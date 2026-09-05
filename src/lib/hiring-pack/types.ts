@@ -272,6 +272,19 @@ export type HiringPackProfileInput = {
    */
   contractSignatoryNameAr?: string | null;
   contractSignatoryTitleAr?: string | null;
+  /**
+   * WHY THIS POST IS ON A FIXED TERM — one of the standard grounds in `renewal-reasons.ts`.
+   *
+   * Stored as a CODE, resolved to its Arabic clause at print time. Article 87 of Labour Law 14/2025
+   * permits a fixed term only where the nature of the work requires it, so this is the sentence that
+   * makes the term lawful rather than a formality, and the renewal annex prints it in its preamble.
+   *
+   * It describes the POST and not the person, which is the reason it is a closed list: two people in
+   * the same job whose annexes state different grounds have written a contradiction into their own
+   * paperwork. Null prints the dotted rule, exactly as before the list existed — a blank somebody
+   * still has to answer is honest, and a guess here would be signed.
+   */
+  contractObjectiveReasonCode?: string | null;
 };
 
 /**

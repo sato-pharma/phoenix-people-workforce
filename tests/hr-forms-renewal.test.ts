@@ -8,6 +8,11 @@ import {
   renderContractRenewalHtml,
 } from "../src/lib/hiring-pack/render-renewal.ts";
 import {
+  RENEWAL_OBJECTIVE_REASONS,
+  isRenewalObjectiveReasonCode,
+  renewalObjectiveReasonClause,
+} from "../src/lib/hiring-pack/renewal-reasons.ts";
+import {
   RENEWAL_BLANK_RULE,
   renewalTemplateStrings,
   renewalTemplateTokens,
@@ -473,6 +478,10 @@ function testTheNoticeDatesTheLastDayFromTheContractNotTheExit(): void {
 // ---------------------------------------------------------------------------------------------
 
 function testTheTwoJudgementFieldsPrintBlank(): void {
+  // Both still rule when nothing has been chosen. The objective reason became a dropdown on
+  // 2026-09-05, which changed where its value comes from and NOT what an unanswered one looks like:
+  // an unanswered legal ground must look unanswered, because the alternative is a guess that gets
+  // signed. The annex number has no source at all — it comes from a paper register.
   const values = buildRenewalValues(packFixture(), RENEWAL_ANNEX_V1);
   for (const token of ["ANNEX_NUMBER", "OBJECTIVE_REASON"] as RenewalToken[]) {
     const value = values[token];
@@ -718,6 +727,147 @@ function testTheBlankRuleIsWhatAnAbsentValueLooksLike(): void {
   assert.ok(!html.includes("{{"), "and still no raw token survives");
 }
 
+// ---------------------------------------------------------------------------------------------
+// The objective reason — a dropdown of standard grounds, owner's instruction 2026-09-05
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Every clause, pinned VERBATIM.
+ *
+ * THIS IS THE LOAD-BEARING TEST FOR THE DROPDOWN. The profile stores a CODE and the sentence is
+ * resolved at print time, so rewording a clause in the catalogue silently changes what an
+ * ALREADY-SIGNED annex reproduces when it is reprinted — on every annex that ever used that code,
+ * with nothing on the page to say so. The catalogue is append-only for exactly that reason; this
+ * table is what makes the rule enforceable rather than aspirational.
+ *
+ * To change a ground: ADD a code and leave the old one in place.
+ */
+const PINNED_CLAUSES: ReadonlyArray<readonly [string, string]> = [
+  [
+    "annual_promotional_plan",
+    "ارتباط الوظيفة بخطة الترويج السنوية المعتمدة، التي يُعاد وضع مستهدفاتها وخطوط منتجاتها ونطاقاتها الجغرافية في مطلع كل سنة",
+  ],
+  [
+    "territory_coverage_cycle",
+    "ارتباط الوظيفة بتغطية نطاق جغرافي محدد ضمن دورة تغطية سنوية يُعاد في نهايتها تقسيم النطاقات وتوزيع العملاء",
+  ],
+  [
+    "product_line_term",
+    "ارتباط الوظيفة بخط منتجات أو مجموعة أصناف يقوم تسويقها على تسجيل أو اتفاق توزيع محدد المدة، فتتحدد مدة العمل بمدته",
+  ],
+  [
+    "defined_project",
+    "ارتباط الوظيفة بمشروع أو حملة محددة المدة والنطاق، تنتهي الحاجة إلى العمل بانتهائها",
+  ],
+  [
+    "third_party_contract",
+    "ارتباط الوظيفة بتنفيذ عقد أو اتفاق محدد المدة مبرم مع الغير، فتتحدد مدة العمل بمدة ذلك العقد",
+  ],
+  [
+    "temporary_cover",
+    "تغطية مؤقتة لوظيفة شاغرة أو لغياب مؤقت لأحد العاملين، وتنتهي الحاجة إلى العمل بزوال سببها",
+  ],
+  [
+    "seasonal_demand",
+    "مواجهة زيادة مؤقتة أو موسمية في حجم العمل لا تستلزم شغل الوظيفة بصفة دائمة",
+  ],
+  [
+    "new_structure_under_review",
+    "ارتباط الوظيفة بوحدة تنظيمية مستحدثة ما زالت قيد التقييم ولم يستقر بعد إدراجها بالهيكل التنظيمي الدائم",
+  ],
+];
+
+function testEveryObjectiveReasonClauseIsPinned(): void {
+  for (const [code, clause] of PINNED_CLAUSES) {
+    assert.equal(
+      renewalObjectiveReasonClause(code),
+      clause,
+      `the clause for "${code}" changed. A stored code resolves to this sentence at PRINT time, so ` +
+        "rewording it rewrites what an already-signed annex reproduces. Add a new code instead.",
+    );
+  }
+  assert.equal(
+    RENEWAL_OBJECTIVE_REASONS.length,
+    PINNED_CLAUSES.length,
+    "a ground was added or removed without pinning it here — every clause that can reach a signed " +
+      "instrument must be in this table",
+  );
+}
+
+function testTheCatalogueHasNoDuplicateOrEmptyCodes(): void {
+  const codes = RENEWAL_OBJECTIVE_REASONS.map((reason) => reason.code);
+  assert.equal(
+    new Set(codes).size,
+    codes.length,
+    "two grounds sharing a code means one of them can never be selected, and which one wins is " +
+      "array order",
+  );
+  for (const reason of RENEWAL_OBJECTIVE_REASONS) {
+    assert.ok(reason.code.trim(), "a ground with no code cannot be stored");
+    assert.ok(reason.labelAr.trim() && reason.labelEn.trim(), `"${reason.code}" has no menu label`);
+    assert.ok(
+      reason.labelAr.length <= 30,
+      `"${reason.code}" has a ${reason.labelAr.length}-character Arabic menu label. A native ` +
+        "<select> is the one control the fits-the-screen rule cannot narrow, so labels stay short " +
+        "and the full sentence prints on the annex instead.",
+    );
+  }
+}
+
+function testAChosenReasonPrintsItsClause(): void {
+  const pack = packFixture({ profile: { contractObjectiveReasonCode: "annual_promotional_plan" } });
+  const values = buildRenewalValues(pack, RENEWAL_ANNEX_V1);
+  assert.equal(values.OBJECTIVE_REASON, PINNED_CLAUSES[0][1]);
+
+  const html = renderContractRenewalHtml(pack, 1);
+  assert.ok(
+    html.includes(PINNED_CLAUSES[0][1]),
+    "the chosen ground must reach the printed preamble, not just the values map",
+  );
+  assert.ok(
+    !html.includes("annual_promotional_plan"),
+    "the CODE must never reach the page. A raw identifier on an Arabic legal instrument is worse " +
+      "than the blank it replaced.",
+  );
+}
+
+function testAnUnknownCodePrintsBlankRatherThanItself(): void {
+  // The column has no CHECK — the catalogue lives in code — so a hand-written or newer-build value
+  // can be in there. It must read as "nothing chosen", never be passed through.
+  const pack = packFixture({ profile: { contractObjectiveReasonCode: "something_else_entirely" } });
+  const values = buildRenewalValues(pack, RENEWAL_ANNEX_V1);
+  assert.equal(
+    values.OBJECTIVE_REASON,
+    "",
+    "an unrecognised ground resolves to nothing, which prints the dotted rule",
+  );
+
+  const html = renderContractRenewalHtml(pack, 1);
+  assert.ok(
+    !html.includes("something_else_entirely"),
+    "an unknown code must not be printed onto the instrument",
+  );
+  assert.ok(
+    html.includes('<span class="rule-line" data-hp-key="OBJECTIVE_REASON">'),
+    "it prints the same blank an unanswered ground has always printed",
+  );
+
+  assert.equal(isRenewalObjectiveReasonCode("something_else_entirely"), false);
+  assert.equal(isRenewalObjectiveReasonCode(null), false);
+  assert.equal(isRenewalObjectiveReasonCode("annual_promotional_plan"), true);
+}
+
+function testTheReasonIsAbsentFromTheNonRenewalNotice(): void {
+  // The notice does not renew anything, so it states no ground for a term. A reason leaking onto it
+  // would be an assertion about why the contract WAS fixed-term, printed on the paper that ends it.
+  const pack = packFixture({ profile: { contractObjectiveReasonCode: "annual_promotional_plan" } });
+  const notice = renderContractNonRenewalHtml(pack, 1);
+  assert.ok(
+    !notice.includes(PINNED_CLAUSES[0][1]),
+    "the objective reason belongs to the annex only",
+  );
+}
+
 export function runHrFormsRenewalTests(): void {
   testEveryContractReferenceResolves();
   testEveryCitationPhraseIsStillOnThePaper();
@@ -739,4 +889,9 @@ export function runHrFormsRenewalTests(): void {
   testTheNoticeSaysItIsNotADismissal();
   testEveryTokenEitherPaperUsesIsInTheUnion();
   testTheBlankRuleIsWhatAnAbsentValueLooksLike();
+  testEveryObjectiveReasonClauseIsPinned();
+  testTheCatalogueHasNoDuplicateOrEmptyCodes();
+  testAChosenReasonPrintsItsClause();
+  testAnUnknownCodePrintsBlankRatherThanItself();
+  testTheReasonIsAbsentFromTheNonRenewalNotice();
 }

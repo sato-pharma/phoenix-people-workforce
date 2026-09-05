@@ -2,6 +2,7 @@ import { systemLegalEntity } from "@/config/system-settings";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import { HOUSE_COLORS, HOUSE_MARK_SRC } from "@/lib/hiring-pack/house-identity";
 import { insuranceWageFromBase } from "@/lib/hiring-pack/insurance-wage";
+import { renewalObjectiveReasonClause } from "@/lib/hiring-pack/renewal-reasons";
 import { spellEgyptianAmount } from "@/lib/hiring-pack/arabic-amount";
 import {
   RENEWAL_BLANK_RULE,
@@ -51,10 +52,18 @@ import type { HiringPackData } from "@/lib/hiring-pack/types";
 // WHAT IS FILLED AND WHAT IS RULED, on the same principle as the custody receipt. Phoenix answers
 // everything it holds a record of — the person, the original contract's dates, the job, the
 // department, the pay, the insurance wage, and the new term when a renewal request has been raised
-// through the workflow. It rules two things it cannot honestly answer: the ANNEX NUMBER, which is
-// assigned by hand out of the company's own register, and the OBJECTIVE REASON for keeping the term
-// fixed, which is a legal judgement about this post under مادة (87) and not a field in any table.
-// A printed guess there is worse than a blank: it would be signed.
+// through the workflow.
+//
+// The ANNEX NUMBER still rules, because it is assigned by hand out of the company's own paper
+// register and nothing here can know it. The OBJECTIVE REASON no longer does: the owner asked on
+// 2026-09-05 for a dropdown of standard grounds, so it is now a code on the hiring profile resolved
+// through `renewal-reasons.ts`. It still rules when nothing has been chosen, which is the important
+// half — an unanswered legal ground must look unanswered, because the alternative is a guess that
+// gets signed.
+//
+// The reason is stored per EMPLOYEE and not per renewal, deliberately: Article 87 asks why the
+// nature of THIS WORK requires a term, which is a fact about the post that does not change between
+// one year's annex and the next.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -182,7 +191,12 @@ export function buildRenewalValues(
     RENEWAL_DURATION: describeDurationMonths(terms.durationMonths),
     RENEWAL_START_DATE: pinLtr(formatDayMonthYear(newStart)),
     RENEWAL_END_DATE: pinLtr(formatDayMonthYear(newEnd)),
-    // OBJECTIVE_REASON is deliberately absent — see the header note. It is a legal judgement.
+    // WHY THIS POST IS ON A FIXED TERM — Article 87's own requirement, and the sentence that
+    // makes the term lawful. Resolved from the code stored on the hiring profile; an absent or
+    // unrecognised code prints the dotted rule, which is what this line did for every annex
+    // before the owner asked for a dropdown on 2026-09-05. A blank somebody still has to answer
+    // is honest; a guessed legal ground would be signed.
+    OBJECTIVE_REASON: renewalObjectiveReasonClause(profile.contractObjectiveReasonCode) ?? "",
 
     // The base salary, not the gross — owner, 2026-08-31, and the same figure مادة (4) of the
     // contract states. An annex that renews on a different number from the one the contract carries
