@@ -128,6 +128,20 @@ async function allText(buffer: Buffer): Promise<string> {
   return text;
 }
 
+/** The emitted pivot cache definition, or null when the build carries no pivot. */
+async function pivotCacheDefinition(buffer: Buffer): Promise<string | null> {
+  const zip = await JSZip.loadAsync(buffer);
+  const part = zip.file("xl/pivotCache/pivotCacheDefinition1.xml");
+  return part ? await part.async("string") : null;
+}
+
+/** The emitted pivot cache records, or null when the build carries no pivot. */
+async function pivotCacheRecords(buffer: Buffer): Promise<string | null> {
+  const zip = await JSZip.loadAsync(buffer);
+  const part = zip.file("xl/pivotCache/pivotCacheRecords1.xml");
+  return part ? await part.async("string") : null;
+}
+
 export async function runWeeklyExportTests() {
   // Interactive build: valid xlsx, 23 sheets (incl. the native pivot), no control bytes.
   const interactive = await buildWeeklyExportWorkbook(sampleDashboard(), GENERATED_AT, { interactive: true });
@@ -193,4 +207,44 @@ export async function runWeeklyExportTests() {
     "the weekly BI workbook must not print the app's name anywhere — it is a Sato Pharma document",
   );
   assert.ok(text.includes(HOUSE_DOCUMENT_STANDARD), `the workbook carries its document standard, ${HOUSE_DOCUMENT_STANDARD}`);
+  // ── THE NATIVE PIVOT OPENS ON THIS MONTH'S DATA, NOT THE BUILD'S ────────────
+  //
+  // ExcelForge's PivotTable interface takes a sheet and a RANGE and nothing else: no refresh flag,
+  // no table source. So both of these are written by rewriting the emitted cache part, and both are
+  // therefore invisible in the builder's source — the only place to check them is the file.
+  //
+  // WHY THEY MATTER, and they are two different failures:
+  //  - without `refreshOnLoad`, the pivot renders the records cached at BUILD time. A workbook
+  //    rebuilt from newer data opens showing the old numbers, with nothing on screen saying so. A
+  //    stale pivot is indistinguishable from a current one, which is what makes it worth a test.
+  //  - a hard `A1:O{lastRow}` source is right on the day it is written and wrong the moment a row
+  //    is added to Data. The table grows on its own.
+  const cacheXml = await pivotCacheDefinition(interactive);
+  assert.ok(cacheXml, "the interactive build carries a pivot cache");
+  assert.match(
+    cacheXml!,
+    /refreshOnLoad="1"/,
+    "the pivot must refresh when the file opens, or it renders the data cached at build time and " +
+      "nothing on screen says the numbers are old",
+  );
+  assert.match(
+    cacheXml!,
+    /<worksheetSource[^>]*name="tblWeekly"/,
+    "the pivot cache must be sourced from the tblWeekly TABLE, not a fixed range — a range does not " +
+      "grow when a row is added to the Data sheet",
+  );
+  // A table-sourced cache carries neither of the range form's attributes. Leaving one behind is
+  // what makes Excel repair the part, which drops the pivot silently.
+  const source = /<worksheetSource[^>]*\/>/.exec(cacheXml!)?.[0] ?? "";
+  assert.ok(!source.includes(" ref=") && !source.includes(" sheet="), `the table source carries no ref or sheet: ${source}`);
+
+  // The cache's own record count still matches what it holds — the rewrite touches the source and
+  // the refresh flag, and must not disturb the records.
+  const declared = Number(/recordCount="(\d+)"/.exec(cacheXml!)?.[1] ?? "-1");
+  const held = ((await pivotCacheRecords(interactive)) ?? "").match(/<r>/g)?.length ?? -2;
+  assert.equal(declared, held, "the cache declares exactly the records it holds");
+
+  // The non-interactive build carries no pivot at all, so the rewrite must be a clean no-op there
+  // rather than something that fails or half-writes a part.
+  assert.equal(await pivotCacheDefinition(plain), null, "the non-interactive build carries no pivot cache to patch");
 }
