@@ -18,6 +18,17 @@ import type {
   FingerprintReportRow,
 } from "@/lib/attendance/fingerprint-report";
 import { summarizeFingerprintDeductionQuantities } from "@/lib/attendance/metrics";
+import {
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+  PortalStackingCell,
+  portalStackingBodyClassName,
+  portalStackingHeadClassName,
+  portalStackingRowClassName,
+  portalStackingTableClassName,
+} from "@/components/employee-portal/portal-primitives";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
@@ -64,11 +75,17 @@ function hasCellValue(row: FingerprintReportRow, column: FingerprintReportColumn
   return String(row[column.key] ?? "").trim().length > 0;
 }
 
+// Every utility here is `md:`-scoped, and that is the whole point of the rewrite on 2026-09-05.
+// From md up the Daily Report is still a 2060px table and the first three columns still freeze
+// while you scroll sideways through it. BELOW md it is a labelled stack, where a cell is a block:
+// there `w-24` would squeeze a value into a 96px strip, and `sticky left-0` would freeze a column
+// against a viewport that has no sideways travel to freeze it from. The freeze is an affordance
+// of the wide table, so it starts exactly where the wide table starts.
 function stickyClass(column: FingerprintReportColumn, area: "body" | "head") {
-  const base = area === "head" ? "bg-slate-50" : "bg-white group-hover:bg-slate-50";
-  if (column.key === "deviceUserId") return `sticky left-0 z-30 w-24 min-w-24 ${base}`;
-  if (column.key === "employeeHrId") return `sticky left-24 z-30 w-32 min-w-32 ${base}`;
-  if (column.key === "employeeName") return `sticky left-56 z-30 w-60 min-w-60 shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)] ${base}`;
+  const base = area === "head" ? "md:bg-slate-50" : "md:bg-white md:group-hover:bg-slate-50";
+  if (column.key === "deviceUserId") return `md:sticky md:left-0 md:z-30 md:w-24 md:min-w-24 ${base}`;
+  if (column.key === "employeeHrId") return `md:sticky md:left-24 md:z-30 md:w-32 md:min-w-32 ${base}`;
+  if (column.key === "employeeName") return `md:sticky md:left-56 md:z-30 md:w-60 md:min-w-60 md:shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)] ${base}`;
   return "";
 }
 
@@ -310,49 +327,90 @@ export function FingerprintReport({ initialData, initialError }: Props) {
           description="Schedule details resolved from employee HR_ID policy, then job title policy, then default policy."
           title="Employee Policy Details"
         >
-          <div className="phoenix-horizontal-scroll overflow-x-auto">
-            <table className="min-w-[1180px] border-separate border-spacing-0 text-left">
-              <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                <tr>
-                  <th className="border-b border-r border-slate-200 px-4 py-3">Employee ID</th>
-                  <th className="border-b border-r border-slate-200 px-4 py-3">Name</th>
-                  <th className="border-b border-r border-slate-200 px-4 py-3">Job Title</th>
-                  <th className="border-b border-r border-slate-200 px-4 py-3">Department</th>
-                  <th className="border-b border-r border-slate-200 px-4 py-3">Scheduled Start</th>
-                  <th className="border-b border-r border-slate-200 px-4 py-3">Scheduled End</th>
-                  <th className="border-b border-r border-slate-200 px-4 py-3">Daily Grace</th>
-                  <th className="border-b border-r border-slate-200 px-4 py-3">Workdays</th>
-                  <th className="border-b border-r border-slate-200 px-4 py-3">Policy</th>
-                  <th className="border-b border-slate-200 px-4 py-3">Effective</th>
-                </tr>
-              </thead>
-              <tbody>
-                {policyDetails.map((row) => (
-                  <tr className="text-sm hover:bg-slate-50/60" key={row.employeeHrId}>
-                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 font-semibold text-slate-800">{row.employeeHrId}</td>
-                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.employeeName}</td>
-                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.jobTitle || "-"}</td>
-                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.department || "-"}</td>
-                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.scheduledStart || "-"}</td>
-                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.scheduledEnd || "-"}</td>
-                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.graceMinutes || "-"}</td>
-                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.workingDays || "-"}</td>
-                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.policyName}</td>
-                    <td className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-slate-700">
-                      {row.effectiveFrom || "-"}{row.effectiveTo ? ` to ${row.effectiveTo}` : ""}
-                    </td>
-                  </tr>
-                ))}
-                {policyDetails.length === 0 ? (
-                  <tr>
-                    <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={10}>
-                      No employee policy details match this filter.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
+          {/* Cards below md, the ten-column table from md up — the owner's standing rule:
+              "desktop shows full tables/dashboards, mobile never does". These rows are read-only,
+              so PortalResponsiveDataList is the right half of the pair; the Daily Report below
+              carries a decision per row and uses the stacking pattern instead, for the reason
+              written on those constants.
+
+              This page reached an HR rail on 2026-09-05, when the Attendance hub row was replaced
+              by its cards and the Fingerprint Report became a row of its own. Before that the only
+              HR row was the hub, tests/hr-shell-mobile-tables.test.ts never walked this far, and a
+              1180px minimum sat one tap from a phone. */}
+          <PortalResponsiveDataList
+            empty={
+              <PortalEmptyState
+                message="No employee policy details match this filter."
+                title="No policies to show"
+              />
+            }
+            getKey={(row) => row.employeeHrId}
+            items={policyDetails}
+            renderCard={(row) => (
+              <PortalRecordCard
+                meta={
+                  <span>
+                    {row.employeeHrId}
+                    {row.jobTitle ? ` · ${row.jobTitle}` : ""}
+                    {row.department ? ` · ${row.department}` : ""}
+                  </span>
+                }
+                title={row.employeeName}
+              >
+                <PortalRecordFields
+                  fields={[
+                    { label: "Policy", value: row.policyName },
+                    { label: "Scheduled Start", value: row.scheduledStart || "-" },
+                    { label: "Scheduled End", value: row.scheduledEnd || "-" },
+                    { label: "Daily Grace", value: row.graceMinutes || "-" },
+                    { label: "Workdays", value: row.workingDays || "-" },
+                    {
+                      label: "Effective",
+                      value: `${row.effectiveFrom || "-"}${row.effectiveTo ? ` to ${row.effectiveTo}` : ""}`,
+                    },
+                  ]}
+                />
+              </PortalRecordCard>
+            )}
+            renderTable={() => (
+              <div className="phoenix-horizontal-scroll hidden overflow-x-auto md:block">
+                <table className="min-w-[1180px] border-separate border-spacing-0 text-left">
+                  <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                    <tr>
+                      <th className="border-b border-r border-slate-200 px-4 py-3">Employee ID</th>
+                      <th className="border-b border-r border-slate-200 px-4 py-3">Name</th>
+                      <th className="border-b border-r border-slate-200 px-4 py-3">Job Title</th>
+                      <th className="border-b border-r border-slate-200 px-4 py-3">Department</th>
+                      <th className="border-b border-r border-slate-200 px-4 py-3">Scheduled Start</th>
+                      <th className="border-b border-r border-slate-200 px-4 py-3">Scheduled End</th>
+                      <th className="border-b border-r border-slate-200 px-4 py-3">Daily Grace</th>
+                      <th className="border-b border-r border-slate-200 px-4 py-3">Workdays</th>
+                      <th className="border-b border-r border-slate-200 px-4 py-3">Policy</th>
+                      <th className="border-b border-slate-200 px-4 py-3">Effective</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {policyDetails.map((row) => (
+                      <tr className="text-sm hover:bg-slate-50/60" key={row.employeeHrId}>
+                        <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 font-semibold text-slate-800">{row.employeeHrId}</td>
+                        <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.employeeName}</td>
+                        <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.jobTitle || "-"}</td>
+                        <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.department || "-"}</td>
+                        <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.scheduledStart || "-"}</td>
+                        <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.scheduledEnd || "-"}</td>
+                        <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.graceMinutes || "-"}</td>
+                        <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.workingDays || "-"}</td>
+                        <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.policyName}</td>
+                        <td className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-slate-700">
+                          {row.effectiveFrom || "-"}{row.effectiveTo ? ` to ${row.effectiveTo}` : ""}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          />
         </AdminTableShell>
       ) : (
       <AdminTableShell
@@ -360,7 +418,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
         title="Daily Report"
       >
         <div
-          className="phoenix-horizontal-scroll overflow-x-auto border-b border-slate-100 bg-slate-50/60"
+          className="phoenix-horizontal-scroll hidden overflow-x-auto border-b border-slate-100 bg-slate-50/60 md:block"
           ref={topScrollRef}
           onScroll={() => syncScroll("top")}
         >
@@ -371,8 +429,16 @@ export function FingerprintReport({ initialData, initialError }: Props) {
           ref={tableScrollRef}
           onScroll={() => syncScroll("table")}
         >
-          <table className="min-w-[2060px] table-fixed border-separate border-spacing-0 text-left">
-            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
+          {/* The STACKING pattern, not PortalResponsiveDataList, and the difference matters here.
+              Every row carries a decision — deduct, exempt or pending — and the page says so in as
+              many words: "decisions are local until exported". PortalResponsiveDataList renders
+              each row twice, a card instance and a table instance, so a phone turned to landscape
+              crosses md mid-review and swaps in the other instance. Here that is only a risk to a
+              pending decision rather than a certainty, because `decisions` is one Map held by this
+              component and both copies would read it — but two live copies of a row a person is
+              deciding on is not a shape worth having, and one table that stacks has neither. */}
+          <table className={`${portalStackingTableClassName} border-separate border-spacing-0 md:min-w-[2060px] md:table-fixed`}>
+            <thead className={`${portalStackingHeadClassName} bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500`}>
               <tr>
                 {visibleColumns.map((column) => (
                   <th className={`whitespace-nowrap border-b border-r border-slate-200 px-4 py-3 ${stickyClass(column, "head")}`} key={column.key}>{column.label}</th>
@@ -380,17 +446,24 @@ export function FingerprintReport({ initialData, initialError }: Props) {
                 <th className="whitespace-nowrap border-b border-r border-slate-200 px-4 py-3">Before Decision</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className={portalStackingBodyClassName}>
               {rows.map((row) => {
                 const decision = decisions.get(row.sortKey) ?? "pending";
                 return (
-                  <tr className={`group text-sm ${rowDecisionClass(decision)}`} key={row.sortKey}>
+                  <tr
+                    className={`${portalStackingRowClassName} group border-b border-slate-200 py-2 text-sm md:border-b-0 md:py-0 ${rowDecisionClass(decision)}`}
+                    key={row.sortKey}
+                  >
                     {visibleColumns.map((column) => (
-                      <td className={`whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700 ${stickyClass(column, "body")}`} key={`${row.sortKey}-${column.key}`}>
+                      <PortalStackingCell
+                        className={`text-slate-700 md:whitespace-nowrap md:border-b md:border-r md:border-slate-100 ${stickyClass(column, "body")}`}
+                        key={`${row.sortKey}-${column.key}`}
+                        label={column.label}
+                      >
                         {column.key === "status" ? statusBadge(row.status) : row[column.key] || "-"}
-                      </td>
+                      </PortalStackingCell>
                     ))}
-                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3">
+                    <PortalStackingCell className="md:whitespace-nowrap md:border-b md:border-r md:border-slate-100" label="Before Decision">
                       {row.status === "Complete" ? (
                         <span className="text-slate-300">—</span>
                       ) : (
@@ -405,13 +478,13 @@ export function FingerprintReport({ initialData, initialError }: Props) {
                           }
                         />
                       )}
-                    </td>
+                    </PortalStackingCell>
                   </tr>
                 );
               })}
               {rows.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={Math.max(visibleColumns.length + 1, 1)}>
+                <tr className={portalStackingRowClassName}>
+                  <td className="block px-4 py-8 text-center text-sm text-slate-500 md:table-cell" colSpan={Math.max(visibleColumns.length + 1, 1)}>
                     No attendance rows found for this filter.
                   </td>
                 </tr>

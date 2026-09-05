@@ -73,21 +73,38 @@ function assertExcludesAll(hrefs: readonly string[], forbidden: readonly string[
   }
 }
 
-// What is LEFT of the 2026-08-08 restoration after the 2026-08-30 collapse. Both of these are
-// still rows on Super Admin's sidebar, and both are still cards on a hub the SFE Manager uses —
-// which is the arrangement, not a duplication, because he is excluded from each row by name:
+// ── 2026-09-05: the owner reversed the COLLAPSE ──────────────────────────────────────────────
+//
+// "I don't want any subtitle to be the one that when I press, it redirects me to a page with big
+// modules. I want a recruitment and its modules under it." So no rail row opens a hub page any
+// more: every hub's cards are promoted onto the rail under the hub's own heading, and the hub row
+// itself is gone. The two lists below are the same two the 2026-08-30 collapse produced, read the
+// other way round — which is what the note above says to do rather than argue with them.
+//
+// The SECTIONS survive the reversal unchanged; only their contents moved. That is why the
+// assertions that used to name a hub href now name a section id.
+
+// What is LEFT of the 2026-08-08 restoration. Both are rows on Super Admin's sidebar, both are
+// cards on a hub the SFE Manager uses, and he is excluded from each standalone ROW by name:
 //   /admin/field-workforce-compliance   a People Management row; a card on the CRM hub, where the
 //                                       SFE Manager reaches it (it is judged on CRM visit activity)
 //   /admin/pm-products                  its own section since 2026-08-30; a card on the Marketing
 //                                       & ROI hub, where the SFE Manager reaches it
+// Since the promotion those two cards ARE rail rows for him — inside `crm` and `hub-marketing-roi`,
+// never inside the sections below, which is what the exclusion was always about.
 const RESTORED_ROWS = ["/admin/field-workforce-compliance", "/admin/pm-products"] as const;
+const RESTORED_ROW_SECTIONS = ["people-management", "pm-product-master"] as const;
 
-// The hub buttons. The SFE Manager always had these; since 2026-08-30 Super Admin has them too,
-// INSTEAD of the rows they list — never beside them.
-const SFE_HUBS = ["/admin/probation-tools", "/admin/crm-tools"] as const;
+// The hub buttons, now retired. No role may have one: they are pages still, reachable by URL and
+// by search, but nothing on the rail opens them.
+const RETIRED_HUB_HREFS = [
+  "/admin/probation-tools",
+  "/admin/crm-tools",
+  "/admin/marketing-roi",
+] as const;
 
-// The rows the 2026-08-30 collapse removed. Nobody may have one of these AND the hub that lists it;
-// Super Admin, who had every one, must now have none of them.
+// The rows the 2026-08-30 collapse removed and the 2026-09-05 promotion put back. Super Admin, who
+// had every one before the collapse, must have every one again — and none of the hubs above.
 const COLLAPSED_INTO_HUBS = [
   // → /admin/probation-tools
   "/probation",
@@ -137,12 +154,19 @@ export function runSidebarRoleScopedHeadingsTests() {
   // reversing the 2026-08-30 phase-4 removal: the owner asked for the sidebar rows back for every
   // admin-shell role that lost them, while the personal-workspace tabs stay too (additive). So the
   // section exists again and its heading is pinned here once more.
+  //
+  // TWO OF THE FOUR WERE RENAMED 2026-09-05, and the point of this list is unchanged: it pins that
+  // each section HAS a heading, by name, so a re-blanking is caught by name. The promotion gave
+  // each of these two a twin in its own domain group carrying the module's name — "Marketing &
+  // ROI" and "People Management" are the promoted bands now — so keeping the old strings here
+  // would have pinned the very collision tests/sidebar-rows-read-uniquely.test.ts forbids. What
+  // each section is called moved; that it is called something did not.
   const superAdminSections = new Map(sectionsFor("Super Admin").map((s) => [s.id, s.label]));
   for (const [sectionId, expectedLabel] of [
     ["command-center", "Command Center"],
     ["my-requests", "My Requests"],
-    ["workspace-marketing-requests", "Marketing & ROI"],
-    ["people-management", "People Management"],
+    ["workspace-marketing-requests", "Marketing Workspace"],
+    ["people-management", "Compliance"],
   ] as const) {
     assert.equal(
       superAdminSections.get(sectionId),
@@ -163,38 +187,52 @@ export function runSidebarRoleScopedHeadingsTests() {
   }
 
   const sfeHrefs = hrefsFor("SFE Manager");
-  assertIncludesAll(sfeHrefs, SFE_HUBS, "SFE Manager keeps his hub buttons");
+  const sfeBands = sfeSections.map((navSection) => navSection.id);
+  assertExcludesAll(sfeHrefs, RETIRED_HUB_HREFS, "no rail row may open a hub page — not even the SFE Manager's, who had them longest");
+  assertIncludesAll(
+    sfeHrefs,
+    ["/probation", "/admin/crm", "/admin/marketing-roi-tracker"],
+    "SFE Manager gets the modules his three hub buttons used to front",
+  );
   assert.ok(
     sfeHrefs.includes("/admin/sfe-command-center"),
     "SFE Manager keeps his own overview (the premium-styled row)",
   );
+  // The exclusion is about the SECTIONS, not the pages. Both rows are cards on hubs he uses, so
+  // since the promotion he holds both hrefs — inside `crm` and `hub-marketing-roi`. What he must
+  // still not have is the standalone section each row was restored into for the other roles.
   assertExcludesAll(
+    sfeBands,
+    RESTORED_ROW_SECTIONS,
+    "SFE Manager must not pick up the sections restored for the other roles",
+  );
+  assertIncludesAll(
     sfeHrefs,
     RESTORED_ROWS,
-    "SFE Manager must not pick up the rows restored for the other roles",
+    "…while keeping both pages, which his own hubs always offered him as cards",
   );
 
-  // ── Super Admin: the two surviving restored rows, the hubs, and none of the collapsed rows ──
+  // ── Super Admin: the restored rows, no hub buttons, and every promoted row back ──
   const superAdminHrefs = hrefsFor("Super Admin");
   assertIncludesAll(
     superAdminHrefs,
     RESTORED_ROWS,
     "Super Admin keeps the rows the 2026-08-30 collapse did NOT touch",
   );
-  assertIncludesAll(
-    superAdminHrefs,
-    SFE_HUBS,
-    "Super Admin sees the hub buttons since 2026-08-30 — they are his route to every page the collapsed rows used to open",
-  );
   assertExcludesAll(
     superAdminHrefs,
+    RETIRED_HUB_HREFS,
+    "Super Admin's hub buttons are gone — 2026-09-05, no rail row opens a page of modules",
+  );
+  assertIncludesAll(
+    superAdminHrefs,
     COLLAPSED_INTO_HUBS,
-    "Super Admin must not see a row the 2026-08-30 collapse folded into a hub — a hub button beside the rows it lists is the duplication both arrangements exist to avoid",
+    "every row the 2026-08-30 collapse folded into a hub is back on Super Admin's rail, under that hub's heading",
   );
 
-  // Every collapsed page still has a route: it is a card on the hub that replaced its row. This is
-  // the assertion that makes the collapse safe rather than merely tidy, and it is why the list
-  // above is spelled out per href instead of counted.
+  // Every promoted page is a card on the hub whose band it now sits in — the rail and the hub page
+  // are the same list, which is what makes the promotion a move rather than a rebuild. Spelled out
+  // per href instead of counted.
   const superAdminCards = new Set(
     hubPageItemGroups.flatMap((group) => group.items.map((item) => item.href)),
   );

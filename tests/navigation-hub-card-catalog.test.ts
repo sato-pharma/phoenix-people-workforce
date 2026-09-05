@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { getNavigationSections, hubPageItemGroups } from "../src/config/system-navigation.ts";
-import { getSections, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
+import {
+  getSections,
+  navigationItemVisible,
+  type PermissionLookup,
+} from "../src/lib/navigation/active-path.ts";
 import {
   getHubCardItems,
   getHubCardSections,
@@ -53,16 +57,73 @@ export function runNavigationHubCardCatalogTests() {
       hubs.length > 0,
       "the admin surface has collapsed hubs, so the catalogue must be non-empty — an empty one means the + is back to offering the rail alone",
     );
-    // The whole point is that this is a LOT of pages. A catalogue that shrank to a handful would
-    // pass every structural check below while quietly failing the ask.
-    assert.ok(
-      items.length > 50,
-      `the hub cards are most of the admin surface; got ${items.length}, which is too few to be the real catalogue`,
-    );
     assert.equal(
       items.length,
       hubs.reduce((count, section) => count + section.items.length, 0),
       "getHubCardItems must be exactly the flattened sections, or the picker and the resolver disagree about what exists",
+    );
+
+    // ── REPOINTED 2026-09-05, and this is the assertion carrying the owner's ask ──────────────
+    //
+    // This block used to read `items.length > 50` — "the catalogue is most of the admin surface" —
+    // with the note that a catalogue shrunk to a handful would pass every structural check while
+    // quietly failing the ask. That was true of the world it was written in, where 147 pages sat
+    // behind 21 hub buttons and this fold was the only thing offering them.
+    //
+    // The owner then removed the hub buttons: no rail row may open a page of modules, so every
+    // hub's cards are rail rows now. Measured today, 144 of the 147 are on Super Admin's rail and
+    // the catalogue holds THREE — the hub pages themselves, which nothing else offers. So the old
+    // floor now fails on the change that made those pages MORE reachable, not less. Left as it
+    // was it could only be deleted or lowered to a smaller number, and a lowered number pins
+    // nothing.
+    //
+    // What it was really asking is pinned instead, directly and without a magic number: every hub
+    // card a viewer's gate admits is offered SOMEWHERE in the panel he opens. Where it lives —
+    // rail row or catalogue card — is the thing that just changed and is free to change again.
+    const admitted = new Set(
+      hubPageItemGroups
+        .flatMap((group) => group.items)
+        .filter((item) => navigationItemVisible(item, permissive, "Super Admin"))
+        .map((item) => item.href),
+    );
+    const offered = new Set(
+      mergeCatalogueSections(adminRail, hubs).flatMap((section) => section.items.map((i) => i.href)),
+    );
+    assert.ok(admitted.size > 50, `${admitted.size} hub cards is too few to be the real catalogue`);
+    assert.deepEqual(
+      [...admitted].filter((href) => !offered.has(href)),
+      [],
+      'every hub card this viewer may reach must be offered by the + panel — the owner\'s ask, in his words: "any page I have, appear in the add and I can add it"',
+    );
+
+    // And the same for a role whose gates actually bite, so this is not a Super Admin special
+    // case. Each role's catalogue is built against ITS OWN rail: passing Super Admin's would
+    // subtract pages Finance Manager never had, which since the promotion is most of the rail.
+    const financeRail = getSections(getNavigationSections("admin"), "admin", permissive, "Finance Manager");
+    const financeOffered = new Set(
+      mergeCatalogueSections(
+        financeRail,
+        getHubCardSections("admin", permissive, "Finance Manager", financeRail),
+      ).flatMap((section) => section.items.map((i) => i.href)),
+    );
+    const financeAdmitted = new Set(
+      hubPageItemGroups
+        .flatMap((group) => group.items)
+        .filter((item) => navigationItemVisible(item, permissive, "Finance Manager"))
+        .map((item) => item.href),
+    );
+    assert.ok(
+      financeAdmitted.size > 20,
+      `${financeAdmitted.size} is too few for the comparison to mean anything`,
+    );
+    assert.deepEqual(
+      [...financeAdmitted].filter((href) => !financeOffered.has(href)),
+      [],
+      "a narrower role must also be offered every card its gate admits",
+    );
+    assert.ok(
+      financeOffered.size < offered.size,
+      "…and fewer pages than Super Admin, or the gate is not being applied at all",
     );
   }
 
@@ -135,14 +196,27 @@ export function runNavigationHubCardCatalogTests() {
   // The catalogue is wider than the rail, so this is the check that matters: widening findability
   // must not widen what a viewer is offered. Flip one resource off and every card gated on it must
   // leave — measured against the same run with it on, so the test fails if it proves nothing.
+  //
+  // MEASURED AGAINST THE WHOLE PANEL, 2026-09-05. This compared the two CATALOGUES and asserted a
+  // payroll card left one of them. Since the hub promotion the catalogue is three hub pages, none
+  // of them payroll-gated, so that comparison returns an empty diff — a check of nothing, passing
+  // the way a check of nothing always passes. The panel is what the viewer actually sees and what
+  // the gate has to hold on, so both sides are now rebuilt end to end with the grant off.
   {
     const denied: PermissionLookup = { "payroll:read": false };
-    const withGrant = getHubCardItems("admin", permissive, "Super Admin", adminRail).map((i) => i.href);
-    const withoutGrant = getHubCardItems("admin", denied, "Super Admin", adminRail).map((i) => i.href);
+    const panelFor = (lookup: PermissionLookup): string[] => {
+      const rail = getSections(getNavigationSections("admin"), "admin", lookup, "Super Admin");
+      return mergeCatalogueSections(
+        rail,
+        getHubCardSections("admin", lookup, "Super Admin", rail),
+      ).flatMap((section) => section.items.map((item) => item.href));
+    };
+    const withGrant = panelFor(permissive);
+    const withoutGrant = panelFor(denied);
     const dropped = withGrant.filter((href) => !withoutGrant.includes(href));
     assert.ok(
       dropped.length > 0,
-      "revoking payroll:read must remove payroll cards from the catalogue — if nothing moved, this test is checking nothing",
+      "revoking payroll:read must remove payroll pages from the panel — if nothing moved, this test is checking nothing",
     );
     assert.ok(
       withoutGrant.every((href) => withGrant.includes(href)),
@@ -155,7 +229,10 @@ export function runNavigationHubCardCatalogTests() {
   // must stay out of the picker for the role it excludes, or the + becomes a way around the one
   // gate that is never waived.
   {
-    const financeManager = getHubCardItems("admin", permissive, "Finance Manager", adminRail);
+    // Built against Finance Manager's OWN rail, for the reason spelled out above: Super Admin's
+    // rail subtracts pages this role never had, and since the promotion that is most of it.
+    const financeManagerRail = getSections(getNavigationSections("admin"), "admin", permissive, "Finance Manager");
+    const financeManager = getHubCardItems("admin", permissive, "Finance Manager", financeManagerRail);
     const superAdmin = getHubCardItems("admin", permissive, "Super Admin", adminRail);
     assert.ok(
       financeManager.length > 0 && superAdmin.length > 0,
@@ -194,14 +271,23 @@ export function runNavigationHubCardCatalogTests() {
     const after = merged.flatMap((section) => section.items.map((i) => i.href)).sort();
     assert.deepEqual(after, before, "merging headings must not drop or duplicate a single page");
 
-    // The rail's own item leads its section — it is the hub BUTTON, and the one carrying the badge.
-    const masterData = merged.find((section) => section.label === "Master Data");
-    const railMasterData = adminRail.find((section) => section.label === "Master Data");
-    if (masterData && railMasterData && railMasterData.items.length > 0) {
+    // The rail's rows lead their section — that ordering is the deliberate one and one of those
+    // rows carries the badge. Asserted on EVERY shared label rather than on "Master Data", which
+    // was the example while a hub button sat there: since the promotion Master Data is a band of
+    // its own modules and shares its name with no hub group, so naming it here would have checked
+    // no section at all — the `if` guard would simply have skipped.
+    const shared = merged.filter(
+      (section) =>
+        adminRail.some((rail) => rail.label === section.label) &&
+        hubs.some((hub) => hub.label === section.label),
+    );
+    assert.ok(shared.length > 0, "no label is shared, so this ordering check would prove nothing");
+    for (const section of shared) {
+      const railFirst = adminRail.find((rail) => rail.label === section.label);
       assert.equal(
-        masterData.items[0]?.href,
-        railMasterData.items[0]?.href,
-        "a merged section keeps the rail's ordering first — the hub button, then the pages behind it",
+        section.items[0]?.href,
+        railFirst?.items[0]?.href,
+        `the merged "${section.label}" section must keep the rail's ordering first`,
       );
     }
   }

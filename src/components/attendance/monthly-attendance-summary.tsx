@@ -11,6 +11,12 @@ import {
   AdminStatCard,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import {
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { Button } from "@/components/ui/button";
 import type { MonthlyAttendanceSummaryData } from "@/lib/attendance/monthly-summary";
 import { attendanceMonthlyCycleNote } from "@/lib/attendance/monthly-summary-note";
@@ -151,7 +157,51 @@ export function MonthlyAttendanceSummary({ initialData, initialError, month }: P
         description="Counts only cover expected working days — weekly offs, holidays, approved leave, and future days are excluded."
         title={`Employee Summary — ${month}`}
       >
-        <div className="phoenix-horizontal-scroll max-h-[70vh] overflow-auto">
+        {/* Cards below md, the fourteen-column table from md up — the owner's standing rule, and a
+            hard acceptance criterion for the two HR seats: "desktop shows full tables/dashboards,
+            mobile never does". This page reached an HR rail on 2026-09-05, when the Attendance hub
+            row was replaced by its cards and Monthly Summary became a row of its own. Before that
+            the only HR row was the hub, so tests/hr-shell-mobile-tables.test.ts never walked this
+            far and a 1400px minimum sat one tap from a phone. */}
+        <PortalResponsiveDataList
+          empty={
+            <PortalEmptyState
+              message="No device-mapped employees found for this month."
+              title="Nothing to summarise"
+            />
+          }
+          getKey={(row) => row.employeeHrId}
+          items={rows}
+          renderCard={(row) => (
+            <PortalRecordCard
+              accent={row.absentDays > 2 ? "rose" : row.absentDays > 0 ? "amber" : "emerald"}
+              meta={
+                <span>
+                  {row.employeeHrId}
+                  {row.jobTitle ? ` · ${row.jobTitle}` : ""}
+                  {row.department ? ` · ${row.department}` : ""}
+                </span>
+              }
+              title={row.employeeName}
+            >
+              <PortalRecordFields
+                fields={[
+                  { label: "Expected", value: row.expectedWorkingDays },
+                  { label: "Present", value: row.presentDays },
+                  { label: "Absent", value: row.absentDays },
+                  { label: "On Leave", value: row.leaveDays },
+                  { label: "Late", value: row.lateCount },
+                  { label: "Early Leave", value: row.earlyLeaveCount },
+                  { label: "Single Punch", value: row.singlePunchCount },
+                  { label: "Exceptions", value: row.exceptionDays },
+                  { label: "Deduction Days", value: row.totalDeductionDays },
+                  { label: "Deduction Value", value: row.totalDeductionValue },
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+        <div className="phoenix-horizontal-scroll hidden max-h-[70vh] overflow-auto md:block">
           <table className="min-w-[1400px] border-separate border-spacing-0 text-left">
             <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
               <tr>
@@ -190,16 +240,11 @@ export function MonthlyAttendanceSummary({ initialData, initialError, month }: P
                   <td className="whitespace-nowrap border-b border-slate-100 px-4 py-3 tabular-nums text-slate-700">{row.totalDeductionValue}</td>
                 </tr>
               ))}
-              {rows.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={14}>
-                    No device-mapped employees found for this month.
-                  </td>
-                </tr>
-              ) : null}
             </tbody>
           </table>
         </div>
+          )}
+        />
       </AdminTableShell>
     </div>
   );

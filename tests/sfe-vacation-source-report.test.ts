@@ -358,11 +358,38 @@ export function runSfeVacationSourceReportTests() {
     1,
     "exactly one row - two rows onto the same page is the failure excludedRoles exists to prevent",
   );
-  for (const role of phoenixRoles) {
-    if (role === "SFE Manager") continue;
-    assert.ok(
-      !sidebarHrefsFor(role).includes("/admin/vacation-report"),
-      `${role} must not be shown this rail row - Super Admin already reaches the page from the Admin Tools hub, and every other role is redirected away from it`,
+  // -- REPOINTED 2026-09-05 ----------------------------------------------------------------------
+  //
+  // This was "and on nobody else's": a loop asserting no other role held the href at all. Its
+  // stated reason was that Super Admin "already reaches the page from the hub" - which is exactly
+  // what stopped being true. The owner ruled that no rail row may open a page of modules, so every
+  // hub's cards became rail rows, and this page is a card on the People Management hub. Both roles
+  // named on that card - Super Admin and HR Operations, added 2026-08-29 by the owner - now hold a
+  // row onto it, in the promoted band, under the card's own name.
+  //
+  // Nothing widened: the band carries the hub row's gate (NavigationSection.gate), so a row appears
+  // only for someone who could have opened that hub AND been shown that card, which both of them
+  // could. The card's own comment still says HR Operations "never SEES this card"; that was written
+  // about her /hr rail and it stays true there - she reaches the report from /hr/admin/vacation-report
+  // - but the shell is chosen by the ADDRESS, not the account (resolveShellNavigationMode), so on an
+  // /admin URL she has always had the People Management hub too.
+  //
+  // What the assertion protects is unchanged and is now stated as the measurement it always was:
+  // the SFE Manager's own row is his, nobody holds TWO rows onto this page, and the only other
+  // holders are the two the card names.
+  const vacationReportRowsFor = (role: PhoenixRole): string[] =>
+    sidebarHrefsFor(role).filter((href) => href === "/admin/vacation-report");
+  const holders = phoenixRoles.filter((role) => vacationReportRowsFor(role).length > 0);
+  assert.deepEqual(
+    [...holders].sort(),
+    ["HR Operations", "SFE Manager", "Super Admin"],
+    "only the SFE Manager's own row and the two roles the People Management card names may reach this page from the rail",
+  );
+  for (const role of holders) {
+    assert.equal(
+      vacationReportRowsFor(role).length,
+      1,
+      `${role} must hold exactly one row onto this page - two rows onto one page is the failure excludedRoles exists to prevent`,
     );
   }
 

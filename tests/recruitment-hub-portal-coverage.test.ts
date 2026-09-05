@@ -93,6 +93,12 @@ function lookupForRole(role: PhoenixRole): PermissionLookup {
   return lookup;
 }
 
+function bandsFor(role: PhoenixRole): string[] {
+  return getSections(getNavigationSections("admin"), "admin", lookupForRole(role), role).map(
+    (section) => section.id,
+  );
+}
+
 function hrefsFor(role: PhoenixRole, mode: "admin" | "employee-portal"): Set<string> {
   const catalog =
     mode === "employee-portal"
@@ -137,18 +143,35 @@ export function runRecruitmentHubPortalCoverageTests() {
       "(admin) route group directly, which is what makes the seven portal mirrors redundant",
   );
 
-  // ── 2. HEADLINE: the hub button is in her rendered sidebar ──────────────────────────────────
-  // Break the fix — drop her from the entry's roles, or drop its permission clause so it renders
-  // for a seat holding none of the cards — and this is what fires.
+  // ── 2. HEADLINE: every card she owns is a ROW in her rendered sidebar ───────────────────────
+  //
+  // This asserted the /admin/recruitment-hiring BUTTON until 2026-09-05, when the owner removed
+  // every rail row that opens a page of modules. The button is now in nobody's sidebar, so that
+  // assertion could only fail — and deleting it would have dropped the one check that she has a way
+  // in at all, which is the entire premise of this file.
+  //
+  // The promotion put the hub's cards on her rail under its heading, so the question can be asked
+  // directly and it is strictly stronger than the button was: not "can she open the hub" but "is
+  // every card she owns a row she can click". Break the fix — drop the band's gate so it renders for
+  // a seat holding none of the cards, or narrow a card past her grants — and this is what fires.
+  const advisoryHrefs = hrefsFor(RECRUITING_SEAT, "admin");
+  const cards = hubCardsFor(RECRUITING_SEAT);
   assert.ok(
-    hrefsFor(RECRUITING_SEAT, "admin").has("/admin/recruitment-hiring"),
-    `${RECRUITING_SEAT} must have the Recruitment & Hiring button in her sidebar. She holds every ` +
-      "card's grant, so the hub renders in full on request — but with no sidebar entry there is no " +
-      "way to reach it, which is exactly the 2026-08-25 defect in its admin-shell form.",
+    bandsFor(RECRUITING_SEAT).includes("hub-recruitment-hiring"),
+    `${RECRUITING_SEAT} must still have the Recruitment & Hiring band on her rail — it is what the ` +
+      "hub button became, and with no band there is no way to reach the tools, which is exactly the " +
+      "2026-08-25 defect in its post-promotion form.",
   );
+  for (const card of cards) {
+    assert.ok(
+      advisoryHrefs.has(card.href),
+      `"${card.label}" (${card.href}) is offered to ${RECRUITING_SEAT} on the hub page but is not a ` +
+        "row on her rail — the promotion is supposed to have moved the cards onto it, so a card the " +
+        "rail drops is reachable only by typed URL",
+    );
+  }
 
   // ── 3. Every card she owns opens ────────────────────────────────────────────────────────────
-  const cards = hubCardsFor(RECRUITING_SEAT);
   assert.equal(
     cards.length,
     8,
@@ -201,10 +224,16 @@ export function runRecruitmentHubPortalCoverageTests() {
     "if this starts failing, HR Operations has been given her own route to Hiring Documents — " +
       "delete this assertion, it has done its job",
   );
+  // The band, not the button: the hub row she was refused is gone from every rail, so naming it here
+  // would pass for any config at all. What replaces it is the band the promotion created — and the
+  // reason it stays refused is a section-level gate carrying the old hub row's own permission
+  // clause. Without it the promotion would have handed her Hiring Documents and HR Forms as rail
+  // rows, which is a WIDENING: she holds employee_documents, so both cards pass their own gate, and
+  // only the hub row's recruitment clause ever kept them off her sidebar.
   assert.ok(
-    !hrefsFor("HR Operations", "admin").has("/admin/recruitment-hiring"),
-    "HR Operations must not be offered a Recruitment & Hiring button — every card on it is " +
-      "filtered out for her, so the button opens an empty page",
+    !bandsFor("HR Operations").includes("hub-recruitment-hiring"),
+    "HR Operations must not be offered a Recruitment & Hiring band — she clears no recruiting card, " +
+      "so the band would be two paperwork rows under a recruiting heading she has no business in",
   );
 
   // ── 5. The orphaned mirrors are reachable by NOBODY, and stay deliberate ────────────────────

@@ -54,6 +54,22 @@ function adminHrefsFor(role: PhoenixRole): string[] {
     .flatMap((navSection) => navSection.items.map((navItem) => navItem.href));
 }
 
+/**
+ * The module FAMILIES on a role's rail, by section id.
+ *
+ * Until 2026-09-05 a family was named here by its hub href — one rail row that opened a page of
+ * cards. The owner removed that shape ("I don't want any subtitle to be the one that when I press
+ * it redirects me to a page with big modules"), so a hub's cards ARE the rail rows now and no hub
+ * href appears on any rail. Naming one in an assertion below would make it vacuously true, which
+ * is worse than a wrong assertion: it reads as a live check and can never fail again. So a claim
+ * about a whole family is made against its band, and a claim about one page against its own href.
+ */
+function adminBandsFor(role: PhoenixRole): string[] {
+  return getSections(adminNavigationSections, "admin", lookupForRole(role), role).map(
+    (navSection) => navSection.id,
+  );
+}
+
 function employeePortalHrefsFor(role: PhoenixRole): string[] {
   return getSections(employeePortalNavigationSections, "employee-portal", lookupForRole(role), role)
     .flatMap((navSection) => navSection.items.map((navItem) => navItem.href));
@@ -184,21 +200,27 @@ export function runNavigationActivePathTests() {
     "admin mode: excludedRoles also drops the item, emptying section b",
   );
 
-  // System Cleanup (and the other Super-Admin-only tools) moved behind the consolidated
-  // "Admin Tools" sidebar button — /admin/admin-tools is now the entry point that must stay
-  // robust to a stale/wrong permission-cache read, since it's role-gated (not permission-gated).
+  // System Cleanup and the other Super-Admin-only tools sit in the "Admin Tools" BAND. It carried
+  // this guarantee as a single /admin/admin-tools row until 2026-09-05; the row is gone and the
+  // band inherited its gate (NavigationSection.gate), which is role-gated, not permission-gated —
+  // so a stale or wrong permission-cache read must not empty it.
   const superAdminCleanupNav = getSections(
     adminNavigationSections,
     "admin",
     { "admin:read": false },
     "Super Admin",
   );
+  const superAdminAdminTools = superAdminCleanupNav.find((navSection) => navSection.id === "admin-tools");
   assert.equal(
-    superAdminCleanupNav.some((navSection) =>
-      navSection.items.some((navItem) => navItem.href === "/admin/admin-tools"),
-    ),
+    superAdminAdminTools !== undefined && superAdminAdminTools.items.length > 0,
     true,
-    "Super Admin must see the Admin Tools sidebar tab even if the dynamic permission cache is stale",
+    "Super Admin must see the Admin Tools band even if the dynamic permission cache is stale",
+  );
+  assert.equal(
+    superAdminAdminTools?.items.some((navItem) => navItem.href === "/admin/system-cleanup"),
+    true,
+    "…and System Cleanup specifically: it is role-gated with no permission of its own, so it is the " +
+      "row that proves the stale `admin:read` did not quietly empty the band down to its permissioned tools",
   );
 
   const ceoCleanupNav = getSections(
@@ -208,11 +230,20 @@ export function runNavigationActivePathTests() {
     "CEO",
   );
   assert.equal(
+    ceoCleanupNav.some((navSection) => navSection.id === "admin-tools"),
+    false,
+    "CEO must not see the Admin Tools band even if a permission lookup grants admin",
+  );
+  // Two Admin Tools cards name the CEO (System Issues, Email Control Center) but the band's gate
+  // is Super-Admin-only, exactly as the hub row was — so they stay off his rail. Promoting the
+  // cards on their own gates alone is what would have put them there, which is the whole reason
+  // the band carries a gate of its own.
+  assert.equal(
     ceoCleanupNav.some((navSection) =>
-      navSection.items.some((navItem) => navItem.href === "/admin/admin-tools"),
+      navSection.items.some((navItem) => navItem.href === "/admin/system-issues"),
     ),
     false,
-    "CEO must not see the Admin Tools sidebar tab even if a permission lookup grants admin",
+    "CEO must not reach an Admin Tools module his hub could never open",
   );
 
   const ceoPayrollTools = payrollManagementPageItems.filter(
@@ -264,13 +295,23 @@ export function runNavigationActivePathTests() {
   // below now.) "Other Approvals" moved to the sidebar's Approvals Hub
   // section, and Organogram/Probation/Workforce Compliance moved to direct
   // sidebar links under People Management — none are cards here anymore.
-  const sensitiveHrHrefs = ["/admin/recruitment-hiring"] as const;
+  // Named as PAGES since 2026-09-05, not as the hub that used to front them. The hub href is on
+  // nobody's rail now, so a list holding it would exclude a string that cannot appear — three
+  // recruiting pages that really are on HR Advisory's and Super Admin's rails are what make these
+  // assertions capable of failing again.
+  const sensitiveHrHrefs = ["/recruitment", "/cv-database", "/offers"] as const;
   // /admin/outstation-expenses and /leave-management moved off this list — both
   // are shared with the CEO (Outstation Expenses / Leave Management hubs), not
   // Super-Admin/Talent-Acquisition-exclusive. (Outstation was shared with the
   // Finance Manager too until 2026-08-10, when the owner excluded him from the
   // module entirely; it is asserted the other way below now.)
-  const systemAdministratorOnlyHrefs = ["/admin/admin-tools"] as const;
+  // Same move, same reason: three Admin Tools pages that are role-gated to Super Admin with no
+  // permission of their own, so no grant anywhere can make them appear for another role.
+  const systemAdministratorOnlyHrefs = [
+    "/admin/system-cleanup",
+    "/admin/data-backup",
+    "/admin/module-locks",
+  ] as const;
 
   const marketingManagerPortal = employeePortalHrefsFor("Marketing Manager");
   // Marketing Manager works from the employee portal like PM/GPM, not the admin workspace shell.
@@ -316,28 +357,42 @@ export function runNavigationActivePathTests() {
   // fail these. Recruitment belongs to HR Advisory; Leave Management to HR Operations;
   // People Management is permission-gated, so both reach it through their own grants.
   assertIncludesAll(
-    adminHrefsFor("HR Advisory"),
-    ["/admin/people-management", "/admin/recruitment-hiring"],
+    adminBandsFor("HR Advisory"),
+    ["hub-people-management", "hub-recruitment-hiring"],
     "HR Advisory must see the recruiting-side admin modules",
   );
   assert.ok(
-    !adminHrefsFor("HR Advisory").includes("/leave-management"),
+    !adminBandsFor("HR Advisory").includes("leave-management"),
     "HR Advisory must NOT see Leave Management — approving leave is HR Operations' duty, and " +
       "inheriting it here is exactly the wholesale-sidebar copy this split exists to prevent",
   );
   assertIncludesAll(
-    adminHrefsFor("HR Operations"),
-    ["/admin/people-management", "/leave-management"],
+    adminBandsFor("HR Operations"),
+    ["hub-people-management", "leave-management"],
     "HR Operations must see the records-and-time admin modules",
   );
   assert.ok(
-    !adminHrefsFor("HR Operations").includes("/admin/recruitment-hiring"),
+    !adminBandsFor("HR Operations").includes("hub-recruitment-hiring"),
     "HR Operations must NOT see Recruitment & Hiring — it is HR Advisory's module",
   );
+  // …and not a single one of its pages by another door. She holds `employee_documents`, which is
+  // the grant Hiring Documents and HR Forms are gated on, so those two cards would have promoted
+  // onto her rail on their own gates alone even though she cannot open the hub that offers them.
+  assertExcludesAll(
+    adminHrefsFor("HR Operations"),
+    ["/recruitment", "/cv-database", "/hiring-documents", "/hiring-pack", "/offers"],
+    "HR Operations must not reach a recruiting page whose hub she cannot open",
+  );
   for (const role of ["HR Advisory", "HR Operations"] as const) {
-    assertExcludesAll(adminHrefsFor(role), ["/employees", "/payroll"], `${role} must not see non-owned company modules`);
     assertExcludesAll(adminHrefsFor(role), systemAdministratorOnlyHrefs, `${role} must not see system-administrator-only modules`);
   }
+  // `/employees` and `/payroll` used to be asserted absent for BOTH seats. That was a statement
+  // about the old rail's shape rather than about reach: HR Operations passes the People Management
+  // and Payroll Management gates, so both pages were always one click away for her, as cards on
+  // those hubs. Promoting the cards makes that visible instead of hidden — the reach did not
+  // change. It stays asserted for HR Advisory, whose gates genuinely do not admit her to either.
+  assertExcludesAll(adminHrefsFor("HR Advisory"), ["/employees", "/payroll"], "HR Advisory must not see non-owned company modules");
+  assertIncludesAll(adminHrefsFor("HR Operations"), ["/employees", "/payroll"], "HR Operations reaches both through her own grants, and the rail now says so");
 
   const financeAdmin = adminHrefsFor("Finance Manager");
   // /admin/payroll-management was his payroll-ownership row until the owner hid it later the same
@@ -363,22 +418,31 @@ export function runNavigationActivePathTests() {
   // path moved); "Payroll Management" went the same way as its sibling hubs above once his one
   // reachable card inside it ("Deductions") was excluded by name too (see hubCardHrefsFor below);
   // "Pharmacovigilance" was trimmed to just "Report It", its own direct row now.
+  // The seven hub hrefs this list used to carry are gone from every rail, so each is now asserted
+  // as its BAND — see `adminBandsFor`. Left as hrefs: the rows that were never hubs.
+  assertExcludesAll(
+    adminBandsFor("Finance Manager"),
+    [
+      "hub-marketing-roi",
+      "hub-people-management",
+      "attendance-management",
+      "crm",
+      "payroll",
+      "hub-pharmacovigilance",
+      "expenses-outstation",
+    ],
+    "Finance Manager's sidebar must not carry the module families the owner took off it (2026-08-10)",
+  );
   assertExcludesAll(
     financeAdmin,
     [
       "/employee-360",
       "/admin/approvals-hub",
-      "/admin/marketing-roi",
       "/admin/marketing-roi-tracker",
-      "/admin/people-management",
-      "/attendance",
-      "/admin/crm-tools",
-      "/admin/payroll-management",
       "/workspace/leave-management/vacation-request",
       "/workspace/excuses",
       "/admin/approvals/vacation",
       "/admin/approvals/excuse",
-      "/admin/pharmacovigilance",
       // Added when the owner said "exclude him 100% from outstation or expenses" (2026-08-10).
       // Unlike every other row above, this one is NOT held out by name alone — the `outstation` key
       // was deleted from his matrix in the same change, so both gates are shut. It is asserted here
@@ -428,7 +492,10 @@ export function runNavigationActivePathTests() {
       "/admin/payslips-center",
       "/workspace/fingerprint-report",
       // Source of Sales returns with the restored `sales` grant — owner decision, 2026-08-10.
-      "/sales/source-of-sales-tools",
+      // Named as the page since 2026-09-05: the hub row is gone and his two Source of Sales rows
+      // are the cards themselves.
+      "/sales",
+      "/sales/truth-check",
     ],
     "the sidebar trim must not remove a duty the Finance Manager actually holds",
   );
@@ -538,9 +605,16 @@ export function runNavigationActivePathTests() {
 
   const ceoAdmin = adminHrefsFor("CEO");
   assertIncludesAll(
-    ceoAdmin,
-    ["/attendance", "/admin/people-management", "/admin/payroll-management"],
+    adminBandsFor("CEO"),
+    ["attendance-management", "hub-people-management", "payroll"],
     "CEO must keep read-only executive module access",
+  );
+  // The bands above are one row each for him in two cases, so name the pages too: a band that
+  // survives with a different single row would still satisfy the ids alone.
+  assertIncludesAll(
+    ceoAdmin,
+    ["/admin/private-calendars", "/reports/vacancies", "/admin/payslips-center"],
+    "…and specifically the executive read surfaces inside them",
   );
   assertExcludesAll(ceoAdmin, [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs], "CEO must not see HR-owned or owner-only modules");
 
@@ -550,12 +624,12 @@ export function runNavigationActivePathTests() {
     [
       ...sensitiveHrHrefs,
       ...systemAdministratorOnlyHrefs,
-      "/admin/payroll-management",
-      "/admin/marketing-roi",
-      "/admin/people-management",
-      "/admin/outstation-expenses",
-      "/admin/field-coaching",
-      "/leave-management",
+      "/payroll",
+      "/admin/marketing-roi-report",
+      "/employees",
+      "/admin/outstation/expense-command",
+      "/coaching",
+      "/leave-management/vacation-report",
     ],
     "Super Admin must see full governance modules",
   );
@@ -565,15 +639,24 @@ export function runNavigationActivePathTests() {
   // Super Admin explicitly. Without it, Super Admin would see a second "Leave Management" row
   // alongside his own /leave-management, and "Report It" as a direct row alongside the
   // Pharmacovigilance hub he already keeps.
+  // Asserted by BAND since 2026-09-05. `/admin/report-it/new` is no longer his alone: it is also a
+  // card on the Pharmacovigilance hub, which both these roles can open, so it is now a row in their
+  // `hub-pharmacovigilance` band and an href test would fail on the wrong evidence. The claim was
+  // always about the Finance-Manager-only SECTIONS, and those are what is named here.
   assertExcludesAll(
-    superAdminAuthorityNav,
-    ["/admin/finance-leave-management", "/admin/report-it/new"],
-    "Super Admin's role bypass must not leak the Finance-Manager-only rows into his own sidebar",
+    adminBandsFor("Super Admin"),
+    ["finance-leave-management", "pharmacovigilance"],
+    "Super Admin's role bypass must not leak the Finance-Manager-only sections into his own sidebar",
   );
   assertExcludesAll(
-    ceoAdmin,
-    ["/admin/finance-leave-management", "/admin/report-it/new"],
-    "CEO must not pick up the Finance-Manager-only rows either",
+    adminBandsFor("CEO"),
+    ["finance-leave-management", "pharmacovigilance"],
+    "CEO must not pick up the Finance-Manager-only sections either",
+  );
+  assertExcludesAll(
+    superAdminAuthorityNav,
+    ["/admin/finance-leave-management"],
+    "…and not the Finance-Manager-only Leave Management page itself, which no other section offers",
   );
   // INVERTED by ruling 11 — "no analytics module, no sales analytics", the owner's words, said
   // three times. This assertion previously REQUIRED the Sales Analytics hub row in Super Admin's
@@ -588,8 +671,9 @@ export function runNavigationActivePathTests() {
   );
   assertIncludesAll(
     superAdminAuthorityNav,
-    ["/sales/source-of-sales-tools"],
-    "Source of Sales hub (which contains Sales Import (Advanced) alongside Sales Upload) must stay visible in sales navigation",
+    ["/sales/import", "/sales/upload"],
+    "Source of Sales must stay visible in sales navigation — Sales Import (Advanced) alongside Sales Upload, " +
+      "which were cards on its hub until the hub row was removed and are rail rows in its band now",
   );
 
   const employeeAdmin = adminHrefsFor("Employee");

@@ -131,6 +131,31 @@ export type NavigationSection = {
   id: string;
   items: readonly NavigationSectionItem[];
   label: string;
+  /**
+   * Gates on the whole band, ALL of which must pass, ANDed with each row's own by `getSections`.
+   *
+   * It exists because an item gate cannot express AND: `permissionAllowed` ORs the entries of a
+   * `permissions` list, so "holds recruitment:read AND holds employee_documents:read" is not
+   * sayable on one row. The promoted hub sections need exactly that — a row is reachable only if
+   * the viewer could have opened the hub it came from AND passes the row's own gate. Set by
+   * `promoteHubRows` at the bottom of this file, from the gate the hub's own sidebar row carried;
+   * without it, promoting a card whose grant is wider than its hub's puts a module on a rail that
+   * never had it (measured: HR Operations, who holds `employee_documents` but not `recruitment`,
+   * gained Hiring Documents and HR Forms).
+   *
+   * A LIST rather than one gate because hubs nest: Customers Database is a hub page that is itself
+   * a card on the Master Data hub, so its band is reachable only by someone who could have opened
+   * Master Data AND was offered that card AND passes the row's own gate — three gates, of which
+   * only the last is sayable on the row. Chaining them is the only correct composition: two gates
+   * cannot be flattened into one, because each one's `permissions` list is internally OR'd.
+   *
+   * Leave it undefined anywhere else — a section without one behaves exactly as it always did.
+   */
+  gate?: readonly {
+    excludedRoles?: readonly PhoenixRole[];
+    permissions?: readonly NavigationPermission[];
+    roles?: readonly PhoenixRole[];
+  }[];
 };
 
 // Section headings below are the REAL titles for every role. The SFE Manager's flat, headless
@@ -214,7 +239,7 @@ export const navigationHomePathByMode: Record<NavigationMode, `/${string}`> = {
   hr: "/hr/workspace",
 };
 
-const adminNavigationSectionSeeds = [
+export const adminNavigationSectionSeeds = [
   // ── Tier 1: Executive overview ────────────────────────────────────────────────
   // Items ordered: primary dashboard → intelligence → monitoring → audit → admin tools → destructive
   {
@@ -640,11 +665,15 @@ const adminNavigationSectionSeeds = [
       // never fall short of it (the gap #2713 existed to close). Change one, change both.
       {
         href: "/workspace/marketing-requests",
-        // Matches the page's own WorkspaceFrame title, which is also why no re-measurement was
-        // needed: "Marketing Requests" is already in the admin sidebar label snapshot.
+        // "Requests Workspace" since 2026-09-05, not the page's own WorkspaceFrame title. The
+        // 2026-09-05 hub promotion put /admin/marketing-requests — whose <h1> is also "Marketing
+        // Requests" — on the rail a few rows away, inside the SAME domain group, so one word named
+        // two different pages. This is the row that gives way rather than the admin board: the
+        // board is the module, this is where an approved request is executed and its invoice
+        // chased, and "workspace" is the word the page's own chrome uses for that. Re-measured.
         exact: true,
         icon: ReceiptText,
-        label: "Marketing Requests",
+        label: "Requests Workspace",
         roles: ["Super Admin", "CEO", "SFE Manager", "Finance Manager", "Financial Advisor"],
       },
       // COLLAPSED TO THE HUB, 2026-08-30 (owner, asked directly). The company-wide register
@@ -686,7 +715,12 @@ const adminNavigationSectionSeeds = [
     // Heading restored on owner instruction (2026-08-08). It repeated the single button beneath
     // it in the SFE Manager's sidebar, but this section carries three rows for Super Admin, so
     // the title is doing real work there. SFE Manager still sees no heading — see flatSidebarRoles.
-    label: "Marketing & ROI",
+    // ── Renamed 2026-09-05, and the reason is the promotion, not the rows ───────────────────
+    // The promoted "Marketing & ROI" band (hub-marketing-roi) carries the module's eleven reports and
+      // sits in the same domain group as this one, so both read "Marketing & ROI" and the sidebar
+      // search drew the heading twice. This half is the inbox and the execution workspace, which is
+      // what it is now called; the group heading above both is still "Marketing & ROI".
+    label: "Marketing Workspace",
   },
 
   // ── Tier 4: HR & People ───────────────────────────────────────────────────────
@@ -764,7 +798,12 @@ const adminNavigationSectionSeeds = [
     ],
     // Heading restored on owner instruction (2026-08-08), same treatment as Command Center.
     // SFE Manager still sees no heading — see flatSidebarRoles.
-    label: "People Management",
+    // ── Renamed 2026-09-05, and the reason is the promotion, not the rows ───────────────────
+    // The promoted "People Management" band (hub-people-management) holds the module's ten rows and
+      // shares this one's domain group, so both read "People Management". What is left here is the
+      // Workforce Compliance board, and that is what this half is now called. The group heading
+      // above both is still "People Management".
+    label: "Compliance",
   },
   // The Recruitment & Hiring hub button (app/(admin)/admin/recruitment-hiring/page.tsx, items in
   // recruitmentHiringPageItems below), plus the Returned CVs queue beside it — same pattern as the
@@ -796,7 +835,12 @@ const adminNavigationSectionSeeds = [
       // hub card, the same choice Returned CVs above made.
       { href: "/recruitment/cv-lifecycle-sheet", icon: Link2, label: "CV Sheet Links", permissions: [{ resource: "recruitment", action: "export" }], roles: hrAuthorityNavigationRoles },
     ],
-    label: "Recruitment & Hiring",
+    // ── Renamed 2026-09-05, and the reason is the promotion, not the rows ───────────────────
+    // The promoted "Recruitment & Hiring" band (hub-recruitment-hiring) holds the module's eight rows
+      // and shares this one's domain group, so both read "Recruitment & Hiring". What is left here
+      // is Returned CVs and CV Sheet Links — CV administration, not the pipeline — so that is what
+      // this half is now called. The group heading above both is still "Recruitment & Hiring".
+    label: "CV Tools",
   },
   // Collapsed to a single sidebar entry that opens the Attendance Management hub
   // (app/(admin)/attendance/page.tsx), which renders the individual tools below
@@ -1649,11 +1693,19 @@ const employeePortalNavigationSectionSeeds = [
 // an authored list is the only kind that stays that way as modules are added. A new admin module
 // appears in the HR sidebar only when someone writes it here on purpose.
 //
-// FLAT, NOT HUBBED — deliberately different from the admin shell. The admin sidebar collapses a
-// module into one hub button and makes you open a card grid to reach the page you wanted. With ~30
-// pages across 8 sections and collapsible headings, every HR page is ONE click from anywhere. The
-// hub pages themselves still exist and still work under /hr/… if a link lands on one; they are just
-// not the way through.
+// FLAT, NOT HUBBED. This was written as "deliberately different from the admin shell", because the
+// admin sidebar collapsed a module into one hub button and made you open a card grid to reach the
+// page you wanted. On 2026-09-05 the owner made the admin shell flat too — "I do not want any
+// subtitle to be the one that when I press, it redirects me to a page with big modules" — so the
+// difference is gone and this catalogue is no longer the exception. With ~30 pages across 8 sections
+// and collapsible headings, every HR page is ONE click from anywhere.
+//
+// Three rows here were themselves hub doors and did not survive that rule: "Attendance"
+// (/attendance), "Leave Management" (/leave-management) and "Payroll Management"
+// (/admin/payroll-management). Each is replaced by the cards behind it that this list did not
+// already carry — five rows in total — and each replacement is annotated where it sits. The hub
+// pages themselves still exist and still work under /hr/… if a link lands on one; nothing on the
+// rail opens one.
 //
 // Every row still carries its real `permissions`, so this list can only ever NARROW what the
 // matrix allows — it can never widen it. A row whose grant a seat lacks simply does not render.
@@ -1788,12 +1840,21 @@ const hrNavigationSectionSeeds = [
   {
     id: "hr-attendance",
     items: [
-      // Kept for BOTH seats. Attendance is named in the HR Business Partner job description too —
-      // "use HR data to identify turnover, vacancy, attendance, performance or engagement patterns
-      // that need management attention" — so Advisory's attendance:read is correct and this row is
-      // right. What was wrong was the destination: every data view inside the hub was CEO/Super
-      // Admin only, so the hub listed 0 of 12 for her and 3 of 12 for Operations. Widened above.
-      { href: "/hr/attendance", icon: Fingerprint, label: "Attendance", permissions: [{ resource: "attendance", action: "read" }] },
+      // ── 2026-09-05: this was ONE row, "Attendance", pointing at /attendance — the hub PAGE ─────
+      //
+      // Attendance is named in the HR Business Partner job description too ("use HR data to identify
+      // turnover, vacancy, attendance, performance or engagement patterns that need management
+      // attention"), so Advisory's attendance:read was right and so was the row. What was wrong was
+      // the destination, twice over. First the hub listed 0 of 12 for her and 3 of 12 for Operations,
+      // which was fixed by widening the cards. Then the owner removed every rail row that opens a
+      // page of modules — "I do not want any subtitle to be the one that when I press, it redirects
+      // me to a page with big modules" — and this row was one, in a catalogue whose own header says
+      // it is FLAT, NOT HUBBED. So the cards each seat clears and this list did not already carry are
+      // written out here, and the hub door is gone. Gates copied from attendanceManagementPageItems,
+      // narrowed to the two seats this catalogue serves.
+      { href: "/hr/attendance/monthly-summary", icon: CalendarCheck, label: "Monthly Summary", permissions: [{ resource: "employees" }] },
+      { href: "/hr/attendance/fingerprint-report", icon: FileSpreadsheet, label: "Fingerprint Report", permissions: [{ resource: "employees" }], roles: ["HR Operations"] },
+      { href: "/hr/attendance/holiday-calendar", icon: CalendarClock, label: "Holiday Calendar", permissions: [{ resource: "employees", action: "read" }], roles: ["HR Operations"] },
       // HR Operations only — the day-by-day org-wide record behind "identify unexplained absences,
       // missing punches or inconsistent records". Same findability problem as the Company Vacation
       // Report: it sits in peopleManagementPageItems, which this catalogue does not open.
@@ -1827,23 +1888,28 @@ const hrNavigationSectionSeeds = [
   {
     id: "hr-leave",
     items: [
-      // excludedRoles: HR Advisory, 2026-08-29. Leave administration appears NOWHERE in the HR
-      // Business Partner job description — it is HR Operations' second area ("Maintain leave
+      // ── 2026-09-05: this was the "Leave Management" row, pointing at /leave-management, the hub ─
+      //
+      // It was already excluded for HR Advisory (2026-08-29): leave administration appears NOWHERE in
+      // the HR Business Partner job description — it is HR Operations' second area ("Maintain leave
       // balances and ensure approved leave is correctly recorded"). Advisory holds leave:[read,
-      // create] for her OWN requests, which the "Request Vacation" row under My Requests already
-      // serves, so this row opened a hub that listed nothing she could enter: 0 of 3 children
-      // visible. An always-empty hub reads as a broken page, not as "not for you".
-      { href: "/hr/leave-management", icon: CalendarDays, label: "Leave Management", permissions: [{ resource: "leave", action: "read" }], excludedRoles: ["HR Advisory"] },
+      // create] for her OWN requests, which the "Request Vacation" row under My Requests serves, so
+      // the row opened a hub listing 0 of 3 for her. Now the hub door is gone for everyone, per the
+      // owner's 2026-09-05 rule, and the one card it offered that this list did not already carry is
+      // written out instead — Vacation Control below was the second, and the third was the hub itself.
+      { href: "/hr/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave" }], roles: ["HR Operations"] },
       { href: "/hr/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }] },
       // HR Operations only — the org-wide leave register. It lives in peopleManagementPageItems,
       // a hub this catalogue has no row for, so without this line the seat passes the gate
       // (companyVacationReportReaderRoles) and still cannot find the page.
-      // Labelled "Vacation Report", not "Company Vacation Report" as the page's own hero reads:
-      // the full name measures 158px against the admin rail's 157px budget, and the owner's rule is
-      // no ellipsis and no wrap, so the label gives way rather than the rail. It loses nothing —
-      // the row sits in the Leave section of an admin shell only HR Operations sees, where there is
-      // no personal vacation report for it to be confused with.
-      { href: "/hr/admin/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave", action: "read" }], roles: ["HR Operations"] },
+      // Labelled "Company Vacation Report", the page's own hero, restored 2026-09-05. It was
+      // shortened to "Vacation Report" because the full name measured 158px against the admin rail's
+      // 157px budget; re-measured after the premium type pass it is 151px, so that reason is gone.
+      // And it now has to be the full name: /hr/leave-management/vacation-report joined this same
+      // section in that change and its own page is titled "Vacation Report", so two rows reading
+      // "Vacation Report" in one section would be a pair nobody can tell apart from the rail. The
+      // company-wide register is this one; the leave module's own report is the row above.
+      { href: "/hr/admin/vacation-report", icon: FileSpreadsheet, label: "Company Vacation Report", permissions: [{ resource: "leave", action: "read" }], roles: ["HR Operations"] },
       // "Other Approvals" IS NOT ON THIS RAIL AT ALL — retired from /hr on 2026-09-01, in two steps
       // on the same day and for two DIFFERENT reasons, which is why it is written down.
       //
@@ -1866,12 +1932,18 @@ const hrNavigationSectionSeeds = [
   {
     id: "hr-payroll",
     items: [
-      // excludedRoles: HR Advisory, 2026-08-29. Payroll appears NOWHERE in the HR Business Partner
-      // job description, and her Role Boundaries bar her from salary changes outright; payroll
-      // inputs and monthly closure are HR Operations' third area. Advisory reached this row through
-      // payslips:read — the grant that shows her HER OWN payslip — and the hub then listed 0 of 7.
-      // Her own payslip is unaffected: that is the employee-portal path, not this admin hub.
-      { href: "/hr/admin/payroll-management", icon: FileSpreadsheet, label: "Payroll Management", permissions: [{ resource: "payroll" }, { resource: "payslips" }, { resource: "deductions", action: "read" }], excludedRoles: ["HR Advisory"] },
+      // ── 2026-09-05: this was "Payroll Management", pointing at /admin/payroll-management, the hub ─
+      //
+      // It was already excluded for HR Advisory (2026-08-29): payroll appears NOWHERE in the HR
+      // Business Partner job description, her Role Boundaries bar her from salary changes outright,
+      // and payroll inputs and monthly closure are HR Operations' third area. She reached the row
+      // through payslips:read — the grant that shows her HER OWN payslip — and the hub then listed
+      // 0 of 7. Her own payslip is unaffected either way: that is the employee-portal path.
+      //
+      // The hub door is now gone per the owner's rule, and of the three cards HR Operations clears on
+      // it, two (Payslips Center, Deductions) are already rows below. This is the third. Gate copied
+      // from the card: payroll:read, which she holds with export and no write action.
+      { href: "/hr/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }], excludedRoles: ["HR Advisory"] },
       // Owner instruction 2026-09-01, and the only row in this change that needed NO permission
       // work at all: HR Operations was given payslips:[read, export] when the seat was composed,
       // and getPayrollScope was widened to return COMPANY for her on 2026-08-29 specifically so
@@ -1971,7 +2043,10 @@ const hrNavigationSectionSeeds = [
   },
 ] as const satisfies readonly NavigationSectionSeed[];
 
-export const adminNavigationSections: readonly NavigationSection[] = adminNavigationSectionSeeds;
+// `adminNavigationSections` is NOT declared here. It is built at the bottom of this file by
+// `promoteHubRows`, which needs the `*PageItems` arrays — all of which are declared below this
+// point. Declaring it here would read those in their temporal dead zone: a ReferenceError at
+// module load, with a green typecheck.
 export const employeePortalNavigationSections: readonly NavigationSection[] = employeePortalNavigationSectionSeeds;
 export const hrNavigationSections: readonly NavigationSection[] = hrNavigationSectionSeeds;
 
@@ -2698,7 +2773,18 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     icon: FileSpreadsheet,
     label: "Fingerprint Report",
     description: "Raw fingerprint clock-in/clock-out punches per employee.",
-    permissions: [{ resource: "employees" }],
+    // TWO clauses, OR'd, and the second one is not decoration. The page's real gate is
+    // canAccessFingerprintReport — "CEO, or employees:read" — a page-scoped exception to the
+    // employees hard boundary, and the CEO holds attendance:read but NOT employees:read. This card
+    // therefore under-described its own page, and the attendance hub page papered over the gap by
+    // special-casing this href against the helper instead of the card.
+    //
+    // That was survivable while the card was only ever rendered by that page. On 2026-09-05 the
+    // owner removed every rail row that opens a page of modules, so this card became a SIDEBAR ROW,
+    // where nothing bridges the difference — and the CEO silently lost his only route to a report he
+    // is explicitly allowed to open. attendance:read is what he holds, so it is the clause that
+    // makes the row honest; `roles` still keeps the pair to the three seats named below.
+    permissions: [{ resource: "employees" }, { resource: "attendance", action: "read" }],
     // HR Operations added 2026-08-29 (owner). Her job description's second area opens "Review
     // attendance records, FINGERPRINT INPUTS, approved leave, permissions, excuses" — this is that
     // screen. Note the page already admitted her: canAccessFingerprintReport is CEO or
@@ -3782,3 +3868,201 @@ export const hubPageItemGroups: readonly { label: string; items: readonly AdminT
   { items: pharmacovigilancePageItems, label: "Pharmacovigilance" },
   { items: directOrdersPageItems, label: "Direct Orders" },
 ] as const;
+
+// ── Hub rows promoted into the rail (owner, 2026-09-05) ─────────────────────────
+//
+// The owner's rule, in his words: "I don't want any subtitle to be the one that when I
+// press, it redirects me to a page that has big modules. I want a Recruitment and its
+// modules under it." So every sidebar row that opened a hub PAGE is gone, replaced by
+// that hub's own modules under a heading carrying the hub's name.
+//
+// WHY THIS LIVES AT THE BOTTOM OF THE FILE rather than inside `adminNavigationSectionSeeds`:
+// every `*PageItems` array is declared BELOW the seeds. Spreading one into a seed is a
+// temporal-dead-zone ReferenceError at module load — and TypeScript does not model TDZ, so
+// typecheck stays green while the rail renders empty in production.
+//
+// `salesAnalyticsPageItems` is absent for the same reason it is absent from
+// `hubPageItemGroups` above: ruling 11, pinned by tests/navigation-ruling-11-analytics.test.ts.
+// Promoting it would put the delisted module back on the rail itself — louder than the Cmd+K
+// route that ruling already closed.
+type AdminHubPromotion = {
+  /**
+   * Heading rendered above the promoted rows, via a group in src/config/sidebar-domains.ts.
+   * It must not repeat one of its own rows: `groupAdminSections` blanks such a heading, and
+   * tests/sidebar-domains.test.ts pins that no heading blanks for any role.
+   */
+  heading: string;
+  /** The hub row being replaced, matched on its href in the seeds. */
+  hubHref: `/${string}`;
+  items: readonly AdminToolsPageItem[];
+  /**
+   * Where the promoted rows land.
+   *
+   * Twelve of these REUSE the id of the section the hub row was the only occupant of, because
+   * a section id is not private to this file: src/components/admin/sidebar-layout-editor.tsx
+   * saves a per-role layout keyed by it, so renaming one silently orphans a saved layout. The
+   * five `hub-` ids are the ones that had to be new — their original section still has rows of
+   * its own and keeps its id.
+   */
+  sectionId: string;
+};
+
+/**
+ * A rail label wider than its budget lands on `truncate`, and an ellipsis is barred (owner rule),
+ * so these cards get a shorter label on the RAIL while the hub page keeps the full one.
+ *
+ * Two budgets are in play and the tighter one is easy to miss. A row in a section with siblings
+ * gets 157px; a section that renders as a SINGLE row is drawn standalone with the ↗ affordance,
+ * which costs 20px and leaves 137px. The last two entries here are that case — both are the only
+ * row of their band for the CEO, and only for him ("Expense Command Center" at 153px and "Weekly
+ * Sales Dashboard" at 141px both fit the 157px budget every other role charges them).
+ *
+ * Keyed by href, so the two hubs that both offer /admin/notification-confidence shorten alike.
+ * Measured, not guessed, by `pnpm run ui:measure-sidebar-labels`;
+ * tests/sidebar-label-width.test.ts is what holds it honest.
+ *
+ * WIDTH IS NOT THE ONLY REASON ANY MORE. /hr-calendar is here because its card label collides:
+ * on the hub page "Company Calendar" was unambiguous, and on the rail it sat a few rows from
+ * /admin/weekly-plans/calendar, which the CEO, SFE Manager and Finance Manager have always known
+ * by that same name. Two different pages under one word is the defect
+ * tests/sidebar-rows-read-uniquely.test.ts exists to catch, and the newcomer is the one that
+ * gives way — the rail row that was already there keeps its name.
+ */
+const HUB_ROW_RAIL_LABELS: Readonly<Record<string, string>> = {
+  "/admin/customer-pharmacy-mapping": "Pharmacy Mapping",
+  "/admin/mailbox-monitor": "Mailbox Compliance",
+  "/admin/marketing-requests/coverage-report": "Coverage Report",
+  "/admin/notification-confidence": "Notification Confidence",
+  "/admin/outstation/expense-command": "Expense Center",
+  "/admin/screening-questions": "Screening Questions",
+  "/admin/weekly-plans/calendar": "Planning Calendar",
+  "/hr-calendar": "HR Calendar",
+  "/attendance/employee-day-report": "Day-by-Day Report",
+  "/sales/weekly/dashboard": "Weekly Dashboard",
+  "/sales/weekly/distributor-editor": "Distributor Columns",
+};
+
+/**
+ * Exported for tests/nav-hub-promotion.test.ts, which re-takes the "0 widened, 0 narrowed"
+ * measurement described on `promoteHubRows` below on every run rather than trusting that it was
+ * taken once. Nothing in the app imports it — `promoteHubRows` consumes it further down this
+ * same file.
+ */
+export const adminHubPromotions: readonly AdminHubPromotion[] = [
+  { heading: "People Management", hubHref: "/admin/people-management", items: peopleManagementPageItems, sectionId: "hub-people-management" },
+  { heading: "Probation Tools", hubHref: "/admin/probation-tools", items: probationPageItems, sectionId: "hub-probation-tools" },
+  { heading: "Recruitment & Hiring", hubHref: "/admin/recruitment-hiring", items: recruitmentHiringPageItems, sectionId: "hub-recruitment-hiring" },
+  { heading: "Field Coaching", hubHref: "/admin/field-coaching", items: fieldCoachingPageItems, sectionId: "field-coaching" },
+  { heading: "Attendance", hubHref: "/attendance", items: attendanceManagementPageItems, sectionId: "attendance-management" },
+  { heading: "Leave Management", hubHref: "/leave-management", items: leaveManagementPageItems, sectionId: "leave-management" },
+  { heading: "Payroll Management", hubHref: "/admin/payroll-management", items: payrollManagementPageItems, sectionId: "payroll" },
+  { heading: "Outstation Expenses", hubHref: "/admin/outstation-expenses", items: outstationExpensesPageItems, sectionId: "expenses-outstation" },
+  { heading: "Source of Sales", hubHref: "/sales/source-of-sales-tools", items: sourceOfSalesPageItems, sectionId: "sales-source-of-sales" },
+  { heading: "Weekly Sales", hubHref: "/sales/weekly-tools", items: weeklySalesToolsPageItems, sectionId: "sales-weekly-module" },
+  { heading: "Direct Orders", hubHref: "/admin/direct-orders", items: directOrdersPageItems, sectionId: "sales-direct-orders" },
+  { heading: "CRM", hubHref: "/admin/crm-tools", items: crmPageItems, sectionId: "crm" },
+  { heading: "Marketing & ROI", hubHref: "/admin/marketing-roi", items: marketingRoiPageItems, sectionId: "hub-marketing-roi" },
+  { heading: "Pharmacovigilance", hubHref: "/admin/pharmacovigilance", items: pharmacovigilancePageItems, sectionId: "hub-pharmacovigilance" },
+  { heading: "Admin Tools", hubHref: "/admin/admin-tools", items: adminToolsPageItems, sectionId: "admin-tools" },
+  { heading: "Master Data", hubHref: "/admin/master-data", items: masterDataPageItems, sectionId: "master-data" },
+  // NESTED. This one is not a seed row — it is a CARD on the Master Data hub above, and it opens a
+  // page of six more modules. It survived the first pass of this promotion invisibly: the rail row
+  // "Master Data" became a band, and one of the rows in that band was still a hub door, which is
+  // exactly what the owner's rule forbids. `promoteHubRows` runs to a fixed point for it, and the
+  // band carries BOTH gates (see NavigationSection.gate). Measured before the change: 8 pages were
+  // catalogue-only, 6 of them behind this door.
+  { heading: "Customers Database", hubHref: "/admin/customers-database", items: customersDatabasePageItems, sectionId: "hub-customers-database" },
+  { heading: "Access & Comms", hubHref: "/admin/access-communication", items: accessCommunicationPageItems, sectionId: "access-communication" },
+];
+
+/**
+ * A hub's cards as rail rows.
+ *
+ * Two things happen here and nowhere else. A card pointing back at its OWN hub page is dropped —
+ * Direct Orders is the only one, and keeping it would rebuild in a single row exactly the "press
+ * it and land on a page of modules" this promotion exists to remove. And the eight over-budget
+ * labels are swapped for their short forms.
+ *
+ * `description` is deliberately not carried over: it is the hub page's card copy, and the rail
+ * has nowhere to render it.
+ */
+function hubRowsFor(hub: AdminHubPromotion): readonly NavigationSectionItem[] {
+  return hub.items
+    .filter((card) => card.href !== hub.hubHref)
+    .map((card) => ({
+      excludedRoles: card.excludedRoles,
+      href: card.href,
+      icon: card.icon,
+      label: HUB_ROW_RAIL_LABELS[card.href] ?? card.label,
+      permissions: card.permissions,
+      roles: card.roles,
+    }));
+}
+
+/**
+ * Replace every hub row with its hub's modules.
+ *
+ * A section keeps its own id and position when it still has non-hub rows; when the hub row was
+ * its only occupant the section is not emitted at all, and the promotion takes its id instead —
+ * which is why `sectionId` above is usually the original.
+ *
+ * Gating is the part worth reading twice. A row's own card gate is only half of what made it
+ * reachable before: the other half was being able to open the hub at all, and dropping that WIDENS
+ * the rail. Measured across all 17 roles x 17 hubs, exactly one card set widened — HR Operations
+ * holds `employee_documents` but not `recruitment`, so Hiring Documents and HR Forms appeared on a
+ * rail that has never carried them. So the hub row's own gate is carried onto the SECTION
+ * (`NavigationSection.gate`), where `getSections` ANDs it with each row's; the two halves stay
+ * separate instead of being flattened into one row gate, which is what an item can express.
+ *
+ * The result is exactly the old reachability: a row shows iff the viewer could have opened the hub
+ * AND the hub page would have rendered that card for them. Re-measured after the change: 0 rows
+ * widened, 0 rows narrowed. What legitimately disappears is a DEAD END — 31 role/hub pairs where
+ * the rail offered a hub whose page had nothing at all for that role (Payroll Management for every
+ * sales role, Attendance for eleven roles). Those bands are gone rather than empty.
+ */
+function promoteHubRows(seeds: readonly NavigationSection[]): readonly NavigationSection[] {
+  const byHubHref = new Map<string, AdminHubPromotion>(adminHubPromotions.map((hub) => [hub.hubHref, hub]));
+  const expanded = new Set<string>();
+  let sections: readonly NavigationSection[] = seeds;
+
+  // Runs until nothing moves, because a hub's own card can be another hub: Customers Database is a
+  // card on Master Data. One pass promoted Master Data into a band and left that card sitting in it
+  // as a live hub door — the rule half-applied, and invisible unless you open the band. `expanded`
+  // makes the loop terminate on its own terms rather than on a pass cap: a hub is promoted once,
+  // and a config cycle would leave one plain row rather than hanging module load.
+  for (;;) {
+    const next: NavigationSection[] = [];
+    let moved = false;
+    for (const section of sections) {
+      const kept: NavigationSectionItem[] = [];
+      const promoted: NavigationSection[] = [];
+      for (const item of section.items) {
+        const hub = byHubHref.get(item.href);
+        if (hub === undefined || expanded.has(hub.hubHref)) {
+          kept.push(item);
+          continue;
+        }
+        moved = true;
+        expanded.add(hub.hubHref);
+        promoted.push({
+          // The band's gates are its parent's plus the row's own — see NavigationSection.gate for
+          // why this is a list. For a seed row the parent list is empty and this is the single
+          // gate it always was.
+          gate: [
+            ...(section.gate ?? []),
+            { excludedRoles: item.excludedRoles, permissions: item.permissions, roles: item.roles },
+          ],
+          id: hub.sectionId,
+          items: hubRowsFor(hub),
+          label: hub.heading,
+        });
+      }
+      if (kept.length > 0) next.push({ ...section, items: kept });
+      next.push(...promoted);
+    }
+    sections = next;
+    if (!moved) return sections;
+  }
+}
+
+export const adminNavigationSections: readonly NavigationSection[] = promoteHubRows(adminNavigationSectionSeeds);

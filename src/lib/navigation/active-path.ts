@@ -237,6 +237,14 @@ export function getSections(
   // where the 20 hub pages and the command palette read the same copy of it.
   const gated = dedupeSectionsByHref(
     sections
+      // Section-level gates are ANDed with every row's own gate, and with each other. The promoted
+      // hub bands use them to say "only if you could have opened this hub", which no single item
+      // gate can express — see `NavigationSection.gate`. There is more than one when hubs nest
+      // (Customers Database sits on the Master Data hub), and `every` is what makes the chain an
+      // AND; a section without any, which is every section that is not a promoted hub, passes
+      // straight through. Filtered BEFORE the item pass and before dedupe, so a band nobody can
+      // reach never takes an href away from a section that is visible.
+      .filter((section) => (section.gate ?? []).every((gate) => navigationItemVisible(gate, lookup, role)))
       .map((section) => ({
         ...section,
         items: section.items.filter((item) => navigationItemVisible(item, lookup, role)),
