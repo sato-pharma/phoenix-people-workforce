@@ -296,11 +296,23 @@ const REMAINING_ROUNDING: Record<string, number> = {
   // WITH THE OWNER — the two stylesheet sites above, counted again by the tree walk.
   "app/globals.css": 2,
 
-  // WITH THE OWNER — email. A mail client is a different medium from the app and from a printed
-  // company document, and rounded corners are ordinary there. 11 + 1 + 4 sites.
+  // 🔒 SETTLED — EMAIL STAYS ROUNDED. Owner, 2026-09-05, asked and answered: "emails stay rounded,
+  // leave them." A mail client is a different medium from the app and from a printed company
+  // document, and a rounded button is ordinary there.
+  //
+  // This is a DECISION, not an outstanding item, and it is written here because this is the file a
+  // future square-edge sweep will read. Do not square these, do not re-raise them on the decision
+  // sheet, and do not treat them as the golden rule leaking — the rule governs the app's own
+  // surfaces and the papers it prints, and the owner drew the line at the medium boundary.
+  //
+  // The counts stay pinned so the settled state cannot drift: a NEW corner in one of these files
+  // still fails, because "email may be round" is not "email is unmeasured".
   "src/emails/phoenix-email-layout.tsx": 11,
   "src/emails/telegram-connect.tsx": 1,
   "templates/phoenix-google-style-email.html": 4,
+  // The seeded templates in supabase/20260517_seed_email_templates.sql (5 more) fall under the same
+  // answer. They are outside this scan's roots, and the live copies are DATABASE rows in any case —
+  // editing that file would not change a single sent email.
 
   // WITH THE OWNER — a standalone static guide served at /marketing-guide.html, referenced from
   // nowhere in the codebase and outside both shells.
