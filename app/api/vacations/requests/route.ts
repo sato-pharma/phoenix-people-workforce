@@ -131,7 +131,6 @@ export async function POST(request: Request) {
             startDate: body.startDate,
             vacationType: body.vacationType,
           },
-      { baseUrl: new URL(request.url).origin },
     );
 
     return NextResponse.json({ request: result, success: true });

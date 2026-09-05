@@ -294,7 +294,7 @@ async function runVacationPayrollReadinessSmoke(lookup: LookupContext) {
     endDate: "2026-08-03",
     startDate: "2026-08-03",
     vacationType: "annual",
-  }, { baseUrl: "http://localhost:3000" });
+  });
   tracked.vacationRequestIds.add(request.id);
   tracked.auditEntityIds.add(request.id);
 
