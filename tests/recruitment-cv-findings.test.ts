@@ -134,7 +134,7 @@ export function runRecruitmentCvFindingsTests() {
 
   const base: WorkQueueInput = {
     answeredAt: null,
-    band: "other",
+    band: "unknown",
     duplicateCount: 1,
     interviewToday: false,
     redFlagged: false,

@@ -1279,7 +1279,11 @@ export async function loadRowFindings(): Promise<Map<string, ExtractedCandidateF
       throw error;
     }
 
-    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    // THROUGH `unknown` DELIBERATELY. supabase-js types a select string it can parse; it cannot
+    // parse a jsonb projection (`alias:column->key`), so it falls back to GenericStringError[]
+    // and a direct cast is rejected as non-overlapping. The runtime shape is verified against
+    // production — each key returns its stored `{ value, confidence }` object.
+    const rows = (data ?? []) as unknown as Array<Record<string, unknown>>;
     for (const row of rows) {
       const candidateId = textOrNull(row.candidate_id);
       if (!candidateId || seen.has(candidateId)) continue;
