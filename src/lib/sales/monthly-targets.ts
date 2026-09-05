@@ -468,6 +468,68 @@ export function rollupAchievementByLine(rows: AchievementRow[]): KeyedAchievemen
   return toKeyed(foldAchievement(rows, (row) => row.lineCode));
 }
 
+/** `null + null = null`; anything else sums, so "no target at all" stays distinguishable from 0. */
+function addNullable(left: number | null, right: number | null): number | null {
+  return left === null && right === null ? null : (left ?? 0) + (right ?? 0);
+}
+
+/**
+ * Restore ONE row per (line, area, product) after an area merge has collapsed two areas onto one
+ * code — `applyAchievementAreaMerges` rewrites `areaCode` and does not re-aggregate.
+ *
+ * `au.f_monthly_achievement` returns one row per (line, area, product), and every surface that
+ * keys on that identity relies on it. The roll-ups above do not care, because they sum again
+ * anyway; a KEYED surface does. The Targets grid keys its edit state, its React keys and its save
+ * payload on `${areaCode}|${productCode}`, so after the Pedia GZ6/UE9 merge it rendered two rows
+ * with the SAME key: both read one `edits` entry, `new Map(...)` kept only the last, and Save
+ * posted a single `{ areaCode: "GZ6" }` that overwrote Fayoum while never touching Beni Suef.
+ *
+ * Owner ruling, restated 2026-09-05: on Pedia the pair is ONE area. So the merged cell carries ONE
+ * target covering both halves, which is also the only arithmetically sound option — the row already
+ * sums both areas' actuals, and a target covering one half would inflate attainment.
+ *
+ * `achievementValue`/`achievementUnits` are RECOMPUTED, never summed, from the covered slice only —
+ * the same rule `foldAchievement` follows and for the same reason (see its note above: a percentage
+ * cannot be re-aggregated, and dividing ALL sales by a covered target credits a seat with revenue
+ * its target never asked for).
+ *
+ * ⚠ Do NOT feed the result to `foldAchievement` or the roll-ups. `hasTarget` is OR-ed here, so a
+ * targeted area folded with an untargeted one produces one row whose ENTIRE actual would then count
+ * as `coveredActualValue` — inflating exactly the number the covered rule exists to protect. Fold
+ * for DISPLAY of a merged cell; roll up from the unfolded rows.
+ */
+export function foldMergedAchievementCells(rows: AchievementRow[]): AchievementRow[] {
+  const byCell = new Map<string, AchievementRow>();
+  const coveredValue = new Map<string, number>();
+  const coveredUnits = new Map<string, number>();
+
+  for (const row of rows) {
+    const key = `${row.lineCode ?? ""}|${(row.areaCode ?? "").toUpperCase()}|${row.productCode.toUpperCase()}`;
+    coveredValue.set(key, (coveredValue.get(key) ?? 0) + (row.hasTarget ? row.actualValue : 0));
+    coveredUnits.set(key, (coveredUnits.get(key) ?? 0) + (row.hasTarget ? row.actualUnits : 0));
+
+    const merged = byCell.get(key);
+    if (!merged) {
+      byCell.set(key, { ...row });
+      continue;
+    }
+    merged.actualValue += row.actualValue;
+    merged.actualUnits += row.actualUnits;
+    merged.targetValue = addNullable(merged.targetValue, row.targetValue);
+    merged.targetUnits = addNullable(merged.targetUnits, row.targetUnits);
+    merged.hasTarget = merged.hasTarget || row.hasTarget;
+    merged.hasActual = merged.hasActual || row.hasActual;
+  }
+
+  for (const [key, row] of byCell) {
+    const targetValue = row.targetValue ?? 0;
+    const targetUnits = row.targetUnits ?? 0;
+    row.achievementValue = targetValue !== 0 ? (coveredValue.get(key) ?? 0) / targetValue : null;
+    row.achievementUnits = targetUnits !== 0 ? (coveredUnits.get(key) ?? 0) / targetUnits : null;
+  }
+  return [...byCell.values()];
+}
+
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
 /** The three canonical sales lines (fixed per owner: CNS, Pedia, Anti-infective). */

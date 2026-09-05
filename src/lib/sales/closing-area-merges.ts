@@ -70,8 +70,20 @@ function mergeCells<T extends { areaCode: string; productCode: string }>(
 
 /**
  * Applies the line's area merges to any array of objects carrying `lineCode` and `areaCode`
- * (e.g. `AchievementRow`s in the dashboard). Merged areas will have their `areaCode` rewritten
- * to the `keepAreaCode`. The aggregation (totals, rollup) will naturally sum them together.
+ * (e.g. `AchievementRow`s in the dashboard). Merged areas have their `areaCode` rewritten to the
+ * `keepAreaCode`.
+ *
+ * ⚠ THIS DOES NOT AGGREGATE — it is a one-for-one `map`, so the result can hold TWO rows sharing
+ * one `(areaCode, productCode)`. That is fine for a consumer that sums afterwards (a roll-up, a
+ * total) and WRONG for one that KEYS on that identity. This docstring used to promise that "the
+ * aggregation will naturally sum them together", and the Targets grid believed it: it keys its
+ * React rows, its edit state and its Save payload on `${areaCode}|${productCode}`, so the Pedia
+ * GZ6/UE9 fold handed it two rows with one key, one shared edit box, and a Save that overwrote
+ * Fayoum's target while never writing Beni Suef's.
+ *
+ * A keyed surface must fold first — `foldMergedAchievementCells` in `monthly-targets.ts` restores
+ * one row per (line, area, product) and recomputes achievement from the covered slice. Read its
+ * warning before using it: the folded result must not then be fed back into a roll-up.
  */
 export function applyAchievementAreaMerges<
   T extends { lineCode: string | null; areaCode: string | null }
