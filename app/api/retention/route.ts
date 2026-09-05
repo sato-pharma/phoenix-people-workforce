@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
+    const actor = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
     await createRetentionConversation(payload.conversation, actor);
     return NextResponse.json(await getRetentionDashboardData(access));
   } catch (error) {
@@ -82,7 +83,7 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
+    const actor = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
     await updateRetentionConversation(payload.conversation, actor);
     return NextResponse.json(await getRetentionDashboardData(access));
   } catch (error) {

@@ -12,7 +12,13 @@ import {
   closingExportFilterFromQuery,
   loadClosingExportPayload,
 } from "@/lib/sales/closing-export-payload";
-import { CLOSING_PDF_SHEETS, isClosingPdfSheet, renderClosingSheetPdf } from "@/lib/sales/closing-report-pdf";
+import {
+  CLOSING_PDF_SHEETS,
+  REP_CARD_SHEET,
+  isClosingPdfSheet,
+  renderClosingSheetPdf,
+  renderRepCardPdf,
+} from "@/lib/sales/closing-report-pdf";
 import { ChromiumUnavailableError } from "@/lib/pdf/chromium";
 import { resolvePortalClosingScope } from "@/lib/sales/monthly-closing-portal";
 
@@ -54,12 +60,17 @@ export async function GET(request: Request) {
     const params = new URL(request.url).searchParams;
 
     const sheet = (params.get("sheet") ?? "Overview").trim();
-    if (!isClosingPdfSheet(sheet)) {
+    // The Rep Card is the one sheet that is not a table. It draws ONE person, chosen on the sheet by
+    // a dropdown, so it needs an area code and is asked for separately -- the link that carries it is
+    // a `=HYPERLINK()` FORMULA rather than a shape, because a formula rebuilds its URL when the
+    // dropdown changes and a shape's hyperlink is fixed at export time.
+    const isRepCard = sheet === REP_CARD_SHEET;
+    if (!isRepCard && !isClosingPdfSheet(sheet)) {
       return Response.json(
         {
           error:
             `"${sheet}" is not a page this report can render.`
-            + ` Ask for one of: ${CLOSING_PDF_SHEETS.join(", ")}.`
+            + ` Ask for one of: ${[...CLOSING_PDF_SHEETS, REP_CARD_SHEET].join(", ")}.`
             + " The three matrix pages are pivot tables that Excel builds when the workbook opens,"
             + " so the file itself holds no rows for them.",
         },
@@ -102,12 +113,27 @@ export async function GET(request: Request) {
       period: (params.get("period") ?? "").trim() || null,
     });
 
-    const pdf = await renderClosingSheetPdf({
-      fill: payload.fill,
-      line: payload.line,
-      period: payload.period,
-      sheet,
-    });
+    const areaCode = (params.get("area") ?? "").trim();
+    if (isRepCard && !areaCode) {
+      return Response.json(
+        {
+          error:
+            "The Rep Card covers one area at a time, so this link needs the area it is for."
+            + " Pick a rep from the card's own dropdown and use the Export PDF cell on that sheet,"
+            + " which carries the choice with it.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const pdf = isRepCard
+      ? await renderRepCardPdf({ areaCode, fill: payload.fill, line: payload.line, period: payload.period })
+      : await renderClosingSheetPdf({
+          fill: payload.fill,
+          line: payload.line,
+          period: payload.period,
+          sheet,
+        });
 
     // A stable, readable filename: the reader saves several of these in a month and sorts them by
     // name. Codes never appear in one — the standing rule is human-readable names everywhere.
@@ -117,7 +143,8 @@ export async function GET(request: Request) {
       (value?.trim() ? value : fallback).replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase();
     const fileName =
       `phoenix-closing-${safe(payload.line, "all-lines")}`
-      + `-${safe(payload.period, "no-month")}-${safe(sheet, "sheet")}.pdf`;
+      + `-${safe(payload.period, "no-month")}-${safe(sheet, "sheet")}`
+      + `${isRepCard ? `-${safe(areaCode, "area")}` : ""}.pdf`;
 
     return new Response(new Uint8Array(pdf), {
       headers: {

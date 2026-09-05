@@ -250,6 +250,12 @@ export type FillOptions = {
    * filter this particular export was narrowed to — and only the route knows those.
    */
   pdfLink?: (sheet: string) => string | null;
+  /**
+   * The Rep Card's PDF URL, up to but not including `&area=`. It is separate from `pdfLink` because
+   * the Rep Card's link is a FORMULA that appends the dropdown's own selection at recalculation
+   * time, which a shape's fixed hyperlink cannot do.
+   */
+  repCardPdfBase?: string;
 };
 
 export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOptions = {}): Promise<Buffer> {
@@ -284,6 +290,7 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   await dropStaleLabelFormats(zip);
   await clearTitleEmblem(zip, fill);
   await hideEmblemFromPrint(zip);
+  await openOnFirstSheet(zip);
   await restorePivotCacheSharedItems(zip, fill);
   await dropDeadSharedStrings(zip);
   // Before both of the below, and for the same reason: the owner's buttons are still here, and the
@@ -294,6 +301,7 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   // are still in the package here, and re-pointing one keeps his styling, caption and position
   // instead of authoring a new shape that would only approximate them.
   if (options.macroFree && options.pdfLink) await linkPdfButtons(zip, options.pdfLink);
+  if (options.macroFree && options.repCardPdfBase) await addRepCardPdfLink(zip, options.repCardPdfBase);
   if (options.macroFree) await stripMacros(zip);
 
   // Directory entries must not reach the file, and this has to be the LAST thing done to the zip.
@@ -2083,4 +2091,105 @@ async function addSheetNavigation(zip: JSZip): Promise<void> {
     zip.file(found.name, out);
     zip.file(relsName, rels);
   }
+}
+
+/**
+ * Open the workbook on its first sheet.
+ *
+ * The owner asked for this, and the reason it was worth asking is measured: the template ships
+ * `activeTab="6"` with `tabSelected="1"` on Area x Product, because that is the sheet the workbook
+ * happened to be saved on. Every export therefore opened on a pivot page — and on the one sheet
+ * whose title collided with the logo, which is how he saw the defect the moment he opened it.
+ *
+ * BOTH HALVES OR NEITHER. `activeTab` alone is not enough: Excel reads each sheet's own
+ * `tabSelected`, and leaving it set on a second sheet opens the two as a GROUP, where an edit on one
+ * is silently written to the other. That is a worse failure than the wrong tab.
+ */
+async function openOnFirstSheet(zip: JSZip): Promise<void> {
+  const workbookFile = zip.file("xl/workbook.xml");
+  if (!workbookFile) return;
+  const workbook = await workbookFile.async("string");
+
+  const first = Object.keys(MANIFEST.sheets)[0];
+  if (!first) return;
+
+  zip.file(
+    "xl/workbook.xml",
+    workbook.replace(/(<workbookView\b[^>]*?)\s*activeTab="\d+"/, "$1").replace(/<workbookView\b/, '<workbookView activeTab="0"'),
+  );
+
+  for (const [sheetName, spec] of Object.entries(MANIFEST.sheets)) {
+    const file = zip.file(spec.file);
+    if (!file) continue;
+    const xml = await file.async("string");
+    const selected = sheetName === first;
+    const next = xml.replace(/<sheetView\b[^>]*>/, (tag) => {
+      const bare = tag.replace(/\s*tabSelected="[^"]*"/, "");
+      return selected ? bare.replace(/<sheetView\b/, '<sheetView tabSelected="1"') : bare;
+    });
+    if (next !== xml) zip.file(spec.file, next);
+  }
+}
+
+/**
+ * The Rep Card's Export PDF, as a FORMULA rather than a shape.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY THIS ONE IS DIFFERENT. Every other Export PDF on this workbook is a shape carrying a fixed
+ * hyperlink, which is fine because every other sheet renders the same page every time. The Rep Card
+ * does not: it draws whichever rep the dropdown in `B5` is set to, and a shape's hyperlink is written
+ * once at export and can never see that. `=HYPERLINK()` is a formula, so it rebuilds its URL every
+ * time the sheet recalculates — pick a different rep and the link follows. No macro, and the only
+ * mechanism in a `.xlsx` that can do this at all.
+ *
+ * `$N$1` is the sheet's own lookup index — `IFERROR(MATCH($B$5, AreaBook[Label], 0), 0)` off the
+ * dropdown — and the area code is resolved from it here rather than read out of another cell. That
+ * is deliberate: the first attempt pointed at `$B$2` on the assumption it held the resolved code,
+ * and `B2` is EMPTY. The link then fell back to its own guard on every rep, which looks exactly like
+ * "nothing is selected" and is why this is verified by opening the workbook rather than by reading
+ * the formula back. `N1` is zero when nothing matches, which is the guard's real condition.
+ *
+ * PLACED IN A CELL, NOT DRAWN. It sits at F4, on the label row beside "Pick a rep or an area" and
+ * directly above the rank block, in the row's own style. A shape would look more like the other
+ * buttons and would not work; this works.
+ */
+async function addRepCardPdfLink(zip: JSZip, base: string): Promise<void> {
+  const spec = MANIFEST.sheets[REP_CARD];
+  const file = spec ? zip.file(spec.file) : null;
+  if (!file) return;
+
+  const xml = await file.async("string");
+  // The row the dropdown's own label sits on, and the style that label uses — so the link matches
+  // the sheet rather than introducing a look this file would have to keep in step with a restyle.
+  const row = /<row\b[^>]*\br="4"[^>]*>[\s\S]*?<\/row>/.exec(xml)?.[0];
+  if (!row) return;
+
+  // F4 may already be PRESENT AND EMPTY — the template styles cells it never fills, and the first
+  // version read "the cell exists" as "the cell is taken" and silently wrote nothing. Its own test
+  // caught that. An empty cell is filled in place; one carrying anything is left alone.
+  const existing = /<c r="F4"[^>]*?(?:\/>|>([\s\S]*?)<\/c>)/.exec(row);
+  if (existing && (existing[1] ?? "").trim() !== "") return;
+  const style = /<c r="F4"[^>]*\bs="(\d+)"/.exec(row)?.[1] ?? /<c r="B4"[^>]*\bs="(\d+)"/.exec(row)?.[1];
+
+  // `&` is the formula's own concatenation operator AND an XML entity, so it is escaped once here
+  // and Excel sees a single `&`. Getting this wrong yields a workbook Excel offers to repair.
+  const formula = xmlEscape(
+    `IF($N$1=0,"Pick a rep above to enable Export PDF",`
+      + `HYPERLINK("${base}&area="&INDEX(AreaBook[Area Code],$N$1),"▸ Export PDF for this rep"))`,
+  );
+  const cell = `<c r="F4"${style ? ` s="${style}"` : ""}><f>${formula}</f></c>`;
+
+  // Replace the empty cell where there is one; otherwise insert after B4 so the cells stay in
+  // column order — Excel is strict about that and repairs a sheet whose cells descend.
+  // REPLACER FUNCTIONS, NOT REPLACEMENT STRINGS, and this is load-bearing rather than style. The
+  // formula contains `$N$1`, and in a replacement string `$1` means CAPTURE GROUP ONE — so the
+  // string form spliced the matched B4 cell into the middle of the formula and produced a workbook
+  // Excel has to repair. It was invisible until the emitted XML was read back, and the version
+  // before this survived only by accident: `$B$2` has no group two, so it stayed literal.
+  const withCell = existing
+    ? row.replace(existing[0], () => cell)
+    : row.replace(/<c r="B4"[^>]*(?:\/>|>[\s\S]*?<\/c>)/, (match) => `${match}${cell}`);
+  if (withCell === row) return;
+
+  zip.file(spec!.file, xml.replace(row, withCell));
 }

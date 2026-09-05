@@ -1193,6 +1193,71 @@ export async function runClosingEngineExportTests() {
   assert.ok(!isClosingPdfSheet("Closing Matrix"), "a pivot page has no rows in the file and cannot be rendered");
   assert.ok(!isClosingPdfSheet("Data"), "the hidden source block is not a page");
 
+  // ── The Rep Card's Export PDF is a FORMULA, and it must read the right cell ─────────────────
+  //
+  // Every other Export PDF is a shape with a fixed hyperlink. The Rep Card cannot be: it draws
+  // whichever rep its dropdown is set to, and a shape's link is written once at export. Only
+  // `=HYPERLINK()` re-evaluates, which is what makes this possible in a .xlsx at all.
+  //
+  // THE BUG THIS PINS actually happened: the first version referenced `$B$2` on the assumption that
+  // it held the resolved area code. `B2` is EMPTY. The formula fell straight to its own guard for
+  // every rep, which on screen is indistinguishable from "nothing is selected" — a defect no amount
+  // of reading the formula back would show, because the formula was well formed and Excel accepted
+  // it. The index lives in `N1`.
+  const repCardBook = await fillClosingEngine(fill, {
+    macroFree: true,
+    repCardPdfBase: "https://phoenix-hr.satopharma.com/pdf?sheet=Rep+Card&line=CNS&period=2026-07",
+  });
+  {
+    const opened = await JSZip.loadAsync(repCardBook);
+    const spec = (CLOSING_ENGINE_TEMPLATE_MANIFEST as unknown as { sheets: Record<string, { file: string }> }).sheets["Rep Card"];
+    const sheet = await opened.file(spec.file)!.async("string");
+    const cell = /<c r="F4"[^>]*>[\s\S]*?<\/c>/.exec(sheet)?.[0];
+    assert.ok(cell, "the Rep Card needs its Export PDF cell — a shape cannot read the dropdown");
+
+    const formula = (/<f[^>]*>([\s\S]*?)<\/f>/.exec(cell!) ?? [])[1] ?? "";
+    assert.match(formula, /HYPERLINK\(/, "it has to be a HYPERLINK formula, not literal text");
+    assert.match(formula, /\$N\$1/, "the selection is resolved through N1, the sheet's own MATCH index");
+    assert.match(
+      formula,
+      /INDEX\(AreaBook\[Area Code\],\$N\$1\)/,
+      "the area code is resolved here rather than read from a cell that may hold nothing",
+    );
+    assert.ok(
+      !/\$B\$2/.test(formula),
+      "B2 is EMPTY on this sheet — pointing at it sends every rep down the guard branch",
+    );
+    // `&` is both the formula's concatenation operator and an XML entity. Left unescaped it is a
+    // workbook Excel offers to repair; escaped twice it reaches Excel as a literal `&amp;`.
+    assert.ok(
+      !/&(?!amp;|quot;|lt;|gt;|apos;)/.test(formula),
+      "a raw & in the emitted XML is exactly the repair prompt this export exists to avoid",
+    );
+    // AND THIS ONE ACTUALLY HAPPENED. The formula was built with a replacement STRING, where `$1`
+    // means capture group one -- so `$N$1` spliced the matched B4 cell into the middle of the
+    // formula and shipped a workbook Excel has to repair. Well formed, accepted by every check that
+    // read the formula rather than the emitted XML, and invisible until the bytes were read back.
+    assert.ok(
+      !/<c\s|<is>|<\/c>/.test(formula),
+      `markup leaked into the formula -- a replacement string ate $1: ${formula.slice(0, 120)}`,
+    );
+    assert.match(formula, /\$N\$1\)/, "the INDEX must still close on $N$1, not on a mangled reference");
+
+    // Excel is strict about cell order within a row and repairs a sheet whose cells descend.
+    const row4 = /<row\b[^>]*\br="4"[^>]*>([\s\S]*?)<\/row>/.exec(sheet)?.[1] ?? "";
+    const order = [...row4.matchAll(/<c r="([A-Z]+)4"/g)].map((m) => m[1]);
+    assert.deepEqual(order, [...order].sort(), `row 4 cells must ascend, got ${order.join(",")}`);
+  }
+  {
+    // The .xlsm keeps its macro and must not gain the formula: two Export PDFs on one sheet is a
+    // worse answer than either alone.
+    const opened = await JSZip.loadAsync(macroBook);
+    const spec = (CLOSING_ENGINE_TEMPLATE_MANIFEST as unknown as { sheets: Record<string, { file: string }> }).sheets["Rep Card"];
+    const sheet = await opened.file(spec.file)!.async("string");
+    assert.ok(!/HYPERLINK\(/.test(sheet), "the .xlsm's Rep Card keeps PhxExportPdf and gains no formula link");
+  }
+
+
   // ── The navigation bar: the owner's idea, in the owner's own button design ──────────────────
   //
   // Taken from a macro-free workbook of his own — 25 shapes, 0 macros, 17 hyperlinks, every one an

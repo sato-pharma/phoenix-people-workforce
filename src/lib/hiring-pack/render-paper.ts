@@ -43,6 +43,16 @@ import {
   renderContractNonRenewalHtml,
   renderContractRenewalHtml,
 } from "@/lib/hiring-pack/render-renewal";
+import {
+  HR_PAPER_ABSENCE_WARNING_V1,
+  HR_PAPER_DEEMED_RESIGNATION_V1,
+  HR_PAPER_DOCUMENTS_RECEIPT_V1,
+  HR_PAPER_DOCUMENTS_RETURN_V1,
+  HR_PAPER_NDA_V1,
+  HR_PAPER_SOCIAL_STATUS_V1,
+} from "@/lib/hiring-pack/hr-paper-text";
+import { renderHrPaperHtml } from "@/lib/hiring-pack/render-hr-paper";
+import type { HrPaperTemplate } from "@/lib/hiring-pack/hr-paper-template";
 import { renderForm1Html } from "@/lib/hiring-pack/render-form1";
 import { renderForm6Html } from "@/lib/hiring-pack/render-form6";
 import { renderWorkerFormHtml } from "@/lib/hiring-pack/render-worker-form";
@@ -69,6 +79,22 @@ import type { HiringPackData, HiringPackDocument } from "@/lib/hiring-pack/types
  * agreement gives each party a copy, the custody receipt's own subtitle says it is drawn in two
  * copies, and each half of the clearance pair says on its own face that the other side keeps one.
  */
+/**
+ * One of Sato's own papers, in the shape `RENDERERS` expects.
+ *
+ * The renderer takes the paper as its THIRD argument — after the data and the copy count — because
+ * which paper is being printed is a property of the entry, not of the request. Binding it here
+ * means every entry below is a name and a count, and there is no argument order left to get wrong.
+ */
+function housePaper(template: HrPaperTemplate) {
+  return (
+    data: HiringPackData,
+    copies: number,
+    templateId?: string | null,
+    fields?: readonly DocumentFieldRow[],
+  ) => renderHrPaperHtml(data, copies, template, templateId, fields ?? []);
+}
+
 const RENDERERS: Record<
   HiringPackDocument,
   {
@@ -93,6 +119,31 @@ const RENDERERS: Record<
   custodyMobile: {
     render: renderCustodyMobileHtml,
     copies: systemContractDefaults.custodyMobileCopies,
+  },
+  // SATO'S SIX OWN PAPERS all go through one renderer, so each entry only has to say WHICH paper.
+  // `housePaper` exists so that adding a seventh is one line here plus its text, rather than an
+  // eighth near-identical closure — and so the argument order can never be got wrong for one of
+  // them and right for the rest.
+  nda: { render: housePaper(HR_PAPER_NDA_V1), copies: systemContractDefaults.ndaCopies },
+  appointmentDocsReceipt: {
+    render: housePaper(HR_PAPER_DOCUMENTS_RECEIPT_V1),
+    copies: systemContractDefaults.appointmentDocsReceiptCopies,
+  },
+  socialStatusSheet: {
+    render: housePaper(HR_PAPER_SOCIAL_STATUS_V1),
+    copies: systemContractDefaults.socialStatusSheetCopies,
+  },
+  absenceWarning: {
+    render: housePaper(HR_PAPER_ABSENCE_WARNING_V1),
+    copies: systemContractDefaults.absenceWarningCopies,
+  },
+  deemedResignation: {
+    render: housePaper(HR_PAPER_DEEMED_RESIGNATION_V1),
+    copies: systemContractDefaults.deemedResignationCopies,
+  },
+  appointmentDocsReturn: {
+    render: housePaper(HR_PAPER_DOCUMENTS_RETURN_V1),
+    copies: systemContractDefaults.appointmentDocsReturnCopies,
   },
   contractRenewal: {
     render: renderContractRenewalHtml,

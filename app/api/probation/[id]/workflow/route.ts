@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -38,7 +39,7 @@ export async function POST(
 
     await assertPermission(access, "probation", action === "pass" || action === "terminate" ? "approve" : "update");
 
-    const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
+    const actor = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
     const data = await runProbationWorkflow(id, action, actor, access, {
       decisionReason: body.decisionReason ? String(body.decisionReason) : undefined,
       evaluationScores: typeof body.evaluationScores === "object" && body.evaluationScores ? body.evaluationScores : undefined,

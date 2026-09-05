@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
@@ -413,6 +413,168 @@ export async function runAdminShellPaletteScopeTests(): Promise<void> {
     `SVG attribute override(s) target a SATURATED colour: ${svgSaturated.join(", ")}. Those are ` +
       `data series, not furniture — recolouring one changes what the chart means.`,
   );
+
+  // --- 9. the square-corner rule's blind spot ------------------------------
+  //
+  // RULE 1 above is `.admin-shell [class*="rounded"] { border-radius: 0 !important }`. It matches a
+  // TAILWIND CLASS, so it can only square an element that carries one. A hand-written
+  // `border-radius` on a plain class name is invisible to it — the element has no `rounded-*` hook,
+  // nothing matches, and the corner survives every sweep that greps for rounded utilities.
+  //
+  // The payroll dashboard ships its own 293-line `<style>` block, and that is exactly what happened
+  // there: `.phoenix-glow-bar` — a CHART BAR, which the owner's rule names explicitly among the
+  // things that are square — carried `border-radius: 18px 18px 6px 6px` on an element whose class
+  // list is `phoenix-glow-bar w-16 max-w-full transition-transform duration-200`. No `rounded-*`
+  // anywhere in it, so RULE 1 never applied, and a 18px top on a bar chart is not subtle.
+  //
+  // WHAT THIS PINS is not "no radius in the file" but the actual invariant: any radius this
+  // stylesheet declares must sit on a selector RULE 1 can reach. That permits
+  // `.payroll-dashboard-surface .rounded-xl.border.bg-card { border-radius: 20px }` — the element
+  // necessarily carries `rounded-xl`, so RULE 1's `!important` beats it and the corner is square
+  // anyway — while still failing any new `.phoenix-whatever { border-radius: … }`. Pinning mere
+  // absence would have forced that already-dead declaration out on a false pretext.
+  //
+  // THE STYLESHEET IS COMPILED, NOT GREPPED. It is a template literal inside a `.tsx`, and this
+  // suite runs under `node --experimental-strip-types`, which refuses a `.tsx` outright. So the
+  // literal is lifted and evaluated, and what is scanned is the string React puts in the DOM.
+  {
+    const dashboardSource = readFileSync(
+      fileURLToPath(new URL("../src/components/payroll/payroll-dashboard.tsx", import.meta.url)),
+      "utf8",
+    );
+
+    const opensAt = dashboardSource.indexOf("<style>{`");
+    assert.ok(opensAt > 0, "the payroll dashboard must still ship a <style> block");
+    const from = dashboardSource.indexOf("`", opensAt);
+    const to = dashboardSource.indexOf("`", from + 1);
+    assert.ok(to > from, "the payroll dashboard's <style> template literal must be closed");
+    const literal = dashboardSource.slice(from, to + 1);
+    assert.ok(
+      !literal.includes("${"),
+      "the dashboard stylesheet interpolates now — compile it with those values in scope",
+    );
+
+    const dashboardCss = new Function(`return ${literal};`)() as string;
+
+    // ANTI-VACUITY. An empty or truncated lift would satisfy every check below without measuring
+    // anything, so the first and last rules in the block are both named here.
+    assert.ok(
+      dashboardCss.includes(".payroll-dashboard-surface {"),
+      "the lifted stylesheet must be the dashboard's own",
+    );
+    assert.ok(
+      dashboardCss.includes(".phoenix-glow-bar {"),
+      "the lift must reach the bar rule — a truncated prefix would pass every scan below",
+    );
+
+    /** Selectors that declare a corner radius, minus the ones RULE 1 can already square. */
+    const radiusOnSelectorsTheSweepCannotReach = (css: string): string[] => {
+      // `@keyframes` bodies nest braces and declare no radius; drop them so the rule split is flat.
+      const flat = css.replace(/@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, "");
+      const out: string[] = [];
+      for (const [, selector, body] of flat.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        if (!/(?:^|[;\s])(?:-[a-z]+-)?(?:border-[a-z-]*)?radius\s*:/i.test(body)) continue;
+        if (selector.includes("rounded")) continue; // RULE 1 matches the element and wins on !important
+        out.push(selector.trim().replace(/\s+/g, " "));
+      }
+      return out;
+    };
+
+    assert.deepEqual(
+      radiusOnSelectorsTheSweepCannotReach(dashboardCss),
+      [],
+      "the square-edge golden rule — a hand-written border-radius on a selector carrying no " +
+        "`rounded-*` hook is invisible to RULE 1, so it survives on screen",
+    );
+
+    // THE CONTROL, CARRIED PERMANENTLY. Put a radius back on the bar and the scan must name it.
+    // Without this, a rule-splitting regex that quietly stopped matching would report a clean
+    // stylesheet forever, and a check that can no longer fire looks exactly like one that passes.
+    assert.deepEqual(
+      radiusOnSelectorsTheSweepCannotReach(
+        dashboardCss.replace(".phoenix-glow-bar {", ".phoenix-glow-bar {\n        border-radius: 18px 18px 6px 6px;"),
+      ),
+      [".phoenix-glow-bar"],
+      "the scan must still be able to see an unreachable radius — otherwise it certifies nothing",
+    );
+  }
+
+  // --- 10. scrollbars are square too --------------------------------------
+  //
+  // A scrollbar thumb is drawn on a `::-webkit-scrollbar-thumb` PSEUDO-ELEMENT, and RULE 1 sets a
+  // radius on the ELEMENT. So RULE 1 can never square a scrollbar, whatever classes the element
+  // carries — a second blind spot, independent of section 9's.
+  //
+  // It is the nastier of the two, because one of the forms it takes READS AS COVERED. A div marked
+  // `[&::-webkit-scrollbar-thumb]:rounded-full` has the substring "rounded" in its class attribute,
+  // so `[class*="rounded"]` matches it and RULE 1 fires — on the div, whose corners were never the
+  // problem. The thumb keeps its 9999px. Anyone auditing by searching for `rounded-` utilities and
+  // checking they are inside the shell would tick this one off as handled.
+  //
+  // Both forms are therefore checked, everywhere, not just in globals.css: the raw declaration
+  // inside a `::-webkit-scrollbar*` rule (which is how app/globals.css and the payslip document
+  // wrote it) and the Tailwind arbitrary variant (which is how expense-report.tsx wrote it).
+  {
+    /** A radius declared inside a `::-webkit-scrollbar*` rule, by selector. */
+    const scrollbarRulesWithARadius = (css: string): string[] =>
+      [...css.matchAll(/([^{}]*::-webkit-scrollbar[^{}]*)\{([^}]*)\}/g)]
+        .filter(([, , body]) => /(?:^|[;\s])(?:-[a-z]+-)?(?:border-[a-z-]*)?radius\s*:/i.test(body))
+        .map(([, selector]) => selector.trim().replace(/\s+/g, " "));
+
+    /** The Tailwind form: a rounded utility aimed at a scrollbar pseudo-element. */
+    const scrollbarRoundedUtilities = (source: string): string[] =>
+      [...source.matchAll(/\[&::-webkit-scrollbar[^\]]*\]:rounded-[a-z0-9[\]#.-]*/gi)].map((m) => m[0]);
+
+    assert.deepEqual(
+      scrollbarRulesWithARadius(GLOBALS_SOURCE),
+      [],
+      "the square-edge golden rule — a scrollbar sits on a pseudo-element, which RULE 1 can never " +
+        "reach, so a radius here survives every sweep",
+    );
+
+    // Everywhere else. Bounded to app/ and src/, and only files that mention a scrollbar at all are
+    // parsed, so the whole pass reads a handful of files rather than 34 MB.
+    const roots = ["app", "src"];
+    const offenders: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = `${dir}/${entry.name}`;
+        if (entry.isDirectory()) {
+          if (entry.name === "node_modules" || entry.name === ".next" || entry.name.startsWith("_wt-")) continue;
+          walk(full);
+          continue;
+        }
+        if (!/\.(?:tsx?|css)$/.test(entry.name)) continue;
+        const source = readFileSync(full, "utf8");
+        if (!source.includes("-webkit-scrollbar")) continue;
+        for (const selector of scrollbarRulesWithARadius(source)) offenders.push(`${full}  ${selector}`);
+        for (const utility of scrollbarRoundedUtilities(source)) offenders.push(`${full}  ${utility}`);
+      }
+    };
+    for (const root of roots) walk(fileURLToPath(new URL(`../${root}`, import.meta.url)));
+
+    assert.deepEqual(
+      offenders,
+      [],
+      "the square-edge golden rule — every scrollbar in the app must be square, in both forms: a " +
+        "raw radius inside a ::-webkit-scrollbar rule, and a [&::-webkit-scrollbar-*]:rounded-* " +
+        "utility (which RULE 1 appears to cover, because the class attribute contains 'rounded', " +
+        "but cannot — it squares the element, never the pseudo-element)",
+    );
+
+    // THE CONTROL, CARRIED PERMANENTLY — one per form, so neither detector can quietly stop
+    // matching and go on reporting a clean app forever.
+    assert.deepEqual(
+      scrollbarRulesWithARadius(".phoenix-horizontal-scroll::-webkit-scrollbar-thumb { border-radius: 999px; }"),
+      [".phoenix-horizontal-scroll::-webkit-scrollbar-thumb"],
+      "the raw-declaration detector must still be able to see a rounded scrollbar",
+    );
+    assert.deepEqual(
+      scrollbarRoundedUtilities('className="md:block [&::-webkit-scrollbar-thumb]:rounded-full"'),
+      ["[&::-webkit-scrollbar-thumb]:rounded-full"],
+      "the utility detector must still be able to see a rounded scrollbar",
+    );
+  }
 }
 
 /** sRGB hex -> OKLCH. Enough precision to compare lightness and classify hue. */

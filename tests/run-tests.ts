@@ -847,6 +847,7 @@ import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-bric
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
+import { runFactoryPriceRestatementAuditTests } from "./factory-price-restatement-audit.test.ts";
 import { runSosDirectCleanupSafetyTests } from "./sos-direct-cleanup-safety.test.ts";
 import { runClosingPublicationSnapshotTests } from "./closing-publication-snapshot.test.ts";
 import { runOfficialNumbersExcludeWeeklyTests } from "./official-numbers-exclude-weekly.test.ts";
@@ -1354,6 +1355,7 @@ import { runAppsScriptPushTests } from "./apps-script-push.test.ts";
 import { runHeredocBackslashDamageTests } from "./heredoc-backslash-damage.test.ts";
 import { runHrFormsRenewalTests } from "./hr-forms-renewal.test.ts";
 import { runMalformedUuidIdGuardsTests } from "./malformed-uuid-id-guards.test.ts";
+import { runHrFormsHousePapersTests } from "./hr-forms-house-papers.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2848,6 +2850,7 @@ await runTest("SoS backfill matches the empty-string brick sentinel, not just NU
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
+await runTest('A factory-price edit that restates a settled closing records it (never refuses it)', runFactoryPriceRestatementAuditTests);
 await runTest('SoS direct cleanup refuses the live vintage and an incomplete backup', runSosDirectCleanupSafetyTests);
 await runTest('Publishing a closing records what was published (insert-only snapshot)', runClosingPublicationSnapshotTests);
 await runTest('SALES TRUTH (one area, one number — every surface reconciles to Monthly Closing)', runSalesTruthNoMismatchTests);
@@ -4298,6 +4301,10 @@ await runTest(
 await runTest(
   "malformed uuid id guards (a non-uuid path segment is 404, never 500, across 18 dynamic routes)",
   runMalformedUuidIdGuardsTests,
+);
+await runTest(
+  "Sato house HR papers (absence threshold is MORE THAN ten days; the second notice declares a deemed resignation rather than accepting one; checklist boxes and service-ending dates stay blank)",
+  runHrFormsHousePapersTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
