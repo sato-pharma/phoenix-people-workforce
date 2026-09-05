@@ -206,14 +206,6 @@ type VacationRequestDbRow = {
   weekly_off_policy_snapshot?: unknown;
 };
 
-type VacationEmailTokenDbRow = {
-  expires_at: string | null;
-  id: string;
-  manager_hr_id: string | null;
-  request_id: string | null;
-  used_at: string | null;
-};
-
 type VacationApprovalStepKey = "direct_manager" | "manager_of_manager" | "hr";
 type VacationApprovalStepStatus = "pending" | "approved" | "rejected";
 
@@ -1515,10 +1507,6 @@ async function fetchVacationEventsForRequests(requestIds: string[]) {
     }
   }
   return byRequestId;
-}
-
-function tokenHash(token: string) {
-  return createHash("sha256").update(token).digest("hex");
 }
 
 /**
@@ -3823,56 +3811,6 @@ export async function decideVacationRequest(access: AccessContext, input: {
     decisionComment: input.decisionComment,
     request,
   });
-}
-
-export async function decideVacationRequestByToken(input: {
-  decision: VacationDecision;
-  requestId: string;
-  token: string;
-}) {
-  const hash = tokenHash(input.token);
-  const { data, error } = await getSupabaseAdmin()
-    .from(vacationTokensTable)
-    .select("id,request_id,manager_hr_id,expires_at,used_at")
-    .eq("request_id", input.requestId)
-    .eq("token_hash", hash)
-    .maybeSingle();
-
-  if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
-  const tokenRow = data as VacationEmailTokenDbRow | null;
-  if (!tokenRow) throw new Error("Vacation approval link is invalid.");
-  if (tokenRow.used_at) throw new Error("Vacation approval link was already used.");
-  if (!tokenRow.expires_at || new Date(tokenRow.expires_at).getTime() < Date.now()) {
-    throw new Error("Vacation approval link has expired.");
-  }
-
-  const request = await fetchVacationRequestById(input.requestId);
-  if (!request) throw new Error("Vacation request was not found.");
-  // Sequential-workflow types (Annual/Other/Compensatory/Emergency) must be reviewed and actioned
-  // inside the Vacation Action Center — token-based direct approval is disabled for them.
-  if (isSequentialWorkflowType(request.vacationType)) {
-    throw new Error("This request must be reviewed on the Vacation Approvals page; email approval links are disabled for it.");
-  }
-  if (request.status !== "pending_manager") {
-    throw new Error("This email approval link is no longer valid because the request is not pending direct manager review.");
-  }
-  if (!hrIdsMatch(tokenRow.manager_hr_id, request.managerHrId)) {
-    throw new Error("Vacation approval link does not match the assigned direct manager.");
-  }
-
-  const updated = await applyVacationDecision({
-    actorHrId: request.managerHrId,
-    actorLoginId: "email-token",
-    decision: input.decision,
-    request,
-  });
-
-  await getSupabaseAdmin()
-    .from(vacationTokensTable)
-    .update({ used_at: new Date().toISOString() })
-    .eq("id", tokenRow.id);
-
-  return updated;
 }
 
 export async function resubmitVacationRequest(access: AccessContext, input: { requestId: string }) {
