@@ -44,8 +44,6 @@ const ACCENT_FILL = "FFF97316";
 /** Square it, or leave it alone. Two options, because there are two. */
 const CORNER_OPTIONS = '"Square it,Leave it round"';
 
-/** The token layer has a third answer: the token can go away entirely. */
-const TOKEN_OPTIONS = '"Set it to 0,Keep as is,Retire the token"';
 
 type SheetWithValidations = ExcelJS.Worksheet & {
   dataValidations: { add: (range: string, rule: ExcelJS.DataValidation) => void };
@@ -224,35 +222,6 @@ const CORNERS: CornerRow[] = [
   },
 ];
 
-type TokenRow = { token: string; value: string; drives: string };
-
-/**
- * The token layer.
- *
- * tokens.css says in its own header that nothing consumes the --phx- system yet. FOR RADIUS THAT IS
- * NO LONGER TRUE: app/globals.css maps these straight into Tailwind, so `--phx-radius: 4px` IS what
- * `rounded-lg` renders, app-wide. Inside the admin shell and the employee portal the two sweeps
- * flatten the result to 0; everywhere else — sign-in, an error page, a generated document — it
- * renders as written. That is the mechanism AGENTS.md §4 describes when it says a session copying a
- * sibling component inherits a corner silently.
- */
-const TOKENS: TokenRow[] = [
-  { token: "--phx-radius-xs", value: "2px", drives: "Tailwind's rounded-sm" },
-  { token: "--phx-radius-sm", value: "3px", drives: "Tailwind's rounded-md" },
-  {
-    token: "--phx-radius",
-    value: "4px",
-    drives: "Tailwind's rounded-lg — and the file calls this 'the default for cards, inputs and buttons'",
-  },
-  { token: "--phx-radius-lg", value: "6px", drives: "Tailwind's rounded-xl" },
-  { token: "--phx-radius-xl", value: "10px", drives: "Tailwind's rounded-2xl" },
-  {
-    token: "--phx-radius-pill",
-    value: "999px",
-    drives: "nothing today — but it is a ready-made pill shape sitting in the token file",
-  },
-];
-
 function styleHeader(sheet: ExcelJS.Worksheet, rowNumber: number): void {
   const row = sheet.getRow(rowNumber);
   row.eachCell((cell) => {
@@ -313,10 +282,10 @@ function buildReadMe(workbook: ExcelJS.Workbook): void {
         + "The 'What it looks like' column tells you what you are looking at without opening the code.",
     ],
     [
-      "Radius tokens (6 rows)",
-      "The design-token file still ships a rounding scale and calls 4px 'the default for cards, "
-        + "inputs and buttons'. That default is why a corner keeps coming back: a new screen copied "
-        + "from an old one inherits it silently. Deciding these once stops the leak at the source.",
+      "The radius tokens are done",
+      "You set all six to 0 on 2026-09-05, so that sheet is gone — an answered question does not "
+        + "come back. The scale keeps its names and every step now resolves to square, which is "
+        + "what stops a newly copied screen inheriting a corner.",
     ],
     [
       "Where one row covers many",
@@ -409,49 +378,6 @@ function buildCorners(workbook: ExcelJS.Workbook): void {
   sheet.autoFilter = { from: { row: headerRow, column: 1 }, to: { row: lastRow, column: 7 } };
 }
 
-function buildTokens(workbook: ExcelJS.Workbook): void {
-  const sheet = workbook.addWorksheet("Radius tokens");
-  sheet.columns = [{ width: 24 }, { width: 12 }, { width: 74 }, { width: 22 }, { width: 40 }];
-
-  addTitle(
-    sheet,
-    5,
-    "The rounding scale in the design-token file",
-    "These six values are why a corner keeps coming back. They are wired into Tailwind, so they "
-      + "decide what every rounded-* class renders as. Inside the admin shell and the employee "
-      + "portal a sweep flattens them to square; everywhere else — sign-in, error pages, generated "
-      + "documents — they render as written.",
-  );
-
-  const headerRow = 4;
-  sheet.getRow(headerRow).values = ["Token", "Value", "What it controls", "Decision", "Note"];
-  styleHeader(sheet, headerRow);
-
-  TOKENS.forEach((token, index) => {
-    const row = sheet.getRow(headerRow + 1 + index);
-    row.values = [token.token, token.value, token.drives, "", ""];
-    row.alignment = { vertical: "top", wrapText: true };
-    row.height = 34;
-    row.getCell(4).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF7ED" } };
-    row.getCell(5).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF7ED" } };
-  });
-
-  const lastRow = headerRow + TOKENS.length;
-  (sheet as SheetWithValidations).dataValidations.add(`D${headerRow + 1}:D${lastRow}`, {
-    type: "list",
-    allowBlank: true,
-    formulae: [TOKEN_OPTIONS],
-    showErrorMessage: true,
-    errorTitle: "What should this token be?",
-    error:
-      "'Set it to 0' keeps the name but makes it square. 'Retire the token' removes it, so anything "
-      + "still using it has to be rewritten. 'Keep as is' changes nothing.",
-  });
-
-  sheet.views = [{ state: "frozen", ySplit: headerRow }];
-  sheet.autoFilter = { from: { row: headerRow, column: 1 }, to: { row: lastRow, column: 5 } };
-}
-
 function nextFreePath(): string {
   const today = new Date().toISOString().slice(0, 10);
   const base = resolve("xlsx", `square-edge-decisions-${today}`);
@@ -471,7 +397,6 @@ async function main(): Promise<void> {
 
   buildReadMe(workbook);
   buildCorners(workbook);
-  buildTokens(workbook);
 
   const outputPath = nextFreePath();
   mkdirSync(dirname(outputPath), { recursive: true });
@@ -479,7 +404,7 @@ async function main(): Promise<void> {
 
   const totalSites = CORNERS.reduce((sum, corner) => sum + corner.sites, 0);
   console.log(`Wrote ${outputPath}`);
-  console.log(`${CORNERS.length} corner decisions covering ${totalSites} declarations, plus ${TOKENS.length} radius tokens.`);
+  console.log(`${CORNERS.length} corner decisions covering ${totalSites} declarations.`);
 }
 
 await main();

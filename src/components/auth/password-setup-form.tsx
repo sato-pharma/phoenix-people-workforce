@@ -80,14 +80,14 @@ export function PasswordSetupForm({ expiresAt, hrId, loginId, name, purpose, tok
   if (isComplete) {
     return (
       <main className="min-h-screen bg-[#020202] px-4 py-10 text-white">
-        <section className="mx-auto max-w-xl rounded-[32px] border border-white/10 bg-[linear-gradient(145deg,rgba(19,22,27,0.92),rgba(5,6,8,0.98))] p-8 shadow-[0_30px_70px_rgba(0,0,0,0.55)]">
+        <section className="mx-auto max-w-xl border border-white/10 bg-[linear-gradient(145deg,rgba(19,22,27,0.92),rgba(5,6,8,0.98))] p-8 shadow-[0_30px_70px_rgba(0,0,0,0.55)]">
           <p className="text-sm font-black uppercase tracking-[0.24em] text-[#ff7900]">{systemIdentity.appName}</p>
           <h1 className="mt-5 text-3xl font-black text-white">Password saved</h1>
           <p className="mt-3 text-base leading-7 text-white/72">
             Your password is ready. Sign in with <span className="font-semibold text-white">{displayLoginId}</span> and the password you just created.
           </p>
           <a
-            className="mt-8 inline-flex h-12 items-center justify-center rounded-xl bg-gradient-to-b from-[#ff8a00] to-[#ff4d00] px-5 text-sm font-black text-white"
+            className="mt-8 inline-flex h-12 items-center justify-center bg-gradient-to-b from-[#ff8a00] to-[#ff4d00] px-5 text-sm font-black text-white"
             href="/login"
           >
             Go to sign in
@@ -99,7 +99,7 @@ export function PasswordSetupForm({ expiresAt, hrId, loginId, name, purpose, tok
 
   return (
     <main className="min-h-screen bg-[#020202] px-4 py-10 text-white">
-      <section className="mx-auto max-w-xl rounded-[32px] border border-white/10 bg-[linear-gradient(145deg,rgba(19,22,27,0.92),rgba(5,6,8,0.98))] p-8 shadow-[0_30px_70px_rgba(0,0,0,0.55)]">
+      <section className="mx-auto max-w-xl border border-white/10 bg-[linear-gradient(145deg,rgba(19,22,27,0.92),rgba(5,6,8,0.98))] p-8 shadow-[0_30px_70px_rgba(0,0,0,0.55)]">
         <p className="text-sm font-black uppercase tracking-[0.24em] text-[#ff7900]">{systemIdentity.appName}</p>
         <h1 className="mt-5 text-3xl font-black text-white">
           {purpose === "setup" ? "Create your password" : "Reset your password"}
@@ -108,7 +108,7 @@ export function PasswordSetupForm({ expiresAt, hrId, loginId, name, purpose, tok
           {name} will sign in with <span className="font-semibold text-white">{displayLoginId}</span> after this step.
         </p>
 
-        <div className="mt-6 rounded-2xl border border-[#ff7900]/20 bg-[#ff7900]/8 p-4 text-sm text-white/80">
+        <div className="mt-6 border border-[#ff7900]/20 bg-[#ff7900]/8 p-4 text-sm text-white/80">
           <div className="flex items-center gap-2 font-semibold text-[#ffb366]">
             <ShieldCheck className="h-4 w-4" />
             One-time secure setup
@@ -120,7 +120,7 @@ export function PasswordSetupForm({ expiresAt, hrId, loginId, name, purpose, tok
           <label className="block">
             <span className="mb-3 block text-sm font-semibold text-white">New password</span>
             <input
-              className="h-14 w-full rounded-2xl border border-white/14 bg-white/[0.045] px-5 text-base text-white outline-none transition placeholder:text-white/34 focus:border-[#ff7900] focus:ring-4 focus:ring-[#ff6a00]/16"
+              className="h-14 w-full border border-white/14 bg-white/[0.045] px-5 text-base text-white outline-none transition placeholder:text-white/34 focus:border-[#ff7900] focus:ring-4 focus:ring-[#ff6a00]/16"
               onChange={(event) => setPassword(event.target.value)}
               placeholder="At least 8 characters"
               type="password"
@@ -130,7 +130,7 @@ export function PasswordSetupForm({ expiresAt, hrId, loginId, name, purpose, tok
           <label className="block">
             <span className="mb-3 block text-sm font-semibold text-white">Confirm password</span>
             <input
-              className="h-14 w-full rounded-2xl border border-white/14 bg-white/[0.045] px-5 text-base text-white outline-none transition placeholder:text-white/34 focus:border-[#ff7900] focus:ring-4 focus:ring-[#ff6a00]/16"
+              className="h-14 w-full border border-white/14 bg-white/[0.045] px-5 text-base text-white outline-none transition placeholder:text-white/34 focus:border-[#ff7900] focus:ring-4 focus:ring-[#ff6a00]/16"
               onChange={(event) => setConfirmPassword(event.target.value)}
               placeholder="Repeat the same password"
               type="password"
@@ -139,13 +139,13 @@ export function PasswordSetupForm({ expiresAt, hrId, loginId, name, purpose, tok
           </label>
 
           {error ? (
-            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-100">
+            <div className="border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-100">
               {error}
             </div>
           ) : null}
 
           <button
-            className="flex h-14 w-full items-center justify-center gap-3 rounded-[14px] bg-gradient-to-b from-[#ff8a00] to-[#ff4d00] text-lg font-black text-white shadow-[0_14px_38px_rgba(255,106,0,0.34)] transition disabled:cursor-not-allowed disabled:opacity-70"
+            className="flex h-14 w-full items-center justify-center gap-3 bg-gradient-to-b from-[#ff8a00] to-[#ff4d00] text-lg font-black text-white shadow-[0_14px_38px_rgba(255,106,0,0.34)] transition disabled:cursor-not-allowed disabled:opacity-70"
             disabled={isSaving}
             type="submit"
           >
