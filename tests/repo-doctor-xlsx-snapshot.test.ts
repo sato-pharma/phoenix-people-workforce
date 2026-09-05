@@ -275,4 +275,49 @@ export async function runRepoDoctorXlsxSnapshotTests() {
   } finally {
     for (const d of [wrongRepo, liveRepo, liveRoot]) rmSync(d, { recursive: true, force: true });
   }
+
+  // --- 8. The manifest describes the FOLDER, not just the run that last wrote it ----------------
+
+  // A same-day re-run reuses that day's directory. If the manifest is built from what THIS run
+  // copied, every file an earlier run put there vanishes from the record while staying on disk.
+  // Measured on the live backup 2026-09-05: 109 files present, 4 listed, under a heading calling
+  // the folder the full base. Nothing was lost — coverage reads real directory contents — but the
+  // audit record said the backup was almost empty, which is the kind of reading that gets a
+  // healthy backup abandoned.
+  const mRepo = mkdtempSync(join(tmpdir(), "phx-man-src-"));
+  const mRoot = mkdtempSync(join(tmpdir(), "phx-man-dst-"));
+  try {
+    execFileSync("git", ["-C", mRepo, "init", "--quiet"], { stdio: ["ignore", "pipe", "pipe"] });
+    mkdirSync(join(mRepo, "xlsx"));
+    writeFileSync(join(mRepo, "xlsx", "first-run-a.xlsx"), "a".repeat(64));
+    writeFileSync(join(mRepo, "xlsx", "first-run-b.xlsx"), "b".repeat(64));
+
+    const day = Date.UTC(2026, 8, 5);
+    const one = takeXlsxSnapshot({ repoRoot: mRepo, snapshotRoot: mRoot, now: day });
+    const oneDir = one.dir;
+    assert.ok(oneDir, "the first run must name the directory it wrote");
+    assert.equal(one.copied, 2);
+
+    // Later the same day, one more file appears and the job runs again.
+    writeFileSync(join(mRepo, "xlsx", "second-run-c.xlsx"), "c".repeat(64));
+    const two = takeXlsxSnapshot({ repoRoot: mRepo, snapshotRoot: mRoot, now: day });
+    assert.equal(two.dir, oneDir, "a same-day re-run must reuse that day's directory");
+    assert.equal(two.copied, 1, "only the new file is copied");
+
+    const onDisk = readdirSync(oneDir).filter((n) => n !== "MANIFEST.txt").sort();
+    assert.deepEqual(onDisk, ["first-run-a.xlsx", "first-run-b.xlsx", "second-run-c.xlsx"]);
+
+    const manifest = readFileSync(join(oneDir, "MANIFEST.txt"), "utf8");
+    for (const name of onDisk) {
+      assert.ok(
+        manifest.includes(name),
+        `the manifest must list ${name}: a folder holding a file its own manifest omits is a backup ` +
+          "nobody can audit, and the omission is invisible until someone needs to restore",
+      );
+    }
+    assert.match(manifest, /Holds\s+: 3 file\(s\) in this folder; this run added 1/);
+  } finally {
+    rmSync(mRepo, { recursive: true, force: true });
+    rmSync(mRoot, { recursive: true, force: true });
+  }
 }

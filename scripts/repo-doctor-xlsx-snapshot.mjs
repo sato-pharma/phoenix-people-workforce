@@ -223,6 +223,8 @@ export function readSnapshots(snapshotRoot) {
   }
 }
 
+const MANIFEST_NAME = "MANIFEST.txt";
+
 const sha256 = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 
 /**
@@ -272,10 +274,22 @@ export function takeXlsxSnapshot({ repoRoot, snapshotRoot, now = Date.now() }) {
     rows.push({ name: f.name, bytes: f.bytes, hash: a });
   }
 
+  // The manifest must describe THE FOLDER, not just this run. Re-running on the same day reuses
+  // that day's directory, so a manifest built from `rows` alone silently drops every file an
+  // earlier run put there. Measured 2026-09-05: the base folder held 109 files while its own
+  // manifest listed 4 — under a heading calling it the full base. Coverage is computed from real
+  // directory contents, so the BACKUP was never at risk; the manifest is the audit record, and one
+  // that under-reports by 105 files invites the reader to conclude the backup is nearly empty.
+  const held = statEntries(dir)
+    .filter((e) => e.name !== MANIFEST_NAME)
+    .map((e) => ({ name: e.name, bytes: e.bytes, hash: sha256(path.join(dir, e.name)) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   const manifest = [
     "xlsx/ snapshot — untracked working files from the Phoenix Workforce repo",
     `Taken     : ${new Date(now).toISOString()}`,
     `Source    : ${path.join(repoRoot, "xlsx")}`,
+    `Holds     : ${held.length} file(s) in this folder; this run added ${rows.length}`,
     "",
     "WHY THIS EXISTS: .gitignore ignores *.xlsx, so none of these files are in git. Written by",
     "scripts/repo-doctor-xlsx-snapshot.mjs — see that file's header for the incident behind it.",
@@ -286,9 +300,9 @@ export function takeXlsxSnapshot({ repoRoot, snapshotRoot, now = Date.now() }) {
     "",
     "SHA256                                                            BYTES  NAME",
     "----------------------------------------------------------------------------",
-    ...rows.map((r) => `${r.hash}  ${String(r.bytes).padStart(9)}  ${r.name}`),
+    ...held.map((r) => `${r.hash}  ${String(r.bytes).padStart(9)}  ${r.name}`),
   ].join("\n");
-  fs.writeFileSync(path.join(dir, "MANIFEST.txt"), `${manifest}\n`);
+  fs.writeFileSync(path.join(dir, MANIFEST_NAME), `${manifest}\n`);
 
   return {
     dir,
