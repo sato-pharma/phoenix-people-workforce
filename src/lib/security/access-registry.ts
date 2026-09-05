@@ -842,6 +842,11 @@ export const accessRegistry = [
   // entries so the bytes route (/files/*) and the list route (/files) each resolve to their own.
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/manager-engagement/candidates/*/files", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/manager-engagement/candidates/*/files/*", permission: null, guard: "domain-helper" }),
+  // The same report as an XLSX. Same audience, same gate, same silence — it reads the report and no
+  // CV file, so it records no "opened" mark either. Audit IS required here where the preview routes
+  // above waive it: this one leaves the building with every manager's name and numbers in a file that
+  // can be forwarded, which is the thing worth having a trail of.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/manager-engagement/export", permission: null, guard: "domain-helper" }),
   // A district manager hands a CV back to the administrator ("area not match — or any other
   // situation"), and the administrator later clears it from the Returned CVs queue. TWO DIFFERENT
   // GRANTS on purpose: returning is `hiring_interviews:update` — the same folder grant every district

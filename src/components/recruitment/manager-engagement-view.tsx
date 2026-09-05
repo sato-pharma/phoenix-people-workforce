@@ -12,6 +12,7 @@
 // `md:hidden` card list beside it — the owner's rule is cards on a phone, never a table — and both
 // spellings are shell-independent Tailwind, so the one component behaves the same in either shell.
 
+import { Download, Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
@@ -21,32 +22,18 @@ import type {
   ManagerCvEngagementReport,
   ManagerCvEngagementRow,
 } from "@/lib/recruitment/manager-cv-engagement";
+// The manager filter, the area grouping, the inactive wording and the Cairo date all come from ONE
+// module, shared with the XLSX export — the owner's rule is that an export matches the screen, and a
+// second copy of any of them is how the file starts answering a different question than this page.
+import {
+  cairoEngagementDate,
+  filterManagerEngagementRows,
+  groupEngagementCandidatesByArea,
+  managerInactiveText,
+} from "@/lib/recruitment/manager-engagement-presentation";
 
 /** One row of the report's own file-list response — the CV file is the one whose kind is "cv". */
 type CandidateFileSummary = { id: string; fileName: string; kind: string; mimeType: string | null };
-
-// The two non-area buckets in the expanded list, always sorted after the real areas. "No area named"
-// is the district catch-all the folder rule fills (REGION_FOLDER_LABEL in district-manager-folders.ts);
-// "Sent directly" is where a hand-push that belongs to no folder lands. Held as local strings so this
-// "use client" file need not import the pure folder module — were that label ever renamed, the group
-// would simply sort among the areas rather than break.
-const NO_AREA_LABEL = "No area named";
-const SENT_DIRECTLY_LABEL = "Sent directly";
-
-// Every time this report shows a person is Cairo local time, never a raw UTC string — the owner's
-// standing rule. Written here rather than imported across a domain boundary, matching the copy in
-// intake-health-view.tsx one file over.
-function cairoDate(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const value = new Date(iso);
-  if (Number.isNaN(value.getTime())) return "";
-  return value.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    timeZone: "Africa/Cairo",
-    year: "numeric",
-  });
-}
 
 function StatTile({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone?: "plain" | "warn" }) {
   return (
@@ -80,10 +67,9 @@ function Pill({ tone, children }: { tone: "green" | "slate" | "amber"; children:
  * when there is one. Kept on one line — the owner's rule is never to wrap a label.
  */
 function InactiveBadge({ label, lastWorkingDate }: { label: string | null; lastWorkingDate: string | null }) {
-  const suffix = lastWorkingDate ? ` · left ${cairoDate(lastWorkingDate)}` : "";
   return (
     <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700 ring-1 ring-inset ring-rose-200">
-      {(label || "Inactive") + suffix}
+      {managerInactiveText(label, lastWorkingDate)}
     </span>
   );
 }
@@ -167,19 +153,7 @@ function EngagementCvName({ candidate }: { candidate: ManagerCvEngagementCandida
  * areas sort first (A→Z), then the district catch-all, then anything hand-pushed with no folder.
  */
 function ManagerCandidateList({ candidates }: { candidates: readonly ManagerCvEngagementCandidate[] }) {
-  const groups = useMemo(() => {
-    const byArea = new Map<string, ManagerCvEngagementCandidate[]>();
-    for (const candidate of candidates) {
-      const key = candidate.area?.trim() || SENT_DIRECTLY_LABEL;
-      const list = byArea.get(key);
-      if (list) list.push(candidate);
-      else byArea.set(key, [candidate]);
-    }
-    const rank = (name: string) => (name === SENT_DIRECTLY_LABEL ? 2 : name === NO_AREA_LABEL ? 1 : 0);
-    return [...byArea.keys()]
-      .sort((left, right) => rank(left) - rank(right) || left.localeCompare(right))
-      .map((area) => ({ area, list: byArea.get(area) ?? [] }));
-  }, [candidates]);
+  const groups = useMemo(() => groupEngagementCandidatesByArea(candidates), [candidates]);
 
   if (candidates.length === 0) {
     return <p className="text-sm text-slate-500">No CVs recorded for this manager.</p>;
@@ -201,7 +175,7 @@ function ManagerCandidateList({ candidates }: { candidates: readonly ManagerCvEn
                 <div className="min-w-0">
                   <EngagementCvName candidate={candidate} />
                   <div className="mt-0.5 text-xs text-slate-500">
-                    {candidate.arrivedAt ? `Arrived ${cairoDate(candidate.arrivedAt)}` : ""}
+                    {candidate.arrivedAt ? `Arrived ${cairoEngagementDate(candidate.arrivedAt)}` : ""}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -241,21 +215,67 @@ function ManagerCountStrip({ row }: { row: ManagerCvEngagementRow }) {
   );
 }
 
+/**
+ * Take the report away as a workbook.
+ *
+ * The route re-loads the report under the viewer's own scope, so the filter has to travel with the
+ * request — without it the file answers a different question than the table underneath. Fetched
+ * rather than linked so a 403/429/500 lands as a message here instead of a browser tab full of JSON.
+ */
+function ExportXlsxButton({ query, disabled }: { query: string; disabled: boolean }) {
+  const [state, setState] = useState<"error" | "idle" | "working">("idle");
+
+  async function handleClick() {
+    setState("working");
+    try {
+      // THE PATH STAYS LITERAL and the interpolation begins only after the `?`. An interpolation
+      // glued to the last path segment — `…/export${params}` — reads to a scanner (and to a human)
+      // as a dynamic route segment, and `recruitment-api-routes-exist` correctly refuses it: there
+      // is no `[param]` folder there. `q` is always sent; the route treats an empty one as no filter.
+      const params = new URLSearchParams({ q: query.trim() });
+      const res = await fetch(`/api/recruitment/manager-engagement/export?${params}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      // The Cairo day, matching the filename the route puts in Content-Disposition.
+      anchor.download = `manager-cv-engagement-${new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Cairo" })}.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setState("idle");
+    } catch {
+      setState("error");
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {/* Wraps rather than pushing the button off a 375px screen when the message is showing. */}
+      {state === "error" ? <span className="text-xs text-rose-600">Export failed — try again</span> : null}
+      <button
+        className="inline-flex h-10 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50"
+        disabled={disabled || state === "working"}
+        onClick={() => void handleClick()}
+        title="Every manager on screen, their four counts, and one line per CV behind them."
+        type="button"
+      >
+        {state === "working" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+        {state === "working" ? "Exporting…" : "Export XLSX"}
+      </button>
+    </div>
+  );
+}
+
 export function ManagerEngagementView({ report }: { report: ManagerCvEngagementReport }) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const toggle = (key: string) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  const rows = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return report.rows;
-    return report.rows.filter((row) =>
-      [row.managerName, row.managerJobTitle, row.managerArea, row.managerLine]
-        .filter(Boolean)
-        .some((field) => String(field).toLowerCase().includes(needle)),
-    );
-  }, [query, report.rows]);
+  const rows = useMemo(() => filterManagerEngagementRows(report.rows, query), [query, report.rows]);
 
   const { totals } = report;
 
@@ -281,18 +301,24 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
         candidate&rsquo;s recorded decision — so an older CV can show <em>not opened</em> yet <em>answered</em>.
       </div>
 
-      <div>
-        <label className="sr-only" htmlFor="manager-engagement-search">
-          Filter managers
-        </label>
-        <input
-          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none sm:max-w-xs"
-          id="manager-engagement-search"
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Filter by manager, area or line…"
-          type="text"
-          value={query}
-        />
+      {/* Filter and export on one wrapping row. No `shrink-0` on either half: at 375px the button
+          drops onto its own line instead of pinning the row to max-content and pushing the input
+          off the screen — the fits-the-screen rule. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="w-full sm:max-w-xs">
+          <label className="sr-only" htmlFor="manager-engagement-search">
+            Filter managers
+          </label>
+          <input
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none"
+            id="manager-engagement-search"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Filter by manager, area or line…"
+            type="text"
+            value={query}
+          />
+        </div>
+        <ExportXlsxButton disabled={rows.length === 0} query={query} />
       </div>
 
       {report.rows.length === 0 ? (
