@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { CoachingScoreItemKey } from "@/lib/coaching/constants";
 
@@ -78,7 +79,9 @@ function toRowInsert(input: CoachingArchivedEvaluationInput) {
     coaching_date: cleanText(input.coachingDate),
     coaching_quarter: input.coachingQuarter ?? null,
     coaching_year: input.coachingYear ?? null,
-    created_by: cleanText(input.createdBy),
+    // cleanText first so an empty string still stores NULL, then canonical casing: the importer
+    // passes access.hrId, which is the lowercase comparison key.
+    created_by: hrIdForStorage(cleanText(input.createdBy)),
     general_remarks: cleanText(input.generalRemarks),
     import_batch_id: cleanText(input.importBatchId),
     overall_score: input.overallScore ?? null,
