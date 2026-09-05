@@ -109,66 +109,13 @@ export const PHARMACY_CALL_RATE_TARGET: number | null = null;
  */
 export const DAILY_CAMPAIGN_LIMIT = 3;
 
-/**
- * The daily visit-average band — owner's own words, 2026-09-05: "the kpis tells call rate in
- * month should be 10 to achieve this should make visits / day av 8-12 and coverage no less than
- * 95%." 10 is the target and the midpoint of the tolerance band; 8 and 12 are its edges. (It is
- * not a coincidence that 2 + 10 = 12, the AM and PM targets above.)
- *
- * THIS IS DELIBERATELY THE ONE PLACE AM AND PM ARE SUMMED. It answers a different question than
- * the split call rate does — "how much verified field work happened today", not "did he hit his
- * AM or his PM number" — so it is not the blended figure the owner banned on 2026-09-04 ("this two
- * and this ten. Don't never get average"). It must never replace the AM/PM split reported
- * elsewhere on the board.
- *
- * VERIFIED ONLY, on purpose: a campaign call names no doctor and is unverifiable by construction
- * (see the module header above), and letting it buy a rep into this band would be exactly the
- * fabrication call rate exists to resist. See {@link verifiedVisitsPerDay}.
- *
- * ABOVE 12 IS NOT A PASS. The owner's own campaign-limit ruling two lines up — an implausibly high
- * count is a flag, not a strength — applies here too: a caller must render the "above" band
- * distinctly from "in-band" and never colour it as a win. See {@link dailyVisitBandOf}.
- *
- * PHARMACY IS EXCLUDED — owner's decision, 2026-09-06, asked directly rather than assumed:
- * once `codex/call-rate-ampm-pharmacy-split` splits pharmacy visits out of AM/PM, this band stays
- * AM/PM ONLY. Pharmacy work is scored on its own coverage/call-rate over there, not folded back in
- * here. So a caller implementing that split must keep {@link verifiedVisitsPerDay} fed from the
- * AM/PM slices alone — never `am + pm + pharmacy`. Today, before that split exists, AM/PM already
- * IS everything, so this is a forward-compatibility note rather than a present behaviour change:
- * company visits/day will read LOWER once pharmacy is carved out (measured August 2026: 8.05/day
- * pharmacy-inclusive vs 7.30/day AM/PM-only), which is intended, not a regression.
- */
-export const DAILY_VISIT_RATE_TARGET = 10;
-/** The band's lower edge. Under this is `"below"` — short of the standard. */
-export const DAILY_VISIT_RATE_MIN = 8;
-/** The band's upper edge. Over this is `"above"` — a volume flag, not automatically a win. */
-export const DAILY_VISIT_RATE_MAX = 12;
-
-/** Where a verified-visits-per-day figure sits against the owner's 8-12 band. */
-export type DailyVisitBand = "below" | "in-band" | "above";
-
-/**
- * Verified AM + PM visits per working day — the input {@link dailyVisitBandOf} buckets.
- *
- * `null` with no working days, matching every other rate in this module — there is nothing here to
- * divide by, which is different from a rep who worked and logged zero.
- */
-export function verifiedVisitsPerDay(amVerified: number, pmVerified: number, workingDays: number): number | null {
-  if (workingDays <= 0) return null;
-  return (amVerified + pmVerified) / workingDays;
-}
-
-/**
- * Buckets a verified-visits-per-day figure against {@link DAILY_VISIT_RATE_MIN}–
- * {@link DAILY_VISIT_RATE_MAX}. `null` in is `null` out — no working days to measure means there is
- * nothing to have fallen short of, which must never be folded silently into `"below"`.
- */
-export function dailyVisitBandOf(visitsPerDay: number | null): DailyVisitBand | null {
-  if (visitsPerDay == null) return null;
-  if (visitsPerDay < DAILY_VISIT_RATE_MIN) return "below";
-  if (visitsPerDay > DAILY_VISIT_RATE_MAX) return "above";
-  return "in-band";
-}
+// A COMBINED AM+PM "visits/day" band (target 10, band 8-12) shipped here briefly on 2026-09-05,
+// reading the owner's "call rate in month should be 10 ... visits/day av 8-12" as one summed
+// figure. Retracted the same week: asked directly, the owner's answer was "10 PM · 2 AM" — the
+// 8-12 band belongs to PM ALONE, not to AM+PM combined. AM keeps its own flat target with no band.
+// That correct, per-list model lives in crm/rep-kpi-reports.ts's `DEFAULT_REP_KPI_STANDARDS` (see
+// `PM.callRateBand`). Do not re-add a combined figure here — it is exactly the blend the owner
+// banned on 2026-09-04 ("this two and this ten. Don't never get average"), just under a new name.
 
 /**
  * The weekdays that make up the call-rate denominator, as JavaScript day-of-week

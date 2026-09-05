@@ -3,19 +3,14 @@ import assert from "node:assert/strict";
 import {
   AM_CALL_RATE_TARGET,
   DAILY_CAMPAIGN_LIMIT,
-  DAILY_VISIT_RATE_MAX,
-  DAILY_VISIT_RATE_MIN,
-  DAILY_VISIT_RATE_TARGET,
   PHARMACY_CALL_RATE_TARGET,
   PM_CALL_RATE_TARGET,
   classifyCallProof,
   computeCallRate,
   countCallRateWorkingDays,
-  dailyVisitBandOf,
   isCallRateWorkingDay,
   isPharmacyVisit,
   normalizeSession,
-  verifiedVisitsPerDay,
   weekdayOfIsoDate,
   type VisitForCallRate,
 } from "../src/lib/crm/call-rate.ts";
@@ -324,33 +319,5 @@ export function runCrmCallRateTests() {
     const rep = report.reps[0];
     assert.equal(rep.pharmacy.verified, 0);
     assert.equal(rep.pharmacy.verifiedRate, 0, "zero pharmacy calls over real working days is 0.00, not null");
-  }
-
-  // ── The owner's 8-12 visits/day band, 2026-09-05 ──────────────────────────────────
-  {
-    // The constants are the owner's own numbers, pinned so a future edit has to change this test
-    // to change them — a magic number changed only at the call site would pass silently.
-    assert.equal(DAILY_VISIT_RATE_TARGET, 10);
-    assert.equal(DAILY_VISIT_RATE_MIN, 8);
-    assert.equal(DAILY_VISIT_RATE_MAX, 12);
-
-    // No working days: null in, null out — never folded into "below". There is nothing here to
-    // have fallen short of.
-    assert.equal(verifiedVisitsPerDay(0, 0, 0), null, "no working days must give null, not Infinity or NaN");
-    assert.equal(dailyVisitBandOf(null), null, "a null rate has no band");
-
-    // Both edges are INSIDE the band — "over this is above" means 12 itself does not flag.
-    assert.equal(dailyVisitBandOf(verifiedVisitsPerDay(2, 5, 1)), "below", "2 AM + 5 PM = 7 a day is short of 8");
-    assert.equal(dailyVisitBandOf(7.99), "below", "just under 8 is below");
-    assert.equal(dailyVisitBandOf(8), "in-band", "8 itself is the band's own lower edge, and counts");
-    assert.equal(dailyVisitBandOf(10), "in-band", "10 is the target, dead centre of the band");
-    assert.equal(dailyVisitBandOf(12), "in-band", "12 itself is the band's own upper edge, and counts");
-    assert.equal(dailyVisitBandOf(12.01), "above", "just over 12 is a volume flag, never a win");
-    assert.equal(dailyVisitBandOf(20), "above", "an implausibly high count is still 'above', not a stronger pass");
-
-    // AM and PM verified are summed here — the ONE place this module allows it, and only because
-    // it answers a different question ("how much work happened today") than the split rate does.
-    assert.equal(verifiedVisitsPerDay(2, 10, 1), 12, "2 AM + 10 PM in one working day is 12 a day");
-    assert.equal(verifiedVisitsPerDay(4, 20, 2), 12, "the same ratio over two days is still 12 a day");
   }
 }

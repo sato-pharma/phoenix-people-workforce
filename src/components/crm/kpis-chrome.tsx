@@ -45,7 +45,7 @@ import { KPI_BAND_SHORT, type KpiBand } from "@/lib/crm/kpis-filters";
  * `noplan` is deliberately the quietest tone on the board. It is not a bad score — it is the
  * absence of one — and painting it rose would accuse a rep of missing a target nobody set him.
  */
-export type Tone = { bar: string; chip: string; text: string };
+type Tone = { bar: string; chip: string; text: string };
 
 const TONES: Record<KpiBand, Tone> = {
   elite: { bar: "bg-emerald-500", chip: "border-emerald-200 bg-emerald-50 text-emerald-800", text: "text-emerald-700" },
@@ -59,44 +59,9 @@ export function toneOf(band: KpiBand): Tone {
   return TONES[band];
 }
 
-// ── Daily visit band (owner, 2026-09-05) ──────────────────────────────────────────────────────
-//
-// A DIFFERENT three-way axis from KpiBand, not a fourth measure wearing its hat: this is where
-// visitsPerDay (call-rate.ts) sits against the owner's 8-12 band, and it gets its OWN tone map
-// rather than being coerced into the five-value KpiBand — "in-band" is not "elite", it is simply
-// on standard. THE PART THAT MATTERS: "above" reuses the CAUTION tone (steady/amber), never the
-// pass tone (elite/emerald). An implausibly high count is the owner's own volume flag (see
-// DAILY_CAMPAIGN_LIMIT in call-rate.ts), not a stronger score, so colouring it green would tell the
-// reader the opposite of what he decided.
-
-export type DailyVisitBand = "below" | "in-band" | "above";
-
-const DAILY_VISIT_TONES: Record<DailyVisitBand, Tone> = {
-  "in-band": TONES.elite,
-  below: TONES.behind,
-  above: TONES.steady,
-};
-
-export const DAILY_VISIT_BAND_LABEL: Record<DailyVisitBand, string> = {
-  "in-band": "In band",
-  below: "Below 8",
-  above: "Above 12",
-};
-
-export function toneOfDailyVisitBand(band: DailyVisitBand): Tone {
-  return DAILY_VISIT_TONES[band];
-}
-
-/** A daily-visit band as a small chip, matching {@link KpiBandChip}'s footprint. `null` — no
- * working days to measure — renders the same quiet "no data" tone `noplan` uses. */
-export function DailyVisitBandChip({ band }: { band: DailyVisitBand | null }) {
-  const tone = band ? toneOfDailyVisitBand(band) : TONES.noplan;
-  return (
-    <span className={`inline-block border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.1em] ${tone.chip}`}>
-      {band ? DAILY_VISIT_BAND_LABEL[band] : "No data"}
-    </span>
-  );
-}
+// A DailyVisitBand tone map and chip lived here briefly (2026-09-05), for a combined AM+PM
+// "visits/day" band the owner retracted the same week — see call-rate.ts's header comment where
+// DAILY_VISIT_RATE_TARGET used to be. The correct PM-only band lives in kpi-reports-tables.tsx.
 
 // ── Shared class strings ──────────────────────────────────────────────────────────────────────
 
@@ -183,20 +148,15 @@ export function KpiTile({
   caption,
   label,
   progress,
-  toneOverride,
   value,
 }: {
   band?: KpiBand;
   caption?: string;
   label: string;
   progress?: number | null;
-  /** Colours the tile from a tone that isn't a KpiBand — the daily-visit tile's "above" must not
-   * read as "elite", and coercing it into KpiBand would do exactly that. Takes precedence over
-   * `band` when both are given. */
-  toneOverride?: Tone;
   value: string;
 }) {
-  const tone = toneOverride ?? (band ? toneOf(band) : null);
+  const tone = band ? toneOf(band) : null;
   return (
     <div className="relative overflow-hidden border border-slate-200 bg-white px-4 py-3.5">
       <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>

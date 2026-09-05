@@ -58,12 +58,6 @@ export type KpiFilterableRow = {
   pharmacyRate: number | null;
   pharmacyVerified: number;
   pharmacyAttainmentPct: number | null;
-  /** Verified AM + PM visits per working day — the ONE place the split is deliberately summed. See
-   * call-rate.ts's DAILY_VISIT_RATE_TARGET. Null exactly when `hasCallRate` is false. */
-  visitsPerDay: number | null;
-  /** Where `visitsPerDay` sits against the owner's 8-12 band (2026-09-05). Null iff `visitsPerDay`
-   * is null — never folded into `"below"`. */
-  dailyVisitBand: "below" | "in-band" | "above" | null;
 
   /** THE DENOMINATOR OF BOTH PLAN KPIs — every doctor the plan names inside the scored window,
    * whether or not his day has arrived. See the window note in crm/kpis-board.ts. */
@@ -183,8 +177,6 @@ export const KPI_FLAGS = [
   "below-pm-target",
   "perfect-frequency",
   "below-coverage-floor",
-  "above-daily-visit-band",
-  "below-daily-visit-band",
 ] as const;
 
 export type KpiFlag = (typeof KPI_FLAGS)[number];
@@ -201,8 +193,6 @@ export const KPI_FLAG_LABEL: Record<KpiFlag, string> = {
   "below-pm-target": "Under the PM target",
   "perfect-frequency": "Every due doctor exactly on plan",
   "below-coverage-floor": "Below the 95% coverage floor",
-  "above-daily-visit-band": "Above 12 visits a day",
-  "below-daily-visit-band": "Below 8 visits a day",
 };
 
 /** One line saying what the flag is FOR, shown under the label in the filter panel. */
@@ -218,8 +208,6 @@ export const KPI_FLAG_HINT: Record<KpiFlag, string> = {
   "below-pm-target": "Verified afternoon calls came in under the PM target, judged on its own.",
   "perfect-frequency": "100% frequency. Exact is the only pass, so this is the real thing.",
   "below-coverage-floor": "Owner's floor, 2026-09-05: coverage should be no less than 95%.",
-  "above-daily-visit-band": "Owner's band, 2026-09-05: visits/day should average 8-12. A high count is a volume flag, not automatically a win — check the campaign share before reading it as strong.",
-  "below-daily-visit-band": "Owner's band, 2026-09-05: visits/day should average 8-12.",
 };
 
 /** Every flag that is true of this row. */
@@ -236,8 +224,6 @@ export function kpiFlagsOf(row: KpiFilterableRow): KpiFlag[] {
   if (row.hasCallRate && row.pmAttainmentPct != null && row.pmAttainmentPct < 100) flags.push("below-pm-target");
   if (row.hasMeasurablePlan && row.frequencyPct === 100) flags.push("perfect-frequency");
   if (row.meetsCoverageFloor === false) flags.push("below-coverage-floor");
-  if (row.dailyVisitBand === "above") flags.push("above-daily-visit-band");
-  if (row.dailyVisitBand === "below") flags.push("below-daily-visit-band");
   return flags;
 }
 

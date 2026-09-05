@@ -935,6 +935,7 @@ import { runPayrollInsuranceWageImportTests } from "./payroll-insurance-wage-imp
 import { runPayrollExportsTests } from "./payroll-exports.test.ts";
 import { runPayrollCopilotReportExportsTests } from "./payroll-copilot-report-exports.test.ts";
 import { runPayrollCopilotExpenseReviewTests } from "./payroll-copilot-expense-review.test.ts";
+import { runPayrollCopilotVacationSettlementTests } from "./payroll-copilot-vacation-settlement.test.ts";
 import { runPayrollCopilotHolidayBridgingTests } from "./payroll-copilot-holiday-bridging.test.ts";
 import { runDirectOrdersApprovalFlowTests } from "./direct-orders-approval-flow.test.ts";
 import { runDirectOrdersApprovalDetailNamesTests } from "./direct-orders-approval-detail-names.test.ts";
@@ -1407,10 +1408,14 @@ import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-ca
 import { runAdminProfileCreatedAtHydrationSafeTests } from "./admin-profile-created-at-hydration-safe.test.ts";
 
 import { runEmployeeSavePreservesSalaryTests } from "./employee-save-preserves-salary.test.ts";
+import { runEmployeePortalHeaderClockHydrationTests } from "./employee-portal-header-clock-hydration.test.ts";
+import { runReportItExportSubtitleCairoDateTests } from "./report-it-export-subtitle-cairo-date.test.ts";
 
 import { runEmployeeJobTitleCasingHintTests } from "./employee-job-title-casing-hint.test.ts";
 
 import { runPayrollHoldConfirmStepReasonTests } from "./payroll-hold-confirm-step-reason.test.ts";
+
+import { runReact418HydrationSafeTextTests } from "./react-418-hydration-safe-text.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2989,6 +2994,7 @@ await runTest("payroll insurance-wage import (parser)", runPayrollInsuranceWageI
 await runTest("payroll exports (bank file + statutory summary)", runPayrollExportsTests);
 await runTest("payroll copilot report exports (deduction/vacation/expense xlsx)", runPayrollCopilotReportExportsTests);
 await runTest("payroll copilot expense review (month-lag: pays prior month's outstation)", runPayrollCopilotExpenseReviewTests);
+await runTest("payroll copilot vacation settlement (defer/salary/reject never leave two live rows)", runPayrollCopilotVacationSettlementTests);
 await runTest("payroll copilot holiday bridging (mandatory before/after national-holiday deduction)", runPayrollCopilotHolidayBridgingTests);
 await runTest("payroll resignation-candidate visibility (additive batch-dashboard banner; stripping untouched)", runPayrollResignationCandidateVisibilityTests);
 await runTest("direct orders approval flow (ladder per role, sequential gating, caps flag not block, pharmacy-price value)", runDirectOrdersApprovalFlowTests);
@@ -4449,6 +4455,10 @@ await runTest(
 );
 
 await runTest("employee save preserves stored salary when the payload omits money fields", runEmployeeSavePreservesSalaryTests);
+await runTest(
+  "employee portal header 'today' chip defers to a mount effect (regression for React hydration error #418)",
+  runEmployeePortalHeaderClockHydrationTests,
+);
 
 await runTest(
   "employee job title casing hint (offers CEO/QPPV/SFE/R&D/HR and the minor-word fix; stays silent on QA/QC, eCommerce, Arabic and already-correct titles)",
@@ -4459,6 +4469,13 @@ await runTest(
   "confirming a payroll hold step enforces the hold reason too (the write path saveStep's rule did not cover, and the last one before publish drops the held rows)",
   runPayrollHoldConfirmStepReasonTests,
 );
+
+await runTest(
+  "report-it export subtitle date is Cairo-pinned via cairoDate(), not the runtime's own zone",
+  runReportItExportSubtitleCairoDateTests,
+);
+
+await runTest("hydration-safe Cairo text: engine-independent month names and a server-formatted password-setup expiry (React #418)", runReact418HydrationSafeTextTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
