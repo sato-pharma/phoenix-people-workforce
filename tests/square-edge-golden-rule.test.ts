@@ -233,10 +233,18 @@ const STYLESHEET_INVENTORY: Record<string, string[]> = {
  * mapping moves every `rounded-*` utility in the app at once, and now that the tokens read 0 such a
  * change would be a REGRESSION rather than a discovery.
  *
- * `--radius-3xl` and `--radius-4xl` are NOT from the token file — they are hard-coded in globals.css
- * and so survived an answer that covered the six `--phx-radius-*` names. `rounded-4xl` has no uses;
- * `rounded-3xl` has 32, every one inside a shell where RULE 1 forces 0. Inert today, and pinned here
- * so that a first use on an unswept surface is a decision rather than a surprise.
+ * `--radius-3xl` and `--radius-4xl` were the last two standing. They are NOT from the token file —
+ * they were written into globals.css as literals, so the answer naming the six `--phx-radius-*`
+ * could not reach them and they sat at 14px and 18px while everything around them went square.
+ * Zeroed 2026-09-05 on the owner's instruction, so the whole scale is now square at both layers.
+ *
+ * NOTHING RENDERED DIFFERENTLY, which is why they were easy to miss: `rounded-4xl` has no uses at
+ * all, and all 33 `rounded-3xl` uses sit inside a shell where RULE 1's `!important` already won.
+ * The value could only ever have shown on a surface outside both shells — and the four this file
+ * pins are exactly that, so the first such use would have rendered rounded with nothing to catch it.
+ *
+ * The names are kept rather than deleted: `rounded-3xl` stays a valid utility that now lands on
+ * square, where deleting it would break 33 call sites to no benefit.
  */
 const RADIUS_TOKEN_INVENTORY: Record<string, string[]> = {
   "src/styles/tokens.css": [
@@ -254,8 +262,8 @@ const RADIUS_TOKEN_INVENTORY: Record<string, string[]> = {
     "--radius-lg: var(--phx-radius)",
     "--radius-xl: var(--phx-radius-lg)",
     "--radius-2xl: var(--phx-radius-xl)",
-    "--radius-3xl: 14px",
-    "--radius-4xl: 18px",
+    "--radius-3xl: 0",
+    "--radius-4xl: 0",
   ],
 };
 
