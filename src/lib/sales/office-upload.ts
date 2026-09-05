@@ -13,6 +13,7 @@ import {
   type OfficeMappedProduct,
   type OfficeUnmappedName,
 } from "@/lib/sales/office-allocation";
+import { assertOfficeProductsOnAllowedLine } from "@/lib/sales/office-distributor";
 import { parseOfficePivotBuffer } from "@/lib/sales/office-pivot";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { normalizeAliasKey, normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
@@ -57,6 +58,9 @@ async function buildOfficeAllocation(input: { buffer: ArrayBuffer | Buffer; file
   const productByCode = new Map(references.products.map((p) => [normalizeCodeKey(p.productCode), p]));
   const mappedByCode = new Map<string, OfficeMappedProduct>();
   const unmappedNames: OfficeUnmappedName[] = [];
+  // The line each mapped product belongs to, captured here because the reference is already in
+  // hand. OfficeMappedProduct is declared in the locked allocation module and is not ours to widen.
+  const lineByCode = new Map<string, string>();
 
   for (const row of pivot.rows) {
     if (!(row.units > 0)) continue; // zero/negative office units contribute nothing — ignore
@@ -68,10 +72,25 @@ async function buildOfficeAllocation(input: { buffer: ArrayBuffer | Buffer; file
       unmappedNames.push({ productName: row.productName, units: row.units, rowNumber: row.rowNumber });
       continue;
     }
+    lineByCode.set(codeKey, reference.line);
     const existing = mappedByCode.get(codeKey);
     if (existing) existing.units += row.units;
     else mappedByCode.set(codeKey, { productCode: reference.productCode, productName: reference.productName, units: row.units, rowNumber: row.rowNumber });
   }
+
+  // The Office channel is CNS only — the owner's rule, stated again on 2026-09-05. Until now it was
+  // enforced NOWHERE: the closing simply declined to show a breakdown for another line, while this
+  // upload accepted the product and the locked value-share rule allocated it. Pedia's 2026-01 slice
+  // is what that looks like from the outside — Lacto Advanced 1 and 2, 556 units, spread across
+  // Pedia's areas and then hidden by the setting that was supposed to forbid them.
+  assertOfficeProductsOnAllowedLine(
+    [...mappedByCode.values()].map((product) => ({
+      line: lineByCode.get(normalizeCodeKey(product.productCode)) ?? "",
+      productCode: product.productCode,
+      productName: product.productName,
+      units: product.units,
+    })),
+  );
 
   const [regionShare, brickShare] = await Promise.all([
     loadOfficeRegionShare(input.period),
