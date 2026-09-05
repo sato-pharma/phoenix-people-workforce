@@ -152,7 +152,7 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
                 <CalendarClock className="h-4 w-4 shrink-0 text-slate-400" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-slate-900 whitespace-nowrap">{row.requestCode}</p>
-                  <p className="text-phx-xs text-slate-500 whitespace-nowrap">
+                  <p className="text-phx-xs text-slate-500">
                     {new Date(row.payDate).toLocaleDateString("en-GB", {
                       day: "2-digit",
                       month: "short",
@@ -186,8 +186,13 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
                 <tile.icon className="h-4 w-4" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-slate-800 whitespace-nowrap">{tile.label}</p>
-                <p className="text-phx-xs text-slate-500 whitespace-nowrap">{tile.description}</p>
+                {/* No `whitespace-nowrap` on either line. This card is `overflow-hidden`, so a pinned
+                    line is CLIPPED rather than scrolled: measured 2026-09-05 at 1024px, "Distributor
+                    sell-in by line, region, product" lost its last 20px and read "…region, produc",
+                    with the page reporting a clean 795/795 throughout. Wrapping is the remedy the
+                    golden rule allows (AGENTS.md §4); the ellipsis ban is untouched. */}
+                <p className="text-sm font-semibold text-slate-800">{tile.label}</p>
+                <p className="text-phx-xs text-slate-500">{tile.description}</p>
               </div>
             </Link>
           ))}

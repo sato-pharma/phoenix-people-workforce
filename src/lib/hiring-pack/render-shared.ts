@@ -166,9 +166,21 @@ export function describeDurationMonths(months: number | null | undefined): strin
  * font request failed is a worse failure than one that never depended on the network. Tahoma leads
  * because its Arabic metrics are the most predictable at small sizes, which is what a 19-article
  * contract on four A4 pages needs.
+ *
+ * THE NOTO ENTRIES ARE FOR THE SERVER, and they are load-bearing. Every face before them is a
+ * WINDOWS font and the container has none of them, so a filed or downloaded PDF fell through to
+ * ttf-freefont — which carries Arabic codepoints but does NOT shape them. Chromium drew each letter
+ * in its isolated form, so the words came apart into separate letters, and the wrong metrics turned
+ * a three-page contract into sixteen. Neither symptom names a font, which is why it survived until
+ * somebody opened a downloaded contract and said the font was wrong.
+ *
+ * DO NOT REMOVE THEM TO TIDY THE LIST. They are never reached on Windows, because Tahoma is first,
+ * and they are the only shaping face the server has. Installed by the Dockerfile's
+ * `font-noto-arabic`; the two must change together, which the print-banner test now pins.
  */
 export const ARABIC_FONT_STACK =
-  '"Tahoma", "Segoe UI", "Traditional Arabic", "Simplified Arabic", "Arial Unicode MS", Arial, sans-serif';
+  '"Tahoma", "Segoe UI", "Traditional Arabic", "Simplified Arabic", "Arial Unicode MS", ' +
+  '"Noto Sans Arabic", "Noto Naskh Arabic", Arial, sans-serif';
 
 /**
  * The banner every printable page carries on screen and never on paper.
@@ -183,9 +195,130 @@ export function printBanner(lines: string[]): string {
   const items = lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("");
   return `<div class="print-banner no-print">
     <button type="button" class="print-banner__action" onclick="window.print()">Print</button>
+    <a class="print-banner__action print-banner__action--ghost" id="phx-pdf" hidden download>Download PDF</a>
     <ul class="print-banner__list">${items}</ul>
-  </div>`;
+  </div>
+  ${DOWNLOAD_LINK_SCRIPT}`;
 }
+
+/**
+ * Point the Download PDF link at this same document, asked for as a file.
+ *
+ * THE HREF IS BUILT FROM `location`, not passed in, and that is the whole reason this works for
+ * every paper including ones added later: the renderers do not know the employee, the document key
+ * or the version being viewed — the ROUTE does, and the browser is already standing on that URL.
+ * Threading those three values through nine renderers to rebuild a URL they are already inside is
+ * how one of them ends up rebuilding it wrong.
+ *
+ * HIDDEN UNTIL PROVEN, because this banner is also served inside the fill screen's preview panel
+ * and by `file://` when a paper is opened from disk, where there is no route behind it. A dead
+ * button on a legal document reads as a broken system; an absent one reads as a screen that does
+ * not offer downloads.
+ *
+ * `preview=1` is dropped deliberately. Downloading the paper is not previewing it, and carrying the
+ * flag through would file the document as never printed.
+ */
+const DOWNLOAD_LINK_SCRIPT = `<script>
+  (function () {
+    // "clearanceEmployee-A-12.pdf". Built from the URL rather than the document's Arabic title:
+    // Windows rejects a colon, which every uploaded company template carries in its custom:<uuid>
+    // key, and a browser that cannot read the name falls back to the last path segment — which
+    // here would be the word "print" on every paper anyone ever saved.
+    var fileName = function (url) {
+      var parts = url.pathname.split("/").filter(Boolean);
+      var hrId = parts.length > 1 ? parts[parts.length - 2] : "document";
+      var doc = url.searchParams.get("document") || "document";
+      var safe = function (value) {
+        return value.replace(/[^A-Za-z0-9._-]+/g, "-");
+      };
+      return safe(doc) + "-" + safe(hrId) + ".pdf";
+    };
+
+    var link = document.getElementById("phx-pdf");
+    if (!link) return;
+    try {
+      var here = new URL(window.location.href);
+      if (here.protocol !== "https:" && here.protocol !== "http:") return;
+      // NO REGEX HERE, DELIBERATELY. This script is authored inside a template literal, where a
+      // backslash is an escape for the template and never reaches the browser: the first version
+      // of this line was /\/print\/?$/ in the source and arrived as //print/?$/ — a line
+      // comment — so the whole script died on a SyntaxError and the button stayed hidden on every
+      // document. Plain string work has no escape to lose.
+      var path = here.pathname;
+      while (path.length > 1 && path.charAt(path.length - 1) === "/") path = path.slice(0, -1);
+      if (path.slice(-6) !== "/print") return;
+      here.searchParams.set("format", "pdf");
+      here.searchParams.delete("preview");
+      here.searchParams.delete("inventory");
+      link.href = here.toString();
+      link.hidden = false;
+
+      // FETCHED RATHER THAN FOLLOWED, because the server spends ten to thirty seconds in Chromium
+      // and a plain <a download> shows NOTHING for all of it — no tab, no spinner, no progress.
+      // The button was reported as "appeared but not working" for exactly that reason: it was
+      // working, silently, and silence on a click reads as a broken button.
+      //
+      // It also means a refusal can be SHOWN. Following the link would navigate the print tab to a
+      // JSON error and lose the document; here the paper stays on screen and the reason is put on
+      // the button itself.
+      var idle = link.textContent;
+      var busy = false;
+      link.addEventListener("click", function (event) {
+        if (!window.fetch || !window.URL || !window.URL.createObjectURL) return; // let the href work
+        event.preventDefault();
+        if (busy) return;
+        busy = true;
+        link.textContent = "Preparing PDF…";
+        link.style.opacity = "0.65";
+
+        var done = function (message) {
+          busy = false;
+          link.style.opacity = "";
+          link.textContent = message || idle;
+          if (message) {
+            window.setTimeout(function () {
+              link.textContent = idle;
+            }, 6000);
+          }
+        };
+
+        window
+          .fetch(link.href, { credentials: "same-origin" })
+          .then(function (response) {
+            if (response.ok) return response.blob();
+            return response
+              .json()
+              .catch(function () {
+                return {};
+              })
+              .then(function (body) {
+                throw new Error(body && body.message ? body.message : "The PDF could not be built.");
+              });
+          })
+          .then(function (blob) {
+            var href = window.URL.createObjectURL(blob);
+            var save = document.createElement("a");
+            save.href = href;
+            save.download = fileName(here);
+            document.body.appendChild(save);
+            save.click();
+            document.body.removeChild(save);
+            window.setTimeout(function () {
+              window.URL.revokeObjectURL(href);
+            }, 30000);
+            done();
+          })
+          .catch(function (error) {
+            // The message is the server's own words where it sent any — a refusal names the file it
+            // could not read, which is the difference between a fixable report and a mystery.
+            done(String((error && error.message) || "Could not build the PDF"));
+          });
+      });
+    } catch (error) {
+      /* No link rather than a broken one. */
+    }
+  })();
+</script>`;
 
 export const PRINT_BANNER_CSS = `
   .print-banner {
@@ -199,6 +332,13 @@ export const PRINT_BANNER_CSS = `
   .print-banner__action {
     flex: 0 0 auto; padding: 8px 18px; border: 0; border-radius: 4px;
     background: #f8fafc; color: #0f172a; font: inherit; font-weight: 600; cursor: pointer;
+    text-decoration: none; line-height: 1.35;
+  }
+  /* The second action is secondary: Print is still the normal way a paper reaches a signing table,
+     and the download exists for the one thing printing cannot do — number the pages. */
+  .print-banner__action--ghost {
+    background: transparent; color: #f8fafc;
+    box-shadow: inset 0 0 0 1px rgba(248, 250, 252, 0.55);
   }
   .print-banner__list { margin: 0; padding-inline-start: 18px; }
   .print-banner__list li { margin: 0 0 2px; }

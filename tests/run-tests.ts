@@ -208,6 +208,8 @@ import { runCandidatePoolFiledSearchTests } from "./candidate-pool-filed-search.
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
 import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
 import { runCvLifecycleFeedTests } from "./cv-lifecycle-feed.test.ts";
+import { runCvLifecycleShareLinksScreenTests } from "./cv-lifecycle-share-links-screen.test.ts";
+import { runCvLifecycleSheetTokenRotationTests } from "./cv-lifecycle-sheet-token-rotation.test.ts";
 import { runHiringManagerTeamScopeTests } from "./hiring-manager-team-scope.test.ts";
 import { runManagerFolderShelfTests } from "./manager-folder-shelf.test.ts";
 import { runBackgroundReviewQueueTests } from "./background-review-queue.test.ts";
@@ -767,6 +769,7 @@ import { runHiringPackCustomTemplateRenderTests } from "./hiring-pack-custom-tem
 import { runHiringPackCustomTemplateTests } from "./hiring-pack-custom-templates.test.ts";
 import { runHiringDocumentFileSourceTests } from "./hiring-document-file-source.test.ts";
 import { runHiringPackPaperArtworkTests } from "./hiring-pack-paper-artwork.test.ts";
+import { runPrintBannerScriptTests } from "./print-banner-script.test.ts";
 import { runHiringPackPaperFilingTests } from "./hiring-pack-paper-filing.test.ts";
 import { runHiringPackDocumentRegistryTests } from "./hiring-pack-document-registry.test.ts";
 import { runHiringPackFieldLayoutTests } from "./hiring-pack-field-layout.test.ts";
@@ -899,6 +902,7 @@ import {
 } from "./direct-orders-unresolved-manager-rung.test.ts";
 import { runDirectOrderOperationalQueryTests } from "./direct-orders-operational-query.test.ts";
 import { runDirectOrderSecondReviewFixTests } from "./direct-orders-second-review-fixes.test.ts";
+import { runDirectOrderSalesMonthLockGuardTests } from "./direct-order-sales-month-lock-guard.test.ts";
 import { runFinanceManagerMonthlyClosingRowTests } from "./finance-manager-monthly-closing-row.test.ts";
 import { runFinanceManagerCalendarRowTests } from "./finance-manager-calendar-row.test.ts";
 import { runFinanceManagerArchivedRoiHiddenTests } from "./finance-manager-archived-roi-hidden.test.ts";
@@ -1049,6 +1053,7 @@ import { runAchievementHashableJoinKeyTests } from "./achievement-hashable-join-
 import { runDirectOrdersRegistryChainGrantsTests } from "./direct-orders-registry-chain-grants.test.ts";
 import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
+import { runClosingStoreSplitHonoursEvenSplitRegistryTests } from "./closing-store-split-honours-even-split-registry.test.ts";
 import { runClosingStoreSplitHonoursManualSplitTests } from "./closing-store-split-honours-manual-split.test.ts";
 import { runClosingStoreSplitRiskFollowupsTests } from "./closing-store-split-risk-followups.test.ts";
 import { runStoreSplitMatrixTests } from "./store-split-matrix.test.ts";
@@ -1218,6 +1223,7 @@ import { runRepoDoctorUnpushedCommitsTests } from "./repo-doctor-unpushed-commit
 import { runRepoDoctorArchiveRefsTests, runStrandedArchiveCases } from "./repo-doctor-archive-refs.test.ts";
 
 import { runCvExtractionNulByteTests } from "./cv-extraction-nul-bytes.test.ts";
+import { runCvContentFingerprintTests } from "./cv-content-fingerprint.test.ts";
 import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
 import { runCandidateNameFromCvTests } from "./candidate-name-from-cv.test.ts";
 import { runLegacyDocCvTests } from "./recruitment-legacy-doc-cv.test.ts";
@@ -1290,6 +1296,8 @@ import { runSosDashboardGroupMergeTests } from "./sos-dashboard-group-merge.test
 import { runWeeklyFieldForceTests } from "./weekly-field-force.test.ts";
 
 import { runEarlyBirdsFortnightCardWrapsTests } from "./early-birds-fortnight-card-wraps.test.ts";
+import { runPortalChromeNeverClipsTextTests } from "./portal-chrome-never-clips-text.test.ts";
+import { runAdminFilenameCellsNeverEllipsiseTests } from "./admin-filename-cells-never-ellipsise.test.ts";
 import { runPortalToolsGridFitsAPhoneTests } from "./portal-tools-grid-fits-a-phone.test.ts";
 
 import { runRecruitmentFolderCvPopupTests } from "./recruitment-folder-cv-popup.test.ts";
@@ -1299,6 +1307,8 @@ import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
 
 import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer.test.ts";
 import { runRepoDoctorNewestPrTests } from "./repo-doctor-newest-pr.test.ts";
+import { runSessionLockStalenessIsAgeTests } from "./session-lock-staleness-is-age.test.ts";
+import { runRepoDoctorOrphanedFoldersTests } from "./repo-doctor-orphaned-folders.test.ts";
 import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
 import { runOutstationMobileWizardStaleCalculationTests } from "./outstation-mobile-wizard-stale-calculation.test.ts";
 import { runOutstationPayrollPayableTotalAgreementTests } from "./outstation-payroll-payable-total-agreement.test.ts";
@@ -1691,6 +1701,14 @@ await runTest(
 await runTest(
   "CV lifecycle sheet (the day bucket is Cairo's, a backfilled mirror still counts on its arrival day, and no column claims the candidate's send time)",
   runCvLifecycleFeedTests,
+);
+await runTest(
+  "CV sheet links screen (the token is shown once and is never in the list, the page gate IS the API gate, and the feed cannot expire unannounced)",
+  runCvLifecycleShareLinksScreenTests,
+);
+await runTest(
+  "CV sheet token rotation (doPost fails closed, the origin can never come from the payload, and the old token dies only after the sheet proves it took the new one)",
+  runCvLifecycleSheetTokenRotationTests,
 );
 await runTest(
   "hiring-manager team scope (one National Sales Manager can NEVER read the other's candidates, and the picker is exactly the gate)",
@@ -2545,6 +2563,7 @@ await runTest("hiring pack field layer (a dragged default keeps its kind, an add
 await runTest("hiring pack company templates (a custom document cannot collide with a built-in, a page in pixels is refused, a new version writes beside the old artwork)", runHiringPackCustomTemplateTests);
 await runTest("hiring pack paper filing (a slot is matched on its pinned column not its name, a retired or missing slot refuses rather than guesses, a filed name survives a Windows download)", runHiringPackPaperFilingTests);
 await runTest("hiring pack paper artwork (a scan is embedded as bytes because setContent gives the page no origin, and an unreadable one is reported so filing refuses rather than storing a blank government form)", runHiringPackPaperArtworkTests);
+await runTest("print banner script (the Download PDF script must PARSE in a browser — a backslash lost to the template literal once made it a comment, and the button stayed hidden on every document with nothing red anywhere)", runPrintBannerScriptTests);
 await runTest("hiring document file source (every source reads back as itself so an issued paper is never reported as an upload, and the exhaustive badge Record is asserted at runtime because ignoreBuildErrors lets a missing key deploy)", runHiringDocumentFileSourceTests);
 await runTest("hiring pack company template printing (a blank template prints its artwork, pages print in upload order, an unfillable placeholder blanks the whole field rather than printing braces)", runHiringPackCustomTemplateRenderTests);
 await runTest("hiring pack document registry (every document — the ten in code and an uploaded one — resolves a name, a copy count and a surface at RUNTIME, which ignoreBuildErrors means the compiler cannot promise)", runHiringPackDocumentRegistryTests);
@@ -2787,6 +2806,7 @@ await runTest("direct orders registry replay (the migration chain must be replay
 await runTest("direct orders desk shell (every desk is framed by the workspace tab strip, and the strip has one definition)", runDirectOrderDeskShellTests);
 await runTest("direct orders operational query (scope is a WHERE clause applied before pagination and before the count; every tier fails closed)", runDirectOrderOperationalQueryTests);
 await runTest("direct orders second-review fixes (returned orders correct in place keeping their chain, no phantom draft queue, sales month approved-only server-side, Finance authority in one module)", runDirectOrderSecondReviewFixTests);
+await runTest("direct order sales month refuses a locked closing (the month and its sales move together, or neither moves)", runDirectOrderSalesMonthLockGuardTests);
 await runTest("finance manager monthly closing row (export-only surface not the upload workspace, both gates, no sales:import, full-sheet branch intact)", runFinanceManagerMonthlyClosingRowTests);
 await runTest("finance manager calendar row (authoring page off the sidebar, planning calendar on it, and BOTH gates of the destination pinned)", runFinanceManagerCalendarRowTests);
 await runTest("finance manager archived ROI hidden (removing the role is the fix; hiding the hub never was, because Cmd+K re-admits by role)", runFinanceManagerArchivedRoiHiddenTests);
@@ -3003,6 +3023,11 @@ await runTest(
 await runTest(
   "closing export honours a hand-split customer (441164 stays on D22/D26 at -400 units / -34,380; detection reads the FACT area, not the brick-resolved one)",
   runClosingStoreSplitHonoursManualSplitTests,
+);
+
+await runTest(
+  "closing store split honours the even-split registry (EZ 1011654 keeps its whole month on Cairo East 1; the DB already shared it, so the city rule must not share it again)",
+  runClosingStoreSplitHonoursEvenSplitRegistryTests,
 );
 
 await runTest(
@@ -3853,6 +3878,12 @@ await runTest(
 );
 
 await runTest(
+  "CV content fingerprint (stays MD5 so it compares against storage's eTag, is written at upload, "
+    + "and is consulted BEFORE createCandidate — after it, the duplicate record already exists)",
+  runCvContentFingerprintTests,
+);
+
+await runTest(
   "CV extraction NUL bytes (a U+0000 in a CV cannot reach jsonb — Postgres 22P05 loses the whole "
     + "read and leaves the candidate unreadable forever)",
   runCvExtractionNulByteTests,
@@ -4038,6 +4069,14 @@ await runTest(
 await runTest("weekly field force (line+area -> rep, units never summed across products, exact vs allocated)", runWeeklyFieldForceTests);
 
 await runTest("stars of the fortnight card wraps on a phone (no whitespace-nowrap, no truncate, no overflow-x-auto)", runEarlyBirdsFortnightCardWrapsTests);
+await runTest(
+  "portal chrome never clips text (header role label, MM intel tiles, GlanceStrip columns)",
+  runPortalChromeNeverClipsTextTests,
+);
+await runTest(
+  "admin filename cells never ellipsise (payroll batch File column, distributor import File column)",
+  runAdminFilenameCellsNeverEllipsiseTests,
+);
 await runTest("portal tile grids are single-column on a phone (a PremiumNavTile floor is 172px; two columns give 146px at 320px)", runPortalToolsGridFitsAPhoneTests);
 
 await runTest("recruitment folder row opens the CV in place (modal + download, never the ?candidate= redirect)", runRecruitmentFolderCvPopupTests);
@@ -4046,6 +4085,21 @@ await runTest("repo-doctor never advises pnpm install in a worktree (restore is 
 await runTest("no source-pinning test strips comments with a regex that eats the code it pins", runCommentStripRatchetTests);
 
 await runTest("repo-doctor offers only what --strip-idle will actually reclaim", runRepoDoctorStripIdleOfferTests);
+await runTest(
+  "a session lock is stale by AGE alone, and no shipped text teaches the PID rule (the lock stores "
+    + "the hook's own short-lived parent shell, so EVERY lock names a dead PID — the weekly hygiene "
+    + "task believed that rule and had been deleting live sessions' locks)",
+  runSessionLockStalenessIsAgeTests,
+);
+await runTest(
+  "a deregistered worktree folder holding files is REPORTED, by name and by content, and is never "
+    + "reachable from --fix (a leftover .git stub used to file it under LIVE, and the bucket without "
+    + "one printed a file count that cannot tell a leftover checkout from the only copy of an "
+    + "afternoon's work; every unknown — unhashable file, unreadable main tree, capped scan, "
+    + "unreadable folder — refuses to print as safe, and a gitignored env copy stays quiet while a "
+    + "stray .xlsx does not)",
+  runRepoDoctorOrphanedFoldersTests,
+);
 await runTest(
   "a worktree is retirable off its NEWEST pull request, never off a stale merged one (a branch "
     + "reused after a squash merge reads as retirable from `--state merged`, and the `git branch -D` "

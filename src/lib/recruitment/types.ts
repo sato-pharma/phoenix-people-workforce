@@ -9,7 +9,7 @@
 import type { CandidateAppliedFor } from "@/lib/recruitment/applied-for";
 // Type-only, so the cycle with candidate-folder.ts (which imports `Candidate` from here) is erased
 // at compile time and never reaches the bundle — same shape as the applied-for import above.
-import type { CandidateFolderKind } from "@/lib/recruitment/candidate-folder";
+import type { CandidateStorageFolderKind } from "@/lib/recruitment/candidate-folder";
 import type { CandidateUnconfirmedCvFacts } from "@/lib/recruitment/candidate-screening-facts";
 
 export const RECRUITMENT_MODULE_KEY = "recruitment" as const;
@@ -345,7 +345,8 @@ export type Candidate = {
    * `key` means whatever `kind` says it means — an area name, a region CODE, or a job title.
    */
   folder: {
-    kind: CandidateFolderKind;
+    // The four shelves OR the duplicate archive — see candidateStorageFolderKinds.
+    kind: CandidateStorageFolderKind;
     key: string;
     filedAt: string;
     filedByHrId: string | null;

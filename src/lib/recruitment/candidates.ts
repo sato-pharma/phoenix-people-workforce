@@ -11,14 +11,22 @@ import { candidateAppliedFor, freeAppliedForEvidence } from "@/lib/recruitment/a
 import { isBackgroundConfirmationOutcome } from "@/lib/recruitment/background-review";
 import {
   candidateFolderRefusal,
+  DUPLICATE_FOLDER_KEY,
+  DUPLICATE_FOLDER_KIND,
+  isStorableFolderKind,
   cleanFolderKey,
-  isCandidateFolderKind,
   PARAMEDICAL_FOLDER_KEY,
 } from "@/lib/recruitment/candidate-folder";
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
 import type { CandidateUnconfirmedCvFacts } from "@/lib/recruitment/candidate-screening-facts";
 import { chunkIds } from "@/lib/recruitment/db-batch";
-import { listSendsForManager, managerSendStamp, type ManagerSend } from "@/lib/recruitment/manager-sends";
+import {
+  isAfter,
+  listLatestSendByCandidate,
+  listSendsForManager,
+  managerSendStamp,
+  type ManagerSend,
+} from "@/lib/recruitment/manager-sends";
 import { hrIdForStorage, hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id";
 import {
   listHiringManagerOptions,
@@ -32,6 +40,7 @@ import {
   normalizeEmail,
   normalizeNationalId,
   normalizePhone,
+  type CandidateMatchReason,
   type MatchableCandidate,
 } from "@/lib/recruitment/candidate-matching";
 import {
@@ -76,7 +85,7 @@ import type {
 export type CandidateUpsertResult = {
   candidate: Candidate;
   created: boolean;
-  matchReason?: "national_id" | "email" | "phone";
+  matchReason?: CandidateMatchReason;
 };
 
 function candidatePayload(input: CreateCandidateInput, access: AccessContext) {
@@ -486,15 +495,100 @@ async function loadNotACvCandidates(ids: string[]): Promise<Set<string>> {
   return notACv;
 }
 
-export async function listCandidates(): Promise<Candidate[]> {
+/**
+ * Every column `mapCandidate` reads EXCEPT `position_specific_fields`.
+ *
+ * WHY IT IS WORTH SPELLING OUT 71 COLUMNS. `position_specific_fields` is the repeating CV blocks —
+ * work history, education history, certifications, skills, languages — and measured on production
+ * 2026-09-05 it is 1,221 kB of the 2,053 kB that a whole-pool `select("*")` moves: 59.4% of the
+ * bytes, for 744 candidates, on every single load.
+ *
+ * The screening queue reads NONE of it. Its whole derive chain — candidate-screening-facts,
+ * applied-for, screening-order, role-fit, red-flag — has zero references to the field, and the
+ * three enrichments this function runs afterwards have zero as well. The workstation already knew
+ * this column was the expensive one and stopped shipping it to the BROWSER; this is the same fix
+ * applied one hop earlier, to the read that crosses from Frankfurt to Amsterdam.
+ *
+ * KEPT IN STEP BY A TEST, NOT BY CARE. `tests/recruitment-screening-page.test.ts` re-derives this
+ * list from mapCandidate's own source and fails if the two drift, because the failure mode is
+ * silent: a column added by a later migration and mapped here but missing from this list does not
+ * error — mapCandidate simply reads `undefined` and maps it to null, and the field is quietly blank
+ * on every screen fed by the slim read.
+ */
+export const CANDIDATE_COLUMNS_WITHOUT_REPEATING_BLOCKS =
+  "address,applied_for_evidence,applied_for_job_title,background_confirmed_at,background_confirmed_by_hr_id," +
+  "background_confirmed_outcome,created_at,created_by,current_employer,current_job_title," +
+  "current_role_responsibilities,cv_external_url,cv_reference_name,date_of_birth,declared_background," +
+  "declared_expected_salary,declared_experience,degree,email,expected_salary,faculty,folder_filed_at," +
+  "folder_filed_by_hr_id,folder_key,folder_kind,full_name,gender,governorate,grade,graduation_year," +
+  "has_medical_rep_experience,has_prior_work_experience,id,linkedin_url,manager_notified_area," +
+  "manager_notified_at,manager_notified_hr_id,manager_notified_job_title,manager_notified_name," +
+  "manager_notified_region,marital_status,medical_rep_employer,medical_rep_experience_from," +
+  "medical_rep_experience_to,military_status,national_id,nationality,notes,notice_period,phone," +
+  "place_of_birth,preferences_declared_at,preferred_area_name,preferred_region_code," +
+  "preferred_region_name,professional_summary,screening_extra_answers,sent_for_area,sent_for_job_title," +
+  "sent_for_line,sent_for_region,sent_for_vacancy_id,source,status,status_changed_at," +
+  "status_changed_by_hr_id,status_note,university,updated_at,whatsapp,years_experience";
+
+/**
+ * The whole live candidate pool.
+ *
+ * `withRepeatingCvBlocks: false` drops `position_specific_fields` from the read — 59% of the bytes,
+ * and unread by every list-shaped caller. Candidates come back with `positionSpecificFields` as an
+ * EMPTY OBJECT on that path, indistinguishable from a candidate who genuinely has none, so it is
+ * opt-in and the default is unchanged: a caller that renders those blocks must not pass it.
+ */
+export async function listCandidates(
+  options: { withRepeatingCvBlocks?: boolean } = {},
+): Promise<Candidate[]> {
+  const columns =
+    options.withRepeatingCvBlocks === false ? CANDIDATE_COLUMNS_WITHOUT_REPEATING_BLOCKS : "*";
   const rows = await selectEveryCandidateRow((table) =>
-    table.select("*").order("created_at", { ascending: false }),
+    table.select(columns).order("created_at", { ascending: false }),
   );
   const candidates = rows.map(mapCandidate);
-  // Concurrently: the two enrichments touch different fields on the same objects and neither reads
-  // the other's output, so serialising them would only add a second Atlantic round trip to a page
-  // that already waits on one.
-  await Promise.all([attachAppliedFor(candidates), attachUnconfirmedCvFacts(candidates)]);
+  // Concurrently: the three reads touch different fields on the same objects and none reads
+  // another's output, so serialising them would only add Atlantic round trips to a page that
+  // already waits on one.
+  const [, , latestSends] = await Promise.all([
+    attachAppliedFor(candidates),
+    attachUnconfirmedCvFacts(candidates),
+    listLatestSendByCandidate(),
+  ]);
+
+  // ── WHO HAS THIS CV, RESOLVED ONCE FOR EVERY SCREEN ─────────────────────────────────────────────
+  //
+  // `manager_notified_*` on the candidate row is the pre-2026-08-30 single-manager record: it holds
+  // whoever was sent the CV LAST and the next send overwrites it. `ats_candidate_manager_sends` is
+  // the fan-out that replaced it. Reading either ALONE has a window where it is wrong, and
+  // production has carried rows where they disagreed outright — a CV sent to Saad Salama on 31 Aug
+  // 2026 with both candidate columns NULL, and one re-sent to Dr Anwar Gaweesh on 1 Sep whose row
+  // still named the earlier manager.
+  //
+  // IT LIVES HERE, not in one page's loader, and that is the point. The screening queue got this
+  // overlay on 2026-09-05 and the candidate pool did not, so the two screens answered "was this
+  // sent, and to whom" from different sources — the same pool, two truths, and nothing on either
+  // screen to say which was right. Every caller of this function reads the whole pool for a person
+  // to look at, so every one of them wants the same answer.
+  //
+  // THE POSITION MOVES ONLY WHEN THE NEWER SEND HAS ONE. A third of production's sends (24 of 72)
+  // carry no position at all, and `hiring-manager-notify.ts` omits the `sent_for_*` columns entirely
+  // for those — so the previous seat STANDS in the database. Overwriting it here with the new send's
+  // empty position would not move the seat, it would erase one, and this module would then contradict
+  // the row it just read.
+  //
+  // A null map means the table is not in this database yet, and then the old columns stand — exactly
+  // how every screen behaved before the fan-out existed.
+  if (latestSends) {
+    for (const candidate of candidates) {
+      const send = latestSends.get(candidate.id);
+      if (!send) continue;
+      if (!isAfter(send.sentAt, candidate.managerNotified?.sentAt ?? null)) continue;
+      const stamp = managerSendStamp(send);
+      candidate.managerNotified = stamp.managerNotified;
+      if (stamp.sentFor) candidate.sentFor = stamp.sentFor;
+    }
+  }
   // Advisory soft-duplicate flags across the whole pool (same phone-tail / normalized name). A
   // "worth a look" marker for Talent Acquisition — nothing here merges anything by itself; the flag
   // is what the merge button in the pool reads, and a person presses it (candidate-merge.ts).
@@ -733,7 +827,9 @@ export async function fileCandidateToFolder(
   kind: string,
   key: string,
 ): Promise<Candidate> {
-  if (!isCandidateFolderKind(kind)) {
+  // Storable, not just a shelf: the duplicate archive shares these columns and is not one of the
+  // four the owner named. See DUPLICATE_FOLDER_KIND for why the two vocabularies are separate.
+  if (!isStorableFolderKind(kind)) {
     throw new Error(`"${String(kind ?? "").trim()}" is not a folder kind.`);
   }
   const cleanKey = cleanFolderKey(key);
@@ -746,11 +842,20 @@ export async function fileCandidateToFolder(
   // screen lists and nobody would think to look in. The CV would be filed, gone from the pool, and
   // effectively lost. Normalised here rather than in the route so that every caller is covered by
   // one rule: the recruiter's picker, and confirmCandidateBackground below it.
-  const folderKey = kind === "paramedical" ? PARAMEDICAL_FOLDER_KEY : cleanKey;
+  // The duplicate shelf holds ONE folder for the same reason and by the same mechanism.
+  const folderKey =
+    kind === "paramedical"
+      ? PARAMEDICAL_FOLDER_KEY
+      : kind === DUPLICATE_FOLDER_KIND
+        ? DUPLICATE_FOLDER_KEY
+        : cleanKey;
 
   const existing = await getCandidate(id);
   if (!existing) throw new Error("Candidate not found.");
-  const refusal = candidateFolderRefusal(existing);
+  // The KIND decides the rule. Position shelves refuse a rejected CV — they are for good CVs waiting
+  // on a seat — while the duplicate shelf is a discard of a redundant record and must be able to
+  // take one, since a duplicate is at least as likely to be rejected as anything else.
+  const refusal = candidateFolderRefusal(existing, kind);
   if (refusal) throw new Error(refusal);
 
   const filedAt = new Date().toISOString();

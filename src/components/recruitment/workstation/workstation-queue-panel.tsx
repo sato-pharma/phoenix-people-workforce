@@ -36,6 +36,15 @@ import { cn } from "@/lib/utils";
 /** "Everyone" sits under its own divider — it is the escape from a narrowing, not a narrowing. */
 const NEEDS_ATTENTION: readonly ScreeningWorkQueue[] = screeningWorkQueues.filter((queue) => queue !== "all");
 
+/**
+ * Piles that are NOT somebody waiting on the reader, and so are not in the folded header's total.
+ *
+ * `red_flagged` is the opposite of work: it is the pile of CVs that need no further attention
+ * because nobody can hire them. Counting it under "waiting" would inflate that number by 97 of 597
+ * (measured 2026-09-05) and make the one figure the folded rail shows meaningless.
+ */
+const NOT_WAITING_ON_ANYBODY: readonly ScreeningWorkQueue[] = ["red_flagged"];
+
 export function WorkstationQueuePanel({
   counts,
   onCollapse,
@@ -61,7 +70,18 @@ export function WorkstationQueuePanel({
   const statsById = new Map(vacancyStats.map((stats) => [stats.vacancyId, stats] as const));
   // What the folded header reports. `all` is excluded on purpose — "everyone in the pool" is not
   // something waiting on anybody, and adding it would make the collapsed rail read 581.
-  const attentionCount = NEEDS_ATTENTION.reduce((total, key) => total + counts[key], 0);
+  const attentionCount = NEEDS_ATTENTION.filter((key) => !NOT_WAITING_ON_ANYBODY.includes(key)).reduce(
+    (total, key) => total + counts[key],
+    0,
+  );
+
+  // A PILE THAT CAN NEVER FILL IS WORSE THAN NO PILE — it teaches the eye to skip the rail.
+  //
+  // "Interviews today" has read 0 since the day it shipped, and structurally: one interview row has
+  // ever existed in production and none carries a scheduled_at, because interviews are not booked in
+  // Phoenix. Hidden while empty rather than deleted, so it returns by itself the day somebody
+  // schedules one — the classifier still computes it and nothing else changes.
+  const visibleQueues = NEEDS_ATTENTION.filter((key) => key !== "interviews" || counts.interviews > 0);
 
   return (
     <div className="flex h-full min-h-0 flex-col border-r border-phx-line bg-white">
@@ -71,7 +91,7 @@ export function WorkstationQueuePanel({
             the vacancy list is the long half — 20-odd open seats — and a recruiter working one pile
             all morning wants it out of the way without losing "how many are waiting on me". */}
         <CollapsibleSection right={`${attentionCount} waiting`} storageKey="queue:attention" title="Needs attention">
-          {NEEDS_ATTENTION.map((key) => (
+          {visibleQueues.map((key) => (
             <QueueButton
               active={queue === key}
               count={counts[key]}

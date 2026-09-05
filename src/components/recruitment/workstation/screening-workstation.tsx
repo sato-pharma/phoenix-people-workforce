@@ -51,9 +51,10 @@ import {
   type ScreeningWorkQueue,
   type WorkQueueCounts,
 } from "@/lib/recruitment/screening-queues";
+import { DUPLICATE_FOLDER_KEY, DUPLICATE_FOLDER_KIND } from "@/lib/recruitment/candidate-folder";
 import { FREE_POSITION, NO_POSITION } from "@/components/recruitment/vacancy-picker";
 import { primaryCvFile } from "@/lib/recruitment/cv-file-choice";
-import type { StoredCvExtraction } from "@/lib/recruitment/cv-extraction-fields";
+import type { ExtractedCvValue, StoredCvExtraction } from "@/lib/recruitment/cv-extraction-fields";
 import type {
   WorkspaceCandidateRow,
   WorkspaceManager,
@@ -164,6 +165,8 @@ export function ScreeningWorkstation({
   const [decided, setDecided] = useState<Record<string, CandidateStatus>>({});
   const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
   const [sentInSession, setSentInSession] = useState<Record<string, string>>({});
+  /** Archived to the Duplicates shelf in this session - dropped from the list without a reload. */
+  const [archived, setArchived] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [sendState, setSendState] = useState<SendState>({
@@ -182,6 +185,8 @@ export function ScreeningWorkstation({
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return rows.filter((row) => {
+      // Archived in this session: gone from every pile at once, the way a reload would show it.
+      if (archived[row.id]) return false;
       if (queue !== "all" && !row.queues.includes(queue)) return false;
       if (vacancyId !== null && !row.vacancyIds.includes(vacancyId)) return false;
       if (!needle) return true;
@@ -198,11 +203,24 @@ export function ScreeningWorkstation({
         .filter(Boolean)
         .some((field) => String(field).toLowerCase().includes(needle));
     });
-  }, [queue, rows, search, vacancyId]);
+  }, [archived, queue, rows, search, vacancyId]);
 
+  // FROM THE VISIBLE LIST, not from every row the server sent.
+  //
+  // This searched `rows`, which is the whole server-filtered pool — so a selection the CLIENT
+  // narrowing had hidden was still "selected": the list rendered its empty state while the pane
+  // beside it showed a candidate, with a live Shortlist / Reject / Send-to-manager header for
+  // somebody not in the pile being looked at. `queue` defaults to "new" and the correcting effect
+  // below deliberately bails on an empty list, so "Interviews today" — 0 in production, and
+  // structurally 0 while no interview carries a scheduled_at — reproduced it in one click.
+  //
+  // Only the DERIVED value changes. `selectedId` is still remembered, so switching to an empty pile
+  // blanks the pane and switching back restores the same CV; the reader never loses their place for
+  // having looked. That is also what the comment further down has always claimed this does: "a
+  // selection that has dropped out of the list is not a selection".
   const selected = useMemo(
-    () => rows.find((row) => row.id === selectedId) ?? null,
-    [rows, selectedId],
+    () => visible.find((row) => row.id === selectedId) ?? null,
+    [visible, selectedId],
   );
 
   // The selection follows the list only when the list has moved out from under it. Re-selecting on
@@ -300,6 +318,9 @@ export function ScreeningWorkstation({
 
   const decide = useCallback(
     async (status: CandidateStatus, note: string | null) => {
+      // `selected`, not `selectedId`: a decision must never land on a candidate the list in front of
+      // the reader is not showing. `selected` is null exactly when that is the case.
+      const selectedId = selected?.id;
       if (!selectedId || busy) return;
       setBusy(true);
       setActionError(null);
@@ -321,8 +342,18 @@ export function ScreeningWorkstation({
         setBusy(false);
       }
     },
-    [busy, goToNext, selectedId],
+    [busy, goToNext, selected],
   );
+
+  /**
+   * Every (candidate, manager) this session has already confirmed a send for.
+   *
+   * A ref, not state: nothing renders from it, and it must not be reset by a re-render mid-send. It
+   * lives for the life of the page, so a genuine re-send is a reload — deliberately, because the
+   * accident it prevents (a manager notified twice about one CV) is not recallable and the case it
+   * blocks is rare.
+   */
+  const sentPairs = useRef<Set<string>>(new Set());
 
   /**
    * Send this CV to everyone chosen — one request per manager, in sequence.
@@ -335,9 +366,30 @@ export function ScreeningWorkstation({
    * PARTIAL SUCCESS IS REPORTED AS PARTIAL. Three sends where the second fails must not read as
    * "sent" and must not read as "failed" — the second lie would have a recruiter re-send to the two
    * managers who already have it.
+   *
+   * AND A SECOND PRESS DOES NOT SEND IT TWICE. The only guard used to be `busy`, which is false again
+   * the moment the last request returns — and nothing cleared the picker, so the panel came back
+   * enabled with the same managers still selected. One more click was a second REAL notification:
+   * the alert's idempotency key is built from the send timestamp (candidateAlertIdempotencyKey), so
+   * it does not dedupe, and a manager was told twice about the same CV.
+   *
+   * Guarded per (candidate, manager) rather than by clearing the picker, because the picker holding
+   * its selection across candidates is the batch workflow — screening a pile for one seat and
+   * sending each one as you go. Clearing it would have fixed the double press by breaking that.
    */
   const send = useCallback(async () => {
+    // Same rule as `decide`: never send a CV the visible list is not showing.
+    const selectedId = selected?.id;
     if (!selectedId || busy || sendState.managerHrIds.length === 0) return;
+    // Everyone selected has already had this CV in this session — the shape of a double press.
+    const targets = sendState.managerHrIds.filter((hrId) => !sentPairs.current.has(`${selectedId}:${hrId}`));
+    if (targets.length === 0) {
+      const names = sendState.managerHrIds
+        .map((hrId) => hiringManagers.find((manager) => manager.hrId === hrId)?.name ?? "that manager")
+        .join(", ");
+      setActionError(`This CV has already gone to ${names}. Reload the page to send it again.`);
+      return;
+    }
     setBusy(true);
     setActionError(null);
     // A picked vacancy sends only its ID — the server reads the seat back and stamps that, so the
@@ -351,7 +403,7 @@ export function ScreeningWorkstation({
           : {};
     const sent: string[] = [];
     const failed: string[] = [];
-    for (const managerHrId of sendState.managerHrIds) {
+    for (const managerHrId of targets) {
       const localName = hiringManagers.find((manager) => manager.hrId === managerHrId)?.name ?? "that manager";
       try {
         const res = await fetch(`/api/recruitment/candidates/${selectedId}/notify-manager`, {
@@ -361,6 +413,9 @@ export function ScreeningWorkstation({
         });
         const data = (await res.json().catch(() => ({}))) as { result?: { managerName?: string }; message?: string };
         if (!res.ok) throw new Error(data.message ?? `Could not send this CV to ${localName}.`);
+        // Recorded only on a CONFIRMED send. A failure must stay retryable — marking the pair here
+        // regardless would turn one network blip into a CV nobody can ever send to that manager.
+        sentPairs.current.add(`${selectedId}:${managerHrId}`);
         // The name the SERVER confirmed — it is the thing that knows who was actually told, and no
         // raw HR_ID ever reaches a person.
         sent.push(data.result?.managerName ?? localName);
@@ -371,7 +426,96 @@ export function ScreeningWorkstation({
     if (sent.length > 0) setSentInSession((prev) => ({ ...prev, [selectedId]: sent.join(", ") }));
     if (failed.length > 0) setActionError(`Could not send this CV to ${failed.join(", ")}.`);
     setBusy(false);
-  }, [busy, hiringManagers, selectedId, sendState]);
+  }, [busy, hiringManagers, selected, sendState]);
+
+  /**
+   * Put this record on the Duplicates shelf.
+   *
+   * A SHELF, not a delete - fileCandidateToFolder writes folder_kind/key/filed_at and the pool
+   * filter drops it; every byte of the candidate, its files and its history stays, and it can be put
+   * back from the folder. That is the whole reason a one-click action is defensible on evidence this
+   * weak: the worst outcome of a wrong press is a CV in the wrong folder, not a lost applicant.
+   *
+   * Optimistic on the LIST only. The row is dropped locally so the reader moves on, and the server's
+   * own counts are refreshed on the next load - the same rule the decision path already follows.
+   */
+  const archiveDuplicate = useCallback(
+    async (candidateId: string) => {
+      if (busy) return;
+      setBusy(true);
+      setActionError(null);
+      try {
+        const res = await fetch(`/api/recruitment/candidates/${candidateId}/folder`, {
+          body: JSON.stringify({ key: DUPLICATE_FOLDER_KEY, kind: DUPLICATE_FOLDER_KIND }),
+          headers: { "Content-Type": "application/json" },
+          method: "PATCH",
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as { message?: string };
+          throw new Error(data.message ?? "Could not archive this CV.");
+        }
+        setArchived((prev) => ({ ...prev, [candidateId]: true }));
+        goToNext();
+      } catch (caught) {
+        setActionError(caught instanceof Error ? caught.message : "Could not archive this CV.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, goToNext],
+  );
+
+  /**
+   * Write ONE reader finding onto the candidate record.
+   *
+   * The reason this exists at all: `cv-auto-apply.ts` writes a finding unattended only at high
+   * confidence, and that gate is correct. But for a candidate created by automatic intake there was
+   * no screen where a human ever saw the low-confidence proposals, so they waited for a review that
+   * never came — 215 candidates carrying a good yearsExperience against a null column on 2026-09-05,
+   * and 120 carrying a nationalId on a pool holding four. This puts them in front of the one person
+   * already reading the CV.
+   *
+   * ONE FIELD PER PRESS, deliberately. These are the readings the extractor itself hedged on, so a
+   * person confirms each against the document in front of them; a bulk "apply everything" would be
+   * the unattended write the confidence gate exists to prevent, wearing a button.
+   *
+   * The route is schema-driven (`listWritableCvFields`), so no allow-list here can drift from the
+   * field registry — and `updateCandidate` recomputes `national_id_norm` on write, which is what
+   * makes an accepted national id immediately usable by the locked identity rule.
+   */
+  const acceptReaderFinding = useCallback(
+    async (fieldKey: string, value: ExtractedCvValue) => {
+      const candidateId = selected?.id;
+      if (!candidateId || busy) return;
+      setBusy(true);
+      setActionError(null);
+      try {
+        const res = await fetch(`/api/recruitment/candidates/${candidateId}`, {
+          body: JSON.stringify({ [fieldKey]: value }),
+          headers: { "Content-Type": "application/json" },
+          method: "PATCH",
+        });
+        const data = (await res.json().catch(() => ({}))) as { candidate?: Candidate; message?: string };
+        if (!res.ok) throw new Error(data.message ?? "Could not save that reading.");
+        // Replace the cached record with the SERVER's, so the row stops offering a finding that is
+        // now saved. Trusting a locally patched copy would leave the button on screen until reload
+        // whenever the server normalised the value differently from the reader's raw proposal.
+        const saved = data.candidate;
+        if (saved) {
+          setLoaded((prev) => {
+            const entry = prev[candidateId];
+            if (!entry) return prev;
+            return { ...prev, [candidateId]: { ...entry, profile: { ...entry.profile, candidate: saved } } };
+          });
+        }
+      } catch (caught) {
+        setActionError(caught instanceof Error ? caught.message : "Could not save that reading.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, selected],
+  );
 
   const suggestedVacancyIds = selected?.vacancyIds ?? [];
 
@@ -528,7 +672,12 @@ export function ScreeningWorkstation({
                   vacancies={vacancies}
                 />
                 {selected.duplicateCount > 1 ? (
-                  <DuplicateBanner onOpen={openCandidate} row={selected} />
+                  <DuplicateBanner
+                    archiving={busy}
+                    onArchive={(id) => void archiveDuplicate(id)}
+                    onOpen={openCandidate}
+                    row={selected}
+                  />
                 ) : null}
                 <div className="min-h-0 flex-1">
                   <WorkstationCvPane
@@ -561,10 +710,13 @@ export function ScreeningWorkstation({
               loadError={entryError}
               loading={Boolean(activeId) && !entry && !entryError}
               noteCount={selected ? (noteCounts[selected.id] ?? selected.noteCount) : 0}
+              onAcceptField={canWriteNotes ? (key, value) => void acceptReaderFinding(key, value) : null}
               onCollapse={() => setPanelOpen(false)}
               onNoteCountChange={(count) => {
-                if (!selectedId) return;
-                setNoteCounts((prev) => ({ ...prev, [selectedId]: count }));
+                // Keyed on the VISIBLE selection, like every other write on this screen — the panel
+                // is fed from `selected`, so counting a note against anything else is impossible.
+                if (!selected) return;
+                setNoteCounts((prev) => ({ ...prev, [selected.id]: count }));
               }}
               onTabChange={setTab}
               tab={tab}
@@ -585,18 +737,41 @@ export function ScreeningWorkstation({
  * both records can tell those apart. So this names the other record and offers to open it; the
  * merge lives on the candidate's own screen, where the whole of both records is visible.
  */
+/**
+ * The pair, the EVIDENCE behind it, and the one action that resolves it.
+ *
+ * The sentence names what was actually matched rather than asserting a duplicate, because neither
+ * signal is proof: candidate-matching.ts keeps the identity rule LOCKED to national ID then email —
+ * neither of which has a single collision in production — and records that phone matching once
+ * "merged three different applicants into one record". Families share a handset; Egyptian names
+ * repeat. So this reports, offers both records to read, and lets a PERSON archive one.
+ *
+ * Archiving is a SHELF, not a delete: the row, its files and its history stay, and the CV can be put
+ * back in the pool from the Duplicates folder. That is what makes a one-click action safe on
+ * evidence this weak.
+ */
 function DuplicateBanner({
+  archiving,
+  onArchive,
   onOpen,
   row,
 }: {
+  archiving: boolean;
+  onArchive: (id: string) => void;
   onOpen: (id: string) => void;
   row: WorkspaceCandidateRow;
 }) {
+  const evidence =
+    row.duplicateReason === "phone"
+      ? "share this phone number"
+      : row.duplicateReason === "name"
+        ? "carry this same name"
+        : "look like the same person";
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-phx-warn-line bg-phx-warn-bg px-4 py-1.5">
       <Layers aria-hidden className="h-3.5 w-3.5 shrink-0 text-phx-warn" />
       <span className="text-[12px] font-bold text-phx-warn">
-        {row.duplicateCount} records share this phone number.
+        {row.duplicateCount} records {evidence}.
       </span>
       {row.duplicateIds.map((id, index) => (
         <button
@@ -608,9 +783,22 @@ function DuplicateBanner({
           Open {row.duplicateNames[index] ?? "the other record"}
         </button>
       ))}
+      {/* Archives the one ON SCREEN, never the other — the reader is looking at the record they are
+          judging, and a button that acted on the twin would act on a CV they have not read. */}
+      <button
+        className="border border-phx-warn-line bg-white px-2 py-0.5 text-[12px] font-bold text-phx-warn transition hover:bg-phx-warn hover:text-white disabled:opacity-50"
+        disabled={archiving}
+        onClick={() => onArchive(row.id)}
+        title="Move this record to the Duplicates folder. It leaves the pool and can be put back."
+        type="button"
+      >
+        {archiving ? "Archiving..." : "Archive this one as a duplicate"}
+      </button>
       <span className="w-full text-[11px] leading-tight text-phx-ink-soft">
-        It may be the same person applying twice, or two people sharing a handset. Read both before merging anything —
-        nothing is merged from here.
+        {row.duplicateReason === "name"
+          ? "A shared name is the weakest signal there is - read both before archiving either."
+          : "It may be the same person applying twice, or two people sharing a handset. Read both first."}{" "}
+        Archiving files this record under Duplicates; nothing is merged and nothing is deleted.
       </span>
     </div>
   );

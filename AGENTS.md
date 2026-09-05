@@ -198,7 +198,7 @@ it for the hook's wording. Which memory backs which hook:
 
 **Parallel sessions**
 
-- **A parallel session can collide with NO git trace at all** — `gh pr list`, `git log` and `git worktree list` were all clean while another session edited the same file. Read the SessionStart working-tree line as a collision signal. A stale lock proves the PID is dead, not that the folder is unattended. Resolve by MERGING, never discarding.
+- **A parallel session can collide with NO git trace at all** — `gh pr list`, `git log` and `git worktree list` were all clean while another session edited the same file. Read the SessionStart working-tree line as a collision signal. A lock's dead PID proves NOTHING — it is the hook's own parent shell, so every lock has one; staleness is AGE >2h, and even a stale one does not prove the folder is unattended. Resolve by MERGING, never discarding.
 - **ONE approval can reach SEVERAL sessions — N sessions holding the same "yes" is N executions.** Before executing a protected action on a terse approval, check how many sessions are live, say so, and re-verify the target immediately before acting. `mergedBy` naming the owner is NOT evidence of a human click.
 
 **Worktrees** (see also §5)
@@ -361,6 +361,7 @@ his own words at length — is in **[docs/agents-owner-rules.md](docs/agents-own
 - 🔒 **THE FITS-THE-SCREEN GOLDEN RULE — never a horizontal scroll, always mobile AND desktop friendly.** `overflow-x-auto` over a `min-width` floor IS the bug, not the fix, so a board bound by this rule must NOT use `PortalDesktopTable`; render `<table className="w-full table-fixed">` with a `<colgroup>`. **Fit by MERGING columns, never by shrinking type; WRAPPING is the permitted answer** and the ellipsis ban is untouched. **Measure, never guess** — `scrollWidth > clientWidth` over `main` at desktop AND 375px. **That check is BLIND to a POPOVER and certifies the page while one hangs off the side** — a nav panel sat 97px off a 375px screen, clipped not scrollable, with `main` reading 375/375 throughout. **It is blind the same way to any `overflow-hidden` BAND holding `whitespace-nowrap`** — clipped content adds nothing to `scrollWidth`, so the Stars of the Fortnight header sat 36px past `main` while every reading stayed clean. Inside such a container measure the CHILDREN's rects, and discount anything `aria-hidden`/`alt=""`: a decorative bleed is MEANT to cross the edge. For anything absolutely positioned, measure the OPEN element's own rect; and place it with `clampPanelToViewport`, since BOTH edges are in play and narrowing cannot fix an anchor's position. A native `<select>` is the one control this cannot fix and may NOT be shrunk. `never-horizontal-scroll-always-mobile-and-desktop-friendly`
 - Admin shell: **desktop shows full tables/dashboards, mobile never does** — mobile gets cards.
 - 🔒 **THE SQUARE-EDGE GOLDEN RULE — no round or semi-round corners, anywhere.** Owner rule, 2026-09-04. Cards, buttons, tags, inputs, bars, avatars and badges are all square. **`tokens.css` CONTRADICTS this** — it ships `--phx-radius-xs/sm/lg/xl/pill` and calls `--phx-radius: 4px` "the default for cards, inputs and buttons", so the default is the bug and a session copying a sibling component inherits it silently. **Measure, never eyeball**: count elements whose computed `border-radius` is not `0px` — a rounded corner at 4px is invisible in a screenshot and survives review. A pill (`border-radius: 999px`) is the loudest breach and reads as house style because the token exists.
+- 🔒 **THE DOCUMENT IDENTITY — every company document wears `SATO-DIS-2026-01 v1.0`, approved 2026-09-05.** It is the **COMPANY's** identity (Sato Pharma), never the Phoenix app's. **"Put it in the system template" is a STANDING instruction** — rebuild the document on it without asking. The palette is **MEASURED FROM THE LOGO** (`#0A527D` deep, `#0A6BA6` blue, `#1482C2` light), replacing a navy `#0B2A4A` that is in no part of the mark. 🔴 **THE INK RULE — no filled areas, anywhere:** colour is carried by lines and type, never by area (9.97% → 3.18% page coverage), the ONE exception being the 6% zebra row he asked for by name. **Government forms are EXEMPT permanently** — Form 1, Form 6 and the labour exit form are Authority facsimiles. On paper the mark is ALWAYS `sato-pharma-logo-on-light.png`; the stock file sets "SATO" in white and the letterhead reads "PHARMA". One module: `src/lib/hiring-pack/house-identity.ts`. `the-house-document-identity-standard`
 - **One production deployment per task.** Bundle all phases into one PR; do not deploy per step.
 - Use the **`gh` CLI** for all GitHub operations, not the GitHub MCP tools.
 - Before wiring any email recipients, **ask who receives it**.
@@ -395,6 +396,7 @@ his own words at length — is in **[docs/agents-owner-rules.md](docs/agents-own
 - 🔒 **Turbify CANNOT issue app passwords centrally — the owner is STAYING, so do not re-pitch a migration.** There is no API and never was. Employee mailboxes are **unmonitorable at scale**, and it is SETTLED — costed at ~$420/month for 60 seats, answered *"NO LEAVE ME AS I AM NOW."* `turbify-cannot-issue-app-passwords-centrally-owner-stays`
 - 🔴 **A password reset does NOT revoke a Turbify mailbox — the app passwords survive it.** It locks the WEB mailbox only; every phone and Outlook client keeps sending and receiving company mail, and the control panel shows nothing wrong. **Both steps are required** — reset AND delete the app passwords, or delete/suspend the mailbox. Never tell the owner (or write in a UI) that a reset closes a leaver's mail access. Tracked in `public.mailbox_offboarding_tasks`, where a row is an **attestation**, never an observation. `a-password-reset-does-not-revoke-a-turbify-mailbox`
 - **Four sales-attribution facts that silently change a number.** EZ `1011654` splits EVENLY across Cairo+Giza CNS with the roster FROZEN per month; the closing reads the DISTRIBUTOR-PRODUCT rollup, so `fact_rollup` alone is INVISIBLE; a case-duplicate `line_area_map` row DOUBLED a whole line; and in the owner's sheets "Stores" means `Office` while "UPA" is a channel. `ez-is-credited-evenly-across-cairo-giza-cns-reps` · `closing-reads-distributor-product-rollup-not-fact-rollup` · `a-case-duplicate-line-map-row-doubled-a-whole-line` · `owner-sheet-vocabulary-stores-is-office-upa-is-a-channel`
+- 🔒 **THE DIRECT-ORDER MONTH GOLDEN RULE — the month Finance books is the month the order COUNTS, at that pharmacy's own brick and area.** Owner 2026-09-05, *"never forget it"*: the system's direct orders REPLACED the Excel-uploaded ones, so `DirectReq` (2026-08 onward) is the live vintage and blank-area `DIRECT` rows (2026-02..06, `area_code` is an EMPTY STRING, not null) are the retired one — never a defect to repair. **Already honoured end to end; verify before "fixing" anything.** The trap is that the closing is a TWO-PART composition: `phx_closing_distributor_product` (invoice lines, which exclude direct ON PURPOSE) **plus** `phx_monthly_closing_direct` (the direct half, folded onto the row's own area). Quoting the distributor rollup ALONE understates the month and reads as the owner's manual sheet being wrong — that mistake was made and delivered — while flipping its `not is_direct` DOUBLE-COUNTS. **`setDirectOrderSalesMonth` refuses a booking into a LOCKED period rather than saving the month and losing the sales** — the guard, not the database error, is what keeps the two halves together. `direct-orders-are-counted-in-the-month-finance-books-them`
 - 🔴 **NOT every distributor uploads every month — "N of 17 missing" is never a finding.** Owner 2026-09-04: only the big feeds are monthly (Ibn Sina, overseas/PS, epda, EGD); the rest send when they send, and files land across the FIRST TWO WEEKS, so a thin count in week one is mid-collection, NEVER lateness. **Measure the EVERY-MONTH set** — the distributors present in every prior month, then ask which of THOSE are absent — and never read a STOPPED feed (`chimipharm`, `EPDA-BULK`) as an outstanding one. Import value and closing value are NOT comparable: Head Office is absent from both trackings. `not-every-distributor-uploads-every-month`
 
 ### 4.1 Marketing customer, venue and licence validation
@@ -416,7 +418,7 @@ Before editing, run `git status`, `git branch --show-current`, `git log -1 --one
 `git worktree list`. **Each line is the rule, not the evidence.** Measurements, dates and incidents
 are in [docs/agents-worktree-and-machine-limits.md](docs/agents-worktree-and-machine-limits.md).
 
-- Use one working tree per active session. **Never two interactive sessions in one folder** — the SessionStart lock warning is a hard stop. (A crashed session's lock self-expires after 2 hours; a lock whose PID is not a running process is stale.)
+- Use one working tree per active session. **Never two interactive sessions in one folder** — the SessionStart lock warning is a hard stop. (A crashed session's lock self-expires after 2 hours, and that AGE is the ONLY staleness test — the lock's `pid` is the hook's own parent shell, so EVERY lock names a dead PID.)
 - Start new work from the latest `origin/main` on a focused `codex/<task>` branch unless told otherwise.
 - Never run `git clone`, `git init`, or anything that recreates the primary repository's `.git`.
 - Never discard, overwrite, clean, reset, or revert changes you did not create. Treat unexpected changes as the owner's work. If the tree is dirty, classify and preserve it.
@@ -445,12 +447,17 @@ to read is the one that stays GREEN while the machine dies.** Measured 2026-09-0
 open: COMMIT 54.8 of 79.8 GB free — healthy by every reading above — while free RAM sat at
 **557–1,780 MB** against the 1,800 MB floor `mem-watchdog.ps1` defends, and the watchdog logged
 continuous PRESSURE while reclaiming NOTHING, because it frees only an IDLE dev server and none was
-running. **So "sessions were never the ceiling" is true of COMMIT and false of RAM:** an idle session
-is ~330 MB of working set, so ten plus the Electron shell is ~4.7 GB of 16. **The ceiling is FOUR
-concurrent sessions** — read BOTH numbers before opening a fifth, and never conclude "healthy" from
-commit alone. Enforced at SessionStart by `~/.claude/hooks/session-census.mjs`, which warns at 5 and
-escalates at 7 or below the RAM floor; `node ~/.claude/scripts/claude-hygiene.mjs` reports on demand.
-**A count on the statusline is not a guard** — it read 9 for hours and nobody acted.
+running. **But the SESSION COUNT is not the term that breaks it, and a ceiling expressed as a count is
+the WRONG INSTRUMENT** — re-measured the same night: a session is **~269 MB**, so the owner's normal
+**10 are ~2.7 GB of 16**, while ONE `next dev` held **3,454 MB** — more than all eleven sessions put
+together, and free RAM fell 2,969 → 750 MB in minutes without a session opening. **So read FREE RAM,
+never the count:** under **2,600 MB** a dev server or cold typecheck (~3.5 GB) would cross the floor;
+under **1,800 MB** you are already in it. Enforced at SessionStart by
+`~/.claude/hooks/session-census.mjs` — RAM-triggered, deliberately **SILENT at 10–12 sessions**, the
+count speaking only at 13/16 for a runaway. **Stop a dev server before closing a session**: ~3.5 GB
+against ~269 MB, and kill it by PORT. **A count on the statusline is not a guard** — it read 9 for
+hours and nobody acted, and a guard that fires at the owner's normal working level becomes that same
+wallpaper by another route.
 
 Route work by tier:
 

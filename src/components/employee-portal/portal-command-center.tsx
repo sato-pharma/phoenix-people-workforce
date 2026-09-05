@@ -197,12 +197,16 @@ function IntelField({
   className?: string;
 }) {
   return (
-    <div className={`flex min-w-0 flex-col gap-1 px-4 py-3 sm:px-7 sm:py-4 ${className}`}>
+    <div className={`flex min-w-0 flex-col gap-1 bg-white px-4 py-3 sm:px-7 sm:py-4 ${className}`}>
       <div className="flex items-center gap-1.5">
-        <Icon className="h-3 w-3 shrink-0 text-[#f47b20]" />
-        <span className="text-phx-3xs font-black uppercase tracking-[0.18em] text-slate-500">{label}</span>
+        <Icon className="h-3 w-3 shrink-0 text-orange-600" />
+        <span className="text-phx-3xs font-black uppercase tracking-[0.18em] text-slate-400">{label}</span>
       </div>
-      <span className="whitespace-nowrap text-sm font-black text-white sm:text-base">{value}</span>
+      {/* Wraps rather than clips. The old value carried `whitespace-nowrap` inside an
+          `overflow-hidden` band, which is the blindness the golden rule names: a long manager name
+          was cut off with `main` still measuring a clean 375/375, because clipped content never
+          reaches scrollWidth. Wrapping is the permitted answer; the ellipsis ban is untouched. */}
+      <span className="text-sm font-black text-slate-900 sm:text-base">{value}</span>
     </div>
   );
 }
@@ -218,20 +222,25 @@ export function ProfileIntelBar({ shell }: { shell: EmployeePortalShellData }) {
       })
     : null;
   if (!employee.line && !hireDateLabel && !employee.manager) return null;
+  // The orange accent is a BORDER, not an absolutely-positioned rule. The cells below are opaque
+  // white now, and a positioned sibling later in the DOM paints over an absolute one — which is
+  // exactly how a 2px rule disappears without anything erroring.
   return (
-    <div className="relative overflow-hidden bg-[#0b1f3a] shadow-[0_8px_32px_rgba(11,31,58,0.35)]">
-      <div className="absolute inset-0 opacity-[0.04] [background-image:linear-gradient(rgba(255,255,255,1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,1)_1px,transparent_1px)] [background-size:32px_32px]" />
-      <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[#f47b20] to-transparent" />
+    <div className="relative border border-t-2 border-slate-200 border-t-orange-500 bg-slate-200">
+      {/* The on-light file, NOT `sato-pharma-logo.png`. That one draws the word SATO in WHITE — it
+          was made for the navy sidebar and this band's own navy past, and it goes invisible the
+          moment the ground turns light. The two files are not interchangeable. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/brand/sato-pharma-logo.png"
+        src="/brand/sato-pharma-logo-on-light.png"
         alt="SATO Pharma"
-        className="pointer-events-none absolute right-5 top-1/2 hidden h-7 w-auto -translate-y-1/2 sm:block"
+        className="pointer-events-none absolute right-5 top-1/2 z-10 hidden h-7 w-auto -translate-y-1/2 sm:block"
       />
-      {/* Mobile: Line + Joined paired, Reports To stacked below. Desktop (sm+): all three on one line. */}
-      <div className="relative flex flex-col sm:flex-row sm:divide-x sm:divide-white/[0.06]">
+      {/* Mobile: Line + Joined paired, Reports To stacked below. Desktop (sm+): all three on one
+          line. The slate ground shows through the 1px gaps as the rules between cells. */}
+      <div className="relative flex flex-col gap-px sm:flex-row">
         {(employee.line || hireDateLabel) && (
-          <div className="flex divide-x divide-white/[0.06] border-b border-white/[0.06] sm:contents sm:border-b-0">
+          <div className="flex gap-px sm:contents">
             {employee.line && (
               <IntelField icon={Layers} label="Line" value={employee.line} className="flex-1 sm:flex-none sm:shrink-0" />
             )}
@@ -314,13 +323,18 @@ type GlanceStripItem = {
 };
 
 export function GlanceStrip({ items }: { items: GlanceStripItem[] }) {
+  /* Three columns are keyed to the STRIP's own width, not the window's. Measured 2026-09-05: at a
+     640px viewport `sm:grid-cols-3` fired while `main` was only 608px, leaving each cell 202px and
+     the label just 75px — "plans awaiting approval" came out one word per line, three lines deep.
+     Nothing was clipped and the page read 608/608, the same blindness the Stars card had. At 672px
+     of container the label gets ~132px and reads on two lines. */
   return (
-    <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-3">
+    <div className="@container grid grid-cols-1 gap-px bg-slate-200 @2xl:grid-cols-3">
       {items.map((item, i) => (
         <Link
           key={i}
           href={item.href}
-          className={`group flex min-h-[56px] items-center gap-2 bg-white px-3 py-3 transition-colors hover:bg-slate-50 sm:min-h-[64px] sm:gap-4 sm:px-5 border-l-[3px] ${item.urgent ? "border-orange-500" : "border-transparent"}`}
+          className={`group flex min-h-[56px] items-center gap-2 bg-white px-3 py-3 transition-colors hover:bg-slate-50 @2xl:min-h-[64px] @2xl:gap-4 @2xl:px-5 border-l-[3px] ${item.urgent ? "border-orange-500" : "border-transparent"}`}
         >
           <div
             className={`flex h-9 w-9 shrink-0 items-center justify-center border transition-colors group-hover:border-orange-300 group-hover:bg-orange-50${item.urgent ? " border-orange-200 bg-orange-50" : " border-slate-200 bg-slate-50"}`}
@@ -330,10 +344,10 @@ export function GlanceStrip({ items }: { items: GlanceStripItem[] }) {
             />
           </div>
           <div className="min-w-0 flex-1">
-            <p className={`whitespace-nowrap text-sm font-black leading-tight sm:text-base${item.urgent ? " text-orange-600" : " text-slate-900"}`}>{item.value}</p>
+            <p className={`whitespace-nowrap text-sm font-black leading-tight @2xl:text-base${item.urgent ? " text-orange-600" : " text-slate-900"}`}>{item.value}</p>
             {/* The VALUE keeps its nowrap — it is a short number and must not break across
-                lines. The label is prose and wraps: at sm each of the three cells leaves about
-                105px for it, and "pending requests" does not fit. */}
+                lines. The label is prose and wraps: in the three-column form each cell leaves it
+                about 132px, and "pending requests" does not fit on one line. */}
             <p className="break-words text-xs leading-snug text-slate-500">{item.label}</p>
           </div>
           <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-orange-400" />
@@ -353,12 +367,28 @@ type QuickAction = {
 
 export function QuickActions({ actions }: { actions: QuickAction[] }) {
   return (
-    <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-2">
+    /* The row is CONTENT-driven, not column-driven. `grid-cols-2` gave every action the same
+       172px at 375px, and "Review Marketing Requests" — the longest label in the repo at 25
+       characters — came out three lines deep, one word per line (measured 2026-09-05 against the
+       real portal chain, which is 351px at 375px, not 375). The golden rule's remedy is to MERGE
+       columns, but merging unconditionally would stack the general portal's four short labels
+       ("My Plans", "Report It") into a needless four-high tower.
+
+       So each item carries `basis-[calc(50%-0.25rem)]` (two per row, allowing for `gap-2`) with
+       `min-w-fit` on top: a label wider than half the row raises its own item's minimum past the
+       basis, the item no longer fits beside a sibling, and `grow` then stretches it to the full
+       row. Short labels never reach that minimum and stay two-up, unchanged. `min-width: fit-content`
+       is capped by the available space, so this cannot overflow — verified at 320px, where the item
+       still fits and nothing crosses the right edge.
+
+       From `sm` the layout is unchanged: `sm:grow-0 sm:basis-auto` returns the items to content
+       width, measured pixel-identical to the previous markup at 1280px. */
+    <div className="flex flex-wrap gap-2">
       {actions.map((action, i) => (
         <Link
           key={i}
           href={action.href}
-          className="flex min-h-[48px] min-w-0 items-center justify-center gap-2 border border-slate-200 bg-white px-3 py-3 text-xs font-bold uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 sm:inline-flex sm:min-h-0 sm:px-4 sm:py-2.5 sm:text-phx-xs"
+          className="flex min-h-[48px] min-w-fit grow basis-[calc(50%-0.25rem)] items-center justify-center gap-2 border border-slate-200 bg-white px-3 py-3 text-xs font-bold uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 sm:inline-flex sm:min-h-0 sm:grow-0 sm:basis-auto sm:px-4 sm:py-2.5 sm:text-phx-xs"
         >
           <action.icon className="h-4 w-4 shrink-0 sm:h-3.5 sm:w-3.5" />
           <span className="text-center leading-tight whitespace-normal sm:whitespace-nowrap">{action.label}</span>

@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 
 import { fileCandidateToFolder, returnCandidateToPool } from "@/lib/recruitment/candidates";
 import {
-  candidateFolderKinds,
+  candidateStorageFolderKinds,
   cleanFolderKey,
-  isCandidateFolderKind,
+  isStorableFolderKind,
 } from "@/lib/recruitment/candidate-folder";
 import {
   assertSameOriginMutation,
@@ -47,8 +47,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const kind = str(body.kind);
     if (!kind) return validationError("A folder kind is required.");
-    if (!isCandidateFolderKind(kind)) {
-      return validationError(`"${kind}" is not a folder kind. Use one of: ${candidateFolderKinds.join(", ")}.`);
+    // The four shelves OR the duplicate archive, which shares the columns and is not a shelf.
+    if (!isStorableFolderKind(kind)) {
+      return validationError(
+        `"${kind}" is not a folder kind. Use one of: ${candidateStorageFolderKinds.join(", ")}.`,
+      );
     }
 
     const key = cleanFolderKey(str(body.key));

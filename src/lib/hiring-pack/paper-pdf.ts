@@ -40,6 +40,10 @@
 // value that silently does nothing — which is worse than not passing one, because the next person
 // to read it would believe it.
 
+import { PDFDocument } from "pdf-lib";
+
+import { HOUSE_COLORS } from "@/lib/hiring-pack/house-identity";
+import { ARABIC_FONT_STACK } from "@/lib/hiring-pack/render-shared";
 import { inlineLocalAssets } from "@/lib/hiring-pack/paper-artwork";
 import { ChromiumUnavailableError, withChromiumPage } from "@/lib/pdf/chromium";
 
@@ -69,7 +73,62 @@ export { ChromiumUnavailableError };
  * saying the copy was not filed, against the cost of a blank Form 1 sitting in the record as though
  * it were the signed one.
  */
-export async function renderHiringPaperPdf(printHtml: string): Promise<Uint8Array> {
+/**
+ * "صفحة N من M" at the foot of every page of a filed paper.
+ *
+ * THIS IS THE ONLY PLACE THE PAGE COUNT IS KNOWABLE. The contract and the two clearances FLOW —
+ * `.copy { min-height: 297mm }` and a `<tfoot>` Chrome repeats — so how many sheets they occupy is
+ * decided by the print engine and cannot be read from the DOM. Nothing in the browser can count
+ * them, which is why the printed-from-a-dialog copy carries no numbering and this one does: here
+ * Chromium is the print engine, and `totalPages` is its own answer rather than our estimate.
+ *
+ * The template is rendered by Chrome, so the Arabic shapes and orders correctly. Drawing this text
+ * with a PDF library instead would emit the letters isolated and in the wrong order — the same trap
+ * documented at the top of render-shared.ts.
+ *
+ * FONT SIZE IS EXPLICIT AND MUST STAY THAT WAY. Chrome renders header and footer templates in an
+ * isolated document whose default font-size is zero; a template without one is not small, it is
+ * invisible, and it fails silently on a paper nobody re-opens.
+ */
+const PAGE_NUMBER_FOOTER = `<div style="width:100%;padding:0 10.2mm;font-family:${ARABIC_FONT_STACK};`
+  + `font-size:7pt;color:${HOUSE_COLORS.muted};direction:rtl;text-align:center">`
+  + `صفحة <span class="pageNumber"></span> من <span class="totalPages"></span>`
+  + `</div>`;
+
+/** Chrome insists on both templates once header/footer are on; an empty one keeps the head clear. */
+const EMPTY_HEADER = '<span style="font-size:0"></span>';
+
+export type HiringPaperPdfOptions = {
+  /**
+   * How many copies of this paper to stamp out.
+   *
+   * THE HTML PASSED IN MUST BE ONE COPY, and the duplication happens here rather than in the
+   * document, because Chrome's `totalPages` counts the whole PDF. Four copies of a three-page
+   * contract rendered as one document footed every page "صفحة N من 12" — a page count of something
+   * nobody is holding. Each copy is a separate instrument that gets signed on its own, so its pages
+   * are numbered against ITSELF.
+   *
+   * Safe because the copies are byte-identical by construction: every renderer builds them with
+   * `Array.from({ length: total }, () => renderCopy(...))`. Duplicating the rendered pages is the
+   * same output as rendering the same HTML N times, for one Chromium run instead of N.
+   */
+  copies?: number;
+  /**
+   * Number the pages.
+   *
+   * FALSE FOR ANYTHING THE AUTHORITY ISSUES. Form 1, Form 6, the resignation request and the mutual
+   * termination agreement are facsimiles of the government's own artwork, laid out at measured
+   * points on `@page { margin: 0 }` — there is no margin for a footer to sit in, and printing
+   * Phoenix's own numbering onto an official form is exactly the kind of alteration that gets one
+   * refused at the window. The house identity exempts them and so does this.
+   */
+  pageNumbers?: boolean;
+};
+
+export async function renderHiringPaperPdf(
+  printHtml: string,
+  options: HiringPaperPdfOptions = {},
+): Promise<Uint8Array> {
   const { html, missing } = inlineLocalAssets(printHtml);
   if (missing.length > 0) throw new PaperArtworkMissingError(missing);
 
@@ -91,13 +150,36 @@ export async function renderHiringPaperPdf(printHtml: string): Promise<Uint8Arra
         + "await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))); })()",
     );
 
-    return page.pdf({
+    const single = await page.pdf({
       // The artwork IS a background in CSS terms on some sheets, and every form's rules, boxes and
       // tints are backgrounds. Without this the government forms print as bare text.
       printBackground: true,
       // See the measurement at the top of this file. This is the only geometry instruction given.
       preferCSSPageSize: true,
+      // The footer draws INSIDE the sheet's own bottom margin, which is why this rides with
+      // `preferCSSPageSize` rather than against it: the paper keeps the geometry it declares, and
+      // the number sits below the content in space the document already reserved.
+      ...(options.pageNumbers
+        ? {
+            displayHeaderFooter: true,
+            headerTemplate: EMPTY_HEADER,
+            footerTemplate: PAGE_NUMBER_FOOTER,
+          }
+        : {}),
       timeout: 30_000,
     });
+
+    const wanted = Math.max(1, Math.trunc(options.copies ?? 1));
+    if (wanted === 1) return single;
+
+    // Stamp out the remaining copies. `copyPages` is a page-tree copy, so each one carries the
+    // footer Chromium already drew — including its per-copy numbering.
+    const source = await PDFDocument.load(single);
+    const out = await PDFDocument.create();
+    for (let copy = 0; copy < wanted; copy += 1) {
+      const pages = await out.copyPages(source, source.getPageIndices());
+      for (const one of pages) out.addPage(one);
+    }
+    return out.save();
   });
 }

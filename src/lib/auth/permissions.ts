@@ -583,6 +583,43 @@ export function isRolePermissionWithinHardBoundary(
 }
 
 /**
+ * Grants the base matrix DECLARES that the hard boundary then strips. Empty is the only healthy
+ * answer, and a test pins it there.
+ *
+ * WHY THIS IS WORTH A FUNCTION. `applyHardPermissionBoundaries` deletes such a key at module load,
+ * so a declaration like the CEO's `recruitment: ["read"]` is not a grant, a bug, or a safety net —
+ * it is a sentence in a security file that says the opposite of what the system does. It reads as
+ * deliberate, it survives review, and the next person to ask "can the CEO open recruitment?" gets
+ * the wrong answer from the most authoritative-looking place in the codebase.
+ *
+ * The same check already exists one layer up for the composed HR seats, in
+ * tests/hr-retention-register.test.ts, and its comment calls a stripped grant "a LIE IN THE WORKBOOK,
+ * not a safety net". This is that check for the roles the base matrix spells out by hand.
+ *
+ * It returns the dead grants rather than exposing `defaultPermissionMatrix` itself, deliberately:
+ * that object is PRE-boundary, and anything importing it would be reading permissions the system
+ * does not honour — the exact confusion this exists to remove, handed out as an API.
+ */
+export function deadMatrixGrants(): Array<{
+  role: PhoenixRole;
+  resource: PermissionResource;
+  actions: PermissionAction[];
+}> {
+  const dead: Array<{ role: PhoenixRole; resource: PermissionResource; actions: PermissionAction[] }> = [];
+  for (const role of phoenixRoles) {
+    for (const [resource, actions] of Object.entries(defaultPermissionMatrix[role]) as Array<
+      [PermissionResource, PermissionAction[] | undefined]
+    >) {
+      const stripped = (actions ?? []).filter(
+        (action) => !isRolePermissionWithinHardBoundary(role, resource, action),
+      );
+      if (stripped.length > 0) dead.push({ actions: stripped, resource, role });
+    }
+  }
+  return dead;
+}
+
+/**
  * Minimum permissions that must never be denied via `role_permission_overrides`.
  * These are permissions that the employee portal requires for basic functionality;
  * revoking them via a DB override breaks portal pages with an unrecoverable
@@ -737,7 +774,6 @@ const defaultPermissionMatrix: PermissionMap = {
     sales: allActions,
     direct_orders: allActions,
     weekly_sales: allActions,
-    support_requests: allActions,
     team: allActions,
     user_admin: allActions,
     vacancies: allActions,
@@ -772,7 +808,6 @@ const defaultPermissionMatrix: PermissionMap = {
     // NOTE: hard boundary (hardBoundaryAllowedActions → "employees" → Super Admin only) removes
     // these actions at runtime. CEO sees only their own employee record via canSeeEmployee().
     // getEmployeeDirectoryRows() (unfiltered) is used on the command center for headcount only.
-    employees: ["read", "export"],
     // SoD: read/export only — expense approval belongs to managers + Finance/Super Admin.
     expenses: ["read", "export"],
     // SoD: read/export only — outstation approval belongs to managers + Super Admin.
@@ -808,14 +843,23 @@ const defaultPermissionMatrix: PermissionMap = {
     resignations: ["read", "export"],
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
-    support_requests: ["read", "export"],
     team: ["read", "export"],
     vacancies: ["read", "export"],
-    recruitment: ["read"],
-    candidates: ["read"],
+    // NO `recruitment` and NO `candidates`, and their absence is the accurate statement.
+    //
+    // Both were declared here as ["read"] and neither ever took effect: they are hard-boundary
+    // capped to `isHrAuthorityRole`, which the CEO is not, so applyHardPermissionBoundaries deleted
+    // both keys at module load and `canAccess(ceo, "candidates", "read")` has always been false.
+    // tests/ceo-account-contract.test.ts pins that it must stay false — the two lines were claiming
+    // exactly what the contract forbids. Removing them changes no behaviour; it stops the most
+    // authoritative-looking file in the codebase from answering "can the CEO read candidates?" with
+    // the opposite of the truth. See deadMatrixGrants().
+    //
     // NSM/RM/CEO candidate tracking: CEO's own hiring round (District Manager -> HR/RM
     // -> National Sales Manager -> CEO for a District Manager candidate). Deliberately NOT
-    // hard-boundary-capped (see hiring-manager-view.ts) so this grant actually takes effect.
+    // hard-boundary-capped (see hiring-manager-view.ts) so this grant actually takes effect — it is
+    // the one recruitment-shaped resource the CEO genuinely holds, and the reason he is not
+    // shut out of his own hiring round by the two lines removed above.
     hiring_interviews: ["read", "update"],
     report_it: ["read", "create", "export"],
     // SoD: read/export only, matching `resignations` above - the CEO observes an exit, he does
@@ -858,7 +902,6 @@ const defaultPermissionMatrix: PermissionMap = {
     direct_orders: ["read", "export"],
     attendance: ["read", "export"],
     crm_visits: ["read"],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     // NO `outstation` key at all (owner, 2026-08-10): "exclude him 100% from outstation or
     // expenses". Outstation expense claims are a field-operations module the HR Manager approves
@@ -945,7 +988,6 @@ const defaultPermissionMatrix: PermissionMap = {
     // fail-closed and currently lists Super Admin / CEO / the HR bundles), and a company-scope
     // branch in canSeeEmployee — which has none, so today he can only act on his own record.
     resignations: ["read"],
-    support_requests: ["read", "create"],
     workflow_registry: ["read"],
     report_it: ["read", "create", "export"],
   },
@@ -959,7 +1001,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     leave: ["read", "create"],
     payslips: ["read", "export"],
-    support_requests: ["create"],
     report_it: ["read", "create"],
   },
   Employee: {
@@ -967,7 +1008,6 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_visits: ["read"],
     overview: [],
     coaching: ["read"],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
@@ -976,7 +1016,6 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     probation: ["read"],
     sales: ["read", "export"],
-    support_requests: ["read", "create"],
     report_it: ["read", "create"],
   },
   "Medical Rep": {
@@ -985,7 +1024,6 @@ const defaultPermissionMatrix: PermissionMap = {
     early_birds: ["read"],
     overview: [],
     coaching: ["read"],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
@@ -995,7 +1033,6 @@ const defaultPermissionMatrix: PermissionMap = {
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
     payslips: ["read", "export"],
-    support_requests: ["read", "create"],
     report_it: ["read", "create"],
   },
   "District Manager": {
@@ -1008,7 +1045,6 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_plans: ["read", "approve"],
     early_birds: ["read", "approve"],
     overview: [],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     double_visit_analytics: ["read", "export"],
@@ -1021,7 +1057,6 @@ const defaultPermissionMatrix: PermissionMap = {
     probation: ["read", "export"],
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
-    support_requests: ["read", "create"],
     team: ["read", "export"],
     vacancies: ["read", "export"],
     weekly_plans: ["read", "create", "update", "approve"],
@@ -1047,7 +1082,6 @@ const defaultPermissionMatrix: PermissionMap = {
     // read-only role download every employee's deduction amounts for any month.
     // A Regional Manager still sees their OWN deductions: the portal page and its nav entry both
     // gate on `employee_profile`, not on this resource.
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     double_visit_analytics: ["read", "export"],
@@ -1065,7 +1099,6 @@ const defaultPermissionMatrix: PermissionMap = {
     probation: ["read", "export"],
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
-    support_requests: ["read", "create"],
     team: ["read", "export"],
     // Same undeclared-access correction as `deductions` above: getEmployeePortalVacancies already
     // has an explicit Regional Manager branch that bounds open seats to the RM's own line AND the
@@ -1084,7 +1117,6 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_visits: ["read"],
     early_birds: ["read"],
     overview: [],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     double_visit_analytics: ["read", "export"],
@@ -1096,7 +1128,6 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
-    support_requests: ["read", "create"],
     team: ["read", "export"],
     organogram: ["read"],
     vacancies: ["read", "export"],
@@ -1115,7 +1146,6 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_visits: ["read", "update"],
     early_birds: ["read"],
     overview: [],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     double_visit_analytics: ["read", "export"],
@@ -1129,7 +1159,6 @@ const defaultPermissionMatrix: PermissionMap = {
     organogram: ["read"],
     vacancies: ["read"],
     probation: ["read"],
-    support_requests: ["read", "create"],
     weekly_plans: ["read", "create", "update"],
     hiring_interviews: ["read", "update"],
     report_it: ["read", "create"],
@@ -1145,7 +1174,6 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_visits: ["read", "update"],
     early_birds: ["read"],
     overview: [],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     double_visit_analytics: ["read", "export"],
@@ -1159,7 +1187,6 @@ const defaultPermissionMatrix: PermissionMap = {
     organogram: ["read"],
     vacancies: ["read"],
     probation: ["read"],
-    support_requests: ["read", "create"],
     weekly_plans: ["read", "create", "update"],
     hiring_interviews: ["read", "update"],
     report_it: ["read", "create"],
@@ -1183,7 +1210,6 @@ const defaultPermissionMatrix: PermissionMap = {
     // Field Workforce Compliance gates on hr_calendar:read. Read-only: it is the working-day
     // calendar the compliance view is computed against, not an HR authoring grant.
     hr_calendar: ["read"],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     double_visit_analytics: ["read", "export"],
@@ -1198,7 +1224,6 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     sales: ["read", "import", "export"],
     weekly_sales: allActions,
-    support_requests: ["read", "create"],
     weekly_plans: ["read", "create", "update"],
     report_it: ["read", "create"],
   },
@@ -1207,7 +1232,6 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_visits: ["read"],
     early_birds: ["read"],
     overview: [],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     // NOTE: the `employees` (employee-master admin) resource is intentionally NOT granted —
     // it is Super-Admin-only at the hard boundary. Training Manager's org-wide directory
@@ -1221,7 +1245,6 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     probation: ["read", "export"],
-    support_requests: ["read", "create"],
     team: ["read"],
     vacancies: ["read"],
     organogram: ["read"],
@@ -1253,7 +1276,6 @@ const defaultPermissionMatrix: PermissionMap = {
     probation: ["read"],
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
-    support_requests: ["create"],
     weekly_plans: ["read", "create", "update"],
     hiring_interviews: ["read", "update"],
     report_it: ["read", "create"],
@@ -1262,9 +1284,7 @@ const defaultPermissionMatrix: PermissionMap = {
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],
     overview: [],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
-    employees: ["read", "export"],
     expenses: ["read", "export"],
     double_visit_analytics: ["read", "export"],
     outstation: ["read", "create"],
@@ -1291,7 +1311,6 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     probation: ["read"],
     sales: ["read", "export"],
-    support_requests: ["read", "create"],
     team: ["read", "export"],
     weekly_plans: ["read", "approve"],
     hiring_interviews: ["read", "update"],

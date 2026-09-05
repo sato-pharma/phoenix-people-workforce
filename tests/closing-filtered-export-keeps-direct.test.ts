@@ -80,6 +80,7 @@ function directRow(id: number, qty: number, salesValue: number): ClosingDetailRo
     invoiceDate: null,
     invoicePeriod: PERIOD,
     isConfidential: false,
+    evenSplitApplied: false,
     isDirect: true,
     officialLine: LINE,
     productCode: PRODUCT,

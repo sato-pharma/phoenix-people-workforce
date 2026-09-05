@@ -178,6 +178,18 @@ export type StoreSplitRow = {
   distributorCode?: string;
   includedInClosing: boolean;
   isDirect: boolean;
+  /**
+   * True when this customer and line sit in the even-split registry (`sos_even_split_customers`),
+   * meaning the database has ALREADY dealt these units out across areas by a rule of their own.
+   *
+   * Set by the row builder in monthly-closing-details.ts from the live registry, so every caller
+   * inherits it rather than having to remember. Optional only so hand-built rows in tests stay
+   * valid; absent means "not registered", which is what every ordinary customer is.
+   *
+   * It cannot be inferred from the rows. See even-split-registry.ts for why the existing
+   * hand-apportioned tell (customersAlreadySplitAcrossAreas) is blind to this case.
+   */
+  evenSplitApplied?: boolean;
   officialLine: string;
   productCode: string;
   qty: number;
@@ -221,15 +233,27 @@ export type StoreSplitRow = {
  * the case above. The other five are four pharmacies and one Head Office customer; the classifier
  * only ever demotes store → pharmacy and Head Office is an excluded line, so not one of them could
  * ever have been split and dropping their exemption moves no number.
+ *
+ * A THIRD ROUTE IN, which those two conditions cannot reach: `evenSplitApplied`. That flag marks a
+ * customer the DATABASE has already distributed — the even-split registry, EZ today — and such a
+ * customer is exempt on the flag alone. The two conditions above are evidence-based, and there is no
+ * evidence to find: this function reads the raw invoice rows, where EZ is one Cairo East 1 row for
+ * the whole month, while the distribution it is exempt for happens later, in the rollup the Closing
+ * Matrix reads. Both conditions therefore read false and the city rule would deal the units out a
+ * second time. See even-split-registry.ts.
  */
 export function customersAlreadySplitAcrossAreas(rows: readonly StoreSplitRow[]): ReadonlySet<string> {
   const closingAreas = new Map<string, Set<string>>();
   const rebooked = new Set<string>();
+  // Registry customers are exempt on their own — no multi-area evidence is required, because the
+  // rows this function reads cannot carry any. See the field doc on StoreSplitRow.evenSplitApplied.
+  const registered = new Set<string>();
 
   for (const row of rows) {
     if (row.isDirect || !row.includedInClosing) continue;
     const code = String(row.clientCode ?? "").trim();
     if (!code) continue;
+    if (row.evenSplitApplied) registered.add(code);
     const area = closingAreaOf(row);
     if (area) {
       let seen = closingAreas.get(code);
@@ -242,7 +266,7 @@ export function customersAlreadySplitAcrossAreas(rows: readonly StoreSplitRow[])
     if (isRebookedRow(row)) rebooked.add(code);
   }
 
-  const exempt = new Set<string>();
+  const exempt = new Set<string>(registered);
   closingAreas.forEach((areas, code) => {
     if (areas.size > 1 && rebooked.has(code)) exempt.add(code);
   });

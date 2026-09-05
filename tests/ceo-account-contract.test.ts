@@ -8,6 +8,7 @@ import {
   canAccess,
   canAccessFingerprintReport,
   createAccessContext,
+  deadMatrixGrants,
   isRolePermissionWithinHardBoundary,
   permissionActions,
   permissionMatrix,
@@ -346,4 +347,36 @@ export async function runCeoAccountContractTests() {
     "sidebar home must resolve through resolveLandingPathForRole for command-center roles and fall back to the shell home otherwise",
   );
   assert.match(sidebarSource, /<SidebarBrand currentRole=\{currentRole\} mode=\{navigationMode\}/);
+
+  // ── The matrix must not CLAIM what the boundary strips ────────────────────────────────────────
+  //
+  // The CEO block declared `recruitment: ["read"]` and `candidates: ["read"]`. Neither ever took
+  // effect — both are capped to isHrAuthorityRole, which the CEO is not — so the assertions above
+  // were green while the file said the opposite of what the system does. That is worse than a bug:
+  // it is the most authoritative-looking answer in the codebase to "can the CEO read candidates?",
+  // and it is wrong. tests/hr-retention-register.test.ts already makes this check for the composed
+  // HR seats and calls such a grant "a LIE IN THE WORKBOOK, not a safety net".
+  const deadForCeo = deadMatrixGrants().filter((grant) => grant.role === "CEO");
+  for (const resource of ["recruitment", "candidates"] as const) {
+    assert.equal(
+      deadForCeo.some((grant) => grant.resource === resource),
+      false,
+      `the CEO block must not declare ${resource} — the hard boundary strips it, so the line only misleads`,
+    );
+  }
+
+  // AND THERE ARE NONE LEFT. 28 such declarations were cleared on 2026-09-05, and the EFFECTIVE
+  // matrix was byte-identical before and after — every one of them was inert. support_requests was
+  // the largest group and the most misleading: applyHardPermissionBoundaries OVERWRITES that one
+  // rather than intersecting it, so whatever a role declared was replaced wholesale, and fifteen
+  // roles carried a line that could never take effect.
+  //
+  // Empty is now the only acceptable answer. A declaration the boundary strips is not a safety net;
+  // it is a sentence in a security file that says the opposite of what the system does, in the most
+  // authoritative-looking place a reader will check.
+  assert.deepEqual(
+    deadMatrixGrants(),
+    [],
+    "a role declares a permission the hard boundary strips — either grant it in hardBoundaryAllowedActions or stop declaring it",
+  );
 }

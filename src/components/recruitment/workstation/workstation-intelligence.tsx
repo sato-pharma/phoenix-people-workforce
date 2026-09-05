@@ -48,7 +48,11 @@ import {
 } from "@/components/recruitment/workstation/workstation-ui";
 import { hiringTargetFamily, readRoleFit, roleFitVerdict, roleFitVerdictLabels } from "@/lib/recruitment/role-fit";
 import type { Candidate } from "@/lib/recruitment/types";
-import type { StoredCvExtraction } from "@/lib/recruitment/cv-extraction-fields";
+import {
+  listUnappliedCvFields,
+  type ExtractedCvValue,
+  type StoredCvExtraction,
+} from "@/lib/recruitment/cv-extraction-fields";
 import { WorkstationNotesTab, WorkstationTimelineTab } from "@/components/recruitment/workstation/workstation-history-tabs";
 import { cn } from "@/lib/utils";
 
@@ -77,6 +81,7 @@ export function WorkstationIntelligencePanel({
   loadError,
   loading,
   noteCount,
+  onAcceptField,
   onCollapse,
   onNoteCountChange,
   onTabChange,
@@ -91,6 +96,11 @@ export function WorkstationIntelligencePanel({
   /** A row IS selected and its record is still arriving. */
   loading: boolean;
   noteCount: number;
+  /**
+   * Write one reader finding onto the record — see CvDataTab for why so many are unwritten.
+   * Null when the viewer may not write, so the button is absent rather than answering 403.
+   */
+  onAcceptField: ((fieldKey: string, value: ExtractedCvValue) => void) | null;
   /** Given, the head grows a fold control. Desktop only — see PaneHead. */
   onCollapse?: () => void;
   onNoteCountChange: (count: number) => void;
@@ -148,7 +158,7 @@ export function WorkstationIntelligencePanel({
         ) : tab === "summary" ? (
           <SummaryTab appliedForText={appliedForText} candidate={candidate} extraction={extraction} />
         ) : tab === "cv" ? (
-          <CvDataTab extraction={extraction} />
+          <CvDataTab candidate={candidate} extraction={extraction} onAccept={onAcceptField} />
         ) : tab === "timeline" ? (
           <WorkstationTimelineTab candidateId={candidate.id} />
         ) : (
@@ -351,8 +361,35 @@ function BriefingList({
  * carries its confidence. A recruiter reading this beside the document should be able to check any
  * line against the page in seconds, which is the only reason to show extracted data at all.
  */
-function CvDataTab({ extraction }: { extraction: StoredCvExtraction | null }) {
+function CvDataTab({
+  candidate,
+  extraction,
+  onAccept,
+}: {
+  candidate: Candidate | null;
+  extraction: StoredCvExtraction | null;
+  /** Writes one reader finding onto the record. Null when the viewer may not write. */
+  onAccept: ((fieldKey: string, value: ExtractedCvValue) => void) | null;
+}) {
   const schema = useMemo(() => getCvPositionSchema(extraction?.positionKey ?? "universal"), [extraction?.positionKey]);
+
+  // WHAT THE READER FOUND AND NOBODY WROTE DOWN.
+  //
+  // `cv-auto-apply.ts` writes a finding unattended only at high confidence — "the AI's own hedge is
+  // respected; low always waits for a human" — and that gate is right. The gap was the other half:
+  // for a candidate created by automatic intake there was no screen where a human ever saw the
+  // proposal, so `low` waited for a review that never came. Measured on production 2026-09-05: 215
+  // candidates carried a perfectly good yearsExperience in the extraction against a null column,
+  // and 120 carried a nationalId on a pool holding four in total.
+  //
+  // So they are offered HERE, to the one person already reading the CV. One rule, shared with the
+  // count, so the number and the rows can never disagree.
+  const unapplied = useMemo(() => {
+    if (!extraction || !schema || !candidate) return new Map<string, ExtractedCvValue>();
+    return new Map(
+      listUnappliedCvFields(extraction.fields, candidate, schema).map((entry) => [entry.field.key, entry.value]),
+    );
+  }, [candidate, extraction, schema]);
 
   const bySection = useMemo(() => {
     const grouped = new Map<CvFieldSection, Array<{ key: string; label: string; level: TrustLevel; value: string }>>();
@@ -416,11 +453,17 @@ function CvDataTab({ extraction }: { extraction: StoredCvExtraction | null }) {
               <ul>
                 {rows.map((row) => (
                   <li className="border-b border-phx-line/70 px-3 py-1.5 last:border-b-0" key={row.key}>
-                    <div className="flex items-baseline justify-between gap-2">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
                       <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-phx-ink-soft">
                         {row.label}
                       </span>
-                      <TrustBadge level={row.level} />
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        {/* Says the value is NOT on the record, which is the fact a reader cannot
+                            otherwise tell: the tab looks identical whether a finding was saved or
+                            silently dropped. */}
+                        {unapplied.has(row.key) ? <Pill tone="warn">Not saved to the record</Pill> : null}
+                        <TrustBadge level={row.level} />
+                      </span>
                     </div>
                     <p
                       className={cn(
@@ -431,6 +474,19 @@ function CvDataTab({ extraction }: { extraction: StoredCvExtraction | null }) {
                     >
                       {row.value}
                     </p>
+                    {/* One click, on the candidate already open. Never a bulk "apply everything":
+                        these are the readings the extractor itself hedged on, so a person confirms
+                        them one at a time, looking at the document that produced them. */}
+                    {onAccept && unapplied.has(row.key) ? (
+                      <button
+                        className="mt-1 border border-phx-accent-line bg-phx-accent-soft px-2 py-0.5 text-[11px] font-bold text-phx-accent-press transition hover:bg-phx-accent hover:text-white"
+                        onClick={() => onAccept(row.key, unapplied.get(row.key) ?? null)}
+                        title="Write this reading onto the candidate record"
+                        type="button"
+                      >
+                        Save this to the record
+                      </button>
+                    ) : null}
                   </li>
                 ))}
               </ul>

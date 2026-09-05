@@ -24,6 +24,7 @@
 
 import {
   candidateFolderKinds,
+  isCandidateFolderKind,
   partitionCandidatesByFolder,
   type CandidateFolderKind,
   type CandidateFolderShelf,
@@ -150,5 +151,8 @@ export function isManagersOwnFiling(
 
 /** The shelf a filing sits on, when a screen needs to name it without unpacking the whole partition. */
 export function filingShelfKind(filing: ManagerFolderFiling | null | undefined): CandidateFolderKind | null {
-  return filing?.kind ?? null;
+  // Null for the duplicate archive, which is stored in the same columns and is NOT a shelf — every
+  // caller of this asks in order to name a shelf, and there is no shelf to name.
+  const kind = filing?.kind ?? null;
+  return kind && isCandidateFolderKind(kind) ? kind : null;
 }
