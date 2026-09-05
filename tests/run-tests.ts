@@ -3855,7 +3855,7 @@ await runTest(
   runDescribeThrownTests,
 );
 await runTest(
-  "manager cascade skips frozen tables (no sales_records PATCH — service_role lost UPDATE and it is the only record of what H1 was paid on; sales_targets still cascades)",
+  "manager cascade skips frozen tables (no sales_records PATCH — service_role lost UPDATE and it is the only record of what H1 was paid on; sales_targets was dropped 2026-09-06 and must not be PATCHed either)",
   runManagerCascadeFrozenTablesTests,
 );
 await runTest(

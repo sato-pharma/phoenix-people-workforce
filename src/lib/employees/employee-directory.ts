@@ -2105,47 +2105,21 @@ async function reassignLiveManagerOwnership(input: {
     nextPayload,
   );
 
-  if (!effectiveDate) {
-    return;
-  }
-
-  const date = new Date(`${effectiveDate.slice(0, 10)}T00:00:00Z`);
-  if (Number.isNaN(date.getTime())) {
-    return;
-  }
-
-  const year = date.getUTCFullYear();
-  const month = date.getUTCMonth() + 1;
-  const salesPayload = {
-    manager_hr_id: newManagerHrId,
-  };
-
-  // `sales_records` is deliberately NOT cascaded here, for two independent reasons.
+  // NEITHER sales table is cascaded here, for two different reasons. The cascade ends above.
   //
-  // It is FROZEN. The Rule #1 migration revoked service_role's INSERT/UPDATE on it, so a PATCH
-  // returns `permission denied for table sales_records` (42501). patchOptionalTable only swallows
-  // missing-relation / schema-cache messages, so that error THREW — and it threw before the
-  // sales_targets calls below could run, leaving those rows on the OLD manager. A half-applied
-  // cascade plus a failed manager change, from a table nothing reads for sales any more.
+  // `sales_records` is FROZEN. The Rule #1 migration revoked service_role's INSERT/UPDATE on it,
+  // so a PATCH returns `permission denied for table sales_records` (42501). patchOptionalTable
+  // swallows only missing-relation / schema-cache messages, so that error THREW — and it threw
+  // part-way through, leaving earlier rows on the OLD manager: a half-applied cascade plus a failed
+  // manager change. It is also HISTORY. Those rows are the only record of what H1 was actually paid
+  // on, and rewriting manager_hr_id across them would restate settled payouts to match today's org
+  // chart. Sales attribution now comes from SoS Monthly Closing, which resolves the manager from
+  // the seat model per period, so there is nothing left here to keep in sync.
   //
-  // It is also HISTORY. Those rows are the only record of what H1 was actually paid on. Rewriting
-  // manager_hr_id across them would restate settled payouts to match today's org chart. Sales
-  // attribution now comes from SoS Monthly Closing, which resolves the manager from the seat model
-  // per period, so there is nothing here left to keep in sync.
-  // `sales_targets` is EMPTY on production and has never held a row — the live sales targets are
-  // `au.monthly_targets` (see src/lib/sales/monthly-targets.ts, and the table's own Postgres
-  // COMMENT). So both PATCHes below match nothing; they cost two round-trips per manager change
-  // and change no data. They stay because tests/manager-cascade-frozen-tables.test.ts pins their
-  // presence in the required CI `validate` check — retiring the pair is a deliberate change that
-  // must update that test too, not a tidy-up.
-  await patchOptionalTable(
-    `sales_targets?manager_hr_id=eq.${previous}&year=gt.${year}`,
-    salesPayload,
-  );
-  await patchOptionalTable(
-    `sales_targets?manager_hr_id=eq.${previous}&year=eq.${year}&month=gte.${month}`,
-    salesPayload,
-  );
+  // `sales_targets` is GONE. It and sales_target_batches were dropped on 2026-09-06
+  // (supabase/migrations/20260906001400_drop_the_empty_legacy_sales_target_tables.sql) after
+  // holding zero rows for their entire life. The live sales targets are `au.monthly_targets`
+  // (src/lib/sales/monthly-targets.ts). The two PATCHes that used to sit here matched nothing.
 }
 
 // Server-side backstop: an area_id must reference an existing, ACTIVE area (the 42 canonical areas).

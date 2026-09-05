@@ -6,17 +6,16 @@ import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 // ─────────────────────────────────────────────────────────────────────────────
 // SOURCE OF TRUTH — sales targets live in `au.monthly_targets`, and nowhere else.
 //
-// `public.sales_targets` and `public.sales_target_batches` are DEAD: zero rows on production,
-// ever, and nothing in this repository reads them. They are dangerous precisely BECAUSE they
-// are empty rather than missing — they hold the obvious name in the obvious schema and answer
-// a SELECT with a confident, authoritative, wrong zero. A system tour on 2026-09-05 queried
-// `public.sales_targets` for the current quarter and briefly had evidence that no sales targets
-// existed at all. Both tables now carry a Postgres COMMENT saying so, added by
-// supabase/migrations/20260905233500_sales_targets_is_empty_legacy_say_so.sql.
+// `public.sales_targets` and `public.sales_target_batches` were DROPPED on 2026-09-06
+// (supabase/migrations/20260906001400_drop_the_empty_legacy_sales_target_tables.sql). They held
+// zero rows for their entire life and nothing ever read them. Recorded here because the trap they
+// created outlived them: they were dangerous precisely BECAUSE they were empty rather than
+// missing — they held the obvious name in the obvious schema and answered a SELECT with a
+// confident, authoritative, wrong zero. A system tour on 2026-09-05 queried `public.sales_targets`
+// for the current quarter and briefly had evidence that no sales targets existed at all.
 //
-// The only live code touching them is a WRITE — the manager-reassignment cascade in
-// src/lib/employees/employee-directory.ts — which matches zero rows and is pinned by
-// tests/manager-cascade-frozen-tables.test.ts in the required CI `validate` check.
+// So if you find a reference to either name anywhere, it is stale by definition: the answer is
+// always `au.monthly_targets`, read through the service-role RPCs below. Do not recreate them.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
