@@ -208,7 +208,37 @@ export function buildCodedWorkbook(result: NormalizeResult): Promise<ExcelJS.Buf
   result.coded.forEach((r) => {
     sheet.addRow([
       r.distributorCode, r.regionCode, r.areaCode, r.brickId, r.productCode, r.productName,
-      r.qty, r.bonusQty, r.value, r.discount, r.invoiceDate, r.clientCode ?? "", r.clientName ?? "", r.clientAddress ?? "", r.officialLine,
+      r.qty, r.bonusQty, r.value, r.discount,
+      // THE "Invoice Date" COLUMN MUST CARRY THE DAY, NOT THE PERIOD.
+      //
+      // Two fields one letter apart, meaning different things, and the names are INVERTED between
+      // the two modules — which is what hid this:
+      //   normalizer  `invoiceDate` = periodFrom(...) -> "2026-04"   `invoiceDay` = dateFrom(...) -> "2026-04-17"
+      //   importer    `invoicePeriod` = the period                   `invoiceDate` = the DAY
+      //
+      // This cell was written with `r.invoiceDate`, the PERIOD. `buildCodedBuffer` feeds this sheet
+      // straight back into the Source-of-Sales validator for the one-click "Import (validated)"
+      // path, and that importer derives BOTH values from this single column. Measured:
+      // `resolveInvoiceDate("2026-04", …, "2026-04")` returns **"2026-04-01"** — its ISO branch
+      // needs three groups so the period falls through, and the row lands stamped on the FIRST OF
+      // THE MONTH. Every row. A whole month of invoices collapsing onto day 1 is not a visible
+      // error; it is a plausible-looking date that silently destroys day-level attribution.
+      //
+      // ⚠ THIS IS A LATENT DEFECT, NOT THE ONE THAT DAMAGED APRIL–JUNE. Do not conflate them.
+      // The 126,321 rows across 2026-04..06 with a NULL invoice_date came from the OTHER path
+      // (`buildNormalizedImportRows`) before it was fixed on 2026-08-05 in c6a39cbd3 — their
+      // `raw_row` is `{}`, which this round-trip could never produce. That fix holds: July and
+      // August carry 33 and 31 distinct days with only 5.2%/3.1% on the 1st. This path is simply
+      // not the one currently in use — but it is still reachable, and it would stamp day 1.
+      //
+      // Writing the DAY fixes it with no schema, template or parser change: the column is matched
+      // by NAME and its meaning is unchanged — it is finally given the value its own heading
+      // promises, and `invoicePeriod("2026-04-17")` still yields the same period as before.
+      //
+      // The fallback preserves behaviour for a row whose source had no usable date: the period is
+      // written, and the importer resolves day 1 from it exactly as it does today.
+      r.invoiceDay ?? r.invoiceDate,
+      r.clientCode ?? "", r.clientName ?? "", r.clientAddress ?? "", r.officialLine,
     ]);
   });
   // Second sheet: the unmapped rows the user still needs to map once.
