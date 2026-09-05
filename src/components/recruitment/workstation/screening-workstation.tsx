@@ -51,6 +51,7 @@ import {
   type ScreeningWorkQueue,
   type WorkQueueCounts,
 } from "@/lib/recruitment/screening-queues";
+import { DUPLICATE_FOLDER_KEY, DUPLICATE_FOLDER_KIND } from "@/lib/recruitment/candidate-folder";
 import { FREE_POSITION, NO_POSITION } from "@/components/recruitment/vacancy-picker";
 import { primaryCvFile } from "@/lib/recruitment/cv-file-choice";
 import type { StoredCvExtraction } from "@/lib/recruitment/cv-extraction-fields";
@@ -164,6 +165,8 @@ export function ScreeningWorkstation({
   const [decided, setDecided] = useState<Record<string, CandidateStatus>>({});
   const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
   const [sentInSession, setSentInSession] = useState<Record<string, string>>({});
+  /** Archived to the Duplicates shelf in this session - dropped from the list without a reload. */
+  const [archived, setArchived] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [sendState, setSendState] = useState<SendState>({
@@ -182,6 +185,8 @@ export function ScreeningWorkstation({
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return rows.filter((row) => {
+      // Archived in this session: gone from every pile at once, the way a reload would show it.
+      if (archived[row.id]) return false;
       if (queue !== "all" && !row.queues.includes(queue)) return false;
       if (vacancyId !== null && !row.vacancyIds.includes(vacancyId)) return false;
       if (!needle) return true;
@@ -198,7 +203,7 @@ export function ScreeningWorkstation({
         .filter(Boolean)
         .some((field) => String(field).toLowerCase().includes(needle));
     });
-  }, [queue, rows, search, vacancyId]);
+  }, [archived, queue, rows, search, vacancyId]);
 
   // FROM THE VISIBLE LIST, not from every row the server sent.
   //
@@ -423,6 +428,43 @@ export function ScreeningWorkstation({
     setBusy(false);
   }, [busy, hiringManagers, selected, sendState]);
 
+  /**
+   * Put this record on the Duplicates shelf.
+   *
+   * A SHELF, not a delete - fileCandidateToFolder writes folder_kind/key/filed_at and the pool
+   * filter drops it; every byte of the candidate, its files and its history stays, and it can be put
+   * back from the folder. That is the whole reason a one-click action is defensible on evidence this
+   * weak: the worst outcome of a wrong press is a CV in the wrong folder, not a lost applicant.
+   *
+   * Optimistic on the LIST only. The row is dropped locally so the reader moves on, and the server's
+   * own counts are refreshed on the next load - the same rule the decision path already follows.
+   */
+  const archiveDuplicate = useCallback(
+    async (candidateId: string) => {
+      if (busy) return;
+      setBusy(true);
+      setActionError(null);
+      try {
+        const res = await fetch(`/api/recruitment/candidates/${candidateId}/folder`, {
+          body: JSON.stringify({ key: DUPLICATE_FOLDER_KEY, kind: DUPLICATE_FOLDER_KIND }),
+          headers: { "Content-Type": "application/json" },
+          method: "PATCH",
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as { message?: string };
+          throw new Error(data.message ?? "Could not archive this CV.");
+        }
+        setArchived((prev) => ({ ...prev, [candidateId]: true }));
+        goToNext();
+      } catch (caught) {
+        setActionError(caught instanceof Error ? caught.message : "Could not archive this CV.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, goToNext],
+  );
+
   const suggestedVacancyIds = selected?.vacancyIds ?? [];
 
   const listTitle = screeningWorkQueueLabels[queue];
@@ -578,7 +620,12 @@ export function ScreeningWorkstation({
                   vacancies={vacancies}
                 />
                 {selected.duplicateCount > 1 ? (
-                  <DuplicateBanner onOpen={openCandidate} row={selected} />
+                  <DuplicateBanner
+                    archiving={busy}
+                    onArchive={(id) => void archiveDuplicate(id)}
+                    onOpen={openCandidate}
+                    row={selected}
+                  />
                 ) : null}
                 <div className="min-h-0 flex-1">
                   <WorkstationCvPane
@@ -637,18 +684,41 @@ export function ScreeningWorkstation({
  * both records can tell those apart. So this names the other record and offers to open it; the
  * merge lives on the candidate's own screen, where the whole of both records is visible.
  */
+/**
+ * The pair, the EVIDENCE behind it, and the one action that resolves it.
+ *
+ * The sentence names what was actually matched rather than asserting a duplicate, because neither
+ * signal is proof: candidate-matching.ts keeps the identity rule LOCKED to national ID then email —
+ * neither of which has a single collision in production — and records that phone matching once
+ * "merged three different applicants into one record". Families share a handset; Egyptian names
+ * repeat. So this reports, offers both records to read, and lets a PERSON archive one.
+ *
+ * Archiving is a SHELF, not a delete: the row, its files and its history stay, and the CV can be put
+ * back in the pool from the Duplicates folder. That is what makes a one-click action safe on
+ * evidence this weak.
+ */
 function DuplicateBanner({
+  archiving,
+  onArchive,
   onOpen,
   row,
 }: {
+  archiving: boolean;
+  onArchive: (id: string) => void;
   onOpen: (id: string) => void;
   row: WorkspaceCandidateRow;
 }) {
+  const evidence =
+    row.duplicateReason === "phone"
+      ? "share this phone number"
+      : row.duplicateReason === "name"
+        ? "carry this same name"
+        : "look like the same person";
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-phx-warn-line bg-phx-warn-bg px-4 py-1.5">
       <Layers aria-hidden className="h-3.5 w-3.5 shrink-0 text-phx-warn" />
       <span className="text-[12px] font-bold text-phx-warn">
-        {row.duplicateCount} records share this phone number.
+        {row.duplicateCount} records {evidence}.
       </span>
       {row.duplicateIds.map((id, index) => (
         <button
@@ -660,9 +730,22 @@ function DuplicateBanner({
           Open {row.duplicateNames[index] ?? "the other record"}
         </button>
       ))}
+      {/* Archives the one ON SCREEN, never the other — the reader is looking at the record they are
+          judging, and a button that acted on the twin would act on a CV they have not read. */}
+      <button
+        className="border border-phx-warn-line bg-white px-2 py-0.5 text-[12px] font-bold text-phx-warn transition hover:bg-phx-warn hover:text-white disabled:opacity-50"
+        disabled={archiving}
+        onClick={() => onArchive(row.id)}
+        title="Move this record to the Duplicates folder. It leaves the pool and can be put back."
+        type="button"
+      >
+        {archiving ? "Archiving..." : "Archive this one as a duplicate"}
+      </button>
       <span className="w-full text-[11px] leading-tight text-phx-ink-soft">
-        It may be the same person applying twice, or two people sharing a handset. Read both before merging anything —
-        nothing is merged from here.
+        {row.duplicateReason === "name"
+          ? "A shared name is the weakest signal there is - read both before archiving either."
+          : "It may be the same person applying twice, or two people sharing a handset. Read both first."}{" "}
+        Archiving files this record under Duplicates; nothing is merged and nothing is deleted.
       </span>
     </div>
   );

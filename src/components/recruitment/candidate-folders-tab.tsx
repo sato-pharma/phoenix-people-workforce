@@ -75,7 +75,7 @@ export function CandidateFoldersTab({
   onOpenCandidate: (candidateId: string) => void;
 }) {
   const router = useRouter();
-  const { shelves, filedCount, pool } = partitionCandidatesByFolder(candidates);
+  const { archived, shelves, filedCount, pool } = partitionCandidatesByFolder(candidates);
   // Which folder is open, as "kind/key". Null shows the shelves themselves — the filing cabinet
   // closed, which is the right first view when there are more folders than fit on a screen.
   const [openFolder, setOpenFolder] = useState<string | null>(null);
@@ -114,6 +114,52 @@ export function CandidateFoldersTab({
         <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
           {error}
         </p>
+      ) : null}
+
+      {/* ── THE ARCHIVE, AND THE WAY BACK OUT ────────────────────────────────────────────────────
+          Records archived as duplicates from the screening queue. It is listed rather than hidden
+          because the evidence behind a duplicate is never proof — candidate-matching.ts keeps the
+          identity rule LOCKED to national ID then email, and neither has a single collision in
+          production, so everything here was archived on a shared number or a shared name. A person
+          pressed the button; a person must be able to undo it, and "reversible" is only true if
+          there is a screen that shows what to reverse. */}
+      {archived.length > 0 ? (
+        <section className="border border-phx-line bg-white">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-phx-line px-3 py-2">
+            <h3 className="text-sm font-black text-phx-ink">Duplicates</h3>
+            <p className="text-xs font-medium text-slate-500">
+              Archived as the same person as another record. Out of the pool, nothing merged, nothing deleted.
+            </p>
+            <span className="ml-auto whitespace-nowrap text-xs font-bold tabular-nums text-phx-ink-soft">
+              {archived.length} archived
+            </span>
+          </div>
+          <ul>
+            {archived.map((candidate) => (
+              <li
+                className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-phx-line px-3 py-1.5 last:border-b-0"
+                key={candidate.id}
+              >
+                <button
+                  className="text-[13px] font-bold text-phx-ink underline-offset-2 hover:underline"
+                  onClick={() => onOpenCandidate(candidate.id)}
+                  type="button"
+                >
+                  {candidate.fullName}
+                </button>
+                <span className="text-[12px] text-slate-500">{candidate.phone ?? candidate.email ?? ""}</span>
+                <button
+                  className="ml-auto border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50"
+                  disabled={busyId === candidate.id}
+                  onClick={() => void returnToPool(candidate)}
+                  type="button"
+                >
+                  {busyId === candidate.id ? "Putting back..." : "Put back in the pool"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
 
       <DeclaredFilingsPanel candidates={candidates} />

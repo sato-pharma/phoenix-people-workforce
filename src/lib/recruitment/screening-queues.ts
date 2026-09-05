@@ -33,6 +33,7 @@ export const screeningWorkQueues = [
   "manager_feedback",
   "duplicates",
   "interviews",
+  "red_flagged",
   "all",
 ] as const;
 
@@ -46,16 +47,18 @@ export const screeningWorkQueueLabels: Record<ScreeningWorkQueue, string> = {
   manager_feedback: "Manager feedback",
   new: "New CVs",
   recommended: "Recommended",
+  red_flagged: "Red-flagged",
 };
 
 /** The second line, saying what the pile actually is rather than repeating its name. */
 export const screeningWorkQueueDescriptions: Record<ScreeningWorkQueue, string> = {
   all: "Every CV in this pool",
-  duplicates: "Same phone, two records",
+  duplicates: "Same number or same name",
   interviews: "Scheduled for today",
   manager_feedback: "Pending / overdue",
   new: "First review required",
   recommended: "Strong role fit",
+  red_flagged: "Cannot be hired",
 };
 
 /**
@@ -67,11 +70,12 @@ export const screeningWorkQueueDescriptions: Record<ScreeningWorkQueue, string> 
  */
 export const screeningWorkQueueEmptyLabels: Record<ScreeningWorkQueue, string> = {
   all: "No CVs match the filters above.",
-  duplicates: "No two records share a phone number. Nothing to merge.",
+  duplicates: "No two records share a number or a name. Nothing to review.",
   interviews: "Nobody is being interviewed today.",
   manager_feedback: "Every CV sent to a manager has been answered.",
   new: "Every CV here has been reviewed at least once.",
   recommended: "No field-force or pharma CVs are waiting in this pool.",
+  red_flagged: "Nothing here is ineligible or already rejected.",
 };
 
 /**
@@ -164,6 +168,19 @@ export function workQueuesFor(input: WorkQueueInput): ScreeningWorkQueue[] {
 
   if (input.interviewToday) queues.push("interviews");
 
+  // ── THE PILE THE POOL ALREADY HAD AND THIS RAIL DID NOT ─────────────────────────────────────────
+  //
+  // `red-flag.ts` exists because the owner's complaint was that CVs he cannot hire sit mixed in
+  // among the ones he can, and the candidate pool answers it with a two-tab split
+  // (partitionCandidatesByRedFlag). The rail never got one: 97 of 597 rows on 2026-09-05 — 96
+  // rejected, 24 stating a nationality we cannot hire — were excluded from the piles above and then
+  // left unsorted in "Everyone", which is the one pile a recruiter searches.
+  //
+  // It is its OWN pile rather than a filter on the others, and that is the point: these rows stay
+  // fully visible, fully actionable and fully counted, just not in the way of the rest — the exact
+  // words red-flag.ts uses about its own tabs.
+  if (input.redFlagged) queues.push("red_flagged");
+
   return queues;
 }
 
@@ -183,6 +200,7 @@ export function emptyWorkQueueCounts(): WorkQueueCounts {
     manager_feedback: 0,
     new: 0,
     recommended: 0,
+    red_flagged: 0,
   };
 }
 

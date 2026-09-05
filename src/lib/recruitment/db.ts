@@ -2,7 +2,7 @@
 // the workflow-registry transition guard, and append-only event logging.
 
 import type { PhoenixRole } from "@/lib/auth/permissions";
-import { isCandidateFolderKind } from "@/lib/recruitment/candidate-folder";
+import { isStorableFolderKind } from "@/lib/recruitment/candidate-folder";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { assertWorkflowRegistryTransition } from "@/lib/workflow-registry/service";
 import {
@@ -236,7 +236,7 @@ export function mapCandidate(row: CandidateDbRow): Candidate {
     // in a later release, a value typed straight into the table) leaves the candidate in the pool
     // instead of forging a folder the vocabulary has no name for.
     folder:
-      textOrNull(row.folder_filed_at) && isCandidateFolderKind(row.folder_kind) && textOrNull(row.folder_key)
+      textOrNull(row.folder_filed_at) && isStorableFolderKind(row.folder_kind) && textOrNull(row.folder_key)
         ? {
             filedAt: String(row.folder_filed_at),
             filedByHrId: textOrNull(row.folder_filed_by_hr_id),

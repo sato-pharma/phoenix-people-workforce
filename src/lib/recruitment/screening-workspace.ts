@@ -54,7 +54,7 @@ import {
 } from "@/lib/recruitment/vacancy-options";
 import { matchesScreeningNarrowing, screeningAreaOptions, screeningSourceOptions } from "@/lib/recruitment/screening-filter";
 import { normalizeCandidateStatus, type CandidateStatus } from "@/lib/recruitment/candidate-status";
-import { normalizePhone } from "@/lib/recruitment/candidate-matching";
+import { normalizeNameForMatch, normalizePhone } from "@/lib/recruitment/candidate-matching";
 import {
   parseScreeningFilters,
   type ScreeningNotifiedFilter,
@@ -83,9 +83,10 @@ import {
 import type { CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import type { Candidate } from "@/lib/recruitment/types";
 
-import type { WorkspaceCandidateRow } from "@/lib/recruitment/screening-workspace-types";
+import type { DuplicateReason, WorkspaceCandidateRow } from "@/lib/recruitment/screening-workspace-types";
 
 export type {
+  DuplicateReason,
   RowFact,
   WorkspaceCandidateRow,
   WorkspaceManager,
@@ -107,6 +108,25 @@ export type ScreeningWorkspace = {
   filteredOut: number;
   /** The whole live pool, before the URL filters. The denominator every count is honest about. */
   poolSize: number;
+  /**
+   * Is the backlog growing or shrinking, in the only terms that matter — CVs in against CVs decided.
+   *
+   * The rail could say how big each pile is and nothing could say whether the reader is winning.
+   * Measured 2026-09-05: 597 in the pool, 438 never opened by anybody, 153 arrived in seven days
+   * against an average 12.8 days to a first decision. The queue was correct and losing, and no
+   * number on the page said so.
+   *
+   * Every figure comes off data this function already holds — the pool, the caller's own view map
+   * and the status stamps — so the strip costs no extra round trip.
+   */
+  throughput: {
+    /** In this pool, never opened by THIS viewer. The same "seen" the rest of the page means. */
+    unread: number;
+    /** Arrived in the last seven days. */
+    arrived7: number;
+    /** Moved off `new` in the last seven days — the reader's actual output. */
+    decided7: number;
+  };
   canSendToManagers: boolean;
 
   seen: ScreeningSeenFilter;
@@ -229,6 +249,20 @@ export async function loadScreeningWorkspace(
   // lie at exactly the moment a recruiter narrows down to act on it.
   const twins = duplicateSets(pool, describeForOrder);
 
+  // The same pool indexed by NORMALIZED NAME — the second half of the rule the candidate pool has
+  // always used. Built over the whole live pool for the reason the phone index is: a pair that stops
+  // being reported the moment one of the two is filtered out of sight is a warning that quietly
+  // becomes a lie at exactly the moment a recruiter narrows down to act on it.
+  const nameTwins = new Map<string, Candidate[]>();
+  for (const candidate of pool) {
+    const key = normalizeNameForMatch(candidate.fullName);
+    if (!key) continue;
+    const group = nameTwins.get(key);
+    if (group) group.push(candidate);
+    else nameTwins.set(key, [candidate]);
+  }
+  for (const [key, group] of nameTwins) if (group.length < 2) nameTwins.delete(key);
+
   const rowFor = (candidate: Candidate): WorkspaceCandidateRow => {
     const facts = candidateScreeningFacts(candidate);
     const appliedFor = candidateRowAppliedFor(candidate);
@@ -243,11 +277,45 @@ export async function loadScreeningWorkspace(
     const family: CandidateRoleFamily | null = hiringTargetFamily(appliedFor.text, facts);
     const fit = readRoleFit(facts, family, appliedFor.text);
 
+    // ── TWO KINDS OF EVIDENCE, NEITHER OF THEM PROOF ────────────────────────────────────────────
+    //
+    // The pile keyed on the phone alone, so it could not see the same person arriving twice under
+    // one name with two numbers — and 58 of the 597 candidates on 2026-09-05 carry no phone or
+    // WhatsApp at all, so they could never enter it. The candidate pool has always flagged BOTH
+    // (findDuplicateFlags: phone-tail, then normalized name); this brings the rail up to the same
+    // rule rather than inventing a third one.
+    //
+    // NEITHER SIDE IS PROOF, and the strength is carried through to the screen rather than
+    // flattened away. candidate-matching.ts marks the identity rule LOCKED — national ID, then
+    // email, and nothing else merges a record — because phone matching once "merged three different
+    // applicants into one record". Families share a handset and Egypt has common names, so this
+    // reports a pair and names the evidence; a person decides.
     const phoneKey = normalizePhone(candidate.phone ?? candidate.whatsapp) ?? "";
-    const group = phoneKey ? (twins.get(phoneKey) ?? []) : [];
-    const others = group.filter((other) => other.id !== candidate.id);
-    const duplicateNames = others.map((other) => candidateDisplayName(other.fullName));
-    const duplicateIds = others.map((other) => other.id);
+    const nameKey = normalizeNameForMatch(candidate.fullName) ?? "";
+    const byPhone = phoneKey ? (twins.get(phoneKey) ?? []) : [];
+    const byName = nameKey ? (nameTwins.get(nameKey) ?? []) : [];
+
+    const seenIds = new Set<string>([candidate.id]);
+    const others: Array<{ candidate: Candidate; reason: DuplicateReason }> = [];
+    for (const other of byPhone) {
+      if (seenIds.has(other.id)) continue;
+      seenIds.add(other.id);
+      others.push({ candidate: other, reason: "phone" });
+    }
+    for (const other of byName) {
+      if (seenIds.has(other.id)) continue;
+      seenIds.add(other.id);
+      others.push({ candidate: other, reason: "name" });
+    }
+    const duplicateNames = others.map((other) => candidateDisplayName(other.candidate.fullName));
+    const duplicateIds = others.map((other) => other.candidate.id);
+    // The STRONGEST evidence in the group, for the one line the row has room for. A shared number is
+    // the stronger of the two — it is at least a fact about the record rather than about a spelling.
+    const duplicateReason: DuplicateReason | null = others.some((other) => other.reason === "phone")
+      ? "phone"
+      : others.length > 0
+        ? "name"
+        : null;
 
     const sentAt = candidate.managerNotified?.sentAt ?? null;
     const comment = comments.get(candidate.id) ?? { count: 0, latestAt: null };
@@ -258,7 +326,10 @@ export async function loadScreeningWorkspace(
     const queueInput: WorkQueueInput = {
       answeredAt,
       band: screeningBand(order),
-      duplicateCount: group.length,
+      // 1 + the others, so a candidate with no phone AND no twin reads 1 like everybody else. It
+      // used to read 0 for them, because the group was empty rather than containing themselves —
+      // harmless while every render guarded on `> 1`, and a trap for the first one that does not.
+      duplicateCount: 1 + others.length,
       interviewToday: interviewToday.has(candidate.id),
       redFlagged: redFlags.length > 0,
       sentToManagerAt: sentAt,
@@ -274,9 +345,10 @@ export async function loadScreeningWorkspace(
       currentEmployer: facts.employer,
       currentRole: facts.roleTitle,
       declaredExperience: facts.declaredExperience?.value ?? null,
-      duplicateCount: group.length,
+      duplicateCount: queueInput.duplicateCount,
       duplicateIds,
       duplicateNames,
+      duplicateReason,
       email: text(candidate.email),
       experienceConfirmed: facts.years?.confirmed ?? false,
       experienceLabel: facts.years ? formatYearsOfExperience(facts.years.value) : null,
@@ -364,6 +436,12 @@ export async function loadScreeningWorkspace(
     now,
   );
 
+  const sevenDaysAgo = asOf - 7 * 24 * 60 * 60 * 1000;
+  const withinSevenDays = (stamp: string | null | undefined): boolean => {
+    const at = stamp ? Date.parse(stamp) : NaN;
+    return Number.isFinite(at) && at >= sevenDaysAgo;
+  };
+
   return {
     ...narrowing,
     // Built from the WHOLE pool, never from the narrowed list: a dropdown that loses its own options
@@ -378,6 +456,16 @@ export async function loadScreeningWorkspace(
     positionSuggestions,
     rows,
     sourceOptions: screeningSourceOptions(pool),
+    // Over the WHOLE pool, never the narrowed view: "am I keeping up" is a question about the
+    // backlog, and a figure that shrank because a filter was applied would answer a different one.
+    throughput: {
+      arrived7: pool.filter((candidate) => withinSevenDays(candidate.createdAt)).length,
+      decided7: pool.filter(
+        (candidate) =>
+          normalizeCandidateStatus(candidate.status) !== "new" && withinSevenDays(candidate.statusChangedAt),
+      ).length,
+      unread: pool.filter((candidate) => !views[candidate.id]).length,
+    },
     vacancies: openVacancies,
     vacancyStats: openVacancies
       .map((vacancy) => vacancyStatsById.get(vacancy.id))

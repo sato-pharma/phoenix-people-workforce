@@ -8,6 +8,7 @@ import {
   candidateFolderKindLabels,
   candidateFolderLabel,
   candidateFolderRefusal,
+  isCandidateFolderKind,
   districtManagerFolderOptions,
   type CandidateFolderKind,
 } from "@/lib/recruitment/candidate-folder";
@@ -89,11 +90,18 @@ export function CandidateFolderControl({
     }
   };
 
-  if (filing) {
+  // A record archived as a duplicate is not "in your folder" — it is out of circulation, and this
+  // control is the manager's shelf. It has no label in candidateFolderKindLabels by design, so
+  // render nothing rather than an undefined heading. Un-archiving lives on the recruiter's folders
+  // tab, which is where the evidence for the pairing can actually be reviewed.
+  const shelfKind = filing && isCandidateFolderKind(filing.kind) ? filing.kind : null;
+  if (filing && !shelfKind) return null;
+
+  if (filing && shelfKind) {
     return (
       <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50/70 px-3 py-2">
         <span className="whitespace-nowrap text-xs font-semibold text-amber-900">
-          In your folder · {candidateFolderKindLabels[filing.kind]} · {candidateFolderLabel(filing.kind, filing.key)}
+          In your folder · {candidateFolderKindLabels[shelfKind]} · {candidateFolderLabel(shelfKind, filing.key)}
         </span>
         <button
           className="whitespace-nowrap rounded-md border border-amber-300 bg-white px-2.5 py-1 text-phx-xs font-semibold text-amber-900 transition hover:bg-amber-100 disabled:opacity-50"

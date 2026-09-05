@@ -73,6 +73,7 @@ export function WorkstationPageClient({
   source,
   sourceOptions,
   status,
+  throughput,
   vacancies,
   vacancyStats,
 }: {
@@ -102,6 +103,8 @@ export function WorkstationPageClient({
   source: string | null;
   sourceOptions: string[];
   status: CandidateStatus | null;
+  /** Backlog in against backlog out — see the strip below and ScreeningWorkspace["throughput"]. */
+  throughput: { unread: number; arrived7: number; decided7: number };
   vacancies: WorkspaceVacancy[];
   vacancyStats: VacancyApplicantStats[];
 }) {
@@ -216,6 +219,8 @@ export function WorkstationPageClient({
     <ScreeningPageFrame>
       {/* THE PAGE'S OWN CHROME. Both bars answer focus; both are gone in full bleed, which draws its
           own single bar inside the frame below. */}
+      {focus || fullBleed ? null : <ThroughputStrip poolSize={poolSize} throughput={throughput} />}
+
       {focus || fullBleed ? null : (
         <div className="flex flex-wrap items-center gap-2 px-2 pb-2 sm:px-4">
           <a
@@ -318,6 +323,59 @@ export function WorkstationPageClient({
         <div className="min-h-0 flex-1">{workstation}</div>
       </div>
     </ScreeningPageFrame>
+  );
+}
+
+/**
+ * IS THE BACKLOG GROWING OR SHRINKING? The one question the rail could not answer.
+ *
+ * Every number on this page described a PILE. None of them said whether the reader was keeping up,
+ * and the answer on 2026-09-05 was no: 597 in the pool, 438 never opened by anybody, 153 arrived in
+ * seven days, and an average of 12.8 days to a first decision. The queue was correct and losing, and
+ * nothing on screen said so.
+ *
+ * So: what came in, what went out, and the difference — in that order, because the difference is
+ * meaningless without the two figures that produced it. `net` is deliberately signed and worded
+ * rather than coloured: "+38 this week" is a fact, and a red pill would be this component having an
+ * opinion about a recruiter's week.
+ *
+ * The unread figure is THIS VIEWER's, the same "seen" the rest of the page means — see
+ * candidate-views.ts on why that is per person and not per candidate.
+ */
+function ThroughputStrip({
+  poolSize,
+  throughput,
+}: {
+  poolSize: number;
+  throughput: { unread: number; arrived7: number; decided7: number };
+}) {
+  const net = throughput.arrived7 - throughput.decided7;
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 border border-phx-line bg-phx-surface-2 px-3 py-1.5 text-[12px] sm:mx-2">
+      <Figure label="in the pool" value={poolSize} />
+      <Figure label="you have not opened" value={throughput.unread} />
+      <Figure label="arrived this week" value={throughput.arrived7} />
+      <Figure label="decided this week" value={throughput.decided7} />
+      <span className="flex items-baseline gap-1 font-bold text-phx-ink-2">
+        <span className="tabular-nums">
+          {net > 0 ? "+" : ""}
+          {net}
+        </span>
+        <span className="font-semibold text-phx-ink-soft">
+          {net > 0 ? "the backlog grew this week" : net < 0 ? "the backlog shrank this week" : "the backlog held level"}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+/** One figure and its words. Tabular so the row does not jitter as the numbers change. */
+function Figure({ label, value }: { label: string; value: number }) {
+  return (
+    <span className="flex items-baseline gap-1">
+      <span className="font-bold tabular-nums text-phx-ink">{value}</span>
+      <span className="font-semibold text-phx-ink-soft">{label}</span>
+    </span>
   );
 }
 

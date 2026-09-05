@@ -7,10 +7,15 @@ import {
   candidateFolderKinds,
   candidateFolderLabel,
   candidateFolderRefusal,
+  candidateStorageFolderKinds,
   canFileCandidate,
   cleanFolderKey,
   districtManagerFolderOptions,
+  DUPLICATE_FOLDER_KEY,
+  DUPLICATE_FOLDER_KIND,
   isCandidateFolderKind,
+  isDuplicateArchive,
+  isStorableFolderKind,
   isFiledCandidate,
   PARAMEDICAL_FOLDER_KEY,
   partitionCandidatesByFolder,
@@ -68,6 +73,32 @@ export async function runCandidateFolderTests() {
     ["medical_rep", "district_manager", "other", "paramedical"],
     "four shelves, in the order the owner named them — paramedical last, added 2026-08-31",
   );
+
+  // ── The archive is STORED beside them and is NOT one of them ──────────────────────────────────
+  //
+  // `folder_kind` may hold a fifth value, and it must never become a fifth shelf. Every folder
+  // screen loops over candidateFolderKinds to draw one heading per kind — deliberately including
+  // the empty ones, because "an empty shelf is information" — so widening that list would put a
+  // "Duplicates" heading on screens that are about which seat a good CV is waiting for. Both of
+  // those tests went red when it was tried, which is how the two vocabularies came to be separate.
+  assert.deepEqual(
+    [...candidateStorageFolderKinds],
+    ["medical_rep", "district_manager", "other", "paramedical", "duplicate"],
+    "the column holds the four shelves plus the duplicate archive",
+  );
+  assert.ok(!(candidateFolderKinds as readonly string[]).includes("duplicate"), "the archive is not a shelf");
+  assert.ok(isStorableFolderKind("duplicate"), "the write path and the row mapper must accept it");
+  assert.ok(!isCandidateFolderKind("duplicate"), "the shelf predicate must keep refusing it");
+  assert.ok(isDuplicateArchive(DUPLICATE_FOLDER_KIND), "and it must be recognisable as the archive");
+
+  // A REJECTED CV CAN BE ARCHIVED. The shelves refuse one — they are for good CVs waiting on a seat
+  // — but archiving a duplicate is a discard of a redundant record, and a duplicate is at least as
+  // likely to be rejected as anything else. Refusing it there would mean the one shelf built for
+  // tidying could not tidy the rows most in need of it.
+  const rejected = { status: "rejected" } as Pick<Candidate, "status">;
+  assert.equal(candidateFolderRefusal(rejected, DUPLICATE_FOLDER_KIND), null, "the archive takes a rejected CV");
+  assert.ok(candidateFolderRefusal(rejected), "a POSITION shelf still refuses one — the default is unchanged");
+  assert.ok(candidateFolderRefusal(rejected, "medical_rep"), "and so does a named shelf");
   assert.ok(isCandidateFolderKind("medical_rep"));
   assert.ok(!isCandidateFolderKind("regional_manager"), "an unknown shelf must not pass the guard");
   assert.ok(!isCandidateFolderKind(null));
@@ -236,4 +267,24 @@ export async function runCandidateFolderTests() {
   assert.ok(isFiledCandidate(filed("x", { filedAt: "2026-08-30T09:00:00Z", key: "Nasr City", kind: "medical_rep" })));
   assert.ok(!isFiledCandidate(filed("y", null)));
   assert.ok(!isFiledCandidate(null));
+
+  // ── An archived duplicate is out of the pool AND off every shelf ──────────────────────────────
+  //
+  // The unknown-kind fallback deliberately leaves a row in the pool rather than hiding it in a
+  // folder nobody can name — right for a kind nobody recognises, wrong here, where the kind IS
+  // recognised and the whole point is that the record has been taken out of circulation. Without
+  // its own bucket an archived duplicate reappears in the pool on the folders tab, which is the one
+  // screen that would make the archive look broken.
+  {
+    const archivedRow = filed("dup", { filedAt: "2026-09-05T00:00:00.000Z", key: DUPLICATE_FOLDER_KEY, kind: DUPLICATE_FOLDER_KIND });
+    const split = partitionCandidatesByFolder([filed("live", null), archivedRow]);
+    assert.deepEqual(split.archived.map((row) => row.id), ["dup"], "the archive has its own bucket");
+    assert.deepEqual(split.pool.map((row) => row.id), ["live"], "and it is NOT left in the pool");
+    assert.equal(
+      split.shelves.some((shelf) => shelf.folders.some((folder) => folder.candidates.some((row) => row.id === "dup"))),
+      false,
+      "nor on any of the four shelves",
+    );
+    assert.equal(split.filedCount, 1, "it still counts as filed — it is off the pool");
+  }
 }

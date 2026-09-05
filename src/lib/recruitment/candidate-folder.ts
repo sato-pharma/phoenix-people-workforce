@@ -51,6 +51,57 @@ import type { Candidate } from "@/lib/recruitment/types";
  */
 export const candidateFolderKinds = ["medical_rep", "district_manager", "other", "paramedical"] as const;
 
+/**
+ * The duplicate archive — a STORED kind, deliberately NOT one of the shelves above.
+ *
+ * ── WHY IT IS NOT A FIFTH SHELF ─────────────────────────────────────────────────────────────────
+ *
+ * `candidateFolderKinds` is the owner's own list, in the order he named them, and every folder
+ * screen loops over it to draw a shelf per kind — deliberately including the empty ones, because
+ * "an empty shelf is information; a shelf that vanishes makes the feature look broken". Adding a
+ * fifth member therefore does not add an archive; it puts a "Duplicates" heading on every screen
+ * that is about which seat a good CV is waiting for. Two tests caught exactly that.
+ *
+ * So the two vocabularies are split. The four above are what a CV is filed UNDER, and what the
+ * shelf screens render. This one is a state a record is put IN: the same storage columns, because
+ * they already mean "out of the pool, reversibly, stamped with who and when" — and nothing else in
+ * the schema means that — but never a shelf, never rendered as one, and never offered in a picker.
+ *
+ * ── WHY A SHELF AND NOT A DELETE ────────────────────────────────────────────────────────────────
+ *
+ * The pairing is never proof. candidate-matching.ts keeps the identity rule LOCKED to national ID
+ * then email, and neither has a single collision in production, so every duplicate a person archives
+ * today rests on a shared number or a shared name — and phone matching once "merged three different
+ * applicants into one record". Filing is reversible and keeps the row, its files and its history.
+ */
+export const DUPLICATE_FOLDER_KIND = "duplicate" as const;
+
+/** The archive holds ONE folder, like the paramedical shelf — see PARAMEDICAL_FOLDER_KEY. */
+export const DUPLICATE_FOLDER_KEY = "Duplicate";
+
+/** What the archive is called wherever it IS shown — the screening banner, and the folders tab. */
+export const DUPLICATE_FOLDER_LABEL = "Duplicates";
+
+/**
+ * Everything `folder_kind` may hold in the database: the four shelves plus the archive.
+ *
+ * This is what the CHECK constraint lists and what the write path and the row mapper must accept.
+ * `candidateFolderKinds` is the DISPLAY vocabulary and stays the owner's four.
+ */
+export const candidateStorageFolderKinds = [...candidateFolderKinds, DUPLICATE_FOLDER_KIND] as const;
+
+export type CandidateStorageFolderKind = (typeof candidateStorageFolderKinds)[number];
+
+/** True for anything the column may legally hold — a shelf OR the duplicate archive. */
+export function isStorableFolderKind(value: unknown): value is CandidateStorageFolderKind {
+    return typeof value === "string" && (candidateStorageFolderKinds as readonly string[]).includes(value);
+}
+
+/** True when this filing is the duplicate archive rather than a position shelf. */
+export function isDuplicateArchive(kind: unknown): boolean {
+    return kind === DUPLICATE_FOLDER_KIND;
+}
+
 export type CandidateFolderKind = (typeof candidateFolderKinds)[number];
 
 /**
@@ -173,16 +224,30 @@ export function districtManagerFolderOptions(): Array<{ key: string; label: stri
  * Returns the sentence to show, not a boolean, so the button's tooltip and the route's 400 say the
  * same thing rather than two wordings that drift.
  */
-export function candidateFolderRefusal(candidate: Pick<Candidate, "status"> | null | undefined): string | null {
+export function candidateFolderRefusal(
+  candidate: Pick<Candidate, "status"> | null | undefined,
+  // Defaults to the POSITION shelves, so all nine existing callers keep the rule they had.
+  kind: CandidateStorageFolderKind | null = null,
+): string | null {
   if (!candidate) return "Candidate not found.";
+  // THE DUPLICATE SHELF IS EXEMPT, and the exemption is the whole reason this takes a kind.
+  //
+  // The rule below exists because "folders are for good CVs waiting on a seat", so a rejected CV has
+  // no business on one. Archiving a duplicate is the opposite act — it is a discard of a REDUNDANT
+  // RECORD, and a duplicate is at least as likely to be rejected as anything else. Refusing it there
+  // would mean the one shelf built for tidying could not tidy the rows most in need of it.
+  if (kind === DUPLICATE_FOLDER_KIND) return null;
   if (normalizeCandidateStatus(candidate.status) === "rejected") {
     return "A rejected CV cannot be filed. Folders are for good CVs waiting on a seat — change the status first if this one is back in play.";
   }
   return null;
 }
 
-export function canFileCandidate(candidate: Pick<Candidate, "status"> | null | undefined): boolean {
-  return candidateFolderRefusal(candidate) === null;
+export function canFileCandidate(
+  candidate: Pick<Candidate, "status"> | null | undefined,
+  kind: CandidateStorageFolderKind | null = null,
+): boolean {
+  return candidateFolderRefusal(candidate, kind) === null;
 }
 
 // ── Reading a filed candidate ────────────────────────────────────────────────────────────────────
@@ -193,7 +258,7 @@ export function canFileCandidate(candidate: Pick<Candidate, "status"> | null | u
  * without any of them having to build a whole candidate.
  */
 export type FiledCandidate = {
-  folder?: { kind: CandidateFolderKind; key: string; filedAt: string; filedByHrId: string | null } | null;
+  folder?: { kind: CandidateStorageFolderKind; key: string; filedAt: string; filedByHrId: string | null } | null;
 };
 
 /**
@@ -246,19 +311,45 @@ export function partitionCandidatesByFolder(candidates: readonly Candidate[]): {
   pool: Candidate[];
   shelves: CandidateFolderShelf[];
   filedCount: number;
+  /**
+   * Records archived as duplicates — out of the pool, and NOT on a shelf.
+   *
+   * A third bucket rather than a fifth shelf, for the reason DUPLICATE_FOLDER_KIND gives: the four
+   * shelves are the owner's own list and every folder screen draws one heading per kind, so an
+   * archive among them would put "Duplicates" on screens that are about which seat a good CV is
+   * waiting for.
+   *
+   * It must not fall into `pool` either. The unknown-kind fallback below deliberately leaves a row
+   * a human can see rather than hiding it — right for a kind nobody can name, wrong here, where the
+   * kind is known and the whole point is that the record has been taken out of circulation. Without
+   * this bucket an archived duplicate reappears in the pool on the folders tab, which is the one
+   * screen that would make the archive look broken.
+   *
+   * Added so the archive is REVERSIBLE and visible: these are what a "Duplicates" section lists, and
+   * DELETE /api/recruitment/candidates/[id]/folder puts any of them back.
+   */
+  archived: Candidate[];
 } {
   const pool: Candidate[] = [];
+  const archived: Candidate[] = [];
   const byKind = new Map<CandidateFolderKind, Map<string, CandidateFolder>>();
   for (const kind of candidateFolderKinds) byKind.set(kind, new Map());
   let filedCount = 0;
 
   for (const candidate of candidates) {
     const folder = candidate.folder ?? null;
-    const groupKey = folder ? candidateFolderKey(folder.kind, folder.key) : null;
+    // Narrowed with the shelf predicate, so the archive kind never reaches a shelf helper.
+    const groupKey = folder && isCandidateFolderKind(folder.kind) ? candidateFolderKey(folder.kind, folder.key) : null;
     // A row whose kind is unknown or whose key is empty is NOT hidden. The database constraint makes
     // that shape unreachable through the app, but a hand-written SQL fix could produce it, and the
     // safe failure for "I cannot tell which folder this is" is to leave the CV where a human will
     // see it rather than to hide it in a folder nobody can name.
+    // The archive first: a known kind, deliberately out of both the pool and the shelves.
+    if (folder && isDuplicateArchive(folder.kind)) {
+      archived.push(candidate);
+      filedCount += 1;
+      continue;
+    }
     if (!folder || !groupKey || !isCandidateFolderKind(folder.kind)) {
       pool.push(candidate);
       continue;
@@ -301,5 +392,5 @@ export function partitionCandidatesByFolder(candidates: readonly Candidate[]): {
     };
   });
 
-  return { filedCount, pool, shelves };
+  return { archived, filedCount, pool, shelves };
 }
