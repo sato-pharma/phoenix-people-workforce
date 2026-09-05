@@ -1386,6 +1386,7 @@ import { runHrFormsHousePapersTests } from "./hr-forms-house-papers.test.ts";
 import { runCairoTodayLocaleSafeTests } from "./cairo-today-locale-safe.test.ts";
 
 import { runClosingWorkbookLinkOriginTests } from "./closing-workbook-link-origin.test.ts";
+import { runVacancyCloseManagerHrIdCanonicalTests } from "./vacancy-close-manager-hr-id-canonical.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4386,6 +4387,10 @@ await runTest("closing workbook Export PDF link origin (allow-list validated, ne
 await runTest(
   "today in Cairo is locale-safe (ISO shape the sign route accepts, Latin digits, year-month-day order, Cairo rollover)",
   runCairoTodayLocaleSafeTests,
+);
+await runTest(
+  "closeVacancyOnHire's manager_hr_id filter is canonicalized (a mixed-case manager id no longer falls through to the manager-less-vacancy fallback and closes the wrong seat)",
+  runVacancyCloseManagerHrIdCanonicalTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
