@@ -6,6 +6,8 @@
 // leak). hr_id/login_id fields are never passed in at all; this covers what's embedded in
 // free text. Pure + unit-tested.
 
+import { redactSecretsFromRoute } from "@/lib/error-monitor/redact-route";
+
 // Order matters: emails and UUIDs first (they contain digit/letter runs the later, broader
 // patterns would otherwise mangle), then route params, then bare identifier shapes.
 const EMAIL = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
@@ -30,7 +32,11 @@ function collapseRouteParams(text: string): string {
 
 export function redactForAi(text: string | null | undefined): string {
   if (!text) return "";
-  return collapseRouteParams(text)
+  // Credentials first. A share or password-setup token is opaque, so the patterns below would
+  // leave most of it intact. New rows are already clean at capture; this covers the rows that
+  // were logged before that landed, which are exactly the ones triage reads back.
+  const withoutSecrets = redactSecretsFromRoute(text) ?? text;
+  return collapseRouteParams(withoutSecrets)
     .replace(EMAIL, "[email]")
     .replace(UUID, "[uuid]")
     .replace(EMPLOYEE_CODE, "[id]")
