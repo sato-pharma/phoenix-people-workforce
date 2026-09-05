@@ -423,6 +423,110 @@ the rule. So **`overflow-x-auto` over a `min-width` floor IS the bug, not the fi
 
 `never-horizontal-scroll-always-mobile-and-desktop-friendly`
 
+### 🔒 The square-edge golden rule — why `globals.css`'s own sweep is not coverage
+
+Owner rule 2026-09-04, *"no round or semi-round corners, anywhere"*. The hook is in
+[AGENTS.md](../AGENTS.md) §4. This is the account of the part that keeps catching sessions out: the
+app **already** has a wholesale square-corner sweep, and reading it as coverage is what let three
+separate breaches ship.
+
+The sweep is two rules in `app/globals.css`, one per shell:
+
+```css
+.admin-shell [class*="rounded"]          { border-radius: 0 !important; }
+.employee-portal-shell [class*="rounded"] { border-radius: 0 !important; }
+```
+
+It is genuinely broad — it squares `rounded-full` pills, chips, badges and dots without touching a
+single component file. But it matches **a Tailwind class, on an element**, and that sentence contains
+both of its blind spots.
+
+**Blind spot 1 — a hand-written `border-radius` on a plain class name.** The selector needs a
+`rounded*` substring in the element's `class` attribute. A component that writes its own CSS does not
+have one. Found live 2026-09-05 in the payroll dashboard's 293-line `<style>` block:
+
+```css
+.phoenix-glow-bar { border-radius: 18px 18px 6px 6px; }
+```
+
+on `<div className="phoenix-glow-bar w-16 max-w-full transition-transform duration-200">`. No
+`rounded-*` anywhere in that class list, so the sweep never matched, and a repo grep for rounded
+*utilities* cannot find it either — it is not a utility. An 18px top on a bar chart, in a shell whose
+rule says bars are square.
+
+Measured under the real cascade (RULE 1 lifted verbatim from `globals.css`, the dashboard block
+compiled out of the `.tsx`, the bar carrying its actual class list): with the declaration present the
+bar computes `18px 18px 6px 6px` while a `.rounded-xl` card beside it computes `0px`. Same page, same
+sweep, `ruleOnePresent: true` — one element reachable, one not.
+
+**The corollary, which stops a false positive.** A radius on a selector that *does* carry a `rounded`
+hook is dead rather than broken:
+
+```css
+.payroll-dashboard-surface .rounded-xl.border.bg-card { border-radius: 20px; }
+```
+
+The element necessarily has `rounded-xl`, so the sweep matches it and wins on `!important`. Measured
+at `0px`. So the invariant to pin is **"every radius must sit on a selector the sweep can reach"**,
+not "no radius in the file" — pinning absence forces dead declarations out on a false pretext and
+makes the rule read as arbitrary.
+
+**Blind spot 2 — scrollbars, which no element-level rule can EVER square.** A thumb is painted on a
+`::-webkit-scrollbar-thumb` **pseudo-element**; the sweep sets a radius on the **element**. Nine
+`999px` pills were riding on that on 2026-09-05: six rules in `globals.css` (admin sidebar and window
+thumbs, portal sidebar track and thumb, horizontal-scroll track and thumb), two utilities in
+`expense-report.tsx`, one in the payslip document.
+
+**This is the trap, and it is worse than blind spot 1 because it audits as handled.** The Tailwind
+form is written on the element:
+
+```tsx
+className="… md:block [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 …"
+```
+
+That class attribute **contains the substring "rounded"**, so `[class*="rounded"]` matches, the sweep
+fires, and it squares the div — whose corners were never the problem. The thumb keeps its `9999px`.
+Anyone auditing by searching for `rounded-` utilities and confirming they sit inside a shell ticks
+this one off as covered.
+
+`getComputedStyle` cannot read a scrollbar pseudo-element, so the measurement is taken two other
+ways: the CSSOM (20 scrollbar rules parsed, 0 carrying a radius, against 8 with `999px` restored) and
+pixels at 7× magnification of the *rendering* — identical CSS, `transform: scale(7)` on the container
+— where the control bar is an unmistakable capsule and the fixed one has square ends. A 10px bar
+cannot be judged by eye at 1×, and judging by eye is what the rule forbids.
+
+**The third surface: an iframe'd document never loads `globals.css` at all.** The hiring-pack paper
+editor renders each paper in an iframe and injects its own stylesheet, which is how
+`border-radius: 2px` sat on the dashed box around every editable field until 2026-09-05 — 37 fields
+on a contract, each measured at 2px. One declaration rounded six affordances, because `outline`
+follows the element's own radius: the live, hover, focus, selected, saving and dry-run rings.
+
+That one was removed rather than rewritten to `border-radius: 0`, deliberately. An uploaded company
+template brings its own stylesheet, and forcing a corner square from the editor would make the
+preview differ from the paper it prints — the one thing that screen exists to rule out.
+
+**How these are pinned.** `tests/admin-shell-palette-scope.test.ts` covers both blind spots: the
+reachability invariant on the payroll dashboard's stylesheet, and a scan of all of `app/` and `src/`
+for scrollbar radii in *both* forms (a raw declaration inside a `::-webkit-scrollbar*` rule, and a
+`[&::-webkit-scrollbar-*]:rounded-*` utility), parsing only files that mention a scrollbar at all.
+`tests/hiring-pack-paper-editor.test.ts` covers the iframe stylesheet.
+
+All three stylesheets live inside a `.tsx` as template literals, and this repo's test runner is
+`node --experimental-strip-types`, which refuses a `.tsx` outright (`Unknown file extension ".tsx"`).
+So each is **lifted and compiled with `new Function`** rather than grepped — the source text and the
+bytes the browser parses are two different things — and each lift is guarded against returning empty
+or a truncated prefix by asserting on both the first and last rule it should contain.
+
+Each of those tests also carries its **control permanently**: it re-runs its own scan with the
+offending declaration spliced back in and requires the exact expected hit. A detector that quietly
+stops matching looks identical to a clean codebase, which is the failure mode this whole rule keeps
+falling into.
+
+**Still deliberately out of scope**, so a later sweep does not read them as misses: the login page's
+`9999px` glow and ember decorations sit outside both shells, and the payslip document's own radii are
+document ink, governed by the house document identity standard rather than the shell rule.
+
+
 ### 🔒 A pharmacy is NOT a contact — a CRM contact count is `PM` + `AM` only
 
 Owner 2026-09-01: *"You will not count the pharmacies as contacts. So everyone should have contacts
