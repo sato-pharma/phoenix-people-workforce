@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 
 type Profile = {
@@ -47,15 +48,13 @@ export function AdminProfileForm({ profile }: { profile: Profile }) {
     }
   }
 
-  const formattedCreatedAt = profile.createdAt
-    ? new Intl.DateTimeFormat("en-US", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      }).format(new Date(profile.createdAt))
-    : "—";
+  // Pinned to Cairo via the shared formatter (never the runtime's own zone): this used to be
+  // `new Intl.DateTimeFormat("en-US", {...}).format(...)` with no `timeZone`, which renders in
+  // whichever zone the RUNTIME is in — UTC on the server (Railway), Cairo in the browser. React
+  // saw two different text nodes for the same instant and threw hydration error #418 on every
+  // profile page view for an account with a real `created_at`. Same root cause and same fix as
+  // password-setup-form.tsx's EXPIRY_FORMAT.
+  const formattedCreatedAt = cairoDateTime(profile.createdAt);
 
   return (
     <div className="mx-auto min-h-screen max-w-[900px] space-y-8 p-6 lg:p-8">
