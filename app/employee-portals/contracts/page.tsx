@@ -47,7 +47,7 @@ export default async function EmployeePortalContractsPage() {
   if (!(await canAccess(access, "contracts", "read"))) {
     return (
       <EmployeePortalEmptyState
-        message="Contract renewal is available to Talent Acquisition and Super Admin only."
+        message="Contract renewal is available to HR Advisory, HR Operations, and Super Admin only."
         title="Contract Renewal Unavailable"
       />
     );
@@ -64,7 +64,7 @@ export default async function EmployeePortalContractsPage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Talent Acquisition"
+      badge="Employee Records"
       description="Manage upcoming and expiring employment contracts."
       errorBoundaryTitle="Contract Renewal unavailable"
       title="Contract Renewal"
