@@ -786,7 +786,13 @@ export async function updateCandidateStatus(
   const existing = await getCandidate(id);
   if (!existing) throw new Error("Candidate not found.");
 
-  const actorHrId = access.hrId ?? null;
+  // hrIdForStorage, never the raw session value. `access.hrId` is the LOWERCASE comparison key
+  // and 178 of 179 employee rows are mixed case, so persisting it verbatim is what left
+  // `status_changed_by_hr_id` holding THREE spellings for TWO people (b-10 x119, B-10 x7,
+  // hr-010 x6 on production 2026-09-05) and `ats_candidate_status_events.actor_hr_id` holding
+  // 255 lowercase rows. Any per-person report then splits one screener in two, with nothing on
+  // screen to say so. Fixed at the BINDING because this one value feeds both columns.
+  const actorHrId = hrIdForStorage(access.hrId);
   const changedAt = new Date().toISOString();
   const supabase = recruitmentDb();
   const { data, error } = await supabase
