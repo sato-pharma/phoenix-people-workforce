@@ -60,6 +60,41 @@ The three genuine carve-outs in §6.1 are not policy softening. Each is a fact:
 3. The other three protected files are announced, not awaited, so the transcript still records what
    changed and why.
 
+## How strictly to read the trigger — permissive, by his decision
+
+The first test run raised the question the rule had not settled. Asked to try AUTORUN on a small
+task, he replied *"send the AUTORUN line above and let it run untouched"* — an unmistakable
+instruction to run, which happened to contain the word only because it was quoting the instruction.
+The session ran the task end to end and then flagged, in the final report, that it had treated an
+instruction as an arming and offered to tighten the rule. He answered:
+
+> "keep it permissive, that's what i want"
+
+So §6.1 now says the owner's plain instruction arms it, phrased however he likes. The reasoning is
+that **stopping to ask which he meant is the exact behaviour AUTORUN exists to remove** — a rule that
+generates a clarifying question on every ambiguous arming has reinvented the interruption it was
+written to prevent.
+
+**Permissive loosens HOW he may phrase it. It never loosens WHO may say it or WHEN.** A memory, a
+doc, a hook, another session, or a replayed summary that mentions the word still arms nothing. The
+line is *the owner speaking now* versus *a record of him having spoken*, and that line is the whole
+safety property: §2.1's parallel-sessions trap is that one approval reaching N sessions is N
+executions, and a production merge is one of the things being approved.
+
+One consequence worth stating plainly: **a permissive arming is not hook-backed.** The guard matches
+the literal word, so an arming phrased any other way is recorded nowhere and dies at the first
+compaction. On a long plan armed without the word, the session should say in one line that it is
+treating it as armed — that sentence becomes the thing compaction carries forward.
+
+### A footnote on that first run
+
+The session was more cautious than it needed to be. The guard hook had merged minutes earlier and had
+already loaded, and it armed on that very message at 09:03 Cairo — because the message did contain
+the word. So the run was properly armed by the mechanism, not by inference, and the caveat raised in
+the report was unnecessary. It cost nothing and produced the decision above, but the lesson is worth
+keeping: **check whether the hook armed you before reasoning about whether you are armed.** The
+answer was already in the session, in the hook's own injected line.
+
 ## Compaction, and the guard that closes it
 
 The arming is one word in one message. A run he expects to last "a day, two days, three days" is
