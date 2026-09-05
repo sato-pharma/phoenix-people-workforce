@@ -379,7 +379,7 @@ function BrandPanel() {
           </p>
 
           <div className="relative mt-6 h-px w-full max-w-[320px] bg-gradient-to-r from-transparent via-[#ff6a00] to-transparent sm:mt-8 sm:max-w-[420px]">
-            <span className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_0_22px_7px_rgba(255,106,0,0.9)]" />
+            <span className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 bg-white shadow-[0_0_22px_7px_rgba(255,106,0,0.9)]" />
           </div>
 
           <p className="mt-5 max-w-[620px] text-lg font-medium leading-7 text-white/92 sm:mt-7 sm:text-2xl sm:leading-8 lg:text-xl">
@@ -568,7 +568,7 @@ function AccessPanel({
           type="submit"
         >
           {isSubmitting ? (
-            <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/35 border-t-white" />
+            <span className="h-5 w-5 animate-spin border-2 border-white/35 border-t-white" />
           ) : (
             <Lock className="h-6 w-6" />
           )}
@@ -590,7 +590,7 @@ function AccessPanel({
               type="button"
             >
               {isBiometricSubmitting ? (
-                <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/35 border-t-white" />
+                <span className="h-5 w-5 animate-spin border-2 border-white/35 border-t-white" />
               ) : (
                 <Fingerprint className="h-6 w-6 text-[#ff9a2f]" />
               )}
