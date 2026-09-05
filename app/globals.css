@@ -303,7 +303,6 @@ body {
   background: rgba(148, 163, 184, 0.32);
   background-clip: padding-box;
   border: 2px solid transparent;
-  border-radius: 999px;
   min-height: 48px;
   transition: background 0.15s ease;
 }
@@ -415,7 +414,6 @@ html:has(.admin-shell)::-webkit-scrollbar-thumb {
   background: rgba(148, 163, 184, 0.32);
   background-clip: padding-box;
   border: 2px solid transparent;
-  border-radius: 999px;
   min-height: 48px;
   transition: background 0.15s ease;
 }
@@ -480,7 +478,6 @@ html:has(.admin-shell) {
 
 .phoenix-employee-sidebar-scroll::-webkit-scrollbar-track {
   background: linear-gradient(180deg, rgba(255, 247, 237, 0.72), rgba(255, 255, 255, 0.25));
-  border-radius: 999px;
   margin-block: 14px;
 }
 
@@ -489,7 +486,6 @@ html:has(.admin-shell) {
     linear-gradient(180deg, rgba(255, 192, 128, 0.95), rgba(240, 90, 26, 0.82));
   background-clip: padding-box;
   border: 2px solid transparent;
-  border-radius: 999px;
   min-height: 48px;
 }
 
@@ -511,7 +507,6 @@ html:has(.admin-shell) {
 
 .phoenix-horizontal-scroll::-webkit-scrollbar-track {
   background: transparent;
-  border-radius: 999px;
   margin-inline: 14px;
 }
 
@@ -520,7 +515,6 @@ html:has(.admin-shell) {
     linear-gradient(90deg, rgba(255, 184, 93, 0.98), rgba(249, 115, 22, 0.98));
   background-clip: padding-box;
   border: 3px solid transparent;
-  border-radius: 999px;
   min-width: 56px;
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.16),

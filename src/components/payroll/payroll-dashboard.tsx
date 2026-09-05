@@ -495,7 +495,6 @@ function PayrollMotionStyles() {
       }
 
       .phoenix-glow-bar {
-        border-radius: 18px 18px 6px 6px;
         filter: drop-shadow(0 0 14px var(--bar-glow));
         box-shadow: inset 0 1px 0 rgba(255,255,255,0.65);
         transform-origin: bottom center;
