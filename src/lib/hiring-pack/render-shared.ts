@@ -212,8 +212,15 @@ const DOWNLOAD_LINK_SCRIPT = `<script>
     if (!link) return;
     try {
       var here = new URL(window.location.href);
-      if (!/^https?:$/.test(here.protocol)) return;
-      if (!/\/print\/?$/.test(here.pathname)) return;
+      if (here.protocol !== "https:" && here.protocol !== "http:") return;
+      // NO REGEX HERE, DELIBERATELY. This script is authored inside a template literal, where a
+      // backslash is an escape for the template and never reaches the browser: the first version
+      // of this line was /\/print\/?$/ in the source and arrived as //print/?$/ — a line
+      // comment — so the whole script died on a SyntaxError and the button stayed hidden on every
+      // document. Plain string work has no escape to lose.
+      var path = here.pathname;
+      while (path.length > 1 && path.charAt(path.length - 1) === "/") path = path.slice(0, -1);
+      if (path.slice(-6) !== "/print") return;
       here.searchParams.set("format", "pdf");
       here.searchParams.delete("preview");
       here.searchParams.delete("inventory");
