@@ -56,6 +56,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
   const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isExportingPremium, setIsExportingPremium] = useState(false);
+  const [isExportingPremiumXlsx, setIsExportingPremiumXlsx] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
   const [filter, setFilter] = useState<MonthlyClosingFilter>(emptyMonthlyClosingFilter);
   const [published, setPublished] = useState<boolean | null>(null);
@@ -270,7 +271,13 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
    * quietly covered the whole line while the screen showed one region is the usual reason a report
    * and its export disagree.
    */
-  async function runExport(input: { fallbackName: string; setBusy: (busy: boolean) => void; url: string }) {
+  async function runExport(input: {
+    /** Anything the route needs beyond the selection — today only `macros: false`. */
+    body?: Record<string, unknown>;
+    fallbackName: string;
+    setBusy: (busy: boolean) => void;
+    url: string;
+  }) {
     if (!selectedLine || !selectedPeriod) return;
     input.setBusy(true);
     try {
@@ -282,6 +289,9 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
           productCodes: filter.productCodes,
           regionCodes: filter.regionCodes,
           search: filter.search,
+          // Spread last so a caller's own field wins, and never the other way round: the selection
+          // is what every export agrees on, the extras are what one of them asks for on top.
+          ...input.body,
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -334,6 +344,30 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
     await runExport({
       fallbackName: "phoenix-monthly-closing-premium.xlsm",
       setBusy: setIsExportingPremium,
+      url: "/api/sales/monthly-closing/premium-export",
+    });
+  }
+
+  /**
+   * The same premium workbook, macro-free.
+   *
+   * WITHOUT THIS BUTTON THE .xlsx WAS REACHABLE BY NOBODY. `macros: false` has been supported by the
+   * route since the macro-free build shipped, but this screen never sent it, so every download was
+   * the .xlsm and the only way to obtain the .xlsx was to call the API by hand. A capability nothing
+   * can reach is indistinguishable from one that was never built.
+   *
+   * It is the file to SEND. Mail systems strip .xlsm attachments, and Windows blocks macros in
+   * anything that arrived from a browser or an inbox — so the reader of a forwarded .xlsm gets a
+   * security bar and dead buttons. The .xlsx has no such problem, and since 2026-09-05 it carries a
+   * working button bar of its own: Export PDF, and a navigation bar, both built as hyperlinks, which
+   * is the one control the format allows. What it cannot have is Expand, Collapse, Refresh and Reset
+   * — those run Excel commands, and only the .xlsm can do that.
+   */
+  async function handlePremiumXlsxExport() {
+    await runExport({
+      body: { macros: false },
+      fallbackName: "phoenix-monthly-closing-premium.xlsx",
+      setBusy: setIsExportingPremiumXlsx,
       url: "/api/sales/monthly-closing/premium-export",
     });
   }
@@ -551,15 +585,24 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                     value={filter}
                   />
                   <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
-                    {/* Two workbooks of the same month, side by side. The owner's instruction (2026-08-30) was
+                    {/* Three workbooks of the same month, side by side. The owner's instruction (2026-08-30) was
                         that the premium sheet be added BESIDE this button rather than replacing it, so whoever is
-                        reading picks the format they read more comfortably. Both carry the same line, the same
-                        month and the same on-screen filter. */}
+                        reading picks the format they read more comfortably. All three carry the same line, the
+                        same month and the same on-screen filter.
+
+                        `shrink-0` STAYS, and the third button was measured against it rather than assumed to
+                        break it — a pinned wrapper is the usual cause of a page scrolling sideways, so this was
+                        the thing to check. It does not happen here: at 700, 768, 900, 1024 and 1280 the document
+                        never exceeds the viewport and this row stays on ONE line, because the FILTERS beside it
+                        wrap instead. Letting the buttons wrap instead was tried and reverted — it made the row
+                        break into two lines from 768 up, for no gain. At 375 everything stacks, as it already
+                        did. Measured with the real filter markup: an early harness used `w-44` selects in place
+                        of the real content-sized `<details>` and manufactured an overflow that does not exist. */}
                     <button
                       className={cn(
                         "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50",
                       )}
-                      disabled={isExporting || isExportingPremium || isMultiPeriod || filteredMatrix.columns.length === 0}
+                      disabled={isExporting || isExportingPremium || isExportingPremiumXlsx || isMultiPeriod || filteredMatrix.columns.length === 0}
                       onClick={() => void handleExport()}
                       title={
                         isMultiPeriod
@@ -575,7 +618,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                       className={cn(
                         "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-white px-4 text-sm font-bold text-[#0B0B0B] transition hover:border-phx-accent hover:bg-phx-accent hover:text-white disabled:opacity-50",
                       )}
-                      disabled={isExporting || isExportingPremium || isMultiPeriod || filteredMatrix.columns.length === 0}
+                      disabled={isExporting || isExportingPremium || isExportingPremiumXlsx || isMultiPeriod || filteredMatrix.columns.length === 0}
                       onClick={() => void handlePremiumExport()}
                       title={
                         isMultiPeriod
@@ -585,6 +628,22 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                       type="button"
                     >
                       {isExportingPremium ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      Export Premium XLSM
+                    </button>
+                    <button
+                      className={cn(
+                        "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-white px-4 text-sm font-bold text-[#0B0B0B] transition hover:border-phx-accent hover:bg-phx-accent hover:text-white disabled:opacity-50",
+                      )}
+                      disabled={isExporting || isExportingPremium || isExportingPremiumXlsx || isMultiPeriod || filteredMatrix.columns.length === 0}
+                      onClick={() => void handlePremiumXlsxExport()}
+                      title={
+                        isMultiPeriod
+                          ? `This workbook is built one month at a time, so it cannot yet cover ${periodSpan}. Pick a single month to export it.`
+                          : "The same premium workbook without macros — this is the one to send. Mail systems strip .xlsm attachments and Windows blocks macros in anything that arrived from an inbox. Export PDF and the navigation bar still work here, as hyperlinks; Expand, Collapse, Refresh and Reset need the .xlsm."
+                      }
+                      type="button"
+                    >
+                      {isExportingPremiumXlsx ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                       Export Premium XLSX
                     </button>
                   </div>
