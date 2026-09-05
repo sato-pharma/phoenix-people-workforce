@@ -136,3 +136,13 @@ export function daysBetween(from: string, to: string): number | null {
   if (!start || !end) return null;
   return Math.round((end.getTime() - start.getTime()) / 86_400_000);
 }
+
+/**
+ * How long a job offer stands by default.
+ *
+ * Lives here rather than in the composer because the composer is no longer the only thing that
+ * creates an offer: the recruitment bridge does too, and a second copy of this number would mean
+ * a letter opened from an application quietly stood for a different length of time than one
+ * typed by hand.
+ */
+export const DEFAULT_OFFER_VALIDITY_DAYS = 7;

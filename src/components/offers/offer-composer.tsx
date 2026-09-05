@@ -18,7 +18,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AdminTableShell } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { addDays, firstOfNextMonth, todayInCairo, toLetterDate } from "@/lib/offers/dates";
+import {
+  addDays,
+  DEFAULT_OFFER_VALIDITY_DAYS,
+  firstOfNextMonth,
+  todayInCairo,
+  toLetterDate,
+} from "@/lib/offers/dates";
 import { offerDraftWarnings, offerWarningsFor, type OfferDraftWarning } from "@/lib/offers/draft-checks";
 import { deriveOfferPay } from "@/lib/offers/pay";
 import {
@@ -52,7 +58,7 @@ type Draft = Omit<OfferFields, "costOfLiving" | "totalMonthly"> & {
 };
 
 /** How long an offer stays open by default. A week is what the letters have used. */
-const DEFAULT_VALIDITY_DAYS = 7;
+
 
 function blankDraft(templates: OfferTemplate[]): Draft {
   const today = todayInCairo();
@@ -73,7 +79,7 @@ function blankDraft(templates: OfferTemplate[]): Draft {
     territory: "",
     title: "",
     totalMonthly: "",
-    validUntil: addDays(today, DEFAULT_VALIDITY_DAYS),
+    validUntil: addDays(today, DEFAULT_OFFER_VALIDITY_DAYS),
   };
 }
 
@@ -293,6 +299,33 @@ export function OfferComposer({
     };
     if (!response.ok || payload.success === false) throw new Error(payload.message || "That did not work.");
     return payload;
+  }
+
+  /**
+   * Record what the candidate answered.
+   *
+   * `PATCH /api/offers/[id]` has accepted "accepted" and "declined" since the module shipped and
+   * NOTHING has ever called it with either - the two words appear in this file only as badge
+   * colours, for a status no button could reach. So an offer's outcome lived in somebody's memory
+   * and the letter sat on "sent" forever.
+   *
+   * Only for a SENT offer. A draft has not been answered because it has not been asked, and
+   * re-answering an offer already marked accepted or declined would overwrite a recorded fact with
+   * a mis-click - which is why this is not offered on those rows either.
+   */
+  async function recordAnswer(offer: OfferRecord, status: "accepted" | "declined") {
+    setBusy(offer.id);
+    try {
+      const payload = (await call(`/api/offers/${offer.id}`, "PATCH", { status })) as { offer?: OfferRecord };
+      if (payload.offer) {
+        onOffers([payload.offer, ...offers.filter((existing) => existing.id !== payload.offer!.id)]);
+      }
+      onReport(`${offer.candidateName} ${status} offer ${offer.reference}.`, "success");
+    } catch (error) {
+      onReport(error instanceof Error ? error.message : "Could not record that answer.", "error");
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function saveDraft(): Promise<string | null> {
@@ -728,12 +761,37 @@ export function OfferComposer({
                     </Badge>
                   </td>
                   <td className="break-words px-5 py-3 text-slate-600">{offerWhen(offer.sentAt)}</td>
-                  <td className="px-5 py-3 text-right">
-                    <Button asChild size="sm" type="button" variant="secondary">
-                      <a href={`/api/offers/${offer.id}/pdf`} rel="noreferrer" target="_blank">
-                        <FileDown className="h-3.5 w-3.5" /> PDF
-                      </a>
-                    </Button>
+                  <td className="px-5 py-3">
+                    {/* Wraps rather than scrolls: the fits-the-screen rule, and three controls do
+                        not fit one line at 375px. */}
+                    <div className="flex flex-wrap justify-end gap-1.5">
+                      {canManage && offer.status === "sent" ? (
+                        <>
+                          <Button
+                            disabled={busy !== null}
+                            onClick={() => void recordAnswer(offer, "accepted")}
+                            size="sm"
+                            type="button"
+                          >
+                            Accepted
+                          </Button>
+                          <Button
+                            disabled={busy !== null}
+                            onClick={() => void recordAnswer(offer, "declined")}
+                            size="sm"
+                            type="button"
+                            variant="destructive"
+                          >
+                            Declined
+                          </Button>
+                        </>
+                      ) : null}
+                      <Button asChild size="sm" type="button" variant="secondary">
+                        <a href={`/api/offers/${offer.id}/pdf`} rel="noreferrer" target="_blank">
+                          <FileDown className="h-3.5 w-3.5" /> PDF
+                        </a>
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
