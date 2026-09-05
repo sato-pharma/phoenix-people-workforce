@@ -15,7 +15,7 @@ import { writeAuditLog, writeRequiredAuditLog } from "@/lib/admin/audit";
 // way) so the marketing badge graduates to "overdue" on exactly the rule the other badges use.
 import { slaTone } from "@/components/approvals-hub/sla-thresholds";
 import type { EmailTemplateContext } from "@/lib/email-templates/service";
-import { canonicalHrIdKey, hrIdLookupKeys, resolveStoredHrId } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys, resolveStoredHrId } from "@/lib/hr-id";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { resolveGovernorate } from "@/lib/geo/egypt-locations";
@@ -4937,7 +4937,7 @@ async function refreshLinksAfterCustomerCompletion(input: {
           .from("marketing_customer_pharmacies")
           .update({
             updated_at: nowIso,
-            updated_by_hr_id: actorHrId,
+            updated_by_hr_id: hrIdForStorage(actorHrId),
             validation_notes: `${existingNotes} ${MARKETING_COMPLETED_CUSTOMER_NOTE}`.trim(),
           })
           .eq("id", link.id);
@@ -4977,7 +4977,7 @@ async function refreshLinksAfterCustomerCompletion(input: {
       .from("marketing_customer_pharmacies")
       .update({
         updated_at: nowIso,
-        updated_by_hr_id: actorHrId,
+        updated_by_hr_id: hrIdForStorage(actorHrId),
         validation_notes: [
           distributorCode ? buildUntrackedDistributorCodeNote(distributorCode.referenceStatus) : null,
           // The same sentence the capture path writes, so a link released later reads identically
@@ -5077,7 +5077,7 @@ async function refreshLinksAfterPharmacyCompletion(input: {
           .from("marketing_customer_pharmacies")
           .update({
             updated_at: nowIso,
-            updated_by_hr_id: actorHrId,
+            updated_by_hr_id: hrIdForStorage(actorHrId),
             validation_notes: `${existingNotes} ${MARKETING_COMPLETED_VENUE_NOTE}`.trim(),
           })
           .eq("id", link.id);
@@ -5114,7 +5114,7 @@ async function refreshLinksAfterPharmacyCompletion(input: {
       .from("marketing_customer_pharmacies")
       .update({
         updated_at: nowIso,
-        updated_by_hr_id: actorHrId,
+        updated_by_hr_id: hrIdForStorage(actorHrId),
         validation_notes: [
           distributorCode ? buildUntrackedDistributorCodeNote(distributorCode.referenceStatus) : null,
           distributorCode ? null : venueNonAttributableReason(venueType),
@@ -6183,7 +6183,7 @@ export async function createMarketingValidationRecord(
       extracted_area_name: normalizedCustomer.extractedAreaName,
       extracted_governorate_name: normalizedCustomer.extractedGovernorateName,
       region_name: normalizedCustomer.regionName,
-      updated_by_hr_id: actorHrId,
+      updated_by_hr_id: hrIdForStorage(actorHrId),
       validated_at: adminValidatedAt,
       validated_by_hr_id: adminValidatedByHrId,
       validation_notes: adminValidationNote,
@@ -6223,7 +6223,7 @@ export async function createMarketingValidationRecord(
         .insert({
           ...capturedColumns,
           area_id: owner.areaId ?? null,
-          created_by_hr_id: actorHrId,
+          created_by_hr_id: hrIdForStorage(actorHrId),
           customer_code: generateMarketingCode("MKT-HCP"),
           customer_type: normalizedCustomer.customerType,
           display_name: normalizedCustomer.displayName,
@@ -6272,7 +6272,7 @@ export async function createMarketingValidationRecord(
         .insert({
           contact_code: generateMarketingCode("MKT-CON"),
           contact_name: customer.displayName,
-          created_by_hr_id: actorHrId,
+          created_by_hr_id: hrIdForStorage(actorHrId),
           customer_id: customer.id,
           mobile_number: normalizedCustomer.mobileNumber,
           specialty: normalizedCustomer.speciality,
@@ -6323,7 +6323,7 @@ export async function createMarketingValidationRecord(
               evidence_photo_name: normalizedPharmacy.evidencePhotoName,
               evidence_status: normalizedPharmacy.evidenceStatus,
               updated_at: new Date().toISOString(),
-              updated_by_hr_id: actorHrId,
+              updated_by_hr_id: hrIdForStorage(actorHrId),
               // NOT guaranteed: accuracy and the reverse-geocoded descriptors can all come back
               // empty from a fix that is otherwise perfectly complete. Each is OMITTED rather than
               // written as null, because on an `.update()` a null for "the client had nothing to
@@ -6461,7 +6461,7 @@ export async function createMarketingValidationRecord(
               .from("marketing_customer_pharmacies")
               .update({
                 updated_at: new Date().toISOString(),
-                updated_by_hr_id: actorHrId,
+                updated_by_hr_id: hrIdForStorage(actorHrId),
                 validation_notes: linkValidationNotes,
                 validation_status: linkValidationStatus,
               })
@@ -6472,11 +6472,11 @@ export async function createMarketingValidationRecord(
             : await supabase
               .from("marketing_customer_pharmacies")
               .insert({
-                created_by_hr_id: actorHrId,
+                created_by_hr_id: hrIdForStorage(actorHrId),
                 customer_id: customer.id,
                 distributor_code_id: distributorCode?.id ?? null,
                 pharmacy_id: pharmacy.id,
-                updated_by_hr_id: actorHrId,
+                updated_by_hr_id: hrIdForStorage(actorHrId),
                 validation_notes: linkValidationNotes,
                 validation_status: linkValidationStatus,
               })
@@ -6519,7 +6519,7 @@ export async function createMarketingValidationRecord(
           captured_at: normalizedPharmacy.capturedAt,
           captured_latitude: normalizedPharmacy.capturedLatitude,
           captured_longitude: normalizedPharmacy.capturedLongitude,
-          created_by_hr_id: actorHrId,
+          created_by_hr_id: hrIdForStorage(actorHrId),
           display_name: normalizedPharmacy.displayName,
           evidence_has_timestamp: normalizedPharmacy.evidenceHasTimestamp,
           evidence_photo_captured_at: normalizedPharmacy.evidencePhotoCapturedAt,
@@ -6533,7 +6533,7 @@ export async function createMarketingValidationRecord(
           owner_hr_id: ownerHrId,
           pharmacy_code: generateMarketingCode("MKT-PHA"),
           region_name: normalizedPharmacy.regionName,
-          updated_by_hr_id: actorHrId,
+          updated_by_hr_id: hrIdForStorage(actorHrId),
           validated_at: adminValidatedAt,
           validated_by_hr_id: adminValidatedByHrId,
           validation_notes: adminValidationNote,
@@ -6650,7 +6650,7 @@ export async function createMarketingValidationRecord(
           const distributorCodeInsert = await supabase
             .from("marketing_pharmacy_distributor_codes")
             .insert({
-              created_by_hr_id: actorHrId,
+              created_by_hr_id: hrIdForStorage(actorHrId),
               distributor_id: vendorCode.distributorId,
               distributor_pharmacy_code: vendorCode.distributorPharmacyCode,
               normalized_pharmacy_code: storedPharmacyCode,
@@ -6671,11 +6671,11 @@ export async function createMarketingValidationRecord(
         const linkInsert = await supabase
           .from("marketing_customer_pharmacies")
           .insert({
-            created_by_hr_id: actorHrId,
+            created_by_hr_id: hrIdForStorage(actorHrId),
             customer_id: customer.id,
             distributor_code_id: distributorCode?.id ?? null,
             pharmacy_id: pharmacy.id,
-            updated_by_hr_id: actorHrId,
+            updated_by_hr_id: hrIdForStorage(actorHrId),
             validation_notes: linkValidationNotes,
             validation_status: linkValidationStatus,
           })
@@ -9107,7 +9107,7 @@ export async function mergeMarketingVenue(
       // copies get created in the first place.
       active: false,
       merged_at: mergedAt,
-      merged_by_hr_id: actorHrId,
+      merged_by_hr_id: hrIdForStorage(actorHrId),
       merged_into_pharmacy_id: survivorId,
       updated_at: mergedAt,
     })

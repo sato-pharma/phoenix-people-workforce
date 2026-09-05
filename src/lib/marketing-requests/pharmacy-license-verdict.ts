@@ -3,6 +3,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
 import { MARKETING_PHARMACY_LICENSE_EVIDENCE_TYPE } from "@/lib/marketing-requests/evidence-photo-storage";
 import { getMarketingRequestDecisionSummary } from "@/lib/marketing-requests/service";
+import { hrIdForStorage } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -77,7 +78,7 @@ export function licenseVerdictColumns(input: {
   }
   return {
     license_name_checked_at: input.now,
-    license_name_checked_by_hr_id: input.actorHrId,
+    license_name_checked_by_hr_id: hrIdForStorage(input.actorHrId),
     license_name_matches_sign: input.matchesSign,
   };
 }
@@ -150,7 +151,7 @@ export async function recordMarketingPharmacyLicenseVerdict(
     .update({
       // All three move together — see licenseVerdictColumns.
       ...licenseVerdictColumns({ actorHrId, matchesSign, now }),
-      updated_by_hr_id: actorHrId,
+      updated_by_hr_id: hrIdForStorage(actorHrId),
       updated_at: now,
       // NOTHING ELSE. validation_status and evidence_status are deliberately untouched: a licence
       // name that does not match is a FLAG for the approver, not a rejection of the venue (owner's

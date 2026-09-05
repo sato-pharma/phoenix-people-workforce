@@ -266,9 +266,17 @@ export function runDirectOrdersShareLinkControlsTests() {
   // the question the table exists to answer is company-wide and cannot be asked one account at a
   // time.
   {
-    assert.match(
-      source,
-      /if \(!isAdmin\) query = query\.in\("created_by_hr_id", hrIdLookupKeys\(access\.hrId\)\);/,
+    // Two substrings rather than one regex over the whole statement: the filter grew a guard
+    // on 2026-09-05 (an empty key list builds `created_by_hr_id=in.()`, which PostgREST
+    // rejects as a syntax error, so a permissioned viewer with no linked HR id 500d the
+    // screen instead of seeing no links). Pinning the one-line form again would false-fail
+    // the next time it grows, while these two say the thing that actually matters.
+    assert.ok(
+      source.includes("const ownKeys = hrIdLookupKeys(access.hrId);"),
+      "the owner filter must be built from the viewer's OWN key list, in every casing",
+    );
+    assert.ok(
+      source.includes('query = query.in("created_by_hr_id", ownKeys);'),
       "a non-admin sees only their own links; a Super Admin sees every one",
     );
     // `.in(hrIdLookupKeys(...))` and not `.eq(access.hrId)`: access.hrId is lower-cased by

@@ -1,6 +1,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { loadMarketingEvidencePhoto } from "@/lib/marketing-requests/evidence-photo-storage";
 import { haversineKm } from "@/lib/sales/normalizer/geo-validate";
@@ -1270,7 +1270,7 @@ export async function transferValidatedCustomerToDirectOrders(
       active: true,
       area_code: geography.areaCode,
       brick_id: brick.brickId,
-      created_by_hr_id: actorHrId,
+      created_by_hr_id: hrIdForStorage(actorHrId),
       // `distributor_code` and `distributor_customer_code` on THIS table are dead columns: nothing
       // in the app or the database reads either, and both are empty on every row. Writing the pair
       // here would also assert a link that the block below deliberately REFUSES to make when the
@@ -1375,7 +1375,7 @@ export async function transferValidatedCustomerToDirectOrders(
       pharmacy_id: directOrderPharmacyId,
       request_id: null,
       requested_at: new Date().toISOString(),
-      requested_by_hr_id: actorHrId,
+      requested_by_hr_id: hrIdForStorage(actorHrId),
       requester_area_code: geography.areaCode,
       status: "pending",
       storage_bucket: evidence ? text(evidence, "storage_bucket") : null,
@@ -1396,7 +1396,7 @@ export async function transferValidatedCustomerToDirectOrders(
       marketing_pharmacy_id: marketingPharmacy ? String(marketingPharmacy.id) : null,
       status: "transferred",
       transfer_notes: input.notes ? String(input.notes).trim() || null : null,
-      transferred_by_hr_id: actorHrId,
+      transferred_by_hr_id: hrIdForStorage(actorHrId),
     })
     .select("id")
     .single();
@@ -1484,7 +1484,7 @@ export async function revertValidatedCustomerTransfer(
       .from("direct_order_pharmacy_validations")
       .update({
         decided_at: new Date().toISOString(),
-        decided_by_hr_id: actorHrId,
+        decided_by_hr_id: hrIdForStorage(actorHrId),
         decision_notes: `Transfer reverted from Marketing by ${actorHrId}.${
           input.reason ? ` Reason: ${String(input.reason).trim()}` : ""
         }`,
@@ -1510,7 +1510,7 @@ export async function revertValidatedCustomerTransfer(
     .update({
       revert_reason: input.reason ? String(input.reason).trim() || null : null,
       reverted_at: new Date().toISOString(),
-      reverted_by_hr_id: actorHrId,
+      reverted_by_hr_id: hrIdForStorage(actorHrId),
       status: "reverted",
     })
     .eq("id", transferId)

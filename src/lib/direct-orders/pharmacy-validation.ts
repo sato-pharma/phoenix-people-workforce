@@ -8,7 +8,7 @@ import {
   type DirectOrderEvidenceCheck,
 } from "@/lib/direct-orders/evidence-check";
 import { assertDirectOrderWorkflowTransition } from "@/lib/direct-orders/workflow";
-import { canonicalHrIdKey, hrIdForStorage } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -713,7 +713,17 @@ export async function listDirectOrderPharmacyValidations(
     ((pharmacies ?? []) as Array<{ id: string } & ValidationPharmacyRow>).map((p) => [p.id, p]),
   );
 
-  const hrIds = Array.from(new Set(rows.map((r) => String(r.requested_by_hr_id ?? "")).filter(Boolean)));
+  // BOTH SPELLINGS, because this column holds both. requested_by_hr_id is written canonically from
+  // 2026-09-05, and every row filed before that holds the lower-cased comparison key. employees.hr_id
+  // is canonical, so a raw `.in()` on the column's own value matched only the newer half and the
+  // older half came back nameless — rendered as "(unknown — a-12)" rather than as an error.
+  const hrIds = Array.from(
+    new Set(
+      rows
+        .flatMap((r) => hrIdLookupKeys(String(r.requested_by_hr_id ?? "")))
+        .filter(Boolean),
+    ),
+  );
   const { data: employees } = await supabase.from("employees").select("hr_id, full_name").in("hr_id", hrIds);
   const nameByHr = new Map(
     ((employees ?? []) as Array<{ hr_id: string; full_name: string | null }>).map((e) => [

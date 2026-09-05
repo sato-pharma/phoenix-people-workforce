@@ -108,9 +108,9 @@ export async function createDirectOrderReportShareLink(
     token,
     surface,
     label: input.label?.toString().trim() || null,
-    created_by_hr_id: hrId,
+    created_by_hr_id: hrIdForStorage(hrId),
     scope,
-    scope_hr_id: hrId,
+    scope_hr_id: hrIdForStorage(hrId),
     filters: input.filters ?? null,
     passcode_hash: surface === "live" ? hashPasscode(passcode, token) : null,
     expires_at: expiresAt,
@@ -138,7 +138,15 @@ export async function listDirectOrderReportShareLinks(access: AccessContext): Pr
   // question this table exists to answer. Everyone else sees only their own.
   // Case-insensitive for the same reason the request lists are: access.hrId is lower-cased by
   // canonicalHrIdKey while the stored column keeps whatever case the creating session had.
-  if (!isAdmin) query = query.in("created_by_hr_id", hrIdLookupKeys(access.hrId));
+  if (!isAdmin) {
+    // An empty key list would build `created_by_hr_id=in.()`, which PostgREST rejects as a SYNTAX
+    // ERROR - the screen 500s instead of showing "you have no links". A viewer with no linked HR id
+    // owns nothing here by definition, so answer that directly rather than asking the database a
+    // question it cannot parse.
+    const ownKeys = hrIdLookupKeys(access.hrId);
+    if (ownKeys.length === 0) return [];
+    query = query.in("created_by_hr_id", ownKeys);
+  }
   const { data, error } = await query;
   if (error) throw error;
   return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
