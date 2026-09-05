@@ -72,6 +72,38 @@ export function runFieldWorkforceComplianceLiveSnapshotsTests() {
   assert.equal(never.ageHours, null);
   assert.equal(never.lastSyncedAt, null);
 
+  // The open-month flag is a CAIRO calendar question, not a UTC one. 2026-06-30T21:30Z is already
+  // 2026-07-01 00:30 in Cairo (UTC+3), so July is open and June is closed. Reading nowIso's UTC
+  // month got this backwards for the ~3 hours after every Cairo midnight — and at a month
+  // rollover that put the "still filling in" warning on June while HR was looking at July.
+  const justAfterCairoMidnight = "2026-06-30T21:30:00.000Z";
+  const cairoRuns = [{ completedAt: "2026-06-30T20:00:00.000Z", startedAt: "2026-06-30T19:55:00.000Z", status: "success" }];
+  const openInCairo = summarizeFieldWorkforceMirrorFreshness({
+    monthKey: "2026-07",
+    nowIso: justAfterCairoMidnight,
+    runs: cairoRuns,
+  });
+  assert.equal(
+    openInCairo.isOpenMonth,
+    true,
+    "just after Cairo midnight on Jul 1, July is the open month even though UTC still reads June",
+  );
+  const closedInCairo = summarizeFieldWorkforceMirrorFreshness({
+    monthKey: "2026-06",
+    nowIso: justAfterCairoMidnight,
+    runs: cairoRuns,
+  });
+  assert.equal(
+    closedInCairo.isOpenMonth,
+    false,
+    "and June is closed at that same instant, though a UTC read would still call it open",
+  );
+  assert.equal(
+    openInCairo.ageHours,
+    1.5,
+    "ageHours still measures a true instant difference — the Cairo month read must not touch it",
+  );
+
   // --- 2.1 Cross-month trend view: employee rollup + trend extraction ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rollupEmployee = (overrides: Record<string, unknown>): any => ({

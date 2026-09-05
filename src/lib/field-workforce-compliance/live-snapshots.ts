@@ -18,6 +18,18 @@ import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/fiel
 import type { FieldWorkforcePreviewResult } from "@/lib/field-workforce-compliance/types";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 
+/**
+ * Africa/Cairo calendar day (YYYY-MM-DD) for `at` — the company's business day, never UTC.
+ *
+ * Cairo is UTC+3, so for the ~3 hours after Cairo midnight a UTC date reads one day behind. Every
+ * use below is either a "now" the owner sees or a value compared against Cairo wall-clock CRM
+ * data. Kept local to this module by the same convention as drain-health-alert.ts and
+ * job-heartbeat-alert.ts, which each carry their own one-liner rather than sharing a date module.
+ */
+function cairoDateIso(at: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(at);
+}
+
 export type FieldWorkforceLiveViewResult = {
   /** Always "now" — there is no separate compute time to track anymore. */
   computedAt: string;
@@ -60,7 +72,11 @@ export function summarizeFieldWorkforceMirrorFreshness(input: {
     ? Math.max(0, Math.round(((nowMs - new Date(lastSyncedAt).getTime()) / 3_600_000) * 10) / 10)
     : null;
   const isStale = ageHours == null || ageHours > FIELD_WORKFORCE_MIRROR_STALE_THRESHOLD_HOURS;
-  const isOpenMonth = input.monthKey === input.nowIso.slice(0, 7);
+  // Which month is "open" is a CAIRO calendar question. Slicing the UTC month out of nowIso got
+  // this wrong for the ~3 hours after every Cairo midnight, and at a month rollover it got it
+  // backwards: the "still filling in" warning would sit on the previous month while HR was
+  // looking at the new one. `nowIso` itself stays a true instant — ageHours above needs it.
+  const isOpenMonth = input.monthKey === cairoDateIso(new Date(input.nowIso)).slice(0, 7);
   const latestStatus = input.runs[0]?.status ?? null;
   return { ageHours, isOpenMonth, isStale, lastSyncedAt, latestStatus };
 }
@@ -98,8 +114,14 @@ export async function getFieldWorkforceComplianceLiveView(input: {
   const [yearStr, monthStr] = input.monthKey.split("-");
   const year = Number.parseInt(yearStr, 10);
   const month = Number.parseInt(monthStr, 10);
-  const todayIso = new Date().toISOString().slice(0, 10);
+  // Africa/Cairo, not UTC. This feeds ireports360-source.ts's `dateIso > todayIso` future-day
+  // cutoff, and the visit dates it is compared against are stored as Cairo wall-clock. A UTC
+  // "today" runs a day behind for the ~3 hours after Cairo midnight, which renders the current
+  // day blank ("not happened yet") instead of "N" (no visits) — under-reporting a day.
+  const todayIso = cairoDateIso();
   const preview = await buildFieldWorkforceCompliancePreviewFromVisitsReport({ month, todayIso, year });
+  // A true INSTANT, deliberately — a timestamp, not a calendar day, and it carries its own `Z`.
+  // Not a Cairo case: do not "fix" this one to a local string.
   const computedAt = new Date().toISOString();
 
   return {
@@ -131,7 +153,12 @@ export function listRecentFieldWorkforceComplianceMonths(input: {
   todayIso?: string;
 } = {}): FieldWorkforceLiveMonthOption[] {
   const monthsBack = input.monthsBack ?? 12;
-  const today = input.todayIso ? new Date(`${input.todayIso}T00:00:00Z`) : new Date();
+  // The UTC anchor is deliberate and stays: `todayIso` is a DATE-ONLY value, so parsing it at UTC
+  // midnight and reading it back with getUTC* is exactly what stops the calendar day shifting.
+  // Only the DEFAULT was wrong — a bare `new Date()` read the clock in UTC, so on the 1st of a
+  // month between Cairo midnight and 03:00 the newest option was still LAST month: the current
+  // month was missing from the picker entirely.
+  const today = new Date(`${input.todayIso ?? cairoDateIso()}T00:00:00Z`);
   let year = today.getUTCFullYear();
   let month = today.getUTCMonth() + 1;
 
@@ -208,7 +235,8 @@ export async function getFieldWorkforceComplianceEmployeeTrend(input: {
 }): Promise<FieldWorkforceEmployeeTrend> {
   const monthsBack = input.monthsBack ?? 6;
   const months = listRecentFieldWorkforceComplianceMonths({ monthsBack: monthsBack - 1 });
-  const todayIso = new Date().toISOString().slice(0, 10);
+  // Africa/Cairo, not UTC — same future-day cutoff as getFieldWorkforceComplianceLiveView above.
+  const todayIso = cairoDateIso();
 
   const rows = await Promise.all(
     months.map(async ({ month, monthKey, year }) => {
