@@ -1433,14 +1433,14 @@ export function ExpenseReport({
 
               <div
                 aria-hidden="true"
-                className="hidden overflow-x-auto overflow-y-hidden border-b border-[#EEF2F6] bg-phx-paper md:block [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar]:h-3"
+                className="hidden overflow-x-auto overflow-y-hidden border-b border-[#EEF2F6] bg-phx-paper md:block [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar]:h-3"
                 onScroll={handleTopScroll}
                 ref={topScrollRef}
               >
                 <div style={{ height: 1, width: tableScrollWidth }} />
               </div>
               <div
-                className="hidden max-h-[70vh] overflow-auto md:block [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar]:w-3"
+                className="hidden max-h-[70vh] overflow-auto md:block [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar]:w-3"
                 onScroll={handleBodyScroll}
                 ref={bodyScrollRef}
               >
