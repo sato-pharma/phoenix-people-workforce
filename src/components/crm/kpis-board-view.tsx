@@ -28,6 +28,11 @@ import {
   toneOf,
   toneOfDailyVisitBand,
 } from "@/components/crm/kpis-chrome";
+import {
+  AmPmKpiReportTables,
+  OffListNote,
+  PharmacyKpiReportTables,
+} from "@/components/crm/kpi-reports-tables";
 import { KPI_TABS, KPI_TAB_HINT, KPI_TAB_LABEL, type KpiTab } from "@/lib/crm/kpis-tabs";
 import {
   buildKpisQuery,
@@ -307,7 +312,37 @@ function tabHeadline(board: KpisBoard, tab: KpiTab): string {
   // separate rates against two separate targets, so they are labelled, never divided.
   if (tab === "call-rate") return `${rate(totals.amRate)} AM · ${rate(totals.pmRate)} PM`;
   if (tab === "coverage") return `${totals.coveragePct}%`;
+  // THE TWO REPORTS' HEADLINES read against the rep's LIST, not his plan — a different denominator
+  // from the four tabs above, which is why they are computed here rather than taken from `totals`.
+  // The AM and PM figures are LABELLED and never divided, for the same reason the call-rate
+  // headline is: a slash between two independent measures reads as a fraction.
+  if (tab === "am-pm") {
+    return `${listCoverage(board, "am")} AM · ${listCoverage(board, "pm")} PM`;
+  }
+  if (tab === "pharmacies") {
+    const withList = board.kpiReports.filter((report) => report.pharmacies.applicable).length;
+    // "Not applicable" for the whole tab is a real answer when nobody in view carries pharmacies —
+    // a 0% would read as "these reps covered no pharmacies", which is the opposite of the truth.
+    return withList === 0 ? "Not applicable" : `${listCoverage(board, "pharmacy")} · ${withList} with a list`;
+  }
   return `${totals.frequencyPct}%`;
+}
+
+/**
+ * One list's coverage across every rep in view: contacts seen at least once, over contacts on the
+ * list. Summed over reps rather than averaged over their percentages — a rep with 4 pharmacies
+ * would otherwise weigh as much as one with 90.
+ */
+function listCoverage(board: KpisBoard, list: "am" | "pm" | "pharmacy"): string {
+  let panel = 0;
+  let visited = 0;
+  for (const report of board.kpiReports) {
+    const block =
+      list === "am" ? report.ampm.am : list === "pm" ? report.ampm.pm : report.pharmacies.pharmacies;
+    panel += block.coverage.panel;
+    visited += block.coverage.visited;
+  }
+  return panel === 0 ? "—" : `${Math.round((visited / panel) * 100)}%`;
 }
 
 /**
@@ -1269,6 +1304,17 @@ export function KpisBoardView({
                   title="No reps in this period."
                 />
               )}
+            </div>
+          ) : tab === "am-pm" || tab === "pharmacies" ? (
+            /* THE TWO REPORTS. No leaderboard above them, deliberately: the podium ranks the four
+               plan-based measures, and a "best on pharmacies" board would rank reps against a
+               standard the owner has not set yet. The tables carry mobile cards of their own. */
+            <div className="border-t border-slate-100">
+              {tab === "am-pm" ? <AmPmKpiReportTables reports={board.kpiReports} /> : null}
+              {tab === "pharmacies" ? <PharmacyKpiReportTables reports={board.kpiReports} /> : null}
+              <div className="border-t border-slate-100">
+                <OffListNote reports={board.kpiReports} />
+              </div>
             </div>
           ) : (
             <>
