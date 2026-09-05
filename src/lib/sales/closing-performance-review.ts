@@ -303,7 +303,7 @@ export type AreaSeatAssignment = {
  * Fails soft to an empty map — a seat-model outage must leave the rep column blank, never break the
  * closing review, which is a sales report first.
  */
-export async function loadAreaSeatAssignments(): Promise<Map<string, AreaSeatAssignment>> {
+export async function loadAreaSeatAssignments(asOf?: string | null): Promise<Map<string, AreaSeatAssignment>> {
   const assignments = new Map<string, AreaSeatAssignment>();
   try {
     const [{ data, error }, directory] = await Promise.all([
@@ -364,7 +364,123 @@ export async function loadAreaSeatAssignments(): Promise<Map<string, AreaSeatAss
       labels: { event: "closing_performance_review_seats_failed" },
     });
   }
+
+  await applyManagerAsOf(assignments, asOf ?? null);
   return assignments;
+}
+
+/**
+ * Whether a dated row is the one in force on `asOf`.
+ *
+ * HALF-OPEN — `[from, to)` — and it has to be. A dated pair closes and reopens on the SAME day: the
+ * Delta (3) rows run to 2026-09-01 and the replacements run from 2026-09-01. An inclusive end would
+ * match BOTH rows for 1 September, and which one won would depend on iteration order, which is not
+ * a decision anybody made.
+ */
+export function coversAsOf(
+  effectiveFrom: string | null | undefined,
+  effectiveTo: string | null | undefined,
+  asOf: string,
+): boolean {
+  const from = String(effectiveFrom ?? "").trim();
+  if (!from || from > asOf) return false;
+  const to = effectiveTo ? String(effectiveTo).trim() : "";
+  return !to || to > asOf;
+}
+
+/** The last day of a `YYYY-MM` period, which is the date a month's attribution is resolved at. */
+export function periodEndDate(period: string | null | undefined): string | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(period ?? "").trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return null;
+  // Day 0 of the NEXT month is the last day of this one, and it handles February without a table.
+  const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return `${match[1]}-${match[2]}-${String(last).padStart(2, "0")}`;
+}
+
+/**
+ * Name the manager who held the area THEN, not the one who holds it now.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * THIS WAS A REAL MISATTRIBUTION, found by checking August's District Managers against the seat model
+ * in the database. `au_v_org_tree` is the CURRENT tree and carries no date, so a past month was
+ * labelled with today's seats. On the five Delta (3) areas — which sit on a dated PAIR, closing
+ * 2026-09-01 and reopening the same day — August was credited to the manager whose seat begins on
+ * 1 September:
+ *
+ *     D24 Sharkia 1  seat SEAT-AIF-DM-D2  -> Salim Gomaa      was shown as Samaa Shalaby
+ *     D11 Qalubeya   seat SEAT-AIF-OTHERS -> vacant           was shown as Samaa Shalaby
+ *     D25 Sharkia 2  seat SEAT-AIF-OTHERS -> vacant           was shown as Samaa Shalaby
+ *     OT2 Suez       seat SEAT-AIF-OTHERS -> vacant           was shown as Samaa Shalaby
+ *
+ * 6,215 EGP of 477,499 relabelled, and a person named for a month before she held the seat. The
+ * totals always reconciled, because the money was never lost — only put under the wrong name, which
+ * is why nothing downstream could notice.
+ *
+ * WHAT THIS DOES AND DOES NOT FIX. The AREA -> SEAT resolution becomes period-aware, which is the
+ * whole of the defect above. The SEAT -> PERSON resolution still reads the current tree: a seat
+ * whose OCCUPANT changed would still show today's holder. Closing that needs `au.occupancy_history`,
+ * and PostgREST exposes only `public`, `graphql_public` and `analytics` — so it needs a view, which
+ * is a migration, which is the owner's to approve. This is deliberately the fix that needs none.
+ *
+ * FAILS SOFT. A map read that errors leaves the current-tree answer in place rather than blanking
+ * every manager: a wrong-but-present name is bad, and no names at all is worse.
+ */
+async function applyManagerAsOf(
+  assignments: Map<string, AreaSeatAssignment>,
+  asOf: string | null,
+): Promise<void> {
+  if (!asOf) return;
+  try {
+    const [{ data: mapRows, error: mapError }, { data: seatRows, error: seatError }] = await Promise.all([
+      getSupabaseAdmin()
+        .from("au_v_line_area_map_all")
+        .select("line_code,area_code,dm_seat_id,effective_from,effective_to"),
+      getSupabaseAdmin().from("au_v_org_tree").select("seat_id,occupant_hr_id,is_other_pseudo_dm"),
+    ]);
+    if (mapError) throw mapError;
+    if (seatError) throw seatError;
+
+    const directory = await getEmployeeDirectory();
+    const nameByHrId = new Map<string, string>();
+    for (const employee of directory.employees) {
+      const key = canonicalHrIdKey(employee.hrId);
+      if (key) nameByHrId.set(key, employee.displayName || employee.fullName);
+    }
+
+    const occupantOf = new Map<string, { name: string | null; pseudo: boolean }>();
+    for (const row of (seatRows ?? []) as SeatRow[]) {
+      const seatId = String(row.seat_id ?? "").trim();
+      if (!seatId) continue;
+      const key = canonicalHrIdKey(row.occupant_hr_id ?? "");
+      occupantOf.set(seatId, {
+        name: key ? nameByHrId.get(key) ?? null : null,
+        pseudo: Boolean(row.is_other_pseudo_dm),
+      });
+    }
+
+    for (const row of (mapRows ?? []) as Array<Record<string, string | null>>) {
+      if (!coversAsOf(row.effective_from, row.effective_to, asOf)) continue;
+
+      const line = lineKey(row.line_code);
+      const areaCode = String(row.area_code ?? "").trim().toUpperCase();
+      if (!line || !areaCode) continue;
+      const key = `${line}::${areaCode}`;
+      const existing = assignments.get(key);
+      if (!existing) continue;
+
+      const seat = row.dm_seat_id ? occupantOf.get(String(row.dm_seat_id).trim()) : undefined;
+      // A pseudo-DM seat is the organogram's catch-all for areas nobody runs; it is not a person.
+      assignments.set(key, { ...existing, managerName: seat && !seat.pseudo ? seat.name : null });
+    }
+  } catch (error) {
+    logError("Performance review as-of manager read failed; keeping the current-tree answer", {
+      error,
+      labels: { event: "closing_performance_review_manager_asof_failed" },
+    });
+  }
 }
 
 /**
@@ -808,7 +924,7 @@ export async function loadClosingPerformanceReview(input?: {
   );
 
   const [seatAssignments, seriesMatrices] = await Promise.all([
-    loadAreaSeatAssignments(),
+    loadAreaSeatAssignments(periodEndDate(parts.combined.period)),
     Promise.all(
       periods.map(async (period) => {
         try {
