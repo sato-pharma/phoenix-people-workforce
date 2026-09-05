@@ -277,7 +277,7 @@ export function runNavHubPromotionTests() {
     // The hub's own card is dropped by `hubRowsFor` — keeping it would rebuild in one row the
     // "press it and land on a page of modules" the promotion exists to remove — so compare against
     // the rows the hub actually becomes, never against `hub.items`.
-    const rows = hub.items.filter((card) => card.href !== hub.hubHref).map((card) => card.href);
+    const rows: string[] = hub.items.filter((card) => card.href !== hub.hubHref).map((card) => card.href);
     const named = hub.split.flatMap((band) => band.hrefs);
 
     assert.deepEqual(

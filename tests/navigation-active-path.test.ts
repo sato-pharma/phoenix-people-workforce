@@ -12,6 +12,7 @@ import {
 } from "../src/lib/navigation/active-path.ts";
 import {
   adminNavigationSections,
+  bandSectionIdsFor,
   employeePortalNavigationSections,
   hubPageItemGroups,
   payrollManagementPageItems,
@@ -204,20 +205,31 @@ export function runNavigationActivePathTests() {
   // this guarantee as a single /admin/admin-tools row until 2026-09-05; the row is gone and the
   // band inherited its gate (NavigationSection.gate), which is role-gated, not permission-gated —
   // so a stale or wrong permission-cache read must not empty it.
+  //
+  // The band became FOUR sections later the same day (the rebalance split Admin Tools at 17 rows).
+  // Resolved through `bandSectionIdsFor` rather than by naming them, because the failure mode of
+  // hardcoding one is silent: `find(id === "admin-tools")` still matches a real section, so the
+  // assertion keeps passing while covering a quarter of what it claims to. System Cleanup moved
+  // into the "Data & Maintenance" quarter, which is how this was caught.
+  const adminToolsBandIds = bandSectionIdsFor("admin-tools");
   const superAdminCleanupNav = getSections(
     adminNavigationSections,
     "admin",
     { "admin:read": false },
     "Super Admin",
   );
-  const superAdminAdminTools = superAdminCleanupNav.find((navSection) => navSection.id === "admin-tools");
+  const superAdminAdminTools = superAdminCleanupNav.filter((navSection) =>
+    adminToolsBandIds.includes(navSection.id),
+  );
   assert.equal(
-    superAdminAdminTools !== undefined && superAdminAdminTools.items.length > 0,
+    superAdminAdminTools.reduce((total, navSection) => total + navSection.items.length, 0) > 0,
     true,
     "Super Admin must see the Admin Tools band even if the dynamic permission cache is stale",
   );
   assert.equal(
-    superAdminAdminTools?.items.some((navItem) => navItem.href === "/admin/system-cleanup"),
+    superAdminAdminTools.some((navSection) =>
+      navSection.items.some((navItem) => navItem.href === "/admin/system-cleanup"),
+    ),
     true,
     "…and System Cleanup specifically: it is role-gated with no permission of its own, so it is the " +
       "row that proves the stale `admin:read` did not quietly empty the band down to its permissioned tools",
@@ -230,9 +242,9 @@ export function runNavigationActivePathTests() {
     "CEO",
   );
   assert.equal(
-    ceoCleanupNav.some((navSection) => navSection.id === "admin-tools"),
+    ceoCleanupNav.some((navSection) => adminToolsBandIds.includes(navSection.id)),
     false,
-    "CEO must not see the Admin Tools band even if a permission lookup grants admin",
+    "CEO must not see the Admin Tools band — any of its four sections — even if a permission lookup grants admin",
   );
   // Two Admin Tools cards name the CEO (System Issues, Email Control Center) but the band's gate
   // is Super-Admin-only, exactly as the hub row was — so they stay off his rail. Promoting the

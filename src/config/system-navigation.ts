@@ -4494,4 +4494,22 @@ function promoteHubRows(seeds: readonly NavigationSection[]): readonly Navigatio
   }
 }
 
+/**
+ * Every section id a hub's rows are drawn in — one, or the several its `split` names.
+ *
+ * Exists for the tests, and it is not a convenience. Several of them assert something about a band
+ * by finding `section.id === "admin-tools"` or `"crm"`, and a split leaves that lookup finding a
+ * TRUE SUBSET of the band it used to name — so the assertion keeps running, keeps reading as though
+ * it covers the module, and quietly stops covering three quarters of it. Two failed exactly that way
+ * when the rebalance shipped, which is the good outcome; the bad one is a test that still passes.
+ *
+ * Takes the ORIGINAL section id (the one the hub row occupied), because that is what a test written
+ * before the split already names.
+ */
+export function bandSectionIdsFor(sectionId: string): readonly string[] {
+  const hub = adminHubPromotions.find((promotion) => promotion.sectionId === sectionId);
+  if (hub?.split === undefined) return [sectionId];
+  return hub.split.map((band) => band.sectionId);
+}
+
 export const adminNavigationSections: readonly NavigationSection[] = promoteHubRows(adminNavigationSectionSeeds);
