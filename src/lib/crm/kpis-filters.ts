@@ -52,6 +52,12 @@ export type KpiFilterableRow = {
    * carries the reasoning. */
   amAttainmentPct: number | null;
   pmAttainmentPct: number | null;
+  /** Verified AM + PM visits per working day — the ONE place the split is deliberately summed. See
+   * call-rate.ts's DAILY_VISIT_RATE_TARGET. Null exactly when `hasCallRate` is false. */
+  visitsPerDay: number | null;
+  /** Where `visitsPerDay` sits against the owner's 8-12 band (2026-09-05). Null iff `visitsPerDay`
+   * is null — never folded into `"below"`. */
+  dailyVisitBand: "below" | "in-band" | "above" | null;
 
   /** THE DENOMINATOR OF BOTH PLAN KPIs — every doctor the plan names inside the scored window,
    * whether or not his day has arrived. See the window note in crm/kpis-board.ts. */
@@ -61,6 +67,9 @@ export type KpiFilterableRow = {
    * sides count the whole window — the only shortfall this board has. */
   missedDoctors: number;
   coveragePct: number;
+  /** Whether `coveragePct` clears the owner's 95% floor (2026-09-05). Null exactly when
+   * `hasMeasurablePlan` is false — the same guard {@link coverageBandOf} already honours. */
+  meetsCoverageFloor: boolean | null;
   onPlanDoctors: number;
   underDoctors: number;
   overDoctors: number;
@@ -114,6 +123,16 @@ export function coverageBandOf(row: KpiFilterableRow): KpiBand {
   return kpiBandOf(row.hasMeasurablePlan ? row.coveragePct : null);
 }
 
+/**
+ * Coverage floor — owner's own words, 2026-09-05: "coverage no less than 95%." Scores THIS board's
+ * `coveragePct` (visitedDoctors / plannedDoctors, over the scored window) — not the grade-weighted
+ * panel norms in sfe-doctor-coverage.ts, a different board scoring a different question ("did he
+ * see this doctor the number of times his grade requires") over a different denominator (the
+ * assigned 90-120 panel, not this window's plan). Measured on production for August 2026: 2 of 70
+ * reps at or above it.
+ */
+export const COVERAGE_TARGET_FLOOR_PCT = 95;
+
 /** Frequency band for a row, honouring `hasMeasurablePlan`. */
 export function frequencyBandOf(row: KpiFilterableRow): KpiBand {
   return kpiBandOf(row.hasMeasurablePlan ? row.frequencyPct : null);
@@ -157,6 +176,9 @@ export const KPI_FLAGS = [
   "below-am-target",
   "below-pm-target",
   "perfect-frequency",
+  "below-coverage-floor",
+  "above-daily-visit-band",
+  "below-daily-visit-band",
 ] as const;
 
 export type KpiFlag = (typeof KPI_FLAGS)[number];
@@ -172,6 +194,9 @@ export const KPI_FLAG_LABEL: Record<KpiFlag, string> = {
   "below-am-target": "Under the AM target",
   "below-pm-target": "Under the PM target",
   "perfect-frequency": "Every due doctor exactly on plan",
+  "below-coverage-floor": "Below the 95% coverage floor",
+  "above-daily-visit-band": "Above 12 visits a day",
+  "below-daily-visit-band": "Below 8 visits a day",
 };
 
 /** One line saying what the flag is FOR, shown under the label in the filter panel. */
@@ -186,6 +211,9 @@ export const KPI_FLAG_HINT: Record<KpiFlag, string> = {
   "below-am-target": "Verified morning calls came in under the AM target, judged on its own.",
   "below-pm-target": "Verified afternoon calls came in under the PM target, judged on its own.",
   "perfect-frequency": "100% frequency. Exact is the only pass, so this is the real thing.",
+  "below-coverage-floor": "Owner's floor, 2026-09-05: coverage should be no less than 95%.",
+  "above-daily-visit-band": "Owner's band, 2026-09-05: visits/day should average 8-12. A high count is a volume flag, not automatically a win — check the campaign share before reading it as strong.",
+  "below-daily-visit-band": "Owner's band, 2026-09-05: visits/day should average 8-12.",
 };
 
 /** Every flag that is true of this row. */
@@ -201,6 +229,9 @@ export function kpiFlagsOf(row: KpiFilterableRow): KpiFlag[] {
   if (row.hasCallRate && row.amAttainmentPct != null && row.amAttainmentPct < 100) flags.push("below-am-target");
   if (row.hasCallRate && row.pmAttainmentPct != null && row.pmAttainmentPct < 100) flags.push("below-pm-target");
   if (row.hasMeasurablePlan && row.frequencyPct === 100) flags.push("perfect-frequency");
+  if (row.meetsCoverageFloor === false) flags.push("below-coverage-floor");
+  if (row.dailyVisitBand === "above") flags.push("above-daily-visit-band");
+  if (row.dailyVisitBand === "below") flags.push("below-daily-visit-band");
   return flags;
 }
 
