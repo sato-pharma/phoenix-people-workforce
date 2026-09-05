@@ -98,6 +98,4 @@ export function deriveDirectOrderCollection(input: {
 }
 
 /** Today in Cairo as YYYY-MM-DD. At 01:00 Cairo, UTC still reads yesterday. */
-export function todayInCairo(now: Date = new Date()): string {
-  return now.toLocaleDateString("en-CA", { timeZone: "Africa/Cairo" });
-}
+export { todayInCairo } from "@/lib/date-only";

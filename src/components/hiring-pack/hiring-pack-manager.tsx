@@ -67,6 +67,7 @@ import {
   INSURANCE_WAGE_DIVISOR,
   insuranceWageFromBase,
 } from "@/lib/hiring-pack/insurance-wage";
+import { todayInCairo } from "@/lib/date-only";
 import { renewalObjectiveReasonOptions } from "@/lib/hiring-pack/renewal-reasons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -565,22 +566,6 @@ function formatStamp(iso: string | null): string {
     timeZone: "Africa/Cairo",
     year: "numeric",
   });
-}
-
-/**
- * Today, in Cairo.
- *
- * Computed on demand rather than at render, so the server and the browser never disagree about what
- * day it is during hydration — and read in Cairo rather than off the machine's clock, because a
- * signature recorded at 1am from a laptop left on UTC would otherwise be dated to yesterday.
- */
-function todayInCairo(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    day: "2-digit",
-    month: "2-digit",
-    timeZone: "Africa/Cairo",
-    year: "numeric",
-  }).format(new Date());
 }
 
 function candidateLabel(candidate: HiringPackCandidate): string {
