@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 
 import { systemDocuments } from "@/config/system-settings";
-import { HOUSE_DOCUMENT_STANDARD, HOUSE_XLSX_COLORS } from "@/lib/export/house-xlsx-palette";
+import { HOUSE_DOCUMENT_STANDARD, HOUSE_XLSX_COLORS, HOUSE_XLSX_DISPLAY_FONT, HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 import { cvDatabaseHeaders } from "@/lib/cv/cv-database";
 
 const dataStartRow = 6;
@@ -30,17 +30,17 @@ function styleTitle(sheet: ExcelJS.Worksheet) {
   sheet.mergeCells("A1:F1");
   sheet.mergeCells("G1:H1");
   sheet.getCell("G1").value = HOUSE_DOCUMENT_STANDARD;
-  sheet.getCell("G1").font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: "Aptos", size: 7.5 };
+  sheet.getCell("G1").font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: HOUSE_XLSX_FONT, size: 7.5 };
   sheet.getCell("G1").alignment = { horizontal: "right", vertical: "middle" };
   sheet.getCell("A1").value = systemDocuments.titles.cvDatabaseUploadTemplate;
-  sheet.getCell("A1").font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos Display", size: 16 };
+  sheet.getCell("A1").font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_DISPLAY_FONT, size: 16 };
   sheet.getCell("A1").alignment = { horizontal: "left", indent: 1, vertical: "middle" };
   sheet.getRow(1).height = 30;
 
   sheet.mergeCells("A2:H2");
   sheet.getCell("A2").value =
     "Use this sheet for candidate CV tracking only. Do not add HR_ID because these candidates are not employees yet.";
-  sheet.getCell("A2").font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: "Aptos", size: 9 };
+  sheet.getCell("A2").font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: HOUSE_XLSX_FONT, size: 9 };
   sheet.getCell("A2").alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
   sheet.getRow(2).height = 24;
 
@@ -65,7 +65,7 @@ function styleSectionRow(sheet: ExcelJS.Worksheet) {
     sheet.mergeCells(4, section.start, 4, section.end);
     const cell = sheet.getCell(4, section.start);
     cell.value = section.label;
-    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 10 };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 10 };
     cell.alignment = { horizontal: "left", indent: 1, vertical: "bottom" };
 
     for (let column = section.start; column <= section.end; column += 1) {
@@ -81,7 +81,7 @@ function styleHeaderRow(sheet: ExcelJS.Worksheet) {
   row.values = [...cvDatabaseHeaders];
   row.height = 34;
   row.eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 10 };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 10 };
     cell.border = {
       bottom: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "medium" },
       top: { color: { argb: HOUSE_XLSX_COLORS.hair }, style: "thin" },
@@ -100,7 +100,7 @@ function styleInputRows(sheet: ExcelJS.Worksheet) {
       cell.border = border();
       cell.alignment = { vertical: "middle", wrapText: true };
       if (rowNumber % 2 !== 0) cell.fill = solidFill(HOUSE_XLSX_COLORS.tint);
-      cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 10 };
+      cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: 10 };
     }
   }
 
@@ -152,7 +152,7 @@ function addInstructions(workbook: ExcelJS.Workbook) {
 
   sheet.mergeCells("A1:B1");
   sheet.getCell("A1").value = "How to use the CV Database template";
-  sheet.getCell("A1").font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos Display", size: 16 };
+  sheet.getCell("A1").font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_DISPLAY_FONT, size: 16 };
   sheet.getCell("A1").alignment = { horizontal: "left", indent: 1, vertical: "middle" };
   sheet.getRow(1).height = 30;
   for (const column of [1, 2]) sheet.getCell(2, column).fill = solidFill(HOUSE_XLSX_COLORS.blue);
@@ -170,7 +170,7 @@ function addInstructions(workbook: ExcelJS.Workbook) {
 
   sheet.getRow(3).values = ["Field", "Rule"];
   sheet.getRow(3).eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 10 };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 10 };
     cell.border = {
       bottom: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "medium" },
       top: { color: { argb: HOUSE_XLSX_COLORS.hair }, style: "thin" },
@@ -187,8 +187,8 @@ function addInstructions(workbook: ExcelJS.Workbook) {
       cell.border = border();
       cell.alignment = { vertical: "top", wrapText: true };
       cell.font = column === 1
-        ? { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 10 }
-        : { color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 10 };
+        ? { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 10 }
+        : { color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: 10 };
     });
   });
 

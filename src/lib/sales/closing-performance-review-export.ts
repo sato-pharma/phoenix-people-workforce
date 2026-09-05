@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { HOUSE_XLSX_DISPLAY_FONT, HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 
 import { HOUSE_DOCUMENT_STANDARD, HOUSE_XLSX_COLORS } from "@/lib/export/house-xlsx-identity";
 import {
@@ -111,19 +112,19 @@ function money(
   if (na || value == null) {
     cell.value = EM;
     align(cell, { horizontal: "center" });
-    font(cell, { color: { argb: MUTE }, name: "Aptos", size: 9 });
+    font(cell, { color: { argb: MUTE }, name: HOUSE_XLSX_FONT, size: 9 });
     return cell;
   }
   if (value === 0 && zeroDot) {
     cell.value = DOT;
     align(cell, { horizontal: "center" });
-    font(cell, { color: { argb: MUTE }, name: "Aptos", size: 9 });
+    font(cell, { color: { argb: MUTE }, name: HOUSE_XLSX_FONT, size: 9 });
     return cell;
   }
   cell.value = value;
   cell.numFmt = NUM;
   align(cell, { horizontal: "right" });
-  font(cell, { bold, color: { argb: color }, name: "Aptos", size: 9.5 });
+  font(cell, { bold, color: { argb: color }, name: HOUSE_XLSX_FONT, size: 9.5 });
   return cell;
 }
 
@@ -133,13 +134,13 @@ function pct(cell: Cell, ratio: number | null, options: { bold?: boolean } = {})
     // genuinely has nothing to be measured against, and printing 0% would accuse it of failing.
     cell.value = "no target";
     align(cell, { horizontal: "center" });
-    font(cell, { color: { argb: MUTE }, italic: true, name: "Aptos", size: 8.5 });
+    font(cell, { color: { argb: MUTE }, italic: true, name: HOUSE_XLSX_FONT, size: 8.5 });
     return cell;
   }
   cell.value = ratio;
   cell.numFmt = PCT;
   align(cell, { horizontal: "center" });
-  font(cell, { bold: true, color: { argb: achColor(ratio) }, name: "Aptos", size: options.bold ? 10.5 : 9.5 });
+  font(cell, { bold: true, color: { argb: achColor(ratio) }, name: HOUSE_XLSX_FONT, size: options.bold ? 10.5 : 9.5 });
   return cell;
 }
 
@@ -147,13 +148,13 @@ function growth(cell: Cell, ratio: number | null) {
   if (ratio == null) {
     cell.value = "new";
     align(cell, { horizontal: "center" });
-    font(cell, { color: { argb: MUTE }, italic: true, name: "Aptos", size: 8.5 });
+    font(cell, { color: { argb: MUTE }, italic: true, name: HOUSE_XLSX_FONT, size: 8.5 });
     return cell;
   }
   cell.value = ratio;
   cell.numFmt = GROW;
   align(cell, { horizontal: "center" });
-  font(cell, { bold: true, color: { argb: ratio >= 0 ? UP : DOWN }, name: "Aptos", size: 9.5 });
+  font(cell, { bold: true, color: { argb: ratio >= 0 ? UP : DOWN }, name: HOUSE_XLSX_FONT, size: 9.5 });
   return cell;
 }
 
@@ -268,7 +269,7 @@ function masthead(workbook: ExcelJS.Workbook, sheet: Sheet, options: MastheadOpt
   // months the series covers. A full-width row cannot clip at any width.
   sheet.getRow(1).height = 11;
   sheet.mergeCells(`A1:${letter}1`);
-  align(font(sheet.getCell("A1"), { color: { argb: MUTE }, name: "Aptos", size: 7.5 }), {
+  align(font(sheet.getCell("A1"), { color: { argb: MUTE }, name: HOUSE_XLSX_FONT, size: 7.5 }), {
     horizontal: "right",
     vertical: "middle",
   }).value = HOUSE_DOCUMENT_STANDARD;
@@ -282,14 +283,14 @@ function masthead(workbook: ExcelJS.Workbook, sheet: Sheet, options: MastheadOpt
   sheet.mergeCells(2, titleFirst, 2, options.lastCol);
   sheet.mergeCells(3, titleFirst, 3, options.lastCol);
   sheet.mergeCells(4, titleFirst, 4, options.lastCol);
-  align(font(sheet.getCell(2, titleFirst), { bold: true, color: { argb: DEEP }, name: "Aptos Display", size: 16 }), {
+  align(font(sheet.getCell(2, titleFirst), { bold: true, color: { argb: DEEP }, name: HOUSE_XLSX_DISPLAY_FONT, size: 16 }), {
     horizontal: "left",
     vertical: "middle",
   }).value = options.title;
-  align(font(sheet.getCell(3, titleFirst), { color: { argb: SLATE }, name: "Aptos", size: 10 }), {
+  align(font(sheet.getCell(3, titleFirst), { color: { argb: SLATE }, name: HOUSE_XLSX_FONT, size: 10 }), {
     horizontal: "left",
   }).value = options.subtitle;
-  align(font(sheet.getCell(4, titleFirst), { color: { argb: MUTE }, italic: true, name: "Aptos", size: 8.5 }), {
+  align(font(sheet.getCell(4, titleFirst), { color: { argb: MUTE }, italic: true, name: HOUSE_XLSX_FONT, size: 8.5 }), {
     horizontal: "left",
   }).value = options.status;
 
@@ -310,22 +311,22 @@ function masthead(workbook: ExcelJS.Workbook, sheet: Sheet, options: MastheadOpt
   sheet.mergeCells(`A6:${letter}6`);
   if (options.legend === "regions") {
     const runs: ExcelJS.RichText[] = [
-      { font: { bold: true, color: { argb: SLATE }, name: "Aptos", size: 8.5 }, text: "REGION  " },
+      { font: { bold: true, color: { argb: SLATE }, name: HOUSE_XLSX_FONT, size: 8.5 }, text: "REGION  " },
     ];
     for (const region of PERFORMANCE_REVIEW_REGIONS) {
-      runs.push({ font: { color: { argb: region.chip }, name: "Aptos", size: 11 }, text: SQ });
-      runs.push({ font: { color: { argb: SLATE }, name: "Aptos", size: 8.5 }, text: ` ${region.regionName}    ` });
+      runs.push({ font: { color: { argb: region.chip }, name: HOUSE_XLSX_FONT, size: 11 }, text: SQ });
+      runs.push({ font: { color: { argb: SLATE }, name: HOUSE_XLSX_FONT, size: 8.5 }, text: ` ${region.regionName}    ` });
     }
     sheet.getCell("A6").value = { richText: runs };
   } else if (options.legend === "growth") {
     sheet.getCell("A6").value = {
       richText: [
-        { font: { color: { argb: UP }, name: "Aptos", size: 11 }, text: SQ },
-        { font: { color: { argb: SLATE }, name: "Aptos", size: 8.5 }, text: " grew on the month     " },
-        { font: { color: { argb: DOWN }, name: "Aptos", size: 11 }, text: SQ },
-        { font: { color: { argb: SLATE }, name: "Aptos", size: 8.5 }, text: " fell on the month     " },
+        { font: { color: { argb: UP }, name: HOUSE_XLSX_FONT, size: 11 }, text: SQ },
+        { font: { color: { argb: SLATE }, name: HOUSE_XLSX_FONT, size: 8.5 }, text: " grew on the month     " },
+        { font: { color: { argb: DOWN }, name: HOUSE_XLSX_FONT, size: 11 }, text: SQ },
+        { font: { color: { argb: SLATE }, name: HOUSE_XLSX_FONT, size: 8.5 }, text: " fell on the month     " },
         {
-          font: { color: { argb: MUTE }, name: "Aptos", size: 8.5 },
+          font: { color: { argb: MUTE }, name: HOUSE_XLSX_FONT, size: 8.5 },
           text: "new = nothing sold the month before, so there is no growth to compute",
         },
       ],
@@ -335,7 +336,7 @@ function masthead(workbook: ExcelJS.Workbook, sheet: Sheet, options: MastheadOpt
 
   sheet.getRow(7).height = 13;
   sheet.mergeCells(`A7:${letter}7`);
-  align(font(sheet.getCell("A7"), { color: { argb: MUTE }, name: "Aptos", size: 8 }), {
+  align(font(sheet.getCell("A7"), { color: { argb: MUTE }, name: HOUSE_XLSX_FONT, size: 8 }), {
     horizontal: "left",
     indent: 1,
   }).value = `${DOT} = nothing sold    ${EM} = not applicable    ${options.note}`;
@@ -351,8 +352,8 @@ function sectionRow(sheet: Sheet, row: number, lastCol: number, text: string, su
   const cell = sheet.getCell(row, 1);
   cell.value = {
     richText: [
-      { font: { bold: true, color: { argb: DEEP }, name: "Aptos", size: 10 }, text },
-      ...(sub ? [{ font: { color: { argb: MUTE }, name: "Aptos", size: 8.5 }, text: `     ${sub}` }] : []),
+      { font: { bold: true, color: { argb: DEEP }, name: HOUSE_XLSX_FONT, size: 10 }, text },
+      ...(sub ? [{ font: { color: { argb: MUTE }, name: HOUSE_XLSX_FONT, size: 8.5 }, text: `     ${sub}` }] : []),
     ],
   };
   align(cell, { horizontal: "left", indent: 1, vertical: "bottom" });
@@ -374,7 +375,7 @@ function headerRow(sheet: Sheet, row: number, headings: string[], leftCount: num
   headings.forEach((heading, index) => {
     const cell = sheet.getCell(row, index + 1);
     cell.value = heading;
-    font(cell, { bold: true, color: { argb: DEEP }, name: "Aptos", size: 8.5 });
+    font(cell, { bold: true, color: { argb: DEEP }, name: HOUSE_XLSX_FONT, size: 8.5 });
     align(cell, {
       horizontal: index < leftCount ? "left" : "center",
       indent: index < leftCount ? 1 : 0,
@@ -447,27 +448,27 @@ function buildRepRankingSheet(workbook: ExcelJS.Workbook, review: ClosingPerform
     const rank = area.achievement == null ? null : index + 1;
 
     cells[0].value = rank ?? EM;
-    align(font(cells[0], { bold: rank != null && rank <= 3, color: { argb: rank != null && rank <= 3 ? DEEP : MUTE }, name: "Aptos", size: 9 }), { horizontal: "center" });
+    align(font(cells[0], { bold: rank != null && rank <= 3, color: { argb: rank != null && rank <= 3 ? DEEP : MUTE }, name: HOUSE_XLSX_FONT, size: 9 }), { horizontal: "center" });
 
     cells[1].value = area.regionName;
-    align(font(cells[1], { bold: true, color: { argb: style.chip }, name: "Aptos", size: 8.5 }), { horizontal: "left", indent: 1 });
+    align(font(cells[1], { bold: true, color: { argb: style.chip }, name: HOUSE_XLSX_FONT, size: 8.5 }), { horizontal: "left", indent: 1 });
 
     // "Vacant seat" is a real fact about a real seat, and the only non-name this column may show.
     cells[2].value = area.repName ?? (area.repIsVacant ? "Vacant seat" : EM);
-    align(font(cells[2], { color: { argb: area.repName ? INK : MUTE }, italic: !area.repName, name: "Aptos", size: 9.5 }), { horizontal: "left", indent: 1 });
+    align(font(cells[2], { color: { argb: area.repName ? INK : MUTE }, italic: !area.repName, name: HOUSE_XLSX_FONT, size: 9.5 }), { horizontal: "left", indent: 1 });
 
     cells[3].value = area.areaName;
-    align(font(cells[3], { color: { argb: SLATE }, name: "Aptos", size: 9 }), { horizontal: "left", indent: 1 });
+    align(font(cells[3], { color: { argb: SLATE }, name: HOUSE_XLSX_FONT, size: 9 }), { horizontal: "left", indent: 1 });
 
     cells[4].value = area.managerName ?? EM;
-    align(font(cells[4], { color: { argb: area.managerName ? SLATE : MUTE }, name: "Aptos", size: 9 }), { horizontal: "left", indent: 1 });
+    align(font(cells[4], { color: { argb: area.managerName ? SLATE : MUTE }, name: HOUSE_XLSX_FONT, size: 9 }), { horizontal: "left", indent: 1 });
 
     money(cells[5], area.salesValue, { bold: true });
     money(cells[6], area.targetValue, { color: SLATE, na: area.targetValue == null });
     pct(cells[7], area.achievement, { bold: true });
 
     cells[8].value = bar(area.achievement);
-    align(font(cells[8], { color: { argb: achColor(area.achievement) }, name: "Aptos", size: 7 }), { horizontal: "left", indent: 1 });
+    align(font(cells[8], { color: { argb: achColor(area.achievement) }, name: HOUSE_XLSX_FONT, size: 7 }), { horizontal: "left", indent: 1 });
     row += 1;
   });
 
@@ -477,7 +478,7 @@ function buildRepRankingSheet(workbook: ExcelJS.Workbook, review: ClosingPerform
     border(sheet.getCell(row, column), { b: medB, t: medB });
   }
   sheet.mergeCells(row, 1, row, 5);
-  align(font(sheet.getCell(row, 1), { bold: true, color: { argb: DEEP }, name: "Aptos", size: 10 }), {
+  align(font(sheet.getCell(row, 1), { bold: true, color: { argb: DEEP }, name: HOUSE_XLSX_FONT, size: 10 }), {
     horizontal: "left",
     indent: 1,
     vertical: "middle",
@@ -485,7 +486,7 @@ function buildRepRankingSheet(workbook: ExcelJS.Workbook, review: ClosingPerform
   money(sheet.getCell(row, 6), review.totals.salesValue, { bold: true, color: DEEP });
   money(sheet.getCell(row, 7), review.totals.targetValue, { bold: true, color: DEEP, na: review.totals.targetValue == null });
   pct(sheet.getCell(row, 8), review.totals.achievement, { bold: true });
-  align(font(sheet.getCell(row, 9), { color: { argb: achColor(review.totals.achievement) }, name: "Aptos", size: 7 }), {
+  align(font(sheet.getCell(row, 9), { color: { argb: achColor(review.totals.achievement) }, name: HOUSE_XLSX_FONT, size: 7 }), {
     horizontal: "left",
     indent: 1,
   }).value = bar(review.totals.achievement);
@@ -502,16 +503,16 @@ function buildRepRankingSheet(workbook: ExcelJS.Workbook, review: ClosingPerform
     const cells = bodyRow(sheet, row, LAST, { zebra: index % 2 === 1 });
     align(cells[0], { horizontal: "center" });
     cells[1].value = group.regionName;
-    align(font(cells[1], { bold: true, color: { argb: style.chip }, name: "Aptos", size: 8.5 }), { horizontal: "left", indent: 1 });
+    align(font(cells[1], { bold: true, color: { argb: style.chip }, name: HOUSE_XLSX_FONT, size: 8.5 }), { horizontal: "left", indent: 1 });
     cells[2].value = group.label;
-    align(font(cells[2], { bold: true, color: { argb: INK }, name: "Aptos", size: 9.5 }), { horizontal: "left", indent: 1 });
+    align(font(cells[2], { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 9.5 }), { horizontal: "left", indent: 1 });
     cells[3].value = `${group.areaCount} ${group.areaCount === 1 ? "area" : "areas"}`;
-    align(font(cells[3], { color: { argb: SLATE }, name: "Aptos", size: 9 }), { horizontal: "left", indent: 1 });
+    align(font(cells[3], { color: { argb: SLATE }, name: HOUSE_XLSX_FONT, size: 9 }), { horizontal: "left", indent: 1 });
     money(cells[5], group.salesValue, { bold: true });
     money(cells[6], group.targetValue, { color: SLATE, na: group.targetValue == null });
     pct(cells[7], group.achievement, { bold: true });
     cells[8].value = bar(group.achievement);
-    align(font(cells[8], { color: { argb: achColor(group.achievement) }, name: "Aptos", size: 7 }), { horizontal: "left", indent: 1 });
+    align(font(cells[8], { color: { argb: achColor(group.achievement) }, name: HOUSE_XLSX_FONT, size: 7 }), { horizontal: "left", indent: 1 });
     row += 1;
   });
   row += 1;
@@ -523,16 +524,16 @@ function buildRepRankingSheet(workbook: ExcelJS.Workbook, review: ClosingPerform
     const style = performanceReviewRegionStyle(group.regionCode);
     sheet.getRow(row).height = 17;
     const cells = bodyRow(sheet, row, LAST, { zebra: index % 2 === 1 });
-    align(font(cells[0], { color: { argb: style.chip }, name: "Aptos", size: 12 }), { horizontal: "center" }).value = SQ;
+    align(font(cells[0], { color: { argb: style.chip }, name: HOUSE_XLSX_FONT, size: 12 }), { horizontal: "center" }).value = SQ;
     sheet.mergeCells(row, 2, row, 3);
-    align(font(sheet.getCell(row, 2), { bold: true, color: { argb: style.chip }, name: "Aptos", size: 10 }), { horizontal: "left", indent: 1 }).value = group.regionName;
+    align(font(sheet.getCell(row, 2), { bold: true, color: { argb: style.chip }, name: HOUSE_XLSX_FONT, size: 10 }), { horizontal: "left", indent: 1 }).value = group.regionName;
     cells[3].value = `${group.areaCount} ${group.areaCount === 1 ? "area" : "areas"}`;
-    align(font(cells[3], { color: { argb: SLATE }, name: "Aptos", size: 9 }), { horizontal: "left", indent: 1 });
+    align(font(cells[3], { color: { argb: SLATE }, name: HOUSE_XLSX_FONT, size: 9 }), { horizontal: "left", indent: 1 });
     money(cells[5], group.salesValue, { bold: true });
     money(cells[6], group.targetValue, { color: SLATE, na: group.targetValue == null });
     pct(cells[7], group.achievement, { bold: true });
     cells[8].value = bar(group.achievement);
-    align(font(cells[8], { color: { argb: achColor(group.achievement) }, name: "Aptos", size: 7 }), { horizontal: "left", indent: 1 });
+    align(font(cells[8], { color: { argb: achColor(group.achievement) }, name: HOUSE_XLSX_FONT, size: 7 }), { horizontal: "left", indent: 1 });
     row += 1;
   });
 
@@ -568,14 +569,14 @@ function buildFamilySheet(workbook: ExcelJS.Workbook, review: ClosingPerformance
     sheet.getRow(row).height = 16;
     const cells = bodyRow(sheet, row, LAST, { zebra: index % 2 === 1 });
     cells[0].value = family.family;
-    align(font(cells[0], { color: { argb: INK }, name: "Aptos", size: 9.5 }), { horizontal: "left", indent: 1 });
+    align(font(cells[0], { color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 9.5 }), { horizontal: "left", indent: 1 });
     cells[1].value = family.productCount;
-    align(font(cells[1], { color: { argb: SLATE }, name: "Aptos", size: 9 }), { horizontal: "center" });
+    align(font(cells[1], { color: { argb: SLATE }, name: HOUSE_XLSX_FONT, size: 9 }), { horizontal: "center" });
     money(cells[2], family.salesValue, { bold: true });
     money(cells[3], family.targetValue, { color: SLATE, na: family.targetValue == null });
     pct(cells[4], family.achievement, { bold: true });
     cells[5].value = bar(family.achievement);
-    align(font(cells[5], { color: { argb: achColor(family.achievement) }, name: "Aptos", size: 7 }), { horizontal: "left", indent: 1 });
+    align(font(cells[5], { color: { argb: achColor(family.achievement) }, name: HOUSE_XLSX_FONT, size: 7 }), { horizontal: "left", indent: 1 });
     row += 1;
   });
 
@@ -583,7 +584,7 @@ function buildFamilySheet(workbook: ExcelJS.Workbook, review: ClosingPerformance
   for (let column = 1; column <= LAST; column += 1) {
     border(sheet.getCell(row, column), { b: medB, t: medB });
   }
-  align(font(sheet.getCell(row, 1), { bold: true, color: { argb: DEEP }, name: "Aptos", size: 10 }), {
+  align(font(sheet.getCell(row, 1), { bold: true, color: { argb: DEEP }, name: HOUSE_XLSX_FONT, size: 10 }), {
     horizontal: "left",
     indent: 1,
     vertical: "middle",
@@ -649,7 +650,7 @@ function buildGridSheet(
     border(sheet.getCell(row, column), { b: med, t: medB });
   }
   sheet.mergeCells(row, 1, row, NAMES);
-  align(font(sheet.getCell(row, 1), { bold: true, color: { argb: DEEP }, name: "Aptos", size: 8.5 }), {
+  align(font(sheet.getCell(row, 1), { bold: true, color: { argb: DEEP }, name: HOUSE_XLSX_FONT, size: 8.5 }), {
     horizontal: "left",
     indent: 1,
     vertical: "middle",
@@ -662,7 +663,7 @@ function buildGridSheet(
       const from = runStart;
       const to = NAMES + index;
       if (to > from) sheet.mergeCells(row, from, row, to);
-      align(font(sheet.getCell(row, from), { bold: true, color: { argb: DEEP }, name: "Aptos", size: 8.5 }), {
+      align(font(sheet.getCell(row, from), { bold: true, color: { argb: DEEP }, name: HOUSE_XLSX_FONT, size: 8.5 }), {
         horizontal: "center",
         vertical: "middle",
       }).value = previous.subLabel;
@@ -670,7 +671,7 @@ function buildGridSheet(
     }
   }
   sheet.mergeCells(row, LAST - 2, row, LAST);
-  align(font(sheet.getCell(row, LAST - 2), { bold: true, color: { argb: DEEP }, name: "Aptos", size: 8.5 }), {
+  align(font(sheet.getCell(row, LAST - 2), { bold: true, color: { argb: DEEP }, name: HOUSE_XLSX_FONT, size: 8.5 }), {
     horizontal: "center",
     vertical: "middle",
   }).value = "THE WHOLE LINE";
@@ -713,7 +714,7 @@ function buildGridSheet(
           bold: isTotal,
           color: { argb: isTotal ? DEEP : muted ? MUTE : INK },
           italic: muted,
-          name: "Aptos",
+          name: HOUSE_XLSX_FONT,
           size: isTotal ? 9.5 : 9,
         }),
         { horizontal: "left", indent: 1 },
@@ -729,7 +730,7 @@ function buildGridSheet(
       label(cells[1], entry.areaName);
       label(cells[2], entry.managerName ?? EM, entry.managerName == null);
       cells[3].value = entry.regionName;
-      align(font(cells[3], { bold: true, color: { argb: style.chip }, name: "Aptos", size: 8.5 }), {
+      align(font(cells[3], { bold: true, color: { argb: style.chip }, name: HOUSE_XLSX_FONT, size: 8.5 }), {
         horizontal: "left",
         indent: 1,
       });
@@ -737,7 +738,7 @@ function buildGridSheet(
       label(cells[0], entry.kind === "grandTotal" ? "NATIONAL TOTAL" : `${entry.regionName.toUpperCase()} TOTAL`);
       for (const index of [1, 2, 3]) {
         cells[index].value = "";
-        font(cells[index], { color: { argb: ink }, name: "Aptos", size: 9 });
+        font(cells[index], { color: { argb: ink }, name: HOUSE_XLSX_FONT, size: 9 });
       }
     }
 
@@ -830,9 +831,9 @@ function buildSeriesSheet(workbook: ExcelJS.Workbook, review: ClosingPerformance
     sheet.getRow(row).height = 16;
     const cells = bodyRow(sheet, row, LAST, { zebra: index % 2 === 1 });
     cells[0].value = entry.label;
-    align(font(cells[0], { color: { argb: INK }, name: "Aptos", size: 9.5 }), { horizontal: "left", indent: 1 });
+    align(font(cells[0], { color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 9.5 }), { horizontal: "left", indent: 1 });
     cells[1].value = entry.subLabel;
-    align(font(cells[1], { bold: Boolean(style), color: { argb: style ? style.chip : SLATE }, name: "Aptos", size: 8.5 }), { horizontal: "left", indent: 1 });
+    align(font(cells[1], { bold: Boolean(style), color: { argb: style ? style.chip : SLATE }, name: HOUSE_XLSX_FONT, size: 8.5 }), { horizontal: "left", indent: 1 });
     entry.perMonth.forEach((value, monthIndex) => {
       money(cells[2 + monthIndex], value, { na: value == null });
     });
@@ -848,7 +849,7 @@ function buildSeriesSheet(workbook: ExcelJS.Workbook, review: ClosingPerformance
       border(sheet.getCell(row, column), { b: medB, t: medB });
     }
     sheet.mergeCells(row, 1, row, 2);
-    align(font(sheet.getCell(row, 1), { bold: true, color: { argb: DEEP }, name: "Aptos", size: 10 }), {
+    align(font(sheet.getCell(row, 1), { bold: true, color: { argb: DEEP }, name: HOUSE_XLSX_FONT, size: 10 }), {
       horizontal: "left",
       indent: 1,
       vertical: "middle",

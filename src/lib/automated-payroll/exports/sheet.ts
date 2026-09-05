@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 
 import { HOUSE_XLSX_COLORS, writeHouseMasthead } from "@/lib/export/house-xlsx-identity";
 import {
@@ -550,7 +551,7 @@ function addExecutiveSummarySheet(
       cell.font = {
         bold: ci === 0 || ci === 3,
         color: { argb: ci === 3 && hasPrevious ? (increase ? INCREASE_TEXT : decrease ? DECREASE_TEXT : HOUSE_XLSX_COLORS.body) : HOUSE_XLSX_COLORS.body },
-        name: "Aptos",
+        name: HOUSE_XLSX_FONT,
         size: ci === 0 ? 11 : 10,
       };
       cell.alignment = { horizontal: ci === 0 ? "left" : "right", vertical: "middle" };
@@ -623,7 +624,7 @@ function addSalaryChangesSheet(
       const cell = excelRow.getCell(ci + 1);
       cell.value = value as ExcelJS.CellValue;
       if (ci >= 2) cell.numFmt = VALUE_FMT;
-      cell.font = { color: { argb: text }, bold: ci === 4, name: "Aptos", size: 10 };
+      cell.font = { color: { argb: text }, bold: ci === 4, name: HOUSE_XLSX_FONT, size: 10 };
       cell.alignment = { horizontal: ci >= 2 ? "right" : "left", vertical: "middle" };
       cell.border = { bottom: { style: "hair", color: { argb: HOUSE_XLSX_COLORS.hair } } };
       cell.fill = { fgColor: { argb: fill }, pattern: "solid", type: "pattern" };

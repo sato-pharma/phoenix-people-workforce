@@ -16,7 +16,7 @@
 
 import ExcelJS from "exceljs";
 
-import { HOUSE_XLSX_COLORS } from "@/lib/export/house-xlsx-palette";
+import { HOUSE_XLSX_COLORS, HOUSE_XLSX_DISPLAY_FONT, HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 import { systemLegalEntity } from "@/config/system-settings";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 // Only MUTED and sanitizeSheetName remain from the shared kit: every tab now draws its own premium
@@ -600,7 +600,7 @@ function buildBranchSheet(
     "Regions come from the weekly branch mapping. Units are this sheet's own sale, de-cumulated. " +
     "Unmapped products are excluded — an unmapped SKU double-counts against the real product it " +
     "belongs to. Stock is a point-in-time snapshot and is never summed across weeks.";
-  footnote.font = { color: { argb: MUTED }, italic: true, name: "Aptos", size: 9 };
+  footnote.font = { color: { argb: MUTED }, italic: true, name: HOUSE_XLSX_FONT, size: 9 };
   footnote.alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
   sheet.getRow(row + 1).height = 26;
 
@@ -645,14 +645,14 @@ function premiumMasthead(
   // THE ONE CONTENT CHANGE in this conversion, and it is deliberate: the eyebrow named the
   // SOFTWARE at the top of a document the company issues. Everything else here moved in ink alone.
   eyebrow.value = [...`${systemLegalEntity.legalNameEn} · Weekly Sales`.toUpperCase()].join(" ");
-  eyebrow.font = { bold: true, color: { argb: ACCENT }, name: "Aptos", size: 7.5 };
+  eyebrow.font = { bold: true, color: { argb: ACCENT }, name: HOUSE_XLSX_FONT, size: 7.5 };
   eyebrow.alignment = { horizontal: "center", vertical: "middle" };
 
   band(3, 30);
   sheet.mergeCells(3, 1, 3, cols);
   const title = sheet.getCell(3, 1);
   title.value = lineLabel;
-  title.font = { bold: true, color: { argb: INK }, name: "Aptos Display", size: 22 };
+  title.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_DISPLAY_FONT, size: 22 };
   title.alignment = { horizontal: "center", vertical: "middle" };
 
   band(4, 15);
@@ -663,7 +663,7 @@ function premiumMasthead(
   context.value = [axisLabel, coverage, periodLabel, generatedAt ? `Generated ${generatedAt}` : ""]
     .filter(Boolean)
     .join("     ");
-  context.font = { color: { argb: MUTED_ON_INK }, name: "Aptos", size: 9 };
+  context.font = { color: { argb: MUTED_ON_INK }, name: HOUSE_XLSX_FONT, size: 9 };
   context.alignment = { horizontal: "center", vertical: "middle" };
 
   band(5, 6); // bottom air
@@ -710,7 +710,7 @@ function writeProductStrip(
     ] as const).forEach(([target, label, fill]) => {
       const c = target.getCell(1);
       c.value = label;
-      c.font = { bold: true, color: { argb: MUTED_WARM }, name: "Aptos", size: 7.5 };
+      c.font = { bold: true, color: { argb: MUTED_WARM }, name: HOUSE_XLSX_FONT, size: 7.5 };
       paint(c, fill);
       c.alignment = { horizontal: "center", vertical: "middle" };
     });
@@ -719,7 +719,7 @@ function writeProductStrip(
       const col = 2 + index;
       const name = nameRow.getCell(col);
       name.value = product.label;
-      name.font = { bold: true, color: { argb: INK }, name: "Aptos", size: 8 };
+      name.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 8 };
       paint(name, BONE);
       name.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
       name.border = { bottom: rule(INK_SOFT), ...(index > 0 ? { left: rule(HAIRLINE) } : {}) };
@@ -732,7 +732,7 @@ function writeProductStrip(
         // Mirrors the product's TOTAL cell, so editing the grid moves this too.
         if (ref) c.value = { formula: ref, result: 0 };
         c.numFmt = UNITS_DASH_FMT;
-        c.font = { bold: true, color: { argb: colour }, name: "Aptos", size };
+        c.font = { bold: true, color: { argb: colour }, name: HOUSE_XLSX_FONT, size };
         paint(c, fill);
         c.alignment = { horizontal: "center", vertical: "middle" };
         if (index > 0) c.border = { left: rule(HAIRLINE) };
@@ -1063,7 +1063,7 @@ function writeRegionProductBlock(
   sheet.mergeCells(row, 1, row, PAGE_COLS);
   const titleCell = sheet.getCell(row, 1);
   titleCell.value = lineLabel;
-  titleCell.font = { bold: true, color: { argb: INK }, name: "Aptos Display", size: 14 };
+  titleCell.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_DISPLAY_FONT, size: 14 };
   titleCell.border = { ...(titleCell.border ?? {}), bottom: rule(ACCENT, "thin"), top: rule(ACCENT, "thin") };
   titleCell.alignment = { horizontal: "center", vertical: "middle" };
   sheet.getRow(row).height = 24;
@@ -1076,7 +1076,7 @@ function writeRegionProductBlock(
   sheet.mergeCells(row, 1, row + 1, 1);
   const regionHead = productHeader.getCell(1);
   regionHead.value = "REGION";
-  regionHead.font = { bold: true, color: { argb: INK }, name: "Aptos", size: 9 };
+  regionHead.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 9 };
   paint(regionHead, BONE);
   regionHead.alignment = { horizontal: "center", vertical: "middle" };
   regionHead.border = { bottom: rule(INK_SOFT) };
@@ -1086,7 +1086,7 @@ function writeRegionProductBlock(
   sheet.mergeCells(row, PAGE_COLS, row + 1, PAGE_COLS);
   const trendHead = productHeader.getCell(PAGE_COLS);
   trendHead.value = "TREND";
-  trendHead.font = { bold: true, color: { argb: INK }, name: "Aptos", size: 9 };
+  trendHead.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 9 };
   paint(trendHead, BONE);
   trendHead.alignment = { horizontal: "center", vertical: "middle" };
   trendHead.border = { bottom: rule(INK_SOFT), left: rule(HAIRLINE) };
@@ -1101,7 +1101,7 @@ function writeRegionProductBlock(
     const head = productHeader.getCell(from);
     head.value = product.label;
     // Warm bone, ink type. A second dark band here fought the block title above and the total below.
-    head.font = { bold: true, color: { argb: INK }, name: "Aptos", size: 10.5 };
+    head.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 10.5 };
     paint(head, BONE);
     head.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     // Hairline between products, so the eye can separate them without a full grid.
@@ -1110,7 +1110,7 @@ function writeRegionProductBlock(
     ([["UNITS", unitsCell], ["STOCK", stockCell]] as const).forEach(([label, cellIndex]) => {
       put(subHeader, cellIndex, (c) => {
         c.value = label;
-        c.font = { bold: true, color: { argb: MUTED_WARM }, name: "Aptos", size: 7.5 };
+        c.font = { bold: true, color: { argb: MUTED_WARM }, name: HOUSE_XLSX_FONT, size: 7.5 };
         paint(c, BONE);
         c.alignment = { horizontal: "center", vertical: "middle" };
         c.border = { bottom: rule(INK_SOFT), ...(cellIndex === unitsCell && index > 0 ? { left: rule(HAIRLINE) } : {}) };
@@ -1128,7 +1128,7 @@ function writeRegionProductBlock(
     const tint = regionIndex % 2 === 1 ? CREAM_ALT : CREAM;
     const label = excelRow.getCell(1);
     label.value = region.label;
-    label.font = { color: { argb: INK_SOFT }, name: "Aptos", size: 10.5 };
+    label.font = { color: { argb: INK_SOFT }, name: HOUSE_XLSX_FONT, size: 10.5 };
     label.alignment = { horizontal: "center", vertical: "middle" };
     paint(label, tint);
     products.forEach((product, index) => {
@@ -1138,7 +1138,7 @@ function writeRegionProductBlock(
         put(excelRow, cellIndex, (c) => {
           c.value = value;
           c.numFmt = UNITS_DASH_FMT;
-          c.font = { color: { argb: value === 0 ? MUTED_WARM : INK_SOFT }, name: "Aptos", size: 10.5 };
+          c.font = { color: { argb: value === 0 ? MUTED_WARM : INK_SOFT }, name: HOUSE_XLSX_FONT, size: 10.5 };
           c.alignment = { horizontal: "center", vertical: "middle" };
           paint(c, tint);
           if (offset === 0 && index > 0) c.border = { left: rule(HAIRLINE) };
@@ -1205,7 +1205,7 @@ function writeRegionProductBlock(
   totalRow.height = 22;
   const totalLabel = totalRow.getCell(1);
   totalLabel.value = "TOTAL";
-  totalLabel.font = { bold: true, color: { argb: CLAY }, name: "Aptos", size: 10 };
+  totalLabel.font = { bold: true, color: { argb: CLAY }, name: HOUSE_XLSX_FONT, size: 10 };
   totalLabel.border = { ...(totalLabel.border ?? {}), bottom: rule(ACCENT, "medium"), top: rule(ACCENT, "medium") };
   totalLabel.alignment = { horizontal: "center", vertical: "middle" };
   totalLabel.border = { top: rule(ACCENT, "medium") };
@@ -1232,7 +1232,7 @@ function writeRegionProductBlock(
             ? { formula: `SUM(${letter}${firstDataRow}:${letter}${lastDataRow})`, result: value }
             : value;
         c.numFmt = UNITS_DASH_FMT;
-        c.font = { bold: true, color: { argb: CLAY }, name: "Aptos", size: 10.5 };
+        c.font = { bold: true, color: { argb: CLAY }, name: HOUSE_XLSX_FONT, size: 10.5 };
         c.border = { ...(c.border ?? {}), bottom: rule(ACCENT, "medium"), top: rule(ACCENT, "medium") };
         c.alignment = { horizontal: "center", vertical: "middle" };
         c.border = { top: rule(ACCENT, "medium") };
@@ -1282,7 +1282,7 @@ function dressPage(sheet: ExcelJS.Worksheet, lastRow: number, cols: number): voi
   // The footer carries its own copy of the face, the colour and the name, none of them reachable
   // by the constants above — `&K` takes a RAW six-digit hex, so the retired warm grey survived the
   // palette change here and nowhere else. House muted, and the company rather than the app.
-  sheet.headerFooter = { oddFooter: `&L&"Aptos"&8&K${HOUSE_XLSX_COLORS.muted.slice(2)}${systemLegalEntity.legalNameEn}&C&8&K${HOUSE_XLSX_COLORS.muted.slice(2)}&P / &N` };
+  sheet.headerFooter = { oddFooter: `&L&HOUSE_XLSX_FONT&8&K${HOUSE_XLSX_COLORS.muted.slice(2)}${systemLegalEntity.legalNameEn}&C&8&K${HOUSE_XLSX_COLORS.muted.slice(2)}&P / &N` };
 }
 
 // ── Tab 2: Weekly by Manager ──────────────────────────────────────────────────
@@ -1510,7 +1510,7 @@ function buildManagerSheet(
     "excluded — an unmapped SKU double-counts against the real product it belongs to. Stock is a " +
     "point-in-time snapshot and is never summed across weeks; a branch can report stock without " +
     "sales, or sales without stock, and both are shown as the source reports them.";
-  footnote.font = { color: { argb: MUTED }, italic: true, name: "Aptos", size: 9 };
+  footnote.font = { color: { argb: MUTED }, italic: true, name: HOUSE_XLSX_FONT, size: 9 };
   footnote.alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
   sheet.getRow(row).height = 30;
 
@@ -1535,7 +1535,7 @@ function writeManagerBand(
   sheet.mergeCells(startRow, 1, startRow, cols);
   const title = sheet.getCell(startRow, 1);
   title.value = bucket.label;
-  title.font = { bold: true, color: { argb: INK }, name: "Aptos Display", size: 14 };
+  title.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_DISPLAY_FONT, size: 14 };
   title.border = { ...(title.border ?? {}), bottom: rule(ACCENT, "thin"), top: rule(ACCENT, "thin") };
   title.alignment = { horizontal: "center", vertical: "middle" };
   sheet.getRow(startRow).height = 24;
@@ -1546,7 +1546,7 @@ function writeManagerBand(
   sheet.mergeCells(startRow + 1, 1, startRow + 1, cols);
   const sub = sheet.getCell(startRow + 1, 1);
   sub.value = caption;
-  sub.font = { color: { argb: MUTED_WARM }, name: "Aptos", size: 8.5 };
+  sub.font = { color: { argb: MUTED_WARM }, name: HOUSE_XLSX_FONT, size: 8.5 };
   paint(sub, CREAM);
   sub.alignment = { horizontal: "center", vertical: "middle" };
   sheet.getRow(startRow + 1).height = 15;
@@ -1657,7 +1657,7 @@ function writeManagerAreaBlock(
     sheet.mergeCells(row, 1, row, MGR_PAGE_COLS);
     const c = sheet.getCell(row, 1);
     c.value = [...subLabel.toUpperCase()].join(" ");
-    c.font = { bold: true, color: { argb: MUTED_WARM }, name: "Aptos", size: 8 };
+    c.font = { bold: true, color: { argb: MUTED_WARM }, name: HOUSE_XLSX_FONT, size: 8 };
     paint(c, CREAM);
     c.alignment = { horizontal: "center", vertical: "middle" };
     c.border = { bottom: rule(HAIRLINE) };
@@ -1676,7 +1676,7 @@ function writeManagerAreaBlock(
   sheet.mergeCells(row, 1, row + 1, 1);
   const areaHead = productHeader.getCell(1);
   areaHead.value = isArea ? "AREA" : "BRANCH";
-  areaHead.font = { bold: true, color: { argb: INK }, name: "Aptos", size: 9 };
+  areaHead.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 9 };
   paint(areaHead, BONE);
   areaHead.alignment = { horizontal: "center", vertical: "middle" };
   areaHead.border = { bottom: rule(INK_SOFT) };
@@ -1685,7 +1685,7 @@ function writeManagerAreaBlock(
   sheet.mergeCells(row, MGR_PAGE_COLS, row + 1, MGR_PAGE_COLS);
   const trendHead = productHeader.getCell(MGR_PAGE_COLS);
   trendHead.value = "TREND";
-  trendHead.font = { bold: true, color: { argb: INK }, name: "Aptos", size: 9 };
+  trendHead.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 9 };
   paint(trendHead, BONE);
   trendHead.alignment = { horizontal: "center", vertical: "middle" };
   trendHead.border = { bottom: rule(INK_SOFT), left: rule(HAIRLINE) };
@@ -1697,7 +1697,7 @@ function writeManagerAreaBlock(
     sheet.mergeCells(row, cellRange(unitsCell).from, row, cellRange(stockCell).to);
     const head = productHeader.getCell(cellRange(unitsCell).from);
     head.value = product.label;
-    head.font = { bold: true, color: { argb: INK }, name: "Aptos", size: 10.5 };
+    head.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 10.5 };
     paint(head, BONE);
     head.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     head.border = { left: rule(index > 0 ? HAIRLINE : INK_SOFT) };
@@ -1705,7 +1705,7 @@ function writeManagerAreaBlock(
     ([["UNITS", unitsCell], ["STOCK", stockCell]] as const).forEach(([label, i]) => {
       put(subHeader, i, (c) => {
         c.value = label;
-        c.font = { bold: true, color: { argb: MUTED_WARM }, name: "Aptos", size: 7.5 };
+        c.font = { bold: true, color: { argb: MUTED_WARM }, name: HOUSE_XLSX_FONT, size: 7.5 };
         paint(c, BONE);
         c.alignment = { horizontal: "center", vertical: "middle" };
         c.border = { bottom: rule(INK_SOFT), ...(i === unitsCell ? { left: rule(index > 0 ? HAIRLINE : INK_SOFT) } : {}) };
@@ -1726,8 +1726,8 @@ function writeManagerAreaBlock(
     label.value = bucket.label;
     // The residue row is muted and italic so it never reads as a real area.
     label.font = bucket.key
-      ? { color: { argb: INK_SOFT }, name: "Aptos", size: 10.5 }
-      : { color: { argb: MUTED_WARM }, italic: true, name: "Aptos", size: 9.5 };
+      ? { color: { argb: INK_SOFT }, name: HOUSE_XLSX_FONT, size: 10.5 }
+      : { color: { argb: MUTED_WARM }, italic: true, name: HOUSE_XLSX_FONT, size: 9.5 };
     label.alignment = { horizontal: "center", vertical: "middle" };
     paint(label, tint);
 
@@ -1738,7 +1738,7 @@ function writeManagerAreaBlock(
         put(excelRow, i, (c) => {
           c.value = value;
           c.numFmt = UNITS_DASH_FMT;
-          c.font = { color: { argb: value === 0 ? MUTED_WARM : INK_SOFT }, name: "Aptos", size: 10.5 };
+          c.font = { color: { argb: value === 0 ? MUTED_WARM : INK_SOFT }, name: HOUSE_XLSX_FONT, size: 10.5 };
           c.alignment = { horizontal: "center", vertical: "middle" };
           paint(c, tint);
           if (offset === 0) c.border = { left: rule(index > 0 ? HAIRLINE : INK_SOFT) };
@@ -1803,7 +1803,7 @@ function writeManagerAreaBlock(
   if (MGR_LABEL_COLS > 1) sheet.mergeCells(row, 1, row, MGR_LABEL_COLS);
   const totalLabelCell = totalRow.getCell(1);
   totalLabelCell.value = totalLabel;
-  totalLabelCell.font = { bold: true, color: { argb: CLAY }, name: "Aptos", size: 10 };
+  totalLabelCell.font = { bold: true, color: { argb: CLAY }, name: HOUSE_XLSX_FONT, size: 10 };
   totalLabelCell.border = { ...(totalLabelCell.border ?? {}), bottom: rule(ACCENT, "medium"), top: rule(ACCENT, "medium") };
   totalLabelCell.alignment = { horizontal: "center", vertical: "middle" };
   totalLabelCell.border = { top: rule(ACCENT, "medium") };
@@ -1824,7 +1824,7 @@ function writeManagerAreaBlock(
             ? { formula: `SUM(${letter}${firstDataRow}:${letter}${lastDataRow})`, result: value }
             : value;
         c.numFmt = UNITS_DASH_FMT;
-        c.font = { bold: true, color: { argb: CLAY }, name: "Aptos", size: 10.5 };
+        c.font = { bold: true, color: { argb: CLAY }, name: HOUSE_XLSX_FONT, size: 10.5 };
         c.border = { ...(c.border ?? {}), bottom: rule(ACCENT, "medium"), top: rule(ACCENT, "medium") };
         c.alignment = { horizontal: "center", vertical: "middle" };
         c.border = { top: rule(ACCENT, "medium") };
@@ -1932,7 +1932,7 @@ function buildDistributorSheet(
   sheet.mergeCells(row, 1, row, cols);
   const note = sheet.getCell(row, 1);
   note.value = `${labels.note} Units and stock only — this workbook carries no value column.`;
-  note.font = { color: { argb: MUTED }, italic: true, name: "Aptos", size: 9 };
+  note.font = { color: { argb: MUTED }, italic: true, name: HOUSE_XLSX_FONT, size: 9 };
   note.alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
   sheet.getRow(row).height = 30;
 
@@ -1988,7 +1988,7 @@ function writeProductDistributorBlock(
   sheet.mergeCells(row, 1, row + 1, 1);
   const productHead = header.getCell(1);
   productHead.value = "PRODUCT";
-  productHead.font = { bold: true, color: { argb: INK }, name: "Aptos", size: 9 };
+  productHead.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 9 };
   paint(productHead, BONE);
   productHead.alignment = { horizontal: "center", vertical: "middle" };
   productHead.border = { bottom: rule(INK_SOFT) };
@@ -1999,7 +1999,7 @@ function writeProductDistributorBlock(
     sheet.mergeCells(row, unitsCol, row, unitsCol + 1);
     const head = header.getCell(unitsCol);
     head.value = dist.label;
-    head.font = { bold: true, color: { argb: INK }, name: "Aptos", size: 10.5 };
+    head.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 10.5 };
     paint(head, BONE);
     head.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     head.border = { left: rule(i > 0 ? HAIRLINE : INK_SOFT) };
@@ -2007,7 +2007,7 @@ function writeProductDistributorBlock(
     ([[labels.unitsLabel, unitsCol], [labels.stockLabel, unitsCol + 1]] as const).forEach(([text, c], k) => {
       const sub = subHeader.getCell(c);
       sub.value = text.toUpperCase();
-      sub.font = { bold: true, color: { argb: MUTED_WARM }, name: "Aptos", size: 7.5 };
+      sub.font = { bold: true, color: { argb: MUTED_WARM }, name: HOUSE_XLSX_FONT, size: 7.5 };
       paint(sub, BONE);
       sub.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
       sub.border = { bottom: rule(INK_SOFT), ...(k === 0 ? { left: rule(i > 0 ? HAIRLINE : INK_SOFT) } : {}) };
@@ -2021,14 +2021,14 @@ function writeProductDistributorBlock(
   sheet.mergeCells(row, totalUnitsCol, row, cols);
   const totalHead = header.getCell(totalUnitsCol);
   totalHead.value = "Total";
-  totalHead.font = { bold: true, color: { argb: CLAY }, name: "Aptos", size: 10.5 };
+  totalHead.font = { bold: true, color: { argb: CLAY }, name: HOUSE_XLSX_FONT, size: 10.5 };
   paint(totalHead, BONE);
   totalHead.alignment = { horizontal: "center", vertical: "middle" };
   totalHead.border = { left: rule(ACCENT, "medium") };
   ([[labels.unitsLabel, totalUnitsCol], [labels.stockLabel, cols]] as const).forEach(([text, c], k) => {
     const sub = subHeader.getCell(c);
     sub.value = text.toUpperCase();
-    sub.font = { bold: true, color: { argb: CLAY }, name: "Aptos", size: 7.5 };
+    sub.font = { bold: true, color: { argb: CLAY }, name: HOUSE_XLSX_FONT, size: 7.5 };
     paint(sub, BONE);
     sub.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     sub.border = { bottom: rule(INK_SOFT), ...(k === 0 ? { left: rule(ACCENT, "medium") } : {}) };
@@ -2045,7 +2045,7 @@ function writeProductDistributorBlock(
     const tint = index % 2 === 1 ? CREAM_ALT : CREAM;
     const label = excelRow.getCell(1);
     label.value = product.label;
-    label.font = { color: { argb: INK_SOFT }, name: "Aptos", size: 10.5 };
+    label.font = { color: { argb: INK_SOFT }, name: HOUSE_XLSX_FONT, size: 10.5 };
     label.alignment = { horizontal: "center", vertical: "middle" };
     paint(label, tint);
 
@@ -2055,7 +2055,7 @@ function writeProductDistributorBlock(
         const c = excelRow.getCell(2 + i * 2 + offset);
         c.value = value;
         c.numFmt = UNITS_DASH_FMT;
-        c.font = { color: { argb: value === 0 ? MUTED_WARM : INK_SOFT }, name: "Aptos", size: 10.5 };
+        c.font = { color: { argb: value === 0 ? MUTED_WARM : INK_SOFT }, name: HOUSE_XLSX_FONT, size: 10.5 };
         c.alignment = { horizontal: "center", vertical: "middle" };
         paint(c, tint);
         if (offset === 0) c.border = { left: rule(i > 0 ? HAIRLINE : INK_SOFT) };
@@ -2073,7 +2073,7 @@ function writeProductDistributorBlock(
       const c = excelRow.getCell(target);
       c.value = refs.length > 0 ? { formula: `SUM(${refs.join(",")})`, result: cached } : cached;
       c.numFmt = UNITS_DASH_FMT;
-      c.font = { bold: true, color: { argb: cached === 0 ? MUTED_WARM : CLAY }, name: "Aptos", size: 10.5 };
+      c.font = { bold: true, color: { argb: cached === 0 ? MUTED_WARM : CLAY }, name: HOUSE_XLSX_FONT, size: 10.5 };
       c.alignment = { horizontal: "center", vertical: "middle" };
       paint(c, tint);
       if (offset === 0) c.border = { left: rule(ACCENT, "medium") };
@@ -2114,7 +2114,7 @@ function writeProductDistributorBlock(
   totalRow.height = 22;
   const totalLabelCell = totalRow.getCell(1);
   totalLabelCell.value = totalLabel;
-  totalLabelCell.font = { bold: true, color: { argb: CLAY }, name: "Aptos", size: 10 };
+  totalLabelCell.font = { bold: true, color: { argb: CLAY }, name: HOUSE_XLSX_FONT, size: 10 };
   totalLabelCell.border = { ...(totalLabelCell.border ?? {}), bottom: rule(ACCENT, "medium"), top: rule(ACCENT, "medium") };
   totalLabelCell.alignment = { horizontal: "center", vertical: "middle" };
   totalLabelCell.border = { top: rule(ACCENT, "medium") };
@@ -2133,7 +2133,7 @@ function writeProductDistributorBlock(
           ? { formula: `SUM(${letter}${firstDataRow}:${letter}${lastDataRow})`, result: cached }
           : cached;
       target.numFmt = UNITS_DASH_FMT;
-      target.font = { bold: true, color: { argb: CLAY }, name: "Aptos", size: 10.5 };
+      target.font = { bold: true, color: { argb: CLAY }, name: HOUSE_XLSX_FONT, size: 10.5 };
       target.border = { ...(target.border ?? {}), bottom: rule(ACCENT, "medium"), top: rule(ACCENT, "medium") };
       target.alignment = { horizontal: "center", vertical: "middle" };
       target.border = { top: rule(ACCENT, "medium") };
@@ -2151,7 +2151,7 @@ function writeProductDistributorBlock(
         ? { formula: `SUM(${letter}${firstDataRow}:${letter}${lastDataRow})`, result: cached }
         : cached;
     target.numFmt = UNITS_DASH_FMT;
-    target.font = { bold: true, color: { argb: CLAY }, name: "Aptos", size: 11 };
+    target.font = { bold: true, color: { argb: CLAY }, name: HOUSE_XLSX_FONT, size: 11 };
     target.border = { ...(target.border ?? {}), bottom: rule(ACCENT, "medium"), top: rule(ACCENT, "medium") };
     target.alignment = { horizontal: "center", vertical: "middle" };
     target.border = { top: rule(ACCENT, "medium"), ...(offset === 0 ? { left: rule(ACCENT, "medium") } : {}) };
@@ -2287,7 +2287,7 @@ function buildLowSalesSheet(
     ).forEach(([label, width], i) => {
       const cell = header.getCell(i + 1);
       cell.value = label;
-      cell.font = { bold: true, color: { argb: INK }, name: "Aptos", size: 9 };
+      cell.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 9 };
       paint(cell, BONE);
       cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
       cell.border = { bottom: rule(INK_SOFT), ...(i >= 4 ? { left: rule(HAIRLINE) } : {}) };
@@ -2318,7 +2318,7 @@ function buildLowSalesSheet(
           color: { argb: c === 5 ? CLAY : unmapped ? MUTED_WARM : INK_SOFT },
           bold: c === 5,
           italic: unmapped,
-          name: "Aptos",
+          name: HOUSE_XLSX_FONT,
           size: unmapped ? 9.5 : 10.5,
         };
         cell.alignment = { horizontal: "center", vertical: "middle" };
@@ -2359,7 +2359,7 @@ function buildLowSalesSheet(
     label.value =
       `${section.manager.label} — ${branchCount} branch${branchCount === 1 ? "" : "es"}` +
       ` · ${entries.length} product${entries.length === 1 ? "" : "s"} sitting`;
-    label.font = { bold: true, color: { argb: CLAY }, name: "Aptos", size: 10 };
+    label.font = { bold: true, color: { argb: CLAY }, name: HOUSE_XLSX_FONT, size: 10 };
     label.border = { ...(label.border ?? {}), bottom: rule(ACCENT, "medium"), top: rule(ACCENT, "medium") };
     label.alignment = { horizontal: "center", vertical: "middle" };
     label.border = { top: rule(ACCENT, "medium") };
@@ -2372,7 +2372,7 @@ function buildLowSalesSheet(
           ? { formula: `SUM(${letter}${firstDataRow}:${letter}${lastDataRow})`, result: cached }
           : cached;
       cell.numFmt = UNITS_DASH_FMT;
-      cell.font = { bold: true, color: { argb: CLAY }, name: "Aptos", size: 10.5 };
+      cell.font = { bold: true, color: { argb: CLAY }, name: HOUSE_XLSX_FONT, size: 10.5 };
       cell.border = { ...(cell.border ?? {}), bottom: rule(ACCENT, "medium"), top: rule(ACCENT, "medium") };
       cell.alignment = { horizontal: "center", vertical: "middle" };
       cell.border = { top: rule(ACCENT, "medium"), left: rule(HAIRLINE) };
@@ -2395,7 +2395,7 @@ function buildLowSalesSheet(
     "field manager to action it) but still appears in the other tabs. Distributors that do not " +
     "report stock at all can never appear. " +
     ATTRIBUTION_CAVEAT;
-  note.font = { color: { argb: MUTED }, italic: true, name: "Aptos", size: 9 };
+  note.font = { color: { argb: MUTED }, italic: true, name: HOUSE_XLSX_FONT, size: 9 };
   note.alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
   sheet.getRow(row).height = 34;
 
@@ -2636,7 +2636,7 @@ function buildVsTargetBlockedSheet(
   sheet.mergeCells(7, 1, 7, VS_TARGET_COLS);
   const note = sheet.getCell(7, 1);
   note.value = reason;
-  note.font = { color: { argb: CLAY }, name: "Aptos", size: 11 };
+  note.font = { color: { argb: CLAY }, name: HOUSE_XLSX_FONT, size: 11 };
   note.alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
   paint(note, CREAM);
   sheet.getRow(7).height = noteRowHeight(reason);
@@ -2722,7 +2722,7 @@ function buildVsTargetSheet(
       sheet.mergeCells(row, 1, row, VS_TARGET_COLS);
       const empty = sheet.getCell(row, 1);
       empty.value = `No validated weekly sales and no uploaded target for ${period}.`;
-      empty.font = { color: { argb: MUTED_WARM }, italic: true, name: "Aptos", size: 10 };
+      empty.font = { color: { argb: MUTED_WARM }, italic: true, name: HOUSE_XLSX_FONT, size: 10 };
       empty.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
       sheet.getRow(row).height = 20;
       row += 2;
@@ -2735,7 +2735,7 @@ function buildVsTargetSheet(
     // With several months on one sheet the anchor must say which month this block measures; two
     // adjacent bands both reading "CNS" would be indistinguishable.
     title.value = multiMonth ? `${section.label} — ${period}` : section.label;
-    title.font = { bold: true, color: { argb: INK }, name: "Aptos Display", size: 14 };
+    title.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_DISPLAY_FONT, size: 14 };
     title.border = { ...(title.border ?? {}), bottom: rule(ACCENT, "thin"), top: rule(ACCENT, "thin") };
     title.alignment = { horizontal: "center", vertical: "middle" };
     sheet.getRow(row).height = 24;
@@ -2750,7 +2750,7 @@ function buildVsTargetSheet(
     caption.font = {
       color: { argb: section.hasTarget ? MUTED_WARM : CLAY },
       italic: !section.hasTarget,
-      name: "Aptos",
+      name: HOUSE_XLSX_FONT,
       size: 8.5,
     };
     paint(caption, CREAM);
@@ -2770,7 +2770,7 @@ function buildVsTargetSheet(
     ).forEach(([label, width], i) => {
       const cell = header.getCell(i + 1);
       cell.value = label;
-      cell.font = { bold: true, color: { argb: INK }, name: "Aptos", size: 9 };
+      cell.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 9 };
       paint(cell, BONE);
       cell.alignment = { horizontal: i === 0 ? "left" : "center", indent: i === 0 ? 1 : 0, vertical: "middle", wrapText: true };
       cell.border = { bottom: rule(INK_SOFT), ...(i >= 1 ? { left: rule(HAIRLINE) } : {}) };
@@ -2791,7 +2791,7 @@ function buildVsTargetSheet(
         bold: isRegion,
         color: { argb: isRegion ? INK : entry.unmapped ? MUTED_WARM : INK_SOFT },
         italic: entry.unmapped,
-        name: "Aptos",
+        name: HOUSE_XLSX_FONT,
         size: isRegion ? 11 : entry.unmapped ? 9.5 : 10.5,
       };
       label.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
@@ -2799,12 +2799,12 @@ function buildVsTargetSheet(
       const sales = excelRow.getCell(2);
       sales.value = entry.salesUnits;
       sales.numFmt = UNITS_DASH_FMT;
-      sales.font = { bold: isRegion, color: { argb: isRegion ? INK : INK_SOFT }, name: "Aptos", size: 10.5 };
+      sales.font = { bold: isRegion, color: { argb: isRegion ? INK : INK_SOFT }, name: HOUSE_XLSX_FONT, size: 10.5 };
 
       const target = excelRow.getCell(3);
       target.value = entry.targetUnits;
       target.numFmt = UNITS_DASH_FMT;
-      target.font = { bold: isRegion, color: { argb: isRegion ? INK : INK_SOFT }, name: "Aptos", size: 10.5 };
+      target.font = { bold: isRegion, color: { argb: isRegion ? INK : INK_SOFT }, name: HOUSE_XLSX_FONT, size: 10.5 };
 
       // Achievement and gap are FORMULAS, not cached arithmetic. Excel recalculates every workbook
       // this repo writes on open, so a hand-computed value would be replaced anyway — and both guard
@@ -2819,7 +2819,7 @@ function buildVsTargetSheet(
           argb:
             entry.achievement == null ? MUTED_WARM : entry.achievement >= 1 ? GOOD : entry.achievement < 0.8 ? CLAY : INK_SOFT,
         },
-        name: "Aptos",
+        name: HOUSE_XLSX_FONT,
         size: 10.5,
       };
 
@@ -2831,7 +2831,7 @@ function buildVsTargetSheet(
       gap.numFmt = UNITS_DASH_FMT;
       gap.font = {
         color: { argb: entry.targetUnits === 0 ? MUTED_WARM : entry.salesUnits >= entry.targetUnits ? GOOD : CLAY },
-        name: "Aptos",
+        name: HOUSE_XLSX_FONT,
         size: 10.5,
       };
 
@@ -2896,7 +2896,7 @@ function buildVsTargetSheet(
       if (c === 4) cell.numFmt = '0.0%;-0.0%;"–"';
       else if (c >= 2) cell.numFmt = UNITS_DASH_FMT;
       if (c >= 2) cell.alignment = { horizontal: "center", vertical: "middle" };
-      cell.font = { bold: true, color: { argb: CLAY }, name: "Aptos", size: c === 1 ? 10 : 10.5 };
+      cell.font = { bold: true, color: { argb: CLAY }, name: HOUSE_XLSX_FONT, size: c === 1 ? 10 : 10.5 };
       cell.border = { bottom: rule(ACCENT, "medium"), top: rule(ACCENT, "medium"), ...(c >= 2 ? { left: rule(HAIRLINE) } : {}) };
     }
     row += 2;
@@ -2931,7 +2931,7 @@ function buildVsTargetSheet(
     (dataNote ? `${dataNote} ` : "") +
     "Units only; this workbook carries no value column. " +
     ATTRIBUTION_CAVEAT;
-  note.font = { color: { argb: MUTED }, italic: true, name: "Aptos", size: 9 };
+  note.font = { color: { argb: MUTED }, italic: true, name: HOUSE_XLSX_FONT, size: 9 };
   note.alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
   sheet.getRow(row).height = noteRowHeight(String(note.value));
 

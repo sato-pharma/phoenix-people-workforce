@@ -275,7 +275,17 @@ export function computeOfficeAllocation(input: ComputeOfficeAllocationInput): Di
     }));
     return {
       ...baseResult,
-      advisories: [],
+      // On this path "Rows Read" counts PRODUCT ROWS, on the validated path it counts allocation
+      // SLICES — the same field, two unrelated quantities, and nothing on screen says which one
+      // you are looking at. Nothing has been allocated here, so the honest number is the pivot's
+      // own size; the advisory exists so the operator is not left comparing it against a validated
+      // run's slice count and concluding the file shrank.
+      advisories: [
+        `Nothing was allocated: ${totalNames} product row(s) were read from the pivot` +
+          ` (${input.mapped.length} mapped, ${input.unmappedNames.length} unmapped).` +
+          ` "Rows Read" above is that pivot count — on a successful upload the same figure counts` +
+          ` allocation slices instead, which is a much larger number for the same file.`,
+      ],
       blockingReasons: [
         `${input.unmappedNames.length} office product name(s) are not mapped to a product code. Map them in the Office product mapping, then preview again.`,
       ],
@@ -373,6 +383,32 @@ export function computeOfficeAllocation(input: ComputeOfficeAllocationInput): Di
 
   const summary = summarizeRows(parsedRows);
   const advisories: string[] = [];
+
+  // OFFICE'S "Rows Read" IS NOT ROWS READ — say so, in the receipt, in the operator's units.
+  //
+  // Every other channel imports 1 sheet row → 1 stored row, so `rowCount` and the "Rows Read"
+  // metric agree with the file. Office does not: it reads a PIVOT of product rows and emits one
+  // allocated slice per (brick × product). July 2026 stored total_rows = importable_rows = 3,591
+  // — allocation slices — while the pivot behind it held a few dozen product rows. The screen
+  // therefore shows a number that cannot be reconciled against the source file at all, which is
+  // the one check an operator would use to confirm the whole pivot was ingested.
+  //
+  // The number itself is deliberately NOT redefined. `rowCount` feeds the batch's stored
+  // total_rows, and every Office batch since 2026-03 holds the slice count; changing the meaning
+  // now would make future batches silently incomparable with past ones — a worse defect than the
+  // label, and invisible. So the receipt gains the missing figure instead of losing an old one.
+  //
+  // Stated on EVERY office upload, not just when something looks wrong: the reconciliation is only
+  // useful if it is always there to compare against.
+  advisories.push(
+    `Office reads a pivot, not a row list: ${input.mapped.length} mapped product row(s)` +
+      (input.unmappedNames.length > 0 ? ` and ${input.unmappedNames.length} unmapped` : "") +
+      ` were read from the sheet, then spread into ${parsedRows.length} allocation slice(s) across` +
+      ` ${new Set(parsedRows.map((r) => r.brickId).filter(Boolean)).size} brick(s).` +
+      ` "Rows Read" above counts the slices, so reconcile the sheet against the ${input.mapped.length}` +
+      ` product row(s), never against ${parsedRows.length}.`,
+  );
+
   if (nationalProducts.length > 0) {
     advisories.push(
       `${nationalProducts.length} product(s) had office units that could not be placed on a brick and went to the National bucket: ${[...new Set(nationalProducts)].join(", ")}.`,

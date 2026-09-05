@@ -390,6 +390,7 @@ import { runRecruitmentHiringAnalyticsTests } from "./recruitment-hiring-analyti
 import { runRecruitmentRequisitionOpenGateTests } from "./recruitment-requisition-open-gate.test.ts";
 import { runRecruitmentInterviewClashTests } from "./recruitment-interview-clash.test.ts";
 import { runRecruitmentTransitionsReachableTests } from "./recruitment-transitions-reachable.test.ts";
+import { runHiringPackActorStampTests } from "./hiring-pack-actor-stamp.test.ts";
 import { runRecruitmentOfferLetterBridgeTests } from "./recruitment-offer-letter-bridge.test.ts";
 import { runRecruitmentHiringAnalyticsLayoutTests } from "./recruitment-hiring-analytics-layout.test.ts";
 import { runRecruitmentEveryStageHasAWayForwardTests } from "./recruitment-every-stage-has-a-way-forward.test.ts";
@@ -860,6 +861,7 @@ import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-bric
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
+import { runOfficeReceiptExplainsItsRowCountTests } from "./office-receipt-explains-its-row-count.test.ts";
 import { runOutboxRowRecordsItsOriginTests } from "./outbox-row-records-its-origin.test.ts";
 import { runVacationEmailSkipRecordedTests } from "./vacation-email-skip-is-recorded.test.ts";
 import { runNormalizerCodedSheetDayTests } from "./normalizer-coded-sheet-carries-the-day.test.ts";
@@ -2143,6 +2145,7 @@ await runTest("hiring analytics (a batch sweep is not a decision, and a rate nee
 await runTest("requisition open gate (no hire for nobody, and no replacing somebody who is still here)", runRecruitmentRequisitionOpenGateTests);
 await runTest("interview clash (one interviewer cannot be in two interviews at once)", runRecruitmentInterviewClashTests);
 await runTest("recruitment transitions are reachable (a registered stage move nothing can invoke is dead wiring)", runRecruitmentTransitionsReachableTests);
+await runTest("hiring pack actor stamp (an unknown editor must not erase the last known one)", runHiringPackActorStampTests);
 await runTest("offer bridge (an approved ATS offer pre-fills the letter, and nothing else does)", runRecruitmentOfferLetterBridgeTests);
 await runTest("hiring analytics layout (desktop table, phone cards, square edges, no sideways scroll)", runRecruitmentHiringAnalyticsLayoutTests);
 await runTest("every application stage has a way forward (a stage nobody can leave reads as low adoption)", runRecruitmentEveryStageHasAWayForwardTests);
@@ -2887,6 +2890,7 @@ await runTest("SoS backfill matches the empty-string brick sentinel, not just NU
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
+await runTest('the Office receipt explains what its Rows Read number is', runOfficeReceiptExplainsItsRowCountTests);
 await runTest('an outbox row records which runtime enqueued it', runOutboxRowRecordsItsOriginTests);
 await runTest('a skipped vacation email is recorded, never silent', runVacationEmailSkipRecordedTests);
 await runTest('the coded sheet carries the invoice DAY, not the period', runNormalizerCodedSheetDayTests);

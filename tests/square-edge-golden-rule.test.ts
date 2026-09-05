@@ -377,6 +377,28 @@ const UNSWEPT_SURFACE_ROUNDING: Record<string, string[]> = {
   "app/password-setup/[token]/page.tsx": [],
 };
 
+/**
+ * Components that must be square NO MATTER WHERE THEY ARE MOUNTED.
+ *
+ * These are not unswept surfaces — in production the identity card renders inside
+ * `.employee-portal-shell`, so RULE 1 squares any `rounded-*` utility on it. That is exactly the
+ * problem: until 2026-09-05 five corners in this tree were square only BECAUSE of the sweep, and
+ * one of them was `rounded-[10px]`, an arbitrary value the zeroed token scale cannot reach either.
+ *
+ * A corner that depends on its container is a corner waiting to come back, and this component is
+ * already mounted outside a shell twice — `app/dev/identity-preview` and `app/dev/employee-portals`
+ * both render it bare. Those are safe only because they `notFound()` when NODE_ENV is production,
+ * which is a weaker guarantee than the corners not existing. Squared at source, so the card is
+ * square as a property of itself.
+ *
+ * Pinned to zero, not to a list: nothing in this tree may round anything, ever.
+ */
+const SHELL_INDEPENDENT_ROUNDING = [
+  "src/components/phoenix-signature-card/PhoenixSignatureCard.tsx",
+  "src/components/phoenix-signature-card/PhoenixIdentityStrip.tsx",
+  "src/components/phoenix-signature-card/EmployeePortrait.tsx",
+];
+
 // ── The test ───────────────────────────────────────────────────────────────────────────────────
 
 export function runSquareEdgeGoldenRuleTests() {
@@ -483,6 +505,23 @@ export function runSquareEdgeGoldenRuleTests() {
     );
   }
 
+  // ── 5c. The identity card is square as a property of itself ──────────────────────────────────
+  for (const file of SHELL_INDEPENDENT_ROUNDING) {
+    const source = readFileSync(file, "utf8");
+    assert.ok(source.length > 200, `${file} is empty or unreadable — the scan below would pass vacuously`);
+    // Only a className can render. The word appears in this tree's prose too ("no rounded corner"),
+    // and matching that would pin a comment.
+    const inClassName = [...source.matchAll(/className=(?:"([^"]*)"|\{`([^`]*)`\})/g)]
+      .flatMap((m) => (m[1] ?? m[2] ?? "").split(/\s+/))
+      .filter((token) => token.includes("rounded"));
+    assert.deepEqual(
+      inClassName,
+      [],
+      `${file} must not round anything. This component is mounted outside a shell by the dev previews, `
+        + "so a corner here is square only while RULE 1 happens to reach it.",
+    );
+  }
+
   // ── 6. The controls — the instrument must still be able to see a corner ──────────────────────
   //
   // Without these, a regex that silently stopped matching would report a clean sweep forever. That
@@ -541,6 +580,27 @@ export function runSquareEdgeGoldenRuleTests() {
       ["rounded-full", "hover:rounded-lg"],
       "every rounding utility on an unswept surface must be seen, prefixed or not",
     );
+
+    // 6f. The className scan must see a utility and must NOT see the prose. This tree's own comments
+    // say "no rounded corner" and "a number waiting to be rounded"; a scan matching the word rather
+    // than the attribute would pin those and go green on a real corner sitting beside them.
+    {
+      const classNamesWithRounding = (source: string): string[] =>
+        [...source.matchAll(/className=(?:"([^"]*)"|\{`([^`]*)`\})/g)]
+          .flatMap((m) => (m[1] ?? m[2] ?? "").split(/\s+/))
+          .filter((token) => token.includes("rounded"));
+
+      assert.deepEqual(
+        classNamesWithRounding('<span className="absolute inset-[2px] rounded-[10px] bg-white" />'),
+        ["rounded-[10px]"],
+        "an arbitrary rounding utility must be seen — the zeroed token scale cannot reach one",
+      );
+      assert.deepEqual(
+        classNamesWithRounding('/* no rounded corner, and 25 is not waiting to be rounded */'),
+        [],
+        "prose mentioning the word must NOT be read as a corner",
+      );
+    }
 
     // 6d. THE NEGATIVE CONTROL. A distance called `radius` is not a corner. Four real files in this
     // repo carry one, and counting them would pin those files at a non-zero number — which would

@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 
 import { HOUSE_XLSX_COLORS, writeHouseMasthead } from "@/lib/export/house-xlsx-identity";
 import {
@@ -157,7 +158,7 @@ export async function buildStepTemplateWorkbook(input: {
       cell.font = {
         bold: column.editable,
         color: { argb: column.editable ? HOUSE_XLSX_COLORS.body : HOUSE_XLSX_COLORS.muted },
-        name: "Aptos",
+        name: HOUSE_XLSX_FONT,
         size: 9.5,
       };
       cell.alignment = { horizontal: column.money ? "right" : "left", vertical: "middle" };
@@ -274,7 +275,7 @@ function appendDetailSheet(
         cell.value = value;
         const isMoney = index >= 2 && detailColumns[index - 2]?.money === true;
         if (isMoney && typeof value === "number") cell.numFmt = VALUE_FMT;
-        cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 9.5 };
+        cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: 9.5 };
         cell.alignment = { horizontal: isMoney ? "right" : "left", vertical: "middle" };
         cell.border = { bottom: { style: "hair", color: { argb: HOUSE_XLSX_COLORS.hair } } };
         if (rowNumber % 2 === 0) {

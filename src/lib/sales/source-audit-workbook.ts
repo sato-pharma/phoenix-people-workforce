@@ -2,6 +2,7 @@
 // (distributor, brick) for the indirect channel, plus the direct/company channel. Pure — takes
 // already-loaded, name-resolved rows and returns the xlsx buffer.
 import ExcelJS from "exceljs";
+import { HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 
 import { HOUSE_XLSX_COLORS } from "@/lib/export/house-xlsx-identity";
 
@@ -13,7 +14,7 @@ const HEADER_STYLE: Partial<ExcelJS.Style> = {
     bottom: { style: "medium", color: { argb: HOUSE_XLSX_COLORS.blue } },
     top: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.hair } },
   },
-  font: { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 9.5 },
+  font: { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 9.5 },
 };
 
 export type IndirectAuditRow = {
