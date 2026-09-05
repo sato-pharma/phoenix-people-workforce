@@ -649,8 +649,8 @@ unavailable, verify the UI says so rather than showing a misleading zero.
 **Role-based testing.** For permission-sensitive work, test the affected roles including denial
 paths. Sales: Super Admin, CEO, National Sales Manager, Regional Manager, District Manager.
 Coaching: Super Admin, CEO, SFE Manager, Training Manager, and Medical Rep when employee review is
-affected. HR: Super Admin, CEO, HR Specialist, and Employee when portal behavior is affected. Do not
-claim role safety from code inspection alone when real role testing is possible.
+affected. HR: Super Admin, CEO, HR Advisory, HR Operations, and Employee when portal behavior is
+affected. Do not claim role safety from code inspection alone when real role testing is possible.
 
 **Deploy verification.** Production is Railway auto-deploy on push to `main` — there is no Cloud Run
 workflow to watch. Confirm a deploy through the GitHub deployments API
