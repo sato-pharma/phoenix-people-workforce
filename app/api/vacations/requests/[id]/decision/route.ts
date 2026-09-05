@@ -27,10 +27,10 @@ function resultHtml(input: { message: string; success: boolean; title: string })
   </head>
   <body style="margin:0;background:#f8fafc;color:#0f172a;font-family:Arial,Helvetica,sans-serif">
     <main style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">
-      <section style="width:100%;max-width:560px;border:1px solid #dbe3ee;border-radius:18px;background:white;padding:28px;box-shadow:0 18px 45px rgba(15,23,42,.12)">
+      <section style="width:100%;max-width:560px;border:1px solid #dbe3ee;background:white;padding:28px;box-shadow:0 18px 45px rgba(15,23,42,.12)">
         <p style="margin:0 0 10px;color:#f97316;font-size:11px;font-weight:900;letter-spacing:.2em;text-transform:uppercase">Phoenix Workforce</p>
         <h1 style="margin:0;color:#0f172a;font-size:24px;line-height:1.2">${input.title}</h1>
-        <p style="margin:16px 0 0;border:1px solid ${color};border-radius:12px;background:${background};padding:14px;color:${color};font-size:14px;font-weight:700;line-height:1.6">${input.message}</p>
+        <p style="margin:16px 0 0;border:1px solid ${color};background:${background};padding:14px;color:${color};font-size:14px;font-weight:700;line-height:1.6">${input.message}</p>
       </section>
     </main>
   </body>

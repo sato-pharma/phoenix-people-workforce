@@ -58,7 +58,7 @@ export function PharmacyTrendSparkline({ months }: { months: TerritoryMonthPrese
             tickLine={false}
           />
           <Tooltip content={<TrendTooltip />} cursor={{ fill: "rgba(249,115,22,0.08)" }} />
-          <Bar dataKey="units" fill="#F97316" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="units" fill="#F97316" radius={[0, 0, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

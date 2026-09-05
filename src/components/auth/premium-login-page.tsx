@@ -284,7 +284,7 @@ export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
     <main className="min-h-screen overflow-hidden bg-[#020202] px-2 py-2 text-white sm:px-4 sm:py-4 lg:px-6">
       <div className="login-grid-bg pointer-events-none fixed inset-0 opacity-70" />
       <div className="login-noise pointer-events-none fixed inset-0 opacity-[0.08]" />
-      <section className="relative mx-auto grid min-h-[calc(100vh-16px)] w-full max-w-[1740px] overflow-hidden rounded-[28px] border border-white/10 bg-black shadow-[0_28px_90px_rgba(0,0,0,0.72)] sm:min-h-[calc(100vh-32px)] lg:min-h-[calc(100vh-48px)] lg:grid-cols-[1.06fr_0.94fr]">
+      <section className="relative mx-auto grid min-h-[calc(100vh-16px)] w-full max-w-[1740px] overflow-hidden border border-white/10 bg-black shadow-[0_28px_90px_rgba(0,0,0,0.72)] sm:min-h-[calc(100vh-32px)] lg:min-h-[calc(100vh-48px)] lg:grid-cols-[1.06fr_0.94fr]">
         <AccessPanel
           biometricAvailable={biometricAvailable}
           error={error}
@@ -394,7 +394,7 @@ function BrandPanel() {
 
               return (
                 <div className="flex items-center gap-4 sm:gap-5" key={feature.title}>
-                  <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-xl border border-[#ff6a00]/80 bg-black/35 text-[#ff6a00] shadow-[0_0_24px_rgba(255,106,0,0.16)] sm:h-[62px] sm:w-[62px] sm:rounded-2xl">
+                  <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center border border-[#ff6a00]/80 bg-black/35 text-[#ff6a00] shadow-[0_0_24px_rgba(255,106,0,0.16)] sm:h-[62px] sm:w-[62px] sm:rounded-2xl">
                     <FeatureIcon className="h-6 w-6 sm:h-7 sm:w-7" strokeWidth={2.3} />
                   </span>
                   <div>
@@ -460,7 +460,7 @@ function AccessPanel({
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,106,0,0.08),transparent_34%)]" />
       <form
         action="/api/auth/login"
-        className={`relative w-full max-w-[620px] rounded-[28px] border border-white/12 bg-[linear-gradient(145deg,rgba(19,22,27,0.9),rgba(5,6,8,0.98))] px-6 py-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_32px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:px-8 sm:py-7 lg:px-10 xl:px-12 ${shakeError ? "login-card-shake" : ""}`}
+        className={`relative w-full max-w-[620px] border border-white/12 bg-[linear-gradient(145deg,rgba(19,22,27,0.9),rgba(5,6,8,0.98))] px-6 py-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_32px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:px-8 sm:py-7 lg:px-10 xl:px-12 ${shakeError ? "login-card-shake" : ""}`}
         method="post"
         noValidate
         onSubmit={onSubmit}
@@ -487,7 +487,7 @@ function AccessPanel({
                 aria-describedby={error ? "login-error" : undefined}
                 aria-invalid={loginInvalid}
                 autoComplete="username"
-                className="h-12 w-full rounded-2xl border border-white/14 bg-white/[0.045] px-5 pr-12 text-base text-white outline-none shadow-[inset_0_1px_18px_rgba(255,255,255,0.035)] transition placeholder:text-white/36 focus:border-[#ff7900] focus:bg-white/[0.065] focus:ring-4 focus:ring-[#ff6a00]/16"
+                className="h-12 w-full border border-white/14 bg-white/[0.045] px-5 pr-12 text-base text-white outline-none shadow-[inset_0_1px_18px_rgba(255,255,255,0.035)] transition placeholder:text-white/36 focus:border-[#ff7900] focus:bg-white/[0.065] focus:ring-4 focus:ring-[#ff6a00]/16"
                 id="login-id"
                 maxLength={maxLoginIdLength}
                 name="loginId"
@@ -508,7 +508,7 @@ function AccessPanel({
                 aria-describedby={error ? "login-error" : undefined}
                 aria-invalid={passwordInvalid}
                 autoComplete="current-password"
-                className="h-12 w-full rounded-2xl border border-white/14 bg-white/[0.045] px-5 pr-12 text-base text-white outline-none shadow-[inset_0_1px_18px_rgba(255,255,255,0.035)] transition placeholder:text-white/36 focus:border-[#ff7900] focus:bg-white/[0.065] focus:ring-4 focus:ring-[#ff6a00]/16"
+                className="h-12 w-full border border-white/14 bg-white/[0.045] px-5 pr-12 text-base text-white outline-none shadow-[inset_0_1px_18px_rgba(255,255,255,0.035)] transition placeholder:text-white/36 focus:border-[#ff7900] focus:bg-white/[0.065] focus:ring-4 focus:ring-[#ff6a00]/16"
                 id="login-password"
                 maxLength={maxPasswordLength}
                 name="password"
@@ -542,11 +542,11 @@ function AccessPanel({
               value="true"
             />
             <span
-              className={`flex h-7 w-7 items-center justify-center rounded-lg border bg-white/[0.035] transition peer-focus-visible:ring-4 peer-focus-visible:ring-[#ff6a00]/30 ${
+              className={`flex h-7 w-7 items-center justify-center border bg-white/[0.035] transition peer-focus-visible:ring-4 peer-focus-visible:ring-[#ff6a00]/30 ${
                 remember ? "border-[#ff7900] bg-[#ff7900]" : "border-white/22"
               }`}
             >
-              {remember ? <span className="h-2.5 w-2.5 rounded-sm bg-white" /> : null}
+              {remember ? <span className="h-2.5 w-2.5 bg-white" /> : null}
             </span>
             Remember login ID
           </label>
@@ -554,7 +554,7 @@ function AccessPanel({
 
         {error && (
           <div
-            className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-100"
+            className="mt-4 border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-100"
             id="login-error"
             role="alert"
           >
@@ -563,7 +563,7 @@ function AccessPanel({
         )}
 
         <button
-          className="mt-4 flex h-[52px] w-full items-center justify-center gap-3 rounded-[14px] bg-gradient-to-b from-[#ff8a00] to-[#ff4d00] text-lg font-black text-white shadow-[0_14px_38px_rgba(255,106,0,0.34),inset_0_1px_0_rgba(255,255,255,0.3)] transition hover:translate-y-[-1px] hover:shadow-[0_18px_48px_rgba(255,106,0,0.48),inset_0_1px_0_rgba(255,255,255,0.35)] focus:outline-none focus:ring-4 focus:ring-[#ff6a00]/30 disabled:cursor-not-allowed disabled:opacity-70"
+          className="mt-4 flex h-[52px] w-full items-center justify-center gap-3 bg-gradient-to-b from-[#ff8a00] to-[#ff4d00] text-lg font-black text-white shadow-[0_14px_38px_rgba(255,106,0,0.34),inset_0_1px_0_rgba(255,255,255,0.3)] transition hover:translate-y-[-1px] hover:shadow-[0_18px_48px_rgba(255,106,0,0.48),inset_0_1px_0_rgba(255,255,255,0.35)] focus:outline-none focus:ring-4 focus:ring-[#ff6a00]/30 disabled:cursor-not-allowed disabled:opacity-70"
           disabled={isSubmitting}
           type="submit"
         >
@@ -584,7 +584,7 @@ function AccessPanel({
             </div>
 
             <button
-              className="mt-4 flex h-[52px] w-full items-center justify-center gap-3 whitespace-nowrap rounded-[14px] border border-white/16 bg-white/[0.045] text-base font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:border-[#ff7900]/60 hover:bg-white/[0.075] focus:outline-none focus:ring-4 focus:ring-[#ff6a00]/24 disabled:cursor-not-allowed disabled:opacity-70"
+              className="mt-4 flex h-[52px] w-full items-center justify-center gap-3 whitespace-nowrap border border-white/16 bg-white/[0.045] text-base font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:border-[#ff7900]/60 hover:bg-white/[0.075] focus:outline-none focus:ring-4 focus:ring-[#ff6a00]/24 disabled:cursor-not-allowed disabled:opacity-70"
               disabled={isBiometricSubmitting || isSubmitting}
               onClick={onBiometricSignIn}
               type="button"

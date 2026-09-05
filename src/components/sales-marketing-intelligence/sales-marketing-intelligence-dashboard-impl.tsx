@@ -251,9 +251,9 @@ function RoiTrendChart({ snapshot }: { snapshot: SalesMarketingDashboardSnapshot
           <YAxis tick={{ fill: "#64748B", fontSize: 11 }} tickFormatter={(value) => compactMoney(Number(value))} tickLine={false} width={56} />
           <Tooltip formatter={chartFormatter} />
           <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Bar dataKey="marketingCost" fill="#0EA5E9" name="Marketing cost" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="actualSalesValue" fill="#10B981" name="Actual attributed sales" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="coverageGap" fill="#F59E0B" name="Coverage gap" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="marketingCost" fill="#0EA5E9" name="Marketing cost" radius={[0, 0, 0, 0]} />
+          <Bar dataKey="actualSalesValue" fill="#10B981" name="Actual attributed sales" radius={[0, 0, 0, 0]} />
+          <Bar dataKey="coverageGap" fill="#F59E0B" name="Coverage gap" radius={[0, 0, 0, 0]} />
           <Line dataKey="requiredRoiValue" dot={false} name="Required ROI" stroke="#EF4444" strokeWidth={2} type="monotone" />
           <Line dataKey="expectedRoiValue" dot={false} name="Expected ROI" stroke="#7C3AED" strokeWidth={2} type="monotone" />
         </ComposedChart>

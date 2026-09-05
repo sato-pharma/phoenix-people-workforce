@@ -704,7 +704,7 @@ export function SosDashboard({
                 <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: "#94A3B8" }} width={40} tickFormatter={(v: number) => formatNumber(v)} />
                 <Tooltip content={<ValueTooltip />} />
                 <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
-                <Bar yAxisId="left" dataKey="Value" fill="#F97316" radius={[3, 3, 0, 0]} barSize={22} />
+                <Bar yAxisId="left" dataKey="Value" fill="#F97316" radius={[0, 0, 0, 0]} barSize={22} />
                 <Line yAxisId="right" type="monotone" dataKey="Units" stroke="#0EA5E9" strokeWidth={3} dot={{ r: 3, fill: "#0EA5E9" }} />
               </ComposedChart>
             </SafeResponsiveContainer>
@@ -835,7 +835,7 @@ export function SosDashboard({
                   <YAxis yAxisId="right" orientation="right" domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: "#94A3B8" }} width={36} tickFormatter={(v: number) => `${v}%`} />
                   <Tooltip content={<ValueTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
-                  <Bar yAxisId="left" dataKey="Value" radius={[3, 3, 0, 0]} barSize={16}>
+                  <Bar yAxisId="left" dataKey="Value" radius={[0, 0, 0, 0]} barSize={16}>
                     {paretoChartData.map((entry) => (
                       <Cell key={entry.name} fill={entry.abc === "A" ? "#F97316" : entry.abc === "B" ? "#FDBA74" : "#E2E8F0"} />
                     ))}
