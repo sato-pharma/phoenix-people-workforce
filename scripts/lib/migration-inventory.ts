@@ -482,6 +482,21 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // it by re-running either file, and do not re-date anything.
   "20260829113000_au_line_area_map_history_view.sql",
   "20260829113500_anti_infective_delta_3_from_september.sql",
+  // ── Added 2026-09-05, after this file's staging leg failed with "function
+  // ...already exists with same argument types". Applied via MCP apply_migration to BOTH
+  // projects ahead of the app-code deploy (drop+recreate of phx_weekly_plan_next_status and
+  // phx_weekly_plan_decide with a new bypassCeo parameter needed to land before the new 9-arg
+  // RPC call could work at all), then again for the follow-up revoke-PUBLIC-execute fix
+  // (commit 07464cfd) — both recorded under the MCP apply_migration clock, not this file's own
+  // version, so this file reads as "missing" from both ledgers though its effect is fully live
+  // on both. Verified 2026-09-05 by direct inspection, never from schema_migrations: on BOTH
+  // staging (cifwmndunmlxjhyjugxa) and production (ozucdzovmcqvepbozvqf),
+  // phx_weekly_plan_next_status(text,text,boolean,boolean) and
+  // phx_weekly_plan_decide(uuid,integer,text,text,text,text,text,jsonb,boolean) exist with
+  // EXECUTE granted to exactly {postgres, service_role} — no anon, no authenticated. Do not
+  // re-run this file; on a project where the 8/3-arg originals are already gone, `create
+  // function` would then fail the OPPOSITE way ("already exists").
+  "20260905183000_district_manager_plans_never_write_a_ceo_row.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
