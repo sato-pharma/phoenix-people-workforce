@@ -147,9 +147,17 @@ export async function POST(request: Request) {
       return `${origin}/api/sales/monthly-closing/premium-export/pdf?${query.toString()}`;
     };
 
+    // The Rep Card's link is a FORMULA, not a shape: the sheet draws whichever rep its dropdown is
+    // set to, and only a formula can append that choice to the URL when the sheet recalculates.
+    const repCardPdfBase = `${origin}/api/sales/monthly-closing/premium-export/pdf?${new URLSearchParams({
+      ...(payload.line ? { line: payload.line } : {}),
+      ...(payload.period ? { period: payload.period } : {}),
+      sheet: "Rep Card",
+    }).toString()}`;
+
     const buffer = await fillClosingEngine(payload.fill, {
       macroFree: !macros,
-      ...(macros ? {} : { pdfLink }),
+      ...(macros ? {} : { pdfLink, repCardPdfBase }),
     });
     const fileName = closingFileName({
       extension: macros ? "xlsm" : "xlsx",
