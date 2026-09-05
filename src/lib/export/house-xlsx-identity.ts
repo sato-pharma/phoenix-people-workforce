@@ -29,45 +29,14 @@ import path from "node:path";
 
 import type ExcelJS from "exceljs";
 
-import { HOUSE_COLORS } from "@/lib/hiring-pack/house-identity";
+import { HOUSE_DOCUMENT_STANDARD, HOUSE_XLSX_COLORS, toArgb } from "@/lib/export/house-xlsx-palette";
 
-/** `#RRGGBB` (or `#RGB`) as the opaque `AARRGGBB` string every ExcelJS colour field expects. */
-export function toArgb(hex: string): string {
-  const raw = hex.replace("#", "").trim();
-  const full = raw.length === 3 ? raw.split("").map((character) => character + character).join("") : raw;
-  return `FF${full.toUpperCase()}`;
-}
+// Re-exported so every caller that only wants a colour keeps its existing import, and so this
+// module stays the single name to reach for when a builder wants the masthead AS WELL.
+// A client-reachable module must import "@/lib/export/house-xlsx-palette" DIRECTLY: this file
+// reads the wordmark off disk, and node:fs fails a Turbopack client build outright.
+export { HOUSE_DOCUMENT_STANDARD, HOUSE_XLSX_COLORS, toArgb };
 
-export const HOUSE_XLSX_COLORS = {
-  /** The SATO wordmark. Body text. */
-  ink: toArgb(HOUSE_COLORS.ink),
-  /** The wave's darkest stroke. Titles, column headers, section labels. */
-  deep: toArgb(HOUSE_COLORS.deep),
-  /** The PHARMA wordmark. The brand rule under the masthead, and section rules. */
-  blue: toArgb(HOUSE_COLORS.blue),
-  /** The wave's lightest stroke. Callout edges, secondary rules. */
-  light: toArgb(HOUSE_COLORS.light),
-  /** Brand Blue at 6%. The zebra row — the only filled element in the format. */
-  tint: toArgb(HOUSE_COLORS.tint),
-  /** Hairline grey for cell grids. */
-  hair: toArgb(HOUSE_COLORS.hair),
-  /** Secondary type: sub-labels, provenance, units. */
-  muted: toArgb(HOUSE_COLORS.muted),
-  /** Primary body type. */
-  body: toArgb(HOUSE_COLORS.body),
-  white: "FFFFFFFF",
-  /** NOT from the logo — see the file header. Defect TEXT only, never a fill. */
-  flag: "FFB3261E",
-} as const;
-
-/**
- * The identity's own reference, printed on every document that wears it.
- *
- * This is the first place the standard's id exists as a VALUE rather than as a comment — the four
- * hiring-pack renderers each mention it only in prose. If a later change gives `house-identity.ts`
- * its own exported constant, this should re-export that one rather than keep a second.
- */
-export const HOUSE_DOCUMENT_STANDARD = "SATO-DIS-2026-01 v1.0";
 
 /**
  * The mark, relative to the app root.

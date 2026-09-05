@@ -1,6 +1,9 @@
 import ExcelJS from "exceljs";
 
-import { HOUSE_XLSX_COLORS } from "@/lib/export/house-xlsx-identity";
+// The PALETTE module, never `house-xlsx-identity` — this file is imported by a client component
+// (`personal-expense-workload-dashboard`) as well as by API routes, and the identity module
+// reads the wordmark with node:fs, which fails a Turbopack client build outright.
+import { HOUSE_XLSX_COLORS } from "@/lib/export/house-xlsx-palette";
 
 // Reusable, premium Phoenix-styled XLSX builder for any admin table.
 // Visual language matches the on-screen admin rules: black header band (sidebar
