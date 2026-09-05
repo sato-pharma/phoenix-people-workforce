@@ -22,7 +22,7 @@ import {
   type CellValue,
   type TableColumn,
 } from "@/lib/export/house-table-workbook";
-import { houseGeneratedRow } from "@/lib/export/house-xlsx-identity";
+import { houseCairoDateTime, houseGeneratedRow } from "@/lib/export/house-xlsx-identity";
 import { sanitizeSheetName } from "@/lib/export/phoenix-xlsx-style";
 import {
   deductionsCalculationStatusLabel,
@@ -72,10 +72,10 @@ const COLUMNS: TableColumn[] = [
   { label: "Decision Reason", width: 40 },
   { label: "HR Note", width: 30 },
   { label: "Decided By", width: 14 },
-  { label: "Decided At", width: 18 },
+  { label: "Decided At (Cairo)", width: 24 },
   { label: "Source System", width: 18 },
   { label: "Source Record ID", width: 24 },
-  { label: "Created At", width: 18 },
+  { label: "Created At (Cairo)", width: 24 },
 ];
 
 // "Applied Value" / "Applied Amount" mean what PAYROLL WILL ACTUALLY TAKE, so
@@ -119,10 +119,10 @@ function candidateRow(candidate: DeductionsCandidateWithDecision): CellValue[] {
     candidate.decision?.decisionReason ?? "",
     candidate.decision?.hrNote ?? "",
     candidate.decision?.decidedBy ?? "",
-    candidate.decision?.decidedAt ?? "",
+    houseCairoDateTime(candidate.decision?.decidedAt),
     candidate.sourceSystem,
     candidate.sourceRecordId,
-    candidate.createdAt,
+    houseCairoDateTime(candidate.createdAt),
   ];
 }
 
