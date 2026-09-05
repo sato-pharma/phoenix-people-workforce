@@ -62,6 +62,7 @@ import type {
   FieldHistoryEntry,
   FieldHistorySummary,
 } from "@/lib/hiring-pack/field-layout-store";
+import { EDITOR_CSS } from "@/lib/hiring-pack/paper-editor-css";
 import {
   buildPaperEditPatch,
   PAPER_FIELD_BINDINGS,
@@ -214,89 +215,6 @@ function fieldLabel(row: DocumentFieldRow): string {
   if (row.source.kind === "literal") return row.source.text ? `“${row.source.text}”` : "(blank fixed text)";
   return row.source.key || "(no key set)";
 }
-
-/**
- * What the page looks like while it is being worked on, and never on paper.
- *
- * Wrapped in `@media screen` throughout, so none of it can reach a printer. The document's own
- * stylesheet is untouched — this is appended to its head after load, which means an editing
- * affordance can never be the reason a printed page differs from the preview.
- */
-const EDITOR_CSS = `
-@media screen {
-  /* The document's own print banner. This panel has its own controls, and two Print buttons on one
-     screen is how somebody prints from the wrong one. */
-  .print-banner { display: none !important; }
-
-  /* An added flow field is inert to the pointer by design (field-layout.ts's flowFieldLayer) so it
-     never steals a click from the prose it sits on top of, on the printed page or the ordinary
-     preview. Inside the editor that is exactly backwards — it is the one thing on a flow document
-     that can be selected, edited or dragged — so this reopens it, at a specificity nothing else in
-     this stylesheet or the document's own can out-rank. */
-  .hp-added { pointer-events: auto !important; }
-
-  [data-hp-live] {
-    outline: 1px dashed rgba(37, 99, 235, 0.45);
-    outline-offset: 2px;
-    border-radius: 2px;
-    cursor: text;
-    transition: background-color 120ms ease, outline-color 120ms ease;
-  }
-  [data-hp-live]:hover { background-color: rgba(37, 99, 235, 0.12); }
-  [data-hp-live]:focus {
-    outline: 2px solid #2563eb;
-    background-color: rgba(37, 99, 235, 0.16);
-  }
-  [data-hp-selected] {
-    outline: 2px solid #2563eb !important;
-    background-color: rgba(37, 99, 235, 0.2) !important;
-  }
-  [data-hp-saving] {
-    outline: 2px solid #f59e0b !important;
-    background-color: rgba(245, 158, 11, 0.2) !important;
-  }
-  /* A RULE BEING TRIED, NOT ONE THAT IS SAVED. Green rather than the editor's blue, because blue
-     already means "you can edit this" everywhere else on the page and a second blue would read as
-     one more editable box. The dashed ring plus the tint says the words under it are not what the
-     document would print if it were printed right now. */
-  [data-hp-dry] {
-    outline: 2px dashed #059669 !important;
-    outline-offset: 2px;
-    background-color: rgba(5, 150, 105, 0.14) !important;
-  }
-  /* A rule that resolves to nothing keeps its ring so the box does not simply vanish — an empty
-     outline IS the warning, and a field that disappeared would read as the preview being broken. */
-  [data-hp-dry][data-hp-dry-empty] {
-    background-color: rgba(220, 38, 38, 0.12) !important;
-    outline-color: #dc2626 !important;
-  }
-
-  /* A value the page prints but nothing can store — the company's own registry numbers, a figure
-     derived from another one. Marked as locked rather than left looking ordinary, so it is obvious
-     WHY it will not take a keystroke. */
-  [data-hp-locked] { cursor: not-allowed; }
-  [data-hp-locked]:hover { background-color: rgba(100, 116, 139, 0.16); }
-
-  body.hp-free-edit [data-hp-locked] {
-    outline: 1px dashed rgba(217, 119, 6, 0.6);
-    outline-offset: 2px;
-    cursor: text;
-  }
-  body.hp-free-edit { caret-color: #b45309; }
-
-  /* Layout mode replaces value-editing with position-editing: every dashed box becomes something to
-     pick up rather than type into, and "add a field" turns the whole page into a drop target. */
-  body.hp-layout-edit [data-hp-live] { cursor: move; }
-  body.hp-layout-edit [data-hp-locked] { cursor: default; }
-  body.hp-layout-edit.hp-adding-field,
-  body.hp-layout-edit.hp-adding-field * { cursor: crosshair !important; }
-  [data-hp-dragging] {
-    z-index: 30;
-    box-shadow: 0 0 0 2px #2563eb, 0 4px 10px rgba(37, 99, 235, 0.35);
-    background-color: rgba(37, 99, 235, 0.14) !important;
-  }
-}
-`;
 
 type PaperEditorCommonProps = {
   hrId: string;
