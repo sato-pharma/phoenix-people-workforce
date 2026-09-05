@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 
 import { candidateRegionCodes, candidateRegionLabels } from "../src/lib/recruitment/candidate-region.ts";
 import { candidateRoleFamilies } from "../src/lib/recruitment/candidate-role-family.ts";
+import { builtInQuestionAppliesToRole } from "../src/lib/recruitment/inbound/whatsapp-question-audience.ts";
 import {
   AREA_OTHER_MAX,
   areaMenu,
   areaOtherPromptText,
-  askAreaForRole,
   BACKGROUND_OTHER_MAX,
   backgroundMenu,
   backgroundOtherPromptText,
@@ -543,25 +543,27 @@ export function runWhatsAppSelfClassificationTests() {
     "a pasted sentence is refused rather than truncated",
   );
 
-  // ── The area cascade — owner's rule 2026-08-30 ────────────────────────────────────────────────
+  // ── The area cascade — owner's rule 2026-08-30, now the area question's DEFAULT audience ─────
   // ONLY a Medical Rep is asked the area; every other role — the sales managers, the head-office
-  // roles, and a typed "Other" — is asked region only. This is the single seam the session state
-  // machine consults, so it is pinned here: a role added to the menu later has its area behaviour
-  // decided on purpose. The whole rule is `family === "medical_rep"`, and the test proves it both
-  // ways — that the rep gets the area, and that nobody else does.
-  assert.equal(askAreaForRole("medical_rep"), true, "a Medical Rep is asked the area");
+  // roles, and a typed "Other" — is asked region only. The rule used to be `askAreaForRole`, a
+  // hardcoded line; since 2026-09-05 it is what the area question does with NOTHING CONFIGURED, one
+  // of six audiences the owner can change on /admin/screening-questions. These assertions are the
+  // same ones, ported onto the function that now answers it — the behaviour did not move, only the
+  // place it is written. `undefined` is the argument that means "nothing configured".
+  const asksArea = (family: string | null) => builtInQuestionAppliesToRole("area", undefined, family);
+  assert.equal(asksArea("medical_rep"), true, "a Medical Rep is asked the area");
   for (const family of offeredRoleMenuFamilies) {
     if (family === "medical_rep") continue;
-    assert.equal(askAreaForRole(family), false, `${family} is asked region only — the area question is Medical-Rep-only`);
+    assert.equal(asksArea(family), false, `${family} is asked region only — the area question defaults to Medical-Rep-only`);
   }
   // A typed "Other" job keeps family "other", and null is a session that never answered the role —
   // neither is a medical rep, so neither is asked an area.
-  assert.equal(askAreaForRole("other"), false, "a typed Other job is not a Medical Rep — region only");
-  assert.equal(askAreaForRole(null), false, "an unanswered role is never asked an area");
+  assert.equal(asksArea("other"), false, "a typed Other job is not a Medical Rep — region only");
+  assert.equal(asksArea(null), false, "an unanswered role is never asked an area");
   // Every offered role except the rep is a region-only role, so at least the seven managers/HO roles
   // skip the area — a sanity check that the menu did not quietly become all reps.
   assert.ok(
-    offeredRoleMenuFamilies.filter((family) => !askAreaForRole(family)).length >= 6,
+    offeredRoleMenuFamilies.filter((family) => !asksArea(family)).length >= 6,
     "the cascade must actually skip the non-rep roles, not wave everyone through to the area",
   );
 

@@ -4,6 +4,8 @@ import * as React from "react";
 import { AlertCircle, ArrowDown, ArrowUp, CheckCircle2, Eye, EyeOff, Loader2, RotateCcw } from "lucide-react";
 
 import { AdminCallout, AdminSectionHeader } from "@/components/admin/admin-design-system";
+import { QuestionAudiencePicker } from "@/components/admin/question-audience-picker";
+import { candidateRoleFamilyLabels, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -12,6 +14,7 @@ import {
   WHATSAPP_ROW_DESCRIPTION_MAX,
   WHATSAPP_ROW_TITLE_MAX,
 } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
+import { audienceViolations } from "@/lib/recruitment/inbound/whatsapp-question-audience";
 import {
   answerConfigViolations,
   optionLabelViolations,
@@ -58,6 +61,20 @@ export type BuiltInPromptRow = {
   options: BuiltInPromptOptionRow[];
   optionsNote: string;
   isCustomised: boolean;
+  /**
+   * Who is asked this question when nothing is configured. Null means every applicant; `area`
+   * carries the owner's Medical-Rep rule here.
+   */
+  defaultAudience: readonly string[] | null;
+  /** False for question 1 alone — it establishes the role, so it cannot be scoped by it. */
+  canChooseAudience: boolean;
+  /**
+   * THREE STATES, and they are not interchangeable — see StoredAudience in
+   * whatsapp-question-audience.ts. `null` is "nothing configured", so the question takes
+   * `defaultAudience`. `[]` is a saved "asked to everyone", which BEATS that default and is the only
+   * way to widen the area question. A non-empty array narrows it to those job titles.
+   */
+  savedAppliesToRoleFamilies: readonly string[] | null;
   savedBody: string | null;
   savedOptionLabels: Record<string, OptionLabel>;
   savedHiddenOptions: string[];
@@ -106,6 +123,16 @@ function liveShownValues(prompt: BuiltInPromptRow): string[] {
   return out;
 }
 
+/** True when the WORDING is overridden - as opposed to a row that exists only to hold an audience. */
+function wordingIsCustomised(prompt: BuiltInPromptRow): boolean {
+  return Boolean(
+    prompt.savedBody
+      || Object.keys(prompt.savedOptionLabels ?? {}).length > 0
+      || (prompt.savedHiddenOptions ?? []).length > 0
+      || (prompt.savedOptionOrder ?? []).length > 0,
+  );
+}
+
 function counterClass(length: number, max: number): string {
   if (length > max) return "text-red-600";
   if (length > max * 0.9) return "text-amber-600";
@@ -116,10 +143,24 @@ function sameList(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
-type Draft = { body: string; options: Record<string, OptionLabel>; shown: string[] };
+type Draft = { audience: string[]; body: string; options: Record<string, OptionLabel>; shown: string[] };
+
+/**
+ * The job titles asked this question RIGHT NOW: what is saved when anything is, else the code
+ * default. This is what the tick list is seeded from, so the boxes always show what the bot actually
+ * does rather than an empty list that behaves as though one box were ticked.
+ *
+ * `?? prompt.defaultAudience ?? []` reads the three states in order: a saved `[]` (everyone) short-
+ * circuits the first `??` and correctly shows nothing ticked, a saved list shows itself, and only a
+ * saved `null` falls through to the default.
+ */
+function liveAudience(prompt: BuiltInPromptRow): string[] {
+  return [...(prompt.savedAppliesToRoleFamilies ?? prompt.defaultAudience ?? [])];
+}
 
 function draftFor(prompt: BuiltInPromptRow): Draft {
   return {
+    audience: liveAudience(prompt),
     body: prompt.savedBody ?? prompt.defaultBody,
     options: Object.fromEntries(
       prompt.options.map((option) => [option.value, liveOptionLabel(prompt, option)]),
@@ -233,6 +274,9 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
       optionLabels: Record<string, OptionLabel>;
       hiddenOptions: string[];
       optionOrder: string[];
+      /** Omitted entirely for question 1, which cannot be scoped. `null` clears the audience back
+       *  to the code default — the reset gesture. */
+      appliesToRoleFamilies?: string[] | null;
     },
     successMessage: string,
   ) {
@@ -290,7 +334,10 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
           const optionsDirty =
             JSON.stringify(nextOptionLabels) !== JSON.stringify(prompt.savedOptionLabels ?? {});
           const answersDirty = !sameList(draft.shown, liveShownValues(prompt));
-          const dirty = bodyDirty || optionsDirty || answersDirty;
+          // Order-insensitive: ticking two boxes in the other order is not an edit.
+          const audienceDirty =
+            !sameList([...draft.audience].sort(), [...liveAudience(prompt)].sort());
+          const dirty = bodyDirty || optionsDirty || answersDirty || audienceDirty;
 
           const optionByValue = new Map(prompt.options.map((option) => [option.value, option]));
           const hiddenValues = prompt.options
@@ -299,6 +346,7 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
 
           const issues = [
             ...promptViolations({ bodyText: draft.body, key: prompt.key }),
+            ...audienceViolations({ appliesToRoleFamilies: draft.audience, key: prompt.key }),
             ...optionLabelViolations({
               allowedValues: prompt.options.map((option) => option.value),
               key: prompt.key,
@@ -323,15 +371,22 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
                   <p className="text-sm font-semibold text-slate-800">{prompt.label}</p>
                   <p className="mt-0.5 text-phx-xs text-slate-500">{prompt.note}</p>
                 </div>
-                {prompt.isCustomised ? (
-                  <span className="rounded-full bg-orange-50 px-2 py-0.5 text-phx-xs font-semibold text-orange-700">
-                    Your wording
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-500">
-                    Default
-                  </span>
-                )}
+                {/* Narrowing a question whose wording is untouched now saves a row, so
+                    `isCustomised` alone would label it "Your wording" and send somebody hunting for
+                    an edit that was never made. The badge names what actually changed. */}
+                <span
+                  className={
+                    prompt.isCustomised
+                      ? "bg-orange-50 px-2 py-0.5 text-phx-xs font-semibold text-orange-700"
+                      : "bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-500"
+                  }
+                >
+                  {wordingIsCustomised(prompt)
+                    ? "Your wording"
+                    : prompt.isCustomised
+                      ? "Your audience"
+                      : "Default"}
+                </span>
               </div>
 
               <label className="mt-3 block text-phx-xs font-medium text-slate-600" htmlFor={`prompt-${prompt.key}`}>
@@ -364,7 +419,48 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
                 </p>
               ) : null}
 
-              {/* ── The answers ───────────────────────────────────────────────────────────────── */}
+              {/* -- Who is asked ------------------------------------------------------------------
+                  The owner's 2026-09-05 request, and the same control the extra questions below
+                  carry - one component, so the two cannot drift. Question 1 gets a sentence instead
+                  of a tick list: it establishes the role every other audience is judged against, so
+                  there is nothing to judge it by. Saying that on the screen is the point - a missing
+                  control reads as an oversight, and the next session would "fix" it. */}
+              <div className="mt-4">
+                {prompt.canChooseAudience ? (
+                  <QuestionAudiencePicker
+                    disabled={busy}
+                    // On `area` "everyone" is a real change from what the bot does today, so the
+                    // caption says which it is rather than stating a neutral fact that happens to be
+                    // false for this one question.
+                    everyoneNote={
+                      prompt.defaultAudience && prompt.defaultAudience.length > 0
+                        ? "Nothing ticked - every applicant is asked this question, widening it from the "
+                          + `${prompt.defaultAudience
+                              .map((family) => candidateRoleFamilyLabels[family as CandidateRoleFamily] ?? family)
+                              .join(", ")} it asks today.`
+                        : undefined
+                    }
+                    idPrefix={`builtin-${prompt.key}`}
+                    onChange={(next) =>
+                      setDrafts((prev) => ({ ...prev, [prompt.key]: { ...draft, audience: next } }))
+                    }
+                    value={draft.audience}
+                  />
+                ) : (
+                  <>
+                    <span className="text-phx-xs font-bold uppercase tracking-wider text-slate-400">
+                      Who is asked
+                    </span>
+                    <p className="mt-1 text-phx-xs text-slate-500">
+                      Everyone, always. This is the question that asks which job they want, so it is
+                      the answer every other question&apos;s job-title list is matched against
+                      - it cannot be limited by one.
+                    </p>
+                  </>
+                )}
+              </div>
+
+              {/* -- The answers -------------------------------------------------------------- */}
               <div className="mt-4 rounded border border-slate-200 bg-slate-50/60 p-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <p className="text-phx-xs font-medium text-slate-600">What the applicant can answer</p>
@@ -552,8 +648,12 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
                           draft.body.trim() === prompt.defaultBody.trim() ? "" : draft.body.trim(),
                         optionLabels: nextOptionLabels,
                         ...nextAnswerConfig,
+                        // Sent as the ticked list, empty included - an empty array is "asked to
+                        // everyone" and is a real, storable decision, not the absence of one. Never
+                        // sent for question 1, whose audience is not a choice.
+                        ...(prompt.canChooseAudience ? { appliesToRoleFamilies: draft.audience } : {}),
                       },
-                      "Saved. The bot uses the new wording on the very next applicant.",
+                      "Saved. The bot uses this on the very next applicant.",
                     )
                   }
                   size="sm"
@@ -565,14 +665,22 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
                 {prompt.isCustomised ? (
                   <Button
                     disabled={busy}
-                    // An empty body with no labels and no answer changes is the reset gesture the
-                    // route understands: the row is dropped and the code's own words and answers
-                    // return together.
+                    // An empty body, no labels, no answer changes and a NULL audience is the reset
+                    // gesture the route understands: the row is dropped and the code's own words,
+                    // answers and audience return together. The null is what makes it a whole reset
+                    // rather than a wording one - omitting the field would leave a narrowed question
+                    // narrowed, under a button that says it went back to default.
                     onClick={() =>
                       post(
                         prompt.key,
-                        { bodyText: "", hiddenOptions: [], optionLabels: {}, optionOrder: [] },
-                        "Back to the default question and answers.",
+                        {
+                          appliesToRoleFamilies: null,
+                          bodyText: "",
+                          hiddenOptions: [],
+                          optionLabels: {},
+                          optionOrder: [],
+                        },
+                        "Back to the default question, answers and audience.",
                       )
                     }
                     size="sm"

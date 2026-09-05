@@ -52,6 +52,9 @@ function override(
   answers: { hiddenOptions?: string[]; optionOrder?: string[] } = {},
 ): PromptOverride {
   return {
+    // `undefined` is "no audience configured", which is what every wording fixture here means: these
+    // tests are about the words, and the question keeps whichever audience its code default gives it.
+    appliesToRoleFamilies: undefined,
     body,
     hiddenOptions: answers.hiddenOptions ?? [],
     optionLabels,
@@ -786,6 +789,7 @@ export async function runWhatsAppQuestionPromptsTests() {
       [
         "job_title",
         {
+          appliesToRoleFamilies: undefined,
           body: "Ahlan! Which job are you applying for at Sato Pharma?",
           hiddenOptions: ["human_resources", "pharmacist"],
           optionLabels: { medical_rep: { description: "Field force", title: "Medical Rep" } },
