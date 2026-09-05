@@ -44,7 +44,11 @@ import { describeForOrder } from "@/lib/recruitment/screening-describe";
 import { duplicateSets, orderForScreening, screeningBand } from "@/lib/recruitment/screening-order";
 import { isFiledCandidate } from "@/lib/recruitment/candidate-folder";
 import { listCandidateIdsWithInterviewToday } from "@/lib/recruitment/interviews";
-import { listCandidateViews } from "@/lib/recruitment/candidate-views";
+import {
+  listCandidateViews,
+  listOtherViewersByCandidate,
+  resolveViewerNames,
+} from "@/lib/recruitment/candidate-views";
 import { listCandidates } from "@/lib/recruitment/candidates";
 import { listHiringManagerOptions, type HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import {
@@ -207,22 +211,32 @@ export async function loadScreeningWorkspace(
 ): Promise<ScreeningWorkspace> {
   const canSendToManagers = Boolean(options.canSendToManagers);
 
-  // Fired together, not in sequence: five of these six are independent, and awaiting them one at a
-  // time is the difference between one round trip and six on a page that is already the slowest in
+  // Fired together, not in sequence: six of these seven are independent, and awaiting them one at a
+  // time is the difference between one round trip and seven on a page that is already the slowest in
   // the module.
-  const [allCandidates, views, hiringManagers, openVacancies, positionSuggestions, interviewToday] =
-    await Promise.all([
-      // WITHOUT the repeating CV blocks. Nothing below reads them, and on production they are 59%
-      // of the bytes this read moves — see CANDIDATE_COLUMNS_WITHOUT_REPEATING_BLOCKS.
-      listCandidates({ withRepeatingCvBlocks: false }),
-      listCandidateViews(viewerHrId),
-      canSendToManagers ? listHiringManagerOptions() : Promise.resolve<HiringManagerOption[]>([]),
-      canSendToManagers ? listOpenVacancyOptions() : Promise.resolve<VacancyOption[]>([]),
-      canSendToManagers
-        ? listUsedPositionText()
-        : Promise.resolve<{ jobTitles: string[]; areas: string[] }>({ areas: [], jobTitles: [] }),
-      listCandidateIdsWithInterviewToday(),
-    ]);
+  const [
+    allCandidates,
+    views,
+    otherViewers,
+    hiringManagers,
+    openVacancies,
+    positionSuggestions,
+    interviewToday,
+  ] = await Promise.all([
+    // WITHOUT the repeating CV blocks. Nothing below reads them, and on production they are 59%
+    // of the bytes this read moves — see CANDIDATE_COLUMNS_WITHOUT_REPEATING_BLOCKS.
+    listCandidates({ withRepeatingCvBlocks: false }),
+    listCandidateViews(viewerHrId),
+    // Who ELSE has opened each CV. A separate read from the caller's own map, deliberately — see
+    // listOtherViewersByCandidate for why the two facts must not be merged.
+    listOtherViewersByCandidate(viewerHrId),
+    canSendToManagers ? listHiringManagerOptions() : Promise.resolve<HiringManagerOption[]>([]),
+    canSendToManagers ? listOpenVacancyOptions() : Promise.resolve<VacancyOption[]>([]),
+    canSendToManagers
+      ? listUsedPositionText()
+      : Promise.resolve<{ jobTitles: string[]; areas: string[] }>({ areas: [], jobTitles: [] }),
+    listCandidateIdsWithInterviewToday(),
+  ]);
 
   // A shelved CV leaves the workstation exactly as it leaves the queue: the whole purpose of the
   // shelf is that a good-but-not-now CV stops being offered for review again. Taken off BEFORE
@@ -234,7 +248,16 @@ export async function loadScreeningWorkspace(
   // trail) before this function sees them. This loader used to do that overlay itself, which meant
   // the pool and this page answered "was it sent, and to whom" from different sources. One rule,
   // one place: src/lib/recruitment/candidates.ts.
-  const comments = await summarizeCommentsByCandidate(pool.map((candidate) => candidate.id));
+  // The other SCREENERS, not the pool — a tiny set by construction, so one targeted read names them
+  // all. A raw HR_ID must never reach a screen (owner's standing rule), and a viewer with no
+  // employee row keeps their id rather than being given an invented name.
+  //
+  // Together with the comments: neither reads the other, and this page already waits on one Atlantic
+  // round trip more than it should.
+  const [comments, viewerNames] = await Promise.all([
+    summarizeCommentsByCandidate(pool.map((candidate) => candidate.id)),
+    resolveViewerNames([...otherViewers.values()].flat()),
+  ]);
 
   // Stamped once. This is a `force-dynamic` page, so one `Date.now()` here is the same instant every
   // "how recently" question is measured against — a second reading mid-loop would let two rows on
@@ -366,6 +389,7 @@ export async function loadScreeningWorkspace(
       queues: workQueuesFor(queueInput),
       redFlags,
       regionCode: place.regionCode,
+      alsoReadBy: (otherViewers.get(candidate.id) ?? []).map((hrId) => viewerNames.get(hrId) ?? hrId),
       seen: Boolean(views[candidate.id]),
       sentForLabel: candidate.sentFor ? positionFolderLabel(candidate.sentFor) : null,
       sentForVacancyId: candidate.sentFor?.vacancyId ?? null,

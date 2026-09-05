@@ -98,6 +98,16 @@ export type WorkspaceCandidateRow = {
 
   /** Has THIS viewer opened the CV before. Never anybody else's reading — see candidate-views.ts. */
   seen: boolean;
+  /**
+   * The OTHER screeners who have opened it, by name. Empty when nobody else has.
+   *
+   * Kept apart from `seen` rather than folded into it, because the two mean different things: `seen`
+   * decides whether the queue offers this CV to YOU again, while this only says the work may already
+   * be done by somebody else. Two people sharing one queue with no sight of each other's reading do
+   * the same CVs twice and cannot tell which — measured 2026-09-05, one person held 200 of the 249
+   * recorded views and 127 of the 133 decisions.
+   */
+  alsoReadBy: string[];
   redFlags: CandidateRedFlag[];
 
   sentToManagerAt: string | null;

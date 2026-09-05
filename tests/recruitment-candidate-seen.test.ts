@@ -229,4 +229,48 @@ export async function runRecruitmentCandidateSeenTests() {
     "deleting a candidate must take its view rows with it",
   );
   assert.match(migration, /enable row level security/, "a new table must not ship without RLS enabled");
+
+  // ── TWO SCREENERS: "have I read this" and "has anyone" are different questions ────────────────
+  //
+  // listCandidateViews is per-person and its header explains why: a shared marker would show each
+  // screener the other's reading as their own. That stands. But it left the opposite question
+  // unanswerable, and the owner's answer to "is screening yours alone?" on 2026-09-05 was that he
+  // and HR-010 share it. Measured the same day: one person held 200 of the 249 recorded views and
+  // 127 of the 133 decisions. Two people on one queue with no sight of each other repeat work and
+  // cannot tell which CVs.
+  const otherViewersSource = read("src/lib/recruitment/candidate-views.ts");
+
+  // THE CALLER IS NEVER IN THEIR OWN "also read by" LIST. Without this the badge fires on every CV
+  // the reader has opened themselves, which is the one thing their own map already says.
+  assert.match(
+    otherViewersSource,
+    /if \(me && viewer === me\) continue;/,
+    "the caller must be excluded from the other-viewers map — their own reading is not somebody else's",
+  );
+  // Safe to compare across people ONLY because this column is canonical by construction — every
+  // write goes through canonicalViewerHrId and a CHECK enforces it. employees.hr_id is not, which
+  // is why the name lookup must not use a plain equality.
+  assert.match(
+    otherViewersSource,
+    /hrIdLookupKeys\(id\)/,
+    "viewer names must be resolved through hrIdLookupKeys — employees.hr_id is mixed case and a " +
+      "plain match returns nobody, so every row would silently fall back to the raw id",
+  );
+  // Paged and refusing to truncate, like the per-person read beside it — this one reads EVERY
+  // viewer's history, so it meets PostgREST's silent 1000-row ceiling sooner.
+  assert.match(otherViewersSource, /Refusing to report a read CV as unread by everyone/, "it must not truncate silently");
+  assert.match(otherViewersSource, /\.range\(from, from \+ VIEW_PAGE_SIZE - 1\)/, "and it must page");
+
+  // The two facts stay APART on the row.
+  const types = read("src/lib/recruitment/screening-workspace-types.ts");
+  assert.match(types, /alsoReadBy: string\[\];/, "the row carries the other screeners by name");
+  assert.match(types, /seen: boolean;/, "and keeps the caller's own reading as its own field");
+  const list = read("src/components/recruitment/workstation/workstation-candidate-list.tsx");
+  assert.match(list, /row\.alsoReadBy\.length > 0/, "the list shows it as its own badge");
+  // NAMED, never an id — the owner's standing rule that a screen shows human-readable names.
+  assert.doesNotMatch(
+    list,
+    /Also opened by \{row\.alsoReadBy\.map\(\(hrId\)/,
+    "the badge must render resolved names, not ids mapped at the last moment",
+  );
 }
