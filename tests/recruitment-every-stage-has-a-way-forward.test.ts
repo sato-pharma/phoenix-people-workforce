@@ -1,38 +1,41 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
+import { offerStages } from "../src/lib/recruitment/offer-rules.ts";
 import { applicationStages, terminalApplicationStages } from "../src/lib/recruitment/types.ts";
 
 /**
  * A pipeline stage a person cannot leave is a dead end, and it looks exactly like low adoption.
  *
- * ── WHAT THIS FOUND ───────────────────────────────────────────────────────────────────────────
+ * ── THIS TEST SHIPPED WRONG AND WAS CORRECTED THE SAME DAY, 2026-09-05 ────────────────────────
  *
- * Measured on production 2026-09-05: 745 candidates, 14 applications, 1 interview, 0 offers,
- * 0 hires. The plan called the offer work "mostly wiring" and read the zeros as adoption.
+ * The first version claimed TEN stages had no way forward — the whole offer chain plus
+ * pre_boarding — and concluded that 0 offers and 0 hires were a dead end rather than adoption.
+ * That was false, and the mistake is kept written down because it is subtle and cheap to repeat.
  *
- * They are not adoption. The offer chain is COMPLETE on the server —  saveOfferDraft,
- * submitOfferForApproval, decideOfferApproval, markOfferSent, recordOfferResponse — and has NO UI
- * at all. `app_select` moves an application INTO `offer_initiated`, and from there
- * `app_offer_extend`, `app_offer_accept`, `app_offer_decline` and `app_to_pre_boarding` have
- * ZERO references in the recruitment components. Whoever pressed "select for offer" first would
- * have reached a screen with no next step and no way back except rejection.
+ * It searched the components for the registry ACTION KEYS (`app_offer_accept`,
+ * `app_to_pre_boarding`, …) and found none. But the UI does not use action keys: it posts an
+ * INTENT to `/api/recruitment/applications/[id]/offer` — `save_draft`, `submit_approval`,
+ * `approve`, `reject_approval`, `mark_sent`, `record_response` — and the route maps those onto the
+ * service. The offer chain has had a complete UI all along: `OfferCard`, rendered whenever
+ * `isOfferStage(stage)` holds, plus a "Mark as hired" card on `offer_accepted`, `offer_initiated`
+ * and `pre_boarding`.
  *
- * That is why nobody has: the furthest any of the 14 applications ever reached is `hr_interview`.
+ * MEASURING THE WRONG SIGNAL AND FINDING ZERO LOOKS EXACTLY LIKE MEASURING THE RIGHT ONE AND
+ * FINDING A GAP. Both produce an empty result and a confident conclusion. The guard is the
+ * positive control below: if a coverage source stops being parseable, every stage reads as
+ * uncovered — which is precisely how the first version talked itself into a ten-stage dead end.
  *
- * ── WHY A TEST AND NOT JUST A FIX ─────────────────────────────────────────────────────────────
+ * ── WHAT THIS TEST IS FOR ─────────────────────────────────────────────────────────────────────
  *
- * The gap is TEN stages wide of 28 - measured, not estimated: 5 are terminal, 9 are reachable
- * through the workspace's two stage maps, 4 through dedicated cards, and 10 have nothing. Nine of
- * those ten are the offer chain end to end. Closing it is a UI build, not an edit, so recording it
- * as a counted list means the next session cannot mistake the zeros for disinterest again, and
- * cannot add an ELEVENTH without this going red. The list may shrink; it may never grow.
+ * Every non-terminal stage must be covered by one of the four sources the workspace actually uses.
+ * A stage added to `applicationStages` with no control anywhere fails here, rather than becoming a
+ * quiet dead end that reads as nobody being interested.
  */
 export function runRecruitmentEveryStageHasAWayForwardTests() {
   const workspace = readFileSync("src/components/recruitment/recruitment-workspace.tsx", "utf8");
 
-  // Stages the workspace can move forward through its two declared maps. Read out of the source
-  // rather than restated here, so editing the map moves this test with it.
+  // ── sources 1 and 2: the two stage → action maps, parsed out of the workspace ───────────────
   const declared = new Set<string>();
   const nextStageBlock = workspace.slice(
     workspace.indexOf("const nextStageAction:"),
@@ -47,72 +50,62 @@ export function runRecruitmentEveryStageHasAWayForwardTests() {
     for (const match of block.matchAll(/^\s{2}(\w+):/gm)) declared.add(match[1]);
   }
 
-  // Stages the workspace handles with a dedicated card instead of a map entry. Named in the
-  // source's own comment above nextStageAction; kept in step with it by the assertion below.
-  const DEDICATED_CARD_STAGES = [
-    "cv_screening",
-    "phone_screening",
-    "hiring_manager_interview",
-    "final_selection",
-  ];
+  // ── source 3: stages with a dedicated card instead of a map entry ───────────────────────────
+  const DEDICATED_CARD_STAGES = ["cv_screening", "phone_screening", "hiring_manager_interview", "final_selection"];
   for (const stage of DEDICATED_CARD_STAGES) {
+    assert.ok(workspace.includes(stage), `${stage} claims a dedicated card but is absent from the workspace`);
+  }
+
+  // ── source 4: the offer panel, and the hire card behind it ──────────────────────────────────
+  //
+  // OfferCard is gated on isOfferStage, so its coverage IS offerStages — imported rather than
+  // restated here, so widening that rule widens this test with it.
+  assert.match(
+    workspace,
+    /isOfferStage\(selected\.stage\) \? \(\s*<OfferCard/,
+    "OfferCard must be rendered for every offer stage - it is the only control the offer chain has",
+  );
+  const HIRE_CARD_STAGES = ["offer_accepted", "offer_initiated", "pre_boarding"];
+  for (const stage of HIRE_CARD_STAGES) {
     assert.ok(
-      workspace.includes(stage),
-      `${stage} is claimed to have a dedicated card but does not appear in the workspace at all`,
+      workspace.includes(`selected.stage === "${stage}"`),
+      `the "Mark as hired" card must render on ${stage}; without it an accepted offer cannot become a hire`,
     );
   }
 
-  // ── THE RECORDED GAP ────────────────────────────────────────────────────────────────────────
+  const covered = new Set<string>([...declared, ...DEDICATED_CARD_STAGES, ...offerStages, ...HIRE_CARD_STAGES]);
+
+  // ── the one stage with no control, and the reason it needs none ─────────────────────────────
   //
-  // Ten stages with no forward control anywhere in the recruitment UI. Listed rather than hidden,
-  // with the server function that already exists for each, because the work is to BUILD the
-  // controls and this is the specification for it.
-  const NO_FORWARD_CONTROL_YET: Record<string, string> = {
-    application_received: "app_add exists; nothing in the workspace offers it",
-    offer_initiated: "saveOfferDraft / submitOfferForApproval exist server-side",
-    offer_draft: "submitOfferForApproval exists server-side",
-    offer_pending_approval: "decideOfferApproval exists server-side",
-    offer_approved: "markOfferSent exists server-side",
-    offer_generated: "markOfferSent exists server-side",
-    offer_sent: "recordOfferResponse exists server-side",
-    offer_accepted: "app_to_pre_boarding is in the transition map; no button calls it",
-    offer_negotiation: "app_offer_negotiation is referenced; no forward path out of it",
-    pre_boarding: "markApplicationHired exists and is reachable only via the convert route",
-  };
+  // `application_received` is transient by construction: applications.ts creates the row at that
+  // stage and immediately runs `app_add` to move it to in_candidate_pool within the same call. No
+  // application has ever been observed sitting there, and none can be selected in it.
+  const TRANSIENT_BY_CONSTRUCTION = ["application_received"];
+  assert.match(
+    readFileSync("src/lib/recruitment/applications.ts", "utf8"),
+    /stage: "application_received"[\s\S]{0,2000}runApplicationTransition\([^)]*"app_add"/,
+    "application_received is exempt only because creation moves straight on from it - if that stops "
+      + "being true it needs a control like every other stage",
+  );
 
   const terminal = new Set<string>(terminalApplicationStages);
-  const unreachable: string[] = [];
-  for (const stage of applicationStages) {
-    if (terminal.has(stage)) continue;
-    if (declared.has(stage)) continue;
-    if (DEDICATED_CARD_STAGES.includes(stage)) continue;
-    unreachable.push(stage);
-  }
+  const uncovered = applicationStages.filter(
+    (stage) => !terminal.has(stage) && !covered.has(stage) && !TRANSIENT_BY_CONSTRUCTION.includes(stage),
+  );
 
-  // A positive control: if the maps stop being parseable, every stage reads as unreachable and the
-  // recorded list would silently look complete.
+  // THE POSITIVE CONTROL. If a coverage source stops being readable, every stage reads as
+  // uncovered — exactly how the first version of this test invented a ten-stage dead end.
   assert.ok(
-    declared.size >= 8,
-    `only ${declared.size} stages parsed out of the workspace's maps; the parse has broken and this `
-      + "test is measuring nothing",
+    covered.size >= 20,
+    `only ${covered.size} stages resolved as covered; a coverage source has stopped being readable and `
+      + "this test is about to report a gap that is not there",
   );
 
-  const unexpected = unreachable.filter((stage) => !(stage in NO_FORWARD_CONTROL_YET));
   assert.deepEqual(
-    unexpected,
+    uncovered,
     [],
-    "these application stages have no way forward in the UI and are not recorded as known gaps. A "
-      + "stage a person cannot leave is a dead end that reads as low adoption - add a control, or "
-      + `record it in NO_FORWARD_CONTROL_YET with the server function that already exists:\n${unexpected.join("\n")}`,
-  );
-
-  const recordedButNowReachable = Object.keys(NO_FORWARD_CONTROL_YET).filter(
-    (stage) => !unreachable.includes(stage),
-  );
-  assert.deepEqual(
-    recordedButNowReachable,
-    [],
-    "these stages now HAVE a forward control and must be removed from NO_FORWARD_CONTROL_YET, so the "
-      + `gap is never reported as wider than it is:\n${recordedButNowReachable.join("\n")}`,
+    "these application stages have no control in the workspace. A stage a person cannot leave is a "
+      + "dead end that reads as low adoption - add a control, or, if it is transient like "
+      + `application_received, exempt it with the code that proves it:\n${uncovered.join("\n")}`,
   );
 }
