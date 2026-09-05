@@ -700,7 +700,7 @@ function RankedBars({
         <Tooltip content={<PremiumTooltip valueOnly />} cursor={{ fill: `${from}12` }} />
         <Bar
           dataKey="value"
-          radius={[2, 6, 6, 2]}
+          radius={[0, 0, 0, 0]}
           fill={`url(#${gradientId})`}
           isAnimationActive
           cursor={clickable ? "pointer" : undefined}
@@ -777,7 +777,7 @@ function ColumnBars({
         <Tooltip content={<PremiumTooltip valueOnly />} cursor={{ fill: `${from}12` }} />
         <Bar
           dataKey="value"
-          radius={[6, 6, 2, 2]}
+          radius={[0, 0, 0, 0]}
           fill={`url(#${gradientId})`}
           isAnimationActive
           cursor={clickable ? "pointer" : undefined}

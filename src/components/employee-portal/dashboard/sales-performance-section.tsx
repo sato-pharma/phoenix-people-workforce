@@ -107,7 +107,7 @@ function chartTooltipStyle() {
     backdropFilter: "blur(18px)",
     background: "rgba(255,255,255,0.96)",
     border: "1px solid rgba(226,232,240,0.9)",
-    borderRadius: 4,
+    borderRadius: 0,
     boxShadow: "0 18px 44px rgba(15,23,42,0.14)",
     color: "#0f172a",
     fontSize: 12,
@@ -308,8 +308,8 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
                       <XAxis {...chartAxisProps()} dataKey="period" tickFormatter={periodLabel} />
                       <YAxis {...chartAxisProps()} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
                       <Tooltip contentStyle={chartTooltipStyle()} cursor={chartCursor} formatter={(value: unknown) => tooltipCurrency(value)} />
-                      <Bar dataKey="sales" fill="url(#salesBarFill)" name="Sales" radius={[8, 8, 0, 0]} />
-                      <Bar dataKey="target" fill="#cbd5e1" name="Target" radius={[8, 8, 0, 0]} />
+                      <Bar dataKey="sales" fill="url(#salesBarFill)" name="Sales" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="target" fill="#cbd5e1" name="Target" radius={[0, 0, 0, 0]} />
                     </BarChart>
                   </StableChartFrame>
                 ) : (

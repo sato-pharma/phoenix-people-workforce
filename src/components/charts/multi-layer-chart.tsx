@@ -118,7 +118,7 @@ export function MultiLayerChart({
                 dataKey={layer.key}
                 name={layer.name}
                 fill={layer.color}
-                radius={[2, 2, 0, 0]}
+                radius={[0, 0, 0, 0]}
                 opacity={hoveredKey && hoveredKey !== layer.key ? 0.3 : 1}
                 className="transition-opacity duration-300"
               />

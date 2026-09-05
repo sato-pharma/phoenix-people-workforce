@@ -852,7 +852,7 @@ function WeekCrossMonthChart({ weekComparison }: { weekComparison: WeeklyDashboa
           formatter={(value: string) => <span style={{ color: "#475569" }}>{value}</span>}
         />
         {labels.map((label, i) => (
-          <Bar key={label} dataKey={label} fill={`url(#barCrossMonth${i})`} radius={[5, 5, 2, 2]} isAnimationActive>
+          <Bar key={label} dataKey={label} fill={`url(#barCrossMonth${i})`} radius={[0, 0, 0, 0]} isAnimationActive>
             <LabelList
               dataKey={label}
               position="top"
@@ -907,7 +907,7 @@ function RankedBars({
         <Tooltip content={<PremiumTooltip valueOnly />} cursor={{ fill: `${from}12` }} />
         <Bar
           dataKey="value"
-          radius={[2, 6, 6, 2]}
+          radius={[0, 0, 0, 0]}
           fill={`url(#${gradientId})`}
           isAnimationActive
           cursor={clickable ? "pointer" : undefined}

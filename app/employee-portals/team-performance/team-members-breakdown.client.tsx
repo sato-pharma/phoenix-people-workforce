@@ -182,7 +182,7 @@ export function TeamAchievementChart({
               onClick={(entry: unknown) => {
                 if (isAchievementChartDatum(entry)) setActiveDatum(entry);
               }}
-              radius={[0, 3, 3, 0]}
+              radius={[0, 0, 0, 0]}
             >
               {chartData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={achievementColor(entry.achievementPercent, index === 0)} />
@@ -281,7 +281,7 @@ export function TeamSalesVsTargetChart({
               onClick={(entry: unknown) => {
                 if (isSalesVsTargetChartDatum(entry)) setActiveDatum(entry);
               }}
-              radius={[3, 3, 0, 0]}
+              radius={[0, 0, 0, 0]}
             />
             <Bar
               dataKey="Target"
@@ -289,7 +289,7 @@ export function TeamSalesVsTargetChart({
               onClick={(entry: unknown) => {
                 if (isSalesVsTargetChartDatum(entry)) setActiveDatum(entry);
               }}
-              radius={[3, 3, 0, 0]}
+              radius={[0, 0, 0, 0]}
             />
           </BarChart>
         </SafeResponsiveContainer>

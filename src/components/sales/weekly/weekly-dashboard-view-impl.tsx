@@ -681,7 +681,7 @@ function HorizontalValueChart({ rows, title }: { rows: WeeklyRanked[]; title: st
               <XAxis axisLine={false} tick={{ fill: "#94A3B8", fontSize: 10, fontWeight: 700 }} tickFormatter={(value) => compactNumber(Number(value))} tickLine={false} type="number" />
               <YAxis axisLine={false} dataKey="label" tick={{ fill: "#334155", fontSize: 10, fontWeight: 700 }} tickLine={false} type="category" width={112} />
               <Tooltip formatter={(value) => money(Number(value))} labelFormatter={(_, payload) => payload?.[0]?.payload?.name ?? ""} />
-              <Bar dataKey="salesValue" fill="#F97316" radius={[0, 5, 5, 0]} />
+              <Bar dataKey="salesValue" fill="#F97316" radius={[0, 0, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -746,8 +746,8 @@ function BranchSalesStockChart({ rows }: { rows: WeeklyBranchComparisonRow[] }) 
               <XAxis axisLine={false} dataKey="label" interval={0} tick={{ fill: "#64748B", fontSize: 9, fontWeight: 700 }} tickLine={false} />
               <YAxis axisLine={false} tick={{ fill: "#94A3B8", fontSize: 10, fontWeight: 700 }} tickFormatter={(value) => compactNumber(Number(value))} tickLine={false} width={46} />
               <Tooltip formatter={(value, name) => [num(Number(value)), name === "salesUnits" ? "Sales units" : "Stock units"]} labelFormatter={(_, payload) => payload?.[0]?.payload?.name ?? ""} />
-              <Bar dataKey="salesUnits" fill="#F97316" radius={[5, 5, 0, 0]} />
-              <Bar dataKey="stockUnits" fill="#2563EB" radius={[5, 5, 0, 0]} />
+              <Bar dataKey="salesUnits" fill="#F97316" radius={[0, 0, 0, 0]} />
+              <Bar dataKey="stockUnits" fill="#2563EB" radius={[0, 0, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -773,7 +773,7 @@ function ZeroSalesStockChart({ rows }: { rows: WeeklyBranchRow[] }) {
               <XAxis axisLine={false} tick={{ fill: "#94A3B8", fontSize: 10, fontWeight: 700 }} tickFormatter={(value) => compactNumber(Number(value))} tickLine={false} type="number" />
               <YAxis axisLine={false} dataKey="label" tick={{ fill: "#334155", fontSize: 10, fontWeight: 700 }} tickLine={false} type="category" width={112} />
               <Tooltip formatter={(value) => [num(Number(value)), "Stock units"]} labelFormatter={(_, payload) => payload?.[0]?.payload?.branchName ?? ""} />
-              <Bar dataKey="stockUnits" fill="#0F766E" radius={[0, 5, 5, 0]} />
+              <Bar dataKey="stockUnits" fill="#0F766E" radius={[0, 0, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

@@ -736,8 +736,8 @@ export function MonthlySalesDashboard({
                 <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: "#94A3B8" }} width={36} tickFormatter={(v: number) => `${v}%`} />
                 <Tooltip content={<CurrencyTooltip />} />
                 <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
-                <Bar yAxisId="left" dataKey="Target" fill="#CBD5E1" radius={[3, 3, 0, 0]} barSize={18} />
-                <Bar yAxisId="left" dataKey="Sales" fill="#F97316" radius={[3, 3, 0, 0]} barSize={18} />
+                <Bar yAxisId="left" dataKey="Target" fill="#CBD5E1" radius={[0, 0, 0, 0]} barSize={18} />
+                <Bar yAxisId="left" dataKey="Sales" fill="#F97316" radius={[0, 0, 0, 0]} barSize={18} />
                 <Line yAxisId="right" type="monotone" dataKey="Achievement %" stroke="#0EA5E9" strokeWidth={3} dot={{ r: 3, fill: "#0EA5E9" }} />
               </ComposedChart>
             </SafeResponsiveContainer>
@@ -812,7 +812,7 @@ export function MonthlySalesDashboard({
                     <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: "#94A3B8" }} width={44} tickFormatter={(v: number) => compactEGP(v)} />
                     <YAxis yAxisId="right" orientation="right" domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: "#94A3B8" }} width={36} tickFormatter={(v: number) => `${v}%`} />
                     <Tooltip content={<CurrencyTooltip />} />
-                    <Bar yAxisId="left" dataKey="Sales" fill="#8B5CF6" radius={[3, 3, 0, 0]} barSize={16} />
+                    <Bar yAxisId="left" dataKey="Sales" fill="#8B5CF6" radius={[0, 0, 0, 0]} barSize={16} />
                     <Line yAxisId="right" type="monotone" dataKey="Cumulative %" stroke="#F97316" strokeWidth={3} dot={{ r: 3, fill: "#F97316" }} />
                   </ComposedChart>
                 </SafeResponsiveContainer>
