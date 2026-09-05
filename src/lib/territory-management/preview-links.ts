@@ -109,7 +109,7 @@ export async function createTerritoryPreviewLink(
 
   const { error } = await getSupabaseAdmin().from("territory_preview_links").insert({
     area_codes: areaCodes,
-    created_by_hr_id: hrId,
+    created_by_hr_id: hrIdForStorage(hrId),
     expires_at: expiresAt,
     label: input.label?.toString().trim() || null,
     line_code: lineCode,

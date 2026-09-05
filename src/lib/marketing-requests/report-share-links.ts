@@ -18,7 +18,7 @@ import {
   type RequestFileLinks,
 } from "@/lib/marketing-requests/request-report-columns";
 import { loadMarketingRequestFullReport } from "@/lib/marketing-requests/request-report-service";
-import { hrIdForStorage } from "@/lib/hr-id";
+import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Live Marketing Request report links (owner request, 2026-08-05).
@@ -113,12 +113,12 @@ export async function createMarketingReportShareLink(
   const supabase = getSupabaseAdmin();
   const { error } = await supabase.from(TABLE).insert({
     allow_files: allowFiles,
-    created_by_hr_id: hrId,
+    created_by_hr_id: hrIdForStorage(hrId),
     expires_at: expiresAt,
     label: input.label?.toString().trim() || null,
     passcode_hash: surface === "live" ? hashPasscode(passcode, token) : null,
     scope,
-    scope_hr_id: hrId,
+    scope_hr_id: hrIdForStorage(hrId),
     surface,
     token,
   });
@@ -143,7 +143,18 @@ export async function listMarketingReportShareLinks(access: AccessContext): Prom
   let query = supabase.from(TABLE).select("*").order("created_at", { ascending: false });
   // A Super Admin sees every link, because "who else has published our numbers" is exactly the
   // question this table exists to answer. Everyone else sees only their own.
-  if (!isAdmin) query = query.eq("created_by_hr_id", access.hrId ?? "");
+  // Case-insensitive because created_by_hr_id is written canonically while rows created before
+  // 2026-09-05 hold the lower-cased comparison key. A bare .eq matches ONE of those spellings
+  // and returns an empty list for the other — a creator silently loses sight of their own links.
+  if (!isAdmin) {
+    // An empty key list would build `created_by_hr_id=in.()`, which PostgREST rejects as a SYNTAX
+    // ERROR - the screen 500s instead of showing "you have no links". A viewer with no linked HR id
+    // owns nothing here by definition, so answer that directly rather than asking the database a
+    // question it cannot parse.
+    const ownKeys = hrIdLookupKeys(access.hrId);
+    if (ownKeys.length === 0) return [];
+    query = query.in("created_by_hr_id", ownKeys);
+  }
   const { data, error } = await query;
   if (error) throw error;
   return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({

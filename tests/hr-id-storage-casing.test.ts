@@ -24,34 +24,31 @@ import { hrIdForStorage } from "../src/lib/hr-id.ts";
 // session) would belong here, with the reason. Empty on purpose: there is currently no such write.
 const DELIBERATE_COMPARISON_KEY_WRITES: string[] = [];
 
-// ── KNOWN, UNREPAIRED, AND DELIBERATELY NOT SILENT ──────────────────────────────────────────────
+// ── THE DEBT THIS ONCE RECORDED IS PAID ─────────────────────────────────────────────────
 //
-// Widening the sweep to follow a local binding (see TAINTED_BINDING) surfaced 29 writes that had
-// been invisible to it. One — the recruitment audit trail — is fixed in the same change. These 28
-// are real and are NOT fixed here, for a reason worth stating rather than hiding in an empty list:
+// This map held 28 writes across marketing requests, direct orders and territory management, listed
+// rather than hidden because each needed its READ side checked before its write could be wrapped.
+// All 28 were repaired on 2026-09-05, together with a 29th the sweep could not see —
+// pharmacy-license-verdict.ts wrote `license_name_checked_by_hr_id` from a PARAMETER
+// (`input.actorHrId`), which is neither the inline expression nor the tainted local, so no pattern
+// here would ever have found it. It surfaced only by reading the file the sweep had pointed at.
 //
-//   SOME OF THEM HAVE A PAIRED READ THAT MUST CHANGE IN THE SAME BREATH. marketing-requests/
-//   report-share-links.ts reads the very column it writes with a plain lowercase equality
-//   (`.eq("created_by_hr_id", access.hrId ?? "")`). Today writes and reads are both lowercase, so it
-//   works by accident. Fixing the write alone would stop a non-admin seeing their own share links —
-//   and it would fail SILENTLY, returning nothing rather than erroring, which is the exact shape
-//   this module's header describes hiding an approver's entire decision history in production.
+// TWO READS CHANGED IN THE SAME BREATH, which was the whole reason for the delay:
 //
-// So each of these needs its read side checked before its write is wrapped. That is a cross-domain
-// repair spanning marketing requests, direct orders and territory management, and it does not
-// belong inside a recruitment change.
+//   marketing-requests/report-share-links.ts read the column it writes with a plain lowercase
+//   equality. Writes and reads were both lowercase, so it worked by accident; wrapping the write
+//   alone would have stopped a non-admin seeing their own share links, returning nothing rather
+//   than erroring. It now matches both spellings, like its direct-orders sibling always did.
 //
-// COUNTED BY FILE, NOT PINNED BY LINE. Line numbers in these files move constantly and a pinned
-// line would false-fail on an unrelated edit. A count cannot: fix one and the test tells you to
-// lower the number, add one and it fails. The debt can shrink or hold, never grow unnoticed.
-const KNOWN_UNREPAIRED_INDIRECT_WRITES: Record<string, number> = {
-  "src/lib/direct-orders/report-share-links.ts": 2,
-  "src/lib/marketing-requests/pharmacy-license-verdict.ts": 1,
-  "src/lib/marketing-requests/report-share-links.ts": 2,
-  "src/lib/marketing-requests/service.ts": 17,
-  "src/lib/marketing-requests/validated-customer-transfer.ts": 5,
-  "src/lib/territory-management/preview-links.ts": 1,
-};
+//   direct-orders/pharmacy-validation.ts resolved requester names with `.in("hr_id", <raw column
+//   values>)` against canonical employees.hr_id — already broken for every lower-cased row before
+//   this change, rendering a real person as "(unknown — a-12)". Widened to both spellings.
+//
+// THE MAP STAYS, EMPTY. It is not dead weight: an entry means "known, counted, allowed for now",
+// and having nowhere to record that is what pushes a future session to either fix a write it does
+// not understand or delete the check. Empty is the honest state, and any new offender now fails
+// through `unexpected` with the message that says how to fix it.
+const KNOWN_UNREPAIRED_INDIRECT_WRITES: Record<string, number> = {};
 
 const RAW_WRITE = /\b\w*_hr_id:\s*(?:input\.)?(?:access|ctx)\.hrId/;
 
@@ -171,6 +168,61 @@ export async function runHrIdStorageCasingTests() {
         : `${file} now has ${actual} raw hr-id writes, fewer than the ${expected} recorded - lower the number in KNOWN_UNREPAIRED_INDIRECT_WRITES so the remaining debt is stated honestly`,
     );
   }
+
+  // --- widening a read to both casings must not hand PostgREST an empty IN list ---
+  //
+  // `hrIdLookupKeys(null)` is `[]`, and `.in(col, [])` builds `col=in.()`, which PostgREST
+  // rejects as a SYNTAX ERROR. So a viewer holding the export permission but no linked HR id
+  // would 500 the screen rather than see an empty list. Both share-link readers answer that
+  // case themselves. Latent in the direct-orders reader since it went casing-blind; found
+  // 2026-09-05 only because the marketing reader was about to copy the same shape.
+  for (const shareLinkModule of [
+    "src/lib/marketing-requests/report-share-links.ts",
+    "src/lib/direct-orders/report-share-links.ts",
+  ]) {
+    const text = readFileSync(shareLinkModule, "utf8");
+    assert.ok(
+      text.includes("const ownKeys = hrIdLookupKeys(access.hrId);"),
+      `${shareLinkModule} must read its own key list into a binding it can measure before filtering on it`,
+    );
+    assert.ok(
+      text.includes("if (ownKeys.length === 0) return [];"),
+      `${shareLinkModule} must answer an empty key list itself - .in(col, []) is a PostgREST syntax error, so the screen 500s instead of showing no links`,
+    );
+  }
+
+  // --- the write NO PATTERN IN THIS FILE CAN SEE ---
+  //
+  // pharmacy-license-verdict.ts persists the actor from a PARAMETER (`input.actorHrId`), which is
+  // neither the inline `access.hrId` expression nor a tainted local, so the sweep above is blind to
+  // it and always was. It is pinned by source because that is the only thing that can hold it: a
+  // future edit that drops the wrapper would restore a silent lower-cased write with nothing red.
+  const licenseVerdict = readFileSync("src/lib/marketing-requests/pharmacy-license-verdict.ts", "utf8");
+  assert.ok(
+    licenseVerdict.includes("license_name_checked_by_hr_id: hrIdForStorage(input.actorHrId),"),
+    "the licence verdict must store the canonical actor id - this write arrives as a parameter, so the repo-wide sweep in this file cannot catch it and nothing else will",
+  );
+
+  // --- the reads repaired ALONGSIDE their writes stay casing-blind ---
+  //
+  // Pinned because reverting either one is silent: both return an empty or nameless result rather
+  // than an error, which reads as "this person has nothing" instead of "this query cannot see it".
+  const marketingShareLinks = readFileSync("src/lib/marketing-requests/report-share-links.ts", "utf8");
+  assert.ok(
+    marketingShareLinks.includes(`query.in("created_by_hr_id", ownKeys)`),
+    "a share-link creator must match created_by_hr_id in BOTH casings - the column holds canonical ids from 2026-09-05 and lower-cased ones before it",
+  );
+  assert.equal(
+    marketingShareLinks.includes(`.eq("created_by_hr_id", access.hrId`),
+    false,
+    "the single-casing .eq on created_by_hr_id is back - a creator then sees an empty list of their own links rather than an error",
+  );
+
+  const pharmacyValidation = readFileSync("src/lib/direct-orders/pharmacy-validation.ts", "utf8");
+  assert.ok(
+    pharmacyValidation.includes(`hrIdLookupKeys(String(r.requested_by_hr_id ?? ""))`),
+    "requester names must be looked up in both casings - a raw .in against canonical employees.hr_id rendered real people as \"(unknown - a-12)\"",
+  );
 
   // --- and the read that this drift already broke stays casing-blind ---
   const directOrders = readFileSync("src/lib/direct-orders/service.ts", "utf8");
