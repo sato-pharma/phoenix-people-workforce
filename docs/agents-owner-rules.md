@@ -208,8 +208,22 @@ account, under `C:\Users\satoh\.claude\projects\F--Phoenix-Workforce-phoenix-wor
 - **Every weekly report and export MUST set `excludeUnmapped`** — an unmapped SKU double-counts
   against the real product it belongs to. **An export must MATCH the screen**: a sheet or a column
   may never be dropped silently because it cannot be filtered — label it instead (owner rule
-  2026-08-26). And the Weekly **Summarized Report's layout and scope are LOCKED**, learned over many
-  rejected iterations — do not restyle it.
+  2026-08-26). And the Weekly **Summarized Report's LAYOUT AND SCOPE are LOCKED**, learned over many
+  rejected iterations.
+
+  **The "do not restyle it" half was lifted by the owner on 2026-09-05**, asking for the house
+  identity after every other export had it: *"do the summarized report too"*. The conversion changed
+  INK ONLY and was proved to, by dumping the workbook's structure — every sheet, merge, column width,
+  row height, number format, alignment and cell value — before and after, and diffing. **877
+  structural lines, and the only difference was the eyebrow**, which had read "PHOENIX WORKFORCE ·
+  WEEKLY SALES" and now names the company. The 109 assertions in `tests/weekly-summary-report.test.ts`
+  pass unchanged.
+
+  **The layout and scope halves still stand and are not up for revisiting.** The design judgements in
+  that file's own palette note survived the palette change intact — one dark anchor per block, the
+  header light rather than a second band, bars desaturated under the type — because every one of them
+  is about WEIGHT, which is what the house format cares about too. What changed is which colours
+  express it.
   `unmapped-products-must-never-reach-a-report` ·
   `an-export-must-match-the-screen-never-different-data` · `weekly-summarized-report-owner-rules`
 - **The system FLAGS an expense; it NEVER auto-rejects one.** Owner rule 2026-08-09: every failed
