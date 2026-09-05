@@ -1123,6 +1123,9 @@ async function rpcDecidePlan(input: {
   expectedRevision: number;
   planId: string;
   returnNotes?: EmployeePlanReturnNoteInput[];
+  // District Manager plans skip the CEO stage: a manager_approve with this flag lands the plan
+  // on final_approved in one decision, writing NO ceo_approve row (see migration 20260905183000).
+  bypassCeo?: boolean;
 }) {
   const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_decide", {
     p_action: input.action,
@@ -1135,6 +1138,7 @@ async function rpcDecidePlan(input: {
     p_return_notes: (input.returnNotes ?? [])
       .map((note) => ({ itemId: cleanText(note.itemId), note: cleanText(note.note) }))
       .filter((note) => note.itemId && note.note),
+    p_bypass_ceo: input.bypassCeo ?? false,
   });
   if (error) rethrowWeeklyPlanRpcError(error);
 }
@@ -3429,12 +3433,21 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
       throw new Error("Forbidden: District Manager plans are decided by HR, not the CEO.");
     }
   }
+  // District Manager plans have no CEO stage at all ("dsm submit, nsm respond, hr ack
+  // automated" — owner, 2026-09-05). Their manager's (National Sales Manager's) approval is
+  // the plan's ONE real approval, so it lands straight on final_approved in a single decision
+  // that writes NO ceo_approve row — never a fabricated CEO decision stamped with the
+  // manager's own identity. bypassCeo carries that through both the client-side next-status
+  // computation and the RPC's server-side one (phx_weekly_plan_next_status.bypass_ceo).
+  const isDistrictManagerPlan = isDistrictManagerPlanTitle(plan.employee_job_title);
+  const bypassCeo = input.action === "manager_approve" && isDistrictManagerPlan;
+
   // The next status is computed client-side for the audit-log entry and the
   // notification branch below, but the SQL function recomputes the same rule
   // server-side using phx_weekly_plan_next_status, which is the source of
   // truth. The RPC also runs SELECT FOR UPDATE on the header row before
   // writing, so two concurrent decides can't both succeed.
-  const nextStatus = getNextEmployeePlanStatus(plan.status, input.action, { comment: input.comment });
+  const nextStatus = getNextEmployeePlanStatus(plan.status, input.action, { comment: input.comment, bypassCeo });
   await rpcDecidePlan({
     access,
     action: input.action,
@@ -3442,6 +3455,7 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
     expectedRevision: plan.revision,
     planId,
     returnNotes: input.returnNotes,
+    bypassCeo,
   });
 
   let updated = await loadPlanRow(planId);
@@ -3451,25 +3465,25 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
     entityType: "weekly_plan",
     newValues: { status: nextStatus },
     oldValues: { status: plan.status },
-    summary: `${updated.plan_kind} plan decision: ${input.action}`,
+    summary: `${updated.plan_kind} plan decision: ${input.action}${bypassCeo ? " (District Manager plan — no CEO stage, final approval)" : ""}`,
   });
 
-  // National Sales Manager reports directly to the CEO with no manager of manager above
-  // them, so the CEO is both the manager-stage and CEO-stage reviewer for their plans (see
-  // assertManagerReviewer's null-manager fallback, and the manager_hr_id-is-the-CEO
-  // convention). Their manager-stage approval is still a real decision the CEO must make —
-  // it just shouldn't also require a separate, purely-formal second click to re-approve
-  // their own decision, so it cascades straight into ceo_approve in the same request,
-  // recorded as the CEO's own second real decision.
-  //
-  // Additionally, plans submitted by District Managers bypass the CEO stage entirely. When
-  // their manager (National Manager) approves, it cascades straight into ceo_approve so HR
-  // can acknowledge it without requiring CEO action.
-  const isDistrictManagerPlan = isDistrictManagerPlanTitle(updated.employee_job_title);
-  if (input.action === "manager_approve" && (access.role === "CEO" || isDistrictManagerPlan)) {
-    if (access.role === "CEO") {
-      await assertPermission(access, "weekly_plans", "approve");
-    }
+  if (bypassCeo) {
+    // The single manager_approve above already reached final_approved with no CEO row. Just
+    // acknowledge on HR's behalf and notify them, so the HR message can tell the truth about
+    // the state the plan is actually in.
+    updated = await autoAcknowledgeFinalApprovedPlan(access, updated);
+    await notifyHr(updated);
+  } else if (input.action === "manager_approve" && access.role === "CEO") {
+    // National Sales Manager reports directly to the CEO with no manager of manager above
+    // them, so the CEO is both the manager-stage and CEO-stage reviewer for their plans (see
+    // assertManagerReviewer's null-manager fallback, and the manager_hr_id-is-the-CEO
+    // convention). Their manager-stage approval is still a real decision the CEO must make —
+    // it just shouldn't also require a separate, purely-formal second click to re-approve
+    // their own decision, so it cascades straight into ceo_approve in the same request,
+    // recorded as the CEO's own second real decision. (This is a genuine CEO decision, unlike
+    // the DM bypass above, so it correctly writes a ceo_approve row under the CEO's identity.)
+    await assertPermission(access, "weekly_plans", "approve");
     const beforeCeoApprove = updated;
     await rpcDecidePlan({
       access,
@@ -3486,10 +3500,8 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
       entityType: "weekly_plan",
       newValues: { status: "final_approved" },
       oldValues: { status: beforeCeoApprove.status },
-      summary: `${updated.plan_kind} plan decision: ceo_approve (auto-cascaded from manager approval${isDistrictManagerPlan ? ' for District Manager bypass' : ''})`,
+      summary: `${updated.plan_kind} plan decision: ceo_approve (auto-cascaded from manager approval)`,
     });
-    // Both routes into final_approved acknowledge on HR's behalf before notifying them, so the
-    // HR message below can tell the truth about which state the plan is actually in.
     updated = await autoAcknowledgeFinalApprovedPlan(access, updated);
     await notifyHr(updated);
   } else if (input.action === "manager_approve") {
@@ -3794,26 +3806,14 @@ export async function acknowledgeEmployeePlan(access: AccessContext, planId: str
   const plan = await loadPlanRow(planId);
   const hrId = access.hrId ?? access.loginId ?? `system-${crypto.randomUUID()}`;
 
-  // HACK: For existing District Manager plans stuck in manager_approved, auto-cascade them
-  // to final_approved under the hood on behalf of the CEO, just as new approvals do,
-  // before running the HR acknowledge step.
-  let currentRevision = plan.revision;
-  if (plan.status === "manager_approved" && isDistrictManagerPlanTitle(plan.employee_job_title)) {
-    await rpcDecidePlan({
-      access,
-      action: "ceo_approve",
-      comment: null,
-      expectedRevision: currentRevision,
-      planId,
-      returnNotes: [],
-    });
-    const refreshed = await loadPlanRow(planId);
-    currentRevision = refreshed.revision;
-  }
-
+  // District Manager plans reach final_approved directly from their manager's single approval
+  // (decideEmployeePlan's bypassCeo path) and never rest at manager_approved, so there is no
+  // stuck-plan case to cascade here. The former HACK advanced such plans by issuing a
+  // ceo_approve under the acknowledging HR user's own identity — the same fabricated-CEO-row
+  // defect this change removes at its source — so it is gone rather than reproduced here.
   await rpcAcknowledgePlan({
     comment,
-    expectedRevision: currentRevision,
+    expectedRevision: plan.revision,
     hrId,
     loginId: access.loginId ?? null,
     planId,

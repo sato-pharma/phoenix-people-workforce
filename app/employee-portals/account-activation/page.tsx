@@ -51,8 +51,8 @@ export default async function EmployeePortalAccountActivationPage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Talent Acquisition"
-      description="Activate or deactivate regular employee accounts. Super Admin, CEO, and Talent Acquisition accounts are never shown here."
+      badge="Account Activation"
+      description="Activate or deactivate regular employee accounts. Super Admin, CEO, Finance Manager, HR Advisory, and HR Operations accounts are never shown here."
       errorBoundaryTitle="Account Activation unavailable"
       title="Account Activation"
     >

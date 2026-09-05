@@ -45,9 +45,9 @@ export function OffersManager({
   templates: initialTemplates,
 }: {
   /**
-   * `offers:delete` — a narrower grant than `canManage` (`offers:create`). Talent Acquisition,
-   * the role this module was wired into the portal for, holds create/update but not delete, so
-   * the two cannot be collapsed into one flag without showing it buttons that answer 403.
+   * `offers:delete` — a narrower grant than `canManage` (`offers:create`). HR Advisory,
+   * the role that holds the `offers` grant, holds create/update but not delete, so the two
+   * cannot be collapsed into one flag without showing it buttons that answer 403.
    */
   canDelete: boolean;
   canManage: boolean;

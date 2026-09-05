@@ -1,13 +1,47 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
-// District Manager plans skip the CEO stage entirely: manager (National Manager) approval
-// cascades straight to final_approved, HR acknowledges, and the CEO gets read-only visibility
-// only -- never a decide action, never a notification. This is a source-pattern "hardening"
-// test (like weekly-plans-hardening.test.ts) rather than an executing-functions test, since
+import { getNextEmployeePlanStatus } from "../src/lib/weekly-planning/plan-v1.ts";
+
+// District Manager plans skip the CEO stage entirely: the manager's (National Manager's)
+// approval IS the final approval -- it lands straight on final_approved in ONE decision that
+// writes NO ceo_approve row, HR acknowledges, and the CEO gets read-only visibility only.
+// Mostly a source-pattern "hardening" test (like weekly-plans-hardening.test.ts) because
 // decideEmployeePlan/acknowledgeEmployeePlan make live Supabase RPC calls with no mocking
-// harness in this repo.
+// harness in this repo -- but the core state-machine invariant is pinned by executing the pure
+// getNextEmployeePlanStatus directly (section 0), which is the one place the whole fix hinges.
 export function runWeeklyPlansDistrictManagerBypassTests() {
+  // 0. THE INVARIANT, EXECUTED. A District Manager plan's single manager_approve must resolve
+  // to final_approved (bypassCeo) -- never manager_approved, which is the state that used to
+  // force a second, fabricated ceo_approve row attributed to the approving manager. This is a
+  // pure function, so it is asserted by calling it, not by reading source. Reverting the
+  // plan-v1 bypass makes exactly this block go red.
+  assert.equal(
+    getNextEmployeePlanStatus("submitted", "manager_approve", { bypassCeo: true }),
+    "final_approved",
+    "a District Manager manager_approve (bypassCeo) must land on final_approved in one decision",
+  );
+  assert.equal(
+    getNextEmployeePlanStatus("submitted", "manager_approve", { bypassCeo: false }),
+    "manager_approved",
+    "a non-bypass manager_approve must still rest at manager_approved (CEO stage intact for other roles)",
+  );
+  assert.equal(
+    getNextEmployeePlanStatus("submitted", "manager_approve"),
+    "manager_approved",
+    "bypassCeo must default to false -- every existing caller keeps the four-stage flow",
+  );
+  // bypassCeo is scoped to manager_approve only: it must not perturb any other transition.
+  assert.equal(
+    getNextEmployeePlanStatus("manager_approved", "ceo_approve", { bypassCeo: true }),
+    "final_approved",
+    "bypassCeo must not change the real ceo_approve transition (still manager_approved -> final_approved)",
+  );
+  assert.equal(
+    getNextEmployeePlanStatus("draft", "submit", { bypassCeo: true }),
+    "submitted",
+    "bypassCeo must be inert for non-manager_approve actions",
+  );
   const planV1Source = readFileSync("src/lib/weekly-planning/plan-v1.ts", "utf8");
   const serviceSource = readFileSync("src/lib/weekly-planning/service.ts", "utf8");
   const workspaceSource = readFileSync("src/components/employee-portal/plans-workspace.tsx", "utf8");
@@ -44,24 +78,62 @@ export function runWeeklyPlansDistrictManagerBypassTests() {
     "decideEmployeePlan must block ceo_* actions on a District Manager plan, closing the direct-call loophole",
   );
 
-  // 3. The District Manager auto-cascade branch must notify HR and must NEVER notify the CEO;
-  // notifyCeo may only fire on the plain (non-cascade) manager_approve path.
-  const cascadeBlockMatch = serviceSource.match(
-    /const isDistrictManagerPlan = isDistrictManagerPlanTitle\(updated\.employee_job_title\);[\s\S]*?await notifyHr\(updated\);\n\s*\} else if \(input\.action === "manager_approve"\) \{/,
+  // 3. The District Manager path must be a SINGLE bypass decision, not a two-call cascade:
+  // decideEmployeePlan computes bypassCeo for a DM manager_approve and passes it to the ONE
+  // rpcDecidePlan call. That call reaches final_approved directly, so no second ceo_approve
+  // call is made and no ceo_approve row is written under the manager's identity.
+  assert.match(
+    serviceSource,
+    /const isDistrictManagerPlan = isDistrictManagerPlanTitle\(plan\.employee_job_title\);\s*\n\s*const bypassCeo = input\.action === "manager_approve" && isDistrictManagerPlan;/,
+    "decideEmployeePlan must derive bypassCeo from a District Manager manager_approve",
+  );
+  assert.match(
+    serviceSource,
+    /getNextEmployeePlanStatus\(plan\.status, input\.action, \{ comment: input\.comment, bypassCeo \}\)/,
+    "the client-side next-status computation must honour bypassCeo so the audit log records final_approved for a DM plan",
+  );
+  // The single decide call carries bypassCeo through to the RPC (which mirrors it server-side).
+  assert.match(
+    serviceSource,
+    /returnNotes: input\.returnNotes,\s*\n\s*bypassCeo,\s*\n\s*\}\);/,
+    "the first (and only) rpcDecidePlan call must pass bypassCeo",
+  );
+  // The DM branch acknowledges + notifies HR and NEVER notifies the CEO.
+  const bypassBranchMatch = serviceSource.match(
+    /if \(bypassCeo\) \{[\s\S]*?await notifyHr\(updated\);\s*\n\s*\} else if \(input\.action === "manager_approve" && access\.role === "CEO"\) \{/,
   );
   assert.ok(
-    cascadeBlockMatch,
-    "the manager_approve auto-cascade block must exist and end with notifyHr before falling through to the plain manager_approve branch",
+    bypassBranchMatch,
+    "the bypassCeo branch must exist, acknowledge on HR's behalf, and precede the genuine-CEO branch",
   );
   assert.doesNotMatch(
-    cascadeBlockMatch[0],
+    bypassBranchMatch[0],
     /notifyCeo/,
-    "the District Manager (and CEO-self-approval) auto-cascade branch must never notify the CEO",
+    "the District Manager bypass branch must never notify the CEO",
   );
   assert.match(
     serviceSource,
     /\} else if \(input\.action === "manager_approve"\) \{\s*\n\s*await notifyCeo\(updated\);/,
     "the CEO must still be notified on the normal (non-District-Manager) manager_approve path",
+  );
+  // A genuine ceo_approve row is only written on the real CEO branch (CEO approving an NSM plan),
+  // never for a District Manager plan. There must be exactly one `action: "ceo_approve"` decide
+  // call in decideEmployeePlan, and it must sit under the `access.role === "CEO"` branch.
+  const ceoApproveCascades = serviceSource
+    .slice(
+      serviceSource.indexOf("export async function decideEmployeePlan"),
+      serviceSource.indexOf("export async function", serviceSource.indexOf("export async function decideEmployeePlan") + 1),
+    )
+    .match(/action: "ceo_approve"/g) ?? [];
+  assert.equal(
+    ceoApproveCascades.length,
+    1,
+    "decideEmployeePlan must issue at most one ceo_approve cascade (the genuine CEO-of-NSM case), never one for a District Manager plan",
+  );
+  assert.match(
+    serviceSource,
+    /else if \(input\.action === "manager_approve" && access\.role === "CEO"\) \{[\s\S]*?action: "ceo_approve",/,
+    "the sole ceo_approve cascade must be gated on access.role === \"CEO\" (a real CEO decision), not on the DM bypass",
   );
 
   // 4. summarizePlans must not count a District Manager's manager_approved plan as CEO-pending
@@ -117,31 +189,40 @@ export function runWeeklyPlansDistrictManagerBypassTests() {
     "QueueCard must never accept a decide action -- reusing it for the District Manager section guarantees it stays view-only",
   );
 
-  // 8. Approvals Hub must route a manager_approved District Manager plan into HR's awaiting
-  // bucket (stage "hr"), not leave it waiting on a CEO stage that will never claim it.
-  assert.match(
+  // 8. A District Manager plan can no longer rest at manager_approved (section 0: its single
+  // manager approval cascades straight to final_approved), so the Approvals Hub must NOT surface
+  // a manager_approved DM plan to HR's awaiting bucket. That branch was dead code -- if it were
+  // ever hit, Acknowledge would call phx_weekly_plan_acknowledge, which only accepts
+  // final_approved/hr_acknowledged and would throw. HR still reaches a DM plan through the normal
+  // final_approved awaiting path just above.
+  assert.doesNotMatch(
     approvalsHubSource,
-    /if \(status === "manager_approved" && isDistrictManagerPlan && hrActor\) \{\s*\n\s*awaiting\.push\(\{ \.\.\.base, stage: "hr" \}\);/,
-    "getPlanApprovalsForResponder must surface a manager_approved District Manager plan to HR as awaiting",
+    /status === "manager_approved" && isDistrictManagerPlan && hrActor/,
+    "getPlanApprovalsForResponder must NOT surface a manager_approved District Manager plan to HR -- that state is now impossible and acknowledging it would throw",
   );
 
-  // 9. acknowledgeEmployeePlan must auto-cascade a legacy plan stuck at manager_approved
-  // (submitted before this feature existed) to final_approved BEFORE running the HR
-  // acknowledge RPC, or those plans are permanently orphaned once no stage claims them.
+  // 9. acknowledgeEmployeePlan must NOT fabricate a ceo_approve. The former HACK advanced a
+  // District Manager plan stuck at manager_approved by issuing a ceo_approve under the
+  // acknowledging HR user's own identity -- the same fabricated-CEO-row defect this change
+  // removes at its source. With the bypass (section 0), a DM plan reaches final_approved from
+  // its single manager approval and never rests at manager_approved, so there is no stuck-plan
+  // case left to cascade, and acknowledge simply acknowledges.
   const acknowledgeMatch = serviceSource.match(/export async function acknowledgeEmployeePlan\([\s\S]*?\n\}\n/);
   assert.ok(acknowledgeMatch, "acknowledgeEmployeePlan must exist");
+  assert.doesNotMatch(
+    acknowledgeMatch[0],
+    /action: "ceo_approve"/,
+    "acknowledgeEmployeePlan must never issue a ceo_approve -- fabricating a CEO decision under the HR user's identity is the exact defect being removed",
+  );
+  assert.doesNotMatch(
+    acknowledgeMatch[0],
+    /rpcDecidePlan/,
+    "acknowledgeEmployeePlan must not run a decision RPC at all; it acknowledges an already-final_approved plan",
+  );
   assert.match(
     acknowledgeMatch[0],
-    /if \(plan\.status === "manager_approved" && isDistrictManagerPlanTitle\(plan\.employee_job_title\)\) \{[\s\S]*?action: "ceo_approve",/,
-    "acknowledgeEmployeePlan must cascade a stuck District Manager plan to final_approved via ceo_approve before acknowledging",
-  );
-  const cascadeIndex = acknowledgeMatch[0].indexOf('action: "ceo_approve"');
-  const ackCallIndex = acknowledgeMatch[0].indexOf("await rpcAcknowledgePlan(");
-  assert.ok(cascadeIndex > -1, "the ceo_approve cascade call must be present in acknowledgeEmployeePlan");
-  assert.ok(ackCallIndex > -1, "the final rpcAcknowledgePlan call must be present in acknowledgeEmployeePlan");
-  assert.ok(
-    cascadeIndex < ackCallIndex,
-    "the legacy-plan cascade must run before the HR acknowledge RPC, not after",
+    /await rpcAcknowledgePlan\(\{\s*\n\s*comment,\s*\n\s*expectedRevision: plan\.revision,/,
+    "acknowledgeEmployeePlan must acknowledge against the plan's own revision, with no intervening decide",
   );
 
   // 10. Approvals Hub needs its own read-only "District Manager Plans" tab: the CEO's
@@ -225,17 +306,24 @@ export function runWeeklyPlansDistrictManagerBypassTests() {
     "getPlanApprovalDetail must thread isDistrictManagerPlan into the tracker",
   );
 
-  // 15. planStageLabel's "Current stage" banner must say HR, not CEO, for a District Manager
-  // plan sitting at manager_approved -- it's genuinely HR's turn, not a mislabeled CEO wait.
+  // 15. planStageLabel no longer special-cases District Manager plans at manager_approved. A DM
+  // plan can never rest at manager_approved (section 0), so that branch only ever described the
+  // now-impossible stuck state. manager_approved is therefore always the CEO stage (only non-DM
+  // plans ever reach it), and a DM plan's HR turn is labeled through the final_approved case.
   assert.match(
     approvalsHubSource,
-    /case "manager_approved":\s*\n(?:\s*\/\/[^\n]*\n)*\s*return isDistrictManagerPlan \? "HR acknowledgement" : "CEO approval";/,
-    "planStageLabel must say HR acknowledgement, not CEO approval, for a District Manager plan",
+    /case "manager_approved":\s*\n(?:\s*\/\/[^\n]*\n)*\s*return "CEO approval";/,
+    "planStageLabel's manager_approved case must resolve to \"CEO approval\" (only non-DM plans ever rest there)",
+  );
+  assert.doesNotMatch(
+    approvalsHubSource,
+    /return isDistrictManagerPlan \? "HR acknowledgement" : "CEO approval";/,
+    "planStageLabel must no longer branch on isDistrictManagerPlan for the impossible manager_approved DM state",
   );
   assert.match(
     approvalsHubSource,
-    /stageLabel: planStageLabel\(status, isDistrictManagerPlan\),/,
-    "getPlanApprovalDetail must thread isDistrictManagerPlan into planStageLabel",
+    /stageLabel: planStageLabel\(status\),/,
+    "getPlanApprovalDetail must call planStageLabel with status only -- the isDistrictManagerPlan arg is gone",
   );
 
   // 16. The CEO/HR tracker rows must never read "Unassigned" before anyone decides -- there's

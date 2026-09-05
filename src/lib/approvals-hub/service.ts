@@ -1293,13 +1293,11 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
       awaiting.push({ ...base, stage: "hr" });
       continue;
     }
-    // Also include stuck District Manager plans (manager_approved) for HR to acknowledge.
-    // (Acknowledge handles cascading them to final_approved first).
-    const isDistrictManagerPlan = isDistrictManagerPlanTitle(String(raw.employee_job_title ?? ""));
-    if (status === "manager_approved" && isDistrictManagerPlan && hrActor) {
-      awaiting.push({ ...base, stage: "hr" });
-      continue;
-    }
+    // A District Manager plan never rests at manager_approved -- its single manager approval
+    // cascades straight to final_approved (getNextEmployeePlanStatus bypassCeo), so it reaches HR
+    // through the final_approved branch above. There is no manager_approved DM state to surface,
+    // and acknowledging one would throw (phx_weekly_plan_acknowledge only accepts
+    // final_approved/hr_acknowledged).
     // The CEO is the stage-2 approver for every plan today, so a plan still at the manager stage
     // is genuinely "coming to" them. (Super Admin can already act on every stage, so no upcoming.)
     if (isCeo && status === "submitted") {
@@ -1631,15 +1629,14 @@ function computePeriodStatus(startIso: string, endIso: string): PlanPeriodStatus
   return "current";
 }
 
-function planStageLabel(status: EmployeePlanStatus, isDistrictManagerPlan = false): string | null {
+function planStageLabel(status: EmployeePlanStatus): string | null {
   switch (status) {
     case "submitted":
       return "Direct manager review";
     case "manager_approved":
-      // District Manager plans skip the CEO stage entirely -- their manager's approval
-      // cascades straight to final_approved, so this status means "awaiting HR", not "awaiting
-      // the CEO" (see decideEmployeePlan's isDistrictManagerPlan cascade).
-      return isDistrictManagerPlan ? "HR acknowledgement" : "CEO approval";
+      // Only non-District-Manager plans ever rest at manager_approved (a DM plan's manager
+      // approval cascades straight to final_approved), so this status is always the CEO stage.
+      return "CEO approval";
     case "final_approved":
       // The real ceo_approve transition goes manager_approved -> final_approved directly (no
       // separate "ceo_approved" status exists in practice) — this is the HR-acknowledge stage.
@@ -1711,11 +1708,11 @@ function buildPlanTrackerSteps(
         : status === "ceo_rejected" ? "rejected"
           : ceoAt ? "approved"
             : "";
-  // District Manager plans never carry a real CEO decision -- their manager's approval
-  // auto-cascades straight to final_approved (decideEmployeePlan), so "manager_approved" here
-  // means "awaiting HR", the same as final_approved does for every other role.
+  // A District Manager plan reaches HR at final_approved (its manager approval cascades straight
+  // there, never resting at manager_approved), so the single final_approved test covers every
+  // role; the CEO step itself is dropped for DM plans below.
   const hrStatus =
-    status === "final_approved" || (isDistrictManagerPlan && status === "manager_approved")
+    status === "final_approved"
       ? "pending"
       : acknowledged
         ? "approved"
@@ -1806,7 +1803,7 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
   // never actionable by the owner.
   const approverStage = resolveApproverPlanStage(status, managerHrId, access, String(row.employee_job_title ?? ""));
   const isDistrictManagerPlan = isDistrictManagerPlanTitle(String(row.employee_job_title ?? ""));
-  const canAcknowledge = (status === "final_approved" || (status === "manager_approved" && isDistrictManagerPlan)) && isSuperAdmin && !own;
+  const canAcknowledge = status === "final_approved" && isSuperAdmin && !own;
   const decisionStage = !own && approverStage ? approverStage : null;
   // The employee's edit-request (reopen a submitted plan) is decided ONLY by the actual direct
   // manager via the separate /edit-request-decision endpoint (assertManagerReviewer has no Super
@@ -1869,7 +1866,7 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
     returnableActivities: buildReturnableActivities(rawItems),
     isOwner: own,
     plannerHref,
-    stageLabel: planStageLabel(status, isDistrictManagerPlan),
+    stageLabel: planStageLabel(status),
     slaAgeDays: row.submitted_at ? daysSinceCalendar(String(row.submitted_at)) : 0,
     readOnly: !actionable || own,
     readOnlyReason: own

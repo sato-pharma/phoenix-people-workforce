@@ -37,6 +37,7 @@ import {
   type OrgMappingSample,
   type OrgMappingWarning,
 } from "@/lib/imports/org-rule-engine";
+import { toOrgTitleCase } from "@/lib/imports/org-title-case";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
 
@@ -190,7 +191,12 @@ function buildRecord(
     gender: normalizeTextValue(valueFor(row, mapping, "gender"))?.toLowerCase() ?? null,
     workEmail: normalizeEmail(valueFor(row, mapping, "workEmail")),
     mobileNumber: normalizeTextValue(valueFor(row, mapping, "mobileNumber")),
-    jobTitle,
+    // Canonicalize free-text job titles through the same acronym-aware caser positions/lines/
+    // departments already use, so an upload spelling "Ceo"/"Sfe Manager" cannot write a mangled
+    // title into employees.job_title. The uncased `jobTitle` above still feeds the Position-column
+    // fallback at classifyOrganizationRow() — its result only ever becomes a lowercase org CODE, so
+    // casing there is irrelevant and left alone.
+    jobTitle: jobTitle ? toOrgTitleCase(jobTitle) : jobTitle,
     hireDate: normalizeDateValue(valueFor(row, mapping, "hireDate")),
     birthDate: normalizeDateValue(valueFor(row, mapping, "birthDate")),
     education: normalizeTextValue(valueFor(row, mapping, "education")),

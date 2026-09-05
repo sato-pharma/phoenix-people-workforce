@@ -1386,6 +1386,12 @@ import { runHrFormsHousePapersTests } from "./hr-forms-house-papers.test.ts";
 import { runCairoTodayLocaleSafeTests } from "./cairo-today-locale-safe.test.ts";
 
 import { runClosingWorkbookLinkOriginTests } from "./closing-workbook-link-origin.test.ts";
+import { runTalentAcquisitionRoleRetiredUiCopyTests } from "./talent-acquisition-role-retired-ui-copy.test.ts";
+import { runVacancyCloseManagerHrIdCanonicalTests } from "./vacancy-close-manager-hr-id-canonical.test.ts";
+import { runPayrollHoldReasonTests } from "./payroll-hold-reason.test.ts";
+
+import { runEmployeeImportJobTitleCasingTests } from "./employee-import-job-title-casing.test.ts";
+import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-cairo-clock.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4386,6 +4392,27 @@ await runTest("closing workbook Export PDF link origin (allow-list validated, ne
 await runTest(
   "today in Cairo is locale-safe (ISO shape the sign route accepts, Latin digits, year-month-day order, Cairo rollover)",
   runCairoTodayLocaleSafeTests,
+);
+await runTest(
+  "the retired Talent Acquisition role is never presented as a live permission (app/ and src/components/ badges and denial messages name HR Advisory / HR Operations instead)",
+  runTalentAcquisitionRoleRetiredUiCopyTests,
+);
+await runTest(
+  "closeVacancyOnHire's manager_hr_id filter is canonicalized (a mixed-case manager id no longer falls through to the manager-less-vacancy fallback and closes the wrong seat)",
+  runVacancyCloseManagerHrIdCanonicalTests,
+);
+await runTest(
+  "employee import job title casing (Ceo/Qppv/Sfe Manager/R And D Manager canonicalize on upload; ordinary titles and blanks unaffected)",
+  runEmployeeImportJobTitleCasingTests,
+);
+
+await runTest(
+  "a payroll hold cannot be saved without a reason, and a reason inherited from last month is labelled as carried forward (never overwriting one typed for this month)",
+  runPayrollHoldReasonTests,
+);
+await runTest(
+  "contract anniversary resolves Cairo's calendar day, not the server's local/UTC clock",
+  runContractAnniversaryCairoClockTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

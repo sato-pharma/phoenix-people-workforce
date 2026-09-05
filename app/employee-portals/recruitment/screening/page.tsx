@@ -42,7 +42,7 @@ export default async function EmployeePortalScreeningPage({
   if (!isHrAuthorityRole(access.role) || !(await canAccess(access, "recruitment", "read"))) {
     return (
       <EmployeePortalEmptyState
-        message="Recruitment tools are available to Talent Acquisition and Super Admin only."
+        message="Recruitment tools are available to HR Advisory and Super Admin only."
         title="Screening Unavailable"
       />
     );
@@ -50,7 +50,7 @@ export default async function EmployeePortalScreeningPage({
 
   return (
     <EmployeePortalPageShell
-      badge="Talent Acquisition"
+      badge="Recruitment & Hiring"
       description="One CV on screen at a time, with the decision beside it."
       errorBoundaryTitle="Screening unavailable"
       title="CV Screening"

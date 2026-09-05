@@ -16,9 +16,11 @@ import { listDeadLetteredInbound } from "@/lib/recruitment/inbound/intake-queue"
 
 export const dynamic = "force-dynamic";
 
-// Portal mirror of app/(admin)/recruitment/intake-health/page.tsx. Talent Acquisition works out of
-// the employee portal, not the admin shell, so without this twin the page is unreachable for the
-// one role that owns it.
+// Portal mirror of app/(admin)/recruitment/intake-health/page.tsx. Built when Talent Acquisition
+// worked out of the employee portal, not the admin shell, so without this twin the page was
+// unreachable for the role that owned it. That role was retired 2026-08-28 and replaced by HR
+// Advisory, an admin-shell role, so this twin is now orphaned surface — see
+// tests/recruitment-hub-portal-coverage.test.ts (ORPHANED_PORTAL_MIRRORS) for the full account.
 //
 // This one mattered most of the six hub tools, which is why it survived the 2026-08-15 cull: the
 // page carries the RETRY action for dead-lettered inbound CVs, and a dead letter is a real
@@ -33,7 +35,7 @@ export default async function EmployeePortalIntakeHealthPage() {
   if (!canViewInboundIntakeHealth(access)) {
     return (
       <EmployeePortalEmptyState
-        message="Inbound intake health is available to Talent Acquisition and Super Admin only."
+        message="Inbound intake health is available to HR Advisory and Super Admin only."
         title="Intake Health Unavailable"
       />
     );
@@ -55,7 +57,7 @@ export default async function EmployeePortalIntakeHealthPage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Talent Acquisition"
+      badge="CV Pipeline"
       description="How WhatsApp and email CVs are flowing into the pipeline over the last 30 days, and any that could not be processed automatically — retry re-queues them for the worker."
       errorBoundaryTitle="Intake health unavailable"
       title="Inbound CV Intake Health"

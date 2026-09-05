@@ -9,7 +9,7 @@
 // Scope per role (owner-confirmed 2026-07-18; Talent Acquisition narrowed to
 // Medical Reps only 2026-07-26; Marketing Manager added to line scope 2026-08-09):
 //   CEO · SFE Manager · Super Admin (+ system)  → whole company
-//   Training Manager · Talent Acquisition       → all Medical Reps + self only
+//   Training Manager · HR Advisory · HR Operations → all Medical Reps + self only
 //   Regional Manager                            → their full multi-level hierarchy + self
 //   National Sales Manager · Product Manager · Group Product Manager · Marketing Manager → their line + self
 //   District Manager · Manager                  → their direct team + self
