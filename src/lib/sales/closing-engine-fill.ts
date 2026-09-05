@@ -284,6 +284,7 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   await dropStaleLabelFormats(zip);
   await clearTitleEmblem(zip, fill);
   await hideEmblemFromPrint(zip);
+  await openOnFirstSheet(zip);
   await restorePivotCacheSharedItems(zip, fill);
   await dropDeadSharedStrings(zip);
   // Before both of the below, and for the same reason: the owner's buttons are still here, and the
@@ -2082,5 +2083,43 @@ async function addSheetNavigation(zip: JSZip): Promise<void> {
 
     zip.file(found.name, out);
     zip.file(relsName, rels);
+  }
+}
+
+/**
+ * Open the workbook on its first sheet.
+ *
+ * The owner asked for this, and the reason it was worth asking is measured: the template ships
+ * `activeTab="6"` with `tabSelected="1"` on Area x Product, because that is the sheet the workbook
+ * happened to be saved on. Every export therefore opened on a pivot page — and on the one sheet
+ * whose title collided with the logo, which is how he saw the defect the moment he opened it.
+ *
+ * BOTH HALVES OR NEITHER. `activeTab` alone is not enough: Excel reads each sheet's own
+ * `tabSelected`, and leaving it set on a second sheet opens the two as a GROUP, where an edit on one
+ * is silently written to the other. That is a worse failure than the wrong tab.
+ */
+async function openOnFirstSheet(zip: JSZip): Promise<void> {
+  const workbookFile = zip.file("xl/workbook.xml");
+  if (!workbookFile) return;
+  const workbook = await workbookFile.async("string");
+
+  const first = Object.keys(MANIFEST.sheets)[0];
+  if (!first) return;
+
+  zip.file(
+    "xl/workbook.xml",
+    workbook.replace(/(<workbookView\b[^>]*?)\s*activeTab="\d+"/, "$1").replace(/<workbookView\b/, '<workbookView activeTab="0"'),
+  );
+
+  for (const [sheetName, spec] of Object.entries(MANIFEST.sheets)) {
+    const file = zip.file(spec.file);
+    if (!file) continue;
+    const xml = await file.async("string");
+    const selected = sheetName === first;
+    const next = xml.replace(/<sheetView\b[^>]*>/, (tag) => {
+      const bare = tag.replace(/\s*tabSelected="[^"]*"/, "");
+      return selected ? bare.replace(/<sheetView\b/, '<sheetView tabSelected="1"') : bare;
+    });
+    if (next !== xml) zip.file(spec.file, next);
   }
 }
