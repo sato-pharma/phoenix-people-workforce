@@ -348,8 +348,11 @@ function buildEmployeePortalSections({
     {
       title: "Field Activity",
       items: [
-        // Every employee-portal role sees their own CRM visits except Talent Acquisition
-        // (owner-requested exclusion — she is HR/office staff, not a field employee).
+        // Every employee-portal role sees their own CRM visits. This carve-out (owner-requested —
+        // HR/office staff are not field employees) was for the retired Talent Acquisition seat;
+        // its successors are admin-shell roles that never reach the portal, so
+        // `showMyVisitsTab`/`isPortalHrOfficeStaff` (navigation.ts) is always true/false now and
+        // no portal role is excluded.
         ...(showMyVisitsTab ? [{ href: "/employee-portals/visits", label: "My Visits", icon: MapPinned }] : []),
         // Full scoped CRM Master — self for a Medical Rep, the team's rows for DSM/RM/NSM. My Visits
         // above stays: it is the always-on self view every portal role keeps.
@@ -394,26 +397,25 @@ function buildEmployeePortalSections({
         ...(showMarketingRoiTrackingTab ? [{ href: "/employee-portals/roi-tracker", label: "ROI Tracker", icon: Target }] : []),
       ],
     },
-    // Talent Acquisition's portal mirror of the admin-shell hrAuthorityNavigationRoles
-    // tools (see app/employee-portals/{recruitment,cv-database,hiring-documents,
-    // intake-health,vacation-control,support-requests}/page.tsx). Empty — and dropped by the
-    // items.length filter below — for every other role. HR Support Requests lives in the
-    // "HR Support" section below, alongside Request Support.
-    //
-    // This list must cover every tool on the admin hub (recruitmentHiringPageItems),
-    // because the hub itself is unreachable for this role: app/(admin)/layout.tsx
-    // redirects portal-mode users out of the entire admin group. A tool added there
-    // and not here is invisible to the only role that works it —
-    // tests/recruitment-hub-portal-coverage.test.ts fails when the two drift.
+    // Built as the retired Talent Acquisition seat's portal mirror of the admin-shell
+    // hrAuthorityNavigationRoles tools (see app/employee-portals/{recruitment,cv-database,
+    // hiring-documents,intake-health,vacation-control,support-requests}/page.tsx). That role's
+    // successors, HR Advisory and HR Operations, are admin-shell roles (see
+    // isPortalHrOfficeStaff in src/lib/employee-portal/navigation.ts) — no portal-mode role is
+    // HR/office staff any more, so `items` below is now empty for every role, always dropped by
+    // the items.length filter, and this heading never renders. See
+    // tests/recruitment-hub-portal-coverage.test.ts (ORPHANED_PORTAL_MIRRORS) for the account of
+    // the mirror pages this once routed to.
     {
       title: "Recruitment & Hiring",
       items: [
       ],
     },
-    // Talent Acquisition's company-wide HR tooling, separate from the recruiting-pipeline
-    // tools above (see app/employee-portals/{employees,contracts,resignations}/page.tsx).
-    // Vacancies Report reuses the existing /employee-portals/vacancies page — the
-    // company-wide branch of getEmployeePortalVacancies now covers her (see
+    // Built as the retired Talent Acquisition seat's company-wide HR tooling, separate from the
+    // recruiting-pipeline tools above (see app/employee-portals/{employees,contracts,
+    // resignations}/page.tsx). Empty for the same reason as that section — see the note there.
+    // Vacancies Report reused the existing /employee-portals/vacancies page — the
+    // company-wide branch of getEmployeePortalVacancies covered her (see
     // canAccessCompanyVacancies in src/lib/reports/organogram.ts).
     {
       title: "People Management",
