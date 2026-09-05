@@ -181,13 +181,86 @@ export function computeBrickCoverage(rows: readonly CoverageInputRow[]): BrickCo
  * Deliberately NOT fire-and-forget-silent: a failure here is logged, because the whole point of
  * this record is to notice things nobody was watching.
  */
+/**
+ * Distinct customers whose resolved brick disagrees with a brick ALREADY STORED for them.
+ *
+ * The normalizer's `customerBrickCorrections` also carries customers with no stored brick at all
+ * (`previousBrickId === null`). Those are FIRST MAPPINGS, not drift, and counting them would turn
+ * every first-time import into a mapping alarm. buildImportPreviewDiff draws the same line with
+ * `if (!mapped || mapped === resolved) continue`, and the two must agree because they write the
+ * same column of the same table.
+ */
+export function countBrickDrift(
+  corrections: readonly { brickId: string; previousBrickId: string | null }[],
+): number {
+  return corrections.filter(
+    (correction) =>
+      correction.previousBrickId !== null &&
+      String(correction.previousBrickId).trim() !== "" &&
+      correction.previousBrickId !== correction.brickId,
+  ).length;
+}
+
+/**
+ * Distinct product labels a sheet could not resolve, in file order.
+ *
+ * The engine files an unresolved row as an exception whose reason is "product" (the product alone
+ * failed) or "both" (product and brick). "brick" is a different failure — it belongs to the brick
+ * coverage figure, not this one — so counting it here would double-report one problem as two.
+ *
+ * Returns the full distinct `count` alongside the labels, because the stored list is sampled: a
+ * caller must never report the sample length as the number of unmapped products.
+ */
+export function collectUnmappedProducts(
+  exceptions: readonly { rawProduct?: string | null; reason: string }[],
+): { count: number; products: string[] } {
+  const seen = new Set<string>();
+  const products: string[] = [];
+  for (const exception of exceptions) {
+    if (exception.reason !== "product" && exception.reason !== "both") continue;
+    const label = String(exception.rawProduct ?? "").trim();
+    if (!label) continue;
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    products.push(label);
+  }
+  return { count: seen.size, products };
+}
+
+/**
+ * Record one batch's brick coverage — and the mapping health the Coverage tab reports.
+ *
+ * `brickDriftCount` and `unmappedProducts` are REQUIRED, deliberately. They used to be written as
+ * the literals `0`, `[]` and `0`, on the path EVERY distributor upload takes, so the two columns
+ * the Coverage tab exists to show were structurally incapable of reporting a problem. Measured on
+ * production 2026-09-05: of 134 snapshots (2026-06-10 to 2026-09-04, 21 distributors) not one has
+ * ever carried a non-zero drift or unmapped-product value — while 20 of them recorded FEWER
+ * importable rows than total rows, 5,005 rows in all. The one screen built to answer "whose
+ * mapping is rotting" gave a clean bill of health to every upload that dropped rows.
+ *
+ * Required, not optional-with-a-default, because a default is what the bug looked like: a caller
+ * that forgets must fail to compile rather than quietly write another zero.
+ *
+ * Both are defined exactly as buildImportPreviewDiff defines them (see import-preview.ts), so the
+ * two writers of this table cannot drift apart:
+ *   - drift counts a customer whose resolved brick DIFFERS from a brick already stored for it.
+ *     A customer with no stored brick yet is a new mapping, not drift.
+ *   - unmapped products are the distinct product labels the sheet could not resolve.
+ */
 export async function saveBrickCoverageSnapshot(input: {
   batchId: string;
+  /** Distinct customers whose resolved brick disagrees with the brick already stored for them. */
+  brickDriftCount: number;
   coverage: BrickCoverage;
   details?: NewCustomerDetail[];
   distributorCode: string;
   period: string | null;
   totalRows: number;
+  /** Distinct product labels this sheet could not map. Sampled for storage, counted in full. */
+  unmappedProducts: readonly string[];
+  /** Full distinct count, which can exceed the sampled list above. */
+  unmappedProductsCount: number;
 }): Promise<void> {
   const { coverage } = input;
   if (coverage.coveragePct < BRICK_COVERAGE_WARN_PCT) {
@@ -206,7 +279,7 @@ export async function saveBrickCoverageSnapshot(input: {
   const supabase = getSupabaseAdmin();
   const { error } = await supabase.from("sos_import_coverage_snapshots").insert({
     batch_id: input.batchId,
-    brick_drift_count: 0,
+    brick_drift_count: input.brickDriftCount,
     distinct_customers: coverage.customersNeedingBrick,
     distributor_code: input.distributorCode,
     importable_rows: coverage.rowsWithBrick,
@@ -218,8 +291,8 @@ export async function saveBrickCoverageSnapshot(input: {
     period: input.period ?? null,
     resolved_pct: coverage.coveragePct,
     total_rows: input.totalRows,
-    unmapped_products: [],
-    unmapped_products_count: 0,
+    unmapped_products: input.unmappedProducts.slice(0, MAX_SNAPSHOT_DETAILS),
+    unmapped_products_count: input.unmappedProductsCount,
   });
   if (error) {
     logError("Failed to save SoS brick-coverage snapshot", {
