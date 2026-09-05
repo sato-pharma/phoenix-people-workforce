@@ -78,13 +78,24 @@ ENV NEXT_TELEMETRY_DISABLED 1
 # Chromium + fonts for server-side PDF generation of offer letters (puppeteer-core drives this
 # system Chromium — we deliberately do NOT bundle Puppeteer's own Chromium, which is a glibc
 # binary that cannot run on Alpine/musl). puppeteer-core reads PUPPETEER_EXECUTABLE_PATH.
+#
+# ARABIC FONTS ARE NOT OPTIONAL HERE, and their absence does not look like a missing font.
+# ttf-freefont carries Arabic CODEPOINTS but does not SHAPE them, so Chromium drew every letter in
+# its isolated form and the words came apart into separate letters. The metrics are wrong too: a
+# three-page employment contract was filed as SIXTEEN pages. Neither symptom names a font, which
+# is why this reached a contract a person was meant to sign before anyone noticed.
+#
+# Noto covers both halves: Arabic for the papers, and Latin so a name or a figure inside them is
+# not a different face from the rest of the line.
 RUN apk add --no-cache \
     chromium \
     nss \
     freetype \
     harfbuzz \
     ca-certificates \
-    ttf-freefont
+    ttf-freefont \
+    font-noto \
+    font-noto-arabic
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 

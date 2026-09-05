@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { printBanner } from "@/lib/hiring-pack/render-shared";
+import { ARABIC_FONT_STACK, printBanner } from "@/lib/hiring-pack/render-shared";
 
 /**
  * The banner's Download PDF script must actually PARSE.
@@ -87,7 +87,31 @@ function testTheGuardAdmitsAPrintUrlAndRefusesOthers() {
   assert.equal(elsewhere.link.hidden, true, "anywhere that is not the print route must leave the button hidden");
 }
 
+/**
+ * The stack must name a face the SERVER actually has.
+ *
+ * Every other family in it is a Windows font. The container has none of them, and ttf-freefont —
+ * what it falls through to — carries Arabic codepoints without shaping them, so Chromium drew each
+ * letter isolated and a three-page contract was filed as sixteen. Nothing was red: it is not a type
+ * error, not a string mismatch, and the HTML was correct. Only the printed page showed it.
+ *
+ * Paired with `font-noto-arabic` in the Dockerfile. If someone tidies this entry out of the stack,
+ * or drops the package, filed contracts silently come apart again — so the two are pinned together.
+ */
+function testTheStackNamesAFontTheServerHas() {
+  assert.match(
+    ARABIC_FONT_STACK,
+    /Noto Sans Arabic/u,
+    "the Arabic stack must name a shaping face the Linux container has — every other family in it ships only with Windows",
+  );
+  assert.ok(
+    ARABIC_FONT_STACK.indexOf("Tahoma") < ARABIC_FONT_STACK.indexOf("Noto Sans Arabic"),
+    "Tahoma must still come first, so nothing changes for HR printing from a Windows desktop",
+  );
+}
+
 export async function runPrintBannerScriptTests() {
+  testTheStackNamesAFontTheServerHas();
   testTheInjectedScriptParses();
   testTheButtonAndTheScriptAgree();
   testTheGuardAdmitsAPrintUrlAndRefusesOthers();
