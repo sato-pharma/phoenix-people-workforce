@@ -1,17 +1,23 @@
-import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
-import { getSalaryBatchExport } from "@/lib/payroll/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { payrollSheetHeaders, payrollSheetValue } from "@/lib/payroll/salary-sheet-fields";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import {
+  buildSalaryBatchWorkbook,
+  salaryBatchFileName,
+} from "@/lib/payroll/salary-batch-workbook";
+import { getSalaryBatchExport } from "@/lib/payroll/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const headers = [...payrollSheetHeaders];
-
+/**
+ * Download a published salary batch.
+ *
+ * The workbook lives in `src/lib/payroll/salary-batch-workbook.ts`; this route resolves access and
+ * streams the bytes. It used to build the file inline — a header row and nothing else.
+ */
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -26,38 +32,15 @@ export async function GET(
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
 
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet("Payroll Data");
-    sheet.addRow(headers);
-    sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
-    sheet.getRow(1).fill = {
-      fgColor: { argb: "FFF97316" },
-      pattern: "solid",
-      type: "pattern",
-    };
-    sheet.views = [{ state: "frozen", ySplit: 1 }];
-    sheet.autoFilter = {
-      from: { column: 1, row: 1 },
-      to: { column: headers.length, row: 1 },
-    };
-    sheet.columns = headers.map((header) => ({
-      header,
-      key: header,
-      width: Math.max(header.length + 4, 14),
-    }));
-
-    exportData.records.forEach((record, index) => {
-      sheet.addRow(headers.map((header) =>
-        payrollSheetValue(record, exportData.batch.month, exportData.batch.year, index + 1, header),
-      ));
+    const buffer = await buildSalaryBatchWorkbook({
+      batch: exportData.batch,
+      records: exportData.records,
     });
-
-    const buffer = await workbook.xlsx.writeBuffer();
-    const period = `${exportData.batch.year}-${String(exportData.batch.month).padStart(2, "0")}`;
 
     return new Response(buffer, {
       headers: {
-        "Content-Disposition": `attachment; filename="phoenix-payroll-${period}.xlsx"`,
+        "Cache-Control": "no-store",
+        "Content-Disposition": `attachment; filename="${salaryBatchFileName(exportData.batch)}"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },
     });
