@@ -12,6 +12,17 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "DIR=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; node \"$DIR/.claude/hooks/autorun-guard.mjs\" 2>/dev/null || true",
+            "shell": "bash"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [

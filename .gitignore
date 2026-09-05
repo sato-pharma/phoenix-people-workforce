@@ -37,6 +37,7 @@ artifacts/
 .claude/settings.local.json
 .claude/settings.local.json.bak-*
 .claude/session.lock
+.claude/.autorun/
 
 PHOENIX old/
 Phoenix Workforce/
