@@ -1407,6 +1407,7 @@ import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-ca
 import { runAdminProfileCreatedAtHydrationSafeTests } from "./admin-profile-created-at-hydration-safe.test.ts";
 
 import { runEmployeeSavePreservesSalaryTests } from "./employee-save-preserves-salary.test.ts";
+import { runReportItExportSubtitleCairoDateTests } from "./report-it-export-subtitle-cairo-date.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4445,6 +4446,11 @@ await runTest(
 );
 
 await runTest("employee save preserves stored salary when the payload omits money fields", runEmployeeSavePreservesSalaryTests);
+
+await runTest(
+  "report-it export subtitle date is Cairo-pinned via cairoDate(), not the runtime's own zone",
+  runReportItExportSubtitleCairoDateTests,
+);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
