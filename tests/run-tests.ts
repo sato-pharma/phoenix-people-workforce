@@ -1392,6 +1392,7 @@ import { runPayrollHoldReasonTests } from "./payroll-hold-reason.test.ts";
 
 import { runEmployeeImportJobTitleCasingTests } from "./employee-import-job-title-casing.test.ts";
 import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-cairo-clock.test.ts";
+import { runAdminProfileCreatedAtHydrationSafeTests } from "./admin-profile-created-at-hydration-safe.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4413,6 +4414,10 @@ await runTest(
 await runTest(
   "contract anniversary resolves Cairo's calendar day, not the server's local/UTC clock",
   runContractAnniversaryCairoClockTests,
+);
+await runTest(
+  "admin profile 'Account created' is built from the Cairo-pinned formatter (regression for React hydration error #418)",
+  runAdminProfileCreatedAtHydrationSafeTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
