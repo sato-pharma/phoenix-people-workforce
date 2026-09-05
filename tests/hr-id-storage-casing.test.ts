@@ -169,6 +169,67 @@ export async function runHrIdStorageCasingTests() {
     );
   }
 
+  // --- THE EXPRESSION, not the column: no raw actor id anywhere PAYROLL writes ---
+  //
+  // One expression appears four times in this repository, and each copy was found separately and
+  // late, because none of them looks like the column-shaped pattern the sweep above matches:
+  //
+  //     resolveEmployeeIdentityId(access) ?? access.loginId ?? "system"
+  //
+  // outstation's approvedBy, automated payroll's actorId, the Payroll Copilot's actor, and the
+  // resignation-candidate upload route. It carries the lowercase comparison key into a stored
+  // column every time, and it is written as a local or a parameter, so nothing keyed on a column
+  // name will ever see it.
+  //
+  // Scoped to the paths that touch MONEY. Repo-wide there are ~96 further copies (mostly
+  // `actorLoginId`, which feeds the audit log's login-id field rather than an hr id) - a separate
+  // tranche, deliberately not swept here rather than quietly folded in.
+  const PAYROLL_ROOTS = [
+    "src/lib/payroll",
+    "src/lib/automated-payroll",
+    "src/lib/outstation",
+    "app/api/payroll",
+  ];
+  const RAW_ACTOR = /resolveEmployeeIdentityId\(\s*(?:access|accessContext)\s*\)\s*\?\?/;
+  const rawActorSites: string[] = [];
+  for (const root of PAYROLL_ROOTS) {
+    for (const file of sourceFilesUnder(root)) {
+      const text = readFileSync(file, "utf8");
+      text.split("\n").forEach((line, index) => {
+        if (!RAW_ACTOR.test(line)) return;
+        // The CORRECT shape puts the hr id through hrIdForStorage FIRST and lets the markers fall
+        // through untouched, so a line holding both is the repair, not the offence.
+        if (line.includes("hrIdForStorage")) return;
+        // `actorLoginId` is the audit log's LOGIN id, not an hr id. Those sites put
+        // access.loginId FIRST on purpose, and canonicalising a login id as though it were an
+        // hr id would be a different bug rather than a repair.
+        if (/\bactorLoginId\b/.test(line)) return;
+        rawActorSites.push(`${file.split(sep).join("/")}:${index + 1}  ${line.trim()}`);
+      });
+    }
+  }
+  assert.deepEqual(
+    rawActorSites,
+    [],
+    "these payroll paths derive a stored actor id without canonicalising it. Put ONLY the hr id "
+      + "through hrIdForStorage - `hrIdForStorage(access.hrId) ?? <the existing chain>` - because "
+      + "canonicalising the whole expression stores SYSTEM, DEV.PREVIEW or a ROLE NAME as the "
+      + `person who acted:\n${rawActorSites.join("\n")}`,
+  );
+
+  // A positive control: the sweep must actually be reading files, or an empty result means nothing.
+  assert.ok(
+    PAYROLL_ROOTS.every((root) => sourceFilesUnder(root).length > 0),
+    "the payroll actor sweep found no source files at all - it is certifying nothing",
+  );
+
+  // And the two repaired here keep the marker fallback that makes them safe.
+  const copilotAccess = readFileSync("src/lib/payroll/copilot/access.ts", "utf8");
+  assert.ok(
+    copilotAccess.includes('hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system"'),
+    "the copilot actor must canonicalise ONLY the hr id and keep the `system` marker intact",
+  );
+
   // --- a column whose NAME hides it, and which does not hold only people ---
   //
   // `outstation_expenses.approved_by` feeds `expense_claims.decided_by_hr_id` through

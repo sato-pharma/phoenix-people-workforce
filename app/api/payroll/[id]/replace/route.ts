@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -66,7 +67,7 @@ export async function POST(
       expectedPeriod: { month: existingBatch.month, year: existingBatch.year },
       salarySources,
     });
-    const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+    const actor = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
     await upsertPayrollResignationCandidates({
       actor,
       candidates: validation.payrollResignationCandidates,

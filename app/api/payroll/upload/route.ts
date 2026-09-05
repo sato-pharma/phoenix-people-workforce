@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { createHash } from "node:crypto";
 
 import { NextResponse } from "next/server";
@@ -99,7 +100,7 @@ export async function POST(request: Request) {
       expectedPeriod: { month, year },
       salarySources,
     });
-    const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+    const actor = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
     await upsertPayrollResignationCandidates({
       actor,
       candidates: validation.payrollResignationCandidates,

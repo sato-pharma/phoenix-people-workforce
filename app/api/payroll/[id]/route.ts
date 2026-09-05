@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { deleteSalaryBatch } from "@/lib/payroll/service";
@@ -20,7 +21,10 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     const { id } = await params;
     // Same actor expression the upload and replace routes already use, so all three payroll audit
     // rows name the person the same way.
-    await deleteSalaryBatch(id, resolveEmployeeIdentityId(access) ?? access.loginId ?? "system");
+    await deleteSalaryBatch(
+      id,
+      hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system",
+    );
 
     return NextResponse.json({ success: true });
   } catch (error) {

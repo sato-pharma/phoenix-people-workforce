@@ -11,7 +11,7 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
-import { hrIdLookupKeys } from "@/lib/hr-id";
+import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { randomUUID } from "node:crypto";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
@@ -3357,7 +3357,8 @@ export async function createManagerExpenseAsAdmin(
   const claimedTotalAmount =
     input.claimedTotalAmount > 0 ? input.claimedTotalAmount : expectedTotalAmount;
   const now = new Date().toISOString();
-  const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+  // Only the hr id is canonicalised; `system` is a marker, not a person, and must survive.
+  const actor = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
   const workloadPayload = await resolveOutstationWorkloadPayload({
     employeeHrId: employee.hrId,
     tripEndDate: input.tripEndDate,
@@ -3548,7 +3549,8 @@ export async function updateManagerExpenseAsAdmin(
   });
 
   const now = new Date().toISOString();
-  const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+  // Only the hr id is canonicalised; `system` is a marker, not a person, and must survive.
+  const actor = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
 
   const employeeHrId = existing.employeeHrId;
   const directory = await getEmployeeDirectory();
@@ -3860,7 +3862,8 @@ export async function rejectOutstationRequestAsAdmin(
   }
 
   const now = new Date().toISOString();
-  const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+  // Only the hr id is canonicalised; `system` is a marker, not a person, and must survive.
+  const actor = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
   const linkedReportIds = Array.from(
     new Set(
       linkedRows
@@ -4107,7 +4110,8 @@ export async function deleteOutstationRequestAsAdmin(
   const existing = await getOutstationRequestById(requestId);
   if (!existing) throw new Error("Outstation request was not found.");
 
-  const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+  // Only the hr id is canonicalised; `system` is a marker, not a person, and must survive.
+  const actor = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
   const expenseTripId = outstationPayrollTripId(existing.id);
   const supabase = getSupabaseAdmin();
 

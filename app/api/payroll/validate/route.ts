@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -73,7 +74,10 @@ export async function POST(request: Request) {
       salarySources,
     });
     await upsertPayrollResignationCandidates({
-      actor: resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role,
+      // Only the HR-id branch is canonicalised. The fallbacks are not hr ids at all — the last
+      // one is a ROLE NAME — and running the whole expression through hrIdForStorage would
+      // store SUPER ADMIN as the person who filed a resignation candidate.
+      actor: hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role,
       candidates: validation.payrollResignationCandidates,
       month,
       sourceFileName: file.name,

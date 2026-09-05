@@ -57,10 +57,16 @@ export function runPayrollMutationAuditTests() {
   );
 
   // The actor has to come from the route; the service has no session.
+  //
+  // Widened 2026-09-05 to REQUIRE the canonicalisation rather than forbid it. The chain now
+  // starts with hrIdForStorage(access.hrId), because access.hrId is the lowercase comparison key
+  // and storing it verbatim splits one person into two in every per-actor report. The markers
+  // behind it are deliberately NOT canonicalised: `system` means no session did this, and
+  // hrIdForStorage would store it as "SYSTEM".
   const deleteRoute = readSource("../app/api/payroll/[id]/route.ts");
   assert.match(
     deleteRoute,
-    /await deleteSalaryBatch\(\s*id,\s*resolveEmployeeIdentityId\(access\) \?\? access\.loginId \?\? "system"\s*\)/,
-    "the payroll DELETE route must pass the acting user into deleteSalaryBatch",
+    /await deleteSalaryBatch\(\s*id,\s*hrIdForStorage\(access\.hrId\) \?\? resolveEmployeeIdentityId\(access\) \?\? access\.loginId \?\? "system",?\s*\)/,
+    "the payroll DELETE route must pass the acting user into deleteSalaryBatch, canonicalised - the raw session key stores a lowercase id that no exact join will match",
   );
 }

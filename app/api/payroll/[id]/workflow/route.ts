@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -87,7 +88,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     await assertPermission(access, "payroll", action === "approve" ? "approve" : "update");
-    const actorIdentity = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
+    const actorIdentity = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
     const updated = await runPayrollWorkflow(id, action, access, actorIdentity, rejectedReason);
     if (!updated) {
       return NextResponse.json({ success: false, error: "Batch not found." }, { status: 404 });
