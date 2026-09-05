@@ -584,7 +584,11 @@ export function buildPayslipDocument(
  * Falls back to the HR id and then to the bare word, because a file still needs a name when the
  * record has none; an unnamed payslip is a data problem, not a reason to fail the download.
  */
-export function payslipFileName(record: { fullName: string; hrId: string; employeeCode: string }) {
+export function payslipFileName(
+  record: { fullName: string; hrId: string; employeeCode: string },
+  month: number,
+  year: number,
+) {
   const person = [record.fullName, record.employeeCode, record.hrId]
     .map((value) => (value ?? "").trim())
     .find((value) => value !== "");
@@ -601,7 +605,12 @@ export function payslipFileName(record: { fullName: string; hrId: string; employ
     .slice(0, 80)
     .trim();
 
-  return `${cleaned || "Employee"} - payslip.pdf`;
+  // THE MONTH IS PART OF THE NAME, added at the owner's instruction 2026-09-05. Without it every
+  // month of one employee's payslips is the same filename, so saving a year of them leaves the
+  // browser appending "(1)", "(2)", "(3)" — the browser deciding, badly, what the file should have
+  // said. `periodLabel` is the same function the document's own subtitle uses, so the sheet and the
+  // file it arrives as cannot name two different months.
+  return `${cleaned || "Employee"} - payslip - ${periodLabel(month, year)}.pdf`;
 }
 
 /**
@@ -627,14 +636,20 @@ export function payslipFileName(record: { fullName: string; hrId: string; employ
  */
 export function payslipContentDisposition(
   record: { fullName: string; hrId: string; employeeCode: string },
+  month: number,
+  year: number,
 ): string {
-  const fileName = payslipFileName(record);
+  const fileName = payslipFileName(record, month, year);
   const ascii = (value: string) =>
     (value ?? "").replace(/[^\u0020-\u007E]/g, "").replace(/["\\]/g, "").trim();
-  const asciiFallback = payslipFileName({
-    fullName: ascii(record.fullName),
-    employeeCode: ascii(record.employeeCode),
-    hrId: ascii(record.hrId),
-  });
+  const asciiFallback = payslipFileName(
+    {
+      fullName: ascii(record.fullName),
+      employeeCode: ascii(record.employeeCode),
+      hrId: ascii(record.hrId),
+    },
+    month,
+    year,
+  );
   return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 }

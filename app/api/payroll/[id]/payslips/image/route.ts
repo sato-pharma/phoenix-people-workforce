@@ -148,7 +148,11 @@ export async function GET(
     return new Response(new Uint8Array(pdf), {
       headers: {
         "Cache-Control": "no-store",
-        "Content-Disposition": payslipContentDisposition(records[0]),
+        "Content-Disposition": payslipContentDisposition(
+          records[0],
+          exportData.batch.month,
+          exportData.batch.year,
+        ),
         "Content-Type": "application/pdf",
       },
     });
