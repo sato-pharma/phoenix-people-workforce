@@ -151,6 +151,17 @@ function sourceSites(source: string): string[] {
   return sites;
 }
 
+/**
+ * Every Tailwind class token containing `rounded`, WITH its variant prefix.
+ *
+ * Capturing the prefix is the whole point. `sm:rounded-2xl` and `rounded-2xl` are different corners
+ * — the first appears only above the `sm` breakpoint — and a pattern anchored on the word alone
+ * reports both as `rounded-2xl`, which is how a live one gets read as one already dealt with.
+ */
+function tailwindRounding(source: string): string[] {
+  return [...source.matchAll(/[a-z0-9:[\]&_.-]*rounded[a-zA-Z0-9_.,:()[\]-]*/g)].map((m) => m[0]);
+}
+
 function walk(dir: string, found: string[] = []): string[] {
   let entries: string[];
   try {
@@ -291,6 +302,35 @@ const REMAINING_ROUNDING: Record<string, number> = {
 
 const SCANNED_ROOTS = ["app", "src", "templates", "public"];
 
+/**
+ * Tailwind rounding on the surfaces NO sweep covers.
+ *
+ * THIS SECTION EXISTS BECAUSE THE REST OF THIS FILE MISSED A LIVE CORNER. Everything above hunts
+ * hand-written declarations, on the reasoning that Tailwind's `rounded-*` utilities are handled by
+ * the two shell sweeps. That reasoning has a hole exactly the size of the second blind spot: a file
+ * rendered OUTSIDE both shells gets no sweep, so its `rounded-*` classes render as written.
+ *
+ * The login page shipped squared on 2026-09-05 with `sm:rounded-2xl` still on its three feature
+ * tiles, and it reached production. Two things hid it. The VARIANT PREFIX sits before the word —
+ * a census keyed on `rounded[...]` finds the token but reads it as a bare `rounded-2xl`, so it
+ * looks like one of the ones already dealt with. And inside a shell that class IS handled, because
+ * `[class*="rounded"]` matches the attribute by substring, which makes the utility look safe
+ * everywhere.
+ *
+ * So these files are pinned by their full class token, prefix included. Anything but the listed
+ * classes fails.
+ */
+const UNSWEPT_SURFACE_ROUNDING: Record<string, string[]> = {
+  // The sign-in screen. Its card, inputs, checkbox, error callout and both buttons were squared;
+  // what is left is a glowing dot and the two button spinners, all three with the owner. A spinner
+  // has to be a circle to read as spinning.
+  "src/components/auth/premium-login-page.tsx": ["rounded-full", "rounded-full", "rounded-full"],
+  "app/login/page.tsx": [],
+  // Renders its own <html>, so app/globals.css never loads here at all — not the sweeps, not the
+  // tokens, nothing. Its one corner was a hand-written borderRadius, already squared.
+  "app/global-error.tsx": [],
+};
+
 // ── The test ───────────────────────────────────────────────────────────────────────────────────
 
 export function runSquareEdgeGoldenRuleTests() {
@@ -385,6 +425,18 @@ export function runSquareEdgeGoldenRuleTests() {
     );
   }
 
+  // ── 5b. Tailwind rounding where no sweep reaches ─────────────────────────────────────────────
+  for (const [file, expected] of Object.entries(UNSWEPT_SURFACE_ROUNDING)) {
+    const source = readFileSync(file, "utf8");
+    assert.ok(source.length > 200, `${file} is empty or unreadable — the scan below would pass vacuously`);
+    assert.deepEqual(
+      tailwindRounding(source),
+      expected,
+      `${file} renders outside .admin-shell and .employee-portal-shell, so a rounded-* class here is `
+        + "a real corner on a real page. Square it, or list it above with the reason it stays.",
+    );
+  }
+
   // ── 6. The controls — the instrument must still be able to see a corner ──────────────────────
   //
   // Without these, a regex that silently stopped matching would report a clean sweep forever. That
@@ -428,6 +480,20 @@ export function runSquareEdgeGoldenRuleTests() {
       sourceSites('<Bar radius={[0, 0, 0, 0]} />\n<div style={{ borderRadius: 0 }} />\n.x { border-radius: 0 }'),
       [],
       "a square value must not be reported as rounding",
+    );
+
+    // 6e. The variant prefix must survive the read. This is the control for the corner that
+    // actually reached production: reported as a bare `rounded-2xl` it reads as one of the classes
+    // already squared, and the miss is invisible.
+    assert.deepEqual(
+      tailwindRounding('<span className="flex h-[52px] w-[52px] sm:h-[62px] sm:rounded-2xl" />'),
+      ["sm:rounded-2xl"],
+      "a responsive variant must be reported WITH its prefix, not as a bare rounded-2xl",
+    );
+    assert.deepEqual(
+      tailwindRounding('<div className="rounded-full animate-spin" /><div className="hover:rounded-lg" />'),
+      ["rounded-full", "hover:rounded-lg"],
+      "every rounding utility on an unswept surface must be seen, prefixed or not",
     );
 
     // 6d. THE NEGATIVE CONTROL. A distance called `radius` is not a corner. Four real files in this
