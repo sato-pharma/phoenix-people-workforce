@@ -1,0 +1,146 @@
+// The Performance Review, as sheets in the premium workbook.
+//
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// WHY ONLY THREE. The review already produces a workbook of its own with `Rep Ranking` and
+// `Family Performance` on it, and the premium engine ALREADY HAS BOTH — folding the review in whole
+// would put two sheets of the same name in one file, and a reader would have no way to tell which
+// was which. What the premium workbook does not carry is the review's other three answers:
+//
+//   - the DISTRICT MANAGER rollup, which exists nowhere in the engine;
+//   - each area's value MONTH BY MONTH, where the engine stops at families;
+//   - each product's value month by month, likewise.
+//
+// So this adds what is missing rather than what is available, and the two files stay distinguishable.
+//
+// VALUE, NEVER UNITS, on both by-month sheets. `productUnitsByMonth` exists and is deliberately not
+// used here: a row that spans more than one product code carries `unitsAreAddable: false`, and a
+// column of such rows cannot be summed. Value spans concentrations safely, which is the owner's
+// standing rule and the reason the review computes both.
+
+import type { ClosingPerformanceReview } from "./closing-performance-review";
+import type { EngineValue } from "./closing-engine-fill";
+
+/** A sheet this module asks the filler to create, declaratively — no OOXML in here. */
+export type ReviewSheet = {
+  /** Tab name. Must not collide with a sheet the engine template already has. */
+  name: string;
+  /** A1, in the engine's own "Title   Month   Line   ·   what it is" shape. */
+  title: string;
+  /** The line under the header row, listing what the sheet counts. */
+  subtitle: string;
+  /** Column headings, in order. */
+  headers: string[];
+  /** Column widths, in Excel's own units. One per heading; missing ones take a default. */
+  widths: number[];
+  /** Data rows, positional against `headers`. */
+  rows: EngineValue[][];
+  /** The line the contents page prints beside this sheet's name. */
+  what: string;
+};
+
+const money = (value: number | null | undefined): EngineValue =>
+  typeof value === "number" && Number.isFinite(value) ? Math.round(value) : null;
+
+/** A ratio stays a ratio — the sheet formats it, so rounding here would lose the percentage. */
+const ratio = (value: number | null | undefined): EngineValue =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+/** `2026-08` as `Aug 2026`, the way the engine's own month columns read. */
+function monthLabel(period: string): string {
+  const [year, month] = period.split("-");
+  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const index = Number(month) - 1;
+  return names[index] ? `${names[index]} ${year}` : period;
+}
+
+/**
+ * The review's sheets for this line and month.
+ *
+ * Returns only the sheets that HAVE rows. An empty sheet in a workbook reads as a missing number
+ * rather than as an absent question, and the contents page would then promise a page with nothing
+ * on it.
+ */
+export function buildReviewSheets(
+  review: ClosingPerformanceReview,
+  input: { line: string | null; period: string | null },
+): ReviewSheet[] {
+  const stamp = [input.period ? monthLabel(input.period) : null, input.line]
+    .filter(Boolean)
+    .join("   ");
+  const title = (name: string, tail: string) => `${name}   ${stamp}   ·   ${tail}`;
+  const sheets: ReviewSheet[] = [];
+
+  // ── District managers ───────────────────────────────────────────────────────────────────────
+  if (review.managers.length > 0) {
+    sheets.push({
+      headers: ["District manager", "Region", "Areas", "Sales value", "Target value", "Achievement"],
+      name: "District Managers",
+      rows: review.managers.map((manager) => [
+        manager.label,
+        manager.regionName,
+        manager.areaCount,
+        money(manager.salesValue),
+        money(manager.targetValue),
+        ratio(manager.achievement),
+      ]),
+      subtitle: "Every district manager's areas rolled up, by value against their own targets.",
+      title: title("District Managers", "each manager's areas rolled into one row"),
+      what: "Every district manager's areas rolled into one row — the rollup the engine has nowhere else.",
+      widths: [30, 18, 9, 16, 16, 14],
+    });
+  }
+
+  // ── The by-month series ─────────────────────────────────────────────────────────────────────
+  // One column per month, oldest first, then the newest month over the one before it. A month that
+  // was never uploaded is null and prints as blank, not as a zero — a zero would read as "sold
+  // nothing", which is a different and much worse claim.
+  const months = review.months ?? [];
+  const series = (
+    rows: ClosingPerformanceReview["areaValueByMonth"],
+    name: string,
+    firstHeading: string,
+    secondHeading: string,
+    tail: string,
+    what: string,
+  ): ReviewSheet | null => {
+    if (rows.length === 0 || months.length === 0) return null;
+    return {
+      headers: [firstHeading, secondHeading, ...months.map(monthLabel), "Against the month before"],
+      name,
+      rows: rows.map((row) => [
+        row.label,
+        row.subLabel,
+        ...row.perMonth.map((value) => money(value)),
+        ratio(row.growth),
+      ]),
+      subtitle:
+        `${months.length === 1 ? "One month" : `${months.length} months`}, oldest first. `
+        + "By value, never units — a row spanning more than one product code cannot have its units summed.",
+      title: title(name, tail),
+      what,
+      widths: [26, 20, ...months.map(() => 14), 20],
+    };
+  };
+
+  const areaSeries = series(
+    review.areaValueByMonth,
+    "Area by Month",
+    "Area",
+    "Region",
+    "value per area, month by month",
+    "Each area's value month by month, with the newest month against the one before it.",
+  );
+  if (areaSeries) sheets.push(areaSeries);
+
+  const productSeries = series(
+    review.productValueByMonth,
+    "Product by Month",
+    "Product",
+    "Family",
+    "value per product, month by month",
+    "Each product's value month by month — value, because units cannot be summed across products.",
+  );
+  if (productSeries) sheets.push(productSeries);
+
+  return sheets;
+}

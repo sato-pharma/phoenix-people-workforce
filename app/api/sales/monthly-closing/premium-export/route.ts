@@ -11,6 +11,7 @@ import {
 import { fillClosingEngine } from "@/lib/sales/closing-engine-fill";
 import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
 import { loadClosingExportPayload } from "@/lib/sales/closing-export-payload";
+import { buildReviewSheets } from "@/lib/sales/closing-review-sheets";
 import { isClosingPdfSheet } from "@/lib/sales/closing-report-pdf";
 import { resolvePortalClosingScope } from "@/lib/sales/monthly-closing-portal";
 
@@ -155,8 +156,14 @@ export async function POST(request: Request) {
       sheet: "Rep Card",
     }).toString()}`;
 
+    // The Performance Review folded in as extra sheets, at the owner's instruction (2026-09-05):
+    // one workbook instead of two. Only what the engine does not already carry -- the review's own
+    // Rep Ranking and Family Performance would collide with the sheets of those names already here.
+    const reviewSheets = buildReviewSheets(payload.review, { line: payload.line, period: payload.period });
+
     const buffer = await fillClosingEngine(payload.fill, {
       macroFree: !macros,
+      reviewSheets,
       ...(macros ? {} : { pdfLink, repCardPdfBase }),
     });
     const fileName = closingFileName({
