@@ -22,6 +22,7 @@ import {
   type CellValue,
   type TableColumn,
 } from "@/lib/export/house-table-workbook";
+import { houseGeneratedRow } from "@/lib/export/house-xlsx-identity";
 import { sanitizeSheetName } from "@/lib/export/phoenix-xlsx-style";
 import {
   deductionsCategoryLabel,
@@ -167,7 +168,7 @@ export function buildDeductionsCategoryWorkbook(input: {
     rows: [
       ["Category", label],
       ["Month", meta.monthKey],
-      ["Generated (UTC)", meta.generatedAtIso],
+      houseGeneratedRow(meta.generatedAtIso),
       ["Exported by", `${meta.generatedByName} (${meta.generatedByHrId})`],
       ["Candidates in this export", String(candidates.length)],
       ["Employees affected", String(employeeCount)],
