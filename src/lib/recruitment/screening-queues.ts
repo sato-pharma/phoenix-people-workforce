@@ -31,6 +31,7 @@ export const screeningWorkQueues = [
   "new",
   "recommended",
   "unsaved_findings",
+  "not_a_cv",
   "manager_feedback",
   "duplicates",
   "interviews",
@@ -49,6 +50,7 @@ export const screeningWorkQueueLabels: Record<ScreeningWorkQueue, string> = {
   new: "New CVs",
   recommended: "Recommended",
   red_flagged: "Red-flagged",
+  not_a_cv: "Not a CV",
   unsaved_findings: "CV data to save",
 };
 
@@ -61,6 +63,7 @@ export const screeningWorkQueueDescriptions: Record<ScreeningWorkQueue, string> 
   new: "First review required",
   recommended: "Strong role fit",
   red_flagged: "Cannot be hired",
+  not_a_cv: "A certificate or a photo",
   unsaved_findings: "Read but never written",
 };
 
@@ -79,6 +82,7 @@ export const screeningWorkQueueEmptyLabels: Record<ScreeningWorkQueue, string> =
   new: "Every CV here has been reviewed at least once.",
   recommended: "No field-force or pharma CVs are waiting in this pool.",
   red_flagged: "Nothing here is ineligible or already rejected.",
+  not_a_cv: "Every document here reads as a real CV.",
   unsaved_findings:
     "Every experience, national ID and job title the CV reader found is already on the record.",
 };
@@ -157,7 +161,7 @@ export function workQueuesFor(input: WorkQueueInput): ScreeningWorkQueue[] {
 
   // Unread and unjudged. Red-flagged rows are excluded: a rejected candidate or one whose CV states
   // a nationality we cannot hire is not "first review required" — a person already answered.
-  if (!input.redFlagged && input.status === "new") queues.push("new");
+  if (!input.redFlagged && input.band !== "no_cv" && input.status === "new") queues.push("new");
 
   // Worth meeting first. Shortlisted stays in on purpose: a CV shortlisted but not yet sent is
   // still a recommendation waiting to be acted on, and dropping it the moment somebody agreed with
@@ -209,6 +213,23 @@ export function workQueuesFor(input: WorkQueueInput): ScreeningWorkQueue[] {
   // saving a rejected candidate's job title is not work waiting on anybody.
   if (!input.redFlagged && input.unsavedFindings > 0) queues.push("unsaved_findings");
 
+  // ── NOT A CV AT ALL ──────────────────────────────────────────────────────────────────────────
+  //
+  // 20 documents in the pool on 2026-09-05 are certificates, photographs or covering notes that
+  // the reader judged not to be a CV. Everything about them was already right — the `no_cv` band
+  // sorts them last, the row wears a "Not a CV" pill, the CV pane says so — except that they were
+  // still counted in "New CVs", so first review read 20 too high and a screener working that pile
+  // top to bottom still had to open each one to find out.
+  //
+  // Its OWN pile rather than a hidden exclusion, exactly as `red_flagged` is: these stay fully
+  // visible, fully actionable and fully counted, just not in the way of the CVs.
+  //
+  // NOTHING IS FILED AND NOTHING IS REJECTED. A document that is not a CV does not mean a person
+  // who is not a candidate — a WhatsApp applicant photographing a certificate is the commonest
+  // shape here, and their real CV may arrive by another route. Moving them off the pool would
+  // hide a live applicant to tidy a queue.
+  if (input.band === "no_cv") queues.push("not_a_cv");
+
   return queues;
 }
 
@@ -226,6 +247,7 @@ export function emptyWorkQueueCounts(): WorkQueueCounts {
     duplicates: 0,
     interviews: 0,
     manager_feedback: 0,
+    not_a_cv: 0,
     unsaved_findings: 0,
     new: 0,
     recommended: 0,
