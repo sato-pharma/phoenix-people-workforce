@@ -21,6 +21,7 @@ import {
   HIRING_PACK_DOCUMENTS,
 } from "@/lib/hiring-pack/types";
 import type {
+  ContractRenewalFacts,
   ExitFacts,
   ExitRoute,
   HiringPackCandidate,
@@ -97,6 +98,15 @@ const DOCUMENT_BINDINGS: Record<
   // later is an edit to that form's row and cannot silently move the other's.
   custodyLaptop: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   custodyMobile: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  // The two renewal papers carry no stored state HERE, and the register that answers them properly
+  // already exists: `contract_renewal_requests` holds one row per renewal with its own decision and
+  // its own `signed_at`. A contract is renewed every year, so a single column against the employee
+  // could record only the newest one while appearing to cover all of them — the identical reasoning
+  // that keeps the custody receipts out (see `SIGNABLE_DOCUMENTS`). A null binding makes
+  // `recordHiringPackPrinted` a no-op for them and `markHiringPackSigned` refuse them, both correct,
+  // and it is why these needed no migration to add.
+  contractRenewal: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  contractNonRenewal: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   form6: {
     table: "employee_offboarding_profile",
     signedColumn: "form6_signed_date",
@@ -216,6 +226,15 @@ type ResignationDbRow = {
   job_title: string | null;
   last_working_date: string | null;
   resignation_date: string | null;
+};
+
+type RenewalRequestDbRow = {
+  area_name: string | null;
+  id: string;
+  proposed_end_date: string | null;
+  proposed_start_date: string | null;
+  signed_at: string | null;
+  status: string;
 };
 
 export class HiringPackEmployeeNotFoundError extends Error {
@@ -925,6 +944,54 @@ async function loadExitFacts(hrId: string): Promise<ExitFacts | null> {
 }
 
 /**
+ * The newest contract-renewal request for this person, narrowed to what the renewal papers print.
+ *
+ * NEWEST BY `created_at`, and there is no uniqueness constraint on `employee_hr_id` because there
+ * should not be: an employee renewed four times has four rows, and the paper being printed is
+ * always about the current term. Ordering the other way would print an annex carrying the dates of
+ * a renewal that was agreed three years ago, which is a wrong date on a signed instrument rather
+ * than a missing one.
+ *
+ * A MISSING TABLE IS NOT A FAILURE HERE. `contract_renewal_requests` is created by the contracts
+ * module's own migration, and a deploy that reaches this code before that migration lands would
+ * otherwise 500 the whole hiring pack — every document, for everybody — over a paper most people
+ * never print. Both codes are caught because a missing table answers PGRST205 through PostgREST and
+ * 42P01 through SQL, and only one of those is the obvious one to guard.
+ *
+ * `ilike` RATHER THAN `eq`, and unlike `loadExitFacts` this one is not backed by a measurement:
+ * the table held zero rows on production when this was written (2026-09-05), so nothing can be
+ * said about how the workflow will case an HR_ID once it starts writing them. HR_IDs in this
+ * database are mixed case, and a plain `.eq` against one silently under-returns — which here would
+ * print an annex with DERIVED dates while a real approved renewal sat in the table unread, and
+ * nothing on the page would say so. A case-insensitive exact match cannot fail that way. There are
+ * no wildcards in `hrId`; it has been through `requireHrId`.
+ */
+async function loadRenewalFacts(hrId: string): Promise<ContractRenewalFacts | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("contract_renewal_requests")
+    .select("id, status, proposed_start_date, proposed_end_date, area_name, signed_at")
+    .ilike("employee_hr_id", hrId)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    if (error.code === "PGRST205" || error.code === "42P01") return null;
+    throw new Error(error.message);
+  }
+  const row = (data ?? [])[0] as RenewalRequestDbRow | undefined;
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    status: row.status,
+    proposedStartDate: row.proposed_start_date,
+    proposedEndDate: row.proposed_end_date,
+    areaName: cleanText(row.area_name),
+    signedAt: row.signed_at,
+  };
+}
+
+/**
  * Resolve every term the documents print: the per-person override where one exists, the company
  * default or the system's own record otherwise.
  *
@@ -989,11 +1056,12 @@ function requireHrId(value: string | null | undefined): string {
 
 export async function getHiringPack(hrIdInput: string): Promise<HiringPackData> {
   const hrId = requireHrId(hrIdInput);
-  const [employee, profile, offboarding, exit] = await Promise.all([
+  const [employee, profile, offboarding, exit, renewal] = await Promise.all([
     loadEmployeeFacts(hrId),
     loadProfile(hrId),
     loadOffboardingProfile(hrId),
     loadExitFacts(hrId),
+    loadRenewalFacts(hrId),
   ]);
   const suggestedJobTitleAr = await loadSuggestedJobTitleAr(employee.jobTitle);
 
@@ -1002,6 +1070,7 @@ export async function getHiringPack(hrIdInput: string): Promise<HiringPackData> 
     profile,
     offboarding,
     exit,
+    renewal,
     suggestedJobTitleAr,
     gaps: collectHiringPackGaps(employee, profile, offboarding, exit),
     terms: resolveContractTerms(employee, profile, offboarding, exit),

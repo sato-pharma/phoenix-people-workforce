@@ -170,6 +170,7 @@ function packFixture(
     profile,
     offboarding,
     exit,
+    renewal: null,
     suggestedJobTitleAr: null,
     gaps: collectHiringPackGaps(employee, profile, offboarding, exit),
     terms: resolveContractTerms(employee, profile, offboarding, exit),

@@ -4,7 +4,9 @@
  * JOINING: the employment contract, social-insurance Form 1 (طلب اشتراك مؤمن عليه), and Sato's own
  *   worker-data form (استمارة بيانات العامل) — the service-file intake sheet filled on the day of hire.
  * DURING: a custody receipt (إقرار استلام عهدة) each time a company device is handed over —
- *   one numbered form for a laptop, another for a phone or tablet.
+ *   one numbered form for a laptop, another for a phone or tablet; and, once a year, ONE of the two
+ *   renewal papers — the annex that extends the fixed term (ملحق تجديد سنوي) or the notice that says
+ *   the company will not (إخطار بعدم تجديد).
  * LEAVING: social-insurance Form 6 (إخطار بإنتهاء اشتراك مؤمن عليه), ONE of the two Ministry of
  *   Labour exit templates — a resignation request or a mutual-termination agreement — and BOTH
  *   halves of the clearance pair (إخلاء طرف). The clearance pair are complements, not alternatives:
@@ -17,6 +19,8 @@ export type HiringPackDocument =
   | "workerDataForm"
   | "custodyLaptop"
   | "custodyMobile"
+  | "contractRenewal"
+  | "contractNonRenewal"
   | "form6"
   | "resignation"
   | "mutualTermination"
@@ -52,6 +56,24 @@ export const ONBOARDING_FORM_DOCUMENTS = ["workerDataForm"] as const;
 export const ASSET_DOCUMENTS = ["custodyLaptop", "custodyMobile"] as const;
 
 /**
+ * The two renewal papers — printed when a fixed-term contract is coming to its end, which like a
+ * device handover is neither arrival nor departure and happens repeatedly during one career.
+ *
+ * THEY ARE ALTERNATIVES, exactly as the resignation and the mutual-termination agreement are, and
+ * for the same reason: they assert incompatible facts. The annex says the contract was extended
+ * before it expired; the notice says it was allowed to run out. A file holding both signed for the
+ * same term contradicts itself, and it is the signed paper a labour inspector reads.
+ *
+ * WHICH ONE IS PRINTED IS NOT RECORDED AGAINST THE PERSON, though, and that is the difference from
+ * the exit pair. An exit happens once. A renewal happens every year, so one column on the employee
+ * row could record only the most recent one while appearing to cover all of them — the identical
+ * reasoning that keeps the custody receipts out of `SIGNABLE_DOCUMENTS`. The register that answers
+ * this properly already exists and is not here: `contract_renewal_requests` holds one row per
+ * renewal, with its own decision, its own dates and its own `signed_at`.
+ */
+export const RENEWAL_DOCUMENTS = ["contractRenewal", "contractNonRenewal"] as const;
+
+/**
  * The two clearance papers — إخلاء طرف — which are Sato's own instruments rather than a government
  * form, and which run in OPPOSITE directions.
  *
@@ -85,6 +107,7 @@ export const HIRING_PACK_DOCUMENTS: readonly HiringPackDocument[] = [
   ...HIRING_DOCUMENTS,
   ...ONBOARDING_FORM_DOCUMENTS,
   ...ASSET_DOCUMENTS,
+  ...RENEWAL_DOCUMENTS,
   ...EXIT_DOCUMENTS,
 ];
 
@@ -179,6 +202,12 @@ export type PrintableDocument = HiringPackDocument | CustomHiringPackDocument;
  * The register that WOULD answer this properly is a custody table keyed by device — see the note in
  * `render-custody.ts`. Until that exists the receipt prints, and what it prints is a paper filed in
  * a drawer, which is exactly what it is today.
+ *
+ * THE TWO RENEWAL PAPERS ARE ABSENT FOR THE SAME REASON AND WITH THE ANSWER ALREADY BUILT: a
+ * contract is renewed every year, so one date against the employee could record only the newest of
+ * them. `contract_renewal_requests` is the register — one row per renewal, carrying its own
+ * decision and its own `signed_at` — so a date here would be a second, worse copy of it. See
+ * `RENEWAL_DOCUMENTS`.
  */
 export const SIGNABLE_DOCUMENTS: readonly HiringPackDocument[] = [
   ...HIRING_DOCUMENTS,
@@ -482,6 +511,33 @@ export type ExitFacts = {
   jobTitle: string | null;
 };
 
+/**
+ * The part of a contract-renewal request the renewal papers print from.
+ *
+ * A NARROW LOCAL TYPE, NOT `ContractRenewalRecord` FROM `@/lib/contracts/types`, and that is not
+ * duplication for its own sake. This module's `types.ts` imports NOTHING — deliberately, so it can
+ * be imported by every other file here without a cycle (see the note on `PrintableDocument`) — and
+ * reaching into another domain's types from it would end that property for the sake of twenty-five
+ * fields of which the papers use four. The loader in `service.ts` narrows the full row down to this
+ * on the way in, which is also the place a change to the contracts domain would surface.
+ *
+ * `status` travels because it decides WHICH paper is the honest one to print: a request decided
+ * `not_renewed` has proposed dates on it, and printing an annex from those would produce a renewal
+ * agreement for a term the company has already declined to grant.
+ */
+export type ContractRenewalFacts = {
+  id: string;
+  status: string;
+  /** The first day of the new term, as HR and the manager approved it. */
+  proposedStartDate: string | null;
+  /** The last day of the new term. */
+  proposedEndDate: string | null;
+  /** The territory recorded on the request — the annex's النطاق الجغرافي, never the product line. */
+  areaName: string | null;
+  /** When the signed annex was filed against the request, if it has been. */
+  signedAt: string | null;
+};
+
 /** One row in the employee picker on the fill screen. Deliberately thin — it is a chooser, not a record. */
 export type HiringPackCandidate = {
   hrId: string;
@@ -505,6 +561,20 @@ export type HiringPackData = {
   offboarding: OffboardingProfile;
   /** The departure as the system records it, or null when nobody has recorded one. */
   exit: ExitFacts | null;
+  /**
+   * The newest contract-renewal request for this person, or null when none was ever raised.
+   *
+   * THE RENEWAL PAPERS PREFER IT TO THEIR OWN ARITHMETIC, and the distinction is the point. This
+   * row carries dates a manager and HR both reviewed and a decision was taken against — it is a
+   * RECORD. The alternative the renderer falls back on, "the day after the old term, for the same
+   * number of months", is a SUGGESTION. Printing the record means the annex bears the dates
+   * somebody actually approved; the derivation only fills a page printed ahead of the workflow.
+   *
+   * NEWEST, not "the one being decided". A person renewed four times has four rows, and the paper
+   * being printed is always about the current term — so the ordering is `created_at desc` and the
+   * shape stays one row rather than a list, which is what every caller of this type wants.
+   */
+  renewal: ContractRenewalFacts | null;
   /**
    * The Arabic job title someone else already typed for the same English job title, most recently
    * saved first. A suggestion only — never persisted here, never overwrites `profile.jobTitleAr`.
