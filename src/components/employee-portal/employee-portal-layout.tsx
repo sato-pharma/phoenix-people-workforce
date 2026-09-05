@@ -483,14 +483,21 @@ function EmployeePortalHeaderDate() {
   const [label, setLabel] = useState<string | null>(null);
 
   useEffect(() => {
-    setLabel(
-      new Date().toLocaleDateString("en-US", {
-        day: "numeric",
-        month: "short",
-        timeZone: "Africa/Cairo",
-        year: "numeric",
-      }),
-    );
+    // Deferred through rAF rather than called synchronously in the effect body — same shape as
+    // ThemeProvider — because this repo's react-hooks/set-state-in-effect lint rule is an ERROR,
+    // not a warning, on a bare setState() inside useEffect.
+    const frame = window.requestAnimationFrame(() => {
+      setLabel(
+        new Date().toLocaleDateString("en-US", {
+          day: "numeric",
+          month: "short",
+          timeZone: "Africa/Cairo",
+          year: "numeric",
+        }),
+      );
+    });
+
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   if (!label) return null;
