@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import ExcelJS from "exceljs";
 
@@ -35,7 +36,36 @@ const outstationHeaders = [
   "PM Workload",
 ];
 
+/**
+ * `table-workbook.ts` is imported by eleven client components as well as by five API routes, so it
+ * may never reach a server-only module. `house-xlsx-identity.ts` is one: it embeds the wordmark, so
+ * it opens a file with `node:fs`, and a Turbopack client build then dies with "the chunking context
+ * does not support external modules (request: node:fs)".
+ *
+ * The colours live in `house-xlsx-palette.ts` for exactly this reason. The build already catches the
+ * mistake — but two and a half minutes into `validate`, in a message that names a chunking context
+ * rather than the import that caused it. This names it in milliseconds.
+ */
+function assertTableWorkbookStaysClientSafe() {
+  const source = readFileSync(new URL("../src/lib/export/table-workbook.ts", import.meta.url), "utf8");
+  assert.equal(
+    /from\s+"@\/lib\/export\/house-xlsx-identity"/.test(source),
+    false,
+    "table-workbook.ts is bundled into client components, so it must take its house colours from " +
+      '"@/lib/export/house-xlsx-palette", never "@/lib/export/house-xlsx-identity" — the identity ' +
+      "module reads the wordmark with node:fs and fails the Turbopack client build.",
+  );
+  // A positive control: the palette import is really there, so the check above cannot pass merely
+  // because the file stopped using the house colours altogether.
+  assert.ok(
+    /from\s+"@\/lib\/export\/house-xlsx-palette"/.test(source),
+    "table-workbook.ts still takes its house colours from the palette module",
+  );
+}
+
 export async function runOutstationExpenseExportTests() {
+  assertTableWorkbookStaysClientSafe();
+
   const columns: ExportColumn[] = outstationHeaders.map((label) => ({
     key: label.toLowerCase().replace(/[^a-z0-9]+/g, ""),
     label,

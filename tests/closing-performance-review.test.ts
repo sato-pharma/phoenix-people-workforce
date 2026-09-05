@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import ExcelJS from "exceljs";
 
+import { HOUSE_DOCUMENT_STANDARD, HOUSE_XLSX_COLORS } from "../src/lib/export/house-xlsx-identity.ts";
 import {
   buildClosingPerformanceReview,
   selectSeriesPeriods,
@@ -133,7 +134,8 @@ function matrixFor(period: string, scale: number): MonthlyClosingMatrix {
   };
 }
 
-function buildFixture(): ClosingPerformanceReview {
+/** Exported so a probe can emit the real workbook and look at it, rather than at the source. */
+export function buildFixture(): ClosingPerformanceReview {
   const latest = matrixFor("2026-09", 2);
   // Cairo 1 has a rep and a district manager above it. Main Store has NEITHER — it is a warehouse,
   // not a territory, so the seat model rightly knows nothing about it. That is the row assertion
@@ -178,6 +180,33 @@ async function workbookText(buffer: Buffer): Promise<{ sheetNames: string[]; tex
     });
   });
   return { sheetNames, text };
+}
+
+/**
+ * Every SOLID fill in the emitted workbook, with where it is.
+ *
+ * ExcelJS reports an unfilled cell as `{ pattern: "none" }` rather than as undefined, so the filter
+ * is on the pattern, not on the presence of `fill`. A check written the obvious way — "cell.fill is
+ * falsy" — passes on every cell in the book and proves nothing.
+ */
+async function workbookFills(buffer: Buffer): Promise<Array<{ address: string; argb: string; row: number; sheet: string }>> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+  const found: Array<{ address: string; argb: string; row: number; sheet: string }> = [];
+  workbook.eachSheet((sheet) => {
+    // includeEmpty on BOTH loops, or the check is blind to exactly the cells that matter: a rule row
+    // is filled and carries no text, so a value-only walk reports the workbook has no rule at all.
+    sheet.eachRow({ includeEmpty: true }, (row) => {
+      row.eachCell({ includeEmpty: true }, (cell) => {
+        const value = cell.fill as ExcelJS.FillPattern | undefined;
+        if (!value || value.pattern !== "solid") return;
+        const argb = value.fgColor?.argb;
+        if (!argb) return;
+        found.push({ address: cell.address, argb, row: row.number, sheet: sheet.name });
+      });
+    });
+  });
+  return found;
 }
 
 export async function runClosingPerformanceReviewTests() {
@@ -422,5 +451,52 @@ export async function runClosingPerformanceReviewTests() {
   assert.ok(
     startsHere.text.some((value) => value.includes("the series starts here")),
     "a one-month series states that it starts there, rather than leaving the reader to guess",
+  );
+
+  // ── (10) THE HOUSE IDENTITY, ASSERTED ON THE EMITTED FILE ──────────────────
+  //
+  // The ink rule is the one part of SATO-DIS-2026-01 a reader cannot check by eye. A navy band is
+  // obvious, but a 6%-tint region wash down five columns of every row is nearly invisible on screen
+  // and survives review — which is how it lived here for months. So this counts every solid fill in
+  // the emitted workbook and names any that is neither of the two the standard allows: the Brand
+  // Blue masthead rule, and the zebra row.
+  //
+  // It reads the FILE, not the source, because the file is the only place the fills exist.
+  const fills = await workbookFills(buffer);
+  const allowed = new Set<string>([HOUSE_XLSX_COLORS.blue, HOUSE_XLSX_COLORS.tint]);
+  const strays = fills.filter((entry) => !allowed.has(entry.argb));
+  assert.deepEqual(
+    strays.slice(0, 6),
+    [],
+    "the ink rule: colour is carried by lines and type, never by filled area. The only fills this " +
+      "workbook may carry are the Brand Blue masthead rule and the 6% zebra row. " +
+      `Found ${strays.length} other filled cell(s).`,
+  );
+
+  // ...and the two that ARE allowed are really there, so the assertion above cannot pass by the
+  // workbook carrying no fills at all — which is what a broken builder would also look like.
+  assert.ok(
+    fills.some((entry) => entry.argb === HOUSE_XLSX_COLORS.blue && entry.row === 5),
+    "every sheet carries the Brand Blue rule beneath its masthead, on row 5",
+  );
+  assert.ok(
+    fills.some((entry) => entry.argb === HOUSE_XLSX_COLORS.tint),
+    "the zebra row is the format's one permitted fill, and it is in use",
+  );
+
+  // The standard identifies itself on the face of the document, as it does on paper.
+  assert.ok(
+    text.some((value) => value.includes(HOUSE_DOCUMENT_STANDARD)),
+    `the workbook prints its document standard, "${HOUSE_DOCUMENT_STANDARD}"`,
+  );
+
+  // The identity is the COMPANY's, never the app's. A title carrying the app's name is the exact
+  // regression this line exists to catch — it is how these workbooks used to read.
+  const appNameOnTheFace = text.filter((value) => /phoenix/i.test(value));
+  assert.deepEqual(
+    appNameOnTheFace,
+    [],
+    "a company document wears the COMPANY's identity: the Performance Review workbook must never " +
+      `print the app's name. Found: ${appNameOnTheFace.join(" | ")}`,
   );
 }
