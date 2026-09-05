@@ -387,6 +387,7 @@ import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
 import { runHrIdStorageCasingTests } from "./hr-id-storage-casing.test.ts";
 import { runRecruitmentHiringAnalyticsTests } from "./recruitment-hiring-analytics.test.ts";
+import { runRecruitmentRequisitionOpenGateTests } from "./recruitment-requisition-open-gate.test.ts";
 import { runRecruitmentHiringAnalyticsLayoutTests } from "./recruitment-hiring-analytics-layout.test.ts";
 import { runRecruitmentEveryStageHasAWayForwardTests } from "./recruitment-every-stage-has-a-way-forward.test.ts";
 import { runClosingDriftAcknowledgementTests } from "./closing-drift-acknowledgement.test.ts";
@@ -1139,6 +1140,7 @@ import { runClosingChannelBreakdownRollupEquivalenceTests } from "./closing-chan
 import { runMonthlyAttributionRollupEquivalenceTests } from "./monthly-attribution-rollup-equivalence.test.ts";
 import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
 import { runClosingCorrectionsCellTests } from "./closing-corrections-cell.test.ts";
+import { runClosingCorrectionsOneEventTests } from "./closing-corrections-one-event.test.ts";
 import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.test.ts";
 import { runTerritoryPreviewLinkControlsTests } from "./territory-preview-link-controls.test.ts";
 
@@ -2128,6 +2130,7 @@ await runTest("weekly plan approver UI parity (no buttons the server rejects; co
 await runTest("weekly plan move to another period (HR re-dates a plan the employee filed on the wrong week)", runWeeklyPlanMovePeriodTests);
 await runTest("hr ids are stored in canonical casing everywhere, never the lowercase comparison key", runHrIdStorageCasingTests);
 await runTest("hiring analytics (a batch sweep is not a decision, and a rate needs a denominator)", runRecruitmentHiringAnalyticsTests);
+await runTest("requisition open gate (no hire for nobody, and no replacing somebody who is still here)", runRecruitmentRequisitionOpenGateTests);
 await runTest("hiring analytics layout (desktop table, phone cards, square edges, no sideways scroll)", runRecruitmentHiringAnalyticsLayoutTests);
 await runTest("every application stage has a way forward (a stage nobody can leave reads as low adoption)", runRecruitmentEveryStageHasAWayForwardTests);
 await runTest("an acknowledged closing drift stays acknowledged only while it is the SAME drift", runClosingDriftAcknowledgementTests);
@@ -3329,6 +3332,11 @@ await runTest(
 await runTest(
   "closing corrections: a net-negative row is the CLOSING cell, not one distributor share",
   runClosingCorrectionsCellTests,
+);
+
+await runTest(
+  "closing corrections: one return is ONE situation however many detectors see it",
+  runClosingCorrectionsOneEventTests,
 );
 
 await runTest(
