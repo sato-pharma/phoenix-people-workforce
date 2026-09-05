@@ -106,9 +106,9 @@ export function runPediaTargetTemplateAndUploadFoldTests() {
   // …and `loadTargetableAreas` must actually APPLY it. The two assertions above exercise the helper,
   // which was already correct — deleting the call in the loader left them both green. Pinned at
   // source because the loader needs a live DB, and the whole template fix lives in this one call.
-  const module = readSource("../src/lib/sales/monthly-targets.ts");
+  const moduleSource = readSource("../src/lib/sales/monthly-targets.ts");
   assert.match(
-    module,
+    moduleSource,
     /return foldAreaOptionsForLine\(lineCode, areas\);/,
     "loadTargetableAreas must fold its option list before returning it — without this the download "
       + "template offers \"Beni Suef\" for Pedia again and the helper tests above still pass",
@@ -148,7 +148,8 @@ export function runPediaTargetTemplateAndUploadFoldTests() {
   assert.equal(clash.errors[0]!.rowNumber, 7);
   assert.match(
     clash.errors[0]!.message,
-    /Row 2 already sets .*"GZ6" and "UE9" are ONE area.*Combine them into a single row\./s,
+    // `[\s\S]` rather than `.` with the /s flag: TS1501 — dotAll needs an es2018+ target.
+    /Row 2 already sets [\s\S]*"GZ6" and "UE9" are ONE area[\s\S]*Combine them into a single row\./,
     "the message must name the row it collides with AND explain that the two areas are one on this "
       + "line — otherwise the author sees a duplicate error for two rows that look different",
   );
