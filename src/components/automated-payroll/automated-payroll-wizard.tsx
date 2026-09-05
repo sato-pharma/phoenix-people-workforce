@@ -23,6 +23,7 @@ import type {
 } from "@/lib/automated-payroll/types";
 import { PART1_STEP_KEYS, PART2_STEP_KEYS, stepPhase } from "@/lib/automated-payroll/types";
 import type { PopulationDiff } from "@/lib/automated-payroll/population-diff";
+import type { HoldReview } from "@/lib/automated-payroll/hold-review";
 import {
   PAYROLL_DATA_ISSUE_LABELS,
   type PayrollDataIssue,
@@ -119,6 +120,8 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
   const [draftRows, setDraftRows] = useState<DraftRow[]>([]);
   const excludedRows = useMemo(() => draftRows.filter((row) => row.excluded), [draftRows]);
   const [populationDiff, setPopulationDiff] = useState<PopulationDiff | null>(null);
+  /** Who this run is NOT paying, and why — see the panel below the reconciliation. */
+  const [holdReview, setHoldReview] = useState<HoldReview | null>(null);
 
   const confirmedSet = useMemo(
     () => new Set(stepStates.filter((state) => state.status === "confirmed").map((state) => state.stepKey)),
@@ -189,6 +192,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       setRecon(null);
       setNonEmployeeCount({ first: 0, second: 0 });
       setPopulationDiff(null);
+      setHoldReview(null);
       setDataQuality(null);
 
       // Load the population diff eagerly rather than behind a button: the bug
@@ -203,6 +207,20 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           })
           .catch(() => {
             /* diff is a safety net, never block the wizard on it */
+          });
+
+        // Who this run is not paying. Eager for the same reason as the diff: a
+        // held row is DROPPED at publish and writes no payslip, so the reason is
+        // readable only until the run is published — and the reconciliation
+        // strip reports it as a bare count, which is the one shape that cannot
+        // separate a settled owner ruling from an unanswered question.
+        void fetch(`/api/automated-payroll/runs/${runId}/hold-review`)
+          .then((response) => response.json())
+          .then((reviewData) => {
+            if (reviewData?.success) setHoldReview(reviewData.review as HoldReview);
+          })
+          .catch(() => {
+            /* the review is a safety net, never block the wizard on it */
           });
 
         // Same reasoning for missing pay-determining data: a null hire date or a
@@ -1016,6 +1034,102 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 value={recon.splitMismatches.length === 0 ? "balanced" : `${recon.splitMismatches.length} off`}
                 tone={recon.splitMismatches.length === 0 ? "emerald" : "rose"}
               />
+            </div>
+          ) : null}
+
+          {/* Who this run is NOT paying, and why.
+              The reconciliation strip above reports holds as a bare count, and a
+              count is the one shape that cannot separate a settled owner ruling
+              from an unanswered question — August 2026 read "Held: 13" while two
+              of those were the continuation of a July ruling and eleven were new
+              decisions with nothing recorded. A held row is dropped at publish
+              and writes no payslip, so this is the last screen on which the
+              reason can still be read at all. Named, never counted — the same
+              rule as the roster panel above. */}
+          {holdReview && holdReview.heldCount > 0 ? (
+            <div className={cn(adminSoftPanelClassName, "flex flex-col gap-3 p-4")}>
+              <div className="flex flex-wrap items-center gap-2">
+                <SectionHeading title="Held — not paid from this run" />
+                <AdminInsightChip tone="orange">{holdReview.heldCount} held</AdminInsightChip>
+                {holdReview.unexplainedCount > 0 ? (
+                  <AdminInsightChip tone="orange">
+                    {holdReview.unexplainedCount} with no reason recorded
+                  </AdminInsightChip>
+                ) : (
+                  <AdminInsightChip tone="emerald">every hold has a reason</AdminInsightChip>
+                )}
+                {holdReview.continuedCount > 0 ? (
+                  <AdminInsightChip tone="neutral">
+                    {holdReview.continuedCount} continued from {holdReview.priorMonthLabel}
+                  </AdminInsightChip>
+                ) : null}
+              </div>
+
+              <p className="text-xs text-slate-600">
+                A held employee is dropped when this run is published: no payslip and no salary record
+                is written for them, and nothing else records that they were paid outside the system.
+                The reason below is the only durable record of why.
+              </p>
+
+              {holdReview.unexplainedCount > 0 ? (
+                <p className="border-l-4 border-rose-500 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800">
+                  The hold step cannot be confirmed until each of these has a reason, so Part 2 and the
+                  publish are blocked until then.
+                </p>
+              ) : null}
+
+              {/* A stack, not a table: this has to stay readable at 375px without a
+                  horizontal scroll, and a reason is free text that must wrap rather
+                  than be cut off. */}
+              <ul className="flex flex-col gap-2">
+                {holdReview.held.map((person) => (
+                  <li
+                    key={person.hrId}
+                    className={cn(
+                      "flex flex-col gap-1 border-l-4 px-3 py-2",
+                      person.reason === null ? "border-rose-500 bg-rose-50/70" : "border-slate-300 bg-slate-50",
+                    )}
+                  >
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span className="text-sm font-semibold text-slate-800">{person.fullName}</span>
+                      <span className="text-[11px] text-slate-500">{person.hrId}</span>
+                      {person.jobTitle ? (
+                        <span className="text-[11px] text-slate-500">· {person.jobTitle}</span>
+                      ) : null}
+                      {person.continuity === "continued" ? (
+                        <span className="text-[11px] font-black uppercase tracking-wide text-amber-700">
+                          Also held in {holdReview.priorMonthLabel}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">
+                          New this month
+                        </span>
+                      )}
+                    </div>
+
+                    {person.reason ? (
+                      <span className="break-words text-[12px] text-slate-700">{person.reason}</span>
+                    ) : (
+                      <span className="break-words text-[12px] font-semibold text-rose-800">
+                        No reason recorded — nothing explains why this person is not being paid.
+                      </span>
+                    )}
+
+                    {/* Last month's own words, shown even when this month has its own
+                        reason: "held again, and here is what was said then" is the
+                        question this run cannot answer about itself. Suppressed only
+                        when the reason ALREADY is that text, carried forward, so the
+                        same sentence is not printed twice. */}
+                    {person.priorHold && !person.carriedForward ? (
+                      <span className="break-words text-[11px] text-amber-800">
+                        {holdReview.priorMonthLabel}:{" "}
+                        {person.priorHold.reason ??
+                          "no reason was recorded that month either — this hold has never been explained."}
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
             </div>
           ) : null}
 
