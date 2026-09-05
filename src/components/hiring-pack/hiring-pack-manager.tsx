@@ -67,6 +67,7 @@ import {
   INSURANCE_WAGE_DIVISOR,
   insuranceWageFromBase,
 } from "@/lib/hiring-pack/insurance-wage";
+import { renewalObjectiveReasonOptions } from "@/lib/hiring-pack/renewal-reasons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChoiceGroup } from "@/components/ui/choice-group";
@@ -96,7 +97,7 @@ const labelClassName =
 const factLabelClassName =
   "text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint";
 
-type FieldKind = "text" | "code" | "number" | "date";
+type FieldKind = "text" | "code" | "number" | "date" | "select";
 
 type FieldDef<Key extends string = string> = {
   key: Key;
@@ -106,6 +107,12 @@ type FieldDef<Key extends string = string> = {
   /** Sits under the input. Used where typing the wrong KIND of value is the likely mistake. */
   hint?: string;
   maxLength?: number;
+  /**
+   * The choices, on a `select` field. The first option is always "not chosen" and is added by the
+   * renderer rather than listed here, so no field has to remember to offer it — a required-looking
+   * dropdown with no way back to blank is how a value nobody meant to set gets set.
+   */
+  options?: ReadonlyArray<{ value: string; labelEn: string; labelAr: string }>;
 };
 
 /** A field on the joining side, writing `employee_hiring_profile`. */
@@ -233,6 +240,14 @@ const TERM_FIELDS: readonly HiringFieldDef[] = [
     labelAr: "صفة الموقّع",
     kind: "text",
     hint: "Blank uses the standing signatory's capacity.",
+  },
+  {
+    key: "contractObjectiveReasonCode",
+    labelEn: "Why this post is fixed-term",
+    labelAr: "السبب الموضوعي لتحديد المدة",
+    kind: "select",
+    options: renewalObjectiveReasonOptions(),
+    hint: "Printed on the renewal annex. Article 87 allows a fixed term only where the nature of the work requires it. Blank prints a blank for a pen.",
   },
 ];
 
@@ -2003,18 +2018,49 @@ function FieldGroup({
               <label className={labelClassName} htmlFor={`hiring-pack-${field.key}`}>
                 {field.labelEn} <span className="text-phx-ink-faint">{field.labelAr}</span>
               </label>
-              <Input
-                className={inputClassName}
-                disabled={disabled}
-                id={`hiring-pack-${field.key}`}
-                inputMode={field.kind === "code" || field.kind === "number" ? "numeric" : undefined}
-                maxLength={field.maxLength}
-                onChange={(event) =>
-                  onChange((current) => ({ ...current, [field.key]: event.target.value }))
-                }
-                type={field.kind === "date" ? "date" : field.kind === "number" ? "number" : "text"}
-                value={currentValue}
-              />
+              {field.kind === "select" ? (
+                /*
+                  A NATIVE SELECT, and it stays native on purpose. The fits-the-screen golden rule
+                  names this as the one control that cannot be narrowed, so its options carry SHORT
+                  labels while the full legal sentence lives in `renewal-reasons.ts` and prints on
+                  the annex — clipped legal text on a chooser is how the wrong ground gets picked.
+
+                  The empty option is rendered here rather than listed in the field definition, so
+                  every select gets a way back to "not chosen" without any field remembering to
+                  offer one. Blank is a real answer: it prints the dotted rule for a pen.
+                */
+                <select
+                  className={inputClassName}
+                  disabled={disabled}
+                  id={`hiring-pack-${field.key}`}
+                  onChange={(event) =>
+                    onChange((current) => ({ ...current, [field.key]: event.target.value }))
+                  }
+                  value={currentValue}
+                >
+                  <option value="">— not chosen —</option>
+                  {(field.options ?? []).map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.labelEn} · {option.labelAr}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Input
+                  className={inputClassName}
+                  disabled={disabled}
+                  id={`hiring-pack-${field.key}`}
+                  inputMode={
+                    field.kind === "code" || field.kind === "number" ? "numeric" : undefined
+                  }
+                  maxLength={field.maxLength}
+                  onChange={(event) =>
+                    onChange((current) => ({ ...current, [field.key]: event.target.value }))
+                  }
+                  type={field.kind === "date" ? "date" : field.kind === "number" ? "number" : "text"}
+                  value={currentValue}
+                />
+              )}
               {showSuggestion ? (
                 <button
                   className="mt-1 text-phx-xs font-semibold text-phx-accent underline decoration-dotted underline-offset-2 hover:text-phx-accent-press"

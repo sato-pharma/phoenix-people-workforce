@@ -122,6 +122,7 @@ function profileFixture(overrides: Partial<HiringPackProfile> = {}): HiringPackP
     // value here means somebody else did, and replaces him everywhere the paper names him.
     contractSignatoryNameAr: null,
     contractSignatoryTitleAr: null,
+    contractObjectiveReasonCode: null,
     updatedAt: null,
     ...overrides,
   };
