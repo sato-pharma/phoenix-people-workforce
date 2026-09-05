@@ -33,7 +33,7 @@ export default function TeamPerformanceChart({
           <Tooltip />
           <Legend />
           <ReferenceLine y={teamAchievement} label={{ value: "Team Avg", position: "middle" }} stroke="#94a3b8" strokeDasharray="5 5" />
-          <Bar dataKey="achievementPercent" fill="#f97316" radius={[4, 4, 0, 0]}>
+          <Bar dataKey="achievementPercent" fill="#f97316" radius={[0, 0, 0, 0]}>
             {teamRows.map((entry, index) => (
               <Cell
                 key={`cell-${index}`}

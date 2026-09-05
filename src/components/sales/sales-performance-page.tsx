@@ -980,7 +980,7 @@ const TrendChart = memo(function TrendChart({
                     dataKey="sales"
                     fill="url(#salesBarGradient)"
                     name="Sales"
-                    radius={[3, 3, 0, 0]}
+                    radius={[0, 0, 0, 0]}
                     yAxisId="money"
                   />
                   <Line

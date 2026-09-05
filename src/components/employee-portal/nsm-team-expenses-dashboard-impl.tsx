@@ -250,7 +250,7 @@ export function NsmTeamExpensesDashboard({
                   <Bar
                     dataKey="expenses"
                     fill="#f97316"
-                    radius={[3, 3, 0, 0]}
+                    radius={[0, 0, 0, 0]}
                     yAxisId="expenses"
                   />
                   <Line
@@ -300,7 +300,7 @@ export function NsmTeamExpensesDashboard({
                     tickLine={false}
                   />
                   <Tooltip content={<RankingTooltip />} />
-                  <Bar dataKey="totalExpenses" radius={[0, 3, 3, 0]}>
+                  <Bar dataKey="totalExpenses" radius={[0, 0, 0, 0]}>
                     {dsmRankingData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={expenseColor(entry.totalExpenses, maxExpense)} />
                     ))}
