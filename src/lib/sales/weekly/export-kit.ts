@@ -143,7 +143,7 @@ const RULE_DEEP = { style: "thin" as const, color: DEEP };
 // White on a Brand Blue band, ruled in the deep between columns — the treatment every other
 // export took on 2026-09-05, for the same reason: a header with no ground does not separate from
 // its data, and the ink rule that put type on white here is a rule about PAPER.
-export const headerStyle: CS = { font: { bold: true, size: 10, color: WHITE, name: HOUSE_XLSX_FONT }, fill: fill(BLUE), alignment: { vertical: "middle", horizontal: "left", indent: 1 }, border: { bottom: { style: "medium" as const, color: DEEP }, left: RULE_DEEP, right: RULE_DEEP, top: { style: "medium" as const, color: DEEP } } };
+export const headerStyle: CS = { font: { bold: true, size: 10, color: WHITE, name: HOUSE_XLSX_FONT }, fill: fill(BLUE), alignment: { vertical: "center", horizontal: "left", indent: 1 }, border: { bottom: { style: "medium" as const, color: DEEP }, left: RULE_DEEP, right: RULE_DEEP, top: { style: "medium" as const, color: DEEP } } };
 export const headerRightStyle: CS = { ...headerStyle, alignment: { vertical: "bottom", horizontal: "right", indent: 1 } };
 export const totalStyle: CS = { font: { bold: true, size: 10.5, color: DEEP, name: HOUSE_XLSX_FONT }, border: { bottom: RULE_BLUE, top: RULE_BLUE }, alignment: { vertical: "center", indent: 1 } };
 export const totalNumStyle = (fmt: string): CS => ({ font: { bold: true, size: 10.5, color: DEEP, name: HOUSE_XLSX_FONT }, border: { bottom: RULE_BLUE, top: RULE_BLUE }, alignment: { vertical: "center", horizontal: "right" }, numberFormat: { formatCode: fmt } });
