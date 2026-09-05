@@ -1409,6 +1409,8 @@ import { runAdminProfileCreatedAtHydrationSafeTests } from "./admin-profile-crea
 import { runEmployeeSavePreservesSalaryTests } from "./employee-save-preserves-salary.test.ts";
 
 import { runEmployeeJobTitleCasingHintTests } from "./employee-job-title-casing-hint.test.ts";
+
+import { runPayrollHoldConfirmStepReasonTests } from "./payroll-hold-confirm-step-reason.test.ts";
 import { runPmCallRateBandTests } from "./pm-call-rate-band.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4451,6 +4453,11 @@ await runTest("employee save preserves stored salary when the payload omits mone
 await runTest(
   "employee job title casing hint (offers CEO/QPPV/SFE/R&D/HR and the minor-word fix; stays silent on QA/QC, eCommerce, Arabic and already-correct titles)",
   runEmployeeJobTitleCasingHintTests,
+);
+
+await runTest(
+  "confirming a payroll hold step enforces the hold reason too (the write path saveStep's rule did not cover, and the last one before publish drops the held rows)",
+  runPayrollHoldConfirmStepReasonTests,
 );
 await runTest(
   "PM call-rate band (the owner's 8-12 judges PM ALONE: 7 PM + 2 AM = 9 a day is BELOW, because only the 7 counts)",
