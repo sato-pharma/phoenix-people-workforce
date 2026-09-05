@@ -64,11 +64,11 @@ export function cvFieldColumn(key: string): string | null {
   return CV_FIELD_COLUMNS[key] ?? null;
 }
 
-// Fields the AI can propose that are NOT part of the identity triple. fullName and email stay
-// excluded from auto-apply (see AUTO_APPLY_NEVER_KEYS in cv-auto-apply.ts) because createCandidate
-// owns identity resolution before the row exists — re-applying them later risks repointing an
-// already-matched candidate onto another person. Phone is allowed, but only on a candidate this
-// same intake created.
+// Fields the AI can propose that are NOT part of the identity triple. fullName alone stays
+// permanently excluded from auto-apply (see AUTO_APPLY_NEVER_KEYS in cv-auto-apply.ts) because
+// createCandidate owns identity resolution before the row exists — re-applying it later risks
+// repointing an already-matched candidate onto another person. Email and phone are allowed, but
+// only on a candidate this same intake created (email joined that gate 2026-09-05).
 export function listWritableCvFields(): CvFieldDefinition[] {
   return universalCvFields.filter((field) => field.storage === "column" && cvFieldColumn(field.key) !== null);
 }

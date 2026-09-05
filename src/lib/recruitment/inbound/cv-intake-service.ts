@@ -568,23 +568,30 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
           positionKey: extraction.positionKey,
         });
         if (Object.keys(autoApply).length > 0) {
-          // ats_candidates.phone_norm carries a partial UNIQUE index, so a phone the AI read off
-          // this CV can belong to somebody already in the pool (the same applicant under a second
-          // email, or a misread). That rejects the WHOLE update, which would take governorate,
-          // university and every other enriched column down with it. Retry once without the phone
-          // so the rest still lands, and leave the number in extracted_fields for a human.
+          // An identity column the AI read off this CV can already belong to somebody in the pool —
+          // the same applicant under a second phone number, or a misread — and that rejects the
+          // WHOLE update, taking governorate, university and every other enriched column down with
+          // it. Retry once without the identity columns so the rest still lands, and leave the
+          // rejected value in extracted_fields for a human to resolve.
+          //
+          // EMAIL is the one that can actually collide today: recruitment_candidates_email_norm_uidx
+          // is UNIQUE and live, and email joined auto-apply on 2026-09-05 (see cv-auto-apply.ts).
+          // Phone is kept in the strip because it is the same class of value, but its own unique
+          // index was dropped on 2026-08-15 and must not be restored — so a phone collision no
+          // longer reaches here, and a comment claiming phone_norm is unique would be wrong.
           try {
             enrichedCandidate = await updateCandidate(candidate.id, autoApply);
           } catch (writeError) {
-            if (autoApply.phone === undefined) throw writeError;
-            const { phone: _rejectedPhone, ...withoutPhone } = autoApply;
-            logError("CV auto-apply could not write the extracted phone; applying the rest", {
+            const { email: _rejectedEmail, phone: _rejectedPhone, ...withoutIdentity } = autoApply;
+            // Nothing identity-shaped to blame — the failure is something else and must surface.
+            if (Object.keys(withoutIdentity).length === Object.keys(autoApply).length) throw writeError;
+            logError("CV auto-apply could not write an extracted identity column; applying the rest", {
               error: writeError,
-              labels: { candidateId: candidate.id, event: "cv_auto_apply_phone_rejected" },
+              labels: { candidateId: candidate.id, event: "cv_auto_apply_identity_rejected" },
             });
             enrichedCandidate =
-              Object.keys(withoutPhone).length > 0
-                ? await updateCandidate(candidate.id, withoutPhone)
+              Object.keys(withoutIdentity).length > 0
+                ? await updateCandidate(candidate.id, withoutIdentity)
                 : enrichedCandidate;
           }
         }
