@@ -142,6 +142,13 @@ async function pivotCacheRecords(buffer: Buffer): Promise<string | null> {
   return part ? await part.async("string") : null;
 }
 
+/** The emitted pivot table definition, or null when the build carries no pivot. */
+async function pivotTableDefinition(buffer: Buffer): Promise<string | null> {
+  const zip = await JSZip.loadAsync(buffer);
+  const part = zip.file("xl/pivotTables/pivotTable1.xml");
+  return part ? await part.async("string") : null;
+}
+
 export async function runWeeklyExportTests() {
   // Interactive build: valid xlsx, 23 sheets (incl. the native pivot), no control bytes.
   const interactive = await buildWeeklyExportWorkbook(sampleDashboard(), GENERATED_AT, { interactive: true });
@@ -247,4 +254,31 @@ export async function runWeeklyExportTests() {
   // The non-interactive build carries no pivot at all, so the rewrite must be a clean no-op there
   // rather than something that fails or half-writes a part.
   assert.equal(await pivotCacheDefinition(plain), null, "the non-interactive build carries no pivot cache to patch");
+
+  // …and the cache is still WHOLE, which the record count above only partly proves.
+  //
+  // `refreshOnLoad="1"` is NOT a licence to empty the cache. Excel validates the pivots against it
+  // BEFORE it honours the refresh, so a cleared field list or a stripped <sharedItems> pool leaves
+  // every <item x="n"/> in pivotTable1.xml pointing into nothing — Excel removes the view and calls
+  // the workbook damaged. That is the bug that put "We found a problem with some content" on every
+  // premium closing export until 2026-09-02; the long note on `restorePivotCacheSharedItems` in
+  // src/lib/sales/closing-engine-fill.ts is the account of it.
+  //
+  // The FIELD half is the one a record count cannot see: a cache can declare its records honestly
+  // and still have lost the field the pivot lays out on, and that is invisible from the sheet —
+  // the pivot renders from its own stale layout until the refresh, and only then collapses. These
+  // three assertions are what fire if the rewrite above is ever "simplified" into a cache wipe.
+  const declaredFields = Number(/<cacheFields count="(\d+)"/.exec(cacheXml!)?.[1] ?? "-1");
+  const heldFields = cacheXml!.match(/<cacheField /g)?.length ?? -2;
+  assert.equal(declaredFields, heldFields, `the cache declares ${declaredFields} fields and holds ${heldFields}`);
+
+  const laidOut = Number(/<pivotFields count="(\d+)"/.exec((await pivotTableDefinition(interactive)) ?? "")?.[1] ?? "-1");
+  assert.equal(laidOut, heldFields, `the pivot lays out ${laidOut} fields and the cache holds ${heldFields}`);
+
+  assert.match(
+    cacheXml!,
+    /<sharedItems[^>]*>[\s\S]*?<\/sharedItems>/,
+    "the shared-item pools must still hold their values — an emptied pool orphans every <item x=..> " +
+      "the pivot enumerates, and Excel drops the view rather than refreshing it",
+  );
 }
