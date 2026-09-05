@@ -121,6 +121,7 @@ function detailRow(spec: RowSpec): ClosingDetailRow {
     invoiceDate: `${PERIOD}-15`,
     invoicePeriod: PERIOD,
     isConfidential: false,
+    evenSplitApplied: false,
     isDirect: false,
     missingClientCode: false,
     officialLine: LINE,

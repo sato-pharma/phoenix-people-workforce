@@ -89,6 +89,7 @@ function detailRow(id: number, areaCode: string, clientName: string, qty: number
     isConfidential: false,
     isDirect: false,
     missingClientCode: false,
+    evenSplitApplied: false,
     officialLine: LINE,
     productCode: PRODUCT,
     productName: "Lacto Advanced 1",

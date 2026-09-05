@@ -117,6 +117,7 @@ function detailRow(overrides: Partial<ClosingDetailRow> = {}): ClosingDetailRow 
     sheetValue: 5_428,
     isDirect: true,
     isConfidential: false,
+    evenSplitApplied: false,
     missingClientCode: true,
     validationState: "valid",
     includedInClosing: false,

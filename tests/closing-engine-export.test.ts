@@ -709,7 +709,7 @@ export async function runClosingEngineExportTests() {
     clientCode: `1011${index}`, clientName: `customer ${index}`, discount: 0, distributorCode: "EP",
     effectiveUnits: 1, exclusions: [], factoryPrice: value, family: "Tebofortin", id: index,
     includedInClosing: true, invoiceDate: "2026-07-15", invoicePeriod: "2026-07",
-    isConfidential: false, isDirect: false, missingClientCode: false, officialLine: "CNS",
+    evenSplitApplied: false, isConfidential: false, isDirect: false, missingClientCode: false, officialLine: "CNS",
     // The organogram pair. Equal to the geographic one here, as it is on every line and area the
     // organogram does not re-own — the case where they DIFFER is pinned in the region-basis test.
     operationalRegionCode: "CA", operationalRegionName: "Cairo",

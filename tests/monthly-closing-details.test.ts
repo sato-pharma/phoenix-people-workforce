@@ -74,6 +74,7 @@ function row(overrides: Partial<ClosingDetailRow> = {}): ClosingDetailRow {
     sheetValue: effectiveUnits * factoryPrice,
     isDirect: false,
     isConfidential: false,
+    evenSplitApplied: false,
     missingClientCode: false,
     validationState: "valid",
     includedInClosing: true,

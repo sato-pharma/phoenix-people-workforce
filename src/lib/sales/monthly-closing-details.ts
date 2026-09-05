@@ -12,6 +12,7 @@ import { applyClosingAreaMergesToDetails } from "@/lib/sales/closing-area-merges
 import { countsInClosingHeadline } from "@/lib/sales/closing-headline";
 import { loadOperationalRegionResolver } from "@/lib/sales/closing-organogram-regions";
 import { closingAreaOf, isRebookedRow } from "@/lib/sales/closing-row-area";
+import { evenSplitKey, loadEvenSplitCustomerKeys } from "@/lib/sales/even-split-registry";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { rowIsInRegionScope, rowMatchesRegionFilter } from "@/lib/sales/sos-region-basis";
@@ -131,6 +132,12 @@ export type ClosingDetailRow = {
 
   isDirect: boolean;
   isConfidential: boolean;
+  /**
+   * True when this customer and line are in `sos_even_split_customers` — the database has already
+   * shared this row's units across areas, so no other rule may distribute them again. Read by the
+   * store city split; see StoreSplitRow.evenSplitApplied and even-split-registry.ts.
+   */
+  evenSplitApplied: boolean;
   /** Data quality, NOT an exclusion — the row still counts, it just has no traceable outlet. */
   missingClientCode: boolean;
   validationState: string;
@@ -559,12 +566,16 @@ export async function loadMonthlyClosingDetails(
     if (!allowed.has(normalizeLineKey(line))) return empty(true);
   }
 
-  const [batchIds, references, operationalRegions] = await Promise.all([
+  const [batchIds, references, operationalRegions, evenSplitCustomers] = await Promise.all([
     validatedBatchIdsForPeriod(period),
     loadSalesReferenceData({ includeCustomerBricks: false }),
     // The org chart, for the region relabel below. Fails soft to geography, so an unreadable chart
     // costs this tab its region vocabulary and never its rows.
     loadOperationalRegionResolver(),
+    // Customers the database distributes across areas by a rule of their own. Read here, at the one
+    // place closing rows are built, so every consumer of those rows inherits the flag instead of
+    // having to remember it — the store city split above all. See even-split-registry.ts.
+    loadEvenSplitCustomerKeys(),
   ]);
   if (batchIds.length === 0) return empty(false);
 
@@ -677,6 +688,9 @@ export async function loadMonthlyClosingDetails(
 
       isDirect,
       isConfidential,
+      // The raw invoice puts this customer's whole month in one area; the rollup the Closing Matrix
+      // reads has already shared it out. Nothing in the row itself shows that, so it is stamped here.
+      evenSplitApplied: evenSplitCustomers.has(evenSplitKey(clientCode, text(raw.official_line))),
       missingClientCode: !clientCode,
       validationState: text(raw.validation_state),
 
