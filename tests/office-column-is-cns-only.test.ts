@@ -14,7 +14,10 @@ import {
   type MonthlyClosingAggregateCell,
   type MonthlyClosingMatrix,
 } from "../src/lib/sales/monthly-distributor-import.ts";
+import { SalesWorkflowError } from "../src/lib/sales/contracts.ts";
 import {
+  assertOfficeProductsOnAllowedLine,
+  isOfficeAllocationLine,
   lineHasOfficeChannel,
   OFFICE_CHANNEL_LINES,
   OFFICE_DISTRIBUTOR_CODE,
@@ -331,10 +334,115 @@ async function runPortalWorkbookTests() {
   }
 }
 
+// ── the ENFORCEMENT half of the same rule (owner, 2026-09-05) ────────────────
+//
+// Everything above pins what the closing SHOWS. None of it stopped a non-CNS product being
+// allocated in the first place: the upload accepted it, the locked value-share rule spread it, and
+// this display setting then hid the result. That is precisely how Pedia's 2026-01 slice happened —
+// Lacto Advanced 1 and 2, 556 units, allocated into Pedia's January closing and never shown.
+// Hiding a number is not refusing it, and for seven months this file was pinning the hiding.
+function runUploadGateTests() {
+  const cns = { line: "CNS", productCode: "CN001", productName: "Depakine", units: 100 };
+  const pedia1 = { line: "Pedia", productCode: "LA001", productName: "Lacto Advanced 1", units: 291 };
+  const pedia2 = { line: "Pedia", productCode: "LA002", productName: "Lacto Advanced 2", units: 265 };
+
+  // The predicate, in both directions and tolerant of how a line name is typed.
+  assert.equal(isOfficeAllocationLine("CNS"), true);
+  assert.equal(isOfficeAllocationLine(" cns "), true, "case and stray spaces must not open a hole");
+  for (const line of ["Pedia", "Anti Infective", "Head Office", "", null, undefined]) {
+    assert.equal(
+      isOfficeAllocationLine(line),
+      false,
+      `${line || "(blank)"} may not be allocated Office units`,
+    );
+  }
+  assert.deepEqual(
+    OFFICE_CHANNEL_LINES.map(String),
+    ["CNS"],
+    "the display half and the enforcement half read ONE list — if this changes, both move together",
+  );
+
+  // A clean workbook passes.
+  assert.doesNotThrow(
+    () => assertOfficeProductsOnAllowedLine([cns]),
+    "a CNS-only Office workbook is accepted exactly as before",
+  );
+  assert.doesNotThrow(
+    () => assertOfficeProductsOnAllowedLine([]),
+    "an empty product list is not a line violation — other guards own that case",
+  );
+
+  // The real January workbook is refused, and the message names what to fix.
+  let thrown: unknown;
+  try {
+    assertOfficeProductsOnAllowedLine([cns, pedia1, pedia2]);
+  } catch (error) {
+    thrown = error;
+  }
+  assert.ok(thrown instanceof SalesWorkflowError, "a non-CNS product refuses the upload");
+  const failure = thrown as SalesWorkflowError<{ offLineProducts: { productCode: string }[] }>;
+  assert.equal(failure.code, "office_line_not_allowed");
+  assert.equal(failure.status, 400);
+  assert.match(failure.message, /Lacto Advanced 1/, "the message names the offending product");
+  assert.match(failure.message, /Lacto Advanced 2/, "and every one of them, not just the first");
+  assert.match(failure.message, /2 products from another line/, "and says how many");
+  assert.ok(
+    !failure.message.includes("Depakine"),
+    "the CNS product is not blamed — it is the file that is refused, not that product",
+  );
+  assert.deepEqual(
+    (failure.details?.offLineProducts ?? []).map((product) => product.productCode).sort(),
+    ["LA001", "LA002"],
+    "and the caller gets the offending rows to render",
+  );
+
+  // Singular reads as English, because a one-product sheet is the likeliest real case.
+  try {
+    assertOfficeProductsOnAllowedLine([pedia1]);
+    assert.fail("one offending product must still refuse the file");
+  } catch (error) {
+    assert.match((error as Error).message, /1 product from another line\. Remove it from the sheet/);
+  }
+
+  // The upload actually CALLS it. Every assertion above drives the rule directly, so without this
+  // the gate could be deleted from the upload path and this file would stay green.
+  const upload = readFileSync(
+    new URL("../src/lib/sales/office-upload.ts", import.meta.url),
+    "utf8",
+  );
+  //
+  // Anchored to the START of a line, not merely "the name appears somewhere". A substring match
+  // passes on `void 0 && assertOfficeProductsOnAllowedLine(...)` — the call disabled while the name
+  // survives — which is exactly the shape this pin has to catch. Verified by making that edit: the
+  // loose form stayed green, this one goes red.
+  assert.match(
+    upload,
+    /^\s*assertOfficeProductsOnAllowedLine\(/m,
+    "office-upload.ts CALLS the refusal as a statement, before the locked allocation rule",
+  );
+  assert.ok(
+    upload.indexOf("assertOfficeProductsOnAllowedLine(") < upload.indexOf("computeOfficeAllocation({"),
+    "and refuses it BEFORE allocating, not after",
+  );
+
+  // The registry's twin guard rides in the same change: the even-split rule is CNS only too, and
+  // that one is enforced in the database because nothing in the application writes that table.
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20260905052000_even_split_registry_is_cns_only.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    migration,
+    /check \(official_line = 'CNS'\)/,
+    "the even-split registry constraint pins the literal line the matching function compares against",
+  );
+}
+
 export async function runOfficeColumnIsCnsOnlyTests() {
   runPredicateTests();
   runCnsUnchangedTests(await workbookFor("CNS", build("CNS", OFFICE_CELLS)));
   await runNonCnsTests();
   await runPortalWorkbookTests();
   runRendererWiringTests();
+  runUploadGateTests();
 }
