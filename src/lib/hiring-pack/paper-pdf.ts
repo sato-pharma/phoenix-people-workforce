@@ -40,7 +40,10 @@
 // value that silently does nothing — which is worse than not passing one, because the next person
 // to read it would believe it.
 
+import { PDFDocument } from "pdf-lib";
+
 import { HOUSE_COLORS } from "@/lib/hiring-pack/house-identity";
+import { ARABIC_FONT_STACK } from "@/lib/hiring-pack/render-shared";
 import { inlineLocalAssets } from "@/lib/hiring-pack/paper-artwork";
 import { ChromiumUnavailableError, withChromiumPage } from "@/lib/pdf/chromium";
 
@@ -87,7 +90,7 @@ export { ChromiumUnavailableError };
  * isolated document whose default font-size is zero; a template without one is not small, it is
  * invisible, and it fails silently on a paper nobody re-opens.
  */
-const PAGE_NUMBER_FOOTER = `<div style="width:100%;padding:0 10.2mm;font-family:Tahoma,'Segoe UI',Arial,sans-serif;`
+const PAGE_NUMBER_FOOTER = `<div style="width:100%;padding:0 10.2mm;font-family:${ARABIC_FONT_STACK};`
   + `font-size:7pt;color:${HOUSE_COLORS.muted};direction:rtl;text-align:center">`
   + `صفحة <span class="pageNumber"></span> من <span class="totalPages"></span>`
   + `</div>`;
@@ -96,6 +99,20 @@ const PAGE_NUMBER_FOOTER = `<div style="width:100%;padding:0 10.2mm;font-family:
 const EMPTY_HEADER = '<span style="font-size:0"></span>';
 
 export type HiringPaperPdfOptions = {
+  /**
+   * How many copies of this paper to stamp out.
+   *
+   * THE HTML PASSED IN MUST BE ONE COPY, and the duplication happens here rather than in the
+   * document, because Chrome's `totalPages` counts the whole PDF. Four copies of a three-page
+   * contract rendered as one document footed every page "صفحة N من 12" — a page count of something
+   * nobody is holding. Each copy is a separate instrument that gets signed on its own, so its pages
+   * are numbered against ITSELF.
+   *
+   * Safe because the copies are byte-identical by construction: every renderer builds them with
+   * `Array.from({ length: total }, () => renderCopy(...))`. Duplicating the rendered pages is the
+   * same output as rendering the same HTML N times, for one Chromium run instead of N.
+   */
+  copies?: number;
   /**
    * Number the pages.
    *
@@ -133,7 +150,7 @@ export async function renderHiringPaperPdf(
         + "await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))); })()",
     );
 
-    return page.pdf({
+    const single = await page.pdf({
       // The artwork IS a background in CSS terms on some sheets, and every form's rules, boxes and
       // tints are backgrounds. Without this the government forms print as bare text.
       printBackground: true,
@@ -151,5 +168,18 @@ export async function renderHiringPaperPdf(
         : {}),
       timeout: 30_000,
     });
+
+    const wanted = Math.max(1, Math.trunc(options.copies ?? 1));
+    if (wanted === 1) return single;
+
+    // Stamp out the remaining copies. `copyPages` is a page-tree copy, so each one carries the
+    // footer Chromium already drew — including its per-copy numbering.
+    const source = await PDFDocument.load(single);
+    const out = await PDFDocument.create();
+    for (let copy = 0; copy < wanted; copy += 1) {
+      const pages = await out.copyPages(source, source.getPageIndices());
+      for (const one of pages) out.addPage(one);
+    }
+    return out.save();
   });
 }

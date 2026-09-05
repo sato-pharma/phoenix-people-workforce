@@ -191,7 +191,23 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
     // ─────────────────────────────────────────────────────────────────────────────────────────
     if (url.searchParams.get("format") === "pdf") {
       try {
-        const pdf = await renderHiringPaperPdf(paper.html, {
+        // ONE COPY IS RENDERED, and the rest are stamped from it. Chrome's `totalPages` counts the
+        // whole PDF, so four copies of a three-page contract in one document footed every page
+        // "صفحة N من 12" — a count of something nobody is holding. Each copy is signed on its own,
+        // so it is numbered against itself. The copies are byte-identical by construction, so this
+        // is the same output for one Chromium run instead of four.
+        const one = await renderHiringPaper({
+          access,
+          copies: "1",
+          document: requested,
+          hrId,
+          version: url.searchParams.get("version"),
+        });
+        if (!one.ok) {
+          return NextResponse.json({ error: one.code, message: one.message }, { status: one.status });
+        }
+        const pdf = await renderHiringPaperPdf(one.html, {
+          copies: paper.copies,
           pageNumbers: documentCarriesHousePageNumbers(requested),
         });
         return new Response(Buffer.from(pdf), {
