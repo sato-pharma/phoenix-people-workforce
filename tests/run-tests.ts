@@ -860,6 +860,7 @@ import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-bric
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
+import { runOfficeReceiptExplainsItsRowCountTests } from "./office-receipt-explains-its-row-count.test.ts";
 import { runOutboxRowRecordsItsOriginTests } from "./outbox-row-records-its-origin.test.ts";
 import { runVacationEmailSkipRecordedTests } from "./vacation-email-skip-is-recorded.test.ts";
 import { runNormalizerCodedSheetDayTests } from "./normalizer-coded-sheet-carries-the-day.test.ts";
@@ -2887,6 +2888,7 @@ await runTest("SoS backfill matches the empty-string brick sentinel, not just NU
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
+await runTest('the Office receipt explains what its Rows Read number is', runOfficeReceiptExplainsItsRowCountTests);
 await runTest('an outbox row records which runtime enqueued it', runOutboxRowRecordsItsOriginTests);
 await runTest('a skipped vacation email is recorded, never silent', runVacationEmailSkipRecordedTests);
 await runTest('the coded sheet carries the invoice DAY, not the period', runNormalizerCodedSheetDayTests);
