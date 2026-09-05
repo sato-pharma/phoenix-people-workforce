@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import { toApiError } from "../src/lib/http/api-errors.ts";
 import { isUuid } from "../src/lib/http/uuid.ts";
@@ -196,4 +196,58 @@ export async function runMalformedUuidIdGuardsTests() {
     "Marketing request detail failed.",
     "and must keep redacting the Postgres sentence behind the caller's fallback",
   );
+
+  // ── one definition, and it stays that way ─────────────────────────────────
+  // The uuid regex had regenerated into three separate copies before it was folded: here, in
+  // hiring-pack/types.ts, and inline in payroll/service.ts as `isLikelyUuid`. Nothing caught that,
+  // because three identical regexes never disagree — until one of them is edited.
+  //
+  // metrics.ts is the deliberate exception and is listed, not excluded silently: `isUuidLike`
+  // tests `value.trim()` because it SUPPRESSES uuids from notification detail rows, where
+  // catching one with stray whitespace is the safe error. A lookup guard must NOT trim — Postgres
+  // answers `"<uuid> "` with 22P02 — so folding the two together would break whichever call site
+  // lost its own semantics.
+  const ALLOWED_UUID_PATTERN_FILES = new Set([
+    "src/lib/http/uuid.ts",
+    // Deliberately NOT folded, both with a different contract from a lookup guard:
+    //   metrics.ts  — isUuidLike TRIMS, because it suppresses uuids from notification detail rows.
+    //   ai-redact.ts  — a global, word-boundary scanner that finds uuids ANYWHERE in a
+    //                    string to redact them, never a test of whether one value IS a uuid.
+    // A lookup guard must be anchored and must not trim; folding either would break one of the two.
+    "src/lib/communication/metrics.ts",
+    "src/lib/error-monitor/ai-redact.ts",
+  ]);
+
+  const uuidPattern = /\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{12\}/;
+  const srcRoot = new URL("../src/", import.meta.url);
+  const offenders: string[] = [];
+
+  const walk = (dir: URL, prefix: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        walk(new URL(`${entry.name}/`, dir), `${prefix}${entry.name}/`);
+        continue;
+      }
+      if (!entry.name.endsWith(".ts") && !entry.name.endsWith(".tsx")) continue;
+      const rel = `src/${prefix}${entry.name}`;
+      if (ALLOWED_UUID_PATTERN_FILES.has(rel)) continue;
+      if (uuidPattern.test(readFileSync(new URL(entry.name, dir), "utf8"))) offenders.push(rel);
+    }
+  };
+  walk(srcRoot, "");
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `a uuid regex was written again instead of importing isUuid from @/lib/http/uuid: ${offenders.join(", ")}`,
+  );
+
+  // And the allow-list must not rot into cover for files that no longer hold the pattern.
+  for (const allowed of ALLOWED_UUID_PATTERN_FILES) {
+    const text = readFileSync(new URL(`../${allowed}`, import.meta.url), "utf8");
+    assert.ok(
+      uuidPattern.test(text),
+      `${allowed} is allow-listed for the uuid regex but no longer contains one — drop it from the list`,
+    );
+  }
 }

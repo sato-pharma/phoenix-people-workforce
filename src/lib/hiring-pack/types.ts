@@ -13,6 +13,9 @@
  *   one certifies the employee is clear of the company and he keeps it, the other certifies the
  *   company is clear of him and the company files it. A departure produces both.
  */
+
+import { isUuid } from "@/lib/http/uuid";
+
 export type HiringPackDocument =
   | "contract"
   | "form1"
@@ -179,6 +182,10 @@ export function customDocumentFor(templateKey: string): CustomHiringPackDocument
   return `${CUSTOM_DOCUMENT_PREFIX}${templateKey}`;
 }
 
+// Re-exported, not redefined: this module's callers have imported `isUuid` from here since before
+// there was anywhere else to put it, and the definition now lives in one place.
+export { isUuid };
+
 /**
  * The uuid inside a `custom:<uuid>` document, or null for anything else.
  *
@@ -186,19 +193,6 @@ export function customDocumentFor(templateKey: string): CustomHiringPackDocument
  * about to be used to look up a row, and the caller's alternative to a null here is a query built
  * from whatever came after the prefix.
  */
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * Whether a string is a uuid, for callers about to hand one to a uuid COLUMN.
- *
- * Postgres does not answer "no rows" for a malformed uuid — it raises 22P02, which reaches a caller
- * as a 500 rather than as the 404 the situation actually is. Every id in this module comes from a
- * url or a request body, so the check belongs at the point of use.
- */
-export function isUuid(value: string): boolean {
-  return UUID.test(value);
-}
-
 export function customTemplateKeyOf(document: string): string | null {
   if (!document.startsWith(CUSTOM_DOCUMENT_PREFIX)) return null;
   const key = document.slice(CUSTOM_DOCUMENT_PREFIX.length);

@@ -20,6 +20,8 @@
  * when the pair matches.
  */
 
+import { isUuid } from "@/lib/http/uuid";
+
 export type CustomerRegister = "marketing" | "direct-order";
 
 export type CustomerSubjectId = `mkt_${string}` | `dor_${string}`;
@@ -33,15 +35,6 @@ const PREFIX_BY_REGISTER: Record<CustomerRegister, string> = {
   "direct-order": "dor_",
   marketing: "mkt_",
 };
-
-/**
- * A UUID, and nothing that merely contains one.
- *
- * The subject id lands in a route segment, so it is attacker-supplied text. Anchoring the pattern
- * means a decoded `recordId` is always safe to hand to a `.eq()` — there is no path where a caller
- * receives a half-parsed id and builds a query out of it.
- */
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function encodeCustomerSubjectId(ref: CustomerSubjectRef): CustomerSubjectId {
   return `${PREFIX_BY_REGISTER[ref.register]}${ref.recordId}` as CustomerSubjectId;
@@ -60,7 +53,7 @@ export function decodeCustomerSubjectId(raw: string | null | undefined): Custome
     const prefix = PREFIX_BY_REGISTER[register];
     if (!value.startsWith(prefix)) continue;
     const recordId = value.slice(prefix.length);
-    if (!UUID.test(recordId)) return null;
+    if (!isUuid(recordId)) return null;
     return { recordId, register };
   }
   return null;

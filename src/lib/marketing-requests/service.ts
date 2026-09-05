@@ -3557,15 +3557,6 @@ function requireMarketingDecisionActor(access: AccessContext) {
 }
 
 /**
- * One request, mapped. Throws `marketing_request_not_found` when it does not exist.
- *
- * Exported (read-only, and with NO access check of its own) so a composite read surface can load
- * the same row without re-deriving the mapping. Callers own the gate — never call this in place
- * of one.
- */
-const MARKETING_REQUEST_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
  * Turn whatever identifier a link carries into the request's UUID.
  *
  * Every read below this line keys on `marketing_requests.id`, a UUID — but the identifier a HUMAN
@@ -3579,7 +3570,7 @@ const MARKETING_REQUEST_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}
 export async function resolveMarketingRequestUuid(supabase: SupabaseClient, idOrCode: string) {
   const candidate = String(idOrCode ?? "").trim();
   if (!candidate) throw notFoundError("Marketing request was not found.", "marketing_request_not_found");
-  if (MARKETING_REQUEST_UUID.test(candidate)) return candidate;
+  if (isUuid(candidate)) return candidate;
 
   const { data, error } = await supabase
     .from("marketing_requests")
@@ -3591,6 +3582,13 @@ export async function resolveMarketingRequestUuid(supabase: SupabaseClient, idOr
   return String(data.id);
 }
 
+/**
+ * One request, mapped. Throws `marketing_request_not_found` when it does not exist.
+ *
+ * Exported (read-only, and with NO access check of its own) so a composite read surface can load
+ * the same row without re-deriving the mapping. Callers own the gate — never call this in place
+ * of one.
+ */
 export async function loadMarketingRequestById(supabase: SupabaseClient, requestId: string) {
   const { data, error } = await supabase
     .from("marketing_requests")

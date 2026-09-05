@@ -34,6 +34,7 @@
 
 import { getNavigationSections, type NavigationSectionItem } from "@/config/system-navigation";
 import { systemIdentity } from "@/config/system-settings";
+import { isUuid } from "@/lib/http/uuid";
 import type { NavigationMode, PhoenixRole } from "@/lib/auth/permissions";
 import { getActiveHref, normalizePathnameForMode } from "@/lib/navigation/active-path";
 
@@ -85,7 +86,7 @@ function decodeSegment(segment: string): string {
 function looksLikeIdentifier(rawSegment: string): boolean {
   const segment = decodeSegment(rawSegment);
   if (/^\d+$/.test(segment)) return true;
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment)) return true;
+  if (isUuid(segment)) return true;
   if (/^[a-z]{1,3}-\d+$/i.test(segment)) return true;
   // A `kind:value` composite key. `repKeyOf` in crm/reps-plans.ts emits three of them — `crm:1468`,
   // `hr:b-141` and `name:Bishoy Bahaa` — and the Reps Plans drill-down carries one as its whole
