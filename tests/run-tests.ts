@@ -188,6 +188,7 @@ import { runRecruitmentCandidateMergeTests } from "./recruitment-candidate-merge
 import { runWhatsAppScreeningQuestionsMenuTests } from "./whatsapp-screening-questions-menu.test.ts";
 import { runWhatsAppScreeningQuestionsSessionTests } from "./whatsapp-screening-questions-session.test.ts";
 import { runWhatsAppScreeningQuestionsAdminTests } from "./whatsapp-screening-questions-admin.test.ts";
+import { runWhatsAppBuiltInQuestionAudienceTests } from "./whatsapp-built-in-question-audience.test.ts";
 import { runWhatsAppScreeningQuestionRoleScopeTests } from "./whatsapp-screening-question-role-scope.test.ts";
 import { runWhatsAppQuestionPromptsTests } from "./whatsapp-question-prompts.test.ts";
 import { runRecruitmentPipelineMetricsTests } from "./recruitment-pipeline-metrics.test.ts";
@@ -1637,6 +1638,10 @@ await runTest(
 await runTest(
   "WhatsApp screening questions - admin (slugifyQuestionKey/disambiguateQuestionKey; admin:update is a hard boundary open only to Super Admin; save validates before writing and never deletes a row)",
   runWhatsAppScreeningQuestionsAdminTests,
+);
+await runTest(
+  "who is asked which of the six built-in WhatsApp questions (the area cascade survives as a default, an empty audience widens it, a skipped region skips the area, and a reworded answer keeps its code)",
+  runWhatsAppBuiltInQuestionAudienceTests,
 );
 await runTest(
   "WhatsApp screening question role scope (a question scoped to the Office Coordinator never reaches a medical rep; an unscoped one still reaches everyone, and a scoped one never reaches an applicant whose role we do not know)",

@@ -14,8 +14,12 @@ import {
   WHATSAPP_ROW_DESCRIPTION_MAX,
   WHATSAPP_ROW_TITLE_MAX,
 } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
-import { candidateRoleFamilies, candidateRoleFamilyLabels } from "@/lib/recruitment/candidate-role-family";
-import { screeningQuestionViolations, type ScreeningQuestionKind } from "@/lib/recruitment/inbound/whatsapp-screening-questions";
+import { QuestionAudiencePicker } from "@/components/admin/question-audience-picker";
+import {
+  screeningQuestionViolations,
+  withStableOptionValues,
+  type ScreeningQuestionKind,
+} from "@/lib/recruitment/inbound/whatsapp-screening-questions";
 import type { ScreeningQuestionAdminRow } from "@/lib/recruitment/inbound/whatsapp-screening-questions-admin";
 
 type Props = {
@@ -26,7 +30,20 @@ type Props = {
   embedded?: boolean;
 };
 
-type EditableOption = { title: string; description: string };
+/**
+ * `value` is the code this answer sends back, and it is STICKY once saved: null for an option nobody
+ * has saved yet, the server's own value forever after.
+ *
+ * THIS FIELD IS WHY EDITING AN ANSWERED QUESTION IS SAFE. The value used to be re-derived from the
+ * title on every single save, so retitling "Yes, I have one" to "Yes" silently rewrote the code from
+ * `yes_i_have_one` to `yes`. That did not matter while an answered question was frozen; the moment
+ * the owner asked (2026-09-05) to be able to edit the wording of a question people have already
+ * answered, it became the way a menu already sitting on somebody's phone stops working - their tap
+ * carries the OLD value, `decideNextExtraStep` finds no option with it, and the reply is dropped as
+ * `unknown_value` with no error anywhere. Keeping the value fixed is what makes the retitle a
+ * relabel, exactly as the six built-in questions above already treat theirs.
+ */
+type EditableOption = { title: string; description: string; value: string | null };
 
 type EditableQuestion = {
   /** Stable React key — the server id once saved, a local placeholder before that. Never the
@@ -45,7 +62,7 @@ type EditableQuestion = {
 };
 
 function newOption(): EditableOption {
-  return { description: "", title: "" };
+  return { description: "", title: "", value: null };
 }
 
 function fromServerRow(row: ScreeningQuestionAdminRow): EditableQuestion {
@@ -60,26 +77,11 @@ function fromServerRow(row: ScreeningQuestionAdminRow): EditableQuestion {
     options: (row.options ?? []).map((option) => ({
       description: option.description ?? "",
       title: option.title,
+      // Carried through rather than dropped - see EditableOption. Dropping it here was the bug.
+      value: option.value,
     })),
     questionKey: row.questionKey,
   };
-}
-
-/** The admin never sees or sets the internal row-id token — it is derived from the option's own
- *  title, disambiguated within the question, right before every validation check and every save. */
-function withDerivedValues(options: readonly EditableOption[]) {
-  const used = new Set<string>();
-  return options.map((option, index) => {
-    const base = option.title.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || `option_${index + 1}`;
-    let value = base;
-    let suffix = 2;
-    while (used.has(value)) {
-      value = `${base}_${suffix}`;
-      suffix += 1;
-    }
-    used.add(value);
-    return { description: option.description.trim() || null, title: option.title.trim(), value };
-  });
 }
 
 function rowIssues(question: EditableQuestion): string[] {
@@ -93,7 +95,7 @@ function rowIssues(question: EditableQuestion): string[] {
     // A brand-new row has no question_key yet — the server generates and validates the real one at
     // save time. This placeholder only stands in so the OTHER checks (length, option shape) can run
     // live, without a spurious "key format" complaint on a question nobody has saved yet.
-    options: question.kind === "tappable" ? withDerivedValues(question.options) : null,
+    options: question.kind === "tappable" ? withStableOptionValues(question.options) : null,
     questionKey: question.questionKey ?? "draft_question",
   });
 }
@@ -202,7 +204,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
             id: row.id,
             isActive: row.isActive,
             kind: row.kind,
-            options: row.kind === "tappable" ? withDerivedValues(row.options) : null,
+            options: row.kind === "tappable" ? withStableOptionValues(row.options) : null,
           })),
         }),
       });
@@ -281,7 +283,17 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
         <div className="space-y-3">
           {rows.map((row, index) => {
             const issues = rowIssues(row);
-            const locked = row.hasAnswers;
+            // ANSWERED QUESTIONS: the WORDING is editable and the STRUCTURE is not. Owner's
+            // decision, 2026-09-05, asked directly - he wanted to be able to edit a question people
+            // had already answered, and chose the narrower of the two ways to give him that.
+            //
+            // What that line separates: retitling an answer is a relabel, because the code beneath
+            // it is sticky (see EditableOption) and stored answers hold the TITLE AS IT READ WHEN IT
+            // WAS ANSWERED - a historical fact this screen cannot reach in either direction. Adding
+            // or removing an answer, or switching the question between tappable and free text, is
+            // not a relabel: it changes what a menu already on somebody's phone can send back, and
+            // there is no reading of the old answers that survives it.
+            const structureLocked = row.hasAnswers;
             return (
               <Card className="p-4" key={row.clientKey}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -322,9 +334,9 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                         New
                       </span>
                     )}
-                    {locked ? (
-                      <span className="rounded bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wider text-amber-700">
-                        Answered — locked
+                    {structureLocked ? (
+                      <span className="bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wider text-amber-700">
+                        Answered — wording only
                       </span>
                     ) : null}
                   </div>
@@ -334,7 +346,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                       <Switch checked={row.isActive} onChange={(checked) => updateRow(row.clientKey, { isActive: checked })} />
                       {row.isActive ? "Active" : "Inactive"}
                     </label>
-                    {!locked ? (
+                    {!structureLocked ? (
                       <Button
                         aria-label="Delete question"
                         disabled={deletingKey === row.clientKey}
@@ -363,8 +375,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                     </span>
                   </div>
                   <textarea
-                    className="mt-1 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-orange-300 disabled:bg-slate-50 disabled:text-slate-400"
-                    disabled={locked}
+                    className="mt-1 w-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-orange-300 disabled:bg-slate-50 disabled:text-slate-400"
                     id={`body-${row.clientKey}`}
                     onChange={(event) => updateRow(row.clientKey, { bodyText: event.target.value })}
                     placeholder="e.g. Do you already have a valid driving license?"
@@ -378,7 +389,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                   <label className="flex items-center gap-1.5 text-sm text-slate-700">
                     <input
                       checked={row.kind === "tappable"}
-                      disabled={locked}
+                      disabled={structureLocked}
                       onChange={() => updateRow(row.clientKey, { kind: "tappable" })}
                       type="radio"
                     />
@@ -387,7 +398,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                   <label className="flex items-center gap-1.5 text-sm text-slate-700">
                     <input
                       checked={row.kind === "free_text"}
-                      disabled={locked}
+                      disabled={structureLocked}
                       onChange={() => updateRow(row.clientKey, { kind: "free_text" })}
                       type="radio"
                     />
@@ -395,40 +406,18 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                   </label>
                 </div>
 
-                {/* WHO IS ASKED. Nothing ticked means everyone, which is what every question meant
-                    before scoping existed — so an admin who ignores this control entirely gets the
-                    old behaviour rather than a question nobody is asked. Deliberately NOT disabled
-                    when the question is locked: locking exists to protect answers already collected
-                    under a key, and narrowing who gets asked NEXT orphans nothing. "Stop asking reps
-                    this" is exactly the edit somebody needs to make on a live question. */}
+                {/* WHO IS ASKED. The same component the six built-in questions above use, so the
+                    two halves of this screen cannot describe the same control differently.
+                    Deliberately NOT disabled when the question is answered: the lock protects the
+                    answer CODES already collected under this key, and narrowing who gets asked NEXT
+                    orphans nothing. "Stop asking reps this" is exactly the edit somebody needs to
+                    make on a live question. */}
                 <div className="mt-3">
-                  <span className="text-phx-xs font-bold uppercase tracking-wider text-slate-400">Who is asked</span>
-                  <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1.5">
-                    {candidateRoleFamilies.map((family) => {
-                      const checked = row.appliesToRoleFamilies.includes(family);
-                      return (
-                        <label className="flex items-center gap-1.5 text-sm text-slate-700" key={family}>
-                          <input
-                            checked={checked}
-                            onChange={() =>
-                              updateRow(row.clientKey, {
-                                appliesToRoleFamilies: checked
-                                  ? row.appliesToRoleFamilies.filter((value) => value !== family)
-                                  : [...row.appliesToRoleFamilies, family],
-                              })
-                            }
-                            type="checkbox"
-                          />
-                          {candidateRoleFamilyLabels[family]}
-                        </label>
-                      );
-                    })}
-                  </div>
-                  <p className="mt-1 text-phx-2xs text-slate-400">
-                    {row.appliesToRoleFamilies.length === 0
-                      ? "Nothing ticked — every applicant is asked this question."
-                      : `Only these ${row.appliesToRoleFamilies.length === 1 ? "applicants are" : "applicants are"} asked it. Everyone else skips it.`}
-                  </p>
+                  <QuestionAudiencePicker
+                    idPrefix={`extra-${row.clientKey}`}
+                    onChange={(next) => updateRow(row.clientKey, { appliesToRoleFamilies: next })}
+                    value={row.appliesToRoleFamilies}
+                  />
                 </div>
 
                 {row.kind === "tappable" ? (
@@ -438,7 +427,6 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                         <div>
                           <Input
                             aria-label={`Option ${optionIndex + 1} title`}
-                            disabled={locked}
                             maxLength={WHATSAPP_ROW_TITLE_MAX + 20}
                             onChange={(event) => updateOption(row.clientKey, optionIndex, { title: event.target.value })}
                             placeholder="Option text"
@@ -451,7 +439,6 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                         <div>
                           <Input
                             aria-label={`Option ${optionIndex + 1} description`}
-                            disabled={locked}
                             maxLength={WHATSAPP_ROW_DESCRIPTION_MAX + 20}
                             onChange={(event) => updateOption(row.clientKey, optionIndex, { description: event.target.value })}
                             placeholder="Description (optional)"
@@ -461,7 +448,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                             {option.description.length} / {WHATSAPP_ROW_DESCRIPTION_MAX}
                           </span>
                         </div>
-                        {!locked ? (
+                        {!structureLocked ? (
                           <Button
                             aria-label="Remove option"
                             className="h-9 w-9 shrink-0 self-start p-0"
@@ -476,7 +463,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                         ) : null}
                       </div>
                     ))}
-                    {!locked ? (
+                    {!structureLocked ? (
                       <Button
                         className="gap-1.5"
                         disabled={row.options.length >= WHATSAPP_LIST_MAX_ROWS}

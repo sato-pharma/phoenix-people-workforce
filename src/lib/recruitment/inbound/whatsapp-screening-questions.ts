@@ -133,6 +133,58 @@ export function questionsForRole<T extends Pick<ScreeningQuestionContent, "appli
   return questions.filter((question) => questionAppliesToRole(question, roleFamily));
 }
 
+/** One answer as the admin screen holds it. `value` is null for an option nobody has saved yet. */
+export type DraftScreeningQuestionOption = {
+  title: string;
+  description: string;
+  /** The code this answer sends back, once it has one. NEVER re-derived — see below. */
+  value: string | null;
+};
+
+/**
+ * Resolve a draft question's answers to their real codes: a SAVED answer keeps the code it already
+ * has, whatever its title now says, and only a NEW answer gets one derived from its title.
+ *
+ * THE STICKINESS IS THE POINT, and it is why this lives here rather than in the admin component it
+ * was extracted from. The code used to be re-derived from the title on every save, so retitling
+ * "Yes, I have one" to "Yes" rewrote `yes_i_have_one` to `yes`. That was harmless only because an
+ * answered question was frozen; the owner asked on 2026-09-05 to be able to edit the wording of a
+ * question people have already answered, and a re-derived code turns that edit into a menu already
+ * sitting on somebody's phone that no longer works — their tap carries the OLD code,
+ * `decideNextExtraStep` finds no option matching it, and the reply is dropped as `unknown_value`
+ * with nothing logged and no visible failure. This is the same guarantee the six built-in questions
+ * have always had, where the code under an answer is displayed and never editable.
+ *
+ * TWO PASSES, AND THE ORDER MATTERS. Every saved code is reserved before a single new one is
+ * derived, so a fresh answer titled the same as a saved one cannot be handed a code that answer is
+ * already using. Deriving in one pass would let the new answer win the base name and push the saved
+ * one to `_2` — the same silent rewrite, arriving by the other door.
+ */
+export function withStableOptionValues(
+  options: readonly DraftScreeningQuestionOption[],
+): ScreeningQuestionOption[] {
+  const used = new Set<string>(
+    options.map((option) => option.value).filter((value): value is string => Boolean(value)),
+  );
+  return options.map((option, index) => {
+    const title = option.title.trim();
+    const description = option.description.trim() || null;
+    if (option.value) return { description, title, value: option.value };
+
+    const base =
+      option.title.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
+      || `option_${index + 1}`;
+    let value = base;
+    let suffix = 2;
+    while (used.has(value)) {
+      value = `${base}_${suffix}`;
+      suffix += 1;
+    }
+    used.add(value);
+    return { description, title, value };
+  });
+}
+
 /** Builds the interactive-list menu for a tappable question. Callers must not call this for a
  *  free_text question — there is nothing to tap, so it is sent as plain text instead
  *  (see whatsapp-screening-questions-session.ts). */
