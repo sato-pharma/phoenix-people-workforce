@@ -4,7 +4,7 @@
 import ExcelJS from "exceljs";
 
 import { systemDocuments } from "@/config/system-settings";
-import { HOUSE_XLSX_COLORS } from "@/lib/export/house-xlsx-palette";
+import { HOUSE_XLSX_COLORS, HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 import { candidateImportHeaders } from "@/lib/recruitment/candidates";
 
 export async function generateCandidateImportTemplateWorkbook(): Promise<ExcelJS.Workbook> {
@@ -26,7 +26,7 @@ export async function generateCandidateImportTemplateWorkbook(): Promise<ExcelJS
   headerRow.eachCell((cell) => {
     // Deep type under a Brand Blue rule — SATO-DIS-2026-01 v1.0. This was a filled slate band; the
     // ink rule carries a header on the rule beneath it instead.
-    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 10 };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 10 };
     cell.border = {
       bottom: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "medium" },
       top: { color: { argb: HOUSE_XLSX_COLORS.hair }, style: "thin" },

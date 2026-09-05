@@ -14,6 +14,7 @@
  */
 
 import type ExcelJS from "exceljs";
+import { HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 
 import {
   HOUSE_XLSX_COLORS,
@@ -90,7 +91,7 @@ export function buildHouseCoverSheet(workbook: ExcelJS.Workbook, cover: HouseCov
   sheet.mergeCells(row, 2, row, 3);
   const note = sheet.getCell(row, 2);
   note.value = cover.confidentialNote;
-  note.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 9.5 };
+  note.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 9.5 };
   note.alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
   note.border = { left: { style: "thick", color: { argb: HOUSE_XLSX_COLORS.light } } };
   sheet.getRow(row).height = 24;
@@ -99,7 +100,7 @@ export function buildHouseCoverSheet(workbook: ExcelJS.Workbook, cover: HouseCov
   sheet.mergeCells(row, 2, row, 3);
   const heading = sheet.getCell(row, 2);
   heading.value = "Report provenance";
-  heading.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 11 };
+  heading.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 11 };
   heading.border = { bottom: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.hair } } };
   sheet.getCell(row, 3).border = { bottom: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.hair } } };
   row += 1;
@@ -111,12 +112,12 @@ export function buildHouseCoverSheet(workbook: ExcelJS.Workbook, cover: HouseCov
 
     const keyCell = sheet.getCell(row, 2);
     keyCell.value = key;
-    keyCell.font = { bold: true, color: { argb: colour }, name: "Aptos", size: 9.5 };
+    keyCell.font = { bold: true, color: { argb: colour }, name: HOUSE_XLSX_FONT, size: 9.5 };
     keyCell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
 
     const valueCell = sheet.getCell(row, 3);
     valueCell.value = value;
-    valueCell.font = { bold: flagged, color: { argb: colour }, name: "Aptos", size: 9.5 };
+    valueCell.font = { bold: flagged, color: { argb: colour }, name: HOUSE_XLSX_FONT, size: 9.5 };
     valueCell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
 
     if (zebra && !flagged) {
@@ -163,7 +164,7 @@ export function writeHouseTable(
   sheet.mergeCells(row, 1, row, columnCount);
   const titleCell = sheet.getCell(row, 1);
   titleCell.value = title;
-  titleCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 11 };
+  titleCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 11 };
   titleCell.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
   titleCell.border = { bottom: { style: "medium", color: { argb: HOUSE_XLSX_COLORS.blue } } };
   sheet.getRow(row).height = 22;
@@ -173,7 +174,7 @@ export function writeHouseTable(
   columns.forEach((column, index) => {
     const cell = headerRow.getCell(index + 1);
     cell.value = column.label;
-    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 9.5 };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 9.5 };
     cell.alignment = {
       horizontal: column.right ? "right" : "left",
       vertical: "bottom",
@@ -195,7 +196,7 @@ export function writeHouseTable(
     columns.forEach((column, index) => {
       const cell = excelRow.getCell(index + 1);
       setCell(cell, cells[index], column.numFmt);
-      cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 9.5 };
+      cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: 9.5 };
       cell.alignment = {
         horizontal: column.right ? "right" : "left",
         indent: column.right ? 0 : 1,
@@ -217,7 +218,7 @@ export function writeHouseTable(
     columns.forEach((column, index) => {
       const cell = totalRow.getCell(index + 1);
       setCell(cell, totals[index], column.numFmt);
-      cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 10 };
+      cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 10 };
       cell.alignment = {
         horizontal: column.right ? "right" : "left",
         indent: column.right ? 0 : 1,
@@ -243,7 +244,7 @@ export function writeHouseTable(
   if (note) {
     const noteCell = sheet.getCell(row, 1);
     noteCell.value = note;
-    noteCell.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, italic: true, name: "Aptos", size: 9 };
+    noteCell.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, italic: true, name: HOUSE_XLSX_FONT, size: 9 };
     row += 1;
   }
 

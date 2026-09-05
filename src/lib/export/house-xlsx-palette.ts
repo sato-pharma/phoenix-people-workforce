@@ -22,7 +22,7 @@
  * the blues instead of shouting over them.
  */
 
-import { HOUSE_COLORS } from "@/lib/hiring-pack/house-identity";
+import { HOUSE_COLORS, HOUSE_TYPE } from "@/lib/hiring-pack/house-identity";
 
 /** `#RRGGBB` (or `#RGB`) as the opaque `AARRGGBB` string every ExcelJS colour field expects. */
 export function toArgb(hex: string): string {
@@ -61,3 +61,17 @@ export const HOUSE_XLSX_COLORS = {
  * its own exported constant, this should re-export that one rather than keep a second.
  */
 export const HOUSE_DOCUMENT_STANDARD = "SATO-DIS-2026-01 v1.0";
+
+/**
+ * The house typeface, for the `name` field ExcelJS and ExcelForge both take.
+ *
+ * Re-exported rather than re-typed, for the same reason the colours are derived: eighteen modules
+ * held the string "Aptos" and the standard held none, so the face was an assumption rather than a
+ * decision. `HOUSE_TYPE` in `house-identity.ts` is the decision; this is how a workbook reads it.
+ *
+ * A symbol glyph is the one exception and stays hard-coded where it is used — the sparkline arrows
+ * in the weekly Summarized Report set "Segoe UI Symbol" on purpose, because the house face may not
+ * carry them and a missing glyph is a box, not a fallback.
+ */
+export const HOUSE_XLSX_FONT = HOUSE_TYPE.body;
+export const HOUSE_XLSX_DISPLAY_FONT = HOUSE_TYPE.display;

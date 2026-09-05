@@ -17,6 +17,7 @@
  */
 
 import ExcelJS from "exceljs";
+import { HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 
 import { systemDocuments } from "@/config/system-settings";
 import {
@@ -59,7 +60,7 @@ function addSummarySheet(
   const stat = (label: string, value: string, note: string) => {
     const labelCell = sheet.getCell(row, 2);
     labelCell.value = label;
-    labelCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 10 };
+    labelCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 10 };
     const valueCell = sheet.getCell(row, 3);
     valueCell.value = value;
     houseCalloutStyle(valueCell, { emphasis: true });
@@ -71,11 +72,11 @@ function addSummarySheet(
   const line = (label: string, body: string) => {
     const labelCell = sheet.getCell(row, 2);
     labelCell.value = label;
-    labelCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 9.5 };
+    labelCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: 9.5 };
     labelCell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
     const bodyCell = sheet.getCell(row, 3);
     bodyCell.value = body;
-    bodyCell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 9.5 };
+    bodyCell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: 9.5 };
     bodyCell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
     sheet.getRow(row).height = Math.max(18, Math.ceil(body.length / 100) * 13 + 6);
     row += 1;
@@ -86,7 +87,7 @@ function addSummarySheet(
     sheet.mergeCells(row, 2, row, 3);
     const cell = sheet.getCell(row, 2);
     cell.value = text;
-    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 11 };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 11 };
     cell.border = { bottom: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.hair } } };
     sheet.getCell(row, 3).border = { bottom: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.hair } } };
     sheet.getRow(row).height = 20;
@@ -143,7 +144,7 @@ function addSummarySheet(
   sheet.mergeCells(row, 2, row, 3);
   const footer = sheet.getCell(row, 2);
   footer.value = systemDocuments.workbookExportScopeNote;
-  footer.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, italic: true, name: "Aptos", size: 8 };
+  footer.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, italic: true, name: HOUSE_XLSX_FONT, size: 8 };
 }
 
 function addFindingsSheet(workbook: ExcelJS.Workbook, entries: FixListEntry[], sourceFileName: string) {
@@ -206,10 +207,10 @@ function addFindingsSheet(workbook: ExcelJS.Workbook, entries: FixListEntry[], s
       color: {
         argb: entry.severity === "Blocks the row" ? HOUSE_XLSX_COLORS.flag : HOUSE_XLSX_COLORS.deep,
       },
-      name: "Aptos",
+      name: HOUSE_XLSX_FONT,
       size: 9,
     };
-    row.getCell(2).font = { color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 9.5 };
+    row.getCell(2).font = { color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 9.5 };
     row.height = Math.max(18, Math.ceil(entry.message.length / 78) * 13 + 5);
   });
 

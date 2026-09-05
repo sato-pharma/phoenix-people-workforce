@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { HOUSE_XLSX_DISPLAY_FONT, HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 import { once } from "node:events";
 import { PassThrough, Readable } from "node:stream";
 
@@ -84,21 +85,21 @@ export function streamCrmMasterWorkbookResponse(opts: {
       labelCell.value = label;
       valueCell.value = value;
       if (style === "title") {
-        labelCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos Display", size: 16 };
+        labelCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_DISPLAY_FONT, size: 16 };
         row.height = 26;
       } else if (style === "subtitle") {
-        labelCell.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: "Aptos", size: 9 };
+        labelCell.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: HOUSE_XLSX_FONT, size: 9 };
         row.height = 16;
       } else if (style === "heading") {
-        labelCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 11 };
+        labelCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 11 };
         labelCell.border = { bottom: { color: { argb: HOUSE_XLSX_COLORS.hair }, style: "thin" } };
         valueCell.border = { bottom: { color: { argb: HOUSE_XLSX_COLORS.hair }, style: "thin" } };
       } else {
         for (const cell of [labelCell, valueCell]) {
-          cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 9.5 };
+          cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: 9.5 };
           cell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
         }
-        labelCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 9.5 };
+        labelCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: 9.5 };
       }
       row.commit();
     };
@@ -130,7 +131,7 @@ export function streamCrmMasterWorkbookResponse(opts: {
       opts.columns.forEach((col, index) => {
         const cell = header.getCell(index + 1);
         cell.value = col.label;
-        cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 9.5 };
+        cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 9.5 };
         cell.alignment = { horizontal: "left", vertical: "bottom", wrapText: true };
         cell.border = {
           bottom: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "medium" },
@@ -153,7 +154,7 @@ export function streamCrmMasterWorkbookResponse(opts: {
           bodyRowNumber += 1;
           const zebra = bodyRowNumber % 2 === 0;
           excelRow.eachCell((cell) => {
-            cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 9.5 };
+            cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: 9.5 };
             cell.alignment = { vertical: "middle" };
             if (zebra) {
               cell.fill = { fgColor: { argb: HOUSE_XLSX_COLORS.tint }, pattern: "solid", type: "pattern" };

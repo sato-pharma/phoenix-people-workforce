@@ -29,7 +29,7 @@ import path from "node:path";
 
 import type ExcelJS from "exceljs";
 
-import { HOUSE_DOCUMENT_STANDARD, HOUSE_XLSX_COLORS, toArgb } from "@/lib/export/house-xlsx-palette";
+import { HOUSE_DOCUMENT_STANDARD, HOUSE_XLSX_COLORS, HOUSE_XLSX_DISPLAY_FONT, HOUSE_XLSX_FONT, toArgb } from "@/lib/export/house-xlsx-palette";
 
 // Re-exported so every caller that only wants a colour keeps its existing import, and so this
 // module stays the single name to reach for when a builder wants the masthead AS WELL.
@@ -189,14 +189,14 @@ export function writeHouseMasthead(
   sheet.mergeCells(1, 3, 1, titleLastColumn);
   const titleCell = sheet.getCell(1, 3);
   titleCell.value = title;
-  titleCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos Display", size: 16 };
+  titleCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_DISPLAY_FONT, size: 16 };
   titleCell.alignment = { horizontal: "left", vertical: "middle" };
 
   // The specimen's `.lh__id` block, right-aligned.
   sheet.mergeCells(1, provenanceFirstColumn, 1, lastColumn);
   const idCell = sheet.getCell(1, provenanceFirstColumn);
   idCell.value = [HOUSE_DOCUMENT_STANDARD, ...provenance].join("\n");
-  idCell.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: "Aptos", size: 7.5 };
+  idCell.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: HOUSE_XLSX_FONT, size: 7.5 };
   idCell.alignment = { horizontal: "right", vertical: "middle", wrapText: true };
 
   const imageId = houseMarkImageId(workbook);
@@ -210,7 +210,7 @@ export function writeHouseMasthead(
   sheet.mergeCells(2, 1, 2, lastColumn);
   const subtitleCell = sheet.getCell(2, 1);
   subtitleCell.value = subtitle;
-  subtitleCell.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: "Aptos", size: 9 };
+  subtitleCell.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: HOUSE_XLSX_FONT, size: 9 };
   subtitleCell.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
 
   // Row 3 — the brand rule.
@@ -229,7 +229,7 @@ export function writeHouseMasthead(
 
 /** The house table header: deep bold type on white under a Brand Blue rule. Never a filled band. */
 export function houseHeaderStyle(cell: ExcelJS.Cell, options: { size?: number; center?: boolean } = {}) {
-  cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: options.size ?? 10 };
+  cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: options.size ?? 10 };
   cell.alignment = {
     horizontal: options.center ? "center" : "left",
     vertical: "bottom",
@@ -248,7 +248,7 @@ export function houseHeaderStyle(cell: ExcelJS.Cell, options: { size?: number; c
  * ruling it as well draws the eye twice for one row.
  */
 export function houseBodyStyle(cell: ExcelJS.Cell, options: { zebra?: boolean; size?: number } = {}) {
-  cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: options.size ?? 10 };
+  cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: options.size ?? 10 };
   cell.alignment = { vertical: "middle" };
   if (options.zebra) {
     cell.fill = { fgColor: { argb: HOUSE_XLSX_COLORS.tint }, pattern: "solid", type: "pattern" };
@@ -266,7 +266,7 @@ export function houseCalloutStyle(cell: ExcelJS.Cell, options: { emphasis?: bool
   cell.font = {
     bold: Boolean(options.emphasis),
     color: { argb: options.emphasis ? HOUSE_XLSX_COLORS.deep : HOUSE_XLSX_COLORS.body },
-    name: "Aptos",
+    name: HOUSE_XLSX_FONT,
     size: 10,
   };
   cell.alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };

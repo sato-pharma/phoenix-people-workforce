@@ -1,4 +1,5 @@
 import { Workbook, type Worksheet } from "@node-projects/excelforge";
+import { HOUSE_XLSX_DISPLAY_FONT, HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 import JSZip from "jszip";
 
 import type { WeeklyDashboard, WeeklyFactExportRow } from "@/lib/sales/weekly/types";
@@ -114,7 +115,7 @@ function buildLineTree(rows: WeeklyFactExportRow[]): LineNode[] {
 function truncationNote(sheet: Worksheet, row: number, n: number, noun: string) {
   if (n <= 0) return;
   sheet.setValue(row, 1, `… +${n} more ${noun} not shown (capped for file size)`);
-  sheet.setStyle(row, 1, { font: { italic: true, size: 9, color: BAD, name: "Aptos" } });
+  sheet.setStyle(row, 1, { font: { italic: true, size: 9, color: BAD, name: HOUSE_XLSX_FONT } });
 }
 
 /** The Data sheet's Excel Table. Named once: `buildDataSheet` creates it and the pivot cache binds
@@ -226,7 +227,7 @@ function buildRegionProductDrill(wb: Workbook, data: WeeklyDashboard, tree: Regi
   for (const reg of tree) {
     const regRow = row;
     // Region header row = the region subtotal (summary above its product details).
-    sheet.setValue(regRow, 1, reg.name); sheet.setStyle(regRow, 1, { font: { bold: true, color: DEEP, name: "Aptos", size: 10.5 }, alignment: { vertical: "center", indent: 1 }, border: GROUP_RULE });
+    sheet.setValue(regRow, 1, reg.name); sheet.setStyle(regRow, 1, { font: { bold: true, color: DEEP, name: HOUSE_XLSX_FONT, size: 10.5 }, alignment: { vertical: "center", indent: 1 }, border: GROUP_RULE });
     sheet.setFormula(regRow, 2, sumifs1("Value", last, [["RegionCode", reg.code]])); sheet.setStyle(regRow, 2, totalNumStyle(F_VALUE));
     sheet.setFormula(regRow, 3, sumifs1("Units", last, [["RegionCode", reg.code]])); sheet.setStyle(regRow, 3, totalNumStyle(F_UNITS));
     sheet.setFormula(regRow, 4, sumifs1("Stock", last, [["RegionCode", reg.code]])); sheet.setStyle(regRow, 4, totalNumStyle(F_UNITS));
@@ -331,7 +332,7 @@ function buildRegionWeekTrajectory(wb: Workbook, data: WeeklyDashboard, tree: Re
   for (const reg of tree) {
     const regRow = row;
     sheet.setValue(regRow, 1, ""); sheet.setStyle(regRow, 1, GROUP_RULE_ONLY);
-    sheet.setValue(regRow, 2, reg.name); sheet.setStyle(regRow, 2, { font: { bold: true, color: DEEP, name: "Aptos", size: 10.5 }, alignment: { vertical: "center", indent: 1 }, border: GROUP_RULE });
+    sheet.setValue(regRow, 2, reg.name); sheet.setStyle(regRow, 2, { font: { bold: true, color: DEEP, name: HOUSE_XLSX_FONT, size: 10.5 }, alignment: { vertical: "center", indent: 1 }, border: GROUP_RULE });
     weeks.forEach((w, j) => { sheet.setFormula(regRow, 3 + j, sumifs1("Value", last, [["RegionCode", reg.code], ["Month", w.month], ["Week", w.week]])); sheet.setStyle(regRow, 3 + j, totalNumStyle(F_VALUE)); });
     sheet.setFormula(regRow, totalCol, `SUM(${colLetter(3)}${regRow}:${colLetter(totalCol - 1)}${regRow})`); sheet.setStyle(regRow, totalCol, totalNumStyle(F_VALUE));
     row += 1;
@@ -396,7 +397,7 @@ function buildZeroSalesGapMap(wb: Workbook, data: WeeklyDashboard, products: { c
   if (products.length && regions.length) {
     try {
       // Highest priority: hard-red the true zeros so gaps are unmissable.
-      sheet.addConditionalFormat({ sqref: `${colLetter(3)}${firstRow}:${colLetter(totalCol - 1)}${lastRow}`, type: "cellIs", operator: "equal", formula: "0", style: { fill: fill(BAD), font: { color: WHITE, bold: true, name: "Aptos", size: 10 } }, priority: cfp() });
+      sheet.addConditionalFormat({ sqref: `${colLetter(3)}${firstRow}:${colLetter(totalCol - 1)}${lastRow}`, type: "cellIs", operator: "equal", formula: "0", style: { fill: fill(BAD), font: { color: WHITE, bold: true, name: HOUSE_XLSX_FONT, size: 10 } }, priority: cfp() });
       // Then a white→amber→green scale for the non-zero magnitudes.
       sheet.addConditionalFormat({ sqref: `${colLetter(3)}${firstRow}:${colLetter(totalCol - 1)}${lastRow}`, type: "colorScale", colorScale: { type: "colorScale", cfvo: [{ type: "num", val: "0" }, { type: "percent", val: "50" }, { type: "max" }], color: [WHITE, WARN, GOOD] }, priority: cfp() });
       if (weeks.length) {
@@ -458,7 +459,7 @@ function buildRegionPareto(wb: Workbook, data: WeeklyDashboard, tree: RegionNode
   const firstBody = row;
   for (const reg of tree) {
     const regRow = row;
-    sheet.setValue(regRow, 1, reg.name); sheet.setStyle(regRow, 1, { font: { bold: true, color: DEEP, name: "Aptos", size: 10.5 }, alignment: { vertical: "center", indent: 1 }, border: GROUP_RULE });
+    sheet.setValue(regRow, 1, reg.name); sheet.setStyle(regRow, 1, { font: { bold: true, color: DEEP, name: HOUSE_XLSX_FONT, size: 10.5 }, alignment: { vertical: "center", indent: 1 }, border: GROUP_RULE });
     sheet.setFormula(regRow, 2, sumifs1("Value", last, [["RegionCode", reg.code]])); sheet.setStyle(regRow, 2, totalNumStyle(F_VALUE));
     for (let c = 3; c <= 6; c += 1) sheet.setStyle(regRow, c, GROUP_RULE_ONLY);
     row += 1;
@@ -471,7 +472,7 @@ function buildRegionPareto(wb: Workbook, data: WeeklyDashboard, tree: RegionNode
       sheet.setFormula(row, 3, `IFERROR(REPT("|",ROUND(B${row}/MAX($B$${prodFirst}:$B$${prodLast})*14,0)),"")`); sheet.setStyle(row, 3, barCell(zebra));
       sheet.setFormula(row, 4, `SUM($B$${prodFirst}:B${row})`); sheet.setStyle(row, 4, numCell(F_VALUE, zebra));
       sheet.setFormula(row, 5, div0(`D${row}`, `B${regRow}`)); sheet.setStyle(row, 5, numCell(F_PCT, zebra));
-      sheet.setFormula(row, 6, `IF(E${row}>=0.8,IF(${i === 0 ? "TRUE" : `E${row - 1}<0.8`},"◄ 80%",""),"")`); sheet.setStyle(row, 6, { font: { color: DEEP, bold: true, name: "Aptos", size: 10 }, alignment: { vertical: "center", indent: 1 } });
+      sheet.setFormula(row, 6, `IF(E${row}>=0.8,IF(${i === 0 ? "TRUE" : `E${row - 1}<0.8`},"◄ 80%",""),"")`); sheet.setStyle(row, 6, { font: { color: DEEP, bold: true, name: HOUSE_XLSX_FONT, size: 10 }, alignment: { vertical: "center", indent: 1 } });
       groupRow(sheet, row, 1);
       row += 1;
     });
@@ -525,8 +526,8 @@ function buildGrowthContribution(wb: Workbook, data: WeeklyDashboard, tree: Regi
   pairs.forEach((_, i) => { const row = firstRow + i; sheet.setFormula(row, 6, `IFERROR(E${row}/SUM($E$${firstRow}:$E$${lastRow}),0)`); sheet.setStyle(row, 6, numCell(F_PCT, i % 2 === 1)); });
   if (pairs.length) {
     try {
-      sheet.addConditionalFormat({ sqref: `E${firstRow}:E${lastRow}`, type: "cellIs", operator: "greaterThan", formula: "0", style: { font: { color: GOOD, bold: true, name: "Aptos", size: 10 } }, priority: cfp() });
-      sheet.addConditionalFormat({ sqref: `E${firstRow}:E${lastRow}`, type: "cellIs", operator: "lessThan", formula: "0", style: { font: { color: BAD, bold: true, name: "Aptos", size: 10 } }, priority: cfp() });
+      sheet.addConditionalFormat({ sqref: `E${firstRow}:E${lastRow}`, type: "cellIs", operator: "greaterThan", formula: "0", style: { font: { color: GOOD, bold: true, name: HOUSE_XLSX_FONT, size: 10 } }, priority: cfp() });
+      sheet.addConditionalFormat({ sqref: `E${firstRow}:E${lastRow}`, type: "cellIs", operator: "lessThan", formula: "0", style: { font: { color: BAD, bold: true, name: HOUSE_XLSX_FONT, size: 10 } }, priority: cfp() });
       sheet.addConditionalFormat({ sqref: `E${firstRow}:E${lastRow}`, type: "dataBar", dataBar: { type: "dataBar", color: BLUE, showValue: true }, priority: cfp() });
     } catch { /* cosmetic */ }
   }
@@ -616,8 +617,8 @@ function buildOutlierDetection(wb: Workbook, data: WeeklyDashboard, tree: Region
   });
   if (pairs.length) {
     try {
-      sheet.addConditionalFormat({ sqref: `D${firstRow}:D${lastRow}`, type: "cellIs", operator: "greaterThan", formula: "2", style: { fill: fill(BAD), font: { color: WHITE, bold: true, name: "Aptos", size: 10 } }, priority: cfp() });
-      sheet.addConditionalFormat({ sqref: `D${firstRow}:D${lastRow}`, type: "cellIs", operator: "lessThan", formula: "-2", style: { fill: fill(BLUE), font: { color: WHITE, bold: true, name: "Aptos", size: 10 } }, priority: cfp() });
+      sheet.addConditionalFormat({ sqref: `D${firstRow}:D${lastRow}`, type: "cellIs", operator: "greaterThan", formula: "2", style: { fill: fill(BAD), font: { color: WHITE, bold: true, name: HOUSE_XLSX_FONT, size: 10 } }, priority: cfp() });
+      sheet.addConditionalFormat({ sqref: `D${firstRow}:D${lastRow}`, type: "cellIs", operator: "lessThan", formula: "-2", style: { fill: fill(BLUE), font: { color: WHITE, bold: true, name: HOUSE_XLSX_FONT, size: 10 } }, priority: cfp() });
     } catch { /* cosmetic */ }
   }
   truncationNote(sheet, lastRow + 2, truncated, "region×product pairs");
@@ -709,7 +710,7 @@ function buildLineDashboards(wb: Workbook, data: WeeklyDashboard, lineTree: Line
   const firstBody = row;
   for (const line of lineTree) {
     const lineRow = row;
-    sheet.setValue(lineRow, 1, line.label); sheet.setStyle(lineRow, 1, { font: { bold: true, color: DEEP, name: "Aptos", size: 10.5 }, alignment: { vertical: "center", indent: 1 }, border: GROUP_RULE });
+    sheet.setValue(lineRow, 1, line.label); sheet.setStyle(lineRow, 1, { font: { bold: true, color: DEEP, name: HOUSE_XLSX_FONT, size: 10.5 }, alignment: { vertical: "center", indent: 1 }, border: GROUP_RULE });
     sheet.setFormula(lineRow, 2, sumifs1("Value", last, [["Line", line.key]])); sheet.setStyle(lineRow, 2, totalNumStyle(F_VALUE));
     sheet.setFormula(lineRow, 3, sumifs1("Units", last, [["Line", line.key]])); sheet.setStyle(lineRow, 3, totalNumStyle(F_UNITS));
     sheet.setFormula(lineRow, 4, sumifs1("Stock", last, [["Line", line.key]])); sheet.setStyle(lineRow, 4, totalNumStyle(F_UNITS));
@@ -924,11 +925,11 @@ function buildDashboard(
   tiles.forEach((t, i) => {
     const c = 1 + i * 2;
     dash.merge(5, c, 5, c + 1); dash.setValue(5, c, t.label);
-    dash.setStyle(5, c, { font: { bold: true, size: 8.5, color: MUTED, name: "Aptos" }, alignment: { vertical: "center", indent: 1 } });
+    dash.setStyle(5, c, { font: { bold: true, size: 8.5, color: MUTED, name: HOUSE_XLSX_FONT }, alignment: { vertical: "center", indent: 1 } });
     dash.setStyle(5, c + 1, {});
     dash.merge(6, c, 6, c + 1);
     if (t.formula) dash.setFormula(6, c, t.formula); else dash.setValue(6, c, t.value ?? 0);
-    dash.setStyle(6, c, { font: { bold: true, size: 17, color: DEEP, name: "Aptos Display" }, alignment: { vertical: "center", indent: 1 }, numberFormat: { formatCode: t.fmt } });
+    dash.setStyle(6, c, { font: { bold: true, size: 17, color: DEEP, name: HOUSE_XLSX_DISPLAY_FONT }, alignment: { vertical: "center", indent: 1 }, numberFormat: { formatCode: t.fmt } });
     dash.setStyle(6, c + 1, {});
     dash.setStyle(7, c, { fill: fill(BLUE) }); dash.setStyle(7, c + 1, { fill: fill(BLUE) });
   });
@@ -945,7 +946,7 @@ function buildDashboard(
   dash.merge(9, 1, 10, 12);
   try { dash.setFormula(9, 1, `IFERROR(${narrative},"Summary unavailable for the current filters.")`); }
   catch { dash.setValue(9, 1, "Weekly Sales BI report."); }
-  dash.setStyle(9, 1, { font: { size: 10, color: BODY, name: "Aptos" }, alignment: { vertical: "center", horizontal: "left", indent: 1, wrapText: true }, border: { left: { style: "thick" as const, color: LIGHT } } });
+  dash.setStyle(9, 1, { font: { size: 10, color: BODY, name: HOUSE_XLSX_FONT }, alignment: { vertical: "center", horizontal: "left", indent: 1, wrapText: true }, border: { left: { style: "thick" as const, color: LIGHT } } });
   dash.setRowHeight(9, 18); dash.setRowHeight(10, 18);
 
   // Native charts bound to the formula breakdown sheets.
@@ -983,15 +984,15 @@ function buildDashboard(
   // Contents panel — clickable HYPERLINK() index of every sheet.
   const cStart = 50;
   dash.merge(cStart, 1, cStart, 12); dash.setValue(cStart, 1, "CONTENTS");
-  dash.setStyle(cStart, 1, { font: { bold: true, size: 11, color: DEEP, name: "Aptos" }, alignment: { vertical: "bottom", indent: 1 }, border: { bottom: { style: "medium" as const, color: BLUE } } });
+  dash.setStyle(cStart, 1, { font: { bold: true, size: 11, color: DEEP, name: HOUSE_XLSX_FONT }, alignment: { vertical: "bottom", indent: 1 }, border: { bottom: { style: "medium" as const, color: BLUE } } });
   for (let c = 2; c <= 12; c += 1) dash.setStyle(cStart, c, { border: { bottom: { style: "medium" as const, color: BLUE } } });
   contentsSheets.forEach((s, i) => {
     const row = cStart + 1 + i;
     try { dash.setFormula(row, 1, `HYPERLINK("#'${s.name.replace(/'/g, "''")}'!A1","${esc(s.name)}")`); }
     catch { dash.setValue(row, 1, s.name); }
-    dash.setStyle(row, 1, { font: { color: BLUE, underline: "single", name: "Aptos", size: 10, bold: true }, alignment: { vertical: "center", indent: 1 } });
+    dash.setStyle(row, 1, { font: { color: BLUE, underline: "single", name: HOUSE_XLSX_FONT, size: 10, bold: true }, alignment: { vertical: "center", indent: 1 } });
     dash.merge(row, 2, row, 12); dash.setValue(row, 2, s.desc);
-    dash.setStyle(row, 2, { font: { color: MUTED, size: 9.5, name: "Aptos" }, alignment: { vertical: "center", indent: 1 } });
+    dash.setStyle(row, 2, { font: { color: MUTED, size: 9.5, name: HOUSE_XLSX_FONT }, alignment: { vertical: "center", indent: 1 } });
   });
 
   for (let c = 1; c <= 12; c += 1) dash.setColumnWidth(c, 12);

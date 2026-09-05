@@ -50,6 +50,7 @@
  */
 
 import ExcelJS from "exceljs";
+import { HOUSE_XLSX_DISPLAY_FONT, HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 
 import { systemDocuments } from "@/config/system-settings";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -418,7 +419,7 @@ function styleMasterSheet(
     const isSectionStart = !previous || previous.section !== column.section;
     const cell = sectionRow.getCell(index + 1);
     cell.value = isSectionStart ? column.section.toUpperCase() : null;
-    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.light }, name: "Aptos", size: 7.5 };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.light }, name: HOUSE_XLSX_FONT, size: 7.5 };
     cell.alignment = { horizontal: "left", vertical: "bottom" };
     // `{}` rather than `undefined` — the property is `Partial<Borders>`, which does not accept it.
     cell.border = isSectionStart
@@ -560,7 +561,7 @@ function styleMasterSheet(
 
   // Row Check reads as a verdict, not as data.
   const rowCheckColumn = sheet.getColumn(columnIndex("rowCheck"));
-  rowCheckColumn.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: "Aptos", size: 9 };
+  rowCheckColumn.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: HOUSE_XLSX_FONT, size: 9 };
   rowCheckColumn.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
 
   // --- conditional formats. Every rule gets its OWN priority: ExcelJS does not assign them, and
@@ -634,7 +635,7 @@ function styleMasterSheet(
     printTitlesRow: `1:${HEADER_ROW}`,
   };
   sheet.headerFooter = {
-    oddFooter: `&L&"Aptos"&8&K5A6B7C${HOUSE_DOCUMENT_STANDARD}&C&"Aptos"&8&K5A6B7CEmployee Master&R&"Aptos"&8&K5A6B7CPage &P of &N`,
+    oddFooter: `&L&HOUSE_XLSX_FONT&8&K5A6B7C${HOUSE_DOCUMENT_STANDARD}&C&HOUSE_XLSX_FONT&8&K5A6B7CEmployee Master&R&HOUSE_XLSX_FONT&8&K5A6B7CPage &P of &N`,
   };
 
   return { lastDataRow, lastFormulaRow };
@@ -689,7 +690,7 @@ function addStartHereSheet(workbook: ExcelJS.Workbook, recordCount: number, last
     sheet.mergeCells(row, 2, row, 3);
     const cell = sheet.getCell(row, 2);
     cell.value = text;
-    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 11 };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 11 };
     cell.alignment = { horizontal: "left", vertical: "bottom" };
     cell.border = { bottom: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.hair } } };
     sheet.getCell(row, 3).border = { bottom: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.hair } } };
@@ -700,11 +701,11 @@ function addStartHereSheet(workbook: ExcelJS.Workbook, recordCount: number, last
   function line(label: string, body: string) {
     const labelCell = sheet.getCell(row, 2);
     labelCell.value = label;
-    labelCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 9.5 };
+    labelCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: 9.5 };
     labelCell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
     const bodyCell = sheet.getCell(row, 3);
     bodyCell.value = body;
-    bodyCell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 9.5 };
+    bodyCell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: 9.5 };
     bodyCell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
     sheet.getRow(row).height = Math.max(18, Math.ceil(body.length / 105) * 14 + 6);
     row += 1;
@@ -713,10 +714,10 @@ function addStartHereSheet(workbook: ExcelJS.Workbook, recordCount: number, last
   function liveStat(label: string, formula: string, note: string) {
     const labelCell = sheet.getCell(row, 2);
     labelCell.value = label;
-    labelCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 10 };
+    labelCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 10 };
     const valueCell = sheet.getCell(row, 3);
     valueCell.value = { formula };
-    valueCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos Display", size: 14 };
+    valueCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_DISPLAY_FONT, size: 14 };
     valueCell.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
     houseCalloutStyle(valueCell, { emphasis: true });
     sheet.getCell(row, 3).note = note;
@@ -776,7 +777,7 @@ function addStartHereSheet(workbook: ExcelJS.Workbook, recordCount: number, last
   row += 1;
   const footer = sheet.getCell(row, 2);
   footer.value = `${HOUSE_DOCUMENT_STANDARD} · ${systemDocuments.workbookExportScopeNote}`;
-  footer.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, italic: true, name: "Aptos", size: 8 };
+  footer.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, italic: true, name: HOUSE_XLSX_FONT, size: 8 };
   sheet.mergeCells(row, 2, row, 3);
 }
 
@@ -823,9 +824,9 @@ function addFieldGuideSheet(workbook: ExcelJS.Workbook) {
       houseBodyStyle(cell, { size: 9.5, zebra });
       cell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
     });
-    row.getCell(1).font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 9.5 };
+    row.getCell(1).font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 9.5 };
     if (!column.imported) {
-      row.getCell(3).font = { color: { argb: HOUSE_XLSX_COLORS.muted }, italic: true, name: "Aptos", size: 9.5 };
+      row.getCell(3).font = { color: { argb: HOUSE_XLSX_COLORS.muted }, italic: true, name: HOUSE_XLSX_FONT, size: 9.5 };
     }
     row.height = Math.max(18, Math.ceil(column.guide.length / 88) * 13 + 6);
   });
@@ -911,7 +912,7 @@ function addUploadRulesSheet(workbook: ExcelJS.Workbook) {
     row.getCell(1).font = {
       bold: true,
       color: { argb: rule.effect === "Blocks the row" ? HOUSE_XLSX_COLORS.flag : HOUSE_XLSX_COLORS.deep },
-      name: "Aptos",
+      name: HOUSE_XLSX_FONT,
       size: 9,
     };
     row.getCell(2).font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: "Consolas", size: 8.5 };
@@ -977,7 +978,7 @@ function addReferenceDataSheet(workbook: ExcelJS.Workbook, lookups: MasterLookup
   teamsHeader.value = "Teams, by area";
   houseHeaderStyle(teamsHeader);
   sheet.getCell(teamsRow, 2).value = "Only these appear in the Team dropdown once that Area is picked.";
-  sheet.getCell(teamsRow, 2).font = { color: { argb: HOUSE_XLSX_COLORS.muted }, italic: true, name: "Aptos", size: 9 };
+  sheet.getCell(teamsRow, 2).font = { color: { argb: HOUSE_XLSX_COLORS.muted }, italic: true, name: HOUSE_XLSX_FONT, size: 9 };
   teamsRow += 1;
 
   const ranges = buildAreaTeamRanges({ areas: lookups.areas, teams: lookups.teams })
@@ -988,12 +989,12 @@ function addReferenceDataSheet(workbook: ExcelJS.Workbook, lookups: MasterLookup
     const areaCell = row.getCell(1);
     areaCell.value = range.areaLabel;
     houseBodyStyle(areaCell, { size: 9, zebra: index % 2 === 1 });
-    areaCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 9 };
+    areaCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 9 };
     const teamsCell = row.getCell(2);
     teamsCell.value = range.teamLabels.length ? range.teamLabels.join(", ") : "— no teams yet —";
     houseBodyStyle(teamsCell, { size: 9, zebra: index % 2 === 1 });
     if (!range.teamLabels.length) {
-      teamsCell.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, italic: true, name: "Aptos", size: 9 };
+      teamsCell.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, italic: true, name: HOUSE_XLSX_FONT, size: 9 };
     }
     sheet.mergeCells(teamsRow + index, 2, teamsRow + index, blocks.length);
   });

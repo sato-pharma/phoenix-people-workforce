@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { HOUSE_XLSX_DISPLAY_FONT, HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 
 import { HOUSE_XLSX_COLORS, writeHouseMasthead } from "@/lib/export/house-xlsx-identity";
 
@@ -134,7 +135,7 @@ function setWorkbookMetadata(workbook: ExcelJS.Workbook) {
 function styleSectionRow(row: ExcelJS.Row) {
   row.height = 20;
   row.eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 10 };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 10 };
     cell.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
     // The caption sits ON the masthead's rule row, so its bottom border IS that rule — one line
     // doing both jobs rather than a caption stacked under a bar.
@@ -145,7 +146,7 @@ function styleSectionRow(row: ExcelJS.Row) {
 function styleHeaderRow(row: ExcelJS.Row) {
   row.height = 26;
   row.eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 9.5 };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 9.5 };
     cell.alignment = { horizontal: "left", vertical: "bottom", wrapText: true };
     cell.border = {
       bottom: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "medium" },
@@ -165,7 +166,7 @@ function styleBodyRows(worksheet: ExcelJS.Worksheet, startRow: number) {
         cell.border = { bottom: { color: { argb: HOUSE_XLSX_COLORS.hair }, style: "hair" } };
       }
       cell.alignment = { vertical: "top", wrapText: true };
-      cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 9.5 };
+      cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: 9.5 };
     });
   }
 }
@@ -290,13 +291,13 @@ function buildQuarterlyRows(reports: CoachingExportReport[]): QuarterlyExportRow
  */
 function colorZoneCell(cell: ExcelJS.Cell, zone: string | null | undefined) {
   if (zone === "critical_red" || zone === "red_zone") {
-    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.flag }, name: "Aptos", size: 9.5 };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.flag }, name: HOUSE_XLSX_FONT, size: 9.5 };
   } else if (zone === "yellow_zone") {
-    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 9.5 };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 9.5 };
   } else if (zone === "green_zone") {
-    cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 9.5 };
+    cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: 9.5 };
   } else if (zone === "excellence_zone") {
-    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.light }, name: "Aptos", size: 9.5 };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.light }, name: HOUSE_XLSX_FONT, size: 9.5 };
   }
 }
 
@@ -345,7 +346,7 @@ function addExecutiveSummarySheet(workbook: ExcelJS.Workbook, input: GenerateCoa
     labelTarget.font = {
       bold: true,
       color: { argb: HOUSE_XLSX_COLORS.light },
-      name: "Aptos",
+      name: HOUSE_XLSX_FONT,
       size: 8,
     };
     labelTarget.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
@@ -353,7 +354,7 @@ function addExecutiveSummarySheet(workbook: ExcelJS.Workbook, input: GenerateCoa
     valueTarget.font = {
       bold: true,
       color: { argb: HOUSE_XLSX_COLORS.deep },
-      name: "Aptos Display",
+      name: HOUSE_XLSX_DISPLAY_FONT,
       size: 15,
     };
     valueTarget.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
@@ -630,9 +631,9 @@ function addQuarterlySummarySheet(workbook: ExcelJS.Workbook, reports: CoachingE
     // A decline gets the flag colour; a gain gets Brand Blue rather than a green the mark has not
     // got. The sign is still in the value, so neither reading depends on colour alone.
     if (row.improvementScore > 0) {
-      improvementCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.light }, name: "Aptos", size: 9.5 };
+      improvementCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.light }, name: HOUSE_XLSX_FONT, size: 9.5 };
     } else if (row.improvementScore < 0) {
-      improvementCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.flag }, name: "Aptos", size: 9.5 };
+      improvementCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.flag }, name: HOUSE_XLSX_FONT, size: 9.5 };
     }
   });
   applyAutoFilter(worksheet, 4, headers.length);
