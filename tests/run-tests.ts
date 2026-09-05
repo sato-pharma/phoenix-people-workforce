@@ -1393,6 +1393,8 @@ import { runPayrollHoldReasonTests } from "./payroll-hold-reason.test.ts";
 import { runEmployeeImportJobTitleCasingTests } from "./employee-import-job-title-casing.test.ts";
 import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-cairo-clock.test.ts";
 
+import { runEmployeeSavePreservesSalaryTests } from "./employee-save-preserves-salary.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4414,6 +4416,8 @@ await runTest(
   "contract anniversary resolves Cairo's calendar day, not the server's local/UTC clock",
   runContractAnniversaryCairoClockTests,
 );
+
+await runTest("employee save preserves stored salary when the payload omits money fields", runEmployeeSavePreservesSalaryTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
