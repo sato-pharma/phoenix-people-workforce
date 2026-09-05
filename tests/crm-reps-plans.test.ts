@@ -7,6 +7,7 @@ import {
   computeCallRate,
   type CallRateReport,
   type CallRateSlice,
+  type PharmacyCallRateSlice,
   type RepCallRate,
   type VisitForCallRate,
 } from "../src/lib/crm/call-rate.ts";
@@ -58,12 +59,36 @@ function slice(target: number, parts: Partial<CallRateSlice>, workingDays: numbe
   };
 }
 
+/**
+ * Same shape as `slice`, but for pharmacy — target is always null, because no owner-set standard
+ * exists yet (see PHARMACY_CALL_RATE_TARGET), so attainmentPct is always null too.
+ */
+function pharmacySlice(parts: Partial<CallRateSlice>, workingDays: number): PharmacyCallRateSlice {
+  const verified = parts.verified ?? 0;
+  const unverified = parts.unverified ?? 0;
+  const campaign = parts.campaign ?? 0;
+  const total = verified + unverified + campaign;
+  return {
+    verified,
+    unverified,
+    campaign,
+    total,
+    verifiedRate: workingDays > 0 ? verified / workingDays : null,
+    totalRate: workingDays > 0 ? total / workingDays : null,
+    target: null,
+    attainmentPct: null,
+  };
+}
+
 function rep(
   name: string,
   workingDays: number,
   am: Partial<CallRateSlice>,
   pm: Partial<CallRateSlice>,
   extra: Partial<RepCallRate> = {},
+  // Optional and trailing so every existing call site — there are dozens below — stays untouched.
+  // Empty by default: none of the pre-2026-09-05 fixtures below are ABOUT pharmacies.
+  pharmacy: Partial<CallRateSlice> = {},
 ): RepCallRate {
   return {
     agentCrmId: extra.agentCrmId ?? null,
@@ -72,6 +97,7 @@ function rep(
     workingDays,
     am: slice(AM_CALL_RATE_TARGET, am, workingDays),
     pm: slice(PM_CALL_RATE_TARGET, pm, workingDays),
+    pharmacy: pharmacySlice(pharmacy, workingDays),
     unspecified: extra.unspecified ?? 0,
     campaignShare: extra.campaignShare ?? 0,
     campaignOverLimitDays: extra.campaignOverLimitDays ?? [],
@@ -201,6 +227,29 @@ export function runCrmRepsPlansTests() {
     { month: "2026-08", isCurrentMonth: false },
   );
   assert.equal(mixed.totals.repsOnTarget, 1, "clearing one of the two targets is not clearing the KPI");
+
+  // ── pharmacies are separate from AM/PM entirely (owner, 2026-09-05) ──────────────────────────
+  {
+    const pharmacyBoard = buildRepsPlansBoard(
+      report(10, [
+        rep("A", 10, { verified: 20 }, { verified: 100 }, { agentCrmId: 1 }, { verified: 30 }),
+        // Zero pharmacy calls is NORMAL, not a shortfall — this rep still clears both AM/PM.
+        rep("B", 10, { verified: 20 }, { verified: 100 }, { agentCrmId: 2 }),
+      ]),
+      { month: "2026-08", isCurrentMonth: false },
+    );
+    assert.equal(pharmacyBoard.pharmacyTarget, null, "no owner-set pharmacy target exists — never invent one");
+    assert.equal(pharmacyBoard.totals.pharmacy.verified, 30, "team pharmacy total sums across reps, like AM/PM");
+    assert.equal(pharmacyBoard.totals.pharmacy.verifiedRate, 1.5, "30 verified / (10 days x 2 reps) = 1.50");
+    assert.equal(pharmacyBoard.totals.pharmacy.attainmentPct, null, "no target means no attainment percentage, ever");
+    // Both reps still clear both targets — B's zero pharmacy calls must not cost him his AM/PM standing.
+    assert.equal(pharmacyBoard.totals.repsOnTarget, 2, "pharmacy performance never enters the AM/PM target test");
+    const rowA = pharmacyBoard.reps.find((r) => r.repName === "A");
+    assert.equal(rowA?.pharmacy.verified, 30);
+    const rowB = pharmacyBoard.reps.find((r) => r.repName === "B");
+    assert.equal(rowB?.pharmacy.verified, 0, "B genuinely made zero pharmacy calls");
+    assert.equal(rowB?.pharmacy.verifiedRate, 0, "and that reads as a real 0.00, not null — he had working days");
+  }
 
   // The rep filter narrows the TABLE and must leave the tiles above it alone — those answer "how is
   // the field force doing", and silently rescoping them to one rep would be a different question
@@ -687,6 +736,7 @@ export function runCrmRepsPlansTests() {
       ampm: "PM",
       contact_crm_id: 501,
       crm_save_date: "2026-08-03 14:00:00",
+      speciality: null,
       visit_date: "2026-08-03",
       visit_type: 0,
       visit_type_description: "Regular",
@@ -699,6 +749,7 @@ export function runCrmRepsPlansTests() {
       ampm: "PM",
       contact_crm_id: 0,
       crm_save_date: `2026-08-03 1${index % 10}:00:00`,
+      speciality: null,
       visit_date: "2026-08-03",
       visit_type: -8,
       visit_type_description: "Campaign",

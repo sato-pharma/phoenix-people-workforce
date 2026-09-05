@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   AM_CALL_RATE_TARGET,
+  PHARMACY_CALL_RATE_TARGET,
   PM_CALL_RATE_TARGET,
   zeroRepCallRate,
   type CallRateReport,
@@ -90,6 +91,9 @@ function rep(hrId: string, crmId: number, am: number, pm: number, workingDays = 
     workingDays,
     am: slice(AM_CALL_RATE_TARGET, am, workingDays),
     pm: slice(PM_CALL_RATE_TARGET, pm, workingDays),
+    // Separate from AM/PM entirely (owner, 2026-09-05) — none of these fixtures are about
+    // pharmacies, so zero calls, no target.
+    pharmacy: { verified: 0, unverified: 0, campaign: 0, total: 0, verifiedRate: workingDays > 0 ? 0 : null, totalRate: workingDays > 0 ? 0 : null, target: null, attainmentPct: null },
     unspecified: 0,
     campaignShare: 0,
     campaignOverLimitDays: [],
@@ -231,6 +235,8 @@ export function runRepsPlansSilentRepTests() {
   assert.equal(zero.am.verifiedRate, null, "a zero denominator still yields no claim at all");
   assert.equal(zero.am.target, AM_CALL_RATE_TARGET);
   assert.equal(zero.pm.target, PM_CALL_RATE_TARGET);
+  assert.equal(zero.pharmacy.target, PHARMACY_CALL_RATE_TARGET, "pharmacy is on the zero row too, target null");
+  assert.equal(zero.pharmacy.verifiedRate, null, "and the same zero-denominator rule applies to it");
   assert.equal(zero.agentCrmId, null);
   assert.deepEqual(zero.campaignOverLimitDays, []);
 }

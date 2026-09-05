@@ -74,6 +74,13 @@ function row(overrides: Partial<KpiRepRow> = {}): KpiRepRow {
     hasCallRate: true,
     amAttainmentPct: 100,
     pmAttainmentPct: 100,
+    // Separate from AM/PM entirely (owner, 2026-09-05) — no target yet, so no attainment percentage
+    // either. See PHARMACY_CALL_RATE_TARGET in crm/call-rate.ts.
+    pharmacyVerified: 0,
+    pharmacyRate: 0,
+    pharmacyReported: 0,
+    pharmacyReportedRate: 0,
+    pharmacyAttainmentPct: null,
     plannedDoctors: 100,
     visitedDoctors: 95,
     missedDoctors: 5,
@@ -452,6 +459,8 @@ function callRateFixture(overrides: Partial<RepCallRate> = {}): RepCallRate {
     workingDays: 1,
     am: slice(2, 2),
     pm: slice(0, 10),
+    // Separate from AM/PM entirely (owner, 2026-09-05) — target null, no target set yet.
+    pharmacy: { verified: 0, unverified: 0, campaign: 0, total: 0, verifiedRate: null, totalRate: null, target: null, attainmentPct: null },
     unspecified: 0,
     campaignShare: 0,
     campaignOverLimitDays: [],

@@ -105,6 +105,7 @@ export function runKpiCallRateHolidayTests() {
       comment: null,
       contact_crm_id: 900,
       crm_save_date: null,
+      speciality: null,
       visit_date: "2026-09-06",
       visit_type: 0,
       visit_type_description: "Regular",
@@ -152,6 +153,9 @@ function callRate(agentCrmId: number | null, agentHrId: string | null, agentName
     campaignOverLimitDays: [],
     campaignShare: 0,
     pm: slice(20, 10),
+    // Separate from AM/PM entirely (owner, 2026-09-05) — no target exists yet, so no attainment
+    // percentage either. See PHARMACY_CALL_RATE_TARGET.
+    pharmacy: { attainmentPct: null, campaign: 0, target: null, total: 0, totalRate: 0, unverified: 0, verified: 0, verifiedRate: 0 },
     unspecified: 0,
     workingDays: 5,
   };
@@ -206,6 +210,8 @@ export function runKpisBoardJoinTests() {
   assert.equal(joined.length, 1, "one rep on both sides must join to ONE row, on the CRM agent id");
   assert.equal(joined[0].pmVerified, 20, "the call-rate half survived the join");
   assert.equal(joined[0].coveragePct, 70, "and so did the plan half");
+  assert.equal(joined[0].pharmacyVerified, 0, "pharmacy joins too, separate from AM/PM");
+  assert.equal(joined[0].pharmacyAttainmentPct, null, "and never carries an attainment percentage — no target yet");
   assert.equal(
     joined[0].agentHrId,
     "a-12",

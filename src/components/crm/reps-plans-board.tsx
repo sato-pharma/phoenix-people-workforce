@@ -110,7 +110,7 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
         ? `${board.periodLabel} — scored through ${scoredThrough}, the days since have not happened yet`
         : `${board.periodLabel} — ${dayLabel(board.dateFrom)} to ${scoredThrough}`;
   const description = [
-    `${board.workingDays} working days (Sat–Wed) · Thursday worked but not counted, Friday off`,
+    `${board.workingDays} working days (Sat–Wed) · Thursday and Friday are not working days`,
     "duplicates collapsed · departed agents excluded · leave, meetings and training are not field work",
     windowText,
   ].join(" · ");
@@ -253,6 +253,24 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
               value={count(totals.repsOnTarget)}
             />
             <Tile label="Working days" sub="Sat · Sun · Mon · Tue · Wed" value={count(board.workingDays)} />
+          </div>
+
+          {/* Pharmacies are a SEPARATE metric from AM/PM (owner, 2026-09-05: "am/pm coverage and
+              call rate are separate from pharmacies coverage and call rate") — never averaged in,
+              never added to either tile above. No target exists for it yet (parked question: what
+              is the pharmacy call-rate target per working day?), so this shows the raw rate with no
+              "of target" tile. A rep with zero pharmacy calls is normal, not a shortfall to flag. */}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            <Tile
+              label="Pharmacy proved"
+              sub={`reported ${rate(totals.pharmacy.reportedRate)} · no target set yet`}
+              value={rate(totals.pharmacy.verifiedRate)}
+            />
+            <Tile
+              label="Pharmacy calls"
+              sub="verified + unverified + campaign"
+              value={count(totals.pharmacy.reported)}
+            />
           </div>
 
           {/* Row two: what the numbers above are made of. Three proof buckets, never summed back

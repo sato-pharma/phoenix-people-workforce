@@ -179,6 +179,13 @@ export async function RepVisitsPageBody({
               </p>
               <p className="text-lg font-black text-slate-900">{row.pm.verifiedRate?.toFixed(1) ?? "—"}</p>
             </div>
+            {/* Pharmacies are separate from AM/PM (owner, 2026-09-05) and have no target set yet —
+                see PHARMACY_CALL_RATE_TARGET — so this tile shows the raw rate with no "of N". Zero
+                is a normal reading, not a gap: never badge it the way a zero AM/PM would be. */}
+            <div className="text-right">
+              <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Pharmacy rate</p>
+              <p className="text-lg font-black text-slate-900">{row.pharmacy.verifiedRate?.toFixed(1) ?? "—"}</p>
+            </div>
             <div className="text-right">
               <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Working days</p>
               <p className="text-lg font-black text-slate-900">{row.workingDays}</p>

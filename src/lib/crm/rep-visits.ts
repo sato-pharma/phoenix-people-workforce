@@ -33,11 +33,13 @@
 
 import {
   classifyCallProof,
+  isCallRateWorkingDay,
   normalizeSession,
   type CallProof,
   type CallSession,
   type VisitForCallRate,
 } from "@/lib/crm/call-rate";
+import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
 import {
   matchCampaignNote,
   type CampaignContactMatch,
@@ -315,6 +317,12 @@ export type RepVisitsSummary = {
   excluded: number;
   am: number;
   pm: number;
+  /**
+   * Pharmacy calls, separate from AM/PM entirely (owner, 2026-09-05) — see crm/call-rate.ts's
+   * `isPharmacyVisit`. A pharmacy row is never also counted in am/pm/unspecified, whatever AM/PM
+   * flag it carries.
+   */
+  pharmacy: number;
   unspecified: number;
   /** Distinct doctors seen, by CRM contact id. */
   distinctContacts: number;
@@ -339,6 +347,15 @@ export type RepVisitsSummary = {
  * rows are the 214 calls behind that rate" — rather than claimed. `fieldCalls` here must equal the
  * rep's reported calls on the board for the same month; both are derived from the same rows through
  * the same classifier, so a mismatch means a filter diverged and the screen will show it.
+ *
+ * THE 2026-09-05 GATE. `fieldCalls`, the proof totals and every session (including `pharmacy`) now
+ * exclude Thursday/Friday rows, mirroring the exact gate `computeCallRate` applies before it will
+ * add a visit to any slice (owner: "visists to be counted from sat to wednesday only"). A Thursday
+ * row is still RENDERED above — it is real field work — but it must not inflate the numbers this
+ * function reconciles against the board, which no longer counts it either. `excluded`,
+ * `distinctContacts`, `distinctRegions`, `unmappedTerritory`, `noTerritory` and
+ * `campaignAlreadyKnown` are deliberately NOT gated: they describe data quality across whatever
+ * range was browsed, a different question from "what counts toward the call rate".
  */
 export function summarizeRepVisits(rows: readonly RepVisitRow[]): RepVisitsSummary {
   const contacts = new Set<number>();
@@ -352,6 +369,7 @@ export function summarizeRepVisits(rows: readonly RepVisitRow[]): RepVisitsSumma
     excluded: 0,
     am: 0,
     pm: 0,
+    pharmacy: 0,
     unspecified: 0,
     distinctContacts: 0,
     distinctRegions: 0,
@@ -365,22 +383,32 @@ export function summarizeRepVisits(rows: readonly RepVisitRow[]): RepVisitsSumma
       continue;
     }
     // Doctors and places are counted over FIELD WORK only, for the same reason the sessions below
-    // are: a day off is not a place visited, and a training day is not a doctor seen.
+    // are: a day off is not a place visited, and a training day is not a doctor seen. NOT gated by
+    // working day — see the header — because these describe data quality across the whole browsed
+    // range, not the call rate.
     if (row.contactCrmId != null) contacts.add(row.contactCrmId);
     if (row.crmRegionId != null) regions.add(row.crmRegionId);
-    summary.fieldCalls += 1;
-    summary[row.standing] += 1;
-    // Sessions are counted over FIELD WORK only, to match the board: a leave row carries an AM/PM
-    // flag like any other and counting it here would inflate the session totals past the rate's.
-    if (row.session === "am") summary.am += 1;
-    else if (row.session === "pm") summary.pm += 1;
-    else summary.unspecified += 1;
     if (row.territory.status === "unmapped") summary.unmappedTerritory += 1;
     else if (row.territory.status === "none") summary.noTerritory += 1;
     // "own" only. A doctor on a COLLEAGUE's list is a territory question, not a mis-coded call, and
     // counting the two together would put a number in front of the owner that mixes a mistake he
     // can tell a rep to stop making with one he cannot.
     if (row.knownContact?.scope === "own") summary.campaignAlreadyKnown += 1;
+
+    // THE 2026-09-05 GATE — see the header. A Thursday/Friday row is real field work (counted
+    // above) but must not reach fieldCalls, the proof totals or any session, because the board no
+    // longer counts it either.
+    if (!isCallRateWorkingDay(row.dateIso)) continue;
+
+    summary.fieldCalls += 1;
+    summary[row.standing] += 1;
+    // Pharmacy is ORTHOGONAL to AM/PM, not a third value of it — a pharmacy row is pulled out
+    // regardless of which flag it carries, exactly as computeCallRate does.
+    const isPharmacy = isPharmacySpeciality(row.speciality) || row.visitTypeLabel === "Pharmacy Visit";
+    if (isPharmacy) summary.pharmacy += 1;
+    else if (row.session === "am") summary.am += 1;
+    else if (row.session === "pm") summary.pm += 1;
+    else summary.unspecified += 1;
   }
   summary.distinctContacts = contacts.size;
   summary.distinctRegions = regions.size;

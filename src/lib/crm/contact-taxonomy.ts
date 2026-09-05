@@ -103,6 +103,19 @@ export function isDoctorSpeciality(speciality: string | null | undefined): boole
 }
 
 /**
+ * True when a visited contact's `speciality` names a pharmacy specifically — NOT the whole HCP
+ * bucket. Owner's rule (2026-09-05, verbatim): "am/pm coverage and call rate are separate from
+ * pharmacies coverage and call rate" / "a pharmacy is not a contact" (2026-09-01, reps-list.ts).
+ * The call-rate split this backs is about the pharmacy channel by itself, so a hospital, contract
+ * or insurance account — all `hcp` too — stays counted as an ordinary AM/PM call rather than being
+ * pulled into a bucket nobody asked for. See {@link classifyCrmContactSpeciality} for the full HCP
+ * membership this deliberately does not use.
+ */
+export function isPharmacySpeciality(speciality: string | null | undefined): boolean {
+  return normalizeSpecialityKey(speciality) === "pharmacy";
+}
+
+/**
  * HCP is one bucket, but it holds two different things: places you visit (a hospital) and accounts
  * you bill (a contract, an insurer). Pharmacy Search has to tell them apart, because "hospitals
  * near this pharmacy" is a question about places.

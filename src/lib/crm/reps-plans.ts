@@ -22,11 +22,13 @@
 
 import {
   AM_CALL_RATE_TARGET,
+  PHARMACY_CALL_RATE_TARGET,
   PM_CALL_RATE_TARGET,
   countCallRateWorkingDays,
   zeroRepCallRate,
   type CallRateReport,
   type CallRateSlice,
+  type PharmacyCallRateSlice,
   type RepCallRate,
 } from "@/lib/crm/call-rate";
 // From the ROLES module, never the resolver: this file is reached by a "use client" component, and
@@ -303,6 +305,26 @@ function toSession(slice: CallRateSlice): RepsPlansSession {
 }
 
 /**
+ * One pharmacy session, same shape as {@link RepsPlansSession} except the target is nullable — the
+ * owner has not set a pharmacy call-rate standard yet (see PHARMACY_CALL_RATE_TARGET), so
+ * `attainmentPct` stays null until he does rather than being computed against an invented number.
+ */
+export type RepsPlansPharmacySession = Omit<RepsPlansSession, "target"> & { target: number | null };
+
+function toPharmacySession(slice: PharmacyCallRateSlice): RepsPlansPharmacySession {
+  return {
+    verified: slice.verified,
+    unverified: slice.unverified,
+    campaign: slice.campaign,
+    reported: slice.total,
+    verifiedRate: round2(slice.verifiedRate),
+    reportedRate: round2(slice.totalRate),
+    target: slice.target,
+    attainmentPct: roundPct(slice.attainmentPct),
+  };
+}
+
+/**
  * One (line, region) a person covers, from the organogram. Re-exported under the board's own name
  * so the components have one import; the resolution lives in `org-placement.ts`.
  */
@@ -359,6 +381,14 @@ export type RepsPlansRepRow = {
   workingDays: number;
   am: RepsPlansSession;
   pm: RepsPlansSession;
+  /**
+   * Pharmacy calls — separate from AM/PM entirely (owner, 2026-09-05): "am/pm coverage and call
+   * rate are separate from pharmacies coverage and call rate" / "a rep must have am/pm but not
+   * must have pharmacies". A pharmacy visit never counts toward am/pm above, whichever flag the
+   * CRM row carries. Zero pharmacy calls is a NORMAL rep, never a gap — do not badge it the way a
+   * zero AM/PM would be.
+   */
+  pharmacy: RepsPlansPharmacySession;
   /** Rows the CRM left with no AM/PM flag — in neither session, so shown on its own. */
   unspecified: number;
   /** AM + PM verified. */
@@ -476,6 +506,7 @@ export function toRepsPlansRow(
 ): RepsPlansRepRow {
   const am = toSession(rep.am);
   const pm = toSession(rep.pm);
+  const pharmacy = toPharmacySession(rep.pharmacy);
   const verifiedCalls = am.verified + pm.verified;
   const reportedCalls = am.reported + pm.reported + rep.unspecified;
   const campaignCalls = am.campaign + pm.campaign;
@@ -488,6 +519,7 @@ export function toRepsPlansRow(
     workingDays: rep.workingDays,
     am,
     pm,
+    pharmacy,
     unspecified: rep.unspecified,
     verifiedCalls,
     reportedCalls,
@@ -513,6 +545,8 @@ export type RepsPlansTotals = {
   workingDays: number;
   am: RepsPlansSession;
   pm: RepsPlansSession;
+  /** Team pharmacy calls, separate from AM/PM — see RepsPlansRepRow.pharmacy. */
+  pharmacy: RepsPlansPharmacySession;
   unspecified: number;
   campaignCalls: number;
   campaignSharePct: number;
@@ -555,6 +589,16 @@ function totalsOf(rows: readonly RepsPlansRepRow[], workingDays: number): RepsPl
   });
   const am = blank(AM_CALL_RATE_TARGET);
   const pm = blank(PM_CALL_RATE_TARGET);
+  const pharmacy: RepsPlansPharmacySession = {
+    verified: 0,
+    unverified: 0,
+    campaign: 0,
+    reported: 0,
+    verifiedRate: null,
+    reportedRate: null,
+    target: PHARMACY_CALL_RATE_TARGET,
+    attainmentPct: null,
+  };
   let unspecified = 0;
   let flaggedDays = 0;
   let repsWithFlaggedDays = 0;
@@ -565,6 +609,7 @@ function totalsOf(rows: readonly RepsPlansRepRow[], workingDays: number): RepsPl
     for (const [into, from] of [
       [am, row.am],
       [pm, row.pm],
+      [pharmacy, row.pharmacy],
     ] as const) {
       into.verified += from.verified;
       into.unverified += from.unverified;
@@ -575,6 +620,9 @@ function totalsOf(rows: readonly RepsPlansRepRow[], workingDays: number): RepsPl
     flaggedDays += row.flaggedDays;
     if (row.flaggedDays > 0) repsWithFlaggedDays += 1;
     campaignOnlyDays += row.campaignOnlyDays;
+    // Pharmacy is deliberately NOT part of this test — no target exists for it yet, and the owner's
+    // "am/pm coverage and call rate are separate from pharmacies" rule means a pharmacy shortfall
+    // must never count against a rep's AM/PM standing either way.
     if ((row.am.verifiedRate ?? 0) >= row.am.target && (row.pm.verifiedRate ?? 0) >= row.pm.target) repsOnTarget += 1;
   }
 
@@ -585,6 +633,13 @@ function totalsOf(rows: readonly RepsPlansRepRow[], workingDays: number): RepsPl
       session.attainmentPct = roundPct((session.verified / denominator / session.target) * 100);
     }
   }
+  if (denominator > 0) {
+    pharmacy.verifiedRate = round2(pharmacy.verified / denominator);
+    pharmacy.reportedRate = round2(pharmacy.reported / denominator);
+    // Null target -> null attainment, never a division. See PHARMACY_CALL_RATE_TARGET.
+    pharmacy.attainmentPct =
+      pharmacy.target != null ? roundPct((pharmacy.verified / denominator / pharmacy.target) * 100) : null;
+  }
 
   const reportedCalls = am.reported + pm.reported + unspecified;
   const verifiedCalls = am.verified + pm.verified;
@@ -594,6 +649,7 @@ function totalsOf(rows: readonly RepsPlansRepRow[], workingDays: number): RepsPl
     workingDays,
     am,
     pm,
+    pharmacy,
     unspecified,
     campaignCalls,
     campaignSharePct: reportedCalls > 0 ? Math.round((campaignCalls / reportedCalls) * 100) : 0,
@@ -630,6 +686,8 @@ export type RepsPlansBoard = {
   campaignLimit: number;
   amTarget: number;
   pmTarget: number;
+  /** Null — no owner-set pharmacy call-rate target exists yet. See PHARMACY_CALL_RATE_TARGET. */
+  pharmacyTarget: number | null;
   totals: RepsPlansTotals;
   reps: RepsPlansRepRow[];
   repOptions: Array<{ repKey: string; repName: string }>;
@@ -951,6 +1009,7 @@ export function buildRepsPlansBoard(
     campaignLimit: report.campaignLimit,
     amTarget: AM_CALL_RATE_TARGET,
     pmTarget: PM_CALL_RATE_TARGET,
+    pharmacyTarget: PHARMACY_CALL_RATE_TARGET,
     totals,
     reps: appliedRepKey ? visibleRows.filter((row) => row.repKey === appliedRepKey) : visibleRows,
     repOptions,

@@ -285,16 +285,21 @@ export function runCrmRepVisitsTests() {
     });
     const rep = rate.reps[0]!;
 
-    const reportedByRate = rep.am.total + rep.pm.total + rep.unspecified;
+    const reportedByRate = rep.am.total + rep.pm.total + rep.pharmacy.total + rep.unspecified;
     assert.equal(
       drilldown.summary.fieldCalls,
       reportedByRate,
       "the drill-down's call count must EQUAL the board's reported calls — a drill-down that adds up to a different number than the row that opened it is worse than none",
     );
-    assert.equal(drilldown.summary.verified, rep.am.verified + rep.pm.verified, "proved calls must reconcile too");
-    assert.equal(drilldown.summary.campaign, rep.am.campaign + rep.pm.campaign);
+    assert.equal(
+      drilldown.summary.verified,
+      rep.am.verified + rep.pm.verified + rep.pharmacy.verified,
+      "proved calls must reconcile too",
+    );
+    assert.equal(drilldown.summary.campaign, rep.am.campaign + rep.pm.campaign + rep.pharmacy.campaign);
     assert.equal(drilldown.summary.am, rep.am.total, "AM rows must match the AM slice exactly");
     assert.equal(drilldown.summary.pm, rep.pm.total, "PM rows must match the PM slice exactly");
+    assert.equal(drilldown.summary.pharmacy, rep.pharmacy.total, "pharmacy rows must match the pharmacy slice exactly");
     assert.equal(
       drilldown.summary.unspecified,
       rep.unspecified,
@@ -303,6 +308,37 @@ export function runCrmRepVisitsTests() {
     // And the row the KPI ignores is still ON the screen — present, and counted apart.
     assert.equal(drilldown.summary.excluded, 1);
     assert.equal(drilldown.summary.rows, visits.length, "every visit is rendered, field work or not");
+  }
+
+  // ── PHARMACIES ARE SEPARATE FROM AM/PM HERE TOO (owner, 2026-09-05) ─────────────
+  {
+    const visits: VisitForRepDrilldown[] = [
+      visit({ ampm: "AM", speciality: "Pharmacy", contact_crm_id: 701, crm_visit_id: 61 }),
+      visit({ ampm: "AM", contact_crm_id: 702, crm_visit_id: 62 }), // a real doctor, still AM
+    ];
+    const checkins = [checkin({ contact_crm_id: 701 }), checkin({ contact_crm_id: 702 })];
+    const drilldown = buildRepVisits(visits, checkins, { territoryIndex: UNMAPPED });
+    const rate = computeCallRate(visits as unknown as VisitForCallRate[], checkins, {
+      dateFrom: "2026-08-01",
+      dateTo: "2026-08-01",
+    });
+    const rep = rate.reps[0]!;
+    assert.equal(drilldown.summary.pharmacy, 1, "the pharmacy row is pulled out of AM, on screen exactly as on the board");
+    assert.equal(drilldown.summary.am, 1, "only the real doctor remains in AM");
+    assert.equal(drilldown.summary.pharmacy, rep.pharmacy.total, "and it reconciles with the board's pharmacy slice");
+  }
+
+  // ── THE 2026-09-05 GATE: a Thursday row is shown but excluded from every count ───
+  {
+    // 2026-08-06 is a Thursday.
+    const visits: VisitForRepDrilldown[] = [
+      visit({ ampm: "PM", contact_crm_id: DOCTOR, crm_visit_id: 63, visit_date: "2026-08-06" }),
+    ];
+    const drilldown = buildRepVisits(visits, [checkin()], { territoryIndex: UNMAPPED });
+    assert.equal(drilldown.rows.length, 1, "the Thursday call is still RENDERED — it is real field work");
+    assert.equal(drilldown.summary.fieldCalls, 0, "but it must not inflate fieldCalls — the board no longer counts it");
+    assert.equal(drilldown.summary.pm, 0, "nor any session");
+    assert.equal(drilldown.summary.verified, 0, "nor the proof totals");
   }
 
   // ── Sessions are counted over FIELD WORK only ───────────────────────────────────
