@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { crmPageItems, getNavigationSections } from "../src/config/system-navigation.ts";
+import { bandSectionIdsFor, crmPageItems, getNavigationSections } from "../src/config/system-navigation.ts";
 import {
   getSections,
   navigationItemVisible,
@@ -75,7 +75,11 @@ import {
 // names a route anyone can click, and every "or via the hub" escape below is gone with it: a card is
 // reachable now only by being a ROW.
 const CRM_HUB_HREF = "/admin/crm-tools";
-const CRM_BAND_ID = "crm";
+// The band was ONE section until the 2026-09-05 rebalance split it in two — "CRM Boards" keeps the
+// `crm` id and "CRM Data Quality" is the other half. Resolved rather than spelled out: naming one id
+// here would still find a real section, so this test would keep passing while silently checking half
+// the module against all of the hub's cards. It failed loudly instead, which is why it is a list.
+const CRM_BAND_IDS = bandSectionIdsFor("crm");
 
 function permissionLookupFor(role: PhoenixRole): PermissionLookup {
   const lookup: PermissionLookup = {};
@@ -103,10 +107,10 @@ function adminHrefsFor(role: PhoenixRole): Set<string> {
 
 /** The rows the CRM band actually draws for a role — [] when the band is gated away entirely. */
 function crmBandRowsFor(role: PhoenixRole): string[] {
-  const band = getSections(getNavigationSections("admin"), "admin", permissionLookupFor(role), role).find(
-    (section) => section.id === CRM_BAND_ID,
-  );
-  return (band?.items ?? []).map((item) => item.href).sort();
+  return getSections(getNavigationSections("admin"), "admin", permissionLookupFor(role), role)
+    .filter((section) => CRM_BAND_IDS.includes(section.id))
+    .flatMap((section) => section.items.map((item) => item.href))
+    .sort();
 }
 
 /** The cards the HUB PAGE would render for a role, through the same helper the rail uses. */

@@ -198,8 +198,14 @@ export function runSidebarDomainsTests() {
     // A band that existed only to hold a hub row whose page had nothing for that role now
     // disappears instead of rendering — 31 role/hub pairs, Payroll Management for every sales role
     // and Attendance for eleven roles among them — so band counts fell even as the rails gained
-    // rows. Measured for these seven roles that day: 6 Financial Advisor, 10 HR Advisory,
-    // 11 HR Operations, 12 Finance Manager, 16 SFE Manager, 20 CEO, 24 Super Admin.
+    // rows: 6 Financial Advisor, 10 HR Advisory, 11 HR Operations, 12 Finance Manager,
+    // 16 SFE Manager, 20 CEO, 24 Super Admin.
+    //
+    // They rose again the same day, in the rebalance the owner picked out of the navigation review
+    // workbook: ten oversized hubs now split into several bands each, so the same rows are drawn
+    // under more headings. Re-measured: 7 Financial Advisor, 14 HR Advisory, 14 HR Operations,
+    // 14 Finance Manager, 23 SFE Manager, 29 CEO, 43 Super Admin. The floor stays at 5 — it is
+    // there to catch a COLLAPSED rail, not to pin a shape that moves whenever a band is added.
     assert.ok(
       headingsRendered >= 5,
       `${role}: measured ${headingsRendered} rendered heading bands — the rail collapsed, so the blank-heading check below has nothing to say`,

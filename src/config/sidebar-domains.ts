@@ -1,16 +1,20 @@
 import {
+  CalendarClock,
   ChartColumnBig,
+  ClipboardList,
+  Database,
   Inbox,
   LayoutDashboard,
   Megaphone,
   ReceiptText,
   Settings2,
+  UserPlus,
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
 
 /**
- * The admin rail's DOMAIN layer: seven groups over the flat section list.
+ * The admin rail's DOMAIN layer: eleven groups over the flat section list.
  *
  * This file is presentation only. It holds no rows, no hrefs and no gates — every one of those
  * still lives in `adminNavigationSectionSeeds` (system-navigation.ts) and is still resolved by
@@ -21,37 +25,46 @@ import {
  * WHY it exists. The admin sidebar had 37 sections holding 54 rows, and 24 of those sections held
  * a single row whose label repeated the heading directly above it — the rail printed the same
  * words twice, 24 times, and a role seeing most of them scrolled a wall of headings. The grouping
- * merges those into 13 headings under 7 domains — 14 until the heading pass below.
+ * merges those into headed bands under a handful of domains.
  *
  * THE HEADING PASS (owner, 2026-09-04, after reviewing the measured rail). The merge above left a
  * second-order version of the same stutter it was built to remove. `groupAdminSections` blanks a
  * heading that repeats one of its own visible rows, so "PEOPLE MANAGEMENT / People Management" did
  * not print twice — it printed the heading as nothing at all, and FIVE of the 14 came out blank on
- * the Super Admin's rail. His People domain read as two unlabelled bands followed by a third with a
- * heading, which is harder to scan than the stutter was.
+ * the Super Admin's rail. Blanking is a fallback, not a layout, so every heading below is chosen
+ * to say something its own rows do not, measured against the union of every row label every admin
+ * role can see. The outcome is pinned by role in tests/sidebar-domains.test.ts: no heading blanks
+ * for anybody, and the assertion is what keeps it that way.
  *
- * Blanking is a fallback, not a layout. The five headings are renamed here so each says something
- * its rows do not, and the two hiring groups are merged into one — measured against the union of
- * every row label every admin role can see, so a rename cannot collide for some other seat. The
- * outcome is pinned by role in tests/sidebar-domains.test.ts: no heading blanks for anybody now,
- * and the assertion is what keeps it that way.
+ * THE REBALANCE (owner, 2026-09-05, from the three scenarios in the navigation review workbook —
+ * he picked this one). Two problems, both measured on the Super Admin's own rail:
  *
- *   overview  "Command Center"      -> "Dashboards"      (row "Command Center" was the collision)
- *   people    "People Management"   -> "Employees"       (row "People Management")
- *   people    "Recruitment & Hiring"-> "Recruitment"     (row "Recruitment & Hiring"), and the
- *                                                        separate "Hiring" group folds into it —
- *                                                        two adjacent hiring bands in one domain
- *   money     "Automated Payroll"   -> "Automation"      (row "Automated Payroll")
- *   marketing "Marketing & ROI"     -> "Requests & ROI"  (row "Marketing & ROI")
+ *   1. TWO DOMAINS HELD MORE THAN HALF THE RAIL. People was 48 rows of 164 and Sales 42 — 90
+ *      between them — while Overview and Requests held 6 each. Opening People filled the screen
+ *      and kept scrolling; opening Overview showed six rows and stopped. The imbalance, not the
+ *      total, is what made the rail tiring. Hiring, Time & Leave, Orders & CRM and Master Data are
+ *      now domains of their own, and the biggest domain is 25 rows instead of 48.
  *
- * No row label, permission, gate or section moves. This layer runs strictly AFTER `getSections`,
- * so it cannot grant or hide anything — it decides only what the bands are called.
+ *   2. THE WIDEST BAND WAS 17 ROWS. Admin Tools, then Source of Sales at 15, then Marketing & ROI,
+ *      Recruitment & Hiring and Attendance at 12 apiece. Ten hubs are now split into several bands
+ *      by `AdminHubPromotion.split` (system-navigation.ts) — real sections, not a subset taken
+ *      here — so no band is longer than six rows.
+ *
+ * ELEVEN DOORS, SHORTER ROOMS is the trade, and it was made deliberately: eleven closed accordions
+ * are more to scan than seven, and each one opens onto something a person can read without
+ * scrolling. Do not "simplify" it back by merging domains without re-measuring the row counts.
+ *
+ * No row label, permission, gate or section moves in this file. This layer runs strictly AFTER
+ * `getSections`, so it cannot grant or hide anything — it decides only what the bands are called
+ * and which domain they sit in.
  *
  * TWO RULES, both mechanical, both tested in tests/sidebar-domains.test.ts:
  *
  *   1. Every admin section id appears in exactly one group. A section added to the seeds and not
  *      placed here is a build-time-invisible mistake — it would render, but at the bottom under
- *      "More", away from its siblings. The test names it instead.
+ *      "More", away from its siblings. The test names it instead. The same assertion, read the
+ *      other way, is what catches a `split` band whose hrefs stopped matching its hub: its id is
+ *      named here and exists nowhere in `adminNavigationSections`, and the test calls it a phantom.
  *   2. An unmapped section is NEVER dropped. `UNGROUPED_DOMAIN` catches it. A nav row silently
  *      ceasing to exist is the one failure mode this layer could plausibly introduce, and it is
  *      the failure mode nobody notices: the page still works, the link is simply unreachable.
@@ -107,34 +120,45 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
   },
   {
     id: "people",
+    // Hiring and Time & Leave used to live here too, which is how this domain reached 48 rows.
+    // What is left is the employee record itself, the reports about it, and probation.
     name: "People",
-    desc: "Employees, attendance, leave and the hiring pipeline.",
+    desc: "Employee records, the reports about them, and probation.",
     icon: UsersRound,
     groups: [
-      // Six hubs used to sit in this domain as six single rows, each opening a page of modules.
-      // They are now six headed bands of real rows (owner, 2026-09-05) — see `adminHubPromotions`
-      // in src/config/system-navigation.ts. Each band merges the hub's own modules with the loose
-      // sections on the same subject, so Attendance is one place rather than a hub row plus two
-      // strays further down.
-      { heading: "People Management", sectionIds: ["hub-people-management", "people-management"] },
+      { heading: "Employee Records", sectionIds: ["hub-people-management", "finance-resignations"] },
+      { heading: "HR Reports", sectionIds: ["hub-people-reports", "people-management"] },
+      { heading: "Plans & Support", sectionIds: ["hub-people-plans"] },
       { heading: "Probation Tools", sectionIds: ["hub-probation-tools", "ceo-probation"] },
-      {
-        heading: "Recruitment & Hiring",
-        sectionIds: ["hub-recruitment-hiring", "recruitment-hiring", "ceo-recruitment-candidates"],
-      },
-      {
-        heading: "Attendance",
-        sectionIds: ["attendance-management", "early-birds", "finance-fingerprint-report"],
-      },
-      { heading: "Field Coaching", sectionIds: ["field-coaching"] },
+    ],
+  },
+  {
+    id: "hiring",
+    name: "Hiring",
+    desc: "The pipeline from an inbound CV to a signed offer.",
+    icon: UserPlus,
+    groups: [
+      { heading: "Recruitment & Hiring", sectionIds: ["hub-recruitment-hiring"] },
+      { heading: "CV Pipeline", sectionIds: ["hub-recruitment-pipeline", "recruitment-hiring"] },
+      { heading: "Hiring Managers", sectionIds: ["ceo-recruitment-candidates"] },
+    ],
+  },
+  {
+    id: "time",
+    name: "Time & Leave",
+    desc: "Attendance, the calendars, leave and field coaching.",
+    icon: CalendarClock,
+    groups: [
+      { heading: "Attendance Reports", sectionIds: ["attendance-management", "finance-fingerprint-report"] },
+      // Five calendars in one place, which is the point: two of them read almost alike and used to
+      // sit in different domains. See the rename at `ceo-company-calendar` in system-navigation.ts.
+      { heading: "Calendars", sectionIds: ["attendance-management-calendars", "ceo-company-calendar"] },
+      { heading: "Attendance Setup", sectionIds: ["attendance-management-setup", "early-birds"] },
       // "Leave", not "Leave Management": `finance-leave-management` carries a row called exactly
       // "Leave Management", and groupAdminSections blanks a heading that repeats one of its own
       // rows — which tests/sidebar-domains.test.ts fails on.
-      {
-        heading: "Leave",
-        sectionIds: ["leave-management", "finance-leave-management", "vacation-sources"],
-      },
-      { heading: "Workforce", sectionIds: ["ceo-company-calendar", "finance-resignations"] },
+      { heading: "Leave", sectionIds: ["leave-management", "finance-leave-management", "vacation-sources"] },
+      { heading: "Field Coaching", sectionIds: ["field-coaching"] },
     ],
   },
   {
@@ -144,7 +168,8 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
     icon: ReceiptText,
     groups: [
       { heading: "Payroll Management", sectionIds: ["payroll", "finance-payslips-center"] },
-      { heading: "Outstation Expenses", sectionIds: ["expenses-outstation"] },
+      { heading: "Expense Desk", sectionIds: ["expenses-outstation"] },
+      { heading: "Expense Records", sectionIds: ["expenses-outstation-records"] },
       // Both rows ARE the automated-payroll module (/admin/automated-payroll and its
       // /finance sibling), so the heading names the capability rather than repeating the row.
       { heading: "Automation", sectionIds: ["automated-payroll"] },
@@ -152,46 +177,73 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
   },
   {
     id: "sales",
+    // Direct orders and the CRM left for their own domain; what stays is the closing and the data
+    // that feeds it.
     name: "Sales",
-    desc: "Closings, targets, the source of sales and the CRM.",
+    desc: "The closing, the imports behind it, the mapping and the weekly feed.",
     icon: ChartColumnBig,
     groups: [
-      // Four of these eight sections were hub rows; each is now a headed band of its own modules.
-      // What is left — Sales vs Target, Targets, Monthly Closing, PM Product Master — are real
-      // single-page modules, so they keep one shared heading rather than four of one row each.
-      { heading: "Source of Sales", sectionIds: ["sales-source-of-sales"] },
-      { heading: "Weekly Sales", sectionIds: ["sales-weekly-module"] },
-      { heading: "Direct Orders", sectionIds: ["sales-direct-orders"] },
-      { heading: "CRM", sectionIds: ["crm"] },
+      { heading: "Closing & Achievement", sectionIds: ["sales-source-of-sales"] },
+      { heading: "Sales Imports", sectionIds: ["sales-sos-imports"] },
+      { heading: "Sales Mapping", sectionIds: ["sales-sos-mapping"] },
+      { heading: "Sales Integrity", sectionIds: ["sales-sos-integrity"] },
       {
         heading: "Targets & Closing",
         sectionIds: ["sales-vs-target-module", "sales-targets-module", "monthly-closing", "pm-product-master"],
       },
+      { heading: "Weekly Sales", sectionIds: ["sales-weekly-module"] },
+    ],
+  },
+  {
+    id: "orders",
+    name: "Orders & CRM",
+    desc: "Direct orders, the pharmacies behind them, and the CRM boards.",
+    icon: ClipboardList,
+    groups: [
+      { heading: "Direct Orders", sectionIds: ["sales-direct-orders"] },
+      { heading: "Direct Order Pharmacies", sectionIds: ["sales-direct-orders-pharmacies"] },
+      { heading: "Direct Order Setup", sectionIds: ["sales-direct-orders-setup"] },
+      { heading: "CRM Boards", sectionIds: ["crm"] },
+      // Not "CRM Integrity": that is the label of a row inside this very group.
+      { heading: "CRM Data Quality", sectionIds: ["crm-integrity"] },
     ],
   },
   {
     id: "marketing",
     name: "Marketing",
-    desc: "Marketing spend and ROI, and adverse-event reporting.",
+    desc: "Marketing spend and ROI, the request desk, and adverse-event reporting.",
     icon: Megaphone,
     groups: [
-      // The "Marketing & ROI" row is gone — the heading now stands over that hub's eleven modules
-      // plus the two request rows that always sat beside it. Same for Pharmacovigilance, whose two
-      // modules join the Report It row.
-      { heading: "Marketing & ROI", sectionIds: ["hub-marketing-roi", "workspace-marketing-requests"] },
+      { heading: "ROI", sectionIds: ["hub-marketing-roi"] },
+      // Not "Marketing Requests" and not "Marketing Control": both are row labels in this domain.
+      { heading: "Requests & Inbox", sectionIds: ["hub-marketing-requests", "workspace-marketing-requests"] },
+      { heading: "Validation & Control", sectionIds: ["hub-marketing-control"] },
       { heading: "Pharmacovigilance", sectionIds: ["hub-pharmacovigilance", "pharmacovigilance"] },
     ],
   },
   {
     id: "system",
-    name: "System",
-    desc: "Master data, access control and the admin tooling.",
+    // Named "Platform" rather than "System" since the rebalance: the master data left for its own
+    // domain, so what is here is the running of the platform rather than everything technical.
+    // The id stays "system" — `domainIdForHref` hands it to the rail as the open-accordion key.
+    name: "Platform",
+    desc: "Health, delivery, maintenance, access control and the comms templates.",
     icon: Settings2,
     groups: [
-      // All three were hub rows, and all three were the only row in their section — so each keeps
-      // its section id and becomes a headed band of its own modules. "Administration" is gone as a
-      // heading: it stood over exactly three rows that each opened another page of modules.
-      { heading: "Admin Tools", sectionIds: ["admin-tools"] },
+      { heading: "Platform Health", sectionIds: ["admin-tools"] },
+      { heading: "Email & Notifications", sectionIds: ["admin-tools-comms"] },
+      { heading: "Data & Maintenance", sectionIds: ["admin-tools-data"] },
+      { heading: "My Tools", sectionIds: ["admin-tools-personal"] },
+      { heading: "Access Control", sectionIds: ["access-communication"] },
+      { heading: "Comms Templates", sectionIds: ["access-communication-templates"] },
+    ],
+  },
+  {
+    id: "master-data",
+    name: "Master Data",
+    desc: "The customer, pharmacy and area catalogues every report reads from.",
+    icon: Database,
+    groups: [
       { heading: "Master Data", sectionIds: ["master-data"] },
       // A band because the "Customers Database" row inside Master Data was itself a hub door, and
       // the owner's 2026-09-05 rule leaves none. Its own heading rather than six more rows under
@@ -199,7 +251,6 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
       // customer database), and folding them in would make Master Data an eight-row list of
       // unrelated things.
       { heading: "Customers Database", sectionIds: ["hub-customers-database"] },
-      { heading: "Access & Comms", sectionIds: ["access-communication"] },
     ],
   },
 ];
