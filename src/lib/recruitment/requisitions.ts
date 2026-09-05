@@ -6,8 +6,10 @@
 // so offer creation can pass them straight through to the offer engine.
 
 import type { AccessContext } from "@/lib/auth/permissions";
-import { canonicalHrIdKey } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { isReplacementRequisition, requisitionOpenBlock } from "@/lib/recruitment/requisition-open-gate";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getVacancyReport, type VacancyReportRow } from "@/lib/reports/vacancies";
 import {
   assertRecruitmentTransition,
@@ -278,6 +280,33 @@ export async function runRequisitionWorkflow(
     status: requisition.status,
     reason: input.reason,
   });
+
+  // Opening a requisition starts a real hire against real money, so it carries one check the
+  // registry cannot express: the registry knows roles and from-statuses, not whether the person
+  // this replaces has actually left.
+  //
+  // Scoped to req_open alone. Publishing, holding, resuming, filling and closing all act on a
+  // requisition that already passed this, and re-running it there would refuse to CLOSE a
+  // requisition whose replacement was since re-hired - blocking the tidy-up rather than the hire.
+  if (actionKey === "req_open") {
+    let replacementStatus: string | null = null;
+    if (isReplacementRequisition(requisition.headcountType) && requisition.replacementForHrId) {
+      // Casing-blind: HR ids are mixed case, and a plain .eq silently under-returns - which here
+      // would read as "this person does not exist" and block a legitimate replacement.
+      const keys = hrIdLookupKeys(requisition.replacementForHrId);
+      if (keys.length > 0) {
+        const { data } = await getSupabaseAdmin()
+          .from("employees")
+          .select("employment_status")
+          .in("hr_id", keys)
+          .maybeSingle();
+        replacementStatus = (data as { employment_status?: string | null } | null)?.employment_status ?? null;
+      }
+    }
+
+    const block = requisitionOpenBlock(requisition, replacementStatus);
+    if (block) throw new Error(block.message);
+  }
 
   const supabase = recruitmentDb();
   const { data, error } = await supabase
