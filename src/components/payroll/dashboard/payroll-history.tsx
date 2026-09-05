@@ -185,7 +185,7 @@ export function PayrollHistory({
                     {payrollPeriodLabel(batch.month, batch.year)}
                   </a>
                 </td>
-                <td className="max-w-[260px] truncate py-3 pr-4 text-text-secondary">
+                <td className="max-w-[260px] break-words py-3 pr-4 text-text-secondary">
                   {batch.fileName}
                 </td>
                 <td className="py-3 pr-4">{statusBadge(batch.status)}</td>
