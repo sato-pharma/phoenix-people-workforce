@@ -590,9 +590,10 @@ function styleMasterSheet(
     cell.value = isSectionStart ? column.section.toUpperCase() : null;
     cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.light }, name: "Aptos", size: 7.5 };
     cell.alignment = { horizontal: "left", vertical: "bottom" };
+    // `{}` rather than `undefined` — the property is `Partial<Borders>`, which does not accept it.
     cell.border = isSectionStart
       ? { left: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.light } } }
-      : undefined;
+      : {};
   });
 
   const headerRow = sheet.getRow(HEADER_ROW);
@@ -1231,7 +1232,19 @@ export async function buildEmployeeMasterWorkbook(
 
   // Open on the cover, even though the data sheet has to be first in the file.
   const startHereIndex = workbook.worksheets.findIndex((worksheet) => worksheet.name === "Start Here");
-  workbook.views = [{ activeTab: startHereIndex < 0 ? 0 : startHereIndex, firstSheet: 0, visibility: "visible" }];
+  // `Workbook.views` is WorkbookView[], not Partial — the window geometry is required even though
+  // Excel overrides it with whatever the reader's window actually is.
+  workbook.views = [
+    {
+      activeTab: startHereIndex < 0 ? 0 : startHereIndex,
+      firstSheet: 0,
+      height: 18000,
+      visibility: "visible",
+      width: 29000,
+      x: 0,
+      y: 0,
+    },
+  ];
 
   return workbook;
 }
