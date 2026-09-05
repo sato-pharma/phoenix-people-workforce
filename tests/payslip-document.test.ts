@@ -14,6 +14,8 @@ import {
   buildPayslipDocument,
   buildPayslipSheet,
   PAYSLIP_DOCUMENT_CSS,
+  payslipContentDisposition,
+  payslipFileName,
 } from "../src/lib/payroll/payslip-document.ts";
 import {
   payrollSheetHeaders,
@@ -242,6 +244,114 @@ export function runPayslipDocumentTests() {
     PAYSLIP_DOCUMENT_CSS,
     /@media screen and \(max-width: 800px\)/,
     "The phone breakpoint must be scoped to screen — paper is 793.7px wide and is never a phone.",
+  );
+
+  // ── the saved file's name (owner's format, 2026-09-05) ─────────────────────────────────────────
+  // "<Employee Name> - payslip.pdf". It leads with the PERSON, and the person is a NAME: the old
+  // name was `phoenix-payslip-<hrId>-<period>.pdf`, which led with the app's brand and identified
+  // the employee by a raw code — against the standing rule that people are shown by name.
+  assert.equal(
+    payslipFileName({ fullName: "Ahmed Specimen Mohamed", employeeCode: "A-000", hrId: "a-000" }, 8, 2026),
+    "Ahmed Specimen Mohamed - payslip - August 2026.pdf",
+    "The owner's format, exactly — name, then the month it covers.",
+  );
+
+  // Spaces SURVIVE. The old helper collapsed everything outside [a-z0-9._-] to hyphens, which is
+  // how "Ahmed Specimen Mohamed" became "Ahmed-Specimen-Mohamed" — not a name, a slug.
+  assert.ok(
+    payslipFileName({ fullName: "Ahmed Specimen Mohamed", employeeCode: "", hrId: "" }, 8, 2026).includes(" Specimen "),
+    "A name keeps its spaces.",
+  );
+
+  // Digits, apostrophes and hyphens are part of real names and must survive. This is the assertion
+  // that catches a character class written as a RANGE — `[ -<]` reads as space-to-less-than and
+  // silently deletes every digit and apostrophe, which looks like nothing at all in review.
+  assert.equal(
+    payslipFileName({ fullName: "Sara O'Brien Al-Sayed 2", employeeCode: "", hrId: "" }, 8, 2026),
+    "Sara O'Brien Al-Sayed 2 - payslip - August 2026.pdf",
+    "Apostrophes, hyphens and digits belong to the name, not to the illegal set.",
+  );
+
+  // What a filesystem genuinely refuses is removed, and nothing else.
+  assert.equal(
+    payslipFileName({ fullName: 'a/b:c*d?e"f<g>h|i', employeeCode: "", hrId: "" }, 8, 2026),
+    "a b c d e f g h i - payslip - August 2026.pdf",
+    "The Windows-illegal set becomes spaces; the name is not otherwise mangled.",
+  );
+
+  // A leading dot hides a file on Unix, so it is trimmed rather than passed through.
+  assert.equal(
+    payslipFileName({ fullName: "  ...Hidden Name  ", employeeCode: "", hrId: "" }, 8, 2026),
+    "Hidden Name - payslip - August 2026.pdf",
+    "Leading dots and surrounding space are trimmed.",
+  );
+
+  // The fallback chain. A file still needs a name when the record has none — an unnamed payslip is
+  // a data problem, not a reason to fail somebody's download.
+  assert.equal(
+    payslipFileName({ fullName: "", employeeCode: "A-137", hrId: "a-137" }, 8, 2026),
+    "A-137 - payslip - August 2026.pdf",
+    "With no name, the employee code stands in.",
+  );
+  assert.equal(
+    payslipFileName({ fullName: "", employeeCode: "", hrId: "" }, 8, 2026),
+    "Employee - payslip - August 2026.pdf",
+    "With nothing at all, the download still gets a name.",
+  );
+
+  // Two months of ONE employee must be two different files. Without the period they are the same
+  // name, and a person saving a year of payslips gets "(1)", "(2)", "(3)" — the browser deciding
+  // what the file should have said.
+  const person = { fullName: "Ahmed Specimen Mohamed", employeeCode: "A-000", hrId: "a-000" };
+  assert.notEqual(
+    payslipFileName(person, 8, 2026),
+    payslipFileName(person, 9, 2026),
+    "Consecutive months must not produce the same filename.",
+  );
+  assert.equal(
+    payslipFileName(person, 1, 2027),
+    "Ahmed Specimen Mohamed - payslip - January 2027.pdf",
+    "…and the month is spelled the way the document's own subtitle spells it.",
+  );
+
+  // ── the header that actually ships ─────────────────────────────────────────────────────────────
+  const disposition = payslipContentDisposition(
+    { fullName: "Ahmed Specimen Mohamed", employeeCode: "A-000", hrId: "a-000" }, 8, 2026,
+  );
+  assert.equal(
+    disposition,
+    `attachment; filename="Ahmed Specimen Mohamed - payslip - August 2026.pdf"; `
+      + `filename*=UTF-8''${encodeURIComponent("Ahmed Specimen Mohamed - payslip - August 2026.pdf")}`,
+    "Both RFC 6266 forms, in order.",
+  );
+
+  // A name is USER DATA on its way into a protocol header. A raw newline would split the header and
+  // a double quote would end the filename early — so the ASCII fallback keeps neither, while the
+  // UTF-8 form is percent-encoded and cannot carry either by construction.
+  const hostile = payslipContentDisposition(
+    { fullName: 'Ahmed" \r\nX-Injected: yes', employeeCode: "", hrId: "" }, 8, 2026,
+  );
+  assert.doesNotMatch(hostile, /[\r\n]/, "No control character may reach the header.");
+  assert.equal(
+    (hostile.match(/"/g) ?? []).length,
+    2,
+    "Exactly the two quotes that delimit the fallback — a name cannot add a third.",
+  );
+
+  // An Arabic name survives in the UTF-8 form even though the ASCII fallback cannot hold it, which
+  // is the entire reason both forms are sent.
+  const arabicName = payslipContentDisposition(
+    { fullName: "محمد عبد الله", employeeCode: "A-9", hrId: "a-9" }, 8, 2026,
+  );
+  assert.match(
+    arabicName,
+    /filename="A-9 - payslip - August 2026\.pdf"/,
+    "The ASCII fallback falls THROUGH to the employee code — stripping the assembled name instead "
+      + "leaves \"- payslip.pdf\", which opens with a dash and identifies nobody.",
+  );
+  assert.ok(
+    decodeURIComponent(arabicName.split("filename*=UTF-8''")[1]) === "محمد عبد الله - payslip - August 2026.pdf",
+    "…while the UTF-8 form carries the real name intact.",
   );
 
   // ── the ellipsis ban (owner rule) ──────────────────────────────────────────────────────────────
