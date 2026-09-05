@@ -590,7 +590,7 @@ export function buildRepKpiReports(input: {
   const pharmacies = blockFor(PHARMACY_LIST_TYPE);
 
   return {
-    repKey: canonicalHrIdKey(input.repHrId),
+    repKey: canonicalHrIdKey(input.repHrId) ?? "",
     repName: input.repName,
     month: input.month,
     workingDays: input.workingDays,
