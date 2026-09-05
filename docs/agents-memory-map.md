@@ -92,6 +92,7 @@ status, give it its own line.
 - **cn() SILENTLY DROPPED every text-phx-* size, and only getComputedStyle in a real…** — `tailwind-merge-strips-custom-named-font-sizes` **(inline — load-bearing)**
 - **Arabic + English in ONE value needs direction PER LINE; dir="auto" on the block is…** — `bilingual-bodies-need-direction-per-line-not-per-block` **(inline — load-bearing)**
 - **A UI timeZone: "UTC" has THREE causes and only ONE is a bug — a blanket Cairo fix…** — `ireports360-timestamps-cairo-local-mislabeled-utc`
+- **VERIFY THE EMITTED ARTIFACT, NEVER THE SOURCE — three defects shipped in ONE night…** — `verify-the-emitted-artifact-never-the-source` **(inline — load-bearing)**
 - **@/lib/utils resolves to the ROOT lib/utils.ts, NOT src/lib/utils.ts** — `at-slash-lib-shadows-src-lib-via-tsconfig-paths` **(inline — load-bearing)**
 - **Sweep memories by CLAIM, never by filename or topic** — `staleness-sweeps-scoped-by-topic-miss-the-dangerous-ones`
 - **A parallel session can collide with NO git trace at all** — `feedback-parallel-session-pr-collision`
@@ -147,6 +148,7 @@ status, give it its own line.
 
 - **"continue verifying" means RESUME the paused Source of Sales audit — never restart…** — `continue-verifying-resumes-sos-audit` · `sos-deep-audit-paused-checkpoint`
 - **THE FITS-THE-SCREEN GOLDEN RULE — never a horizontal scroll, always mobile AND…** — `never-horizontal-scroll-always-mobile-and-desktop-friendly` **(inline — load-bearing)**
+- **THE DOCUMENT IDENTITY — every company document wears SATO-DIS-2026-01 v1.0** — `the-house-document-identity-standard` **(inline — load-bearing)**
 - **A PHARMACY IS NOT A CONTACT — a CRM contact count is PM + AM only.** — `a-pharmacy-is-not-a-contact` **(inline — load-bearing)**
 - **THE OLD MONTHLY CLOSING EXPORT IS FROZEN — every new closing feature ships BESIDE…** — `the-old-monthly-closing-export-is-never-touched` **(inline — load-bearing)**
 - **The premium closing workbook FILLS the .xlsm engine — it never rebuilds one.** — `premium-closing-export-fills-the-xlsm-engine-never-rebuilds-it` **(inline — load-bearing)**
