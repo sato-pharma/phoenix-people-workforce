@@ -92,7 +92,7 @@ function sheetOf(workbook: ExcelJS.Workbook, name: string): ExcelJS.Worksheet {
 }
 
 /** The whole of a narrow sheet as one searchable string — used for the Cover's key/value rows. */
-function sheetDump(sheet: ExcelJS.Worksheet, rows = 24, width = 2): string {
+function sheetDump(sheet: ExcelJS.Worksheet, rows = 24, width = 3): string {
   return JSON.stringify(Array.from({ length: rows }, (_, index) => rowText(sheet, index + 1, width)));
 }
 
@@ -202,15 +202,15 @@ export async function runRecruitmentManagerEngagementExportTests() {
   const coverText = sheetDump(sheetOf(workbook, "Cover"));
   assert.match(
     coverText,
-    /\["Generated","05 \w+ 2026, 12:30 \(Cairo\)"\]/,
+    /\["","Generated","05 \w+ 2026, 12:30 \(Cairo\)"\]/,
     "generated-at is the CAIRO wall clock (09:30Z + 3), labelled as such — never a raw UTC string",
   );
   assert.match(coverText, /Omar Gawish · Super Admin/, "the exporter is named, not reduced to an HR_ID");
-  assert.match(coverText, /"Scope","All lines"/, "the scope the numbers were produced under is stated");
+  assert.match(coverText, /"","Scope","All lines"/, "the scope the numbers were produced under is stated");
   assert.match(coverText, /None — every manager in scope/, "an unfiltered export says so rather than staying silent");
   assert.match(
     coverText,
-    /\["Not opened","3"\]/,
+    /\["","Not opened","3"\]/,
     "the cover's totals come from the rows written (2 + 1 unopened), not the report's stale figures",
   );
   assert.doesNotMatch(coverText, /999/, "the report's own totals must never be copied onto the cover");

@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 
 import { systemDocuments } from "@/config/system-settings";
+import { HOUSE_DOCUMENT_STANDARD, HOUSE_XLSX_COLORS } from "@/lib/export/house-xlsx-palette";
 import { cvDatabaseHeaders } from "@/lib/cv/cv-database";
 
 const dataStartRow = 6;
@@ -14,7 +15,7 @@ function solidFill(argb: string): ExcelJS.Fill {
   };
 }
 
-function border(color = "FFE2E8F0"): Partial<ExcelJS.Borders> {
+function border(color = HOUSE_XLSX_COLORS.hair): Partial<ExcelJS.Borders> {
   return {
     bottom: { color: { argb: color }, style: "thin" },
     left: { color: { argb: color }, style: "thin" },
@@ -24,40 +25,51 @@ function border(color = "FFE2E8F0"): Partial<ExcelJS.Borders> {
 }
 
 function styleTitle(sheet: ExcelJS.Worksheet) {
-  sheet.mergeCells("A1:H1");
+  // The title takes the left of row 1 and the standard's own id the right, as on the specimen. The
+  // merge stops at F so the id has cells of its own rather than being lost inside the title's.
+  sheet.mergeCells("A1:F1");
+  sheet.mergeCells("G1:H1");
+  sheet.getCell("G1").value = HOUSE_DOCUMENT_STANDARD;
+  sheet.getCell("G1").font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: "Aptos", size: 7.5 };
+  sheet.getCell("G1").alignment = { horizontal: "right", vertical: "middle" };
   sheet.getCell("A1").value = systemDocuments.titles.cvDatabaseUploadTemplate;
-  sheet.getCell("A1").font = { bold: true, color: { argb: "FFFFFFFF" }, size: 18 };
-  sheet.getCell("A1").fill = solidFill("FF111827");
-  sheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
-  sheet.getRow(1).height = 34;
+  sheet.getCell("A1").font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos Display", size: 16 };
+  sheet.getCell("A1").alignment = { horizontal: "left", indent: 1, vertical: "middle" };
+  sheet.getRow(1).height = 30;
 
   sheet.mergeCells("A2:H2");
   sheet.getCell("A2").value =
     "Use this sheet for candidate CV tracking only. Do not add HR_ID because these candidates are not employees yet.";
-  sheet.getCell("A2").font = { color: { argb: "FF334155" }, italic: true };
-  sheet.getCell("A2").fill = solidFill("FFFFF7ED");
-  sheet.getCell("A2").alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-  sheet.getRow(2).height = 26;
+  sheet.getCell("A2").font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: "Aptos", size: 9 };
+  sheet.getCell("A2").alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
+  sheet.getRow(2).height = 24;
+
+  // Row 3 — the Brand Blue rule, and the standard's id opposite it. This is the one filled shape the
+  // ink rule allows outside the zebra, and the row was previously blank spacing.
+  for (let column = 1; column <= 8; column += 1) sheet.getCell(3, column).fill = solidFill(HOUSE_XLSX_COLORS.blue);
+  sheet.getRow(3).height = 3;
 }
 
 function styleSectionRow(sheet: ExcelJS.Worksheet) {
+  // Three groups that used to be an orange, a teal and a navy BLOCK. Each cell already names its
+  // own group in words, so under SATO-DIS-2026-01 v1.0 the block goes and the label carries the
+  // colour itself — one deep type over a light rule, the same for all three, because the words are
+  // what tell them apart and three different colours never did.
   const sections = [
-    { end: 2, fill: "FFF97316", label: "Candidate", start: 1 },
-    { end: 6, fill: "FF0F766E", label: "Medical Sales Experience", start: 3 },
-    { end: 8, fill: "FF1E3A8A", label: "Source File", start: 7 },
+    { end: 2, label: "Candidate", start: 1 },
+    { end: 6, label: "Medical Sales Experience", start: 3 },
+    { end: 8, label: "Source File", start: 7 },
   ];
 
   for (const section of sections) {
     sheet.mergeCells(4, section.start, 4, section.end);
     const cell = sheet.getCell(4, section.start);
     cell.value = section.label;
-    cell.fill = solidFill(section.fill);
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
-    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 10 };
+    cell.alignment = { horizontal: "left", indent: 1, vertical: "bottom" };
 
     for (let column = section.start; column <= section.end; column += 1) {
-      sheet.getCell(4, column).border = border("FFFFFFFF");
-      sheet.getCell(4, column).fill = solidFill(section.fill);
+      sheet.getCell(4, column).border = { bottom: { color: { argb: HOUSE_XLSX_COLORS.light }, style: "medium" } };
     }
   }
 
@@ -69,9 +81,11 @@ function styleHeaderRow(sheet: ExcelJS.Worksheet) {
   row.values = [...cvDatabaseHeaders];
   row.height = 34;
   row.eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
-    cell.fill = solidFill("FF0F172A");
-    cell.border = border("FFFFEDD5");
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 10 };
+    cell.border = {
+      bottom: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "medium" },
+      top: { color: { argb: HOUSE_XLSX_COLORS.hair }, style: "thin" },
+    };
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
   });
 }
@@ -85,8 +99,8 @@ function styleInputRows(sheet: ExcelJS.Worksheet) {
       const cell = row.getCell(column);
       cell.border = border();
       cell.alignment = { vertical: "middle", wrapText: true };
-      cell.fill = solidFill(rowNumber % 2 === 0 ? "FFFFFFFF" : "FFF8FAFC");
-      cell.font = { color: { argb: "FF0F172A" } };
+      if (rowNumber % 2 !== 0) cell.fill = solidFill(HOUSE_XLSX_COLORS.tint);
+      cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 10 };
     }
   }
 
@@ -138,10 +152,11 @@ function addInstructions(workbook: ExcelJS.Workbook) {
 
   sheet.mergeCells("A1:B1");
   sheet.getCell("A1").value = "How to use the CV Database template";
-  sheet.getCell("A1").font = { bold: true, color: { argb: "FFFFFFFF" }, size: 16 };
-  sheet.getCell("A1").fill = solidFill("FF111827");
-  sheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
-  sheet.getRow(1).height = 32;
+  sheet.getCell("A1").font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos Display", size: 16 };
+  sheet.getCell("A1").alignment = { horizontal: "left", indent: 1, vertical: "middle" };
+  sheet.getRow(1).height = 30;
+  for (const column of [1, 2]) sheet.getCell(2, column).fill = solidFill(HOUSE_XLSX_COLORS.blue);
+  sheet.getRow(2).height = 3;
 
   const rows = [
     ["Name", "Candidate full name as written on the CV."],
@@ -155,10 +170,12 @@ function addInstructions(workbook: ExcelJS.Workbook) {
 
   sheet.getRow(3).values = ["Field", "Rule"];
   sheet.getRow(3).eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    cell.fill = solidFill("FFF97316");
-    cell.border = border("FFFFFFFF");
-    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 10 };
+    cell.border = {
+      bottom: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "medium" },
+      top: { color: { argb: HOUSE_XLSX_COLORS.hair }, style: "thin" },
+    };
+    cell.alignment = { horizontal: "left", indent: 1, vertical: "bottom" };
   });
 
   rows.forEach((values, index) => {
@@ -166,10 +183,12 @@ function addInstructions(workbook: ExcelJS.Workbook) {
     row.values = values;
     row.height = 36;
     row.eachCell((cell, column) => {
-      cell.fill = solidFill(index % 2 === 0 ? "FFFFFFFF" : "FFF8FAFC");
+      if (index % 2 !== 0) cell.fill = solidFill(HOUSE_XLSX_COLORS.tint);
       cell.border = border();
       cell.alignment = { vertical: "top", wrapText: true };
-      cell.font = column === 1 ? { bold: true, color: { argb: "FF0F172A" } } : { color: { argb: "FF334155" } };
+      cell.font = column === 1
+        ? { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 10 }
+        : { color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 10 };
     });
   });
 
