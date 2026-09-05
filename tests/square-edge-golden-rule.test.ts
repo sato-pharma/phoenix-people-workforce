@@ -247,11 +247,16 @@ const RADIUS_TOKEN_INVENTORY: Record<string, string[]> = {
  */
 const REMAINING_ROUNDING: Record<string, number> = {
   // OWNED BY ANOTHER BRANCH — do not touch from here.
-  // PR #3200 (`codex/payslip-house-identity`) is rewriting this route onto the house document
-  // identity and will settle its own corners.
-  "app/api/payroll/[id]/payslips/route.ts": 11,
   // `codex/payroll-glow-bar-square-edge` is squaring the payroll glow bar in a parallel session.
   "src/components/payroll/payroll-dashboard.tsx": 2,
+  //
+  // The payslip route USED to sit here at 11 corners, held for PR #3200. That PR merged on
+  // 2026-09-05 and settled them: the stylesheet moved to `src/lib/payroll/payslip-document.ts`,
+  // an 18px page, 14px cards and a 999px status pill went, and the document now opens with
+  // `*, *::before, *::after { border-radius: 0 !important; }` so it cannot inherit a corner from
+  // whatever stylesheet renders it. Both files are therefore absent from this map, which is the
+  // correct state — and it is the strongest answer to the token problem in the row below: a
+  // generated document that resets rounding at its own root does not care what tokens.css ships.
 
   // WITH THE OWNER — the eight stylesheet sites above, counted again by the tree walk.
   "app/globals.css": 8,
