@@ -22,6 +22,7 @@ import { runCommandPaletteItemsTests } from "./command-palette-items.test.ts";
 import { runNavSingleGateNoBypassTests } from "./nav-single-gate-no-bypass.test.ts";
 import { runNavRolesNameOnlyPermissionHoldersTests } from "./nav-roles-name-only-permission-holders.test.ts";
 import { runNavigationGrantedButUnreachableTests } from "./navigation-granted-but-unreachable.test.ts";
+import { runPageGateReaderRoleInequalityGateTests } from "./page-gate-reader-role-inequality-gates.test.ts";
 import { runPermissionLookupTotalityTests } from "./permission-lookup-totality.test.ts";
 import { runNavigationRuling11AnalyticsTests } from "./navigation-ruling-11-analytics.test.ts";
 import { runHrUrlNamespaceTests } from "./hr-url-namespace.test.ts";
@@ -1378,6 +1379,14 @@ await runTest(
 await runTest(
   "navigation granted but unreachable (a page a role can open that nothing links to, plus the unreadable-gate blind spot — both pinned to the backlog by identity)",
   runNavigationGrantedButUnreachableTests,
+);
+await runTest(
+  "page gate reader reads role-INEQUALITY entry gates and const-bound predicates (25 pages wrote " +
+    "`if (access.role !== \"Super Admin\") redirect(…)` and 8 hoisted the predicate into a const; both " +
+    "read as ungated, so /attendance/employee-day-report — Super Admin only by its own comment — " +
+    "reported openable by every holder of attendance:read, and the five OR-chain pages must still " +
+    "yield nothing)",
+  runPageGateReaderRoleInequalityGateTests,
 );
 await runTest(
   "navigation permission lookup is total (union == runtime array, no hand-rolled copies, fail-open unreachable)",
