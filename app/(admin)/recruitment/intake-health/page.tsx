@@ -13,7 +13,8 @@ import { listDeadLetteredInbound } from "@/lib/recruitment/inbound/intake-queue"
 export const dynamic = "force-dynamic";
 
 // Read-mostly inbound-CV intake funnel: volume, per-channel/outcome breakdown, capture rate, and
-// the dead-lettered CVs (with a retry action). Talent Acquisition + Super Admin.
+// the dead-lettered CVs (with a retry action). Gated by canViewInboundIntakeHealth
+// (src/lib/recruitment/access.ts): HR Advisory + Super Admin.
 //
 // This is the alarm on the front door of the whole module: if CVs stop arriving, this page is the
 // only thing that says so. Kept deliberately on 2026-08-15 when the three CV tuning tools next to

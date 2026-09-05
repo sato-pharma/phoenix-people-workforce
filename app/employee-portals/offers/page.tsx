@@ -15,20 +15,21 @@ export const dynamic = "force-dynamic";
 
 // Portal mirror of app/(admin)/offers/page.tsx.
 //
-// Not duplication for its own sake: Talent Acquisition is a portal-shell role, and
+// Built when Talent Acquisition, a portal-shell role, was the only role that issued offers, and
 // app/(admin)/layout.tsx redirects portal-shell roles out of the entire (admin) group before any
-// page in it renders. Without this twin the only role that actually issues offers could not open
-// the screen — see tests/recruitment-hub-portal-coverage.test.ts, which fails if the hub card and
-// this route ever drift apart. Both pages load through `loadOffersWorkspace`, so there is one
-// place a value can be wrong.
+// page in it renders. That role was retired 2026-08-28 and replaced by HR Advisory, an admin-shell
+// role — so this twin is now orphaned surface, reachable by nobody: see
+// tests/recruitment-hub-portal-coverage.test.ts (ORPHANED_PORTAL_MIRRORS) for the full account.
+// Kept on disk rather than deleted for the same reason as its six siblings there. Both pages load
+// through `loadOffersWorkspace`, so there is one place a value can be wrong.
 export default async function EmployeePortalOffersPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/offers");
   }
 
-  // `delete` is asked separately because Talent Acquisition — the role this twin exists for —
-  // holds read/create/update/export on `offers` and not delete. See the admin page's note.
+  // `delete` is asked separately because HR Advisory — the role that now holds `offers` — carries
+  // read/create/update/export and not delete. See the admin page's note.
   const [canRead, canManage, canDelete] = await Promise.all([
     canAccess(access, "offers", "read"),
     canAccess(access, "offers", "create"),
