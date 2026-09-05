@@ -1219,3 +1219,54 @@ Method note: the mid-sweep check that nearly went wrong was a "has this folder g
 sample which returned **blank on both reads** and scored itself *the folder is quiet* — two nulls
 comparing equal. The folder had in fact been removed by another session seconds earlier. Verify
 with a positive control (bytes read, rows found), never with a clean-looking blank.
+
+## Two ways a Windows liveness check lies, and a count that invents a row — 2026-09-05
+
+All three were hit while building `xlsx-tripwire.ps1`, the watcher that names the process deleting
+files out of `xlsx/`. Each one produced a **confident wrong answer** rather than an error, which is
+the only reason they are worth a page.
+
+**1. A process filter matches the process running it.** Stopping the watcher was written as
+
+    Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
+      Where-Object { $_.CommandLine -like '*xlsx-tripwire.ps1*' } |
+      ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+
+The command's own PowerShell process has that string in its command line, because the filter is
+part of the command. So it matched itself and killed the shell mid-pipeline. What comes back is
+`exit 255` and **no output whatsoever** — not the partial output up to the kill, nothing. That
+signature reads as a blocked call, a hook refusal or a bad path, and the natural next move is to go
+looking at permissions. The fix is one clause: `$_.ProcessId -ne $PID`, plus matching on the
+`-File <script>` form rather than a bare substring.
+
+**2. A scheduled task's state does not mean its job is alive.** `(Get-ScheduledTask).State` reported
+`Running`, and minutes later `Ready` beside a `LastRunTime` that looked like a normal finish, while
+zero watcher processes existed and the heartbeat file was 140 seconds stale. Reading the state alone
+would have certified a dead monitor as healthy — the worst possible failure for a monitor, because
+its silence then reads as *nothing has happened*.
+
+`LastTaskResult` carried the real story: **`3221225786` = `0xC000013A` = `STATUS_CONTROL_C_EXIT`**,
+a Ctrl-C-class termination, not a clean exit. Note also that **restart-on-failure did not fire** —
+the task sat at `Ready` and brought nothing back.
+
+So: a long-running scheduled job needs **two** things the scheduler will not give you. A **heartbeat
+file it rewrites on a known interval**, so a reader can tell "quiet because nothing happened" from
+"quiet because it is dead" — and that heartbeat must be written once *before* entering the wait
+loop, or it does not exist for the first interval. And a **repeating trigger** (every 10 min here)
+with the script no-opping when a healthy instance already exists, which self-heals regardless of how
+the previous one died. Make that no-op `exit 0`: a distinct failure code fires every interval,
+paints the history permanently red, and trains whoever reads it to ignore the one run that mattered.
+
+**3. `@($null).Count` is 1.** `Get-Acl -Audit` needs `SeSecurityPrivilege`; unelevated it throws and
+yields nothing, so `@((Get-Acl -Audit $f).Audit).Count` printed **`1`** — reported, in this session,
+as evidence that a folder held one audit rule. The array wrapper turns "no value" into a
+single-element array holding `$null`. Any count taken from a call that can fail must check the call
+succeeded first, or count `Where-Object { $_ }`.
+
+**The shared shape.** Every one of these answers a question you did not ask. The filter answered
+"which processes match" and silently included the asker. The task answered "is the task in a running
+state" when the question was "is the job alive". The count answered "how big is this array" when the
+question was "how many rules are there". **Prefer the measurement that fails loudly**: a live process
+check over a status field, a fresh heartbeat over an absence of errors, and a verdict computed from
+the number rather than a label typed beside it — a printed `(under 30 = still beating)` sat next to
+the value `140` in this session and was read straight past.
