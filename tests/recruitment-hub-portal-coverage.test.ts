@@ -149,13 +149,24 @@ export function runRecruitmentHubPortalCoverageTests() {
 
   // ── 3. Every card she owns opens ────────────────────────────────────────────────────────────
   const cards = hubCardsFor(RECRUITING_SEAT);
+  // SEVEN since 2026-09-05, down from eight: the Job Offers card was hidden at the owner's
+  // instruction. Hidden, not deleted — /offers, its route and its `offers` permission gate are all
+  // untouched and it opens by direct URL for anyone holding the grant.
+  //
+  // The two facts behind it, measured on production that day: ats_offers held ZERO rows, and NO
+  // application had ever been converted to an employee (converted_employee_hr_id null on all 14). A
+  // hub card is a promise that a tool does something; that one had never been used once.
+  //
+  // The machinery itself deliberately survives. Requisitions are LIVE — 6 open, newest created
+  // 2026-09-03 — so the chain they feed must not be cut while somebody is still filling the top of
+  // it. Whether the back half gets finished or removed is a product decision that needs an answer
+  // from the hiring managers first, and this count is what will make that decision explicit again.
   assert.equal(
     cards.length,
-    8,
-    "the hub must carry exactly eight cards for the recruiting seat (Recruitment, CV Database, " +
-      "Hiring Documents, HR Forms, Job Offers, Inbound Intake Health, Missing Contact " +
-      "Details, WhatsApp Replies) — if that count moves, decide the reachability of the new one " +
-      "in the same change. " +
+    7,
+    "the hub must carry exactly seven cards for the recruiting seat (Recruitment, CV Database, " +
+      "Hiring Documents, HR Forms, Inbound Intake Health, Missing Contact Details, WhatsApp " +
+      "Replies) — if that count moves, decide the reachability of the new one in the same change. " +
       `Got: ${cards.map((c) => c.href).join(", ")}`,
   );
   for (const card of cards) {

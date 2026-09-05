@@ -1753,7 +1753,20 @@ const hrNavigationSectionSeeds = [
       // door in one place. A merge that restores `vacancies` here silently reopens it —
       // tests/cv-database-recruiting-boundary.test.ts is what catches that.
       { href: "/hr/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "recruitment" }] },
-      { href: "/hr/offers", icon: MailCheck, label: "Job Offers", permissions: [{ resource: "offers" }] },
+      // NO "Job Offers" row (/hr/offers). Hidden 2026-09-05 at the owner's instruction, and hidden
+      // rather than deleted: the page, its route and its `offers` permission gate are all untouched
+      // and it still opens by direct URL for anyone holding the grant.
+      //
+      // WHY. Measured on production the same day: ats_offers held ZERO rows, and no application had
+      // ever been converted to an employee (converted_employee_hr_id null on all 14). A sidebar row
+      // is a promise that a tool does something; this one had never once been used, so it was
+      // costing attention and returning nothing. Restoring it is re-adding this single line.
+      //
+      // DELIBERATELY NOT DELETED. The offer machinery is woven through applications, the hiring
+      // manager portal and notifications, and requisitions ARE live — 6 open, the newest created
+      // 2026-09-03 — so the chain those requisitions feed must not be cut while somebody is still
+      // filling the top of it. Whether the back half is finished or removed is a product decision
+      // that needs an answer from the hiring managers first.
       { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }] },
       { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", permissions: [{ resource: "employee_documents" }] },
       // NO "Missing Contact Details" (/hr/recruitment/contact-review) and NO "Inbound Intake
@@ -3114,14 +3127,10 @@ export const recruitmentHiringPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "employee_documents" }],
     roles: hrAuthorityNavigationRoles,
   },
-  {
-    href: "/offers",
-    icon: MailCheck,
-    label: "Job Offers",
-    description: "Compose, design and send official offers of employment as Sato Pharmaceuticals.",
-    permissions: [{ resource: "offers" }],
-    roles: hrAuthorityNavigationRoles,
-  },
+  // NO "Job Offers" card (/offers). Hidden 2026-09-05 at the owner's instruction — same reasoning
+  // as the /hr/offers sidebar row above, and the same two facts behind it: zero offers had ever been
+  // written, and zero applications had ever been converted to an employee. The route and its gate
+  // are untouched; this removes the card only. Restoring it is re-adding this entry.
   // Removed 2026-08-15 on the owner's ruling: CV Review Queue, CV Extraction Accuracy and CV Field
   // Settings. Measured against production before cutting — the review queue had been opened for 5
   // of 194 extracted CVs, the accuracy dashboard computed its whole number from those same 5
