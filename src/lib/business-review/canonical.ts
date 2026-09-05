@@ -808,7 +808,7 @@ function buildCompany(
     areasVacant += vacant;
 
     // Only graded areas score, and only target-bearing seats count as districts.
-    const graded = ds.areas.filter((a) => a.hasTarget && a.allProducts.ach != null);
+    const gradedAreas = ds.areas.filter((a) => a.hasTarget && a.allProducts.ach != null);
     const seats = ds.dms.filter((d) => d.allProducts.target > 0);
     return {
       id,
@@ -826,8 +826,8 @@ function buildCompany(
       dmsVacant: seats.filter((d) => d.vacant).length,
       areas: ds.areas.length,
       areasVacant: vacant,
-      earners: graded.filter((a) => !a.vacant && (a.allProducts.ach ?? 0) >= 90).length,
-      repFails: graded.filter((a) => !a.vacant && (a.allProducts.ach ?? 0) < REVIEW_THRESHOLDS.repFailBelow).length,
+      earners: gradedAreas.filter((a) => !a.vacant && (a.allProducts.ach ?? 0) >= 90).length,
+      repFails: gradedAreas.filter((a) => !a.vacant && (a.allProducts.ach ?? 0) < REVIEW_THRESHOLDS.repFailBelow).length,
     };
   }).sort((a, b) => (b.allProducts.ach ?? -1) - (a.allProducts.ach ?? -1));
 
@@ -891,7 +891,7 @@ function buildCompany(
     },
     total: {
       allProducts: slice(graded, sales, target),
-      exVacant: slice(exCovered, exSales, exTarget),
+      exVacant: slice(exGraded, exSales, exTarget),
       marketingCost: company.marketingCommitted,
       marketingPending: company.marketingPending,
       outstationCost: company.outstationClaimed,
