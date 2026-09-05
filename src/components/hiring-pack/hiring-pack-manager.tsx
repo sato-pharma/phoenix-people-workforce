@@ -2568,6 +2568,17 @@ function DocumentCard({
   const blocking = gaps.filter((gap) => gap.blocking).length;
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/gu, "-");
 
+  /*
+    THE EMPTY-DATE REFUSAL IS SAID HERE, ON THE CARD, AND NOT ONLY AT THE TOP OF THE PAGE.
+    `recordSignature` has always refused an empty date and called `setError` — and that banner
+    renders beside the employee picker, several hundred pixels ABOVE the document cards. So pressing
+    "Record signature" with an empty box did exactly nothing that the person pressing it could see:
+    no request, no spinner, no message in view. Measured 2026-09-05, it cost four rounds of "I
+    signed it" / "nothing was written", and the owner asked for the message to be where the button
+    is. The page-level guard stays as the backstop; this one is what anybody actually reads.
+  */
+  const [emptyDateWarning, setEmptyDateWarning] = useState(false);
+
   return (
     <AdminTableShell description={subtitle} title={title}>
       <div className="flex flex-col gap-4 px-5 py-5 sm:px-6">
@@ -2642,22 +2653,43 @@ function DocumentCard({
                 Date signed
               </label>
               <Input
-                className={cn(inputClassName, "w-44")}
+                aria-describedby={emptyDateWarning ? `hiring-pack-signed-${slug}-error` : undefined}
+                aria-invalid={emptyDateWarning || undefined}
+                className={cn(inputClassName, "w-44", emptyDateWarning && "border-phx-danger-line")}
                 id={`hiring-pack-signed-${slug}`}
-                onChange={(event) => onSignDateChange(event.target.value)}
+                onChange={(event) => {
+                  if (event.target.value) setEmptyDateWarning(false);
+                  onSignDateChange(event.target.value);
+                }}
                 type="date"
                 value={signDate}
               />
             </div>
             <Button
               className="h-10 rounded-xl"
-              onClick={() => onSignDateChange(todayInCairo())}
+              onClick={() => {
+                setEmptyDateWarning(false);
+                onSignDateChange(todayInCairo());
+              }}
               type="button"
               variant="outline"
             >
               Today
             </Button>
-            <Button className="h-11 gap-2 rounded-2xl" disabled={busy} onClick={onSign}>
+            <Button
+              className="h-11 gap-2 rounded-2xl"
+              disabled={busy}
+              onClick={() => {
+                // Focus lands ON the empty box, so the fix is where the eye already went.
+                if (!signDate) {
+                  setEmptyDateWarning(true);
+                  document.getElementById(`hiring-pack-signed-${slug}`)?.focus();
+                  return;
+                }
+                setEmptyDateWarning(false);
+                onSign();
+              }}
+            >
               {busy ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
@@ -2665,6 +2697,16 @@ function DocumentCard({
               )}
               {signedDate ? "Update signature date" : "Record signature"}
             </Button>
+            {emptyDateWarning ? (
+              <p
+                className="w-full text-phx-xs font-semibold text-phx-danger"
+                id={`hiring-pack-signed-${slug}-error`}
+                role="alert"
+              >
+                Enter the date written on the signed paper first — or press Today. Nothing is
+                recorded until this box has a date.
+              </p>
+            ) : null}
           </div>
         ) : null}
       </div>
