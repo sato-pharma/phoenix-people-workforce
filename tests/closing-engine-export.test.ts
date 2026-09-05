@@ -1250,6 +1250,34 @@ export async function runClosingEngineExportTests() {
     );
     // Value columns must carry the engine's own money format, or they print as bare digits.
     assert.match(sheet, /s="43"/, "money columns take the engine's #,##0 format");
+
+    // The review's sheets get their OWN contents band. Neither side of the merge that introduced
+    // this had a test for it: the bands came from one branch and the review sheets from the other,
+    // so the join between them is the part nothing was watching.
+    const contentsPart = partOf("Contents");
+    assert.ok(contentsPart, "the contents page must be registered in the review build too");
+    const contentsSheet = await opened.file(contentsPart!)!.async("string");
+    assert.ok(
+      contentsSheet.includes(">Performance review</t>"),
+      "the review's sheets must appear under their own contents band",
+    );
+    assert.ok(
+      /HYPERLINK\("#'District Managers'!A1"/.test(contentsSheet),
+      "District Managers must be reachable from the contents page",
+    );
+
+    // And the band goes away with its sheets. A heading standing over nothing is the failure mode
+    // of appending a band unconditionally, and it only shows on the build that omits the review.
+    const plainOpened = await JSZip.loadAsync(plainBook);
+    const plainWorkbook = await plainOpened.file("xl/workbook.xml")!.async("string");
+    const plainRels = await plainOpened.file("xl/_rels/workbook.xml.rels")!.async("string");
+    const plainRid = /<sheet name="Contents"[^>]*?r:id="(rId\d+)"/.exec(plainWorkbook)![1];
+    const plainTarget = new RegExp(`Id="${plainRid}"[^>]*?Target="([^"]+)"`).exec(plainRels)![1];
+    const plainContents = await plainOpened.file(`xl/${plainTarget}`)!.async("string");
+    assert.ok(
+      !plainContents.includes(">Performance review</t>"),
+      "a build with no review sheets must not carry an empty Performance review band",
+    );
   }
 
 
@@ -1294,6 +1322,42 @@ export async function runClosingEngineExportTests() {
     }
     assert.ok(!jumps.includes("Data"), `${label}: Data is veryHidden and is not a page anybody navigates to`);
     assert.equal(new Set(jumps).size, jumps.length, `${label}: a page is listed twice`);
+
+    // ── The bands ─────────────────────────────────────────────────────────────────────────────
+    //
+    // Twelve undifferentiated rows are a list; the bands are what make the page a map. They are
+    // asserted on the EMITTED sheet rather than on the source table, because the thing that breaks
+    // is not the table — it is the XML around it.
+    for (const band of ["Start here", "By area", "By product family", "Behind the numbers"]) {
+      assert.ok(sheet.includes(`>${band}</t>`), `${label}: the contents page lost its "${band}" band`);
+    }
+
+    // A band spans both columns, so every one adds a merge. A hard-coded count is a repair prompt:
+    // Excel rebuilds a workbook whose declared mergeCells count disagrees with the refs it finds,
+    // and the reader sees "we found a problem with some content" instead of the front page.
+    const declaredMerges = Number(/<mergeCells count="(\d+)"/.exec(sheet)![1]);
+    const actualMerges = [...sheet.matchAll(/<mergeCell ref="/g)].length;
+    assert.equal(
+      declaredMerges,
+      actualMerges,
+      `${label}: mergeCells declares ${declaredMerges} but the sheet carries ${actualMerges} — Excel repairs that`,
+    );
+
+    // Same class of defect: a dimension that stops short of the rows actually written.
+    const declaredLastRow = Number(/<dimension ref="A1:B(\d+)"/.exec(sheet)![1]);
+    const writtenLastRow = Math.max(...[...sheet.matchAll(/<row r="(\d+)"/g)].map((m) => Number(m[1])));
+    assert.equal(
+      declaredLastRow,
+      writtenLastRow,
+      `${label}: the contents dimension ends at row ${declaredLastRow} but row ${writtenLastRow} is written`,
+    );
+
+    // The closing note explains why three of the tabs listed above open empty until Excel
+    // recalculates — without it, a pivot page reads as a broken export.
+    assert.ok(
+      /pivot tables/.test(sheet),
+      `${label}: the contents page must say the matrix pages are pivots Excel builds on open`,
+    );
   }
 
 
