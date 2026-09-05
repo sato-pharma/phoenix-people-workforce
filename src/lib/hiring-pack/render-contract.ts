@@ -1,5 +1,5 @@
 import { systemLegalEntity } from "@/config/system-settings";
-import { HOUSE_COLORS } from "@/lib/hiring-pack/house-identity";
+import { HOUSE_COLORS, HOUSE_MARK_SRC } from "@/lib/hiring-pack/house-identity";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import { spellEgyptianAmount } from "@/lib/hiring-pack/arabic-amount";
 import {
@@ -699,7 +699,7 @@ function renderDocumentCopy(
             <em>${escapeHtml(template.subtitleAr)}</em>
           </span>
           <span class="doc-mast__side doc-mast__mark">
-            <img src="/brand/sato-pharma-logo-on-light.png" alt="" width="401" height="158">
+            <img src="${HOUSE_MARK_SRC}" alt="" width="401" height="158">
           </span>
         </header>
       </td></tr></thead>

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 
+import { HOUSE_MARK_SRC } from "@/lib/hiring-pack/house-identity";
 import { inlineLocalAssets } from "@/lib/hiring-pack/paper-artwork";
 
 // The scanned artwork a filed paper sits on.
@@ -35,6 +36,13 @@ function testRealArtworkIsEmbeddedAsBytes() {
   const light = inlineLocalAssets('<img src="/brand/sato-pharma-logo-on-light.png" />');
   assert.deepEqual(light.missing, []);
   assert.match(light.html, /src="data:image\/png;base64,/);
+
+  // THE VECTOR MARK IS THE ONE THE LETTERHEAD ASKS FOR NOW, and a filed paper REFUSES rather than
+  // files a blank when an asset cannot be read — so an un-allow-listed logo would stop every hiring
+  // paper being filed, and would do it silently until somebody opened the record.
+  const vector = inlineLocalAssets(`<img src="${HOUSE_MARK_SRC}" />`);
+  assert.deepEqual(vector.missing, [], "the letterhead's own mark must be readable");
+  assert.match(vector.html, /src="data:image\/svg\+xml/);
 }
 
 /**
