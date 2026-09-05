@@ -131,7 +131,7 @@ export function sampleSalesDetail(): MarketingCoverageExportSalesDetailRow[] {
  * so this is the workbook's whole fill vocabulary in a handful of entries. Conditional-format fills
  * live in `<dxfs>` instead and are asserted separately above, on the rules themselves.
  */
-async function solidFills(buffer: Buffer): Promise<string[]> {
+async function solidFills(buffer: ArrayBuffer): Promise<string[]> {
   const zip = await JSZip.loadAsync(buffer);
   const styles = (await zip.file("xl/styles.xml")?.async("string")) ?? "";
   return [...new Set(
