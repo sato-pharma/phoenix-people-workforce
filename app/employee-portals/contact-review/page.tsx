@@ -23,7 +23,7 @@ export default async function EmployeePortalContactReviewPage() {
   if (!canReviewCandidateContacts(access)) {
     return (
       <EmployeePortalEmptyState
-        message="Contact-details review is available to Talent Acquisition and Super Admin only."
+        message="Contact-details review is available to HR Advisory and Super Admin only."
         title="Contact Review Unavailable"
       />
     );
@@ -39,7 +39,7 @@ export default async function EmployeePortalContactReviewPage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Talent Acquisition"
+      badge="CV Pipeline"
       description="Candidates with no email or phone on record whose own CV carries one. Accepting fills only the blank column — anything already on the record always wins."
       errorBoundaryTitle="Contact review unavailable"
       title="Missing Contact Details"

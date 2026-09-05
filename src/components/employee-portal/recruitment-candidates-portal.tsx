@@ -55,7 +55,7 @@ type Props = {
    * What this manager has filed onto HIS OWN shelf, keyed by candidate id.
    *
    * His own, not the recruitment team's: filing here writes ats_candidate_manager_folders and
-   * Talent Acquisition's pool does not move. See manager-folder-shelf.ts for why the two must stay
+   * the recruiter's pool does not move. See manager-folder-shelf.ts for why the two must stay
    * separate — the short version is that the recruiter's filing hides a CV from every recruiter.
    */
   initialFilings: ManagerFolderFilings;
@@ -104,8 +104,8 @@ async function sendJson(url: string, method: "POST" | "PATCH", body: unknown): P
 }
 
 // A narrow, DM-relevant subset of the full 26-stage pipeline — everything else (CV/phone
-// screening, interview scheduling) is Talent Acquisition's own stage, shown as a neutral
-// "with Talent Acquisition" badge below.
+// screening, interview scheduling) is the recruiter's own stage, shown as a neutral
+// "With recruitment" badge below.
 const stageLabels: Record<string, { label: string; tone: string }> = {
   application_rejected: { label: "Not qualified", tone: "border-rose-200 bg-rose-50 text-rose-700" },
   application_withdrawn: { label: "Withdrawn", tone: "border-slate-200 bg-slate-100 text-slate-500" },
@@ -391,7 +391,7 @@ function SentCandidateCard({
   const [error, setError] = useState<string | null>(null);
 
   const notified = candidate.managerNotified;
-  // Only an untouched candidate still needs an answer. Once the manager (or Talent Acquisition) has
+  // Only an untouched candidate still needs an answer. Once the manager (or the recruiter) has
   // moved them, the card shows what was decided instead of offering the buttons again — a second
   // "Not interested" on somebody already rejected writes a new event and tells nobody anything.
   const awaitingAnswer = isUnreviewedCandidateStatus(candidate.status) || candidate.status === "sent_to_manager";

@@ -10,12 +10,16 @@ import { EMPLOYEE_PLAN_TRANSITIONS, getNextEmployeePlanStatus } from "../src/lib
 //
 // What this test protects, in order of how expensive the regression would be:
 //
-//  1. BOTH routes into final_approved must auto-acknowledge. The direct ceo_approve is the obvious
-//     one; the second is the manager_approve cascade (CEO-as-own-manager, and the District Manager
-//     CEO-bypass), which reaches final_approved inside the SAME request without ever passing
-//     through the ceo_approve branch. Wiring only the obvious one leaves every District Manager
-//     plan — the ones with no CEO stage at all — stuck exactly where the owner asked them not to
-//     be, and nothing goes red.
+//  1. EVERY route into final_approved must auto-acknowledge. There are three, each its own
+//     branch in decideEmployeePlan: the direct ceo_approve; a CEO self-approving their own NSM
+//     plan's manager_approve (a real second ceo_approve, cascaded in the same request); and a
+//     District Manager's manager_approve, which bypasses the CEO stage entirely (bypassCeo) and
+//     reaches final_approved directly, with no ceo_approve row at all. Before the District
+//     Manager bypass existed as its own branch, that last case shared code with the CEO-self
+//     branch, so this test's count was 2 — splitting it into a dedicated branch (so a fabricated
+//     ceo_approve is never written under the manager's identity) legitimately made it 3. Wiring
+//     any one of the three branches without the auto-ack call leaves that route's plans stuck
+//     exactly where the owner asked them not to be, and nothing goes red.
 //  2. It must go through the acknowledge RPC, never a bare status flip. phx_weekly_plan_acknowledge
 //     writes the employee_plan_hr_acknowledgements row and the hr_acknowledge decision row as one
 //     transaction. A status-only update would satisfy every screen and still trip drift detector D6
@@ -99,13 +103,13 @@ export function runWeeklyPlanAutoHrAcknowledgeTests() {
     "the submitter must still be told their plan was acknowledged, exactly as the manual path tells them",
   );
 
-  // ---- Both routes into final_approved must call it ------------------------------------------
+  // ---- Every route into final_approved must call it --------------------------------------------
   const decide = sliceFunction(service, "export async function decideEmployeePlan", "decideEmployeePlan");
   const autoAckCalls = decide.match(/autoAcknowledgeFinalApprovedPlan\(access, updated\)/g) ?? [];
   assert.equal(
     autoAckCalls.length,
-    2,
-    "BOTH routes into final_approved must auto-acknowledge: the direct ceo_approve, and the manager_approve cascade that District Manager plans take instead of a CEO decision",
+    3,
+    "all THREE routes into final_approved must auto-acknowledge: the direct ceo_approve, a CEO self-approving their own NSM plan, and a District Manager's manager_approve (bypassCeo) which never passes through a ceo_approve row at all",
   );
   const cascadeIndex = decide.indexOf("auto-cascaded from manager approval");
   assert.ok(cascadeIndex >= 0, "the manager_approve cascade must still exist - this test locates the cascade branch by its audit summary");

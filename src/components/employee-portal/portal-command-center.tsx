@@ -1285,13 +1285,13 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   const barColor =
     pct === null ? "bg-orange-500" : pct >= 100 ? "bg-emerald-500" : pct >= 90 ? "bg-amber-400" : "bg-orange-500";
 
-  // Talent Acquisition is HR/office staff, not a field employee — she has no approval
-  // authority (Approvals Hub is hidden from her sidebar entirely, see navigation.ts's
-  // showActionsTab) and no outstation expenses of her own, so both quick-access surfaces
-  // are dropped here too, matching the sidebar. Every other StandardCommandCenter role
-  // (Employee, Manager, Training Manager, …) is unaffected.
-  // See navigation.ts: no portal-mode role is HR/office staff since the Talent Acquisition seat
-  // was retired on 2026-08-28. Both successor bundles are admin-shell roles.
+  // Built for the retired Talent Acquisition seat, HR/office staff who had no approval
+  // authority (Approvals Hub was hidden from her sidebar entirely, see navigation.ts's
+  // showActionsTab) and no outstation expenses of her own, so both quick-access surfaces were
+  // dropped here too, matching the sidebar. See navigation.ts: no portal-mode role is HR/office
+  // staff since that seat was retired on 2026-08-28 — both successor bundles (HR Advisory, HR
+  // Operations) are admin-shell roles — so `isPortalHrOfficeStaff` below is always false and
+  // every StandardCommandCenter role now takes the unaffected path.
   const isPortalHrOfficeStaff = new Set<string>([]).has(role);
 
   return (

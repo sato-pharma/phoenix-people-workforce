@@ -25,7 +25,7 @@ export default async function EmployeePortalCvDatabasePage() {
   if (!isHrAuthorityRole(access.role) || !(await canAccess(access, "recruitment", "read"))) {
     return (
       <EmployeePortalEmptyState
-        message="The CV database is available to Talent Acquisition and Super Admin only."
+        message="The CV database is available to HR Advisory and Super Admin only."
         title="CV Database Unavailable"
       />
     );
@@ -37,7 +37,7 @@ export default async function EmployeePortalCvDatabasePage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Talent Acquisition"
+      badge="Recruitment & Hiring"
       description="Browse and search the candidate CV database."
       errorBoundaryTitle="CV Database unavailable"
       title="CV Database"

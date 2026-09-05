@@ -32,7 +32,7 @@ export default async function EmployeePortalResignationsPage() {
   if (!(await canAccess(access, "resignations", "read"))) {
     return (
       <EmployeePortalEmptyState
-        message="Resignations are available to Talent Acquisition and Super Admin only."
+        message="Resignations are available to HR Operations and Super Admin only."
         title="Resignations Unavailable"
       />
     );
@@ -49,7 +49,7 @@ export default async function EmployeePortalResignationsPage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Talent Acquisition"
+      badge="Employee Records"
       description="Track and process employee resignations."
       errorBoundaryTitle="Resignations unavailable"
       title="Resignations"

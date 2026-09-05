@@ -23,7 +23,7 @@ export default async function EmployeePortalSupportRequestsPage() {
   if (!canRead) {
     return (
       <EmployeePortalEmptyState
-        message="HR support ticket management is available to Talent Acquisition and Super Admin only."
+        message="HR support ticket management is available to HR Advisory, HR Operations, and Super Admin only."
         title="HR Support Requests Unavailable"
       />
     );

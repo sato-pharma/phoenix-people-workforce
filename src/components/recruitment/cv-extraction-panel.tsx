@@ -1,6 +1,6 @@
 "use client";
 
-// Talent Acquisition — create a candidate from an uploaded CV. AI extracts the fields
+// The recruiter — create a candidate from an uploaded CV. AI extracts the fields
 // (src/lib/recruitment/cv-extraction.ts) against the universal schema
 // (src/lib/recruitment/cv-field-schemas.ts); this panel then hands the raw extraction to the
 // drag-and-drop review board (cv-extraction-review-board.tsx) before saving.
@@ -73,7 +73,7 @@ export function CvExtractionPanel({ onCreated }: { onCreated: (candidateId: stri
       if (fileRef.current) fileRef.current.value = "";
     } catch (caught) {
       // A partially-created stub candidate (e.g. upload succeeded but extraction failed) is
-      // left as-is — Talent Acquisition can still find it in the pool and finish it manually.
+      // left as-is — the recruiter can still find it in the pool and finish it manually.
       setError(caught instanceof Error ? caught.message : "CV extraction failed.");
       setStage("idle");
     } finally {

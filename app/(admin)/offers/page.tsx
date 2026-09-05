@@ -10,18 +10,23 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 export const dynamic = "force-dynamic";
 
 // Gated by `offers`, whose hard boundary in src/lib/auth/permissions.ts is HR-authority-only —
-// and `hrAuthorityRoles` is exactly two roles, Super Admin and Talent Acquisition. No other role
-// can hold any offers action, whatever the permission matrix says. The resource has existed since
-// long before this module; this page is its first surface. `system-navigation.ts` hiding the link
-// is UX; the gate is here and in every route under /api/offers.
+// but `hrAuthorityRoles` now lists three roles (Super Admin, HR Advisory, HR Operations), and
+// listing both HR bundles there is safe only because the resource check does the discriminating:
+// `offers` lives in the `recruiting` function bundle (src/lib/auth/hr-functions.ts), which only
+// HR Advisory carries. No other role can hold any offers action, whatever `hrAuthorityRoles` alone
+// suggests. The resource has existed since long before this module; this page is its first surface.
+// `system-navigation.ts` hiding the link is UX; the gate is here and in every route under
+// /api/offers.
 //
-// Three grants, not one: Super Admin holds all actions, Talent Acquisition holds
+// Three grants, not one: Super Admin holds all actions, HR Advisory holds
 // read/create/update/export but NOT delete. `canDelete` is threaded separately so the Delete
 // buttons match the routes rather than promising something that answers 403.
 //
-// Talent Acquisition reaches this screen through its portal twin at
-// app/employee-portals/offers/page.tsx, because app/(admin)/layout.tsx redirects portal-shell roles
-// out of this entire route group before any page in it renders.
+// HR Advisory reaches this screen directly — she is an admin-shell role, unlike the retired
+// Talent Acquisition seat this module was first built for. Its portal twin at
+// app/employee-portals/offers/page.tsx is now orphaned surface: see
+// tests/recruitment-hub-portal-coverage.test.ts for the full account of why nobody who holds
+// `offers` today resolves into the employee-portal shell.
 
 export default async function OffersPage() {
   const access = await resolveAccessContextFromPage();

@@ -39,7 +39,7 @@ export default async function EmployeePortalHiringDocumentsPage() {
   if (!isHrAuthorityRole(access.role) || !canRead) {
     return (
       <EmployeePortalEmptyState
-        message="Hiring documents are available to Talent Acquisition and Super Admin only."
+        message="Hiring documents are available to HR Advisory, HR Operations, and Super Admin only."
         title="Hiring Documents Unavailable"
       />
     );
@@ -47,7 +47,7 @@ export default async function EmployeePortalHiringDocumentsPage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Talent Acquisition"
+      badge="Recruitment & Hiring"
       description="Onboarding document readiness and employee status."
       errorBoundaryTitle="Hiring Documents unavailable"
       title="Hiring Documents"

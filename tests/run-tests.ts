@@ -1386,8 +1386,11 @@ import { runHrFormsHousePapersTests } from "./hr-forms-house-papers.test.ts";
 import { runCairoTodayLocaleSafeTests } from "./cairo-today-locale-safe.test.ts";
 
 import { runClosingWorkbookLinkOriginTests } from "./closing-workbook-link-origin.test.ts";
+import { runTalentAcquisitionRoleRetiredUiCopyTests } from "./talent-acquisition-role-retired-ui-copy.test.ts";
 import { runVacancyCloseManagerHrIdCanonicalTests } from "./vacancy-close-manager-hr-id-canonical.test.ts";
 import { runPayrollHoldReasonTests } from "./payroll-hold-reason.test.ts";
+
+import { runEmployeeImportJobTitleCasingTests } from "./employee-import-job-title-casing.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4390,8 +4393,16 @@ await runTest(
   runCairoTodayLocaleSafeTests,
 );
 await runTest(
+  "the retired Talent Acquisition role is never presented as a live permission (app/ and src/components/ badges and denial messages name HR Advisory / HR Operations instead)",
+  runTalentAcquisitionRoleRetiredUiCopyTests,
+);
+await runTest(
   "closeVacancyOnHire's manager_hr_id filter is canonicalized (a mixed-case manager id no longer falls through to the manager-less-vacancy fallback and closes the wrong seat)",
   runVacancyCloseManagerHrIdCanonicalTests,
+);
+await runTest(
+  "employee import job title casing (Ceo/Qppv/Sfe Manager/R And D Manager canonicalize on upload; ordinary titles and blanks unaffected)",
+  runEmployeeImportJobTitleCasingTests,
 );
 
 await runTest(
