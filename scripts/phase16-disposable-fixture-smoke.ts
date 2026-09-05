@@ -300,7 +300,7 @@ async function runVacationServiceSmoke(lookup: LookupContext) {
     endDate: "2026-07-01",
     startDate: "2026-07-01",
     vacationType: "annual",
-  }, { baseUrl: "http://localhost:3000" });
+  });
   tracked.vacationRequestIds.add(request.id);
 
   const approved = await decideVacationRequest({
