@@ -367,6 +367,16 @@ const nextStageAction: Record<string, { action: RecruitmentActionKey; label: str
   shortlisted: { action: "app_shortlist_to_scheduling", label: "Move to interview scheduling" },
   manager_interview_completed: { action: "app_mgr_completed_to_final", label: "Move to final selection" },
   backup_candidate: { action: "app_backup_to_offer", label: "Activate backup for offer" },
+  // The workflow registry has defined app_to_pre_boarding since the ATS re-platform - from
+  // offer_accepted, to pre_boarding, for Super Admin and HR Advisory, labelled "Move to
+  // pre-boarding" - and this map is the ONLY thing that turns a registry action into a button.
+  // offer_accepted was missing from it, so the stage could be reached by nothing at all.
+  //
+  // It is not a cosmetic gap. pre_boarding is a counted stage: it is the whole of the "Joining"
+  // group on the HR command centre and one of the three stages pipeline-metrics treats as an
+  // accepted offer. With no way in, Joining could only ever read zero, which looks like nobody is
+  // joining rather than like a missing button.
+  offer_accepted: { action: "app_to_pre_boarding", label: "Move to pre-boarding" },
 };
 
 // Resume actions for the holding states (Rule 5/6/8).

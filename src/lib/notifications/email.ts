@@ -1324,9 +1324,21 @@ function migratedTemplateKeyForNotification(input: NotificationEmailInput) {
       : EMAIL_TEMPLATE_KEYS.USER_CREATED;
   }
   if (input.notificationType === "resignation") return EMAIL_TEMPLATE_KEYS.RESIGNATION_WORKFLOW;
-  // Offer STATUS notifications (accepted/rejected/hire-approved) use the dedicated
-  // Offer Status template — the JOB_OFFER template stays reserved for the candidate
-  // offer LETTER, which goes through sendTemplatedEmail('offer') independently.
+  // Offer STATUS notifications (accepted/rejected/hire-approved) use the dedicated Offer Status
+  // template.
+  //
+  // This comment used to say the JOB_OFFER template "stays reserved for the candidate offer
+  // LETTER, which goes through sendTemplatedEmail('offer') independently". That call does not
+  // exist and never did — measured 2026-09-05, the string `sendTemplatedEmail('offer')` appeared
+  // in this repository exactly once: in the comment itself. A reader checking whether the key was
+  // wired would have found a sentence asserting it was.
+  //
+  // What actually sends a candidate their offer letter is the offers module — src/lib/offers/send.ts
+  // renders its own block templates for both the PDF and the email body, because a letter needs a
+  // letterhead, a compensation table and a signature block that this key/value template system has
+  // no way to express. So EMAIL_TEMPLATE_KEYS.JOB_OFFER has no consumer and, in production, no
+  // template row either. It is kept rather than deleted because the key set is data other rows
+  // reference, and removing a key is a migration, not an edit.
   // Candidate-addressed confirmations stay on the audience-neutral GENERAL template
   // (candidates have no Phoenix login; Offer Status frames internal HR alerts).
   if (input.notificationType === "offer") {
