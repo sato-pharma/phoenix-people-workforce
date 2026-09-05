@@ -112,7 +112,7 @@ var TZ = 'Africa/Cairo';
  * feed's COLUMNS. A sheet that silently keeps the previous design is indistinguishable from one
  * where the update failed.
  */
-var LAYOUT_VERSION = 'v3-detail';
+var LAYOUT_VERSION = 'v10-phoenix';
 
 var TAB_SUMMARY = 'Summary';
 var TAB_DAILY = 'Daily Dashboard';
@@ -125,7 +125,14 @@ var ROW_TITLE = 1;
 var ROW_SUBTITLE = 2;
 
 // Summary tab geography. Fixed rows, because tiles and charts must not move under the reader.
-var SUMMARY_COLS = 6;
+// Seven, not six, because six put the two tiles in a row edge to edge: the black label band of
+// the left card ran straight into the black label band of the right one, and what the eye saw was
+// one wide band with two headings in it, not two cards. A card needs air around it or it stops
+// being a card. Column 4 is that air — narrow, empty, and never written to.
+var SUMMARY_COLS = 7;
+var TILE_COL_LEFT = 1;
+var TILE_COL_RIGHT = 5;
+var TILE_GUTTER_COL = 4;
 var TILE_ROWS = [4, 8, 12];
 var SUMMARY_SPARK_TITLE_ROW = 16;
 var SUMMARY_SPARK_ROW = 17;
@@ -153,20 +160,83 @@ var LIFECYCLE_HEADER_ROW = 4;
 /** How many rows the fixed chart and format ranges cover. About three years of daily rows. */
 var FIXED_RANGE_ROWS = 1000;
 
-// ── Palette ──────────────────────────────────────────────────────────────────────
-var INK = '#0b1f3a';
-var HEADER_BG = '#1f3864';
-var HEADER_FG = '#ffffff';
-var PAPER = '#ffffff';
-var MUTED = '#5f6368';
-var RULE = '#d7dee8';
-var TILE_BG = '#f6f8fc';
-var GOOD = '#0f7b3f';
-var GOOD_BG = '#e7f8ee';
-var BAD = '#b3261e';
-var BAD_BG = '#fce8e6';
-var WARN_BG = '#fff4d6';
-var WARN_FG = '#7a5b00';
+// ── Typography ──────────────────────────────────────────────────
+//
+// Setting a font family at all is the single highest-leverage line in this file: without it every
+// tab renders in Sheets' default Arial 10, which is what makes a sheet carrying real work look
+// like an export somebody forgot to format.
+//
+// Calibri, because the two live sheets beside this one are set in Calibri. A third face would make
+// this the odd sheet in a set of three, which is most of what "it looks awful" meant: the figures
+// were fine, the sheet just did not look like it came from the same company as the others.
+var FONT = 'Calibri';
+
+// Deliberately the same face. `mono:` on a column still means "this is a figure" and still
+// right-aligns it — the alignment and the number format are what make a column of figures line up.
+// A second family bought nothing here and cost the sheet its family resemblance.
+var FONT_MONO = 'Calibri';
+
+// ── The Phoenix palette ───────────────────────────────────────────────────────────────────────
+//
+// Not chosen here. LIFTED VERBATIM from docs/marketing-request-live-sheet.gs, which is one of the
+// two sheets the owner already reads every morning, so that all three are visibly one system:
+// black masthead, orange wordmark, warm cream cards, a near-black table header.
+//
+// The version this replaces was navy and gold. It was a defensible palette and it was the wrong
+// one, because it was invented for this file alone while two finished sheets in the same repo had
+// already settled the question. AGENTS.md says to match the siblings before building new UI; this
+// is that rule applied after the fact, at the cost of three rounds of "nothing changed".
+var BLACK = '#000000';
+var ORANGE = '#F97316';
+var AMBER = '#FDE7C7';
+var WHITE = '#FFFFFF';
+
+var INK = '#0F172A';
+var INK_SOFT = '#334155';
+var MUTED = '#94A3B8';
+var FAINT = '#CBD5E1';
+var RULE_SOFT = '#E2E8F0';
+var RULE = '#E2E8F0';
+var PAPER = '#FFFFFF';
+
+// The house zebra: a warm tint a shade off white, not Google's grey theme. On a 58-column table a
+// heavy stripe fights the status colours for attention and wins, which is how a table ends up
+// looking busy and telling you nothing.
+var BAND_ALT = '#FFF8F1';
+var TILE_BG = '#FFF7ED';
+
+var HEADER_BG = '#0F172A';
+var HEADER_FG = '#FFFFFF';
+var HERO_BG = '#000000';
+var HERO_SUB = '#94A3B8';
+var ACCENT = '#F97316';
+var BRAND = '#F97316';
+var BRAND_DEEP = '#000000';
+var TOTAL_BG = '#1F2937';
+
+// Semantic pairs. These are the only colours on the page that mean something, which is why the
+// rest of the sheet is black, white and one orange: a green number has to be able to shout.
+var GOOD = '#15803D';
+var GOOD_BG = '#ECFDF3';
+var BAD = '#B42318';
+var BAD_BG = '#FEF3F2';
+var WARN_FG = '#B45309';
+var WARN_BG = '#FDE7C7';
+var INFO = '#1F2937';
+var INFO_BG = '#F1F5F9';
+
+var TYPE_TITLE = 16;
+var TYPE_SECTION = 12;
+var TYPE_BODY = 10;
+var TYPE_HEADER = 10.5;
+var TYPE_LABEL = 9;
+var TYPE_TILE = 26;
+
+var ROW_H_TITLE = 38;
+var ROW_H_SUBTITLE = 20;
+var ROW_H_RULE = 5;
+
+var ROW_H_HEADER = 36;
 var C_WHATSAPP = '#25d366';
 var C_EMAIL = '#4285f4';
 var C_HAND = '#9aa0a6';
@@ -308,6 +378,34 @@ function rebuildLayout() {
  * on screen with a red banner over them saying they are old. See the note at the top of the file.
  */
 function refreshCvLifecycle() {
+  // ONE REFRESH AT A TIME, AND A LOSER THAT SAYS NOTHING.
+  //
+  // The trigger runs every REFRESH_MINUTES and a manual run takes 35-55 seconds, so a Run clicked
+  // in the editor overlaps the next tick often enough to have happened on the first day. On
+  // 2026-09-05 it did: the manual run fetched and wrote the whole sheet, the trigger fired 40
+  // seconds later, ITS fetch failed while the first was still in flight, and it painted a STALE
+  // banner over data that had just been refreshed successfully. The banner even named the time of
+  // the good refresh as the moment things "stopped updating".
+  //
+  // A false stale banner is worse than no banner. It teaches him to ignore the one warning this
+  // sheet has, and the next one will be real.
+  //
+  // The loser returns silently rather than reporting: it has nothing to say. The winner is doing
+  // the exact work it wanted done, and will finish in seconds.
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) {
+    console.log('Another refresh is already running. Skipping this one.');
+    return;
+  }
+
+  try {
+    refreshCvLifecycleLocked_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function refreshCvLifecycleLocked_() {
   var url = PropertiesService.getScriptProperties().getProperty('FEED_URL');
   if (!url) {
     markFeedStale('FEED_URL is not set in Project Settings then Script Properties');
@@ -385,13 +483,65 @@ function parseSections_(text) {
 
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
-    var first = row && row.length ? String(row[0]) : '';
-    if (first.charAt(0) === '#') {
+    var first = row && row.length ? String(row[0]).trim() : '';
+
+    // A SECTION MARKER IS #CAPITALS WITH NOTHING BESIDE IT — AND "NOTHING BESIDE IT" MAY NOT BE
+    // EXPRESSED AS row.length === 1.
+    //
+    // Two bugs have now lived on this one line, and the second was the fix for the first.
+    //
+    // The original test was `first.charAt(0) === '#'`, which swallowed the CV Details header whole:
+    // its first column is literally named "#", so the header was filed as a section named '' and
+    // DETAIL came back empty. The repair added `row.length === 1` — and that is what stopped the
+    // sheet dead. `Utilities.parseCsv` does not hand back the ragged array a hand-written parser
+    // does; a lone `#LIFECYCLE` line in a bundle whose widest section is 58 columns comes back
+    // padded with empty cells, so `row.length === 1` was false for EVERY marker, no section was
+    // ever opened, and `sections` came back `{}`. refreshCvLifecycle then hit its own guard —
+    // fewer than two lifecycle rows means never overwrite a full sheet — and returned before
+    // writing a single cell. Every execution logged "Completed". The sheet sat frozen at its last
+    // good pull for a day, with the stale banner painting onto a layout too old to have a line to
+    // paint it on. Silent, green, and completely stopped.
+    //
+    // So test the SHAPE, not the array's length: the first cell is #CAPITALS and every other cell
+    // is empty. That is true under a ragged parser and a padding one, which is the only version of
+    // this test that cannot be broken again by a parser's internals.
+    var marker = /^#[A-Z][A-Z0-9_]*$/.test(first);
+    for (var c = 1; marker && c < row.length; c++) {
+      if (String(row[c]).trim() !== '') marker = false;
+    }
+    if (marker) {
       current = first.slice(1);
       sections[current] = [];
       continue;
     }
     if (current) sections[current].push(row);
+  }
+
+  // A SECTION IS AS WIDE AS ITS OWN HEADER, NOT AS WIDE AS THE FILE.
+  //
+  // The same padding that hid the markers also inflates every section to the width of the widest
+  // one. Summary has 2 columns, Daily 7, Lifecycle 26, Details 58 — but Utilities.parseCsv hands
+  // all four back at 58, so without this pass Daily draws 7 real columns and 51 empty ones, banded
+  // and bordered like data, and Lifecycle draws 26 and 32. Nothing throws; the tabs just look like
+  // a spreadsheet somebody abandoned halfway.
+  //
+  // The header row is the authority for the width, because it is the one row every column of which
+  // is named by Phoenix. Trailing blanks past the last name are padding by definition, and every
+  // data row is then squared to that same width so setValues still gets a rectangle.
+  var names = Object.keys(sections);
+  for (var s = 0; s < names.length; s++) {
+    var block = sections[names[s]];
+    if (!block.length) continue;
+
+    var width = block[0].length;
+    while (width > 0 && String(block[0][width - 1]).trim() === '') width--;
+    if (width < 1 || width === block[0].length) continue;
+
+    for (var r = 0; r < block.length; r++) {
+      var trimmed = block[r].slice(0, width);
+      while (trimmed.length < width) trimmed.push('');
+      block[r] = trimmed;
+    }
   }
   return sections;
 }
@@ -464,7 +614,38 @@ function markLayoutBuilt_(key, header) {
  * the new chart, old conditional rules keep colouring cells the new design left plain, and old
  * merges block the new ones. Every rebuild therefore starts from nothing.
  */
-function resetTab_(sheet) {
+/**
+ * Grow the tab until the range the layout is about to address actually exists.
+ *
+ * A new Google Sheets tab is 1000 rows by 26 columns, and `getRange` does not extend the grid — it
+ * throws. Both dimensions were out of bounds here:
+ *
+ *   getRange(5, 1, FIXED_RANGE_ROWS, n)  needs row 1004 on a sheet that has 1000
+ *   the CV Details header                needs column 58 on a sheet that has 26
+ *
+ * Nothing in this file ever grew either one. The reason it went unnoticed for so long is that the
+ * section-marker bug meant no layout builder had EVER run: refreshCvLifecycle bailed out before the
+ * first one. Fixing that ran all four for the first time, and they hit this immediately.
+ *
+ * The failure is unusually quiet from the reader's side. Summary is 6 columns and its ranges are
+ * small, so it rebuilds and looks new; Daily then throws on row 1004 and Detail and Lifecycle never
+ * run at all. One tab changes, three do not, and the sheet reads as "nothing happened" — which is
+ * the opposite of a script that is doing nothing, and sends you looking in the wrong place.
+ *
+ * So this is not called by the builders. It is called by resetTab_, which every builder must run
+ * first, because a builder that has to remember is a builder that eventually will not.
+ */
+function ensureGrid_(sheet, rows, cols) {
+  var haveRows = sheet.getMaxRows();
+  if (rows > haveRows) sheet.insertRowsAfter(haveRows, rows - haveRows);
+
+  var haveCols = sheet.getMaxColumns();
+  if (cols > haveCols) sheet.insertColumnsAfter(haveCols, cols - haveCols);
+}
+
+function resetTab_(sheet, rows, cols) {
+  ensureGrid_(sheet, rows, cols);
+
   var charts = sheet.getCharts();
   for (var i = 0; i < charts.length; i++) sheet.removeChart(charts[i]);
 
@@ -484,79 +665,207 @@ function resetTab_(sheet) {
   var all = sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns());
   all.breakApart();
   all.clear();
+
+  // Set once, on the whole grid, so every later range inherits it and no builder has to remember.
+  // A tab that misses this is instantly obvious beside one that did not, which is the point.
+  all.setFontFamily(FONT).setFontSize(TYPE_BODY).setFontColor(INK);
 }
 
-/** The dark title band and the subtitle line the stale banner later paints over. */
+/**
+ * The masthead: title, timestamp, rule.
+ *
+ * This used to be a 48px slab of navy with 20pt white text across the full width of the table —
+ * on the 58-column detail tab, a blue stripe roughly two metres wide. It read as a banner rather
+ * than a heading, and banners are what unimportant documents wear.
+ *
+ * A report instead states its name on the paper and draws a line under it. The weight comes from
+ * the type and the rule, and it stays proportionate however wide the table gets, because the rule
+ * is a row height rather than a block of colour.
+ */
 function titleBand_(sheet, cols, title) {
   sheet.setHiddenGridlines(true);
-  sheet.setTabColor(HEADER_BG);
+  sheet.setTabColor(ORANGE);
 
-  sheet.getRange(ROW_TITLE, 1, 1, cols).merge()
-    .setValue(title)
-    .setBackground(INK)
-    .setFontColor(HEADER_FG)
-    .setFontSize(20)
+  // PAINTED, NEVER MERGED - and that is a correctness rule, not a taste one.
+  //
+  // Merging row 1 across the band makes Google refuse setFrozenColumns: "you can't freeze columns
+  // which contain only part of a merged cell", because the boundary at column 2 bisects a range
+  // spanning ten. CV Details and CV Lifecycle both freeze two columns, so a merged masthead throws
+  // on both of them - after Summary and Daily have already been written. Two tabs update, two do
+  // not, which is indistinguishable from a script that half ran.
+  //
+  // Painting the row's BACKGROUND and leaving the text in an unmerged A1 looks identical: the band
+  // cells beside it are empty, so the title overflows across them the way any long cell does. This
+  // is how the Marketing Requests sheet solves it. The Direct Orders sheet is the one that solved
+  // it by dropping the frozen column instead, which costs the reader their anchor the moment they
+  // scroll right.
+  sheet.getRange(ROW_TITLE, 1, 1, cols).setBackground(BLACK);
+  sheet.getRange(ROW_TITLE, 1)
+    .setValue('Phoenix Workforce — ' + String(title).trim())
+    .setFontFamily(FONT)
+    .setFontColor(ORANGE)
     .setFontWeight('bold')
-    .setVerticalAlignment('middle')
-    .setHorizontalAlignment('left');
-  sheet.setRowHeight(ROW_TITLE, 48);
-
-  sheet.getRange(ROW_SUBTITLE, 1, 1, cols).merge()
-    .setBackground(PAPER)
-    .setFontColor(MUTED)
-    .setFontStyle('italic')
+    .setFontSize(TYPE_TITLE)
     .setVerticalAlignment('middle');
-  sheet.setRowHeight(ROW_SUBTITLE, 24);
-  sheet.setRowHeight(3, 10);
+  sheet.setRowHeight(ROW_TITLE, ROW_H_TITLE);
+
+  sheet.getRange(ROW_SUBTITLE, 1, 1, cols).setBackground(BLACK);
+  sheet.getRange(ROW_SUBTITLE, 1)
+    .setFontFamily(FONT)
+    .setFontColor(HERO_SUB)
+    .setFontStyle('italic')
+    .setFontSize(TYPE_LABEL + 1)
+    .setVerticalAlignment('middle');
+  sheet.setRowHeight(ROW_SUBTITLE, ROW_H_SUBTITLE);
+
+  // Five pixels of orange closes the block. It is the only saturated colour on the page apart from
+  // the wordmark above it, which is exactly why it can be this bright without competing with data.
+  // On CV Details this row is overwritten by the group bands, which do the same job with labels.
+  sheet.getRange(3, 1, 1, cols).setBackground(ORANGE);
+  sheet.setRowHeight(3, ROW_H_RULE);
 }
 
-/** The ordinary subtitle. Contains the word the stale detector looks for — do not reword it. */
+/**
+ * The ordinary subtitle. Contains the word the stale detector looks for — do not reword it.
+ *
+ * The version is on the end because "I pasted the new script and nothing changed" is otherwise
+ * unanswerable without opening the editor. Three separate causes produce that sentence — the paste
+ * never saved, a second .gs file in the project still defines these functions and wins, or the
+ * refresh bailed out before writing — and they are indistinguishable by looking at the sheet. With
+ * the version on the page, one glance separates "the new code is not running" from "the new code is
+ * running and I do not like it", which are opposite problems.
+ */
 function writeSubtitle_(sheet, name, stamp) {
-  sheet.getRange(ROW_SUBTITLE, 1).setValue(name + ' — refreshed ' + stamp + ' (Cairo)');
+  sheet.getRange(ROW_SUBTITLE, 1)
+    .setValue(name + ' — refreshed ' + stamp + ' (Cairo) · layout ' + LAYOUT_VERSION);
 }
 
 function sectionTitle_(sheet, row, cols, text) {
-  sheet.getRange(row, 1, 1, cols).merge()
-    .setValue(text)
-    .setFontSize(12)
+  // Orange on near-black, the same band the other two sheets use to open a section. Unmerged for
+  // the same reason the masthead is: a merge here is one more thing that can refuse a freeze.
+  sheet.getRange(row, 1, 1, cols).setBackground(INK);
+  sheet.getRange(row, 1)
+    .setValue(' ' + text)
+    .setFontFamily(FONT)
+    .setFontSize(TYPE_SECTION)
     .setFontWeight('bold')
-    .setFontColor(INK)
+    .setFontColor(ORANGE)
     .setVerticalAlignment('middle');
   sheet.setRowHeight(row, 28);
 }
 
 function styleHeader_(sheet, headerRow, width) {
   var range = sheet.getRange(headerRow, 1, 1, width);
-  range.setBackground(HEADER_BG).setFontColor(HEADER_FG).setFontWeight('bold');
-  range.setVerticalAlignment('middle').setWrap(true);
-  sheet.setRowHeight(headerRow, 34);
+  range.setBackground(HEADER_BG)
+    .setFontColor(HEADER_FG)
+    .setFontFamily(FONT)
+    .setFontSize(TYPE_HEADER)
+    .setFontWeight('bold')
+    .setVerticalAlignment('middle')
+    .setHorizontalAlignment('left')
+    .setWrap(true);
+  // A darker edge under the header seats the block on the page instead of letting the fill float.
+  // The same gold as the masthead rule, so the two blocks on the page are visibly one system.
+  range.setBorder(null, null, true, null, null, null, ORANGE, SpreadsheetApp.BorderStyle.SOLID_THICK);
+  sheet.setRowHeight(headerRow, ROW_H_HEADER);
 }
 
-/** A KPI tile: three rows tall, three columns wide, label over a large number. */
+/**
+ * The body of a table: banding, alignment, and tabular figures where they earn their keep.
+ *
+ * Sheets' stock banding themes are far too heavy — LIGHT_GREY alternates against a grey that
+ * competes with the text sitting on it. `applyRowBanding` hands back the Banding object, so the
+ * colours can be replaced with a near-white alternate that separates rows without shouting. That
+ * one substitution is most of the difference between a table that looks designed and one that
+ * looks striped.
+ *
+ * `names` are matched by column NAME, never by index, for the same reason every other lookup in
+ * this file is: a column inserted upstream must not silently re-align the wrong data.
+ */
+function tableChrome_(sheet, headerRow, header, opts) {
+  var options = opts || {};
+  var body = sheet.getRange(headerRow + 1, 1, FIXED_RANGE_ROWS, header.length);
+
+  var banding = body.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, false, false);
+  banding.setFirstRowColor(PAPER).setSecondRowColor(BAND_ALT).setHeaderRowColor(null);
+
+  body.setVerticalAlignment('middle').setFontSize(TYPE_BODY).setFontColor(INK_SOFT);
+
+  applyToNamed_(sheet, headerRow, header, options.mono, function (range) {
+    range.setFontFamily(FONT_MONO).setHorizontalAlignment('right');
+  });
+  applyToNamed_(sheet, headerRow, header, options.right, function (range) {
+    range.setHorizontalAlignment('right');
+  });
+  applyToNamed_(sheet, headerRow, header, options.centre, function (range) {
+    range.setHorizontalAlignment('center');
+  });
+  applyToNamed_(sheet, headerRow, header, options.quiet, function (range) {
+    range.setFontColor(MUTED);
+  });
+
+  // One hairline down the right edge of the frozen block, so the columns that stay put while he
+  // scrolls read as an anchor rather than as the first two columns of a very wide table.
+  if (options.freezeEdge > 0) {
+    sheet.getRange(headerRow, options.freezeEdge, FIXED_RANGE_ROWS + 1, 1)
+      .setBorder(null, null, null, true, null, null, RULE_SOFT, SpreadsheetApp.BorderStyle.SOLID);
+  }
+}
+
+function applyToNamed_(sheet, headerRow, header, names, apply) {
+  if (!names || !names.length) return;
+  for (var i = 0; i < names.length; i++) {
+    var col = columnByName_(header, names[i]);
+    if (col > 0) apply(sheet.getRange(headerRow + 1, col, FIXED_RANGE_ROWS, 1));
+  }
+}
+
+/**
+ * A KPI card: label above a large tabular number, on white, inside a hairline.
+ *
+ * The old tile centred a 10pt grey label over a 26pt number on a pale blue fill, boxed in on all
+ * four sides. Centring is the problem — a column of centred numbers of different lengths has no
+ * common edge, so the eye cannot compare them without reading each one. Left-aligning the label
+ * and the figure gives every card the same edge, and the figures line up down the page.
+ *
+ * The fill goes white and the border becomes a hairline, because a card earns its separation from
+ * the page through whitespace. Colour is reserved for the one thing on the card that is a
+ * judgement — the number itself, which fillTile_ tints when it means something.
+ */
 function buildTile_(sheet, row, col, label) {
   sheet.getRange(row, col, 3, 3)
     .setBackground(TILE_BG)
-    .setBorder(true, true, true, true, false, false, RULE, SpreadsheetApp.BorderStyle.SOLID);
+    .setBorder(true, true, true, true, false, false, RULE_SOFT, SpreadsheetApp.BorderStyle.SOLID);
 
+  // One label treatment for all six, not six colours.
+  //
+  // The version before this gave each card its own colour so a bad number would be visible from
+  // across the room. It made the row read as six unrelated things - and the judgement is the
+  // NUMBER, not the label, so fillTile_ is where a colour belongs. Six identical black-and-orange
+  // labels under one masthead is a set of cards; six coloured ones is a chart of nothing.
   sheet.getRange(row, col, 1, 3).merge()
-    .setValue(label)
-    .setFontSize(10)
-    .setFontColor(MUTED)
-    .setHorizontalAlignment('center')
+    .setValue(' ' + label)
+    .setBackground(BLACK)
+    .setFontFamily(FONT)
+    .setFontSize(TYPE_LABEL)
+    .setFontColor(ORANGE)
+    .setFontWeight('bold')
+    .setHorizontalAlignment('left')
     .setVerticalAlignment('middle');
 
   sheet.getRange(row + 1, col, 2, 3).merge()
-    .setFontSize(26)
+    .setFontFamily(FONT)
+    .setFontSize(TYPE_TILE)
     .setFontWeight('bold')
+    .setFontColor(INK)
     .setHorizontalAlignment('center')
     .setVerticalAlignment('middle');
 
-  sheet.setRowHeight(row, 20);
-  sheet.setRowHeight(row + 1, 26);
-  sheet.setRowHeight(row + 2, 26);
+  sheet.setRowHeight(row, 24);
+  sheet.setRowHeight(row + 1, 34);
+  sheet.setRowHeight(row + 2, 16);
 }
 
-/** Values only — the tile's box, fonts and merges were built once. */
 function fillTile_(sheet, row, col, value, colour) {
   sheet.getRange(row + 1, col).setValue(value).setFontColor(colour || INK);
 }
@@ -571,8 +880,94 @@ function fillTile_(sheet, row, col, value, colour) {
 var FEED_STATE_KEY = 'phoenixCvFeedState';
 var LAST_GOOD_KEY = 'phoenixCvLastGoodStamp';
 var STALE_MARKER = '⚠ STALE';
+
+/**
+ * STRIP EVERY URL OUT OF A FAILURE MESSAGE BEFORE IT REACHES THE SHEET.
+ *
+ * This is a security control, not tidiness. FEED_URL carries a share token, and UrlFetchApp puts
+ * the WHOLE url into the text of the exception it throws — "Address unavailable: https://…/<token>
+ * /feed". That string went straight into the banner, so a transient network blip printed the token
+ * in plaintext across row 2 of all four tabs. Anyone the sheet is shared with, at view access,
+ * could read it out of the cell and pull all 986 candidates: names, phones, emails, addresses,
+ * dates of birth. It happened, on 2026-09-05.
+ *
+ * A cell is worse than a log for this. The log is the owner's alone; the sheet is a thing he
+ * hands to people.
+ *
+ * Redacting costs nothing diagnostically — the URL is the same one every time, and it is in the
+ * script properties where it belongs, so the message loses no information he does not already have.
+ */
+function redactUrls_(text) {
+  return String(text === null || text === undefined ? '' : text)
+    .replace(/https?:\/\/[^\s)]+/gi, 'the Phoenix feed link');
+}
 var STALE_BG = '#b91c1c';
 var STALE_FG = '#ffffff';
+
+/**
+ * A span of minutes, in the unit a person would say it in.
+ *
+ * This tile read "23249 min" on the first live build. That is sixteen days, and nobody reads it as
+ * sixteen days — it reads as a number that has gone wrong, which is worse than the fact it is
+ * reporting. The figure is real: it is dominated by the backfill, where CVs that arrived months
+ * ago only reached Drive when this pipeline was first run.
+ */
+function humanDuration_(minutes) {
+  if (minutes === null || minutes === undefined || isNaN(minutes)) return '—';
+  if (minutes < 1) return 'under a minute';
+  if (minutes < 60) return Math.round(minutes) + ' min';
+
+  var hours = minutes / 60;
+  if (hours < 48) return (hours < 10 ? hours.toFixed(1) : String(Math.round(hours))) + ' hours';
+
+  var days = hours / 24;
+  return (days < 10 ? days.toFixed(1) : String(Math.round(days))) + ' days';
+}
+
+/**
+ * An ISO day from the feed, as a real date rather than the text of one.
+ *
+ * Built from PARTS. `new Date('2026-07-24')` is UTC midnight, and rendering UTC midnight in Cairo
+ * is the off-by-one that turns a Friday into a Thursday on every row of the tab.
+ */
+function asCairoDate_(value) {
+  var text = String(value === null || value === undefined ? '' : value).trim();
+  var parts = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(text);
+  if (!parts) return value;
+  return new Date(
+    Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]),
+    Number(parts[4] || 0), Number(parts[5] || 0), Number(parts[6] || 0)
+  );
+}
+
+// The columns Phoenix sends as ISO text. Every one of them read as a database key on the face of
+// the sheet — "1996-11-14", "2026-09-05 00:22" — which is the raw form the owner's standing rule
+// says never to show him. As text they also cannot sort, filter by range, or drive a chart.
+//
+// The clock does not move. The parts are read as local and rendered by a script whose timezone is
+// Africa/Cairo, so what Phoenix sent is what appears; only the spelling changes.
+var DETAIL_DATE_COLUMNS = ['Date of birth'];
+var DETAIL_TIME_COLUMNS = ['Added to Phoenix', 'Manager notified at'];
+var LIFECYCLE_TIME_COLUMNS = [
+  'Reached Phoenix', 'Saved in Phoenix', 'Saved in Google Drive', 'Applicant answered at'
+];
+
+/** Rewrite the named columns of a body from ISO text into real dates. Anything else is untouched. */
+function datify_(header, body, names) {
+  var cols = [];
+  for (var n = 0; n < names.length; n++) {
+    var c = columnByName_(header, names[n]);
+    if (c > 0) cols.push(c - 1);
+  }
+  if (!cols.length) return body;
+
+  for (var r = 0; r < body.length; r++) {
+    for (var i = 0; i < cols.length; i++) {
+      if (cols[i] < body[r].length) body[r][cols[i]] = asCairoDate_(body[r][cols[i]]);
+    }
+  }
+  return body;
+}
 
 /** The subtitle cells that carry a live refresh stamp, and are therefore safe to repaint. */
 function stampedSubtitles(ss) {
@@ -599,7 +994,7 @@ function markFeedStale(reason) {
     var props = PropertiesService.getScriptProperties();
     // Keyed on the reason too, so a 403 that becomes a network outage repaints with the new cause
     // instead of leaving the first explanation up for ever.
-    var state = 'stale:' + reason;
+    var state = 'stale:' + redactUrls_(reason);
     if (props.getProperty(FEED_STATE_KEY) === state) return;
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -609,7 +1004,7 @@ function markFeedStale(reason) {
     var now = Utilities.formatDate(new Date(), TZ, 'dd MMM yyyy, HH:mm');
     var message = STALE_MARKER + ' — these figures stopped updating '
       + (frozenAt ? 'on ' + frozenAt : 'at some point before this script was updated')
-      + ' (Cairo). Last attempt ' + now + ' failed: ' + reason
+      + ' (Cairo). Last attempt ' + now + ' failed: ' + redactUrls_(reason)
       + '. Still retrying every ' + REFRESH_MINUTES
       + ' minutes; this line clears itself the moment the feed answers.';
 
@@ -640,6 +1035,11 @@ function markFeedFresh(ss, stamp) {
     var props = PropertiesService.getScriptProperties();
     var previous = String(props.getProperty(FEED_STATE_KEY) || '');
     props.setProperty(LAST_GOOD_KEY, stamp);
+
+    // Stamped unconditionally, so the key always answers "what happened on the last run". It used
+    // to be written only on the way out of a banner, which left it unset on a sheet that had never
+    // failed — and an unset key reads exactly like a script that never got as far as this line.
+    props.setProperty(FEED_STATE_KEY, 'ok');
     if (previous.indexOf('stale:') !== 0) return;
 
     var targets = stampedSubtitles(ss);
@@ -648,10 +1048,13 @@ function markFeedFresh(ss, stamp) {
       if (targets[i].before.indexOf(STALE_MARKER) === 0) {
         cell.setValue(targets[i].sheet.getName() + ' — refreshed ' + stamp + ' (Cairo)');
       }
-      targets[i].sheet.getRange(ROW_SUBTITLE, 1, 1, targets[i].cols).setBackground(PAPER);
-      cell.setFontColor(MUTED).setFontStyle('italic').setFontWeight('normal');
+      // BLACK, not PAPER. Row 2 is the lower half of the masthead, so restoring it to white paints
+      // a white stripe through the middle of the black band — on the one run that is supposed to
+      // signal everything is fine again. The colour to restore is whatever titleBand_ painted, and
+      // the only way that stays true is to name the same constant it does.
+      targets[i].sheet.getRange(ROW_SUBTITLE, 1, 1, targets[i].cols).setBackground(BLACK);
+      cell.setFontColor(HERO_SUB).setFontStyle('italic').setFontWeight('normal');
     }
-    props.setProperty(FEED_STATE_KEY, 'ok');
   } catch (err) {
     console.error('Could not clear the stale banner: ' + err);
   }
@@ -742,15 +1145,15 @@ function writeSummary_(ss, summaryRows, dailyRows, lifecycleRows, stamp) {
   var share = (total && onDrive !== null) ? Math.round((onDrive / total) * 100) : null;
   var minutes = medianMinutesToDrive_(lifecycleRows);
 
-  fillTile_(sheet, TILE_ROWS[0], 1, metrics['CVs in total'] || '—', INK);
-  fillTile_(sheet, TILE_ROWS[0], 4, metrics['CVs received today'] || '—', INK);
-  fillTile_(sheet, TILE_ROWS[1], 1,
+  fillTile_(sheet, TILE_ROWS[0], TILE_COL_LEFT, metrics['CVs in total'] || '—', INK);
+  fillTile_(sheet, TILE_ROWS[0], TILE_COL_RIGHT, metrics['CVs received today'] || '—', INK);
+  fillTile_(sheet, TILE_ROWS[1], TILE_COL_LEFT,
     (metrics['Saved in Google Drive'] || '—') + (share === null ? '' : '  (' + share + '%)'),
     share === 100 ? GOOD : INK);
-  fillTile_(sheet, TILE_ROWS[1], 4, metrics['Still missing from Drive'] || '—', missing ? BAD : GOOD);
-  fillTile_(sheet, TILE_ROWS[2], 1, metrics['Drive errors'] || '—', errors ? BAD : GOOD);
-  fillTile_(sheet, TILE_ROWS[2], 4,
-    minutes === null ? '—' : (minutes < 1 ? 'under a minute' : Math.round(minutes) + ' min'),
+  fillTile_(sheet, TILE_ROWS[1], TILE_COL_RIGHT, metrics['Still missing from Drive'] || '—', missing ? BAD : GOOD);
+  fillTile_(sheet, TILE_ROWS[2], TILE_COL_LEFT, metrics['Drive errors'] || '—', errors ? BAD : GOOD);
+  fillTile_(sheet, TILE_ROWS[2], TILE_COL_RIGHT,
+    humanDuration_(minutes),
     INK);
 
   // ── Where they came from ──
@@ -797,20 +1200,21 @@ function writeSummary_(ss, summaryRows, dailyRows, lifecycleRows, stamp) {
 }
 
 function buildSummaryLayout_(sheet, dailyRows) {
-  resetTab_(sheet);
+  resetTab_(sheet, SUMMARY_METRIC_HEADER_ROW + SUMMARY_METRIC_CAPACITY + 2, SUMMARY_COLS + 1);
   titleBand_(sheet, SUMMARY_COLS, '  CV Lifecycle');
 
   for (var c = 1; c <= SUMMARY_COLS; c++) sheet.setColumnWidth(c, 150);
+  sheet.setColumnWidth(TILE_GUTTER_COL, 18);
 
   // A thin gap under each row of tiles, so they read as cards rather than as a grid.
   for (var t = 0; t < TILE_ROWS.length; t++) sheet.setRowHeight(TILE_ROWS[t] + 3, 12);
 
-  buildTile_(sheet, TILE_ROWS[0], 1, 'CVs IN TOTAL');
-  buildTile_(sheet, TILE_ROWS[0], 4, 'RECEIVED TODAY');
-  buildTile_(sheet, TILE_ROWS[1], 1, 'SAVED IN GOOGLE DRIVE');
-  buildTile_(sheet, TILE_ROWS[1], 4, 'STILL MISSING FROM DRIVE');
-  buildTile_(sheet, TILE_ROWS[2], 1, 'DRIVE ERRORS');
-  buildTile_(sheet, TILE_ROWS[2], 4, 'TYPICAL TIME PHOENIX TO DRIVE');
+  buildTile_(sheet, TILE_ROWS[0], TILE_COL_LEFT, 'CVs IN TOTAL');
+  buildTile_(sheet, TILE_ROWS[0], TILE_COL_RIGHT, 'RECEIVED TODAY');
+  buildTile_(sheet, TILE_ROWS[1], TILE_COL_LEFT, 'SAVED IN GOOGLE DRIVE');
+  buildTile_(sheet, TILE_ROWS[1], TILE_COL_RIGHT, 'STILL MISSING FROM DRIVE');
+  buildTile_(sheet, TILE_ROWS[2], TILE_COL_LEFT, 'DRIVE ERRORS');
+  buildTile_(sheet, TILE_ROWS[2], TILE_COL_RIGHT, 'TYPICAL TIME PHOENIX TO DRIVE');
 
   // ── The daily shape, as one sparkline ──
   sectionTitle_(sheet, SUMMARY_SPARK_TITLE_ROW, SUMMARY_COLS, 'How many arrive each day');
@@ -839,7 +1243,7 @@ function buildSummaryLayout_(sheet, dailyRows) {
   var donut = sheet.newChart()
     .setChartType(Charts.ChartType.PIE)
     .addRange(sheet.getRange(SUMMARY_CHANNEL_HEADER_ROW, 1, 4, 2))
-    .setPosition(SUMMARY_CHANNEL_TITLE_ROW, 4, 0, 0)
+    .setPosition(SUMMARY_CHANNEL_TITLE_ROW, TILE_COL_RIGHT, 0, 0)
     .setOption('title', 'Share of all CVs')
     .setOption('pieHole', 0.45)
     .setOption('legend', { position: 'labeled' })
@@ -894,12 +1298,12 @@ function buildSummaryLayout_(sheet, dailyRows) {
  * wrong block, which is worse than no band at all.
  */
 var DETAIL_GROUPS = [
-  { bg: '#e8eef7', from: '#',                    label: 'Who they are' },
-  { bg: '#e7f1ea', from: 'Faculty',              label: 'What they studied' },
-  { bg: '#fbf0e2', from: 'Applied for',          label: 'What they have done' },
-  { bg: '#efe9f7', from: 'Their own background', label: 'What they told us themselves' },
-  { bg: '#e6eef4', from: 'Prefers region',       label: 'Where it went' },
-  { bg: '#eef0f1', from: 'How they reached us',  label: 'The record' }
+  { bg: '#FFEDD5', from: '#',                    label: 'Who they are' },
+  { bg: '#FEF3C7', from: 'Faculty',              label: 'What they studied' },
+  { bg: '#FFF7ED', from: 'Applied for',          label: 'What they have done' },
+  { bg: '#FDE7C7', from: 'Their own background', label: 'What they told us themselves' },
+  { bg: '#F5F0E8', from: 'Prefers region',       label: 'Where it went' },
+  { bg: '#EDEDEA', from: 'How they reached us',  label: 'The record' }
 ];
 
 /** Long free text. Wide, and NOT wrapped — a wrapped CV summary makes a 200px tall row. */
@@ -974,7 +1378,8 @@ function writeDetail_(ss, rows, stamp) {
   clearDataBelow_(sheet, DETAIL_HEADER_ROW, header.length);
   if (body.length) {
     sheet.getRange(DETAIL_HEADER_ROW + 1, 1, body.length, header.length)
-      .setValues(linkify_(header, body));
+      .setValues(datify_(header, linkify_(header, body),
+        DETAIL_DATE_COLUMNS.concat(DETAIL_TIME_COLUMNS)));
   }
   fitBody_(sheet, TAB_DETAIL, DETAIL_HEADER_ROW, header.length, body.length);
 
@@ -983,7 +1388,7 @@ function writeDetail_(ss, rows, stamp) {
 }
 
 function buildDetailLayout_(sheet, header) {
-  resetTab_(sheet);
+  resetTab_(sheet, DETAIL_HEADER_ROW + FIXED_RANGE_ROWS + 1, header.length + 1);
   titleBand_(sheet, header.length, '  Everything Phoenix knows about each candidate');
 
   // titleBand_ leaves row 3 as a 10px spacer. Here it carries the group band instead.
@@ -999,6 +1404,15 @@ function buildDetailLayout_(sheet, header) {
 
   applyDetailWidths_(sheet, header);
   applyDetailFormats_(sheet, header);
+  tableChrome_(sheet, DETAIL_HEADER_ROW, header, {
+    mono: [
+      '#', 'Date of birth', 'Graduation year', 'Years of experience',
+      'Salary they asked for', 'Expected salary (on file)', 'CVs on file', 'Added to Phoenix',
+    ],
+    centre: ['Worked before?', 'Medical rep before?'],
+    quiet: ['Drive folder', 'Filed folder', 'Status note', 'Manager notified at'],
+    freezeEdge: 2,
+  });
   applyDetailColours_(sheet, header);
 
   // A filter, so "show me everyone in Giza who has been a medical rep" is two clicks rather than a
@@ -1019,14 +1433,17 @@ function paintDetailGroups_(sheet, header) {
     var from = starts[j].col;
     var to = (j + 1 < starts.length) ? starts[j + 1].col - 1 : header.length;
     if (to < from) continue;
-    sheet.getRange(3, from, 1, to - from + 1).merge()
-      .setValue(starts[j].group.label)
+    // Painted, not merged: this tab freezes two columns and the first band starts at column 1, so
+    // a merge here bisects the freeze boundary and setFrozenColumns throws - taking the whole tab
+    // with it, after the two narrow tabs have already been written.
+    sheet.getRange(3, from, 1, to - from + 1)
       .setBackground(starts[j].group.bg)
+      .setFontFamily(FONT)
       .setFontColor(INK)
       .setFontWeight('bold')
       .setFontSize(10)
-      .setHorizontalAlignment('center')
       .setVerticalAlignment('middle');
+    sheet.getRange(3, from).setValue(' ' + starts[j].group.label);
   }
 }
 
@@ -1050,6 +1467,10 @@ function applyDetailFormats_(sheet, header) {
   // '0' and not '#,##0': a graduation year is not a quantity, and 2,024 reads as a bug.
   format('Graduation year', '0');
   format('Years of experience', '#,##0');
+
+  // A birthday has no clock on it; the two audit stamps do.
+  for (var d = 0; d < DETAIL_DATE_COLUMNS.length; d++) format(DETAIL_DATE_COLUMNS[d], 'dd MMM yyyy');
+  for (var t = 0; t < DETAIL_TIME_COLUMNS.length; t++) format(DETAIL_TIME_COLUMNS[t], 'dd MMM yyyy, HH:mm');
   format('CVs on file', '#,##0');
   format('Salary they asked for', '#,##0');
   format('Expected salary (on file)', '#,##0');
@@ -1126,7 +1547,15 @@ function writeDaily_(ss, rows, stamp) {
 
   clearDataBelow_(sheet, DAILY_HEADER_ROW, header.length);
   if (body.length) {
-    sheet.getRange(DAILY_HEADER_ROW + 1, 1, body.length, header.length).setValues(body);
+    // The day arrives as the text "2026-07-24". Left as text it stays "2026-07-24" on the face of
+    // the sheet, which is a database key, not a date — and it cannot be sorted or charted as one.
+    var shaped = [];
+    for (var r = 0; r < body.length; r++) {
+      var line = body[r].slice();
+      line[0] = asCairoDate_(line[0]);
+      shaped.push(line);
+    }
+    sheet.getRange(DAILY_HEADER_ROW + 1, 1, body.length, header.length).setValues(shaped);
   }
   fitBody_(sheet, TAB_DAILY, DAILY_HEADER_ROW, header.length, body.length);
 
@@ -1135,7 +1564,8 @@ function writeDaily_(ss, rows, stamp) {
 }
 
 function buildDailyLayout_(sheet, header) {
-  resetTab_(sheet);
+  // The chart floats to the right of the table, so the grid has to reach past it.
+  resetTab_(sheet, DAILY_HEADER_ROW + FIXED_RANGE_ROWS + 1, header.length + 10);
   titleBand_(sheet, header.length, '  CVs received each day, by channel');
 
   sheet.setColumnWidth(1, 120);
@@ -1148,6 +1578,23 @@ function buildDailyLayout_(sheet, header) {
   // Whole numbers. Without this a count of 7 can render as 7.00 once the column has ever held a
   // formatted value, which looks like a bug in the data.
   sheet.getRange(DAILY_HEADER_ROW + 1, 2, FIXED_RANGE_ROWS, header.length - 1).setNumberFormat('#,##0');
+  sheet.getRange(DAILY_HEADER_ROW + 1, 1, FIXED_RANGE_ROWS, 1)
+    .setNumberFormat('ddd dd MMM yyyy')
+    .setHorizontalAlignment('left');
+
+  var dailyBody = sheet.getRange(DAILY_HEADER_ROW + 1, 1, FIXED_RANGE_ROWS, header.length);
+  var dailyBanding = dailyBody.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, false, false);
+  dailyBanding.setFirstRowColor(PAPER).setSecondRowColor(BAND_ALT).setHeaderRowColor(null);
+  dailyBody.setVerticalAlignment('middle').setFontSize(TYPE_BODY).setFontColor(INK_SOFT);
+
+  // Named columns are impossible here — the columns ARE the channels, and a channel Phoenix has
+  // never seen before appears as a new one. The shape is what is stable: day, then counts.
+  sheet.getRange(DAILY_HEADER_ROW + 1, 2, FIXED_RANGE_ROWS, header.length - 1)
+    .setFontFamily(FONT_MONO)
+    .setHorizontalAlignment('right');
+  sheet.getRange(DAILY_HEADER_ROW + 1, 1, FIXED_RANGE_ROWS, 1)
+    .setFontFamily(FONT_MONO)
+    .setFontColor(INK);
 
   applyDailyColours_(sheet, header);
   buildDailyChart_(sheet, header.length);
@@ -1167,6 +1614,13 @@ function buildDailyChart_(sheet, cols) {
     // Day, then the three channel columns — not the totals, which would double the height of every
     // bar and hide the split the chart exists to show.
     .addRange(sheet.getRange(DAILY_HEADER_ROW, 1, FIXED_RANGE_ROWS + 1, 4))
+    // WITHOUT THIS THE LEGEND IS THREE COLOURED SQUARES NAMING NOTHING.
+    //
+    // The range starts on the header row, but a chart does not assume that — left to guess, it
+    // took row 4 as data and the three series came out unnamed. A legend that names nothing is
+    // worse than no legend: the reader can see that WhatsApp, Email and by-hand are different
+    // colours, and cannot tell which is which.
+    .setNumHeaders(1)
     // Anchored two columns PAST the table rather than above it. A chart placed above the data has
     // to have rows reserved under it, and reserved rows are indistinguishable from a broken sheet.
     .setPosition(DAILY_HEADER_ROW, cols + 2, 0, 0)
@@ -1176,7 +1630,19 @@ function buildDailyChart_(sheet, cols) {
     .setOption('height', 300)
     .setOption('width', 1000)
     .setOption('colors', [C_WHATSAPP, C_EMAIL, C_HAND])
-    .setOption('hAxis', { title: 'Day (Cairo)', slantedText: true, slantedTextAngle: 45 })
+    // The cells read "Fri 24 Jul 2026", which is right in the table and far too long for an axis
+    // slot — every label came out clipped mid-word. The chart carries its own shorter format.
+    // `format` does NOTHING here: it applies to a continuous axis, and a column chart's category
+    // axis is discrete, so the label is whatever text the cell shows — "Fri 24 Jul 2026", clipped
+    // to "Fri 24 Ju". The two things that DO work are giving each label the width of three slots
+    // and setting it smaller than the default.
+    .setOption('hAxis', {
+      title: 'Day (Cairo)',
+      slantedText: true,
+      slantedTextAngle: 45,
+      showTextEvery: 3,
+      textStyle: { fontSize: 10 }
+    })
     .setOption('vAxis', { title: 'CVs', minValue: 0 })
     .build();
   sheet.insertChart(chart);
@@ -1265,7 +1731,7 @@ function writeLifecycle_(ss, rows, stamp) {
   clearDataBelow_(sheet, LIFECYCLE_HEADER_ROW, header.length);
   if (body.length) {
     sheet.getRange(LIFECYCLE_HEADER_ROW + 1, 1, body.length, header.length)
-      .setValues(linkify_(header, body));
+      .setValues(datify_(header, linkify_(header, body), LIFECYCLE_TIME_COLUMNS));
   }
 
   if (fresh) markLayoutBuilt_(TAB_LIFECYCLE, header);
@@ -1308,7 +1774,7 @@ function linkify_(header, body) {
 }
 
 function buildLifecycleLayout_(sheet, header) {
-  resetTab_(sheet);
+  resetTab_(sheet, LIFECYCLE_HEADER_ROW + FIXED_RANGE_ROWS + 1, header.length + 1);
   titleBand_(sheet, header.length, '  Every CV, stage by stage');
 
   sheet.getRange(LIFECYCLE_HEADER_ROW, 1, 1, header.length).setValues([header]);
@@ -1326,10 +1792,21 @@ function buildLifecycleLayout_(sheet, header) {
   if (size > 0) {
     sheet.getRange(LIFECYCLE_HEADER_ROW + 1, size, FIXED_RANGE_ROWS, 1).setNumberFormat('#,##0');
   }
+  for (var t = 0; t < LIFECYCLE_TIME_COLUMNS.length; t++) {
+    var tc = columnByName_(header, LIFECYCLE_TIME_COLUMNS[t]);
+    if (tc > 0) {
+      sheet.getRange(LIFECYCLE_HEADER_ROW + 1, tc, FIXED_RANGE_ROWS, 1)
+        .setNumberFormat('dd MMM yyyy, HH:mm');
+    }
+  }
 
-  var dataRange = sheet.getRange(LIFECYCLE_HEADER_ROW + 1, 1, FIXED_RANGE_ROWS, header.length);
-  dataRange.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, false, false);
-  dataRange.setVerticalAlignment('middle');
+  tableChrome_(sheet, LIFECYCLE_HEADER_ROW, header, {
+    mono: ['#', 'Size (KB)', 'Phoenix → Drive (minutes)'],
+    centre: ['In Phoenix?', 'On Google Drive?'],
+    // Plumbing, not answers. Present when he goes looking, receding when he is not.
+    quiet: ['Drive folder', 'Filed folder', 'Intake error', 'Drive problem', 'Accuracy of that time'],
+    freezeEdge: 2,
+  });
 
   applyLifecycleColours_(sheet, header);
 
