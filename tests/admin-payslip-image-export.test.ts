@@ -64,10 +64,37 @@ export function runAdminPayslipImageExportTests() {
     assert.equal(canExportPayslipDocument({ role }), false, `${role} must not export payslip documents.`);
   }
 
+  // ── ONE DOCUMENT, TWO TRANSPORTS (2026-09-05) ────────────────────────────────────────────────
+  // This route drew its own pdf-lib payslip until the house-identity redesign — a second rendering
+  // of the same document, with its own palette and its own field order, which had already drifted
+  // from the HTML sheet. Both routes now render `@/lib/payroll/payslip-document`, and these two
+  // assertions are what stops a future change re-introducing a private drawing in either file.
+  //
+  // The old assertion here required the literal `pdf-lib`, which is exactly the shape AGENTS.md
+  // warns about: a pinning test that pins the ANTI-pattern and has to be found by grepping the
+  // tests for the old string before the source can be changed at all.
   assert.match(
     imageRouteSource,
-    /pdf-lib/,
-    "Payslip export must use pdf-lib to render the PDF (Playwright replaced).",
+    /from "@\/lib\/payroll\/payslip-document"/,
+    "The PDF export must render the SHARED payslip document, never a second drawing of its own.",
+  );
+  assert.match(
+    imageRouteSource,
+    /withChromiumPage/,
+    "…printed by Chromium, which is the only thing in this stack that shapes Arabic correctly.",
+  );
+  // The IMPORT, not the word. This route's header explains at length why pdf-lib was removed, and
+  // an assertion that forbids the mere mention forbids the explanation with it — which is how a
+  // comment ends up deleted to make a test pass.
+  assert.doesNotMatch(
+    imageRouteSource,
+    /^import .*from "pdf-lib"/m,
+    "A PDF library cannot draw this document: WinAnsi has no Arabic, and the amount in words is Arabic.",
+  );
+  assert.match(
+    imageRouteSource,
+    /printBackground:\s*true/,
+    "The 6% zebra row is a CSS background — without this the detail tables print as unruled text.",
   );
 
   assert.match(
@@ -84,8 +111,8 @@ export function runAdminPayslipImageExportTests() {
 
   assert.match(
     payslipRouteSource,
-    /\.image-export \.sheet-scroll[\s\S]*max-height: none;[\s\S]*overflow: visible;/,
-    "Payslip image render mode must remove the internal detail-table scroll.",
+    /buildPayslipDocument\(records, exportData\.batch\.month/,
+    "The HTML route must serve the same shared document the PDF route prints.",
   );
 
   assert.match(
