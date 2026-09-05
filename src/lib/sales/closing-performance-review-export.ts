@@ -55,6 +55,7 @@ const MUTE = HOUSE_XLSX_COLORS.muted;
 // rather than a second red invented here.
 const GOOD = "FF0F766E";
 const WARN = "FF9A5B08";
+const WHITE = HOUSE_XLSX_COLORS.white;
 const CRIT = HOUSE_XLSX_COLORS.flag;
 const UP = GOOD;
 const DOWN = CRIT;
@@ -375,13 +376,17 @@ function headerRow(sheet: Sheet, row: number, headings: string[], leftCount: num
   headings.forEach((heading, index) => {
     const cell = sheet.getCell(row, index + 1);
     cell.value = heading;
-    font(cell, { bold: true, color: { argb: DEEP }, name: HOUSE_XLSX_FONT, size: 8.5 });
+    // White on a Brand Blue band. A header with no ground does not separate from its data on a sheet
+    // this wide — the product grids run to twenty-odd columns — and the ink rule that put type on
+    // white here is a rule about PAPER, measured in page coverage.
+    font(cell, { bold: true, color: { argb: WHITE }, name: HOUSE_XLSX_FONT, size: 8.5 });
+    fill(cell, options.band ? LIGHT : BLUE);
     align(cell, {
       horizontal: index < leftCount ? "left" : "center",
       indent: index < leftCount ? 1 : 0,
-      vertical: "bottom",
+      vertical: "middle",
     });
-    border(cell, { b: options.band ? med : medB, l: undefined, r: undefined, t: thin });
+    border(cell, { b: medB, l: thin, r: thin, t: medB });
   });
 }
 
@@ -400,8 +405,9 @@ function bodyRow(sheet: Sheet, row: number, lastCol: number, options: { emphasis
   const cells: Cell[] = [];
   for (let column = 1; column <= lastCol; column += 1) {
     const cell = sheet.getCell(row, column);
-    // The zebra row REPLACES its hairline rather than joining it: a tinted row already reads as a
-    // band, so ruling it as well draws the eye twice for one row.
+    // The zebra sits OVER the grid rather than instead of it — `border()` fills every unnamed side
+    // with a hairline, so a tinted row is ruled like any other. The grid separates the columns; the
+    // tint holds a row together across them.
     if (emphasis === "area" && options.zebra) fill(cell, ZEBRA);
     border(cell, {
       b: emphasis === "total" ? medB : emphasis === "subtotal" ? med : thin,

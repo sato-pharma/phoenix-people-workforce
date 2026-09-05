@@ -794,8 +794,17 @@ function autofit(
 }
 
 function styleHeader(cell: ExcelJS.Cell, right: boolean, soft = false): void {
-  cell.font = { name: HOUSE_XLSX_FONT, size: 10, bold: true, color: { argb: DEEP } };
-  cell.border = { ...(cell.border ?? {}), bottom: { style: soft ? "thin" : "medium", color: { argb: soft ? RULE_STRONG : ACCENT } } };
+  // White on a Brand Blue band — deep for a real column header, the lighter blue for the softer
+  // group row above one. Type on white does not separate from its data on a book this wide.
+  cell.font = { name: HOUSE_XLSX_FONT, size: 10, bold: true, color: { argb: HOUSE_XLSX_COLORS.white } };
+  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: soft ? RULE_STRONG : ACCENT } };
+  cell.border = {
+    ...(cell.border ?? {}),
+    bottom: { style: "medium", color: { argb: DEEP } },
+    left: { style: "thin", color: { argb: DEEP } },
+    right: { style: "thin", color: { argb: DEEP } },
+    top: { style: "medium", color: { argb: DEEP } },
+  };
   cell.alignment = { vertical: "middle", horizontal: right ? "right" : "left", indent: 1 };
   cell.border = {
     top: { style: "thin", color: { argb: RULE_STRONG } },
