@@ -1,5 +1,7 @@
 import ExcelJS from "exceljs";
 
+import { HOUSE_XLSX_COLORS } from "@/lib/export/house-xlsx-identity";
+
 // Reusable, premium Phoenix-styled XLSX builder for any admin table.
 // Visual language matches the on-screen admin rules: black header band (sidebar
 // colour) with centred white labels, thin light-orange cell grid, zebra rows, and
@@ -33,7 +35,19 @@ export type BuildTableWorkbookInput = {
   columns: ExportColumn[];
   rows: ExportRow[];
   template?: "outstation_expenses";
+  /**
+   * Which identity the sheet wears. Defaults to "phoenix" so every existing caller is untouched.
+   *
+   * A THEME PARAMETER RATHER THAN A SECOND FUNCTION, because this one is performance-tuned: its
+   * style objects are hoisted and shared by reference across every cell, which is what stopped a
+   * tens-of-thousands-row export from allocating millions of throwaway styles. A house-flavoured
+   * copy would have had to reproduce that care exactly, and would drift from it the first time
+   * either side was touched.
+   */
+  theme?: TableTheme;
 };
+
+export type TableTheme = "phoenix" | "house";
 
 const BLACK = "FF000000";
 const ORANGE = "FFF97316";
@@ -46,6 +60,53 @@ const MUTED = "FF94A3B8";
 function gridBorder(): ExcelJS.Borders {
   const side = { style: "thin" as const, color: { argb: ORANGE_LINE } };
   return { top: side, left: side, bottom: side, right: side } as ExcelJS.Borders;
+}
+
+/**
+ * The SATO house grid: a hairline under each row and nothing else. The Phoenix kit boxes every
+ * cell on four sides; the house format rules rows, not cells.
+ */
+function houseGridBorder(): ExcelJS.Borders {
+  return {
+    bottom: { style: "hair" as const, color: { argb: HOUSE_XLSX_COLORS.hair } },
+  } as ExcelJS.Borders;
+}
+
+/** Everything the sheet needs to wear one identity or the other, resolved once per sheet. */
+function resolveTheme(theme: TableTheme) {
+  if (theme === "house") {
+    return {
+      band: null,
+      bodyColour: HOUSE_XLSX_COLORS.body,
+      font: "Aptos",
+      grid: houseGridBorder(),
+      headerBorder: {
+        bottom: { style: "medium" as const, color: { argb: HOUSE_XLSX_COLORS.blue } },
+        top: { style: "thin" as const, color: { argb: HOUSE_XLSX_COLORS.hair } },
+      } as ExcelJS.Borders,
+      headerColour: HOUSE_XLSX_COLORS.deep,
+      subtitleColour: HOUSE_XLSX_COLORS.muted,
+      titleColour: HOUSE_XLSX_COLORS.deep,
+      titleRule: { bottom: { style: "medium" as const, color: { argb: HOUSE_XLSX_COLORS.blue } } } as ExcelJS.Borders,
+      totalColour: HOUSE_XLSX_COLORS.deep,
+      totalFill: null,
+      zebra: HOUSE_XLSX_COLORS.tint,
+    };
+  }
+  return {
+    band: BLACK,
+    bodyColour: SLATE,
+    font: "Calibri",
+    grid: gridBorder(),
+    headerBorder: gridBorder(),
+    headerColour: WHITE,
+    subtitleColour: WHITE,
+    titleColour: WHITE,
+    titleRule: { bottom: { style: "medium" as const, color: { argb: ORANGE } } } as ExcelJS.Borders,
+    totalColour: BLACK,
+    totalFill: ORANGE_SOFT,
+    zebra: ORANGE_SOFT,
+  };
 }
 
 function sanitizeSheetName(name: string | undefined) {
@@ -76,37 +137,43 @@ export function addPhoenixTableSheet(workbook: ExcelJS.Workbook, input: BuildTab
   });
 
   const colCount = Math.max(1, input.columns.length);
+  const theme = resolveTheme(input.theme ?? "phoenix");
 
-  // Row 1 — title band (black, white title, orange bottom-border accent)
+  // Row 1 — the title. A filled band in the Phoenix theme; type over a Brand Blue rule in the house
+  // one, where nothing but the zebra is ever filled.
   sheet.mergeCells(1, 1, 1, colCount);
   const titleCell = sheet.getCell(1, 1);
   titleCell.value = input.title;
-  titleCell.font = { name: "Calibri", size: 16, bold: true, color: { argb: WHITE } };
+  titleCell.font = { name: theme.font, size: 16, bold: true, color: { argb: theme.titleColour } };
   titleCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
-  titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BLACK } };
-  titleCell.border = { bottom: { style: "medium", color: { argb: ORANGE } } };
-  sheet.getRow(1).height = 36;
+  if (theme.band) titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: theme.band } };
+  titleCell.border = theme.titleRule;
+  sheet.getRow(1).height = theme.band ? 36 : 30;
 
-  // Row 2 — subtitle band
+  // Row 2 — subtitle
   sheet.mergeCells(2, 1, 2, colCount);
   const subCell = sheet.getCell(2, 1);
   subCell.value = input.subtitle ?? `Phoenix Workforce · exported ${new Date().toLocaleString("en-GB")}`;
-  subCell.font = { name: "Calibri", size: 10, italic: true, color: { argb: WHITE } };
+  subCell.font = { name: theme.font, size: 10, italic: theme.band !== null, color: { argb: theme.subtitleColour } };
   subCell.alignment = { vertical: "middle", horizontal: "left", indent: 1, wrapText: true };
-  subCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BLACK } };
+  if (theme.band) subCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: theme.band } };
   sheet.getRow(2).height = 18;
 
-  // Row 3 — header (black, centred, white, bold)
+  // Row 3 — header
   const headerRow = sheet.getRow(3);
   input.columns.forEach((col, i) => {
     const cell = headerRow.getCell(i + 1);
     cell.value = col.label;
-    cell.font = { name: "Calibri", size: 11.5, bold: true, color: { argb: WHITE } };
-    cell.alignment = { vertical: "middle", horizontal: "center" };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BLACK } };
-    cell.border = gridBorder();
+    cell.font = { name: theme.font, size: 11.5, bold: true, color: { argb: theme.headerColour } };
+    cell.alignment = {
+      vertical: theme.band ? "middle" : "bottom",
+      horizontal: theme.band ? "center" : col.numeric ? "right" : "left",
+      wrapText: true,
+    };
+    if (theme.band) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: theme.band } };
+    cell.border = theme.headerBorder;
   });
-  headerRow.height = 22;
+  headerRow.height = theme.band ? 22 : 26;
 
   // Data rows. Style objects are hoisted and SHARED by reference across every cell instead of
   // allocated per cell — for a large export (e.g. the CRM Visits tab, tens of thousands of rows ×
@@ -114,11 +181,11 @@ export function addPhoenixTableSheet(workbook: ExcelJS.Workbook, input: BuildTab
   // the dominant memory/time cost behind the export hanging. ExcelJS reads these at write time, so
   // sharing one frozen instance is safe and identical in output.
   const firstDataRow = 4;
-  const dataFont = { name: "Calibri", size: 10.5, color: { argb: SLATE } } as const;
-  const dataBorder = gridBorder();
+  const dataFont = { name: theme.font, size: 10.5, color: { argb: theme.bodyColour } } as const;
+  const dataBorder = theme.grid;
   const alignLeft = { vertical: "middle", horizontal: "left", wrapText: false } as const;
   const alignRight = { vertical: "middle", horizontal: "right", wrapText: false } as const;
-  const zebraFill = { type: "pattern", pattern: "solid", fgColor: { argb: ORANGE_SOFT } } as const;
+  const zebraFill = { type: "pattern", pattern: "solid", fgColor: { argb: theme.zebra } } as const;
   const colAlign = input.columns.map((col) => (col.numeric ? alignRight : alignLeft));
   // Precomputed alongside colAlign for the same reason: one lookup per cell, no per-cell
   // allocation. A shared string literal costs nothing to reuse.
@@ -146,9 +213,16 @@ export function addPhoenixTableSheet(workbook: ExcelJS.Workbook, input: BuildTab
     const totalRow = sheet.getRow(totalRowIndex);
     input.columns.forEach((col, i) => {
       const cell = totalRow.getCell(i + 1);
-      cell.font = { name: "Calibri", size: 10.5, bold: true, color: { argb: BLACK } };
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ORANGE_SOFT } };
-      cell.border = gridBorder();
+      cell.font = { name: theme.font, size: 10.5, bold: true, color: { argb: theme.totalColour } };
+      if (theme.totalFill) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: theme.totalFill } };
+      }
+      cell.border = theme.totalFill
+        ? theme.grid
+        : ({
+            bottom: { style: "double" as const, color: { argb: HOUSE_XLSX_COLORS.blue } },
+            top: { style: "thin" as const, color: { argb: HOUSE_XLSX_COLORS.blue } },
+          } as ExcelJS.Borders);
       if (i === 0) {
         cell.value = "TOTAL";
         cell.alignment = { vertical: "middle", horizontal: "left" };

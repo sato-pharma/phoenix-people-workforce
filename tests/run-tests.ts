@@ -3171,7 +3171,7 @@ await runTest(
 );
 
 await runTest(
-  "Performance Review never names a system state and never adds units across products (no \"Not mapped to an area\" / \"No district manager\" anywhere in the workbook, Main Store keeps its own name, the by-area growth tab is value-only, and a month never uploaded renders as a dash)",
+  "Performance Review never names a system state, never adds units across products, and wears the house identity (no \"Not mapped to an area\" / \"No district manager\" anywhere in the workbook, Main Store keeps its own name, the by-area growth tab is value-only, a month never uploaded renders as a dash, and the emitted file carries no fill but the Brand Blue rule and the zebra row, prints SATO-DIS-2026-01 v1.0, and never prints the app's name)",
   runClosingPerformanceReviewTests,
 );
 

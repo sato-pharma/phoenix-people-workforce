@@ -3,13 +3,17 @@
 // already-loaded, name-resolved rows and returns the xlsx buffer.
 import ExcelJS from "exceljs";
 
+import { HOUSE_XLSX_COLORS } from "@/lib/export/house-xlsx-identity";
+
 import type { DirectBreakdownRow } from "@/lib/sales/monthly-targets";
 
 const HEADER_STYLE: Partial<ExcelJS.Style> = {
-  font: { bold: true, color: { argb: "FFFFFFFF" }, size: 10 },
-  fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B0B0B" } },
-  alignment: { vertical: "middle", wrapText: true },
-  border: { bottom: { style: "thin", color: { argb: "FFF97316" } } },
+  alignment: { vertical: "bottom", wrapText: true },
+  border: {
+    bottom: { style: "medium", color: { argb: HOUSE_XLSX_COLORS.blue } },
+    top: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.hair } },
+  },
+  font: { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 9.5 },
 };
 
 export type IndirectAuditRow = {
