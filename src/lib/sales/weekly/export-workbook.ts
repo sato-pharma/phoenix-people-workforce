@@ -1,5 +1,6 @@
 import { Workbook, type Worksheet } from "@node-projects/excelforge";
 
+import { hardenPivotCaches } from "@/lib/export/pivot-cache-hardening";
 import type { WeeklyDashboard, WeeklyFactExportRow } from "@/lib/sales/weekly/types";
 import {
   DEEP, BLUE, LIGHT, MUTED, BODY, WHITE, GOOD, WARN, BAD,
@@ -1067,5 +1068,9 @@ export async function buildWeeklyExportWorkbook(
   wb.setActiveSheet("Dashboard");
 
   const b64 = await wb.buildBase64();
-  return Buffer.from(b64, "base64");
+  // ExcelForge cannot express either half of this through its API, so the pivot cache is
+  // repaired on the EMITTED package: refresh on open, and read the `tblWeekly` table rather
+  // than the row count this file happened to be built with. A non-interactive build carries no
+  // pivot cache and comes back through untouched, byte for byte.
+  return hardenPivotCaches(Buffer.from(b64, "base64"));
 }

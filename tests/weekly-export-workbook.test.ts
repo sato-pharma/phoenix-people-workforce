@@ -194,3 +194,87 @@ export async function runWeeklyExportTests() {
   );
   assert.ok(text.includes(HOUSE_DOCUMENT_STANDARD), `the workbook carries its document standard, ${HOUSE_DOCUMENT_STANDARD}`);
 }
+
+// ── The native pivot's cache: refreshes on open, and reads the table ──────────────────────────
+//
+// ASSERTED ON THE EMITTED PACKAGE, because the source cannot answer either question. ExcelForge's
+// `PivotTable` input carries no refresh setting and no table-source option at all, so both of these
+// are written by `hardenPivotCaches` into the zip after `buildBase64()` — reading
+// `export-workbook.ts` tells you only that the call happens, never that the bytes came out right.
+//
+// What each defect looked like before the fix (both shipped on `main`, both reported by
+// `node scripts/check-workbook-integrity.mjs`):
+//
+//   <pivotCacheDefinition ... recordCount="7">                      <- opens showing BUILD-TIME data
+//     <cacheSource type="worksheet"><worksheetSource ref="A1:O8" sheet="Data"/></cacheSource>
+//                                                                   <- pinned to 7 rows for ever
+//
+// The stale half is the one a reader is hurt by: a cross-tab rebuilt from a cache frozen at build
+// time looks exactly like a live one, with nothing on screen saying otherwise.
+export async function runWeeklyPivotCacheTests() {
+  const interactive = await buildWeeklyExportWorkbook(sampleDashboard(), GENERATED_AT, { interactive: true });
+  const zip = await JSZip.loadAsync(interactive);
+
+  const cacheDef = await zip.file("xl/pivotCache/pivotCacheDefinition1.xml")?.async("string");
+  assert.ok(cacheDef, "the interactive build must carry a pivot cache definition");
+
+  // 1. Refresh on open.
+  assert.match(
+    cacheDef,
+    /<pivotCacheDefinition[^>]*\srefreshOnLoad="1"/,
+    "the pivot cache must be set to refresh on load, or the pivot opens showing whatever was cached " +
+      "at build time — a stale cross-tab that looks exactly like a live one",
+  );
+  assert.equal(
+    (cacheDef.match(/refreshOnLoad=/g) ?? []).length,
+    1,
+    "refreshOnLoad is written once, never doubled onto a tag that already carries it",
+  );
+
+  // 2. The source is the Data sheet's own Table, by NAME — that is what makes it grow with the rows.
+  const source = (cacheDef.match(/<worksheetSource\b[^>]*\/>/) ?? [])[0] ?? "";
+  const tableXml = (await zip.file("xl/tables/table1.xml")?.async("string")) ?? "";
+  const tableName = (tableXml.match(/\sname="([^"]*)"/) ?? [])[1];
+  assert.equal(tableName, "tblWeekly", "the Data sheet's Excel Table is the one the pivot must read");
+  assert.equal(
+    source,
+    '<worksheetSource name="tblWeekly"/>',
+    "the pivot cache must name the Data table rather than the fixed range the file happened to be " +
+      `built with — a raw ref never grows with the data. Found: ${source}`,
+  );
+
+  // 3. …and the cache is still WHOLE. `refreshOnLoad="1"` is not a licence to empty it: Excel
+  //    validates the pivots against the cache BEFORE it honours the refresh, so a cleared record
+  //    set or a stripped <sharedItems> pool leaves every <item x="n"/> in pivotTable1.xml pointing
+  //    into nothing — Excel then removes the view and calls the workbook damaged. That is the bug
+  //    that prompted "We found a problem with some content" on every premium closing export until
+  //    2026-09-02 (see restorePivotCacheSharedItems in src/lib/sales/closing-engine-fill.ts). This
+  //    is the assertion that fires if someone ever "simplifies" the hardening into a cache wipe.
+  const records = (await zip.file("xl/pivotCache/pivotCacheRecords1.xml")?.async("string")) ?? "";
+  const declaredRecords = Number((cacheDef.match(/recordCount="(\d+)"/) ?? [])[1] ?? 0);
+  const heldRecords = (records.match(/<r>/g) ?? []).length;
+  assert.ok(heldRecords > 0, "the pivot cache must still hold its records — an emptied cache is removed by Excel");
+  assert.equal(declaredRecords, heldRecords, `cache declares ${declaredRecords} records but holds ${heldRecords}`);
+
+  const declaredFields = Number((cacheDef.match(/<cacheFields count="(\d+)"/) ?? [])[1] ?? 0);
+  const heldFields = (cacheDef.match(/<cacheField\b/g) ?? []).length;
+  assert.equal(declaredFields, heldFields, `cache declares ${declaredFields} fields but holds ${heldFields}`);
+
+  const pivotXml = (await zip.file("xl/pivotTables/pivotTable1.xml")?.async("string")) ?? "";
+  const laidOut = Number((pivotXml.match(/<pivotFields count="(\d+)"/) ?? [])[1] ?? 0);
+  assert.equal(laidOut, heldFields, `the pivot lays out ${laidOut} fields but the cache holds ${heldFields}`);
+  assert.ok(
+    /<sharedItems[^>]*>[\s\S]*?<\/sharedItems>/.test(cacheDef),
+    "the shared-items pools must still be populated — an emptied pool orphans every <item x=..> the pivot enumerates",
+  );
+
+  // 4. The non-interactive build has no pivot at all, so nothing above can apply to it. It is
+  //    returned as the very bytes ExcelForge produced and must stay a valid, pivot-free workbook.
+  const plain = await buildWeeklyExportWorkbook(sampleDashboard(), GENERATED_AT, { interactive: false });
+  const plainZip = await JSZip.loadAsync(plain);
+  assert.equal(
+    Object.keys(plainZip.files).filter((n) => n.startsWith("xl/pivotCache/")).length,
+    0,
+    "the non-interactive build carries no pivot cache",
+  );
+}

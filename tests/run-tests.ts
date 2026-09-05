@@ -583,7 +583,7 @@ import { runMarketingCoverageExportWorkbookTests } from "./marketing-coverage-ex
 import { runMarketingCoverageReportAnalyticsTests } from "./marketing-coverage-report-analytics.test.ts";
 import { runMarketingCoverageDistributorRollupTests } from "./marketing-coverage-distributor-rollup.test.ts";
 import { runMarketingCoverageUrlStateTests } from "./marketing-coverage-url-state.test.ts";
-import { runWeeklyExportTests } from "./weekly-export-workbook.test.ts";
+import { runWeeklyExportTests, runWeeklyPivotCacheTests } from "./weekly-export-workbook.test.ts";
 import { runMarketingValidationServiceTests } from "./marketing-validation-service.test.ts";
 import { runMarketingCompleteExistingCustomerTests } from "./marketing-complete-existing-customer.test.ts";
 import { runMarketingCompleteExistingVenueTests } from "./marketing-complete-existing-venue.test.ts";
@@ -2343,6 +2343,7 @@ await runTest("marketing coverage URL filter state (shareable link round-trip)",
 await runTest("marketing ROI attribution consistency (no brick/geography fallback across all paths)", runMarketingRoiAttributionConsistencyTests);
 await runTest("marketing ROI actuals toggle parity (includeRestricted must not silently drop direct-order sales)", runMarketingRoiActualsToggleParityTests);
 await runTest("weekly sales BI export workbook (xlsx builds + clean)", runWeeklyExportTests);
+await runTest("weekly BI native pivot cache (refreshes on open, reads the Data table)", runWeeklyPivotCacheTests);
 await runTest("marketing request service", runMarketingRequestServiceTests);
 await runTest("report rpc guardrails", runReportRpcGuardrailTests);
 await runTest("marketing review routing", runMarketingReviewRoutingTests);
