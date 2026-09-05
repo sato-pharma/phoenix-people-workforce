@@ -117,6 +117,12 @@ export const HOUSE_IDENTITY_CSS = `
   .lh__title { text-align: center; padding: 3.3mm 0 2.2mm; }
   .lh__title h1 { margin: 0; color: var(--phx-doc-deep); font-size: 17pt; font-weight: 700; line-height: 1.2; }
   .lh__title p { margin: 1.2mm 0 0; color: var(--phx-doc-muted); font-size: 8pt; font-weight: 600; }
+
+  /* The Arabic name of an ENGLISH-facing paper, sitting under its English title. Brand Blue and a
+     size between the two, so it reads as the same title said again rather than as a subtitle. */
+  .lh__title .lh__ar {
+    margin-top: .8mm; color: var(--phx-doc-blue); font-size: 11pt; font-weight: 600; line-height: 1.3;
+  }
   .lh__hair { border-top: .5pt solid var(--phx-doc-hair); }
 
   /* Who keeps this copy. Ruled, never filled — it is the one line that stops the employee's copy
@@ -127,6 +133,8 @@ export const HOUSE_IDENTITY_CSS = `
     border-bottom: .5pt solid var(--phx-doc-hair);
     color: var(--phx-doc-deep); font-size: 8.5pt; font-weight: 700; text-align: center;
   }
+  /* The band holds two lines when the paper states its purpose in both scripts. */
+  .lh__purpose p { margin: 0; }
 
   /* ---------- the invisible half: costs no ink, only care ---------- */
   p, li { orphans: 3; widows: 3; }
@@ -185,6 +193,28 @@ export interface HouseLetterheadInput {
   legalNameAr: string;
   /** The same name in Latin script, under it. Omitted on forms that are Arabic-only. */
   legalNameEn?: string | null;
+
+  // ── THE ENGLISH-FACING MODE, added 2026-09-05 for the payslip ────────────────────────────────
+  //
+  // Not every company paper is an Arabic legal instrument. A payslip answers one question — what am
+  // I paid this month — and every field on it (Base Salary, Total Deductions, First Part) is already
+  // named in English by the payroll sheet the figures come from. Leading in Arabic would mean
+  // translating a vocabulary the owner reads in English in both the app and the workbook.
+  //
+  // So such a paper leads in English and carries its Arabic name under it. TWO LINES, NEVER ONE
+  // MIXED LINE: direction resolves per line, and a single run holding both scripts renders the
+  // English half backwards — the mirror of the bug a block-level `dir="auto"` causes.
+  //
+  // PURELY ADDITIVE. With none of these set this function emits byte-for-byte what it emitted
+  // before, which is what keeps the contract, both clearances and the worker data form out of this
+  // change. `tests/payslip-document.test.ts` pins that byte-identity rather than trusting it.
+
+  /** The English title. When present it becomes the h1 and `titleAr` moves under it. */
+  titleEn?: string | null;
+  /** The English line under the title — what the paper is, or the period it covers. */
+  subtitleEn?: string | null;
+  /** Who keeps this copy, in English. Shares the band with `purposeAr` when both are given. */
+  purposeEn?: string | null;
 }
 
 /**
@@ -197,9 +227,14 @@ export interface HouseLetterheadInput {
  * detail stays where the document's author put it.
  */
 export function houseLetterhead(input: HouseLetterheadInput): string {
-  const subtitle = input.subtitleAr?.trim()
-    ? `<p>${escapeHtml(input.subtitleAr.trim())}</p>`
-    : "";
+  // Each line carries its OWN direction, and the Arabic line is left exactly as it always was — no
+  // `dir` attribute — so an Arabic-only caller's bytes do not move. The English line states `ltr`
+  // because on an Arabic paragraph a trailing "." or a leading "£" would otherwise be painted at
+  // the wrong end of the run.
+  const subtitle = [
+    input.subtitleAr?.trim() ? `<p>${escapeHtml(input.subtitleAr.trim())}</p>` : "",
+    input.subtitleEn?.trim() ? `<p dir="ltr">${escapeHtml(input.subtitleEn.trim())}</p>` : "",
+  ].join("");
 
   // PINNED LEFT-TO-RIGHT, and this is not decoration. These documents lay out right-to-left, and
   // the full stop that ends "Sato Pharma L.L.C." is a NEUTRAL character: with nothing to hold it,
@@ -212,9 +247,28 @@ export function houseLetterhead(input: HouseLetterheadInput): string {
     ? `<span dir="ltr">${escapeHtml(input.legalNameEn.trim())}</span>`
     : "";
 
-  const purpose = input.purposeAr?.trim()
-    ? `<p class="lh__purpose">${escapeHtml(input.purposeAr.trim())}</p>`
-    : "";
+  const purposeAr = input.purposeAr?.trim() ?? "";
+  const purposeEn = input.purposeEn?.trim() ?? "";
+  // Three shapes, and the Arabic-only one is deliberately the ORIGINAL string rather than a special
+  // case of the general form. Every existing caller passes Arabic only, and reusing their exact
+  // markup is what makes "additive" a fact instead of an intention.
+  let purpose = "";
+  if (purposeAr && !purposeEn) {
+    purpose = `<p class="lh__purpose">${escapeHtml(purposeAr)}</p>`;
+  } else if (purposeEn && !purposeAr) {
+    purpose = `<p class="lh__purpose" dir="ltr">${escapeHtml(purposeEn)}</p>`;
+  } else if (purposeAr && purposeEn) {
+    purpose = `<div class="lh__purpose"><p>${escapeHtml(purposeAr)}</p>`
+      + `<p dir="ltr">${escapeHtml(purposeEn)}</p></div>`;
+  }
+
+  // The English title takes the h1 and the Arabic moves under it. Otherwise the Arabic keeps the h1
+  // and emits precisely what it always did.
+  const titleEn = input.titleEn?.trim() ?? "";
+  const title = titleEn
+    ? `<h1 dir="ltr">${escapeHtml(titleEn)}</h1>`
+      + `<p class="lh__ar" dir="rtl" lang="ar">${escapeHtml(input.titleAr)}</p>`
+    : `<h1>${escapeHtml(input.titleAr)}</h1>`;
 
   return `<header class="lh">
       <div class="lh__mark"><img src="${HOUSE_MARK_SRC}" alt="" width="401" height="158"></div>
@@ -222,7 +276,7 @@ export function houseLetterhead(input: HouseLetterheadInput): string {
     </header>
     <div class="lh__rule"></div>
     <div class="lh__title">
-      <h1>${escapeHtml(input.titleAr)}</h1>
+      ${title}
       ${subtitle}
     </div>
     <div class="lh__hair"></div>
