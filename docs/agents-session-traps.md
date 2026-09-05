@@ -1172,3 +1172,50 @@ same morning — more than this entire trim recovered. If §2.1 has to shrink ag
 displacement rule applied to *new* hooks at the moment they are written (cue here, account in
 `docs/`), not another editing pass over what is already there. Re-reading this section and finding
 it terse is the expected state, not an invitation to compress it further.
+
+## The holder of a husk IS findable, and can be unkillable — 2026-09-05
+
+Hook: AGENTS.md §2.1 (Worktrees), *"Closing the session does NOT release its worktree"*.
+
+`.claude/worktrees/nifty-benz-8de692` was a textbook husk — unregistered, no `.git` file, zero
+files, zero subdirectories — and every removal refused with exit 32, *the process cannot access
+the file because it is being used by another process*. `repo-doctor --fix` aborted on its own
+concurrency census (9 sessions), `rmdir` and `rmdir /s /q` both failed, and `--force` would have
+hit the identical lock: the guard was never what stood in the way.
+
+**The old hook said "no OS tool points at the holder — and `list_sessions` does NOT either."
+Both halves were wrong.**
+
+- Windows exposes no process's current directory through `Get-Process`, `Win32_Process`, Task
+  Manager or `openfiles`, and Sysinternals `handle.exe` is not installed here. But the cwd lives
+  in each process's PEB and can simply be read: `NtQueryInformationProcess` for the PEB base,
+  `+0x20` for `RTL_USER_PROCESS_PARAMETERS`, `+0x38` for the `CurrentDirectory` UNICODE_STRING.
+  129–257 processes come back readable in about a second. That is now
+  `scripts/find-worktree-holder.ps1`. It named the holder on the first run: **PID 23316
+  `claude.exe`** and **PID 8584 `powershell.exe`**, both cwd'd into the husk.
+- `list_sessions` named it too — session *"Add a share-link screen for the CV lifecycle sheet"*,
+  `cwd` set to that exact folder. The "every session reports the PRIMARY" claim is true only of
+  `_wt-*` sibling worktrees; a `.claude/worktrees/` session PINS its cwd to its worktree. Reading
+  the old hook literally is what delayed finding this.
+
+**Then it would not die.** PID 23316 had burned 5,039 s of CPU and was still taking 104–106% of
+one core, sampled repeatedly over six hours. The split was the tell: **4,549 s kernel against
+1,778 s user**, with 43 threads reading 1 Running, 42 Waiting and **zero Terminated**. `Stop-Process`
+and Task Manager's End task both failed — a thread spinning inside a kernel call is marked for
+termination but cannot be unwound until the call returns, and it never did. Its creation time was
+byte-identical across five separate checks, proving it had never been killed or respawned. The
+likely mechanism: its worktree was deregistered and emptied underneath a live session, leaving a
+file watcher spinning on a path that had vanished — which is also what held the directory open.
+
+**Only the restart cleared it.** After the 06:55:55 reboot the process was gone, the folder
+released immediately, and a plain non-recursive `rmdir` took it with exit 0 on the first attempt.
+
+**The cost lesson matters more than the fix.** `repo-doctor` had priced this husk at
+`0 empty path entries reclaimable` — deleting it reclaimed nothing, not one file, not one path
+entry. Five rounds went into it. The merged worktrees retired the same night gave up **68,167
+path entries**, taking the checkout from 83,243 to 15,076. Read the price before chasing a husk.
+
+Method note: the mid-sweep check that nearly went wrong was a "has this folder gone quiet" mtime
+sample which returned **blank on both reads** and scored itself *the folder is quiet* — two nulls
+comparing equal. The folder had in fact been removed by another session seconds earlier. Verify
+with a positive control (bytes read, rows found), never with a clean-looking blank.
