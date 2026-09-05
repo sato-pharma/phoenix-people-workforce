@@ -711,8 +711,8 @@ function UploadedSheetsTable({
                       const deleting = deleteLoadingId === batch.batchId;
                       return (
                         <tr className="text-phx-ink-soft" key={batch.batchId}>
-                          <td className="max-w-[260px] px-4 py-3">
-                            <p className="truncate font-semibold text-phx-ink">{batch.fileName}</p>
+                          <td className="min-w-[220px] max-w-[260px] px-4 py-3">
+                            <p className="break-words font-semibold text-phx-ink">{batch.fileName}</p>
                             <p className="mt-1 text-xs text-phx-ink-soft">{batch.uploadedBy}</p>
                           </td>
                           <td className="px-4 py-3">{batch.distributorName} / {batch.distributorCode}</td>
