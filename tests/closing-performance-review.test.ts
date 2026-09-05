@@ -10,6 +10,7 @@ import {
   type AreaSeatAssignment,
   type ClosingPerformanceReview,
 } from "../src/lib/sales/closing-performance-review.ts";
+import { coversAsOf, periodEndDate } from "../src/lib/sales/closing-performance-review.ts";
 import { buildClosingPerformanceReviewWorkbook } from "../src/lib/sales/closing-performance-review-export.ts";
 import type {
   MonthlyClosingAreaRow,
@@ -499,4 +500,50 @@ export async function runClosingPerformanceReviewTests() {
     "a company document wears the COMPANY's identity: the Performance Review workbook must never " +
       `print the app's name. Found: ${appNameOnTheFace.join(" | ")}`,
   );
+}
+
+/**
+ * The as-of manager resolution, and the boundary that makes it correct.
+ *
+ * These are pure: the loader they belong to reads the database, but the two things that were WRONG
+ * are arithmetic — which day a month resolves at, and which of a dated PAIR is in force on the day
+ * they share.
+ */
+export function runClosingManagerAsOfTests() {
+  // ── the day a month is resolved at ──────────────────────────────────────────
+  assert.equal(periodEndDate("2026-08"), "2026-08-31");
+  assert.equal(periodEndDate("2026-02"), "2026-02-28", "February is not 30 days, and not hard-coded");
+  assert.equal(periodEndDate("2024-02"), "2024-02-29", "a leap February is 29");
+  assert.equal(periodEndDate("2026-12"), "2026-12-31");
+  assert.equal(periodEndDate(null), null);
+  assert.equal(periodEndDate("2026-13"), null, "month 13 is not a month");
+  assert.equal(periodEndDate("nonsense"), null);
+
+  // ── the dated pair ──────────────────────────────────────────────────────────
+  //
+  // THIS IS THE DEFECT ITSELF. The five Delta (3) areas close on 2026-09-01 and reopen the same day.
+  // August must see the OLD row and September the NEW one, and exactly one of them on any date.
+  const oldRow = { from: "2026-07-13", to: "2026-09-01" };
+  const newRow = { from: "2026-09-01", to: null };
+
+  const inForce = (asOf: string) =>
+    [
+      coversAsOf(oldRow.from, oldRow.to, asOf) ? "old" : null,
+      coversAsOf(newRow.from, newRow.to, asOf) ? "new" : null,
+    ].filter(Boolean);
+
+  assert.deepEqual(inForce("2026-08-31"), ["old"], "August is the manager who held the area THEN");
+  assert.deepEqual(inForce("2026-09-01"), ["new"], "the move takes effect on its own date");
+  assert.deepEqual(inForce("2026-09-30"), ["new"], "and stays in effect after it");
+  assert.deepEqual(inForce("2026-07-12"), [], "before either row, nothing is in force");
+
+  // Exactly one row on the shared day is the whole point: an inclusive end matches both, and which
+  // one wins would depend on iteration order rather than on a decision anybody made.
+  for (const day of ["2026-08-31", "2026-09-01", "2026-09-02"]) {
+    assert.equal(inForce(day).length, 1, `${day}: exactly one row must be in force, got ${inForce(day).join("+")}`);
+  }
+
+  // An open-ended row with no start is not a row.
+  assert.equal(coversAsOf(null, null, "2026-08-31"), false);
+  assert.equal(coversAsOf("", "2026-09-01", "2026-08-31"), false);
 }
