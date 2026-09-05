@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { resolveEmployeeIdentityId, type AccessContext } from "@/lib/auth/permissions";
@@ -20,8 +21,27 @@ export function assertCopilotAccess(access: AccessContext): void {
   }
 }
 
+/**
+ * Who the Payroll Copilot records as having acted.
+ *
+ * This is the FOURTH copy of one expression in this repository — outstation's `approvedBy`,
+ * automated payroll's `actorId`, the resignation upload route, and here. All four have the same
+ * shape and the same two traps, so they get the same treatment:
+ *
+ *   1. `resolveEmployeeIdentityId` returns the LOWERCASE comparison key. Storing it verbatim is
+ *      what splits one person into two in any per-actor report, and it is invisible until
+ *      somebody writes a plain `.eq` against the column.
+ *   2. The fallbacks are NOT hr ids. `system` means no session did this, and a login id names
+ *      no employee. Canonicalising the whole expression — the obvious one-line repair — stores
+ *      SYSTEM and DEV.PREVIEW, and every screen that reads the column then names a shouty
+ *      non-person as the actor.
+ *
+ * So only the HR-id branch is canonicalised, and the chain is otherwise untouched. Six routes
+ * flow through here into payroll_copilot_runs, payroll_copilot_adjustments and
+ * payroll_copilot_vacation_settlements.
+ */
 export function resolveCopilotActor(access: AccessContext): string {
-  return resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+  return hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
 }
 
 export function copilotErrorResponse(error: unknown): NextResponse {
