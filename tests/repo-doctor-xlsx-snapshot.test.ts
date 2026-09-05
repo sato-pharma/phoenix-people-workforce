@@ -275,4 +275,75 @@ export async function runRepoDoctorXlsxSnapshotTests() {
   } finally {
     for (const d of [wrongRepo, liveRepo, liveRoot]) rmSync(d, { recursive: true, force: true });
   }
+
+  // --- 8. The manifest describes the FOLDER, not just the run that last wrote it ----------------
+
+  // A same-day re-run reuses that day's directory. If the manifest is built from what THIS run
+  // copied, every file an earlier run put there vanishes from the record while staying on disk.
+  // Measured on the live backup 2026-09-05: 109 files present, 4 listed, under a heading calling
+  // the folder the full base. Nothing was lost — coverage reads real directory contents — but the
+  // audit record said the backup was almost empty, which is the kind of reading that gets a
+  // healthy backup abandoned.
+  const mRepo = mkdtempSync(join(tmpdir(), "phx-man-src-"));
+  const mRoot = mkdtempSync(join(tmpdir(), "phx-man-dst-"));
+  try {
+    execFileSync("git", ["-C", mRepo, "init", "--quiet"], { stdio: ["ignore", "pipe", "pipe"] });
+    mkdirSync(join(mRepo, "xlsx"));
+    writeFileSync(join(mRepo, "xlsx", "first-run-a.xlsx"), "a".repeat(64));
+    writeFileSync(join(mRepo, "xlsx", "first-run-b.xlsx"), "b".repeat(64));
+
+    const day = Date.UTC(2026, 8, 5);
+    const one = takeXlsxSnapshot({ repoRoot: mRepo, snapshotRoot: mRoot, now: day });
+    const oneDir = one.dir;
+    assert.ok(oneDir, "the first run must name the directory it wrote");
+    assert.equal(one.copied, 2);
+
+    // Later the same day, one more file appears and the job runs again.
+    writeFileSync(join(mRepo, "xlsx", "second-run-c.xlsx"), "c".repeat(64));
+    const two = takeXlsxSnapshot({ repoRoot: mRepo, snapshotRoot: mRoot, now: day });
+    assert.equal(two.dir, oneDir, "a same-day re-run must reuse that day's directory");
+    assert.equal(two.copied, 1, "only the new file is copied");
+
+    const onDisk = readdirSync(oneDir).filter((n) => n !== "MANIFEST.txt").sort();
+    assert.deepEqual(onDisk, ["first-run-a.xlsx", "first-run-b.xlsx", "second-run-c.xlsx"]);
+
+    const manifest = readFileSync(join(oneDir, "MANIFEST.txt"), "utf8");
+    for (const name of onDisk) {
+      assert.ok(
+        manifest.includes(name),
+        `the manifest must list ${name}: a folder holding a file its own manifest omits is a backup ` +
+          "nobody can audit, and the omission is invisible until someone needs to restore",
+      );
+    }
+    assert.match(manifest, /Holds\s+: 3 file\(s\) in this folder; this run added 1/);
+
+    // And a QUIET run must reconcile a stale manifest. This is the case that actually bit: the
+    // live backup's manifest was wrong, and the repair run copied nothing, took the early return
+    // before any manifest was written, and left the record exactly as wrong as it found it. No
+    // other path would ever have fixed it - a wrong manifest was only rewritten when a new file
+    // happened to appear.
+    writeFileSync(join(oneDir, "MANIFEST.txt"), "stale - written by some earlier run\n");
+    const quiet = takeXlsxSnapshot({ repoRoot: mRepo, snapshotRoot: mRoot, now: day });
+    assert.equal(quiet.dir, null, "a run with nothing to copy still creates no directory");
+    assert.equal(quiet.manifestHolds, 3, "the quiet run must reconcile the manifest it found");
+
+    const healed = readFileSync(join(oneDir, "MANIFEST.txt"), "utf8");
+    for (const name of onDisk) {
+      assert.ok(healed.includes(name), `the reconciled manifest must list ${name}`);
+    }
+    assert.match(healed, /Holds\s+: 3 file\(s\) in this folder; this run added 0/);
+
+    // Reconciling must never CREATE a folder. A day with no snapshot is not a day to invent one.
+    const otherDay = takeXlsxSnapshot({ repoRoot: mRepo, snapshotRoot: mRoot, now: Date.UTC(2026, 8, 9) });
+    assert.equal(otherDay.dir, null);
+    assert.equal(otherDay.manifestHolds, 0, "no folder for that day, so nothing to reconcile");
+    assert.equal(
+      readdirSync(mRoot).filter((n) => n.includes("2026-09-09")).length,
+      0,
+      "a quiet run on a fresh day must not create an empty snapshot folder",
+    );
+  } finally {
+    rmSync(mRepo, { recursive: true, force: true });
+    rmSync(mRoot, { recursive: true, force: true });
+  }
 }
