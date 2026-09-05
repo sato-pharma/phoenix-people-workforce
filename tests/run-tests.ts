@@ -820,6 +820,7 @@ import { runDmSeatAreaScopeTests } from "./dm-seat-area-scope.test.ts";
 import { runWeeklyAreaScopeTests } from "./weekly-area-scope.test.ts";
 import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
 import { runSqlExcludeCodesFailClosedTests } from "./sql-exclude-codes-fail-closed.test.ts";
+import { runPediaMergedAreaTargetGridTests } from "./pedia-merged-area-target-grid.test.ts";
 import { runSosDashboardBlockedBatchTotalsTests } from "./sos-dashboard-blocked-batch-totals.test.ts";
 import { runSosDashboardGeographyIsLiveForEveryViewerTests } from "./sos-dashboard-geography-is-live-for-every-viewer.test.ts";
 import { runSosImportDashboardHeadOfficeLockTests } from "./sos-import-dashboard-head-office-lock.test.ts";
@@ -2778,6 +2779,14 @@ await runTest(
   runSosDashboardGeographyIsLiveForEveryViewerTests,
 );
 await runTest("SoS dashboard totals exclude blocked/rejected batches", runSosDashboardBlockedBatchTotalsTests);
+await runTest(
+  "Pedia's merged Fayoum/Beni Suef area is ONE row in the Targets grid (applyAchievementAreaMerges "
+    + "rewrites the code without aggregating, so the grid keyed two rows on GZ6|product — one shared "
+    + "edit box, rowByKey keeping only the last, and Save posting one areaCode that overwrote Fayoum's "
+    + "target and never wrote Beni Suef's; the fold is grid-only because the roll-ups re-derive "
+    + "coveredActualValue from hasTarget)",
+  runPediaMergedAreaTargetGridTests,
+);
 await runTest("analytics per-viewer scope (line/region/product, per role)", runAnalyticsViewerScopeTests);
 await runTest("rep achievement period resolution", runRepAchievementPeriodsTests);
 await runTest("monthly closing geography scope (DM/RM area bound reaches the loader)", runAnalyticsClosingGeographyScopeTests);

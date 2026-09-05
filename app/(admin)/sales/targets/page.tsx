@@ -15,6 +15,7 @@ import { canViewTargetsAdminPage } from "@/lib/sales/portal-targets";
 import {
   SALES_LINES,
   loadAllCanonicalAreaNames,
+  foldMergedAchievementCells,
   loadEmployeeNameMap,
   loadMonthlyAchievement,
   loadProductNameMap,
@@ -100,7 +101,17 @@ export default async function TargetsPage({
     const mergedAchievement = applyAchievementAreaMerges(achievement);
     const lineRows = mergedAchievement.filter((row) => row.lineCode === selectedLine);
 
-    rows = lineRows
+    // The grid is a KEYED surface: `${areaCode}|${productCode}` is its React key, its edit-state key
+    // and the areaCode it posts on Save. `applyAchievementAreaMerges` only rewrites the code, so on
+    // Pedia the GZ6/UE9 fold left two rows sharing one key — one visible edit box driving both, and
+    // a Save that wrote Fayoum's target while silently leaving Beni Suef's untouched.
+    //
+    // Folded for the GRID ONLY. The roll-ups below deliberately keep `lineRows`: they re-derive
+    // `coveredActualValue` from `hasTarget`, which this fold OR-s, so folding first would count an
+    // untargeted area's actuals as covered and inflate the very percentage the covered rule protects.
+    const gridRows = foldMergedAchievementCells(lineRows);
+
+    rows = gridRows
       .map((row) => ({
         areaCode: row.areaCode ?? "",
         areaName: getMergedAreaName(selectedLine, row.areaCode ?? "") ?? areaName.get(row.areaCode ?? "") ?? "",
