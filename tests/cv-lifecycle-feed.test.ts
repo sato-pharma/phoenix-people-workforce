@@ -103,6 +103,40 @@ function row(overrides: Partial<CvLifecycleRow> = {}): CvLifecycleRow {
   };
 }
 
+/**
+ * Apps Script's `Utilities.parseCsv`, to the extent this suite depends on it: RFC 4180 quoting, so a
+ * professional summary carrying a comma stays one cell. It exists because the parser under test is
+ * Apps Script source and cannot be imported — it is run here through `new Function` with this as
+ * its only injected global.
+ */
+function parseCsvLikeAppsScript(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]!;
+    if (quoted) {
+      if (char !== '"') cell += char;
+      else if (text[i + 1] === '"') { cell += '"'; i++; }
+      else quoted = false;
+      continue;
+    }
+    if (char === '"') quoted = true;
+    else if (char === ",") { row.push(cell); cell = ""; }
+    else if (char === "\n" || char === "\r") {
+      if (char === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else cell += char;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter((entry) => entry.length > 1 || entry[0] !== "");
+}
+
 function detailCellFor(columnName: string, subject: CvLifecycleRow, cvCount = 1): unknown {
   const index = CV_DETAIL_COLUMNS.indexOf(columnName as (typeof CV_DETAIL_COLUMNS)[number]);
   assert.notEqual(index, -1, `no detail column named ${columnName} \u2014 the test and the feed have drifted`);
@@ -396,6 +430,108 @@ export function runCvLifecycleFeedTests() {
   assert.ok(
     script.includes("writeDetail_(ss, sections.DETAIL"),
     "the refresh must actually write the detail tab — registering the name alone builds nothing",
+  );
+
+  // ── The sheet must be able to READ what the feed writes ───────────────────────────
+  //
+  // This is the one seam the two halves of this feature meet at, and it broke in the most expensive
+  // way available: silently, in the direction of doing nothing at all.
+  //
+  // `parseSections_` used to treat any row whose first cell began with "#" as a section marker. The
+  // first column of both big tables is literally named "#", so every refresh read those two header
+  // rows as markers, filed their data under a section named "", and handed back LIFECYCLE = [] and
+  // DETAIL = []. `refreshCvLifecycle` then hit its own guard — fewer than two lifecycle rows means
+  // never overwrite a full sheet — and returned before writing a single tab. The guard was right.
+  // Everything upstream of it was green: the view, the route, the feed, this suite. The sheet just
+  // sat there, and "nothing changed" was the literal truth.
+  //
+  // So this runs the sheet's OWN parser, extracted from the .gs verbatim, over a bundle built by the
+  // real feed builder. Asserting on a hand-written fixture would have missed it; asserting the two
+  // halves agree is the only shape of test that catches it.
+
+  const parserSource = script.slice(script.indexOf("function parseSections_"));
+  const parseSections = new Function(
+    "Utilities",
+    parserSource.slice(0, parserSource.indexOf("\n}\n") + 3) + "\nreturn parseSections_;",
+  )({ parseCsv: parseCsvLikeAppsScript }) as (text: string) => Record<string, string[][]>;
+
+  const parsed = parseSections(csv);
+  for (const [name, minimum] of [
+    ["SUMMARY", 2],
+    ["DAILY", 2],
+    ["DETAIL", 2],
+    ["LIFECYCLE", 2],
+  ] as const) {
+    assert.ok(
+      (parsed[name]?.length ?? 0) >= minimum,
+      `the sheet's parser found ${parsed[name]?.length ?? 0} rows in #${name} — a header row whose first cell is "#" is being eaten as a section marker, and the refresh will write nothing at all`,
+    );
+  }
+  assert.equal(
+    parsed[""],
+    undefined,
+    'the parser invented a section with an empty name — that is a data header being read as a marker',
+  );
+  assert.deepEqual(
+    parsed.LIFECYCLE?.[0],
+    [...CV_LIFECYCLE_COLUMNS],
+    "the lifecycle header must survive the parser intact rather than being consumed as a marker",
+  );
+  assert.deepEqual(
+    parsed.DETAIL?.[0],
+    [...CV_DETAIL_COLUMNS],
+    "the detail header must survive the parser intact rather than being consumed as a marker",
+  );
+
+  // ── A builder may not address a cell it has not reserved ───────────────────────────────
+  //
+  // A new Google Sheets tab is 1000 rows by 26 columns and `getRange` does not extend the grid — it
+  // throws. Both dimensions were out of bounds: the body ranges need row 1004, and the CV Details
+  // header needs column 58. Nothing grew either one.
+  //
+  // What made it expensive to find is how it fails. Summary is six columns with small ranges, so it
+  // rebuilds and looks new; Daily then throws on row 1004 and Detail and Lifecycle never run. One
+  // tab changes and three do not, which reads as "nothing happened" — the same sentence a script
+  // that never ran produces, and it sends you looking at triggers and pastes instead of at rows.
+
+  const gridSource = script.slice(script.indexOf("function ensureGrid_"));
+  const ensureGrid = new Function(
+    gridSource.slice(0, gridSource.indexOf("\n}\n") + 3) + "\nreturn ensureGrid_;",
+  )() as (sheet: unknown, rows: number, cols: number) => void;
+
+  function fakeSheet(rows: number, cols: number) {
+    return {
+      rows,
+      cols,
+      getMaxRows() { return this.rows; },
+      getMaxColumns() { return this.cols; },
+      insertRowsAfter(_after: number, count: number) { this.rows += count; },
+      insertColumnsAfter(_after: number, count: number) { this.cols += count; },
+    };
+  }
+
+  const fresh = fakeSheet(1000, 26);
+  ensureGrid(fresh, 1005, 58);
+  assert.ok(fresh.rows >= 1005, `a fresh tab was left at ${fresh.rows} rows and the layout addresses 1004`);
+  assert.ok(fresh.cols >= 58, `a fresh tab was left at ${fresh.cols} columns and CV Details has 58`);
+
+  const roomy = fakeSheet(2000, 80);
+  ensureGrid(roomy, 1005, 58);
+  assert.equal(roomy.rows, 2000, "a tab that is already big enough must not grow every refresh");
+  assert.equal(roomy.cols, 80, "a tab that is already big enough must not grow every refresh");
+
+  // resetTab_ owns the guarantee, so no builder has to remember it. A builder that calls
+  // resetTab_(sheet) with no size is the regression this catches: it compiles, it runs, and it
+  // throws only on a tab nobody has resized by hand.
+  assert.ok(
+    /function resetTab_\(sheet, rows, cols\) \{\s*ensureGrid_\(sheet, rows, cols\);/.test(script),
+    "resetTab_ must take a size and reserve it before anything else touches the tab",
+  );
+  const bareReset = script.match(/resetTab_\(sheet\)/g);
+  assert.equal(
+    bareReset,
+    null,
+    `${bareReset?.length ?? 0} builder(s) still call resetTab_ without declaring the grid they need`,
   );
 
   // ── The unauthenticated route must never grow a file surface ─────────────────────────────────
