@@ -11,6 +11,7 @@ import {
 } from "@/components/admin/admin-design-system";
 import { ClosingDetailsPanel } from "@/components/sales/closing-details-panel";
 import { ClosingMatrixTable } from "@/components/sales/closing-matrix-table";
+import { ClosingSummaryFits } from "@/components/sales/closing-summary-fits";
 import {
   MonthlyClosingFilters,
   emptyMonthlyClosingFilter,
@@ -655,6 +656,12 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                 <div className="border-b border-slate-100 px-4 py-2.5 text-xs text-slate-500 md:px-5">
                   Store sales are shared across their city&apos;s areas — this matrix and the exported workbook show the same numbers.
                 </div>
+                {/* BESIDE the matrix, never instead of it. The full product matrix cannot fit a
+                    screen — CNS measures ~9,600px against a 1,144px container, which is 29px per
+                    product — so it keeps its scroll and its role as the auditor's detail view, and
+                    this fitting family-grain summary sits above it. Both are folded from the SAME
+                    matrix object, so they cannot disagree. */}
+                <ClosingSummaryFits matrix={filteredMatrix} />
                 <ClosingMatrixTable matrix={filteredMatrix} office={filteredOffice} />
               </>
             ) : (

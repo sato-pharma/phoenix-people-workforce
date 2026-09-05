@@ -1,0 +1,181 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+import { buildClosingFamilySummary } from "../src/lib/sales/closing-family-summary.ts";
+import type {
+  MonthlyClosingCell,
+  MonthlyClosingMatrix,
+} from "../src/lib/sales/monthly-distributor-import.ts";
+
+// THE CLOSING SUMMARY THAT FITS — and must never disagree with the matrix beside it.
+//
+// The full closing matrix cannot fit a screen and never will: areas × PRODUCTS × six metrics, with
+// CNS carrying 14 products plus its Office column. Measured 2026-09-05, the width model validated
+// against the live page (predicted 1,558px for Anti Infective, measured 1,559):
+//
+//     Anti Infective   2 products    1,558px  vs 1,144px container   1.4x over
+//     Pedia            4 products   ~2,490px                          2.2x over
+//     CNS             14 products   ~9,600px                          8.4x over
+//
+// Forcing CNS to fit leaves 29px per product, so the fits-the-screen rule's own remedy — merge
+// columns, never shrink type — does not reach it. The matrix therefore keeps its scroll as the
+// auditor's detail view, and this family-grain summary ships BESIDE it, per the owner's standing
+// instruction that anything new sits beside the old closing rather than changing it.
+//
+// THE DANGER THIS TEST GUARDS. A second view of the same money is exactly how "one area, one
+// number" gets broken. The summary is FOLDED from the same matrix object and carries the matrix's
+// own row totals through untouched, so the two cannot drift — not even by a rounding step.
+
+const COMPONENT_RAW = readFileSync(
+  fileURLToPath(new URL("../src/components/sales/closing-summary-fits.tsx", import.meta.url)),
+  "utf8",
+);
+
+/**
+ * The component with COMMENTS STRIPPED.
+ *
+ * The file explains at length what it deliberately does NOT use — "no overflow-x-auto", "no
+ * min-width floor" — so a check against the raw text matches its own prose and fails on a file that
+ * is correct. Caught exactly that way on the first run.
+ */
+const COMPONENT = COMPONENT_RAW
+  .split(/\r?\n/)
+  .filter((line) => {
+    const trimmed = line.trimStart();
+    return !trimmed.startsWith("//") && !trimmed.startsWith("*") && !trimmed.startsWith("/*");
+  })
+  .join("\n");
+
+const cell = (
+  salesValue: number,
+  targetValue: number | null = null,
+  achievement: number | null = null,
+): MonthlyClosingCell => ({ achievement, salesUnits: 0, salesValue, targetUnits: null, targetValue });
+
+/** Two families over three products, so folding is a real fold and not a rename. */
+function matrixFixture(): MonthlyClosingMatrix {
+  const columns = [
+    { family: "Saginko", productCode: "SA001", productName: "Saginko 40mg" },
+    { family: "Saginko", productCode: "SA002", productName: "Saginko 80mg" },
+    { family: "Royafloxacin", productCode: "RO001", productName: "Royafloxacin 500" },
+  ];
+  const areaCells = [cell(100, 50), cell(200, 150), cell(700, null)];
+  return {
+    availableLines: ["CNS"],
+    availablePeriods: ["2026-08"],
+    columns,
+    grandTotal: { cells: areaCells, kind: "grandTotal", rowTotal: cell(1000, 200, 500) },
+    line: "CNS",
+    period: "2026-08",
+    regions: [
+      {
+        areas: [
+          { areaCode: "GZ6", areaName: "Fayoum", cells: areaCells, rowTotal: cell(1000, 200, 500) },
+        ],
+        regionCode: "UE",
+        regionName: "Upper Egypt",
+        subtotal: {
+          cells: areaCells,
+          kind: "regionSubtotal",
+          regionCode: "UE",
+          regionName: "Upper Egypt",
+          rowTotal: cell(1000, 200, 500),
+        },
+      },
+    ],
+  } as MonthlyClosingMatrix;
+}
+
+export async function runClosingSummaryFitsTests(): Promise<void> {
+  const summary = buildClosingFamilySummary(matrixFixture());
+
+  // ── 1. families come from the matrix's own columns, in order, deduped ──────────────────────
+  assert.deepEqual(
+    summary.families,
+    ["Saginko", "Royafloxacin"],
+    "families read left-to-right exactly as the matrix presents them, each once",
+  );
+
+  const [area] = summary.regions[0]!.areas;
+  const saginko = area!.byFamily.find((f) => f.family === "Saginko")!;
+  const royaflox = area!.byFamily.find((f) => f.family === "Royafloxacin")!;
+
+  // ── 2. IT FOOTS TO THE MATRIX — the whole point ────────────────────────────────────────────
+  assert.equal(saginko.value + royaflox.value, 1000, "the families sum to the area's own row total");
+  assert.equal(
+    area!.total.salesValue,
+    1000,
+    "and the total shown is the matrix's rowTotal, carried through — not a re-addition that could " +
+      "round differently from the matrix beside it",
+  );
+  assert.equal(saginko.value, 300, "Saginko folds its two products (100 + 200)");
+  assert.equal(royaflox.value, 700, "a single-product family passes through unchanged");
+
+  // ── 3. achievement is recomputed on the SUMMED slice, never averaged ───────────────────────
+  // Saginko: 300 value over 200 target = 150%. Averaging the two products' own percentages
+  // (100/50 = 200% and 200/150 = 133%) would give ~167% — a number belonging to no money.
+  assert.equal(saginko.targetValue, 200, "family target is the sum of the targets that exist");
+  assert.ok(
+    Math.abs((saginko.achievement ?? 0) - 150) < 0.001,
+    `Saginko must read 150% (300/200), recomputed on the slice. Got ${saginko.achievement}`,
+  );
+
+  // ── 4. no target reads as a DASH, never 0% and never Infinity ──────────────────────────────
+  assert.equal(
+    royaflox.targetValue,
+    null,
+    "a family whose products carry no target has no target — summing nulls as zeros would invent one",
+  );
+  assert.equal(
+    royaflox.achievement,
+    null,
+    "and its achievement must be null so the screen prints a dash. 0% would read as total failure " +
+      "on an area that simply has no target, and value/0 would render Infinity",
+  );
+
+  // ── 5. a column with no family label is kept, never dropped ────────────────────────────────
+  // Dropping it would understate the area against the matrix beside it — the exact disagreement
+  // this view exists not to create.
+  const unlabelled = matrixFixture();
+  unlabelled.columns = [{ family: "", productCode: "XX001", productName: "Unfamilied" }];
+  unlabelled.regions[0]!.areas[0]!.cells = [cell(42)];
+  const kept = buildClosingFamilySummary(unlabelled);
+  assert.deepEqual(kept.families, ["XX001"], "an unlabelled column falls back to its product code");
+  assert.equal(kept.regions[0]!.areas[0]!.byFamily[0]!.value, 42, "and keeps its money");
+
+  // ── 6. the view FITS BY CONSTRUCTION, and must keep doing so ───────────────────────────────
+  assert.match(
+    COMPONENT,
+    /className="w-full table-fixed/,
+    "the summary table must be w-full table-fixed — the shape the golden rule prescribes",
+  );
+  assert.match(COMPONENT, /<colgroup>/, "with a colgroup, so the columns are declared not discovered");
+  assert.match(
+    COMPONENT,
+    /width: `\$\{(areaPct|familyPct|totalPct)\}%`/,
+    "column widths must be PERCENTAGES: a percentage table cannot exceed its container whatever " +
+      "the family count, which is what makes this fit by construction rather than by tuning",
+  );
+  assert.doesNotMatch(
+    COMPONENT,
+    /overflow-x-auto|overflow-auto|min-w-\[/,
+    "no horizontal scroll container and no min-width floor — per the golden rule, that IS the bug " +
+      "rather than the fix, and it is what the full matrix already does",
+  );
+  assert.doesNotMatch(
+    COMPONENT,
+    /truncate|text-ellipsis/,
+    "nothing is truncated — the ellipsis ban stands; long names WRAP instead (break-words)",
+  );
+  assert.match(COMPONENT, /break-words/, "long area and family names must wrap rather than overflow");
+  assert.doesNotMatch(
+    COMPONENT,
+    /\brounded-/,
+    "square-edge golden rule: no rounded corners on a new surface",
+  );
+
+  // ── 7. mobile gets cards, never this table ─────────────────────────────────────────────────
+  assert.match(COMPONENT, /hidden md:block/, "the table is desktop-only");
+  assert.match(COMPONENT, /md:hidden/, "and a card list stands in on mobile");
+}

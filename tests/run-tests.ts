@@ -519,6 +519,7 @@ import { runClosingOfficeDifferentiationTests } from "./closing-office-different
 import { runOfficeColumnIsCnsOnlyTests } from "./office-column-is-cns-only.test.ts";
 import { runSosEvenSplitEzTests } from "./sos-even-split-ez.test.ts";
 import { runClosingMatrixFoldTests } from "./closing-matrix-fold.test.ts";
+import { runClosingSummaryFitsTests } from "./closing-summary-fits.test.ts";
 import { runMasterWorkbookKeysetTests } from "./master-workbook-keyset.test.ts";
 import { runSalesVsTargetCacheTests } from "./sales-vs-target-cache.test.ts";
 import { runBusinessReviewAchievementArithmeticTests } from "./business-review-achievement-arithmetic.test.ts";
@@ -2236,6 +2237,7 @@ await runTest(
   runSosEvenSplitEzTests,
 );
 await runTest("closing matrix fold (matrix derived from distributor_product, matrix RPC dropped)", runClosingMatrixFoldTests);
+await runTest("closing summary fits the screen and foots to the matrix beside it", runClosingSummaryFitsTests);
 await runTest("master workbook keyset (single keyset pass, raw_row folded, no OFFSET rescan)", runMasterWorkbookKeysetTests);
 await runTest(
   "sales vs target cache (freshness token in the key; rows gzipped under Next's 2MB data-cache limit)",
