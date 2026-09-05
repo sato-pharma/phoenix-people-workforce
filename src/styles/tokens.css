@@ -153,11 +153,12 @@
      own <html> and never loads globals.css at all), and any future surface
      outside both shells. Closing that gap at the source is the point.
 
-     TWO STEPS IN THAT @theme BLOCK DO NOT COME FROM HERE and are untouched:
-     --radius-3xl (14px) and --radius-4xl (18px) are hard-coded in globals.css.
-     rounded-4xl has no uses; rounded-3xl has 32, every one inside a shell — so
-     both are inert today, but they are the same kind of default, and a first use
-     on an unswept surface would render rounded.
+     TWO STEPS IN THAT @theme BLOCK DO NOT COME FROM HERE: --radius-3xl and
+     --radius-4xl were written into globals.css as literals, so the answer naming
+     the six --phx-radius-* names could not reach them and they stayed at 14px and
+     18px while everything around them went square. Zeroed there on the same day,
+     so the scale is now square at BOTH layers — but they are still edited in
+     globals.css, not here.
 
      --phx-radius-pill keeps its name deliberately. It has no consumer, and
      zeroing rather than deleting it means a future var(--phx-radius-pill) renders
