@@ -11,10 +11,27 @@
  *     a VALUE. The Data sheet carries units per area x product, which is one product code, so the
  *     Rep Card and the Units Matrix pivot can show them honestly; nothing else may sum them. See
  *     AGENTS.md §4 and the Rep Card's own footnote, which the engine prints on the sheet.
- *  2. **Achievement is targeted sales over target value** — sales from products that HAVE a target,
- *     never all sales over target. Anything else scores a rep on money nobody asked them for. This is
- *     the arithmetic the Closing Matrix uses and the arithmetic the Rep Card recomputes live, so the
- *     static sheets must use it too or the workbook contradicts itself when a reader picks a rep.
+ *  2. **Achievement is ALL sales over target value** — the whole area's money over the target it was
+ *     given, which is what `closingAchievement` in monthly-closing-matrix-cells.ts computes and
+ *     therefore what the Closing Matrix, the closing screen and the auditor's workbook all print.
+ *     The static sheets, the pivots' `Ach` field and the Rep Card must use it too, or the premium
+ *     workbook disagrees with the Monthly Closing it is a second view of.
+ *
+ *     THIS RULE WAS THE OTHER WAY ROUND UNTIL 2026-09-05, and the reason it changed is worth the
+ *     paragraph. The engine divided only the sales that sat on a product WITH a target, on the
+ *     stated grounds that this "is the arithmetic the Closing Matrix uses". It is not, and never
+ *     was: the matrix divides `salesValue / targetValue` at every level, untargeted money included.
+ *     So the premise was false and the two files disagreed wherever an area sold something nobody
+ *     had targeted — August's Anti Infective read 29.95% here beside 31.78% on the closing, 1.83
+ *     points apart on 27,529.80 EGP of real sales spread over 24 area x product pairs. Put to the
+ *     owner on 2026-09-05 with both numbers, he ruled: "THE OLD CLOSING IS THE CORRECT ONE."
+ *
+ *     A target of zero or none still yields NO percentage rather than 0% — only the numerator moved.
+ *     An untargeted area therefore stays unranked and unscored, exactly as before.
+ *
+ *     Note this is deliberately NOT the rule Business Review and the Targets pages follow. Those
+ *     grade a person against their own target and were moved to covered-actual on purpose; the
+ *     closing states a line's total money against the line's total target. Do not "align" them.
  */
 
 import { closingAreaOf } from "./closing-row-area";
@@ -129,9 +146,17 @@ function growthArrow(growth: number | null): string {
   return growth >= 0 ? UP : DOWN;
 }
 
-function achievementOf(targetedSales: number, targetValue: number | null): number | null {
+/**
+ * The one achievement in this workbook: every pound the area sold, over the target it was given.
+ *
+ * Deliberately the same shape as `closingAchievement` in monthly-closing-matrix-cells.ts, which is
+ * what the Closing Matrix and the auditor's workbook divide — same numerator, same null when there
+ * is no target to divide by. Keep the two together: the premium workbook is a second view of that
+ * closing, not a second opinion on it.
+ */
+function achievementOf(salesValue: number, targetValue: number | null): number | null {
   if (targetValue == null || targetValue === 0) return null;
-  return targetedSales / targetValue;
+  return salesValue / targetValue;
 }
 
 function growthOf(current: number, prior: number | null): number | null {
@@ -220,7 +245,7 @@ function priorIndex(priorMatrix: MonthlyClosingMatrix | null | undefined) {
 }
 
 /**
- * One row per area, carrying the person on the seat and the targeted arithmetic.
+ * One row per area, carrying the person on the seat and the area's own arithmetic.
  *
  * The numbers come from the matrix (the closing's own grid) and the names from the review, joined on
  * the area code. Both are already scoped and filtered by the caller, so this never widens what a
@@ -249,7 +274,10 @@ function buildAreas(input: ClosingEngineDataInput): AreaAggregate[] {
       }
 
       rows.push({
-        achievement: achievementOf(targetedSales, targetValue),
+        // All of the area's money over its target — the Closing Matrix's own division. `targetedSales`
+        // is still carried and still written to the Data sheet, but as an "of which was targeted"
+        // fact about the month rather than as the numerator of anything.
+        achievement: achievementOf(salesValue, targetValue),
         areaCode: area.areaCode,
         areaName: area.areaName,
         cells: area.cells,
@@ -318,8 +346,10 @@ function buildSalesData(input: ClosingEngineDataInput, areas: AreaAggregate[]): 
         column.productName,
         cell.salesUnits,
         cell.targetUnits,
-        // "Targeted" units and sales are the ones that HAVE a target, so achievement is like for
-        // like. Null, never zero: a product with no target contributes to neither side of it.
+        // "Targeted" units and sales are the ones that HAVE a target. They are no longer the
+        // numerator of any achievement — the pivots' `Ach` field divides the plain Sales Value
+        // column, as the closing does — but they stay as an honest "of which was targeted" fact a
+        // reader can pivot on. Null, never zero: an untargeted product is absent from them, not nil.
         cell.targetUnits == null ? null : cell.salesUnits,
         cell.salesValue,
         cell.targetValue,
@@ -608,8 +638,12 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
   const headlineSales = matrix.grandTotal.rowTotal.salesValue;
   const targeted = areas.filter((area) => area.targetValue != null && area.targetValue > 0);
   const targetTotal = targeted.reduce((sum, area) => sum + (area.targetValue ?? 0), 0);
-  const targetedSalesTotal = areas.reduce((sum, area) => sum + area.targetedSales, 0);
-  const headlineAchievement = achievementOf(targetedSalesTotal, targetTotal || null);
+  // B5 divided by D5 — literally the two numbers printed either side of it, so a reader can do the
+  // division by hand and land on F5. That is also the Closing Matrix's own grand-total arithmetic
+  // (`salesValue / targetValue`), which is what makes this headline and the closing screen agree.
+  // It did NOT divide before: F5 was targeted sales over target while B5 showed every pound, so the
+  // three cells on the masthead never tied and the smaller F5 had no visible explanation.
+  const headlineAchievement = achievementOf(headlineSales, targetTotal || null);
   const atTarget = targeted.filter((area) => (area.achievement ?? 0) >= 1).length;
 
   const priorTotal = input.priorMatrix ? input.priorMatrix.grandTotal.rowTotal.salesValue : null;
@@ -636,8 +670,9 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
       (sum, area) => (area.targetValue == null ? sum : (sum ?? 0) + area.targetValue),
       null,
     );
-    const regionTargeted = regionAreas.reduce((sum, area) => sum + area.targetedSales, 0);
-    const achievement = achievementOf(regionTargeted, target);
+    // The region's whole sales column over its whole target column, so each Overview row divides
+    // the way the two cells beside it read — same rule as the headline above and as every area row.
+    const achievement = achievementOf(sales, target);
     const regionPrior = regionAreas.reduce<number | null>(
       (sum, area) => (area.priorValue == null ? sum : (sum ?? 0) + area.priorValue),
       null,
@@ -688,24 +723,15 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
   const first = topTen[0];
 
   // ── Family Performance ──────────────────────────────────────────────────────────────────────
-  // Achievement is sales that HAD a target over that target -- the same arithmetic `buildAreas`
-  // does for every other page in this workbook. `review.families` divides ALL of a family's sales
-  // by its target instead, and the two disagree by exactly the sales made in areas nobody set a
-  // target for: on August's Anti Infective this page printed 15.3% beside an Overview reading 14%,
-  // with no way for a reader to tell which one the file meant. The screen keeps its own definition
-  // -- nothing there is being moved silently -- but a workbook has to agree with itself.
-  const targetedSalesByFamily = new Map<string, number>();
-  matrix.columns.forEach((column, index) => {
-    const family = column.family?.trim() || column.productName;
-    const targeted = areas.reduce((sum, area) => {
-      const cell = area.cells[index];
-      return sum + (cell && cell.targetValue != null ? cell.salesValue : 0);
-    }, 0);
-    targetedSalesByFamily.set(family, (targetedSalesByFamily.get(family) ?? 0) + targeted);
-  });
-
+  // `review.families` already divides all of a family's sales by its target — the closing screen's
+  // own arithmetic — so the row's own achievement is taken as it comes and nothing is recomputed
+  // here. Between 2026-09-03 and 2026-09-05 this block overrode it with targeted-only sales to
+  // match an Overview that was itself on the wrong rule; both are back on the closing's rule now,
+  // so the override has nothing left to correct and re-adding one would reopen the same gap from
+  // the other side. The page is the Performance Review's family table, and it must read as it does
+  // on screen.
   const familyRows: EngineValue[][] = review.families.map((family) => {
-    const achievement = achievementOf(targetedSalesByFamily.get(family.family) ?? 0, family.targetValue);
+    const achievement = family.achievement;
     return [
       family.family,
       family.productCount,
