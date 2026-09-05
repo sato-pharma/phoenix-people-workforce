@@ -1362,6 +1362,8 @@ import { runHrFormsRenewalTests } from "./hr-forms-renewal.test.ts";
 import { runMalformedUuidIdGuardsTests } from "./malformed-uuid-id-guards.test.ts";
 import { runHrFormsHousePapersTests } from "./hr-forms-house-papers.test.ts";
 
+import { runClosingWorkbookLinkOriginTests } from "./closing-workbook-link-origin.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4323,6 +4325,8 @@ await runTest(
   "Sato house HR papers (absence threshold is MORE THAN ten days; the second notice declares a deemed resignation rather than accepting one; checklist boxes and service-ending dates stay blank)",
   runHrFormsHousePapersTests,
 );
+await runTest("closing workbook Export PDF link origin (allow-list validated, never the 0.0.0.0 bind address)", runClosingWorkbookLinkOriginTests);
+
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

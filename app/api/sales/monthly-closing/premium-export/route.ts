@@ -3,6 +3,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { trustedOriginForRedirect } from "@/lib/security/origins";
 import {
   MARKETING_OVERSIGHT_LINE_ROLES,
   normalizeLineKey,
@@ -129,9 +130,18 @@ export async function POST(request: Request) {
     // reader is actually on, not a configured constant — a workbook taken from staging must not send
     // its reader to production, which is a difference nobody would notice until the numbers on the
     // PDF disagreed with the numbers in their hands.
-    const origin =
-      new URL(request.url).origin
-      || (process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/+$/, "");
+    //
+    // It canNOT be `new URL(request.url).origin`, which is what shipped: behind Railway's proxy
+    // that is the container's OWN bind address, so every Export PDF link in a downloaded workbook
+    // came out as `https://0.0.0.0:8080/…` and opened nothing. Both share feeds hit this exact bug
+    // first and each answered it with a hard-coded production URL — affordable there because each
+    // has exactly one consumer, and NOT affordable here, because the staging workbook has to keep
+    // pointing at staging. `trustedOriginForRedirect` answers both halves at once: it reads
+    // `x-forwarded-host`, so it resolves the real public domain, but honours it only when it is
+    // already an allowed Phoenix origin — so a caller's header cannot aim the owner's links at a
+    // host we do not serve. Both environments carry their own URL in `PHOENIX_ALLOWED_ORIGINS`, and
+    // anything unrecognised falls back to the production domain rather than to a dead one.
+    const origin = trustedOriginForRedirect(request);
     const pdfLink = (sheet: string): string | null => {
       if (!isClosingPdfSheet(sheet)) return null;
       // Only what actually resolved. An empty `line=` would narrow the PDF to a line named by the
