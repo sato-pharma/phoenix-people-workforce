@@ -329,6 +329,18 @@ import {
   runKpiTabTests,
   runKpisBoardJoinTests,
 } from "./kpis-board.test.ts";
+import {
+  runTwoKpiReportsApplicabilityTests,
+  runTwoKpiReportsConfigurableTests,
+  runTwoKpiReportsGradeAndBandTests,
+  runTwoKpiReportsNeverAveragedTests,
+  runTwoKpiReportsSampleRepTests,
+  runTwoKpiReportsSplitTests,
+  runTwoKpiReportsTabTests,
+  runTwoKpiReportsVisitGateTests,
+  runTwoKpiReportsVocabularyTests,
+  runTwoKpiReportsZeroNormTests,
+} from "./two-kpi-reports-per-rep.test.ts";
 import { runCrmMedicalRepTests } from "./crm-medical-rep.test.ts";
 import { runCrmPlanActualsTests } from "./crm-plan-actuals.test.ts";
 import {
@@ -1388,8 +1400,17 @@ import { runCairoTodayLocaleSafeTests } from "./cairo-today-locale-safe.test.ts"
 import { runClosingWorkbookLinkOriginTests } from "./closing-workbook-link-origin.test.ts";
 import { runTalentAcquisitionRoleRetiredUiCopyTests } from "./talent-acquisition-role-retired-ui-copy.test.ts";
 import { runVacancyCloseManagerHrIdCanonicalTests } from "./vacancy-close-manager-hr-id-canonical.test.ts";
+import { runPayrollHoldReasonTests } from "./payroll-hold-reason.test.ts";
 
 import { runEmployeeImportJobTitleCasingTests } from "./employee-import-job-title-casing.test.ts";
+import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-cairo-clock.test.ts";
+import { runAdminProfileCreatedAtHydrationSafeTests } from "./admin-profile-created-at-hydration-safe.test.ts";
+
+import { runEmployeeSavePreservesSalaryTests } from "./employee-save-preserves-salary.test.ts";
+
+import { runEmployeeJobTitleCasingHintTests } from "./employee-job-title-casing-hint.test.ts";
+
+import { runPayrollHoldConfirmStepReasonTests } from "./payroll-hold-confirm-step-reason.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2048,6 +2069,16 @@ await runTest("KPIs podium (four leaderboards, never a blended rank, and nobody 
 await runTest("KPIs attainment and identity (AM against 2 and PM against 10, never averaged, and a mixed-case hr id still resolves)", runKpiAttainmentAndIdentityTests);
 await runTest("KPIs medical reps only (managers off the board, above the filter layer so no URL undoes it)", runKpiMedicalRepOnlyTests);
 await runTest("KPIs early-window guard (a percentage two days into a month is a position, not a verdict)", runKpiTooEarlyToScoreTests);
+await runTest("two KPI reports (coverage is visited-at-least-once; frequency is the graded norm — different numbers)", runTwoKpiReportsVocabularyTests);
+await runTest("two KPI reports (the split is list_type, never speciality, and every list type lands in a report)", runTwoKpiReportsSplitTests);
+await runTest("two KPI reports (AM and PM are never averaged, and the pair never prints with a slash)", runTwoKpiReportsNeverAveragedTests);
+await runTest("two KPI reports (no pharmacy list is Not applicable; no owner standard is Not scored — never a zero)", runTwoKpiReportsApplicabilityTests);
+await runTest("two KPI reports (a zero norm is nobody set a standard, never zero visits expected)", runTwoKpiReportsZeroNormTests);
+await runTest("two KPI reports (every number is configurable — one answer never disturbs the other three)", runTwoKpiReportsConfigurableTests);
+await runTest("two KPI reports (Sat-Wed only, the catch-all contact excluded, off-list visits surfaced not merged)", runTwoKpiReportsVisitGateTests);
+await runTest("two KPI reports (A+ folds into A in step with the coverage board, and PM is judged on the 8-12 band)", runTwoKpiReportsGradeAndBandTests);
+await runTest("two KPI reports (the owner sample rep reads 92% on doctors, not the 65% the mixed number showed)", runTwoKpiReportsSampleRepTests);
+await runTest("two KPI reports (both are tabs on the KPIs board, and AM · PM never prints with a slash)", runTwoKpiReportsTabTests);
 await runTest("crm reps plans board (live-month cap, company rate over days x reps, rep filter leaves totals alone)", runCrmRepsPlansTests);
 await runTest(
   "reps plans roster (the rep with no visits is a zero row, seeded from the organogram, never a missing person)",
@@ -2289,7 +2320,7 @@ await runTest("sos normalizer persist shape", runSosNormalizerPersistShapeTests)
 await runTest("sos import template", runSosImportTemplateTests);
 await runTest("import preview diff", runImportPreviewTests);
 await runTest("employee import never resurrects a deactivated team (insert-only org entities)", runEmployeeImportTeamResurrectionGuardTests);
-await runTest("org title casing keeps acronyms (HR/QPPV/CEO/SFE/R&D) and round-trips to the same code", runOrgTitleCaseAcronymTests);
+await runTest("org title casing keeps acronyms (HR/QPPV/CEO/SFE/R&D), lower-cases minor words mid-name, and round-trips to the same code", runOrgTitleCaseAcronymTests);
 await runTest("imports line canonicalization (Anti Inf → Anti infective; no duplicate lines rows)", runImportsLineCanonicalizationTests);
 await runTest("employee import warns when an Area carries no Team (warn, never block)", runImportTeamBlankWarningTests);
 await runTest("detect distributor", runDetectDistributorTests);
@@ -3853,7 +3884,7 @@ await runTest(
   runDescribeThrownTests,
 );
 await runTest(
-  "manager cascade skips frozen tables (no sales_records PATCH — service_role lost UPDATE and it is the only record of what H1 was paid on; sales_targets still cascades)",
+  "manager cascade skips frozen tables (no sales_records PATCH — service_role lost UPDATE and it is the only record of what H1 was paid on; sales_targets was dropped 2026-09-06 and must not be PATCHed either)",
   runManagerCascadeFrozenTablesTests,
 );
 await runTest(
@@ -4400,8 +4431,33 @@ await runTest(
   runVacancyCloseManagerHrIdCanonicalTests,
 );
 await runTest(
-  "employee import job title casing (Ceo/Qppv/Sfe Manager/R And D Manager canonicalize on upload; ordinary titles and blanks unaffected)",
+  "employee import job title casing (Ceo/Qppv/Sfe Manager/R And D Manager canonicalize on upload; ordinary titles, minor words like \"Finance and Admin Manager\", and blanks unaffected)",
   runEmployeeImportJobTitleCasingTests,
+);
+
+await runTest(
+  "a payroll hold cannot be saved without a reason, and a reason inherited from last month is labelled as carried forward (never overwriting one typed for this month)",
+  runPayrollHoldReasonTests,
+);
+await runTest(
+  "contract anniversary resolves Cairo's calendar day, not the server's local/UTC clock",
+  runContractAnniversaryCairoClockTests,
+);
+await runTest(
+  "admin profile 'Account created' is built from the Cairo-pinned formatter (regression for React hydration error #418)",
+  runAdminProfileCreatedAtHydrationSafeTests,
+);
+
+await runTest("employee save preserves stored salary when the payload omits money fields", runEmployeeSavePreservesSalaryTests);
+
+await runTest(
+  "employee job title casing hint (offers CEO/QPPV/SFE/R&D/HR and the minor-word fix; stays silent on QA/QC, eCommerce, Arabic and already-correct titles)",
+  runEmployeeJobTitleCasingHintTests,
+);
+
+await runTest(
+  "confirming a payroll hold step enforces the hold reason too (the write path saveStep's rule did not cover, and the last one before publish drops the held rows)",
+  runPayrollHoldConfirmStepReasonTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

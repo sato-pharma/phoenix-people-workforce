@@ -15,6 +15,7 @@ import { buildFabSheetWorkbook, defaultFabValueDate, fabRowsForNonEmployees, fab
 import { buildFullSheetWorkbook, buildPart1SheetWorkbook, type PeriodSummary } from "./exports/sheet.ts";
 import { buildStepTemplateWorkbook } from "./exports/step-template.ts";
 import { diffStepUpload, parseStepWorkbook } from "./imports/step-parser.ts";
+import { assertHoldReasonsPresent, holdCandidatesFromStepRows } from "./hold-reason.ts";
 import {
   markCarryForwardApplied,
   outstandingCarryForwardFor,
@@ -456,16 +457,46 @@ export async function saveStep(
         ),
       )
     : null;
-  const patches = edits
+  const applicable = edits
     .filter((edit) => !readOnlyHrIds.has(String(edit.hrId ?? "").toLowerCase()))
-    .filter((edit) => !populationHrIds || populationHrIds.has(String(edit.hrId ?? "").toLowerCase()))
-    .map((edit) => {
-      const isLeaver = leaverHrIds.has(String(edit.hrId ?? "").toLowerCase());
-      const patch = stepEditToPatch(stepKey, edit, isLeaver);
-      patch.source = inputMode;
-      patch.editedBy = actorId(access);
-      return patch;
-    });
+    .filter((edit) => !populationHrIds || populationHrIds.has(String(edit.hrId ?? "").toLowerCase()));
+
+  // A hold may not be saved without a reason.
+  //
+  // This is the boundary that matters: `recommendHolds` reads `onHold` straight
+  // off the stored draft row, so a hold can only ever ENTER the run through here
+  // — from the inline grid or from a re-uploaded xlsx, both of which land in
+  // saveStep. Enforcing in the service rather than in the grid is what makes the
+  // xlsx path and any future caller obey it too; "Validation:" is what jsonError
+  // turns into a 400.
+  //
+  // Judged on the state the save RESULTS in, not on the edit: an edit that only
+  // flips the switch passes when a reason is already stored, and an edit that
+  // blanks the reason of an already-held row fails. A field the edit omits keeps
+  // whatever is on the current row — including a reason carried forward from
+  // last month, which is why a continuing hold needs no retyping.
+  if (stepDefinition(stepKey).isHoldStep) {
+    const currentByHr = new Map(currentRows.map((row) => [row.hrId.toLowerCase(), row]));
+    assertHoldReasonsPresent(
+      applicable.map((edit) => {
+        const current = currentByHr.get(String(edit.hrId ?? "").toLowerCase());
+        return {
+          hrId: String(edit.hrId ?? ""),
+          fullName: current?.fullName ?? null,
+          onHold: edit.onHold !== undefined ? edit.onHold : current?.onHold ?? false,
+          reason: edit.reason !== undefined ? edit.reason : current?.reason ?? null,
+        };
+      }),
+    );
+  }
+
+  const patches = applicable.map((edit) => {
+    const isLeaver = leaverHrIds.has(String(edit.hrId ?? "").toLowerCase());
+    const patch = stepEditToPatch(stepKey, edit, isLeaver);
+    patch.source = inputMode;
+    patch.editedBy = actorId(access);
+    return patch;
+  });
   await upsertDraftRows(runId, patches);
   await upsertStepState({ runId, stepKey, status: "pending", inputMode });
   await writeAutomatedPayrollAudit({
@@ -491,6 +522,23 @@ export async function confirmStep(
   const period: PayrollPeriod = { month: run.month, year: run.year };
   const { members, sources, draftRows } = await loadRunContext(period, runId);
   const rows = await recommendStep({ access, period, stepKey, members, sources, draftRows });
+
+  // A hold may not be CONFIRMED without a reason either.
+  //
+  // saveStep guards the two paths a hold is EDITED by (the inline grid and the
+  // xlsx re-upload). Confirming is the third way one is written: it persists
+  // every row the step is showing, and `stepRowToPatch` carries `onHold` and
+  // `reason` straight onto the draft row, so a hold nobody touched this session
+  // is re-saved with an empty reason and the step locks — the save rule never
+  // running because nothing was "edited". That is the click this rule most needs
+  // to cover: it is the last one before publish drops the held rows, and once
+  // published the reason is unrecoverable because no salary_record is written.
+  //
+  // Rows carrying a reason inherited from last month pass without retyping —
+  // recommendHolds has already resolved carry-forward into `row.reason` by here.
+  if (stepDefinition(stepKey).isHoldStep) {
+    assertHoldReasonsPresent(holdCandidatesFromStepRows(rows));
+  }
 
   // Informational rows never persist. A notice-period employee is shown on the
   // Resignations step so HR can see the resignation, but their settlement

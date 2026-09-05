@@ -12,6 +12,7 @@ import { KpisFilterBar } from "@/components/crm/kpis-filter-bar";
 import { KpisPeriodPicker, type KpiPickerOption } from "@/components/crm/kpis-period-picker";
 import {
   CAPTION,
+  DailyVisitBandChip,
   KpiBandChip,
   KpiEmptyState,
   KpiMeter,
@@ -25,7 +26,13 @@ import {
   TD,
   TH,
   toneOf,
+  toneOfDailyVisitBand,
 } from "@/components/crm/kpis-chrome";
+import {
+  AmPmKpiReportTables,
+  OffListNote,
+  PharmacyKpiReportTables,
+} from "@/components/crm/kpi-reports-tables";
 import { KPI_TABS, KPI_TAB_HINT, KPI_TAB_LABEL, type KpiTab } from "@/lib/crm/kpis-tabs";
 import {
   buildKpisQuery,
@@ -316,7 +323,37 @@ function tabHeadline(board: KpisBoard, tab: KpiTab): string {
   // separate rates against two separate targets, so they are labelled, never divided.
   if (tab === "call-rate") return `${rate(totals.amRate)} AM · ${rate(totals.pmRate)} PM`;
   if (tab === "coverage") return `${totals.coveragePct}%`;
+  // THE TWO REPORTS' HEADLINES read against the rep's LIST, not his plan — a different denominator
+  // from the four tabs above, which is why they are computed here rather than taken from `totals`.
+  // The AM and PM figures are LABELLED and never divided, for the same reason the call-rate
+  // headline is: a slash between two independent measures reads as a fraction.
+  if (tab === "am-pm") {
+    return `${listCoverage(board, "am")} AM · ${listCoverage(board, "pm")} PM`;
+  }
+  if (tab === "pharmacies") {
+    const withList = board.kpiReports.filter((report) => report.pharmacies.applicable).length;
+    // "Not applicable" for the whole tab is a real answer when nobody in view carries pharmacies —
+    // a 0% would read as "these reps covered no pharmacies", which is the opposite of the truth.
+    return withList === 0 ? "Not applicable" : `${listCoverage(board, "pharmacy")} · ${withList} with a list`;
+  }
   return `${totals.frequencyPct}%`;
+}
+
+/**
+ * One list's coverage across every rep in view: contacts seen at least once, over contacts on the
+ * list. Summed over reps rather than averaged over their percentages — a rep with 4 pharmacies
+ * would otherwise weigh as much as one with 90.
+ */
+function listCoverage(board: KpisBoard, list: "am" | "pm" | "pharmacy"): string {
+  let panel = 0;
+  let visited = 0;
+  for (const report of board.kpiReports) {
+    const block =
+      list === "am" ? report.ampm.am : list === "pm" ? report.ampm.pm : report.pharmacies.pharmacies;
+    panel += block.coverage.panel;
+    visited += block.coverage.visited;
+  }
+  return panel === 0 ? "—" : `${Math.round((visited / panel) * 100)}%`;
 }
 
 /**
@@ -480,11 +517,17 @@ function ActiveFilterChips({ context }: { context: ViewContext }) {
 function MeasureCell({
   band,
   caption,
+  extra,
   fill,
   value,
 }: {
   band: KpiBand;
   caption: string;
+  /** An extra badge under the caption — used for the coverage floor, which is a DIFFERENT
+   * threshold (95%) from the five-value band's own 90% "elite" cutoff, so a rep can read elite
+   * here and still miss the floor. Keeping it a separate element rather than folding it into
+   * `band` is what keeps the two readable side by side instead of one overwriting the other. */
+  extra?: React.ReactNode;
   fill: number | null;
   value: string;
 }) {
@@ -493,7 +536,23 @@ function MeasureCell({
       <span className={`block text-base font-black ${toneOf(band).text}`}>{value}</span>
       <KpiMeter band={band} value={fill} />
       <span className="mt-1 block text-phx-3xs font-semibold leading-4 text-slate-500">{caption}</span>
+      {extra ? <span className="mt-1 block">{extra}</span> : null}
     </td>
+  );
+}
+
+/** The coverage-floor badge (owner, 2026-09-05: "coverage no less than 95%"). Null when there is no
+ * plan to measure against — the same guard every coverage reading on this board honours. */
+function coverageFloorBadge(row: KpiRepRow): React.ReactNode {
+  if (row.meetsCoverageFloor == null) return null;
+  // Reuses the SAME tokens as the five-value band — "elite" green when it clears, "behind" rose
+  // when it does not — rather than a one-off pair of colours, per the shared-chrome rule at the
+  // top of kpis-chrome.tsx.
+  const chip = toneOf(row.meetsCoverageFloor ? "elite" : "behind").chip;
+  return (
+    <span className={`inline-block border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.1em] ${chip}`}>
+      {row.meetsCoverageFloor ? "Floor met · 95%" : "Below floor · 95%"}
+    </span>
   );
 }
 
@@ -501,13 +560,21 @@ function MeasureCell({
  * The rep cell — name, where they sit, and any situation flags.
  *
  * Flags are MERGED in here rather than given a column of their own, which is the golden rule's own
- * answer to a width collision: merge, never shrink. Three flags are left out because every table
+ * answer to a width collision: merge, never shrink. Six flags are left out because every table
  * already prints their underlying number in its own column — the two below-target flags beside the
- * AM and PM figures, and `over-visiting` beside the Above count, would be the same fact said twice.
+ * AM and PM figures, `over-visiting` beside the Above count, the daily-visit-band flags beside the
+ * visits/day figure in the Days column (Call Rate tab), and `below-coverage-floor` beside the
+ * coverage percentage — would each be the same fact said twice.
  */
 function RepCell({ rank, row }: { rank?: number; row: KpiRepRow }) {
   const flags = kpiFlagsOf(row).filter(
-    (flag) => flag !== "below-am-target" && flag !== "below-pm-target" && flag !== "over-visiting",
+    (flag) =>
+      flag !== "below-am-target" &&
+      flag !== "below-pm-target" &&
+      flag !== "over-visiting" &&
+      flag !== "below-coverage-floor" &&
+      flag !== "above-daily-visit-band" &&
+      flag !== "below-daily-visit-band",
   );
   return (
     <td className={TD}>
@@ -622,6 +689,7 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
                   ? `${row.visitedDoctors} of ${row.plannedDoctors} planned doctors`
                   : "Nothing planned"
               }
+              extra={coverageFloorBadge(row)}
               fill={coverageFill(row)}
               value={planPct(row, row.coveragePct)}
             />
@@ -678,7 +746,7 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             direction={filters.direction}
             href={sortHref(context, "workingdays")}
             label="Days"
-            sub="Sat–Wed"
+            sub="Sat–Wed · visits/day"
           />
           <KpiSortableTh
             active={filters.sort === "am"}
@@ -718,7 +786,17 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
         {rows.map((row, index) => (
           <tr key={row.agentCrmId ?? `${row.repName}-${index}`}>
             <RepCell rank={context.showRank ? index + 1 : undefined} row={row} />
-            <td className={NUM}>{row.workingDays}</td>
+            <td className={NUM}>
+              {row.workingDays}
+              <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
+                {row.visitsPerDay == null ? "—" : row.visitsPerDay.toFixed(2)}
+              </span>
+              {row.dailyVisitBand ? (
+                <span className="mt-1 block">
+                  <DailyVisitBandChip band={row.dailyVisitBand} />
+                </span>
+              ) : null}
+            </td>
             <td className={NUM}>
               {rate(row.amRate)} <span className="text-phx-3xs font-bold text-slate-400">of {board.amTarget}</span>
               <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
@@ -819,6 +897,7 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
                   ? `${row.visitedDoctors} of ${row.plannedDoctors} planned doctors`
                   : "No planned doctors to be a percentage of"
               }
+              extra={coverageFloorBadge(row)}
               fill={coverageFill(row)}
               value={planPct(row, row.coveragePct)}
             />
@@ -917,18 +996,32 @@ function RepCard({
   pmTarget,
   rank,
   row,
+  visitsPerDayMax,
+  visitsPerDayMin,
+  visitsPerDayTarget,
 }: {
   amTarget: number;
   pmTarget: number;
   rank?: number;
   row: KpiRepRow;
+  visitsPerDayMax: number;
+  visitsPerDayMin: number;
+  visitsPerDayTarget: number;
 }) {
-  const measures: Array<{ band: KpiBand; caption: string; fill: number | null; label: string; value: string }> = [
+  const measures: Array<{
+    band: KpiBand;
+    caption: string;
+    extra?: React.ReactNode;
+    fill: number | null;
+    label: string;
+    value: string;
+  }> = [
     {
       band: coverageBandOf(row),
       caption: row.hasMeasurablePlan
         ? `${row.visitedDoctors}/${row.plannedDoctors} planned`
         : "Nothing planned",
+      extra: coverageFloorBadge(row),
       fill: coverageFill(row),
       label: "Coverage",
       value: planPct(row, row.coveragePct),
@@ -966,7 +1059,13 @@ function RepCard({
     },
   ];
   const flags = kpiFlagsOf(row).filter(
-    (flag) => flag !== "below-am-target" && flag !== "below-pm-target" && flag !== "over-visiting",
+    (flag) =>
+      flag !== "below-am-target" &&
+      flag !== "below-pm-target" &&
+      flag !== "over-visiting" &&
+      flag !== "below-coverage-floor" &&
+      flag !== "above-daily-visit-band" &&
+      flag !== "below-daily-visit-band",
   );
 
   return (
@@ -985,8 +1084,27 @@ function RepCard({
             <dd className={`mt-0.5 text-sm font-black tabular-nums ${toneOf(measure.band).text}`}>{measure.value}</dd>
             <KpiMeter band={measure.band} value={measure.fill} />
             <dd className="mt-1 text-phx-3xs leading-4 text-slate-500">{measure.caption}</dd>
+            {measure.extra ? <dd className="mt-1">{measure.extra}</dd> : null}
           </div>
         ))}
+        <div className="min-w-0">
+          <dt className="text-phx-3xs font-black uppercase tracking-[0.1em] text-slate-400">Visits/day</dt>
+          <dd
+            className={`mt-0.5 text-sm font-black tabular-nums ${
+              row.dailyVisitBand ? toneOfDailyVisitBand(row.dailyVisitBand).text : "text-slate-500"
+            }`}
+          >
+            {row.visitsPerDay == null ? "—" : row.visitsPerDay.toFixed(2)}
+          </dd>
+          <dd className="mt-1 text-phx-3xs leading-4 text-slate-500">
+            Target {visitsPerDayTarget} · band {visitsPerDayMin}–{visitsPerDayMax}
+          </dd>
+          {row.dailyVisitBand ? (
+            <dd className="mt-1">
+              <DailyVisitBandChip band={row.dailyVisitBand} />
+            </dd>
+          ) : null}
+        </div>
       </dl>
       {row.hasCallRate ? (
         <p className="mt-1.5 text-phx-3xs leading-4 text-slate-500">
@@ -1138,9 +1256,15 @@ export function KpisBoardView({
             </div>
           ) : null}
 
-          {/* Six tiles since 2026-09-05, when pharmacy joined as a SEPARATE tile — never averaged
-              into AM/PM, never blended with them. Call rate is now three of the six. */}
-          <div className="grid gap-3 border-t border-slate-100 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-6">
+          {/* Seven tiles since 2026-09-06: two new ones landed the same day, both additive and never
+              blended with AM/PM. Visits/day is a raw count against the owner's 8-12 band — his own
+              words that day were "call rate in month should be 10 to achieve this should make
+              visits / day av 8-12 and coverage no less than 95%" — and it is a tile, not a fourth
+              KpiBand, because it is a count against a band, not a percentage against a target; see
+              toneOfDailyVisitBand in kpis-chrome.tsx. Pharmacy joined as its own tile the same day,
+              never averaged into AM/PM and never folded into visits/day — see
+              PHARMACY_CALL_RATE_TARGET in crm/call-rate.ts for why it carries no target yet. */}
+          <div className="grid gap-3 border-t border-slate-100 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-7">
             <KpiTile
               caption={
                 // "2 working days" alone reads as a footnote; "2 of 22" is the fact that makes the
@@ -1151,6 +1275,16 @@ export function KpisBoardView({
               }
               label={filtered ? "Medical reps shown" : "Medical reps in reach"}
               value={filtered ? `${totals.reps} of ${board.scopedReps}` : String(totals.reps)}
+            />
+            <KpiTile
+              caption={
+                totals.dailyVisitBand === "above"
+                  ? `Above ${board.visitsPerDayMax} — a volume flag, not automatically a win. See Campaign share.`
+                  : `Target ${board.visitsPerDayTarget} · band ${board.visitsPerDayMin}–${board.visitsPerDayMax} a day`
+              }
+              label="Visits/day"
+              toneOverride={totals.dailyVisitBand ? toneOfDailyVisitBand(totals.dailyVisitBand) : undefined}
+              value={totals.visitsPerDay == null ? "—" : totals.visitsPerDay.toFixed(2)}
             />
             <KpiTile
               band={kpiBandOf(totals.amAttainmentPct)}
@@ -1177,6 +1311,12 @@ export function KpisBoardView({
               band={kpiBandOf(totals.coveragePct)}
               caption={`${totals.visitedDoctors} of ${totals.plannedDoctors} planned doctors${
                 partial ? " · the period is still running" : ""
+              }${
+                totals.meetsCoverageFloor == null
+                  ? ""
+                  : totals.meetsCoverageFloor
+                    ? ` · clears the ${board.coverageFloorPct}% floor`
+                    : ` · below the ${board.coverageFloorPct}% floor`
               }`}
               label="Coverage"
               progress={totals.coveragePct}
@@ -1212,6 +1352,17 @@ export function KpisBoardView({
                   title="No reps in this period."
                 />
               )}
+            </div>
+          ) : tab === "am-pm" || tab === "pharmacies" ? (
+            /* THE TWO REPORTS. No leaderboard above them, deliberately: the podium ranks the four
+               plan-based measures, and a "best on pharmacies" board would rank reps against a
+               standard the owner has not set yet. The tables carry mobile cards of their own. */
+            <div className="border-t border-slate-100">
+              {tab === "am-pm" ? <AmPmKpiReportTables reports={board.kpiReports} /> : null}
+              {tab === "pharmacies" ? <PharmacyKpiReportTables reports={board.kpiReports} /> : null}
+              <div className="border-t border-slate-100">
+                <OffListNote reports={board.kpiReports} />
+              </div>
             </div>
           ) : (
             <>
@@ -1273,6 +1424,9 @@ export function KpisBoardView({
                         pmTarget={board.pmTarget}
                         rank={context.showRank ? index + 1 : undefined}
                         row={row}
+                        visitsPerDayMax={board.visitsPerDayMax}
+                        visitsPerDayMin={board.visitsPerDayMin}
+                        visitsPerDayTarget={board.visitsPerDayTarget}
                       />
                     </div>
                   ))}

@@ -226,7 +226,10 @@ function buildCorners(workbook: ExcelJS.Workbook): void {
 }
 
 function nextFreePath(): string {
-  const today = new Date().toISOString().slice(0, 10);
+  // Africa/Cairo, not UTC. `toISOString()` would date the file a day early for the ~3 hours
+  // after Cairo midnight — which is exactly when this repository is often worked — and every
+  // date the owner sees is Cairo local by standing rule.
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
   const base = resolve("xlsx", `square-edge-decisions-${today}`);
   const first = `${base}.xlsx`;
   if (!existsSync(first)) return first;

@@ -218,6 +218,14 @@ export function runKpisBoardJoinTests() {
     "the hr id is carried from whichever side has it — scope is enforced on it",
   );
 
+  // ── The owner's 8-12 visits/day band and 95% coverage floor (2026-09-05) ─────────────────────
+  // Fixture: 4 verified AM + 20 verified PM over 5 working days = 4.8 a day — short of the band —
+  // and 70% coverage, which misses the 95% floor. Both must come out of the JOIN itself, not just
+  // out of a hand-set fixture, or a real bug in the computation would pass every other test here.
+  assert.equal(joined[0].visitsPerDay, 4.8, "(4 AM + 20 PM) / 5 working days");
+  assert.equal(joined[0].dailyVisitBand, "below", "4.8 a day is under the 8-12 band");
+  assert.equal(joined[0].meetsCoverageFloor, false, "70% coverage misses the 95% floor");
+
   // A rep present on only ONE side is KEPT. A rep with a plan and no visits at all is the single
   // most important row on this board; dropping him would make the worst case invisible.
   const oneSided = joinKpiRows({
@@ -236,6 +244,9 @@ export function runKpisBoardJoinTests() {
     false,
     "and the row says which half is missing rather than printing a zero rate",
   );
+  assert.equal(oneSided[0].meetsCoverageFloor, null, "Rep One has visits but no plan here, so there is no coverage to judge against the floor");
+  assert.equal(oneSided[1].visitsPerDay, null, "a rep who never logged a call has no visits/day, not a silent zero");
+  assert.equal(oneSided[1].dailyVisitBand, null, "and therefore no band either");
 
   // ── THE REPORTED RATE RIDES BESIDE THE VERIFIED ONE ──────────────────────────────────────────
   // Both boards read one `CallRateSlice`. Reps Plans has always printed `verifiedRate` and
@@ -331,6 +342,43 @@ export function runKpisBoardJoinTests() {
     [],
     "scope `none` returns nothing — the page renders its reason instead of an empty table",
   );
+
+  // ── On standard, and above it is not a win (owner, 2026-09-05) ───────────────────────────────
+  // Every callRate() fixture carries workingDays: 5, so 10 AM + 40 PM verified is exactly the
+  // target (50 / 5 = 10), and 20 AM + 80 PM is a volume flag rather than a stronger pass.
+  const onStandardBase = callRate(33, "c-9", "On Standard");
+  const onStandard = {
+    ...onStandardBase,
+    am: { ...onStandardBase.am, verified: 10, total: 10 },
+    pm: { ...onStandardBase.pm, verified: 40, total: 40 },
+  };
+  const [onStandardRow] = joinKpiRows({
+    callRates: [onStandard],
+    docLists: [{ ...docList(33, "c-9", "On Standard"), coveragePct: 96, visitedDoctors: 96, plannedDoctors: 100 }],
+    scope: { basis: "company", kind: "company", label: "Whole company" },
+    workingDays: 5,
+  });
+  assert.equal(onStandardRow.visitsPerDay, 10, "(10 AM + 40 PM) / 5 working days = 10, the owner's own target");
+  assert.equal(onStandardRow.dailyVisitBand, "in-band");
+  assert.equal(onStandardRow.meetsCoverageFloor, true, "96% clears the 95% floor");
+
+  const heavy = {
+    ...onStandardBase,
+    am: { ...onStandardBase.am, verified: 20, total: 20 },
+    pm: { ...onStandardBase.pm, verified: 80, total: 80 },
+  };
+  const [aboveBandRow] = joinKpiRows({
+    callRates: [heavy],
+    docLists: [],
+    scope: { basis: "company", kind: "company", label: "Whole company" },
+    workingDays: 5,
+  });
+  assert.equal(aboveBandRow.visitsPerDay, 20, "(20 AM + 80 PM) / 5 working days = 20");
+  assert.equal(
+    aboveBandRow.dailyVisitBand,
+    "above",
+    "20 a day is a volume flag, not a stronger version of on-standard — see call-rate.ts's DAILY_VISIT_RATE_MAX",
+  );
 }
 
 // ── 3. The tab in the URL ─────────────────────────────────────────────────────────────────────
@@ -350,9 +398,19 @@ export function runKpiTabTests() {
   assert.equal(resolveKpiTab(""), "summary", "an empty tab parameter is the same as no tab at all");
   assert.deepEqual(
     [...KPI_TABS],
+    ["summary", "call-rate", "coverage", "frequency", "am-pm", "pharmacies"],
+    "the owner's four KPI tabs, in the order he named them, then his two per-rep reports",
+  );
+  // THE FIRST FOUR ARE HIS, IN HIS ORDER (2026-09-02: "show four tabs. The first tab is the
+  // summary..."). Pinned as a prefix so the two reports appended on 2026-09-05 cannot drift into
+  // the middle of a layout he specified.
+  assert.deepEqual(
+    [...KPI_TABS].slice(0, 4),
     ["summary", "call-rate", "coverage", "frequency"],
     "the owner named these four, in this order: summary, call rate, coverage, frequency",
   );
+  assert.equal(resolveKpiTab("am-pm"), "am-pm", "the AM/PM report is reachable from the URL");
+  assert.equal(resolveKpiTab("pharmacies"), "pharmacies", "and so is the pharmacies report");
 
   // The month picker is string arithmetic on the date, never Date parsing: a `new Date(todayIso)`
   // is UTC midnight and lands in the PREVIOUS month for a Cairo caller just after midnight, which

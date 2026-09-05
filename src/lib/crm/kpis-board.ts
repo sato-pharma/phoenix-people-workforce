@@ -66,6 +66,7 @@ import {
 import {
   applyKpiFilters,
   buildKpiFacets,
+  COVERAGE_TARGET_FLOOR_PCT,
   EMPTY_KPI_FILTERS,
   KPI_CUSTOM_PERIOD_VALUE,
   type KpiFacets,
@@ -78,8 +79,21 @@ import { loadCallRateReport } from "@/lib/crm/call-rate-service";
 import { countCallRateWorkingDays } from "@/lib/crm/call-rate";
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { getRepDoctorLists, monthLabelOf, type RepDoctorListRepRow } from "@/lib/crm/rep-doctor-lists";
+import { loadRepKpiReports } from "@/lib/crm/rep-kpi-reports-data";
+import type { RepKpiReports } from "@/lib/crm/rep-kpi-reports";
 import { repsPlansRange, repsPlansWeeks, type RepsPlansRange } from "@/lib/crm/reps-plans";
-import { AM_CALL_RATE_TARGET, PHARMACY_CALL_RATE_TARGET, PM_CALL_RATE_TARGET, type RepCallRate } from "@/lib/crm/call-rate";
+import {
+  AM_CALL_RATE_TARGET,
+  DAILY_VISIT_RATE_MAX,
+  DAILY_VISIT_RATE_MIN,
+  DAILY_VISIT_RATE_TARGET,
+  PHARMACY_CALL_RATE_TARGET,
+  PM_CALL_RATE_TARGET,
+  dailyVisitBandOf,
+  verifiedVisitsPerDay,
+  type DailyVisitBand,
+  type RepCallRate,
+} from "@/lib/crm/call-rate";
 import type { AccessContext } from "@/lib/auth/permissions";
 
 /** One option in the board's month or period picker. */
@@ -189,6 +203,15 @@ export type KpiRepRow = {
    */
   amAttainmentPct: number | null;
   pmAttainmentPct: number | null;
+  /**
+   * Verified AM + PM visits per working day — the ONE place the split is deliberately summed. See
+   * call-rate.ts's DAILY_VISIT_RATE_TARGET for why this is allowed and what it must never become.
+   * Null exactly when `hasCallRate` is false, matching `amRate`/`pmRate`.
+   */
+  visitsPerDay: number | null;
+  /** Where `visitsPerDay` sits against the owner's 8-12 band (2026-09-05). Null iff `visitsPerDay`
+   * is null. `"above"` is a volume flag, never a win — see dailyVisitBandOf. */
+  dailyVisitBand: DailyVisitBand | null;
 
   // ── Pharmacy (separate from AM/PM entirely — owner, 2026-09-05) ───────────
   /**
@@ -217,6 +240,9 @@ export type KpiRepRow = {
   visitedDoctors: number;
   missedDoctors: number;
   coveragePct: number;
+  /** Whether `coveragePct` clears the owner's 95% floor (2026-09-05). Null exactly when
+   * `hasMeasurablePlan` is false. */
+  meetsCoverageFloor: boolean | null;
   onPlanDoctors: number;
   underDoctors: number;
   overDoctors: number;
@@ -284,6 +310,15 @@ export type KpisBoard = {
    * forgot a filter was on would read a partial board as the whole truth.
    */
   scopedReps: number;
+  /**
+   * The owner's two KPI reports per rep — AM/PM, and pharmacies — for the SAME rows as `reps`.
+   *
+   * Kept beside the four KPI tabs rather than folded into `KpiRepRow` because they answer against a
+   * different denominator: the four tabs score a rep against his PLAN, these score him against the
+   * whole list the CRM assigned him ("whole panel visisted one is the coverage", owner 2026-09-05).
+   * One row per rep, keyed by the same canonical hr id `KpiRepRow.agentHrId` carries.
+   */
+  kpiReports: RepKpiReports[];
   /** Facet options and counts, built from the SCOPED rows so a choice never returns an empty board. */
   facets: KpiFacets;
   /** The filter state actually applied, echoed back so the UI can render and clear it. */
@@ -304,9 +339,14 @@ export type KpisBoard = {
     pmReportedRate: number | null;
     campaignCalls: number;
     totalCalls: number;
+    /** Team verified AM + PM visits per working day — see visitsPerDay on KpiRepRow. */
+    visitsPerDay: number | null;
+    dailyVisitBand: DailyVisitBand | null;
     plannedDoctors: number;
     visitedDoctors: number;
     coveragePct: number;
+    /** Whether the team's own coveragePct clears the owner's 95% floor. Null with no reps. */
+    meetsCoverageFloor: boolean | null;
     onPlanDoctors: number;
     underDoctors: number;
     overDoctors: number;
@@ -325,6 +365,13 @@ export type KpisBoard = {
   pmTarget: number;
   /** Null — no owner-set pharmacy target exists yet. See KpiRepRow.pharmacyAttainmentPct. */
   pharmacyTarget: number | null;
+  /** The owner's 8-12 visits/day band (2026-09-05) — target is the midpoint. See call-rate.ts's
+   * DAILY_VISIT_RATE_TARGET for why AM and PM are summed here and nowhere else on this board. */
+  visitsPerDayTarget: number;
+  visitsPerDayMin: number;
+  visitsPerDayMax: number;
+  /** The owner's coverage floor (2026-09-05). See kpis-filters.ts's COVERAGE_TARGET_FLOOR_PCT. */
+  coverageFloorPct: number;
 };
 
 /** One place on a podium. `value` is already the percentage the caption prints. */
@@ -509,10 +556,13 @@ export function joinKpiRows(input: {
     pharmacyReported: 0,
     pharmacyReportedRate: null,
     pharmacyAttainmentPct: null,
+    visitsPerDay: null,
+    dailyVisitBand: null,
     plannedDoctors: 0,
     visitedDoctors: 0,
     missedDoctors: 0,
     coveragePct: 0,
+    meetsCoverageFloor: null,
     onPlanDoctors: 0,
     underDoctors: 0,
     overDoctors: 0,
@@ -608,6 +658,13 @@ export function joinKpiRows(input: {
     row.amAttainmentPct = attainmentPct(row, row.amVerified, amTarget);
     row.pmAttainmentPct = attainmentPct(row, row.pmVerified, pmTarget);
     row.pharmacyAttainmentPct = attainmentPct(row, row.pharmacyVerified, pharmacyTarget);
+    // AM/PM only, never + pharmacy — owner's decision, 2026-09-06, asked directly once this split
+    // existed: "the band stays AM/PM only. Pharmacy is scored on its own coverage/call-rate over
+    // there, never folded back into this figure." row.amVerified/pmVerified never include pharmacy
+    // (it is its own field above), so this is already correct by construction.
+    row.visitsPerDay = row.hasCallRate ? verifiedVisitsPerDay(row.amVerified, row.pmVerified, row.workingDays) : null;
+    row.dailyVisitBand = dailyVisitBandOf(row.visitsPerDay);
+    row.meetsCoverageFloor = row.hasMeasurablePlan ? row.coveragePct >= COVERAGE_TARGET_FLOOR_PCT : null;
   }
 
   // Scope is applied AFTER the join, never before: a rep whose hr id appears on only one of the two
@@ -675,6 +732,7 @@ export async function getKpisBoard(input: {
     scopeLabel: "",
     scopeReason: null,
     reps: [],
+    kpiReports: [],
     scopedReps: 0,
     facets: buildKpiFacets([]),
     filters,
@@ -692,9 +750,12 @@ export async function getKpisBoard(input: {
       pmReportedRate: null,
       campaignCalls: 0,
       totalCalls: 0,
+      visitsPerDay: null,
+      dailyVisitBand: null,
       plannedDoctors: 0,
       visitedDoctors: 0,
       coveragePct: 0,
+      meetsCoverageFloor: null,
       onPlanDoctors: 0,
       underDoctors: 0,
       overDoctors: 0,
@@ -709,6 +770,10 @@ export async function getKpisBoard(input: {
     amTarget: AM_CALL_RATE_TARGET,
     pmTarget: PM_CALL_RATE_TARGET,
     pharmacyTarget: PHARMACY_CALL_RATE_TARGET,
+    visitsPerDayTarget: DAILY_VISIT_RATE_TARGET,
+    visitsPerDayMin: DAILY_VISIT_RATE_MIN,
+    visitsPerDayMax: DAILY_VISIT_RATE_MAX,
+    coverageFloorPct: COVERAGE_TARGET_FLOOR_PCT,
   };
 
   if (scope.kind === "none") {
@@ -775,6 +840,28 @@ export async function getKpisBoard(input: {
   const facets = buildKpiFacets(scopedReps);
   const reps = applyKpiFilters(scopedReps, filters);
 
+  // THE TWO REPORTS RIDE THE SAME POPULATION as the four tabs beside them: the same scope object
+  // (never re-resolved — see rep-kpi-reports-data.ts), then narrowed to exactly the rows that
+  // survived `keepMedicalRepsOnly` and the advanced filters. Anything else and the strip would show
+  // six tabs describing two different sets of people, with nothing on screen saying so.
+  //
+  // Awaited here rather than in the batch above because it needs `callRate.workingDays` as its
+  // denominator, and that is the same number the other tabs divide by. A second round trip is the
+  // price of the two boards agreeing; splitting the fetch from the arithmetic to save it would put
+  // a second working-day count on the page, which is the disagreement this is avoiding.
+  const kpiReportRows = await loadRepKpiReports({
+    scope,
+    dateFrom: range.dateFrom,
+    dateTo: range.dateTo,
+    workingDays: callRate.workingDays,
+    holidays: windowHolidays.dates,
+    repNameByHrId: new Map(
+      scopedReps.flatMap((row) => (row.agentHrId ? [[row.agentHrId, row.repName] as const] : [])),
+    ),
+  });
+  const visibleRepKeys = new Set(reps.flatMap((row) => (row.agentHrId ? [row.agentHrId] : [])));
+  const kpiReports = kpiReportRows.reports.filter((report) => report.repKey != null && visibleRepKeys.has(report.repKey));
+
   // Totals are summed from the SCOPED rows, never taken from either source's own `totals`. Those
   // cover the whole company, and a District Manager reading a company total beside his own six reps
   // would have no way to tell the two apart.
@@ -818,6 +905,9 @@ export async function getKpisBoard(input: {
   // i.e. the average rep's rate, not the sum. Summing the rates instead would make a district of six
   // look six times better than any of its reps.
   const denominator = callRate.workingDays * totals.reps;
+  const teamVisitsPerDay =
+    denominator > 0 ? verifiedVisitsPerDay(totals.amVerified, totals.pmVerified, denominator) : null;
+  const teamCoveragePct = pct(totals.visitedDoctors, totals.plannedDoctors);
 
   return {
     ...empty,
@@ -829,6 +919,7 @@ export async function getKpisBoard(input: {
     isCurrentMonth: docList.isCurrentMonth,
     scopeLabel: scope.kind === "company" ? scope.label : scope.label,
     reps,
+    kpiReports,
     scopedReps: scopedReps.length,
     facets,
     filters,
@@ -849,9 +940,12 @@ export async function getKpisBoard(input: {
       pmReportedRate: denominator > 0 ? totals.pmReported / denominator : null,
       campaignCalls: totals.campaignCalls,
       totalCalls: totals.totalCalls,
+      visitsPerDay: teamVisitsPerDay,
+      dailyVisitBand: dailyVisitBandOf(teamVisitsPerDay),
       plannedDoctors: totals.plannedDoctors,
       visitedDoctors: totals.visitedDoctors,
-      coveragePct: pct(totals.visitedDoctors, totals.plannedDoctors),
+      coveragePct: teamCoveragePct,
+      meetsCoverageFloor: totals.plannedDoctors > 0 ? teamCoveragePct >= COVERAGE_TARGET_FLOOR_PCT : null,
       onPlanDoctors: totals.onPlanDoctors,
       underDoctors: totals.underDoctors,
       overDoctors: totals.overDoctors,

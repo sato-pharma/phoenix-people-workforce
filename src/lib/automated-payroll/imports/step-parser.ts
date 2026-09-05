@@ -153,6 +153,27 @@ export function diffStepUpload(input: {
         to: nowHeld ? "Yes" : "No",
         status,
       });
+
+      // The REASON is a column on this sheet too, and the preview used to be
+      // silent about it — so an upload that emptied "Hold Reason" while leaving
+      // "Hold?" on reported "unchanged" and then wiped the one record of why the
+      // person was not paid. The save now refuses that outright; showing it here
+      // means the reviewer sees the change before it is attempted, rather than
+      // meeting it as an error.
+      const reasonFrom = (current.reason ?? "").trim();
+      const reasonTo = (edit.reason ?? "").trim();
+      if (reasonFrom !== reasonTo) {
+        changed += 1;
+        diffs.push({
+          hrId: edit.hrId,
+          fullName: current.fullName,
+          field: "Hold Reason",
+          from: reasonFrom,
+          to: reasonTo,
+          status: "changed",
+          message: nowHeld && !reasonTo ? "A hold cannot be saved without a reason." : undefined,
+        });
+      }
       continue;
     }
 

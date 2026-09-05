@@ -4,6 +4,21 @@ import { foldAreaCodeForLine, foldAreaOptionsForLine } from "@/lib/sales/closing
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SOURCE OF TRUTH — sales targets live in `au.monthly_targets`, and nowhere else.
+//
+// `public.sales_targets` and `public.sales_target_batches` were DROPPED on 2026-09-06
+// (supabase/migrations/20260906001400_drop_the_empty_legacy_sales_target_tables.sql). They held
+// zero rows for their entire life and nothing ever read them. Recorded here because the trap they
+// created outlived them: they were dangerous precisely BECAUSE they were empty rather than
+// missing — they held the obvious name in the obvious schema and answered a SELECT with a
+// confident, authoritative, wrong zero. A system tour on 2026-09-05 queried `public.sales_targets`
+// for the current quarter and briefly had evidence that no sales targets existed at all.
+//
+// So if you find a reference to either name anywhere, it is stale by definition: the answer is
+// always `au.monthly_targets`, read through the service-role RPCs below. Do not recreate them.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Phase 6 — Targets on the 42-area seat model. Grain: one target per
 // (month, line, area, product). Targets ride the AREA/seat (not the person), so a
 // new hire inherits them and a vacant area still carries its target; "Other" areas

@@ -93,6 +93,15 @@ function todayDate() {
   return currentCairoDateOnlyIso();
 }
 
+// Same Cairo calendar day as todayDate(), as a Date — nextContractAnniversary compares against
+// this internally too, but call sites here pass it explicitly rather than relying on the
+// default `new Date()`, which would read the server's own clock (UTC on Railway) if this ever
+// changed. Falls back to the live instant only if todayDate() somehow returns an unparseable
+// string, which currentCairoDateOnlyIso() never does.
+function todayCairoDate(): Date {
+  return parseDateOnly(todayDate()) ?? new Date();
+}
+
 function cleanText(value: string | null | undefined) {
   const text = String(value ?? "").trim();
   return text ? text : null;
@@ -263,10 +272,14 @@ async function getActiveRequestByHrId() {
   return requestsByHrId;
 }
 
-function renewalDateForEmployee(employee: EmployeeDirectoryRow, contract?: ContractDbRow | null) {
+function renewalDateForEmployee(
+  employee: EmployeeDirectoryRow,
+  contract: ContractDbRow | null | undefined,
+  today: Date,
+) {
   return normalizeDate(contract?.contract_renewal_date) ??
     normalizeDate(employee.contractRenewalDate) ??
-    nextContractAnniversary(employee.hireDate) ??
+    nextContractAnniversary(employee.hireDate, today) ??
     "";
 }
 
@@ -286,10 +299,11 @@ export async function getContractRenewalDashboardData(access?: AccessContext): P
     if (!isContractRenewalSchemaMissing(error)) throw error;
   }
 
+  const today = todayCairoDate();
   const rows = employees.map((employee) => {
     const employeeHrId = cleanHrId(employee.hrId);
     const contract = contractsByHrId.get(employeeHrId ?? "");
-    const renewalDate = renewalDateForEmployee(employee, contract);
+    const renewalDate = renewalDateForEmployee(employee, contract, today);
     const renewalDay = parseDateOnly(renewalDate)?.getDate() ?? 0;
 
     return {
@@ -331,12 +345,13 @@ function validateCreateInput(
     throw new ContractRenewalValidationError("Contract renewals can only be created for active employees.");
   }
 
+  const today = todayCairoDate();
   const currentRenewalDate = (
     currentContract?.status === "active" ? currentContract.contract_renewal_date : null
-  ) ?? employee.contractRenewalDate ?? nextContractAnniversary(employee.hireDate);
+  ) ?? employee.contractRenewalDate ?? nextContractAnniversary(employee.hireDate, today);
   const requestedRenewalDate = normalizeDate(input.requestedRenewalDate) ?? currentRenewalDate ?? todayDate();
   const proposedStartDate = normalizeDate(input.proposedStartDate) ?? requestedRenewalDate;
-  const proposedEndDate = normalizeDate(input.proposedEndDate) ?? nextContractAnniversary(proposedStartDate) ?? proposedStartDate;
+  const proposedEndDate = normalizeDate(input.proposedEndDate) ?? nextContractAnniversary(proposedStartDate, today) ?? proposedStartDate;
 
   requireDate(requestedRenewalDate, "Requested renewal date");
   requireDate(proposedStartDate, "Proposed start date");

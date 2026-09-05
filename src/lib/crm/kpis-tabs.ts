@@ -13,7 +13,17 @@
  */
 
 /** Tab ids, in the order the strip renders them. */
-export const KPI_TABS = ["summary", "call-rate", "coverage", "frequency"] as const;
+/**
+ * Tab ids, in the order the strip renders them.
+ *
+ * The first four slice the board by KPI and were specified by the owner on 2026-09-02 ("show four
+ * tabs. The first tab is the summary..."), so their order is his and is not rearranged. The last
+ * two slice it by POPULATION instead — they are the two reports he asked for on 2026-09-05, each
+ * carrying all three KPIs for one list. They are appended rather than interleaved precisely
+ * because the two axes are different: mixing them into the original four would make the strip read
+ * as one list of six comparable things.
+ */
+export const KPI_TABS = ["summary", "call-rate", "coverage", "frequency", "am-pm", "pharmacies"] as const;
 
 export type KpiTab = (typeof KPI_TABS)[number];
 
@@ -23,6 +33,10 @@ export const KPI_TAB_LABEL: Record<KpiTab, string> = {
   "call-rate": "Call Rate",
   coverage: "Coverage",
   frequency: "Frequency",
+  // The separator is a middle dot, never a slash. The owner read "1.63 / 6.57" as "1.63 out of
+  // 6.57" — a slash between two independent measures reads as a fraction.
+  "am-pm": "AM · PM",
+  pharmacies: "Pharmacies",
 };
 
 /**
@@ -37,6 +51,12 @@ export const KPI_TAB_HINT: Record<KpiTab, string> = {
   "call-rate": "Calls per working day. Saturday to Wednesday, minus national holidays.",
   coverage: "How much of the planned doctor list has been reached at all this month.",
   frequency: "Whether each doctor was seen the number of times the plan asked for. Exact is the only pass.",
+  // These two say "against his LIST" on purpose. The four tabs above measure against the rep's
+  // PLAN; these measure against the whole panel the CRM assigned him, which is what the owner meant
+  // by "whole panel visisted one is the coverage". Two different denominators, so the wording has
+  // to make clear which one a number came from.
+  "am-pm": "All three KPIs against his AM and PM lists, reported apart and never averaged.",
+  pharmacies: "All three KPIs against his pharmacy list. A rep with no pharmacies is not applicable, not a zero.",
 };
 
 /**
