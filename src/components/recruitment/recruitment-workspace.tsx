@@ -1304,9 +1304,12 @@ function PipelineTab({
   // application it started from with the new HR_ID already in the box — see the hire card below.
   // Lazy initialisers rather than an effect: react-hooks/set-state-in-effect is an error here.
   const hireParams = useSearchParams();
-  // Talent Acquisition works in the portal shell and Super Admin in the admin one; the same
-  // workspace renders in both, so the way out to Add Employee is derived from where we already are
-  // rather than passed down as another prop.
+  // Built when Talent Acquisition worked in the portal shell and Super Admin in the admin one, so
+  // the way out to Add Employee is derived from where we already are rather than passed down as
+  // another prop. HR Advisory, the current recruiting seat, is admin-shell like Super Admin, so in
+  // practice this only ever renders at the admin pathname now — see
+  // tests/recruitment-hub-portal-coverage.test.ts (ORPHANED_PORTAL_MIRRORS) for why the portal
+  // route this branch still serves is unreachable.
   const hirePathname = usePathname();
   const addEmployeeHref = hirePathname?.startsWith("/employee-portals")
     ? "/employee-portals/employees"
@@ -2197,7 +2200,7 @@ function RequisitionsTab({
 /**
  * Shortlist and Reject — a decision on a CV that needs no requisition, no seat and no application.
  *
- * These two plus "Send to manager" (the picker below) are the whole of what Talent Acquisition does
+ * These two plus "Send to manager" (the picker below) are the whole of what the recruiter does
  * with an arriving CV, and until now none of the three could be recorded without first inventing a
  * requisition. Measured in production on 2026-08-15: 226 candidates, 6 human workflow moves ever.
  *

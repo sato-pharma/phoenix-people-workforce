@@ -1,6 +1,6 @@
 "use client";
 
-// Talent Acquisition — create several candidates from a batch of CVs at once. Files are
+// The recruiter — create several candidates from a batch of CVs at once. Files are
 // processed sequentially (not in parallel — bounds AI cost/concurrency and avoids hammering
 // the extraction endpoint with a burst of requests); each file gets its own row in a queue
 // with its own status, and a failure on one file (e.g. an unsupported type) doesn't stop the

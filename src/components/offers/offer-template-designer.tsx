@@ -133,8 +133,8 @@ export function OfferTemplateDesigner({
   templates,
 }: {
   /**
-   * Separate from `canManage` because the two are genuinely different grants: Talent Acquisition
-   * holds `offers:read/create/update/export` but NOT `offers:delete`, so it can build and edit a
+   * Separate from `canManage` because the two are genuinely different grants: HR Advisory
+   * holds `offers:read/create/update/export` but NOT `offers:delete`, so she can build and edit a
    * template and cannot remove one. Showing an enabled Delete that answers 403 is worse than
    * showing a disabled one — the route is the gate either way, this only stops the dead click.
    */

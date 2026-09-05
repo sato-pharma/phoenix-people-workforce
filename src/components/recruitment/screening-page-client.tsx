@@ -105,9 +105,11 @@ export function ScreeningPageClient({
   positionSuggestions: { jobTitles: string[]; areas: string[] };
   /**
    * Where "back to the pool" goes. Passed in rather than hard-coded because this page exists in
-   * both shells — the admin one at /recruitment and the Talent Acquisition portal twin at
-   * /employee-portals/recruitment — and sending a portal user to the admin route would bounce them
-   * straight back out through the (admin) group's redirect.
+   * both shells — the admin one at /recruitment and the portal twin at /employee-portals/recruitment
+   * built for the retired Talent Acquisition seat — and sending a portal user to the admin route
+   * would bounce them straight back out through the (admin) group's redirect. HR Advisory, the
+   * current recruiting seat, is admin-shell, so that portal twin is orphaned in practice — see
+   * tests/recruitment-hub-portal-coverage.test.ts (ORPHANED_PORTAL_MIRRORS).
    */
   poolHref: string;
   /** How long ago this link narrowed the CV to have arrived — null means any time. */

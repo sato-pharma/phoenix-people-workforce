@@ -139,8 +139,9 @@ export function EmployeeSearchList({
 }: {
   employees: Employee360ListItem[];
   /** Detail-link prefix — the admin index page links to `/employee-360/[hrId]`; the
-   * employee-portal's company-wide viewers (Talent Acquisition today) need their own
-   * `/employee-portals/employee-360/[hrId]` instead, since the admin route redirects
+   * employee-portal's company-wide viewers (Training Manager today — the retired Talent
+   * Acquisition seat's successors, HR Advisory and HR Operations, are admin-shell now) need
+   * their own `/employee-portals/employee-360/[hrId]` instead, since the admin route redirects
    * portal-mode roles away. */
   basePath?: string;
   /** Tab to open on. The portal self-report passes the VIEWER's own role family so a manager lands
