@@ -9,6 +9,12 @@ import {
   type AreaSeatAssignment,
 } from "../src/lib/sales/closing-performance-review.ts";
 import { closingFileName } from "../src/lib/sales/closing-export-filename.ts";
+import {
+  CLOSING_PDF_SHEETS,
+  buildClosingSheetHtml,
+  isClosingPdfSheet,
+  readSheetChrome,
+} from "../src/lib/sales/closing-report-pdf.ts";
 import { CLOSING_ENGINE_TEMPLATE_MANIFEST } from "../src/lib/sales/closing-engine-template-generated.ts";
 import type { MonthlySourceCoverage, SourceCoverageEntry } from "../src/lib/sales/source-coverage.ts";
 import type { ClosingDetailRow } from "../src/lib/sales/monthly-closing-details.ts";
@@ -194,6 +200,11 @@ export async function runClosingEngineExportTests() {
   const fill = buildClosingEngineFill({ matrix: july, priorMatrix: june, review });
   const macroBook = await fillClosingEngine(fill, {});
   const plainBook = await fillClosingEngine(fill, { macroFree: true });
+  const linkedBook = await fillClosingEngine(fill, {
+    macroFree: true,
+    pdfLink: (sheet) =>
+      isClosingPdfSheet(sheet) ? `https://phoenix-hr.satopharma.com/pdf?sheet=${encodeURIComponent(sheet)}` : null,
+  });
 
   // ── The engine itself survives the fill ─────────────────────────────────────────────────────
   // Everything here is what a static rebuild cannot carry, which is why the first attempt at this
@@ -1078,4 +1089,98 @@ export async function runClosingEngineExportTests() {
     "phoenix-monthly-closing-premium-jul-2026-cns-cairo.xlsx",
     "the default stays .xlsx — a macro attachment is stripped by too many mail systems to be the default",
   );
+
+  // ── Export PDF, as the one control a .xlsx is allowed to carry ──────────────────────────────
+  //
+  // The format forbids a VBA part, so `PhxExportPdf` cannot exist in this build and no Excel feature
+  // substitutes for it. A hyperlink can, and this is that button: the owner's own shape, with its
+  // macro swapped for a destination. Asserted on the EMITTED package, because every way this fails
+  // is a package-level fault Excel reports as "we found a problem with some content" — a dangling
+  // relationship id, a hyperlink rel that is not external, a `macro=` left behind.
+  const linkedZip = await JSZip.loadAsync(linkedBook);
+  const linkedSheets: string[] = [];
+  let danglingMacros = 0;
+  for (const file of linkedZip.file(/^xl\/drawings\/drawing\d+\.xml$/)) {
+    const xml = await file.async("string");
+    danglingMacros += (xml.match(/macro="[^"]+"/g) ?? []).length;
+
+    const relsName = file.name.replace(/drawings\/(drawing\d+)\.xml$/, "drawings/_rels/$1.xml.rels");
+    const rels = (await linkedZip.file(relsName)?.async("string")) ?? "";
+    for (const hit of xml.match(/<a:hlinkClick[^>]*r:id="rId\d+"/g) ?? []) {
+      const id = /r:id="(rId\d+)"/.exec(hit)![1];
+      const rel = new RegExp(`<Relationship Id="${id}"[^>]*>`).exec(rels)?.[0];
+      assert.ok(rel, `${file.name}: the button points at ${id}, which is not in ${relsName}`);
+      assert.match(rel!, /relationships\/hyperlink/, `${id} must be a hyperlink relationship`);
+      assert.match(rel!, /TargetMode="External"/, `${id} points off the package and must say so`);
+      linkedSheets.push(decodeURIComponent(/sheet=([^"&]*)/.exec(rel!)?.[1] ?? "?"));
+    }
+  }
+  assert.equal(
+    danglingMacros,
+    0,
+    "a linked build may still name no VBA routine — re-pointing the button must also strip macro=",
+  );
+  assert.deepEqual(
+    [...linkedSheets].sort(),
+    [...CLOSING_PDF_SHEETS].sort(),
+    "every renderable page gets a button, and only those — a pivot page's button is dropped, never left dead",
+  );
+
+  // The .xlsm is untouched by all of it: its macro works, so it keeps the macro.
+  const macroDrawingXml = await Promise.all(
+    (await JSZip.loadAsync(macroBook)).file(/^xl\/drawings\/drawing\d+\.xml$/).map((f) => f.async("string")),
+  );
+  assert.equal(
+    macroDrawingXml.reduce((n, xml) => n + (xml.match(/<a:hlinkClick/g) ?? []).length, 0),
+    0,
+    "the .xlsm must not gain a hyperlink — PhxExportPdf still runs there",
+  );
+  assert.ok(
+    macroDrawingXml.some((xml) => /macro="PhxExportPdf"/.test(xml)),
+    "the .xlsm must still hold the owner's Export PDF button",
+  );
+
+  // ── The PDF document itself ─────────────────────────────────────────────────────────────────
+  //
+  // On the EMITTED HTML, never on the module's source: the three defects that shipped in one night
+  // on this repo's other document work were all template-literal faults invisible in the source —
+  // an escaped slash that reached the browser unescaped, a quoted font family that closed a `style`
+  // attribute. Chromium is not launched here; CI's runner is not the app container.
+  const chrome = await readSheetChrome("Rep Ranking");
+  assert.ok(chrome.headers.includes("Medical rep"), "headings come from the owner's template, not from this file");
+  assert.ok(chrome.landscape, "Rep Ranking is landscape in his own page setup, and the PDF must follow it");
+
+  const html = buildClosingSheetHtml(
+    { fill, line: "CNS", period: "2026-07", sheet: "Rep Ranking" },
+    chrome,
+  );
+  assert.ok(!/text-overflow/.test(html), "no ellipsis, ever — a shortened customer name reads as a different one");
+  assert.match(html, /border-radius: 0 !important/, "square edges: the owner's rule, and tokens.css defaults to 4px");
+  assert.match(html, /<thead>/, "the heading row repeats on every page of a long table");
+  // Checked with the embedded mark taken out first. It is a base64 PNG, and a base64 blob contains
+  // every letter sequence eventually — this very logo carries a literal "NaN" inside it, which
+  // failed this assertion on a document that was perfectly correct.
+  const withoutImages = (page: string) => page.replace(/src="data:[^"]*"/g, 'src="…"');
+  assert.ok(
+    !/undefined|NaN|\[object Object\]/.test(withoutImages(html)),
+    "no value may reach the page as a JavaScript artefact",
+  );
+
+  // A proportion prints as a percentage. The fill hands over a bare ratio and the workbook's own
+  // percent format lives in a cell style this renderer never sees, so `0.83` printed as `0.83` is
+  // the silent failure here — not wrong, just unreadable.
+  const proportions = buildClosingSheetHtml(
+    {
+      fill: { ...fill, sheets: { "Rep Ranking": { rows: [[1, "A rep", "Area", "Region", "A manager", 1000, 800, 1.25]] } } },
+      line: "CNS",
+      period: "2026-07",
+      sheet: "Rep Ranking",
+    },
+    chrome,
+  );
+  assert.match(proportions, />125%</, "an achievement of 1.25 prints as 125%, the way the sheet shows it");
+  assert.match(proportions, />1,000</, "money keeps its thousands separators");
+
+  assert.ok(!isClosingPdfSheet("Closing Matrix"), "a pivot page has no rows in the file and cannot be rendered");
+  assert.ok(!isClosingPdfSheet("Data"), "the hidden source block is not a page");
 }
