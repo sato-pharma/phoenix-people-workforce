@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   describeIncompleteWindow,
@@ -110,4 +112,42 @@ export function runIncentiveSemesterWindowTests() {
     "a malformed today has no semester, and the window must NOT quietly fall back to the rep's data",
   );
   assert.equal(describeIncompleteWindow(null), null, "no window → no notice to render");
+
+  // ── THE NUMERATOR: total sales, never the covered slice ──────────────────────────────────────
+  //
+  // The owner's own definition, given on 2026-09-05 when asked directly what the incentive is paid
+  // on: "the incentive is total sales per semester over total target semester, twice yearly, the
+  // first time from Jan to June and the second from July to Dec." The window half of that is pinned
+  // above; this is the numerator half, and it is the half that decides money.
+  //
+  // It divided COVERED sales until that answer — only the money on a product carrying a target —
+  // defended by a comment asserting that "/sales-vs-target and Monthly Closing both measure
+  // achievement as covered ÷ target". Neither was true: vs-target moved onto the closing's rule
+  // that same morning, and the Monthly Closing has NEVER used covered ÷ target — closingAchievement
+  // divides all sales and always has. The justification was a mistaken belief about the closing.
+  //
+  // Pinned at SOURCE because the figure is computed inside an IO-bound portal loader that no unit
+  // test can reach. Whitespace-insensitive, so a reformat cannot false-fail it.
+  const service = readFileSync(
+    fileURLToPath(new URL("../src/lib/employee-portal/service.ts", import.meta.url)),
+    "utf8",
+  ).replace(/\s+/g, " ");
+
+  assert.ok(
+    service.includes("const overviewAchievementPercent = semesterTarget > 0 ? (semesterSales / semesterTarget) * 100 : 0;"),
+    "the incentive achievement must divide TOTAL semester sales by the semester target — the owner's "
+      + "stated basis, and the number the payout curve is fed",
+  );
+  assert.ok(
+    !service.includes("(semesterCoveredSales / semesterTarget)"),
+    "the covered-sales numerator must not return: it under-credits a rep against the closing, and on "
+      + "this tab the 90% floor is worth 50 points of payout",
+  );
+  // The retired accumulator is gone entirely rather than left dangling, so nothing can quietly
+  // reattach it. If a genuine need for coverage on this tab appears, add it as a DISPLAY field with
+  // its own name — never as something the percentage could be pointed back at.
+  assert.ok(
+    !service.includes("semesterCoveredSales"),
+    "the covered accumulator should be removed, not left unused beside the live numerator",
+  );
 }
