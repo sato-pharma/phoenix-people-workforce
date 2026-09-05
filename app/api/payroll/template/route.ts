@@ -35,6 +35,9 @@ import {
 import { getLatestSalaryExpenseTotalsBefore, getSalaryBatchExport } from "@/lib/payroll/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
+import { HOUSE_XLSX_COLORS, writeHouseMasthead } from "@/lib/export/house-xlsx-identity";
+import { payrollHeaderCell, payrollTotalsCell } from "@/lib/payroll/payroll-sheet-style";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -108,15 +111,15 @@ const readyPayrollEditableColumnNumbers = new Set<number>(
  * agree about where it belongs.
  */
 const uploadTemplateSections = [
-  { bodyFill: "FFEFF6FF", end: col("Working Days"), headerFill: "FF1E3A8A", label: "Employee Data", start: 1 },
-  { bodyFill: "FFF0FDFA", end: col("Net Salary"), headerFill: "FF0F766E", label: "Fixed Salary", start: col("Base Salary") },
-  { bodyFill: "FFF0FDF4", end: col("Other Additions"), headerFill: "FF16A34A", label: "Additions", start: col("Expenses") },
-  { bodyFill: "FFDCFCE7", end: col("Total Additions"), headerFill: "FF166534", label: "Total Additions", start: col("Total Additions") },
-  { bodyFill: "FFF5F3FF", end: col("Governmental Deductions"), headerFill: "FF7C3AED", label: "Governmental Deductions", start: col("Social Insurance") },
-  { bodyFill: "FFFEF2F2", end: col("Other Deductions"), headerFill: "FFDC2626", label: "Internal Deductions", start: col("CRM") },
-  { bodyFill: "FFFEE2E2", end: col("Total Deductions"), headerFill: "FF991B1B", label: "Total Deductions", start: col("Total Deductions") },
-  { bodyFill: "FFFFF7ED", end: col("Policy Comment"), headerFill: "FFF97316", label: "Payment Split", start: col("Month Salary") },
-  { bodyFill: "FFF8FAFC", end: col("Bank Account"), headerFill: "FF475569", label: "Bank Details", start: col("Bank") },
+  { end: col("Working Days"), label: "Employee Data", start: 1 },
+  { end: col("Net Salary"), label: "Fixed Salary", start: col("Base Salary") },
+  { end: col("Other Additions"), label: "Additions", start: col("Expenses") },
+  { end: col("Total Additions"), label: "Total Additions", start: col("Total Additions") },
+  { end: col("Governmental Deductions"), label: "Governmental Deductions", start: col("Social Insurance") },
+  { end: col("Other Deductions"), label: "Internal Deductions", start: col("CRM") },
+  { end: col("Total Deductions"), label: "Total Deductions", start: col("Total Deductions") },
+  { end: col("Policy Comment"), label: "Payment Split", start: col("Month Salary") },
+  { end: col("Bank Account"), label: "Bank Details", start: col("Bank") },
 ] as const;
 
 type PayrollTemplateRow = {
@@ -444,15 +447,11 @@ function writeReadyPayrollBlockHeaderRow(
   const row = sheet.getRow(rowNumber);
   const cell = row.getCell(1);
   cell.value = label;
-  cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 12 };
-  cell.fill = solidFill("FF0F172A");
-  cell.alignment = { horizontal: "left", vertical: "middle" };
-  cell.border = {
-    bottom: { color: { argb: "FFFFFFFF" }, style: "thin" },
-    left: { color: { argb: "FFFFFFFF" }, style: "thin" },
-    right: { color: { argb: "FFFFFFFF" }, style: "thin" },
-    top: { color: { argb: "FFFFFFFF" }, style: "thin" },
-  };
+  // A block divider: deep type over a Brand Blue rule, the same shape every heading in the house
+  // format takes. It was a full-width navy bar.
+  cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 11 };
+  cell.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
+  cell.border = { bottom: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "medium" } };
   row.height = 24;
   row.commit();
 }
@@ -461,23 +460,20 @@ function uploadSectionForColumn(columnNumber: number) {
   return uploadTemplateSections.find((section) => columnNumber >= section.start && columnNumber <= section.end) ?? uploadTemplateSections[0];
 }
 
-function solidFill(argb: string): ExcelJS.Fill {
-  return {
-    fgColor: { argb },
-    pattern: "solid",
-    type: "pattern",
-  };
-}
-
-function borderForColumn(columnNumber: number, color = "FFE5E7EB"): Partial<ExcelJS.Borders> {
+/**
+ * The grid, in the house format: a hairline between cells and a Brand Blue rule where one section
+ * ends and the next begins. The boundary rule is what separates the sections now that they no
+ * longer each have a colour of their own — nine hues, none of them in the company mark.
+ */
+function borderForColumn(columnNumber: number, color = HOUSE_XLSX_COLORS.hair): Partial<ExcelJS.Borders> {
   const section = uploadSectionForColumn(columnNumber);
   const isSectionEnd = columnNumber === section.end;
 
   return {
-    bottom: { color: { argb: color }, style: "thin" },
-    left: { color: { argb: color }, style: "thin" },
-    right: { color: { argb: isSectionEnd ? section.headerFill : color }, style: isSectionEnd ? "medium" : "thin" },
-    top: { color: { argb: color }, style: "thin" },
+    bottom: { color: { argb: color }, style: "hair" },
+    right: isSectionEnd
+      ? { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "thin" }
+      : { color: { argb: color }, style: "hair" },
   };
 }
 
@@ -493,15 +489,16 @@ function writeUploadSectionHeader(
     sheet.mergeCells(rowNumber, section.start, rowNumber, section.end);
   }
 
-  leadCell.value = section.label;
-  leadCell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
-  leadCell.fill = solidFill(section.headerFill);
-  leadCell.alignment = { horizontal: "center", vertical: "middle" };
+  leadCell.value = section.label.toUpperCase();
+  leadCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.light }, name: "Aptos", size: 7.5 };
+  leadCell.alignment = { horizontal: "left", indent: 1, vertical: "bottom" };
 
   for (let column = section.start; column <= section.end; column += 1) {
     const cell = row.getCell(column);
-    cell.fill = solidFill(section.headerFill);
-    cell.border = borderForColumn(column, "FFFFFFFF");
+    cell.border =
+      column === section.start
+        ? { left: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "thin" } }
+        : {};
   }
 }
 
@@ -525,13 +522,10 @@ function writeBankDetailsSectionRow(sheet: ExcelJS.Worksheet, rowNumber: number)
 }
 
 function stylePayrollHeaderRow(row: ExcelJS.Row) {
-  row.font = { bold: true, color: { argb: "FFFFFFFF" } };
-  row.height = 34;
-  row.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+  row.height = 32;
   row.eachCell((cell) => {
-    const section = uploadSectionForColumn(Number(cell.col));
-    cell.fill = solidFill(section.headerFill);
-    cell.border = borderForColumn(Number(cell.col), "FFFFEDD5");
+    const column = Number(cell.col);
+    payrollHeaderCell(cell, { numeric: moneyColumnNumbers.has(column) || countColumnNumbers.has(column) });
   });
 }
 
@@ -550,12 +544,28 @@ function stylePayrollDataCell(cell: ExcelJS.Cell) {
     cell.numFmt = "0";
   }
 
-  cell.alignment = { vertical: "middle", wrapText: true };
+  cell.alignment = {
+    horizontal: moneyColumnNumbers.has(column) || countColumnNumbers.has(column) ? "right" : "left",
+    vertical: "middle",
+    wrapText: true,
+  };
   cell.border = borderForColumn(column);
-  cell.fill = solidFill(section.bodyFill);
-  cell.font = isTotalColumn
-    ? { bold: true, color: { argb: "FF0F172A" } }
-    : { color: { argb: "FF0F172A" } };
+  // Nine section body fills become one zebra. The sections are still legible — their captions and
+  // the Brand Blue rule at each boundary do that work — and a data-entry sheet where every column
+  // is tinted has no way left to highlight anything that matters.
+  if (Number(cell.row) % 2 === 0) {
+    cell.fill = {
+      fgColor: { argb: HOUSE_XLSX_COLORS.tint },
+      pattern: "solid",
+      type: "pattern",
+    };
+  }
+  cell.font = {
+    bold: isTotalColumn,
+    color: { argb: isTotalColumn ? HOUSE_XLSX_COLORS.deep : HOUSE_XLSX_COLORS.body },
+    name: "Aptos",
+    size: 9.5,
+  };
 }
 
 function styleBankDetailsCells(
@@ -585,12 +595,8 @@ function applyPayrollTemplateColumnWidths(sheet: ExcelJS.Worksheet) {
 
 function stylePayrollTotalsRow(row: ExcelJS.Row) {
   row.eachCell((cell) => {
-    const section = uploadSectionForColumn(Number(cell.col));
     const column = Number(cell.col);
-    cell.fill = solidFill(section.headerFill);
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    cell.alignment = { horizontal: column === 1 ? "left" : "right", vertical: "middle", wrapText: true };
-    cell.border = borderForColumn(column, "FFFFFFFF");
+    payrollTotalsCell(cell, { numeric: column !== 1 });
     if (moneyColumnNumbers.has(column)) {
       cell.numFmt = "#,##0.00";
     }
@@ -725,7 +731,13 @@ async function buildUploadRows(month: number, year: number): Promise<PayrollTemp
     });
 }
 
-async function createFallbackWorkbook(
+/**
+ * Exported for `tests/payroll-upload-template.test.ts`, which round-trips the generated sheet back
+ * through the real importer. The masthead and the section captions sit ABOVE the header row, and
+ * the importer picks its header row by scoring rows 1-12 — so this is the one thing about the
+ * restyle that could silently swallow an upload, and it is tested rather than reasoned about.
+ */
+export async function createFallbackWorkbook(
   rows: PayrollTemplateRow[] = [],
   month = new Date().getMonth() + 1,
   year = new Date().getFullYear(),
@@ -734,29 +746,11 @@ async function createFallbackWorkbook(
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Payroll Upload");
 
-  writeTitle(sheet, month, year);
-  sheet.mergeCells(1, 1, 1, headers.length);
-  sheet.getCell("A1").value = "Phoenix Payroll Upload Template";
-  sheet.getCell("A1").font = { bold: true, color: { argb: "FFFFFFFF" }, size: 18 };
-  sheet.getCell("A1").fill = {
-    fgColor: { argb: "FF111827" },
-    pattern: "solid",
-    type: "pattern",
-  };
-  sheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
-  sheet.getRow(1).height = 34;
-  sheet.mergeCells(2, 1, 3, headers.length);
-  sheet.getCell("A2").value =
-    `Payroll period: ${monthName(month)} ${year}. Fixed fields are pre-populated from employee master data. Add monthly expenses, additions, and deductions before upload.`;
-  sheet.getCell("A2").font = { color: { argb: "FF374151" }, italic: true };
-  sheet.getCell("A2").fill = {
-    fgColor: { argb: "FFFFF7ED" },
-    pattern: "solid",
-    type: "pattern",
-  };
-  sheet.getCell("A2").alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-  sheet.getRow(2).height = 22;
-  sheet.getRow(3).height = 22;
+  // Rows 1-3 are the house masthead, which is exactly the space the old navy title bar and its
+  // orange subtitle occupied — so the section band stays on row 4, the header on row 5, and the
+  // importer's header scan sees precisely what it saw before. Row 3 is the masthead's 3-point brand
+  // RULE; the old layout set it to height 22, which here would render a blue slab, not a hairline.
+  applyPayrollUploadMasthead(workbook, sheet, month, year);
   writeUploadSectionRow(sheet, dataStartRow - 2);
   writeHeaderRow(sheet, dataStartRow - 1);
   stylePayrollHeaderRow(sheet.getRow(dataStartRow - 1));
@@ -812,6 +806,58 @@ async function createFallbackWorkbook(
   return workbook;
 }
 
+/**
+ * Puts the house masthead on a Payroll Upload sheet, whether it was just built or loaded from the
+ * stored `Phoneix system template.xlsx`.
+ *
+ * TWO OF THE THREE DOWNLOAD PATHS START FROM THAT STORED FILE — the plain template and the "ready"
+ * one both load it and restyle in place, and only `?upload=1` builds a sheet from scratch. Styling
+ * only the built one would have shipped the old navy title bar sitting on top of a house-styled
+ * body: a masthead in one identity, a table in another, on the same sheet.
+ *
+ * The loaded workbook already has rows 1-3 merged its own way, and ExcelJS throws rather than
+ * re-merging, so the old merges come out first. `unMergeCells` throws when there is nothing merged,
+ * which is the normal case for a freshly built sheet — hence the guard rather than a check.
+ */
+function applyPayrollUploadMasthead(
+  workbook: ExcelJS.Workbook,
+  sheet: ExcelJS.Worksheet,
+  month: number,
+  year: number,
+) {
+  for (const range of [
+    [1, 1, 1, headers.length],
+    [2, 1, 3, headers.length],
+    [1, 3, 1, Math.max(3, headers.length - 3)],
+  ] as Array<[number, number, number, number]>) {
+    try {
+      sheet.unMergeCells(range[0], range[1], range[2], range[3]);
+    } catch {
+      // Nothing merged there — the ordinary case on a sheet built from scratch.
+    }
+  }
+
+  for (let rowNumber = 1; rowNumber <= 3; rowNumber += 1) {
+    const row = sheet.getRow(rowNumber);
+    for (let column = 1; column <= headers.length; column += 1) {
+      const cell = row.getCell(column);
+      cell.value = null;
+      cell.fill = { type: "pattern", pattern: "none" };
+      cell.border = {};
+    }
+  }
+
+  writeHouseMasthead(workbook, sheet, {
+    columns: headers.length,
+    provenance: [`${monthName(month)} ${year}`],
+    subtitle:
+      `Payroll period: ${monthName(month)} ${year}. Fixed fields are pre-populated from employee ` +
+      "master data. Add monthly expenses, additions, and deductions before upload.",
+    title: "Payroll Upload Template",
+  });
+  writeTitle(sheet, month, year);
+}
+
 async function loadPayrollTemplateWorkbook() {
   const templatePath = payrollTemplatePath();
 
@@ -834,6 +880,7 @@ async function exactTemplateResponse() {
   const workbook = await loadPayrollTemplateWorkbook();
   const sheet = workbook.worksheets[0] ?? workbook.addWorksheet("Payroll Upload");
 
+  applyPayrollUploadMasthead(workbook, sheet, now.getMonth() + 1, now.getFullYear());
   writeBankDetailsSectionRow(sheet, dataStartRow - 2);
   writeHeaderRow(sheet, dataStartRow - 1);
   stylePayrollHeaderRow(sheet.getRow(dataStartRow - 1));
@@ -899,8 +946,17 @@ function prepareTemplateRows(
   return dataStartRow + rowCount;
 }
 
+/**
+ * The period line under the mark.
+ *
+ * A2 is the house masthead's subtitle row, so this writes the same cell the masthead does and must
+ * agree with it rather than compete: whichever runs last wins, and two different sentences in one
+ * cell is how a sheet ends up captioned for the wrong month.
+ */
 function writeTitle(sheet: ExcelJS.Worksheet, month: number, year: number) {
-  sheet.getCell("A2").value = `⚡  Phoenix — Payroll Sheet  |  ${monthName(month)} ${year}`;
+  sheet.getCell("A2").value =
+    `Payroll period: ${monthName(month)} ${year}. Fixed fields are pre-populated from employee ` +
+    "master data. Add monthly expenses, additions, and deductions before upload.";
 }
 
 function rowValues(
@@ -1119,17 +1175,25 @@ function writeTotals(
   row.commit();
 }
 
+/**
+ * "Type here".
+ *
+ * The one place this template still spends a fill on meaning rather than on rhythm, and it earns
+ * it: on a sheet of pre-populated figures, which cells a person is expected to change is the most
+ * useful thing the styling can say. It is the house tint with a Brand Blue rule around it, instead
+ * of an orange box in a palette that appears nowhere in the company mark.
+ */
 function styleInputCell(cell: ExcelJS.Cell) {
   cell.fill = {
-    fgColor: { argb: "FFFFF7ED" },
+    fgColor: { argb: HOUSE_XLSX_COLORS.tint },
     pattern: "solid",
     type: "pattern",
   };
   cell.border = {
-    bottom: { color: { argb: "FFF97316" }, style: "thin" },
-    left: { color: { argb: "FFF97316" }, style: "thin" },
-    right: { color: { argb: "FFF97316" }, style: "thin" },
-    top: { color: { argb: "FFF97316" }, style: "thin" },
+    bottom: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "thin" },
+    left: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "thin" },
+    right: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "thin" },
+    top: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "thin" },
   };
 }
 
@@ -1222,13 +1286,9 @@ function upsertWorkingDaysCalcSheet(workbook: ExcelJS.Workbook, month: number, y
 
   sheet.mergeCells("A1:J1");
   sheet.getCell("A1").value = "Working Days Calc";
-  sheet.getCell("A1").font = { bold: true, color: { argb: "FFFFFFFF" }, size: 16 };
-  sheet.getCell("A1").fill = {
-    fgColor: { argb: "FF111827" },
-    pattern: "solid",
-    type: "pattern",
-  };
-  sheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
+  sheet.getCell("A1").font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos Display", size: 14 };
+  sheet.getCell("A1").alignment = { horizontal: "left", indent: 1, vertical: "middle" };
+  sheet.getCell("A1").border = { bottom: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "medium" } };
   sheet.getRow(1).height = 30;
 
   writeMatrix(sheet, 3, 1, [
@@ -1262,16 +1322,14 @@ function upsertWorkingDaysCalcSheet(workbook: ExcelJS.Workbook, month: number, y
     ["Net Salary = Base Salary + CoL + Fuel from April 2026 onward", "", "", "", ""],
   ]);
   sheet.mergeCells("D3:H3");
-  sheet.getCell("D3").font = { bold: true, color: { argb: "FFFFFFFF" } };
-  sheet.getCell("D3").fill = {
-    fgColor: { argb: "FF334155" },
-    pattern: "solid",
-    type: "pattern",
-  };
+  sheet.getCell("D3").font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 10 };
+  sheet.getCell("D3").border = { bottom: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "medium" } };
   applyWorkingDaysLegendStyle(sheet.getCell("D4"), "FFDCFCE7");
   applyWorkingDaysLegendStyle(sheet.getCell("F4"), "FFFFEDD5");
   applyWorkingDaysLegendStyle(sheet.getCell("H4"), "FFF3F4F6");
-  applyWorkingDaysLegendStyle(sheet.getCell("D5"), "FFF97316");
+  // Entry/exit day. The legend swatch and the conditional format below are one pair: change one
+  // without the other and the key describes a colour the calendar no longer uses.
+  applyWorkingDaysLegendStyle(sheet.getCell("D5"), HOUSE_XLSX_COLORS.light);
   styleInputCell(sheet.getCell("F5"));
   applyWorkingDaysLegendStyle(sheet.getCell("H5"), "FFEFF6FF");
 
@@ -1348,8 +1406,8 @@ function upsertWorkingDaysCalcSheet(workbook: ExcelJS.Workbook, month: number, y
         formulae: ['F15="Boundary"'],
         priority: 3,
         style: {
-          fill: { fgColor: { argb: "FFF97316" }, type: "pattern", pattern: "solid" },
-          font: { color: { argb: "FFFFFFFF" } },
+          fill: { fgColor: { argb: HOUSE_XLSX_COLORS.light }, type: "pattern", pattern: "solid" },
+          font: { color: { argb: HOUSE_XLSX_COLORS.white } },
         },
         type: "expression",
       },
@@ -1372,12 +1430,8 @@ function upsertWorkingDaysCalcSheet(workbook: ExcelJS.Workbook, month: number, y
   sheet.mergeCells("A20:H20");
   sheet.mergeCells("A21:H21");
   sheet.mergeCells("A22:H22");
-  sheet.getCell("A19").font = { bold: true, color: { argb: "FFFFFFFF" } };
-  sheet.getCell("A19").fill = {
-    fgColor: { argb: "FF0F766E" },
-    pattern: "solid",
-    type: "pattern",
-  };
+  sheet.getCell("A19").font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 10 };
+  sheet.getCell("A19").border = { bottom: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "medium" } };
   forCells(sheet, 20, 1, 22, 8, (cell) => {
     cell.alignment = { wrapText: true };
   });
@@ -1395,14 +1449,10 @@ function upsertSalaryPolicySheet(workbook: ExcelJS.Workbook) {
   sheet.getColumn(2).width = 92;
 
   sheet.mergeCells("A1:B1");
-  sheet.getCell("A1").value = "Phoenix Salary Upload Policy";
-  sheet.getCell("A1").font = { bold: true, color: { argb: "FFFFFFFF" }, size: 16 };
-  sheet.getCell("A1").fill = {
-    fgColor: { argb: "FF111827" },
-    pattern: "solid",
-    type: "pattern",
-  };
-  sheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
+  sheet.getCell("A1").value = "Salary Upload Policy";
+  sheet.getCell("A1").font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos Display", size: 14 };
+  sheet.getCell("A1").alignment = { horizontal: "left", indent: 1, vertical: "middle" };
+  sheet.getCell("A1").border = { bottom: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "medium" } };
   sheet.getRow(1).height = 30;
 
   writeMatrix(sheet, 3, 1, [
@@ -1788,7 +1838,7 @@ async function buildStyledTemplate(
   const rowsToKeep = ready ? displayRows.length : 25;
   const totalsRow = prepareTemplateRows(sheet, rowsToKeep);
 
-  writeTitle(sheet, month, year);
+  applyPayrollUploadMasthead(workbook, sheet, month, year);
   writeBankDetailsSectionRow(sheet, dataStartRow - 2);
   writeHeaderRow(sheet, dataStartRow - 1);
   stylePayrollHeaderRow(sheet.getRow(dataStartRow - 1));
