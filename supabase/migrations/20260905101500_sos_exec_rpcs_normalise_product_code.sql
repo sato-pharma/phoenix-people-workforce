@@ -261,3 +261,23 @@ begin
   end if;
 end;
 $function$;
+
+-- ── Re-assert the SECURITY DEFINER grants ────────────────────────────────────────────────────
+-- CREATE OR REPLACE keeps the existing ACL, so on production these statements change NOTHING:
+-- measured 2026-09-05, all three already read `postgres=X/postgres | service_role=X/postgres`,
+-- with no PUBLIC, anon or authenticated entry.
+--
+-- They are here for REPLAY. On a fresh database the CREATE above would take the default ACL, which
+-- grants EXECUTE to PUBLIC — and these are SECURITY DEFINER functions reading the whole fact
+-- rollup, so that would hand every role the confidential-product data the exclude filter above
+-- exists to withhold. Revoking anon/authenticated alone is a no-op because both inherit through
+-- PUBLIC membership; and revoking PUBLIC on a default ACL also strips service_role, which is why
+-- each grant is re-stated explicitly.
+revoke execute on function public.phx_exec_brick(text, text[], text[], text[], text[], text[]) from public, anon, authenticated;
+grant  execute on function public.phx_exec_brick(text, text[], text[], text[], text[], text[]) to service_role;
+
+revoke execute on function public.phx_exec_distributor_product(text, text[], text[], text[], text[], text[], text[]) from public, anon, authenticated;
+grant  execute on function public.phx_exec_distributor_product(text, text[], text[], text[], text[], text[], text[]) to service_role;
+
+revoke execute on function public.phx_exec_sos_trend(text[], text[], text[], text[], text[], text[], text[]) from public, anon, authenticated;
+grant  execute on function public.phx_exec_sos_trend(text[], text[], text[], text[], text[], text[], text[]) to service_role;
