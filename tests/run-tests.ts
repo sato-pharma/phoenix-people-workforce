@@ -388,6 +388,7 @@ import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-pa
 import { runHrIdStorageCasingTests } from "./hr-id-storage-casing.test.ts";
 import { runRecruitmentHiringAnalyticsTests } from "./recruitment-hiring-analytics.test.ts";
 import { runRecruitmentRequisitionOpenGateTests } from "./recruitment-requisition-open-gate.test.ts";
+import { runRecruitmentInterviewClashTests } from "./recruitment-interview-clash.test.ts";
 import { runRecruitmentHiringAnalyticsLayoutTests } from "./recruitment-hiring-analytics-layout.test.ts";
 import { runRecruitmentEveryStageHasAWayForwardTests } from "./recruitment-every-stage-has-a-way-forward.test.ts";
 import { runClosingDriftAcknowledgementTests } from "./closing-drift-acknowledgement.test.ts";
@@ -2130,6 +2131,7 @@ await runTest("weekly plan move to another period (HR re-dates a plan the employ
 await runTest("hr ids are stored in canonical casing everywhere, never the lowercase comparison key", runHrIdStorageCasingTests);
 await runTest("hiring analytics (a batch sweep is not a decision, and a rate needs a denominator)", runRecruitmentHiringAnalyticsTests);
 await runTest("requisition open gate (no hire for nobody, and no replacing somebody who is still here)", runRecruitmentRequisitionOpenGateTests);
+await runTest("interview clash (one interviewer cannot be in two interviews at once)", runRecruitmentInterviewClashTests);
 await runTest("hiring analytics layout (desktop table, phone cards, square edges, no sideways scroll)", runRecruitmentHiringAnalyticsLayoutTests);
 await runTest("every application stage has a way forward (a stage nobody can leave reads as low adoption)", runRecruitmentEveryStageHasAWayForwardTests);
 await runTest("an acknowledged closing drift stays acknowledged only while it is the SAME drift", runClosingDriftAcknowledgementTests);
