@@ -7,7 +7,6 @@ import {
   renderContractNonRenewalHtml,
   renderContractRenewalHtml,
 } from "../src/lib/hiring-pack/render-renewal.ts";
-import { PRINT_BANNER_CSS } from "../src/lib/hiring-pack/render-shared.ts";
 import {
   RENEWAL_BLANK_RULE,
   renewalTemplateStrings,
@@ -563,14 +562,14 @@ function testBothPapersRenderCompletely(): void {
       html.includes("/brand/sato-pharma-logo-on-light.svg"),
       `${name}: ALWAYS the on-light mark. The stock file sets "SATO" in white, which vanishes on paper.`,
     );
-    // THE SQUARE-EDGE GOLDEN RULE, measured on the DOCUMENT rather than on the page.
-    // `PRINT_BANNER_CSS` is the on-screen banner every hiring paper carries — it is `.no-print`,
-    // it never reaches paper, and it is shared by all ten other documents, so its own 4px button
-    // radius is not this instrument's to answer for. Subtracting it is what makes this assertion
-    // about the renewal papers instead of about somebody else's chrome.
+    // THE SQUARE-EDGE GOLDEN RULE, measured on the WHOLE page rather than on the document alone.
+    // This used to subtract `PRINT_BANNER_CSS` — the on-screen banner every hiring paper carries —
+    // because that shared chrome rounded its own buttons at 4px and the radius was not this
+    // instrument's to answer for. The radius is gone, so nothing has to be carved out: the page
+    // now answers for every corner it draws, chrome included, which is the stronger claim.
     assert.ok(
-      !html.replace(PRINT_BANNER_CSS, "").includes("border-radius"),
-      `${name}: the square-edge golden rule — no round or semi-round corners on the document`,
+      !html.includes("border-radius"),
+      `${name}: the square-edge golden rule — no round or semi-round corners anywhere on the page`,
     );
   }
 
