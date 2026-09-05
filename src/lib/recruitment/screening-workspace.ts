@@ -49,7 +49,8 @@ import {
   listOtherViewersByCandidate,
   resolveViewerNames,
 } from "@/lib/recruitment/candidate-views";
-import { listCandidates } from "@/lib/recruitment/candidates";
+import { listCandidates, loadDecisionHistory } from "@/lib/recruitment/candidates";
+import { buildThroughput, type ThroughputSummary } from "@/lib/recruitment/candidate-throughput";
 import { listHiringManagerOptions, type HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import {
   listOpenVacancyOptions,
@@ -113,24 +114,24 @@ export type ScreeningWorkspace = {
   /** The whole live pool, before the URL filters. The denominator every count is honest about. */
   poolSize: number;
   /**
-   * Is the backlog growing or shrinking, in the only terms that matter — CVs in against CVs decided.
+   * Is the backlog growing or shrinking, in the only terms that matter — CVs in against CVs decided,
+   * over four weeks rather than one.
    *
    * The rail could say how big each pile is and nothing could say whether the reader is winning.
    * Measured 2026-09-05: 597 in the pool, 438 never opened by anybody, 153 arrived in seven days
    * against an average 12.8 days to a first decision. The queue was correct and losing, and no
    * number on the page said so.
    *
-   * Every figure comes off data this function already holds — the pool, the caller's own view map
-   * and the status stamps — so the strip costs no extra round trip.
+   * THE COUNTING MOVED, AND SO DID THE COST. The first version of this read the pool's own status
+   * stamps, which cost no extra round trip and was wrong in both directions once measured against
+   * the real history: it counted a re-decision as this week's output (93 against a true 71) and lost
+   * older decisions whose only stamp had moved forward (140 against a true 216 over thirty days). A
+   * single week's figure survives that; a trend built on it draws a confident line out of an
+   * artefact. It now costs one extra read of the decision history — see loadDecisionHistory, and
+   * candidate-throughput.ts for the arithmetic and for why an uncovered span reads as unknown
+   * rather than as zero.
    */
-  throughput: {
-    /** In this pool, never opened by THIS viewer. The same "seen" the rest of the page means. */
-    unread: number;
-    /** Arrived in the last seven days. */
-    arrived7: number;
-    /** Moved off `new` in the last seven days — the reader's actual output. */
-    decided7: number;
-  };
+  throughput: ThroughputSummary;
   canSendToManagers: boolean;
 
   seen: ScreeningSeenFilter;
@@ -222,6 +223,7 @@ export async function loadScreeningWorkspace(
     openVacancies,
     positionSuggestions,
     interviewToday,
+    decisionHistory,
   ] = await Promise.all([
     // WITHOUT the repeating CV blocks. Nothing below reads them, and on production they are 59%
     // of the bytes this read moves — see CANDIDATE_COLUMNS_WITHOUT_REPEATING_BLOCKS.
@@ -236,6 +238,9 @@ export async function loadScreeningWorkspace(
       ? listUsedPositionText()
       : Promise.resolve<{ jobTitles: string[]; areas: string[] }>({ areas: [], jobTitles: [] }),
     listCandidateIdsWithInterviewToday(),
+    // The decision history, for the throughput trend. A separate read because the pool's own status
+    // stamps cannot answer "when was this candidate FIRST decided" — they hold only the latest move.
+    loadDecisionHistory(),
   ]);
 
   // A shelved CV leaves the workstation exactly as it leaves the queue: the whole purpose of the
@@ -460,11 +465,17 @@ export async function loadScreeningWorkspace(
     now,
   );
 
-  const sevenDaysAgo = asOf - 7 * 24 * 60 * 60 * 1000;
-  const withinSevenDays = (stamp: string | null | undefined): boolean => {
-    const at = stamp ? Date.parse(stamp) : NaN;
-    return Number.isFinite(at) && at >= sevenDaysAgo;
-  };
+  // ARRIVALS COME FROM EVERY CANDIDATE, not from the pool. A CV that arrived and was then filed to
+  // a shelf did arrive, and dropping it would make the "in" side shrink every time somebody tidied
+  // up — so the strip would report the backlog improving because work was hidden rather than done.
+  // `unread` stays a question about the POOL, because that is the pile still in front of the reader.
+  const throughput = buildThroughput({
+    arrivals: allCandidates.map((candidate) => candidate.createdAt),
+    firstDecisions: [...decisionHistory.firstDecisionAt.values()],
+    historyStartsAt: decisionHistory.startsAt,
+    now: asOf,
+    unread: pool.filter((candidate) => !views[candidate.id]).length,
+  });
 
   return {
     ...narrowing,
@@ -480,16 +491,9 @@ export async function loadScreeningWorkspace(
     positionSuggestions,
     rows,
     sourceOptions: screeningSourceOptions(pool),
-    // Over the WHOLE pool, never the narrowed view: "am I keeping up" is a question about the
-    // backlog, and a figure that shrank because a filter was applied would answer a different one.
-    throughput: {
-      arrived7: pool.filter((candidate) => withinSevenDays(candidate.createdAt)).length,
-      decided7: pool.filter(
-        (candidate) =>
-          normalizeCandidateStatus(candidate.status) !== "new" && withinSevenDays(candidate.statusChangedAt),
-      ).length,
-      unread: pool.filter((candidate) => !views[candidate.id]).length,
-    },
+    // Over everything, never the narrowed view: "am I keeping up" is a question about the backlog,
+    // and a figure that shrank because a filter was applied would answer a different one.
+    throughput,
     vacancies: openVacancies,
     vacancyStats: openVacancies
       .map((vacancy) => vacancyStatsById.get(vacancy.id))
