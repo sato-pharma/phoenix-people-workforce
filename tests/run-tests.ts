@@ -846,6 +846,8 @@ import { runHrIdNormalizerRatchetTests } from "./hrid-normalizer-ratchet.test.ts
 import { runScheduledNotificationKeyRatchetTests } from "./scheduled-notification-key-ratchet.test.ts";
 import { runBadgeToneContrastTests } from "./badge-tone-contrast.test.ts";
 import { runNavigationPageFindabilityRatchetTests } from "./navigation-page-findability-ratchet.test.ts";
+import { runEmployeeImportChangePreviewTests } from "./employee-import-change-preview.test.ts";
+import { runEmployeeImportFixListTests } from "./employee-import-fix-list.test.ts";
 import { runEmployeeMasterWorkbookTests } from "./employee-master-workbook.test.ts";
 import { runEmployeeTemplateTeamDropdownTests } from "./employee-template-team-dropdown.test.ts";
 import { runSosMappingIntegrityTests } from "./sos-mapping-integrity.test.ts";
@@ -2125,6 +2127,8 @@ await runTest("closing resolves the org chart at the month being closed, not the
 await runTest("closing reads the org chart WITH history, so a dated territory move resolves", runClosingRegionHistoryTests);
 await runTest("employee template Area->Team dropdown (builder and Excel resolve the same range)", runEmployeeTemplateTeamDropdownTests);
 await runTest("employee master workbook (import contract, spare rows, emitted artifact)", runEmployeeMasterWorkbookTests);
+await runTest("employee import fix list (findings resolve to columns, nothing truncated)", runEmployeeImportFixListTests);
+await runTest("employee import change preview (blanks are not changes, money called out)", runEmployeeImportChangePreviewTests);
 await runTest("direct channel", runDirectChannelTests);
 await runTest("direct orders land on their own area", runDirectOrdersLandOnTheirOwnAreaTests);
 await runTest("the place spine resolves EXACT customer-code pairs (two .in() filters are independent)", runCustomerGeographySpineTests);
