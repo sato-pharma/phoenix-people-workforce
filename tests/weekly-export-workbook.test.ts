@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 
 import JSZip from "jszip";
 
+import { HOUSE_DOCUMENT_STANDARD, HOUSE_XLSX_COLORS } from "../src/lib/export/house-xlsx-palette.ts";
 import { buildWeeklyExportWorkbook } from "../src/lib/sales/weekly/export-workbook.ts";
 import { WEEKLY_TRACKED_SCOPE_NOTE } from "../src/lib/sales/weekly/tracked-lines.ts";
 import type { WeeklyDashboard, WeeklyFactExportRow } from "../src/lib/sales/weekly/types.ts";
 
-const GENERATED_AT = "2026-06-29 12:00 UTC";
+export const GENERATED_AT = "2026-06-29 12:00 UTC";
 
 function isXlsx(buffer: Buffer): boolean {
   // .xlsx is a zip → first two bytes are 'P' 'K' (0x50 0x4B)
@@ -62,7 +63,7 @@ function factRows(): WeeklyFactExportRow[] {
   return rows;
 }
 
-function sampleDashboard(empty = false): WeeklyDashboard {
+export function sampleDashboard(empty = false): WeeklyDashboard {
   const rows = empty ? [] : factRows();
   const regions = empty ? [] : [{ code: "D1", name: "Delta 1" }, { code: "D2", name: "Delta 2" }].map((r) => ({ ...r, salesValue: 0, salesUnits: 0, stockUnits: 0, share: 0 }));
   const products = empty ? [] : [{ code: "SAG", name: "Saginkgo" }, { code: "ROY", name: `Royafloxacin, "500mg" & co` }].map((p) => ({ ...p, salesValue: 0, salesUnits: 0, stockUnits: 0, share: 0 }));
@@ -99,6 +100,34 @@ function sampleDashboard(empty = false): WeeklyDashboard {
   };
 }
 
+/**
+ * Every SOLID fill in the emitted package's style table, and every font family it names.
+ *
+ * Read from `styles.xml` rather than by walking cells: ExcelForge writes one style entry per
+ * distinct look, so this is the whole vocabulary of the workbook in a dozen entries rather than
+ * hundreds of thousands of cell lookups — and a fill that exists in the table but is applied to
+ * nothing is still a fill somebody meant to use.
+ */
+async function styleVocabulary(buffer: Buffer): Promise<{ fills: string[]; fonts: string[] }> {
+  const zip = await JSZip.loadAsync(buffer);
+  const styles = (await zip.file("xl/styles.xml")?.async("string")) ?? "";
+  const fills = [...styles.matchAll(/<patternFill patternType="solid"><fgColor rgb="([0-9A-Fa-f]{8})"/g)]
+    .map((match) => match[1].toUpperCase());
+  const fonts = [...new Set([...styles.matchAll(/<name val="([^"]+)"\/>/g)].map((match) => match[1]))];
+  return { fills, fonts };
+}
+
+/** Every string the workbook renders, shared strings and inline strings alike. */
+async function allText(buffer: Buffer): Promise<string> {
+  const zip = await JSZip.loadAsync(buffer);
+  let text = "";
+  for (const name of Object.keys(zip.files)) {
+    if (!/\.(xml|rels)$/.test(name)) continue;
+    text += await zip.files[name].async("string");
+  }
+  return text;
+}
+
 export async function runWeeklyExportTests() {
   // Interactive build: valid xlsx, 23 sheets (incl. the native pivot), no control bytes.
   const interactive = await buildWeeklyExportWorkbook(sampleDashboard(), GENERATED_AT, { interactive: true });
@@ -115,4 +144,53 @@ export async function runWeeklyExportTests() {
   const blank = await buildWeeklyExportWorkbook(sampleDashboard(true), GENERATED_AT, { interactive: true });
   assert.ok(isXlsx(blank), "empty-data workbook must still be a valid .xlsx (zip) buffer");
   assert.equal(await hasControlBytes(blank), false, "empty workbook must contain no control bytes");
+  // ── THE HOUSE IDENTITY, ASSERTED ON THE EMITTED PACKAGE ─────────────────────
+  //
+  // This workbook used to be orange and slate: a filled slate band per sheet header, a slate band per
+  // region group, six KPI tiles on filled slate, a warm-orange zebra and orange gridlines. Under
+  // SATO-DIS-2026-01 v1.0 colour is carried by lines and type, and the CHROME may hold only two
+  // fills — the Brand Blue masthead rule and the 6% zebra row.
+  //
+  // The conditional formats are deliberately NOT chrome and keep their fills: a colour scale IS the
+  // analysis on a matrix sheet, and there is no type-only form of a heatmap. Those are re-pointed
+  // into the palette where they read MAGNITUDE and keep a signal colour where they read a VERDICT,
+  // which is why the allowed set below is the two chrome fills plus exactly three verdict marks.
+  const vocabulary = await styleVocabulary(interactive);
+  const allowedFills = new Set([
+    HOUSE_XLSX_COLORS.blue, // the masthead rule — and the low-outlier mark, which shares it
+    HOUSE_XLSX_COLORS.tint, // the zebra row: the format's one permitted chrome fill
+    HOUSE_XLSX_COLORS.flag, // the alarm mark on a zero cell
+    "FF9A5B08", // the at-target mark
+  ]);
+  const strayFills = [...new Set(vocabulary.fills)].filter((argb) => !allowedFills.has(argb));
+  assert.deepEqual(
+    strayFills,
+    [],
+    "the ink rule: colour is carried by lines and type, never by filled area. This workbook's style " +
+      "table may hold only the Brand Blue rule, the zebra, and the two data-driven verdict marks. " +
+      `Found: ${strayFills.join(", ")}`,
+  );
+
+  // ...and the two that must be PRESENT, so the assertion above cannot pass on a workbook that lost
+  // its styling altogether — which is what a broken builder would also look like.
+  assert.ok(vocabulary.fills.includes(HOUSE_XLSX_COLORS.blue), "every sheet carries the Brand Blue masthead rule");
+  assert.ok(vocabulary.fills.includes(HOUSE_XLSX_COLORS.tint), "the zebra row is in use");
+
+  // Every font this builder sets is the house face. `Calibri` survives at style index 0 only, which
+  // is ExcelForge's mandatory OOXML default for an unstyled cell and is not ours to change — the
+  // library exposes no default-font setting, so asserting its absence would be asserting a fiction.
+  const setFonts = vocabulary.fonts.filter((name) => name !== "Calibri");
+  assert.deepEqual(
+    [...setFonts].sort(),
+    ["Aptos", "Aptos Display"],
+    `every font this builder sets is the house face; found ${vocabulary.fonts.join(", ")}`,
+  );
+
+  // A company document wears the COMPANY's identity, never the app's.
+  const text = await allText(interactive);
+  assert.ok(
+    !/phoenix/i.test(text),
+    "the weekly BI workbook must not print the app's name anywhere — it is a Sato Pharma document",
+  );
+  assert.ok(text.includes(HOUSE_DOCUMENT_STANDARD), `the workbook carries its document standard, ${HOUSE_DOCUMENT_STANDARD}`);
 }
