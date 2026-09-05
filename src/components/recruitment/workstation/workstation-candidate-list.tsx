@@ -174,7 +174,7 @@ export function WorkstationCandidateList({
                     <input
                       aria-label={`Select ${row.fullName} for a bulk decision`}
                       checked={markedIds.has(row.id)}
-                      className="h-3.5 w-3.5 rounded-none accent-phx-accent"
+                      className="h-3.5 w-3.5 accent-phx-accent"
                       onChange={() => onToggleMark(row.id)}
                       type="checkbox"
                     />
