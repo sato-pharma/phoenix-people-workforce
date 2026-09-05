@@ -199,7 +199,12 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
   "/hr/attendance/device-user-mapping": 'canAccessAttendanceSetup(access, "read") — true for Operations, the only seat offered it',
   "/hr/attendance/policies": 'canAccessAttendanceSetup(access, "read") — true for Operations, the only seat offered it',
   "/hr/admin/support-requests": "hoisted const canRead = await canAccess(access, support_requests, read) — true for both",
-  "/hr/offers": "destructured Promise.all, gate is !canRead = offers:read — true for Advisory, the only seat offered it",
+  // NO /hr/offers entry. It was listed here while the rail carried the row — "the only seat offered
+  // it" was the whole reason it needed answering for — and the owner cut that row on 2026-09-05
+  // because ats_offers held zero rows and no application had ever been converted to an employee.
+  // With no HR row pointing at the page there is nothing for this map to answer for, exactly as
+  // with contact-review and intake-health above. The PAGE and its gate are untouched: /offers still
+  // opens by direct URL on offers:read, which only Advisory holds. Restore this line with the row.
   "/hr/hiring-documents": "destructured Promise.all, gate is isHrAuthorityRole && employee_documents:read — true for both",
   "/hr/hiring-pack": "destructured Promise.all, gate is isHrAuthorityRole && employee_documents:read — true for both",
   "/hr/admin/payroll-management": "any-of payroll:read || payslips:read || deductions:read — both hold deductions:read",
