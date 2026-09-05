@@ -182,20 +182,22 @@ function walk(dir: string, found: string[] = []): string[] {
 /**
  * Every rounding site in the shipped stylesheets, exactly.
  *
- * ALL EIGHT ARE WITH THE OWNER as of 2026-09-05 and are deliberately NOT squared here. Six are
- * scrollbar thumbs and tracks and two are decorative login effects — a glow and an ember, both of
- * which are meant to be circles. Squaring them would be a visible regression nobody asked for, and
- * "is a scrollbar thumb a corner" is a question for the owner, not an inference for a session. They
- * are pinned rather than fixed so the answer lands as a deliberate edit to this list.
+ * BOTH ARE WITH THE OWNER as of 2026-09-05 and are deliberately NOT squared here. They are the two
+ * decorative effects on the sign-in screen — a glow and an ember — and at 9999px each is a CIRCLE
+ * rather than a rounded box, so squaring them turns a halo into a glowing square and a drifting
+ * spark into falling confetti. That is a question for the owner, not an inference for a session.
+ *
+ * THIS LIST HELD SIX MORE UNTIL 2026-09-05: the scrollbar thumbs and tracks. PR #3209 squared them,
+ * on a sharper reading of the mechanism than the one this file started with — RULE 1 sets a radius
+ * on the ELEMENT, but a scrollbar thumb is painted on a `::-webkit-scrollbar-thumb` PSEUDO-element,
+ * so the sweep can never reach one whatever classes the element carries. Its companion trap is
+ * worth carrying: a div marked `[&::-webkit-scrollbar-thumb]:rounded-full` DOES contain the
+ * substring "rounded", so `[class*="rounded"]` matches and RULE 1 fires — on the div, whose corners
+ * were never the problem, while the thumb keeps its radius. Auditing by grepping `rounded-`
+ * utilities and checking they sit inside a shell ticks that case off as handled.
  */
 const STYLESHEET_INVENTORY: Record<string, string[]> = {
   "app/globals.css": [
-    ".phoenix-admin-sidebar-scroll::-webkit-scrollbar-thumb | border-radius: 999px",
-    "html:has(.admin-shell)::-webkit-scrollbar-thumb | border-radius: 999px",
-    ".phoenix-employee-sidebar-scroll::-webkit-scrollbar-track | border-radius: 999px",
-    ".phoenix-employee-sidebar-scroll::-webkit-scrollbar-thumb | border-radius: 999px",
-    ".phoenix-horizontal-scroll::-webkit-scrollbar-track | border-radius: 999px",
-    ".phoenix-horizontal-scroll::-webkit-scrollbar-thumb | border-radius: 999px",
     // NOTE: this rule carries ::before AND ::after, so it is two elements, not one.
     ".login-logo-glow::before, .login-logo-glow::after | border-radius: 9999px",
     ".login-ember | border-radius: 9999px",
@@ -246,9 +248,14 @@ const RADIUS_TOKEN_INVENTORY: Record<string, string[]> = {
  * Every entry here is either owned by another branch or waiting on the owner. None is an accident.
  */
 const REMAINING_ROUNDING: Record<string, number> = {
-  // OWNED BY ANOTHER BRANCH — do not touch from here.
-  // `codex/payroll-glow-bar-square-edge` is squaring the payroll glow bar in a parallel session.
-  "src/components/payroll/payroll-dashboard.tsx": 2,
+  // LEGAL, AND DELIBERATELY NOT ZERO. The survivor here is
+  // `.payroll-dashboard-surface .rounded-xl.border.bg-card { border-radius: 20px }`. The element
+  // necessarily carries `rounded-xl`, so RULE 1's `!important` out-ranks it and the corner computes
+  // 0px on the live page — measured in a browser by PR #3209, which squared this file's OTHER
+  // radius (`.phoenix-glow-bar`, at `18px 18px 6px 6px`, on a bar with no `rounded-*` hook at all
+  // and therefore unreachable by RULE 1). Pinning mere absence would have forced this dead
+  // declaration out on a false pretext, so it stays and is counted.
+  "src/components/payroll/payroll-dashboard.tsx": 1,
   //
   // The payslip route USED to sit here at 11 corners, held for PR #3200. That PR merged on
   // 2026-09-05 and settled them: the stylesheet moved to `src/lib/payroll/payslip-document.ts`,
@@ -258,8 +265,8 @@ const REMAINING_ROUNDING: Record<string, number> = {
   // correct state — and it is the strongest answer to the token problem in the row below: a
   // generated document that resets rounding at its own root does not care what tokens.css ships.
 
-  // WITH THE OWNER — the eight stylesheet sites above, counted again by the tree walk.
-  "app/globals.css": 8,
+  // WITH THE OWNER — the two stylesheet sites above, counted again by the tree walk.
+  "app/globals.css": 2,
 
   // WITH THE OWNER — email. A mail client is a different medium from the app and from a printed
   // company document, and rounded corners are ordinary there. 11 + 1 + 4 sites.

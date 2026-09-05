@@ -12,11 +12,13 @@
  *   1. Things the rule names outright — cards, buttons, tags, inputs, bars, avatars, badges. Those
  *      were squared in the same branch as this script and are NOT in here. Asking about them would
  *      be asking the owner to re-state a rule he already locked.
- *   2. Things another branch already owns (the payslip route under PR #3200, the payroll glow bar
- *      under `codex/payroll-glow-bar-square-edge`). Not ours to ask about.
- *   3. THESE. A scrollbar handle, a decorative glow, a spinner ring, a design token, an email in a
- *      mail client. Squaring any of them would be a visible change nobody asked for, and reading
- *      the rule as covering them is an inference, not an instruction.
+ *   2. Things a parallel branch settled while this ran. PR #3200 put the payslip on the house
+ *      document identity and squared its 11 corners; PR #3209 squared the payroll glow bar and all
+ *      six scrollbars. Those were rows here until they were answered in code — an answered question
+ *      must not be re-asked, which is the rule that keeps these sheets getting replies at all.
+ *   3. THESE. A decorative glow, a spinner ring, a design token, an email in a mail client.
+ *      Squaring any of them would be a visible change nobody asked for, and reading the rule as
+ *      covering them is an inference, not an instruction.
  *
  * NOTHING IS PADDED. Where one decision genuinely covers many declarations — every corner in one
  * email layout is one question about one medium — it is ONE row carrying the site count, not eleven
@@ -66,64 +68,6 @@ type CornerRow = {
  * few seconds without opening the code.
  */
 const CORNERS: CornerRow[] = [
-  // ── Scrollbars ────────────────────────────────────────────────────────────────────────────────
-  {
-    group: "Scrollbar",
-    what: "Admin sidebar scrollbar handle",
-    where: "app/globals.css",
-    element: ".phoenix-admin-sidebar-scroll::-webkit-scrollbar-thumb",
-    value: "999px",
-    context:
-      "The little draggable bar in the admin sidebar. A browser's own scrollbar is rounded on every "
-      + "OS; squaring ours makes it look unlike every other scrollbar on the machine.",
-    sites: 1,
-  },
-  {
-    group: "Scrollbar",
-    what: "Whole-page scrollbar handle, admin screens",
-    where: "app/globals.css",
-    element: 'html:has(.admin-shell)::-webkit-scrollbar-thumb',
-    value: "999px",
-    context: "The main page scrollbar on every admin screen. Same question as the row above.",
-    sites: 1,
-  },
-  {
-    group: "Scrollbar",
-    what: "Portal sidebar scrollbar groove",
-    where: "app/globals.css",
-    element: ".phoenix-employee-sidebar-scroll::-webkit-scrollbar-track",
-    value: "999px",
-    context: "The channel the handle slides in, in the employee portal sidebar.",
-    sites: 1,
-  },
-  {
-    group: "Scrollbar",
-    what: "Portal sidebar scrollbar handle",
-    where: "app/globals.css",
-    element: ".phoenix-employee-sidebar-scroll::-webkit-scrollbar-thumb",
-    value: "999px",
-    context: "The draggable bar in the employee portal sidebar.",
-    sites: 1,
-  },
-  {
-    group: "Scrollbar",
-    what: "Horizontal scroller groove",
-    where: "app/globals.css",
-    element: ".phoenix-horizontal-scroll::-webkit-scrollbar-track",
-    value: "999px",
-    context: "Used where a wide strip scrolls sideways inside a page.",
-    sites: 1,
-  },
-  {
-    group: "Scrollbar",
-    what: "Horizontal scroller handle",
-    where: "app/globals.css",
-    element: ".phoenix-horizontal-scroll::-webkit-scrollbar-thumb",
-    value: "999px",
-    context: "The draggable bar of that sideways scroller.",
-    sites: 1,
-  },
-
   // ── The login screen's decorations ────────────────────────────────────────────────────────────
   {
     group: "Login decoration",
@@ -359,13 +303,13 @@ function buildReadMe(workbook: ExcelJS.Workbook): void {
     ],
     [
       "Why these were not just squared",
-      "A scrollbar handle, a spinner and a glowing speck are circles, not corners. Squaring them "
-        + "would be a visible change to the sign-in screen and every scrollbar in the app that you "
-        + "did not ask for. Guessing either way is worse than asking once.",
+      "A spinner and a glowing speck are circles, not corners. Squaring them would be a "
+        + "visible change to the sign-in screen that you did not ask for. Guessing either way is "
+        + "worse than asking once. (The scrollbars were a row here until PR #3209 squared them.)",
     ],
     [
-      "Corners (20 rows)",
-      "Scrollbars, the sign-in screen's decorations, the identity card, the offer letter and email. "
+      "Corners (14 rows)",
+      "The sign-in screen's decorations, the identity card, the offer letter and email. "
         + "The 'What it looks like' column tells you what you are looking at without opening the code.",
     ],
     [
