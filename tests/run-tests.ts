@@ -1404,6 +1404,7 @@ import { runPayrollHoldReasonTests } from "./payroll-hold-reason.test.ts";
 
 import { runEmployeeImportJobTitleCasingTests } from "./employee-import-job-title-casing.test.ts";
 import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-cairo-clock.test.ts";
+import { runAdminProfileCreatedAtHydrationSafeTests } from "./admin-profile-created-at-hydration-safe.test.ts";
 
 import { runEmployeeSavePreservesSalaryTests } from "./employee-save-preserves-salary.test.ts";
 
@@ -4437,6 +4438,10 @@ await runTest(
 await runTest(
   "contract anniversary resolves Cairo's calendar day, not the server's local/UTC clock",
   runContractAnniversaryCairoClockTests,
+);
+await runTest(
+  "admin profile 'Account created' is built from the Cairo-pinned formatter (regression for React hydration error #418)",
+  runAdminProfileCreatedAtHydrationSafeTests,
 );
 
 await runTest("employee save preserves stored salary when the payload omits money fields", runEmployeeSavePreservesSalaryTests);
