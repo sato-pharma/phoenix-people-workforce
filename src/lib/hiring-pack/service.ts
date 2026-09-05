@@ -309,6 +309,29 @@ function cleanText(value: string | null | undefined) {
   return text ? text : null;
 }
 
+/**
+ * The "who last edited this" stamp — or NOTHING AT ALL when nobody is known.
+ *
+ * Both profile savers take the actor as OPTIONAL and the routes pass `access.hrId ?? null`, so a
+ * signed-in person with no linked HR id — the `admin-HR` account carries a NULL `hr_id` by design —
+ * arrives here as null. Writing the column unconditionally then stamped NULL over whoever was
+ * recorded before, with no error and no history: measured on production 2026-09-05, Nada Saed's
+ * hiring profile lost its previous editor at 15:27 Cairo that way.
+ *
+ * Returning an EMPTY OBJECT is the fix, not `?? "system"` or the old value re-read. An absent key
+ * is left out of the upsert's SET clause, so the stored value survives untouched — the same
+ * mechanism `versionStamp` below already relies on to stamp a contract's template version once and
+ * never rewrite it. A marker like "system" would be worse than the erase: it reads as a fact.
+ *
+ * This is the pattern rather than the two call sites. An optional field written unconditionally is
+ * a silent erase, and it regenerates — the next satellite table with an actor column will be
+ * written by somebody copying one of these upserts.
+ */
+export function updatedByStamp(actorHrId: string | null | undefined): { updated_by_hr_id?: string } {
+  const stored = hrIdForStorage(cleanText(actorHrId));
+  return stored ? { updated_by_hr_id: stored } : {};
+}
+
 function toNumber(value: number | string | null | undefined) {
   if (value === null || value === undefined || value === "") return null;
   const parsed = typeof value === "number" ? value : Number(value);
@@ -1326,7 +1349,7 @@ export async function saveHiringPackProfile(
         contract_objective_reason_code: isRenewalObjectiveReasonCode(input.contractObjectiveReasonCode)
           ? cleanText(input.contractObjectiveReasonCode)
           : null,
-        updated_by_hr_id: hrIdForStorage(cleanText(actorHrId)),
+        ...updatedByStamp(actorHrId),
       },
       { onConflict: "hr_id" },
     );
@@ -1371,7 +1394,7 @@ export async function saveOffboardingProfile(
         employer_rep_name_ar: cleanText(input.employerRepNameAr),
         employer_rep_title_ar: cleanText(input.employerRepTitleAr),
         notes: cleanText(input.notes),
-        updated_by_hr_id: hrIdForStorage(cleanText(actorHrId)),
+        ...updatedByStamp(actorHrId),
       },
       { onConflict: "hr_id" },
     );
@@ -1466,7 +1489,7 @@ export async function markHiringPackSigned(input: MarkHiringPackSignedInput): Pr
       {
         hr_id: hrId,
         [binding.signedColumn]: signedDate,
-        updated_by_hr_id: hrIdForStorage(cleanText(input.actorHrId)),
+        ...updatedByStamp(input.actorHrId),
         ...versionStamp,
       },
       { onConflict: "hr_id" },
