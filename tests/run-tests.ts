@@ -1324,6 +1324,7 @@ import { runDirectOrderReversalFamilyCodeTests } from "./direct-orders-reversal-
 import { runSidebarLayoutEditorModeTests } from "./sidebar-layout-editor-mode.test.ts";
 import { runNavRowWayBackTests } from "./nav-row-way-back.test.ts";
 import { runCiDependencyAuditTests } from "./ci-dependency-audit.test.ts";
+import { runAppsScriptPushTests } from "./apps-script-push.test.ts";
 import { runHeredocBackslashDamageTests } from "./heredoc-backslash-damage.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -4169,6 +4170,12 @@ await runTest(
 await runTest(
   "an npm outage is told apart from a real advisory (CI dependency audit fails closed on findings, open on timeouts)",
   runCiDependencyAuditTests,
+);
+await runTest(
+  "a sheet fix actually reaches the sheet (Apps Script push refuses to write an empty project, "
+  + "refuses when the managed file is absent or the wrong type, preserves appsscript.json and "
+  + "every sibling file, and every docs/*-live-sheet.gs on disk is declared in the manifest)",
+  runAppsScriptPushTests,
 );
 await runTest(
   "heredoc backslash damage sweep (no control byte in source, no regex built from a halved escape)",
