@@ -31,20 +31,21 @@ export type { CellValue, TableColumn };
  * failing an export for.
  */
 export function applyHouseDataBar(sheet: ExcelJS.Worksheet, ref: string, priority = 1) {
+  // The rule is built as a NAMED CONST, not inlined — ExcelJS's `DataBarRuleType` does not declare
+  // `color`, and TypeScript's excess-property check fires on a direct object literal but not on a
+  // variable passed in. The kit's own `applyDataBar` is written the same way for the same reason;
+  // inlining it here is what turned this into a build failure. ExcelJS does honour the property.
+  const rule = {
+    cfvo: [{ type: "min" as const }, { type: "max" as const }],
+    color: { argb: HOUSE_XLSX_COLORS.light },
+    gradient: false,
+    priority,
+    showValue: true,
+    type: "dataBar" as const,
+  };
+
   try {
-    sheet.addConditionalFormatting({
-      ref,
-      rules: [
-        {
-          cfvo: [{ type: "min" as const }, { type: "max" as const }],
-          color: { argb: HOUSE_XLSX_COLORS.light },
-          gradient: false,
-          priority,
-          showValue: true,
-          type: "dataBar" as const,
-        },
-      ],
-    });
+    sheet.addConditionalFormatting({ ref, rules: [rule] });
   } catch {
     // A data bar is decoration; an export that fails because of one is worse than one without it.
   }
