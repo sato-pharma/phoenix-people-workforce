@@ -110,11 +110,16 @@ export function runSalesSourceOfTruthTests() {
     /from\("sales_records"\)\s*\n?\s*\.select\(SALES_DASHBOARD_RECORD_SELECT\)/,
     "the dashboard no longer reads the legacy sales_records table",
   );
-  // Achievement divides covered sales only — sales sitting on a key that carries a target.
+  // Achievement divides EVERY pound over the target — the Monthly Closing's own rule, which this
+  // dashboard must match because it feeds the portal hero card. It pinned the covered slice until
+  // the owner ruled otherwise on 2026-09-05 ("FOLLOW THE OLD MONTHLY CLOSING ... 100% IDENTICAL");
+  // measured then, 7 of 85 reps were being shown two different figures for their own month, the
+  // worst 63.21% against the closing's 93.76%.
   assert.match(
     salesServiceSource,
-    /achievementRate: performanceMetric\(totalCoveredSales, totalTarget\)/,
-    "the headline achievement % divides covered sales, not every sale over whatever targets exist",
+    /achievementRate: performanceMetric\(totalSales, totalTarget\)/,
+    "the headline achievement % divides every sale over the target, as the closing does — and so the "
+      + "summary's own totalApprovedSales / totalApprovedTarget divide into the rate printed beside them",
   );
 
   // Rule #1 reaches the reconciliation dashboard too, and that leg is SQL — no TypeScript sits
