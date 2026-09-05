@@ -280,6 +280,62 @@ export async function runHrIdStorageCasingTests() {
       + "write SYSTEM into the column the claims screen reads as the person who decided",
   );
 
+  // --- A FOURTH SHAPE: the call site names no column, and the sink names no session ---
+  //
+  // Found 2026-09-05 by re-counting production, NOT by any sweep in this file: lowercase actor ids
+  // went 255 -> 262 while this file was green, seven rows written by real users between 14:00 and
+  // 14:22 Cairo the same afternoon. Two columns took them: direct_order_events.actor_hr_id (b-185,
+  // b-94) and employee_hiring_profile.updated_by_hr_id (b-10).
+  //
+  // ── WHY EVERY SWEEP ABOVE READS CLEAN ON IT ─────────────────────────────────────────────────
+  //
+  // The bug is split across two lines that are each individually innocent. The CALL SITE is
+  // `actorHrId: access.hrId` - a camelCase FIELD name, so no pattern keyed on `\w*_hr_id:` can
+  // match it, and no resolveEmployeeIdentityId and no `?? loginId` chain for the actor-expression
+  // sweep to key on either. The SINK is `actor_hr_id: input.actorHrId` - the right column name, but
+  // the value is a PARAMETER, not a local binding, so taintedNames() never sees it declared.
+  //
+  // Fourteen call sites in direct-orders/service.ts feed one sink. THAT is why the repair belongs at
+  // the sink: fixing fourteen callers leaves the fifteenth free to reintroduce it, and the fifteenth
+  // is what a future session writes. The same reasoning covers coaching_archived_evaluations
+  // (`created_by` - a column name with no `_hr_id` in it at all, invisible BY NAME) and the three
+  // hiring-pack writes, where the value is wrapped in cleanText() and so is not a bare identifier.
+  //
+  // cleanText FIRST, then canonicalise: cleanText turns a blank into null, and hrIdForStorage
+  // deliberately passes a blank through untouched (asserted at the top of this file), so reversing
+  // the order would store an empty string in a column that used to receive null.
+  for (const [file, needle, why] of [
+    [
+      "src/lib/direct-orders/service.ts",
+      "actor_hr_id: hrIdForStorage(input.actorHrId),",
+      "direct_order_events is the single sink for fourteen `actorHrId: access.hrId` call sites in "
+        + "that one file - it took five lowercase rows on 2026-09-05 alone",
+    ],
+    [
+      "src/lib/coaching/archived.ts",
+      "created_by: hrIdForStorage(cleanText(input.createdBy)),",
+      "coaching_archived_evaluations.created_by has no `_hr_id` in its name, so no sweep in this "
+        + "file can see it by column name - the same blind spot that hid outstation approved_by",
+    ],
+    [
+      "src/lib/hiring-pack/service.ts",
+      "updated_by_hr_id: hrIdForStorage(cleanText(actorHrId)),",
+      "employee_hiring_profile.updated_by_hr_id took a lowercase b-10 at 14:05 Cairo on 2026-09-05",
+    ],
+    [
+      "src/lib/hiring-pack/service.ts",
+      "updated_by_hr_id: hrIdForStorage(cleanText(input.actorHrId)),",
+      "the document-signing path writes the same column and would have been missed by fixing only "
+        + "the two profile writes",
+    ],
+  ] as const) {
+    assert.ok(
+      readFileSync(file, "utf8").includes(needle),
+      `${file} must funnel its actor column through hrIdForStorage AT THE SINK, not at the callers: `
+        + `${why}. Expected to find: ${needle}`,
+    );
+  }
+
   // --- widening a read to both casings must not hand PostgREST an empty IN list ---
   //
   // `hrIdLookupKeys(null)` is `[]`, and `.in(col, [])` builds `col=in.()`, which PostgREST

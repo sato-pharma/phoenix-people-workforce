@@ -600,7 +600,13 @@ async function insertEvent(input: {
   const supabase = getSupabaseAdmin();
   await supabase.from("direct_order_events").insert({
     request_id: input.requestId,
-    actor_hr_id: input.actorHrId,
+    // Canonical on the way in. Fourteen call sites in this file pass `actorHrId: access.hrId`,
+    // which is the LOWERCASE comparison key - a FOURTH shape of the actor bug, matching none of
+    // the three the repo-wide sweep knows: the column is not named in the call (the field is
+    // camelCase `actorHrId`), there is no resolveEmployeeIdentityId, and there is no `?? loginId`
+    // chain to grep for. Seven rows were written lowercase by real users on 2026-09-05 alone.
+    // Stamping it HERE rather than at the fourteen callers is what makes the fifteenth caller safe.
+    actor_hr_id: hrIdForStorage(input.actorHrId),
     event_type: input.eventType,
     message: input.message,
     metadata: input.metadata ?? {},
