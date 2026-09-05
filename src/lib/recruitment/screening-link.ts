@@ -25,6 +25,8 @@ export type ScreeningQueueFilters = {
   unseen?: string | string[] | undefined;
   /** `1`/`true` — the other half of the same three-way: only CVs this viewer HAS already opened. */
   seen?: string | string[] | undefined;
+  /** Nobody has opened it - not the caller, not the other screener. */
+  untouched?: string | string[] | undefined;
   /** `1`/`true` — only CVs already pushed straight to a manager. */
   sent?: string | string[] | undefined;
   /** `1`/`true` — the other half of the same three-way: only CVs never pushed to a manager. */
@@ -51,7 +53,17 @@ export type ScreeningQueueFilters = {
  * without remembering the name — and folding that into an unchecked box answers it with the whole
  * pool instead.
  */
-export type ScreeningSeenFilter = "any" | "seen" | "unseen";
+/**
+ * `untouched` is a FOURTH state, and it is not a synonym for `unseen`.
+ *
+ * `unseen` means *I* have not opened it — and since screening became a two-person job, that
+ * includes every CV the other screener has already read. `untouched` means NOBODY has opened it.
+ *
+ * The difference is the whole point of the pair working the queue from both ends: measured on
+ * production 2026-09-05, 554 of 781 candidates had never been opened by anyone, so "untouched" is
+ * where the unread work actually is, while "unseen" quietly re-offers the other person's reading.
+ */
+export type ScreeningSeenFilter = "any" | "seen" | "unseen" | "untouched";
 
 /**
  * Sent-to-a-manager, as the same kind of three-way as seen/unseen above — and for the same reason:
@@ -166,6 +178,7 @@ function parseRegion(value: string | null): ScreeningRegionFilter | null {
 export function parseScreeningFilters(filters: ScreeningQueueFilters = {}): ScreeningQueueNarrowing {
   const unseen = isTruthyFlag(firstParam(filters.unseen));
   const seen = isTruthyFlag(firstParam(filters.seen));
+  const untouched = isTruthyFlag(firstParam(filters.untouched));
   const sent = isTruthyFlag(firstParam(filters.sent));
   const unsent = isTruthyFlag(firstParam(filters.unsent));
   const area = firstParam(filters.area);
@@ -177,9 +190,11 @@ export function parseScreeningFilters(filters: ScreeningQueueFilters = {}): Scre
     received: parseReceived(firstParam(filters.received)),
     region: parseRegion(firstParam(filters.region)),
     role: parseRole(firstParam(filters.role)),
-    // `?unseen=1&seen=1` is somebody editing an address bar, not an attack. Unseen wins because it
-    // is the link that already exists in bookmarks and in the pool's own button.
-    seen: unseen ? "unseen" : seen ? "seen" : "any",
+    // `?unseen=1&seen=1` is somebody editing an address bar, not an attack. The order below is
+    // narrowest-first, which is the same rule the sent/unsent pair follows: `untouched` is a
+    // subset of `unseen` (nobody has read it, so I have not either), so it must be tested first or
+    // it could never win.
+    seen: untouched ? "untouched" : unseen ? "unseen" : seen ? "seen" : "any",
     source: firstParam(filters.source),
     status: normalizeCandidateStatus(firstParam(filters.status)),
   };
@@ -216,6 +231,7 @@ export function screeningHref(basePath: string, options: ScreeningHrefOptions = 
   const params = new URLSearchParams();
   if (options.seen === "unseen") params.set("unseen", "1");
   if (options.seen === "seen") params.set("seen", "1");
+  if (options.seen === "untouched") params.set("untouched", "1");
   if (options.notified === "sent") params.set("sent", "1");
   if (options.notified === "unsent") params.set("unsent", "1");
   if (options.status) params.set("status", options.status);

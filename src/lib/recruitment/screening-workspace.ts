@@ -46,6 +46,7 @@ import { isFiledCandidate } from "@/lib/recruitment/candidate-folder";
 import { listCandidateIdsWithInterviewToday } from "@/lib/recruitment/interviews";
 import {
   listCandidateViews,
+  listLiveClaimsByCandidate,
   listOtherViewersByCandidate,
   resolveViewerNames,
 } from "@/lib/recruitment/candidate-views";
@@ -220,6 +221,7 @@ export async function loadScreeningWorkspace(
     allCandidates,
     views,
     otherViewers,
+    liveClaims,
     hiringManagers,
     openVacancies,
     positionSuggestions,
@@ -234,6 +236,9 @@ export async function loadScreeningWorkspace(
     // Who ELSE has opened each CV. A separate read from the caller's own map, deliberately — see
     // listOtherViewersByCandidate for why the two facts must not be merged.
     listOtherViewersByCandidate(viewerHrId),
+    // Who has a CV OPEN right now, excluding the caller. A third fact again, not a slice of the
+    // second: "has read" is permanent history, "is reading" is a five-minute lease that expires.
+    listLiveClaimsByCandidate(viewerHrId),
     canSendToManagers ? listHiringManagerOptions() : Promise.resolve<HiringManagerOption[]>([]),
     canSendToManagers ? listOpenVacancyOptions() : Promise.resolve<VacancyOption[]>([]),
     canSendToManagers
@@ -266,7 +271,8 @@ export async function loadScreeningWorkspace(
   // round trip more than it should.
   const [comments, viewerNames] = await Promise.all([
     summarizeCommentsByCandidate(pool.map((candidate) => candidate.id)),
-    resolveViewerNames([...otherViewers.values()].flat()),
+    // Claim holders too, or 'B-10 is reading this' shows a code where the owner's rule is names.
+    resolveViewerNames([...otherViewers.values()].flat().concat([...liveClaims.values()].map((c) => c.viewerHrId))),
   ]);
 
   // Stamped once. This is a `force-dynamic` page, so one `Date.now()` here is the same instant every
@@ -404,6 +410,13 @@ export async function loadScreeningWorkspace(
       regionCode: place.regionCode,
       alsoReadBy: (otherViewers.get(candidate.id) ?? []).map((hrId) => viewerNames.get(hrId) ?? hrId),
       seen: Boolean(views[candidate.id]),
+      // "Somebody is reading this RIGHT NOW", by name. Null when nobody is, which is the normal
+      // case - a claim lasts five minutes and expires on its own.
+      beingReadBy: (() => {
+        const claim = liveClaims.get(candidate.id);
+        if (!claim) return null;
+        return viewerNames.get(claim.viewerHrId) ?? claim.viewerHrId;
+      })(),
       unsavedFindings: queueInput.unsavedFindings,
       sentForLabel: candidate.sentFor ? positionFolderLabel(candidate.sentFor) : null,
       sentForVacancyId: candidate.sentFor?.vacancyId ?? null,
@@ -426,7 +439,13 @@ export async function loadScreeningWorkspace(
   const byId = new Map(orderedPool.map((candidate) => [candidate.id, candidate] as const));
 
   const visible = orderedPool.filter((candidate) =>
-    matchesScreeningNarrowing(candidate, narrowing, { asOf, seenByViewer: Boolean(views[candidate.id]) }),
+    matchesScreeningNarrowing(candidate, narrowing, {
+      asOf,
+      seenByViewer: Boolean(views[candidate.id]),
+      // BOTH halves. `untouched` means nobody has opened it, and the caller's own map answers only
+      // for the caller - on a two-person queue that is most of the wrong answer.
+      seenByAnyone: Boolean(views[candidate.id]) || (otherViewers.get(candidate.id)?.length ?? 0) > 0,
+    }),
   );
 
   const rows = visible.map(rowFor);

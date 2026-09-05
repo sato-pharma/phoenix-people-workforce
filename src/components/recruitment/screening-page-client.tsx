@@ -48,11 +48,19 @@ import { cn } from "@/lib/utils";
 // Type-only for the same reason: vacancy-options reads the service-role client.
 import type { VacancyOption } from "@/lib/recruitment/vacancy-options";
 
-/** The three-way, in the words a screener would use rather than the words the URL uses. */
+/**
+ * The four-way, in the words a screener would use rather than the words the URL uses.
+ *
+ * The last two are deliberately worded to be told apart at a glance: "I have not read" is about ME,
+ * "nobody has read" is about the pair. Since screening became a two-person job the first includes
+ * everything the other screener has already worked — 554 of 781 candidates on 2026-09-05 were in
+ * the second pile, so the difference is most of the queue rather than an edge case.
+ */
 const seenFilterLabels: Record<ScreeningSeenFilter, string> = {
   any: "Seen and unseen",
   seen: "Only ones I have read",
   unseen: "Only ones I have not read",
+  untouched: "Only ones nobody has read",
 };
 
 /** The other three-way, in the words a screener would use. */
