@@ -82,17 +82,7 @@ import { getRepDoctorLists, monthLabelOf, type RepDoctorListRepRow } from "@/lib
 import { loadRepKpiReports } from "@/lib/crm/rep-kpi-reports-data";
 import type { RepKpiReports } from "@/lib/crm/rep-kpi-reports";
 import { repsPlansRange, repsPlansWeeks, type RepsPlansRange } from "@/lib/crm/reps-plans";
-import {
-  AM_CALL_RATE_TARGET,
-  DAILY_VISIT_RATE_MAX,
-  DAILY_VISIT_RATE_MIN,
-  DAILY_VISIT_RATE_TARGET,
-  dailyVisitBandOf,
-  PM_CALL_RATE_TARGET,
-  verifiedVisitsPerDay,
-  type DailyVisitBand,
-  type RepCallRate,
-} from "@/lib/crm/call-rate";
+import { AM_CALL_RATE_TARGET, PM_CALL_RATE_TARGET, type RepCallRate } from "@/lib/crm/call-rate";
 import type { AccessContext } from "@/lib/auth/permissions";
 
 /** One option in the board's month or period picker. */
@@ -202,15 +192,6 @@ export type KpiRepRow = {
    */
   amAttainmentPct: number | null;
   pmAttainmentPct: number | null;
-  /**
-   * Verified AM + PM visits per working day — the ONE place the split is deliberately summed. See
-   * call-rate.ts's DAILY_VISIT_RATE_TARGET for why this is allowed and what it must never become.
-   * Null exactly when `hasCallRate` is false, matching `amRate`/`pmRate`.
-   */
-  visitsPerDay: number | null;
-  /** Where `visitsPerDay` sits against the owner's 8-12 band (2026-09-05). Null iff `visitsPerDay`
-   * is null. `"above"` is a volume flag, never a win — see dailyVisitBandOf. */
-  dailyVisitBand: DailyVisitBand | null;
 
   // ── Coverage and frequency (the scored window) ────────────────────────────
   /** Every doctor the plan names inside the window, due or not — and THE DENOMINATOR OF BOTH plan
@@ -318,9 +299,6 @@ export type KpisBoard = {
     pmReportedRate: number | null;
     campaignCalls: number;
     totalCalls: number;
-    /** Team verified AM + PM visits per working day — see visitsPerDay on KpiRepRow. */
-    visitsPerDay: number | null;
-    dailyVisitBand: DailyVisitBand | null;
     plannedDoctors: number;
     visitedDoctors: number;
     coveragePct: number;
@@ -337,11 +315,6 @@ export type KpisBoard = {
   };
   amTarget: number;
   pmTarget: number;
-  /** The owner's 8-12 visits/day band (2026-09-05) — target is the midpoint. See call-rate.ts's
-   * DAILY_VISIT_RATE_TARGET for why AM and PM are summed here and nowhere else on this board. */
-  visitsPerDayTarget: number;
-  visitsPerDayMin: number;
-  visitsPerDayMax: number;
   /** The owner's coverage floor (2026-09-05). See kpis-filters.ts's COVERAGE_TARGET_FLOOR_PCT. */
   coverageFloorPct: number;
 };
@@ -503,8 +476,6 @@ export function joinKpiRows(input: {
     hasCallRate: false,
     amAttainmentPct: null,
     pmAttainmentPct: null,
-    visitsPerDay: null,
-    dailyVisitBand: null,
     plannedDoctors: 0,
     visitedDoctors: 0,
     missedDoctors: 0,
@@ -600,8 +571,6 @@ export function joinKpiRows(input: {
     }
     row.amAttainmentPct = attainmentPct(row, row.amVerified, amTarget);
     row.pmAttainmentPct = attainmentPct(row, row.pmVerified, pmTarget);
-    row.visitsPerDay = row.hasCallRate ? verifiedVisitsPerDay(row.amVerified, row.pmVerified, row.workingDays) : null;
-    row.dailyVisitBand = dailyVisitBandOf(row.visitsPerDay);
     row.meetsCoverageFloor = row.hasMeasurablePlan ? row.coveragePct >= COVERAGE_TARGET_FLOOR_PCT : null;
   }
 
@@ -684,8 +653,6 @@ export async function getKpisBoard(input: {
       pmReportedRate: null,
       campaignCalls: 0,
       totalCalls: 0,
-      visitsPerDay: null,
-      dailyVisitBand: null,
       plannedDoctors: 0,
       visitedDoctors: 0,
       coveragePct: 0,
@@ -699,9 +666,6 @@ export async function getKpisBoard(input: {
     },
     amTarget: AM_CALL_RATE_TARGET,
     pmTarget: PM_CALL_RATE_TARGET,
-    visitsPerDayTarget: DAILY_VISIT_RATE_TARGET,
-    visitsPerDayMin: DAILY_VISIT_RATE_MIN,
-    visitsPerDayMax: DAILY_VISIT_RATE_MAX,
     coverageFloorPct: COVERAGE_TARGET_FLOOR_PCT,
   };
 
@@ -829,8 +793,6 @@ export async function getKpisBoard(input: {
   // i.e. the average rep's rate, not the sum. Summing the rates instead would make a district of six
   // look six times better than any of its reps.
   const denominator = callRate.workingDays * totals.reps;
-  const teamVisitsPerDay =
-    denominator > 0 ? verifiedVisitsPerDay(totals.amVerified, totals.pmVerified, denominator) : null;
   const teamCoveragePct = pct(totals.visitedDoctors, totals.plannedDoctors);
 
   return {
@@ -864,8 +826,6 @@ export async function getKpisBoard(input: {
       pmReportedRate: denominator > 0 ? totals.pmReported / denominator : null,
       campaignCalls: totals.campaignCalls,
       totalCalls: totals.totalCalls,
-      visitsPerDay: teamVisitsPerDay,
-      dailyVisitBand: dailyVisitBandOf(teamVisitsPerDay),
       plannedDoctors: totals.plannedDoctors,
       visitedDoctors: totals.visitedDoctors,
       coveragePct: teamCoveragePct,
