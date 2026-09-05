@@ -21,7 +21,13 @@
 
 import ExcelJS from "exceljs";
 
-import { buildCoverSheet, sanitizeSheetName, writeTable, type CellValue, type TableColumn } from "@/lib/export/phoenix-xlsx-style";
+import {
+  buildHouseCoverSheet,
+  writeHouseTable,
+  type CellValue,
+  type TableColumn,
+} from "@/lib/export/house-table-workbook";
+import { sanitizeSheetName } from "@/lib/export/phoenix-xlsx-style";
 import {
   DEDUCTIONS_CATEGORY_CONFIG,
   deductionsCategoryLabel,
@@ -196,7 +202,7 @@ function buildSummarySheet(
 
   const description = describeDeductionsOrgFilter(filter);
   const sheet = workbook.addWorksheet(sanitizeSheetName("Summary"), { properties: { defaultColWidth: 14 } });
-  writeTable(sheet, 1, {
+  writeHouseTable(sheet, 1, {
     columns,
     rows,
     title: `Deductions Summary — ${monthKey}${filterSuffix(filter)}`,
@@ -227,6 +233,10 @@ const DETAIL_COLUMNS: TableColumn[] = [
   { label: "Dates", width: 40 },
   { label: "Applied Dates", width: 40 },
   { label: "Decision Status", width: 18 },
+  // Same column, same reason, as the per-category sheet: whether THIS row costs the person money
+  // is the question the sheet exists to answer, and it should not have to be inferred from a
+  // status string plus a zero. Sourced from `isEligibleForPublish`, which is what publish uses.
+  { label: "Will Be Deducted", width: 16 },
   { label: "Applied Value", numFmt: "#,##0.00", right: true, width: 12 },
   { label: "Applied Amount", numFmt: "#,##0.00", right: true, width: 14, dataBar: true },
   { label: "Decision Reason", width: 40 },
@@ -261,6 +271,7 @@ function detailRow(
     joinDates(candidate.dates),
     joinDates(resolveAppliedDeductionDates(candidate)),
     candidate.decision?.decisionStatus ?? "Pending",
+    isEligibleForPublish(candidate) ? "Yes" : "No",
     appliedValueCell(candidate),
     appliedAmountCell(candidate),
     candidate.decision?.decisionReason ?? "",
@@ -305,7 +316,7 @@ function buildDetailedSheet(
   const employeeCount = new Set(ordered.map((candidate) => candidate.employeeHrIdCompact)).size;
   const description = describeDeductionsOrgFilter(filter);
   const sheet = workbook.addWorksheet(sanitizeSheetName("Detailed"), { properties: { defaultColWidth: 14 } });
-  writeTable(sheet, 1, {
+  writeHouseTable(sheet, 1, {
     columns: DETAIL_COLUMNS,
     rows: ordered.map((candidate) => detailRow(candidate, orgByCompactHrId)),
     title: `All Deductions — ${monthKey}${filterSuffix(filter)}`,
@@ -345,7 +356,7 @@ export function buildDeductionsMasterWorkbook(input: {
   const workbook = new ExcelJS.Workbook();
   workbook.created = new Date(meta.generatedAtIso);
 
-  buildCoverSheet(workbook, {
+  buildHouseCoverSheet(workbook, {
     title: `Deductions — Master (All Categories)${filterDescription ? " — Filtered" : ""}`,
     subtitle: filterDescription
       ? `Every deduction category for ${meta.monthKey}, narrowed to ${filterDescription}. A FILTERED extract — the totals below are for this selection only, not for the company.`
