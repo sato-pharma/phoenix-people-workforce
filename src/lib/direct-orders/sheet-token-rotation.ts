@@ -1,6 +1,7 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { rotatedLabel } from "@/lib/share-links/rotated-label";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rotate the live sheet's feed token, end to end, with nobody opening an editor.
@@ -116,7 +117,7 @@ export async function rotateDirectOrderSheetToken(): Promise<SheetTokenRotationR
   const { error: insertError } = await supabase.from("direct_order_report_share_links").insert({
     token: newToken,
     surface: String(old.surface ?? "feed"),
-    label: old.label ? `${String(old.label)} (rotated)` : "Rotated feed link",
+    label: rotatedLabel(old.label, "Rotated feed link"),
     created_by_hr_id: String(old.created_by_hr_id ?? ""),
     scope: String(old.scope ?? "own"),
     scope_hr_id: String(old.scope_hr_id ?? ""),
