@@ -1220,6 +1220,105 @@ export async function listCandidateStatusEvents(candidateId: string): Promise<Ca
   return ((data ?? []) as CandidateStatusEventDbRow[]).map(mapCandidateStatusEvent);
 }
 
+/** A runaway guard on the decision history, not a data cap. */
+const STATUS_EVENT_PAGE_SIZE = 1000;
+const STATUS_EVENT_PAGE_LIMIT = 50;
+
+export type DecisionHistory = {
+  /** When each decided candidate was FIRST decided, keyed by candidate id. */
+  firstDecisionAt: Map<string, string>;
+  /** The earliest instant the history covers at all, or null when there is none. */
+  startsAt: string | null;
+};
+
+/**
+ * When each candidate was FIRST moved off `new`, across the whole recorded history.
+ *
+ * ── WHY FIRST, AND WHY DISTINCT CANDIDATES ──────────────────────────────────────────────────────
+ *
+ * The throughput strip asks whether the backlog is being cleared, so its unit has to be a CV that
+ * left the backlog — not a status change. Measured in production 2026-09-05, the week of 08-24
+ * carried 461 status events across 189 candidates: counting events would have reported two and a
+ * half times the real output, and every re-decision would have read as fresh progress.
+ *
+ * ── WHY THE WHOLE TABLE, AND WHAT THAT COSTS ────────────────────────────────────────────────────
+ *
+ * "First ever" cannot be answered from a 30-day slice: a candidate whose first decision was in
+ * July and who was re-decided yesterday would look like a brand-new decision. So the read is the
+ * full history — 560 rows on 2026-09-05, two columns, and the table only began on 2026-08-16.
+ *
+ * It grows, and bulk decisions write to it faster than the old one-at-a-time flow did. It is paged
+ * with a refusal rather than a silent truncation, and when the count reaches the point where this
+ * is no longer a cheap read the answer is a SQL aggregate — not a wider page limit, and not a
+ * window, which would quietly reintroduce the "first ever" bug above.
+ *
+ * ── THE START DATE IS RETURNED, NOT ASSUMED ─────────────────────────────────────────────────────
+ *
+ * Nothing before the history began can be reported, and a span the history only partly covers must
+ * read as unknown rather than as zero. The caller needs the boundary to do that, so it comes back
+ * from the same read rather than being hardcoded to a date that will drift.
+ */
+export async function loadDecisionHistory(): Promise<DecisionHistory> {
+  const supabase = recruitmentDb();
+  const firstDecisionAt = new Map<string, string>();
+  let startsAt: string | null = null;
+
+  for (let page = 0; page < STATUS_EVENT_PAGE_LIMIT; page += 1) {
+    const from = page * STATUS_EVENT_PAGE_SIZE;
+    const { data, error } = await supabase
+      .from("ats_candidate_status_events")
+      .select("candidate_id,created_at,to_status")
+      // Stable and unique together, so paging can neither repeat a row nor drop one.
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + STATUS_EVENT_PAGE_SIZE - 1);
+
+    if (error) {
+      // No table means no history — which the strip renders as "not recorded", never as zero work.
+      if (isMissingStatusEventRelation(error)) return { firstDecisionAt, startsAt };
+      throw error;
+    }
+
+    const rows = (data ?? []) as Array<{
+      candidate_id?: string | null;
+      created_at?: string | null;
+      to_status?: string | null;
+    }>;
+
+    for (const row of rows) {
+      const at = row.created_at ? String(row.created_at) : null;
+      if (!at) continue;
+      // The boundary is the earliest event of ANY kind: it marks when recording began, which is a
+      // fact about the table rather than about decisions.
+      if (startsAt === null || at < startsAt) startsAt = at;
+
+      const candidateId = row.candidate_id ? String(row.candidate_id) : null;
+      if (!candidateId) continue;
+      // `new` is where a candidate starts; arriving there is not a decision. A revert back to it is
+      // not one either — the undo path writes such a row, and counting it would let one press and
+      // its own undo read as two CVs cleared.
+      if (normalizeCandidateStatus(row.to_status) === "new") continue;
+
+      const held = firstDecisionAt.get(candidateId);
+      if (!held || at < held) firstDecisionAt.set(candidateId, at);
+    }
+
+    if (rows.length < STATUS_EVENT_PAGE_SIZE) return { firstDecisionAt, startsAt };
+  }
+
+  throw new Error(
+    `Decision history paging stopped at ${STATUS_EVENT_PAGE_LIMIT * STATUS_EVENT_PAGE_SIZE} rows. ` +
+      "Refusing to report a partial history as a complete one — the throughput trend would understate " +
+      "real output with nothing on screen to say so.",
+  );
+}
+
+/** PGRST205 is what a MISSING TABLE answers here, not 42P01 — both are treated as one absence. */
+function isMissingStatusEventRelation(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code;
+  return code === "42P01" || code === "PGRST205";
+}
+
 // Partial edit of a candidate's own fields (not status — see updateCandidateStatus).
 // An omitted key leaves that column untouched; an explicit `null` clears it. The
 // identity-match columns (national_id_norm/email_norm/phone_norm) are only recomputed
