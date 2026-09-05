@@ -1728,6 +1728,64 @@ function resolveEmployeeCompensationInput(input: EmployeeMutationInput) {
   };
 }
 
+/**
+ * THE MONEY COLUMNS — WRITTEN ONLY WHEN THE CALLER ACTUALLY SUPPLIED ONE.
+ *
+ * Every column below holds real salary data with no history table behind it: an overwrite is
+ * silent, produces no audit row, and cannot be recovered from this database. Writing them
+ * unconditionally meant any caller whose payload simply did not carry pay — a partial API save, a
+ * script, a client that never rendered the salary section, or a viewer whose read of those figures
+ * was redacted — blanked every one of them as a side effect of editing something else entirely,
+ * such as a phone number.
+ *
+ * So the write is keyed on the PAYLOAD, not on who is sending it. A money column is written only
+ * when this save actually carries a value for it; otherwise the key is omitted from the upsert body
+ * and PostgREST leaves that column out of its `DO UPDATE SET` list, so the stored figure survives
+ * untouched.
+ *
+ * `numberOrNull` collapses "absent" and "explicitly cleared" into the same `null` — the edit form
+ * (`formToPayload`) posts `null` for an empty box, so the two are genuinely indistinguishable here.
+ * Both therefore preserve. That is the same call the employee IMPORT already makes for these exact
+ * columns (`employeeValues` in app/api/imports/employees/confirm/route.ts guards each one with
+ * `!== null`), and it is the safe direction: failing to clear a salary is a visible no-op the user
+ * can retry, while failing to preserve one destroys payroll data nobody notices until payday.
+ * Clearing a salary outright is not reachable from this path any more, by design — it is a
+ * deliberate act that belongs in a governed flow, not a side effect of a blank box.
+ *
+ * Only on an UPDATE. On a create there is no stored figure to protect, so the columns are written
+ * exactly as before and a new row's pay is never left implicit.
+ *
+ * EXPORTED FOR THE TESTS, deliberately: `employeePayload` reaches the network on every call
+ * (manager validation, CRM uniqueness, region derivation), so the one rule worth pinning here —
+ * which money columns a given payload writes — is only reachable in isolation.
+ */
+export function employeeCompensationColumns(input: EmployeeMutationInput, isUpdate: boolean) {
+  const compensation = resolveEmployeeCompensationInput(input);
+  const columns = {
+    base_salary: compensation.baseSalary,
+    basic_salary: compensation.basicSalary,
+    extra_cost_of_living: compensation.extraCostOfLiving,
+    fuel_allowance: compensation.fuelAllowance,
+    gross_salary: compensation.grossSalary,
+    medical_insurance: numberOrNull(input.medicalInsurance),
+    net_salary: compensation.netSalary,
+    social_insurance: numberOrNull(input.socialInsurance),
+    // The insurance WAGE alone decides the statutory filing — payroll never reads
+    // social_insurance_status — so blanking it silently changes what is filed for this employee
+    // with the Authority. It is protected on exactly the same terms as the salary columns.
+    social_insurance_wage: numberOrNull(input.socialInsuranceWage),
+    taxes: numberOrNull(input.taxes),
+  };
+
+  if (!isUpdate) {
+    return columns;
+  }
+
+  return Object.fromEntries(
+    Object.entries(columns).filter(([, value]) => value !== null && value !== undefined),
+  ) as Partial<typeof columns>;
+}
+
 async function employeePayload(
   input: EmployeeMutationInput,
   isUpdate: boolean,
@@ -1801,7 +1859,6 @@ async function employeePayload(
 
   const lifecycleActive = isActiveLifecycleStatus(employmentStatus);
   const payrollEligible = lifecycleActive ? input.payrollEligible !== false : false;
-  const compensation = resolveEmployeeCompensationInput(input);
 
   // Region is authoritative from the au sales geography: derive it from (line, area) and persist the
   // code + precise name so an employee's region can never drift from their sales area. Non-sales
@@ -1811,11 +1868,10 @@ async function employeePayload(
   const regionFields = employeeRegionFields(derivedRegion, compact(input.regionName));
 
   return {
+    ...employeeCompensationColumns(input, isUpdate),
     area_id: areaId,
     bank_account: compact(input.bankAccount),
     bank_name: compact(input.bankName),
-    base_salary: compensation.baseSalary,
-    basic_salary: compensation.basicSalary,
     birth_date: compact(input.birthDate),
     contract_type: compact(input.contractType),
     crm_id: crmId,
@@ -1823,12 +1879,9 @@ async function employeePayload(
     department_id: numberOrNull(input.departmentId),
     education: compact(input.education),
     employment_status: employmentStatus,
-    extra_cost_of_living: compensation.extraCostOfLiving,
     full_name: fullName,
     nickname: compact(input.nickname),
     gender: compact(input.gender)?.toLowerCase(),
-    fuel_allowance: compensation.fuelAllowance,
-    gross_salary: compensation.grossSalary,
     has_bank_account: normalizeYesNo(input.hasBankAccount),
     hire_date: compact(input.hireDate),
     hr_id: hrId,
@@ -1838,8 +1891,6 @@ async function employeePayload(
     mobile_number: compact(input.mobileNumber),
     name_ar: compact(input.nameAr),
     national_id: compact(input.nationalId),
-    net_salary: compensation.netSalary,
-    medical_insurance: numberOrNull(input.medicalInsurance),
     medical_insurance_status: normalizeEnrollmentStatus(input.medicalInsuranceStatus),
     medical_insurance_number: compact(input.medicalInsuranceNumber),
     organogram_visible: lifecycleActive,
@@ -1851,11 +1902,8 @@ async function employeePayload(
     residence_city: compact(input.residenceCity),
     region_name: regionFields.region_name,
     region_code: regionFields.region_code,
-    social_insurance: numberOrNull(input.socialInsurance),
     social_insurance_status: normalizeEnrollmentStatus(input.socialInsuranceStatus),
     social_insurance_number: compact(input.socialInsuranceNumber),
-    social_insurance_wage: numberOrNull(input.socialInsuranceWage),
-    taxes: numberOrNull(input.taxes),
     team_id: numberOrNull(input.teamId),
     updated_at: new Date().toISOString(),
     work_email: workEmail,
