@@ -693,4 +693,83 @@ export async function runRecruitmentScreeningWorkstationTests() {
   assert.match(uiSource, /const foldName = \(foldLabel \?\? title\)\.toLowerCase\(\)/, "the fold control can be given the pane's own name");
   assert.doesNotMatch(uiSource, /Fold the \$\{title\.toLowerCase\(\)\}/, "and must no longer build that name out of the heading");
   assert.match(listSource, /foldLabel="candidates"/, "the list names itself the way its spine does");
+
+  // ── The red-flagged pile, and the two the rail must NOT count ─────────────────────────────────
+  //
+  // red-flag.ts exists because the owner's complaint was that CVs he cannot hire sit mixed in among
+  // the ones he can, and the candidate pool answers it with a two-tab split. The rail never got one:
+  // 97 of 597 rows on 2026-09-05 — 96 rejected, 24 stating a nationality we cannot hire — were kept
+  // out of New / Recommended / Duplicates and then left unsorted in "Everyone", the one pile a
+  // recruiter searches.
+  {
+    const base: WorkQueueInput = {
+      answeredAt: null,
+      band: "field_force",
+      duplicateCount: 1,
+      interviewToday: false,
+      redFlagged: false,
+      sentToManagerAt: null,
+      status: "new",
+    };
+    assert.ok(!workQueuesFor(base).includes("red_flagged"), "an ordinary CV is not in the red pile");
+    const red = workQueuesFor({ ...base, redFlagged: true });
+    assert.ok(red.includes("red_flagged"), "a red-flagged CV has its own pile");
+    // Still counted, still reachable — the pool's own words about its red tab.
+    assert.ok(red.includes("all"), "and it stays in Everyone, fully visible and fully counted");
+    // And still out of the piles that mean work, which is the behaviour that already existed.
+    assert.ok(!red.includes("new"), "a CV nobody can hire is not first review required");
+    assert.ok(!red.includes("recommended"), "nor recommended");
+  }
+
+  const railSource = read("src/components/recruitment/workstation/workstation-queue-panel.tsx");
+  // The folded rail reports ONE number, and it must mean "waiting on me". Counting 97 unhireable
+  // CVs into it would make the only figure a folded rail shows meaningless.
+  assert.match(
+    railSource,
+    /NOT_WAITING_ON_ANYBODY: readonly ScreeningWorkQueue\[\] = \["red_flagged"\]/,
+    "the red pile is not work waiting on the reader, so it is not in the folded total",
+  );
+  // A PILE THAT CAN NEVER FILL teaches the eye to skip the rail. "Interviews today" has read 0 since
+  // it shipped and structurally: one interview row has ever existed in production and none carries a
+  // scheduled_at. Hidden while empty rather than deleted, so it returns by itself the day one is
+  // booked — the classifier still computes it.
+  assert.match(
+    railSource,
+    /key !== "interviews" \|\| counts\.interviews > 0/,
+    "an empty interviews pile is hidden, not deleted",
+  );
+
+  // ── Is the backlog growing? The question no number on the page could answer ───────────────────
+  const pageSource = read("src/components/recruitment/workstation/workstation-page-client.tsx");
+  assert.match(pageSource, /function ThroughputStrip\(/, "the page must say whether the reader is keeping up");
+  assert.match(pageSource, /arrived7 - throughput\.decided7/, "in against out — the difference is the answer");
+  const loaderSource = read("src/lib/recruitment/screening-workspace.ts");
+  // Over the WHOLE pool, never the narrowed view: a backlog figure that shrank because a filter was
+  // applied would answer a different question from the one it is labelled with.
+  assert.match(
+    loaderSource,
+    /arrived7: pool\.filter/,
+    "the throughput figures are computed over the pool, not over the filtered rows",
+  );
+
+  // ── Duplicates: two kinds of evidence, and neither of them proof ──────────────────────────────
+  //
+  // The pile keyed on the phone alone, so it could not see one person applying twice under one name
+  // with two numbers — and 58 of 597 carry no phone at all, so they could never enter it. The pool
+  // has always flagged both (findDuplicateFlags). candidate-matching.ts keeps the identity rule
+  // LOCKED to national ID then email because phone matching once "merged three different applicants
+  // into one record", so the strength is carried to the screen rather than flattened away.
+  assert.match(loaderSource, /const nameTwins = new Map<string, Candidate\[\]>\(\)/, "names are indexed too");
+  assert.match(loaderSource, /duplicateReason: DuplicateReason \| null/, "and the evidence travels with the pair");
+  const workstationSource = read("src/components/recruitment/workstation/screening-workstation.tsx");
+  assert.match(workstationSource, /share this phone number/, "the banner names the evidence");
+  assert.match(workstationSource, /carry this same name/, "both kinds of it");
+  // Archiving is a SHELF, not a delete, and it acts on the record ON SCREEN.
+  assert.match(workstationSource, /const archiveDuplicate = useCallback/, "a duplicate can be archived from here");
+  assert.match(
+    workstationSource,
+    /kind: DUPLICATE_FOLDER_KIND/,
+    "through the folder route — the row, its files and its history all survive",
+  );
+  assert.doesNotMatch(workstationSource, /method: "DELETE"/, "nothing on this screen deletes a candidate");
 }

@@ -115,6 +115,7 @@ async function ScreeningContent({
       source={workspace.source}
       sourceOptions={workspace.sourceOptions}
       status={workspace.status}
+      throughput={workspace.throughput}
       vacancies={workspace.vacancies}
       vacancyStats={workspace.vacancyStats}
     />
