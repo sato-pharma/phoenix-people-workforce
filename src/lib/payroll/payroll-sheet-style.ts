@@ -37,6 +37,7 @@
  */
 
 import type ExcelJS from "exceljs";
+import { HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 
 import { HOUSE_XLSX_COLORS, writeHouseMasthead } from "@/lib/export/house-xlsx-identity";
 import {
@@ -115,7 +116,7 @@ export function writePayrollSectionBand(sheet: ExcelJS.Worksheet, bands: Payroll
     for (let column = band.from; column <= band.to; column += 1) {
       const cell = row.getCell(column);
       cell.value = column === band.from ? band.label.toUpperCase() : null;
-      cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.light }, name: "Aptos", size: 7.5 };
+      cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.light }, name: HOUSE_XLSX_FONT, size: 7.5 };
       cell.alignment = { horizontal: "left", vertical: "bottom" };
       cell.border =
         column === band.from
@@ -133,7 +134,7 @@ export function payrollHeaderCell(
   cell.font = {
     bold: true,
     color: { argb: HOUSE_XLSX_COLORS.deep },
-    name: "Aptos",
+    name: HOUSE_XLSX_FONT,
     size: 9.5,
   };
   cell.alignment = {
@@ -166,7 +167,7 @@ export function payrollBodyCell(cell: ExcelJS.Cell, options: PayrollBodyOptions)
   cell.font = {
     bold: options.held || options.execution,
     color: { argb: options.held ? HOUSE_XLSX_COLORS.flag : HOUSE_XLSX_COLORS.body },
-    name: "Aptos",
+    name: HOUSE_XLSX_FONT,
     size: 9.5,
   };
   cell.alignment = { horizontal: numeric ? "right" : "left", vertical: "middle" };
@@ -205,7 +206,7 @@ export const HELD_ROW_NOTE =
 
 /** Totals row: heavier type under a double rule, no fill. */
 export function payrollTotalsCell(cell: ExcelJS.Cell, options: { numeric?: boolean } = {}) {
-  cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 10 };
+  cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 10 };
   cell.alignment = { horizontal: options.numeric ? "right" : "left", vertical: "middle" };
   cell.border = {
     bottom: { style: "double", color: { argb: HOUSE_XLSX_COLORS.blue } },
@@ -250,7 +251,7 @@ export function buildPayrollCoverSheet(workbook: ExcelJS.Workbook, cover: Payrol
   sheet.mergeCells(row, 2, row, 3);
   const note = sheet.getCell(row, 2);
   note.value = cover.confidentialNote;
-  note.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 9.5 };
+  note.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 9.5 };
   note.alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
   note.border = { left: { style: "thick", color: { argb: HOUSE_XLSX_COLORS.light } } };
   sheet.getRow(row).height = 24;
@@ -258,7 +259,7 @@ export function buildPayrollCoverSheet(workbook: ExcelJS.Workbook, cover: Payrol
 
   const heading = sheet.getCell(row, 2);
   heading.value = "Report provenance";
-  heading.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 11 };
+  heading.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 11 };
   heading.border = { bottom: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.hair } } };
   sheet.getCell(row, 3).border = { bottom: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.hair } } };
   row += 1;
@@ -271,7 +272,7 @@ export function buildPayrollCoverSheet(workbook: ExcelJS.Workbook, cover: Payrol
     keyCell.font = {
       bold: true,
       color: { argb: held ? HOUSE_XLSX_COLORS.flag : HOUSE_XLSX_COLORS.body },
-      name: "Aptos",
+      name: HOUSE_XLSX_FONT,
       size: 9.5,
     };
     keyCell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
@@ -281,7 +282,7 @@ export function buildPayrollCoverSheet(workbook: ExcelJS.Workbook, cover: Payrol
     valueCell.font = {
       bold: held,
       color: { argb: held ? HOUSE_XLSX_COLORS.flag : HOUSE_XLSX_COLORS.body },
-      name: "Aptos",
+      name: HOUSE_XLSX_FONT,
       size: 9.5,
     };
     valueCell.alignment = { horizontal: "left", vertical: "top", wrapText: true };

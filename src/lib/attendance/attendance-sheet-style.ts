@@ -20,6 +20,7 @@
  */
 
 import type ExcelJS from "exceljs";
+import { HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 
 import { HOUSE_XLSX_COLORS, writeHouseMasthead } from "@/lib/export/house-xlsx-identity";
 
@@ -37,12 +38,12 @@ export type AttendanceSeverity = "normal" | "watch" | "alert";
  */
 export function attendanceSeverityFont(severity: AttendanceSeverity): Partial<ExcelJS.Font> {
   if (severity === "alert") {
-    return { bold: true, color: { argb: HOUSE_XLSX_COLORS.flag }, name: "Aptos", size: 9.5 };
+    return { bold: true, color: { argb: HOUSE_XLSX_COLORS.flag }, name: HOUSE_XLSX_FONT, size: 9.5 };
   }
   if (severity === "watch") {
-    return { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 9.5 };
+    return { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 9.5 };
   }
-  return { color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 9.5 };
+  return { color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: 9.5 };
 }
 
 export function writeAttendanceMasthead(
@@ -78,8 +79,8 @@ export function writeAttendanceNote(
   const cell = sheet.getCell(rowNumber, 1);
   cell.value = text;
   cell.font = options.alert
-    ? { bold: true, color: { argb: HOUSE_XLSX_COLORS.flag }, name: "Aptos", size: 9.5 }
-    : { color: { argb: HOUSE_XLSX_COLORS.muted }, name: "Aptos", size: 9 };
+    ? { bold: true, color: { argb: HOUSE_XLSX_COLORS.flag }, name: HOUSE_XLSX_FONT, size: 9.5 }
+    : { color: { argb: HOUSE_XLSX_COLORS.muted }, name: HOUSE_XLSX_FONT, size: 9 };
   cell.alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
   if (options.alert) {
     cell.border = { left: { style: "thick", color: { argb: HOUSE_XLSX_COLORS.flag } } };
@@ -91,7 +92,7 @@ export function writeAttendanceNote(
 export function styleAttendanceHeaderRow(row: ExcelJS.Row) {
   row.height = 26;
   row.eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 9.5 };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 9.5 };
     cell.alignment = { horizontal: "left", vertical: "bottom", wrapText: true };
     cell.border = {
       bottom: { style: "medium", color: { argb: HOUSE_XLSX_COLORS.blue } },
@@ -103,7 +104,7 @@ export function styleAttendanceHeaderRow(row: ExcelJS.Row) {
 /** Body row; the 6% zebra is the only fill in the format. */
 export function styleAttendanceBodyRow(row: ExcelJS.Row, options: { zebra: boolean }) {
   row.eachCell((cell) => {
-    cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 9.5 };
+    cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: 9.5 };
     cell.alignment = { vertical: "middle" };
     if (options.zebra) {
       cell.fill = { fgColor: { argb: HOUSE_XLSX_COLORS.tint }, pattern: "solid", type: "pattern" };
