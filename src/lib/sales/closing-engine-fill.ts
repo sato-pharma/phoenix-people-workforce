@@ -242,6 +242,14 @@ export type FillOptions = {
    * with it — see `dropMacroButtons`.
    */
   macroFree?: boolean;
+  /**
+   * Where each sheet's Export PDF button should point, in the macro-free build. Return null for a
+   * sheet that has no PDF page and its button is dropped with the rest.
+   *
+   * A function rather than a base URL because the link carries the selection — line, month and the
+   * filter this particular export was narrowed to — and only the route knows those.
+   */
+  pdfLink?: (sheet: string) => string | null;
 };
 
 export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOptions = {}): Promise<Buffer> {
@@ -278,6 +286,10 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   await hideEmblemFromPrint(zip);
   await restorePivotCacheSharedItems(zip, fill);
   await dropDeadSharedStrings(zip);
+  // BEFORE the strip, which is what makes this possible at all: the owner's own Export PDF buttons
+  // are still in the package here, and re-pointing one keeps his styling, caption and position
+  // instead of authoring a new shape that would only approximate them.
+  if (options.macroFree && options.pdfLink) await linkPdfButtons(zip, options.pdfLink);
   if (options.macroFree) await stripMacros(zip);
 
   // Directory entries must not reach the file, and this has to be the LAST thing done to the zip.
@@ -1806,5 +1818,76 @@ async function dropMacroButtons(zip: JSZip): Promise<void> {
       WIRED_TO_A_MACRO.test(anchor) ? "" : anchor,
     );
     if (stripped !== drawing) zip.file(file.name, stripped);
+  }
+}
+
+/** The Export PDF button, the one shape a macro-free build can keep by giving it somewhere to go. */
+const EXPORT_PDF_BUTTON = /macro="PhxExportPdf"/;
+/** `<xdr:cNvPr …>` — self-closing or paired. The hyperlink is its FIRST child in either form. */
+const NON_VISUAL_PROPS = /<xdr:cNvPr\b[^>]*?\/>|<xdr:cNvPr\b[^>]*?>/;
+
+/**
+ * Give the Export PDF button a destination instead of a macro.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * THE ONE THING A `.xlsx` CAN DO. The format forbids a VBA part, so `PhxExportPdf` cannot exist in
+ * this build and no Excel feature substitutes for it: Power Query loads data and cannot write a
+ * file, Office Scripts has no PDF API and needs a Microsoft 365 tenant this company does not have,
+ * and an Excel 4.0 macro sheet is barred from `.xlsx` for exactly the reason VBA is. A HYPERLINK is
+ * allowed, so the button stops running code and starts opening a URL — the server renders the page
+ * and hands the reader the PDF.
+ *
+ * THE OWNER'S OWN SHAPE, re-pointed. The template still holds his button here, before `stripMacros`
+ * runs, so this keeps its caption, fill, font, size and position rather than authoring a new one
+ * that would only look approximately right. `macro=` comes off in the same pass, which is what stops
+ * `dropMacroButtons` from removing it two steps later — the two are ordered, not independent.
+ *
+ * A SHEET WITH NO PDF PAGE KEEPS NOTHING. `pdfLink` returns null for the three pivot sheets and the
+ * Rep Card, whose button is then dropped with the others. A button that looks like a button and does
+ * nothing is the failure this whole path exists to avoid, and it is the one a reader reports.
+ */
+async function linkPdfButtons(zip: JSZip, pdfLink: (sheet: string) => string | null): Promise<void> {
+  for (const sheetName of Object.keys(MANIFEST.sheets)) {
+    const url = pdfLink(sheetName);
+    if (!url) continue;
+
+    const found = await sheetDrawing(zip, sheetName);
+    if (!found) continue;
+    const button = (found.xml.match(DRAWING_ANCHOR) ?? []).find((anchor) => EXPORT_PDF_BUTTON.test(anchor));
+    if (!button) continue;
+
+    const relsName = found.name.replace(/drawings\/(drawing\d+)\.xml$/, "drawings/_rels/$1.xml.rels");
+    const relsFile = zip.file(relsName);
+    if (!relsFile) continue;
+    const rels = await relsFile.async("string");
+
+    // Next free id, read from the part rather than assumed. The emblem already holds rId1 on every
+    // drawing, and a collision would repoint the picture at this URL — Excel then reports the file
+    // as damaged rather than showing a wrong image.
+    const used = [...rels.matchAll(/Id="rId(\d+)"/g)].map((match) => Number(match[1]));
+    const relId = `rId${Math.max(0, ...used) + 1}`;
+
+    zip.file(
+      relsName,
+      rels.replace(
+        "</Relationships>",
+        `<Relationship Id="${relId}"`
+          + ` Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"`
+          + ` Target="${xmlEscape(url).replace(/"/g, "&quot;")}" TargetMode="External"/></Relationships>`,
+      ),
+    );
+
+    const linked = button
+      .replace(/\smacro="[^"]*"/, "")
+      // `<a:hlinkClick>` is the first child of `cNvPr` in the schema, ahead of `hlinkHover` and
+      // `extLst` — and the template's button carries an `extLst` creationId, so appending instead
+      // would put the two in the wrong order and make the part invalid.
+      .replace(NON_VISUAL_PROPS, (props) =>
+        props.endsWith("/>")
+          ? `${props.slice(0, -2)}><a:hlinkClick xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="${relId}"/></xdr:cNvPr>`
+          : `${props}<a:hlinkClick xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="${relId}"/>`,
+      );
+
+    zip.file(found.name, found.xml.replace(button, linked));
   }
 }

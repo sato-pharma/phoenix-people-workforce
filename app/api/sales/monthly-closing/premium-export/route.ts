@@ -8,15 +8,11 @@ import {
   normalizeLineKey,
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
-import { buildClosingEngineFill, previousPeriod } from "@/lib/sales/closing-engine-data";
 import { fillClosingEngine } from "@/lib/sales/closing-engine-fill";
 import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
-import { loadClosingPerformanceReview } from "@/lib/sales/closing-performance-review";
-import { loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
+import { loadClosingExportPayload } from "@/lib/sales/closing-export-payload";
+import { isClosingPdfSheet } from "@/lib/sales/closing-report-pdf";
 import { resolvePortalClosingScope } from "@/lib/sales/monthly-closing-portal";
-import { loadMonthlyClosingPartsWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
-import { filterMonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
-import { loadMonthlySourceCoverage } from "@/lib/sales/source-coverage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -98,93 +94,21 @@ export async function POST(request: Request) {
       }
     }
 
-    const line = body.line ?? marketingOversight?.line ?? null;
-    const period = body.period ?? null;
-    const filter = {
-      areaCodes: Array.isArray(body.areaCodes) ? body.areaCodes : [],
-      productCodes: Array.isArray(body.productCodes) ? body.productCodes : [],
-      regionCodes: Array.isArray(body.regionCodes) ? body.regionCodes : [],
-      search: typeof body.search === "string" ? body.search : "",
-    };
-
-    // The matrix the closing SCREEN renders — store split already applied, then narrowed by the
-    // same pure function the table uses. The review is derived from the same source and narrowed
-    // the same way, so its rankings describe exactly the areas this matrix kept.
-    const [parts, review] = await Promise.all([
-      loadMonthlyClosingPartsWithStoreSplit({ line, period }),
-      loadClosingPerformanceReview({ filter, line, period }),
-    ]);
-    const matrix = filterMonthlyClosingMatrix(parts.combined, filter);
-
-    // The month before this one, and every invoice line behind it.
-    //
-    // The prior month feeds the engine's comparison column and the Rep Card's one-line "<month> was
-    // N" — a column the owner built into his own workbook, so it is not optional decoration. Both
-    // loads degrade to null rather than failing the export: a month that was never uploaded is a
-    // real answer, and the workbook says so in words instead of printing a zero that reads as a
-    // collapse in sales.
-    //
-    // The prior load is checked against what it RETURNED, not against what it was asked for.
-    // loadMonthlyClosingParts falls back to the newest available month whenever the period it is
-    // given was never uploaded — so asking for a month that does not exist hands back THIS month,
-    // and the comparison column would quietly become a copy of itself with every growth figure
-    // exactly zero. Compare the period on the matrix and discard anything that is not the month
-    // that was asked for.
-    const priorPeriod = previousPeriod(matrix.period);
-    const [priorParts, details, coverage] = await Promise.all([
-      priorPeriod
-        ? loadMonthlyClosingPartsWithStoreSplit({ line: matrix.line, period: priorPeriod }).catch(() => null)
-        : Promise.resolve(null),
-      loadMonthlyClosingDetails({
-        access,
-        // The loader resolves its line by looking the requested one up IN this list, and falls back
-        // to `availableLines[0] ?? null` when it is not there. Omit it and the list is empty, the
-        // line resolves to null, and the loader returns an empty result WITHOUT THROWING — so the
-        // catch below never fires and the Details and Top Customers sheets ship blank behind a
-        // perfectly valid workbook. Both other callers pass it for the same reason.
-        availableLines: matrix.availableLines,
-        availablePeriods: matrix.availablePeriods,
-        filters: {
-          areaCodes: filter.areaCodes,
-          productCodes: filter.productCodes,
-          regionCodes: filter.regionCodes,
-        },
-        line: matrix.line,
-        period: matrix.period,
-        // Every row the viewer may see, not one page — the Details and Top Customers sheets are the
-        // two that answer "which customer", and a page of 200 would answer it for the largest few.
-        unpaged: true,
-      }).catch(() => null),
-      // Completeness ride-along, the same shape the closing screen uses: a coverage failure costs
-      // the note, never the workbook. It is deliberately asked on the UNFILTERED line and period —
-      // whether a distributor's file arrived is a fact about the month, not about the regions this
-      // particular export happens to be filtered to.
-      loadMonthlySourceCoverage(matrix.line, matrix.period).catch(() => null),
-    ]);
-    const priorMatrix =
-      priorParts && priorParts.combined.period === priorPeriod
-        ? filterMonthlyClosingMatrix(priorParts.combined, filter)
-        : null;
-
-    // The filter stamp, in human names — the standing rule is names, never raw codes. Options come
-    // from the UNFILTERED matrix, so every filtered code still resolves to the name it was picked by.
-    const nameOf = (list: { code: string; label: string }[], code: string) =>
-      list.find((item) => item.code.trim().toUpperCase() === code.trim().toUpperCase())?.label ?? code;
-    const noteParts: string[] = [];
-    if (filter.regionCodes.length > 0) {
-      noteParts.push(`Region: ${filter.regionCodes.map((code) => nameOf(review.filterOptions.regions, code)).join(", ")}`);
-    }
-    if (filter.areaCodes.length > 0) {
-      noteParts.push(`Area: ${filter.areaCodes.map((code) => nameOf(review.filterOptions.areas, code)).join(", ")}`);
-    }
-    if (filter.productCodes.length > 0) {
-      noteParts.push(`Product: ${filter.productCodes.map((code) => nameOf(review.filterOptions.products, code)).join(", ")}`);
-    }
-    if (filter.search.trim()) noteParts.push(`Area search: "${filter.search.trim()}"`);
-    const filterNote =
-      noteParts.length === 0
-        ? ""
-        : `Filtered export — this workbook covers only: ${noteParts.join(" · ")}.`;
+    // Loaded by the shared module, not inline. The PDF renderer is the third reader of this same
+    // month, and every branch of the load is a wrong NUMBER rather than an error when it is got
+    // wrong -- a prior matrix for the wrong month, a details loader silently handed no line. Three
+    // copies is where those drift; see `closing-export-payload.ts` for the traps it carries.
+    const payload = await loadClosingExportPayload({
+      access,
+      filter: {
+        areaCodes: Array.isArray(body.areaCodes) ? body.areaCodes : [],
+        productCodes: Array.isArray(body.productCodes) ? body.productCodes : [],
+        regionCodes: Array.isArray(body.regionCodes) ? body.regionCodes : [],
+        search: typeof body.search === "string" ? body.search : "",
+      },
+      line: body.line ?? marketingOversight?.line ?? null,
+      period: body.period ?? null,
+    });
 
     // Fill the OWNER'S engine — never rebuild it. The template is his own .xlsm with its two Excel
     // Tables, three pivots, two slicers, the Rep Card's INDEX/MATCH formulas and the VBA button bar
@@ -194,21 +118,45 @@ export async function POST(request: Request) {
     // VBA, and that limitation is a reason to stop rebuilding, not a reason to ship without them.
     // .xlsm with the button bar is the DEFAULT, by the owner's explicit instruction on 2026-09-02:
     // "I want the buttons ... the export as PDF must be in this sheet ... I don't want to lose a
-    // single feature." A .xlsx cannot carry code at all, so a button in one is necessarily dead —
-    // there is no macro-free way to put Export PDF inside the workbook. Passing `macros: false`
-    // still builds the plain .xlsx, and that build removes the buttons rather than ship shortcuts
-    // that answer a click with "Cannot run the macro 'PhxExportPdf'".
+    // single feature." A .xlsx cannot carry code at all, so a button in one cannot RUN anything —
+    // but it can LINK. Passing `macros: false` builds the plain .xlsx, and since 2026-09-05 that
+    // build keeps Export PDF as a hyperlink to the renderer below; the remaining buttons, whose work
+    // Excel already does natively, are removed rather than shipped as shortcuts that answer a click
+    // with "Cannot run the macro 'PhxExportPdf'".
     const macros = body.macros !== false;
-    const buffer = await fillClosingEngine(
-      buildClosingEngineFill({ coverage, details: details?.rows ?? null, filterNote, matrix, priorMatrix, review }),
-      { macroFree: !macros },
-    );
+
+    // The macro-free build gets its Export PDF button back as a hyperlink. The origin is the one the
+    // reader is actually on, not a configured constant — a workbook taken from staging must not send
+    // its reader to production, which is a difference nobody would notice until the numbers on the
+    // PDF disagreed with the numbers in their hands.
+    const origin =
+      new URL(request.url).origin
+      || (process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/+$/, "");
+    const pdfLink = (sheet: string): string | null => {
+      if (!isClosingPdfSheet(sheet)) return null;
+      // Only what actually resolved. An empty `line=` would narrow the PDF to a line named by the
+      // empty string, which matches nothing and renders as a page with no rows rather than an error;
+      // omitted, the route resolves the same default the workbook did.
+      const query = new URLSearchParams({ sheet });
+      if (payload.line) query.set("line", payload.line);
+      if (payload.period) query.set("period", payload.period);
+      for (const code of body.regionCodes ?? []) query.append("region", code);
+      for (const code of body.areaCodes ?? []) query.append("area", code);
+      for (const code of body.productCodes ?? []) query.append("product", code);
+      if (typeof body.search === "string" && body.search.trim()) query.set("search", body.search.trim());
+      return `${origin}/api/sales/monthly-closing/premium-export/pdf?${query.toString()}`;
+    };
+
+    const buffer = await fillClosingEngine(payload.fill, {
+      macroFree: !macros,
+      ...(macros ? {} : { pdfLink }),
+    });
     const fileName = closingFileName({
       extension: macros ? "xlsm" : "xlsx",
       kind: "premium",
-      line: matrix.line,
-      period: matrix.period,
-      region: regionScopeLabel(matrix.regions.map((region) => region.regionName)),
+      line: payload.line,
+      period: payload.period,
+      region: regionScopeLabel(payload.matrix.regions.map((region) => region.regionName)),
     });
     return new Response(new Uint8Array(buffer), {
       headers: {
