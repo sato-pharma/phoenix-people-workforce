@@ -56,8 +56,11 @@ const ADVERSARIAL_AREA_NAMES = [
   "  Sharkia 1  ",      // padded: the same pick to a user, and to Excel's MATCH
 ];
 
+// The workbook moved out of the route and into a domain module; this pins the module that now
+// builds the cascade. If it moves again, point this at wherever `buildAreaTeamRanges` is called —
+// a path that no longer exists would make every assertion below vacuous.
 const ROUTE_SOURCE = readFileSync(
-  fileURLToPath(new URL("../app/api/employees/template/route.ts", import.meta.url)),
+  fileURLToPath(new URL("../src/lib/employees/employee-master-workbook.ts", import.meta.url)),
   "utf8",
 );
 

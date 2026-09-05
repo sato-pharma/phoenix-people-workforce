@@ -19,6 +19,22 @@ export function readableExcelCellValue(value: ExcelJS.CellValue): unknown {
       const richText = (value as { richText?: Array<{ text?: unknown }> }).richText ?? [];
       return richText.map((part) => String(part.text ?? "")).join("");
     }
+
+    // A FORMULA CELL WITH NO CACHED RESULT READS AS EMPTY, not as the cell object.
+    //
+    // The `result` branch above catches a formula Excel has already calculated. A formula that has
+    // never been calculated — every formula ExcelJS writes, since it emits `<f>` with no `<v>` —
+    // arrives here as a bare `{ formula }` and used to fall all the way through to `return value`,
+    // which the caller then stringified to the literal text "[object Object]".
+    //
+    // Two things went wrong with that. Any spreadsheet a user uploads with a formula in it imported
+    // "[object Object]" as though the person had typed it. And, worse, it made the cell non-EMPTY:
+    // `excelWorksheetToJsonRows` drops a row only when every cell reads blank, so a template whose
+    // spare rows carry formulas presented all of them as real rows — 12 employees arrived as 262,
+    // each failing with "missing_hr_id".
+    if ("formula" in value || "sharedFormula" in value) {
+      return readableExcelCellValue((value as { result?: ExcelJS.CellValue }).result ?? "");
+    }
   }
 
   return value;

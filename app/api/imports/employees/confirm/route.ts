@@ -20,12 +20,7 @@ import { logError } from "@/lib/observability/log";
 import { closeVacancyOnHire } from "@/lib/employees/vacancy-closer";
 import { normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import {
-  excelCellText,
-  excelWorksheetToJsonRows,
-  firstExcelWorksheet,
-  loadExcelWorkbook,
-} from "@/lib/uploads/exceljs-rows";
+import { parseEmployeeUploadRows } from "@/lib/imports/employee-upload-parse";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { generateVacancySeatCode } from "@/lib/workforce/vacancy-code";
 import { shouldCloseVacancyForHire } from "@/lib/workforce/seat-lifecycle";
@@ -75,45 +70,6 @@ function vacancyCodeFor(record: VacantPositionImportRecord) {
     positionTitle: record.positionTitle ?? record.jobTitle,
     teamCode: compactCodePart(record.codes.teamCode),
   });
-}
-
-async function parseExcelRows(file: File) {
-  try {
-    const workbook = await loadExcelWorkbook(await file.arrayBuffer());
-    const firstSheet = firstExcelWorksheet(workbook);
-
-    if (!firstSheet) {
-      return { error: "empty_worksheet" as const };
-    }
-
-    let headerRowNumber = 1;
-    for (let rowNumber = 1; rowNumber <= Math.min(firstSheet.rowCount, 10); rowNumber += 1) {
-      const row = firstSheet.getRow(rowNumber);
-      const values = Array.from({ length: firstSheet.columnCount }, (_, index) =>
-        excelCellText(row.getCell(index + 1).value).toLowerCase(),
-      );
-
-      if (
-        values.some((value) => ["employee id", "hr_id", "hr id", "employee code"].includes(value)) &&
-        values.some((value) => value === "full name")
-      ) {
-        headerRowNumber = rowNumber;
-        break;
-      }
-    }
-
-    const rows = excelWorksheetToJsonRows(firstSheet, headerRowNumber, {
-      defaultValue: null,
-    }) as RawEmployeeImportRow[];
-
-    if (rows.length === 0) {
-      return { error: "empty_worksheet" as const };
-    }
-
-    return { firstDataRowNumber: headerRowNumber + 1, rows };
-  } catch {
-    return { error: "invalid_excel_file" as const };
-  }
 }
 
 function shouldRejectImport(result: EmployeeImportValidationResult) {
@@ -1077,7 +1033,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: fileValidation.error, message: fileValidation.message }, { status: fileValidation.status });
     }
 
-    const parsed = await parseExcelRows(file);
+    const parsed = await parseEmployeeUploadRows<RawEmployeeImportRow>(file);
 
     if ("error" in parsed) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
