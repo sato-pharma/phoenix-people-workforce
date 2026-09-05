@@ -106,6 +106,16 @@ export const HOUSE_TYPE = {
   body: "Aptos",
   /** Titles and mastheads only. The display cut, for type above about 14pt. */
   display: "Aptos Display",
+  /**
+   * Monospace, for a value the reader is meant to match CHARACTER BY CHARACTER against something
+   * else — the literal strings the upload checks for, a code, an id. Proportional type invites the
+   * eye to read those as words, which is the one thing they are not.
+   *
+   * Consolas rather than a house choice, because it ships with Windows itself rather than with
+   * Office: the face is present even where Microsoft 365 is not, which is the opposite of the risk
+   * `body` carries.
+   */
+  mono: "Consolas",
 } as const;
 
 /**
