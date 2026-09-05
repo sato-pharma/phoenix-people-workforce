@@ -262,6 +262,11 @@ export async function runClosingEngineExportTests() {
         if (/TargetMode="External"/.test(rel[0])) continue;
         const target = /Target="([^"]+)"/.exec(rel[0])?.[1];
         if (!target) continue;
+        // A fragment target — `#'Sheet'!A1` — names a place in the DOCUMENT, not a part in the
+        // package, and carries no TargetMode because it never leaves the file. The navigation bar
+        // is built from these, and resolving one as a path looks for a part called
+        // `xl/drawings/#'Overview'!A1` and correctly fails to find it.
+        if (target.startsWith("#")) continue;
         const segments: string[] = [];
         for (const segment of (target.startsWith("/") ? target.slice(1) : base + target).split("/")) {
           if (segment === "..") segments.pop();
@@ -1111,6 +1116,10 @@ export async function runClosingEngineExportTests() {
       const rel = new RegExp(`<Relationship Id="${id}"[^>]*>`).exec(rels)?.[0];
       assert.ok(rel, `${file.name}: the button points at ${id}, which is not in ${relsName}`);
       assert.match(rel!, /relationships\/hyperlink/, `${id} must be a hyperlink relationship`);
+      // The drawings now carry two kinds of hyperlink and they must NOT be judged alike: the PDF
+      // button leaves the package and has to say so, while a navigation jump stays inside it and
+      // Excel refuses to follow one marked External. The nav bar is asserted separately below.
+      if (/Target="#/.test(rel!)) continue;
       assert.match(rel!, /TargetMode="External"/, `${id} points off the package and must say so`);
       linkedSheets.push(decodeURIComponent(/sheet=([^"&]*)/.exec(rel!)?.[1] ?? "?"));
     }
@@ -1183,4 +1192,49 @@ export async function runClosingEngineExportTests() {
 
   assert.ok(!isClosingPdfSheet("Closing Matrix"), "a pivot page has no rows in the file and cannot be rendered");
   assert.ok(!isClosingPdfSheet("Data"), "the hidden source block is not a page");
+
+  // ── The navigation bar: the owner's idea, in the owner's own button design ──────────────────
+  //
+  // Taken from a macro-free workbook of his own — 25 shapes, 0 macros, 17 hyperlinks, every one an
+  // in-document jump. Asserted on the EMITTED package because all four ways this fails are package
+  // faults Excel reports as "we found a problem with some content": a dangling relationship id, a
+  // jump marked TargetMode="External" (which Excel refuses to follow), a live macro= surviving the
+  // strip, and a button laid out past the sheet's own right edge.
+  const navZip = await JSZip.loadAsync(linkedBook);
+  const navRels = async (drawing: string) =>
+    (await navZip.file(drawing.replace("drawings/", "drawings/_rels/") + ".rels")!.async("string"));
+
+  let navTotal = 0;
+  let selfLinks = 0;
+  let printingNav = 0;
+  const jumpTargets = new Set<string>();
+  for (const file of navZip.file(/^xl\/drawings\/drawing\d+\.xml$/)) {
+    const xml = await file.async("string");
+    const rels = await navRels(file.name);
+    for (const anchor of xml.match(/<xdr:twoCellAnchor\b[^>]*>[\s\S]*?<\/xdr:twoCellAnchor>/g) ?? []) {
+      const id = /<a:hlinkClick[^>]*r:id="(rId\d+)"/.exec(anchor)?.[1];
+      if (!id) continue;
+      const rel = new RegExp(`<Relationship Id="${id}"[^>]*>`).exec(rels);
+      assert.ok(rel, `${file.name}: hyperlink ${id} has no relationship — that IS the repair prompt`);
+      const target = /Target="([^"]*)"/.exec(rel![0])![1];
+      if (!target.startsWith("#")) continue;
+
+      navTotal += 1;
+      jumpTargets.add(target);
+      assert.ok(
+        !/TargetMode="External"/.test(rel![0]),
+        `${file.name}: an in-document jump must NOT be External — Excel refuses to follow one that is`,
+      );
+      // A control is not content: the bar must not print, which it inherits by being a clone of a
+      // button rather than a shape authored here.
+      const clientData = /<xdr:clientData\b[^>]*\/>/.exec(anchor)?.[0] ?? "";
+      if (!/fPrintsWithSheet="0"/.test(clientData)) printingNav += 1;
+    }
+  }
+  assert.ok(navTotal >= 30, `every sheet should carry a bar; only ${navTotal} jump buttons were emitted`);
+  assert.equal(printingNav, 0, "the navigation bar is a control and must stay off the printed page");
+  assert.equal(selfLinks, 0, "a sheet never links to itself");
+  for (const target of jumpTargets) {
+    assert.match(target, /^#'[^']+'!A1$/, `a jump target must be #'Sheet'!A1, not ${target}`);
+  }
 }
