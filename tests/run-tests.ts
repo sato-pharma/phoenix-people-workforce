@@ -1407,6 +1407,7 @@ import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-ca
 import { runAdminProfileCreatedAtHydrationSafeTests } from "./admin-profile-created-at-hydration-safe.test.ts";
 
 import { runEmployeeSavePreservesSalaryTests } from "./employee-save-preserves-salary.test.ts";
+import { runEmployeePortalHeaderClockHydrationTests } from "./employee-portal-header-clock-hydration.test.ts";
 
 import { runEmployeeJobTitleCasingHintTests } from "./employee-job-title-casing-hint.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -4446,6 +4447,10 @@ await runTest(
 );
 
 await runTest("employee save preserves stored salary when the payload omits money fields", runEmployeeSavePreservesSalaryTests);
+await runTest(
+  "employee portal header 'today' chip defers to a mount effect (regression for React hydration error #418)",
+  runEmployeePortalHeaderClockHydrationTests,
+);
 
 await runTest(
   "employee job title casing hint (offers CEO/QPPV/SFE/R&D/HR and the minor-word fix; stays silent on QA/QC, eCommerce, Arabic and already-correct titles)",
