@@ -1413,6 +1413,7 @@ import { runEmployeeJobTitleCasingHintTests } from "./employee-job-title-casing-
 
 import { runPayrollHoldConfirmStepReasonTests } from "./payroll-hold-confirm-step-reason.test.ts";
 
+import { runPmCallRateBandTests } from "./pm-call-rate-band.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4465,6 +4466,10 @@ await runTest(
   runPayrollHoldConfirmStepReasonTests,
 );
 
+await runTest(
+  "PM call-rate band is PM alone (7 PM + 2 AM = 9 a day is BELOW band, because only the 7 counts)",
+  runPmCallRateBandTests,
+);
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

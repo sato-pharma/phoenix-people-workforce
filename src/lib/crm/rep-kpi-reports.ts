@@ -169,23 +169,29 @@ export const DEFAULT_REP_KPI_STANDARDS: RepKpiStandards = {
   AM: { callRatePerDay: 2, callRateBand: null, coverageFloorPct: 95, frequencyNorms: NO_NORMS },
   PM: {
     callRatePerDay: 10,
-    // ⚠ TWO READINGS OF "8-12" ARE LIVE, and which one the owner meant changes a verdict a
-    // manager sees. Both are his own words, days apart:
+    // SETTLED 2026-09-06 — the 8-12 band is PM ALONE, and this module is now its ONLY home.
     //
-    //   THIS ONE  — "8-12 pm only and 2 am accounts": the band is PM's, AM is a flat 2.
-    //   call-rate.ts's DAILY_VISIT_RATE_MIN/MAX (PR #3319) — "call rate in month should be 10 to
-    //     achieve this should make visits / day av 8-12": the band is AM + PM SUMMED per day.
+    // TWO READINGS OF "8-12" WERE LIVE ON `main` AT ONCE, merged 22 minutes apart on 2026-09-05.
+    // Recorded rather than deleted, because "why is the band only on PM?" is a question the next
+    // session would otherwise answer by re-deriving the combined model from the owner's earlier,
+    // more general wording — which is exactly how it was arrived at the first time:
     //
-    // They agree on most reps and disagree on a real one: 7 PM + 2 AM is 9 a day, which is
-    // IN-BAND summed and BELOW-BAND on PM alone — so one rep can read Met on the AM · PM tab and
-    // Below on the call-rate tab, with nothing on screen explaining why.
+    //   THIS ONE — "8-12 pm only and 2 am accounts": the band is PM's, AM is a flat 2. CORRECT.
+    //   call-rate.ts (PR #3319) — "call rate in month should be 10 to achieve this should make
+    //     visits / day av 8-12": banded an AM + PM SUM. Said before AM and PM had been separated
+    //     in the conversation at all, which is why it read as the whole day.
     //
-    // Deliberately NOT reconciled by guesswork. Reusing that constant here would silently
-    // re-point it at a different population; dropping this band would silently lose the "8 is a
-    // pass" nuance he stated. Parked for the owner.
+    // They agreed on most reps and disagreed on 30 of 76 (August 2026, production, Sat-Wed, 23
+    // working days): 7 PM + 2 AM is 9 a day — IN-BAND summed, BELOW band on PM alone — so one rep
+    // read Met on the AM · PM tab and Below on the call-rate board, with nothing on screen saying
+    // why. PR #3331 flagged that without guessing at it; asked directly, the owner answered "8-12
+    // pm only and 2 am accounts" and, to a second session, "10 PM - 2 AM".
     //
-    // Do NOT "tidy" this by making the numbers match — the numbers already match. It is the
-    // DENOMINATOR that differs.
+    // PR #3341 then RETRACTED the combined band rather than repointing it: two implementations of
+    // one rule is what let them drift apart, so the call-rate.ts copy is gone and this is the
+    // single authority. Do NOT reintroduce a band on AM, and do NOT add a combined AM+PM band
+    // anywhere — a band on both lists invites summing them, which is the shape that was retired.
+    // Pinned by tests/pm-call-rate-band.test.ts, whose separating case is 7 PM + 2 AM.
     callRateBand: { min: 8, max: 12 },
     coverageFloorPct: 95,
     frequencyNorms: { A: 2, B: 1, C: 1 },
