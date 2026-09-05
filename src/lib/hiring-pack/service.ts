@@ -106,6 +106,17 @@ const DOCUMENT_BINDINGS: Record<
   // that keeps the custody receipts out (see `SIGNABLE_DOCUMENTS`). A null binding makes
   // `recordHiringPackPrinted` a no-op for them and `markHiringPackSigned` refuse them, both correct,
   // and it is why these needed no migration to add.
+  // Sato's own six. Null for the same reason the worker-data form is null: they are papers filed
+  // in a drawer, and this system records no signature against the person for them. The NDA is the
+  // one that arguably should — it is signed once in a career, like the contract — and giving it a
+  // real binding means a column and a migration. Written out one per document rather than shared,
+  // so that doing that later is an edit to ONE row and cannot silently move the other five.
+  nda: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  appointmentDocsReceipt: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  socialStatusSheet: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  absenceWarning: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  deemedResignation: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  appointmentDocsReturn: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   contractRenewal: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   contractNonRenewal: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   form6: {
