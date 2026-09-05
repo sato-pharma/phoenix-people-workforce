@@ -54,18 +54,6 @@ function formatPaymentStatus(request: VacationRequestRecord) {
   return `Payment status: ${request.paymentStatus}${request.unpaidReason ? ` (${vacationUnpaidReasonLabel(request.unpaidReason)})` : ""}`;
 }
 
-export function buildVacationDecisionUrl(input: {
-  baseUrl: string;
-  decision: VacationDecision;
-  requestId: string;
-  token: string;
-}) {
-  const url = new URL(`/api/vacations/requests/${encodeURIComponent(input.requestId)}/decision`, input.baseUrl);
-  url.searchParams.set("decision", input.decision);
-  url.searchParams.set("token", input.token);
-  return url.toString();
-}
-
 /**
  * True only when sendTemplatedEmail skipped because the template itself is missing,
  * unsupported, or deactivated — NOT when there were simply no deliverable recipients.
