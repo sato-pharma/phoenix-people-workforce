@@ -39,6 +39,7 @@ export default async function ScreeningQuestionsPage() {
       return {
         ...prompt,
         isCustomised: Boolean(saved),
+        savedAppliesToRoleFamilies: saved?.appliesToRoleFamilies ?? null,
         savedBody: saved?.body ?? null,
         savedHiddenOptions: saved?.hiddenOptions ?? [],
         savedOptionLabels: saved?.optionLabels ?? {},

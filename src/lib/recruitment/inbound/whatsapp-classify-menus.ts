@@ -1,10 +1,11 @@
 // Recruitment / ATS — the menus a CV sender taps to say what they are applying for.
 //
 // Six questions: role -> graduation background -> region -> area -> years of experience -> expected
-// salary. The area question is asked ONLY to a Medical Rep (owner's cascade rule 2026-08-30, see
-// askAreaForRole); every other applicant skips it and goes straight to experience. Background,
-// experience and expected salary are asked to everyone. Expected salary is the one free-typed
-// question — every other question is a tappable list.
+// salary. WHICH of them an applicant is asked is the owner's to set per question since 2026-09-05
+// (whatsapp-question-audience.ts) — the area question defaults to Medical Reps only, his cascade rule
+// of 2026-08-30, and the other five default to everyone. Question 1 is always asked: it establishes
+// the role the rest are judged against. Expected salary is the one free-typed question — every other
+// question is a tappable list.
 //
 // WHY THIS EXISTS. Measured against production 2026-08-28: 446 candidates, 227 of them (51%) from
 // WhatsApp, and `applied_for_job_title` filled on 60. Those 60 hold 41 DISTINCT spellings, because
@@ -483,20 +484,13 @@ export function isOfferedRoleFamily(value: string): value is CandidateRoleFamily
   return (candidateRoleFamilies as readonly string[]).includes(value);
 }
 
-/**
- * Whether this applicant is asked the AREA question. Owner's cascade rule, 2026-08-30: a Medical Rep
- * is asked region THEN area; every other applicant — the sales managers, the head-office roles, and
- * anyone who typed their own job under "Other" — is asked region only, no area.
- *
- * The whole rule is this one line, and it turns on the tapped role FAMILY, not the label. A typed
- * "Other" job never counts (its family stays "other"), which is the safe default: we do not know
- * what seat they are after, so we do not ask them to name an area inside one. This is the single
- * seam the session state machine consults — pinned in a test so a role added to the menu later has
- * its area behaviour decided on purpose rather than by omission.
- */
-export function askAreaForRole(family: string | null | undefined): boolean {
-  return family === "medical_rep";
-}
+// `askAreaForRole` USED TO LIVE HERE, and it is gone rather than moved: the owner's cascade rule of
+// 2026-08-30 — a Medical Rep is asked region THEN area, everyone else region only — is now the
+// DEFAULT AUDIENCE for the area question in whatsapp-question-audience.ts, one of six he can change
+// on /admin/screening-questions without a deploy. Deleted rather than kept as a wrapper, because a
+// wrapper would answer for the default while the flow answered for the saved audience, and the two
+// disagreeing is the exact bug the control was added to prevent. Use
+// builtInQuestionAppliesToRole("area", audiences.get("area"), family).
 
 // ── Question 4 — which area? ─────────────────────────────────────────────────────────────────────
 // Areas are passed in because they are read live from au.canonical_areas. Largest region is Others

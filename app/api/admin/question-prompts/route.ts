@@ -52,6 +52,7 @@ function promptsWithOverrides(overrides: ReadonlyMap<string, PromptOverride>) {
       ...prompt,
       isCustomised: Boolean(saved),
       savedBody: saved?.body ?? null,
+      savedAppliesToRoleFamilies: saved?.appliesToRoleFamilies ?? null,
       savedHiddenOptions: saved?.hiddenOptions ?? [],
       savedOptionLabels: saved?.optionLabels ?? {},
       savedOptionOrder: saved?.optionOrder ?? [],
@@ -85,6 +86,7 @@ export async function POST(request: Request) {
       optionLabels?: Record<string, OptionLabel>;
       hiddenOptions?: string[];
       optionOrder?: string[];
+      appliesToRoleFamilies?: string[] | null;
     };
     const key = String(body.key ?? "").trim();
     if (!key) {
@@ -103,9 +105,29 @@ export async function POST(request: Request) {
     // A blank bodyText with no labels and no answer changes is the RESET gesture, handled inside
     // saveQuestionPrompt — the row is dropped and the question goes back to its code defaults rather
     // than being saved empty.
+    // WHO IS ASKED — four wire states, and the difference between the first two is the point.
+    //   field ABSENT -> leave the stored audience alone. This is what a client that predates the
+    //                   control sends, and what the screen's Reset-wording button sends, so a reset
+    //                   cannot silently widen a question somebody narrowed.
+    //   null         -> clear it, so the question goes back to its CODE default.
+    //   []           -> asked to everyone. Beats the code default; the only way to widen `area`.
+    //   [a, b]       -> asked to those job titles only.
+    // Membership is NOT checked here: audienceViolations owns that vocabulary, so the admin gets one
+    // message naming the bad job title rather than a generic 400 from this parser.
+    const audience =
+      body.appliesToRoleFamilies === undefined
+        ? undefined
+        : {
+            value:
+              body.appliesToRoleFamilies === null
+                ? undefined
+                : body.appliesToRoleFamilies.map((family) => String(family ?? "").trim()).filter(Boolean),
+          };
+
     await saveQuestionPrompt({
       actorHrId: access.hrId ?? null,
       allowedValues,
+      audience,
       bodyText: String(body.bodyText ?? ""),
       defaultOfferedValues,
       hiddenOptions: Array.isArray(body.hiddenOptions) ? body.hiddenOptions : [],

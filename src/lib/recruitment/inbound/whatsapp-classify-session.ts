@@ -6,10 +6,17 @@
 // apart, with nothing but the sender's number tying them together, so the conversation's position is
 // held in `ats_whatsapp_classification_sessions` (one open row per sender).
 //
-// The AREA question is the one that cascades: owner's rule 2026-08-30 (see askAreaForRole) asks it
-// only of a Medical Rep. Every other applicant — the sales managers, head-office roles, and anyone
-// who typed their own job — skips straight from region to the experience and salary questions, which
-// are asked to everyone. Expected salary is the last question and the only one that is typed.
+// EVERY ONE OF THE SIX CAN NOW BE SKIPPED, and which ones are is the owner's to set on
+// /admin/screening-questions — the same "who is asked" control the extra questions have had since
+// 2026-09-02, extended to the built-in six on 2026-09-05. The area question is where that started:
+// owner's rule 2026-08-30 asked it only of a Medical Rep, hardcoded, and that rule is now simply the
+// default audience for `area` (whatsapp-question-audience.ts) rather than a branch. Question 1 is
+// the one exception and always will be — it establishes the role every other audience is judged
+// against, so there is nothing to judge it by.
+//
+// The consequence for this file: there is exactly ONE place a built-in question decides what comes
+// next, `advanceAfterBuiltIn`. It used to be eight hardcoded transitions with the area skip written
+// out at three of them.
 //
 // EVERYTHING HERE IS BEST-EFFORT AND NEVER THROWS INTO THE WEBHOOK. The CV is already captured and
 // queued by the time any of this runs; a failed prompt must never turn a delivered CV into a lost
@@ -32,10 +39,15 @@ import {
 } from "@/lib/recruitment/inbound/whatsapp-question-prompts";
 import { loadQuestionPromptOverrides } from "@/lib/recruitment/inbound/whatsapp-question-prompts-store";
 import {
+  builtInQuestionAppliesToRole,
+  nextBuiltInQuestion,
+  type BuiltInQuestionKey,
+  type SavedAudiences,
+} from "@/lib/recruitment/inbound/whatsapp-question-audience";
+import {
   AREA_OTHER_MAX,
   areaMenu,
   areaOtherPromptText,
-  askAreaForRole,
   BACKGROUND_OTHER_MAX,
   backgroundMenu,
   backgroundOtherPromptText,
@@ -261,6 +273,151 @@ async function salaryPromptWithOverride(): Promise<string> {
     key: "salary",
     overrides: await loadQuestionPromptOverrides(),
   });
+}
+
+/**
+ * The audiences the owner has saved for the six, keyed by step.
+ *
+ * Read through the same never-throwing override load every prompt already goes through, so one
+ * database hiccup cannot both blank the wording and rearrange who is asked what — it leaves every
+ * question on its code default, which is exactly what this conversation did before either feature
+ * existed. A key ABSENT from the map is "nothing configured", which is the `undefined`
+ * `resolveBuiltInAudience` expects, so a plain `.get()` is already the right argument.
+ */
+async function loadSavedAudiences(): Promise<SavedAudiences> {
+  const byKey = new Map<string, readonly string[]>();
+  for (const [key, override] of await loadQuestionPromptOverrides()) {
+    if (override.appliesToRoleFamilies !== undefined) byKey.set(key, override.appliesToRoleFamilies);
+  }
+  return byKey;
+}
+
+/** The three built-in questions that are an ordinary menu send. `area` builds its rows from the
+ *  applicant's own region and `salary` is plain text, so both are handled apart in
+ *  `advanceAfterBuiltIn`. `job_title` is here only to keep the map total — it is question one, so
+ *  it can never be what comes NEXT. */
+const BUILT_IN_MENUS: Record<Exclude<BuiltInQuestionKey, "area" | "salary">, () => ClassifyMenu> = {
+  background: backgroundMenu,
+  experience: experienceMenu,
+  job_title: jobTitleMenu,
+  region: regionMenu,
+};
+
+/**
+ * Everything that happens once the fixed six are done for this applicant: hand off to the
+ * admin-defined extra questions when any are active for their role, else finish.
+ *
+ * Extracted from the salary step because salary is no longer guaranteed to BE the last question. The
+ * owner can now narrow it to particular job titles, and an applicant it does not apply to finishes
+ * the moment the question before it is answered. Two copies of this hand-off would be two places for
+ * the extra-question loop to go missing, and the symptom — a conversation that simply stops after
+ * the six — looks like the applicant went quiet.
+ */
+async function finishFixedSix(session: SessionRow, phoneNumberId: string | null): Promise<void> {
+  // Scoped to the role this applicant tapped, so the Office Coordinator questions never reach a
+  // Medical Rep. See listActiveScreeningQuestions.
+  const activeExtraQuestions = await listActiveScreeningQuestions(session.job_title_family);
+  if (activeExtraQuestions.length > 0) {
+    await startExtraQuestionLoop(session, phoneNumberId, activeExtraQuestions);
+  } else {
+    await finishSession(session, phoneNumberId);
+  }
+}
+
+/**
+ * Record one of the six answers, then ask whichever of the six comes NEXT for this applicant.
+ *
+ * THE ONE PLACE A BUILT-IN TRANSITION HAPPENS. This file used to carry eight hardcoded
+ * `step: "<the next one>"` transitions — five tapped, three typed — and the single skip that existed
+ * (`askAreaForRole`) was already written out at three of them. Making all six skippable that way
+ * would have meant every question's rule repeated at every site, with the "Other" branches as the
+ * quiet place one goes missing: those are the paths nobody re-reads, and a missed skip there asks a
+ * manager for a territory rather than failing loudly.
+ *
+ * The answer in `patch` is written whether or not a next question exists, so an answer is never lost
+ * to a conversation that ends on it.
+ */
+async function advanceAfterBuiltIn(input: {
+  session: SessionRow;
+  /** The question just answered. Pass the plain key for a typed "Other" answer too — `region_other`
+   *  finishes the region question exactly as a tapped region does. */
+  after: BuiltInQuestionKey;
+  /** The answer columns this transition writes. */
+  patch: Record<string, string>;
+  phoneNumberId: string | null;
+  nowIso: string;
+}): Promise<"advanced" | "asked_other"> {
+  const { after, nowIso, patch, session } = input;
+  const supabase = recruitmentDb();
+  const withPhone = { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId };
+  // The session as it will be AFTER this answer. `patch` routinely holds the very field the next
+  // decision reads — the role on question 1, the region on question 3 — so the decision is made
+  // against the merged row and never against the stale one it was loaded from.
+  const answered = { ...session, ...patch } as SessionRow;
+
+  const next = nextBuiltInQuestion({
+    after,
+    audiences: await loadSavedAudiences(),
+    // Tapped or typed — either is a region on file. A TYPED one has no region code, which is what
+    // sends the area question down its typed path below rather than to a menu listing some other
+    // region's areas.
+    hasRegion: Boolean(answered.region_code || answered.region_other_text),
+    roleFamily: answered.job_title_family,
+  });
+
+  const write = (extra: Record<string, string>) =>
+    supabase
+      .from(SESSIONS_TABLE)
+      .update({ ...patch, ...extra, updated_at: nowIso })
+      .eq("id", session.id);
+
+  if (!next) {
+    await write({});
+    await finishFixedSix(answered, input.phoneNumberId);
+    return "advanced";
+  }
+
+  if (next === "area") {
+    // Two ways the area question cannot be a menu, and both end as a TYPED answer rather than as a
+    // silence: the applicant typed their own region, so there is nothing to list areas for; and a
+    // real region with no areas drawn yet — Delta (3) on 2026-08-28, live and carrying target the
+    // day its first District Manager seat opened. Asking is worth more than giving up, because "we
+    // have not drawn the areas yet" is our problem and not the applicant's.
+    const areas = answered.region_code ? await areaNamesForRegion(answered.region_code) : [];
+    if (areas.length === 0) {
+      if (answered.region_code) {
+        logWarning("WhatsApp classification found no areas for a region", {
+          context: { regionCode: answered.region_code },
+          labels: { event: "whatsapp_classify_no_areas" },
+        });
+      }
+      await write({ step: "area_other" });
+      await sendPromptText(withPhone, areaOtherPromptText());
+      return "asked_other";
+    }
+    await write({ step: "area" });
+    await sendStep(
+      withPhone,
+      areaMenu(answered.region_code as CandidateRegionCode, areas),
+      // The only prompt carrying a token: an owner-written "Which area inside {region}?" needs the
+      // region they just chose. Passed here rather than derived in sendStep, which cannot know it.
+      candidateRegionLabels[answered.region_code as CandidateRegionCode],
+    );
+    return "advanced";
+  }
+
+  if (next === "salary") {
+    // The one built-in sent as plain text — there is nothing to tap — so the step is parked here
+    // rather than by sendStep, and it must stay parked even if the send fails, so a typed answer
+    // that arrives anyway is still understood.
+    await write({ step: "salary" });
+    await sendPromptText(withPhone, await salaryPromptWithOverride());
+    return "advanced";
+  }
+
+  await write({ step: next });
+  await sendStep(withPhone, BUILT_IN_MENUS[next]());
+  return "advanced";
 }
 
 /**
@@ -521,12 +678,13 @@ export async function handleClassifyReply(input: {
         return "asked_other";
       }
 
-      await supabase
-        .from(SESSIONS_TABLE)
-        .update({ job_title_family: parsed.value, step: "background", updated_at: nowIso })
-        .eq("id", session.id);
-      const sent = await sendStep({ ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId }, backgroundMenu());
-      return sent ? "advanced" : "advanced";
+      return advanceAfterBuiltIn({
+        after: "job_title",
+        nowIso,
+        patch: { job_title_family: parsed.value },
+        phoneNumberId: input.phoneNumberId,
+        session,
+      });
     }
 
     if (parsed.step === "background") {
@@ -544,15 +702,13 @@ export async function handleClassifyReply(input: {
         return "asked_other";
       }
       if (!isOfferedBackground(parsed.value)) return "unknown_value";
-      await supabase
-        .from(SESSIONS_TABLE)
-        .update({ background: parsed.value, step: "region", updated_at: nowIso })
-        .eq("id", session.id);
-      const sent = await sendStep(
-        { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId },
-        regionMenu(),
-      );
-      return sent ? "advanced" : "advanced";
+      return advanceAfterBuiltIn({
+        after: "background",
+        nowIso,
+        patch: { background: parsed.value },
+        phoneNumberId: input.phoneNumberId,
+        session,
+      });
     }
 
     if (parsed.step === "region") {
@@ -571,54 +727,13 @@ export async function handleClassifyReply(input: {
       }
       if (!isOfferedRegion(parsed.value)) return "unknown_value";
 
-      // The cascade. Only a Medical Rep is asked the area; for everyone else the region skips the
-      // area question and goes straight to experience. Checked BEFORE loading areas — a manager never
-      // needs an area list built, and Delta (3)'s empty-area escape below is a medical-rep concern
-      // that must not fire for a role that was never going to be asked an area.
-      if (!askAreaForRole(session.job_title_family)) {
-        await supabase
-          .from(SESSIONS_TABLE)
-          .update({ region_code: parsed.value, step: "experience", updated_at: nowIso })
-          .eq("id", session.id);
-        const sent = await sendStep(
-          { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId },
-          experienceMenu(),
-        );
-        return sent ? "advanced" : "advanced";
-      }
-
-      const areas = await areaNamesForRegion(parsed.value);
-      if (areas.length === 0) {
-        // A real region with no areas yet — Delta (3) on 2026-08-28, live and carrying target the
-        // day its first District Manager seat opened. This used to give up and file two answers of
-        // three. Now it asks them to type the area, because "we have not drawn the areas yet" is our
-        // problem, not the applicant's, and the answer is worth more than the silence was.
-        await supabase
-          .from(SESSIONS_TABLE)
-          .update({ region_code: parsed.value, step: "area_other", updated_at: nowIso })
-          .eq("id", session.id);
-        logWarning("WhatsApp classification found no areas for a region", {
-          context: { regionCode: parsed.value },
-          labels: { event: "whatsapp_classify_no_areas" },
-        });
-        await sendPromptText(
-          { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId },
-          areaOtherPromptText(),
-        );
-        return "asked_other";
-      }
-      await supabase
-        .from(SESSIONS_TABLE)
-        .update({ region_code: parsed.value, step: "area", updated_at: nowIso })
-        .eq("id", session.id);
-      const sent = await sendStep(
-        { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId },
-        areaMenu(parsed.value as CandidateRegionCode, areas),
-        // The only prompt carrying a token: an owner-written "Which area inside {region}?" needs the
-        // region they just chose. Passed here rather than derived in sendStep, which cannot know it.
-        candidateRegionLabels[parsed.value as CandidateRegionCode],
-      );
-      return sent ? "advanced" : "advanced";
+      return advanceAfterBuiltIn({
+        after: "region",
+        nowIso,
+        patch: { region_code: parsed.value },
+        phoneNumberId: input.phoneNumberId,
+        session,
+      });
     }
 
     if (parsed.step === "area") {
@@ -638,15 +753,13 @@ export async function handleClassifyReply(input: {
       }
       const validAreas = session.region_code ? await areaNamesForRegion(session.region_code) : [];
       if (validAreas.length > 0 && !validAreas.includes(parsed.value)) return "unknown_value";
-      await supabase
-        .from(SESSIONS_TABLE)
-        .update({ area_name: parsed.value, step: "experience", updated_at: nowIso })
-        .eq("id", session.id);
-      const sent = await sendStep(
-        { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId },
-        experienceMenu(),
-      );
-      return sent ? "advanced" : "advanced";
+      return advanceAfterBuiltIn({
+        after: "area",
+        nowIso,
+        patch: { area_name: parsed.value },
+        phoneNumberId: input.phoneNumberId,
+        session,
+      });
     }
 
     // step === "experience" — the last TAPPABLE answer, asked to everyone. Falls through here rather
@@ -656,15 +769,13 @@ export async function handleClassifyReply(input: {
     // TYPED, so park on `salary` and let handleClassifyText take the figure. No "Other" branch: the
     // bands are exhaustive, so isOfferedExperience is the only guard needed.
     if (!isOfferedExperience(parsed.value)) return "unknown_value";
-    await supabase
-      .from(SESSIONS_TABLE)
-      .update({ experience: parsed.value, step: "salary", updated_at: nowIso })
-      .eq("id", session.id);
-    await sendPromptText(
-      { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId },
-      await salaryPromptWithOverride(),
-    );
-    return "advanced";
+    return advanceAfterBuiltIn({
+      after: "experience",
+      nowIso,
+      patch: { experience: parsed.value },
+      phoneNumberId: input.phoneNumberId,
+      session,
+    });
   } catch (error) {
     logError("WhatsApp classification failed to handle a reply", {
       error,
@@ -728,11 +839,13 @@ export async function handleClassifyText(input: {
         await sendPromptText(withPhone, jobTitleOtherTooLongText());
         return "unusable_text";
       }
-      await supabase
-        .from(SESSIONS_TABLE)
-        .update({ job_title_other_text: typed, step: "background", updated_at: nowIso })
-        .eq("id", session.id);
-      await sendStep(withPhone, backgroundMenu());
+      await advanceAfterBuiltIn({
+        after: "job_title",
+        nowIso,
+        patch: { job_title_other_text: typed },
+        phoneNumberId: input.phoneNumberId,
+        session,
+      });
       return "advanced";
     }
 
@@ -742,11 +855,13 @@ export async function handleClassifyText(input: {
         await sendPromptText(withPhone, backgroundOtherTooLongText());
         return "unusable_text";
       }
-      await supabase
-        .from(SESSIONS_TABLE)
-        .update({ background_other_text: typed, step: "region", updated_at: nowIso })
-        .eq("id", session.id);
-      await sendStep(withPhone, regionMenu());
+      await advanceAfterBuiltIn({
+        after: "background",
+        nowIso,
+        patch: { background_other_text: typed },
+        phoneNumberId: input.phoneNumberId,
+        session,
+      });
       return "advanced";
     }
 
@@ -756,23 +871,13 @@ export async function handleClassifyText(input: {
         await sendPromptText(withPhone, typedAnswerTooLongText("region", REGION_OTHER_MAX));
         return "unusable_text";
       }
-      // The cascade, in its typed form. A Medical Rep types the area next; everyone else skips the
-      // area question and goes straight to experience. A region we do not have has no areas to list,
-      // so the rep's area is typed too — going back to a menu would offer the areas of a DIFFERENT
-      // region, which is worse than asking.
-      if (!askAreaForRole(session.job_title_family)) {
-        await supabase
-          .from(SESSIONS_TABLE)
-          .update({ region_other_text: typed, step: "experience", updated_at: nowIso })
-          .eq("id", session.id);
-        await sendStep(withPhone, experienceMenu());
-        return "advanced";
-      }
-      await supabase
-        .from(SESSIONS_TABLE)
-        .update({ region_other_text: typed, step: "area_other", updated_at: nowIso })
-        .eq("id", session.id);
-      await sendPromptText(withPhone, areaOtherPromptText());
+      await advanceAfterBuiltIn({
+        after: "region",
+        nowIso,
+        patch: { region_other_text: typed },
+        phoneNumberId: input.phoneNumberId,
+        session,
+      });
       return "advanced";
     }
 
@@ -784,11 +889,13 @@ export async function handleClassifyText(input: {
         await sendPromptText(withPhone, typedAnswerTooLongText("area", AREA_OTHER_MAX));
         return "unusable_text";
       }
-      await supabase
-        .from(SESSIONS_TABLE)
-        .update({ area_other_text: typedArea, step: "experience", updated_at: nowIso })
-        .eq("id", session.id);
-      await sendStep(withPhone, experienceMenu());
+      await advanceAfterBuiltIn({
+        after: "area",
+        nowIso,
+        patch: { area_other_text: typedArea },
+        phoneNumberId: input.phoneNumberId,
+        session,
+      });
       return "advanced";
     }
 
@@ -804,21 +911,13 @@ export async function handleClassifyText(input: {
       await sendPromptText(withPhone, salaryTooLongText());
       return "unusable_text";
     }
-    await supabase
-      .from(SESSIONS_TABLE)
-      .update({ expected_salary: typedSalary, updated_at: nowIso })
-      .eq("id", session.id);
-    const finishedFixedSix = { ...session, expected_salary: typedSalary };
-    // Scoped to the role this applicant tapped. A Medical Rep is asked only the questions written
-    // for everyone; the Office Coordinator questions never reach them, which is the whole point of
-    // the scope column — the Sheraton commute question would otherwise read to a field applicant as
-    // though the rep job were Cairo-based, at the very end of the flow.
-    const activeExtraQuestions = await listActiveScreeningQuestions(finishedFixedSix.job_title_family);
-    if (activeExtraQuestions.length > 0) {
-      await startExtraQuestionLoop(finishedFixedSix, input.phoneNumberId, activeExtraQuestions);
-    } else {
-      await finishSession(finishedFixedSix, input.phoneNumberId);
-    }
+    await advanceAfterBuiltIn({
+      after: "salary",
+      nowIso,
+      patch: { expected_salary: typedSalary },
+      phoneNumberId: input.phoneNumberId,
+      session,
+    });
     return "advanced";
   } catch (error) {
     logError("WhatsApp classification failed to handle a typed answer", {
@@ -842,9 +941,15 @@ export async function finishSession(session: SessionRow, fallbackPhoneNumberId: 
   const experienceLabel = sessionExperienceLabel(session);
   // Verbatim — never coerced. See the salary column note in writeClassification and the menu file.
   const expectedSalary = session.expected_salary ?? null;
-  // Whether the area question was part of this applicant's flow at all — Medical Rep only. Drives
-  // whether the mirror reads a missing area as "not answered" or simply omits it.
-  const areaApplies = askAreaForRole(session.job_title_family);
+  // Whether the area question was part of this applicant's flow at all. Drives whether the mirror
+  // reads a missing area as "not answered" or simply omits it — so it has to ask the SAME question
+  // the flow asked, audience and all. Reading the code default alone would tell the owner an area is
+  // missing from a manager he deliberately narrowed the question away from.
+  const areaApplies = builtInQuestionAppliesToRole(
+    "area",
+    (await loadSavedAudiences()).get("area"),
+    session.job_title_family,
+  );
 
   await applyClassificationToCandidate(session);
   await closeSession(session.id, "completed");

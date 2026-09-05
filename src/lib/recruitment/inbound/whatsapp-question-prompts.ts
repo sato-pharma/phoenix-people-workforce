@@ -35,6 +35,13 @@
 // client component for live feedback, and asserted in a test without a database.
 
 import {
+  BUILT_IN_DEFAULT_AUDIENCE,
+  builtInQuestionKeys,
+  canChooseAudience,
+  type QuestionAudience,
+  type StoredAudience,
+} from "@/lib/recruitment/inbound/whatsapp-question-audience";
+import {
   areaMenu,
   backgroundMenu,
   experienceMenu,
@@ -53,15 +60,12 @@ import {
 } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
 
 /** The six steps whose wording an admin may edit. Same spelling as the session's `step` column and
- *  as the migration's CHECK constraint — one vocabulary, three places, no translation layer. */
-export const builtInPromptKeys = [
-  "job_title",
-  "background",
-  "region",
-  "area",
-  "experience",
-  "salary",
-] as const;
+ *  as the migration's CHECK constraint — one vocabulary, three places, no translation layer.
+ *
+ *  Re-exported from whatsapp-question-audience.ts rather than re-declared: that module has to own
+ *  the list (whatsapp-classify-menus.ts imports it, and importing this file back would be a cycle),
+ *  and two copies of the six step names is exactly the kind of drift a fourth place invites. */
+export const builtInPromptKeys = builtInQuestionKeys;
 
 export type BuiltInPromptKey = (typeof builtInPromptKeys)[number];
 
@@ -86,6 +90,13 @@ export type OptionLabel = { title?: string; description?: string };
 /** Everything saved for one question. `body` null means the prompt keeps its code default. */
 export type PromptOverride = {
   body: string | null;
+  /**
+   * Who is asked this question. THREE states — see `StoredAudience`: `undefined` is "nothing
+   * configured" and falls through to the question's code default, `[]` is a saved "ask everyone",
+   * and a non-empty array narrows it. Deliberately NOT collapsed to `string[] | null` here, because
+   * that is the shape that makes "ask everyone" unsaveable on the area question.
+   */
+  appliesToRoleFamilies: StoredAudience;
   optionLabels: Record<string, OptionLabel>;
   /**
    * Values NOT to offer — the "delete an answer" gesture. Hiding rather than removing, so an
@@ -138,6 +149,14 @@ export type BuiltInPrompt = {
   options: BuiltInPromptOption[];
   /** How the applicant answers, and anything the admin needs to know about editing these answers. */
   optionsNote: string;
+  /**
+   * Who is asked this question when nothing is configured. Null means every applicant. Sent to the
+   * screen so it can show the live audience without a second source of truth — and so "ask everyone"
+   * on the area question is visibly a CHANGE from its default rather than a no-op.
+   */
+  defaultAudience: QuestionAudience;
+  /** False for `job_title` alone — it establishes the role, so it cannot be scoped by it. */
+  canChooseAudience: boolean;
 };
 
 /**
@@ -151,6 +170,8 @@ export type BuiltInPrompt = {
 export function builtInPrompts(): BuiltInPrompt[] {
   return [
     {
+      canChooseAudience: canChooseAudience("job_title"),
+      defaultAudience: BUILT_IN_DEFAULT_AUDIENCE.job_title,
       defaultBody: jobTitleMenu().body,
       key: "job_title",
       label: "1 · What are you applying for?",
@@ -163,6 +184,8 @@ export function builtInPrompts(): BuiltInPrompt[] {
       supportsRegionToken: false,
     },
     {
+      canChooseAudience: canChooseAudience("background"),
+      defaultAudience: BUILT_IN_DEFAULT_AUDIENCE.background,
       defaultBody: backgroundMenu().body,
       key: "background",
       label: "2 · What did you graduate in?",
@@ -172,6 +195,8 @@ export function builtInPrompts(): BuiltInPrompt[] {
       supportsRegionToken: false,
     },
     {
+      canChooseAudience: canChooseAudience("region"),
+      defaultAudience: BUILT_IN_DEFAULT_AUDIENCE.region,
       defaultBody: regionMenu().body,
       key: "region",
       label: "3 · Which region?",
@@ -181,10 +206,12 @@ export function builtInPrompts(): BuiltInPrompt[] {
       supportsRegionToken: false,
     },
     {
+      canChooseAudience: canChooseAudience("area"),
+      defaultAudience: BUILT_IN_DEFAULT_AUDIENCE.area,
       defaultBody: AREA_PROMPT_DEFAULT,
       key: "area",
       label: "4 · Which area?",
-      note: `Asked to Medical Representatives only. Use ${REGION_TOKEN} where the region name should appear.`,
+      note: `Asked to Medical Representatives unless you widen it below. Use ${REGION_TOKEN} where the region name should appear.`,
       // areaMenu builds its rows from the live areas of whichever region was chosen, so the only row
       // that exists for every applicant — and the only one there is any point relabelling — is the
       // escape. Passing no area names is what leaves exactly that row.
@@ -194,6 +221,8 @@ export function builtInPrompts(): BuiltInPrompt[] {
       supportsRegionToken: true,
     },
     {
+      canChooseAudience: canChooseAudience("experience"),
+      defaultAudience: BUILT_IN_DEFAULT_AUDIENCE.experience,
       defaultBody: experienceMenu().body,
       key: "experience",
       label: "5 · How much experience?",
@@ -203,6 +232,8 @@ export function builtInPrompts(): BuiltInPrompt[] {
       supportsRegionToken: false,
     },
     {
+      canChooseAudience: canChooseAudience("salary"),
+      defaultAudience: BUILT_IN_DEFAULT_AUDIENCE.salary,
       defaultBody: salaryPromptText(),
       key: "salary",
       label: "6 · Expected salary",
@@ -258,7 +289,7 @@ export function isBuiltInPromptKey(value: string): value is BuiltInPromptKey {
 
 /** The empty override — what every question starts on, and what a failed read falls back to. */
 export function emptyPromptOverride(): PromptOverride {
-  return { body: null, hiddenOptions: [], optionLabels: {}, optionOrder: [] };
+  return { appliesToRoleFamilies: undefined, body: null, hiddenOptions: [], optionLabels: {}, optionOrder: [] };
 }
 
 /**
