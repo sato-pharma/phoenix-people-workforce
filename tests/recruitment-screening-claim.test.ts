@@ -36,10 +36,46 @@ export function runRecruitmentScreeningClaimTests() {
   const views = readFileSync("src/lib/recruitment/candidate-views.ts", "utf8");
   assert.match(
     views,
-    /claimed_until: new Date\(\(input\.now \?\? new Date\(\)\)\.getTime\(\) \+ CANDIDATE_CLAIM_LEASE_MINUTES \* 60_000\)/,
+    /CANDIDATE_CLAIM_LEASE_MINUTES \* 60_000/,
     "opening a CV must claim it, written on the SAME upsert as the view - two writes could half "
       + "succeed and leave a view with no claim, and this row must never disagree with itself",
   );
+
+  // ── 1b · ONLY A SCREENER CLAIMS ────────────────────────────────────────────────────────────
+  //
+  // Found reviewing this change, not writing it. markCandidateSeen has THREE call sites, and two
+  // of them are manager paths: recordManagerCvOpen and the hiring-manager file download behind it.
+  // Claiming unconditionally meant a hiring manager previewing a CV already sent to them put
+  // "Hany Saad has this open right now. Pick another CV." in front of a screener - advice that is
+  // simply wrong, because a manager reading is not competing for screening work.
+  assert.match(
+    views,
+    /claim\?: boolean;/,
+    "claiming must be OPT-IN. 'somebody opened this' and 'somebody is screening this right now' are "
+      + "different facts with different audiences",
+  );
+  assert.match(
+    views,
+    /\.\.\.\(input\.claim/,
+    "and the column must be OMITTED when not claiming, never written as null - a manager opening a "
+      + "CV must not WIPE a screener's live claim on the row they share",
+  );
+  const seenRoute = readFileSync("app/api/recruitment/candidates/[id]/seen/route.ts", "utf8");
+  assert.match(
+    seenRoute,
+    /markCandidateSeen\(\{ candidateId: id, claim: true, viewerHrId: access\.hrId \}\)/,
+    "the screening beacon is the one caller that claims - this is the collision the lease exists for",
+  );
+  for (const managerPath of ["src/lib/recruitment/manager-cv-engagement.ts", "src/lib/recruitment/hiring-manager-view.ts"]) {
+    const text = readFileSync(managerPath, "utf8");
+    const call = /markCandidateSeen\(\{[^}]*\}\)/.exec(text);
+    if (!call) continue;
+    assert.doesNotMatch(
+      call[0],
+      /claim:\s*true/,
+      `${managerPath} must NOT claim - a manager reading a CV already sent to them is not screening it`,
+    );
+  }
   assert.match(
     views,
     /\.gt\("claimed_until", now\.toISOString\(\)\)/,

@@ -328,6 +328,20 @@ export async function resolveViewerNames(viewerHrIds: readonly string[]): Promis
  * Returns the stored view so the caller can show "seen 3 times" without a second query.
  */
 export async function markCandidateSeen(input: {
+  /**
+   * Also claim the CV — "I am reading this right now" — for CANDIDATE_CLAIM_LEASE_MINUTES.
+   *
+   * OPT-IN, and defaulting to false, because "somebody opened this" and "somebody is screening this
+   * right now" are different facts with different audiences. Three call sites reach this function:
+   * the screening beacon, and TWO manager paths (recordManagerCvOpen, and the hiring-manager file
+   * download behind it). A hiring manager previewing a CV that was already sent to them is not
+   * competing for screening work, so claiming on their behalf would put "pick another CV" in front
+   * of a screener about somebody who is not screening.
+   *
+   * Default false is the safe direction: a caller that has not thought about it does not claim, and
+   * the queue simply behaves as it did before.
+   */
+  claim?: boolean;
   candidateId: string;
   viewerHrId: string | null | undefined;
   /** Injectable so a test can assert the timestamps without racing the clock. */
@@ -364,10 +378,19 @@ export async function markCandidateSeen(input: {
       last_seen_at: seenAt,
       view_count: viewCount,
       viewer_hr_id: viewer,
-      // Opening a CV claims it. Written on the SAME upsert rather than as a second call: two
-      // writes could half-succeed and leave a view with no claim or a claim with no view, and the
-      // one thing this row must never do is disagree with itself about who was here.
-      claimed_until: new Date((input.now ?? new Date()).getTime() + CANDIDATE_CLAIM_LEASE_MINUTES * 60_000).toISOString(),
+      // Claiming is opt-in; see `claim` above. Written on the SAME upsert rather than as a second
+      // call: two writes could half-succeed and leave a view with no claim or a claim with no view,
+      // and the one thing this row must never do is disagree with itself about who was here.
+      //
+      // `undefined` rather than null when not claiming, so a manager opening a CV does not WIPE a
+      // screener's live claim on it. The two facts share a row; only one of them is being written.
+      ...(input.claim
+        ? {
+            claimed_until: new Date(
+              (input.now ?? new Date()).getTime() + CANDIDATE_CLAIM_LEASE_MINUTES * 60_000,
+            ).toISOString(),
+          }
+        : {}),
     },
     { onConflict: "candidate_id,viewer_hr_id" },
   );

@@ -40,7 +40,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // Scoped to the CALLER, never to an HR_ID from the body. "Have I seen this" is a question
     // about the person asking it, and accepting a viewer id from a request would let one person
     // silently mark another's queue as read.
-    const view = await markCandidateSeen({ candidateId: id, viewerHrId: access.hrId });
+    // `claim: true` ONLY here. This is the screening beacon — the screener has the CV open — and it
+    // is the collision this lease exists to prevent. The manager paths that also reach
+    // markCandidateSeen deliberately do not claim: a manager reading a CV already sent to them is
+    // not competing for screening work, and claiming for them would tell a screener to pick
+    // another CV on account of somebody who is not screening.
+    const view = await markCandidateSeen({ candidateId: id, claim: true, viewerHrId: access.hrId });
 
     // A null view means either "no HR_ID on this session" (a dev-preview login with none) or "the
     // migration has not reached this database yet". Neither is an error the screener can act on,
