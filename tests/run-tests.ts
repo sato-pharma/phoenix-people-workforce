@@ -1393,6 +1393,8 @@ import { runPayrollHoldReasonTests } from "./payroll-hold-reason.test.ts";
 import { runEmployeeImportJobTitleCasingTests } from "./employee-import-job-title-casing.test.ts";
 import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-cairo-clock.test.ts";
 
+import { runPayrollHoldConfirmStepReasonTests } from "./payroll-hold-confirm-step-reason.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4413,6 +4415,11 @@ await runTest(
 await runTest(
   "contract anniversary resolves Cairo's calendar day, not the server's local/UTC clock",
   runContractAnniversaryCairoClockTests,
+);
+
+await runTest(
+  "confirming a payroll hold step enforces the hold reason too (the write path saveStep's rule did not cover, and the last one before publish drops the held rows)",
+  runPayrollHoldConfirmStepReasonTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
