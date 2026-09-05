@@ -68,6 +68,14 @@ export type NotificationEmailInput = {
   bcc?: string[];
   candidateEmail?: string | null;
   cc?: string[];
+  /**
+   * Which runtime enqueued this row — "production", "staging", "development".
+   *
+   * Stamped by enqueueNotificationEmail; never set by a caller. Present so a row written by a
+   * LOCAL `pnpm run dev` (which talks to the production database, AGENTS.md §3) is distinguishable
+   * from a real production one. Optional because rows enqueued before 2026-09-05 do not carry it.
+   */
+  originEnvironment?: string;
   ctaHref?: string;
   ctaLabel?: string;
   /** The originating CreateSystemNotificationInput.eventType — threaded through purely so the
@@ -1872,6 +1880,27 @@ async function getNotificationOutboxRowByDedupeKey(dedupeKey: string) {
   return (data as NotificationOutboxRow | null) ?? null;
 }
 
+/**
+ * Which runtime enqueued this row: "production", "staging", "development"…
+ *
+ * `.env.local` points at PRODUCTION Supabase (AGENTS.md §3), so `pnpm run dev` writes real rows
+ * into the real outbox. That local process has no `EMAIL_NOTIFICATIONS_ENABLED`, so every one of
+ * those rows is immediately skipped with "EMAIL_NOTIFICATIONS_ENABLED is not true" — and until now
+ * nothing on the row said where it came from. 63 such rows sit in production and are
+ * indistinguishable from a genuine production email outage.
+ *
+ * That ambiguity is expensive: it is exactly what made "the system is not firing emails" look real
+ * on 2026-09-05, and settling it needed clock forensics — 40 of those 63 rows have `updated_at`
+ * EARLIER than `created_at`, because the two timestamps come from different machines, against 2 of
+ * 2,231 everywhere else. Stamping the origin turns an afternoon of archaeology into one glance.
+ *
+ * Same expression as the error monitor's own label, deliberately: one definition of "which
+ * environment am I", so the two never disagree about the same run.
+ */
+function enqueueOriginEnvironment(): string {
+  return process.env.APP_ENV || process.env.NODE_ENV || "development";
+}
+
 async function enqueueNotificationEmail(input: NotificationEmailInput) {
   const dedupeKey = notificationDedupeKey(input);
   const existing = await getNotificationOutboxRowByDedupeKey(dedupeKey);
@@ -1886,7 +1915,9 @@ async function enqueueNotificationEmail(input: NotificationEmailInput) {
       dedupe_key: dedupeKey,
       max_attempts: notificationOutboxMaxAttempts,
       next_attempt_at: now,
-      payload: input,
+      // Stamped into the payload rather than a new column: no migration, and it travels with the
+      // row wherever the payload is read.
+      payload: { ...input, originEnvironment: enqueueOriginEnvironment() },
       status: "pending",
       updated_at: now,
     })
