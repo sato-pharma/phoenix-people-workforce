@@ -1312,6 +1312,7 @@ import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer
 import { runRepoDoctorNewestPrTests } from "./repo-doctor-newest-pr.test.ts";
 import { runSessionLockStalenessIsAgeTests } from "./session-lock-staleness-is-age.test.ts";
 import { runRepoDoctorOrphanedFoldersTests } from "./repo-doctor-orphaned-folders.test.ts";
+import { runRepoDoctorXlsxSnapshotTests } from "./repo-doctor-xlsx-snapshot.test.ts";
 import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
 import { runOutstationMobileWizardStaleCalculationTests } from "./outstation-mobile-wizard-stale-calculation.test.ts";
 import { runOutstationPayrollPayableTotalAgreementTests } from "./outstation-payroll-payable-total-agreement.test.ts";
@@ -4111,6 +4112,14 @@ await runTest(
     + "unreadable folder — refuses to print as safe, and a gitignored env copy stays quiet while a "
     + "stray .xlsx does not)",
   runRepoDoctorOrphanedFoldersTests,
+);
+await runTest(
+  "untracked xlsx/ spreadsheets are reported as backed up ONLY when a snapshot really holds them "
+    + "(coverage is by content, so a decision sheet the owner filled in is not covered by the empty "
+    + "version of itself; an unreadable source, an unreadable snapshot root and an absent backup "
+    + "drive each refuse to print as clean; and the report path writes nothing — only --snapshot-xlsx "
+    + "copies, and the module never deletes)",
+  runRepoDoctorXlsxSnapshotTests,
 );
 await runTest(
   "a worktree is retirable off its NEWEST pull request, never off a stale merged one (a branch "
