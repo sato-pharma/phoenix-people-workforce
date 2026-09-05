@@ -133,6 +133,8 @@ function SummaryStrip({ summary }: { summary: RepVisitsSummary }) {
     { label: "Already his", tone: "text-orange-600", value: summary.campaignAlreadyKnown },
     { label: "AM", tone: "text-slate-700", value: summary.am },
     { label: "PM", tone: "text-slate-700", value: summary.pm },
+    // Separate from AM/PM entirely (owner, 2026-09-05) — see crm/call-rate.ts.
+    { label: "Pharmacy", tone: "text-slate-700", value: summary.pharmacy },
     { label: "Doctors", tone: "text-slate-700", value: summary.distinctContacts },
     { label: "Not field work", tone: "text-slate-400", value: summary.excluded },
   ];

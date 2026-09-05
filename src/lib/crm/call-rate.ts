@@ -8,11 +8,40 @@
 //     AM call rate = AM calls / working days   → target  2
 //     PM call rate = PM calls / working days   → target 10
 //
-// WORKING DAYS are Saturday, Sunday, Monday, Tuesday and Wednesday. Thursday is
-// a normal AM working day but is deliberately NOT counted here, and Friday is
-// off. The denominator is the CALENDAR count of those weekdays in the period —
-// not the days the rep happened to work. The owner was explicit: twenty visits
-// done across Sunday and Monday is 20/5, never 20/2.
+// WORKING DAYS are Saturday, Sunday, Monday, Tuesday and Wednesday only. Friday
+// is the weekend. THURSDAY WAS ONCE COUNTED TOO — the owner first said "count
+// Thursday as 0.5 working day", then SUPERSEDED that on 2026-09-05 with "donot
+// count thursday as working day" / "visists to be counted from sat to wednesday
+// only regular visits": Thursday is now excluded outright, from both the
+// denominator (see CALL_RATE_WEEKDAYS) and the numerator below. The denominator
+// is the CALENDAR count of Sat–Wed days in the period — not the days the rep
+// happened to work. The owner was explicit: twenty visits done across Sunday
+// and Monday is 20/5, never 20/2.
+//
+// THE NUMERATOR IS NOW WEEKDAY-GATED TOO (2026-09-05 fix). Before this date the
+// denominator above was already Sat–Wed, but `computeCallRate`'s per-visit loop
+// counted every visit handed to it regardless of what day it fell on — so a
+// Thursday visit still inflated a rep's AM/PM slice even though Thursday could
+// never appear in workingDays. Every visit is now checked against
+// {@link isCallRateWorkingDay} (the same rule the denominator uses, holidays
+// included) before it is added to a session or pharmacy slice. This does NOT
+// touch `campaignShare`, `perDay` or the daily-campaign-limit flagging below —
+// that is a separate anti-fraud feature the 2026-09-05 ruling does not mention,
+// and it still watches every day the rep logged anything, Thursday included.
+//
+// PHARMACIES ARE NOT AM/PM (owner, 2026-09-05): "am/pm coverage and call rate
+// are separate from pharmacies coverage and call rate" / "a rep must have am/pm
+// but not must have pharmacies". A visit to a pharmacy — identified by the
+// visited contact's own `speciality` field, or by the vendor's undocumented -30
+// code carrying a pharmacy-flavored comment (see {@link isPharmacyVisit}) — is
+// pulled OUT of the am/pm slices entirely and into its own `pharmacy` slice,
+// regardless of which AM/PM flag the row happens to carry. THE PHARMACY TARGET
+// IS NOT SET ANYWHERE — {@link PHARMACY_CALL_RATE_TARGET} is null on purpose
+// until the owner supplies one; every reader must treat null as "not configured
+// yet", not as zero. A rep with zero pharmacy visits is NORMAL, never a gap:
+// measured on production Sat–Wed August 2026, 43 of 76 reps who did any regular
+// field work had none at all, while 0 of the same 76 had zero AM/PM — pharmacies
+// are optional, AM/PM is universal.
 //
 // NATIONAL HOLIDAYS COME OUT of that count (owner, 2026-09-02): "if we have a
 // national vacation in this week, then the week will be four." The rep's OWN
@@ -57,12 +86,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit, type CheckinForMatch } from "@/lib/crm/checkin-match";
+import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
 import { classifyVisit } from "@/lib/crm/visit-types";
 
 /** Two AM accounts every working day (owner's standard). */
 export const AM_CALL_RATE_TARGET = 2;
 /** Ten PM clinics/polyclinics every working day (owner's standard). */
 export const PM_CALL_RATE_TARGET = 10;
+/**
+ * No owner-set target exists for pharmacy calls anywhere in this codebase, and this file must not
+ * invent one. Null, deliberately, until the owner supplies a number (parked as an open question,
+ * 2026-09-05: "what is the pharmacy call-rate target per working day?"). Every consumer has to
+ * treat null as "not configured yet" — never default it to 0, which would read as "zero calls
+ * expected" rather than "no standard set".
+ */
+export const PHARMACY_CALL_RATE_TARGET: number | null = null;
 
 /**
  * More than this many campaign calls in one day is flagged for the district
@@ -82,8 +120,11 @@ export const DAILY_CAMPAIGN_LIMIT = 3;
 /**
  * The weekdays that make up the call-rate denominator, as JavaScript day-of-week
  * indexes (0 = Sunday … 6 = Saturday): Saturday, Sunday, Monday, Tuesday,
- * Wednesday. Thursday (4) and Friday (5) are deliberately absent — Thursday is
- * worked but not counted, Friday is the weekend.
+ * Wednesday. Thursday (4) and Friday (5) are both absent — Friday is the
+ * weekend, and Thursday is NOT a working day either (owner, 2026-09-05,
+ * superseding an earlier "count Thursday as 0.5" instruction): "donot count
+ * thursday as working day". Since 2026-09-05 this set governs the NUMERATOR as
+ * well as the denominator — see {@link isCallRateWorkingDay} and the header.
  */
 export const CALL_RATE_WEEKDAYS: ReadonlySet<number> = new Set([6, 0, 1, 2, 3]);
 
@@ -112,7 +153,10 @@ export function weekdayOfIsoDate(dateIso: string): number | null {
 export type CallRateHolidays = ReadonlySet<string>;
 
 /**
- * True when this calendar day counts toward the call-rate denominator.
+ * True when this calendar day counts toward the call-rate denominator — and, since 2026-09-05,
+ * toward the numerator too. A visit logged on a day this returns false for must not be added to
+ * any AM/PM or pharmacy slice in {@link computeCallRate}, exactly as it is already excluded from
+ * {@link countCallRateWorkingDays}.
  *
  * `holidays` is optional so every existing caller keeps the pure weekday rule.
  */
@@ -226,8 +270,15 @@ export function normalizeSession(ampm: string | null | undefined): CallSession {
   return "unspecified";
 }
 
-/** One session's counts and rates. Never sum the three proof buckets back up. */
-export type CallRateSlice = {
+/**
+ * One session's (or pharmacy's) counts and rates. Never sum the three proof buckets back up.
+ *
+ * Generic over `target` so AM/PM and pharmacy can share one shape while disagreeing on whether a
+ * target even exists: AM/PM always carry a real number, pharmacy carries null until the owner sets
+ * one (see {@link PHARMACY_CALL_RATE_TARGET}). `finalizeSlice` reads `target` polymorphically, so a
+ * null target simply means `attainmentPct` stays null — never zero, never a division.
+ */
+type CallRateSliceOf<Target extends number | null> = {
   /** Regular visit with a matching same-day GPS check-in at the same contact. */
   verified: number;
   /** Regular visit against a real contact, but no check-in that day. */
@@ -240,11 +291,17 @@ export type CallRateSlice = {
   verifiedRate: number | null;
   /** total / workingDays — what the rep's number looks like if nobody checks. */
   totalRate: number | null;
-  /** 2 for AM, 10 for PM. */
-  target: number;
-  /** verifiedRate as a percentage of target. Null when the rate is null. */
+  /** 2 for AM, 10 for PM, null for pharmacy (no owner-set standard yet). */
+  target: Target;
+  /** verifiedRate as a percentage of target. Null when the rate OR the target is null. */
   attainmentPct: number | null;
 };
+
+/** AM/PM slice — always has a real target. */
+export type CallRateSlice = CallRateSliceOf<number>;
+
+/** Pharmacy slice — same shape, but the target is not configured yet. See the header. */
+export type PharmacyCallRateSlice = CallRateSliceOf<number | null>;
 
 /** A day a rep exceeded the campaign limit. */
 export type CampaignOverLimitDay = {
@@ -262,7 +319,13 @@ export type RepCallRate = {
   workingDays: number;
   am: CallRateSlice;
   pm: CallRateSlice;
-  /** Rows the CRM left with no AM/PM flag; counted here and in neither slice. */
+  /**
+   * Pharmacy calls — never AM/PM, regardless of which flag the row carries (owner, 2026-09-05: "a
+   * pharmacy is not a contact" / "am/pm coverage and call rate are separate from pharmacies
+   * coverage and call rate"). See {@link isPharmacyVisit}.
+   */
+  pharmacy: PharmacyCallRateSlice;
+  /** Rows the CRM left with no AM/PM flag AND are not a pharmacy call; counted here and in no slice. */
   unspecified: number;
   /** Share of this rep's calls that took the campaign route, 0–1. */
   campaignShare: number;
@@ -295,19 +358,44 @@ export type VisitForCallRate = {
   visit_type: number | null;
   visit_type_description: string | null;
   comment: string | null;
+  /**
+   * The visited contact's medical specialty/kind from iReports360 (null on campaign and other
+   * non-customer visit types). The ONLY signal, together with a pharmacy-flavored -30 comment, that
+   * routes a call into the pharmacy slice instead of AM/PM — see {@link isPharmacyVisit}.
+   */
+  speciality: string | null;
 };
 
-function emptySlice(target: number): CallRateSlice {
+function emptySlice<Target extends number | null>(target: Target): CallRateSliceOf<Target> {
   return { verified: 0, unverified: 0, campaign: 0, total: 0, verifiedRate: null, totalRate: null, target, attainmentPct: null };
 }
 
-function finalizeSlice(slice: CallRateSlice, workingDays: number): CallRateSlice {
+function finalizeSlice<Target extends number | null>(
+  slice: CallRateSliceOf<Target>,
+  workingDays: number,
+): CallRateSliceOf<Target> {
   slice.total = slice.verified + slice.unverified + slice.campaign;
   if (workingDays <= 0) return slice;
   slice.verifiedRate = slice.verified / workingDays;
   slice.totalRate = slice.total / workingDays;
-  slice.attainmentPct = slice.target > 0 ? (slice.verifiedRate / slice.target) * 100 : null;
+  slice.attainmentPct = slice.target != null && slice.target > 0 ? (slice.verifiedRate / slice.target) * 100 : null;
   return slice;
+}
+
+/**
+ * Whether a visit counts toward the pharmacy call rate rather than AM/PM.
+ *
+ * Two signals, because pharmacy identity reaches the visits table two different ways: the common
+ * case is a registered contact's own `speciality` (see {@link isPharmacySpeciality}); the vendor's
+ * undocumented -30 code carries no contact at all, so the only signal left is the rep's own
+ * free-text comment, which {@link classifyVisit} already routes to the "Pharmacy Visit" label. Note
+ * a CAMPAIGN call (-8) is NEVER a pharmacy call by this function — campaign rows carry no contact
+ * and classifyVisit never applies the comment-sniffing route to them, so a campaign call always
+ * lands in AM/PM/unspecified exactly as it did before this split existed.
+ */
+export function isPharmacyVisit(visit: VisitForCallRate): boolean {
+  if (isPharmacySpeciality(visit.speciality)) return true;
+  return classifyVisit(visit.visit_type, visit.comment, visit.visit_type_description).label === "Pharmacy Visit";
 }
 
 /**
@@ -335,6 +423,7 @@ export function zeroRepCallRate(
     workingDays,
     am: finalizeSlice(emptySlice(AM_CALL_RATE_TARGET), workingDays),
     pm: finalizeSlice(emptySlice(PM_CALL_RATE_TARGET), workingDays),
+    pharmacy: finalizeSlice(emptySlice(PHARMACY_CALL_RATE_TARGET), workingDays),
     unspecified: 0,
     campaignShare: 0,
     campaignOverLimitDays: [],
@@ -402,6 +491,7 @@ export function computeCallRate<C extends CheckinForMatch>(
     agentName: string;
     am: CallRateSlice;
     pm: CallRateSlice;
+    pharmacy: PharmacyCallRateSlice;
     unspecified: number;
     fieldCalls: number;
     campaignCalls: number;
@@ -422,6 +512,7 @@ export function computeCallRate<C extends CheckinForMatch>(
         agentName: visit.agent_name ?? "",
         am: emptySlice(AM_CALL_RATE_TARGET),
         pm: emptySlice(PM_CALL_RATE_TARGET),
+        pharmacy: emptySlice(PHARMACY_CALL_RATE_TARGET),
         unspecified: 0,
         fieldCalls: 0,
         campaignCalls: 0,
@@ -436,10 +527,9 @@ export function computeCallRate<C extends CheckinForMatch>(
     rep.fieldCalls += 1;
     if (proof === "campaign") rep.campaignCalls += 1;
 
-    const session = normalizeSession(visit.ampm);
-    if (session === "unspecified") rep.unspecified += 1;
-    else rep[session][proof] += 1;
-
+    // The daily-campaign-limit bookkeeping below is a SEPARATE anti-fraud feature the 2026-09-05
+    // Sat–Wed ruling does not touch — it still watches every day the rep logged anything, Thursday
+    // included, exactly as it always has.
     const day = (visit.visit_date ?? "").slice(0, 10);
     if (day) {
       const bucket = rep.perDay.get(day) ?? { campaign: 0, verified: 0 };
@@ -447,6 +537,23 @@ export function computeCallRate<C extends CheckinForMatch>(
       if (proof === "verified") bucket.verified += 1;
       rep.perDay.set(day, bucket);
     }
+
+    // THE 2026-09-05 GATE: a visit that fell on a day outside the call-rate denominator (Thursday,
+    // Friday, or a national holiday) must not inflate any AM/PM or pharmacy slice either — see the
+    // file header. Everything above this line (fieldCalls, campaignCalls, perDay) is deliberately
+    // unaffected, because campaignShare and the daily-limit flag are a different feature.
+    if (!isCallRateWorkingDay(day, options.holidays)) continue;
+
+    // Pharmacy is ORTHOGONAL to AM/PM, not a third value of it: a pharmacy call is pulled out
+    // regardless of which AM/PM flag it carries (owner, 2026-09-05 — see the header).
+    if (isPharmacyVisit(visit)) {
+      rep.pharmacy[proof] += 1;
+      continue;
+    }
+
+    const session = normalizeSession(visit.ampm);
+    if (session === "unspecified") rep.unspecified += 1;
+    else rep[session][proof] += 1;
   }
 
   const reps: RepCallRate[] = [];
@@ -468,6 +575,7 @@ export function computeCallRate<C extends CheckinForMatch>(
       workingDays,
       am: finalizeSlice(rep.am, workingDays),
       pm: finalizeSlice(rep.pm, workingDays),
+      pharmacy: finalizeSlice(rep.pharmacy, workingDays),
       unspecified: rep.unspecified,
       campaignShare: rep.fieldCalls > 0 ? rep.campaignCalls / rep.fieldCalls : 0,
       campaignOverLimitDays: overLimit,

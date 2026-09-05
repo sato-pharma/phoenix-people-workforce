@@ -31,13 +31,14 @@ import type { RepsPlansRepRow } from "@/lib/crm/reps-plans";
 // THE DESKTOP TABLE FITS THE SCREEN. It was 13 columns over a 1700px floor inside an
 // `overflow-x-auto` container until 2026-09-03, which is the owner's golden rule stated backwards:
 // never a horizontal scroll, mobile AND desktop friendly, and `overflow-x-auto` over a min-width IS
-// the bug rather than the fix. It is now `w-full table-fixed` with a `<colgroup>` and EIGHT columns,
-// fitted the one permitted way — by MERGING columns, never by shrinking type and never by an
-// ellipsis:
+// the bug rather than the fix. It is now `w-full table-fixed` with a `<colgroup>` and NINE columns
+// (pharmacy added 2026-09-05, one column and no sub-columns — it carries no target), fitted the one
+// permitted way — by MERGING columns, never by shrinking type and never by an ellipsis:
 //
 //   Rep            name, with the territory and role beneath it   (was 2 columns)
 //   AM / PM        the proved rate with the reported one beneath  (was 2 x 2 columns)
 //   AM% / PM%      attainment against the rep's own target
+//   Pharmacy       proved rate with the reported one beneath — SEPARATE from AM/PM, no target
 //   Unproven
 //   Campaign       calls with the share beneath                   (was 2 columns)
 //   Days           over the campaign limit, and with no proof     (was 2 columns)
@@ -384,6 +385,8 @@ const REP_COLS = [
   { accessor: (r: RepsPlansRepRow) => r.pm.verifiedRate, key: "pmVerifiedRate", type: "number" as const },
   { accessor: (r: RepsPlansRepRow) => r.pm.reportedRate, key: "pmReportedRate", type: "number" as const },
   { accessor: (r: RepsPlansRepRow) => r.pm.attainmentPct, key: "pmAttainmentPct", type: "number" as const },
+  { accessor: (r: RepsPlansRepRow) => r.pharmacy.verifiedRate, key: "pharmacyVerifiedRate", type: "number" as const },
+  { accessor: (r: RepsPlansRepRow) => r.pharmacy.reportedRate, key: "pharmacyReportedRate", type: "number" as const },
   { accessor: (r: RepsPlansRepRow) => r.unprovenPct, key: "unprovenPct", type: "number" as const },
   { accessor: (r: RepsPlansRepRow) => r.campaignCalls, key: "campaignCalls", type: "number" as const },
   { accessor: (r: RepsPlansRepRow) => r.campaignSharePct, key: "campaignSharePct", type: "number" as const },
@@ -466,6 +469,10 @@ export function RepsPlansRepTable({
     pm_proved: row.pm.verifiedRate,
     pm_reported: row.pm.reportedRate,
     pm_pct: row.pm.attainmentPct,
+    // Separate from AM/PM (owner, 2026-09-05) — no target column, because none is set yet. See
+    // PHARMACY_CALL_RATE_TARGET.
+    pharmacy_proved: row.pharmacy.verifiedRate,
+    pharmacy_reported: row.pharmacy.reportedRate,
     rep: row.repName,
     // The export must match the screen (owner's standing rule) — a file that silently dropped the
     // territory column would read as though every rep had one.
@@ -504,6 +511,9 @@ export function RepsPlansRepTable({
             { key: "pm_proved", label: "PM Proved Rate", numeric: true },
             { key: "pm_reported", label: "PM Reported Rate", numeric: true },
             { key: "pm_pct", label: "PM % Of Target", numeric: true },
+            // No "% Of Target" column — none exists yet (see PHARMACY_CALL_RATE_TARGET).
+            { key: "pharmacy_proved", label: "Pharmacy Proved Rate", numeric: true },
+            { key: "pharmacy_reported", label: "Pharmacy Reported Rate", numeric: true },
             { key: "unproven", label: "Unproven %", numeric: true },
             { key: "campaign_calls", label: "Campaign Calls", numeric: true },
             { key: "campaign_share", label: "Campaign Share %", numeric: true },
@@ -621,6 +631,17 @@ export function RepsPlansRepTable({
                   value: <span className="whitespace-nowrap text-slate-500">{rate(row.pm.reportedRate)}</span>,
                 },
                 {
+                  // Separate from AM/PM (owner, 2026-09-05), no target yet — see
+                  // PHARMACY_CALL_RATE_TARGET — so no attainment colour and no "of N".
+                  label: "Pharmacy",
+                  value: (
+                    <span className="whitespace-nowrap text-slate-700">
+                      {rate(row.pharmacy.verifiedRate)}{" "}
+                      <span className="text-slate-400">({rate(row.pharmacy.reportedRate)} rep.)</span>
+                    </span>
+                  ),
+                },
+                {
                   label: "Unproven",
                   value: <span className={unprovenText(row.unprovenPct)}>{pct(row.unprovenPct)}</span>,
                 },
@@ -659,19 +680,21 @@ export function RepsPlansRepTable({
           // renders the cards above, not a squeezed table.
           <div className="hidden md:block">
             <table className="w-full table-fixed border-collapse text-left text-xs">
-              {/* The eight widths add to exactly 100, so the table can never want more room than it
-                  has. Rep takes a quarter because it is the only column holding prose — a CRM handle
-                  is a login name with a territory bolted on, and it is the one thing here allowed to
-                  wrap onto a second line. */}
+              {/* The nine widths add to exactly 100, so the table can never want more room than it
+                  has. Rep takes just under a quarter because it is the only column holding prose —
+                  a CRM handle is a login name with a territory bolted on, and it is the one thing
+                  here allowed to wrap onto a second line. Pharmacy is a single column, narrower than
+                  AM/PM's own halves, because it carries no attainment column beside it. */}
               <colgroup>
-                <col style={{ width: "24%" }} />
-                <col style={{ width: "12%" }} />
-                <col style={{ width: "10%" }} />
-                <col style={{ width: "12%" }} />
-                <col style={{ width: "10%" }} />
+                <col style={{ width: "22%" }} />
                 <col style={{ width: "11%" }} />
-                <col style={{ width: "10%" }} />
+                <col style={{ width: "9%" }} />
                 <col style={{ width: "11%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "10%" }} />
               </colgroup>
               <thead>
                 {/* Two header rows: the session groups above, the measures below. AM and PM are
@@ -686,6 +709,29 @@ export function RepsPlansRepTable({
                   </th>
                   <th className={`${THEAD} border-l border-slate-700 text-center`} colSpan={2} scope="colgroup">
                     PM — target 10 / day
+                  </th>
+                  {/* No sub-columns and no target: pharmacies are a SEPARATE metric from AM/PM
+                      (owner, 2026-09-05) with no owner-set standard yet — see
+                      PHARMACY_CALL_RATE_TARGET. rowSpan to match Rep, since there is only the one
+                      column beneath it. */}
+                  <th className={THEAD} rowSpan={2} scope="col">
+                    <span className="flex flex-col items-end gap-0.5 text-right">
+                      <SortButton
+                        align="right"
+                        label="Pharmacy"
+                        onSort={table.toggleSort}
+                        sort={table.sort}
+                        sortKey="pharmacyVerifiedRate"
+                      />
+                      <SortButton
+                        align="right"
+                        className="text-phx-3xs font-bold normal-case tracking-normal text-slate-400"
+                        label="reported"
+                        onSort={table.toggleSort}
+                        sort={table.sort}
+                        sortKey="pharmacyReportedRate"
+                      />
+                    </span>
                   </th>
                   <th className={`${THEAD} border-l border-slate-700 text-center`} colSpan={3} scope="colgroup">
                     Proof
@@ -895,6 +941,17 @@ export function RepsPlansRepTable({
                       className={`whitespace-nowrap px-2 py-2 text-right font-bold tabular-nums ${targetText(row, row.pm.attainmentPct)}`}
                     >
                       {targetPct(row, row.pm.attainmentPct)}
+                    </td>
+                    {/* Pharmacy — separate from AM/PM, no target, no colour claim. Zero is a normal
+                        rep, not a shortfall (43 of 76 in a typical month), so it stays plain slate
+                        rather than borrowing the AM/PM red-amber-green bands. */}
+                    <td className="whitespace-nowrap border-l border-slate-100 px-2 py-2 text-right">
+                      <span className="block font-black tabular-nums text-slate-900">
+                        {rate(row.pharmacy.verifiedRate)}
+                      </span>
+                      <span className="block text-phx-3xs font-semibold tabular-nums text-slate-400">
+                        {rate(row.pharmacy.reportedRate)} rep.
+                      </span>
                     </td>
                     <td
                       className={`whitespace-nowrap border-l border-slate-100 px-2 py-2 text-right font-bold tabular-nums ${unprovenText(row.unprovenPct)}`}

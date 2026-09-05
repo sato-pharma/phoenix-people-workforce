@@ -31,6 +31,7 @@ function callsOn(day: string, am: number, pm: number): VisitForCallRate[] {
       ampm: index < am ? "AM" : "PM",
       contact_crm_id: null,
       crm_save_date: null,
+      speciality: null,
       visit_date: day,
       visit_type: -8,
       visit_type_description: "Campaign",

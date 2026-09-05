@@ -879,7 +879,23 @@ function RepPercent({ pct, note }: { pct: number; note?: React.ReactNode }) {
 }
 
 /** One half-day of the call rate: its own number, its own target, its own bar. Never merged. */
-function RepCallHalf({ label, rate, target }: { label: string; rate: number; target: number }) {
+/**
+ * `target` is nullable so this same component serves Pharmacy, which has no owner-set standard yet
+ * (see PHARMACY_CALL_RATE_TARGET) — a null target shows the raw rate with no "of N" and no
+ * red/amber/green bar, since there is nothing to be a percentage of.
+ */
+function RepCallHalf({ label, rate, target }: { label: string; rate: number; target: number | null }) {
+  if (target == null) {
+    return (
+      <div className="min-w-0 flex-1">
+        <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400">{label}</p>
+        <p className="mt-0.5 flex items-baseline gap-1">
+          <span className="text-[16px] font-bold leading-none tabular-nums text-slate-700">{rate.toFixed(1)}</span>
+          <span className="text-[10px] font-semibold text-slate-400">no target yet</span>
+        </p>
+      </div>
+    );
+  }
   const attainment = target > 0 ? (rate / target) * 100 : 0;
   const tone = repTone(attainment);
   return (
@@ -1073,7 +1089,9 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
         </RepTile>
 
         {/* AM and PM, apart, each against its own target and its own bar. Never averaged, and never
-            printed with a slash between them — he read "1.63 / 6.57" as one number over another. */}
+            printed with a slash between them — he read "1.63 / 6.57" as one number over another.
+            Pharmacy joined 2026-09-05, separate again — see PHARMACY_CALL_RATE_TARGET for why it
+            carries no bar and no "of N". */}
         <RepTile
           hint={kpis?.hasCallRate ? `Verified calls per day · ${kpis.workingDays} working days` : "No calls logged"}
           label="Call rate"
@@ -1084,6 +1102,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
             <div className="flex gap-4">
               <RepCallHalf label="Morning" rate={kpis.amRate ?? 0} target={kpis.amTarget} />
               <RepCallHalf label="Afternoon" rate={kpis.pmRate ?? 0} target={kpis.pmTarget} />
+              <RepCallHalf label="Pharmacy" rate={kpis.pharmacyRate ?? 0} target={kpis.pharmacyTarget} />
             </div>
           ) : (
             <p className="text-[13px] font-semibold text-slate-400">Nothing logged yet</p>
