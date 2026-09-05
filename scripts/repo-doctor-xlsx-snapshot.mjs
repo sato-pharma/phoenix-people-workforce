@@ -38,6 +38,7 @@ import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 /** Directories under the snapshot root that hold a dated snapshot. */
 export const SNAPSHOT_DIR_PREFIX = "xlsx-snapshot-";
@@ -296,4 +297,65 @@ export function takeXlsxSnapshot({ repoRoot, snapshotRoot, now = Date.now() }) {
     verified: files.length - mismatched.length,
     mismatched,
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// RUN DIRECTLY, as the nightly job does.
+//
+// WHY THIS ENTRY POINT EXISTS. The obvious way to schedule the snapshot is to point a task at
+// `repo-doctor.mjs --snapshot-xlsx` in the primary checkout. Measured 2026-09-05, that silently does
+// NOTHING: the primary sat 38 commits behind origin/main, its repo-doctor predated the flag, and an
+// unknown flag is ignored without complaint — the job exited 0 and wrote a full, plausible-looking
+// report with no snapshot section in it at all. A working checkout is on whatever branch someone
+// left it on, so a backup that depends on the code checked out there is a backup that stops working
+// without saying so. The wrapper therefore extracts THIS file from origin/main and runs it, and only
+// the folder being copied comes from the checkout.
+//
+// Exit codes are the whole point of running it this way: they are what the scheduled task records.
+//   0 copied, or nothing to copy   2 no destination   3 source unreadable   4 a copy failed to verify
+// ---------------------------------------------------------------------------------------------
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  const argOf = (flag) => {
+    const i = process.argv.indexOf(flag);
+    return i > 0 && process.argv[i + 1] ? process.argv[i + 1] : null;
+  };
+  const repoRoot = argOf("--repo") ?? process.cwd();
+  const snapshotRoot = argOf("--root") ?? snapshotRootFor();
+  const stamp = new Date().toISOString();
+
+  if (!fs.existsSync(snapshotRoot)) {
+    // REFUSED, never "created". An absent backup drive is the one state where inventing the
+    // destination would be worst: it writes the only copy onto the disk it is meant to survive.
+    console.error(`${stamp} REFUSED — ${snapshotRoot} does not exist. Nothing was copied.`);
+    process.exit(2);
+  }
+  // An ABSENT xlsx/ is a failure here, not an empty one. readSourceFiles answers [] for a folder
+  // that is not there — right for the report, which runs inside a known repo — but as a scheduled
+  // job that turns a wrong --repo (a typo, a moved folder, a drive letter that came back different)
+  // into "OK, 0 sheet(s), nothing to do" with exit 0. That is the false clean this whole check
+  // exists to prevent, and it would be the nightly log every night while nothing was backed up.
+  const sourceDir = path.join(repoRoot, "xlsx");
+  if (!fs.existsSync(sourceDir)) {
+    console.error(`${stamp} FAILED — ${sourceDir} does not exist. Wrong --repo? Nothing was copied.`);
+    process.exit(3);
+  }
+  if (readSourceFiles(repoRoot) === null) {
+    console.error(`${stamp} FAILED — cannot read ${sourceDir}. Nothing was copied.`);
+    process.exit(3);
+  }
+
+  const result = takeXlsxSnapshot({ repoRoot, snapshotRoot });
+  if (result.dir === null) {
+    console.log(`${stamp} OK — nothing new; all ${result.skipped} sheet(s) are already in a snapshot.`);
+    process.exit(0);
+  }
+  console.log(
+    `${stamp} OK — copied ${result.copied}, skipped ${result.skipped} already held, ` +
+      `verified ${result.verified} by SHA256 -> ${result.dir}`,
+  );
+  if (result.mismatched.length) {
+    console.error(`${stamp} FAILED — ${result.mismatched.length} copy/copies did not verify:`);
+    for (const m of result.mismatched) console.error(`  ${m}`);
+    process.exit(4);
+  }
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -226,5 +226,49 @@ export async function runRepoDoctorXlsxSnapshotTests() {
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
+  }
+
+  // --- 7. The scheduled job announces every way it can do nothing --------------------------------
+  //
+  // This entry point IS the nightly job — the wrapper extracts this file from origin/main and runs
+  // it, so these exit codes are the only thing the scheduled task records. Each one exists because
+  // the alternative is a log that reads fine while nothing is being backed up.
+
+  const job = (args: string[]) =>
+    spawnSync(process.execPath, [MODULE, ...args], { encoding: "utf8" });
+
+  const wrongRepo = mkdtempSync(join(tmpdir(), "phx-xlsx-norepo-"));
+  const liveRepo = mkdtempSync(join(tmpdir(), "phx-xlsx-live-"));
+  const liveRoot = mkdtempSync(join(tmpdir(), "phx-xlsx-root-"));
+  try {
+    execFileSync("git", ["-C", liveRepo, "init", "--quiet"], { stdio: ["ignore", "pipe", "pipe"] });
+    mkdirSync(join(liveRepo, "xlsx"));
+    writeFileSync(join(liveRepo, "xlsx", "targets.xlsx"), "x".repeat(64));
+
+    // A wrong --repo must NOT read as "nothing to do". readSourceFiles answers [] for an absent
+    // folder, which is right for the report and a false clean for a job: a typo, a moved folder or a
+    // drive letter that came back different would log OK, 0 sheets, exit 0, every night, forever.
+    const missing = job(["--repo", wrongRepo, "--root", liveRoot]);
+    assert.equal(missing.status, 3, "an absent xlsx/ is a failure, never an empty one");
+    assert.match(missing.stderr, /does not exist/);
+    assert.doesNotMatch(missing.stdout, /OK/, "a wrong --repo must never print OK");
+
+    // An absent destination is REFUSED, never created — inventing it writes the only copy onto the
+    // disk the copy exists to survive.
+    const noDest = job(["--repo", liveRepo, "--root", join(liveRoot, "not-mounted")]);
+    assert.equal(noDest.status, 2);
+    assert.match(noDest.stderr, /REFUSED/);
+    assert.equal(existsSync(join(liveRoot, "not-mounted")), false, "the destination must not be created");
+
+    const ok = job(["--repo", liveRepo, "--root", liveRoot]);
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.match(ok.stdout, /copied 1/);
+
+    // Second run, same day, nothing changed: still 0, and it says so rather than copying again.
+    const quiet = job(["--repo", liveRepo, "--root", liveRoot]);
+    assert.equal(quiet.status, 0, quiet.stderr);
+    assert.match(quiet.stdout, /nothing new/);
+  } finally {
+    for (const d of [wrongRepo, liveRepo, liveRoot]) rmSync(d, { recursive: true, force: true });
   }
 }
