@@ -886,7 +886,11 @@ export async function bulkUpdateCandidateStatus(
 
   const supabase = recruitmentDb();
   const { data, error } = await supabase.rpc("ats_bulk_set_candidate_status", {
-    p_actor_hr_id: access.hrId ?? null,
+    // hrIdForStorage, never the raw session value: `access.hrId` is the LOWERCASE comparison
+    // key, and 178 of 179 employee rows are mixed case. Writing the raw key here is how
+    // `status_changed_by_hr_id` came to hold three spellings for two people — any per-person
+    // report then splits one screener in two, with nothing on screen to say so.
+    p_actor_hr_id: hrIdForStorage(access.hrId),
     p_candidate_ids: unique,
     p_note: cleanNote,
     p_status: next,
@@ -983,7 +987,11 @@ export async function revertCandidateStatuses(
   // is the one failure here that would otherwise be invisible: a candidate silently restored to
   // somebody else's status looks exactly like an ordinary set of moves afterwards.
   const { data, error } = await supabase.rpc("ats_revert_candidate_status", {
-    p_actor_hr_id: access.hrId ?? null,
+    // hrIdForStorage, never the raw session value: `access.hrId` is the LOWERCASE comparison
+    // key, and 178 of 179 employee rows are mixed case. Writing the raw key here is how
+    // `status_changed_by_hr_id` came to hold three spellings for two people — any per-person
+    // report then splits one screener in two, with nothing on screen to say so.
+    p_actor_hr_id: hrIdForStorage(access.hrId),
     p_candidate_ids: clean.map((move) => move.id),
     p_notes: clean.map((move) => move.note ?? ""),
     p_statuses: clean.map((move) => move.status),

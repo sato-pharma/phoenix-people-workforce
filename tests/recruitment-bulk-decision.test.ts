@@ -254,6 +254,23 @@ export function runRecruitmentBulkDecisionTests() {
     /supabase\.rpc\("ats_revert_candidate_status"/,
     "undo has its own database function, restoring a per-row status",
   );
+
+  // WHO the decision is attributed to must be stored in CANONICAL casing. `access.hrId` is the
+  // lowercase comparison key and 178 of 179 employee rows are mixed case, so writing it raw is
+  // exactly how `status_changed_by_hr_id` came to hold three spellings for two people — after which
+  // any per-person report splits one screener in two, with nothing on screen to say so. Both RPC
+  // calls shipped with the raw value on the first attempt and CI caught it.
+  assert.equal(
+    (service.match(/p_actor_hr_id: hrIdForStorage\(access\.hrId\)/g) ?? []).length,
+    2,
+    "both the bulk decision and the undo must store the actor through hrIdForStorage — the raw " +
+      "session key is lowercase and would add a fourth spelling to a column that already has three",
+  );
+  assert.doesNotMatch(
+    service,
+    /p_actor_hr_id: access\.hrId/,
+    "neither call may pass the raw session hr id",
+  );
   const revertRoute = read("app/api/recruitment/candidates/revert-status/route.ts");
   assert.doesNotMatch(
     revertRoute,
