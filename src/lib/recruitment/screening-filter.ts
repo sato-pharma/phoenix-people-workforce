@@ -111,15 +111,26 @@ export function screeningAreaOptions(candidates: readonly ScreeningFilterCandida
  * `seen` is the one thing this cannot answer alone: "have I read this" is a fact about the VIEWER,
  * so the caller passes it in from the view map it loaded for the caller's own HR id. A viewer id in
  * a query string would let one person open a link that reports somebody else's reading as their own.
+ *
+ * `untouched` needs a SECOND fact, and it is not the same one. "Nobody has read this" cannot be
+ * derived from "I have not read this" — since screening became a two-person job, the second is
+ * true for every CV the other screener has already worked. `seenByAnyone` is therefore passed
+ * separately, and a caller that cannot supply it must say so rather than let it default: a missing
+ * `false` would report the whole pool as untouched, which is the one wrong answer that looks like
+ * a working filter.
  */
 export function matchesScreeningNarrowing(
   candidate: ScreeningFilterCandidateRow,
   narrowing: ScreeningQueueNarrowing,
-  context: { seenByViewer: boolean; asOf: number },
+  context: { seenByViewer: boolean; seenByAnyone?: boolean; asOf: number },
 ): boolean {
   if (narrowing.status && normalizeCandidateStatus(candidate.status) !== narrowing.status) return false;
   if (narrowing.seen === "unseen" && context.seenByViewer) return false;
   if (narrowing.seen === "seen" && !context.seenByViewer) return false;
+  // Fails CLOSED on a caller that did not supply the fact: `seenByAnyone ?? true` means an
+  // un-wired screen shows NOTHING under this filter rather than the entire pool. An empty list is
+  // a visible bug; a full one reads as "554 CVs nobody has touched" and is believed.
+  if (narrowing.seen === "untouched" && (context.seenByAnyone ?? true)) return false;
 
   if (narrowing.notified === "sent" && !candidate.managerNotified) return false;
   if (narrowing.notified === "unsent" && candidate.managerNotified) return false;

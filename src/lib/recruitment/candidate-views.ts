@@ -227,6 +227,73 @@ export async function listOtherViewersByCandidate(
  * A viewer with no employee row keeps their id. That is a recorded fact, not a failure: it is what
  * a dev-auth session or a retired seat looks like, and inventing a name for it would be worse.
  */
+/**
+ * How long "somebody is reading this right now" stands for.
+ *
+ * A LEASE, not a lock. The column's own comment sets the contract: it EXPIRES rather than being
+ * released, because the failure that matters is a screener closing a laptop mid-CV, and a claim
+ * that outlives the person holding it takes the queue away from everybody else.
+ *
+ * Five minutes is the read, not the session. `markCandidateSeen` fires once, 2.5 seconds after the
+ * document renders, so the claim is set once and is not refreshed while somebody reads on. Erring
+ * SHORT is the safe direction: an expired claim on a CV still being read costs one duplicated
+ * read, which is what this feature already tolerates by being advisory. An over-long claim would
+ * hide a CV from the other screener for no reason, which is the failure it exists to prevent.
+ */
+export const CANDIDATE_CLAIM_LEASE_MINUTES = 5;
+
+/** Somebody else has this CV open right now. */
+export type CandidateClaim = {
+  viewerHrId: string;
+  claimedUntil: string;
+};
+
+/**
+ * Who is reading each of these candidates RIGHT NOW, excluding the caller.
+ *
+ * Live claims only: the filter is on `claimed_until > now`, which is also the partial index's
+ * predicate, so this reads "CVs open right now" rather than the whole view history.
+ *
+ * The caller is excluded for the same reason they are excluded from "also read by" — a screener
+ * does not need telling that they themselves have the CV open, and showing it would make every
+ * candidate they touch look contested.
+ */
+export async function listLiveClaimsByCandidate(
+  viewerHrId: string | null | undefined,
+  now: Date = new Date(),
+): Promise<Map<string, CandidateClaim>> {
+  const me = canonicalViewerHrId(viewerHrId);
+  const claims = new Map<string, CandidateClaim>();
+  const supabase = recruitmentDb();
+
+  const { data, error } = await supabase
+    .from("ats_candidate_views")
+    .select("candidate_id,viewer_hr_id,claimed_until")
+    .gt("claimed_until", now.toISOString())
+    .order("claimed_until", { ascending: false })
+    .limit(VIEW_PAGE_SIZE);
+
+  if (error) {
+    // A missing table OR a missing column degrades to "nobody is reading anything", which is
+    // exactly how the screen behaved before this shipped. The code reaches production on a merge
+    // and the migration is a separate step, so that window is real.
+    if (isMissingRelation(error)) return claims;
+    throw error;
+  }
+
+  for (const row of (data ?? []) as Array<{ candidate_id?: string | null; viewer_hr_id?: string | null; claimed_until?: string | null }>) {
+    const candidateId = row.candidate_id ? String(row.candidate_id) : null;
+    const viewer = row.viewer_hr_id ? String(row.viewer_hr_id) : null;
+    const until = row.claimed_until ? String(row.claimed_until) : null;
+    if (!candidateId || !viewer || !until) continue;
+    if (me && viewer === me) continue;
+    // Ordered newest-first, so the first claim seen for a candidate is the freshest one.
+    if (!claims.has(candidateId)) claims.set(candidateId, { claimedUntil: until, viewerHrId: viewer });
+  }
+
+  return claims;
+}
+
 export async function resolveViewerNames(viewerHrIds: readonly string[]): Promise<Map<string, string>> {
   const names = new Map<string, string>();
   const ids = Array.from(new Set(viewerHrIds.map((id) => canonicalViewerHrId(id)).filter((id): id is string => Boolean(id))));
@@ -297,6 +364,10 @@ export async function markCandidateSeen(input: {
       last_seen_at: seenAt,
       view_count: viewCount,
       viewer_hr_id: viewer,
+      // Opening a CV claims it. Written on the SAME upsert rather than as a second call: two
+      // writes could half-succeed and leave a view with no claim or a claim with no view, and the
+      // one thing this row must never do is disagree with itself about who was here.
+      claimed_until: new Date((input.now ?? new Date()).getTime() + CANDIDATE_CLAIM_LEASE_MINUTES * 60_000).toISOString(),
     },
     { onConflict: "candidate_id,viewer_hr_id" },
   );

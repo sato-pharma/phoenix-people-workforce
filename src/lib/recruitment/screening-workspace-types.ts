@@ -118,6 +118,14 @@ export type WorkspaceCandidateRow = {
    * recorded views and 127 of the 133 decisions.
    */
   alsoReadBy: string[];
+  /**
+   * Who has this CV open RIGHT NOW, by name, or null when nobody has.
+   *
+   * Distinct from `alsoReadBy`, which is permanent history. This is a five-minute lease that
+   * expires on its own, so it answers the collision `alsoReadBy` cannot: two screeners opening the
+   * same CV in the same minute, both reading it, one of the two readings wasted.
+   */
+  beingReadBy: string | null;
   redFlags: CandidateRedFlag[];
 
   sentToManagerAt: string | null;

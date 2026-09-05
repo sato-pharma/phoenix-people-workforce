@@ -314,6 +314,19 @@ function CandidateBlock({
             {row.alsoReadBy.length === 1 ? row.alsoReadBy[0] : `${row.alsoReadBy.length} others`}
           </Pill>
         ) : null}
+        {/* SOMEBODY HAS IT OPEN RIGHT NOW. The badge above is permanent history — "this work may
+            already be done" — and cannot answer the collision that costs the most: two screeners
+            opening the same CV in the same minute, both reading it, one reading wasted.
+
+            `warn`, not `info`, because this one asks the reader to do something: pick another CV.
+            It is advisory — nothing stops them — and it disappears by itself after five minutes,
+            so a closed laptop cannot hold a CV away from the other screener. */}
+        {row.beingReadBy ? (
+          <Pill tone="warn" title={`${row.beingReadBy} has this open right now. Pick another CV unless you mean to look together.`}>
+            <Eye className="h-2.5 w-2.5" />
+            {row.beingReadBy} is reading
+          </Pill>
+        ) : null}
         {/* THE CV READER FOUND SOMETHING NOBODY SAVED. 271 of 582 candidates carried one of these on
             2026-09-05 and there was no way to tell from the list which. Not an extraction failure:
             cv-auto-apply writes unattended only at high confidence and `low` waits for a human, so
