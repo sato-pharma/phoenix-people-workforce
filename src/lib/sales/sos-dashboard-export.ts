@@ -4,7 +4,7 @@ import { addPhoenixTableSheet, type ExportColumn, type ExportRow } from "@/lib/e
 import type { SosDashboardData, SosDistributorRow, SosGroupRow } from "@/lib/sales/sos-dashboard";
 
 // Multi-sheet "Source of Sales" workbook: Summary + Product + Region + Area + Distributor, each
-// rendered with the premium Phoenix table style. Built from already-scoped + Head-Office/confidential
+// rendered in the SATO house table style (`theme: "house"` on the shared writer). Built from already-scoped + Head-Office/confidential
 // stripped data (the caller passes the output of getPortalSosDashboard), so the export can never
 // contain anything the viewer can't see on screen.
 
@@ -37,7 +37,7 @@ export async function buildSosDashboardWorkbook(input: {
   const s = data.summary;
 
   // Summary sheet — headline KPIs as a metric/value table.
-  addPhoenixTableSheet(workbook, {
+  addPhoenixTableSheet(workbook, { theme: "house",
     title: "Source of Sales — Summary",
     subtitle,
     sheetName: "Summary",
@@ -57,9 +57,9 @@ export async function buildSosDashboardWorkbook(input: {
     ],
   });
 
-  addPhoenixTableSheet(workbook, { title: "By Product", subtitle, sheetName: "Product", columns: GROUP_COLUMNS, rows: groupRows(data.byProduct) });
-  addPhoenixTableSheet(workbook, { title: "By Region", subtitle, sheetName: "Region", columns: GROUP_COLUMNS, rows: groupRows(data.byRegion) });
-  addPhoenixTableSheet(workbook, { title: "By Area", subtitle, sheetName: "Area", columns: GROUP_COLUMNS, rows: groupRows(data.byArea) });
+  addPhoenixTableSheet(workbook, { theme: "house", title: "By Product", subtitle, sheetName: "Product", columns: GROUP_COLUMNS, rows: groupRows(data.byProduct) });
+  addPhoenixTableSheet(workbook, { theme: "house", title: "By Region", subtitle, sheetName: "Region", columns: GROUP_COLUMNS, rows: groupRows(data.byRegion) });
+  addPhoenixTableSheet(workbook, { theme: "house", title: "By Area", subtitle, sheetName: "Area", columns: GROUP_COLUMNS, rows: groupRows(data.byArea) });
 
   const distributorColumns: ExportColumn[] = [
     { key: "label", label: "Distributor", width: 34 },
@@ -70,7 +70,7 @@ export async function buildSosDashboardWorkbook(input: {
     { key: "areas", label: "Areas", numeric: true, width: 12 },
     { key: "products", label: "Products", numeric: true, width: 12 },
   ];
-  addPhoenixTableSheet(workbook, {
+  addPhoenixTableSheet(workbook, { theme: "house",
     title: "By Distributor",
     subtitle,
     sheetName: "Distributor",

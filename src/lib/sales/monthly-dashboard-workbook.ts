@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 
-import { buildCoverSheet } from "@/lib/export/phoenix-xlsx-style";
+import { buildHouseCoverSheet, writeHouseTable } from "@/lib/export/house-table-workbook";
 import {
   PCT_FMT,
   UNITS_FMT,
@@ -104,7 +104,7 @@ export async function buildMonthlySalesDashboardWorkbook(input: {
   const totalSales = Number(summary.totalApprovedSales ?? 0);
   const totalTarget = Number(summary.totalApprovedTarget ?? 0);
 
-  buildCoverSheet(workbook, {
+  buildHouseCoverSheet(workbook, {
     title: "Monthly Sales Dashboard",
     subtitle: "Approved Source of Sales data — targets, channel mix, territories and trends, filter-scoped.",
     confidentialNote: "Confidential products (LA003 / LA004) are excluded unless your role is authorized to view them.",
@@ -126,7 +126,7 @@ export async function buildMonthlySalesDashboardWorkbook(input: {
   // ── Trend ─────────────────────────────────────────────────────────────────
   const trend = asArray<SalesTrendPoint>(data.trend);
   const trendSheet = workbook.addWorksheet(sanitizeSheetName("Trend"));
-  writeTable(trendSheet, 1, {
+  writeHouseTable(trendSheet, 1, {
     title: "Monthly sales vs target",
     columns: [
       { label: "Month", width: 12 },
@@ -143,7 +143,7 @@ export async function buildMonthlySalesDashboardWorkbook(input: {
   const channelMix = asArray<ChannelSlice>(data.channelMix);
   const channelSheet = workbook.addWorksheet(sanitizeSheetName("Channel Mix"));
   const channelTotal = channelMix.reduce((s, c) => s + c.value, 0);
-  writeTable(channelSheet, 1, {
+  writeHouseTable(channelSheet, 1, {
     title: "Sales value by sales type",
     columns: [
       { label: "Sales type", width: 24 },
@@ -157,7 +157,7 @@ export async function buildMonthlySalesDashboardWorkbook(input: {
   // ── Family Performance ───────────────────────────────────────────────────
   const familyMatrix = asArray<FamilyRow>(data.familyMatrix);
   const familySheet = workbook.addWorksheet(sanitizeSheetName("Family Performance"));
-  writeTable(familySheet, 1, {
+  writeHouseTable(familySheet, 1, {
     title: "Sales by product family",
     columns: [
       { label: "Family", width: 26 },
@@ -174,7 +174,7 @@ export async function buildMonthlySalesDashboardWorkbook(input: {
   // ── Territory Performance ────────────────────────────────────────────────
   const territories = asArray<TerritoryRow>(data.territories);
   const territorySheet = workbook.addWorksheet(sanitizeSheetName("Territory Performance"));
-  writeTable(territorySheet, 1, {
+  writeHouseTable(territorySheet, 1, {
     title: "Sales by territory",
     columns: [
       { label: "Territory", width: 24 },
@@ -191,7 +191,7 @@ export async function buildMonthlySalesDashboardWorkbook(input: {
   // ── Line Performance ──────────────────────────────────────────────────────
   const linePerformance = asArray<LineRow>(data.linePerformance);
   const lineSheet = workbook.addWorksheet(sanitizeSheetName("Line Performance"));
-  writeTable(lineSheet, 1, {
+  writeHouseTable(lineSheet, 1, {
     title: "Sales by product line",
     columns: [
       { label: "Line", width: 18 },
@@ -209,7 +209,7 @@ export async function buildMonthlySalesDashboardWorkbook(input: {
   // ── Manager Performance ───────────────────────────────────────────────────
   const managerPerformance = asArray<ManagerRow>(data.managerPerformance);
   const managerSheet = workbook.addWorksheet(sanitizeSheetName("Manager Performance"));
-  writeTable(managerSheet, 1, {
+  writeHouseTable(managerSheet, 1, {
     title: "District/sales managers ranked by approved sales",
     columns: [
       { label: "Manager", width: 24 },
@@ -230,7 +230,7 @@ export async function buildMonthlySalesDashboardWorkbook(input: {
   // ── Product Performance ───────────────────────────────────────────────────
   const productPerformance = asArray<ProductRow>(data.productPerformance);
   const productSheet = workbook.addWorksheet(sanitizeSheetName("Product Performance"));
-  writeTable(productSheet, 1, {
+  writeHouseTable(productSheet, 1, {
     title: "Sales by product / SKU",
     columns: [
       { label: "Product", width: 30 },
@@ -248,7 +248,7 @@ export async function buildMonthlySalesDashboardWorkbook(input: {
   // ── Pareto ────────────────────────────────────────────────────────────────
   const pareto = asArray<ParetoRow>(data.pareto);
   const paretoSheet = workbook.addWorksheet(sanitizeSheetName("Pareto"));
-  writeTable(paretoSheet, 1, {
+  writeHouseTable(paretoSheet, 1, {
     title: "Top products — cumulative contribution",
     columns: [
       { label: "Product", width: 30 },
@@ -262,7 +262,7 @@ export async function buildMonthlySalesDashboardWorkbook(input: {
   // ── Anomalies ─────────────────────────────────────────────────────────────
   const anomalies = asArray<AnomalyRow>(data.anomalies);
   const anomalySheet = workbook.addWorksheet(sanitizeSheetName("Anomalies"));
-  writeTable(anomalySheet, 1, {
+  writeHouseTable(anomalySheet, 1, {
     title: "Product x territory outliers",
     columns: [
       { label: "Label", width: 28 },
@@ -279,7 +279,7 @@ export async function buildMonthlySalesDashboardWorkbook(input: {
   // explains where the numbers came from. Upload provenance lives on /sales/import.
   const recentBatches = asArray<RecentBatchRow>(data.recentBatches);
   const batchSheet = workbook.addWorksheet(sanitizeSheetName("Recent Batches"));
-  writeTable(batchSheet, 1, {
+  writeHouseTable(batchSheet, 1, {
     title: "Recently uploaded sales batches",
     columns: [
       { label: "File name", width: 30 },
@@ -349,7 +349,7 @@ export async function buildMonthlySalesDashboardWorkbook(input: {
   txnTotals[12] = transactions.reduce((s, r) => s + r.salesValue, 0);
   txnTotals[13] = transactions.reduce((s, r) => s + r.targetValue, 0);
   const txnSheet = workbook.addWorksheet(sanitizeSheetName("Transactions"));
-  writeTable(txnSheet, 1, {
+  writeHouseTable(txnSheet, 1, {
     title: "Detailed approved sales records",
     columns: txnColumns,
     rows: txnRows,

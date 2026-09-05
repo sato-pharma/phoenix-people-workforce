@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 
+import { HOUSE_DOCUMENT_STANDARD, HOUSE_XLSX_COLORS } from "@/lib/export/house-xlsx-identity";
 import {
   performanceReviewRegionStyle,
   PERFORMANCE_REVIEW_FIRST_PERIOD,
@@ -24,21 +25,38 @@ import { SATO_LOGO_ON_LIGHT_PNG_BASE64 } from "@/lib/sales/sato-logo-asset";
 // asserts it rather than re-deciding it.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BLUE = "FF0868A8";
-const DEEP = "FF06466F";
-const BAND = "FFE7F1F8";
-const ZEBRA = "FFF7FAFD";
-const RULE = "FFD7E4EE";
-const RULE2 = "FFA8C3D8";
-const INK = "FF10202D";
-const MUTE = "FF6C8798";
-const WHITE = "FFFFFFFF";
+// ── The house document identity — SATO-DIS-2026-01 v1.0 ──────────────────────
+//
+// Every colour here is the COMPANY's, measured from the Sato Pharma mark, never the Phoenix app's.
+// The ink rule holds: colour is carried by LINES and TYPE, never by filled area. The one permitted
+// fill in the whole format is the 6% zebra row.
+//
+// What that removed from this workbook: a full-width blue bar above the masthead, a navy bar below
+// it, a navy header band on every sheet, a navy section bar, a pale band on every total row, and a
+// pastel region tint down the first five columns of every body row. The region survived all of it
+// intact, because the row already SAYS its region, in words, in that region's own colour, in a
+// column of its own — a fill may only go when the cell says the thing without it.
+const BLUE = HOUSE_XLSX_COLORS.blue;
+const DEEP = HOUSE_XLSX_COLORS.deep;
+const LIGHT = HOUSE_XLSX_COLORS.light;
+const ZEBRA = HOUSE_XLSX_COLORS.tint;
+const RULE = HOUSE_XLSX_COLORS.hair;
+const INK = HOUSE_XLSX_COLORS.body;
+// The house palette carries ONE secondary tone, not two. SLATE and MUTE therefore resolve to the
+// same value, and the distinction they used to draw in colour is now drawn in size and italic —
+// the standard's own discipline, and the reason an absent value keeps its em-dash glyph.
+const SLATE = HOUSE_XLSX_COLORS.muted;
+const MUTE = HOUSE_XLSX_COLORS.muted;
+// The achievement ramp and the growth arrows are TYPE, which is what the ink rule says colour
+// SHOULD be carried by, so they keep a real three-step reading. Grey is not available as the middle
+// step: it already means "no target" a few columns to the left, and one colour cannot mean both
+// "unmeasured" and "measured, and mid". The red is the standard's own sanctioned non-logo colour
+// rather than a second red invented here.
 const GOOD = "FF0F766E";
 const WARN = "FF9A5B08";
-const CRIT = "FFA81F1F";
-const SLATE = "FF4A5D6B";
-const UP = "FF0F766E";
-const DOWN = "FFA81F1F";
+const CRIT = HOUSE_XLSX_COLORS.flag;
+const UP = GOOD;
+const DOWN = CRIT;
 
 // Written as escapes so no editor, terminal or patch tool can mangle them into a literal.
 const BLK = String.fromCharCode(0x2588);
@@ -50,8 +68,10 @@ const NUM = "#,##0";
 const PCT = "0.0%";
 const GROW = "+#,##0.0%;−#,##0.0%;0.0%";
 
-const thin = { color: { argb: RULE }, style: "thin" as const };
-const med = { color: { argb: RULE2 }, style: "medium" as const };
+// The grid is hairlines in house hair, not a thin box on every cell: with the fills gone the rules
+// are doing the whole job of separating rows, and a "thin" grid at that density reads as a cage.
+const thin = { color: { argb: RULE }, style: "hair" as const };
+const med = { color: { argb: LIGHT }, style: "medium" as const };
 const medB = { color: { argb: BLUE }, style: "medium" as const };
 
 type Cell = ExcelJS.Cell;
@@ -217,37 +237,74 @@ type MastheadOptions = {
   title: string;
 };
 
+/**
+ * Rows 1-8, in the house identity.
+ *
+ * The footprint is unchanged at eight rows — every sheet builder below starts its header at row 9
+ * and freezes there, and the by-month legend and note lines are content this report needs, not
+ * decoration to be dropped. What changed is the ink. The specimen's lockup is horizontal: the mark
+ * sits physically left and the title reads BESIDE it, with the standard's own id right-aligned
+ * opposite, and a single Brand Blue rule running the full width beneath. That is one short filled
+ * row in place of the two full-width bars this masthead used to carry.
+ */
 function masthead(workbook: ExcelJS.Workbook, sheet: Sheet, options: MastheadOptions) {
   const letter = sheet.getColumn(options.lastCol).letter;
 
-  sheet.getRow(1).height = 5;
-  for (let column = 1; column <= options.lastCol; column += 1) fill(sheet.getCell(1, column), BLUE);
+  // The title begins in the first column that clears the floating mark, so the lockup reads as one
+  // horizontal unit whatever the sheet's columns happen to be. The mark is 96pt ≈ 18 of Excel's
+  // character-width units, and these seven sheets range from a 6-wide first column to a 42-wide one:
+  // a fixed "start at C" clears the mark on the ranking sheet and wastes 66 characters on the series
+  // sheets. Measuring is two lines and cannot be wrong.
+  let titleFirst = 1;
+  for (let width = 0; titleFirst < options.lastCol && width < 19; titleFirst += 1) {
+    width += sheet.getColumn(titleFirst).width ?? 8.43;
+  }
 
-  sheet.getRow(2).height = 21;
+  // Row 1 — the standard's own id, right-aligned above everything.
+  //
+  // It gets a row of its own rather than the trailing columns of the title row, because those
+  // columns are 12 characters wide on one sheet and 34 on another: opposite the title it either fits
+  // or silently CLIPS the headline it sits beside, and which of those happens depends on how many
+  // months the series covers. A full-width row cannot clip at any width.
+  sheet.getRow(1).height = 11;
+  sheet.mergeCells(`A1:${letter}1`);
+  align(font(sheet.getCell("A1"), { color: { argb: MUTE }, name: "Aptos", size: 7.5 }), {
+    horizontal: "right",
+    vertical: "middle",
+  }).value = HOUSE_DOCUMENT_STANDARD;
+
+  sheet.getRow(2).height = 24;
   sheet.getRow(3).height = 14;
   sheet.getRow(4).height = 13;
-  sheet.mergeCells(`A2:${letter}2`);
-  sheet.mergeCells(`A3:${letter}3`);
-  sheet.mergeCells(`A4:${letter}4`);
-  align(font(sheet.getCell("A2"), { bold: true, color: { argb: DEEP }, name: "Aptos Display", size: 16 }), {
-    horizontal: "center",
+  // Title, subtitle and status all start at the same column, to the RIGHT of the mark. The mark
+  // floats over rows 2-3 of the columns before it, so a subtitle merged from column A would render
+  // underneath the wordmark on the four sheets whose first column is 34 characters or wider.
+  sheet.mergeCells(2, titleFirst, 2, options.lastCol);
+  sheet.mergeCells(3, titleFirst, 3, options.lastCol);
+  sheet.mergeCells(4, titleFirst, 4, options.lastCol);
+  align(font(sheet.getCell(2, titleFirst), { bold: true, color: { argb: DEEP }, name: "Aptos Display", size: 16 }), {
+    horizontal: "left",
     vertical: "middle",
   }).value = options.title;
-  align(font(sheet.getCell("A3"), { color: { argb: SLATE }, name: "Aptos", size: 10 }), { horizontal: "center" }).value =
-    options.subtitle;
-  align(font(sheet.getCell("A4"), { color: { argb: MUTE }, italic: true, name: "Aptos", size: 8.5 }), {
-    horizontal: "center",
+  align(font(sheet.getCell(3, titleFirst), { color: { argb: SLATE }, name: "Aptos", size: 10 }), {
+    horizontal: "left",
+  }).value = options.subtitle;
+  align(font(sheet.getCell(4, titleFirst), { color: { argb: MUTE }, italic: true, name: "Aptos", size: 8.5 }), {
+    horizontal: "left",
   }).value = options.status;
 
   try {
     const image = workbook.addImage({ base64: SATO_LOGO_ON_LIGHT_PNG_BASE64, extension: "png" });
-    sheet.addImage(image, { ext: { height: 44, width: 112 }, tl: { col: 0.18, row: 1.45 } });
+    // 401x158 native, so 96x38 holds the 2.54:1 ratio and keeps the PHARMA counters open.
+    sheet.addImage(image, { ext: { height: 38, width: 96 }, tl: { col: 0.2, row: 1.15 } });
   } catch {
     // The wordmark is presentation, never data — a failed embed must not lose the report.
   }
 
+  // Row 5 — the brand rule. A rule, not a band: one short row, which is the single filled shape the
+  // ink rule allows outside the zebra.
   sheet.getRow(5).height = 3;
-  for (let column = 1; column <= options.lastCol; column += 1) fill(sheet.getCell(5, column), DEEP);
+  for (let column = 1; column <= options.lastCol; column += 1) fill(sheet.getCell(5, column), BLUE);
 
   sheet.getRow(6).height = 15;
   sheet.mergeCells(`A6:${letter}6`);
@@ -274,63 +331,83 @@ function masthead(workbook: ExcelJS.Workbook, sheet: Sheet, options: MastheadOpt
       ],
     };
   }
-  align(sheet.getCell("A6"), { horizontal: "center", vertical: "middle" });
+  align(sheet.getCell("A6"), { horizontal: "left", indent: 1, vertical: "middle" });
 
   sheet.getRow(7).height = 13;
   sheet.mergeCells(`A7:${letter}7`);
-  align(font(sheet.getCell("A7"), { color: { argb: MUTE }, name: "Aptos", size: 8 }), { horizontal: "center" }).value =
-    `${DOT} = nothing sold    ${EM} = not applicable    ${options.note}`;
+  align(font(sheet.getCell("A7"), { color: { argb: MUTE }, name: "Aptos", size: 8 }), {
+    horizontal: "left",
+    indent: 1,
+  }).value = `${DOT} = nothing sold    ${EM} = not applicable    ${options.note}`;
 
   sheet.getRow(8).height = 7;
 }
 
+/** A section break: deep type over a Brand Blue rule, no band. */
 function sectionRow(sheet: Sheet, row: number, lastCol: number, text: string, sub?: string) {
   const letter = sheet.getColumn(lastCol).letter;
   sheet.mergeCells(`A${row}:${letter}${row}`);
   sheet.getRow(row).height = 18;
   const cell = sheet.getCell(row, 1);
-  fill(cell, DEEP);
   cell.value = {
     richText: [
-      { font: { bold: true, color: { argb: WHITE }, name: "Aptos", size: 10 }, text },
-      ...(sub ? [{ font: { color: { argb: "FFBBD5E6" }, name: "Aptos", size: 8.5 }, text: `     ${sub}` }] : []),
+      { font: { bold: true, color: { argb: DEEP }, name: "Aptos", size: 10 }, text },
+      ...(sub ? [{ font: { color: { argb: MUTE }, name: "Aptos", size: 8.5 }, text: `     ${sub}` }] : []),
     ],
   };
-  align(cell, { horizontal: "left", indent: 1, vertical: "middle" });
+  align(cell, { horizontal: "left", indent: 1, vertical: "bottom" });
+  // Set directly rather than through border(), which fills every unnamed side with a hairline: a
+  // section break is a rule under a label, never a box.
   for (let column = 1; column <= lastCol; column += 1) {
-    border(sheet.getCell(row, column), { b: medB, l: medB, r: medB, t: medB });
+    sheet.getCell(row, column).border = { bottom: medB };
   }
 }
 
+/**
+ * The house table header: deep bold type on white, under a rule.
+ *
+ * `band` was the paler of two filled bands; it is now the paler of two rules — the Brand Blue rule
+ * marks a real column header, the light rule marks the grouping strip that sits above one.
+ */
 function headerRow(sheet: Sheet, row: number, headings: string[], leftCount: number, options: { band?: boolean } = {}) {
-  const last = headings.length;
   sheet.getRow(row).height = options.band ? 22 : 26;
   headings.forEach((heading, index) => {
     const cell = sheet.getCell(row, index + 1);
     cell.value = heading;
-    fill(cell, options.band ? BAND : DEEP);
-    font(cell, { bold: true, color: { argb: options.band ? DEEP : WHITE }, name: "Aptos", size: 8.5 });
+    font(cell, { bold: true, color: { argb: DEEP }, name: "Aptos", size: 8.5 });
     align(cell, {
       horizontal: index < leftCount ? "left" : "center",
       indent: index < leftCount ? 1 : 0,
-      vertical: "middle",
+      vertical: "bottom",
     });
-    border(cell, {
-      b: options.band ? med : medB,
-      l: index === 0 ? medB : thin,
-      r: index === last - 1 ? medB : thin,
-      t: options.band ? med : medB,
-    });
+    border(cell, { b: options.band ? med : medB, l: undefined, r: undefined, t: thin });
   });
 }
 
-/** Paint one body row's background and rules, and hand back its cells. */
-function bodyRow(sheet: Sheet, row: number, lastCol: number, options: { tint: string; tintUpTo: number; zebra: boolean }) {
+/** How strongly a body row is marked. `area` is an ordinary row; the other two are totals. */
+type RowEmphasis = "area" | "subtotal" | "total";
+
+/**
+ * Rule one body row and hand back its cells.
+ *
+ * The region tint that used to run down the first columns is gone: the row names its region in that
+ * region's own colour a column or two along, so the tint was saying a second time what the type
+ * already said. A total is now marked by rules and weight rather than by a band.
+ */
+function bodyRow(sheet: Sheet, row: number, lastCol: number, options: { emphasis?: RowEmphasis; zebra: boolean }) {
+  const emphasis = options.emphasis ?? "area";
   const cells: Cell[] = [];
   for (let column = 1; column <= lastCol; column += 1) {
     const cell = sheet.getCell(row, column);
-    fill(cell, column <= options.tintUpTo ? options.tint : options.zebra ? ZEBRA : WHITE);
-    border(cell, { l: column === 1 ? medB : thin, r: column === lastCol ? medB : thin });
+    // The zebra row REPLACES its hairline rather than joining it: a tinted row already reads as a
+    // band, so ruling it as well draws the eye twice for one row.
+    if (emphasis === "area" && options.zebra) fill(cell, ZEBRA);
+    border(cell, {
+      b: emphasis === "total" ? medB : emphasis === "subtotal" ? med : thin,
+      l: undefined,
+      r: undefined,
+      t: emphasis === "area" ? thin : emphasis === "total" ? medB : med,
+    });
     cells.push(cell);
   }
   return cells;
@@ -366,7 +443,7 @@ function buildRepRankingSheet(workbook: ExcelJS.Workbook, review: ClosingPerform
   review.areas.forEach((area, index) => {
     const style = performanceReviewRegionStyle(area.regionCode);
     sheet.getRow(row).height = 16;
-    const cells = bodyRow(sheet, row, LAST, { tint: style.tint, tintUpTo: 5, zebra: index % 2 === 1 });
+    const cells = bodyRow(sheet, row, LAST, { zebra: index % 2 === 1 });
     const rank = area.achievement == null ? null : index + 1;
 
     cells[0].value = rank ?? EM;
@@ -397,9 +474,7 @@ function buildRepRankingSheet(workbook: ExcelJS.Workbook, review: ClosingPerform
   // National total
   sheet.getRow(row).height = 20;
   for (let column = 1; column <= LAST; column += 1) {
-    const cell = sheet.getCell(row, column);
-    fill(cell, BAND);
-    border(cell, { b: medB, l: column === 1 ? medB : thin, r: column === LAST ? medB : thin, t: medB });
+    border(sheet.getCell(row, column), { b: medB, t: medB });
   }
   sheet.mergeCells(row, 1, row, 5);
   align(font(sheet.getCell(row, 1), { bold: true, color: { argb: DEEP }, name: "Aptos", size: 10 }), {
@@ -417,14 +492,14 @@ function buildRepRankingSheet(workbook: ExcelJS.Workbook, review: ClosingPerform
   row += 2;
 
   // District managers
-  sectionRow(sheet, row, LAST, "DISTRICT MANAGERS", "each manager is coloured by the region he or she runs");
+  sectionRow(sheet, row, LAST, "DISTRICT MANAGERS", "each is named beside the region he or she runs");
   row += 1;
   headerRow(sheet, row, ["", "REGION", "DISTRICT MANAGER", "AREAS", "", "SALES VALUE", "TARGET VALUE", "ACH.", "ACHIEVEMENT"], 5, { band: true });
   row += 1;
   review.managers.forEach((group, index) => {
     const style = performanceReviewRegionStyle(group.regionCode);
     sheet.getRow(row).height = 17;
-    const cells = bodyRow(sheet, row, LAST, { tint: style.tint, tintUpTo: 5, zebra: index % 2 === 1 });
+    const cells = bodyRow(sheet, row, LAST, { zebra: index % 2 === 1 });
     align(cells[0], { horizontal: "center" });
     cells[1].value = group.regionName;
     align(font(cells[1], { bold: true, color: { argb: style.chip }, name: "Aptos", size: 8.5 }), { horizontal: "left", indent: 1 });
@@ -442,12 +517,12 @@ function buildRepRankingSheet(workbook: ExcelJS.Workbook, review: ClosingPerform
   row += 1;
 
   // Regions
-  sectionRow(sheet, row, LAST, "REGIONS", "the colour key used on every sheet of this workbook");
+  sectionRow(sheet, row, LAST, "REGIONS", "the colour every sheet of this workbook names a region in");
   row += 1;
   review.regions.forEach((group, index) => {
     const style = performanceReviewRegionStyle(group.regionCode);
     sheet.getRow(row).height = 17;
-    const cells = bodyRow(sheet, row, LAST, { tint: style.tint, tintUpTo: 5, zebra: index % 2 === 1 });
+    const cells = bodyRow(sheet, row, LAST, { zebra: index % 2 === 1 });
     align(font(cells[0], { color: { argb: style.chip }, name: "Aptos", size: 12 }), { horizontal: "center" }).value = SQ;
     sheet.mergeCells(row, 2, row, 3);
     align(font(sheet.getCell(row, 2), { bold: true, color: { argb: style.chip }, name: "Aptos", size: 10 }), { horizontal: "left", indent: 1 }).value = group.regionName;
@@ -491,7 +566,7 @@ function buildFamilySheet(workbook: ExcelJS.Workbook, review: ClosingPerformance
 
   review.families.forEach((family, index) => {
     sheet.getRow(row).height = 16;
-    const cells = bodyRow(sheet, row, LAST, { tint: index % 2 === 1 ? ZEBRA : WHITE, tintUpTo: 0, zebra: index % 2 === 1 });
+    const cells = bodyRow(sheet, row, LAST, { zebra: index % 2 === 1 });
     cells[0].value = family.family;
     align(font(cells[0], { color: { argb: INK }, name: "Aptos", size: 9.5 }), { horizontal: "left", indent: 1 });
     cells[1].value = family.productCount;
@@ -506,9 +581,7 @@ function buildFamilySheet(workbook: ExcelJS.Workbook, review: ClosingPerformance
 
   sheet.getRow(row).height = 20;
   for (let column = 1; column <= LAST; column += 1) {
-    const cell = sheet.getCell(row, column);
-    fill(cell, BAND);
-    border(cell, { b: medB, l: column === 1 ? medB : thin, r: column === LAST ? medB : thin, t: medB });
+    border(sheet.getCell(row, column), { b: medB, t: medB });
   }
   align(font(sheet.getCell(row, 1), { bold: true, color: { argb: DEEP }, name: "Aptos", size: 10 }), {
     horizontal: "left",
@@ -573,9 +646,7 @@ function buildGridSheet(
   let row = 9;
   sheet.getRow(row).height = 18;
   for (let column = 1; column <= LAST; column += 1) {
-    const cell = sheet.getCell(row, column);
-    fill(cell, BAND);
-    border(cell, { b: med, l: column === 1 ? medB : thin, r: column === LAST ? medB : thin, t: medB });
+    border(sheet.getCell(row, column), { b: med, t: medB });
   }
   sheet.mergeCells(row, 1, row, NAMES);
   align(font(sheet.getCell(row, 1), { bold: true, color: { argb: DEEP }, name: "Aptos", size: 8.5 }), {
@@ -630,18 +701,17 @@ function buildGridSheet(
     if (entry.kind === "area") zebra = !zebra;
     sheet.getRow(row).height = isTotal ? 19 : 16;
     const cells = bodyRow(sheet, row, LAST, {
-      tint: entry.kind === "grandTotal" ? DEEP : entry.kind === "regionSubtotal" ? BAND : style.tint,
-      tintUpTo: isTotal ? LAST : NAMES,
+      emphasis: entry.kind === "grandTotal" ? "total" : entry.kind === "regionSubtotal" ? "subtotal" : "area",
       zebra,
     });
 
-    const ink = entry.kind === "grandTotal" ? WHITE : INK;
+    const ink = isTotal ? DEEP : INK;
     const label = (cell: Cell, value: string, muted = false) => {
       cell.value = value;
       align(
         font(cell, {
           bold: isTotal,
-          color: { argb: entry.kind === "grandTotal" ? WHITE : muted ? MUTE : INK },
+          color: { argb: isTotal ? DEEP : muted ? MUTE : INK },
           italic: muted,
           name: "Aptos",
           size: isTotal ? 9.5 : 9,
@@ -758,11 +828,7 @@ function buildSeriesSheet(workbook: ExcelJS.Workbook, review: ClosingPerformance
   options.rows.forEach((entry, index) => {
     const style = options.tintByRegion ? performanceReviewRegionStyle(regionCodeFor(review, entry)) : null;
     sheet.getRow(row).height = 16;
-    const cells = bodyRow(sheet, row, LAST, {
-      tint: style ? style.tint : ZEBRA,
-      tintUpTo: style ? 2 : 0,
-      zebra: index % 2 === 1,
-    });
+    const cells = bodyRow(sheet, row, LAST, { zebra: index % 2 === 1 });
     cells[0].value = entry.label;
     align(font(cells[0], { color: { argb: INK }, name: "Aptos", size: 9.5 }), { horizontal: "left", indent: 1 });
     cells[1].value = entry.subLabel;
@@ -779,9 +845,7 @@ function buildSeriesSheet(workbook: ExcelJS.Workbook, review: ClosingPerformance
   if (options.measure === "value") {
     sheet.getRow(row).height = 20;
     for (let column = 1; column <= LAST; column += 1) {
-      const cell = sheet.getCell(row, column);
-      fill(cell, BAND);
-      border(cell, { b: medB, l: column === 1 ? medB : thin, r: column === LAST ? medB : thin, t: medB });
+      border(sheet.getCell(row, column), { b: medB, t: medB });
     }
     sheet.mergeCells(row, 1, row, 2);
     align(font(sheet.getCell(row, 1), { bold: true, color: { argb: DEEP }, name: "Aptos", size: 10 }), {
