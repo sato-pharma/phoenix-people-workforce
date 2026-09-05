@@ -463,6 +463,48 @@ function buildEmployeePortalSections({
   ].filter((section) => section.items.length > 0);
 }
 
+/**
+ * The header's "today" chip is genuinely hydration-unsafe if computed inline: React
+ * server-renders this component once (capturing "now" at the server's render instant) and
+ * hydrates it client-side once more (capturing "now" again, independently, moments later).
+ * `timeZone: "Africa/Cairo"` is already correct, so this is NOT the UTC-vs-Cairo bug class —
+ * almost every render lands within the same Cairo calendar day and produces identical text, but a
+ * page load straddling the Cairo midnight boundary lands the two computations on different days,
+ * throwing React hydration error #418 (63% of production errors over the trailing 7 days,
+ * confirmed live against public.app_error_events, spread across nearly every /employee-portals/*
+ * route this header renders on).
+ *
+ * Same "server default, then correct after mount" shape as ThemeProvider
+ * (src/components/layout/theme-provider.tsx): render nothing until mounted, so the server's HTML
+ * and the client's first hydration pass are byte-identical regardless of which instant either side
+ * lands on, then fill in the real date a moment later.
+ */
+function EmployeePortalHeaderDate() {
+  const [label, setLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Deferred through rAF rather than called synchronously in the effect body — same shape as
+    // ThemeProvider — because this repo's react-hooks/set-state-in-effect lint rule is an ERROR,
+    // not a warning, on a bare setState() inside useEffect.
+    const frame = window.requestAnimationFrame(() => {
+      setLabel(
+        new Date().toLocaleDateString("en-US", {
+          day: "numeric",
+          month: "short",
+          timeZone: "Africa/Cairo",
+          year: "numeric",
+        }),
+      );
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  if (!label) return null;
+
+  return <span className="whitespace-nowrap">{label}</span>;
+}
+
 function dispatchEmployeePortalRoutePending(href: string) {
   window.dispatchEvent(new CustomEvent(EMPLOYEE_ROUTE_PENDING_EVENT, { detail: { href } }));
 }
@@ -804,9 +846,7 @@ export function EmployeePortalTopNav({
           <InternalMessagesMenu isAdminMode={false} />
           <div className="hidden items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-semibold text-slate-500 lg:flex">
             <CalendarClock className="h-3 w-3 text-slate-400" />
-            <span className="whitespace-nowrap">
-              {new Date().toLocaleDateString("en-US", { day: "numeric", month: "short", timeZone: "Africa/Cairo", year: "numeric" })}
-            </span>
+            <EmployeePortalHeaderDate />
           </div>
           {visibility.showMyPerformanceTab === false ? null : (
             <div className="hidden items-center gap-1.5 rounded border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-phx-xs font-bold text-orange-700 lg:flex">
