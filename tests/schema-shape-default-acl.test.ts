@@ -14,6 +14,37 @@ import { evaluateSchemaShape, type SchemaShape } from "../scripts/check-schema-s
 // pg_default_acl row requires membership in the owning role, and the migration runner has
 // none. Grading it an error would make the daily check permanently red — which is exactly
 // how the real alarm became background noise and went unread for three days.
+//
+// ── The `supabase_admin` residual is INERT, not merely unfixable (measured 2026-09-06) ──
+//
+// "Unfixable" is the weaker half of the reason and it reads like an open wound: a session
+// finds `supabase_admin` granting anon `arwdDxtm` on public TABLES, concludes that every new
+// table inherits it, and goes looking for a way to alter a catalog row it has no membership
+// for. That happened, and the conclusion was wrong.
+//
+// A default ACL keys on the role that CREATES the object, not on the schema alone. `public`
+// carries TWO rows, and the one that governs us is clean:
+//
+//   postgres        -> {postgres=arwdDxtm, service_role=arwdDxtm}                    <- ours
+//   supabase_admin  -> {postgres, anon=arwdDxtm, authenticated, service_role}        <- inert
+//
+// Migrations run as `postgres` (current_user = postgres, and it is NOT a member of
+// supabase_admin), so a table created by a migration takes the first row. Probed on
+// production 2026-09-06 by creating a table in `public` and rolling it back via RAISE:
+//
+//   PROBE -> anon_can_select=f | acl={postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}
+//
+// All 326 public tables are `postgres`-owned, so the supabase_admin row has never applied to
+// one of them and cannot start. This is why the residual is downgraded rather than chased:
+// it is unreachable by construction, not merely inconvenient to reach.
+//
+// Do NOT "fix" it by widening the check, and do not read the 21 tables that DID grant anon
+// (revoked 2026-09-06, #3330) as evidence of drift from this row — they predate the current
+// postgres default ACL. Verify with the probe above before concluding otherwise.
+//
+// Separately: `postgres` DOES own a default ACL on the `storage` schema granting anon full
+// CRUD, and that one IS alterable. It is deliberately left alone — `storage` is Supabase's own
+// machinery and anon access there is part of how Storage's RLS model works.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** A schema in good health, so each test varies one thing and nothing else fires. */
