@@ -104,6 +104,26 @@ export async function GET(request: NextRequest) {
   });
 
   return streamCrmMasterWorkbookResponse({
+    cover: {
+      rows: [
+        ["Dataset", filter.dataset ?? "visits"],
+        ["Date from", filter.dateFrom || "—"],
+        ["Date to", filter.dateTo || "—"],
+        ["Search", filter.search || "—"],
+        ["Scope", "Bounded to your own scope"],
+        ["Generated", `${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC`],
+        [
+          "Row count",
+          "Not stated here on purpose: the rows are streamed, so none have been read when this page is written. The Visits sheet is the count.",
+        ],
+        [
+          "Confidential",
+          "Individual visit-level CRM activity. Internal use only — do not forward outside the organization.",
+        ],
+      ],
+      subtitle: label,
+      title: "CRM Master Export",
+    },
     filename: exportFileName(label),
     sheetName: label,
     columns: crmMasterExportColumns(filter),
