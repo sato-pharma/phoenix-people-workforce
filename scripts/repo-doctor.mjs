@@ -1318,10 +1318,15 @@ let autoloadedIndexBytes = null;
     } else {
       const result = takeXlsxSnapshot({ repoRoot: primaryRoot, snapshotRoot });
       if (result.dir === null) {
-        console.log("  -> --snapshot-xlsx: nothing untracked to copy.");
+        // A DELTA writes nothing on a quiet day. Say which quiet it is — an empty folder and a
+        // fully-covered one are the same output otherwise, and only one of them is good news.
+        console.log("  -> --snapshot-xlsx: nothing new to copy; every sheet is already in a snapshot.");
       } else {
         console.log(`  -> snapshot written: ${result.dir}`);
-        console.log(`     ${result.copied} copied, ${result.verified} verified identical by SHA256`);
+        console.log(
+          `     ${result.copied} copied, ${result.verified} verified identical by SHA256` +
+            (result.skipped ? `, ${result.skipped} already held by an earlier snapshot` : ""),
+        );
         if (result.mismatched.length > 0) {
           // A mismatch means the copy on disk is NOT the file. Loud, and never folded into the
           // success line — a partially-good backup that reads as good is the failure this whole

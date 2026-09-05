@@ -4136,8 +4136,9 @@ await runTest(
   "untracked xlsx/ spreadsheets are reported as backed up ONLY when a snapshot really holds them "
     + "(coverage is by content, so a decision sheet the owner filled in is not covered by the empty "
     + "version of itself; an unreadable source, an unreadable snapshot root and an absent backup "
-    + "drive each refuse to print as clean; and the report path writes nothing — only --snapshot-xlsx "
-    + "copies, and the module never deletes)",
+    + "drive each refuse to print as clean; the report path writes nothing — only --snapshot-xlsx "
+    + "copies, and the module never deletes; and the copy is a DELTA against every existing snapshot, "
+    + "because a full 56 MB copy taken daily would write ~20 GB a year onto a 21.9 GB drive)",
   runRepoDoctorXlsxSnapshotTests,
 );
 await runTest(
