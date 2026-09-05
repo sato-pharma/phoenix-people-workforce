@@ -27,6 +27,8 @@
 //      an answer actually experiences. Neither alone is honest.
 
 import { isBatchActor } from "@/lib/recruitment/batch-actor";
+import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** Below this, a channel gets counts but no percentage. */
 export const MIN_CHANNEL_CANDIDATES = 20;
@@ -165,4 +167,106 @@ export function buildFunnel(steps: readonly { label: string; count: number }[]):
         previous === null || previous === 0 ? null : step.count / previous,
     };
   });
+}
+
+
+// ── reading it out of the database ──────────────────────────────────────────────────────────────
+//
+// PAGED, because a PostgREST select stops at 1000 rows with no marker of any kind — the read simply
+// returns 1000 and looks complete. There are 733 candidates and thousands of status events today,
+// so an unpaged read would silently compute these rates over a truncated pool and every figure
+// would be wrong in the same direction.
+//
+// Ordered by a column plus the id, so the order is TOTAL: without the tiebreak two rows written in
+// the same millisecond can appear on two consecutive pages, or on neither.
+const PAGE_SIZE = 500;
+const MAX_PAGES = 200;
+
+async function readAllPages<T>(
+  table: string,
+  columns: string,
+  orderColumn: string,
+): Promise<T[]> {
+  const supabase = getSupabaseAdmin();
+  const rows: T[] = [];
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const from = page * PAGE_SIZE;
+    const { data, error } = await supabase
+      .from(table)
+      .select(columns)
+      .order(orderColumn, { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    const batch = (data ?? []) as unknown as T[];
+    rows.push(...batch);
+    // A short page is the last page. Checking the length rather than asking for a count keeps this
+    // to one round trip per page.
+    if (batch.length < PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+export type HiringAnalytics = {
+  channels: ChannelEffectiveness[];
+  funnel: FunnelStep[];
+  generatedAt: string;
+  totalCandidates: number;
+};
+
+/**
+ * The whole report, for the dashboard.
+ *
+ * The permission is asserted HERE and not only in the route: this is the security boundary, and a
+ * second caller added later would otherwise inherit an unguarded read of every candidate.
+ */
+export async function loadHiringAnalytics(access: AccessContext): Promise<HiringAnalytics> {
+  await assertPermission(access, "candidates", "read");
+
+  const [candidateRows, eventRows] = await Promise.all([
+    readAllPages<{ id: string; source: string | null; created_at: string | null }>(
+      "ats_candidates",
+      "id,source,created_at",
+      "created_at",
+    ),
+    readAllPages<{
+      id: string;
+      candidate_id: string | null;
+      created_at: string | null;
+      to_status: string | null;
+      actor_hr_id: string | null;
+    }>("ats_candidate_status_events", "id,candidate_id,created_at,to_status,actor_hr_id", "created_at"),
+  ]);
+
+  const candidates: AnalyticsCandidate[] = candidateRows.map((row) => ({
+    id: String(row.id),
+    source: row.source,
+    createdAt: row.created_at,
+  }));
+  const events: AnalyticsStatusEvent[] = eventRows.map((row) => ({
+    candidateId: String(row.candidate_id ?? ""),
+    createdAt: row.created_at,
+    toStatus: row.to_status,
+    actorHrId: row.actor_hr_id,
+  }));
+
+  const supabase = getSupabaseAdmin();
+  // count(*) rather than a select length, for the same reason the reads above are paged.
+  const [applications, interviews, offers] = await Promise.all([
+    supabase.from("ats_applications").select("id", { count: "exact", head: true }),
+    supabase.from("ats_interviews").select("id", { count: "exact", head: true }),
+    supabase.from("ats_offers").select("id", { count: "exact", head: true }),
+  ]);
+
+  return {
+    channels: buildChannelEffectiveness(candidates, events),
+    funnel: buildFunnel([
+      { label: "Candidates", count: candidates.length },
+      { label: "Applications", count: applications.count ?? 0 },
+      { label: "Interviews", count: interviews.count ?? 0 },
+      { label: "Offers", count: offers.count ?? 0 },
+    ]),
+    generatedAt: new Date().toISOString(),
+    totalCandidates: candidates.length,
+  };
 }
