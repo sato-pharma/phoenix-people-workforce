@@ -313,20 +313,30 @@ export async function runHrCommandCenterTests() {
   // assertion would have been a control that passes because its claim is stale, which is worse
   // than no control at all.
   //
-  // /hr/offers replaces it, and it is a stronger control because it discriminates in BOTH
-  // directions on the SAME href: offers:read is a recruiting grant, so HR Advisory is offered the
-  // row and HR Operations is not. A one-sided check cannot tell "correctly rejected" from
-  // "rejects everything"; this one can.
+  // /hr/cv-database is the subject, and it discriminates in BOTH directions on the SAME href:
+  // recruitment:read is a recruiting grant, so HR Advisory is offered the row and HR Operations is
+  // not. A one-sided check cannot tell "correctly rejected" from "rejects everything"; this can.
+  //
+  // It replaced /hr/offers on 2026-09-05, which had itself replaced /hr/admin/deductions. The
+  // offers row was hidden that day — ats_offers held ZERO rows and no application had ever been
+  // converted to an employee — so a control asserting it is still offered would have been exactly
+  // the stale claim the note above warns about, and worse than no control at all.
+  //
+  // The replacement is deliberately a PLAIN PERMISSION row rather than a role-set one: /hr/offers
+  // and /hr/recruitment/manager-engagement both discriminate correctly today, but a role set is a
+  // named list that an owner ruling can change without touching a grant, which is how the previous
+  // control went stale. recruitment:read is Advisory's by bundle and Operations holds no
+  // recruitment grant at all, so this control moves only if the seats themselves are redefined.
   assert.ok(
-    !offeredHrefs("HR Operations").has("/hr/offers"),
-    "/hr/offers is offered to HR Operations — she holds no offers grant, so if this set now " +
-      "admits it, the offered-set check has stopped discriminating and every tile assertion " +
+    !offeredHrefs("HR Operations").has("/hr/cv-database"),
+    "/hr/cv-database is offered to HR Operations — she holds no recruitment grant, so if this set " +
+      "now admits it, the offered-set check has stopped discriminating and every tile assertion " +
       "above is blind",
   );
   assert.ok(
-    offeredHrefs("HR Advisory").has("/hr/offers"),
-    "/hr/offers is NOT offered to HR Advisory — offers is hers, so this set is now rejecting " +
-      "everything and the control above passes for the wrong reason",
+    offeredHrefs("HR Advisory").has("/hr/cv-database"),
+    "/hr/cv-database is NOT offered to HR Advisory — recruitment is hers, so this set is now " +
+      "rejecting everything and the control above passes for the wrong reason",
   );
 
   // The row that replaced it as a subject, pinned as a fact rather than left implied. Both

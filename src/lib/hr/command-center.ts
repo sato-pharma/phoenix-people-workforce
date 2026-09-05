@@ -387,11 +387,14 @@ const TILES_BY_FUNCTION: Record<
       );
     }
 
-    // Offers load separately, so a failure there costs this one tile rather than the whole group.
-    if (loaded.offers) {
-      const awaiting = loaded.offers.filter((offer) => offer.status === "sent").length;
-      tiles.push(tile("offers-sent", "Offers Out", awaiting, "awaiting a reply", "/hr/offers", awaiting > 0 ? "amber" : "slate"));
-    }
+    // NO "Offers Out" tile. It counted offers awaiting a reply and linked to /hr/offers; the owner
+    // hid that surface on 2026-09-05 because ats_offers held ZERO rows and no application had ever
+    // been converted to an employee, so the tile reported nothing and led to a row this seat is no
+    // longer offered. A tile that leads nowhere is what hr-command-center.test.ts refuses, and it
+    // is right to: a dead link on a command centre is worse than an absent one.
+    //
+    // The offers LOADER is deliberately left in SOURCES_BY_FUNCTION. It costs one read, it keeps the
+    // group's failure isolation honest, and restoring the tile is re-adding these three lines.
     return tiles;
   },
 
