@@ -1406,6 +1406,7 @@ import { runEmployeeImportJobTitleCasingTests } from "./employee-import-job-titl
 import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-cairo-clock.test.ts";
 
 import { runEmployeeSavePreservesSalaryTests } from "./employee-save-preserves-salary.test.ts";
+import { runReact418HydrationSafeTextTests } from "./react-418-hydration-safe-text.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4440,6 +4441,7 @@ await runTest(
 );
 
 await runTest("employee save preserves stored salary when the payload omits money fields", runEmployeeSavePreservesSalaryTests);
+await runTest("hydration-safe Cairo text: engine-independent month names, server-formatted password-setup expiry, guarded portal clock (React #418)", runReact418HydrationSafeTextTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

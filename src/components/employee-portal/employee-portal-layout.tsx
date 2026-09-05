@@ -804,7 +804,28 @@ export function EmployeePortalTopNav({
           <InternalMessagesMenu isAdminMode={false} />
           <div className="hidden items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-semibold text-slate-500 lg:flex">
             <CalendarClock className="h-3 w-3 text-slate-400" />
-            <span className="whitespace-nowrap">
+            {/* READS THE CLOCK DURING RENDER, and that is why it carries suppressHydrationWarning.
+
+                The zone is already pinned to Cairo and the en-US abbreviations are stable across
+                every ICU version, so the FORMAT is not the problem here — the INSTANT is. This is a
+                client component: Node evaluates `new Date()` when the HTML is built and the browser
+                evaluates it again when React hydrates. Almost always the two land on the same Cairo
+                day and the text matches; across the midnight boundary they do not, and React then
+                discards the server HTML for the whole shell and re-renders it (hydration error
+                #418, seen on /employee-portals/plans at 23:28 Cairo on 2026-09-05).
+
+                suppressHydrationWarning is React's own answer for exactly this — a rendered clock —
+                and it is a real fix rather than a muted warning: react-dom checks the flag BEFORE
+                calling throwOnHydrationMismatch, so no recoverable error is raised and nothing
+                reaches GlobalErrorReporter. React keeps the server's text, which is the better of
+                the two anyway: the Railway clock is authoritative where a phone's may simply be
+                wrong. It applies one level deep, to this span's own text and nothing else.
+
+                Do NOT widen it to a parent, and do not copy it onto a value that MATTERS. It is
+                right for a decorative today-chip and wrong for anything a reader would act on —
+                there, format on the server and pass the finished string down, the way
+                app/password-setup/[token]/page.tsx does. */}
+            <span className="whitespace-nowrap" suppressHydrationWarning>
               {new Date().toLocaleDateString("en-US", { day: "numeric", month: "short", timeZone: "Africa/Cairo", year: "numeric" })}
             </span>
           </div>
