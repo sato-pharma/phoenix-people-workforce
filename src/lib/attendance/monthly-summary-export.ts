@@ -2,14 +2,20 @@ import ExcelJS from "exceljs";
 
 import { systemDocuments } from "@/config/system-settings";
 import {
+  attendanceSeverityFont,
+  styleAttendanceBodyRow,
+  styleAttendanceHeaderRow,
+  writeAttendanceMasthead,
+  writeAttendanceNote,
+  type AttendanceSeverity,
+} from "@/lib/attendance/attendance-sheet-style";
+import {
   attendanceMonthlyCycleNote,
   type MonthlyAttendanceSummaryData,
   type MonthlyAttendanceSummaryRow,
 } from "@/lib/attendance/monthly-summary";
 
-const phoenixOrange = "FFF97316";
-const phoenixSlate = "FF0F172A";
-const softBorder = "FFE2E8F0";
+
 
 const summaryColumns: Array<{ key: keyof MonthlyAttendanceSummaryRow; label: string }> = [
   { key: "employeeHrId", label: "Employee ID" },
@@ -32,39 +38,15 @@ const summaryColumns: Array<{ key: keyof MonthlyAttendanceSummaryRow; label: str
   { key: "totalDeductionValue", label: "Deduction Value" },
 ];
 
-function styleTitle(cell: ExcelJS.Cell) {
-  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: phoenixOrange } };
-  cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 16 };
-  cell.alignment = { horizontal: "center", vertical: "middle" };
-}
-
-function styleHeader(row: ExcelJS.Row) {
-  row.height = 24;
-  row.eachCell((cell) => {
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: phoenixSlate } };
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
-    cell.alignment = { horizontal: "center", vertical: "middle" };
-    cell.border = {
-      bottom: { style: "thin", color: { argb: softBorder } },
-      left: { style: "thin", color: { argb: softBorder } },
-      right: { style: "thin", color: { argb: softBorder } },
-      top: { style: "thin", color: { argb: softBorder } },
-    };
-  });
-}
-
-function styleBody(row: ExcelJS.Row) {
-  row.eachCell((cell) => {
-    cell.font = { color: { argb: phoenixSlate }, size: 10 };
-    cell.alignment = { vertical: "middle" };
-    cell.border = { bottom: { style: "thin", color: { argb: "FFF1F5F9" } } };
-  });
-}
-
-function absentFill(absentDays: number) {
-  if (absentDays <= 0) return "FFD1FAE5";
-  if (absentDays <= 2) return "FFFFEDD5";
-  return "FFFFE4E6";
+/**
+ * Absences, as a grade. Same three steps the cell fills used to draw, carried by type — and by the
+ * same helper the fingerprint report grades its Status column with, so "2 absences" here and "Short
+ * day" there mean the same thing to someone who opens both.
+ */
+function absentSeverity(absentDays: number): AttendanceSeverity {
+  if (absentDays <= 0) return "normal";
+  if (absentDays <= 2) return "watch";
+  return "alert";
 }
 
 export async function generateMonthlyAttendanceSummaryWorkbook(data: MonthlyAttendanceSummaryData) {
@@ -74,15 +56,17 @@ export async function generateMonthlyAttendanceSummaryWorkbook(data: MonthlyAtte
   workbook.modified = new Date();
 
   const sheet = workbook.addWorksheet("Monthly Summary", {
-    views: [{ state: "frozen", ySplit: 4 }],
+    views: [{ showGridLines: false, state: "frozen", ySplit: 6 }],
   });
 
   const columnCount = summaryColumns.length;
-  sheet.mergeCells(1, 1, 1, columnCount);
-  styleTitle(sheet.getCell(1, 1));
-  sheet.getCell(1, 1).value = `Monthly Attendance Summary — ${data.month}`;
+  writeAttendanceMasthead(workbook, sheet, {
+    columns: columnCount,
+    provenance: [`${data.totals.employees} employee${data.totals.employees === 1 ? "" : "s"}`],
+    subtitle: `${data.dateFrom} to ${data.dateTo}`,
+    title: `Monthly Attendance Summary — ${data.month}`,
+  });
 
-  sheet.mergeCells(2, 1, 2, columnCount);
   // The absence figures must never leave this file looking complete when they are not: a day the
   // attendance device never reported is excluded from Expected/Absent upstream, and is called out
   // here so nobody reads a quiet month as a well-behaved one.
@@ -91,38 +75,34 @@ export async function generateMonthlyAttendanceSummaryWorkbook(data: MonthlyAtte
       `${data.missingDataDates.length === 1 ? "day" : "days"} (${data.missingDataDates.join(", ")}), ` +
       `excluded from Expected and Absent`
     : "";
-  sheet.getCell(2, 1).value =
-    `Period: ${data.dateFrom} to ${data.dateTo} | Employees: ${data.totals.employees} | ` +
-    `Expected: ${data.totals.expectedWorkingDays} | Present: ${data.totals.presentDays} | ` +
-    `Absent: ${data.totals.absentDays} (${data.totals.absenceRate}%) | Late: ${data.totals.lateCount}` +
-    missingDataNote;
-  sheet.getCell(2, 1).font = data.missingDataDates.length > 0
-    ? { bold: true, color: { argb: "FFB91C1C" } }
-    : { color: { argb: "FF475569" }, italic: true };
-  sheet.getCell(2, 1).alignment = { horizontal: "center" };
+  // Row 4 carries the totals AND, when data is missing, the warning — flagged, because a month the
+  // device never fully reported must not read as a well-behaved one.
+  writeAttendanceNote(
+    sheet,
+    4,
+    columnCount,
+    `Period: ${data.dateFrom} to ${data.dateTo} · Employees: ${data.totals.employees} · ` +
+      `Expected: ${data.totals.expectedWorkingDays} · Present: ${data.totals.presentDays} · ` +
+      `Absent: ${data.totals.absentDays} (${data.totals.absenceRate}%) · Late: ${data.totals.lateCount}` +
+      missingDataNote,
+    { alert: data.missingDataDates.length > 0 },
+  );
 
-  sheet.mergeCells(3, 1, 3, columnCount);
-  sheet.getCell(3, 1).value = attendanceMonthlyCycleNote;
-  sheet.getCell(3, 1).font = { bold: true, color: { argb: phoenixOrange }, italic: true };
-  sheet.getCell(3, 1).alignment = { horizontal: "center" };
+  writeAttendanceNote(sheet, 5, columnCount, attendanceMonthlyCycleNote);
 
-  sheet.addRow(summaryColumns.map((column) => column.label));
-  styleHeader(sheet.getRow(4));
+  sheet.getRow(6).values = summaryColumns.map((column) => column.label);
+  styleAttendanceHeaderRow(sheet.getRow(6));
 
   const absentIndex = summaryColumns.findIndex((column) => column.key === "absentDays") + 1;
 
-  for (const row of data.rows) {
-    const excelRow = sheet.addRow(summaryColumns.map((column) => row[column.key] ?? ""));
-    styleBody(excelRow);
+  data.rows.forEach((row, index) => {
+    const excelRow = sheet.getRow(7 + index);
+    excelRow.values = summaryColumns.map((column) => row[column.key] ?? "");
+    styleAttendanceBodyRow(excelRow, { zebra: index % 2 === 1 });
     if (absentIndex > 0) {
-      excelRow.getCell(absentIndex).fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: absentFill(row.absentDays) },
-      };
-      excelRow.getCell(absentIndex).font = { bold: true, color: { argb: phoenixSlate }, size: 10 };
+      excelRow.getCell(absentIndex).font = attendanceSeverityFont(absentSeverity(row.absentDays));
     }
-  }
+  });
 
   summaryColumns.forEach((column, index) => {
     const longest = Math.max(
@@ -132,9 +112,11 @@ export async function generateMonthlyAttendanceSummaryWorkbook(data: MonthlyAtte
     sheet.getColumn(index + 1).width = Math.min(Math.max(longest + 3, 12), 32);
   });
 
+  // Row 6, following the header. It was 4 — which is now the totals/warning note, so the filter
+  // would have been attached to a merged banner rather than to the table.
   sheet.autoFilter = {
-    from: { column: 1, row: 4 },
-    to: { column: columnCount, row: 4 },
+    from: { column: 1, row: 6 },
+    to: { column: columnCount, row: 6 },
   };
 
   return workbook;

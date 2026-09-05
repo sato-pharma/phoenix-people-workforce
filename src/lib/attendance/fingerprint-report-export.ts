@@ -1,45 +1,27 @@
 import ExcelJS from "exceljs";
 
 import { systemDocuments } from "@/config/system-settings";
+import {
+  attendanceSeverityFont,
+  styleAttendanceBodyRow,
+  styleAttendanceHeaderRow,
+  writeAttendanceMasthead,
+  writeAttendanceNote,
+  type AttendanceSeverity,
+} from "@/lib/attendance/attendance-sheet-style";
 import type { FingerprintReportData, FingerprintReportRow } from "@/lib/attendance/fingerprint-report";
 
-const phoenixOrange = "FFF97316";
-const phoenixSlate = "FF0F172A";
-const softBorder = "FFE2E8F0";
-
-function styleTitle(cell: ExcelJS.Cell) {
-  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: phoenixOrange } };
-  cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 16 };
-  cell.alignment = { horizontal: "center", vertical: "middle" };
-}
-
-function styleHeader(row: ExcelJS.Row) {
-  row.height = 24;
-  row.eachCell((cell) => {
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: phoenixSlate } };
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
-    cell.alignment = { horizontal: "center", vertical: "middle" };
-    cell.border = {
-      bottom: { style: "thin", color: { argb: softBorder } },
-      left: { style: "thin", color: { argb: softBorder } },
-      right: { style: "thin", color: { argb: softBorder } },
-      top: { style: "thin", color: { argb: softBorder } },
-    };
-  });
-}
-
-function styleBody(row: ExcelJS.Row) {
-  row.eachCell((cell) => {
-    cell.font = { color: { argb: phoenixSlate }, size: 10 };
-    cell.alignment = { vertical: "middle" };
-    cell.border = { bottom: { style: "thin", color: { argb: "FFF1F5F9" } } };
-  });
-}
-
-function statusFill(status: string) {
-  if (status === "Complete") return "FFD1FAE5";
-  if (status === "Short day") return "FFFFEDD5";
-  return "FFFFE4E6";
+/**
+ * The day's status, as a grade.
+ *
+ * Was a green / orange / pink cell fill. It is the same three steps, carried by type — see
+ * `attendance-sheet-style` for why, and so that this report and the monthly summary grade a cell
+ * the same way rather than each inventing a scale.
+ */
+function statusSeverity(status: string): AttendanceSeverity {
+  if (status === "Complete") return "normal";
+  if (status === "Short day") return "watch";
+  return "alert";
 }
 
 function rowValues(data: FingerprintReportData, row: FingerprintReportRow) {
@@ -57,28 +39,33 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
   });
 
   const columnCount = data.columns.length;
-  sheet.mergeCells(1, 1, 1, columnCount);
-  styleTitle(sheet.getCell(1, 1));
-  sheet.getCell(1, 1).value = systemDocuments.titles.fingerprintAttendanceReport;
+  // Masthead on rows 1-3, the period note on 4, headers on 5 — the row the frozen pane already
+  // expected, so nothing that reads this sheet moves.
+  writeAttendanceMasthead(workbook, sheet, {
+    columns: columnCount,
+    provenance: [`${data.summary.rows} row${data.summary.rows === 1 ? "" : "s"}`],
+    subtitle: `${data.filters.dateFrom} to ${data.filters.dateTo}`,
+    title: systemDocuments.titles.fingerprintAttendanceReport,
+  });
+  writeAttendanceNote(
+    sheet,
+    4,
+    columnCount,
+    `Period: ${data.filters.dateFrom} to ${data.filters.dateTo} · Rows: ${data.summary.rows} · Deduction flags: ${data.summary.deductions}`,
+  );
 
-  sheet.mergeCells(2, 1, 2, columnCount);
-  sheet.getCell(2, 1).value = `Period: ${data.filters.dateFrom} to ${data.filters.dateTo} | Rows: ${data.summary.rows} | Deduction Flags: ${data.summary.deductions}`;
-  sheet.getCell(2, 1).font = { color: { argb: "FF475569" }, italic: true };
-  sheet.getCell(2, 1).alignment = { horizontal: "center" };
+  sheet.getRow(5).values = data.columns.map((column) => column.label);
+  styleAttendanceHeaderRow(sheet.getRow(5));
 
-  sheet.addRow([]);
-  sheet.addRow(data.columns.map((column) => column.label));
-  styleHeader(sheet.getRow(4));
-
-  for (const row of data.rows) {
-    const excelRow = sheet.addRow(rowValues(data, row));
-    styleBody(excelRow);
-    const statusIndex = data.columns.findIndex((column) => column.key === "status") + 1;
+  const statusIndex = data.columns.findIndex((column) => column.key === "status") + 1;
+  data.rows.forEach((row, index) => {
+    const excelRow = sheet.getRow(6 + index);
+    excelRow.values = rowValues(data, row);
+    styleAttendanceBodyRow(excelRow, { zebra: index % 2 === 1 });
     if (statusIndex > 0) {
-      excelRow.getCell(statusIndex).fill = { type: "pattern", pattern: "solid", fgColor: { argb: statusFill(row.status) } };
-      excelRow.getCell(statusIndex).font = { bold: true, color: { argb: phoenixSlate }, size: 10 };
+      excelRow.getCell(statusIndex).font = attendanceSeverityFont(statusSeverity(row.status));
     }
-  }
+  });
 
   data.columns.forEach((column, index) => {
     const longest = Math.max(
@@ -89,8 +76,8 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
   });
 
   sheet.autoFilter = {
-    from: { column: 1, row: 4 },
-    to: { column: columnCount, row: 4 },
+    from: { column: 1, row: 5 },
+    to: { column: columnCount, row: 5 },
   };
 
   const policySheet = workbook.addWorksheet("Policy Details", {
@@ -109,8 +96,8 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
     "Effective From",
     "Effective To",
   ]);
-  styleHeader(policySheet.getRow(1));
-  for (const row of data.policyDetails) {
+  styleAttendanceHeaderRow(policySheet.getRow(1));
+  data.policyDetails.forEach((row, index) => {
     const excelRow = policySheet.addRow([
       row.employeeHrId,
       row.employeeName,
@@ -124,8 +111,8 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
       row.effectiveFrom,
       row.effectiveTo,
     ]);
-    styleBody(excelRow);
-  }
+    styleAttendanceBodyRow(excelRow, { zebra: index % 2 === 1 });
+  });
   policySheet.columns.forEach((column) => {
     column.width = 18;
   });
@@ -140,10 +127,11 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
     ["Workdays", "When an attendance policy has custom workdays, only those weekdays are expected attendance days. Empty workdays use the standard company weekend policy."],
     ["Approved Vacation/Leave, Approved Excuse, CRM Activity, Weekly Plan", "Supporting evidence only -- these columns do not change this report's own Status/Deduction figures. They show what Phoenix vacation/excuse requests, the CRM (iReports360) mirror, and the employee's approved weekly plan record for that same day, so a reviewer can manually cross-check a flagged day the same way the Employee Day-by-Day Report's reconciliation does."],
   ]);
-  styleHeader(notesSheet.getRow(1));
+  styleAttendanceHeaderRow(notesSheet.getRow(1));
   for (let row = 2; row <= notesSheet.rowCount; row += 1) {
-    styleBody(notesSheet.getRow(row));
+    styleAttendanceBodyRow(notesSheet.getRow(row), { zebra: row % 2 === 1 });
   }
+  notesSheet.views = [{ showGridLines: false }];
 
   return workbook;
 }

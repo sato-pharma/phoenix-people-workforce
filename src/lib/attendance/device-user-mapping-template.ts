@@ -1,6 +1,11 @@
 import ExcelJS from "exceljs";
 
 import { systemDocuments } from "@/config/system-settings";
+import {
+  styleAttendanceBodyRow,
+  styleAttendanceHeaderRow,
+  writeAttendanceMasthead,
+} from "@/lib/attendance/attendance-sheet-style";
 import { saveAttendanceDeviceUserMapping } from "@/lib/attendance/device-user-mapping";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -64,29 +69,6 @@ function buildHeaderMap(worksheet: ExcelJS.Worksheet, headerRowNumber: number) {
   return map;
 }
 
-function styleHeaderRow(row: ExcelJS.Row) {
-  row.height = 24;
-  row.eachCell((cell) => {
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F172A" } };
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
-    cell.alignment = { horizontal: "center", vertical: "middle" };
-    cell.border = {
-      bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
-      left: { style: "thin", color: { argb: "FFE2E8F0" } },
-      right: { style: "thin", color: { argb: "FFE2E8F0" } },
-      top: { style: "thin", color: { argb: "FFE2E8F0" } },
-    };
-  });
-}
-
-function styleBodyRow(row: ExcelJS.Row) {
-  row.eachCell((cell) => {
-    cell.font = { color: { argb: "FF0F172A" }, size: 10 };
-    cell.alignment = { vertical: "middle" };
-    cell.border = { bottom: { style: "thin", color: { argb: "FFF1F5F9" } } };
-  });
-}
-
 export async function generateDeviceMappingTemplateWorkbook() {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = systemDocuments.workbookCreator;
@@ -94,32 +76,34 @@ export async function generateDeviceMappingTemplateWorkbook() {
   workbook.modified = new Date();
 
   const sheet = workbook.addWorksheet("Device User Mapping", {
-    views: [{ state: "frozen", ySplit: 4 }],
+    views: [{ showGridLines: false, state: "frozen", ySplit: 4 }],
   });
 
-  sheet.mergeCells("A1:E1");
-  sheet.getCell("A1").value = systemDocuments.titles.attendanceDeviceUserMapping;
-  sheet.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF97316" } };
-  sheet.getCell("A1").font = { bold: true, color: { argb: "FFFFFFFF" }, size: 15 };
-  sheet.getCell("A1").alignment = { horizontal: "center" };
+  // Masthead on rows 1-3, headers on row 4 — exactly where they already were, which matters here
+  // more than anywhere else in this pass: this template is UPLOADED BACK, and `findHeaderRow` scans
+  // rows 1-10 for the row carrying every template header. The old layout wrote the title, the
+  // subtitle, then an EMPTY row via `addRow([])`, which landed the headers on 4 by arithmetic. The
+  // masthead already occupies three rows, so that empty row is gone — leaving it would have pushed
+  // the headers to 5 and, with them, the autofilter and the sample rows.
+  writeAttendanceMasthead(workbook, sheet, {
+    columns: templateHeaders.length,
+    subtitle:
+      "Fill one row per fingerprint device user. employee_hr_id must exist in Phoenix employees.",
+    title: systemDocuments.titles.attendanceDeviceUserMapping,
+  });
 
-  sheet.mergeCells("A2:E2");
-  sheet.getCell("A2").value = "Fill one row per fingerprint device user. employee_hr_id must exist in Phoenix employees.";
-  sheet.getCell("A2").font = { color: { argb: "FF475569" }, italic: true };
-  sheet.getCell("A2").alignment = { horizontal: "center" };
-
-  sheet.addRow([]);
-  sheet.addRow([...templateHeaders]);
-  styleHeaderRow(sheet.getRow(4));
+  sheet.getRow(4).values = [...templateHeaders];
+  styleAttendanceHeaderRow(sheet.getRow(4));
 
   const sampleRows = [
     [defaultDeviceId, "1", "B-185", true, "Example row - replace or delete"],
     [defaultDeviceId, "2", "B-210", true, "Example row - replace or delete"],
   ];
-  for (const sample of sampleRows) {
-    const row = sheet.addRow(sample);
-    styleBodyRow(row);
-  }
+  sampleRows.forEach((sample, index) => {
+    const row = sheet.getRow(5 + index);
+    row.values = sample;
+    styleAttendanceBodyRow(row, { zebra: index % 2 === 1 });
+  });
 
   sheet.columns = [
     { key: "device_id", width: 22 },
@@ -149,9 +133,9 @@ export async function generateDeviceMappingTemplateWorkbook() {
     ["is_active", "TRUE means Phoenix will resolve punches for this device user. FALSE disables the mapping."],
     ["notes", "Optional. Not imported into attendance calculations."],
   ]);
-  styleHeaderRow(instructions.getRow(1));
+  styleAttendanceHeaderRow(instructions.getRow(1));
   for (let row = 2; row <= instructions.rowCount; row += 1) {
-    styleBodyRow(instructions.getRow(row));
+    styleAttendanceBodyRow(instructions.getRow(row), { zebra: row % 2 === 1 });
   }
 
   return workbook;
