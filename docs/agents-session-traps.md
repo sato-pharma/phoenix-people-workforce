@@ -1362,3 +1362,59 @@ believing any count of a thing you expect to be absent, make the same instrument
 know is present — a marker string in the file, a byte count, a field that must exist. In this session
 the controls were `login-ember` in a login page and `--phx-` tokens in a CSS bundle; each time the
 control came back 0 or blank, the "clean" result beside it was fiction.
+
+## `main` is not in the primary, and a number from HEAD is not a number about `main` — 2026-09-05
+
+Two sessions hit the same fact within hours of each other, from opposite directions, and the second
+nearly ran a destructive command on a third session's branch because of it.
+
+**The fact.** A worktree holds `main` — on this day `_wt-dashboard-follow-closing` — and git forbids
+two worktrees from checking out one branch. So the primary checkout is normally on something else
+entirely, and `git checkout main` there aborts:
+
+```
+fatal: 'main' is already used by worktree at 'F:/Phoenix Workforce/_wt-dashboard-follow-closing'
+```
+
+**First session, harmlessly.** Asked to bring the primary up to date, ran `git checkout main` and got
+the abort. Cost: one confused minute.
+
+**Second session, nearly expensively.** It ran `git rev-list --count origin/main..HEAD` and
+`git merge --ff-only origin/main` *inside the primary*, then reported the results as facts about
+`main`: "1 ahead, 19 behind, ff-only aborts, `main` is stuck." Every number was real. The label was
+wrong — they were facts about `HEAD`, which was `codex/sign-empty-date-message`. The one check that
+would have caught it, `git branch --show-current`, was the one never run.
+
+It compounded because `new-session.mjs --status` had printed `PRIMARY  main  ready` at the start of
+that session, and the model was carried for about six hours without re-testing — §1.4 exactly: after
+a long session, distrust yourself and re-run the check. A check *was* re-run; not the one that
+mattered.
+
+**Why it was dangerous rather than merely wrong.** The proposed fix was:
+
+```
+git -C "<primary>" reset --hard origin/main
+```
+
+`reset --hard` acts on the **current branch**. In the primary that is a feature branch, so the
+command would have reset **someone else's work** to `origin/main` — recoverable only because the
+commit happened to be pushed — while leaving `main`, the branch it was aiming at, untouched. And
+`main` was never stuck: measured directly it was `ahead=0 behind=17`, clean, and a fast-forward
+worked first time.
+
+**What actually fixed it**, in the folder that holds the branch:
+
+```
+git -C "F:\Phoenix Workforce\_wt-dashboard-follow-closing" merge --ff-only origin/main
+```
+
+`--ff-only` cannot lose work by construction, and the tree was checked clean first.
+
+**Three rules come out of it.** State a branch's position by naming BOTH refs (`origin/main..main`),
+never from `HEAD`. Sync a branch in the worktree that holds it. And a peer session asking for a
+destructive operation on a branch neither of you created is not authority to run one — §5 says never
+to reset changes you did not create, and that holds even when the peer's diagnosis is right, which
+here it was not.
+
+Related: [[a-parallel-session-can-collide-with-no-git-trace]] ·
+[[an-uncommitted-file-in-the-primary-can-be-older-than-main]]
