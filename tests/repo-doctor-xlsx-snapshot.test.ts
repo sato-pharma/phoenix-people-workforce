@@ -188,7 +188,9 @@ export async function runRepoDoctorXlsxSnapshotTests() {
     const first = takeXlsxSnapshot({ repoRoot: repo, snapshotRoot: root, now: Date.UTC(2026, 8, 5) });
     assert.equal(first.copied, 2, "the first run has no earlier snapshot, so it copies everything");
     assert.equal(first.mismatched.length, 0, "every copy must verify by SHA256");
-    assert.ok(readdirSync(first.dir).includes("MANIFEST.txt"), "a snapshot without a manifest cannot be audited");
+    const firstDir = first.dir;
+    assert.ok(firstDir, "a run that copied something must name the directory it wrote to");
+    assert.ok(readdirSync(firstDir).includes("MANIFEST.txt"), "a snapshot without a manifest cannot be audited");
 
     // The owner fills one sheet in and adds another. The untouched one must NOT be copied again.
     writeFileSync(join(repo, "xlsx", "gets-filled-in.xlsx"), "b".repeat(4096));
@@ -197,7 +199,9 @@ export async function runRepoDoctorXlsxSnapshotTests() {
     const second = takeXlsxSnapshot({ repoRoot: repo, snapshotRoot: root, now: Date.UTC(2026, 8, 6) });
     assert.equal(second.copied, 2, "only the changed sheet and the new one");
     assert.equal(second.skipped, 1, "the untouched sheet is already held and must be skipped");
-    const wrote = readdirSync(second.dir).filter((n) => n !== "MANIFEST.txt").sort();
+    const secondDir = second.dir;
+    assert.ok(secondDir, "a delta that copied something must name the directory it wrote to");
+    const wrote = readdirSync(secondDir).filter((n: string) => n !== "MANIFEST.txt").sort();
     assert.deepEqual(wrote, ["brand-new.xlsx", "gets-filled-in.xlsx"]);
     assert.ok(
       !wrote.includes("keeps-still.xlsx"),
@@ -206,7 +210,7 @@ export async function runRepoDoctorXlsxSnapshotTests() {
 
     // A delta is only restorable if its manifest says so. A folder holding two of three files, with
     // nothing explaining that, is a backup someone will restore from and quietly lose a file.
-    const manifest = readFileSync(join(second.dir, "MANIFEST.txt"), "utf8");
+    const manifest = readFileSync(join(secondDir, "MANIFEST.txt"), "utf8");
     assert.match(manifest, /THIS IS A DELTA/);
     assert.match(manifest, /DATE ORDER, oldest first/);
 
