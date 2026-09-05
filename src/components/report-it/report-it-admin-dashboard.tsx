@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { AlertTriangle, ChevronDown, ChevronUp, RefreshCw, X } from "lucide-react";
+import { cairoDate } from "@/lib/format/cairo-datetime";
 import type { ReportItKpis } from "@/lib/report-it/service";
 import type { ReportItReportRow } from "@/lib/report-it/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -347,7 +348,13 @@ export function ReportItAdminDashboard({ kpis, initialRows, initialTotal }: Prop
         </p>
         <ExportXlsxButton
           title="Pharmacovigilance Reports"
-          subtitle={`Exported ${new Date().toLocaleDateString()}`}
+          // Cairo-pinned via the shared formatter, not the runtime's own zone: this used to be
+          // `new Date().toLocaleDateString()` with no timeZone, which renders in whichever zone
+          // the RUNTIME happens to be in. This prop is only read inside ExportXlsxButton's click
+          // handler (never rendered to the DOM), so unlike admin-profile-form.tsx it can't throw
+          // a React hydration error — but the exported file's "Exported" date still shouldn't
+          // depend on the caller's own zone rather than Phoenix's Cairo business date.
+          subtitle={`Exported ${cairoDate(new Date().toISOString())}`}
           sheetName="Reports"
           columns={EXPORT_COLUMNS}
           rows={rows.map(rowToExport)}
