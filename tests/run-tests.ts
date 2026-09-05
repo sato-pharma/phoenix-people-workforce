@@ -848,6 +848,7 @@ import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
 import { runSosDirectCleanupSafetyTests } from "./sos-direct-cleanup-safety.test.ts";
+import { runClosingPublicationSnapshotTests } from "./closing-publication-snapshot.test.ts";
 import { runOfficialNumbersExcludeWeeklyTests } from "./official-numbers-exclude-weekly.test.ts";
 import { runLactoLineFamilyGroupingTests } from "./lacto-line-family-grouping.test.ts";
 import { runIdentityCardSignatureLockTests } from "./identity-card-signature-lock.test.ts";
@@ -2847,6 +2848,7 @@ await runTest("SoS seat attribution (today's wiring, departed reps keep their cr
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
 await runTest('SoS direct cleanup refuses the live vintage and an incomplete backup', runSosDirectCleanupSafetyTests);
+await runTest('Publishing a closing records what was published (insert-only snapshot)', runClosingPublicationSnapshotTests);
 await runTest('SALES TRUTH (one area, one number — every surface reconciles to Monthly Closing)', runSalesTruthNoMismatchTests);
 await runTest('RULE #1 Monthly Closing is the only truth (the official-number engine never imports the weekly pipeline)', runOfficialNumbersExcludeWeeklyTests);
 await runTest('Lacto (line, family) key (family_code LA is shared across Pedia + Head Office; never group on it alone)', runLactoLineFamilyGroupingTests);

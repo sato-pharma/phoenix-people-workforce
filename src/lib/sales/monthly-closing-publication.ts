@@ -197,6 +197,20 @@ export async function publishClosing(input: {
   // mail cannot be recalled by unpublishing. See src/lib/sales/closing-period-gate.ts.
   assertClosingPeriodComplete(period);
 
+  // THE SNAPSHOT IS TAKEN BY THE DATABASE, NOT HERE — and this payload must stay four columns.
+  //
+  // `trg_publication_take_snapshot` (BEFORE INSERT on monthly_closing_publications) fills
+  // snapshot_units / snapshot_cells / snapshot_breakdown / snapshot_taken_at in the same statement
+  // that writes the row, so a published closing always carries a baseline and
+  // phx_closing_publication_drift can later show that a factory-price edit or a re-attribution
+  // moved it. In the DB because a Supabase request that times out at 15s still commits, so
+  // insert-then-update could publish a closing with no baseline at all.
+  //
+  // DO NOT add snapshot_* to this payload. On a re-publish the upsert takes the ON CONFLICT branch
+  // and writes exactly the columns named here — so naming them would overwrite the published
+  // baseline with today's figures, at precisely the moment someone is asking whether the figures
+  // moved. Leaving them out is what makes a re-publish a no-op for the snapshot.
+  // Pinned by tests/closing-publication-snapshot.test.ts.
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("monthly_closing_publications")
