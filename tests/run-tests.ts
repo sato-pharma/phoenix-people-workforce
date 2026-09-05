@@ -1391,6 +1391,7 @@ import { runVacancyCloseManagerHrIdCanonicalTests } from "./vacancy-close-manage
 import { runPayrollHoldReasonTests } from "./payroll-hold-reason.test.ts";
 
 import { runEmployeeImportJobTitleCasingTests } from "./employee-import-job-title-casing.test.ts";
+import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-cairo-clock.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4408,6 +4409,10 @@ await runTest(
 await runTest(
   "a payroll hold cannot be saved without a reason, and a reason inherited from last month is labelled as carried forward (never overwriting one typed for this month)",
   runPayrollHoldReasonTests,
+);
+await runTest(
+  "contract anniversary resolves Cairo's calendar day, not the server's local/UTC clock",
+  runContractAnniversaryCairoClockTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
