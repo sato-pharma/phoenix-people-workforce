@@ -150,6 +150,24 @@ file holding the full account, under
   regex stops at the first `/>` and makes a correct file look broken, openpyxl reports `images: 0` on
   every sheet because it cannot read ExcelJS DrawingML (check `xl/media/*` instead), and openpyxl
   under-reports grouped columns. `exceljs-writes-two-schema-invalid-ooxml-fragments`
+- **Two ways of LOOKING at a generated workbook lie, and both lie in the same direction — they make a
+  CORRECT file read as broken**, which is the expensive way round: you go hunting for a defect that is
+  not there. Excel is not drivable headlessly here, so LibreOffice
+  (`/c/Program Files/LibreOffice/program/soffice.exe`) is the tool, and two of its three modes mislead.
+  **1 —** `--convert-to png` renders only the LEFTMOST columns. On a sheet whose columns are 4 / 30 / 96
+  characters wide it showed columns 1-2 and stopped: every body paragraph, every live counter and the
+  title (which sits in column 3) came out blank, with no error. Diagnosed as a builder bug twice in one
+  session; both times the cells were present and correct. **2 —** a "review copy" made by loading the
+  workbook with ExcelJS, `removeWorksheet`-ing the other sheets and saving **destroys the merges** (7
+  `mergeCell` refs became 0) and the column widths, so headings clip mid-word — in the copy only.
+  §4 already forbids that round trip for the premium closing engine's pivots and VBA; it damages an
+  ordinary workbook too, and destroys precisely what a visual review is trying to judge. **What works is
+  `--convert-to html`**, which emits every sheet's real cell values: strip the tags and assert the
+  strings you expect are present. That settled both false alarms in one command. Keep the PNG for
+  STRUCTURE at a glance — masthead, rules, zebra banding, whether anything is a filled block — never for
+  whether content exists. And the structural question is separate from both: only
+  `node scripts/check-workbook-integrity.mjs <file>` answers "will Excel silently repair this", so run it
+  as well, not instead. `looking-at-a-generated-workbook-two-ways-that-lie`
 
 **Git**
 
