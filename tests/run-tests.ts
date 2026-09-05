@@ -207,6 +207,7 @@ import { runRecruitmentBulkDecisionTests } from "./recruitment-bulk-decision.tes
 import { runRecruitmentThroughputTrendTests } from "./recruitment-throughput-trend.test.ts";
 import { runRecruitmentCvFindingsTests } from "./recruitment-cv-findings.test.ts";
 import { runRecruitmentNotACvPileTests } from "./recruitment-not-a-cv-pile.test.ts";
+import { runRecruitmentCvSearchTests } from "./recruitment-cv-search.test.ts";
 import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.test.ts";
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
 import { runRecruitmentScreeningWorkstationTests } from "./recruitment-screening-workstation.test.ts";
@@ -1708,6 +1709,10 @@ await runTest(
 await runTest(
   "recruitment not-a-CV pile (a certificate leaves first review, gets its own address, and is never filed away)",
   runRecruitmentNotACvPileTests,
+);
+await runTest(
+  "recruitment CV content search (every term must match, substring not lexeme, and a truncated list says so)",
+  runRecruitmentCvSearchTests,
 );
 await runTest(
   "recruitment screening page (the queue has an address, in both shells, and the viewer never comes from the URL)",
