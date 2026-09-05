@@ -263,9 +263,20 @@ function CandidateBlock({
           {decided ? `${candidateStatusLabel(decided)} · just now` : candidateStatusLabel(row.statusRaw)}
         </Pill>
         {row.seen ? (
-          <Pill tone="neutral" title="This CV has been opened before.">
+          <Pill tone="neutral" title="You have opened this CV before.">
             <Eye className="h-2.5 w-2.5" />
             Read
+          </Pill>
+        ) : null}
+        {/* SOMEBODY ELSE has read it. A separate badge from "Read" above, never folded into it,
+            because the two answer different questions: "Read" decides whether the queue offers this
+            CV to YOU again, this one only says the work may already be done. Two people sharing one
+            queue with no sight of each other's reading do the same CVs twice and cannot tell which.
+            Named, never an id — the owner's standing rule. */}
+        {row.alsoReadBy.length > 0 ? (
+          <Pill tone="info" title={`Also opened by ${row.alsoReadBy.join(", ")}.`}>
+            <Eye className="h-2.5 w-2.5" />
+            {row.alsoReadBy.length === 1 ? row.alsoReadBy[0] : `${row.alsoReadBy.length} others`}
           </Pill>
         ) : null}
         {row.locationLabel ? (

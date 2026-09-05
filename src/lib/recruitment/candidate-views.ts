@@ -20,7 +20,7 @@
 // the moment Talent Acquisition screens alongside him, a single shared marker would show each of
 // them the other's reading as their own, and the feature would be worse than nothing.
 
-import { canonicalHrIdKey } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { recruitmentDb } from "@/lib/recruitment/db";
 
@@ -139,6 +139,114 @@ export async function listCandidateViews(viewerHrId: string | null | undefined):
   throw new Error(
     `Candidate view paging stopped at ${VIEW_PAGE_LIMIT * VIEW_PAGE_SIZE} rows for one viewer. Refusing to report read CVs as unread.`,
   );
+}
+
+/**
+ * Who ELSE has opened each of these CVs — the other half of "have I read this".
+ *
+ * ── WHY THIS EXISTS ─────────────────────────────────────────────────────────────────────────────
+ *
+ * `listCandidateViews` is deliberately per-person, and its header explains why: the moment a second
+ * person screens alongside the owner, a single shared marker would show each of them the other's
+ * reading as their own. That reasoning holds and is untouched.
+ *
+ * But it left the opposite question unanswerable. Measured 2026-09-05: B-10 had opened 200 of the
+ * 249 recorded views and made 127 of the 133 decisions, and the owner's answer to "is screening
+ * yours alone?" was that he and HR-010 share it. Two people working one queue with no way to see
+ * each other's reading do the same CVs twice, and neither can tell which ones.
+ *
+ * So this reports the OTHER viewers, never merged into the caller's own map. "I have read this" and
+ * "somebody has read this" stay two separate facts on the row, because they mean different things:
+ * the first decides whether it is offered again, the second only says the work may already be done.
+ *
+ * SAFE TO COMPARE ACROSS PEOPLE. `viewer_hr_id` is canonical upper-case here by construction —
+ * canonicalViewerHrId on every write, plus a CHECK constraint — so this is the one HR_ID column in
+ * the module a plain equality may be trusted on. `employees.hr_id` is NOT: 178 of 179 rows in
+ * production are mixed case, which is why the name lookup below goes through hrIdLookupKeys.
+ *
+ * Paged for the same reason listCandidateViews is: PostgREST caps a request at 1000 rows and says
+ * nothing, and this reads EVERY viewer's history rather than one person's, so it meets that ceiling
+ * sooner than the per-person read does.
+ */
+export async function listOtherViewersByCandidate(
+  viewerHrId: string | null | undefined,
+): Promise<Map<string, string[]>> {
+  const me = canonicalViewerHrId(viewerHrId);
+  const byCandidate = new Map<string, string[]>();
+  const supabase = recruitmentDb();
+
+  for (let page = 0; page < VIEW_PAGE_LIMIT; page += 1) {
+    const from = page * VIEW_PAGE_SIZE;
+    const { data, error } = await supabase
+      .from("ats_candidate_views")
+      .select("candidate_id,viewer_hr_id")
+      // Stable and unique, so paging cannot repeat one row and drop another.
+      .order("candidate_id", { ascending: true })
+      .order("viewer_hr_id", { ascending: true })
+      .range(from, from + VIEW_PAGE_SIZE - 1);
+
+    if (error) {
+      // A missing table degrades to "nobody else has read anything", which is exactly how this
+      // screen behaved before the column existed.
+      if (isMissingRelation(error)) return byCandidate;
+      throw error;
+    }
+
+    const rows = (data ?? []) as Array<{ candidate_id?: string | null; viewer_hr_id?: string | null }>;
+    for (const row of rows) {
+      const candidateId = row.candidate_id ? String(row.candidate_id) : null;
+      const viewer = row.viewer_hr_id ? String(row.viewer_hr_id) : null;
+      if (!candidateId || !viewer) continue;
+      // The CALLER is never in their own "also read by" list — that is what their own map is for.
+      if (me && viewer === me) continue;
+      const list = byCandidate.get(candidateId);
+      if (list) list.push(viewer);
+      else byCandidate.set(candidateId, [viewer]);
+    }
+
+    if (rows.length < VIEW_PAGE_SIZE) return byCandidate;
+  }
+
+  throw new Error(
+    `Candidate view paging stopped at ${VIEW_PAGE_LIMIT * VIEW_PAGE_SIZE} rows. Refusing to report a read CV as unread by everyone.`,
+  );
+}
+
+/**
+ * Names for a handful of viewer HR ids, so a row can say "Also read by Omar" rather than "B-10".
+ *
+ * The owner's standing rule is that a screen shows human-readable names, never raw codes. The set
+ * is tiny by construction — the people who screen, not the people in the pool — so this is a single
+ * targeted read rather than a roster load.
+ *
+ * `hrIdLookupKeys` on the way in, NOT a plain `.eq`: the views table stores canonical upper case
+ * while `employees.hr_id` is whatever was typed, and 178 of 179 production rows are mixed case. A
+ * plain match here would return nobody and every row would silently fall back to the id — the exact
+ * failure the module has already had twice.
+ *
+ * A viewer with no employee row keeps their id. That is a recorded fact, not a failure: it is what
+ * a dev-auth session or a retired seat looks like, and inventing a name for it would be worse.
+ */
+export async function resolveViewerNames(viewerHrIds: readonly string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  const ids = Array.from(new Set(viewerHrIds.map((id) => canonicalViewerHrId(id)).filter((id): id is string => Boolean(id))));
+  if (ids.length === 0) return names;
+
+  const keys = Array.from(new Set(ids.flatMap((id) => hrIdLookupKeys(id))));
+  if (keys.length === 0) return names;
+
+  const { data, error } = await recruitmentDb().from("employees").select("hr_id,full_name").in("hr_id", keys);
+  if (error) {
+    if (isMissingRelation(error)) return names;
+    throw error;
+  }
+
+  for (const row of (data ?? []) as Array<{ hr_id?: string | null; full_name?: string | null }>) {
+    const key = canonicalViewerHrId(String(row.hr_id ?? ""));
+    const name = String(row.full_name ?? "").trim();
+    if (key && name) names.set(key, name);
+  }
+  return names;
 }
 
 /**
