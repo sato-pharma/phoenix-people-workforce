@@ -12,6 +12,7 @@ import { runErrorMonitorDerivedStatusTests } from "./error-monitor-derived-statu
 import { runClientErrorCrossOriginNoiseTests } from "./client-error-cross-origin-noise.test.ts";
 import { runErrorMonitorMessageDecodeTests } from "./error-monitor-message-decode.test.ts";
 import { runErrorMonitorAiRedactTests } from "./error-monitor-ai-redact.test.ts";
+import { runErrorMonitorRedactRouteTests } from "./error-monitor-redact-route.test.ts";
 import { runErrorMonitorUserAttemptsTests } from "./error-monitor-user-attempts.test.ts";
 import { runGcpMetricsTests } from "./gcp-metrics.test.ts";
 import { runWeeklySystemHealthDigestTests } from "./weekly-system-health-digest.test.ts";
@@ -1367,6 +1368,7 @@ await runTest(
   runClientErrorCrossOriginNoiseTests,
 );
 await runTest("error monitor ai redact", runErrorMonitorAiRedactTests);
+await runTest("error monitor redact route", runErrorMonitorRedactRouteTests);
 await runTest("error monitor per-user attempts (30d default window + real-account partition)", runErrorMonitorUserAttemptsTests);
 await runTest("gcp-metrics service health reader (availability/latency/instances + {available:false} guard)", runGcpMetricsTests);
 await runTest("weekly system health digest", runWeeklySystemHealthDigestTests);
