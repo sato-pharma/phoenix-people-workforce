@@ -52,6 +52,8 @@
 //   node scripts/repo-doctor.mjs --strip-idle=480    # ...only if idle 8h+ (default 120 minutes)
 //   node scripts/repo-doctor.mjs --fix --force   # skip the concurrent-session guard
 //   node scripts/repo-doctor.mjs --no-auth   # skip the orphan-auth-user check (offline / no creds)
+//   node scripts/repo-doctor.mjs --snapshot-xlsx  # COPY untracked xlsx/ sheets to the DR set (the
+//                                            #    only flag that writes outside this repo)
 //   node scripts/repo-doctor.mjs --deep      # ...also names every unlinked memory file, not the
 //                                            #    first 20, and every one reachable via AGENTS.md,
 //                                            #    and every at-risk file in an ORPHANED folder
@@ -124,12 +126,21 @@ import {
   orphanedFolderLines,
   REGENERABLE_DIRS,
 } from "./repo-doctor-orphaned-folders.mjs";
+import {
+  classifyXlsxSnapshot,
+  readSnapshots,
+  readSourceFiles,
+  snapshotRootFor,
+  takeXlsxSnapshot,
+  xlsxSnapshotLines,
+} from "./repo-doctor-xlsx-snapshot.mjs";
 
 const args = process.argv.slice(2);
 const deep = args.includes("--deep");
 const fix = args.includes("--fix");
 const force = args.includes("--force");
 const skipAuth = args.includes("--no-auth");
+const snapshotXlsx = args.includes("--snapshot-xlsx");
 const stripArg = args.find((a) => a === "--strip-idle" || a.startsWith("--strip-idle="));
 const stripIdle = stripArg !== undefined;
 // Default 120 minutes. Two hours is long enough that a session pausing to think does not lose its
@@ -1275,6 +1286,49 @@ let autoloadedIndexBytes = null;
         }
         console.log("  -> these commits exist on this disk ONLY. The lines above are ADDITIVE and");
         console.log("     safe: each creates a new ref on origin and changes no branch, no history.");
+      }
+    }
+  }
+}
+
+// WHETHER THE UNTRACKED SPREADSHEETS EXIST ANYWHERE BUT THIS DISK.
+//
+// The section above proves a COMMIT exists off this laptop. This one asks the same question of the
+// one category of file git was never going to answer for: `.gitignore` matches `*.xlsx`, so the
+// working spreadsheets in xlsx/ are in no commit, no branch and no archive ref. On 2026-09-05 an
+// unidentified sweep deleted every TRACKED pdf in that folder from all seven checkouts at once;
+// those came back from git, and the 103 untracked sheets beside them would not have.
+//
+// Read-only, like every other section here. --snapshot-xlsx is the only flag in this tool that
+// writes outside the repository, and it only ever creates files under the snapshot root.
+{
+  const snapshotRoot = snapshotRootFor();
+  const sourceFiles = readSourceFiles(primaryRoot);
+  const destinationExists = fs.existsSync(snapshotRoot);
+  const snapshots = destinationExists ? readSnapshots(snapshotRoot) : [];
+  const verdict = classifyXlsxSnapshot({ destinationExists, sourceFiles, snapshots, now: Date.now() });
+
+  for (const line of xlsxSnapshotLines(verdict, { deep, snapshotRoot })) console.log(line);
+
+  if (snapshotXlsx) {
+    if (!destinationExists) {
+      // Refuse rather than invent the destination. Creating it would put the only copy of 56 MB
+      // somewhere nobody has ever looked, on a machine whose backup drive is not attached.
+      console.log(`  -> --snapshot-xlsx REFUSED: ${snapshotRoot} does not exist. Nothing was copied.`);
+    } else {
+      const result = takeXlsxSnapshot({ repoRoot: primaryRoot, snapshotRoot });
+      if (result.dir === null) {
+        console.log("  -> --snapshot-xlsx: nothing untracked to copy.");
+      } else {
+        console.log(`  -> snapshot written: ${result.dir}`);
+        console.log(`     ${result.copied} copied, ${result.verified} verified identical by SHA256`);
+        if (result.mismatched.length > 0) {
+          // A mismatch means the copy on disk is NOT the file. Loud, and never folded into the
+          // success line — a partially-good backup that reads as good is the failure this whole
+          // section exists to prevent.
+          console.log(`     !! ${result.mismatched.length} FILE(S) DID NOT VERIFY — the snapshot is NOT trustworthy:`);
+          for (const name of result.mismatched) console.log(`        ${name}`);
+        }
       }
     }
   }
