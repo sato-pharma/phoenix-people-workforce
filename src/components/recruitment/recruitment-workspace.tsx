@@ -4086,6 +4086,19 @@ function CandidatesTab({
               <Sparkles className="h-3.5 w-3.5" />
               Screening page
             </Link>
+            {/* THE OTHER PILE, and on a two-person queue it is the bigger one.
+                "Unseen" means *I* have not read it, which since screening became a two-person job
+                includes everything HR-010 has already worked. This is the pile nobody has touched:
+                554 of 781 candidates on 2026-09-05. A second link rather than a replacement, because
+                the one above is in the owner's bookmarks and answers a different question. */}
+            <Link
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+              href={screeningHref(screeningBasePath, { seen: "untouched" })}
+              title="Open the screening queue on the CVs nobody has read yet — not you, not the other screener"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Nobody has read
+            </Link>
             {dateFilter !== "all" || experienceFilter !== "all" || statusFilter || sourceFilter || roleFilter || regionFilter || query || duplicatesOnly ? (
               <Button
                 variant="ghost"
