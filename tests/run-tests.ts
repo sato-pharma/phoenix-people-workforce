@@ -1407,6 +1407,7 @@ import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-ca
 import { runAdminProfileCreatedAtHydrationSafeTests } from "./admin-profile-created-at-hydration-safe.test.ts";
 
 import { runEmployeeSavePreservesSalaryTests } from "./employee-save-preserves-salary.test.ts";
+import { runEmployeePortalHeaderClockHydrationTests } from "./employee-portal-header-clock-hydration.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4445,6 +4446,10 @@ await runTest(
 );
 
 await runTest("employee save preserves stored salary when the payload omits money fields", runEmployeeSavePreservesSalaryTests);
+await runTest(
+  "employee portal header 'today' chip defers to a mount effect (regression for React hydration error #418)",
+  runEmployeePortalHeaderClockHydrationTests,
+);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
