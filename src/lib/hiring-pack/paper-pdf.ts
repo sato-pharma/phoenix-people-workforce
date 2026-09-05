@@ -90,8 +90,18 @@ export { ChromiumUnavailableError };
  * isolated document whose default font-size is zero; a template without one is not small, it is
  * invisible, and it fails silently on a paper nobody re-opens.
  */
-const PAGE_NUMBER_FOOTER = `<div style="width:100%;padding:0 10.2mm;font-family:${ARABIC_FONT_STACK};`
-  + `font-size:7pt;color:${HOUSE_COLORS.muted};direction:rtl;text-align:center">`
+/**
+ * SINGLE-QUOTED ATTRIBUTE, and that is not a style preference.
+ *
+ * `ARABIC_FONT_STACK` quotes its family names — `"Tahoma", "Segoe UI"` — so interpolating it into a
+ * DOUBLE-quoted attribute closes that attribute on the first family. The div is then malformed,
+ * Chrome drops the whole footer, and the pages come out with NO NUMBER AT ALL. That shipped: the
+ * numbering had been correct the build before, and naming the shared stack here silently removed it.
+ *
+ * A single-quoted attribute holds double quotes legally, so the stack can be dropped in whole.
+ */
+export const PAGE_NUMBER_FOOTER = `<div style='width:100%;padding:0 10.2mm;font-family:${ARABIC_FONT_STACK};`
+  + `font-size:7pt;color:${HOUSE_COLORS.muted};direction:rtl;text-align:center'>`
   + `صفحة <span class="pageNumber"></span> من <span class="totalPages"></span>`
   + `</div>`;
 
