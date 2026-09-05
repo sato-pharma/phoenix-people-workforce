@@ -29,8 +29,10 @@ import {
   AdminStatCard,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import { EmployeeImportReview } from "@/components/employees/employee-import-review";
 import { EmployeePhotoManager } from "@/components/employees/employee-photo-manager";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
+import type { EmployeeImportValidationResult } from "@/lib/imports/employee-import-types";
 import {
   PortalDesktopTable,
   PortalEmptyState,
@@ -101,16 +103,14 @@ type ResignationFormState = {
   workflowNotes: string;
 };
 
-type EmployeeImportPreview = {
-  failedRows?: number;
-  missingRequiredColumns?: string[];
-  rowsToInsert?: unknown[];
-  rowsToUpdate?: unknown[];
-  validationErrors?: Array<{ message?: string; rowNumber?: number }>;
-  validationWarnings?: Array<{ message?: string; rowNumber?: number }>;
-  vacantPositionsToCreate?: unknown[];
-  warningRows?: number;
-};
+/**
+ * The dry run's response, as it really is.
+ *
+ * This was a hand-written subset — `rowsToUpdate?: unknown[]`, findings as `{ message?, rowNumber? }`
+ * — which is why the preview could only ever print counts and message strings. The route returns
+ * `EmployeeImportValidationResult`; naming it lets the review below diff the actual records.
+ */
+type EmployeeImportPreview = EmployeeImportValidationResult;
 
 type EmployeeSalaryDetailFormRow = {
   category: EmployeeSalaryDetailCategory;
@@ -818,6 +818,7 @@ export function EmployeeManagement({
   const [isResigning, setIsResigning] = React.useState(false);
   const [isResignationOpen, setIsResignationOpen] = React.useState(false);
   const [masterDetailsEmployee, setMasterDetailsEmployee] = React.useState<EmployeeDirectoryRow | null>(null);
+  const [isDownloadingFixList, setIsDownloadingFixList] = React.useState(false);
   const [pendingImportFile, setPendingImportFile] = React.useState<File | null>(null);
   const [pendingImportPreview, setPendingImportPreview] = React.useState<EmployeeImportPreview | null>(null);
   const [resignationError, setResignationError] = React.useState<string | null>(null);
@@ -1526,6 +1527,57 @@ export function EmployeeManagement({
     }
   }
 
+  function cancelPendingImport() {
+    setPendingImportFile(null);
+    setPendingImportPreview(null);
+    setNotice(null);
+  }
+
+  /**
+   * The findings, as a workbook.
+   *
+   * Posts the SAME file back rather than the preview it already has: the preview is the browser's
+   * copy of a judgement, and what someone works from has to be the server's. Re-running it costs
+   * one parse and removes any chance of handing over findings that no longer match the file.
+   */
+  async function downloadImportFixList() {
+    if (!pendingImportFile) return;
+
+    setIsDownloadingFixList(true);
+    setError(null);
+
+    const formData = new FormData();
+    formData.append("file", pendingImportFile);
+
+    try {
+      const response = await fetch("/api/imports/employees/fix-list", {
+        body: formData,
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        setError("Unable to build the list of things to fix.");
+        return;
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const match = /filename="(.+?)"/.exec(disposition);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = match?.[1] ?? "employee-import-what-to-fix.xlsx";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("Unable to build the list of things to fix.");
+    } finally {
+      setIsDownloadingFixList(false);
+    }
+  }
+
   async function confirmPendingImport() {
     if (!pendingImportFile) return;
 
@@ -1695,96 +1747,17 @@ export function EmployeeManagement({
         </AdminCallout>
       ) : null}
 
-      {pendingImportPreview ? (
-        <AdminCallout tone={pendingImportPreview.failedRows ? "danger" : "warning"}>
-          <div className="flex items-start gap-4 w-full">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-phx-accent to-[#FB923C] text-white shadow-lg">
-              <Upload className="h-5 w-5" />
-            </div>
-            <div className="flex flex-1 flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div className="space-y-2">
-                <h2 className="text-sm font-semibold text-text">Employee import preview</h2>
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-phx-ok-bg px-3 py-1 text-xs font-bold text-phx-ok">
-                    <Check className="h-3 w-3" />
-                    {(pendingImportPreview.rowsToInsert?.length ?? 0)} to create
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-phx-info-bg px-3 py-1 text-xs font-bold text-phx-info">
-                    <Pencil className="h-3 w-3" />
-                    {(pendingImportPreview.rowsToUpdate?.length ?? 0)} to update
-                  </span>
-                  {(pendingImportPreview.vacantPositionsToCreate?.length ?? 0) > 0 ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-phx-info-bg px-3 py-1 text-xs font-bold text-phx-info">
-                      {(pendingImportPreview.vacantPositionsToCreate?.length ?? 0)} vacancies
-                    </span>
-                  ) : null}
-                  {(pendingImportPreview.failedRows ?? 0) > 0 ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-phx-danger-bg px-3 py-1 text-xs font-bold text-phx-danger">
-                      <AlertCircle className="h-3 w-3" />
-                      {(pendingImportPreview.failedRows ?? 0)} blocked
-                    </span>
-                  ) : null}
-                  {(pendingImportPreview.warningRows ?? 0) > 0 ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-phx-warn-bg px-3 py-1 text-xs font-bold text-phx-warn">
-                      <AlertCircle className="h-3 w-3" />
-                      {(pendingImportPreview.warningRows ?? 0)} need review
-                    </span>
-                  ) : null}
-                </div>
-                {(pendingImportPreview.validationErrors?.length ?? 0) > 0 ? (
-                  <div className="mt-1 space-y-0.5 text-xs text-danger">
-                    {pendingImportPreview.validationErrors?.slice(0, 10).map((issue, index) => (
-                      <p key={`${issue.rowNumber ?? "-"}-${index}`}>
-                        {`Row ${issue.rowNumber ?? "-"}: ${issue.message ?? "Validation failed."}`}
-                      </p>
-                    ))}
-                    {(pendingImportPreview.validationErrors?.length ?? 0) > 10 ? (
-                      <p className="font-semibold">
-                        +{(pendingImportPreview.validationErrors?.length ?? 0) - 10} more blocked row(s).
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-                {(pendingImportPreview.validationWarnings?.length ?? 0) > 0 ? (
-                  <div className="mt-1 space-y-0.5 text-xs text-amber-700">
-                    {pendingImportPreview.validationWarnings?.slice(0, 10).map((issue, index) => (
-                      <p key={`${issue.rowNumber ?? "-"}-${index}`}>
-                        {`Row ${issue.rowNumber ?? "-"}: ${issue.message ?? "Needs review."}`}
-                      </p>
-                    ))}
-                    {(pendingImportPreview.validationWarnings?.length ?? 0) > 10 ? (
-                      <p className="font-semibold">
-                        +{(pendingImportPreview.validationWarnings?.length ?? 0) - 10} more row(s) to review.
-                      </p>
-                    ) : null}
-                    <p className="font-semibold">
-                      These rows still import — review them first if the missing value matters.
-                    </p>
-                  </div>
-                ) : null}
-                {(pendingImportPreview.missingRequiredColumns?.length ?? 0) > 0 ? (
-                  <p className="mt-1 text-xs font-semibold text-danger">
-                    Missing required column(s): {pendingImportPreview.missingRequiredColumns?.join(", ")}. Fix the file header before importing.
-                  </p>
-                ) : (pendingImportPreview.failedRows ?? 0) > 0 ? (
-                  <p className="mt-1 text-xs text-text-secondary">
-                    Blocked rows are skipped automatically — the {(pendingImportPreview.rowsToUpdate?.length ?? 0) + (pendingImportPreview.rowsToInsert?.length ?? 0)} valid row(s) will still be imported.
-                  </p>
-                ) : null}
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  className="h-10 rounded-xl px-5 text-xs font-semibold transition-all focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
-                  disabled={isImportingTemplate || (pendingImportPreview.missingRequiredColumns?.length ?? 0) > 0}
-                  onClick={() => void confirmPendingImport()}
-                >
-                  {isImportingTemplate ? <LoadingSpinner /> : <Check className="h-4 w-4" />}
-                  Confirm Import
-                </Button>
-              </div>
-            </div>
-          </div>
-        </AdminCallout>
+      {pendingImportPreview && pendingImportFile ? (
+        <EmployeeImportReview
+          employees={data?.employees ?? []}
+          fileName={pendingImportFile.name}
+          isConfirming={isImportingTemplate}
+          isDownloading={isDownloadingFixList}
+          onCancel={cancelPendingImport}
+          onConfirm={() => void confirmPendingImport()}
+          onDownloadFixList={() => void downloadImportFixList()}
+          preview={pendingImportPreview}
+        />
       ) : null}
 
       {data ? (
