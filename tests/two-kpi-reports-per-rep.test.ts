@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import { LIST_TYPES } from "../src/lib/crm/contacts-web-client.ts";
+import { KPI_TABS, KPI_TAB_HINT, KPI_TAB_LABEL } from "../src/lib/crm/kpis-tabs.ts";
 import { coverageTargetForGrade } from "../src/lib/crm/sfe-doctor-coverage.ts";
 import {
   buildRepKpiReports,
@@ -383,6 +384,32 @@ export function runTwoKpiReportsConfigurableTests() {
   assert.ok(scored.scored && scored.meets, "46 calls over 23 working days is 2/day — meets a target of 2");
 }
 
+// ── The two tabs on the KPIs board ────────────────────────────────────────────────────────────
+
+export function runTwoKpiReportsTabTests() {
+  // Both reports are reachable as tabs, and every tab — old or new — carries a label and a hint.
+  // A Record<KpiTab, string> already makes a MISSING key a type error, but types are stripped at
+  // runtime here, so an empty string would pass the compiler and render a nameless tab.
+  for (const tab of KPI_TABS) {
+    assert.ok(KPI_TAB_LABEL[tab]?.trim(), `tab "${tab}" has a label`);
+    assert.ok(KPI_TAB_HINT[tab]?.trim(), `tab "${tab}" has a hint saying what its number MEANS`);
+  }
+  assert.ok(KPI_TABS.includes("am-pm"), "report 1 is a tab");
+  assert.ok(KPI_TABS.includes("pharmacies"), "report 2 is a tab");
+
+  // NEVER A SLASH between the two sessions. The owner read "1.63 / 6.57" as "1.63 out of 6.57",
+  // so the AM/PM tab is labelled with the middle dot the rest of the board uses.
+  assert.equal(KPI_TAB_LABEL["am-pm"], "AM · PM");
+  assert.ok(!KPI_TAB_LABEL["am-pm"].includes("/"), "a slash between AM and PM reads as a fraction");
+
+  // The hints must say these measure against the LIST, not the plan — the four tabs beside them use
+  // a different denominator, and a manager comparing the two numbers needs to know why they differ.
+  assert.match(KPI_TAB_HINT["am-pm"], /list/i);
+  assert.match(KPI_TAB_HINT.pharmacies, /list/i);
+  // And the pharmacies hint must say the absent case is NOT a zero — that is the whole point.
+  assert.match(KPI_TAB_HINT.pharmacies, /not applicable/i);
+}
+
 // ── The owner's own sample rep ────────────────────────────────────────────────────────────────
 
 export function runTwoKpiReportsSampleRepTests() {
@@ -444,4 +471,27 @@ export function runTwoKpiReportsSampleRepTests() {
   });
   assert.equal(upper.repKey, lower.repKey, "'B-155' and 'b-155' are one rep, never two rows");
   assert.equal(report.repKey, report.repKey?.toLowerCase(), "the key is case-folded, so a mixed-case id still joins");
+
+  // A REP WITH NO HR ID KEYS TO NULL, NOT TO "". The vendor feed allows a null `agent_hr_id`, and
+  // an empty string is a perfectly good Map key — so coercing it would collapse every unidentified
+  // rep into ONE row carrying the sum of their panels and visits. That row would look completely
+  // ordinary, which is why this is a test and not a comment.
+  const nameless = buildRepKpiReports({
+    repHrId: null,
+    repName: "Unknown",
+    month: "2026-08",
+    workingDays: 23,
+    panel: [contact()],
+    visits: [],
+  });
+  assert.equal(nameless.repKey, null, "a rep with no hr id is unkeyed, never keyed to the empty string");
+  const blank = buildRepKpiReports({
+    repHrId: "   ",
+    repName: "Unknown",
+    month: "2026-08",
+    workingDays: 23,
+    panel: [contact()],
+    visits: [],
+  });
+  assert.equal(blank.repKey, null, "and whitespace is not an identity either");
 }

@@ -336,6 +336,7 @@ import {
   runTwoKpiReportsNeverAveragedTests,
   runTwoKpiReportsSampleRepTests,
   runTwoKpiReportsSplitTests,
+  runTwoKpiReportsTabTests,
   runTwoKpiReportsVisitGateTests,
   runTwoKpiReportsVocabularyTests,
   runTwoKpiReportsZeroNormTests,
@@ -2069,6 +2070,7 @@ await runTest("two KPI reports (every number is configurable — one answer neve
 await runTest("two KPI reports (Sat-Wed only, the catch-all contact excluded, off-list visits surfaced not merged)", runTwoKpiReportsVisitGateTests);
 await runTest("two KPI reports (A+ folds into A in step with the coverage board, and PM is judged on the 8-12 band)", runTwoKpiReportsGradeAndBandTests);
 await runTest("two KPI reports (the owner sample rep reads 92% on doctors, not the 65% the mixed number showed)", runTwoKpiReportsSampleRepTests);
+await runTest("two KPI reports (both are tabs on the KPIs board, and AM · PM never prints with a slash)", runTwoKpiReportsTabTests);
 await runTest("crm reps plans board (live-month cap, company rate over days x reps, rep filter leaves totals alone)", runCrmRepsPlansTests);
 await runTest(
   "reps plans roster (the rep with no visits is a zero row, seeded from the organogram, never a missing person)",

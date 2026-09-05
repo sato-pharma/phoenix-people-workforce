@@ -372,8 +372,17 @@ export type PharmacyKpiReport = {
 };
 
 export type RepKpiReports = {
-  /** Canonical (case-folded) hr id. HR ids are mixed case in this database. */
-  readonly repKey: string;
+  /**
+   * Canonical (case-folded) hr id — HR ids are mixed case in this database, and a raw `.eq` on one
+   * silently under-returns.
+   *
+   * NULL when the row carries no hr id at all, which the vendor feed does allow. Deliberately not
+   * coerced to `""`: an empty string is a perfectly good Map key, so every unidentified rep would
+   * silently collapse into ONE row carrying the sum of their panels and visits — a single plausible
+   * row that no manager could tell was wrong. Null forces the caller to decide what to do with a
+   * rep it cannot name.
+   */
+  readonly repKey: string | null;
   readonly repName: string;
   /** "YYYY-MM". */
   readonly month: string;

@@ -344,9 +344,19 @@ export function runKpiTabTests() {
   assert.equal(resolveKpiTab(""), "summary", "an empty tab parameter is the same as no tab at all");
   assert.deepEqual(
     [...KPI_TABS],
+    ["summary", "call-rate", "coverage", "frequency", "am-pm", "pharmacies"],
+    "the owner's four KPI tabs, in the order he named them, then his two per-rep reports",
+  );
+  // THE FIRST FOUR ARE HIS, IN HIS ORDER (2026-09-02: "show four tabs. The first tab is the
+  // summary..."). Pinned as a prefix so the two reports appended on 2026-09-05 cannot drift into
+  // the middle of a layout he specified.
+  assert.deepEqual(
+    [...KPI_TABS].slice(0, 4),
     ["summary", "call-rate", "coverage", "frequency"],
     "the owner named these four, in this order: summary, call rate, coverage, frequency",
   );
+  assert.equal(resolveKpiTab("am-pm"), "am-pm", "the AM/PM report is reachable from the URL");
+  assert.equal(resolveKpiTab("pharmacies"), "pharmacies", "and so is the pharmacies report");
 
   // The month picker is string arithmetic on the date, never Date parsing: a `new Date(todayIso)`
   // is UTC midnight and lands in the PREVIOUS month for a Cairo caller just after midnight, which

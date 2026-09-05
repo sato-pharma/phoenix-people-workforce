@@ -78,6 +78,8 @@ import { loadCallRateReport } from "@/lib/crm/call-rate-service";
 import { countCallRateWorkingDays } from "@/lib/crm/call-rate";
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { getRepDoctorLists, monthLabelOf, type RepDoctorListRepRow } from "@/lib/crm/rep-doctor-lists";
+import { loadRepKpiReports } from "@/lib/crm/rep-kpi-reports-data";
+import type { RepKpiReports } from "@/lib/crm/rep-kpi-reports";
 import { repsPlansRange, repsPlansWeeks, type RepsPlansRange } from "@/lib/crm/reps-plans";
 import { AM_CALL_RATE_TARGET, PM_CALL_RATE_TARGET, type RepCallRate } from "@/lib/crm/call-rate";
 import type { AccessContext } from "@/lib/auth/permissions";
@@ -264,6 +266,15 @@ export type KpisBoard = {
    * forgot a filter was on would read a partial board as the whole truth.
    */
   scopedReps: number;
+  /**
+   * The owner's two KPI reports per rep — AM/PM, and pharmacies — for the SAME rows as `reps`.
+   *
+   * Kept beside the four KPI tabs rather than folded into `KpiRepRow` because they answer against a
+   * different denominator: the four tabs score a rep against his PLAN, these score him against the
+   * whole list the CRM assigned him ("whole panel visisted one is the coverage", owner 2026-09-05).
+   * One row per rep, keyed by the same canonical hr id `KpiRepRow.agentHrId` carries.
+   */
+  kpiReports: RepKpiReports[];
   /** Facet options and counts, built from the SCOPED rows so a choice never returns an empty board. */
   facets: KpiFacets;
   /** The filter state actually applied, echoed back so the UI can render and clear it. */
@@ -614,6 +625,7 @@ export async function getKpisBoard(input: {
     scopeLabel: "",
     scopeReason: null,
     reps: [],
+    kpiReports: [],
     scopedReps: 0,
     facets: buildKpiFacets([]),
     filters,
@@ -708,6 +720,28 @@ export async function getKpisBoard(input: {
   const facets = buildKpiFacets(scopedReps);
   const reps = applyKpiFilters(scopedReps, filters);
 
+  // THE TWO REPORTS RIDE THE SAME POPULATION as the four tabs beside them: the same scope object
+  // (never re-resolved — see rep-kpi-reports-data.ts), then narrowed to exactly the rows that
+  // survived `keepMedicalRepsOnly` and the advanced filters. Anything else and the strip would show
+  // six tabs describing two different sets of people, with nothing on screen saying so.
+  //
+  // Awaited here rather than in the batch above because it needs `callRate.workingDays` as its
+  // denominator, and that is the same number the other tabs divide by. A second round trip is the
+  // price of the two boards agreeing; splitting the fetch from the arithmetic to save it would put
+  // a second working-day count on the page, which is the disagreement this is avoiding.
+  const kpiReportRows = await loadRepKpiReports({
+    scope,
+    dateFrom: range.dateFrom,
+    dateTo: range.dateTo,
+    workingDays: callRate.workingDays,
+    holidays: windowHolidays.dates,
+    repNameByHrId: new Map(
+      scopedReps.flatMap((row) => (row.agentHrId ? [[row.agentHrId, row.repName] as const] : [])),
+    ),
+  });
+  const visibleRepKeys = new Set(reps.flatMap((row) => (row.agentHrId ? [row.agentHrId] : [])));
+  const kpiReports = kpiReportRows.reports.filter((report) => report.repKey != null && visibleRepKeys.has(report.repKey));
+
   // Totals are summed from the SCOPED rows, never taken from either source's own `totals`. Those
   // cover the whole company, and a District Manager reading a company total beside his own six reps
   // would have no way to tell the two apart.
@@ -758,6 +792,7 @@ export async function getKpisBoard(input: {
     isCurrentMonth: docList.isCurrentMonth,
     scopeLabel: scope.kind === "company" ? scope.label : scope.label,
     reps,
+    kpiReports,
     scopedReps: scopedReps.length,
     facets,
     filters,
