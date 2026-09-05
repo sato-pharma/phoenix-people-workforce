@@ -3522,15 +3522,33 @@ export async function getMedicalRepPortalData(
   // an H1 number on screen labelled as this semester's, and fed it to the payout curve. Under the
   // calendar anchor that is no longer an edge case: it is every rep until their July lands.
   //
-  // The percentage divides COVERED sales, not total sales. Rule #1 is that a rep's month reads
-  // identically everywhere, and /sales-vs-target and Monthly Closing both measure achievement as
-  // covered ÷ target — a product sold with no target beside it is real revenue but cannot be
-  // credited against a target that does not exist. Dividing the whole month by a partial target
-  // manufactures over-achievement, and on this tab over-achievement is money.
+  // THE INCENTIVE BASIS, in the owner's own words (2026-09-05, asked directly): "the incentive is
+  // total sales per semester over total target semester, twice yearly, the first time from Jan to
+  // June and the second from July to Dec." So: TOTAL sales ÷ TOTAL target, over the calendar
+  // semester. The window above already is that; this line is the numerator half of it.
+  //
+  // It divided COVERED sales until then — only the money sitting on a product that carried a
+  // target — justified by a comment claiming "/sales-vs-target and Monthly Closing both measure
+  // achievement as covered ÷ target". Neither was true by 2026-09-05: vs-target was moved onto the
+  // closing's rule that morning, and the Monthly Closing NEVER used covered ÷ target —
+  // `closingAchievement` (monthly-closing-matrix-cells.ts) has always divided all sales. So the
+  // stated reason for the covered numerator was a mistaken belief about the closing, and the rule
+  // it appealed to — a rep's month reads identically everywhere — is the reason to divide TOTAL.
+  //
+  // Measured before the change, across all 80 reps carrying an H2 target: it moved NOBODY's payout.
+  // One rep differed at all (21.76% against 25.90%) and sat far below the 90% floor, while the
+  // three reps above that floor had no untargeted sales whatsoever. That is why this was safe to
+  // correct rather than something to grandfather — but it does not stay free: the 90% floor is
+  // worth 50 points of payout, so a rep at 88% covered and 92% total is the case this prevents.
+  //
+  // ⚠ A SEMESTER MONTH CARRYING NO TARGET INFLATES THIS, and that is a live shape rather than a
+  // hypothetical: Anti Infective has no 2026-09 target row while CNS and Pedia do. Sales in such a
+  // month are divided by a target that excludes them. The owner's definition is total over total,
+  // so it is honoured literally here rather than silently carved out — the fix belongs in loading
+  // the missing target, not in quietly redefining his formula. Raised with him on 2026-09-05.
   const semesterSales = semesterTrend.reduce((sum, p) => sum + p.sales, 0);
-  const semesterCoveredSales = semesterTrend.reduce((sum, p) => sum + p.coveredSales, 0);
   const semesterTarget = semesterTrend.reduce((sum, p) => sum + p.target, 0);
-  const overviewAchievementPercent = semesterTarget > 0 ? (semesterCoveredSales / semesterTarget) * 100 : 0;
+  const overviewAchievementPercent = semesterTarget > 0 ? (semesterSales / semesterTarget) * 100 : 0;
   const growthVsLastMonthPercent =
     latestTrend && previousTrend && previousTrend.sales > 0
       ? ((latestTrend.sales - previousTrend.sales) / previousTrend.sales) * 100
