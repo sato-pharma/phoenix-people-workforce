@@ -601,6 +601,8 @@ function signDatesShape(value: (document: HiringPackDocument) => string): Record
     workerDataForm: value("workerDataForm"),
     custodyLaptop: value("custodyLaptop"),
     custodyMobile: value("custodyMobile"),
+    contractRenewal: value("contractRenewal"),
+    contractNonRenewal: value("contractNonRenewal"),
     form6: value("form6"),
     resignation: value("resignation"),
     mutualTermination: value("mutualTermination"),
@@ -621,6 +623,12 @@ function signedDatesFromPack(pack: HiringPackData | null): Record<HiringPackDocu
     workerDataForm: "",
     custodyLaptop: "",
     custodyMobile: "",
+    // The renewal papers store no signature date here either, and the register that answers them
+    // properly already exists: `contract_renewal_requests` holds one row per renewal with its own
+    // `signed_at`. A contract is renewed every year, so one date on the employee row could record
+    // only the newest of them. See `RENEWAL_DOCUMENTS`.
+    contractRenewal: "",
+    contractNonRenewal: "",
     form6: pack?.offboarding.form6SignedDate ?? "",
     resignation: pack?.offboarding.resignationSignedDate ?? "",
     mutualTermination: pack?.offboarding.mutualTerminationSignedDate ?? "",
@@ -1626,6 +1634,56 @@ export function HiringPackManager({
                     signable={false}
                     subtitle="إقرار استلام عهدة — نموذج رقم ٢ (هاتف / جهاز لوحي)"
                     title="Custody receipt — phone or tablet"
+                  />
+                </div>
+
+                {/*
+                  THE RENEWAL PAIR SITS BESIDE THE CUSTODY RECEIPTS, for the same reason: a contract
+                  is renewed every year, which is neither arrival nor departure.
+
+                  UNLIKE the custody receipts, only ONE of these two is ever issued for a given term
+                  — the annex if the contract is extended, the notice if it is not. They are shown
+                  together because the choice is made once, by one person, at one moment, and putting
+                  the notice in the leaver tab would hide it until after the decision it announces.
+                */}
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <DocumentCard
+                    busy={false}
+                    canManage={canManage}
+                    copies={copies.contractRenewal}
+                    gaps={gapsFor(pack.gaps, "contractRenewal")}
+                    onCopiesChange={(value) => setCopiesFor("contractRenewal", value)}
+                    footnote="The new term is taken from the approved renewal request where one exists, and derived from the expiring contract where it does not. The annex number and the objective reason for keeping the term fixed print blank — the number comes from the company's own register, and the reason is a legal judgement about the post."
+                    onPreview={() => openPreview("contractRenewal")}
+                    onPrint={() => openPrint("contractRenewal")}
+                    onSign={() => undefined}
+                    onSignDateChange={() => undefined}
+                    printedAt={null}
+                    printingNote="Four copies, matching the contract it amends — one for the employee, one for the file, one for the labour office, one for social insurance. SIGN IT BEFORE THE CURRENT TERM EXPIRES: under مادة (88) of Law 14/2025, carrying on after expiry with no written agreement makes the contract indefinite from the day it was made."
+                    signDate=""
+                    signedDate={null}
+                    signable={false}
+                    subtitle="ملحق تجديد سنوي لعقد عمل محدد المدة"
+                    title="Contract renewal annex"
+                  />
+                  <DocumentCard
+                    busy={false}
+                    canManage={canManage}
+                    copies={copies.contractNonRenewal}
+                    gaps={gapsFor(pack.gaps, "contractNonRenewal")}
+                    onCopiesChange={(value) => setCopiesFor("contractNonRenewal", value)}
+                    footnote="The alternative to the annex, never a companion to it. The last working day is the contract's own end date and nothing else — this notice exists to say the contract expired rather than that anybody resigned or was dismissed."
+                    onPreview={() => openPreview("contractNonRenewal")}
+                    onPrint={() => openPrint("contractNonRenewal")}
+                    onSign={() => undefined}
+                    onSignDateChange={() => undefined}
+                    printedAt={null}
+                    printingNote="Two copies — one handed over, one filed with the employee's acknowledgment on it. Serve it before the term ends. If he will not sign, the witness block at the foot is the record."
+                    signDate=""
+                    signedDate={null}
+                    signable={false}
+                    subtitle="إخطار بعدم تجديد عقد عمل محدد المدة"
+                    title="Non-renewal notice"
                   />
                 </div>
 

@@ -55,7 +55,16 @@ function testEveryBuiltInTableIsComplete() {
 
 /** Every built-in document resolves all three answers, through the public functions. */
 function testEveryBuiltInDocumentResolvesAllThree() {
-  assert.equal(HIRING_PACK_DOCUMENTS.length, 10, "the built-in document list should still be ten");
+  // TWELVE since 2026-09-05, when the two renewal papers were added — the annual renewal annex
+  // and the non-renewal notice. This number is deliberately hard-coded rather than derived: it
+  // is what makes adding a document a decision somebody had to write down, in a repo where
+  // `ignoreBuildErrors` means an incomplete Record compiles and deploys perfectly happily.
+  assert.equal(
+    HIRING_PACK_DOCUMENTS.length,
+    12,
+    "the built-in document list should still be twelve — update this only alongside the four " +
+      "tables in document-registry.ts, the surfaces, the renderers and the template registry",
+  );
 
   for (const document of HIRING_PACK_DOCUMENTS) {
     const label = documentLabel(document);
@@ -233,8 +242,12 @@ function testEveryDocumentIsInExactlyOnePackage() {
   );
   assert.deepEqual(
     seen.get("other")?.sort(),
-    ["custodyLaptop", "custodyMobile"],
-    "a custody receipt is printed whenever a device changes hands, which is neither arriving nor leaving",
+    ["contractNonRenewal", "contractRenewal", "custodyLaptop", "custodyMobile"].sort(),
+    "\"other\" is the DURING-employment package: a custody receipt is printed whenever a device " +
+      "changes hands, and the two renewal papers whenever a fixed term is coming to its end. Neither " +
+      "is arriving or leaving. The non-renewal notice is here rather than in the leaving package on " +
+      "purpose — it is one half of a decision made before anybody has left, and filing it under " +
+      "leaving would hide it until after the decision it announces.",
   );
 }
 

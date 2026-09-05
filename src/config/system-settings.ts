@@ -259,6 +259,26 @@ export const systemContractDefaults = {
    */
   clearanceEmployeeCopies: 2,
   clearanceCompanyCopies: 2,
+  /**
+   * The renewal annex — FOUR, matching the contract it amends.
+   *
+   * مادة (89) of Labour Law 14/2025 requires the contract itself to be drawn in four copies, and
+   * the annex becomes part of it: one for the employee, one for the service file, one deposited
+   * with the labour office and one with the social insurance authority. The annex's own مادة (8)
+   * says the same. Written out rather than aliased to `contractCopies` for the reason every count
+   * here is written out — they agree today, and a change to what the contract needs must not
+   * silently move what the annex needs.
+   */
+  contractRenewalCopies: 4,
+  /**
+   * The non-renewal notice — TWO, and the difference from the annex is the point.
+   *
+   * The annex is an agreement that amends a contract, so it goes everywhere the contract went. This
+   * is a unilateral notice: the company hands one over and keeps one carrying the employee's
+   * acknowledgment. Nothing is deposited anywhere, because nothing has been agreed — the contract
+   * is being allowed to run out on the date it always named.
+   */
+  contractNonRenewalCopies: 2,
 } as const;
 
 export const systemAuthEmailText = {

@@ -69,6 +69,8 @@ export const DOCUMENT_SURFACES: Readonly<Record<HiringPackDocument, DocumentSurf
   workerDataForm: "flow",
   custodyLaptop: "flow",
   custodyMobile: "flow",
+  contractRenewal: "flow",
+  contractNonRenewal: "flow",
   form6: "page",
   resignation: "page",
   mutualTermination: "page",

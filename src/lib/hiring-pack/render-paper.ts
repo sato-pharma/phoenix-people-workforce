@@ -39,6 +39,10 @@ import {
   renderCustodyLaptopHtml,
   renderCustodyMobileHtml,
 } from "@/lib/hiring-pack/render-custody";
+import {
+  renderContractNonRenewalHtml,
+  renderContractRenewalHtml,
+} from "@/lib/hiring-pack/render-renewal";
 import { renderForm1Html } from "@/lib/hiring-pack/render-form1";
 import { renderForm6Html } from "@/lib/hiring-pack/render-form6";
 import { renderWorkerFormHtml } from "@/lib/hiring-pack/render-worker-form";
@@ -89,6 +93,14 @@ const RENDERERS: Record<
   custodyMobile: {
     render: renderCustodyMobileHtml,
     copies: systemContractDefaults.custodyMobileCopies,
+  },
+  contractRenewal: {
+    render: renderContractRenewalHtml,
+    copies: systemContractDefaults.contractRenewalCopies,
+  },
+  contractNonRenewal: {
+    render: renderContractNonRenewalHtml,
+    copies: systemContractDefaults.contractNonRenewalCopies,
   },
   form1: { render: renderForm1Html, copies: systemContractDefaults.form1Copies },
   form6: { render: renderForm6Html, copies: systemContractDefaults.form6Copies },

@@ -29,6 +29,7 @@ import {
   ASSET_DOCUMENTS,
   HIRING_PACK_DOCUMENTS,
   ONBOARDING_FORM_DOCUMENTS,
+  RENEWAL_DOCUMENTS,
   SIGNABLE_DOCUMENTS,
   isSignableDocument,
 } from "../src/lib/hiring-pack/types.ts";
@@ -156,6 +157,7 @@ function packFixture(
     profile,
     offboarding,
     exit: null,
+    renewal: null,
     suggestedJobTitleAr: null,
     gaps: collectHiringPackGaps(employee, profile, offboarding, null),
     terms: resolveContractTerms(employee, profile, offboarding, null),
@@ -487,14 +489,19 @@ function testACustodyReceiptRecordsNoSignatureAgainstThePerson(): void {
   }
 
   // And the control: every OTHER document still is, or this test would pass on a build where
-  // signing was broken for everything. "Other" now means two classes of non-signable paper, not
-  // one: the custody receipts above, and the worker-data form — a service-file sheet filed in a
-  // drawer, kept out of SIGNABLE_DOCUMENTS for the same reason. Both are skipped here.
+  // signing was broken for everything. "Other" now means THREE classes of non-signable paper, not
+  // one: the custody receipts above; the worker-data form — a service-file sheet filed in a drawer,
+  // kept out of SIGNABLE_DOCUMENTS for the same reason; and, since 2026-09-05, the two renewal
+  // papers. The renewal pair are out on the custody receipts' own reasoning rather than the worker
+  // form's: a contract is renewed every year, so one date against the employee could record only
+  // the newest of them, and `contract_renewal_requests` already holds one row per renewal with its
+  // own `signed_at`. All three classes are skipped here.
   for (const document of HIRING_PACK_DOCUMENTS) {
     if (ASSET_DOCUMENTS.includes(document as (typeof ASSET_DOCUMENTS)[number])) continue;
     if (ONBOARDING_FORM_DOCUMENTS.includes(document as (typeof ONBOARDING_FORM_DOCUMENTS)[number])) {
       continue;
     }
+    if (RENEWAL_DOCUMENTS.includes(document as (typeof RENEWAL_DOCUMENTS)[number])) continue;
     assert.equal(
       isSignableDocument(document),
       true,

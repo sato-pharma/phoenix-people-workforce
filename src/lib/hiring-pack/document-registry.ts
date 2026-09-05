@@ -35,6 +35,7 @@ import {
   HIRING_DOCUMENTS,
   HIRING_PACK_DOCUMENTS,
   ONBOARDING_FORM_DOCUMENTS,
+  RENEWAL_DOCUMENTS,
   isBuiltInDocument,
   isCustomDocument,
   type HiringPackDocument,
@@ -57,6 +58,8 @@ const BUILT_IN_LABELS: Readonly<Record<HiringPackDocument, string>> = {
   workerDataForm: "Worker data form",
   custodyLaptop: "Laptop custody receipt",
   custodyMobile: "Phone/tablet custody receipt",
+  contractRenewal: "Contract renewal annex",
+  contractNonRenewal: "Non-renewal notice",
   form6: "Form 6",
   resignation: "Resignation request",
   mutualTermination: "Mutual termination agreement",
@@ -71,6 +74,8 @@ const BUILT_IN_COPIES: Readonly<Record<HiringPackDocument, number>> = {
   workerDataForm: systemContractDefaults.workerDataFormCopies,
   custodyLaptop: systemContractDefaults.custodyLaptopCopies,
   custodyMobile: systemContractDefaults.custodyMobileCopies,
+  contractRenewal: systemContractDefaults.contractRenewalCopies,
+  contractNonRenewal: systemContractDefaults.contractNonRenewalCopies,
   form6: systemContractDefaults.form6Copies,
   resignation: systemContractDefaults.resignationCopies,
   mutualTermination: systemContractDefaults.mutualTerminationCopies,
@@ -140,6 +145,8 @@ const BUILT_IN_SURFACE_HINT: Readonly<Record<HiringPackDocument, DocumentSurface
   workerDataForm: "flow",
   custodyLaptop: "flow",
   custodyMobile: "flow",
+  contractRenewal: "flow",
+  contractNonRenewal: "flow",
   form6: "page",
   resignation: "page",
   mutualTermination: "page",
@@ -181,6 +188,7 @@ const BUILT_IN_GROUPS: Readonly<Record<HiringPackDocument, CustomTemplateGroup>>
   ...fromList(ONBOARDING_FORM_DOCUMENTS, "joining"),
   ...fromList(EXIT_DOCUMENTS, "leaving"),
   ...fromList(ASSET_DOCUMENTS, "other"),
+  ...fromList(RENEWAL_DOCUMENTS, "other"),
 } as Readonly<Record<HiringPackDocument, CustomTemplateGroup>>;
 
 function fromList(
