@@ -4,13 +4,25 @@
 // categories share the exact same candidate shape (deductions_candidates
 // joined with its decision), only the category filter and label differ.
 //
-// Uses the house branded workbook kit (Cover + Provenance sheet, zebra-styled
-// data table) so this matches every other export in the codebase rather than
-// being a bare, unbranded dump.
+// Uses the HOUSE workbook kit (`house-table-workbook`) — the SATO document identity, a Cover +
+// Provenance sheet and a zebra-styled table — so this reads as the same document as the payroll
+// pack and the employee master rather than as its own thing.
+//
+// Every row also states, in a word, whether it will actually be deducted. That was previously
+// only inferable from a decision status plus a zero, and the inference is not obvious: the
+// eligible status is "Approved for Payroll" rather than "Approved", and a MANDATORY category
+// deducts while still Pending where a discretionary one does not. The column comes from
+// `isEligibleForPublish`, which is what `publishMonth` uses.
 
 import ExcelJS from "exceljs";
 
-import { buildCoverSheet, sanitizeSheetName, writeTable, type CellValue, type TableColumn } from "@/lib/export/phoenix-xlsx-style";
+import {
+  buildHouseCoverSheet,
+  writeHouseTable,
+  type CellValue,
+  type TableColumn,
+} from "@/lib/export/house-table-workbook";
+import { sanitizeSheetName } from "@/lib/export/phoenix-xlsx-style";
 import {
   deductionsCategoryLabel,
   isEligibleForPublish,
@@ -46,6 +58,12 @@ const COLUMNS: TableColumn[] = [
   // reviewer dropped.
   { label: "Applied Dates", width: 40 },
   { label: "Decision Status", width: 18 },
+  // Said outright rather than left to be inferred. "Decision Status: Pending" and an Applied
+  // Amount of 0 do together mean "this one is not deducted", but that is a deduction the reader
+  // has to make on every row, on a sheet whose whole subject is money coming out of someone's
+  // pay. This column answers it in one word, from `isEligibleForPublish` — the same function
+  // `publishMonth` uses, so the sheet cannot disagree with what the month will actually take.
+  { label: "Will Be Deducted", width: 16 },
   { label: "Applied Value", numFmt: "#,##0.00", right: true, width: 12 },
   { label: "Applied Amount", numFmt: "#,##0.00", right: true, width: 14, dataBar: true },
   { label: "Decision Reason", width: 40 },
@@ -92,6 +110,7 @@ function candidateRow(candidate: DeductionsCandidateWithDecision): CellValue[] {
     joinDates(candidate.dates),
     joinDates(resolveAppliedDeductionDates(candidate)),
     candidate.decision?.decisionStatus ?? "Pending",
+    isEligibleForPublish(candidate) ? "Yes" : "No",
     appliedValueCell(candidate),
     appliedAmountCell(candidate),
     candidate.decision?.decisionReason ?? "",
@@ -140,7 +159,7 @@ export function buildDeductionsCategoryWorkbook(input: {
   const workbook = new ExcelJS.Workbook();
   workbook.created = new Date(meta.generatedAtIso);
 
-  buildCoverSheet(workbook, {
+  buildHouseCoverSheet(workbook, {
     title: `Deductions — ${label}`,
     subtitle: `Full candidate detail for ${meta.monthKey}, one row per deduction.`,
     confidentialNote:
@@ -161,7 +180,7 @@ export function buildDeductionsCategoryWorkbook(input: {
   totals[0] = "TOTAL";
   const appliedAmountColumnIndex = COLUMNS.findIndex((column) => column.label === "Applied Amount");
   totals[appliedAmountColumnIndex] = totalAmount;
-  writeTable(sheet, 1, {
+  writeHouseTable(sheet, 1, {
     columns: COLUMNS,
     rows: candidates.map(candidateRow),
     title: `${label} — ${meta.monthKey}`,

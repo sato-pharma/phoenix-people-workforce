@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 
 /**
@@ -60,7 +61,17 @@ export function assertAutomatedPayrollFinanceActor(access: AccessContext): void 
   }
 }
 
-/** Stable actor id for audit/created_by columns. */
+/**
+ * Stable actor id for audit/created_by columns.
+ *
+ * The HR id is canonicalised; the login id and the `system` marker are NOT hr ids and are left
+ * exactly as they are. This is the same shape as outstation_expenses.approved_by, and the same
+ * trap: running the whole expression through hrIdForStorage would stamp SYSTEM and DEV.PREVIEW
+ * into every payroll audit row and into salary_batches.approved_by.
+ *
+ * access.hrId is the LOWERCASE comparison key, so writing it verbatim is what splits one person
+ * into two in any per-actor report — the defect this repo has now repaired in six other columns.
+ */
 export function actorId(access: AccessContext): string {
-  return access.hrId ?? access.loginId ?? "system";
+  return hrIdForStorage(access.hrId) ?? access.loginId ?? "system";
 }

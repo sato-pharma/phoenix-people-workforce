@@ -50,6 +50,21 @@ Phoenix Workforce/
 !Source of sales area database.xlsx
 !.env.*.example
 
+# xlsx/ is the working-data folder. Around 104 of its files are in no commit, branch or
+# archive ref, so git cannot recover them. On 2026-09-05 a `git clean -fd` in the primary
+# deleted four of them in one burst - a contract and three logo assets - because they were
+# untracked but NOT ignored, while the 100 spreadsheets beside them survived precisely
+# because `*.xlsx` above made them ignored. `git clean` skips ignored files, so this line
+# extends that same protection to everything in the folder.
+#
+# The `/*` form is deliberate: `xlsx/` would exclude the directory itself, and git cannot
+# re-include a file whose parent directory is excluded. This way a specific file can still
+# be tracked with a negation below.
+#
+# It does NOT stop `git clean -fdx`, which overrides ignore rules by design, and it does
+# not affect the six files already tracked in xlsx/.
+xlsx/*
+
 # Root-level scratch scripts from local automation sessions (e.g. Excel COM builds)
 _tmp-*
 

@@ -272,6 +272,7 @@ import { runRecruitmentInboundQueueTests } from "./recruitment-inbound-queue.tes
 import { runRecruitmentInboundMasteryTests } from "./recruitment-inbound-mastery.test.ts";
 import { runRecruitmentCandidateSourceContextTests } from "./recruitment-candidate-source-context.test.ts";
 import { runRecruitmentDbBatchTests } from "./recruitment-db-batch.test.ts";
+import { runAttendanceExportHouseIdentityTests } from "./attendance-export-house-identity.test.ts";
 import { runAttendanceCalendarSourceTests } from "./attendance-calendar-source.test.ts";
 import { runEmployeeStatusFilterConsolidationTests } from "./employee-status-filter-consolidation.test.ts";
 import { runAttendanceWorkingDaysTests } from "./attendance-working-days.test.ts";
@@ -385,6 +386,7 @@ import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confid
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
 import { runHrIdStorageCasingTests } from "./hr-id-storage-casing.test.ts";
+import { runPreviewSessionCannotDecideTests } from "./preview-session-cannot-decide.test.ts";
 import { runWeeklyPlanMovePeriodTests } from "./weekly-plan-move-period.test.ts";
 import { runWeeklyPlanAutoHrAcknowledgeTests } from "./weekly-plan-auto-hr-acknowledge.test.ts";
 import { runWeeklyPlanErrorBannerToneTests } from "./weekly-plan-error-banner-tone.test.ts";
@@ -1042,6 +1044,7 @@ import { runAttendanceMonthlySummaryOutageTests } from "./attendance-monthly-sum
 
 import { runPayrollBatchMembershipTests } from "./payroll-batch-membership.test.ts";
 import { runDeductionsEmployeeSummaryPublishEligibilityTests } from "./deductions-employee-summary-publish-eligibility.test.ts";
+import { runDeductionsExportHouseIdentityTests } from "./deductions-export-house-identity.test.ts";
 import { runDeductionsExportAppliedAndMasterTests } from "./deductions-export-applied-and-master.test.ts";
 import { runDeductionsMasterExportLineRegionFilterTests } from "./deductions-master-export-line-region-filter.test.ts";
 import { runDeductionsVacationDayDoubleChargeTests } from "./deductions-vacation-day-double-charge.test.ts";
@@ -1344,6 +1347,7 @@ import { runNavRowWayBackTests } from "./nav-row-way-back.test.ts";
 import { runCiDependencyAuditTests } from "./ci-dependency-audit.test.ts";
 import { runAppsScriptPushTests } from "./apps-script-push.test.ts";
 import { runHeredocBackslashDamageTests } from "./heredoc-backslash-damage.test.ts";
+import { runHrFormsRenewalTests } from "./hr-forms-renewal.test.ts";
 import { runMalformedUuidIdGuardsTests } from "./malformed-uuid-id-guards.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -1905,6 +1909,7 @@ await runTest("recruitment inbound mastery (analytics, spike, fuzzy dedup, cv-li
 await runTest("recruitment candidate source context (email subject / whatsapp first messages)", runRecruitmentCandidateSourceContextTests);
 await runTest("recruitment db batching (.in() id lists stay inside the request URL)", runRecruitmentDbBatchTests);
 await runTest("attendance calendar source", runAttendanceCalendarSourceTests);
+await runTest("attendance exports (house identity, mapping header row, incomplete warning)", runAttendanceExportHouseIdentityTests);
 await runTest("employee status filter consolidation (5 hand-rolled terminal-status filters → shared constant)", runEmployeeStatusFilterConsolidationTests);
 await runTest("attendance working days", runAttendanceWorkingDaysTests);
 await runTest("attendance Cairo-midnight boundary (shared cairoMidnightUtcIso, EEST/EET + dropped-punch regression)", runAttendanceCairoMidnightBoundaryTests);
@@ -2102,6 +2107,7 @@ await runTest("private calendar", runPrivateCalendarTests);
 await runTest("weekly plan approver UI parity (no buttons the server rejects; comments gated on participation)", runWeeklyPlanApproverUiParityTests);
 await runTest("weekly plan move to another period (HR re-dates a plan the employee filed on the wrong week)", runWeeklyPlanMovePeriodTests);
 await runTest("hr ids are stored in canonical casing everywhere, never the lowercase comparison key", runHrIdStorageCasingTests);
+await runTest("a preview session may look at anything and decide nothing (one approved a real 383.62 expense on production)", runPreviewSessionCannotDecideTests);
 await runTest("weekly plan automatic HR acknowledgement on final approval (both routes, best-effort, manual fallback intact)", runWeeklyPlanAutoHrAcknowledgeTests);
 await runTest("weekly plan error banner tone (a rejection must not look like a confirmation)", runWeeklyPlanErrorBannerToneTests);
 await runTest("termination truth (company exits are not announced as resignations; complete actually terminates)", runTerminationTruthTests);
@@ -3031,6 +3037,7 @@ await runTest("payroll batch membership is historical (a resignation after payda
 await runTest("deductions By Employee total counts only what publish will actually take (pending shown separately, agrees with Overview)", runDeductionsEmployeeSummaryPublishEligibilityTests);
 
 await runTest("deductions export shows the applied value/amount publish will take for an approved-without-narrowing row (never blank), and the master workbook summarizes eligible-only with Line + Direct Manager columns", runDeductionsExportAppliedAndMasterTests);
+await runTest("deductions exports (house identity, Will Be Deducted agrees with publish)", runDeductionsExportHouseIdentityTests);
 await runTest("the master deductions export narrows to one line and/or region, carries a Region column, and a filtered workbook says so on its cover and in its filename", runDeductionsMasterExportLineRegionFilterTests);
 
 await runTest("one employee-day of unpaid vacation is chargeable once regardless of which source found it (re-run supersedes, collisions seen within a category)", runDeductionsVacationDayDoubleChargeTests);
@@ -4273,6 +4280,10 @@ await runTest(
 await runTest(
   "heredoc backslash damage sweep (no control byte in source, no regex built from a halved escape)",
   runHeredocBackslashDamageTests,
+);
+await runTest(
+  "contract renewal annex and non-renewal notice (every cross-reference resolves against the CURRENT contract; new term starts the day after the old one ends; annex number and objective reason stay blank)",
+  runHrFormsRenewalTests,
 );
 await runTest(
   "malformed uuid id guards (a non-uuid path segment is 404, never 500, across 18 dynamic routes)",

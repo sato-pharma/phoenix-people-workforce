@@ -53,6 +53,7 @@ import {
   assertAutomatedPayrollHrActor,
   assertAutomatedPayrollPublisher,
 } from "./permissions.ts";
+import { assertRealSessionForDecision } from "@/lib/auth/preview-session-guard";
 import {
   computeVacationDeductionTotals,
   filterExcludedMembers,
@@ -241,6 +242,7 @@ export async function startOrResumeRun(
   access: AccessContext,
   period: PayrollPeriod,
 ): Promise<MonthlySalaryRun> {
+  assertRealSessionForDecision(access, "start or resume a payroll run");
   assertAutomatedPayrollHrActor(access);
 
   const existing = await findActiveRun(period.month, period.year);
@@ -301,6 +303,7 @@ export async function getRunForPeriod(
 }
 
 export async function cancelRun(access: AccessContext, runId: string): Promise<MonthlySalaryRun> {
+  assertRealSessionForDecision(access, "cancel a payroll run");
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertActiveRun(run);
@@ -425,6 +428,7 @@ export async function saveStep(
   edits: StepEditInput[],
   inputMode: StepInputMode,
 ): Promise<void> {
+  assertRealSessionForDecision(access, "save a payroll run step");
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertStepPhaseAllowed(run, stepKey);
@@ -479,6 +483,7 @@ export async function confirmStep(
   runId: string,
   stepKey: StepKey,
 ): Promise<StepState> {
+  assertRealSessionForDecision(access, "confirm a payroll run step");
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertStepPhaseAllowed(run, stepKey);
@@ -563,6 +568,7 @@ export async function confirmPart1(
   runId: string,
   options: { acknowledgeDataIssues?: boolean } = {},
 ): Promise<MonthlySalaryRun> {
+  assertRealSessionForDecision(access, "confirm Part 1 of a payroll run");
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertActiveRun(run);
@@ -624,6 +630,7 @@ export async function confirmPart1(
  * HR does not need to re-click through every tab to get there.
  */
 export async function unconfirmPart1(access: AccessContext, runId: string): Promise<MonthlySalaryRun> {
+  assertRealSessionForDecision(access, "reopen Part 1 of a payroll run");
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertActiveRun(run);
@@ -660,6 +667,7 @@ export async function confirmPart2(
   options: { acknowledgeOverpaid?: boolean; acknowledgeDataIssues?: boolean } = {},
 ): Promise<MonthlySalaryRun> {
   const acknowledgeOverpaid = options.acknowledgeOverpaid === true;
+  assertRealSessionForDecision(access, "confirm Part 2 of a payroll run");
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertActiveRun(run);
@@ -924,6 +932,7 @@ export async function excludeEmployeeFromRun(
   hrId: string,
   reason: string,
 ): Promise<void> {
+  assertRealSessionForDecision(access, "exclude an employee from a payroll run");
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertActiveRun(run);
@@ -945,6 +954,7 @@ export async function excludeEmployeeFromRun(
 
 /** Reverse excludeEmployeeFromRun — the employee re-enters the run's population. */
 export async function includeEmployeeInRun(access: AccessContext, runId: string, hrId: string): Promise<void> {
+  assertRealSessionForDecision(access, "put an employee back into a payroll run");
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertActiveRun(run);
@@ -986,6 +996,7 @@ export type PublishResult = {
  * batch already claiming the month; idempotent if this run already published.
  */
 export async function publishToPayslips(access: AccessContext, runId: string): Promise<PublishResult> {
+  assertRealSessionForDecision(access, "publish a payroll run to payslips");
   assertAutomatedPayrollPublisher(access);
   const run = await requireRun(runId);
 
