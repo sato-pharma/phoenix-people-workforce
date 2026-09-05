@@ -42,6 +42,30 @@ function loadSax() {
   return null;
 }
 
+/** XML entities, decoded. Sheet names reach these parts escaped; the comparisons below do not. */
+const decodeEntities = (text) =>
+  String(text)
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+
+/**
+ * The `<sheet>` entries of workbook.xml, in order.
+ *
+ * ATTRIBUTE ORDER IS NOT FIXED IN OOXML and ExcelJS writes `sheetId` before `name`, so the two
+ * regexes this replaced — both anchored on `<sheet name=` — matched nothing at all against an
+ * ExcelJS workbook. That did not fail loudly: the sheet list came back EMPTY, so every defined
+ * name reported an unknown sheet and every localSheetId reported as out of range. Seven false
+ * alarms on a correct file, which is the state in which a real one stops being read.
+ */
+const sheetTags = (workbookXml) =>
+  [...workbookXml.matchAll(/<sheet\s[^>]*>/g)].map((match) => ({
+    name: decodeEntities((match[0].match(/(?:^|\s)name="([^"]*)"/) ?? [])[1] ?? ""),
+    rid: (match[0].match(/r:id="(rId\d+)"/) ?? [])[1] ?? null,
+  }));
+
 const colIndex = (letters) => [...letters].reduce((n, c) => n * 26 + (c.charCodeAt(0) - 64), 0);
 
 export async function checkWorkbook(bytes, { quiet = false } = {}) {
@@ -153,8 +177,8 @@ export async function checkWorkbook(bytes, { quiet = false } = {}) {
   const wbRels = text["xl/_rels/workbook.xml.rels"] ?? "";
   const relTarget = Object.fromEntries([...wbRels.matchAll(/Id="(rId\d+)"[^>]*Target="([^"]*)"/g)].map((m) => [m[1], m[2]]));
   const sheetFileByName = {};
-  for (const m of workbook.matchAll(/<sheet name="([^"]*)"[^>]*r:id="(rId\d+)"/g)) {
-    sheetFileByName[m[1]] = `xl/${relTarget[m[2]]}`;
+  for (const tag of sheetTags(workbook)) {
+    if (tag.rid && relTarget[tag.rid]) sheetFileByName[tag.name] = `xl/${relTarget[tag.rid]}`;
   }
 
   for (const name of names.filter((n) => /^xl\/tables\/table\d+\.xml$/.test(n))) {
@@ -208,7 +232,12 @@ export async function checkWorkbook(bytes, { quiet = false } = {}) {
   }
 
   for (const m of workbook.matchAll(/<definedName name="([^"]*)"(?: localSheetId="\d+")?[^>]*>([^<]*)<\/definedName>/g)) {
-    const [, dnName, value] = m;
+    const [, dnName, rawValue] = m;
+    // A defined name whose sheet has a space is written quoted, and XML escapes that quote as
+    // &apos;. Matching the raw text made EVERY such name read as pointing at a sheet called
+    // "&apos;Lookup Data&apos;" — 6 false alarms on a workbook that was correct, which is how a
+    // real one gets waved through.
+    const value = decodeEntities(rawValue);
     const sheetRef = value.match(/^'?([^'!]+)'?!\$[A-Z]+\$\d+:\$[A-Z]+\$(\d+)$/);
     if (!sheetRef) continue;
     const file = sheetFileByName[sheetRef[1]];
@@ -228,11 +257,14 @@ export async function checkWorkbook(bytes, { quiet = false } = {}) {
   // valid, every part resolves, every range is in bounds, and Excel opens it without a murmur. It
   // shows up only as the wrong page coming out of a printer, which is the one place a reader will
   // not think to blame the export.
-  const sheetOrder = [...workbook.matchAll(/<sheet name="([^"]*)"/g)].map((m) => m[1]);
+  // Attribute ORDER is not fixed in OOXML, and ExcelJS writes sheetId before name — so a regex
+  // anchored on `<sheet name=` matched nothing at all, and this whole check silently passed on an
+  // empty list while reporting every localSheetId as "out of range".
+  const sheetOrder = sheetTags(workbook).map((tag) => tag.name);
   let misplaced = 0;
   for (const m of workbook.matchAll(/<definedName name="([^"]*)" localSheetId="(\d+)"[^>]*>([^<]*)<\/definedName>/g)) {
     const [, dnName, index, value] = m;
-    const named = value.match(/^'?([^'!]+)'?!/);
+    const named = decodeEntities(value).match(/^'?([^'!]+)'?!/);
     if (!named) continue;
     const owner = sheetOrder[Number(index)];
     if (owner !== named[1]) {
