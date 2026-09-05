@@ -37,18 +37,20 @@ export type FilingDecision =
   | { filed: false; why: string };
 
 /**
- * The seven papers whose signature the app records, and which therefore have a moment to file at.
+ * The eight papers whose signature the app records, and which therefore have a moment to file at.
  *
- * DELIBERATELY NOT DERIVED FROM `SIGNABLE_DOCUMENTS`. It would be the same seven today, and the two
- * lists answer different questions: that one is "can a signed date be recorded", this one is "is
- * there a filing rule for it". A document could gain a recorded date and want no file — the worker
- * data form and the custody receipts already sit in that shape for the opposite reason. Keeping
- * them apart means adding one never silently changes the other; the test asserts they agree today.
+ * DELIBERATELY NOT DERIVED FROM `SIGNABLE_DOCUMENTS`. It would be the same eight today, and the
+ * two lists answer different questions: that one is "can a signed date be recorded", this one is
+ * "is there a filing rule for it". A document could gain a recorded date and want no file — the
+ * worker data form and the custody receipts already sit in that shape for the opposite reason.
+ * Keeping them apart means adding one never silently changes the other; the test asserts they
+ * agree today — and it caught the NDA, which became signable a commit before it became fileable.
  */
 export const FILEABLE_BUILT_IN_DOCUMENTS = [
   "contract",
   "form1",
   "form6",
+  "nda",
   "resignation",
   "mutualTermination",
   "clearanceEmployee",

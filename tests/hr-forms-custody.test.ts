@@ -131,6 +131,8 @@ function profileFixture(overrides: Partial<HiringPackProfile> = {}): HiringPackP
     contractSignatoryNameAr: null,
     contractSignatoryTitleAr: null,
     contractObjectiveReasonCode: null,
+    ndaSignedDate: null,
+    ndaPrintedAt: null,
     updatedAt: null,
     ...overrides,
   };
@@ -504,11 +506,17 @@ function testACustodyReceiptRecordsNoSignatureAgainstThePerson(): void {
       continue;
     }
     if (RENEWAL_DOCUMENTS.includes(document as (typeof RENEWAL_DOCUMENTS)[number])) continue;
-    // Sato's own six are out on the same reasoning: five are sheets filed in a drawer and the
-    // two absence notices are issued repeatedly. The NDA is the one that arguably belongs in
-    // SIGNABLE_DOCUMENTS and is not there only because it needs a column and a migration — see
-    // the note in `SIGNABLE_DOCUMENTS` itself.
-    if (HOUSE_PAPER_DOCUMENTS.includes(document as (typeof HOUSE_PAPER_DOCUMENTS)[number])) continue;
+    // FIVE of Sato's six are out on the same reasoning: the checklist, the service sheet and the
+    // two appointment-documents forms are sheets filed in a drawer, and the absence notices are
+    // issued repeatedly. THE NDA IS NOT SKIPPED — it got a real register on 2026-09-05, so it must
+    // fall through to the assertion below and be signable like the contract. Naming it here rather
+    // than filtering the whole group is what makes that difference visible.
+    if (
+      document !== "nda" &&
+      HOUSE_PAPER_DOCUMENTS.includes(document as (typeof HOUSE_PAPER_DOCUMENTS)[number])
+    ) {
+      continue;
+    }
     assert.equal(
       isSignableDocument(document),
       true,
