@@ -150,10 +150,12 @@ file holding the full account, under
   regex stops at the first `/>` and makes a correct file look broken, openpyxl reports `images: 0` on
   every sheet because it cannot read ExcelJS DrawingML (check `xl/media/*` instead), and openpyxl
   under-reports grouped columns. `exceljs-writes-two-schema-invalid-ooxml-fragments`
-- **Two ways of LOOKING at a generated workbook lie, and both lie in the same direction — they make a
-  CORRECT file read as broken**, which is the expensive way round: you go hunting for a defect that is
-  not there. Excel is not drivable headlessly here, so LibreOffice
-  (`/c/Program Files/LibreOffice/program/soffice.exe`) is the tool, and two of its three modes mislead.
+- **THREE ways of LOOKING at a generated workbook lie, and they do NOT all lie in the same direction.**
+  Two make a CORRECT file read as broken, which is the expensive way round — you go hunting for a defect
+  that is not there. The third makes a BROKEN file read as CORRECT, which is worse: nobody goes looking
+  at all. Excel is not drivable headlessly here, so LibreOffice
+  (`/c/Program Files/LibreOffice/program/soffice.exe`) is the tool, and every one of its modes misleads
+  about something.
   **1 —** `--convert-to png` renders only the LEFTMOST columns. On a sheet whose columns are 4 / 30 / 96
   characters wide it showed columns 1-2 and stopped: every body paragraph, every live counter and the
   title (which sits in column 3) came out blank, with no error. Diagnosed as a builder bug twice in one
@@ -161,11 +163,27 @@ file holding the full account, under
   workbook with ExcelJS, `removeWorksheet`-ing the other sheets and saving **destroys the merges** (7
   `mergeCell` refs became 0) and the column widths, so headings clip mid-word — in the copy only.
   §4 already forbids that round trip for the premium closing engine's pivots and VBA; it damages an
-  ordinary workbook too, and destroys precisely what a visual review is trying to judge. **What works is
+  ordinary workbook too, and destroys precisely what a visual review is trying to judge.
+  **What works is
   `--convert-to html`**, which emits every sheet's real cell values: strip the tags and assert the
   strings you expect are present. That settled both false alarms in one command. Keep the PNG for
   STRUCTURE at a glance — masthead, rules, zebra banding, whether anything is a filled block — never for
-  whether content exists. And the structural question is separate from both: only
+  whether content exists.
+  **3 — and this one inverts the direction: `--convert-to html` cannot judge a PIVOT's freshness.**
+  LibreOffice rebuilds a pivot (its DataPilot) from the declared source on EVERY load, unconditionally
+  and regardless of `refreshOnLoad`, so it renders a STALE cache exactly as it renders a live one — the
+  defect reads as FIXED. Measured 2026-09-05 on the Weekly Sales BI workbook: the cached records were
+  poisoned to `777777` in BOTH a fixed and an unfixed build, and both rendered the true total 6,786. The
+  poison never appeared, so a clean render is no evidence at all about `refreshOnLoad`. What it CAN
+  settle is the cache SOURCE, precisely because it rebuilds from whatever source is declared — append
+  rows to the Data table, leave the cache untouched, re-convert and read the pivot's grand total:
+  `<worksheetSource name="tblWeekly"/>` gave 855,270 with the new rows in, while
+  `<worksheetSource ref="A1:O8" sheet="Data"/>` gave 6,786 with them invisible. That is a real
+  end-to-end proof that a pivot grows with its data. `refreshOnLoad` itself is provable only
+  STRUCTURALLY — the attribute present, singular, and matching the form Excel wrote in
+  `assets/closing-engine/template.xlsm`. Confirming a pivot actually OPENS fresh needs Excel; say which
+  half your evidence covers rather than letting a CLEAN render imply both.
+  And the structural question is separate from all three: only
   `node scripts/check-workbook-integrity.mjs <file>` answers "will Excel silently repair this", so run it
   as well, not instead. `looking-at-a-generated-workbook-two-ways-that-lie`
 
