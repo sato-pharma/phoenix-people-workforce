@@ -169,6 +169,32 @@ export async function runHrIdStorageCasingTests() {
     );
   }
 
+  // --- a column whose NAME hides it, and which does not hold only people ---
+  //
+  // `outstation_expenses.approved_by` feeds `expense_claims.decided_by_hr_id` through
+  // phx_refresh_expense_claims. The sweep above matches `\w*_hr_id:`, so a column called
+  // `approved_by` is invisible to it BY NAME no matter how the value is written - which is how
+  // 71 lower-cased rows survived every pass of this file.
+  //
+  // The second assertion is the one that matters most, and it guards the OPPOSITE mistake.
+  // Measured on production 2026-09-05 the column held three kinds of value: `b-10` (71 rows, a
+  // real HR id), `system` (15 rows, a marker meaning no session decided this) and `dev.preview`
+  // (1 row, a login id with no employee behind it). Running the whole expression through
+  // hrIdForStorage - the obvious repair - would store SYSTEM and DEV.PREVIEW, and the claims
+  // screen would answer "who decided this" with a shouty non-person. Only the HR-id branch may
+  // be canonicalised.
+  const outstationExpenses = readFileSync("src/lib/outstation/expenses.ts", "utf8");
+  assert.ok(
+    outstationExpenses.includes("hrIdForStorage(accessContext.hrId)"),
+    "outstation_expenses.approved_by must store the canonical HR id - it feeds "
+      + "expense_claims.decided_by_hr_id, and no pattern in this file can catch it by column name",
+  );
+  assert.ok(
+    /\?\?\s*"system";/.test(outstationExpenses),
+    "the `system` marker must survive untouched - canonicalising the whole expression would "
+      + "write SYSTEM into the column the claims screen reads as the person who decided",
+  );
+
   // --- widening a read to both casings must not hand PostgREST an empty IN list ---
   //
   // `hrIdLookupKeys(null)` is `[]`, and `.in(col, [])` builds `col=in.()`, which PostgREST
