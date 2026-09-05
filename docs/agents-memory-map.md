@@ -114,6 +114,7 @@ status, give it its own line.
 - **Dev login is GET /api/dev-auth?role=<Role>, and it DOES role-switch the Browser pane** — `dev-auth-is-header-only-browser-pane-cannot-use-it`
 - **Turbopack 500s with 0xc0000142 when the commit charge is exhausted** — `turbopack-500s-with-0xc0000142-when-commit-is-full`
 - **Verify a 375px mobile layout with NO dev server.** — `verify-a-mobile-layout-without-a-dev-server`
+- **Looking at a generated workbook has two modes that LIE (LibreOffice PNG, ExcelJS round-trip).** — `looking-at-a-generated-workbook-two-ways-that-lie`
 - **A freeze leaves NO dump** — `commit-limit-not-ram-is-the-freeze-ceiling-pagefile-now-16gb`
 - **An interrupted session leaves the tree BROKEN ON PURPOSE.** — `an-interrupted-session-leaves-the-tree-deliberately-broken`
 
