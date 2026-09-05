@@ -1348,6 +1348,7 @@ import { runCiDependencyAuditTests } from "./ci-dependency-audit.test.ts";
 import { runAppsScriptPushTests } from "./apps-script-push.test.ts";
 import { runHeredocBackslashDamageTests } from "./heredoc-backslash-damage.test.ts";
 import { runHrFormsRenewalTests } from "./hr-forms-renewal.test.ts";
+import { runMalformedUuidIdGuardsTests } from "./malformed-uuid-id-guards.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4283,6 +4284,10 @@ await runTest(
 await runTest(
   "contract renewal annex and non-renewal notice (every cross-reference resolves against the CURRENT contract; new term starts the day after the old one ends; annex number and objective reason stay blank)",
   runHrFormsRenewalTests,
+);
+await runTest(
+  "malformed uuid id guards (a non-uuid path segment is 404, never 500, across 18 dynamic routes)",
+  runMalformedUuidIdGuardsTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

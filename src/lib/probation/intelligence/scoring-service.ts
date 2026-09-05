@@ -8,6 +8,7 @@ import { getProbationConfig } from "./config";
 import { computeProbationScore, type FeedbackScoreInput, type ProbationScoreResult } from "./scoring";
 import { detectContradictions, type Contradiction } from "./contradictions";
 import type { ProbationEvaluatorRole, ProbationRecommendation, ProbationScorecard } from "./types";
+import { isUuid } from "@/lib/http/uuid";
 
 export type ProbationReadiness =
   | "not_decision_ready"
@@ -46,6 +47,9 @@ export async function getCaseScore(
   caseId: string,
   generatedAt: string = new Date().toISOString(),
 ): Promise<CaseScore> {
+  // A malformed id is NOT FOUND, not a fault: this is a uuid column, and Postgres answers a
+  // non-uuid with 22P02 from the WHERE clause instead of with no rows, which leaves as a 500.
+  if (!isUuid(caseId)) throw new Error("Not found: probation case does not exist.");
   const supabase = getSupabaseAdmin();
   const config = await getProbationConfig();
 

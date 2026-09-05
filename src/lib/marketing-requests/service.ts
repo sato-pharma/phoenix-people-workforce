@@ -20,6 +20,7 @@ import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { isUuid } from "@/lib/http/uuid";
 import { parseCrmContactCode } from "@/lib/crm/contact-code";
 // The one definition of "this link was inferred, not field-validated". Imported rather than
 // re-implemented so the validation report and the Customer Pharmacy Mapping page can never drift
@@ -8716,6 +8717,13 @@ export async function getMarketingRequestDetail(
 ): Promise<MarketingRequestDetail> {
   const cleanRequestId = cleanText(requestId);
   if (!cleanRequestId) throw validationError("Marketing request ID is required.");
+  // A malformed id is NOT FOUND, not a fault. `id` is a uuid column, and Postgres answers a
+  // non-uuid with 22P02 from the WHERE clause rather than with no rows — which leaves here as a
+  // 500 telling the caller the system is broken, when the honest answer is that their link is
+  // wrong. Same error as an absent row below, so the two stay indistinguishable.
+  if (!isUuid(cleanRequestId)) {
+    throw notFoundError("Marketing request was not found.", "marketing_request_not_found");
+  }
 
   const supabase = getSupabaseAdmin();
   const employeeRows = await loadEmployeeDirectoryRows();

@@ -17,6 +17,7 @@ import { computeFeedbackSla, type FeedbackSlaState } from "./feedback-sla";
 import { currentProbationDay, milestoneStatuses, computeDvProgress, type DvDayLite } from "./report-metrics";
 import { probationDaysRemaining } from "@/lib/probation/date";
 import type { ProbationCase, ProbationEvaluatorRole, ProbationRecommendation } from "./types";
+import { isUuid } from "@/lib/http/uuid";
 
 const STALE_SYNC_HOURS = 48;
 
@@ -68,6 +69,9 @@ function mean(scores: Record<string, number> | null): number | null {
 }
 
 async function loadCaseById(caseId: string): Promise<ProbationCase | null> {
+  // A malformed id is NOT FOUND, not a fault: this is a uuid column, and Postgres answers a
+  // non-uuid with 22P02 from the WHERE clause instead of with no rows, which leaves as a 500.
+  if (!isUuid(caseId)) return null;
   const { data, error } = await getSupabaseAdmin()
     .from("probation_cases")
     .select("*")

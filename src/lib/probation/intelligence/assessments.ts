@@ -21,6 +21,7 @@ import { buildSfeEvidence } from "./sfe-evidence";
 import { buildHrEvidence } from "./hr-evidence";
 import { probationEndDate } from "@/lib/probation/date";
 import type { ProbationAssessment, ProbationAssessmentKind } from "./types";
+import { isUuid } from "@/lib/http/uuid";
 
 // ── Role authorization (P5-T05) ──────────────────────────────────────────────
 
@@ -261,6 +262,9 @@ export async function getHrEvidencePreview(caseId: string) {
 }
 
 export async function getCaseAssessments(access: AccessContext, caseId: string): Promise<CaseAssessments> {
+  // A malformed id is NOT FOUND, not a fault: this is a uuid column, and Postgres answers a
+  // non-uuid with 22P02 from the WHERE clause instead of with no rows, which leaves as a 500.
+  if (!isUuid(caseId)) throw new Error("Not found: probation case does not exist.");
   const config = await getProbationConfig();
   const redact = !canSeeConfidentialNote(access);
   const { data, error } = await getSupabaseAdmin()

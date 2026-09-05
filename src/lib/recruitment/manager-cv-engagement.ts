@@ -47,6 +47,7 @@ import { loadAllDistrictBoards } from "@/lib/recruitment/district-manager-folder
 import { getFileForDownload, listCandidateFiles, type FileDownload } from "@/lib/recruitment/files";
 import { MANAGER_SENDS_TABLE } from "@/lib/recruitment/manager-sends";
 import type { RecruitmentFile } from "@/lib/recruitment/types";
+import { isUuid } from "@/lib/http/uuid";
 
 /**
  * The roles that may open the report at all.
@@ -563,6 +564,9 @@ export async function recordManagerCvOpen(input: {
 
 /** The candidate's files, for the report's silent preview. Records nothing. */
 export async function listManagerEngagementCandidateFiles(candidateId: string): Promise<RecruitmentFile[]> {
+  // A malformed id is NOT FOUND, not a fault: this is a uuid column, and Postgres answers a
+  // non-uuid with 22P02 from the WHERE clause instead of with no rows, which leaves as a 500.
+  if (!isUuid(candidateId)) throw new Error("Candidate not found.");
   return listCandidateFiles(candidateId);
 }
 

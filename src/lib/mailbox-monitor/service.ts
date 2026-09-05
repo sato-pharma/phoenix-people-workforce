@@ -28,6 +28,7 @@ import type {
   MailboxMonitor,
   MailboxMonitorStatus,
 } from "@/lib/mailbox-monitor/types";
+import { isUuid } from "@/lib/http/uuid";
 
 const DEFAULT_IMAP_HOST = "imap.mail.yahoo.com"; // Turbify/Yahoo business mail
 const DEFAULT_IMAP_PORT = 993;
@@ -160,6 +161,10 @@ async function logAccess(entry: {
 }
 
 async function loadRow(id: string): Promise<MonitorRow> {
+  // A malformed id is NOT FOUND, not a fault: this is a uuid column, and Postgres answers a
+  // non-uuid with 22P02 from the WHERE clause instead of with no rows, which leaves as a 500.
+  // Same error as the absent-row case below, so the two stay indistinguishable.
+  if (!isUuid(id)) throw new MailboxMonitorError("Mailbox monitor not found.", 404);
   const { data, error } = await db().from(MONITORS_TABLE).select("*").eq("id", id).maybeSingle();
   if (error) throw new MailboxMonitorError(error.message, 500, { diagnostic: true });
   if (!data) throw new MailboxMonitorError("Mailbox monitor not found.", 404);

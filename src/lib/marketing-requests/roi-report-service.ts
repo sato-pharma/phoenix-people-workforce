@@ -1,5 +1,5 @@
 import type { AccessContext } from "@/lib/auth/permissions";
-import { describeUnexpectedError, errorMessageOf } from "@/lib/http/api-errors";
+import { describeUnexpectedError, errorMessageOf, notFoundError } from "@/lib/http/api-errors";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { logError } from "@/lib/observability/log";
@@ -45,6 +45,7 @@ import {
   restrictedProductNameSet,
 } from "@/lib/sales/access-scope";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
+import { isUuid } from "@/lib/http/uuid";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Marketing ROI Filter-Engine — server data layer.
@@ -1603,6 +1604,9 @@ export async function getMarketingRequestViewSales(
   assertMarketingWorkspaceAccess(access);
   const cleanId = String(requestId ?? "").trim();
   if (!cleanId) throw new Error("Marketing request id is required.");
+  // A malformed id is NOT FOUND, not a fault: this is a uuid column, and Postgres answers a
+  // non-uuid with 22P02 from the WHERE clause instead of with no rows, which leaves as a 500.
+  if (!isUuid(cleanId)) throw notFoundError("Marketing request was not found.", "marketing_request_not_found");
 
   const supabase = getSupabaseAdmin();
   // Include terminated/resigned employees: marketing ROI is a HISTORICAL report, so requests

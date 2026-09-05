@@ -9,6 +9,7 @@ import {
   RESTRICTED_PRODUCT_NAME_FALLBACKS,
 } from "@/lib/sales/access-scope";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { isUuid } from "@/lib/http/uuid";
 
 /**
  * Historical sales evidence for the customer behind a marketing request.
@@ -234,7 +235,15 @@ export async function getMarketingSalesEvidence(
   requestId: string,
   access: AccessContext,
 ): Promise<MarketingSalesEvidence> {
-  // Stays the FIRST statement — no customer or sales data is read until access is settled.
+  // Ahead of the access check because it reads NOTHING — a uuid format test, no query — so the
+  // "no data before access is settled" rule below is untouched. It has to come first: the access
+  // check itself filters approval steps by `request_id`, a uuid column, so a malformed id raises
+  // 22P02 there, returning a 500 before the request is ever looked up.
+  if (!isUuid(String(requestId ?? "").trim())) {
+    throw notFoundError("Marketing request was not found.", "request_not_found");
+  }
+
+  // Stays the FIRST statement that READS — no customer or sales data until access is settled.
   await assertSalesEvidenceAccess(requestId, access);
 
   const supabase = getSupabaseAdmin();
