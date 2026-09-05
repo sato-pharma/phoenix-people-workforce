@@ -60,9 +60,7 @@ The three genuine carve-outs in §6.1 are not policy softening. Each is a fact:
 3. The other three protected files are announced, not awaited, so the transcript still records what
    changed and why.
 
-## The open hole: compaction
-
-**AUTORUN does not survive compaction, and it fails in the direction nobody notices.**
+## Compaction, and the guard that closes it
 
 The arming is one word in one message. A run he expects to last "a day, two days, three days" is
 compacted repeatedly, and AGENTS.md §1.4 is explicit that a replayed summary is not a live
@@ -71,17 +69,36 @@ which *looks correct*. A session asking permission never reads as a bug, so noth
 run just gets slower and more interrupted the longer it goes, which is precisely the failure the rule
 was written to prevent.
 
-The proper fix is a `UserPromptSubmit` hook that records the arming per `session_id` and re-injects
-it on every turn, with `AUTORUN OFF` standing it down. It would have to be strictly one-directional:
-**able to re-state an arming, never to create one.** A hook that could arm AUTORUN by itself would
-let a doc, a memory, or another session's transcript authorise a production merge — see §2.1,
-Parallel sessions, where one approval reaching N sessions is N executions.
+`.claude/hooks/autorun-guard.mjs` closes this. It is a `UserPromptSubmit` hook that records the
+arming per `session_id` and re-states it on every turn, with `AUTORUN OFF` standing it down. It is
+strictly one-directional: **able to re-state an arming, never to create one.** A hook that could arm
+AUTORUN by itself would let a doc, a memory, or another session's transcript authorise a production
+merge — see §2.1, Parallel sessions, where one approval reaching N sessions is N executions. That is
+why it keys on `input.prompt`, the one field carrying only what the human submitted.
 
-**That hook is not built.** It was drafted and the write was refused by the harness's auto-mode
-classifier, which gates the creation of scripts that execute automatically on every prompt. That is a
-reasonable gate and it was not worked around. Building it needs the owner to place the file himself
-or to grant the permission explicitly.
+Two implementation details are load-bearing rather than incidental. It resolves its own directory
+with `fileURLToPath` and not `url.pathname`, because the checkout lives under `F:\Phoenix Workforce\`
+and pathname returns `%20` — every state read would miss, silently, and the hook would look like it
+was working while arming nothing. And it formats the timestamp with `Intl` rather than a `TZ=` env
+var, which returns UTC under MSYS on this machine (§2.1). State files self-expire after 14 days.
 
-Until then §6.1's two mitigations are all there is, and the second one is the load-bearing half:
-**if a session cannot tell whether it is armed, it is not armed.** Guessing in the other direction
-means an unattended session merging to production on an authorisation nobody gave.
+### Getting it in place
+
+Writing it took two hands. The harness's auto-mode classifier gates the creation of scripts that
+execute automatically on every prompt, and it refused both the file and the `.claude/settings.json`
+entry that registers it — correctly, since a hook an agent can install unsupervised is a hook that
+could authorise its own merges. The gate was not worked around: the owner ran two `cp` commands. If
+this needs doing again, that is the path — prepare the file, hand him the copy command.
+
+### Where it is NOT loaded
+
+**Never assume the hook is running.** Hooks load at session start, so any session opened before
+2026-09-05 09:00 Cairo does not have it. And each worktree carries its own `.claude/settings.json`
+from **its** branch, so a worktree whose branch predates the merge has no entry at all — it will pick
+one up only when that branch takes `main`.
+
+The hook is silent both when a session is not armed and when it is not loaded, and **those two are
+indistinguishable from inside the session**. So §6.1's two mitigations still stand, and the second is
+the load-bearing half: **if a session cannot tell whether it is armed, it is not armed.** Guessing in
+the other direction means an unattended session merging to production on an authorisation nobody
+gave.
