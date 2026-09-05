@@ -84,6 +84,22 @@ export function runEmployeeImportJobTitleCasingTests() {
     "a blank Job Title cell must stay null, never a title invented from the Position column",
   );
 
+  // ── A live title with a minor word must survive a re-upload. ─────────────────────────────
+  // The canonicalization added on 2026-09-05 title-cased EVERY word, so re-uploading B-185's real
+  // stored title "Finance and Admin Manager" rewrote it to "Finance And Admin Manager" — the same
+  // class of silent damage this test exists to prevent, introduced by the repair itself. Production
+  // stores the lower-case "and" on both the employees row and the `finance_and_admin_manager`
+  // position row, so "And" is a regression against real data, not a tidier rendering of it.
+  const minorWord = validateEmployeeImportRows(
+    [employeeRow({ HR_ID: "B-185", "Job Title": "Finance and Admin Manager" })],
+    { existingState },
+  );
+  assert.equal(
+    jobTitleFor(minorWord, "B-185"),
+    "Finance and Admin Manager",
+    "an ordinary minor word must stay lower-case mid-title — re-uploading B-185's live title must be a no-op",
+  );
+
   // ── Already-correct casing is a fixed point. ──────────────────────────────────────────────
   // Re-uploading the now-fixed production values must not degrade them (the exact idempotence
   // property tests/org-title-case-acronyms.test.ts pins for positions — "R&D" must not become

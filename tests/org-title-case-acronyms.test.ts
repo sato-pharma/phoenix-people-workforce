@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createOrgCode } from "../src/lib/imports/org-rule-engine.ts";
 import {
   ORG_TITLE_ACRONYMS,
+  ORG_TITLE_MINOR_WORDS,
   ORG_TITLE_PHRASES,
   toOrgTitleCase,
 } from "../src/lib/imports/org-title-case.ts";
@@ -56,6 +57,14 @@ const acronymCases: ReadonlyArray<{
   },
   { code: "supply_chain", expected: "Supply Chain", note: "department" },
   { code: "anti_infective", expected: "Anti Infective", note: "line" },
+  // The minor-word rule. Production stores this title with a lower-case "and" on BOTH the
+  // employees row (B-185) and the positions row (`finance_and_admin_manager`); a caser that
+  // renders "And" rewrites real, correct data on the next upload.
+  {
+    code: "finance_and_admin_manager",
+    expected: "Finance and Admin Manager",
+    note: "position + B-185's job_title — the one live title the minor-word rule protects",
+  },
 ];
 
 const sourceOf = (relativePath: string) =>
@@ -156,8 +165,54 @@ export async function runOrgTitleCaseAcronymTests() {
   // `/\br\s+and\s+d\b/` is anchored on word boundaries. Without them it would eat the middle of
   // perfectly ordinary names, and the damage would be invisible until somebody read a report.
   // "docto[r and d]entist" contains the phrase as a raw substring and must NOT be rewritten.
-  assert.equal(toOrgTitleCase("doctor and dentist liaison"), "Doctor And Dentist Liaison");
-  assert.equal(toOrgTitleCase("finance and admin manager"), "Finance And Admin Manager");
+  assert.equal(toOrgTitleCase("doctor and dentist liaison"), "Doctor and Dentist Liaison");
+  assert.equal(toOrgTitleCase("finance and admin manager"), "Finance and Admin Manager");
+
+  // ── Minor words are lower-cased in the middle, never at either end ──
+  //
+  // Ordinary English title case, and the reason B-185's live title survives a re-upload. First and
+  // last word always capitalise, so a name that IS a minor word cannot be flattened to nothing.
+  assert.equal(toOrgTitleCase("head of quality"), "Head of Quality");
+  assert.equal(toOrgTitleCase("director for the delta"), "Director for the Delta");
+  assert.equal(toOrgTitleCase("and"), "And", "a single minor word is the first word — capitalise");
+  assert.equal(
+    toOrgTitleCase("supply and"),
+    "Supply And",
+    "a trailing minor word is the LAST word — capitalise, per ordinary title case",
+  );
+
+  // `a` is deliberately NOT a minor word: the live sales line codes are the bare letters A, C and P,
+  // so "team a support" must keep its "A". Same weigh-the-false-positive reasoning that keeps `it`
+  // out of the acronym set.
+  assert.equal(toOrgTitleCase("team a support"), "Team A Support");
+  assert.ok(!ORG_TITLE_MINOR_WORDS.has("a"), "`a` must stay out of the minor-word set");
+
+  // Every minor word must be code-stable, exactly as the acronym set is: lower-casing a word must
+  // not change the slug, or a generated display name stops matching its own row.
+  const minorWordFailures: string[] = [];
+
+  for (const minorWord of ORG_TITLE_MINOR_WORDS) {
+    const rendered = toOrgTitleCase(`alpha ${minorWord} omega`);
+
+    if (rendered !== `Alpha ${minorWord} Omega`) {
+      minorWordFailures.push(`${minorWord} rendered "${rendered}"`);
+    }
+
+    if (createOrgCode(rendered) !== createOrgCode(`alpha ${minorWord} omega`)) {
+      minorWordFailures.push(`${minorWord} changes its code when cased`);
+    }
+  }
+
+  assert.equal(minorWordFailures.join(" | "), "", "an ORG_TITLE_MINOR_WORDS entry is unsafe");
+  assert.ok(ORG_TITLE_MINOR_WORDS.size > 0, "the minor-word set was emptied");
+
+  // The acronym set must win over the minor-word set if the two ever overlap.
+  for (const acronym of ORG_TITLE_ACRONYMS) {
+    assert.ok(
+      !ORG_TITLE_MINOR_WORDS.has(acronym),
+      `"${acronym}" is in BOTH sets — the two rules would fight`,
+    );
+  }
 
   // ── Source pin: exactly ONE implementation, and both consumers use it ──
   //
