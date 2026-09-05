@@ -44,6 +44,8 @@ import {
   type AccessContext,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
+import { assertRealSessionForDecision } from "@/lib/auth/preview-session-guard";
+import { hrIdForStorage } from "@/lib/hr-id";
 import { isWithinManagerHierarchy, reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import type {
   EmployeeDirectoryRow,
@@ -985,7 +987,28 @@ export async function savePayrollExpenseApprovals(input: {
   }>;
   reportId?: string | null;
 }, accessContext: AccessContext) {
-  const approvedBy = resolveEmployeeIdentityId(accessContext) ?? accessContext.loginId ?? "system";
+  // WHO APPROVED IT - and this column does NOT hold only people.
+  //
+  // `outstation_expenses.approved_by` feeds `expense_claims.decided_by_hr_id` through
+  // phx_refresh_expense_claims, which is the screen that answers "who decided this claim".
+  // Three different kinds of value legitimately live here, measured on production 2026-09-05:
+  //
+  //   b-10          71 rows   a real HR id, stored as the LOWERCASE comparison key - the bug
+  //   system        15 rows   a marker: no session decided this, the workflow did
+  //   dev.preview    1 row    a login id with no employees row behind it
+  //
+  // So ONLY the HR-id branch is canonicalised. Running the whole expression through
+  // hrIdForStorage would write SYSTEM and DEV.PREVIEW, and the claims screen would then show
+  // a shouty non-person in the decided-by column - a regression dressed as a repair.
+  //
+  // The chain is otherwise unchanged: hr id, else the normalised login id, else the marker.
+  // The column name is why this one hid so long - it does not end in `_hr_id`, so the
+  // repo-wide raw-write sweep in tests/hr-id-storage-casing.test.ts cannot see it by shape.
+  const approvedBy =
+    hrIdForStorage(accessContext.hrId)
+    ?? resolveEmployeeIdentityId(accessContext)
+    ?? accessContext.loginId
+    ?? "system";
   const now = new Date().toISOString();
   const supabase = getSupabaseAdmin();
 
@@ -1026,6 +1049,12 @@ export async function savePayrollExpenseApprovals(input: {
   // HR Manager rights the approvals screen needs.
   const hasManualPayrollApprovals = decisions.some((decision) => decision.decidesApproval);
   if (hasManualPayrollApprovals) {
+    // BEFORE the permission check, not after: a dev-preview session can hold any role it likes,
+    // so every check below would pass for it. On 2026-09-03 one approved a real 383.62 expense on
+    // production and the claims screen then named `dev.preview` as the decider. The guard carries
+    // no environment term on purpose - see preview-session-guard.ts for why an
+    // isProductionRuntime() check would have waved this exact caller through.
+    assertRealSessionForDecision(accessContext, "approve an outstation expense");
     await assertManualPayrollExpenseApprovalAccess(accessContext);
     await assertOutstationExpenseWorkflowTransition({
       access: accessContext,
