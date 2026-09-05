@@ -1,0 +1,38 @@
+-- Take anon/authenticated off the two EMPTY LEGACY sales-target tables.
+--
+-- Context: public.sales_targets and public.sales_target_batches hold ZERO rows and are read by
+-- nothing (see 20260905233500_sales_targets_is_empty_legacy_say_so.sql, which labelled them; the
+-- live sales targets are au.monthly_targets). While labelling them, both were found granting FULL
+-- CRUD -- DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE -- to anon AND
+-- authenticated.
+--
+-- WHAT THIS DOES AND DOES NOT CHANGE. Nothing observable, today. RLS is already enabled on both
+-- and the only policy on each is service_role-scoped, so anon and authenticated were already
+-- blocked -- the grants were unreachable. What this removes is the footgun underneath: with the
+-- grants in place, disabling RLS on either table (a one-line change someone could make for a
+-- debugging session) would immediately let anon TRUNCATE it. Defence in depth, not a live hole.
+--
+-- HOUSE NORM. Measured on production 2026-09-05: of 328 public tables, anon can SELECT on 23 and
+-- DELETE/TRUNCATE on 17; authenticated can SELECT on 68. These two tables sat in that small
+-- minority. Revoking puts them with the other 311.
+--
+-- SAFE FOR THE ONE LIVE WRITER. The manager-reassignment cascade in
+-- src/lib/employees/employee-directory.ts PATCHes sales_targets over PostgREST, and supabaseRest()
+-- there authenticates with SUPABASE_SERVICE_ROLE_KEY -- so it runs as service_role, which keeps
+-- every privilege below. This matters: shouldIgnoreOptionalCascadeError swallows only
+-- missing-relation / schema-cache messages, NOT permission-denied, and
+-- tests/manager-cascade-frozen-tables.test.ts pins that it must never be widened to swallow one.
+-- Revoking service_role here would therefore THROW mid-cascade and half-apply a manager change.
+-- Do not extend this revoke to service_role.
+--
+-- NOT A READ-ONLY CLAIM. A write REVOKE does not make a table read-only: SECURITY DEFINER
+-- functions and ON DELETE CASCADE both run as the table OWNER and bypass it, and
+-- has_table_privilege cannot see either bypass. Neither exists for these tables (no external FK
+-- points at them, no function touches them), but the claim being made here is narrow and exact:
+-- anon and authenticated lose their DIRECT grants.
+--
+-- No sequences are owned by either table, so there is nothing secondary to revoke.
+-- Reversible: re-grant. Idempotent: revoking an absent privilege is a no-op.
+
+revoke all on table public.sales_targets        from anon, authenticated;
+revoke all on table public.sales_target_batches from anon, authenticated;
