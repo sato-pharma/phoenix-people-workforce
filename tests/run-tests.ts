@@ -386,6 +386,7 @@ import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confid
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
 import { runHrIdStorageCasingTests } from "./hr-id-storage-casing.test.ts";
+import { runRecruitmentEveryStageHasAWayForwardTests } from "./recruitment-every-stage-has-a-way-forward.test.ts";
 import { runClosingDriftAcknowledgementTests } from "./closing-drift-acknowledgement.test.ts";
 import { runPreviewSessionCannotDecideTests } from "./preview-session-cannot-decide.test.ts";
 import { runWeeklyPlanMovePeriodTests } from "./weekly-plan-move-period.test.ts";
@@ -2117,6 +2118,7 @@ await runTest("private calendar", runPrivateCalendarTests);
 await runTest("weekly plan approver UI parity (no buttons the server rejects; comments gated on participation)", runWeeklyPlanApproverUiParityTests);
 await runTest("weekly plan move to another period (HR re-dates a plan the employee filed on the wrong week)", runWeeklyPlanMovePeriodTests);
 await runTest("hr ids are stored in canonical casing everywhere, never the lowercase comparison key", runHrIdStorageCasingTests);
+await runTest("every application stage has a way forward (a stage nobody can leave reads as low adoption)", runRecruitmentEveryStageHasAWayForwardTests);
 await runTest("an acknowledged closing drift stays acknowledged only while it is the SAME drift", runClosingDriftAcknowledgementTests);
 await runTest("a preview session may look at anything and decide nothing (one approved a real 383.62 expense on production)", runPreviewSessionCannotDecideTests);
 await runTest("weekly plan automatic HR acknowledgement on final approval (both routes, best-effort, manual fallback intact)", runWeeklyPlanAutoHrAcknowledgeTests);
