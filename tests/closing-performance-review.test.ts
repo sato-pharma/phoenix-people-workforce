@@ -546,4 +546,33 @@ export function runClosingManagerAsOfTests() {
   // An open-ended row with no start is not a row.
   assert.equal(coversAsOf(null, null, "2026-08-31"), false);
   assert.equal(coversAsOf("", "2026-09-01", "2026-08-31"), false);
+
+  // ── a seat that changed hands twice ─────────────────────────────────────────
+  //
+  // The real Upper Egypt 2 history, and the reason this matters beyond the Delta (3) move: a person
+  // to 2026-08-03, empty until 2026-08-24, then a different person. Reading the CURRENT tree named
+  // the last of the three for every earlier month — 87,587 of July credited to a manager who did not
+  // hold the seat until 24 August, and Giza's 53,051 to one who started on 2 August.
+  const seat = [
+    { from: "2026-03-24", to: "2026-08-03", who: "Ahmed Nashaat" },
+    { from: "2026-08-03", to: "2026-08-24", who: null },
+    { from: "2026-08-24", to: null, who: "Weaam Mahmoud" },
+  ];
+  const heldOn = (asOf: string) => {
+    const rows = seat.filter((r) => coversAsOf(r.from, r.to, asOf));
+    assert.equal(rows.length, 1, `${asOf}: exactly one row must be in force, got ${rows.length}`);
+    return rows[0]!.who;
+  };
+
+  assert.equal(heldOn("2026-07-31"), "Ahmed Nashaat", "July is the manager who held it THEN");
+  assert.equal(heldOn("2026-08-02"), "Ahmed Nashaat", "his last full day counts");
+  assert.equal(heldOn("2026-08-03"), null, "the seat is empty from the day he leaves it");
+  assert.equal(heldOn("2026-08-23"), null, "and stays empty until the day the next person starts");
+  assert.equal(heldOn("2026-08-24"), "Weaam Mahmoud", "who counts from her own first day");
+  assert.equal(heldOn("2026-08-31"), "Weaam Mahmoud", "which is what August reports");
+
+  // A manager who has since LEFT must still be nameable — his month is his. That is why the as-of
+  // lookup reads the directory with `includeInactive`, and an active-only read would turn a real
+  // person's month into an ordinary-looking vacancy.
+  assert.equal(heldOn("2026-07-31"), "Ahmed Nashaat", "a leaver still owns the month he worked");
 }
