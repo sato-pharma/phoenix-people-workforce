@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   countProposedCvFields,
   countUnappliedCvFields,
+  listUnappliedCvFields,
   normalizeStoredExtractionFields,
   seedReviewFieldsFromCandidate,
 } from "../src/lib/recruitment/cv-extraction-fields.ts";
@@ -292,4 +293,52 @@ export function runRecruitmentCvExtractionFieldsTests() {
   );
   assert.deepEqual(seededBlocks.workHistory.value, [{ employer: "Sanofi" }], "a stored block seeds an empty proposal");
   assert.equal(seededBlocks.workHistory.confidence, "high", "a stored block is not an AI guess to check");
+
+  // --- listUnappliedCvFields (what the screening workstation OFFERS, not just counts) ---------
+  //
+  // WHY THIS EXISTS. cv-auto-apply writes a finding unattended only at high confidence — "the AI's
+  // own hedge is respected; low always waits for a human" — and that gate is right. The gap was the
+  // other half: a candidate created by automatic intake had no screen where a human ever saw the
+  // low-confidence proposals, so they waited for a review that never came. Measured on production
+  // 2026-09-05: 596 of 597 live candidates HAD an extraction, and 215 of them carried a perfectly
+  // good yearsExperience (0.8, 5.6, 12.1, 17.1, 23…) against a null column; 120 carried a
+  // nationalId on a pool holding FOUR in total. The reader found it and nothing wrote it down.
+  {
+    const empty = listUnappliedCvFields(proposal, candidate(), medicalRep);
+    // ONE RULE, NOT TWO. The count is this list's length, so the number a prompt reports and the
+    // rows a screen offers can never disagree about what counts as outstanding.
+    assert.equal(
+      empty.length,
+      countUnappliedCvFields(proposal, candidate(), medicalRep),
+      "the count must be the list's length — a second rule is a second answer",
+    );
+    assert.deepEqual(
+      empty.map((entry) => entry.field.key).sort(),
+      ["address", "governorate", "hasMedicalRepExperience", "university"],
+      "the same four the count reports, now nameable",
+    );
+
+    // The CONFIDENCE travels with the row, because it is the reason the finding is still here and
+    // the reason a person — not the intake — has to be the one to accept it.
+    const byKey = new Map(empty.map((entry) => [entry.field.key, entry]));
+    assert.equal(byKey.get("university")?.confidence, "low", "the hedge is carried, not discarded");
+    assert.equal(byKey.get("governorate")?.confidence, "high", "and so is its absence");
+    // The VALUE travels too — the screen writes exactly what the reader proposed, never a re-read.
+    assert.equal(byKey.get("university")?.value, "Misr International University");
+    assert.equal(byKey.get("hasMedicalRepExperience")?.value, false, "a boolean false IS the finding");
+
+    // Once saved, it stops being offered. Without this the button stays on screen after a
+    // successful write and a reader presses it twice.
+    assert.deepEqual(
+      listUnappliedCvFields(
+        proposal,
+        candidate({ address: "El waha district, Nasr city", fullName: "Mazen Hassan", governorate: "Cairo" }),
+        medicalRep,
+      )
+        .map((entry) => entry.field.key)
+        .sort(),
+      ["hasMedicalRepExperience", "university"],
+      "what intake already applied is not offered again",
+    );
+  }
 }

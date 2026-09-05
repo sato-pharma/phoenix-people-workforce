@@ -184,13 +184,54 @@ export function countUnappliedCvFields(
   candidate: Candidate,
   schema: CvPositionSchema,
 ): number {
-  let count = 0;
+  return listUnappliedCvFields(fields, candidate, schema).length;
+}
+
+/** One finding the reader produced that the candidate record still does not hold. */
+export type UnappliedCvField = {
+  field: CvFieldDefinition;
+  /** The value the reader proposed, in the shape the schema declares. */
+  value: ExtractedCvValue;
+  /** The reader's own hedge. `low` is why most of these are still here — see below. */
+  confidence: ExtractedFieldConfidence;
+};
+
+/**
+ * WHICH findings are still missing from the candidate, not merely how many.
+ *
+ * `countUnappliedCvFields` is now this function's length, so the number a prompt reports and the
+ * rows a screen offers can never disagree about what counts — that split is the failure this
+ * module's own comments keep describing.
+ *
+ * ── WHY THERE ARE SO MANY, AND WHY THAT IS NOT AN EXTRACTION BUG ────────────────────────────────
+ *
+ * Measured on production 2026-09-05: 596 of the 597 live candidates HAVE an extraction, and 278 of
+ * them still carried no `yearsExperience` on the row — 215 of those had a perfectly good number
+ * sitting in the extraction (0.8, 5.6, 12.1, 17.1, 23…). 120 carried an extracted `nationalId`
+ * against a null column, on a pool holding only 4 national ids in total.
+ *
+ * The reader found it. Nothing wrote it down. `cv-auto-apply.ts` applies a finding unattended only
+ * at `confidence: "high"` — "the AI's own hedge is respected; low always waits for a human" — and
+ * that gate is right and stays. The gap is the other half: for a candidate created by automatic
+ * intake there was no screen where that human ever saw the proposal, so `low` waited for a review
+ * that never came. This function exists to put those findings in front of the one person who is
+ * already reading the CV, so accepting one costs a click rather than a re-extraction.
+ *
+ * Pure, and it must stay pure: the screening workstation is a client component.
+ */
+export function listUnappliedCvFields(
+  fields: ExtractedCandidateFields,
+  candidate: Candidate,
+  schema: CvPositionSchema,
+): UnappliedCvField[] {
+  const unapplied: UnappliedCvField[] = [];
   for (const field of schema.fields) {
     const proposed = fields[field.key];
     if (!proposed || !isRealFinding(proposed.value, field)) continue;
-    if (candidateFieldValue(candidate, field) === null) count += 1;
+    if (candidateFieldValue(candidate, field) !== null) continue;
+    unapplied.push({ confidence: proposed.confidence, field, value: proposed.value });
   }
-  return count;
+  return unapplied;
 }
 
 // Whether a proposal is something a human could still act on. Two gates, each closing a permanent
