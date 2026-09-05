@@ -1053,6 +1053,7 @@ import { runAchievementHashableJoinKeyTests } from "./achievement-hashable-join-
 import { runDirectOrdersRegistryChainGrantsTests } from "./direct-orders-registry-chain-grants.test.ts";
 import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
+import { runClosingStoreSplitHonoursEvenSplitRegistryTests } from "./closing-store-split-honours-even-split-registry.test.ts";
 import { runClosingStoreSplitHonoursManualSplitTests } from "./closing-store-split-honours-manual-split.test.ts";
 import { runClosingStoreSplitRiskFollowupsTests } from "./closing-store-split-risk-followups.test.ts";
 import { runStoreSplitMatrixTests } from "./store-split-matrix.test.ts";
@@ -3021,6 +3022,11 @@ await runTest(
 await runTest(
   "closing export honours a hand-split customer (441164 stays on D22/D26 at -400 units / -34,380; detection reads the FACT area, not the brick-resolved one)",
   runClosingStoreSplitHonoursManualSplitTests,
+);
+
+await runTest(
+  "closing store split honours the even-split registry (EZ 1011654 keeps its whole month on Cairo East 1; the DB already shared it, so the city rule must not share it again)",
+  runClosingStoreSplitHonoursEvenSplitRegistryTests,
 );
 
 await runTest(

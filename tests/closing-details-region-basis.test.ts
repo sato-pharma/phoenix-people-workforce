@@ -69,6 +69,7 @@ function row(overrides: Partial<ClosingDetailRow> = {}): ClosingDetailRow {
 
     isDirect: false,
     isConfidential: false,
+    evenSplitApplied: false,
     missingClientCode: false,
     validationState: "valid",
     includedInClosing: true,
