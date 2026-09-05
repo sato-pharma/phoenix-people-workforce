@@ -229,10 +229,18 @@ export function runVacationModuleTests() {
   const decisionBlock = serviceSource.slice(decisionStart, decisionEnd);
   assert.match(decisionBlock, /channels: \["in_app", "telegram", "push"\]/, "decision dispatch must suppress the generic email so only the templated decision email sends");
   assert.match(decisionBlock, /sendVacationDecisionResultEmail\(/, "decision dispatch must send the templated decision result email");
-  assert.match(
+  // Token-based direct approval is GONE, not merely carved out for the sequential workflow. This
+  // used to pin the carve-out's error string; the whole path was removed once production showed
+  // `v2_vacation_email_tokens` had never held a single row, and the GET that consumed a token went
+  // with it. Inverted rather than deleted, because the invariant is stronger now and still needs a
+  // guard: email approval is off for EVERY vacation type, not just the sequential ones.
+  //
+  // The same mechanism stays live for EXCUSES (21 tokens in production, newest 2026-09-03), so this
+  // asserts on the vacation service only — it is not a ban on the pattern.
+  assert.doesNotMatch(
     serviceSource,
-    /This request must be reviewed on the Vacation Approvals page; email approval links are disabled/,
-    "token-based direct approval must be disabled for the sequential workflow",
+    /decideVacationRequestByToken/,
+    "token-based direct approval must not come back — email approval links are disabled for every vacation type",
   );
   assert.match(submittedBlock, /requestUrl: actionCenterUrl/, "vacation submitted metadata must include requestUrl for Telegram templates");
   assert.match(submittedBlock, /actionUrl: actionCenterUrl/, "vacation submitted metadata must include actionUrl for Telegram templates");
@@ -342,7 +350,6 @@ export function runVacationModuleTests() {
   assert.match(serviceSource, /Required vacation evidence must be accepted by HR before final HR approval/);
   assert.match(serviceSource, /buildVacationOverlapWarnings/);
   assert.match(serviceSource, /buildVacationDashboardData/);
-  assert.match(serviceSource, /This email approval link is no longer valid/);
   assert.match(serviceSource, /An active vacation request already exists/);
   assert.match(serviceSource, /Manual admin record update/);
   assert.match(serviceSource, /Other vacation requires an explanation for HR review/);
