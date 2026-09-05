@@ -161,3 +161,72 @@ export function toOrgTitleCase(value: string): string {
     perWord,
   );
 }
+
+/**
+ * The correction to OFFER for a hand-typed job title, or `null` when there is nothing to say.
+ *
+ * WHY THIS IS NOT `toOrgTitleCase`. The Employees screen is one person deliberately typing one
+ * title, and the casing IS the intent — the opposite of a spreadsheet cell. Running the full caser
+ * over free text damages it: "QA/QC Supervisor" becomes "Qa/qc Supervisor" and "eCommerce Manager"
+ * becomes "Ecommerce Manager", because neither is one of this vocabulary's words and per-word title
+ * case cannot know that. Suggesting a WORSE value than the one that was typed is a worse failure
+ * than staying quiet, so this function is surgical: it rewrites only words this module actually
+ * knows — an acronym, a minor word out of place, and the `R and D` phrase — and returns every other
+ * character exactly as it was typed.
+ *
+ * It is a SUGGESTION, deliberately. Nothing here writes to `employees.job_title`; the Employees
+ * screen shows the result and the person chooses. The importer is the path that normalizes without
+ * asking, and it is allowed to because a sheet is bulk data with no author standing behind each
+ * cell. Owner's rule for the system generally: the system flags, it does not auto-correct.
+ *
+ * Returns `null` — not the unchanged string — so a caller cannot accidentally render a hint that
+ * proposes exactly what is already in the box.
+ */
+export function suggestOrgTitleCasing(value: string): string | null {
+  if (!value.trim()) {
+    return null;
+  }
+
+  const words = value.split(" ");
+  const letterBearing = words.reduce<number[]>((indexes, word, index) => {
+    if (/[a-z]/i.test(word)) {
+      indexes.push(index);
+    }
+
+    return indexes;
+  }, []);
+  const firstWord = letterBearing[0];
+  const lastWord = letterBearing[letterBearing.length - 1];
+
+  const corrected = words
+    .map((word, index) => {
+      const lowerCased = word.toLowerCase();
+
+      // A known acronym typed as anything but full caps — "Ceo", "Hr", "Sfe Manager". This is the
+      // case that put a mangled title on the CEO's own record.
+      if (ORG_TITLE_ACRONYMS.has(lowerCased)) {
+        return word.toUpperCase();
+      }
+
+      // A minor word capitalised mid-title — "Finance And Admin Manager".
+      if (
+        ORG_TITLE_MINOR_WORDS.has(lowerCased) &&
+        index !== firstWord &&
+        index !== lastWord
+      ) {
+        return lowerCased;
+      }
+
+      // Everything else is returned BYTE-IDENTICAL. No first-letter capitalisation, no
+      // lower-casing of the remainder — that is precisely what would wreck "QA/QC" and "eCommerce".
+      return word;
+    })
+    .join(" ");
+
+  const withPhrases = ORG_TITLE_PHRASES.reduce(
+    (text, [pattern, replacement]) => text.replace(pattern, replacement),
+    corrected,
+  );
+
+  return withPhrases === value ? null : withPhrases;
+}

@@ -33,6 +33,7 @@ import { EmployeeImportReview } from "@/components/employees/employee-import-rev
 import { EmployeePhotoManager } from "@/components/employees/employee-photo-manager";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import type { EmployeeImportValidationResult } from "@/lib/imports/employee-import-types";
+import { suggestOrgTitleCasing } from "@/lib/imports/org-title-case";
 import {
   PortalDesktopTable,
   PortalEmptyState,
@@ -1036,6 +1037,15 @@ export function EmployeeManagement({
   }
 
   /** The net salary and the job title drive the whole salary block. */
+  // The casing correction to OFFER for a hand-typed title, or null to stay quiet. Suggestion only:
+  // the person's typing stands unless they take it. `suggestOrgTitleCasing` returns null for
+  // anything outside this company's org vocabulary, so "QA/QC Supervisor" and "eCommerce Manager"
+  // never raise a hint that would make them worse.
+  const jobTitleSuggestion = React.useMemo(
+    () => suggestOrgTitleCasing(form.jobTitle),
+    [form.jobTitle],
+  );
+
   function updateSalaryDriver(key: "netSalary" | "jobTitle", value: string) {
     setForm((current) =>
       withSalaryAutofill({ ...current, [key]: value }, salaryOverridesRef.current),
@@ -2588,12 +2598,29 @@ export function EmployeeManagement({
                     placeholder="Select position"
                     value={form.positionId}
                   />
-                  <TextField
-                    label="Title"
-                    onChange={(value) => updateSalaryDriver("jobTitle", value)}
-                    placeholder="Auto-filled from selected position"
-                    value={form.jobTitle}
-                  />
+                  <div>
+                    <TextField
+                      label="Title"
+                      onChange={(value) => updateSalaryDriver("jobTitle", value)}
+                      placeholder="Auto-filled from selected position"
+                      value={form.jobTitle}
+                    />
+                    {jobTitleSuggestion ? (
+                      <div
+                        className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 border border-phx-warn-line bg-phx-warn-bg px-2 py-1 text-phx-2xs font-bold text-phx-warn"
+                        role="status"
+                      >
+                        <span className="break-words">Did you mean &ldquo;{jobTitleSuggestion}&rdquo;?</span>
+                        <button
+                          className="underline underline-offset-2"
+                          onClick={() => updateSalaryDriver("jobTitle", jobTitleSuggestion)}
+                          type="button"
+                        >
+                          Use it
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                   <SelectField
                     label="Department"
                     onChange={(value) => updateForm("departmentId", value)}
