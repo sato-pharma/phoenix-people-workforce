@@ -81,7 +81,12 @@ export function runErrorMonitorRedactRouteTests() {
 
   // ── 2. Every declared family actually redacts ───────────────────────────────
   for (const prefix of CREDENTIAL_ROUTE_PREFIXES) {
-    const secret = "aH3kR9tZq1Lw7pX2vN5bY8cM4dF6gJ0s";
+    // DELIBERATELY low-entropy. A realistic-looking token here failed the required secret-scan
+    // check (gitleaks generic-api-key, 2026-09-05) — the very check this file exists to help. The
+    // redactor replaces whatever sits in the segment, so entropy buys no coverage. Do not "improve"
+    // these fixtures into something that looks real. The mixed case, digits, `-` and `_` are the
+    // part that matters: they exercise the character class that decides where the segment ends.
+    const secret = "example-token_ABC123-not-a-credential";
     assert.equal(
       redactSecretsFromRoute(`${prefix}/${secret}`),
       `${prefix}/${TOKEN_PLACEHOLDER}`,
@@ -101,11 +106,11 @@ export function runErrorMonitorRedactRouteTests() {
 
   // ── 3. Real shapes, including the ones production actually logged ───────────
   assert.equal(
-    redactSecretsFromRoute("/password-setup/9f2c1ab84e5d7601bc33ae90f4718d25"),
+    redactSecretsFromRoute("/password-setup/example-token_0001-not-a-credential"),
     "/password-setup/[token]",
   );
   assert.equal(
-    redactSecretsFromRoute("/share/territory/Kx7-pQ2_mZ9"),
+    redactSecretsFromRoute("/share/territory/example-token_0002-not-a-credential"),
     "/share/territory/[token]",
   );
   // Case-insensitive: the browser may send a differently-cased path.
@@ -157,10 +162,10 @@ export function runErrorMonitorRedactRouteTests() {
   // New rows are clean at capture, but rows already in the table are not, and those are what
   // gets read and sent to OpenAI. redactForAi's own patterns never matched a bare token.
   assert.equal(
-    redactForAi("GET /password-setup/9f2c1ab84e5d7601bc33ae90f4718d25 failed"),
+    redactForAi("GET /password-setup/example-token_0001-not-a-credential failed"),
     "GET /password-setup/[token] failed",
   );
-  assert.ok(!redactForAi("/share/territory/Kx7-pQ2_mZ9").includes("Kx7-pQ2_mZ9"));
+  assert.ok(!redactForAi("/share/territory/example-token_0002-not-a-credential").includes("example-token_0002-not-a-credential"));
   // And the existing behaviour is unchanged.
   assert.equal(redactForAi("Forbidden: employee B-59 cannot read expenses"), "Forbidden: employee [id] cannot read expenses");
   assert.equal(redactForAi("Switched to client-side rendering"), "Switched to client-side rendering");
