@@ -269,7 +269,7 @@ export function isClosedEmployeePlanStatus(status: EmployeePlanStatus): boolean 
 export function getNextEmployeePlanStatus(
   currentStatus: EmployeePlanStatus,
   action: EmployeePlanAction,
-  options?: { comment?: string | null },
+  options?: { comment?: string | null; bypassCeo?: boolean },
 ): EmployeePlanStatus {
   const transition = EMPLOYEE_PLAN_TRANSITIONS[action];
   if (!transition.from.includes(currentStatus)) {
@@ -282,6 +282,14 @@ export function getNextEmployeePlanStatus(
 
   if (transition.requiresComment && !String(options?.comment ?? "").trim()) {
     throw new EmployeePlanWorkflowError("COMMENT_REQUIRED", `Action '${action}' requires a comment.`);
+  }
+
+  // District Manager plans have no CEO stage: their single manager approval IS the final
+  // approval, so it jumps straight to final_approved rather than resting at manager_approved
+  // and requiring a second, fabricated ceo_approve. Mirrors phx_weekly_plan_next_status's
+  // bypass_ceo parameter (migration 20260905183000), the server-side source of truth.
+  if (options?.bypassCeo && action === "manager_approve") {
+    return "final_approved";
   }
 
   return transition.to;
