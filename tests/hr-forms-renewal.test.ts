@@ -135,6 +135,9 @@ function profileFixture(overrides: Partial<HiringPackProfile> = {}): HiringPackP
     contractTemplateVersion: null,
     contractSignatoryNameAr: null,
     contractSignatoryTitleAr: null,
+    // Nothing chosen, which is the ordinary case and the one that must keep printing a blank. The
+    // tests that exercise a chosen ground override it.
+    contractObjectiveReasonCode: null,
     updatedAt: null,
     ...overrides,
   };
