@@ -1415,6 +1415,8 @@ import { runEmployeeJobTitleCasingHintTests } from "./employee-job-title-casing-
 
 import { runPayrollHoldConfirmStepReasonTests } from "./payroll-hold-confirm-step-reason.test.ts";
 
+import { runReact418HydrationSafeTextTests } from "./react-418-hydration-safe-text.test.ts";
+import { runPayrollHoldReviewTests } from "./payroll-hold-review.test.ts";
 import { runPmCallRateBandTests } from "./pm-call-rate-band.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4472,6 +4474,13 @@ await runTest(
 await runTest(
   "report-it export subtitle date is Cairo-pinned via cairoDate(), not the runtime's own zone",
   runReportItExportSubtitleCairoDateTests,
+);
+
+await runTest("hydration-safe Cairo text: engine-independent month names and a server-formatted password-setup expiry (React #418)", runReact418HydrationSafeTextTests);
+
+await runTest(
+  "the pre-publish held-employee review names who is not being paid and why (unexplained holds sort first; a carried-forward reason stays labelled after it is saved)",
+  runPayrollHoldReviewTests,
 );
 await runTest(
   "PM call-rate band is PM alone (7 PM + 2 AM = 9 a day is BELOW band, because only the 7 counts)",

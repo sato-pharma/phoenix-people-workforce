@@ -6,34 +6,29 @@ import { useState } from "react";
 import { systemIdentity } from "@/config/system-settings";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 
-/**
- * Pinned locale AND pinned zone, because both sides of hydration must produce the same string.
- *
- * This was `new Date(expiresAt).toLocaleString("en-US")`, which uses whatever zone the RUNTIME is
- * in: the server renders it in UTC (Railway), the phone renders it in Cairo (UTC+3). React saw two
- * different text nodes and threw hydration error #418 — 36 times between 30 July and 12 August,
- * once for essentially every new joiner who opened their setup link. The zone also has to be Cairo
- * regardless: a link that expires "8:00 PM" must not read three hours early to the person reading
- * it. The zone is named in the copy so nobody has to guess which clock it is.
- */
-const EXPIRY_FORMAT = new Intl.DateTimeFormat("en-GB", {
-  dateStyle: "medium",
-  timeStyle: "short",
-  timeZone: "Africa/Cairo",
-});
-
-/**
- * Guarded because `Intl.format` THROWS on an invalid date where the old `toLocaleString` only
- * returned "Invalid Date". This page is the single path a new joiner has to a working account, so
- * a malformed timestamp must degrade to a missing line, never to a blank screen.
- */
-function formatExpiry(expiresAt: string): string | null {
-  const parsed = new Date(expiresAt);
-  return Number.isNaN(parsed.getTime()) ? null : EXPIRY_FORMAT.format(parsed);
-}
-
 type Props = {
-  expiresAt: string;
+  /**
+   * ALREADY FORMATTED, by the server component that renders this form.
+   *
+   * It used to be the raw `expiresAt` instant, formatted here with
+   * `Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Cairo" })`.
+   * The zone was pinned, so this was NOT the UTC-vs-Cairo bug — it was a subtler one. `dateStyle`
+   * and `timeStyle` are the most ICU-version-sensitive options `Intl` has: they resolve through
+   * locale data that changes between CLDR releases, and en-GB's abbreviated September became
+   * "Sept" in CLDR 42. The server (Node 24, ICU 78) rendered "1 Sept 2026, 20:01" while a reader
+   * on Samsung Internet 20 (Chrome 106, ICU 71) rendered "1 Sep 2026, 20:01", and React threw
+   * hydration error #418 over the one missing character.
+   *
+   * Formatting on the server and passing the finished string down removes the whole class of
+   * failure rather than one instance of it: the browser no longer calls `Intl` here at all, so no
+   * difference in ICU data, locale resolution or clock between the two engines can make the server
+   * HTML and the hydrated render disagree. This page is the FIRST screen a new employee ever sees,
+   * before they have a session, so it is the worst possible place to spend a flicker.
+   *
+   * `null` renders no expiry line at all — an unparseable timestamp must degrade to a missing
+   * line, never to "Invalid Date" and never to a blank screen.
+   */
+  expiryLabel: string | null;
   hrId: string | null;
   loginId: string;
   name: string;
@@ -41,14 +36,13 @@ type Props = {
   token: string;
 };
 
-export function PasswordSetupForm({ expiresAt, hrId, loginId, name, purpose, token }: Props) {
+export function PasswordSetupForm({ expiryLabel, hrId, loginId, name, purpose, token }: Props) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const displayLoginId = formatHrIdForDisplay(hrId) ?? loginId;
-  const expiryLabel = formatExpiry(expiresAt);
 
   async function submitForm(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

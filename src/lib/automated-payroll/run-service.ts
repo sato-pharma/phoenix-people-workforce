@@ -16,6 +16,7 @@ import { buildFullSheetWorkbook, buildPart1SheetWorkbook, type PeriodSummary } f
 import { buildStepTemplateWorkbook } from "./exports/step-template.ts";
 import { diffStepUpload, parseStepWorkbook } from "./imports/step-parser.ts";
 import { assertHoldReasonsPresent, holdCandidatesFromStepRows } from "./hold-reason.ts";
+import { buildHoldReview, type HoldReview } from "./hold-review.ts";
 import {
   markCarryForwardApplied,
   outstandingCarryForwardFor,
@@ -929,6 +930,27 @@ function periodBoundsFor(period: PayrollPeriod): { start: string; end: string } 
  * should always be empty — anything in it means someone silently fell out of
  * payroll (see population-diff.ts for the real incident this guards).
  */
+/**
+ * Who this run is NOT paying, and why — the pre-publish held-employee review.
+ *
+ * Reads the hold step through `recommendStep`, the same call `confirmStep` makes,
+ * so the panel shows exactly the reasons the confirm gate will judge. Deriving
+ * them separately from the draft columns would be cheaper and would reintroduce
+ * the drift that `hold-reason.ts` exists to prevent.
+ *
+ * `p2_holds` rather than `p1_holds`: both hold steps read and write the one
+ * `on_hold` / `hold_reason` pair on the draft row, so either returns identical
+ * hold data, and Part 2 is the one a reviewer is standing in before publishing.
+ */
+export async function getHoldReview(access: AccessContext, runId: string): Promise<HoldReview> {
+  assertAutomatedPayrollHrActor(access);
+  const run = await requireRun(runId);
+  const period: PayrollPeriod = { month: run.month, year: run.year };
+  const { members, sources, draftRows } = await loadRunContext(period, runId);
+  const rows = await recommendStep({ access, period, stepKey: "p2_holds", members, sources, draftRows });
+  return buildHoldReview({ period, rows });
+}
+
 export async function getPopulationDiff(access: AccessContext, runId: string): Promise<PopulationDiff> {
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
