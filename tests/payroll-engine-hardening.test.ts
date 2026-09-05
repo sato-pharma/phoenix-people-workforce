@@ -568,8 +568,11 @@ export function runPayrollEngineHardeningTests() {
   );
   assert.match(
     templateRouteSource,
-    /Phoenix Salary Upload Policy/,
-    "Payroll template must include the current salary policy reference sheet.",
+    /Salary Upload Policy/,
+    "Payroll template must include the current salary policy reference sheet. The title lost its " +
+      "\"Phoenix\" prefix when the pack moved onto the house document identity: that identity is the " +
+      "COMPANY's (Sato Pharma), never the app's, so a company document does not carry the product " +
+      "name. The sheet itself is unchanged — this pin is about it existing, not about the prefix.",
   );
   assert.match(
     templateRouteSource,
