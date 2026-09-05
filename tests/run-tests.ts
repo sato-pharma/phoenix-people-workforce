@@ -1222,6 +1222,7 @@ import { runRepoDoctorUnpushedCommitsTests } from "./repo-doctor-unpushed-commit
 import { runRepoDoctorArchiveRefsTests, runStrandedArchiveCases } from "./repo-doctor-archive-refs.test.ts";
 
 import { runCvExtractionNulByteTests } from "./cv-extraction-nul-bytes.test.ts";
+import { runCvContentFingerprintTests } from "./cv-content-fingerprint.test.ts";
 import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
 import { runCandidateNameFromCvTests } from "./candidate-name-from-cv.test.ts";
 import { runLegacyDocCvTests } from "./recruitment-legacy-doc-cv.test.ts";
@@ -3868,6 +3869,12 @@ await runTest(
 await runTest(
   "CV re-read applies what it reads (every extraction persister also writes to the candidate)",
   runCvRereadAppliesWhatItReadsTests,
+);
+
+await runTest(
+  "CV content fingerprint (stays MD5 so it compares against storage's eTag, is written at upload, "
+    + "and is consulted BEFORE createCandidate — after it, the duplicate record already exists)",
+  runCvContentFingerprintTests,
 );
 
 await runTest(

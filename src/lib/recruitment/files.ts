@@ -2,6 +2,8 @@
 // Gated on the `candidates` resource at the route layer (PII). Binary uploads
 // require Google Drive credentials; otherwise candidates keep a CV link.
 
+import { createHash } from "node:crypto";
+
 import type { AccessContext } from "@/lib/auth/permissions";
 import {
   mapRecruitmentFile,
@@ -102,6 +104,49 @@ export type UploadCandidateFileInput = {
   sizeBytes?: number | null;
 };
 
+/**
+ * The file's own fingerprint — MD5 of the exact bytes, hex.
+ *
+ * MD5 and not SHA-256 on purpose: Supabase storage already stores the MD5 of every object as its
+ * eTag, so the 986 rows uploaded before this column existed can be backfilled from what storage
+ * itself recorded, and old rows then compare against new ones. Nothing here is a security decision —
+ * this hash answers "are these the same document", never "is this document trusted".
+ */
+export function cvContentFingerprint(bytes: ArrayBuffer | Buffer): string {
+  const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+  return createHash("md5").update(buffer).digest("hex");
+}
+
+/**
+ * The candidate who already owns a byte-identical file, or null.
+ *
+ * Ordered oldest-first so the ORIGINAL record wins: a duplicate should attach to the person already
+ * in the pipeline, never the other way round. Reads the oldest matching row rather than counting,
+ * because the answer needed is which candidate, not how many.
+ */
+export async function findCandidateIdByContentFingerprint(
+  contentMd5: string,
+  options: { excludeCandidateId?: string | null } = {},
+): Promise<string | null> {
+  const fingerprint = String(contentMd5 ?? "").trim();
+  if (!fingerprint) return null;
+
+  const supabase = recruitmentDb();
+  let query = supabase
+    .from("ats_files")
+    .select("candidate_id, created_at")
+    .eq("content_md5", fingerprint)
+    .not("candidate_id", "is", null)
+    .order("created_at", { ascending: true })
+    .limit(1);
+  if (options.excludeCandidateId) query = query.neq("candidate_id", options.excludeCandidateId);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  const owner = data?.[0]?.candidate_id;
+  return owner ? String(owner) : null;
+}
+
 export async function uploadCandidateFile(
   access: AccessContext,
   input: UploadCandidateFileInput,
@@ -128,6 +173,7 @@ export async function uploadCandidateFile(
       file_name: input.fileName,
       mime_type: input.mimeType,
       size_bytes: input.sizeBytes ?? null,
+      content_md5: cvContentFingerprint(input.bytes),
       drive_file_id: stored.driveFileId,
       external_url: stored.externalUrl,
       uploaded_by_hr_id: hrIdForStorage(access.hrId) ?? access.loginId ?? null,
