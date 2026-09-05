@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 
 import { buildHouseCoverSheet, writeHouseTable } from "@/lib/export/house-table-workbook";
+import { houseGeneratedRow } from "@/lib/export/house-xlsx-identity";
 import {
   PCT_FMT,
   UNITS_FMT,
@@ -109,7 +110,7 @@ export async function buildMonthlySalesDashboardWorkbook(input: {
     subtitle: "Approved Source of Sales data — targets, channel mix, territories and trends, filter-scoped.",
     confidentialNote: "Confidential products (LA003 / LA004) are excluded unless your role is authorized to view them.",
     rows: [
-      ["Generated (UTC)", meta.generatedAtIso],
+      houseGeneratedRow(meta.generatedAtIso),
       ["Exported by", `${meta.exportedByName} (${meta.exportedByHrId})`],
       ["Role", meta.role],
       ["Applied filters", describeMonthlyDashboardFilters(meta.filters)],

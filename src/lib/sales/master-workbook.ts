@@ -12,6 +12,7 @@
 import ExcelJS from "exceljs";
 
 import { systemIdentity } from "@/config/system-settings";
+import { houseGeneratedRow } from "@/lib/export/house-xlsx-identity";
 import { isRestrictedProductCode } from "@/lib/sales/access-scope";
 import { listMasterRows } from "@/lib/sales/master-data/list";
 import { listCustomerMap } from "@/lib/sales/normalizer/customer-map";
@@ -524,7 +525,7 @@ export async function buildMasterWorkbookBuffer(
     description: "Snapshot of the current system state (generated at download time).",
     headers: ["Metric", "Value"],
     rows: [
-      ["Generated at (UTC)", new Date().toISOString()],
+      houseGeneratedRow(new Date().toISOString()),
       ["Products in catalogue", products.length],
       ["Regions / Areas / Blocks / Bricks", `${regions.length} / ${areas.length} / ${blocks.length} / ${bricks.length}`],
       ["Product aliases", productAliases.length],

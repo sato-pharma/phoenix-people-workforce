@@ -13,6 +13,7 @@ import {
   type CellValue,
   type TableColumn,
 } from "@/lib/export/phoenix-xlsx-style";
+import { houseGeneratedRow } from "@/lib/export/house-xlsx-identity";
 import { ROI_RESULT_STATUS_LABEL } from "@/lib/marketing-requests/roi-labels";
 import type {
   MarketingRoiExportDetail,
@@ -111,7 +112,7 @@ export async function buildMarketingRoiReportWorkbook(input: {
     subtitle: "Realized sales of promoted products vs the required return, role-scoped.",
     confidentialNote: report.includedRestricted ? CONFIDENTIAL_INCLUDED : CONFIDENTIAL_EXCLUDED,
     rows: [
-      ["Generated (UTC)", meta.generatedAtIso],
+      houseGeneratedRow(meta.generatedAtIso),
       ["Exported by", `${meta.exportedByName} (${meta.exportedByHrId})`],
       ["Role", meta.role],
       ["Export ID", meta.exportId],
@@ -281,7 +282,7 @@ export async function buildMarketingRoiViewSalesWorkbook(input: {
     subtitle: `Realized sales for request ${data.context.requestCode}.`,
     confidentialNote: data.includedRestricted ? CONFIDENTIAL_INCLUDED : CONFIDENTIAL_EXCLUDED,
     rows: [
-      ["Generated (UTC)", meta.generatedAtIso],
+      houseGeneratedRow(meta.generatedAtIso),
       ["Exported by", `${meta.exportedByName} (${meta.exportedByHrId})`],
       ["Role", meta.role],
       ["Export ID", meta.exportId],

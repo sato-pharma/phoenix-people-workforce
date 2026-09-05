@@ -27,6 +27,7 @@ import {
   type CellValue,
   type TableColumn,
 } from "@/lib/export/house-table-workbook";
+import { houseGeneratedRow } from "@/lib/export/house-xlsx-identity";
 import { sanitizeSheetName } from "@/lib/export/phoenix-xlsx-style";
 import {
   DEDUCTIONS_CATEGORY_CONFIG,
@@ -371,7 +372,7 @@ export function buildDeductionsMasterWorkbook(input: {
       ["Line filter", filter.line ?? "All lines"],
       ["Region filter", filter.region ?? "All regions"],
       ["Scope", filterDescription ? "FILTERED EXTRACT — not the whole company" : "Whole company"],
-      ["Generated (UTC)", meta.generatedAtIso],
+      houseGeneratedRow(meta.generatedAtIso),
       ["Exported by", `${meta.generatedByName} (${meta.generatedByHrId})`],
       ["Candidates in this export", String(candidates.length)],
       ["Employees affected", String(employeeCount)],
