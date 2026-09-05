@@ -124,6 +124,78 @@ The CV-lifecycle secret is the one with no fallback to the feed token, deliberat
 reads candidate names and phone numbers, and letting it double as the key that can REPLACE itself
 would mean one leaked token kept its holder in control of where the sheet points.
 
+## Live Google Sheet Script Push (Optional)
+
+The three `docs/*-live-sheet.gs` files used to be REVIEW copies only. The script that actually
+runs lives in Google, so merging an improvement to the repository copy changed nothing on the
+sheet until somebody pasted ~2,000 lines into the Apps Script editor by hand — and a fix nobody
+pastes is a fix that never shipped. `scripts/push-apps-script.mjs` closes that: it writes the
+repository copy into Google, so a merged sheet fix reaches the sheet like any other deploy.
+
+Each sheet is connected independently. **A target whose script id is unset is skipped, and the
+run still succeeds** — the same shape as the token rotation above, so nothing has to be wired up
+in a particular order. With no script id set at all the pusher prints what it would need and
+exits 0.
+
+| Variable | Description | Default |
+|---|---|---|
+| GOOGLE_APPS_SCRIPT_CLIENT_ID | OAuth client (type "Desktop app") for the Apps Script API | (unset) |
+| GOOGLE_APPS_SCRIPT_CLIENT_SECRET | That client's secret | (unset) |
+| GOOGLE_APPS_SCRIPT_REFRESH_TOKEN | Long-lived grant from the sheets' owner. Issued by `scripts/apps-script-authorize.mjs`; scope `script.projects` and nothing wider | (unset) |
+| CV_LIFECYCLE_APPS_SCRIPT_ID | CV-lifecycle sheet: Extensions to Apps Script to Project Settings to Script ID | (unset) |
+| DIRECT_ORDERS_APPS_SCRIPT_ID | Direct-orders sheet: same place | (unset) |
+| MARKETING_REQUESTS_APPS_SCRIPT_ID | Marketing-requests sheet: same place | (unset) |
+
+These are GitHub Actions secrets, not Railway variables — the push happens in CI, not in the
+running app. `scripts/apps-script-authorize.mjs` performs the one-time consent and stores all
+three OAuth values with `gh secret set`, piped through stdin so no credential ever reaches a
+command line (a permission allow-rule in this repo stores the literal command).
+
+A service account cannot be used here. Apps Script projects belong to a PERSON, and
+`projects.updateContent` acts as the signed-in user, so the grant has to come from the account
+that owns the sheets.
+
+Running the one-time consent:
+
+```bash
+node scripts/apps-script-authorize.mjs --client-file ~/Downloads/client_secret_....json
+```
+
+`--client-file` points at the JSON Google offers at the moment the OAuth client is created, and it
+is the preferred route for a reason that is not convenience: **Google shows a client secret exactly
+once** and no longer allows viewing or downloading it afterwards, so the alternative is copying the
+value by hand, through a clipboard or a chat window or a shell command, each of which leaves a copy
+behind. Reading Google's own file means the secret goes from disk into one HTTPS request and
+nowhere else. Dismissing that dialog is not fatal but it is not free either: the only way back is
+to add a SECOND secret to the same client.
+
+Two further flags exist for re-running it:
+
+- `--write-env-local` additionally writes the three values into `.env.local`, which is gitignored.
+  Actions secrets are **write-only** — once stored, nothing can read them back — so a run that only
+  stores them proves the storing and nothing else. A local copy is what makes
+  `node --env-file=.env.local scripts/push-apps-script.mjs --check` runnable, and therefore what
+  makes the whole setup verifiable before CI is ever trusted with it. That file also holds
+  production credentials, so the write carries through every line it is not setting, refuses if it
+  would drop more lines than the keys it is adding, and lands via a rename so an interrupted write
+  cannot leave half a file behind.
+- `--reuse-consent` drops `prompt=consent`, so an account that has already approved is not asked to
+  approve the same scope again. Google only guarantees a refresh token on the FIRST approval, so
+  the run still **fails loudly** when none comes back, rather than storing nothing and reporting
+  success.
+
+One setting outside this repository decides whether the grant survives: the OAuth consent screen's
+publishing status. While it reads **Testing**, Google expires every refresh token after 7 days, so
+the push would work for a week and then start failing with `invalid_grant` for no visible reason.
+**In production** has no such expiry. Check it before wondering why a working setup stopped.
+
+The API this uses REPLACES every file in a project — there is no per-file write. So the pusher
+reads the project first and sends every existing file back with only the managed one swapped, and
+refuses outright if the project reads back empty or if the file named in
+`scripts/apps-script-manifest.mjs` is not there. `tests/apps-script-push.test.ts` pins both
+refusals, proves `appsscript.json` survives an update, and fails if a new `docs/*-live-sheet.gs`
+is added without a manifest entry — which would otherwise leave that sheet silently manual.
+
 ## Dev-Only Variables
 
 These should never be set in production.
