@@ -499,3 +499,41 @@ codes and CRM links move with it, and production has no PITR.
 Cost of the mistake if unwritten: a session sweeps for duplicates, finds no shared codes, and
 reports the venue list as clean — while the cross-distributor duplicates, which are most of them,
 sit untouched and keep splitting one pharmacy's sales across two rows.
+
+
+## New hook — the 255 append-only actor rows stay lower-cased (2026-09-05)
+
+**What happened.** On 2026-09-05 the actor-id casing audit repaired 92 write sites and 3,460
+production rows. `AccessContext.hrId` is the lowercase comparison key, and persisting it verbatim
+had split one person into two in every per-actor report. One column could not be repaired:
+`ats_candidate_status_events.actor_hr_id`, 255 rows, because the table is append-only —
+`ats_candidate_status_events_immutable` refuses UPDATE and DELETE and a second trigger refuses
+TRUNCATE. **That refusal is the guard working, not a failure.**
+
+**What was designed, and then declined.** The repair would have amended the trigger to permit
+exactly one kind of UPDATE: one where `to_jsonb(new) - 'actor_hr_id'` equals the old row (so every
+other column, including any added later, is byte-identical), the actor is the same person
+case-insensitively, and the value actually differs. Delete and truncate untouched. That is provably
+casing-only and cannot rewrite who decided what, or when.
+
+It was still declined, and the reasoning is worth keeping because the design looks good enough to
+tempt a future session into rebuilding it:
+
+- **Nothing is broken by the 255.** Every comparison in the application routes through
+  `canonicalHrIdKey`, which lower-cases both sides, so `b-10` and `B-10` are already one identity.
+- **The one pattern that would be fooled** — a raw `.eq` against the column — is pinned by
+  `tests/hr-id-storage-casing.test.ts`, which runs in the required CI `validate` job.
+- **The writer is fixed**, so the count cannot grow.
+- **The rows are not wrong.** They are an accurate record of what the system wrote at the time.
+  Repairing them makes the table tidier, not truer.
+- Against all of that: a permanent write path into a hiring-decision audit trail, to change how a
+  name is capitalised.
+
+**The move that must never be taken instead.** Disabling the trigger for the duration of an UPDATE
+fails OPEN — a session that errors between DISABLE and ENABLE leaves the whole history writable with
+nothing saying so — and for that window it grants the power to change anything at all, including who
+decided and when.
+
+**Owner decision, 2026-09-05: leave them.** Offered with the design in hand and declined. A safety
+classifier had already blocked the migration before it was written, which was the correct call and
+is worth noting: the block is what turned a plausible repair into a decision the owner made.
