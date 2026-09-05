@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { logError } from "@/lib/observability/log";
 import { roundCurrency } from "@/lib/payroll/money";
@@ -202,13 +204,16 @@ export type ApprovedVacationSalaryTotals = Map<string, number>;
  * unpaidVacations alongside the existing chat-driven prorate path. Defensive:
  * never throws, empty map on failure.
  */
-export async function buildSettledSalaryDeductionTotals(period: CopilotPeriod): Promise<ApprovedVacationSalaryTotals> {
+export async function buildSettledSalaryDeductionTotals(
+  period: CopilotPeriod,
+  client: SupabaseClient = getSupabaseAdmin(),
+): Promise<ApprovedVacationSalaryTotals> {
   const totals: ApprovedVacationSalaryTotals = new Map();
   const { start, end } = periodBounds(period);
   try {
     // Include both full-salary settlements and partial-balance settlements —
     // both carry a salary_deduction_amount that must reach the payroll sheet.
-    const { data, error } = await getSupabaseAdmin()
+    const { data, error } = await client
       .from("payroll_copilot_vacation_settlements")
       .select("employee_hr_id_compact,salary_deduction_amount")
       .in("settlement_method", ["salary", "partial_balance"])
@@ -243,13 +248,16 @@ export async function buildSettledSalaryDeductionTotals(period: CopilotPeriod): 
  * request stays a plain unpaid absence with no payroll consequence from this
  * tab). 'balance' additionally fires the (idempotent) notification email.
  */
-export async function recordVacationSettlementDecision(input: {
-  runId: string;
-  candidate: UnpaidVacationCandidate;
-  method: "salary" | "balance" | "partial_balance" | "defer_to_balance" | "reject";
-  decidedBy: string;
-}): Promise<void> {
-  const supabase = getSupabaseAdmin();
+export async function recordVacationSettlementDecision(
+  input: {
+    runId: string;
+    candidate: UnpaidVacationCandidate;
+    method: "salary" | "balance" | "partial_balance" | "defer_to_balance" | "reject";
+    decidedBy: string;
+  },
+  client: SupabaseClient = getSupabaseAdmin(),
+): Promise<void> {
+  const supabase = client;
   const compact = compactHrKey(input.candidate.employeeHrId);
   if (!compact) throw new Error("Invalid employee HR id for vacation settlement.");
 
