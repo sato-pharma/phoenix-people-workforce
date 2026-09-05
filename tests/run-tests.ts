@@ -389,6 +389,7 @@ import { runHrIdStorageCasingTests } from "./hr-id-storage-casing.test.ts";
 import { runRecruitmentHiringAnalyticsTests } from "./recruitment-hiring-analytics.test.ts";
 import { runRecruitmentRequisitionOpenGateTests } from "./recruitment-requisition-open-gate.test.ts";
 import { runRecruitmentInterviewClashTests } from "./recruitment-interview-clash.test.ts";
+import { runRecruitmentTransitionsReachableTests } from "./recruitment-transitions-reachable.test.ts";
 import { runRecruitmentOfferLetterBridgeTests } from "./recruitment-offer-letter-bridge.test.ts";
 import { runRecruitmentHiringAnalyticsLayoutTests } from "./recruitment-hiring-analytics-layout.test.ts";
 import { runRecruitmentEveryStageHasAWayForwardTests } from "./recruitment-every-stage-has-a-way-forward.test.ts";
@@ -2141,6 +2142,7 @@ await runTest("hr ids are stored in canonical casing everywhere, never the lower
 await runTest("hiring analytics (a batch sweep is not a decision, and a rate needs a denominator)", runRecruitmentHiringAnalyticsTests);
 await runTest("requisition open gate (no hire for nobody, and no replacing somebody who is still here)", runRecruitmentRequisitionOpenGateTests);
 await runTest("interview clash (one interviewer cannot be in two interviews at once)", runRecruitmentInterviewClashTests);
+await runTest("recruitment transitions are reachable (a registered stage move nothing can invoke is dead wiring)", runRecruitmentTransitionsReachableTests);
 await runTest("offer bridge (an approved ATS offer pre-fills the letter, and nothing else does)", runRecruitmentOfferLetterBridgeTests);
 await runTest("hiring analytics layout (desktop table, phone cards, square edges, no sideways scroll)", runRecruitmentHiringAnalyticsLayoutTests);
 await runTest("every application stage has a way forward (a stage nobody can leave reads as low adoption)", runRecruitmentEveryStageHasAWayForwardTests);
