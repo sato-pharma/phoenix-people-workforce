@@ -174,15 +174,22 @@ export function writeHouseTable(
   columns.forEach((column, index) => {
     const cell = headerRow.getCell(index + 1);
     cell.value = column.label;
-    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 9.5 };
+    // White on the Brand Blue band, ruled in the deep between columns — the same treatment
+    // `houseHeaderStyle` took on 2026-09-05, and for the same reason: a header with no ground does
+    // not separate from its data. The ink rule that put type on white here is a rule about PAPER,
+    // measured in page coverage, and these are read on screen.
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: 9.5 };
     cell.alignment = {
       horizontal: column.right ? "right" : "left",
-      vertical: "bottom",
+      vertical: "middle",
       wrapText: true,
     };
+    cell.fill = { fgColor: { argb: HOUSE_XLSX_COLORS.blue }, pattern: "solid", type: "pattern" };
     cell.border = {
-      bottom: { style: "medium", color: { argb: HOUSE_XLSX_COLORS.blue } },
-      top: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.hair } },
+      bottom: { style: "medium", color: { argb: HOUSE_XLSX_COLORS.deep } },
+      left: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.deep } },
+      right: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.deep } },
+      top: { style: "medium", color: { argb: HOUSE_XLSX_COLORS.deep } },
     };
     setColumnWidth(sheet, index + 1, column.width ?? Math.max(12, column.label.length + 2));
   });
@@ -203,10 +210,13 @@ export function writeHouseTable(
         vertical: "middle",
         wrapText: !column.right,
       };
+      // A four-sided hairline on EVERY cell, with the zebra over it rather than instead of it. The
+      // old form gave a tinted row no border at all, which left these tables with horizontal rules
+      // on alternate rows and no vertical rules anywhere — the columns ran together.
+      const hair = { style: "hair" as const, color: { argb: HOUSE_XLSX_COLORS.hair } };
+      cell.border = { bottom: hair, left: hair, right: hair, top: hair };
       if (zebra) {
         cell.fill = { fgColor: { argb: HOUSE_XLSX_COLORS.tint }, pattern: "solid", type: "pattern" };
-      } else {
-        cell.border = { bottom: { style: "hair", color: { argb: HOUSE_XLSX_COLORS.hair } } };
       }
     });
     row += 1;

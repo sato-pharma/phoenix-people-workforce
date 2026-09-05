@@ -66,13 +66,17 @@ function gridBorder(): ExcelJS.Borders {
 }
 
 /**
- * The SATO house grid: a hairline under each row and nothing else. The Phoenix kit boxes every
- * cell on four sides; the house format rules rows, not cells.
+ * The SATO house grid: a hairline on all four sides.
+ *
+ * It ruled ROWS and not cells until 2026-09-05 — a hairline under each row and nothing else — on the
+ * ink rule's reasoning that a workbook should carry as little as it can. On a wide table that leaves
+ * no vertical separation at all and the columns run together, which the owner said plainly looking
+ * at a fifty-column export. The rule it came from is a rule about PAPER, measured in page coverage;
+ * these are read on screen.
  */
 function houseGridBorder(): ExcelJS.Borders {
-  return {
-    bottom: { style: "hair" as const, color: { argb: HOUSE_XLSX_COLORS.hair } },
-  } as ExcelJS.Borders;
+  const side = { style: "hair" as const, color: { argb: HOUSE_XLSX_COLORS.hair } };
+  return { top: side, left: side, bottom: side, right: side } as ExcelJS.Borders;
 }
 
 /** Everything the sheet needs to wear one identity or the other, resolved once per sheet. */
@@ -81,13 +85,18 @@ function resolveTheme(theme: TableTheme) {
     return {
       band: null,
       bodyColour: HOUSE_XLSX_COLORS.body,
+      // Separate from `band`, which is the TITLE's fill: the house title stays type over a rule
+      // while its header takes a ground. Reusing `band` would have filled both.
+      headerFill: HOUSE_XLSX_COLORS.blue,
       font: HOUSE_XLSX_FONT,
       grid: houseGridBorder(),
       headerBorder: {
-        bottom: { style: "medium" as const, color: { argb: HOUSE_XLSX_COLORS.blue } },
-        top: { style: "thin" as const, color: { argb: HOUSE_XLSX_COLORS.hair } },
+        bottom: { style: "medium" as const, color: { argb: HOUSE_XLSX_COLORS.deep } },
+        left: { style: "thin" as const, color: { argb: HOUSE_XLSX_COLORS.deep } },
+        right: { style: "thin" as const, color: { argb: HOUSE_XLSX_COLORS.deep } },
+        top: { style: "medium" as const, color: { argb: HOUSE_XLSX_COLORS.deep } },
       } as ExcelJS.Borders,
-      headerColour: HOUSE_XLSX_COLORS.deep,
+      headerColour: HOUSE_XLSX_COLORS.white,
       subtitleColour: HOUSE_XLSX_COLORS.muted,
       titleColour: HOUSE_XLSX_COLORS.deep,
       titleRule: { bottom: { style: "medium" as const, color: { argb: HOUSE_XLSX_COLORS.blue } } } as ExcelJS.Borders,
@@ -98,6 +107,7 @@ function resolveTheme(theme: TableTheme) {
   }
   return {
     band: BLACK,
+    headerFill: BLACK,
     bodyColour: SLATE,
     font: "Calibri",
     grid: gridBorder(),
@@ -169,11 +179,13 @@ export function addPhoenixTableSheet(workbook: ExcelJS.Workbook, input: BuildTab
     cell.value = col.label;
     cell.font = { name: theme.font, size: 11.5, bold: true, color: { argb: theme.headerColour } };
     cell.alignment = {
-      vertical: theme.band ? "middle" : "bottom",
+      vertical: theme.headerFill ? "middle" : "bottom",
       horizontal: theme.band ? "center" : col.numeric ? "right" : "left",
       wrapText: true,
     };
-    if (theme.band) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: theme.band } };
+    if (theme.headerFill) {
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: theme.headerFill } };
+    }
     cell.border = theme.headerBorder;
   });
   headerRow.height = theme.band ? 22 : 26;
