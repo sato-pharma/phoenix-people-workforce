@@ -306,7 +306,7 @@ export function PhoenixSignatureCard({
           style={{ marginTop: "clamp(3px,0.55cqw,8px)", width: nameWidth ? `${nameWidth}px` : "auto" }}
         >
           <div className="flex-1 h-px" style={{ background: "#f47b20" }} />
-          <div className="rounded-full mx-[clamp(3px,0.3cqw,5px)]" style={{ width: "clamp(5px,0.55cqw,8px)", height: "clamp(5px,0.55cqw,8px)", background: "#f47b20" }} />
+          <div className="mx-[clamp(3px,0.3cqw,5px)]" style={{ width: "clamp(5px,0.55cqw,8px)", height: "clamp(5px,0.55cqw,8px)", background: "#f47b20" }} />
           <div className="h-px" style={{ width: "22%", background: "rgba(244,123,32,0.5)" }} />
         </div>
         {/* Title centered under name */}

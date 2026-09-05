@@ -411,15 +411,15 @@ export function PhoenixIdentityStrip({
               different things — see PORTRAIT_GLOW / PORTRAIT_RING above. */}
           <span
             aria-hidden="true"
-            className="absolute inset-0 rounded-xl sm:hidden"
+            className="absolute inset-0 sm:hidden"
             style={{ background: PORTRAIT_BEZEL, boxShadow: PORTRAIT_GLOW }}
           />
           <span
             aria-hidden="true"
-            className="absolute inset-0 hidden rounded-xl sm:block"
+            className="absolute inset-0 hidden sm:block"
             style={{ background: PORTRAIT_BEZEL, boxShadow: PORTRAIT_RING }}
           />
-          <span className="absolute inset-[2px] overflow-hidden rounded-[10px] bg-[#f8efe5]">
+          <span className="absolute inset-[2px] overflow-hidden bg-[#f8efe5]">
             {photoSrc ? (
               <Image
                 alt={`${name} portrait`}
@@ -524,7 +524,7 @@ export function PhoenixIdentityStrip({
               of the margin, for the same reason. */}
           <span aria-hidden="true" className="mt-[2px] mr-[52px] flex items-center sm:mr-[117px]">
             <span className="h-[2px] flex-1" style={{ background: "#f47b20" }} />
-            <span className="mx-[5px] h-[7px] w-[7px] rounded-full" style={{ background: "#f47b20" }} />
+            <span className="mx-[5px] h-[7px] w-[7px]" style={{ background: "#f47b20" }} />
             <span
               className="h-[2px] flex-[2]"
               style={{ background: "linear-gradient(90deg, rgba(244,123,32,0.5), rgba(244,123,32,0))" }}
