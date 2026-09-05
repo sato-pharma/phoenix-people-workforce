@@ -256,3 +256,52 @@ required check can ever see a trim. The rule is behavioural, and the tool is the
 **The safe direction is unchanged.** A hook written on an unmerged branch still reads as an orphan
 from a checkout that cannot see it, and that is CORRECT — not a tool bug to work around. A false
 orphan costs a reader a minute; a false "reachable" is what strands a memory.
+
+### The same trap, fired the other way — a false ORPHAN from a stale primary
+
+**The section above is about TRIMMING an index line. This one is about `repo-doctor` REPORTING an
+orphan, and the two need opposite fixes — conflating them would have broken the one that already
+works.**
+
+Measured 2026-09-05: the primary checkout was 29 commits behind `origin/main`. `repo-doctor`'s
+MEMORY INDEX section reads `AGENTS.md` from `primaryRoot` — the same file the trimming rule above
+insists on — and printed:
+
+```
+ORPHAN  main-is-not-the-primary-checkout.md
+```
+
+The memory was not an orphan. The slug is backticked on `origin/main`'s `AGENTS.md` (added by
+PR #3298, itself written to clean up an EARLIER duplicate of this exact rule). After the primary
+caught up to `origin/main`, the identical command read **0 reachable from neither** for that file.
+
+**Why this is worse than a cosmetic stale read.** The section's own remedy is to add an index line
+in `MEMORY.md` for anything it calls an orphan. Following that advice here would have written a
+SECOND hook for a rule already live on `main` — reproducing the defect PR #3298 existed to fix, and
+spending `MEMORY.md` budget (§2.2's displacement rule) on a duplicate. The footprint section a few
+lines below in the same report already carries a caveat for exactly this staleness
+(`measured on the primary checkout at <sha> — N commit(s) BEHIND origin/main ... pull before
+acting on it`); the MEMORY INDEX section printed `ORPHAN` with no such caveat at all.
+
+**The fix, and why it does not touch the trimming rule above.** `repo-doctor.mjs`'s MEMORY INDEX
+block now reads a SECOND copy of `AGENTS.md` — `git show origin/main:AGENTS.md`, the local
+remote-tracking ref, no fetch, the same offline-cheap tradeoff the footprint section already takes
+— and unions it with the local read before classifying. A memory is an ORPHAN only when it is
+unreachable from **both** copies; a file rescued only by the origin/main copy is printed separately
+("N file(s) read as ORPHAN against this checkout's AGENTS.md but are named on origin/main's — the
+checkout is behind, not the memory"), never silently folded into the clean "reachable" count.
+
+This is a different question from the trimming rule's, and the two point opposite ways on
+purpose. Trimming asks *"if I delete this line now, is the memory still reachable from the
+checkout I'm editing?"* — and the answer must stay LOCAL-ONLY, because `origin/main` having the
+slug today says nothing about whether YOUR edit is about to remove the only copy that matters once
+it merges. Reporting asks *"has this memory already been relocated, anywhere a session might load
+it from?"* — and for that question, a slug that is merged and shared but not yet pulled into this
+one disk is not unreachable, it is one `git pull` away. Widening the reporting check does not
+weaken the trimming one: `scripts/memory-index-reachability.mjs`'s own CLI (the tool §2.2 names for
+the trim check) still reads only the local `AGENTS.md`, deliberately, per its own docstring.
+
+**The safe direction, restated for this case too.** When `origin/main` cannot be read (offline, no
+remote-tracking ref, git failure), the union silently degrades to the local-only read — the same
+false orphan as before the fix, never a false "reachable". Under-claiming reachability stays the
+one failure mode this file tolerates.
