@@ -945,19 +945,25 @@ export async function finishSession(session: SessionRow, fallbackPhoneNumberId: 
   // reads a missing area as "not answered" or simply omits it — so it has to ask the SAME question
   // the flow asked, audience and all. Reading the code default alone would tell the owner an area is
   // missing from a manager he deliberately narrowed the question away from.
-  const areaApplies = builtInQuestionAppliesToRole(
-    "area",
-    (await loadSavedAudiences()).get("area"),
-    session.job_title_family,
-  );
+  const savedAudiences = await loadSavedAudiences();
+  const areaApplies = builtInQuestionAppliesToRole("area", savedAudiences.get("area"), session.job_title_family);
+  // Same question for the region, and it has to be asked the same way: the mirror otherwise reports
+  // "Region: not answered" for somebody the owner himself excluded from that question.
+  const regionApplies = builtInQuestionAppliesToRole("region", savedAudiences.get("region"), session.job_title_family);
 
   await applyClassificationToCandidate(session);
   await closeSession(session.id, "completed");
 
-  // Sent once role and region are in. Area is deliberately NOT required: it is Medical-Rep-only, so
-  // a manager legitimately completes without one, and gating the thank-you on it would leave every
-  // non-rep applicant with no confirmation at all. Experience and salary are shown when present.
-  if (roleLabel && regionLabel) {
+  // Sent once the ROLE is in, and nothing else is required.
+  //
+  // This used to also require a region, which was safe only while the region question was asked to
+  // everybody. Since 2026-09-05 it is one of six the owner can narrow to particular job titles, and
+  // the moment he narrows it the old gate would have left every applicant outside that list with no
+  // confirmation at all — silence, at the end of a conversation they completed. That is precisely
+  // the failure the previous comment here described and deliberately avoided for the AREA question;
+  // narrowing the region question simply moved it one question up. Every other line was already
+  // shown-when-present, so the summary reads correctly with any subset missing.
+  if (roleLabel) {
     await sendWhatsAppText({
       phoneNumberId: session.phone_number_id ?? fallbackPhoneNumberId,
       text: classifyThankYouText({
@@ -993,6 +999,7 @@ export async function finishSession(session: SessionRow, fallbackPhoneNumberId: 
     expectedSalary,
     experienceLabel,
     kind: "classified",
+    regionApplies,
     regionLabel,
     roleLabel,
     waId: session.wa_id,
