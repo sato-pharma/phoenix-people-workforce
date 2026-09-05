@@ -12,7 +12,6 @@ import { KpisFilterBar } from "@/components/crm/kpis-filter-bar";
 import { KpisPeriodPicker, type KpiPickerOption } from "@/components/crm/kpis-period-picker";
 import {
   CAPTION,
-  DailyVisitBandChip,
   KpiBandChip,
   KpiEmptyState,
   KpiMeter,
@@ -23,10 +22,11 @@ import {
   KpiTile,
   NUM,
   PANEL,
+  PmCallRateBandChip,
   TD,
   TH,
   toneOf,
-  toneOfDailyVisitBand,
+  toneOfPmCallRateBand,
 } from "@/components/crm/kpis-chrome";
 import {
   AmPmKpiReportTables,
@@ -551,8 +551,8 @@ function coverageFloorBadge(row: KpiRepRow): React.ReactNode {
  * Flags are MERGED in here rather than given a column of their own, which is the golden rule's own
  * answer to a width collision: merge, never shrink. Six flags are left out because every table
  * already prints their underlying number in its own column — the two below-target flags beside the
- * AM and PM figures, `over-visiting` beside the Above count, the daily-visit-band flags beside the
- * visits/day figure in the Days column (Call Rate tab), and `below-coverage-floor` beside the
+ * AM and PM figures, the PM-band flags beside the PM calls/day figure in the Days column (Call
+ * Rate tab), `over-visiting` beside the Above count, and `below-coverage-floor` beside the
  * coverage percentage — would each be the same fact said twice.
  */
 function RepCell({ rank, row }: { rank?: number; row: KpiRepRow }) {
@@ -562,8 +562,8 @@ function RepCell({ rank, row }: { rank?: number; row: KpiRepRow }) {
       flag !== "below-pm-target" &&
       flag !== "over-visiting" &&
       flag !== "below-coverage-floor" &&
-      flag !== "above-daily-visit-band" &&
-      flag !== "below-daily-visit-band",
+      flag !== "above-pm-band" &&
+      flag !== "below-pm-band",
   );
   return (
     <td className={TD}>
@@ -733,7 +733,7 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             direction={filters.direction}
             href={sortHref(context, "workingdays")}
             label="Days"
-            sub="Sat–Wed · visits/day"
+            sub="Sat–Wed · PM/day"
           />
           <KpiSortableTh
             active={filters.sort === "am"}
@@ -767,11 +767,11 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             <td className={NUM}>
               {row.workingDays}
               <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
-                {row.visitsPerDay == null ? "—" : row.visitsPerDay.toFixed(2)}
+                {row.pmVisitsPerDay == null ? "—" : row.pmVisitsPerDay.toFixed(2)}
               </span>
-              {row.dailyVisitBand ? (
+              {row.pmCallRateBand ? (
                 <span className="mt-1 block">
-                  <DailyVisitBandChip band={row.dailyVisitBand} />
+                  <PmCallRateBandChip band={row.pmCallRateBand} />
                 </span>
               ) : null}
             </td>
@@ -965,20 +965,18 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
  */
 function RepCard({
   amTarget,
+  pmBandMax,
+  pmBandMin,
   pmTarget,
   rank,
   row,
-  visitsPerDayMax,
-  visitsPerDayMin,
-  visitsPerDayTarget,
 }: {
   amTarget: number;
+  pmBandMax: number;
+  pmBandMin: number;
   pmTarget: number;
   rank?: number;
   row: KpiRepRow;
-  visitsPerDayMax: number;
-  visitsPerDayMin: number;
-  visitsPerDayTarget: number;
 }) {
   const measures: Array<{
     band: KpiBand;
@@ -1026,8 +1024,8 @@ function RepCard({
       flag !== "below-pm-target" &&
       flag !== "over-visiting" &&
       flag !== "below-coverage-floor" &&
-      flag !== "above-daily-visit-band" &&
-      flag !== "below-daily-visit-band",
+      flag !== "above-pm-band" &&
+      flag !== "below-pm-band",
   );
 
   return (
@@ -1050,20 +1048,20 @@ function RepCard({
           </div>
         ))}
         <div className="min-w-0">
-          <dt className="text-phx-3xs font-black uppercase tracking-[0.1em] text-slate-400">Visits/day</dt>
+          <dt className="text-phx-3xs font-black uppercase tracking-[0.1em] text-slate-400">PM band</dt>
           <dd
             className={`mt-0.5 text-sm font-black tabular-nums ${
-              row.dailyVisitBand ? toneOfDailyVisitBand(row.dailyVisitBand).text : "text-slate-500"
+              row.pmCallRateBand ? toneOfPmCallRateBand(row.pmCallRateBand).text : "text-slate-500"
             }`}
           >
-            {row.visitsPerDay == null ? "—" : row.visitsPerDay.toFixed(2)}
+            {row.pmVisitsPerDay == null ? "—" : row.pmVisitsPerDay.toFixed(2)}
           </dd>
           <dd className="mt-1 text-phx-3xs leading-4 text-slate-500">
-            Target {visitsPerDayTarget} · band {visitsPerDayMin}–{visitsPerDayMax}
+            PM only · band {pmBandMin}–{pmBandMax} a day
           </dd>
-          {row.dailyVisitBand ? (
+          {row.pmCallRateBand ? (
             <dd className="mt-1">
-              <DailyVisitBandChip band={row.dailyVisitBand} />
+              <PmCallRateBandChip band={row.pmCallRateBand} />
             </dd>
           ) : null}
         </div>
@@ -1218,11 +1216,14 @@ export function KpisBoardView({
             </div>
           ) : null}
 
-          {/* Six tiles since 2026-09-05: the call rate is two of them and visits/day is a third, new
-              measure — the owner's own words that day were "call rate in month should be 10 to
-              achieve this should make visits / day av 8-12 and coverage no less than 95%." It is a
-              tile, not a fourth KpiBand, because it is a raw count against a band, not a
-              percentage against a target — see toneOfDailyVisitBand in kpis-chrome.tsx. */}
+          {/* Six tiles since 2026-09-05. The PM band tile is a tile, not a fourth KpiBand, because
+              it is a raw count against a band rather than a percentage against a target — see
+              toneOfPmCallRateBand in kpis-chrome.tsx.
+
+              It shows the SAME number as the PM call rate tile beside it, on purpose and since
+              2026-09-06: what it adds is the band, which is the only thing that can say 8 is a
+              pass while the target is 10. Until that date it showed an AM + PM sum banded against
+              what turned out to be a PM band — see call-rate.ts's PM_CALL_RATE_BAND_MIN. */}
           <div className="grid gap-3 border-t border-slate-100 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-6">
             <KpiTile
               caption={
@@ -1237,13 +1238,13 @@ export function KpisBoardView({
             />
             <KpiTile
               caption={
-                totals.dailyVisitBand === "above"
-                  ? `Above ${board.visitsPerDayMax} — a volume flag, not automatically a win. See Campaign share.`
-                  : `Target ${board.visitsPerDayTarget} · band ${board.visitsPerDayMin}–${board.visitsPerDayMax} a day`
+                totals.pmCallRateBand === "above"
+                  ? `Above ${board.pmBandMax} — a volume flag, not automatically a win. See Campaign share.`
+                  : `PM only · band ${board.pmBandMin}–${board.pmBandMax} a day`
               }
-              label="Visits/day"
-              toneOverride={totals.dailyVisitBand ? toneOfDailyVisitBand(totals.dailyVisitBand) : undefined}
-              value={totals.visitsPerDay == null ? "—" : totals.visitsPerDay.toFixed(2)}
+              label="PM band"
+              toneOverride={totals.pmCallRateBand ? toneOfPmCallRateBand(totals.pmCallRateBand) : undefined}
+              value={totals.pmVisitsPerDay == null ? "—" : totals.pmVisitsPerDay.toFixed(2)}
             />
             <KpiTile
               band={kpiBandOf(totals.amAttainmentPct)}
@@ -1361,12 +1362,11 @@ export function KpisBoardView({
                     <div key={String(row.agentCrmId ?? `${row.repName}-${index}`)}>
                       <RepCard
                         amTarget={board.amTarget}
+                        pmBandMax={board.pmBandMax}
+                        pmBandMin={board.pmBandMin}
                         pmTarget={board.pmTarget}
                         rank={context.showRank ? index + 1 : undefined}
                         row={row}
-                        visitsPerDayMax={board.visitsPerDayMax}
-                        visitsPerDayMin={board.visitsPerDayMin}
-                        visitsPerDayTarget={board.visitsPerDayTarget}
                       />
                     </div>
                   ))}

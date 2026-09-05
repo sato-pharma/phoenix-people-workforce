@@ -169,23 +169,27 @@ export const DEFAULT_REP_KPI_STANDARDS: RepKpiStandards = {
   AM: { callRatePerDay: 2, callRateBand: null, coverageFloorPct: 95, frequencyNorms: NO_NORMS },
   PM: {
     callRatePerDay: 10,
-    // ⚠ TWO READINGS OF "8-12" ARE LIVE, and which one the owner meant changes a verdict a
-    // manager sees. Both are his own words, days apart:
+    // SETTLED 2026-09-06 — the 8-12 band is PM ALONE, and this file is the one that had it right.
     //
-    //   THIS ONE  — "8-12 pm only and 2 am accounts": the band is PM's, AM is a flat 2.
-    //   call-rate.ts's DAILY_VISIT_RATE_MIN/MAX (PR #3319) — "call rate in month should be 10 to
-    //     achieve this should make visits / day av 8-12": the band is AM + PM SUMMED per day.
+    // TWO READINGS OF "8-12" WERE LIVE ON `main` AT ONCE, merged 22 minutes apart on 2026-09-05.
+    // Kept here rather than deleted, because "why were there two 8-12s?" is a question the next
+    // session would otherwise have to answer from scratch:
     //
-    // They agree on most reps and disagree on a real one: 7 PM + 2 AM is 9 a day, which is
-    // IN-BAND summed and BELOW-BAND on PM alone — so one rep can read Met on the AM · PM tab and
-    // Below on the call-rate tab, with nothing on screen explaining why.
+    //   THIS ONE — "8-12 pm only and 2 am accounts": the band is PM's, AM is a flat 2. CORRECT.
+    //   call-rate.ts (PR #3319) — "call rate in month should be 10 to achieve this should make
+    //     visits / day av 8-12": banded an AM + PM SUM. Said before AM and PM had been separated
+    //     in the conversation at all, which is why it read as the whole day.
     //
-    // Deliberately NOT reconciled by guesswork. Reusing that constant here would silently
-    // re-point it at a different population; dropping this band would silently lose the "8 is a
-    // pass" nuance he stated. Parked for the owner.
+    // They agreed on most reps and disagreed on 31 of 76 (August 2026, production): 7 PM + 2 AM
+    // is 9 a day — IN-BAND summed, BELOW band on PM alone — so one rep read Met on the AM · PM
+    // tab and Below on the call-rate tab, with nothing on screen explaining why. PR #3331 flagged
+    // that without guessing at it, and the owner then answered directly: "8-12 pm only and 2 am
+    // accounts", restated unprompted as "pm band 8-12 and monthly cr target 10".
     //
-    // Do NOT "tidy" this by making the numbers match — the numbers already match. It is the
-    // DENOMINATOR that differs.
+    // call-rate.ts was repointed to PM alone to match this. Its band constants are now named for
+    // the population they judge (PM_CALL_RATE_BAND_MIN/MAX) and its rate helper takes ONE visit
+    // count, so the summed shape cannot come back by accident. Do NOT re-point this band at a
+    // combined figure to "reconcile" the two — that is the direction the owner ruled against.
     callRateBand: { min: 8, max: 12 },
     coverageFloorPct: 95,
     frequencyNorms: { A: 2, B: 1, C: 1 },

@@ -59,41 +59,45 @@ export function toneOf(band: KpiBand): Tone {
   return TONES[band];
 }
 
-// ── Daily visit band (owner, 2026-09-05) ──────────────────────────────────────────────────────
+// ── PM call-rate band (owner, settled 2026-09-06) ─────────────────────────────────────────────
 //
 // A DIFFERENT three-way axis from KpiBand, not a fourth measure wearing its hat: this is where
-// visitsPerDay (call-rate.ts) sits against the owner's 8-12 band, and it gets its OWN tone map
+// pmVisitsPerDay (call-rate.ts) sits against the owner's 8-12 band, and it gets its OWN tone map
 // rather than being coerced into the five-value KpiBand — "in-band" is not "elite", it is simply
 // on standard. THE PART THAT MATTERS: "above" reuses the CAUTION tone (steady/amber), never the
 // pass tone (elite/emerald). An implausibly high count is the owner's own volume flag (see
 // DAILY_CAMPAIGN_LIMIT in call-rate.ts), not a stronger score, so colouring it green would tell the
 // reader the opposite of what he decided.
+//
+// THE BAND IS PM ALONE. It banded an AM + PM sum until 2026-09-06, when the owner settled which
+// population he meant ("8-12 pm only and 2 am accounts"). AM is judged apart against a flat 2 and
+// has no band at all, so nothing here may ever be handed a combined figure.
 
-export type DailyVisitBand = "below" | "in-band" | "above";
+export type PmCallRateBand = "below" | "in-band" | "above";
 
-const DAILY_VISIT_TONES: Record<DailyVisitBand, Tone> = {
+const PM_BAND_TONES: Record<PmCallRateBand, Tone> = {
   "in-band": TONES.elite,
   below: TONES.behind,
   above: TONES.steady,
 };
 
-export const DAILY_VISIT_BAND_LABEL: Record<DailyVisitBand, string> = {
+export const PM_CALL_RATE_BAND_LABEL: Record<PmCallRateBand, string> = {
   "in-band": "In band",
   below: "Below 8",
   above: "Above 12",
 };
 
-export function toneOfDailyVisitBand(band: DailyVisitBand): Tone {
-  return DAILY_VISIT_TONES[band];
+export function toneOfPmCallRateBand(band: PmCallRateBand): Tone {
+  return PM_BAND_TONES[band];
 }
 
-/** A daily-visit band as a small chip, matching {@link KpiBandChip}'s footprint. `null` — no
+/** A PM call-rate band as a small chip, matching {@link KpiBandChip}'s footprint. `null` — no
  * working days to measure — renders the same quiet "no data" tone `noplan` uses. */
-export function DailyVisitBandChip({ band }: { band: DailyVisitBand | null }) {
-  const tone = band ? toneOfDailyVisitBand(band) : TONES.noplan;
+export function PmCallRateBandChip({ band }: { band: PmCallRateBand | null }) {
+  const tone = band ? toneOfPmCallRateBand(band) : TONES.noplan;
   return (
     <span className={`inline-block border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.1em] ${tone.chip}`}>
-      {band ? DAILY_VISIT_BAND_LABEL[band] : "No data"}
+      {band ? PM_CALL_RATE_BAND_LABEL[band] : "No data"}
     </span>
   );
 }
@@ -190,7 +194,7 @@ export function KpiTile({
   caption?: string;
   label: string;
   progress?: number | null;
-  /** Colours the tile from a tone that isn't a KpiBand — the daily-visit tile's "above" must not
+  /** Colours the tile from a tone that isn't a KpiBand — the PM band tile's "above" must not
    * read as "elite", and coercing it into KpiBand would do exactly that. Takes precedence over
    * `band` when both are given. */
   toneOverride?: Tone;

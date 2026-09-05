@@ -74,10 +74,11 @@ function row(overrides: Partial<KpiRepRow> = {}): KpiRepRow {
     hasCallRate: true,
     amAttainmentPct: 100,
     pmAttainmentPct: 100,
-    // (40 + 200) / 20 = 12 — the band's own upper edge, deliberately: it pins the boundary as
-    // in-band rather than above, matching dailyVisitBandOf's "over this is above" wording.
-    visitsPerDay: 12,
-    dailyVisitBand: "in-band",
+    // 240 PM / 20 working days = 12 — the band's own upper edge, deliberately: it pins the
+    // boundary as in-band rather than above, matching pmCallRateBandOf's "over this is above"
+    // wording. PM alone since 2026-09-06; AM is judged apart and is not in this figure.
+    pmVisitsPerDay: 12,
+    pmCallRateBand: "in-band",
     plannedDoctors: 100,
     visitedDoctors: 95,
     missedDoctors: 5,
@@ -552,17 +553,17 @@ export function runKpiAttainmentAndIdentityTests() {
   );
 
   assert.ok(
-    kpiFlagsOf(row({ visitsPerDay: 12.5, dailyVisitBand: "above" })).includes("above-daily-visit-band"),
-    "over 12 a day is flagged — a volume question, not automatically a win",
+    kpiFlagsOf(row({ pmVisitsPerDay: 12.5, pmCallRateBand: "above" })).includes("above-pm-band"),
+    "over 12 PM calls a day is flagged — a volume question, not automatically a win",
   );
   assert.ok(
-    kpiFlagsOf(row({ visitsPerDay: 6, dailyVisitBand: "below" })).includes("below-daily-visit-band"),
-    "under 8 a day is flagged as short of the band",
+    kpiFlagsOf(row({ pmVisitsPerDay: 6, pmCallRateBand: "below" })).includes("below-pm-band"),
+    "under 8 PM calls a day is flagged as short of the band",
   );
   assert.ok(
-    !kpiFlagsOf(row({ visitsPerDay: 10, dailyVisitBand: "in-band" })).includes("above-daily-visit-band") &&
-      !kpiFlagsOf(row({ visitsPerDay: 10, dailyVisitBand: "in-band" })).includes("below-daily-visit-band"),
-    "on standard raises neither daily-visit-band flag",
+    !kpiFlagsOf(row({ pmVisitsPerDay: 10, pmCallRateBand: "in-band" })).includes("above-pm-band") &&
+      !kpiFlagsOf(row({ pmVisitsPerDay: 10, pmCallRateBand: "in-band" })).includes("below-pm-band"),
+    "on standard raises neither PM-band flag",
   );
 }
 

@@ -84,13 +84,12 @@ import type { RepKpiReports } from "@/lib/crm/rep-kpi-reports";
 import { repsPlansRange, repsPlansWeeks, type RepsPlansRange } from "@/lib/crm/reps-plans";
 import {
   AM_CALL_RATE_TARGET,
-  DAILY_VISIT_RATE_MAX,
-  DAILY_VISIT_RATE_MIN,
-  DAILY_VISIT_RATE_TARGET,
-  dailyVisitBandOf,
+  PM_CALL_RATE_BAND_MAX,
+  PM_CALL_RATE_BAND_MIN,
   PM_CALL_RATE_TARGET,
-  verifiedVisitsPerDay,
-  type DailyVisitBand,
+  pmCallRateBandOf,
+  pmVerifiedPerDay,
+  type PmCallRateBand,
   type RepCallRate,
 } from "@/lib/crm/call-rate";
 import type { AccessContext } from "@/lib/auth/permissions";
@@ -203,14 +202,16 @@ export type KpiRepRow = {
   amAttainmentPct: number | null;
   pmAttainmentPct: number | null;
   /**
-   * Verified AM + PM visits per working day — the ONE place the split is deliberately summed. See
-   * call-rate.ts's DAILY_VISIT_RATE_TARGET for why this is allowed and what it must never become.
+   * Verified PM visits per working day — PM ALONE, never AM + PM. Until 2026-09-06 this was the
+   * summed pair, banded against a band the owner has since confirmed is PM's; see call-rate.ts's
+   * PM_CALL_RATE_BAND_MIN for the account. It is the same population as `pmRate`, kept as its own
+   * field because the band below is what a manager reads it for.
    * Null exactly when `hasCallRate` is false, matching `amRate`/`pmRate`.
    */
-  visitsPerDay: number | null;
-  /** Where `visitsPerDay` sits against the owner's 8-12 band (2026-09-05). Null iff `visitsPerDay`
-   * is null. `"above"` is a volume flag, never a win — see dailyVisitBandOf. */
-  dailyVisitBand: DailyVisitBand | null;
+  pmVisitsPerDay: number | null;
+  /** Where `pmVisitsPerDay` sits against the owner's PM 8-12 band (settled 2026-09-06). Null iff
+   * `pmVisitsPerDay` is null. `"above"` is a volume flag, never a win — see pmCallRateBandOf. */
+  pmCallRateBand: PmCallRateBand | null;
 
   // ── Coverage and frequency (the scored window) ────────────────────────────
   /** Every doctor the plan names inside the window, due or not — and THE DENOMINATOR OF BOTH plan
@@ -318,9 +319,9 @@ export type KpisBoard = {
     pmReportedRate: number | null;
     campaignCalls: number;
     totalCalls: number;
-    /** Team verified AM + PM visits per working day — see visitsPerDay on KpiRepRow. */
-    visitsPerDay: number | null;
-    dailyVisitBand: DailyVisitBand | null;
+    /** Team verified PM visits per working day — see pmVisitsPerDay on KpiRepRow. */
+    pmVisitsPerDay: number | null;
+    pmCallRateBand: PmCallRateBand | null;
     plannedDoctors: number;
     visitedDoctors: number;
     coveragePct: number;
@@ -337,11 +338,10 @@ export type KpisBoard = {
   };
   amTarget: number;
   pmTarget: number;
-  /** The owner's 8-12 visits/day band (2026-09-05) — target is the midpoint. See call-rate.ts's
-   * DAILY_VISIT_RATE_TARGET for why AM and PM are summed here and nowhere else on this board. */
-  visitsPerDayTarget: number;
-  visitsPerDayMin: number;
-  visitsPerDayMax: number;
+  /** The owner's PM 8-12 band (settled 2026-09-06), around `pmTarget` — which is its midpoint and
+   * the reason no separate target is carried here. See call-rate.ts's PM_CALL_RATE_BAND_MIN. */
+  pmBandMin: number;
+  pmBandMax: number;
   /** The owner's coverage floor (2026-09-05). See kpis-filters.ts's COVERAGE_TARGET_FLOOR_PCT. */
   coverageFloorPct: number;
 };
@@ -503,8 +503,8 @@ export function joinKpiRows(input: {
     hasCallRate: false,
     amAttainmentPct: null,
     pmAttainmentPct: null,
-    visitsPerDay: null,
-    dailyVisitBand: null,
+    pmVisitsPerDay: null,
+    pmCallRateBand: null,
     plannedDoctors: 0,
     visitedDoctors: 0,
     missedDoctors: 0,
@@ -600,8 +600,8 @@ export function joinKpiRows(input: {
     }
     row.amAttainmentPct = attainmentPct(row, row.amVerified, amTarget);
     row.pmAttainmentPct = attainmentPct(row, row.pmVerified, pmTarget);
-    row.visitsPerDay = row.hasCallRate ? verifiedVisitsPerDay(row.amVerified, row.pmVerified, row.workingDays) : null;
-    row.dailyVisitBand = dailyVisitBandOf(row.visitsPerDay);
+    row.pmVisitsPerDay = row.hasCallRate ? pmVerifiedPerDay(row.pmVerified, row.workingDays) : null;
+    row.pmCallRateBand = pmCallRateBandOf(row.pmVisitsPerDay);
     row.meetsCoverageFloor = row.hasMeasurablePlan ? row.coveragePct >= COVERAGE_TARGET_FLOOR_PCT : null;
   }
 
@@ -684,8 +684,8 @@ export async function getKpisBoard(input: {
       pmReportedRate: null,
       campaignCalls: 0,
       totalCalls: 0,
-      visitsPerDay: null,
-      dailyVisitBand: null,
+      pmVisitsPerDay: null,
+      pmCallRateBand: null,
       plannedDoctors: 0,
       visitedDoctors: 0,
       coveragePct: 0,
@@ -699,9 +699,8 @@ export async function getKpisBoard(input: {
     },
     amTarget: AM_CALL_RATE_TARGET,
     pmTarget: PM_CALL_RATE_TARGET,
-    visitsPerDayTarget: DAILY_VISIT_RATE_TARGET,
-    visitsPerDayMin: DAILY_VISIT_RATE_MIN,
-    visitsPerDayMax: DAILY_VISIT_RATE_MAX,
+    pmBandMin: PM_CALL_RATE_BAND_MIN,
+    pmBandMax: PM_CALL_RATE_BAND_MAX,
     coverageFloorPct: COVERAGE_TARGET_FLOOR_PCT,
   };
 
@@ -829,8 +828,7 @@ export async function getKpisBoard(input: {
   // i.e. the average rep's rate, not the sum. Summing the rates instead would make a district of six
   // look six times better than any of its reps.
   const denominator = callRate.workingDays * totals.reps;
-  const teamVisitsPerDay =
-    denominator > 0 ? verifiedVisitsPerDay(totals.amVerified, totals.pmVerified, denominator) : null;
+  const teamPmVisitsPerDay = denominator > 0 ? pmVerifiedPerDay(totals.pmVerified, denominator) : null;
   const teamCoveragePct = pct(totals.visitedDoctors, totals.plannedDoctors);
 
   return {
@@ -864,8 +862,8 @@ export async function getKpisBoard(input: {
       pmReportedRate: denominator > 0 ? totals.pmReported / denominator : null,
       campaignCalls: totals.campaignCalls,
       totalCalls: totals.totalCalls,
-      visitsPerDay: teamVisitsPerDay,
-      dailyVisitBand: dailyVisitBandOf(teamVisitsPerDay),
+      pmVisitsPerDay: teamPmVisitsPerDay,
+      pmCallRateBand: pmCallRateBandOf(teamPmVisitsPerDay),
       plannedDoctors: totals.plannedDoctors,
       visitedDoctors: totals.visitedDoctors,
       coveragePct: teamCoveragePct,

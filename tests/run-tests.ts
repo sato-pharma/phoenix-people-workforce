@@ -1409,6 +1409,7 @@ import { runAdminProfileCreatedAtHydrationSafeTests } from "./admin-profile-crea
 import { runEmployeeSavePreservesSalaryTests } from "./employee-save-preserves-salary.test.ts";
 
 import { runEmployeeJobTitleCasingHintTests } from "./employee-job-title-casing-hint.test.ts";
+import { runPmCallRateBandTests } from "./pm-call-rate-band.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4450,6 +4451,10 @@ await runTest("employee save preserves stored salary when the payload omits mone
 await runTest(
   "employee job title casing hint (offers CEO/QPPV/SFE/R&D/HR and the minor-word fix; stays silent on QA/QC, eCommerce, Arabic and already-correct titles)",
   runEmployeeJobTitleCasingHintTests,
+);
+await runTest(
+  "PM call-rate band (the owner's 8-12 judges PM ALONE: 7 PM + 2 AM = 9 a day is BELOW, because only the 7 counts)",
+  runPmCallRateBandTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

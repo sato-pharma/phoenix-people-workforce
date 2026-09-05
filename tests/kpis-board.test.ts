@@ -212,12 +212,15 @@ export function runKpisBoardJoinTests() {
     "the hr id is carried from whichever side has it — scope is enforced on it",
   );
 
-  // ── The owner's 8-12 visits/day band and 95% coverage floor (2026-09-05) ─────────────────────
-  // Fixture: 4 verified AM + 20 verified PM over 5 working days = 4.8 a day — short of the band —
-  // and 70% coverage, which misses the 95% floor. Both must come out of the JOIN itself, not just
-  // out of a hand-set fixture, or a real bug in the computation would pass every other test here.
-  assert.equal(joined[0].visitsPerDay, 4.8, "(4 AM + 20 PM) / 5 working days");
-  assert.equal(joined[0].dailyVisitBand, "below", "4.8 a day is under the 8-12 band");
+  // ── The owner's PM 8-12 band and 95% coverage floor (band settled 2026-09-06) ────────────────
+  // Fixture: 20 verified PM over 5 working days = 4 a day — short of the band — and 70% coverage,
+  // which misses the 95% floor. Both must come out of the JOIN itself, not just out of a hand-set
+  // fixture, or a real bug in the computation would pass every other test here.
+  //
+  // THE 4 VERIFIED AM CALLS ARE DELIBERATELY IGNORED. Until 2026-09-06 this row summed them in and
+  // read 4.8; the owner settled that the band is PM alone, so the figure is 20/5 = 4.
+  assert.equal(joined[0].pmVisitsPerDay, 4, "20 PM / 5 working days — the 4 AM calls are not in this figure");
+  assert.equal(joined[0].pmCallRateBand, "below", "4 PM calls a day is under the 8-12 band");
   assert.equal(joined[0].meetsCoverageFloor, false, "70% coverage misses the 95% floor");
 
   // A rep present on only ONE side is KEPT. A rep with a plan and no visits at all is the single
@@ -239,8 +242,8 @@ export function runKpisBoardJoinTests() {
     "and the row says which half is missing rather than printing a zero rate",
   );
   assert.equal(oneSided[0].meetsCoverageFloor, null, "Rep One has visits but no plan here, so there is no coverage to judge against the floor");
-  assert.equal(oneSided[1].visitsPerDay, null, "a rep who never logged a call has no visits/day, not a silent zero");
-  assert.equal(oneSided[1].dailyVisitBand, null, "and therefore no band either");
+  assert.equal(oneSided[1].pmVisitsPerDay, null, "a rep who never logged a call has no PM rate, not a silent zero");
+  assert.equal(oneSided[1].pmCallRateBand, null, "and therefore no band either");
 
   // ── THE REPORTED RATE RIDES BESIDE THE VERIFIED ONE ──────────────────────────────────────────
   // Both boards read one `CallRateSlice`. Reps Plans has always printed `verifiedRate` and
@@ -338,13 +341,15 @@ export function runKpisBoardJoinTests() {
   );
 
   // ── On standard, and above it is not a win (owner, 2026-09-05) ───────────────────────────────
-  // Every callRate() fixture carries workingDays: 5, so 10 AM + 40 PM verified is exactly the
-  // target (50 / 5 = 10), and 20 AM + 80 PM is a volume flag rather than a stronger pass.
+  // Every callRate() fixture carries workingDays: 5. 50 verified PM is exactly the PM target
+  // (50 / 5 = 10) and 10 verified AM is exactly the AM target (10 / 5 = 2) — a perfect rep. 80 PM
+  // is a volume flag rather than a stronger pass. The AM figures ride along and must not move the
+  // band, which is PM alone since 2026-09-06.
   const onStandardBase = callRate(33, "c-9", "On Standard");
   const onStandard = {
     ...onStandardBase,
     am: { ...onStandardBase.am, verified: 10, total: 10 },
-    pm: { ...onStandardBase.pm, verified: 40, total: 40 },
+    pm: { ...onStandardBase.pm, verified: 50, total: 50 },
   };
   const [onStandardRow] = joinKpiRows({
     callRates: [onStandard],
@@ -352,8 +357,8 @@ export function runKpisBoardJoinTests() {
     scope: { basis: "company", kind: "company", label: "Whole company" },
     workingDays: 5,
   });
-  assert.equal(onStandardRow.visitsPerDay, 10, "(10 AM + 40 PM) / 5 working days = 10, the owner's own target");
-  assert.equal(onStandardRow.dailyVisitBand, "in-band");
+  assert.equal(onStandardRow.pmVisitsPerDay, 10, "50 PM / 5 working days = 10, the owner's own PM target");
+  assert.equal(onStandardRow.pmCallRateBand, "in-band");
   assert.equal(onStandardRow.meetsCoverageFloor, true, "96% clears the 95% floor");
 
   const heavy = {
@@ -367,11 +372,11 @@ export function runKpisBoardJoinTests() {
     scope: { basis: "company", kind: "company", label: "Whole company" },
     workingDays: 5,
   });
-  assert.equal(aboveBandRow.visitsPerDay, 20, "(20 AM + 80 PM) / 5 working days = 20");
+  assert.equal(aboveBandRow.pmVisitsPerDay, 16, "80 PM / 5 working days = 16 — the 20 AM calls are not in it");
   assert.equal(
-    aboveBandRow.dailyVisitBand,
+    aboveBandRow.pmCallRateBand,
     "above",
-    "20 a day is a volume flag, not a stronger version of on-standard — see call-rate.ts's DAILY_VISIT_RATE_MAX",
+    "16 PM a day is a volume flag, not a stronger version of on-standard — see call-rate.ts's PM_CALL_RATE_BAND_MAX",
   );
 }
 
