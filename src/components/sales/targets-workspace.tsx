@@ -77,10 +77,12 @@ export type TargetGridRow = {
   dmName: string | null;
 };
 
-// `coveredActualValue` is the slice of `actualValue` that sits on a product with a target
-// this month — the figure `achievementValue` actually divides. It is carried into the UI so
-// the percentage is legible: without it the card shows an Actual and a Target that do not
-// divide into the Achievement beside them, and the reader concludes the page is broken.
+// `coveredActualValue` is the slice of `actualValue` that sits on a product with a target this
+// month. It USED to be the figure `achievementValue` divided, and was carried into the UI so the
+// card's numbers would tie. Since 2026-09-05 the percentage divides `actualValue` — the Monthly
+// Closing's own rule, which this page must now match exactly — so Actual and Target divide into
+// Achievement on their own. It stays as a COVERAGE fact (how much of this line carries a target at
+// all), and must never be put back inside the percentage.
 export type RegionRollup = { region: string; actualValue: number; coveredActualValue: number; targetValue: number; achievementValue: number | null };
 export type DmRollup = { dmName: string; actualValue: number; coveredActualValue: number; targetValue: number; achievementValue: number | null };
 export type LineTotal = { actualValue: number; coveredActualValue: number; targetValue: number; achievementValue: number | null } | null;
@@ -127,8 +129,8 @@ const fmtPrice = (value: number | null): string => (value == null ? "—" : pric
  * The exact division behind a rolled-up percentage, for the `title` of the row that shows it.
  * The bar and the number carry the shape; this carries the arithmetic for anyone who wants it.
  */
-const divisionHint = (covered: number, target: number): string =>
-  target === 0 ? "No target loaded — not graded." : `${formatEgpFull(covered)} graded / ${formatEgpFull(target)} target`;
+const divisionHint = (actual: number, target: number): string =>
+  target === 0 ? "No target loaded — not graded." : `${formatEgpFull(actual)} sales / ${formatEgpFull(target)} target`;
 
 const keyOf = (row: TargetGridRow): string => `${row.areaCode}|${row.productCode}`;
 
@@ -291,7 +293,7 @@ function RollupList({
         <li
           key={entry.name}
           className="grid grid-cols-[1.5rem_minmax(0,1fr)_5.5rem] items-center gap-x-3 gap-y-1.5 px-4 py-2.5"
-          title={divisionHint(entry.coveredActualValue, entry.targetValue)}
+          title={divisionHint(entry.actualValue, entry.targetValue)}
         >
           <span
             className="flex h-6 w-6 shrink-0 items-center justify-center text-phx-2xs font-black text-white"
@@ -488,9 +490,10 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
   const lineLabel = props.lines.find((line) => line.code === props.selectedLine)?.label ?? props.selectedLine;
   const total = props.lineTotal;
   const notGraded = total ? total.actualValue - total.coveredActualValue : 0;
-  // "Measured" is the share of this line's sales that has a target behind it. It is the figure
-  // that explains why Actual and Target do not divide into Achievement, and it is the first thing
-  // a manager asks about when the percentage looks wrong.
+  // "Measured" is the share of this line's sales sitting on a product that carries a target of its
+  // own. It no longer explains the percentage — Actual over Target is the percentage now — but it
+  // is still the first thing a manager asks when a number looks off, because a line that is barely
+  // targeted produces a percentage built on very little.
   const measured = total && total.actualValue !== 0 ? total.coveredActualValue / total.actualValue : null;
 
   // Ranked, because the bar beside each row is a proportion of the largest and an unordered bar
@@ -520,12 +523,12 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
           total ? (
             <>
               <BandStat
-                label="Graded sales"
+                label="With a target"
                 value={<CountUpNumber value={total.coveredActualValue} format={formatEgp} />}
                 note={
                   notGraded === 0
                     ? "every pound has a target behind it"
-                    : `${formatEgp(notGraded)} more carries no target`
+                    : `${formatEgp(notGraded)} more has none, and still counts`
                 }
               />
               <BandStat
@@ -537,7 +540,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
               <BandStat
                 label="Total sales"
                 value={<CountUpNumber value={total.actualValue} format={formatEgp} />}
-                note="graded and ungraded together"
+                note="every pound — this over Target is the Achievement"
               />
             </>
           ) : undefined
@@ -549,7 +552,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
               <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Measured</p>
               <p className="mt-1 whitespace-nowrap text-2xl font-black tabular-nums text-white">{formatPct(measured)}</p>
               <p className="mt-1 max-w-[13rem] text-phx-xs leading-4 text-slate-400">
-                of this line&apos;s sales has a target to be measured against
+                of this line&apos;s sales sits on a product with a target of its own
               </p>
             </div>
           ) : undefined

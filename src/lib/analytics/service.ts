@@ -613,11 +613,13 @@ type RepAggBucket = {
   areaCode: string | null;
   salesValue: number;
   /**
-   * The slice of `salesValue` sitting on a product that HAS a target this month — the numerator
-   * `achievementPct` divides. `salesValue` is every sale the rep made on this line; a percentage
-   * cannot be re-aggregated, only the parts it divides can, and both parts must describe the same
-   * population. Dividing all sales by the covered target credits a rep with revenue their target
-   * never asked for. Same rule as `vs-target.ts` and `monthly-targets.ts`.
+   * The slice of `salesValue` sitting on a product that HAS a target this month.
+   *
+   * A coverage statistic, NOT the numerator: since 2026-09-05 `achievementPct` divides the whole
+   * `salesValue`, because this bucket must read identically to the Monthly Closing it is a cut of.
+   * Kept because "how much of this rep's month was even targeted" is still worth knowing, and
+   * because dropping it would leave nothing able to answer that. Same rule as `vs-target.ts` and
+   * `monthly-targets.ts`; a percentage still cannot be re-aggregated, only the parts it divides.
    */
   coveredSalesValue: number;
   targetValue: number;
@@ -742,11 +744,16 @@ async function loadClosingByEmployeeUncached(filters: ClosingFilters): Promise<C
     .map((b) => {
       const area = b.areaCode ? areaNames.get(b.areaCode) : null;
       return {
-        // COVERED sales, not all sales — see RepAggBucket.coveredSalesValue. Measured on
-        // production 2026-08-23 this moved one July rep-line by 4.1 points and four February ones
-        // by up to 2.3; small here because a rep with untargeted sales usually still holds a target
-        // for the line, unlike the DM roll-up where it reached 46 points.
-        achievementPct: b.hasTarget && b.targetValue > 0 ? round2((b.coveredSalesValue / b.targetValue) * 100) : null,
+        // ALL sales over the target — the Monthly Closing's own division, which this bucket is a
+        // cut of and must agree with. Owner ruling 2026-09-05: "FOLLOW THE OLD MONTHLY CLOSING ...
+        // MUST BE 100% IDENTICAL". The bucket is keyed (period, line, rep), so it is always one
+        // month and the across-months half of that rule cannot arise here.
+        //
+        // It divided `coveredSalesValue` until then. The effect was small — 4.1 points on one July
+        // rep-line, up to 2.3 on four February ones — because a rep with untargeted sales usually
+        // still holds a target on that line. Small is not the same as agreeing, and this feeds
+        // three dashboards that sit beside the closing.
+        achievementPct: b.hasTarget && b.targetValue > 0 ? round2((b.salesValue / b.targetValue) * 100) : null,
         employeeHrId: b.repHrId,
         employeeName: nameByHrId ? (nameByHrId.get(b.repHrId.trim().toUpperCase()) ?? UNKNOWN_NAME) : UNKNOWN_NAME,
         line: REP_ACHIEVEMENT_LINE_DISPLAY[b.lineCode] ?? b.lineCode,

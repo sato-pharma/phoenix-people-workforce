@@ -29,18 +29,29 @@ export type { ReviewPersonRow, ReviewRoleRow } from "./sources/roles";
 /**
  * One totals bucket: what was sold, what was asked for, and the percentage between them.
  *
- * `covered` is the half that is easy to leave out and impossible to reconstruct afterwards. It is
- * the actual sitting on a key that HAS a target — the numerator `ach` really divides. Sales on a
- * key with no target anywhere are real money and stay in `sales`, but they were never asked for,
- * so they must not lift a percentage whose denominator they are not part of.
+ * `graded` is the half that is easy to leave out and impossible to reconstruct afterwards: the
+ * numerator `ach` really divides. It travels with every Slice because **a percentage cannot be
+ * re-aggregated — only the parts it divides can.** Any caller summing slices (company from lines,
+ * family from SKUs, a district manager's own areas) must divide `sum(graded)` by `sum(target)`.
  *
- * It travels with every Slice because **a percentage cannot be re-aggregated — only the parts it
- * divides can.** Any caller summing slices (company from lines, family from SKUs, a district
- * manager's own areas) must divide `sum(covered)` by `sum(target)`. Dividing `sum(sales)` instead
- * is silently right in a month where everything has a target and badly wrong in one where
- * something does not.
+ * WHAT "GRADED" MEANS, AND WHY IT IS NO LONGER "COVERED". Owner ruling 2026-09-05 — "FOLLOW THE
+ * OLD MONTHLY CLOSING ... MUST BE 100% IDENTICAL" — so this page prints the number the Monthly
+ * Closing prints. The closing carries two rules and both are in force here:
+ *
+ *   inside a month, EVERY pound counts, including sales on a product nobody targeted;
+ *   across months, a month carrying no target at all is left out of the numerator entirely.
+ *
+ * The second rule is the closing's own "ALL MONTHS" row, and it exists because this page spans a
+ * WINDOW while the closing covers one month. Mar–Jun 2026 hold sales and no target: counting them
+ * against the targeted months' targets reads 77.55% where the closing's rule reads 35.26%.
+ *
+ * This field was called `covered` until 2026-09-05 and meant "actual on a key that HAS a target" —
+ * the first rule inverted. It was renamed rather than quietly redefined, because a numerator that
+ * changes meaning under an unchanged name is exactly how two screens start disagreeing again. The
+ * old meaning survives as a coverage statistic (`VsTargetTotals.coveredActualValue`), reported
+ * beside the percentage and never inside it.
  */
-export type Slice = { sales: number; target: number; covered: number; ach: number | null };
+export type Slice = { sales: number; target: number; graded: number; ach: number | null };
 
 export type AreaSummary = {
   area: string;

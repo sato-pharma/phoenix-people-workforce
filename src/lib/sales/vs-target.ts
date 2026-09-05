@@ -18,13 +18,35 @@
 //      and reports so, rather than quietly comparing against June (owner decision,
 //      2026-08-04). The floor is enforced in SQL as well; this is the second lock.
 //
-//   2. TARGET COVERAGE. As of 2026-08-04 only 36 of 142 (line, area) pairs carrying
-//      July sales have a target at all, and the whole Pedia line has none. So actuals
-//      routinely exist with no target beside them. Every total below therefore splits
-//      actual into COVERED (has a target) and UNCOVERED (does not), and computes
-//      achievement % over the covered part only. An achievement figure that silently
-//      averaged in untargeted sales would read as catastrophic underperformance when
-//      the real story is "nobody set a target". Missing target is null, never 0.
+//   2. TARGET COVERAGE, AND THE RULE THE % ACTUALLY USES.
+//
+//      Owner ruling, 2026-09-05: "FOLLOW THE OLD MONTHLY CLOSING ... MUST BE 100%
+//      IDENTICAL". This screen and the Monthly Closing must print the same percentage
+//      for the same line and month, so the closing's arithmetic is the arithmetic, and
+//      it is copied here rather than reasoned about afresh. The closing carries TWO
+//      rules, and both are honoured below:
+//
+//        INSIDE one month — every pound over the target that was set, untargeted areas
+//        and products included (`closingAchievement` in monthly-closing-matrix-cells.ts).
+//
+//        ACROSS months — only the months that CARRY a target count, because this screen
+//        spans a window and the closing does not. That is the old export's own "ALL
+//        MONTHS" row (monthly-closing-export.ts, Block 5), whose formula is
+//        `SUMIF(target,">0",sales)/SUM(target)` and whose comment gives the reason:
+//        dividing every month's sales by the targeted months' targets "would print a
+//        wildly flattering percentage against a target nobody set for those months".
+//        Measured 2026-09-05 over Jan–Sep on the three tracked lines, ignoring that
+//        second rule reads 77.55% where the closing's own rule reads 35.26% — because
+//        Mar–Jun carry sales and no target at all.
+//
+//      So the numerator is GRADED actual: every pound inside a month this group was
+//      targeted in. Missing target is null, never 0.
+//
+//      COVERED/UNCOVERED is still tracked and still shown, but it is now a coverage
+//      statistic beside the percentage rather than the numerator inside it — the split
+//      that used to drive the % and no longer does. As of 2026-08-04 only 36 of 142
+//      (line, area) pairs carrying July sales had a target at all, which is why the
+//      reader still needs to see it.
 //
 //   3. THE HIERARCHY. Team (line) → region → area → medical rep → brick, each level
 //      carrying its own prior-period comparison.
@@ -679,9 +701,19 @@ export type VsTargetTotals = {
   actualUnits: number;
   targetValue: number;
   targetUnits: number;
-  /** Actual sitting on a key that HAS a target — the only actual achievement % uses. */
+  /**
+   * Actual inside a month this group carries a target in — the numerator achievement % uses.
+   *
+   * Not "actual on a key that has a target": inside a targeted month EVERY pound counts, because
+   * that is what the Monthly Closing divides. The month is the only thing that excludes anything,
+   * and it excludes whole months rather than keys. See rule 2 in the header.
+   */
+  gradedActualValue: number;
+  /** The same rule in units, so achievementUnits divides like-for-like as value does. */
+  gradedActualUnits: number;
+  /** Actual sitting on a key that HAS a target. A coverage statistic, no longer a numerator. */
   coveredActualValue: number;
-  /** The same rule in units. Kept so achievementUnits divides like-for-like, as value does. */
+  /** The same, in units. */
   coveredActualUnits: number;
   /** Actual with no target row anywhere. Reported beside the %, never inside it. */
   uncoveredActualValue: number;
@@ -699,6 +731,8 @@ export function emptyTotals(): VsTargetTotals {
     actualUnits: 0,
     targetValue: 0,
     targetUnits: 0,
+    gradedActualValue: 0,
+    gradedActualUnits: 0,
     coveredActualValue: 0,
     coveredActualUnits: 0,
     uncoveredActualValue: 0,
@@ -716,11 +750,17 @@ export function emptyTotals(): VsTargetTotals {
  * up per-row percentages averages a 10%-achieving product with a 400%-achieving one and
  * calls it 205%, which is wrong at every level above the row.
  */
-function addRow(total: VsTargetTotals, row: AchievementRow): void {
+function addRow(total: VsTargetTotals, row: AchievementRow, gradedPeriods: ReadonlySet<string>): void {
   total.actualValue += row.actualValue;
   total.actualUnits += row.actualUnits;
   total.targetValue += row.targetValue ?? 0;
   total.targetUnits += row.targetUnits ?? 0;
+  // The month decides, not the key. A row with no target of its own still counts when the group
+  // was targeted that month — that is the closing including an untargeted area in its line total.
+  if (gradedPeriods.has(row.period)) {
+    total.gradedActualValue += row.actualValue;
+    total.gradedActualUnits += row.actualUnits;
+  }
   if (row.hasTarget) {
     total.coveredActualValue += row.actualValue;
     total.coveredActualUnits += row.actualUnits;
@@ -732,6 +772,19 @@ function addRow(total: VsTargetTotals, row: AchievementRow): void {
 }
 
 /**
+ * The months this set of rows carries a target in — the only months an achievement may count.
+ *
+ * Computed per GROUP, from that group's own rows, because the question is "was THIS team targeted
+ * in that month", not "did anyone have a target somewhere". A region with no February target must
+ * not have its February sales graded against another region's February.
+ */
+function gradedPeriodsOf(rows: readonly AchievementRow[]): Set<string> {
+  const periods = new Set<string>();
+  for (const row of rows) if ((row.targetValue ?? 0) > 0) periods.add(row.period);
+  return periods;
+}
+
+/**
  * Compute the percentages once the sums are final.
  *
  * A zero target yields null, not 0 and not Infinity: "no target set" and "achieved
@@ -740,22 +793,22 @@ function addRow(total: VsTargetTotals, row: AchievementRow): void {
  * — Anti-Infective/Haram-Faisal was −32,166 EGP in 2026-07), so a negative achievement
  * is legitimate and is left alone.
  *
- * BOTH percentages divide the COVERED actual by the target. Units used to divide the whole
- * actual instead, which quietly folded untargeted sales into the numerator and read 55.4%
- * where the like-for-like figure was 50.7% (2026-07, company-wide). Nothing renders
- * achievementUnits today; that is exactly why the inconsistency had to go before something
- * does.
+ * BOTH percentages divide the GRADED actual by the target, so value and units answer the same
+ * question. They divided the COVERED actual until 2026-09-05, which is what made this screen
+ * disagree with the Monthly Closing; see rule 2 in the header for the owner's ruling and the
+ * measurements behind it.
  */
 function sealTotals(total: VsTargetTotals): VsTargetTotals {
-  total.achievementValue = total.targetValue !== 0 ? total.coveredActualValue / total.targetValue : null;
-  total.achievementUnits = total.targetUnits !== 0 ? total.coveredActualUnits / total.targetUnits : null;
+  total.achievementValue = total.targetValue !== 0 ? total.gradedActualValue / total.targetValue : null;
+  total.achievementUnits = total.targetUnits !== 0 ? total.gradedActualUnits / total.targetUnits : null;
   return total;
 }
 
 /** Total a set of rows, with coverage accounting. */
 export function totalRows(rows: AchievementRow[]): VsTargetTotals {
   const total = emptyTotals();
-  for (const row of rows) addRow(total, row);
+  const graded = gradedPeriodsOf(rows);
+  for (const row of rows) addRow(total, row, graded);
   return sealTotals(total);
 }
 
@@ -813,16 +866,20 @@ export function rollupLevel(
   priorRows: AchievementRow[] | null,
   spec: NodeSpec,
 ): VsTargetNode[] {
+  // Bucketed BEFORE folding, because the graded months are a property of the group rather than of
+  // the row: a node is graded in a month only if that node itself was targeted in it. Streaming
+  // rows straight into a running total cannot know that until every row has been seen.
   const fold = (source: AchievementRow[]) => {
-    const totals = new Map<string, VsTargetTotals>();
+    const grouped = new Map<string, AchievementRow[]>();
     for (const row of source) {
       const key = spec.keyOf(row);
       if (key == null) continue;
-      const total = totals.get(key) ?? emptyTotals();
-      addRow(total, row);
-      totals.set(key, total);
+      const bucket = grouped.get(key);
+      if (bucket) bucket.push(row);
+      else grouped.set(key, [row]);
     }
-    for (const total of totals.values()) sealTotals(total);
+    const totals = new Map<string, VsTargetTotals>();
+    for (const [key, rows] of grouped) totals.set(key, totalRows(rows));
     return totals;
   };
 
@@ -1029,15 +1086,15 @@ export type TrendPoint = {
  * silently vanishing from the axis.
  */
 export function buildTrend(rows: AchievementRow[], periods: string[]): TrendPoint[] {
-  const byPeriod = new Map<string, VsTargetTotals>();
-  for (const period of periods) byPeriod.set(period, emptyTotals());
-  for (const row of rows) {
-    const total = byPeriod.get(row.period);
-    if (!total) continue;
-    addRow(total, row);
-  }
+  // One point is one month, so the across-months rule cannot bite here: a month with a target
+  // grades all of its own sales, and a month without one has no target to divide by and reads
+  // null either way. Grouped rather than streamed so each point takes the same `totalRows` path
+  // every other figure on the page takes — one definition of achievement, not two.
+  const byPeriod = new Map<string, AchievementRow[]>();
+  for (const period of periods) byPeriod.set(period, []);
+  for (const row of rows) byPeriod.get(row.period)?.push(row);
   return periods.map((period) => {
-    const total = sealTotals(byPeriod.get(period) ?? emptyTotals());
+    const total = totalRows(byPeriod.get(period) ?? []);
     return {
       period,
       actualValue: total.actualValue,

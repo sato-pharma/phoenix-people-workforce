@@ -107,19 +107,53 @@ export function runSalesVsTargetTests() {
   );
   assert.equal(untargeted.uncoveredActualValue, 5000, "untargeted sales are counted, not discarded");
   assert.equal(untargeted.coveredActualValue, 0, "untargeted sales never enter the covered bucket");
+  assert.equal(untargeted.gradedActualValue, 0, "and a month carrying no target grades nothing");
 
-  // ── Achievement is computed over the COVERED portion only ──────────────────
+  // ── INSIDE a month, every pound is graded ──────────────────────────────────
+  // Owner ruling 2026-09-05, "FOLLOW THE OLD MONTHLY CLOSING ... MUST BE 100% IDENTICAL": within
+  // one month the closing divides ALL sales by the target that was set, untargeted products
+  // included. Both rows below sit in the same period and that period carries a target, so the
+  // whole 5,800 is graded and the answer is 580%.
+  //
+  // This assertion read 0.8 until that ruling, on the reasoning that 580% "would be meaningless".
+  // It is the Monthly Closing's own number for this shape, and the owner chose it after being
+  // shown both readings. Do not restore the 0.8 without his word.
   const mixed = totalRows([
     row({ actualValue: 800, targetValue: 1000, hasTarget: true }),
     row({ actualValue: 5000, hasTarget: false }),
   ]);
   assert.equal(
     mixed.achievementValue,
-    0.8,
-    "achievement divides covered actual by target — folding the untargeted 5000 in would read 580% and be meaningless",
+    5.8,
+    "inside a targeted month achievement divides ALL sales by target — 5,800/1,000, the closing's own arithmetic",
   );
   assert.equal(mixed.actualValue, 5800, "total actual still includes the untargeted sales");
-  assert.equal(coverageRatio(mixed), 800 / 5800, "coverage reports what share of sales is actually measured");
+  assert.equal(coverageRatio(mixed), 800 / 5800, "coverage still reports what share of sales carries a target of its own");
+
+  // ── ACROSS months, an untargeted month is left out entirely ────────────────
+  // The other half of the closing's rule, and the half this screen needs because it spans a
+  // WINDOW: the old export's "ALL MONTHS" row divides `SUMIF(target,">0",sales)/SUM(target)`.
+  // Without it, Mar–Jun 2026 (sales, no target anywhere) get credited against the targeted months'
+  // targets — measured 77.55% against the closing's own 35.26% over Jan–Sep 2026.
+  //
+  // Same two amounts as `mixed`, but the untargeted 5,000 now sits in its OWN month, which carries
+  // no target and is therefore not graded at all.
+  const acrossMonths = totalRows([
+    row({ period: "2026-07", actualValue: 800, targetValue: 1000, hasTarget: true }),
+    row({ period: "2026-08", actualValue: 5000, hasTarget: false }),
+  ]);
+  assert.equal(
+    acrossMonths.achievementValue,
+    0.8,
+    "a month with no target of its own is excluded from the numerator — 800/1,000, never 5,800/1,000",
+  );
+  assert.equal(acrossMonths.actualValue, 5800, "its sales are still real money and still reported");
+  assert.notEqual(
+    acrossMonths.achievementValue,
+    mixed.achievementValue,
+    "the same two amounts must grade DIFFERENTLY depending on whether they share a month — that is the "
+      + "entire across-months rule, and a fixture keeping both in one period cannot see it",
+  );
 
   // ── Achievement is recomputed from sums, never averaged per row ────────────
   const twoProducts = totalRows([
