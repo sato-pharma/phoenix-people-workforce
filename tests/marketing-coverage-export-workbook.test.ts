@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { HOUSE_XLSX_COLORS } from "../src/lib/export/house-xlsx-palette.ts";
 
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
 
 import { buildMarketingCoverageReportWorkbook, describeCoverageFilters } from "../src/lib/export/marketing-coverage-workbook.ts";
 import { emptyMarketingCoverageFilterState } from "../src/lib/marketing-requests/roi-report-types.ts";
@@ -10,7 +12,7 @@ import type {
   MarketingRoiExportDetail,
 } from "../src/lib/marketing-requests/roi-report-types.ts";
 
-const META = {
+export const META = {
   exportedByName: "A-9",
   exportedByHrId: "A-9",
   role: "CEO",
@@ -23,7 +25,7 @@ function isXlsx(buffer: ArrayBuffer): boolean {
   return bytes.length > 100 && bytes[0] === 0x50 && bytes[1] === 0x4b;
 }
 
-function sampleReport(): MarketingCoverageReport {
+export function sampleReport(): MarketingCoverageReport {
   return {
     rows: [
       {
@@ -89,7 +91,7 @@ function sampleReport(): MarketingCoverageReport {
   };
 }
 
-function sampleDetail(): MarketingRoiExportDetail {
+export function sampleDetail(): MarketingRoiExportDetail {
   return {
     products: [],
     pharmacies: [
@@ -103,7 +105,7 @@ function sampleDetail(): MarketingRoiExportDetail {
   };
 }
 
-function sampleSalesDetail(): MarketingCoverageExportSalesDetailRow[] {
+export function sampleSalesDetail(): MarketingCoverageExportSalesDetailRow[] {
   return [
     // Only "Pharmacy One" (12345) has a matched sale — "Pharmacy Two" (67890) has none,
     // and must simply be absent here (its zero is already recorded in Target Pharmacies).
@@ -120,6 +122,21 @@ function sampleSalesDetail(): MarketingCoverageExportSalesDetailRow[] {
       value: 12000,
     },
   ];
+}
+
+/**
+ * Every SOLID fill in the emitted package's style table.
+ *
+ * Read from `styles.xml` rather than by walking cells: ExcelJS writes one entry per distinct look,
+ * so this is the workbook's whole fill vocabulary in a handful of entries. Conditional-format fills
+ * live in `<dxfs>` instead and are asserted separately above, on the rules themselves.
+ */
+async function solidFills(buffer: ArrayBuffer): Promise<string[]> {
+  const zip = await JSZip.loadAsync(buffer);
+  const styles = (await zip.file("xl/styles.xml")?.async("string")) ?? "";
+  return [...new Set(
+    [...styles.matchAll(/<patternFill patternType="solid"><fgColor rgb="([0-9A-Fa-f]{8})"/g)].map((m) => m[1].toUpperCase()),
+  )];
 }
 
 export async function runMarketingCoverageExportWorkbookTests() {
@@ -161,7 +178,7 @@ export async function runMarketingCoverageExportWorkbookTests() {
   //    read-back doesn't preserve a separate `text` field for containsText rules (Excel's
   //    XML embeds it only inside the SEARCH() formula), so assert against `formulae` instead.
   const conditionalFormattings =
-    (requestSheet as unknown as { conditionalFormattings?: Array<{ ref: string; rules: Array<{ formulae?: string[]; style?: { fill?: { bgColor?: { argb?: string } } } }> }> })
+    (requestSheet as unknown as { conditionalFormattings?: Array<{ ref: string; rules: Array<{ formulae?: string[]; style?: { fill?: { bgColor?: { argb?: string } }; font?: { color?: { argb?: string } } } }> }> })
       .conditionalFormattings ?? [];
   const statusColIndex = requestHeaders.indexOf("Status") + 1;
   const statusColLetter = requestSheet!.getColumn(statusColIndex).letter;
@@ -171,9 +188,27 @@ export async function runMarketingCoverageExportWorkbookTests() {
   assert.ok(ruleFormulae.some((f) => f.includes('"Approved"')));
   assert.ok(ruleFormulae.some((f) => f.includes('"Rejected"')));
   assert.ok(ruleFormulae.some((f) => f.includes('"Pending"')), "one rule matches both Pending validation and Pending approval via containsText");
-  // ── The 3 fill colors are Excel's own built-in Good/Bad/Neutral palette (green/red/yellow).
+  // ── The three verdicts are TYPE, not fills — SATO-DIS-2026-01 v1.0.
+  //
+  // This used to pin Excel's built-in Good/Bad/Neutral triplet: a green, red or yellow BLOCK behind
+  // the word. Under the ink rule colour is carried by type, and the test for whether a fill may go
+  // is met here about as plainly as it ever is — the cell already SAYS "Approved", "Rejected" or
+  // "Pending approval", so the block was repeating what the reader was already reading.
+  //
+  // Both halves are asserted, because only checking the new font colours would still pass on a rule
+  // that kept its fill as well.
+  const fontColors = statusFormat!.rules.map((rule) => rule.style?.font?.color?.argb);
+  assert.deepEqual(
+    fontColors,
+    [HOUSE_XLSX_COLORS.deep, HOUSE_XLSX_COLORS.flag, HOUSE_XLSX_COLORS.muted],
+    "Approved (deep), Rejected (flag red), Pending (muted), in that priority order",
+  );
   const fillColors = statusFormat!.rules.map((rule) => rule.style?.fill?.bgColor?.argb);
-  assert.deepEqual(fillColors, ["FFC6EFCE", "FFFFC7CE", "FFFFEB9C"], "green (Approved), red (Rejected), yellow (Pending), in that priority order");
+  assert.deepEqual(
+    fillColors,
+    [undefined, undefined, undefined],
+    "no status rule carries a fill: the word says the verdict, and colour is carried by the word",
+  );
 
   // ── Target Pharmacies sheet includes BOTH pharmacies from detail.pharmacies —
   //    the zero-sales one must never be silently dropped from the export either.
@@ -214,4 +249,21 @@ export async function runMarketingCoverageExportWorkbookTests() {
     !salesDetailPharmacyNames.includes("Pharmacy Two (no sales)"),
     "the zero-sales pharmacy must never get a fabricated Sales Detail row",
   );
+  // ── THE HOUSE IDENTITY'S CHROME, ON THE EMITTED PACKAGE ─────────────────────
+  //
+  // The status verdicts are asserted above, on the conditional-format rules. This is the other half:
+  // the workbook's own style table, where under SATO-DIS-2026-01 v1.0 the only fills permitted are
+  // the Brand Blue masthead rule and the 6% zebra row.
+  const fills = await solidFills(buffer);
+  const allowed = new Set<string>([HOUSE_XLSX_COLORS.blue, HOUSE_XLSX_COLORS.tint]);
+  const strays = fills.filter((argb) => !allowed.has(argb));
+  assert.deepEqual(
+    strays,
+    [],
+    "the ink rule: colour is carried by lines and type, never by filled area. This workbook may " +
+      `carry only the Brand Blue rule and the zebra row. Found: ${strays.join(", ")}`,
+  );
+  // Both must be PRESENT, so the check above cannot pass on a workbook that lost its styling.
+  assert.ok(fills.includes(HOUSE_XLSX_COLORS.blue), "the Brand Blue masthead rule is in use");
+  assert.ok(fills.includes(HOUSE_XLSX_COLORS.tint), "the zebra row is in use");
 }

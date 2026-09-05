@@ -1,10 +1,13 @@
 import ExcelJS from "exceljs";
 
+// The HOUSE helpers for the cover and the tables — SATO-DIS-2026-01 v1.0. `phoenix-xlsx-style`
+// keeps serving the five other families that still read it, so it is not changed here; its
+// formats and helpers below are unaffected and still come from it.
+import { buildHouseCoverSheet, writeHouseTable } from "@/lib/export/house-table-workbook";
+
 import {
-  buildCoverSheet,
   phoenixBandHeader,
   sanitizeSheetName,
-  writeTable,
   type CellValue,
   type TableColumn,
 } from "@/lib/export/phoenix-xlsx-style";
@@ -52,7 +55,7 @@ function addSheet(
 ) {
   const sheet = workbook.addWorksheet(sanitizeSheetName(name), { properties: { defaultColWidth: 16 } });
   phoenixBandHeader(sheet, Math.max(1, columns.length), title, subtitle);
-  writeTable(sheet, 4, {
+  writeHouseTable(sheet, 4, {
     columns,
     // A report that silently shows nothing reads as "there is no such data". Say which it is.
     note: rows.length === 0 ? emptyNote : undefined,
@@ -73,7 +76,7 @@ export async function buildMarketingRequestReportWorkbook(
   const totalCost = requests.reduce((sum, request) => sum + (request.estimatedCost ?? 0), 0);
   const totalRoi = requests.reduce((sum, request) => sum + (request.expectedRoiValue ?? 0), 0);
 
-  buildCoverSheet(workbook, {
+  buildHouseCoverSheet(workbook, {
     confidentialNote: CONFIDENTIAL_NOTE,
     rows: [
       ["Scope", "Requests raised in Phoenix only — the historical xlsx import is excluded"],
