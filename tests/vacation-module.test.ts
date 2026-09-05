@@ -237,9 +237,15 @@ export function runVacationModuleTests() {
   //
   // The same mechanism stays live for EXCUSES (21 tokens in production, newest 2026-09-03), so this
   // asserts on the vacation service only — it is not a ban on the pattern.
+  // Matched with a trailing "(" ON PURPOSE, so this catches the DEFINITION and any CALL while
+  // still allowing prose to name the thing that was removed. The bare-name form forbade the symbol
+  // appearing anywhere at all, which made the removal impossible to document: the comment on
+  // vacationTokensTable explaining why the path went away tripped this very assertion. A guard that
+  // cannot coexist with its own explanation gets loosened by whoever hits it next, so it is spelled
+  // precisely here instead. Do NOT "tighten" it back to the bare name.
   assert.doesNotMatch(
     serviceSource,
-    /decideVacationRequestByToken/,
+    /decideVacationRequestByToken\s*\(/,
     "token-based direct approval must not come back — email approval links are disabled for every vacation type",
   );
   assert.match(submittedBlock, /requestUrl: actionCenterUrl/, "vacation submitted metadata must include requestUrl for Telegram templates");

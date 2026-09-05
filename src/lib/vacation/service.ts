@@ -115,6 +115,26 @@ const vacationEvidenceReviewsTable = "v2_vacation_evidence_reviews";
 const vacationApprovalStepsTable = "v2_vacation_approval_steps";
 const vacationSlaRunsTable = "v2_vacation_sla_runs";
 const vacationSlaSettingsTable = "v2_vacation_sla_settings";
+/**
+ * RETAINED ON PURPOSE, THOUGH IT HAS NEVER HELD A ROW. Do not propose dropping it again without
+ * reading this first.
+ *
+ * It backed the one-click approve/reject link in a vacation email. Nothing ever issued a token —
+ * production has held ZERO rows for the life of the table — so the GET that consumed them could
+ * only ever answer "Vacation approval link is invalid". That GET, its renderer and
+ * `decideVacationRequestByToken` were removed on 2026-09-05 (#3274); managers review in the Action
+ * Center instead, which the manager email's own `reviewUrl` documents as "no direct approve/reject".
+ *
+ * The TABLE stayed, owner's decision the same day, after the cost was measured: it is empty, 64 kB,
+ * and nothing references it in the database (0 inbound foreign keys). Dropping it is safe in
+ * isolation but is NOT a one-line change — the retention purge below deletes from it BEFORE it
+ * purges SLA runs, so a missing table aborts that cron mid-sequence and silently stops SLA-log
+ * cleanup too, and a nightly-failing cron alerts nobody here. It would need a code PR, a deploy, a
+ * production DDL and a second migration for the vestigial 'decision_tokens' retention policy row.
+ *
+ * The same mechanism IS live for excuses (`v2_excuse_email_tokens`) — this is not a dead pattern,
+ * only a dead copy.
+ */
 const vacationTokensTable = "v2_vacation_email_tokens";
 const vacationWeeklyOffPoliciesTable = "v2_vacation_weekly_off_policies";
 const vacationRetentionPoliciesTable = "v2_vacation_retention_policies";
