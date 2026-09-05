@@ -6,6 +6,7 @@ import {
   INSURANCE_WAGE_DIVISOR,
   insuranceWageFromBase,
 } from "../src/lib/hiring-pack/insurance-wage.ts";
+import { EDITOR_CSS } from "../src/lib/hiring-pack/paper-editor-css.ts";
 import {
   buildPaperEditPatch,
   PAPER_FIELD_BINDINGS,
@@ -757,6 +758,69 @@ export function runHiringPackPaperEditorTests() {
     assert.ok(
       renderContractHtml(pack, 1).includes("المبيعات"),
       "the contract must name the department that employs him",
+    );
+  }
+
+  // ── 9. The square-edge golden rule, on the editor's own affordances ──────────────────────────
+  //
+  // THE EMITTED STYLESHEET, NEVER THE SOURCE FILE. `EDITOR_CSS` is injected into the framed
+  // document at load — `enhance()` appends it as a `<style id="hp-editor-css">` in the document's
+  // own head — so it is the one stylesheet in this feature the app's square-edge sweep cannot
+  // reach, for two independent reasons: the iframe is a separate document that never loads
+  // `app/globals.css`, and that sweep is `.admin-shell [class*="rounded"]`, which matches a
+  // Tailwind class rather than a hand-written `border-radius` declaration. Either reason alone
+  // would be enough to let a rounded corner sit here unnoticed, which is what happened.
+  //
+  // It rounded the dashed box around every editable field at 2px until 2026-09-05. ONE declaration,
+  // because `outline` follows the element's own `border-radius`: the live ring, the hover ring, the
+  // focus ring, the selected ring, the saving ring and the dry-run ring were rounded by it.
+  //
+  // Deliberately NOT rewritten to `border-radius: 0` — absence, not an override. An uploaded
+  // company template brings its own stylesheet, and forcing a corner square from here would make
+  // the editor's preview differ from the paper it prints, which is the one thing this screen exists
+  // to rule out.
+  {
+    const roundingIn = (css: string): string[] =>
+      [...css.matchAll(/(?:^|[;{}\s])((?:-[a-z]+-)?(?:border-[a-z-]*)?radius)\s*:\s*([^;}]+)/gi)].map(
+        (m) => `${m[1]}: ${m[2].trim()}`,
+      );
+
+    assert.deepEqual(
+      roundingIn(EDITOR_CSS),
+      [],
+      "the square-edge golden rule — the editor may not round any affordance it draws on a paper",
+    );
+
+    // Measured on the page the browser parses, not on the module. The stylesheet is sliced back out
+    // of the assembled document, so an escape that survives the file and dies on the way to the
+    // browser is caught here rather than shipped.
+    const paper = renderContractHtml(packFixture(), 1);
+    const head = paper.lastIndexOf("</head>");
+    assert.ok(head > 0, "a rendered paper must have a head for the editor stylesheet to go into");
+    const editorPage = `${paper.slice(0, head)}<style id="hp-editor-css">${EDITOR_CSS}</style>${paper.slice(head)}`;
+
+    const opensAt = editorPage.indexOf('<style id="hp-editor-css">');
+    const embedded = editorPage.slice(
+      opensAt + '<style id="hp-editor-css">'.length,
+      editorPage.indexOf("</style>", opensAt),
+    );
+    assert.ok(
+      embedded.includes("[data-hp-live] {"),
+      "the editor stylesheet must actually reach the page — an empty slice would pass vacuously",
+    );
+    assert.deepEqual(
+      roundingIn(embedded),
+      [],
+      "the square-edge golden rule, on the stylesheet as it reaches the browser",
+    );
+
+    // The control on the instrument itself: the same check over the same stylesheet with the old
+    // declaration put back must FAIL. Without this, a regex that silently stopped matching would
+    // report a clean sweep forever.
+    assert.equal(
+      roundingIn(EDITOR_CSS.replace("outline-offset: 2px;", "outline-offset: 2px;\n    border-radius: 2px;")).length,
+      1,
+      "the sweep must still be able to see a rounded corner — otherwise it certifies nothing",
     );
   }
 }
