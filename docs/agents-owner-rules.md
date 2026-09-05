@@ -949,3 +949,52 @@ session undoing the rule, so it cannot be cut. The measured yield was 1.9%, and 
 came from two duplicates rather than from wording. **Do not run another editing pass over §4** — the
 remaining bytes are the rules themselves, and the cost of blunting one of them is far higher than
 the context they occupy.
+
+## The offer letter design is frozen — owner decision, 2026-09-05
+
+Asked directly, having been shown both letters rendered from the live code, and answered:
+*"donot change in offer design"*.
+
+### What was put to him
+
+A house-identity sweep had just moved the payslip and the deduction exports onto
+`SATO-DIS-2026-01 v1.0`, and the offer letters were the obvious next candidate. They are
+measurably off that standard, and the deviation is not subtle:
+
+| | Offer letters | House standard |
+| --- | --- | --- |
+| Palette | `#0b86be`, `#8ed4ef`, `#111820`, `#9ab6c7` | `#0A527D`, `#0A6BA6`, `#1482C2` |
+| Mark | `sato-pharma-logo-on-light.png` (raster) | the vector, since 2026-09-05 |
+| Corners | a `border-radius: 50%` initials disc | square everywhere |
+| Ink | 6 painted areas (classic) and 7 (executive): navy bands, a filled table header, tinted rows, a gradient divider | lines and type, plus one 6% tint |
+
+`house-identity.ts` even names them in its own docstring — *"the job-offer letters were on a
+different blue entirely"* — which reads as a known deviation waiting to be tidied up.
+
+### Why the answer was no, and why that is right
+
+**The classic template reproduces a letter he SIGNED.** Its description in
+`builtin-templates.ts` is "the signed Dr Samaa letter". Its look is not an artefact of how the
+code grew; it is a document that went out under his name and was accepted.
+
+**The executive template's navy bands ARE its design.** It is described as "the Ultra Premium
+letter — navy bands, tinted salary table, welcome band". The ink rule's first act would be to
+delete exactly those three things, which is not a cleanup — it is removing the premium look from
+the premium letter.
+
+An offer is also the one document in this codebase whose reader is a STRANGER. The contract, the
+payslip and the deduction exports are read by people who already work here; an offer is read by a
+candidate deciding whether to. The owner has already ruled once on that basis — offers speak as
+Sato Pharma and never as Phoenix (`src/lib/offers/identity.ts`) — and this is the same judgement
+applied to the design.
+
+### The hazard this section exists to stop
+
+The house identity is deliberately written as a company-wide standard, and its own comments flag
+the offer letters as off it. A future session doing a sweep will find them, read that line as a
+TODO, and "finish the job" — reversing an owner decision while believing it is enforcing one. The
+rule in `AGENTS.md` §4 is the stop, and it is phrased as a boundary on the standard rather than as
+an exception to it: **the house document identity does not reach `src/lib/offers/`.**
+
+Nothing was changed. `git status` over `src/lib/offers` and `app/api/offers` was empty at the end
+of the session that asked.
