@@ -28,6 +28,7 @@ import {
 import {
   ASSET_DOCUMENTS,
   HIRING_PACK_DOCUMENTS,
+  HOUSE_PAPER_DOCUMENTS,
   ONBOARDING_FORM_DOCUMENTS,
   RENEWAL_DOCUMENTS,
   SIGNABLE_DOCUMENTS,
@@ -503,6 +504,11 @@ function testACustodyReceiptRecordsNoSignatureAgainstThePerson(): void {
       continue;
     }
     if (RENEWAL_DOCUMENTS.includes(document as (typeof RENEWAL_DOCUMENTS)[number])) continue;
+    // Sato's own six are out on the same reasoning: five are sheets filed in a drawer and the
+    // two absence notices are issued repeatedly. The NDA is the one that arguably belongs in
+    // SIGNABLE_DOCUMENTS and is not there only because it needs a column and a migration — see
+    // the note in `SIGNABLE_DOCUMENTS` itself.
+    if (HOUSE_PAPER_DOCUMENTS.includes(document as (typeof HOUSE_PAPER_DOCUMENTS)[number])) continue;
     assert.equal(
       isSignableDocument(document),
       true,

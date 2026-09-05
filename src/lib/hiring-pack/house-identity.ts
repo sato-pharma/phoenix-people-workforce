@@ -166,6 +166,12 @@ const HOUSE_NUMBERED_DOCUMENTS: ReadonlySet<string> = new Set([
   "custodyMobile",
   "contractRenewal",
   "contractNonRenewal",
+  "nda",
+  "appointmentDocsReceipt",
+  "socialStatusSheet",
+  "absenceWarning",
+  "deemedResignation",
+  "appointmentDocsReturn",
   "clearanceEmployee",
   "clearanceCompany",
 ]);
