@@ -65,7 +65,9 @@ import { logError } from "@/lib/observability/log";
 import { positionFolderLabel } from "@/lib/recruitment/position-folder";
 import { resolveSentForPosition } from "@/lib/recruitment/vacancy-options";
 import {
+  BULK_DECISION_MAX,
   CANDIDATE_STATUS_NOTE_MAX_LENGTH,
+  bulkDecisionRefusal,
   normalizeCandidateStatus,
   type CandidateStatus,
 } from "@/lib/recruitment/candidate-status";
@@ -808,6 +810,207 @@ export async function updateCandidateStatus(
   });
 
   return mapCandidate(data as CandidateDbRow);
+}
+
+/** One candidate that a bulk decision actually moved, and where it moved them from. */
+export type BulkStatusMove = {
+  id: string;
+  fromStatus: string | null;
+  toStatus: CandidateStatus;
+};
+
+export type BulkStatusResult = {
+  /** How many ids the caller asked for, before anything was checked. */
+  requested: number;
+  /** The candidates that really moved, each with the status it came from. */
+  moved: BulkStatusMove[];
+  /** Asked for but not moved — an id that matches no candidate row. Never silently dropped. */
+  missing: string[];
+};
+
+/**
+ * One screening verdict across many candidates, atomically.
+ *
+ * ── WHY THIS IS NOT A LOOP ──────────────────────────────────────────────────────────────────────
+ *
+ * The obvious implementation is to call `updateCandidateStatus` once per id. It is the wrong one
+ * here, and this repository has already paid for the reason twice over. A Supabase client request
+ * that times out at 15 seconds STILL COMMITS, so a loop that dies partway through leaves some
+ * candidates decided and some not, while the screen reports a failure. The recruiter then re-applies
+ * the decision over rows that already carry it, and the history fills with duplicate events that
+ * make "who decided this, and when" unanswerable.
+ *
+ * So the whole thing is one `plpgsql` function — `ats_bulk_set_candidate_status` — which moves every
+ * candidate and writes every history row inside one transaction. Either the queue changed or it did
+ * not; there is no third state for a tired screener to untangle at 2am.
+ *
+ * ── THE REFUSAL IS ASKED, NOT RESTATED ──────────────────────────────────────────────────────────
+ *
+ * `bulkDecisionRefusal` owns which statuses may be set this way and how many at once, so the
+ * disabled button's tooltip, this service and the route's 400 all say one sentence. `sent_to_manager`
+ * and `hired` are refused there for reasons worth reading before relaxing either.
+ *
+ * ── WHAT IT RETURNS, AND WHY IT COUNTS THE MISSES ───────────────────────────────────────────────
+ *
+ * The function returns a row per candidate it actually moved. An id matching no row is skipped
+ * rather than failing the batch — that is what a stale tab looks like, and failing all fifty because
+ * one was deleted would be worse. But it is reported, because "50 selected, 47 moved" is the truth
+ * and "done" is not. The caller needs `fromStatus` too: it is what the undo path restores, and it is
+ * unavailable afterwards because the row has already been overwritten.
+ */
+export async function bulkUpdateCandidateStatus(
+  access: AccessContext,
+  ids: readonly string[],
+  status: string,
+  note?: string | null,
+): Promise<BulkStatusResult> {
+  // Duplicates collapse before anything is counted, so a list holding the same candidate twice is
+  // one decision and cannot spend the cap twice over.
+  const unique = Array.from(new Set(ids.map((id) => String(id ?? "").trim()).filter(Boolean)));
+
+  const refusal = bulkDecisionRefusal(status, unique.length);
+  if (refusal) throw new Error(refusal);
+
+  const next = normalizeCandidateStatus(status) as CandidateStatus;
+  const cleanNote = textOrNull(note);
+  if (cleanNote && cleanNote.length > CANDIDATE_STATUS_NOTE_MAX_LENGTH) {
+    throw new Error(`Keep the note under ${CANDIDATE_STATUS_NOTE_MAX_LENGTH} characters.`);
+  }
+
+  // Defensive and deliberately unreachable through `bulkDecisionRefusal`, which already caps the
+  // count. It is here because the cap is the one rule that also lives in SQL, and a mismatch between
+  // the two should surface as this sentence rather than as a raw `23514` from Postgres.
+  if (unique.length > BULK_DECISION_MAX) {
+    throw new Error(`One decision covers up to ${BULK_DECISION_MAX} candidates; this is ${unique.length}.`);
+  }
+
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase.rpc("ats_bulk_set_candidate_status", {
+    // hrIdForStorage, never the raw session value: `access.hrId` is the LOWERCASE comparison
+    // key, and 178 of 179 employee rows are mixed case. Writing the raw key here is how
+    // `status_changed_by_hr_id` came to hold three spellings for two people — any per-person
+    // report then splits one screener in two, with nothing on screen to say so.
+    p_actor_hr_id: hrIdForStorage(access.hrId),
+    p_candidate_ids: unique,
+    p_note: cleanNote,
+    p_status: next,
+  });
+  if (error) throw error;
+
+  const moved: BulkStatusMove[] = (
+    (data ?? []) as Array<{ candidate_id?: string | null; from_status?: string | null }>
+  ).map((row) => ({
+    fromStatus: row.from_status ?? null,
+    id: String(row.candidate_id ?? ""),
+    toStatus: next,
+  }));
+
+  const movedIds = new Set(moved.map((row) => row.id));
+  return {
+    missing: unique.filter((id) => !movedIds.has(id)),
+    moved,
+    requested: unique.length,
+  };
+}
+
+/** One candidate to put back, with the status and note it carried before the decision. */
+export type StatusRevert = {
+  id: string;
+  status: string;
+  note: string | null;
+};
+
+export type StatusRevertResult = {
+  requested: number;
+  restored: Array<{ id: string; status: CandidateStatus }>;
+  missing: string[];
+};
+
+/**
+ * Undo — put candidates back to the status and note each one carried moments ago.
+ *
+ * ── WHY THIS IS NOT "DECIDE BACK" ───────────────────────────────────────────────────────────────
+ *
+ * A revert is a different operation from a decision, in two ways that matter.
+ *
+ * It is PER ROW. `bulkUpdateCandidateStatus` sets one status for everybody; an undo has to restore
+ * whatever each candidate individually had, which after a mixed selection is several different
+ * statuses at once.
+ *
+ * And it is NOT BOUND BY `bulkDecidableStatuses`. That list exists to stop somebody marking fifty
+ * CVs `sent_to_manager` when no manager was told. Putting a candidate BACK to `sent_to_manager`
+ * tells no such lie — they really were sent, the notification really happened, and this only
+ * restores the row as it stood before the last press. Routing undo through the decision rule would
+ * block the commonest undo of all, back to `new`, which is the entire backlog case.
+ *
+ * ── IT ADDS TO THE HISTORY, IT DOES NOT ERASE ───────────────────────────────────────────────────
+ *
+ * The original decision stays on the record and the reversal is written after it, so an audit later
+ * shows somebody decided and changed their mind within seconds. That is the truth, and it is more
+ * useful than a gap where a decision used to be.
+ *
+ * ── THE STATUS IS VALIDATED, EVEN THOUGH IT CAME FROM US ────────────────────────────────────────
+ *
+ * These values originate in a response this server sent seconds earlier, so it is tempting to trust
+ * them. They still arrive over the wire from a browser, and this is a write path: a caller can send
+ * whatever it likes. Every status is normalised against the real vocabulary before it is written.
+ */
+export async function revertCandidateStatuses(
+  access: AccessContext,
+  moves: readonly StatusRevert[],
+): Promise<StatusRevertResult> {
+  const seen = new Set<string>();
+  const clean: Array<{ id: string; status: CandidateStatus; note: string | null }> = [];
+
+  for (const move of moves) {
+    const id = String(move?.id ?? "").trim();
+    if (!id || seen.has(id)) continue;
+    const status = normalizeCandidateStatus(move?.status);
+    if (!status) {
+      throw new Error(`"${String(move?.status ?? "").trim()}" is not a candidate status.`);
+    }
+    const note = textOrNull(move?.note);
+    if (note && note.length > CANDIDATE_STATUS_NOTE_MAX_LENGTH) {
+      throw new Error(`Keep the note under ${CANDIDATE_STATUS_NOTE_MAX_LENGTH} characters.`);
+    }
+    seen.add(id);
+    clean.push({ id, note, status });
+  }
+
+  if (clean.length === 0) return { missing: [], requested: 0, restored: [] };
+  if (clean.length > BULK_DECISION_MAX) {
+    throw new Error(`One undo covers up to ${BULK_DECISION_MAX} candidates; this is ${clean.length}.`);
+  }
+
+  const supabase = recruitmentDb();
+  // Three POSITIONAL arrays — the function pairs them by index and refuses a length mismatch, which
+  // is the one failure here that would otherwise be invisible: a candidate silently restored to
+  // somebody else's status looks exactly like an ordinary set of moves afterwards.
+  const { data, error } = await supabase.rpc("ats_revert_candidate_status", {
+    // hrIdForStorage, never the raw session value: `access.hrId` is the LOWERCASE comparison
+    // key, and 178 of 179 employee rows are mixed case. Writing the raw key here is how
+    // `status_changed_by_hr_id` came to hold three spellings for two people — any per-person
+    // report then splits one screener in two, with nothing on screen to say so.
+    p_actor_hr_id: hrIdForStorage(access.hrId),
+    p_candidate_ids: clean.map((move) => move.id),
+    p_notes: clean.map((move) => move.note ?? ""),
+    p_statuses: clean.map((move) => move.status),
+  });
+  if (error) throw error;
+
+  const restored = ((data ?? []) as Array<{ candidate_id?: string | null; restored_to?: string | null }>)
+    .map((row) => ({
+      id: String(row.candidate_id ?? ""),
+      status: normalizeCandidateStatus(row.restored_to) as CandidateStatus,
+    }))
+    .filter((row) => Boolean(row.id) && Boolean(row.status));
+
+  const restoredIds = new Set(restored.map((row) => row.id));
+  return {
+    missing: clean.map((move) => move.id).filter((id) => !restoredIds.has(id)),
+    requested: clean.length,
+    restored,
+  };
 }
 
 /**

@@ -43,7 +43,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Layers, PanelLeft, X } from "lucide-react";
 
-import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
+import {
+  BULK_DECISION_MAX,
+  bulkDecidableStatuses,
+  candidateStatusLabels,
+  type BulkDecidableStatus,
+  type CandidateStatus,
+} from "@/lib/recruitment/candidate-status";
 import type { Candidate } from "@/lib/recruitment/types";
 import {
   screeningWorkQueueEmptyLabels,
@@ -103,7 +109,27 @@ type CandidateProfileShape = {
 /** Which single pane is on screen below the laptop breakpoint. */
 type MobilePane = "list" | "cv" | "panel";
 
+/**
+ * How long a decision can be taken back.
+ *
+ * Ten seconds is the width of "I pressed the wrong one", and deliberately not longer. The undo is a
+ * strip across the screen; leaving it up for a minute turns it into furniture that gets pressed by
+ * accident, and an undo pressed by accident is itself an undecided candidate back in the queue.
+ * Nothing is lost when it expires — the decision is on the record and can be changed the ordinary
+ * way, with a reason.
+ */
+const UNDO_WINDOW_MS = 10_000;
+
+/** A decision that can still be taken back, with what each candidate must be put back to. */
+type PendingUndo = {
+  moves: Array<{ id: string; note: string | null; status: CandidateStatus }>;
+  /** The sentence on the strip — already resolved to names, never ids. */
+  label: string;
+  expiresAt: number;
+};
+
 export function ScreeningWorkstation({
+  canDecide,
   canSendToManagers,
   canWriteNotes,
   counts,
@@ -118,6 +144,14 @@ export function ScreeningWorkstation({
   vacancies,
   vacancyStats,
 }: {
+  /**
+   * May this reader decide candidates — the gate on both the single verdict and the bulk one.
+   *
+   * Its own prop rather than a second use of `canWriteNotes`, even though the two are the same
+   * value today. They answer different questions, and the day notes are gated separately from
+   * decisions, a shared prop would move who can reject fifty CVs without anybody editing this file.
+   */
+  canDecide: boolean;
   canSendToManagers: boolean;
   canWriteNotes: boolean;
   counts: WorkQueueCounts;
@@ -167,6 +201,22 @@ export function ScreeningWorkstation({
   const [sentInSession, setSentInSession] = useState<Record<string, string>>({});
   /** Archived to the Duplicates shelf in this session - dropped from the list without a reload. */
   const [archived, setArchived] = useState<Record<string, boolean>>({});
+  /**
+   * Ticked for a bulk decision — a SET, so testing 400 rendered rows against a 200-row selection
+   * stays O(1) per row instead of a scan each.
+   *
+   * Kept even when a row leaves the list under a search or a queue change, so widening the list
+   * brings the selection back rather than punishing the reader for looking. What is DECIDED is
+   * narrowed to the visible rows at the moment of the press — see `markedVisible`.
+   */
+  const [marked, setMarked] = useState<ReadonlySet<string>>(() => new Set<string>());
+  /**
+   * The note this session wrote with each decision, so an undo restores the note as well as the
+   * status. `decided` alone cannot: it remembers the verdict and forgets the reason, and a revert
+   * that silently blanked a rejection reason would be a quiet data loss.
+   */
+  const [decidedNote, setDecidedNote] = useState<Record<string, string | null>>({});
+  const [undoable, setUndoable] = useState<PendingUndo | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [sendState, setSendState] = useState<SendState>({
@@ -308,6 +358,17 @@ export function ScreeningWorkstation({
     setActionError(null);
   }, [positionInList, visible]);
 
+  // The other direction. `goToNext` has existed since the decision flow was built, because a
+  // decision moves you on; navigating by keyboard needs the way back as well, or `k` is a key that
+  // silently does nothing on the first press a reader tries it.
+  const goToPrevious = useCallback(() => {
+    if (positionInList <= 0) return;
+    const previous = visible[positionInList - 1];
+    if (!previous) return;
+    setSelectedId(previous.id);
+    setActionError(null);
+  }, [positionInList, visible]);
+
   const openCandidate = useCallback((id: string) => {
     setSelectedId(id);
     setActionError(null);
@@ -322,6 +383,12 @@ export function ScreeningWorkstation({
       // the reader is not showing. `selected` is null exactly when that is the case.
       const selectedId = selected?.id;
       if (!selectedId || busy) return;
+      // Captured BEFORE the write, because afterwards it is gone: the row on screen holds the old
+      // status only until the response lands, and the database has already overwritten it. A
+      // session decision outranks the stored one — undoing a second press must restore the first.
+      const wasStatus = decided[selectedId] ?? selected?.status ?? null;
+      const wasNote = selectedId in decidedNote ? decidedNote[selectedId] : (selected?.statusNote ?? null);
+      const name = selected?.fullName ?? "that candidate";
       setBusy(true);
       setActionError(null);
       try {
@@ -335,6 +402,18 @@ export function ScreeningWorkstation({
           throw new Error(data.message ?? "Could not save that decision.");
         }
         setDecided((prev) => ({ ...prev, [selectedId]: status }));
+        setDecidedNote((prev) => ({ ...prev, [selectedId]: note }));
+        // No previous status means there is nothing to put back — a row whose stored status is not
+        // in the vocabulary at all. Offering an undo that cannot run is worse than offering none.
+        setUndoable(
+          wasStatus
+            ? {
+                expiresAt: Date.now() + UNDO_WINDOW_MS,
+                label: `${candidateStatusLabels[status]} ${name}`,
+                moves: [{ id: selectedId, note: wasNote, status: wasStatus }],
+              }
+            : null,
+        );
         goToNext();
       } catch (caught) {
         setActionError(caught instanceof Error ? caught.message : "Could not save that decision.");
@@ -342,8 +421,227 @@ export function ScreeningWorkstation({
         setBusy(false);
       }
     },
-    [busy, goToNext, selected],
+    [busy, decided, decidedNote, goToNext, selected],
   );
+
+  /**
+   * The ticked rows that are ACTUALLY IN THE LIST in front of the reader.
+   *
+   * Marks survive a narrowing, so widening the list again brings the selection back rather than
+   * punishing the reader for looking. But a decision must never land on a candidate they cannot
+   * see — the same rule `selected` follows, for the same reason. Every count printed beside a bulk
+   * button is measured here, so what the button says is what the button does.
+   */
+  const markedVisible = useMemo(() => visible.filter((row) => marked.has(row.id)), [marked, visible]);
+
+  const toggleMark = useCallback((id: string) => {
+    setMarked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearMarks = useCallback(() => setMarked(new Set<string>()), []);
+
+  /**
+   * Tick every row in the list, up to the cap.
+   *
+   * Capped rather than refused: a reader who has narrowed to 400 rows and wants them all is better
+   * served by getting the first 200 and being told so than by a button that does nothing. The number
+   * is the same constant the route and the database function enforce.
+   */
+  const markAllVisible = useCallback(() => {
+    setMarked(new Set(visible.slice(0, BULK_DECISION_MAX).map((row) => row.id)));
+  }, [visible]);
+
+  /**
+   * One verdict across every ticked candidate — a single request, not one per row.
+   *
+   * The server runs it as one transaction, so it cannot half-apply. That matters more than it looks:
+   * a client-side loop that dies partway leaves some candidates decided while the screen reports a
+   * failure, and the recruiter then re-decides rows that already moved.
+   *
+   * The response carries each candidate's PREVIOUS status. That is the only place it still exists
+   * once the write has happened, and it is exactly what the undo strip needs.
+   */
+  const bulkDecide = useCallback(
+    async (status: BulkDecidableStatus) => {
+      const rows = markedVisible;
+      if (rows.length === 0 || busy) return;
+      const wasNoteById = new Map(
+        rows.map((row) => [row.id, row.id in decidedNote ? decidedNote[row.id] : row.statusNote] as const),
+      );
+      setBusy(true);
+      setActionError(null);
+      try {
+        const res = await fetch("/api/recruitment/candidates/bulk-status", {
+          body: JSON.stringify({ ids: rows.map((row) => row.id), status }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          message?: string;
+          missing?: string[];
+          moved?: Array<{ fromStatus: string | null; id: string }>;
+        };
+        if (!res.ok) throw new Error(data.message ?? "Could not save that decision.");
+
+        const moved = data.moved ?? [];
+        setDecided((prev) => {
+          const next = { ...prev };
+          for (const row of moved) next[row.id] = status;
+          return next;
+        });
+        setDecidedNote((prev) => {
+          const next = { ...prev };
+          for (const row of moved) next[row.id] = null;
+          return next;
+        });
+
+        // Only rows whose previous status is a real one can be put back. The rest are dropped from
+        // the undo rather than failing it, so one unrecognised legacy row cannot cost the other 49.
+        const restorable = moved
+          .map((row) => ({
+            id: row.id,
+            note: wasNoteById.get(row.id) ?? null,
+            status: (row.fromStatus ?? "") as CandidateStatus,
+          }))
+          .filter((row) => Boolean(row.status));
+
+        setUndoable(
+          restorable.length > 0
+            ? {
+                expiresAt: Date.now() + UNDO_WINDOW_MS,
+                label: `${candidateStatusLabels[status]} ${moved.length} ${moved.length === 1 ? "candidate" : "candidates"}`,
+                moves: restorable,
+              }
+            : null,
+        );
+
+        clearMarks();
+        // "50 selected, 47 moved" is the truth and "done" is not. A missing row is a stale tab, not
+        // a failure, so it is reported rather than thrown.
+        const missing = data.missing?.length ?? 0;
+        if (missing > 0) {
+          setActionError(
+            `${moved.length} decided. ${missing} could not be found — reload the page to see the current list.`,
+          );
+        }
+      } catch (caught) {
+        setActionError(caught instanceof Error ? caught.message : "Could not save that decision.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, clearMarks, decidedNote, markedVisible],
+  );
+
+  /**
+   * Take the last decision back.
+   *
+   * Its own route, because a revert restores a DIFFERENT status per candidate and is deliberately
+   * not bound by the two verdicts a bulk decision may set — putting somebody back to "sent to
+   * manager" tells no lie, since they really were sent. The reversal is written to the history
+   * rather than erasing the original, so the record shows a change of mind instead of a gap.
+   */
+  const undoLast = useCallback(async () => {
+    const pending = undoable;
+    if (!pending || busy) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      const res = await fetch("/api/recruitment/candidates/revert-status", {
+        body: JSON.stringify({ moves: pending.moves }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        message?: string;
+        restored?: Array<{ id: string; status: CandidateStatus }>;
+      };
+      if (!res.ok) throw new Error(data.message ?? "Could not undo that.");
+
+      const restored = data.restored ?? [];
+      const noteById = new Map(pending.moves.map((move) => [move.id, move.note] as const));
+      setDecided((prev) => {
+        const next = { ...prev };
+        for (const row of restored) next[row.id] = row.status;
+        return next;
+      });
+      setDecidedNote((prev) => {
+        const next = { ...prev };
+        for (const row of restored) next[row.id] = noteById.get(row.id) ?? null;
+        return next;
+      });
+      setUndoable(null);
+    } catch (caught) {
+      setActionError(caught instanceof Error ? caught.message : "Could not undo that.");
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, undoable]);
+
+  /**
+   * The keyboard, for the reader who is doing this two hundred times.
+   *
+   * `J`/`K` and the arrows move; `S` shortlists; `U` takes the last decision back. They extend the
+   * `F`-for-full-width handler that already lives in workstation-page-client and follow its rule
+   * exactly: ignored while typing, so an "s" in a search term does not decide the CV underneath.
+   *
+   * REJECT IS DELIBERATELY NOT BOUND. It is the one verdict this screen asks a reason for — the
+   * button opens a panel rather than deciding — and a single keystroke that skipped that panel would
+   * quietly turn every rejection into an unexplained one. Shortlisting asks for nothing today, which
+   * is why it can be a key. Rejecting many at once has its own control, with the same note field.
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT" ||
+        target?.isContentEditable === true;
+      if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+
+      const key = event.key.toLowerCase();
+      if (key === "j" || event.key === "ArrowDown") {
+        event.preventDefault();
+        goToNext();
+        return;
+      }
+      if (key === "k" || event.key === "ArrowUp") {
+        event.preventDefault();
+        goToPrevious();
+        return;
+      }
+      if (key === "u" && undoable) {
+        event.preventDefault();
+        void undoLast();
+        return;
+      }
+      if (key === "s" && canDecide && selected) {
+        event.preventDefault();
+        void decide("shortlisted", null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canDecide, decide, goToNext, goToPrevious, selected, undoLast, undoable]);
+
+  // The window closes on its own. A timer rather than a rendered countdown: nothing here needs to
+  // re-render ten times a second, and a ticking number beside a live control invites a race.
+  useEffect(() => {
+    if (!undoable) return;
+    const remaining = undoable.expiresAt - Date.now();
+    if (remaining <= 0) {
+      setUndoable(null);
+      return;
+    }
+    const timer = setTimeout(() => setUndoable(null), remaining);
+    return () => clearTimeout(timer);
+  }, [undoable]);
 
   /**
    * Every (candidate, manager) this session has already confirmed a send for.
@@ -617,6 +915,71 @@ export function ScreeningWorkstation({
           </span>
         </div>
 
+        {/* ── The undo offer ────────────────────────────────────────────────
+            Across the full width, above both panes, because it belongs to the DECISION and not to
+            whichever CV happens to be open — after a bulk verdict the row it refers to may not be
+            on screen at all. It wraps rather than scrolling, per the fits-the-screen rule. */}
+        {undoable ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-phx-line bg-phx-accent-soft px-4 py-1.5">
+            <span className="text-[12px] font-bold text-phx-ink">{undoable.label}.</span>
+            <button
+              className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-bold text-phx-ink transition hover:bg-phx-accent hover:text-white disabled:opacity-50"
+              disabled={busy}
+              onClick={() => void undoLast()}
+              type="button"
+            >
+              Undo
+            </button>
+            <span className="w-full text-[11px] leading-tight text-phx-ink-soft">
+              Or press U. This offer goes in a few seconds; after that the decision can still be
+              changed the ordinary way, with a reason.
+            </span>
+          </div>
+        ) : null}
+
+        {/* ── The bulk verdict ──────────────────────────────────────────────
+            Only once something is ticked. A permanently visible bar advertising an action nobody
+            has set up yet is furniture, and the row tick-boxes are how it is reached. */}
+        {canDecide && markedVisible.length > 0 ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-phx-line bg-phx-surface-2 px-4 py-1.5">
+            <span className="text-[12px] font-bold text-phx-ink">
+              {markedVisible.length} selected
+            </span>
+            {bulkDecidableStatuses.map((status) => (
+              <button
+                className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-bold text-phx-ink-2 transition hover:bg-phx-accent hover:text-white disabled:opacity-50"
+                disabled={busy}
+                key={status}
+                onClick={() => void bulkDecide(status)}
+                type="button"
+              >
+                {candidateStatusLabels[status]} all {markedVisible.length}
+              </button>
+            ))}
+            {visible.length > markedVisible.length ? (
+              <button
+                className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper"
+                onClick={markAllVisible}
+                type="button"
+              >
+                Select all {Math.min(visible.length, BULK_DECISION_MAX)} in this list
+              </button>
+            ) : null}
+            <button
+              className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper"
+              onClick={clearMarks}
+              type="button"
+            >
+              Clear
+            </button>
+            <span className="w-full text-[11px] leading-tight text-phx-ink-soft">
+              One decision, applied together — it either moves all of them or none. Every move is
+              written to each candidate&rsquo;s history, and can be taken back for a few seconds
+              afterwards.
+            </span>
+          </div>
+        ) : null}
+
         <div className="flex min-h-0 flex-1">
           {/* ── AREA 2 ───────────────────────────────────────────────────────── */}
           <div
@@ -629,8 +992,10 @@ export function ScreeningWorkstation({
             <WorkstationCandidateList
               decidedById={decided}
               emptyLabel={emptyLabelFor(queue, chosenVacancy?.jobTitle ?? null, search, poolSize, filteredOut)}
+              markedIds={marked}
               onCollapse={() => setListOpen(false)}
               onSelect={openCandidate}
+              onToggleMark={canDecide ? toggleMark : null}
               onSearchChange={setSearch}
               rows={visible}
               search={search}

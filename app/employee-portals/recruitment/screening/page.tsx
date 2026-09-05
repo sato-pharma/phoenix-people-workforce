@@ -94,6 +94,7 @@ async function ScreeningContent({
     <WorkstationPageClient
       area={workspace.area}
       areaOptions={workspace.areaOptions}
+      canDecide={canUpdate}
       canSendToManagers={workspace.canSendToManagers}
       canWriteNotes={canUpdate}
       counts={workspace.counts}

@@ -52,6 +52,8 @@ export function WorkstationCandidateList({
   rows,
   search,
   onSearchChange,
+  markedIds,
+  onToggleMark,
   selectedId,
   title,
   totalLabel,
@@ -65,8 +67,23 @@ export function WorkstationCandidateList({
    */
   decidedById: Readonly<Record<string, CandidateStatus>>;
   emptyLabel: string;
+  /**
+   * The candidates ticked for a bulk decision.
+   *
+   * Separate from `selectedId` on purpose, and the two are genuinely different things: `selectedId`
+   * is the ONE CV being read, `markedIds` is the SET being acted on. Folding them together would
+   * mean either that reading a CV enrolled it in the next bulk verdict, or that ticking a box threw
+   * away the document the reader had open.
+   */
+  markedIds: ReadonlySet<string>;
   /** Desktop only. Given, the head grows a fold control; omitted, the pane cannot be folded. */
   onCollapse?: () => void;
+  /**
+   * Null when this reader cannot decide anything — the row then renders with no checkbox at all,
+   * exactly as it did before bulk existed. A disabled tick-box on every row would be forty pieces
+   * of furniture advertising a thing that cannot be done.
+   */
+  onToggleMark: ((id: string) => void) | null;
   onSelect: (id: string) => void;
   onSearchChange: (value: string) => void;
   rows: readonly WorkspaceCandidateRow[];
@@ -148,10 +165,24 @@ export function WorkstationCandidateList({
         ) : (
           <>
             {visible.map((row, index) => (
+              // A FLEX LINE, with the tick-box a SIBLING of the row rather than inside it. A control
+              // nested in another control is invalid HTML and behaves accordingly — the tick would be
+              // swallowed by the row's own click and open the CV instead of selecting it.
+              <div className="flex items-stretch" key={row.id}>
+                {onToggleMark ? (
+                  <label className="flex shrink-0 cursor-pointer items-start border-b border-phx-line bg-white pl-2 pr-1 pt-3">
+                    <input
+                      aria-label={`Select ${row.fullName} for a bulk decision`}
+                      checked={markedIds.has(row.id)}
+                      className="h-3.5 w-3.5 accent-phx-accent"
+                      onChange={() => onToggleMark(row.id)}
+                      type="checkbox"
+                    />
+                  </label>
+                ) : null}
               <CandidateBlock
                 active={row.id === selectedId}
                 decided={decidedById[row.id] ?? null}
-                key={row.id}
                 onSelect={() => onSelect(row.id)}
                 row={row}
                 // A band printed on every row is not information, it is wallpaper: the list is
@@ -161,6 +192,7 @@ export function WorkstationCandidateList({
                 // the queue ends and the next begins — and costs nothing on the rows in between.
                 showBand={index === 0 || visible[index - 1].band !== row.band}
               />
+              </div>
             ))}
             {limit < rows.length ? (
               // A real button as well as the scroll handler. Scroll-to-load alone is invisible to a
@@ -197,11 +229,14 @@ function CandidateBlock({
   const redFlag = row.redFlags[0] ?? null;
   const status = decided ?? row.status;
 
+  // `min-w-0 flex-1` rather than `w-full`: the row now sits in a flex line beside an optional
+  // tick-box (see the call site). Alone in that line it is exactly the width it always was, so a
+  // reader who cannot decide sees the list unchanged.
   return (
     <button
       aria-current={active ? "true" : undefined}
       className={cn(
-        "flex w-full flex-col gap-1 border-b border-phx-line px-3 py-2 text-left transition",
+        "flex min-w-0 flex-1 flex-col gap-1 border-b border-phx-line px-3 py-2 text-left transition",
         active
           ? "border-l-2 border-l-phx-accent bg-phx-accent-soft"
           : "border-l-2 border-l-transparent hover:bg-phx-paper",

@@ -964,9 +964,28 @@ export async function runRecruitmentScreeningPageTests() {
   // its selection across candidates IS the batch workflow — screening a pile for one seat. Clearing
   // it would have fixed the double press by breaking that.
   const workstation = read("src/components/recruitment/workstation/screening-workstation.tsx");
-  const guardAt = workstation.indexOf("sentPairs.current.has(");
-  const recordAt = workstation.indexOf("sentPairs.current.add(");
-  const confirmAt = workstation.indexOf("if (!res.ok) throw new Error(data.message");
+  // SCOPED TO THE SEND PATH, not to the whole file.
+  //
+  // These three offsets are compared against each other, so all three must be measured inside the
+  // one function whose ordering is being pinned. Read with a bare `indexOf` over the file they are
+  // not: `if (!res.ok) throw new Error(data.message` now appears FOUR times in this component — the
+  // bulk decision, the undo, the send and the seen-marker — and `indexOf` returns whichever sits
+  // highest in the file. Adding the bulk-decision handler above the send on 2026-09-05 therefore
+  // pointed `confirmAt` at a completely unrelated function and failed this assertion while the send
+  // path was untouched and still correctly ordered.
+  //
+  // The window starts at the `sentPairs` ref, which is declared immediately above the send and is
+  // unique in the file, so everything measured below belongs to the send.
+  const sendRegionAt = workstation.indexOf("const sentPairs = useRef<");
+  assert.ok(
+    sendRegionAt >= 0,
+    "the send path must still be anchored by the sentPairs ref — without it the three offsets below " +
+      "are measured against the whole file again and stop meaning anything",
+  );
+  const sendRegion = workstation.slice(sendRegionAt);
+  const guardAt = sendRegion.indexOf("sentPairs.current.has(");
+  const recordAt = sendRegion.indexOf("sentPairs.current.add(");
+  const confirmAt = sendRegion.indexOf("if (!res.ok) throw new Error(data.message");
   assert.ok(guardAt >= 0, "the send must skip managers this CV already reached in this session");
   assert.ok(recordAt >= 0, "a confirmed send must be recorded so the next press can see it");
   assert.ok(confirmAt >= 0, "the send must still check res.ok before believing it succeeded");
