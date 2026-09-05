@@ -60,6 +60,24 @@ function SectionTable({
   );
 }
 
+/**
+ * One event seen by several detectors must READ as one event.
+ *
+ * A late return that is also a reversal pair and also drags its cell negative appears in three
+ * sections at three different magnitudes. Production 2026-07: D21/RO001 and D21/SA001 each
+ * appear in ALL THREE, and summing their sentences suggested ~62,000 EGP of July distortion for
+ * a return whose real effect on the closing cell is -12,559.95. The number in each section is
+ * correct for what that section measures; what was missing was that they are the same return.
+ */
+function withCrossReference(impact: string, alsoSeenIn: readonly string[]): string {
+  if (alsoSeenIn.length === 0) return impact;
+  const quoted = alsoSeenIn.map((label) => `“${label}”`).join(" and ");
+  return (
+    `${impact} The same area and product is also listed under ${quoted} — ` +
+    `one situation seen ${alsoSeenIn.length + 1} ways, not ${alsoSeenIn.length + 1} separate ones.`
+  );
+}
+
 export function ClosingCorrectionsView({ initialData, initialError }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -67,9 +85,15 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
   const data = initialData;
   const period = data?.period ?? "";
   const availablePeriods = data?.availablePeriods ?? [];
-  const findingsCount = data
-    ? data.reversalPairs.length + data.netNegatives.length + data.lateReturns.length
-    : 0;
+  // DISTINCT situations, never the three section lengths added together.
+  //
+  // One return routinely trips two or three detectors — a late return that is also a reversal pair
+  // and also drags its cell negative is ONE event seen three ways. Summing the sections counted it
+  // three times: production 2026-07 announced "17 situations found" for 12 real ones, with the same
+  // money printed three times at three different magnitudes and nothing saying they were one event.
+  // This page exists to size how far a month reads wrong before sign-off, so an inflated headline
+  // inflates exactly the judgement it is there to inform. Pinned by tests/closing-corrections-one-event.test.ts.
+  const findingsCount = data?.situationCount ?? 0;
 
   const switchPeriod = (next: string) => {
     startTransition(() => {
@@ -168,7 +192,7 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
                       pair.productName,
                       `${pair.positivePeriod}: +${UNITS.format(pair.positiveUnits)} u / ${EGP.format(pair.positiveValue)}`,
                       `${pair.negativePeriod}: ${UNITS.format(pair.negativeUnits)} u / ${EGP.format(pair.negativeValue)}`,
-                      pair.impact,
+                      withCrossReference(pair.impact, pair.alsoSeenIn),
                     ])}
                   />
                 </section>
@@ -198,7 +222,7 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
                       cell.productName,
                       UNITS.format(cell.units),
                       EGP.format(cell.value),
-                      cell.impact,
+                      withCrossReference(cell.impact, cell.alsoSeenIn),
                     ])}
                   />
                 </section>
@@ -221,7 +245,7 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
                       `${entry.areaName} (${entry.areaCode})`,
                       entry.productName,
                       `${UNITS.format(entry.units)} u / ${EGP.format(entry.value)}`,
-                      entry.impact,
+                      withCrossReference(entry.impact, entry.alsoSeenIn),
                     ])}
                   />
                 </section>
