@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { foldAreaCodeForLine } from "@/lib/sales/closing-area-merges";
 import { isValidVsTargetPeriod, loadBrickSales, rollupBricks } from "@/lib/sales/vs-target";
 import { filterBricksForBound, resolveVsTargetBound } from "@/lib/sales/vs-target-scope";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -39,7 +40,33 @@ export async function GET(request: Request) {
 
     const bound = await resolveVsTargetBound(access);
     const scoped = filterBricksForBound(await loadBrickSales(period), bound);
-    const forArea = scoped.filter((row) => String(row.areaCode ?? "").trim().toUpperCase() === area);
+
+    // MATCH THE AREA THE PAGE SHOWS, WHICH IS THE FOLDED ONE.
+    //
+    // The Areas table applies `applyAchievementAreaMerges`, so on PEDIA the Beni Suef (UE9) row is
+    // folded into Fayoum (GZ6) and the node the user clicks is keyed "GZ6" with a total that
+    // INCLUDES Beni Suef. Comparing the raw `areaCode` here returned Fayoum's bricks only, so the
+    // panel opened to prove the area number silently disproved it — a gap a DM cannot explain and
+    // would reasonably read as sales missing from the pipeline.
+    //
+    // Measured on production 2026-09-05, through this route's own RPC:
+    //   2026-07 Pedia  shown 29,913.38   missing  5,690.25  (16.0% of the area)
+    //   2026-08 Pedia  shown  3,047.63   missing 11,100.38  (78.5%)
+    // 16,790.63 EGP invisible. The audit filed this as latent because no Pedia row existed in UE9
+    // yet; they exist now.
+    //
+    // FOLD PER ROW, BY THE ROW'S OWN LINE — not by expanding the requested code. PEDIA IS THE ONLY
+    // MERGED LINE: the owner removed CNS on 2026-08-30 and it now shows the two areas separately.
+    // A CNS or Anti Infective row in UE9 must NOT answer a request for GZ6, because those lines
+    // show UE9 as its own area — pulling them in would corrupt the opposite drill-down and
+    // re-merge a line he deliberately split. `foldAreaCodeForLine` reads the rule per line, so this
+    // stays correct if the rule changes again; it also trims and upper-cases, matching `area` above.
+    //
+    // Safe with the bound, and the ORDER is what makes it safe: `filterBricksForBound` has already
+    // dropped every row this viewer may not see, using the REAL area codes. Folding afterwards only
+    // re-keys what survived, so a viewer scoped to Beni Suef alone still cannot pull in Fayoum's
+    // bricks. Folding BEFORE the bound would hand them over — see the note above the handler.
+    const forArea = scoped.filter((row) => foldAreaCodeForLine(row.lineCode, row.areaCode ?? "") === area);
 
     return NextResponse.json({ success: true, bricks: rollupBricks(forArea, null) });
   } catch (error) {
