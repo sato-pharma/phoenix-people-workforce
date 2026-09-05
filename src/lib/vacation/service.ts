@@ -2639,8 +2639,7 @@ export async function getVacationRequestPageData(access: AccessContext) {
   };
 }
 
-export async function createVacationRequest(access: AccessContext, input: CreateVacationRequestInput, options: { baseUrl: string }) {
-  void options;
+export async function createVacationRequest(access: AccessContext, input: CreateVacationRequestInput) {
   await assertPermission(access, "leave", "create");
   await assertLeaveWorkflowTransition({
     access,
