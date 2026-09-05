@@ -217,6 +217,21 @@ export function ScreeningWorkstation({
    */
   const [decidedNote, setDecidedNote] = useState<Record<string, string | null>>({});
   const [undoable, setUndoable] = useState<PendingUndo | null>(null);
+  /**
+   * Candidates whose CV CONTENTS match the current search, from the server.
+   *
+   * Null means "not asked". Empty means "asked, and nobody matched" — two different sentences, and
+   * collapsing them into one would make a search that found nothing look like a search never run.
+   *
+   * The searchable CV text is 514 kB against the 683 kB this page already ships, so it stays in the
+   * database and is fetched only when somebody asks. The instant box above is untouched.
+   */
+  const [cvSearch, setCvSearch] = useState<{
+    query: string;
+    ids: ReadonlySet<string>;
+    truncated: boolean;
+  } | null>(null);
+  const [cvSearching, setCvSearching] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [sendState, setSendState] = useState<SendState>({
@@ -240,6 +255,11 @@ export function ScreeningWorkstation({
       if (queue !== "all" && !row.queues.includes(queue)) return false;
       if (vacancyId !== null && !row.vacancyIds.includes(vacancyId)) return false;
       if (!needle) return true;
+      // A CV-content match passes the text filter. A UNION, not a replacement: somebody who searched
+      // "pharmacist" should keep the people whose JOB TITLE says pharmacist as well as the ones whose
+      // CV body does, and a mode that swapped one set for the other would make results disappear on
+      // a press that was meant to add to them.
+      if (cvSearch && cvSearch.query === needle && cvSearch.ids.has(row.id)) return true;
       return [
         row.fullName,
         row.appliedForText,
@@ -253,7 +273,7 @@ export function ScreeningWorkstation({
         .filter(Boolean)
         .some((field) => String(field).toLowerCase().includes(needle));
     });
-  }, [archived, queue, rows, search, vacancyId]);
+  }, [archived, cvSearch, queue, rows, search, vacancyId]);
 
   // FROM THE VISIBLE LIST, not from every row the server sent.
   //
@@ -433,6 +453,42 @@ export function ScreeningWorkstation({
    * button is measured here, so what the button says is what the button does.
    */
   const markedVisible = useMemo(() => visible.filter((row) => marked.has(row.id)), [marked, visible]);
+
+  /**
+   * Ask the server which CVs actually CONTAIN the search term.
+   *
+   * Explicit rather than automatic. Typing is instant and local; this is a round trip over half a
+   * megabyte of extracted text, and firing it on every keystroke would make the fast path feel slow
+   * to pay for a search most sessions never run.
+   *
+   * The query is stamped into the result, and `visible` only honours a result whose query still
+   * matches what is in the box — so editing the search term after a CV search silently retires it
+   * rather than leaving stale matches in the list attached to words nobody typed.
+   */
+  const searchCvContents = useCallback(async () => {
+    const needle = search.trim().toLowerCase();
+    if (needle.length < 2 || cvSearching) return;
+    setCvSearching(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/recruitment/candidates/cv-search?q=${encodeURIComponent(needle)}`);
+      const data = (await res.json().catch(() => ({}))) as {
+        hits?: Array<{ candidateId: string }>;
+        message?: string;
+        truncated?: boolean;
+      };
+      if (!res.ok) throw new Error(data.message ?? "Could not search CV contents.");
+      setCvSearch({
+        ids: new Set((data.hits ?? []).map((hit) => hit.candidateId)),
+        query: needle,
+        truncated: data.truncated === true,
+      });
+    } catch (caught) {
+      setActionError(caught instanceof Error ? caught.message : "Could not search CV contents.");
+    } finally {
+      setCvSearching(false);
+    }
+  }, [cvSearching, search]);
 
   const toggleMark = useCallback((id: string) => {
     setMarked((prev) => {
@@ -948,6 +1004,52 @@ export function ScreeningWorkstation({
               Or press U. This offer goes in a few seconds; after that the decision can still be
               changed the ordinary way, with a reason.
             </span>
+          </div>
+        ) : null}
+
+        {/* ── Search inside the CVs ─────────────────────────────────────────
+            Offered only once something is typed, and only while the instant search is narrower than
+            the CV search could be. Wraps rather than scrolling, per the fits-the-screen rule. */}
+        {search.trim().length >= 2 ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-phx-line bg-phx-surface-2 px-4 py-1.5">
+            {cvSearch && cvSearch.query === search.trim().toLowerCase() ? (
+              <>
+                <span className="text-[12px] font-bold text-phx-ink">
+                  {cvSearch.ids.size} {cvSearch.ids.size === 1 ? "CV mentions" : "CVs mention"}
+                  {" "}&ldquo;{search.trim()}&rdquo;
+                </span>
+                <button
+                  className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper"
+                  onClick={() => setCvSearch(null)}
+                  type="button"
+                >
+                  Clear
+                </button>
+                {cvSearch.truncated ? (
+                  // NEVER a silent cut. A list stopped at the cap reads as a complete answer, and a
+                  // recruiter who believes they have seen every match stops looking.
+                  <span className="w-full text-[11px] leading-tight text-phx-ink-soft">
+                    More than {cvSearch.ids.size} CVs match. Add another word to narrow it — every
+                    word must appear, so &ldquo;{search.trim()} cairo&rdquo; is a smaller list.
+                  </span>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <button
+                  className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-bold text-phx-ink-2 transition hover:bg-phx-accent hover:text-white disabled:opacity-50"
+                  disabled={cvSearching}
+                  onClick={() => void searchCvContents()}
+                  type="button"
+                >
+                  {cvSearching ? "Searching CVs..." : `Search inside CVs for "${search.trim()}"`}
+                </button>
+                <span className="text-[11px] leading-tight text-phx-ink-soft">
+                  The box above searches names, roles and numbers. This reads what the CV itself says
+                  &mdash; skills, employers, universities.
+                </span>
+              </>
+            )}
           </div>
         ) : null}
 
