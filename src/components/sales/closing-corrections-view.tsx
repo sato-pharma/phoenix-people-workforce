@@ -178,14 +178,21 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
                     Returns bigger than the month&apos;s sales
                   </h3>
                   <p className="px-4 pb-2 text-xs text-slate-500 md:px-5">
-                    The area×product cell nets below zero this month — the closing shows a negative
-                    there, which is real, not a bug.
+                    The area×product cell nets below zero this month, across every distributor —
+                    the closing shows a negative there, which is real, not a bug.
                   </p>
+                  {/*
+                    NO DISTRIBUTOR COLUMN HERE, and it must not come back. This row is the whole
+                    cell, exactly as the closing groups it; it has no single distributor. The
+                    column used to exist because the RPC grouped by distributor too, which made
+                    each row one distributor's share labelled as the cell — 7 of 10 rows on
+                    production disagreed with the closing, three of them in sign. Pinned by
+                    tests/closing-corrections-cell.test.ts.
+                  */}
                   <SectionTable
-                    columns={["Distributor", "Line", "Area", "Product", "Net units", "Net EGP", "What it means"]}
+                    columns={["Line", "Area", "Product", "Net units", "Net EGP", "What it means"]}
                     emptyText={`No cell of ${data.period} nets negative beyond the noise floor.`}
                     rows={data.netNegatives.map((cell) => [
-                      cell.distributorName,
                       cell.line,
                       `${cell.areaName} (${cell.areaCode})`,
                       cell.productName,
