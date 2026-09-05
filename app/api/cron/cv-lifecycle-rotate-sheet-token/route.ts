@@ -13,24 +13,27 @@ export const maxDuration = 60;
 /**
  * Healthchecks slug, `phoenix-<route>` like every other watched cron route.
  *
- * ⚠ NOT YET DECLARED IN `JOB_SCHEDULES`, DELIBERATELY, AND THIS IS THE ONE LOOSE END.
- * Declaring a slug in src/lib/observability/job-schedule.ts (and the matching row in
- * docs/observability.md, which CI asserts agrees with it) tells the heartbeat sweep this job
- * SHOULD be reporting — so declaring it before the cron-job.org job exists would page a human
- * in-app and on Telegram, every day, about a job nobody scheduled. An alarm that is usually wrong
- * is an alarm that gets ignored, and this repo has already paid for that once.
+ * WIRED 2026-09-05, in this order and for this reason. Declaring a slug in
+ * src/lib/observability/job-schedule.ts (and the matching row in docs/observability.md, which CI
+ * asserts agrees with it) tells the heartbeat sweep this job SHOULD be reporting — so declaring it
+ * before a scheduler existed would have paged a human in-app and on Telegram, every day, about a
+ * job nobody had scheduled. An alarm that is usually wrong is an alarm that gets ignored, and this
+ * repo has already paid for that once. So the cron-job.org job was created FIRST — `8387636`,
+ * Fridays 04:03 Africa/Cairo, twenty minutes behind the marketing rotation at 03:43 and forty
+ * behind direct orders at 03:23, because each waits on a Google Apps Script round-trip this route
+ * allows 60s while cron-job.org gives up on the request at 30s, and that spacing is what keeps the
+ * three from overlapping — and the declaration followed in the same pull request.
  *
- * So: create the cron-job.org job first, then add the declaration. Suggested slot is **Fridays
- * 04:03 Africa/Cairo** (`3 4 * * 5`), twenty minutes behind the marketing rotation at 03:43 and
- * forty behind direct orders at 03:23 — each waits on a Google Apps Script round-trip and is
- * allowed 60s by `maxDuration`, well past the 30s at which cron-job.org gives up on the request,
- * so the spacing is what keeps the three from overlapping. Grace `2 * HOUR`, matching its two
- * siblings.
+ * The sheet side is live too: the Web App deployment exists, its `WEBHOOK_SECRET` script property
+ * is set, and `CV_LIFECYCLE_SHEET_REFRESH_WEBHOOK_URL` / `_SECRET` hold the matching pair on
+ * Railway production. Proven end to end before this was declared: a POST carrying the wrong secret
+ * answered `denied`, one carrying the right secret answered `ok`, and the sheet's own
+ * `phoenixCvLastGoodStamp` moved to the minute of that call.
  *
- * The route is safe to schedule BEFORE the sheet side is configured: with the two environment
- * variables unset it answers 200 `{ rotated: false, reason: "not configured" }` and touches
- * nothing. That ordering is the recommended one — the job starts reporting, then the sheet gets
- * wired up, and the declaration is correct from its first day.
+ * The route stays safe to run unconfigured — with the two variables unset it answers 200
+ * `{ rotated: false, reason: "not configured" }` and touches nothing — so losing either variable
+ * degrades to a no-op rather than an error, and the heartbeat keeps reporting either way. That is
+ * why a silent `rotated: false` week is worth reading: see the HTTP contract note below.
  */
 const JOB_SLUG = "phoenix-cv-lifecycle-rotate-sheet-token";
 
