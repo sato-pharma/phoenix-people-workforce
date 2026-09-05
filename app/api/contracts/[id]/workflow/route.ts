@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -46,7 +47,7 @@ export async function POST(
       action === "renew" || action === "not_renew" ? "approve" : "update",
     );
 
-    const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
+    const actor = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
     const data = await runContractRenewalWorkflow(id, action, actor, {
       access,
       decisionReason: body.decisionReason ? String(body.decisionReason) : undefined,

@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { deleteSalesBatch, updateSalesBatchStatus } from "@/lib/sales/service";
@@ -20,7 +21,7 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const access = await resolveAccessContext(request);
     const { action, id } = await context.params;
-    const actorUsername = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+    const actorUsername = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
     const actorDisplayName = access.loginId ?? access.hrId ?? access.role;
 
     if (action !== "approve" && action !== "reject" && action !== "delete") {

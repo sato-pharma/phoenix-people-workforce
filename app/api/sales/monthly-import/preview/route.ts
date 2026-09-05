@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: resolved.error, success: false, ...(resolved.code ? { code: resolved.code } : {}) }, { status: resolved.status });
     }
 
-    const uploadedBy = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+    const uploadedBy = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
     const result = await importSourceOfSalesFile({
       distributorCode: resolved.distributorCode,
       dryRun: true,

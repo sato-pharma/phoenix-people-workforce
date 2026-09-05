@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -54,7 +55,7 @@ export async function PATCH(
       resignation?: UpdateResignationDatesInput;
     } & UpdateResignationDatesInput;
     const dates = payload.dates ?? payload.resignation ?? payload;
-    const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
+    const actor = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
     const updated = await updateResignationDates(id, dates, actor);
 
     if (!updated) {

@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import type ExcelJS from "exceljs";
 
 import { type AccessContext, normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -151,7 +152,7 @@ type InsertedReportRow = {
 const bulkInsertChunkSize = 500;
 
 function actorId(access: AccessContext) {
-  return resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
+  return hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
 }
 
 function chunks<T>(rows: T[], size: number) {

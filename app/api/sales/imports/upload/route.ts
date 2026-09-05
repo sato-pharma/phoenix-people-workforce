@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { SalesWorkflowError } from "@/lib/sales/contracts";
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const actorUsername = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+    const actorUsername = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
     const actorDisplayName = access.loginId ?? access.hrId ?? access.role;
 
     const result = await runSalesImportWorkflow({ file, line, uploadedBy: actorUsername });

@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -37,7 +38,7 @@ export async function PUT(request: Request) {
       ? body.productCodes.map((code) => String(code ?? "").trim()).filter(Boolean)
       : [];
 
-    const actorId = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+    const actorId = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
     await replaceWeeklyProductScope(hrId, productCodes, actorId);
 
     const data = await loadWeeklyProductScopeAdmin();

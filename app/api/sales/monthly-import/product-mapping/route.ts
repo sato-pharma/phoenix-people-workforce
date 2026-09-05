@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status });
     }
 
-    const actorId = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+    const actorId = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
     const result = await importSosProductMappingWorkbook({ file, actorId, distributorCode });
     const blocked = result.blockedRows.length > 0;
     // Per-row tolerant: valid rows are saved even when some are blocked. Only a hard fail (nothing

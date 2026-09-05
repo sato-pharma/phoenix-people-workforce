@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -15,7 +16,7 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "import");
-    void (resolveEmployeeIdentityId(access) ?? access.loginId ?? "system");
+    void (hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system");
 
     const { distributor } = await context.params;
     const distributorCode = decodeURIComponent(distributor);

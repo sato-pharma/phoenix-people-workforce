@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -48,7 +49,7 @@ export async function POST(
       action === "approve" || action === "reject" || action === "complete" ? "approve" : "update",
     );
 
-    const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
+    const actor = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
     const updated = await runResignationWorkflow(id, action, actor, note, rejectedReason, access);
     if (!updated) {
       return NextResponse.json({ success: false, error: "Resignation record not found." }, { status: 404 });

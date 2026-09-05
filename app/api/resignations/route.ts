@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
+    const actor = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
     await createResignation(payload.resignation, actor, access);
     return NextResponse.json(await getResignationsDashboardData(access));
   } catch (error) {

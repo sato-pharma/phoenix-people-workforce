@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
 // Permission is enforced here (service-role bypasses RLS); the page additionally gates Super Admin/system.
 
 function actor(access: Awaited<ReturnType<typeof resolveAccessContext>>): string {
-  return resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+  return hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
 }
 
 function fail(error: unknown, fallback: string) {

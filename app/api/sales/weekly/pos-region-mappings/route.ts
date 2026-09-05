@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const actorId = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+    const actorId = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
     const result = await importWeeklyPosRegionMappingWorkbook({ actorId, file });
     const data = await loadWeeklyPosRegionMappingAdmin("PS");
     const blocked = result.blockedRows.length > 0;
