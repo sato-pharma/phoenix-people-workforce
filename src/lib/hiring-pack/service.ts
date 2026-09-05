@@ -13,6 +13,7 @@ import {
 import { canonicalHrIdForDisplay, hrIdsMatch } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { arabicDepartmentName } from "@/lib/hiring-pack/department-names";
+import { isRenewalObjectiveReasonCode } from "@/lib/hiring-pack/renewal-reasons";
 import { currentTemplateVersion } from "@/lib/hiring-pack/template-registry";
 import {
   ASSET_DOCUMENTS,
@@ -177,6 +178,7 @@ export type ProfileDbRow = {
   contract_printed_at: string | null;
   contract_signatory_name_ar: string | null;
   contract_signatory_title_ar: string | null;
+  contract_objective_reason_code: string | null;
   contract_signed_date: string | null;
   contract_start_date: string | null;
   contract_template_version: string | null;
@@ -377,6 +379,7 @@ export function emptyProfile(hrId: string): HiringPackProfile {
     notes: null,
     contractSignatoryNameAr: null,
     contractSignatoryTitleAr: null,
+    contractObjectiveReasonCode: null,
     contractSignedDate: null,
     form1SignedDate: null,
     contractPrintedAt: null,
@@ -409,6 +412,15 @@ export function mapProfile(row: ProfileDbRow): HiringPackProfile {
     notes: cleanText(row.notes),
     contractSignatoryNameAr: cleanText(row.contract_signatory_name_ar),
     contractSignatoryTitleAr: cleanText(row.contract_signatory_title_ar),
+    // An unrecognised code reads as NOTHING CHOSEN rather than being passed through. The column
+    // is plain text with no check constraint, so a hand-written or newer-build value can be in
+    // there, and the one thing that must never happen is a raw code reaching an Arabic legal
+    // instrument. `renewalObjectiveReasonClause` refuses it again at print time; this is the
+    // first of the two gates, and it is the one that also keeps the dropdown honest — the
+    // select shows nothing selected rather than a blank option nobody can name.
+    contractObjectiveReasonCode: isRenewalObjectiveReasonCode(row.contract_objective_reason_code)
+      ? cleanText(row.contract_objective_reason_code)
+      : null,
     contractSignedDate: row.contract_signed_date,
     form1SignedDate: row.form1_signed_date,
     contractPrintedAt: row.contract_printed_at,
@@ -1283,6 +1295,12 @@ export async function saveHiringPackProfile(
         notes: cleanText(input.notes),
         contract_signatory_name_ar: cleanText(input.contractSignatoryNameAr),
         contract_signatory_title_ar: cleanText(input.contractSignatoryTitleAr),
+        // Validated on the way IN as well as on the way out: this column feeds a printed legal
+        // ground, and an unknown code stored here would resolve to the dotted rule silently,
+        // which reads on screen as a saved choice and on paper as an unanswered one.
+        contract_objective_reason_code: isRenewalObjectiveReasonCode(input.contractObjectiveReasonCode)
+          ? cleanText(input.contractObjectiveReasonCode)
+          : null,
         updated_by_hr_id: cleanText(actorHrId),
       },
       { onConflict: "hr_id" },
