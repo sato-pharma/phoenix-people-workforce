@@ -1,6 +1,7 @@
 import { PasswordSetupForm } from "@/components/auth/password-setup-form";
 import { systemIdentity } from "@/config/system-settings";
 import { getPasswordSetupPreview } from "@/lib/auth/password-setup";
+import { cairoDateTime } from "@/lib/format/cairo-datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -27,9 +28,26 @@ export default async function PasswordSetupPage(
     );
   }
 
+  // Formatted HERE, on the server, and handed down as a finished string.
+  //
+  // The form is a client component, so anything it formats itself is formatted TWICE — once by
+  // Node when the HTML is rendered and again by the browser when React hydrates it. Those are two
+  // different engines carrying two independently-versioned copies of the Unicode locale data, and
+  // when they disagree by a single character React throws away the server HTML and re-renders
+  // (hydration error #418). It did: en-GB's abbreviated September is "Sep" before CLDR 42 and
+  // "Sept" after it, so the Railway server and a reader on Samsung Internet 20 built different
+  // strings for the same instant. Formatting once, on the server, means there is no second render
+  // to disagree with.
+  //
+  // `cairoDateTime` is the shared, zone-pinned helper (Cairo, never the runtime's own zone — the
+  // copy below says "Cairo time" and must not be lying); it returns an em dash for an absent or
+  // unparseable instant, which becomes `null` here so the expiry LINE disappears rather than
+  // printing a dash where a date should be.
+  const formattedExpiry = cairoDateTime(preview.expiresAt);
+
   return (
     <PasswordSetupForm
-      expiresAt={preview.expiresAt}
+      expiryLabel={formattedExpiry === "—" ? null : formattedExpiry}
       hrId={preview.hrId}
       loginId={preview.loginId}
       name={preview.name}

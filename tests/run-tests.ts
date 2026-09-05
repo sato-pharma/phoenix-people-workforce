@@ -1415,6 +1415,8 @@ import { runEmployeeJobTitleCasingHintTests } from "./employee-job-title-casing-
 
 import { runPayrollHoldConfirmStepReasonTests } from "./payroll-hold-confirm-step-reason.test.ts";
 
+import { runReact418HydrationSafeTextTests } from "./react-418-hydration-safe-text.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4472,6 +4474,8 @@ await runTest(
   "report-it export subtitle date is Cairo-pinned via cairoDate(), not the runtime's own zone",
   runReportItExportSubtitleCairoDateTests,
 );
+
+await runTest("hydration-safe Cairo text: engine-independent month names and a server-formatted password-setup expiry (React #418)", runReact418HydrationSafeTextTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
