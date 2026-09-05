@@ -63,7 +63,11 @@ async function buildOfficeAllocation(input: { buffer: ArrayBuffer | Buffer; file
   const lineByCode = new Map<string, string>();
 
   for (const row of pivot.rows) {
-    if (!(row.units > 0)) continue; // zero/negative office units contribute nothing — ignore
+    // Negatives are RETURNS and must net against the month's sales for that product, so they reach
+    // the allocator instead of being dropped here. A pivot row of -10 against 100 sold now
+    // allocates 90; previously it allocated 100 and the 10 stayed on real bricks forever.
+    // Zero and non-numeric still contribute nothing.
+    if (!Number.isFinite(row.units) || row.units === 0) continue;
     const aliasKey = normalizeAliasKey(row.productName);
     const code = aliasKey ? nameToCode.get(aliasKey) : undefined;
     const codeKey = code ? normalizeCodeKey(code) : "";

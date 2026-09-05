@@ -86,8 +86,12 @@ function reconcile(slices: AllocationSlice[], target: number): AllocationSlice[]
   const sum = round6(rounded.reduce((acc, s) => acc + s.units, 0));
   const residual = round6(target - sum);
   if (residual !== 0) {
+    // By MAGNITUDE, not by signed value. The residual must land on the slice best able to absorb
+    // it; for a return (negative units) the signed test would pick the slice closest to zero and
+    // distort it most, which is the opposite of the intent. Identical to the old comparison for
+    // an all-positive product, so no existing allocation moves.
     let largest = 0;
-    for (let i = 1; i < rounded.length; i += 1) if (rounded[i].units > rounded[largest].units) largest = i;
+    for (let i = 1; i < rounded.length; i += 1) if (Math.abs(rounded[i].units) > Math.abs(rounded[largest].units)) largest = i;
     rounded[largest] = { ...rounded[largest], units: round6(rounded[largest].units + residual) };
   }
   return rounded.filter((s) => s.units !== 0);
@@ -199,7 +203,12 @@ const EMPTY_WEIGHTS: OfficeAreaWeights = {
  * Pure — unit-tested without a database.
  */
 function allocateProduct(units: number, weights: OfficeAreaWeights): AllocationSlice[] {
-  if (!(units > 0)) return [];
+  // A RETURN IS NOT NOTHING. `!(units > 0)` discarded every negative, so an Office credit never
+  // reduced Office — the un-returned units stayed spread across real bricks and real reps'
+  // achievement. Office was the only channel in the system with zero negative rows (2026-05..09),
+  // against 380 for PS, 158 RM and 64 IS: that absence was this guard, not the business.
+  // Zero and non-finite still allocate nothing, which is what they always meant.
+  if (!Number.isFinite(units) || units === 0) return [];
 
   // Nothing sold anywhere this period → cannot be placed → NATIONAL.
   if (!(weights.totalValue > 0) || weights.areaShare.size === 0) {
@@ -215,7 +224,10 @@ function allocateProduct(units: number, weights: OfficeAreaWeights): AllocationS
 
   for (const [areaCode, share] of weights.areaShare) {
     const areaUnitsForProduct = units * share;
-    if (!(areaUnitsForProduct > 0)) continue;
+    // Same reason as the guard above, and the one that actually bit: shares are positive, so a
+    // negative product makes EVERY area slice negative and this test skipped all of them — the
+    // product then reconciled to an empty list and vanished even if the entry guard let it in.
+    if (!Number.isFinite(areaUnitsForProduct) || areaUnitsForProduct === 0) continue;
 
     const bricks = weights.brickWithinArea.get(areaCode) ?? [];
     if (bricks.length === 0) {
