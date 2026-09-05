@@ -45,6 +45,11 @@ export type WhatsAppMirrorEvent =
       roleLabel: string | null;
       backgroundLabel: string | null;
       regionLabel: string | null;
+      /** Whether the region question was part of this applicant's flow at all. Same distinction
+       *  `areaApplies` draws, and needed for the same reason now that the region question can be
+       *  narrowed to particular job titles: "not answered" would accuse an applicant of skipping a
+       *  question nobody put to them, and would read as the bot having lost an answer. */
+      regionApplies: boolean;
       areaName: string | null;
       /** Whether the area question was part of this applicant's flow — Medical Rep only. When false
        *  the area line is omitted entirely, rather than shown as "not answered": a manager was never
@@ -102,7 +107,9 @@ export function buildWhatsAppMirrorMessage(event: WhatsAppMirrorEvent): { title:
       "",
       `Applying for: ${event.roleLabel ?? "not answered"}`,
       `Background: ${event.backgroundLabel ?? "not answered"}`,
-      `Region: ${event.regionLabel ?? "not answered"}`,
+      ...(event.regionApplies || event.regionLabel
+        ? [`Region: ${event.regionLabel ?? "not answered"}`]
+        : []),
     ];
     // The area line appears when it has a value, and — for a Medical Rep, the only role asked it —
     // as "not answered" when they stopped short. For every other role it is omitted: they were

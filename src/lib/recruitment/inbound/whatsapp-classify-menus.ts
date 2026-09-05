@@ -623,14 +623,22 @@ export function salaryTooLongText(): string {
 export function classifyThankYouText(input: {
   roleLabel: string;
   backgroundLabel: string | null;
-  regionLabel: string;
+  /**
+   * Nullable since 2026-09-05, when the region question became one the owner can narrow to
+   * particular job titles. Before that it was asked to everybody, so a non-null region was a safe
+   * assumption; now an Office Coordinator can legitimately finish the conversation without one, and
+   * a required field here is what would have turned that into an applicant who gets no reply at all.
+   */
+  regionLabel: string | null;
   areaName: string | null;
   experienceLabel: string | null;
   expectedSalary: string | null;
 }): string {
   const lines = ["Thank you — your application is now recorded as:", "", `Role: ${input.roleLabel}`];
   if (input.backgroundLabel) lines.push(`Background: ${input.backgroundLabel}`);
-  lines.push(`Region: ${input.regionLabel}`);
+  // Printed only when there is one — same rule as every other optional line below. A question the
+  // applicant was never asked has no place in the summary of what they told us.
+  if (input.regionLabel) lines.push(`Region: ${input.regionLabel}`);
   if (input.areaName) lines.push(`Area: ${input.areaName}`);
   if (input.experienceLabel) lines.push(`Experience: ${input.experienceLabel}`);
   if (input.expectedSalary) lines.push(`Expected salary: ${input.expectedSalary}`);
