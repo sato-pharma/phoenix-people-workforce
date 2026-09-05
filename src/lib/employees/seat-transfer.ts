@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { AccessContext } from "@/lib/auth/permissions";
+import { hrIdForStorage } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -97,11 +98,15 @@ export async function listSeatTransferOptions(
 
   const hrId = employeeHrId.trim();
   if (!hrId) throw new Error("Employee HR ID is required.");
+  // employees.hr_id is stored canonical-uppercase; a raw case-sensitive .eq() on the trimmed
+  // path segment would silently return no row for a mixed-case id (same defect class as
+  // vacancy-closer.ts's manager_hr_id match — AGENTS.md 2.1, "HR ids are MIXED CASE").
+  const canonicalHrId = hrIdForStorage(hrId) ?? hrId;
 
   const { data: employeeRow, error: employeeError } = await client
     .from("employees")
     .select("hr_id, full_name, line_id, employment_status")
-    .eq("hr_id", hrId)
+    .eq("hr_id", canonicalHrId)
     .maybeSingle();
   if (employeeError) throw new Error(`Employee lookup failed: ${employeeError.message}`);
   if (!employeeRow) throw new Error(`Employee ${hrId} not found.`);

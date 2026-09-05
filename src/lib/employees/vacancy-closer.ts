@@ -2,6 +2,7 @@ import { cache } from "react";
 
 import { getRequiredEnv } from "@/lib/env";
 import { pickDepartmentSafeVacancy } from "@/lib/employees/vacancy-matching";
+import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 
 // Open-vacancy lookups and the hire-time vacancy closer used by
 // src/lib/employees/employee-directory.ts. Kept in its own module (talks to
@@ -256,7 +257,11 @@ export async function closeVacancyOnHire(input: {
   position_id?: number | null;
   vacancy_id?: number | null;
 }) {
-  const compactManagerHrId = compact(input.manager_hr_id);
+  // position_vacancies.manager_hr_id is stored canonical-uppercase; PostgREST `eq.` is a
+  // case-sensitive string comparison, so a mixed-case input here would silently miss the row
+  // and fall through to the weaker manager-NAME / open-manager-less-vacancy branches below,
+  // closing the wrong vacancy with no error (AGENTS.md 2.1, "HR ids are MIXED CASE").
+  const canonicalManagerHrId = canonicalHrIdForDisplay(input.manager_hr_id);
   const explicitVacancyId = numberOrNull(input.vacancy_id);
   if (!explicitVacancyId && (
     input.area_id === null || input.area_id === undefined ||
@@ -312,15 +317,15 @@ export async function closeVacancyOnHire(input: {
     matches = await findMatches(params);
   }
 
-  if (!explicitVacancyId && compactManagerHrId) {
+  if (!explicitVacancyId && canonicalManagerHrId) {
     const params = baseMatchParams("id,replacement_for_hr_id,department_id");
-    params.set("manager_hr_id", `eq.${compactManagerHrId}`);
+    params.set("manager_hr_id", `eq.${canonicalManagerHrId}`);
     matches = matches.length > 0 ? matches : await findMatches(params);
   }
 
   const resolvedManagerName =
     normalizeManagerName(input.manager_name) ??
-    normalizeManagerName(await loadEmployeeFullName(compactManagerHrId));
+    normalizeManagerName(await loadEmployeeFullName(canonicalManagerHrId));
 
   if (matches.length === 0 && resolvedManagerName && !explicitVacancyId) {
     const params = baseMatchParams("id,replacement_for_hr_id,department_id,manager_hr_id,manager_name");
@@ -331,7 +336,7 @@ export async function closeVacancyOnHire(input: {
     );
   }
 
-  if (matches.length === 0 && compactManagerHrId === null && !explicitVacancyId) {
+  if (matches.length === 0 && canonicalManagerHrId === null && !explicitVacancyId) {
     const params = baseMatchParams("id,replacement_for_hr_id,department_id,manager_hr_id,manager_name");
     params.set("manager_hr_id", "is.null");
     const unmatchedSeatVacancies = await findMatches(params);

@@ -50,6 +50,32 @@ function rpcCapturingClient(result: { data?: unknown; error?: { message: string 
   return { calls, client };
 }
 
+// employees.hr_id is stored canonical-uppercase (same rule as position_vacancies.manager_hr_id
+// in vacancy-closer.ts). A row with line_id: null keeps the scenario to a single query -- the
+// lines/au_v_org_tree lookups are skipped entirely -- and lets `from()` refuse any other table,
+// which doubles as proof nothing else is queried.
+function employeeLookupClient(
+  employeeRow: { hr_id: string; full_name: string; line_id: number | null; employment_status: string } | null,
+) {
+  const eqCalls: Array<{ column: string; value: unknown }> = [];
+  const client = {
+    from(table: string) {
+      if (table !== "employees") throw new Error(`unexpected table for this scenario: ${table}`);
+      return {
+        select() {
+          return {
+            eq(column: string, value: unknown) {
+              eqCalls.push({ column, value });
+              return { maybeSingle: () => Promise.resolve({ data: employeeRow, error: null }) };
+            },
+          };
+        },
+      };
+    },
+  } as unknown as SupabaseClient;
+  return { eqCalls, client };
+}
+
 export async function runSeatTransferServiceTests() {
   await assert.rejects(
     () => transferEmployeeSeat("CN-0006", { toSeatId: "SEAT-CNS-REP-CA5" }, "B-12", districtManager, untouchableClient()),
@@ -120,4 +146,13 @@ export async function runSeatTransferServiceTests() {
     /already occupied/,
     "the SQL guard's message surfaces verbatim so the dialog can show the real reason",
   );
+
+  const lookup = employeeLookupClient({ hr_id: "B-12", full_name: "Reem Kassem", line_id: null, employment_status: "active" });
+  const options = await listSeatTransferOptions("b-12", superAdmin, lookup.client);
+  assert.deepEqual(
+    lookup.eqCalls,
+    [{ column: "hr_id", value: "B-12" }],
+    "a lower-case hr_id path segment is canonicalized to the stored uppercase form before the .eq() filter -- a raw eq(\"hr_id\",\"b-12\") would silently return no row, same defect class as vacancy-closer.ts's manager_hr_id match",
+  );
+  assert.equal(options.employee.hrId, "B-12", "the employee is found despite the mixed-case path segment");
 }
