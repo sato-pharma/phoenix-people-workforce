@@ -189,12 +189,16 @@ export function runWeeklyPlansDistrictManagerBypassTests() {
     "QueueCard must never accept a decide action -- reusing it for the District Manager section guarantees it stays view-only",
   );
 
-  // 8. Approvals Hub must route a manager_approved District Manager plan into HR's awaiting
-  // bucket (stage "hr"), not leave it waiting on a CEO stage that will never claim it.
-  assert.match(
+  // 8. A District Manager plan can no longer rest at manager_approved (section 0: its single
+  // manager approval cascades straight to final_approved), so the Approvals Hub must NOT surface
+  // a manager_approved DM plan to HR's awaiting bucket. That branch was dead code -- if it were
+  // ever hit, Acknowledge would call phx_weekly_plan_acknowledge, which only accepts
+  // final_approved/hr_acknowledged and would throw. HR still reaches a DM plan through the normal
+  // final_approved awaiting path just above.
+  assert.doesNotMatch(
     approvalsHubSource,
-    /if \(status === "manager_approved" && isDistrictManagerPlan && hrActor\) \{\s*\n\s*awaiting\.push\(\{ \.\.\.base, stage: "hr" \}\);/,
-    "getPlanApprovalsForResponder must surface a manager_approved District Manager plan to HR as awaiting",
+    /status === "manager_approved" && isDistrictManagerPlan && hrActor/,
+    "getPlanApprovalsForResponder must NOT surface a manager_approved District Manager plan to HR -- that state is now impossible and acknowledging it would throw",
   );
 
   // 9. acknowledgeEmployeePlan must NOT fabricate a ceo_approve. The former HACK advanced a
@@ -302,17 +306,24 @@ export function runWeeklyPlansDistrictManagerBypassTests() {
     "getPlanApprovalDetail must thread isDistrictManagerPlan into the tracker",
   );
 
-  // 15. planStageLabel's "Current stage" banner must say HR, not CEO, for a District Manager
-  // plan sitting at manager_approved -- it's genuinely HR's turn, not a mislabeled CEO wait.
+  // 15. planStageLabel no longer special-cases District Manager plans at manager_approved. A DM
+  // plan can never rest at manager_approved (section 0), so that branch only ever described the
+  // now-impossible stuck state. manager_approved is therefore always the CEO stage (only non-DM
+  // plans ever reach it), and a DM plan's HR turn is labeled through the final_approved case.
   assert.match(
     approvalsHubSource,
-    /case "manager_approved":\s*\n(?:\s*\/\/[^\n]*\n)*\s*return isDistrictManagerPlan \? "HR acknowledgement" : "CEO approval";/,
-    "planStageLabel must say HR acknowledgement, not CEO approval, for a District Manager plan",
+    /case "manager_approved":\s*\n(?:\s*\/\/[^\n]*\n)*\s*return "CEO approval";/,
+    "planStageLabel's manager_approved case must resolve to \"CEO approval\" (only non-DM plans ever rest there)",
+  );
+  assert.doesNotMatch(
+    approvalsHubSource,
+    /return isDistrictManagerPlan \? "HR acknowledgement" : "CEO approval";/,
+    "planStageLabel must no longer branch on isDistrictManagerPlan for the impossible manager_approved DM state",
   );
   assert.match(
     approvalsHubSource,
-    /stageLabel: planStageLabel\(status, isDistrictManagerPlan\),/,
-    "getPlanApprovalDetail must thread isDistrictManagerPlan into planStageLabel",
+    /stageLabel: planStageLabel\(status\),/,
+    "getPlanApprovalDetail must call planStageLabel with status only -- the isDistrictManagerPlan arg is gone",
   );
 
   // 16. The CEO/HR tracker rows must never read "Unassigned" before anyone decides -- there's
