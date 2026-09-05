@@ -1,6 +1,7 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { rotatedLabel } from "@/lib/share-links/rotated-label";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rotate the CV-lifecycle sheet's feed token, end to end, with nobody opening an editor.
@@ -144,7 +145,7 @@ export async function rotateCvLifecycleSheetToken(): Promise<CvLifecycleSheetTok
   const { error: insertError } = await supabase.from(TABLE).insert({
     created_by_hr_id: String(old.created_by_hr_id ?? ""),
     expires_at: expiresAt,
-    label: old.label ? `${String(old.label)} (rotated)` : "Rotated CV-lifecycle feed link",
+    label: rotatedLabel(old.label, "Rotated CV-lifecycle feed link"),
     surface: String(old.surface ?? "feed"),
     token: newToken,
   });
