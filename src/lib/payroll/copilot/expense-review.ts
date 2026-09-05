@@ -1,4 +1,6 @@
-import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { getEmployeeDirectory, type EmployeeDirectoryData } from "@/lib/employees/employee-directory";
 import { logError } from "@/lib/observability/log";
 import { roundCurrency } from "@/lib/payroll/money";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -68,11 +70,12 @@ function joinLocation(city: unknown, area: unknown): string {
 
 async function loadExistingDecisions(
   period: CopilotPeriod,
+  client: SupabaseClient,
 ): Promise<Map<string, { decision: "include" | "defer"; decidedAt: string }>> {
   const map = new Map<string, { decision: "include" | "defer"; decidedAt: string }>();
   const { start, end } = sourceExpenseMonthBounds(period);
   try {
-    const { data, error } = await getSupabaseAdmin()
+    const { data, error } = await client
       .from("payroll_copilot_expense_decisions")
       .select("outstation_expense_request_id,decision,decided_at")
       .is("superseded_at", null)
@@ -101,9 +104,12 @@ async function loadExistingDecisions(
 }
 
 /** HR-approved outstation expense requests overlapping the period, with any already-decided include/defer choice. */
-export async function listExpenseCandidates(period: CopilotPeriod): Promise<ExpenseCandidate[]> {
+export async function listExpenseCandidates(
+  period: CopilotPeriod,
+  overrides?: { client?: SupabaseClient; directory?: EmployeeDirectoryData },
+): Promise<ExpenseCandidate[]> {
   const { start, end } = sourceExpenseMonthBounds(period);
-  const supabase = getSupabaseAdmin();
+  const supabase = overrides?.client ?? getSupabaseAdmin();
 
   const [{ data: requests, error }, directory, existingDecisions] = await Promise.all([
     supabase
@@ -114,8 +120,8 @@ export async function listExpenseCandidates(period: CopilotPeriod): Promise<Expe
       .in("status", ["accepted_by_system", "accepted_by_admin", "approved"])
       .lte("trip_start_date", end)
       .gte("trip_end_date", start),
-    getEmployeeDirectory(),
-    loadExistingDecisions(period),
+    overrides?.directory ? Promise.resolve(overrides.directory) : getEmployeeDirectory(),
+    loadExistingDecisions(period, supabase),
   ]);
 
   if (error) {
@@ -163,11 +169,14 @@ export type IncludedExpenseTotals = Map<string, number>;
  * was hardcoded to 0 before this tab existed. Defensive: never throws, empty
  * map on failure.
  */
-export async function buildIncludedExpenseTotals(period: CopilotPeriod): Promise<IncludedExpenseTotals> {
+export async function buildIncludedExpenseTotals(
+  period: CopilotPeriod,
+  client: SupabaseClient = getSupabaseAdmin(),
+): Promise<IncludedExpenseTotals> {
   const totals: IncludedExpenseTotals = new Map();
   const { start, end } = sourceExpenseMonthBounds(period);
   try {
-    const { data, error } = await getSupabaseAdmin()
+    const { data, error } = await client
       .from("payroll_copilot_expense_decisions")
       .select("employee_hr_id_compact,travel_cost,allowance")
       .eq("decision", "include")
@@ -201,13 +210,16 @@ export async function buildIncludedExpenseTotals(period: CopilotPeriod): Promise
  * Supersedes any existing live decision first — a re-decision (e.g.
  * defer -> include) must never leave two live rows.
  */
-export async function recordExpenseDecision(input: {
-  runId: string;
-  candidate: ExpenseCandidate;
-  decision: "include" | "defer";
-  decidedBy: string;
-}): Promise<void> {
-  const supabase = getSupabaseAdmin();
+export async function recordExpenseDecision(
+  input: {
+    runId: string;
+    candidate: ExpenseCandidate;
+    decision: "include" | "defer";
+    decidedBy: string;
+  },
+  client: SupabaseClient = getSupabaseAdmin(),
+): Promise<void> {
+  const supabase = client;
   const compact = compactHrKey(input.candidate.employeeHrId);
   if (!compact) throw new Error("Invalid employee HR id for expense decision.");
 
