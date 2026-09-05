@@ -440,7 +440,9 @@ export function VsTargetDashboard({
             <h1 className="mt-1 text-3xl font-black leading-none tracking-tight text-white sm:text-[2.3rem]">
               Sales vs Target
             </h1>
-            <p className="mt-2 whitespace-nowrap text-sm text-slate-400">
+            {/* The band is `overflow-hidden`, so nowrap here did not spill — it CUT, losing
+                "Direct Orders" off the right edge at 375px (61px, measured 2026-09-05). */}
+            <p className="mt-2 text-sm text-slate-400">
               {formatPeriod(data.period)} · {data.scopeLabel} · Source of Sales + Direct Orders
             </p>
 

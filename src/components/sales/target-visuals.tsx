@@ -271,15 +271,27 @@ export function SectionCard({
 }) {
   return (
     <section className={cn("flex flex-col border border-border bg-card shadow-sm", className)}>
-      <header className="flex items-center justify-between gap-3 border-b border-border bg-muted/30 px-4 py-2.5">
+      {/*
+        The header WRAPS, and the actions block is not `shrink-0`. Both halves of that are
+        load-bearing at 375px. `shrink-0` guarantees the actions keep their max-content width,
+        so a `flex-wrap` row inside them is never handed a narrow box and can never wrap — on
+        /sales/vs-target that pushed the "District Managers" and "Products" tabs 78px and 151px
+        past the shell's clip edge, where the page does NOT scroll (main read 526/375 while the
+        document read 375/375), so the two tabs were unreachable on a phone rather than merely
+        cut. Wrapping is the permitted answer under the fits-the-screen golden rule; nothing
+        here shrinks type. Measured 2026-09-05.
+      */}
+      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-muted/30 px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2.5">
           <Icon className="h-4 w-4 shrink-0 text-orange-500" />
           <div className="min-w-0">
-            <h2 className="whitespace-nowrap text-phx-md font-black tracking-tight text-foreground">{title}</h2>
-            {subtitle ? <p className="whitespace-nowrap text-phx-xs text-muted-foreground">{subtitle}</p> : null}
+            {/* No `whitespace-nowrap`: this sits in a `min-w-0` box, so nowrap could only ever
+                clip a long title instead of wrapping it. */}
+            <h2 className="text-phx-md font-black tracking-tight text-foreground">{title}</h2>
+            {subtitle ? <p className="text-phx-xs text-muted-foreground">{subtitle}</p> : null}
           </div>
         </div>
-        {actions ? <div className="shrink-0">{actions}</div> : null}
+        {actions ? <div className="max-w-full">{actions}</div> : null}
       </header>
       <div className="flex-1">{children}</div>
     </section>
