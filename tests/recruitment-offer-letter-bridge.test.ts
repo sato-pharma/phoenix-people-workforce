@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
 
 import { buildOfferLetterDraft } from "../src/lib/recruitment/offer-letter-bridge.ts";
+import type { OfferApprovalTrail, OfferTerms } from "../src/lib/recruitment/offer-rules.ts";
 
 /**
  * The offer bridge: an approved recruitment offer's terms, carried into the letter composer.
@@ -21,7 +22,10 @@ import { buildOfferLetterDraft } from "../src/lib/recruitment/offer-letter-bridg
  *    of that would put a fourth number on a document somebody signs.
  */
 
-const approved = {
+// Annotated, not inferred: from the values alone TypeScript reads `sentAt: null` and
+// `approvedAt: string` as the types, and then every variant below is a type error rather
+// than a case. The test suite strips types, so only the typecheck job sees that.
+const approved: OfferTerms & OfferApprovalTrail = {
   jobTitle: "Medical Representative",
   monthlyGross: 18_550,
   startDate: "2026-10-01",
@@ -59,11 +63,11 @@ export function runRecruitmentOfferLetterBridgeTests() {
   //
   // Not just "unapproved": each of these is a different way for an offer to be short of approval,
   // and a guard that only checks approvedAt would pass three of them.
-  const unapproved: Array<[string, typeof approved | null, RegExp]> = [
+  const unapproved: Array<[string, (OfferTerms & OfferApprovalTrail) | null, RegExp]> = [
     ["no offer at all", null, /no offer on this application/i],
     [
       "terms still incomplete",
-      { ...approved, monthlyGross: null as unknown as number, approvedAt: null, submittedForApprovalAt: null },
+      { ...approved, monthlyGross: null, approvedAt: null, submittedForApprovalAt: null },
       /missing its monthly gross salary/i,
     ],
     ["never submitted", { ...approved, submittedForApprovalAt: null, approvedAt: null }, /not been submitted for approval/i],
