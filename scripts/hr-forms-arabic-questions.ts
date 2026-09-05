@@ -318,7 +318,10 @@ function buildLookupSheet(
  * rule says a stray workbook must be kept rather than removed.
  */
 function nextFreePath(): string {
-  const stamp = new Date().toISOString().slice(0, 10);
+  // Africa/Cairo, not UTC. `toISOString()` would date the file a day early for the ~3 hours
+  // after Cairo midnight — which is exactly when this repository is often worked — and every
+  // date the owner sees is Cairo local by standing rule.
+  const stamp = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
   const base = resolve(process.cwd(), "xlsx", `hr-forms-questions-${stamp}`);
   if (!existsSync(`${base}.xlsx`)) return `${base}.xlsx`;
 

@@ -173,7 +173,7 @@ async function main() {
   const proposals = divergence.filter((row) => Number(row.divergence_km) >= DIVERGENCE_PROPOSAL_KM);
   const correctionsSql = [
     "-- PROPOSED brick-pin corrections from check-in GPS medians — REVIEW, get owner approval,",
-    `-- and apply manually. Generated ${new Date().toISOString().slice(0, 10)} by analyze-checkin-brick-groundtruth.mjs; NEVER auto-executed.`,
+    `-- and apply manually. Generated ${new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date())} by analyze-checkin-brick-groundtruth.mjs; NEVER auto-executed.`,
     ...proposals.map(
       (row) =>
         `update geo_locations set latitude = ${row.gps_lat}, longitude = ${row.gps_lon}, geocode_provider = 'checkin_gps', geocode_status = 'success', updated_at = now() where source_type = 'brick_centroid' and source_key = '${row.brick_id}'; -- ${row.brick_name} (${row.area_code}): ${row.divergence_km} km off, ${row.checkins} check-ins`,
