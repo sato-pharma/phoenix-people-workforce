@@ -1,6 +1,6 @@
 import { Workbook, type Worksheet } from "@node-projects/excelforge";
+import JSZip from "jszip";
 
-import { hardenPivotCaches } from "@/lib/export/pivot-cache-hardening";
 import type { WeeklyDashboard, WeeklyFactExportRow } from "@/lib/sales/weekly/types";
 import {
   DEEP, BLUE, LIGHT, MUTED, BODY, WHITE, GOOD, WARN, BAD,
@@ -117,6 +117,12 @@ function truncationNote(sheet: Worksheet, row: number, n: number, noun: string) 
   sheet.setStyle(row, 1, { font: { italic: true, size: 9, color: BAD, name: "Aptos" } });
 }
 
+/** The Data sheet's Excel Table. Named once: `buildDataSheet` creates it and the pivot cache binds
+ *  to it, and a rename that reached only one of those two would leave the pivot pointing at nothing. */
+const WEEKLY_DATA_TABLE = "tblWeekly";
+/** The pivot cache part ExcelForge emits. There is exactly one pivot in this workbook. */
+const PIVOT_CACHE_PART = "xl/pivotCache/pivotCacheDefinition1.xml";
+
 // ── hidden Data Excel Table (single source for every formula / pivot / chart) ─────────────────────
 function buildDataSheet(wb: Workbook, rows: WeeklyFactExportRow[]): number {
   const sheet = wb.addSheet("Data", { state: "hidden" });
@@ -132,7 +138,7 @@ function buildDataSheet(wb: Workbook, rows: WeeklyFactExportRow[]): number {
   if (matrix.length) sheet.writeArray(2, 1, matrix);
   const lastRow = Math.max(2, 1 + matrix.length);
   sheet.addTable({
-    name: "tblWeekly", displayName: "tblWeekly",
+    name: WEEKLY_DATA_TABLE, displayName: WEEKLY_DATA_TABLE,
     ref: `A1:${colLetter(DATA_NCOLS)}${lastRow}`,
     style: "TableStyleMedium2", showRowStripes: true,
     columns: DATA_HEADERS.map((name) => ({ name, filterButton: true })),
@@ -1068,9 +1074,65 @@ export async function buildWeeklyExportWorkbook(
   wb.setActiveSheet("Dashboard");
 
   const b64 = await wb.buildBase64();
-  // ExcelForge cannot express either half of this through its API, so the pivot cache is
-  // repaired on the EMITTED package: refresh on open, and read the `tblWeekly` table rather
-  // than the row count this file happened to be built with. A non-interactive build carries no
-  // pivot cache and comes back through untouched, byte for byte.
-  return hardenPivotCaches(Buffer.from(b64, "base64"));
+  return bindPivotToTheTable(Buffer.from(b64, "base64"), interactive);
+}
+
+/**
+ * Bind the native pivot's cache to the `tblWeekly` table, and make it refresh when the file opens.
+ *
+ * WHY THIS IS A ZIP REWRITE RATHER THAN AN OPTION. ExcelForge's `PivotTable` interface takes
+ * `sourceSheet` + `sourceRef` and nothing else — there is no table-name source and no refresh flag
+ * anywhere in it — so neither of these can be expressed through the API that builds the workbook.
+ * Rewriting the emitted part is the same approach the premium closing engine uses for the same
+ * reason, and it is confined to one part of one file.
+ *
+ * WHAT THE TWO CHANGES ARE FOR, and they are not the same problem:
+ *
+ *  - `refreshOnLoad="1"` is the one a reader feels. Without it the pivot renders from the records
+ *    cached at BUILD time, so a workbook rebuilt from newer data opens showing the old numbers with
+ *    nothing on screen saying so. A stale pivot looks exactly like a current one.
+ *  - `<worksheetSource name="tblWeekly"/>` replaces a hard `A1:O{lastRow}` range. The range is
+ *    correct on the day it is written and wrong the moment anybody adds a row to the Data sheet;
+ *    the table grows on its own. The table already exists — `buildDataSheet` creates it — so this
+ *    points the cache at what the rest of the workbook's formulas already read.
+ *
+ * The rewrite is deliberately conditional and deliberately silent when it does not apply: a
+ * non-interactive build carries no pivot at all, and a build whose pivot authoring failed (that
+ * call is wrapped in a try/catch as best-effort polish) carries no cache part to patch. In both
+ * cases the workbook is returned exactly as it was rather than failing over cosmetics.
+ */
+async function bindPivotToTheTable(buffer: Buffer, interactive: boolean): Promise<Buffer> {
+  if (!interactive) return buffer;
+  try {
+    const zip = await JSZip.loadAsync(buffer);
+    const part = zip.file(PIVOT_CACHE_PART);
+    if (!part) return buffer;
+
+    const xml = await part.async("string");
+    let next = xml;
+
+    // Both patterns match the ELEMENT NAME up to the space that begins its first attribute,
+    // rather than using a word boundary. A backslash-b written through a shell heredoc arrived
+    // here as a literal 0x08 byte once already, which turns each of these into a pattern that can
+    // NEVER match and a rewrite that silently does nothing - the exact class of failure this
+    // function exists to prevent, one level up. A space cannot be mangled that way.
+    if (!/refreshOnLoad="1"/.test(next)) {
+      next = next.replace("<pivotCacheDefinition ", '<pivotCacheDefinition refreshOnLoad="1" ');
+    }
+    // A table-sourced cache names the table and carries neither ref nor sheet — both are what the
+    // range form uses, and leaving one behind is what makes Excel repair the part.
+    next = next.replace(
+      /<worksheetSource [^>]*\/>/,
+      `<worksheetSource name="${WEEKLY_DATA_TABLE}"/>`,
+    );
+
+    if (next === xml) return buffer;
+    zip.file(PIVOT_CACHE_PART, next);
+    return await zip.generateAsync({ compression: "DEFLATE", type: "nodebuffer" });
+  } catch {
+    // The pivot is polish, exactly as its authoring call says. A workbook that reaches the reader
+    // with a stale pivot is worse than one that does not; a workbook that fails to build at all is
+    // worse than both.
+    return buffer;
+  }
 }
