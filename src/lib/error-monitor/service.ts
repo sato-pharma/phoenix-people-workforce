@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
 import { getBlockedIps, type BlockedIp } from "@/lib/auth/ip-blocklist";
 import { deriveAppErrorStatus, getCurrentReleaseTag, shouldPersistErrorEvents, signatureKey, type IssueStatus } from "@/lib/error-monitor/derived-status";
+import { redactSecretsFromRoute } from "@/lib/error-monitor/redact-route";
 import { logError } from "@/lib/observability/log";
 import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 
@@ -135,7 +136,7 @@ export async function logAppError(input: LogAppErrorInput): Promise<void> {
   // through /api/errors/client into this one function.
   if (!shouldPersistErrorEvents()) {
     console.error(
-      `[app-error:not-persisted] ${input.route ?? "(no route)"} — ${input.message}`,
+      `[app-error:not-persisted] ${redactSecretsFromRoute(input.route) ?? "(no route)"} — ${input.message}`,
       input.stack ?? "",
     );
     return;
@@ -155,7 +156,9 @@ export async function logAppError(input: LogAppErrorInput): Promise<void> {
       module_label: input.moduleLabel ?? "Other",
       release: input.release ?? getCurrentReleaseTag(),
       role: input.role ?? null,
-      route: input.route ?? null,
+      // Redacted at CAPTURE. Ten route families carry a live credential in the path, and the row
+      // is written the moment the page opens — while the token still works. See redact-route.ts.
+      route: redactSecretsFromRoute(input.route),
       route_type: input.routeType ?? null,
       source: input.source,
       stack: truncate(combineStack(input.stack, input.componentStack, input.clientContext), MAX_TEXT_LENGTH),
