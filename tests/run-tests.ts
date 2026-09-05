@@ -935,6 +935,7 @@ import { runPayrollInsuranceWageImportTests } from "./payroll-insurance-wage-imp
 import { runPayrollExportsTests } from "./payroll-exports.test.ts";
 import { runPayrollCopilotReportExportsTests } from "./payroll-copilot-report-exports.test.ts";
 import { runPayrollCopilotExpenseReviewTests } from "./payroll-copilot-expense-review.test.ts";
+import { runPayrollCopilotVacationSettlementTests } from "./payroll-copilot-vacation-settlement.test.ts";
 import { runPayrollCopilotHolidayBridgingTests } from "./payroll-copilot-holiday-bridging.test.ts";
 import { runDirectOrdersApprovalFlowTests } from "./direct-orders-approval-flow.test.ts";
 import { runDirectOrdersApprovalDetailNamesTests } from "./direct-orders-approval-detail-names.test.ts";
@@ -1408,6 +1409,7 @@ import { runAdminProfileCreatedAtHydrationSafeTests } from "./admin-profile-crea
 
 import { runEmployeeSavePreservesSalaryTests } from "./employee-save-preserves-salary.test.ts";
 import { runEmployeePortalHeaderClockHydrationTests } from "./employee-portal-header-clock-hydration.test.ts";
+import { runReportItExportSubtitleCairoDateTests } from "./report-it-export-subtitle-cairo-date.test.ts";
 
 import { runEmployeeJobTitleCasingHintTests } from "./employee-job-title-casing-hint.test.ts";
 
@@ -2991,6 +2993,7 @@ await runTest("payroll insurance-wage import (parser)", runPayrollInsuranceWageI
 await runTest("payroll exports (bank file + statutory summary)", runPayrollExportsTests);
 await runTest("payroll copilot report exports (deduction/vacation/expense xlsx)", runPayrollCopilotReportExportsTests);
 await runTest("payroll copilot expense review (month-lag: pays prior month's outstation)", runPayrollCopilotExpenseReviewTests);
+await runTest("payroll copilot vacation settlement (defer/salary/reject never leave two live rows)", runPayrollCopilotVacationSettlementTests);
 await runTest("payroll copilot holiday bridging (mandatory before/after national-holiday deduction)", runPayrollCopilotHolidayBridgingTests);
 await runTest("payroll resignation-candidate visibility (additive batch-dashboard banner; stripping untouched)", runPayrollResignationCandidateVisibilityTests);
 await runTest("direct orders approval flow (ladder per role, sequential gating, caps flag not block, pharmacy-price value)", runDirectOrdersApprovalFlowTests);
@@ -4466,6 +4469,10 @@ await runTest(
   runPayrollHoldConfirmStepReasonTests,
 );
 
+await runTest(
+  "report-it export subtitle date is Cairo-pinned via cairoDate(), not the runtime's own zone",
+  runReportItExportSubtitleCairoDateTests,
+);
 await runTest(
   "PM call-rate band is PM alone (7 PM + 2 AM = 9 a day is BELOW band, because only the 7 counts)",
   runPmCallRateBandTests,

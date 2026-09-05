@@ -113,8 +113,11 @@ export function runPmCallRateBandTests() {
     panel: eightPm,
     visits: eightPm.map((c) => on(c.contactCrmId)),
   });
+  // Narrowed through `scored` first: KpiScore is a union and `meets` exists only on the scored
+  // arm, matching how tests/two-kpi-reports-per-rep.test.ts reads it.
+  const eightScore = eight.ampm.pm.callRate.score;
   assert.ok(
-    eight.ampm.pm.callRate.score.meets,
+    eightScore.scored && eightScore.meets,
     "8 PM calls a day MEETS the standard even though the headline target is 10",
   );
 }
