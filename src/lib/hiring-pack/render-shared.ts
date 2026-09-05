@@ -117,15 +117,7 @@ export function formatMoney(value: number | null): string {
  * anything printed after 22:00 local would be stamped with yesterday's date on a document the
  * employee is about to sign and date by hand. Every date this system reports is Cairo local time.
  */
-export function todayInCairo(): string {
-  // en-CA formats as YYYY-MM-DD, which is the shape the rest of this module parses.
-  return new Intl.DateTimeFormat("en-CA", {
-    day: "2-digit",
-    month: "2-digit",
-    timeZone: "Africa/Cairo",
-    year: "numeric",
-  }).format(new Date());
-}
+export { todayInCairo } from "@/lib/date-only";
 
 export function splitIsoDate(
   iso: string | null | undefined,

@@ -107,3 +107,43 @@ export function daysBetweenDateOnly(start: string | null | undefined, end: Date 
   const endDate = new Date(end.getFullYear(), end.getMonth(), end.getDate());
   return Math.round((endDate.getTime() - startDate.getTime()) / 86400000);
 }
+
+/**
+ * TODAY IN CAIRO, as YYYY-MM-DD, safely on any browser.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY THIS IS NOT `toLocaleDateString("en-CA")`. Four places in this codebase computed today's
+ * Cairo date that way, each with a comment saying en-CA renders as yyyy-mm-dd. It does — on the
+ * engines it was written and tested on. THE PATTERN IS LOCALE DATA, NOT SPEC, and the value it
+ * produces is whatever the browser's ICU says. Two ways that bites, both reproduced in a real
+ * browser on 2026-09-05:
+ *
+ *   ar-EG  ->  ٢٠٢٦-٠٩-٠٥   Arabic-Indic digits. Right order, unusable string.
+ *   en-GB  ->  05/09/2026    Latin digits, wrong order.
+ *
+ * The owner hit this: pressing "Today" on a hiring-pack document filled the date box with
+ * something that looked like a date, and the sign route answered 400 "Pass signedDate as
+ * YYYY-MM-DD". The failure reads as though the operator typed something wrong, which is why it
+ * survived — nobody suspects a button that fills the field for you.
+ *
+ * NEITHER HALF OF THE FIX IS ENOUGH ALONE, which is the part worth remembering:
+ *   · assembling from `formatToParts` fixes the ORDER but still yields ٢٠٢٦-٠٩-٠٥ under ar-EG;
+ *   · forcing `numberingSystem: "latn"` fixes the DIGITS but still yields 05/09/2026 under en-GB.
+ * So this does both, and never returns the formatter's own rendering.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+export function todayInCairo(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    // Latin digits regardless of what locale the engine actually resolves to.
+    numberingSystem: "latn",
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+  }).formatToParts(now);
+
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((entry) => entry.type === type)?.value ?? "";
+
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}

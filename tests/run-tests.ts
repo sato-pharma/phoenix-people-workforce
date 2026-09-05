@@ -1368,6 +1368,7 @@ import { runHeredocBackslashDamageTests } from "./heredoc-backslash-damage.test.
 import { runHrFormsRenewalTests } from "./hr-forms-renewal.test.ts";
 import { runMalformedUuidIdGuardsTests } from "./malformed-uuid-id-guards.test.ts";
 import { runHrFormsHousePapersTests } from "./hr-forms-house-papers.test.ts";
+import { runCairoTodayLocaleSafeTests } from "./cairo-today-locale-safe.test.ts";
 
 import { runClosingWorkbookLinkOriginTests } from "./closing-workbook-link-origin.test.ts";
 
@@ -4352,6 +4353,10 @@ await runTest(
   runHrFormsHousePapersTests,
 );
 await runTest("closing workbook Export PDF link origin (allow-list validated, never the 0.0.0.0 bind address)", runClosingWorkbookLinkOriginTests);
+await runTest(
+  "today in Cairo is locale-safe (ISO shape the sign route accepts, Latin digits, year-month-day order, Cairo rollover)",
+  runCairoTodayLocaleSafeTests,
+);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
