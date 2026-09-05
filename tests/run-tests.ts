@@ -1091,6 +1091,7 @@ import { runWorkflowRegistryRetargetGuardTests } from "./workflow-registry-retar
 
 
 import { runSalesVsTargetTests } from "./sales-vs-target.test.ts";
+import { runBrickDrilldownFollowsTheAreaMergeTests } from "./brick-drilldown-follows-the-area-merge.test.ts";
 import { runAchievementCountsUnmappedTests } from "./achievement-counts-unmapped.test.ts";
 import { runAchievementHashableJoinKeyTests } from "./achievement-hashable-join-key.test.ts";
 import { runDirectOrdersRegistryChainGrantsTests } from "./direct-orders-registry-chain-grants.test.ts";
@@ -3139,6 +3140,7 @@ await runTest("outstation departure-photo resend (the one action that deliberate
 await runTest("outstation manager workload rollup (a DM's ride-alongs are already his; an NSM reaches one hop but only on the days he was actually out with that DM; a shared rep counts once)", runOutstationWorkloadRollupTests);
 
 await runTest("sales vs target (no target reads as null not 0%, July 2026 has no prior period, and a medical rep is bounded to their own rows not their whole line)", runSalesVsTargetTests);
+await runTest("brick drill-down follows the Fayoum/Beni Suef area merge (per line)", runBrickDrilldownFollowsTheAreaMergeTests);
 await runTest(
   "business review window + coverage (a period with no data SAYS so and never renders a zero: Mar-Jun grade as \"not gradeable\" rather than 0%, a pre-August window reports no marketing rather than 0 EGP, a month whose distributor files have not landed is held out of the grade and named with the value it does hold rather than dragging Jan-Aug from 50.67% to 39.30%, every clamp announces itself, unplaceable rows are counted not dropped, and doctors are unioned at every level while rides land where the rep stood)",
   runBusinessReviewWindowAndCoverageTests,
