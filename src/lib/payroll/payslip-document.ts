@@ -567,3 +567,74 @@ export function buildPayslipDocument(
   <body>${sheets}</body>
 </html>`;
 }
+
+/**
+ * The saved file's name: "Ahmed Mohamed - payslip.pdf". Owner's format, 2026-09-05.
+ *
+ * IT LEADS WITH THE PERSON, and the person is a NAME. This used to be
+ * `phoenix-payslip-<hrId>-<period>.pdf`, which put the app's own brand first and identified the
+ * employee by `hrId` — a raw code, against the standing rule that people are shown by name
+ * everywhere. Whoever opens a saved payslip is looking for a person, not for `a-137`.
+ *
+ * SPACES ARE KEPT. The old helper collapsed everything outside `[a-z0-9._-]` into hyphens, so a
+ * name arrived as "Ahmed-Specimen-Mohamed"; the owner asked for the name, and a name has spaces in
+ * it. What is stripped is only what a filesystem genuinely refuses — the Windows-illegal set
+ * `\ / : * ? " < > |`, control characters, and the leading dots that hide a file on Unix.
+ *
+ * Falls back to the HR id and then to the bare word, because a file still needs a name when the
+ * record has none; an unnamed payslip is a data problem, not a reason to fail the download.
+ */
+export function payslipFileName(record: { fullName: string; hrId: string; employeeCode: string }) {
+  const person = [record.fullName, record.employeeCode, record.hrId]
+    .map((value) => (value ?? "").trim())
+    .find((value) => value !== "");
+
+  const cleaned = (person ?? "")
+    // The C0 controls, DEL, and the set Windows refuses in a filename — spelled with explicit
+    // escapes. NEVER write these as literal characters: the class then holds invisible bytes that
+    // no reviewer can see and no diff renders. Nor as a range like [ -<], which reads as "space to
+    // less-than" and silently swallows every digit and apostrophe in a name.
+    // eslint-disable-next-line no-control-regex -- C0 is precisely what a filename may not contain
+    .replace(/[\u0000-\u001F\u007F<>:"/\\|?*]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/^[.\s]+|[.\s]+$/g, "")
+    .slice(0, 80)
+    .trim();
+
+  return `${cleaned || "Employee"} - payslip.pdf`;
+}
+
+/**
+ * The whole `Content-Disposition` header for a payslip download.
+ *
+ * BOTH FORMS, in the order RFC 6266 specifies. `filename=` is the quoted ASCII fallback every
+ * browser understands; `filename*=` carries the real UTF-8 name for the ones that read it, and is
+ * what stops an accented or Arabic name arriving as mojibake.
+ *
+ * THE FALLBACK IS STRIPPED, NOT TRUSTED. An employee's name is user data on its way into a protocol
+ * header: a raw newline would split the header and a double quote would end the filename early, so
+ * the ASCII form keeps only printable ASCII and drops quotes and backslashes outright.
+ *
+ * IT IS STRIPPED PER FIELD, NOT ACROSS THE FINISHED NAME, and that distinction is the whole reason
+ * this is not two lines. Stripping the assembled string leaves an ARABIC-ONLY name as "- payslip",
+ * a file that opens with a dash and identifies nobody — measured, on "محمد عبد الله". Running the
+ * same builder over an ASCII-reduced record instead lets the existing fallback chain do its job, so
+ * that employee's download is "A-9 - payslip.pdf" while the UTF-8 form still carries his real name.
+ *
+ * Lives here rather than in the route so a test can assert on the header that actually ships. The
+ * same reasoning as the document itself: asserting on the source of a template literal is what lets
+ * a quoting defect pass review.
+ */
+export function payslipContentDisposition(
+  record: { fullName: string; hrId: string; employeeCode: string },
+): string {
+  const fileName = payslipFileName(record);
+  const ascii = (value: string) =>
+    (value ?? "").replace(/[^\u0020-\u007E]/g, "").replace(/["\\]/g, "").trim();
+  const asciiFallback = payslipFileName({
+    fullName: ascii(record.fullName),
+    employeeCode: ascii(record.employeeCode),
+    hrId: ascii(record.hrId),
+  });
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+}

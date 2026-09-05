@@ -31,7 +31,11 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isDevelopment } from "@/lib/env";
 import { canExportPayslipDocument } from "@/lib/payroll/payslip-center";
-import { buildPayslipDocument, isPublishedPayslipStatus, periodLabel } from "@/lib/payroll/payslip-document";
+import {
+  buildPayslipDocument,
+  isPublishedPayslipStatus,
+  payslipContentDisposition,
+} from "@/lib/payroll/payslip-document";
 import { getSalaryBatchExport } from "@/lib/payroll/service";
 import { inlineLocalAssets } from "@/lib/hiring-pack/paper-artwork";
 import { ChromiumUnavailableError, withChromiumPage } from "@/lib/pdf/chromium";
@@ -42,10 +46,6 @@ import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function safeFilePart(value: string) {
-  return value.trim().replace(/[^a-z0-9._-]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "payslip";
-}
 
 /**
  * One payslip, rendered by Chromium.
@@ -145,13 +145,10 @@ export async function GET(
       exportData.batch.status,
     );
 
-    const employee = safeFilePart(records[0].hrId || records[0].employeeCode || records[0].fullName);
-    const period   = safeFilePart(periodLabel(exportData.batch.month, exportData.batch.year));
-
     return new Response(new Uint8Array(pdf), {
       headers: {
         "Cache-Control": "no-store",
-        "Content-Disposition": `attachment; filename="phoenix-payslip-${employee}-${period}.pdf"`,
+        "Content-Disposition": payslipContentDisposition(records[0]),
         "Content-Type": "application/pdf",
       },
     });
