@@ -42,7 +42,11 @@ import { scoreCvExtraction } from "@/lib/recruitment/cv-extraction-quality";
 import { defaultCvPositionKey, getCvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { recruitmentDb } from "@/lib/recruitment/db";
-import { uploadCandidateFile } from "@/lib/recruitment/files";
+import {
+  cvContentFingerprint,
+  findCandidateIdByContentFingerprint,
+  uploadCandidateFile,
+} from "@/lib/recruitment/files";
 import { inboxCvGate } from "@/lib/recruitment/inbound/email-mailboxes-config";
 import { heldBackReason, strictGateHoldsBack } from "@/lib/recruitment/inbound/inbox-cv-gate";
 import { notifyTalentAcquisitionOfInboundCv } from "@/lib/recruitment/inbound/recruitment-notify";
@@ -119,7 +123,7 @@ export type InboundCvIntakeResult = {
   outcome: InboundCvIntakeOutcome;
   candidateId?: string;
   fileId?: string;
-  matchReason?: "national_id" | "email" | "phone";
+  matchReason?: CandidateMatchReason;
 };
 
 const DEFAULT_MAX_INBOUND_CV_BYTES = 15 * 1024 * 1024;
@@ -157,7 +161,7 @@ export type IntakeEventClaim = {
 
 // The accepted match_reason values, kept type-linked to CandidateMatchReason so this set can never
 // drift out of step with the domain union.
-const MATCH_REASONS = new Set<CandidateMatchReason>(["national_id", "email", "phone"]);
+const MATCH_REASONS = new Set<CandidateMatchReason>(["national_id", "email", "phone", "cv_content"]);
 
 // match_reason is a free-text column; narrow it back to the union before it re-enters the domain.
 function asMatchReason(value: unknown): CandidateUpsertResult["matchReason"] {
@@ -488,18 +492,53 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
     // MATCHED an existing candidate (created = false); its absence means it CREATED one
     // (created = true). If the prior candidate has since been deleted, fall back to normal resolution.
     const priorCandidate = claimedCandidateId ? await getCandidate(claimedCandidateId) : null;
+
+    // A CV that is byte-for-byte one we already hold belongs to whoever already holds it.
+    //
+    // This runs BEFORE createCandidate because createCandidate cannot be taken back: it resolves on
+    // national ID, then email, and candidate-matching.ts keeps phone OUT of that decision on purpose
+    // (phone matching once merged three different applicants into one record). A WhatsApp CV usually
+    // carries no national ID and no email, and the phone on it belongs to whoever FORWARDED it — so
+    // without this check the identical document CREATES a second person, every time. Measured on
+    // production 2026-09-05: 986 CV files held 739 distinct documents, and 21 candidate records
+    // existed only because of this. One had already been sent to a hiring manager under one record
+    // while the identical CV sat untouched under the other.
+    //
+    // The bytes are proof in a way the phone and the name are not, which is the distinction
+    // 20260905051500's duplicate shelf exists to record: a resemblance gets filed for a human to
+    // judge, an identity is simply the same person. Oldest owner wins, so a late arrival attaches to
+    // the record already in the pipeline rather than dragging it to a new one.
+    //
+    // A failed lookup must never cost us the CV — fall through to identity matching, which is
+    // exactly today's behaviour.
+    const contentFingerprint = cvContentFingerprint(input.attachment.bytes);
+    let sameCvCandidate: Awaited<ReturnType<typeof getCandidate>> = null;
+    if (!priorCandidate) {
+      try {
+        const ownerId = await findCandidateIdByContentFingerprint(contentFingerprint);
+        sameCvCandidate = ownerId ? await getCandidate(ownerId) : null;
+      } catch (fingerprintError) {
+        logError("CV fingerprint lookup failed; falling back to identity matching", {
+          error: fingerprintError,
+          labels: { channel: input.channel, event: "cv_fingerprint_lookup_failed" },
+        });
+      }
+    }
+
     const { candidate, created, matchReason } = priorCandidate
       ? { candidate: priorCandidate, created: !claimedMatchReason, matchReason: claimedMatchReason }
-      : await createCandidate(
-          {
-            email: identity.email,
-            fullName: identity.fullName,
-            notes: input.candidate.notes ?? null,
-            phone: identity.phone,
-            source: input.channel,
-          },
-          systemAccessContext,
-        );
+      : sameCvCandidate
+        ? { candidate: sameCvCandidate, created: false, matchReason: "cv_content" as const }
+        : await createCandidate(
+            {
+              email: identity.email,
+              fullName: identity.fullName,
+              notes: input.candidate.notes ?? null,
+              phone: identity.phone,
+              source: input.channel,
+            },
+            systemAccessContext,
+          );
 
     let fileId: string;
     try {

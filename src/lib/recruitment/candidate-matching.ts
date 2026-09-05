@@ -79,7 +79,13 @@ export function candidateMatchKeys(input: {
 // ats_cv_intake_events rows carry match_reason = 'phone', and cv-intake-service's asMatchReason
 // narrows that free-text column back through this type. Dropping it would turn those rows into
 // nulls on read, erasing the evidence of the very merges this change exists to stop.
-export type CandidateMatchReason = "national_id" | "email" | "phone";
+//
+// "cv_content" is NOT returned by findMatchingCandidate either, and deliberately so — it is not an
+// identity KEY. It is decided in the intake, before a candidate exists, by hashing the arriving CV
+// and finding a candidate who already owns that exact document (see cvContentFingerprint in
+// files.ts). Keeping it in this union is what lets the intake event record WHY a candidate was
+// reused, so a reuse on the bytes is distinguishable on read from a reuse on the email.
+export type CandidateMatchReason = "national_id" | "email" | "phone" | "cv_content";
 
 export type MatchableCandidate = CandidateMatchKeys & { id: string };
 
