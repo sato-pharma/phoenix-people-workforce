@@ -21,6 +21,7 @@ import { roundCurrency } from "@/lib/payroll/money";
 import { PayrollConflictError } from "@/lib/payroll/errors";
 import { getPayrollWorkflowTransition } from "@/lib/payroll/workflow";
 import { assertPayrollWorkflowRegistryTransition } from "@/lib/payroll/workflow-registry";
+import { isUuid } from "@/lib/http/uuid";
 import type { SalaryValidationIssue, SalaryValidationRow } from "@/lib/payroll/salary-import";
 import type {
   PayrollDashboardData,
@@ -138,10 +139,6 @@ export function duplicateEmployeeInBatchMessage(records: readonly DuplicateEmplo
     .join("; ");
 
   return `The uploaded sheet lists the same employee more than once for this month: ${named}. Each employee must appear on exactly one row — remove the duplicate and upload again.`;
-}
-
-function isLikelyUuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
 function isMissingColumnError(error: unknown, columnName: string) {
@@ -1032,7 +1029,7 @@ export async function getSalaryBatchExport(
   let targetBatchId = normalizedRequestedId;
   const payrollAccessFilter = await resolvePayrollAccessFilter(accessContext);
 
-  if (!isLikelyUuid(normalizedRequestedId)) {
+  if (!isUuid(normalizedRequestedId)) {
     const numericRecordId = Number.parseInt(normalizedRequestedId, 10);
     if (Number.isInteger(numericRecordId) && String(numericRecordId) === normalizedRequestedId) {
       const lookup = await supabase

@@ -27,6 +27,7 @@
  */
 
 import { hrIdLookupKeys } from "@/lib/hr-id";
+import { isUuid } from "@/lib/http/uuid";
 import { describeDirectOrderStatus } from "@/lib/direct-orders/status-labels";
 import { DIRECT_ORDER_STATUS_VALUES, type DirectOrderReportScope } from "@/lib/direct-orders/types";
 
@@ -125,11 +126,8 @@ export function resolveDirectOrderStatusGroupFilter(
  * anything else — so an unconditional id clause turns every ordinary word into a failed query.
  * Lives here rather than beside the query so it can be tested without a database.
  */
-export const DIRECT_ORDER_ID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export function looksLikeDirectOrderId(value: string): boolean {
-  return DIRECT_ORDER_ID_PATTERN.test(value.trim());
+  return isUuid(value.trim());
 }
 
 export type DirectOrderOperationalFilters = {

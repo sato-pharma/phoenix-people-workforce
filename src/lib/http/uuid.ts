@@ -26,6 +26,13 @@
  * Guard sites reuse the not-found error they ALREADY raise for a well-formed id that matches no
  * row, so a malformed id and an absent one are indistinguishable to the caller. That is
  * deliberate: it adds no new way to probe for which ids exist.
+ *
+ * DOES NOT TRIM, and that is the contract — `isUuidLike` in `@/lib/communication/metrics` looks
+ * like the same function and is not. It tests `value.trim()`, because its job is to SUPPRESS a
+ * raw uuid from a notification detail row, where catching one with stray whitespace is the safe
+ * error. Here the safe error runs the other way: Postgres rejects `"<uuid> "` with 22P02 just as
+ * it rejects any other malformed value, so a trimming guard would wave through exactly what it
+ * exists to stop. The two are not duplicates and must not be folded together.
  */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
