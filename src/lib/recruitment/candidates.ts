@@ -40,6 +40,7 @@ import {
   normalizeEmail,
   normalizeNationalId,
   normalizePhone,
+  type CandidateMatchReason,
   type MatchableCandidate,
 } from "@/lib/recruitment/candidate-matching";
 import {
@@ -84,7 +85,7 @@ import type {
 export type CandidateUpsertResult = {
   candidate: Candidate;
   created: boolean;
-  matchReason?: "national_id" | "email" | "phone";
+  matchReason?: CandidateMatchReason;
 };
 
 function candidatePayload(input: CreateCandidateInput, access: AccessContext) {

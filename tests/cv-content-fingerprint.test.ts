@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { cvContentFingerprint } from "../src/lib/recruitment/files.ts";
+import { MATCH_REASON_LABEL } from "../src/lib/recruitment/inbound/recruitment-notify.ts";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const readSource = (relative: string) => fs.readFileSync(path.join(repoRoot, relative), "utf8");
@@ -97,4 +98,16 @@ export async function runCvContentFingerprintTests() {
     ),
     "cv_content must be in the CandidateMatchReason union",
   );
+
+  // 9. Every match reason has WORDS, and none of them is the stored code. `ignoreBuildErrors` is on
+  //    for this repo's build, so an exhaustive Record does NOT gate a deploy: a missing key compiles,
+  //    ships, and renders "(matched by cv_content)" into a recruiter's notification — a raw code in a
+  //    human's message, which the owner's rules forbid outright. Only a runtime check catches it.
+  const reasons = ["national_id", "email", "phone", "cv_content"] as const;
+  for (const reason of reasons) {
+    const label = MATCH_REASON_LABEL[reason];
+    assert.ok(label, `match reason "${reason}" has no human label`);
+    assert.notEqual(label, reason, `match reason "${reason}" renders its own raw code to a person`);
+    assert.ok(!/_/.test(label), `match reason "${reason}" renders a snake_case code: "${label}"`);
+  }
 }

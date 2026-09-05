@@ -9,6 +9,7 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { recruitmentManageRoles } from "@/lib/recruitment/access";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
+import type { CandidateMatchReason } from "@/lib/recruitment/candidate-matching";
 import type { InboundCvChannel } from "@/lib/recruitment/inbound/cv-intake-service";
 import {
   dailyCvDigestMessage,
@@ -31,12 +32,22 @@ async function hrIdsForRoles(roles: readonly PhoenixRole[]): Promise<string[]> {
   );
 }
 
+// What matched, in words a recruiter reads — never the stored code. Keyed by CandidateMatchReason
+// so a value added to that union is a compile error here rather than a raw `cv_content` appearing in
+// somebody's notification, which is how "matched by phone" would have read had this been a template.
+export const MATCH_REASON_LABEL: Record<CandidateMatchReason, string> = {
+  cv_content: "an identical CV already on file",
+  email: "email address",
+  national_id: "National ID",
+  phone: "phone number",
+};
+
 export async function notifyTalentAcquisitionOfInboundCv(input: {
   candidateId: string;
   fullName: string;
   channel: InboundCvChannel;
   created: boolean;
-  matchReason?: "national_id" | "email" | "phone";
+  matchReason?: CandidateMatchReason;
   fileAttached: boolean;
   // Fields the AI read that intake could NOT auto-apply — low confidence, jsonb storage, or the
   // identity triple cv-auto-apply.ts deliberately never touches. Those are the ones still needing
@@ -58,9 +69,7 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
   if (recipientHrIds.length === 0) return;
 
   const channelLabel = input.channel === "whatsapp" ? "WhatsApp" : "email";
-  const matchLabel = input.matchReason
-    ? ` (matched by ${input.matchReason === "national_id" ? "National ID" : input.matchReason})`
-    : "";
+  const matchLabel = input.matchReason ? ` (matched by ${MATCH_REASON_LABEL[input.matchReason]})` : "";
   const awaiting = input.fieldsAwaitingReview ?? 0;
   // Two genuinely different events share this notification, so each says its own thing. The applicant
   // wording leads with the CV being ON FILE, because the whole point of the alert is that somebody

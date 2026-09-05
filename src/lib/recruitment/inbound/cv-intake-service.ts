@@ -123,7 +123,7 @@ export type InboundCvIntakeResult = {
   outcome: InboundCvIntakeOutcome;
   candidateId?: string;
   fileId?: string;
-  matchReason?: "national_id" | "email" | "phone";
+  matchReason?: CandidateMatchReason;
 };
 
 const DEFAULT_MAX_INBOUND_CV_BYTES = 15 * 1024 * 1024;
