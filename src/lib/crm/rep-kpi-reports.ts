@@ -599,7 +599,14 @@ export function buildRepKpiReports(input: {
   const pharmacies = blockFor(PHARMACY_LIST_TYPE);
 
   return {
-    repKey: canonicalHrIdKey(input.repHrId) ?? "",
+    // NOT `?? ""`. That fallback is right where this codebase already uses it — the `hk` helper in
+    // double-visit-analytics-workspace.tsx feeds a DISPLAY lookup, where a miss simply renders
+    // nothing. Here `repKey` is a GROUPING key: callers put it in a Map or a Set (see
+    // rep-kpi-reports-data.ts and getKpisBoard's visibleRepKeys), and "" is a perfectly good key,
+    // so every rep the vendor sent without an hr id would silently merge into ONE row carrying the
+    // sum of their panels and visits. That row looks completely ordinary — which is why the type is
+    // nullable and the caller is made to decide. Pinned by runTwoKpiReportsSampleRepTests.
+    repKey: canonicalHrIdKey(input.repHrId),
     repName: input.repName,
     month: input.month,
     workingDays: input.workingDays,
