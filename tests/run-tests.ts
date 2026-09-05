@@ -819,6 +819,7 @@ import { runWeeklyAreaScopeTests } from "./weekly-area-scope.test.ts";
 import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
 import { runSqlExcludeCodesFailClosedTests } from "./sql-exclude-codes-fail-closed.test.ts";
 import { runSosDashboardBlockedBatchTotalsTests } from "./sos-dashboard-blocked-batch-totals.test.ts";
+import { runSosDashboardGeographyIsLiveForEveryViewerTests } from "./sos-dashboard-geography-is-live-for-every-viewer.test.ts";
 import { runSosImportDashboardHeadOfficeLockTests } from "./sos-import-dashboard-head-office-lock.test.ts";
 import { runAnalyticsViewerScopeTests } from "./analytics-viewer-scope.test.ts";
 import { runRepAchievementPeriodsTests } from "./rep-achievement-periods.test.ts";
@@ -2758,6 +2759,13 @@ await runTest("weekly sales optional area scope (branch-mapped areas)", runWeekl
 await runTest("sales Head Office confidential lock (all surfaces)", runSalesHeadOfficeLockTests);
 await runTest("SQL p_exclude_codes defaults are fail-closed (and match RESTRICTED_PRODUCT_CODES)", runSqlExcludeCodesFailClosedTests);
 await runTest("SoS import dashboard Head Office line lock (loader + all callers)", runSosImportDashboardHeadOfficeLockTests);
+await runTest(
+  "SoS dashboard geography is LIVE for every viewer (the geo RPC ran only for viewers needing an "
+    + "exclusion, so a Regional Manager's areas were computed from the rows while the CEO's and Super "
+    + "Admin's came from the import_summaries cache — the audit measured 1,172,838.83 EGP in the wrong "
+    + "area for 2026-07 before that cache gained a refresh on 2026-09-05; the asymmetry is what this pins)",
+  runSosDashboardGeographyIsLiveForEveryViewerTests,
+);
 await runTest("SoS dashboard totals exclude blocked/rejected batches", runSosDashboardBlockedBatchTotalsTests);
 await runTest("analytics per-viewer scope (line/region/product, per role)", runAnalyticsViewerScopeTests);
 await runTest("rep achievement period resolution", runRepAchievementPeriodsTests);

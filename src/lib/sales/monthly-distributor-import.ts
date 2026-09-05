@@ -2587,14 +2587,33 @@ export function buildSourceOfSalesDashboard(input: {
       addDashboardTotals(distributor, batchTotals);
       distributorMap.set(key, distributor);
     });
+    // Geography comes from `geoSummaries` when the loader supplied it, exactly as on the scoped
+    // path below. This is a FRESHNESS fix, not a visibility one: `source_of_sales_import_summaries`
+    // is written once at commit and has no updater anywhere in src, app or supabase/migrations, so
+    // after a customer is re-mapped to another area its `area`/`brick`/`region` rows keep the
+    // geography the file had at import time — for ever. `phx_sync_sos_run` re-stamps the ROWS and
+    // refreshes fact_rollup, customer_directory_rollup and marketing ROI facts; summaries are not
+    // among them.
+    //
+    // Measured on production for 2026-07: 40 areas disagree with the live rows, 314 rows sit in the
+    // wrong area, 1,172,838.83 EGP is misattributed — GZ6/UE9 (the Fayoum / Beni Suef pair) being
+    // the worst. Every fact-based surface (Executive, Monthly Closing, Analytics, the au
+    // attribution chain) already reads the re-stamped rows, so only this dashboard disagreed.
+    //
+    // Before this, the fallback ran the wrong way round for the wrong people: the loader called the
+    // live RPC only for viewers who needed something EXCLUDED, so a Super Admin or the CEO — who
+    // need nothing excluded — got the stale summaries, while a Regional Manager on the same page in
+    // the same minute got geography computed live. The privilege gradient was inverted, and the
+    // stale number is the one that gets quoted.
+    const unrestrictedGeoSource = input.geoSummaries ?? input.summaries;
     return {
       availablePeriods: input.availablePeriods,
-      byArea: aggregateDashboardGroups(input.summaries, "area"),
-      byBrick: aggregateDashboardGroups(input.summaries, "brick"),
+      byArea: aggregateDashboardGroups(unrestrictedGeoSource, "area"),
+      byBrick: aggregateDashboardGroups(unrestrictedGeoSource, "brick"),
       byDistributor: [...distributorMap.values()].map(roundedTotals).sort((l, r) => r.totalValue - l.totalValue || l.distributorName.localeCompare(r.distributorName)),
       byLine: aggregateDashboardGroups(input.summaries, "line"),
       byProduct: aggregateDashboardGroups(input.summaries, "product"),
-      byRegion: aggregateDashboardGroups(input.summaries, "region"),
+      byRegion: aggregateDashboardGroups(unrestrictedGeoSource, "region"),
       period: input.period,
       sheetCount: countedBatches.length,
       totals: roundedTotals(totals),
@@ -2669,8 +2688,11 @@ export function buildSourceOfSalesDashboard(input: {
   // rather than render a contaminated split. (Lower is not a leak — geography can be unmapped —
   // so it is left alone.) Tolerance is 1.00 against values rounded to 6dp, i.e. rounding only.
   //
-  // Only scoped viewers reach here; the unrestricted CEO/Super-Admin path returned above, reads its
-  // geography straight from the unfiltered summaries, and is deliberately not reconciled.
+  // Only scoped viewers reach here. The unrestricted CEO/Super-Admin path returned above and is
+  // deliberately NOT reconciled: this guard exists to catch an under-filtered exclusion leaking
+  // confidential value, and a viewer with both locks open has nothing being excluded to leak. (It
+  // now reads the same live geo aggregates they do — see that path — so it is no longer reading the
+  // stale summaries either; that changed the freshness, not the reconciliation question.)
   if (byRegion.length > 0) {
     const geoValue = byRegion.reduce((sum, group) => sum + group.totalValue, 0);
     if (geoValue - totals.totalValue > 1) {
@@ -2851,9 +2873,17 @@ export async function loadSourceOfSalesDashboard(
 
   if (summariesResult.error) throw summariesResult.error;
 
-  // For non-CEO/SuperAdmin: call the geo RPC to get region/area/brick totals with the confidential
-  // rows excluded. The pre-aggregated summaries bake their value in at import time so cannot be
-  // filtered post-hoc.
+  // Call the geo RPC for EVERY viewer to get region/area/brick totals computed live from
+  // `source_of_sales_import_rows`. The pre-aggregated summaries bake their value in at import time,
+  // so they can neither be filtered post-hoc NOR reflect a later re-map — see the freshness note in
+  // buildSourceOfSalesDashboard's unrestricted path.
+  //
+  // It used to run only when something had to be EXCLUDED, which quietly made an exclusion filter
+  // the sole source of freshness and handed the stale copy to precisely the two roles that sign off
+  // the month. A fully privileged viewer now passes an EMPTY exclusion list: the RPC guards its own
+  // filter with `not exists (select 1 from excluded) or …`, so an empty array excludes nothing and
+  // returns the complete live geography (and `coalesce(p_exclude_codes, '{}')` makes even NULL
+  // safe). Nothing about who may see what changes here.
   //
   // The RPC excludes by PRODUCT CODE, and region/area/brick carry no line dimension — so the
   // Head Office LINE is hidden here by excluding that line's product codes, resolved live from the
@@ -2863,12 +2893,19 @@ export async function loadSourceOfSalesDashboard(
   // with another line. buildSourceOfSalesDashboard re-checks that equivalence at runtime by
   // reconciling the geography sum against the line-scoped total, so a future import that breaks it
   // withholds the split instead of leaking it.
+  // A viewer with BOTH locks open has nothing to exclude, so an RPC failure cannot leak anything
+  // past them. They fall back to the summaries (stale geography, but present) rather than to a
+  // blank split; a scoped viewer still fails CLOSED to `[]`. Same call, two different failure
+  // semantics, because the risk is not the same in the two directions.
+  const scopedViewer = !canViewRestricted || !canViewHeadOffice;
+  const geoFailureFallback = scopedViewer ? [] : undefined;
   let geoSummaries: SourceOfSalesSummaryRecord[] | undefined;
-  if ((!canViewRestricted || !canViewHeadOffice) && batchIds.length > 0) {
+  if (batchIds.length > 0) {
     const excludeCodes = new Set<string>(
       canViewRestricted ? [] : RESTRICTED_PRODUCT_CODES.map((code) => code.trim().toUpperCase()),
     );
     // null ⇒ the master could not be read, so the exclusion list cannot be trusted to be complete.
+    // Only reachable for a scoped viewer: `canViewHeadOffice` short-circuits the read for the other.
     const headOfficeCodes = canViewHeadOffice ? new Set<string>() : await loadHeadOfficeProductCodes();
     if (!headOfficeCodes) {
       geoSummaries = [];
@@ -2881,13 +2918,23 @@ export async function loadSourceOfSalesDashboard(
       if (!geoResult.error && geoResult.data) {
         geoSummaries = (geoResult.data as Record<string, unknown>[]).map((row) => mapSourceOfSalesSummary(row));
       } else if (geoResult.error) {
-        // Fail CLOSED: a restricted viewer must never see byRegion/byArea/byBrick fall back to the
-        // unfiltered (confidential-inclusive) summaries just because this RPC call errored. An empty
-        // geo breakdown (rather than `undefined`, which buildSourceOfSalesDashboard's geoSource ??
-        // input.summaries fallback would treat as "RPC skipped, use the inflated summaries") degrades
-        // to a blank region/area/brick section instead of leaking confidential product value.
-        console.warn("[sales dashboard] phx_sos_geo_aggregates_without_restricted failed; region/area/brick breakdown will be empty rather than falling back to unfiltered totals", geoResult.error);
-        geoSummaries = [];
+        // Fail CLOSED for a SCOPED viewer: they must never see byRegion/byArea/byBrick fall back to
+        // the unfiltered (confidential-inclusive) summaries just because this RPC call errored. An
+        // empty geo breakdown (rather than `undefined`, which the geoSource ?? input.summaries
+        // fallback would treat as "RPC skipped, use the inflated summaries") degrades to a blank
+        // region/area/brick section instead of leaking confidential product value.
+        //
+        // A viewer with both locks open has no confidential rows to leak, so `undefined` there
+        // degrades to the stale-but-present summaries — the behaviour they had before this call was
+        // extended to them. Blanking their geography on a transient RPC error would be a NEW outage
+        // introduced by a freshness fix.
+        console.warn(
+          `[sales dashboard] phx_sos_geo_aggregates_without_restricted failed; region/area/brick will ${
+            scopedViewer ? "be empty rather than falling back to unfiltered totals" : "fall back to the (stale) import summaries"
+          }`,
+          geoResult.error,
+        );
+        geoSummaries = geoFailureFallback;
       }
     }
   }
