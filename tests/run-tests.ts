@@ -1344,6 +1344,7 @@ import { runNavRowWayBackTests } from "./nav-row-way-back.test.ts";
 import { runCiDependencyAuditTests } from "./ci-dependency-audit.test.ts";
 import { runAppsScriptPushTests } from "./apps-script-push.test.ts";
 import { runHeredocBackslashDamageTests } from "./heredoc-backslash-damage.test.ts";
+import { runMalformedUuidIdGuardsTests } from "./malformed-uuid-id-guards.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4272,6 +4273,10 @@ await runTest(
 await runTest(
   "heredoc backslash damage sweep (no control byte in source, no regex built from a halved escape)",
   runHeredocBackslashDamageTests,
+);
+await runTest(
+  "malformed uuid id guards (a non-uuid path segment is 404, never 500, across 18 dynamic routes)",
+  runMalformedUuidIdGuardsTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

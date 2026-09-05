@@ -47,6 +47,7 @@ import type {
   PriorRecordSnapshot,
   ProposedAction,
 } from "./types.ts";
+import { isUuid } from "@/lib/http/uuid";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -346,6 +347,10 @@ function mapAdjustment(row: Record<string, unknown>): CopilotAdjustment {
 }
 
 async function loadRun(runId: string): Promise<CopilotRun | null> {
+  // A malformed id is NOT FOUND, not a fault: this is a uuid column, and Postgres answers a
+  // non-uuid with 22P02 from the WHERE clause instead of with no rows, which leaves as a 500.
+  // Null here, so requireRun raises its own 404 and every copilot route inherits the fix.
+  if (!isUuid(runId)) return null;
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("payroll_copilot_runs")
