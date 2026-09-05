@@ -191,9 +191,15 @@ export function runNotificationGovernanceHardeningTests() {
     /reviewUrl:\s*absoluteReviewUrl,\s*\}\)\.catch\(\(\) => undefined\)/,
     "the submit-time manager decision email must not swallow its failure silently",
   );
+  // The optional `.then(...)` is the skip recorder added 2026-09-05: sendPhoenixEmail can RETURN
+  // `{ skipped: true }` instead of throwing, and a skip left no trace anywhere (these sends bypass
+  // notification_outbox). The recorder sits between the send and this `.catch`, so the adjacency
+  // this regex used to require is gone — but the assertion's intent is unchanged and still
+  // enforced: the failure path must log via insertVacationEvent rather than be swallowed. The
+  // `.then` alternative is length-bounded so this cannot silently match some distant `.catch`.
   assertContains(
     vacationSource,
-    /reviewUrl:\s*absoluteReviewUrl,\s*\}\)\.catch\(async \(error\) => \{\s*await insertVacationEvent\(\{\s*actorHrId:\s*input\.request\.employeeHrId,/,
+    /reviewUrl:\s*absoluteReviewUrl,\s*\}\)(?:\.then\(async \(result\) => \{[\s\S]{0,400}?\}\))?\.catch\(async \(error\) => \{\s*await insertVacationEvent\(\{\s*actorHrId:\s*input\.request\.employeeHrId,/,
     "the submit-time manager decision email failure must be logged via insertVacationEvent",
   );
   assertContains(
