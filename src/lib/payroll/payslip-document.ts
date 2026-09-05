@@ -179,9 +179,11 @@ function bandRows(
       // names after its band rather than "Total …".
       isTotal:
         header.startsWith("Total ") || header === "Governmental Deductions",
+      // A non-money column can still be a number (a day count), so it is stringified before
+      // escaping rather than being handed to `escapeHtml` as `string | number`.
       value: payrollMoneyHeaders.has(header)
         ? formatEGP(Number(payrollSheetValue(record, month, year, index, header) ?? 0))
-        : escapeHtml(payrollSheetValue(record, month, year, index, header) || "-"),
+        : escapeHtml(String(payrollSheetValue(record, month, year, index, header) || "-")),
     }));
 }
 
@@ -224,7 +226,10 @@ function detailColumn(
     </table></div>`;
 }
 
-function idCell(label: string, value: string, arabic = false) {
+// `value` is nullable because several of these columns are: `nameAr` is `string | null`, and a
+// record with no Arabic name must print the same visible gap as any other empty cell rather than
+// the word "null".
+function idCell(label: string, value: string | null | undefined, arabic = false) {
   // `dir="rtl" lang="ar"` on the VALUE only. The employee's Arabic name is single-language free
   // text, so it gets its own direction and the English label beside it keeps LTR — the per-line
   // rule. A block-level `dir="auto"` here would read the label's first strong character and turn
