@@ -385,6 +385,29 @@ the rule. So **`overflow-x-auto` over a `min-width` floor IS the bug, not the fi
   the scroll widths** — and discount anything `aria-hidden="true"` or `alt=""`. The identity card's
   `/brand/identity-watermark.png` reaches 413px on purpose; a decorative bleed inside an
   `overflow-hidden` box is the intended design, not a violation.
+- **The INVERSE trap: `main` overflowing while the DOCUMENT reads clean is content CLIPPED AWAY,
+  not scrollable — and that is worse than a scroll.** Measured 2026-09-05 on `/sales/vs-target` at
+  375px: `main = 526/375` while `document = 375/375`. Reading that 151px as "reachable by dragging
+  sideways" is the mistake — nothing scrolled, so two of the six Performance breakdown tabs
+  ("District Managers" 78px past the clip edge, "Products" 151px past) were simply **unreachable on a
+  phone**, with nothing on screen suggesting they existed. A Super Admin could not switch the
+  breakdown to those levels at all. **The tell that separates unreachable from merely-cut is
+  `own = 0`** on the overflowing element: `scrollWidth - clientWidth` of zero means the whole control
+  sat past the edge rather than being internally truncated.
+- **The cause of that was one token, and it is the reusable half: `shrink-0` pins a wrapper to its
+  max-content width, so a `flex flex-wrap` row inside it is INERT at every viewport.** `flex-wrap`
+  only wraps when its container is narrower than its content, and `shrink-0` guarantees it never is.
+  **Adding `flex-wrap` cannot fix such a row — it already has it**; let the wrapper narrow instead
+  (`max-w-full`, not `shrink-0`) and let the header itself wrap. Same edit dropped
+  `whitespace-nowrap` from the card title, which sits in a `min-w-0` box where nowrap could only ever
+  clip rather than wrap. `SectionCard` in `src/components/sales/target-visuals.tsx`, PR #3140, pinned
+  by `tests/section-card-header-fits-a-phone.test.ts`.
+  **A static harness built for this certified nothing and was thrown away** — it modelled four tabs
+  where the page renders six, so its BEFORE case read a clean 375/375 and reproduced no defect. Same
+  void-harness shape as the 1280px one in `tests/admin-filename-cells-never-ellipsise.test.ts`:
+  a harness that does not reproduce the defect cannot certify the fix. The measurement that counted
+  was the real page at 375px — after: `main = 375/375`, six tabs on two lines, every one inside the
+  clip edge, with 1280px and 768px unchanged at six tabs on one line.
 - **Prefer to fix it where the text is, not where the box is.** Removing `whitespace-nowrap` was the
   whole fix above; the header additionally takes `flex-wrap` plus `basis-full sm:basis-auto` on the
   title so a phone gives it the full row and desktop is untouched. `tests/early-birds-fortnight-card-wraps.test.ts`
