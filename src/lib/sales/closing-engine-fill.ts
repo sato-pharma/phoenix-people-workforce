@@ -2349,6 +2349,13 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
     .filter((section) => section.entries.length > 0);
   if (sections.length === 0) return;
 
+  // Formats written for this page, not borrowed whole. See ensureIndexStyles: s81 was picked for its
+  // font and brought a right alignment and a bottom rule with it, which is what made the page read
+  // as a broken table.
+  const own = await ensureIndexStyles(zip);
+  const linkStyle = own?.link ?? INDEX_STYLE.link;
+  const bandStyle = own?.band ?? INDEX_STYLE.subtitle;
+
   const line = String(fill.sheets.Overview?.cells?.A1 ?? "").trim();
   const rows: string[] = [];
   // Collected as the rows are written rather than counted afterwards: every band adds one, so a
@@ -2363,6 +2370,48 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   rowNumber += 1;
   rows.push(`<row r="${rowNumber}" ht="18" customHeight="1">${inline(`A${rowNumber}`, INDEX_STYLE.subtitle, "Every page in this workbook. Press a name to go there.")}</row>`);
   rowNumber += 2; // one blank row, as the other sheets space their header off the title
+
+  // ── The month in four figures, before the list of pages ─────────────────────────────────────
+  //
+  // Taken from the Overview's OWN header cells rather than recomputed, so the front page cannot
+  // disagree with the page it summarises. A figure the fill did not write is skipped rather than
+  // shown as a zero.
+  const kpi = fill.sheets.Overview?.cells ?? {};
+  const kpiCells: Array<{ label: string; note: string; percent: boolean; value: number }> = [];
+  const kpiSpec: Array<{ label: string; note: string; percent: boolean; ref: string; noteRef: string }> = [
+    { label: "Sales value", note: "", percent: false, ref: "B5", noteRef: "B6" },
+    { label: "Target value", note: "", percent: false, ref: "D5", noteRef: "D6" },
+    { label: "Achievement", note: "", percent: true, ref: "F5", noteRef: "F6" },
+    { label: String(kpi.I4 ?? "Against last month"), note: "", percent: true, ref: "I5", noteRef: "I6" },
+  ];
+  for (const spec of kpiSpec) {
+    const value = kpi[spec.ref];
+    if (typeof value !== "number" || !Number.isFinite(value)) continue;
+    kpiCells.push({ label: spec.label, note: String(kpi[spec.noteRef] ?? ""), percent: spec.percent, value });
+  }
+
+  if (own && kpiCells.length > 0) {
+    for (const cell of kpiCells) {
+      // THE NOTE BELONGS TO THE LABEL, not to a second column. It used to sit in B, which begins 26
+      // characters to the right of a figure that is seven characters long — so "EGP, August 2026"
+      // floated away from the 477,499 it qualifies and read as an unrelated remark. Folded into the
+      // label above the figure, the three parts are one block, and column B is left to the
+      // descriptions it exists for.
+      const heading = cell.note ? `${cell.label}  ·  ${cell.note}` : cell.label;
+      rows.push(
+        `<row r="${rowNumber}" ht="15" customHeight="1">`
+          + inline(`A${rowNumber}`, own.kpiLabel, heading)
+          + "</row>",
+      );
+      rows.push(
+        `<row r="${rowNumber + 1}" ht="21" customHeight="1">`
+          + `<c r="A${rowNumber + 1}" s="${cell.percent ? own.kpiPercent : own.kpiMoney}"><v>${cell.value}</v></c>`
+          + "</row>",
+      );
+      rowNumber += 2;
+    }
+    rowNumber += 1;
+  }
 
   const headerRow = rowNumber;
   rows.push(
@@ -2379,9 +2428,9 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
     // allowed to mark a document.
     merges.push(`A${rowNumber}:B${rowNumber}`);
     rows.push(
-      `<row r="${rowNumber}" ht="24" customHeight="1">`
-        + inline(`A${rowNumber}`, INDEX_STYLE.subtitle, section.band)
-        + `<c r="B${rowNumber}" s="${INDEX_STYLE.subtitle}"/>`
+      `<row r="${rowNumber}" ht="26" customHeight="1">`
+        + inline(`A${rowNumber}`, bandStyle, section.band.toUpperCase())
+        + `<c r="B${rowNumber}" s="${bandStyle}"/>`
         + "</row>",
     );
     rowNumber += 1;
@@ -2392,7 +2441,7 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
       const jump = xmlEscape(`HYPERLINK("#'${entry.sheet.replace(/'/g, "''")}'!A1","${entry.sheet}")`);
       rows.push(
         `<row r="${rowNumber}" ht="22.5" customHeight="1">`
-          + `<c r="A${rowNumber}" s="${INDEX_STYLE.link}"><f>${jump}</f></c>`
+          + `<c r="A${rowNumber}" s="${linkStyle}"><f>${jump}</f></c>`
           + inline(`B${rowNumber}`, INDEX_STYLE.body, entry.what)
           + "</row>",
       );
@@ -2608,4 +2657,88 @@ async function addReviewSheets(zip: JSZip, sheets: ReviewSheet[]): Promise<Revie
   zip.file("xl/_rels/workbook.xml.rels", rels);
   zip.file("[Content_Types].xml", types);
   return written;
+}
+
+/**
+ * Add a cell format to `styles.xml` and return its index.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * BORROWING AN INDEX WAS NOT ENOUGH, and the contents page is where that showed. `s81` was picked
+ * for its font — bold 12pt in the brand blue — and it carries two other things: `horizontal="right"`
+ * and a MEDIUM blue bottom border. So every page name on the contents page sat hard against the
+ * description beside it with a stray rule under it, which reads as a broken table rather than a list
+ * of links. A style is a font AND an alignment AND a border, and taking one for a third of it takes
+ * the other two as well.
+ *
+ * So the fonts, fills and borders the owner drew are still reused by id — nothing new is invented —
+ * but the COMBINATION is written here, which is the part a catalogue lookup cannot supply.
+ *
+ * `count` is rewritten from the number of `<xf>` elements actually present. Excel repairs a workbook
+ * whose declared count disagrees with its contents, which is the same failure the contents page's
+ * `mergeCells` already had once.
+ */
+function appendCellXf(stylesXml: string, xf: string): { index: number; xml: string } {
+  const open = stylesXml.indexOf("<cellXfs");
+  const close = stylesXml.indexOf("</cellXfs>");
+  if (open < 0 || close < 0) return { index: 0, xml: stylesXml };
+
+  const body = stylesXml.slice(stylesXml.indexOf(">", open) + 1, close);
+  const index = (body.match(/<xf\b/g) ?? []).length;
+  const rebuilt =
+    stylesXml.slice(0, open)
+    + `<cellXfs count="${index + 1}">${body}${xf}`
+    + stylesXml.slice(close);
+  return { index, xml: rebuilt };
+}
+
+/**
+ * The contents page's own formats, built from the template's fonts and borders.
+ *
+ * fontId 22 is the bold brand blue the owner uses for a figure that matters; fontId 2 the 13pt title
+ * face; fontId 20 the grey subtitle; fontId 11 the body. borderId 4 is his medium blue rule, which
+ * is what gives a band its divider without a filled bar — the house rule is colour on lines and type,
+ * never on area.
+ */
+async function ensureIndexStyles(zip: JSZip): Promise<Record<string, string> | null> {
+  const file = zip.file("xl/styles.xml");
+  if (!file) return null;
+  let xml = await file.async("string");
+
+  const add = (definition: string): string => {
+    const result = appendCellXf(xml, definition);
+    xml = result.xml;
+    return String(result.index);
+  };
+
+  const styles = {
+    // The page name: his bold blue, LEFT where a reader starts, and no border at all.
+    link: add(
+      '<xf numFmtId="0" fontId="22" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">'
+      + '<alignment horizontal="left" vertical="center" indent="1"/></xf>',
+    ),
+    // A band label: same blue, smaller, with the medium rule under it so the section is a section.
+    band: add(
+      '<xf numFmtId="0" fontId="10" fillId="0" borderId="4" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">'
+      + '<alignment horizontal="left" vertical="bottom" indent="1"/></xf>',
+    ),
+    kpiLabel: add(
+      '<xf numFmtId="0" fontId="20" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">'
+      + '<alignment horizontal="left" vertical="bottom" indent="1"/></xf>',
+    ),
+    kpiMoney: add(
+      '<xf numFmtId="165" fontId="2" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyAlignment="1">'
+      + '<alignment horizontal="left" vertical="center" indent="1"/></xf>',
+    ),
+    kpiPercent: add(
+      '<xf numFmtId="164" fontId="2" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyAlignment="1">'
+      + '<alignment horizontal="left" vertical="center" indent="1"/></xf>',
+    ),
+    kpiNote: add(
+      '<xf numFmtId="0" fontId="11" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">'
+      + '<alignment horizontal="left" vertical="top" indent="1"/></xf>',
+    ),
+  };
+
+  zip.file("xl/styles.xml", xml);
+  return styles;
 }

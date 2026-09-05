@@ -387,6 +387,9 @@ import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
 import { runHrIdStorageCasingTests } from "./hr-id-storage-casing.test.ts";
 import { runRecruitmentHiringAnalyticsTests } from "./recruitment-hiring-analytics.test.ts";
+import { runRecruitmentRequisitionOpenGateTests } from "./recruitment-requisition-open-gate.test.ts";
+import { runRecruitmentInterviewClashTests } from "./recruitment-interview-clash.test.ts";
+import { runRecruitmentHiringAnalyticsLayoutTests } from "./recruitment-hiring-analytics-layout.test.ts";
 import { runRecruitmentEveryStageHasAWayForwardTests } from "./recruitment-every-stage-has-a-way-forward.test.ts";
 import { runClosingDriftAcknowledgementTests } from "./closing-drift-acknowledgement.test.ts";
 import { runPreviewSessionCannotDecideTests } from "./preview-session-cannot-decide.test.ts";
@@ -470,6 +473,7 @@ import { runSalesDistributorRegistryTests } from "./sales-distributor-registry.t
 import { runSalesProfilesTests } from "./sales-profiles.test.ts";
 import { runSalesMasterDataPaginationTests } from "./sales-master-data-pagination.test.ts";
 import { runSalesMasterDataEditDeleteTests } from "./sales-master-data-edit-delete.test.ts";
+import { runMappingDeleteNeedsDeletePermissionTests } from "./mapping-delete-needs-delete-permission.test.ts";
 import { runSalesBrickRelocateTests } from "./sales-brick-relocate.test.ts";
 import { runDistributorProfileStoreTests } from "./sales-distributor-profile-store.test.ts";
 import { runWeeklyColumnProfileStoreTests } from "./weekly-column-profile-store.test.ts";
@@ -663,6 +667,7 @@ import { runPortalLoggingTests } from "./portal-logging.test.ts";
 import { runScopeBadgeTests } from "./scope-badge.test.ts";
 import { runEmployeePortalPayslipSalaryTests } from "./employee-portal-payslip-salary.test.ts";
 import { runAdminPayslipImageExportTests } from "./admin-payslip-image-export.test.ts";
+import { runHouseCoverTimestampTests } from "./house-cover-timestamp.test.ts";
 import { runPayslipDocumentTests } from "./payslip-document.test.ts";
 import { runEmployeePayrollEligibilityTests } from "./employee-payroll-eligibility.test.ts";
 import { runEmployeeAccessProvisioningTests } from "./employee-access-provisioning.test.ts";
@@ -851,6 +856,7 @@ import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-bric
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
+import { runVacationEmailSkipRecordedTests } from "./vacation-email-skip-is-recorded.test.ts";
 import { runNormalizerCodedSheetDayTests } from "./normalizer-coded-sheet-carries-the-day.test.ts";
 import { runExecPanelsConfidentialRevealTests } from "./exec-panels-confidential-reveal.test.ts";
 import { runFactoryPriceRestatementAuditTests } from "./factory-price-restatement-audit.test.ts";
@@ -1137,6 +1143,7 @@ import { runClosingChannelBreakdownRollupEquivalenceTests } from "./closing-chan
 import { runMonthlyAttributionRollupEquivalenceTests } from "./monthly-attribution-rollup-equivalence.test.ts";
 import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
 import { runClosingCorrectionsCellTests } from "./closing-corrections-cell.test.ts";
+import { runClosingCorrectionsOneEventTests } from "./closing-corrections-one-event.test.ts";
 import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.test.ts";
 import { runTerritoryPreviewLinkControlsTests } from "./territory-preview-link-controls.test.ts";
 
@@ -1365,6 +1372,7 @@ import { runHeredocBackslashDamageTests } from "./heredoc-backslash-damage.test.
 import { runHrFormsRenewalTests } from "./hr-forms-renewal.test.ts";
 import { runMalformedUuidIdGuardsTests } from "./malformed-uuid-id-guards.test.ts";
 import { runHrFormsHousePapersTests } from "./hr-forms-house-papers.test.ts";
+import { runCairoTodayLocaleSafeTests } from "./cairo-today-locale-safe.test.ts";
 
 import { runClosingWorkbookLinkOriginTests } from "./closing-workbook-link-origin.test.ts";
 
@@ -2126,6 +2134,9 @@ await runTest("weekly plan approver UI parity (no buttons the server rejects; co
 await runTest("weekly plan move to another period (HR re-dates a plan the employee filed on the wrong week)", runWeeklyPlanMovePeriodTests);
 await runTest("hr ids are stored in canonical casing everywhere, never the lowercase comparison key", runHrIdStorageCasingTests);
 await runTest("hiring analytics (a batch sweep is not a decision, and a rate needs a denominator)", runRecruitmentHiringAnalyticsTests);
+await runTest("requisition open gate (no hire for nobody, and no replacing somebody who is still here)", runRecruitmentRequisitionOpenGateTests);
+await runTest("interview clash (one interviewer cannot be in two interviews at once)", runRecruitmentInterviewClashTests);
+await runTest("hiring analytics layout (desktop table, phone cards, square edges, no sideways scroll)", runRecruitmentHiringAnalyticsLayoutTests);
 await runTest("every application stage has a way forward (a stage nobody can leave reads as low adoption)", runRecruitmentEveryStageHasAWayForwardTests);
 await runTest("an acknowledged closing drift stays acknowledged only while it is the SAME drift", runClosingDriftAcknowledgementTests);
 await runTest("a preview session may look at anything and decide nothing (one approved a real 383.62 expense on production)", runPreviewSessionCannotDecideTests);
@@ -2233,6 +2244,7 @@ await runTest("sales distributor registry", runSalesDistributorRegistryTests);
 await runTest("sales profiles invariants", runSalesProfilesTests);
 await runTest("sales master-data pagination", runSalesMasterDataPaginationTests);
 await runTest("sales master-data edit/delete (soft deactivate)", runSalesMasterDataEditDeleteTests);
+await runTest("mapping delete needs sales:delete, not sales:import", runMappingDeleteNeedsDeletePermissionTests);
 await runTest("sales brick relocate (new id + deactivate old)", runSalesBrickRelocateTests);
 await runTest("distributor profile store (editable merge + validation)", runDistributorProfileStoreTests);
 await runTest("weekly column profile store (editable merge + validation)", runWeeklyColumnProfileStoreTests);
@@ -2437,6 +2449,7 @@ await runTest("portal logging", runPortalLoggingTests);
 await runTest("scope badge", runScopeBadgeTests);
 await runTest("employee portal payslip salary", runEmployeePortalPayslipSalaryTests);
 await runTest("admin payslip image export", runAdminPayslipImageExportTests);
+await runTest("house cover timestamp (Cairo, not UTC)", runHouseCoverTimestampTests);
 await runTest("payslip document (house identity SATO-DIS-2026-01)", runPayslipDocumentTests);
 await runTest("employee payroll eligibility", runEmployeePayrollEligibilityTests);
 await runTest("employee access provisioning", runEmployeeAccessProvisioningTests);
@@ -2864,6 +2877,7 @@ await runTest("SoS backfill matches the empty-string brick sentinel, not just NU
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
+await runTest('a skipped vacation email is recorded, never silent', runVacationEmailSkipRecordedTests);
 await runTest('the coded sheet carries the invoice DAY, not the period', runNormalizerCodedSheetDayTests);
 await runTest('exec panels honour the confidential-product reveal (footer must not lie)', runExecPanelsConfidentialRevealTests);
 await runTest('A factory-price edit that restates a settled closing records it (never refuses it)', runFactoryPriceRestatementAuditTests);
@@ -3325,6 +3339,11 @@ await runTest(
 await runTest(
   "closing corrections: a net-negative row is the CLOSING cell, not one distributor share",
   runClosingCorrectionsCellTests,
+);
+
+await runTest(
+  "closing corrections: one return is ONE situation however many detectors see it",
+  runClosingCorrectionsOneEventTests,
 );
 
 await runTest(
@@ -4342,6 +4361,10 @@ await runTest(
   runHrFormsHousePapersTests,
 );
 await runTest("closing workbook Export PDF link origin (allow-list validated, never the 0.0.0.0 bind address)", runClosingWorkbookLinkOriginTests);
+await runTest(
+  "today in Cairo is locale-safe (ISO shape the sign route accepts, Latin digits, year-month-day order, Cairo rollover)",
+  runCairoTodayLocaleSafeTests,
+);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

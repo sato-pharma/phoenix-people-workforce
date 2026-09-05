@@ -67,6 +67,24 @@ export async function POST(request: Request) {
     const distributorCode = String(body.distributorCode ?? "").trim();
     const customerCode = String(body.customerCode ?? "").trim();
     if (body.action === "delete") {
+      // DELETING A MAPPING NEEDS sales:delete, NOT sales:import.
+      //
+      // The POST asserts sales:import once, at the top, for every action it serves — and the
+      // matrix hands `sales: ["read", "import", "export"]` to SFE Manager, who therefore reached
+      // this branch without ever holding the delete grant that `allActions` reserves for Super
+      // Admin. That the two are meant to differ is settled elsewhere in the same module:
+      // app/api/sales/database-mapping/[master]/[key]/route.ts asserts sales:delete for its
+      // DELETE, and `reconcile-apply` a few lines below adds its own Super-Admin gate precisely
+      // because it is destructive.
+      //
+      // The customer map is the crosswalk that decides which AREA is credited with a sale. Delete
+      // a row and every later import row for that customer resolves to no brick, so its units fall
+      // out of area attribution: the area's Monthly Closing under-reports by that customer's whole
+      // volume while the company total still counts it. The loss is silent — a mapping that is
+      // gone looks exactly like a customer that was never mapped.
+      //
+      // Pinned by tests/mapping-delete-needs-delete-permission.test.ts.
+      await assertPermission(access, "sales", "delete");
       await deleteCustomerMapRow({ actorLoginId: actor(access), distributorCode, customerCode });
       return NextResponse.json({ success: true, message: "Mapping deleted." });
     }

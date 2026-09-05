@@ -1,15 +1,19 @@
 import ExcelJS from "exceljs";
 
+// The HOUSE helpers for the cover and the tables — SATO-DIS-2026-01 v1.0. `phoenix-xlsx-style`
+// keeps serving the five other families that still read it, so it is not changed here; its
+// formats and helpers below are unaffected and still come from it.
+import { buildHouseCoverSheet, writeHouseTable } from "@/lib/export/house-table-workbook";
+
 import {
   PCT_FMT,
   UNITS_FMT,
   VALUE_FMT,
-  buildCoverSheet,
   sanitizeSheetName,
-  writeTable,
   type CellValue,
   type TableColumn,
 } from "@/lib/export/phoenix-xlsx-style";
+import { houseGeneratedRow } from "@/lib/export/house-xlsx-identity";
 import { ROI_RESULT_STATUS_LABEL } from "@/lib/marketing-requests/roi-labels";
 import type {
   MarketingRoiExportDetail,
@@ -103,12 +107,12 @@ export async function buildMarketingRoiReportWorkbook(input: {
   workbook.created = new Date(meta.generatedAtIso);
 
   const kpi = report.kpi;
-  buildCoverSheet(workbook, {
+  buildHouseCoverSheet(workbook, {
     title: "Marketing ROI Report",
     subtitle: "Realized sales of promoted products vs the required return, role-scoped.",
     confidentialNote: report.includedRestricted ? CONFIDENTIAL_INCLUDED : CONFIDENTIAL_EXCLUDED,
     rows: [
-      ["Generated (UTC)", meta.generatedAtIso],
+      houseGeneratedRow(meta.generatedAtIso),
       ["Exported by", `${meta.exportedByName} (${meta.exportedByHrId})`],
       ["Role", meta.role],
       ["Export ID", meta.exportId],
@@ -178,11 +182,11 @@ export async function buildMarketingRoiReportWorkbook(input: {
   totals[11] = report.rows.reduce((s, r) => s + r.requiredRoiValue, 0);
   totals[12] = report.rows.reduce((s, r) => s + r.expectedRoiValue, 0);
   totals[13] = report.rows.reduce((s, r) => s + r.actualSalesValue, 0);
-  writeTable(requestSheet, 1, { columns: requestColumns, rows: requestRows, title: "Requests — actual vs required return", totals, note: `${report.rows.length} request(s). Sales data as of ${kpi.salesDataAsOf ?? "n/a"}.` });
+  writeHouseTable(requestSheet, 1, { columns: requestColumns, rows: requestRows, title: "Requests — actual vs required return", totals, note: `${report.rows.length} request(s). Sales data as of ${kpi.salesDataAsOf ?? "n/a"}.` });
 
   // ── Products ──────────────────────────────────────────────────────────────
   const productSheet = workbook.addWorksheet(sanitizeSheetName("Products"));
-  writeTable(productSheet, 1, {
+  writeHouseTable(productSheet, 1, {
     title: "Promoted products (per request)",
     columns: [
       { label: "Request", width: 14 },
@@ -200,7 +204,7 @@ export async function buildMarketingRoiReportWorkbook(input: {
 
   // ── Target Pharmacies ─────────────────────────────────────────────────────
   const pharmacySheet = workbook.addWorksheet(sanitizeSheetName("Target Pharmacies"));
-  writeTable(pharmacySheet, 1, {
+  writeHouseTable(pharmacySheet, 1, {
     title: "Target pharmacies (per request)",
     columns: [
       { label: "Request", width: 14 },
@@ -215,7 +219,7 @@ export async function buildMarketingRoiReportWorkbook(input: {
 
   // ── Approvals ─────────────────────────────────────────────────────────────
   const approvalSheet = workbook.addWorksheet(sanitizeSheetName("Approvals"));
-  writeTable(approvalSheet, 1, {
+  writeHouseTable(approvalSheet, 1, {
     title: "Approval history (per request)",
     columns: [
       { label: "Request", width: 14 },
@@ -243,7 +247,7 @@ export async function buildMarketingRoiReportWorkbook(input: {
     const totalUnits = matchedSales.reduce((sum, r) => sum + r.qty, 0);
     const totalValue = matchedSales.reduce((sum, r) => sum + r.value, 0);
     const requestCount = new Set(matchedSales.map((r) => r.requestCode)).size;
-    writeTable(matchedSheet, 1, {
+    writeHouseTable(matchedSheet, 1, {
       title: "Matched sales — every request, line by line",
       columns: [
         { label: "Request", width: 14 },
@@ -273,12 +277,12 @@ export async function buildMarketingRoiViewSalesWorkbook(input: {
   const workbook = new ExcelJS.Workbook();
   workbook.created = new Date(meta.generatedAtIso);
 
-  buildCoverSheet(workbook, {
+  buildHouseCoverSheet(workbook, {
     title: "Marketing ROI — View Sales",
     subtitle: `Realized sales for request ${data.context.requestCode}.`,
     confidentialNote: data.includedRestricted ? CONFIDENTIAL_INCLUDED : CONFIDENTIAL_EXCLUDED,
     rows: [
-      ["Generated (UTC)", meta.generatedAtIso],
+      houseGeneratedRow(meta.generatedAtIso),
       ["Exported by", `${meta.exportedByName} (${meta.exportedByHrId})`],
       ["Role", meta.role],
       ["Export ID", meta.exportId],
@@ -296,7 +300,7 @@ export async function buildMarketingRoiViewSalesWorkbook(input: {
   });
 
   const detailSheet = workbook.addWorksheet(sanitizeSheetName("Matched Sales"));
-  writeTable(detailSheet, 1, {
+  writeHouseTable(detailSheet, 1, {
     title: `Matched sales — ${data.context.requestCode}`,
     columns: [
       { label: "Period", width: 10 },
@@ -314,7 +318,7 @@ export async function buildMarketingRoiViewSalesWorkbook(input: {
   });
 
   const byProductSheet = workbook.addWorksheet(sanitizeSheetName("By Product"));
-  writeTable(byProductSheet, 1, {
+  writeHouseTable(byProductSheet, 1, {
     title: "Sales by product",
     columns: [
       { label: "Product", width: 30 },
@@ -325,7 +329,7 @@ export async function buildMarketingRoiViewSalesWorkbook(input: {
   });
 
   const byPharmacySheet = workbook.addWorksheet(sanitizeSheetName("By Pharmacy"));
-  writeTable(byPharmacySheet, 1, {
+  writeHouseTable(byPharmacySheet, 1, {
     title: "Sales by pharmacy",
     columns: [
       { label: "Pharmacy", width: 32 },
@@ -336,7 +340,7 @@ export async function buildMarketingRoiViewSalesWorkbook(input: {
   });
 
   const byMonthSheet = workbook.addWorksheet(sanitizeSheetName("By Month"));
-  writeTable(byMonthSheet, 1, {
+  writeHouseTable(byMonthSheet, 1, {
     title: "Sales by month",
     columns: [
       { label: "Month", width: 12 },
@@ -348,7 +352,7 @@ export async function buildMarketingRoiViewSalesWorkbook(input: {
 
   // Pharmacy × product × month matrix (the on-screen drill-down grid, flattened).
   const matrixSheet = workbook.addWorksheet(sanitizeSheetName("Matrix"));
-  writeTable(matrixSheet, 1, {
+  writeHouseTable(matrixSheet, 1, {
     title: "Pharmacy × product × month",
     columns: [
       { label: "Customer code", width: 18 },
@@ -369,7 +373,7 @@ export async function buildMarketingRoiViewSalesWorkbook(input: {
 
   // Reverse-lookup: other (in-scope) requests targeting these pharmacies.
   const reverseSheet = workbook.addWorksheet(sanitizeSheetName("Also Targets"));
-  writeTable(reverseSheet, 1, {
+  writeHouseTable(reverseSheet, 1, {
     title: "Other requests targeting these pharmacies",
     columns: [
       { label: "Request", width: 14 },

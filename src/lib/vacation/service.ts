@@ -1282,6 +1282,56 @@ function canSeeVacation(access: AccessContext, request: VacationRequestRecord, v
   return false;
 }
 
+/**
+ * Record when a templated vacation email was NOT sent.
+ *
+ * WHY THIS EXISTS. `sendPhoenixEmail` has seven paths that return `{ skipped: true, reason }`
+ * rather than throwing — email globally disabled, no provider, no sender, no deliverable
+ * recipient, every recipient suppressed, blocked before sending, and one more. Every vacation
+ * caller wrote `send(...).catch(...)`, which only ever sees a THROW. A skip returned normally was
+ * discarded, and these sends do not go through `notification_outbox` either, so a skipped vacation
+ * email left **no trace anywhere**: no outbox row, no provider id, no event.
+ *
+ * That is not a small gap. On 2026-09-05 the question "are vacation emails firing?" could not be
+ * answered from this database at all — it took reading the provider's own API to establish that
+ * they were. A silent skip and a healthy send are indistinguishable from the inside, which is
+ * exactly the shape that lets a real outage sit unnoticed for weeks.
+ *
+ * Only skips are recorded. A successful send already leaves a trail at the provider, and logging
+ * every success would bury the signal in a table people read by eye.
+ */
+/**
+ * The pure half, exported so a test can reach it: given whatever a templated sender returned, was
+ * this a SKIP, and why? Returns null for a real send.
+ *
+ * `skipped !== true` rather than `!skipped` on purpose — a sender that returns a success object,
+ * `undefined` (the `void` branch of a `.catch`-typed chain), or anything unexpected must read as
+ * "sent", never as a silent skip. Only an explicit `skipped: true` is a skip.
+ */
+export function describeSkippedVacationEmail(result: unknown): string | null {
+  const value = result as { reason?: string; skipped?: boolean } | null | undefined;
+  if (!value || value.skipped !== true) return null;
+  return value.reason ?? "no reason given";
+}
+
+async function recordVacationEmailSkip(input: {
+  actorHrId?: string | null;
+  label: string;
+  recipient?: string | null;
+  requestId: string;
+  result: unknown;
+}) {
+  const reason = describeSkippedVacationEmail(input.result);
+  if (reason === null) return;
+  await insertVacationEvent({
+    actorHrId: input.actorHrId ?? null,
+    eventType: "notification_skipped",
+    message: `${input.label} email was NOT sent — ${reason}`,
+    metadata: { label: input.label, reason, recipient: input.recipient ?? null },
+    requestId: input.requestId,
+  }).catch(() => undefined);
+}
+
 async function insertVacationEvent(input: {
   actorHrId?: string | null;
   actorLoginId?: string | null;
@@ -1932,6 +1982,14 @@ async function notifyVacationSubmittedByGovernance(input: {
         policyWarnings: input.policyWarnings,
         request: input.request,
         reviewUrl: absoluteReviewUrl,
+      }).then(async (result) => {
+        await recordVacationEmailSkip({
+          actorHrId: input.request.employeeHrId,
+          label: "Manager approval request (on submit)",
+          recipient: primaryDeliverableEmail,
+          requestId: input.request.id,
+          result,
+        });
       }).catch(async (error) => {
         await insertVacationEvent({
           actorHrId: input.request.employeeHrId,
@@ -2094,6 +2152,14 @@ async function dispatchVacationManagerReview(input: {
       managerName: input.request.managerName ?? "Your manager",
       nextStep,
       request: input.request,
+    }).then(async (result) => {
+      await recordVacationEmailSkip({
+        actorHrId: input.request.managerHrId,
+        label: `Manager step result (${input.decision})`,
+        recipient: input.request.employeeWorkEmail,
+        requestId: input.request.id,
+        result,
+      });
     }).catch(async (error) => {
       await insertVacationEvent({
         actorHrId: input.request.managerHrId,
@@ -2173,6 +2239,14 @@ async function dispatchVacationNextManagerStep(input: {
       managerName: nextApprover.displayName,
       request: input.request,
       reviewUrl: toAbsoluteAppUrl(actionHref),
+    }).then(async (result) => {
+      await recordVacationEmailSkip({
+        actorHrId: input.actingManagerHrId,
+        label: "Next approver hand-off",
+        recipient: nextManagerEmail,
+        requestId: input.request.id,
+        result,
+      });
     }).catch(async (error) => {
       await insertVacationEvent({
         actorHrId: input.actingManagerHrId,
@@ -2639,8 +2713,7 @@ export async function getVacationRequestPageData(access: AccessContext) {
   };
 }
 
-export async function createVacationRequest(access: AccessContext, input: CreateVacationRequestInput, options: { baseUrl: string }) {
-  void options;
+export async function createVacationRequest(access: AccessContext, input: CreateVacationRequestInput) {
   await assertPermission(access, "leave", "create");
   await assertLeaveWorkflowTransition({
     access,

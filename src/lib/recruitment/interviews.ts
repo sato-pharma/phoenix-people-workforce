@@ -4,6 +4,9 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { cairoMidnightUtcIso } from "@/lib/attendance/timezone";
 import { cairoTodayIso } from "@/lib/attendance/working-days";
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
+import { findInterviewClash, interviewClashMessage } from "@/lib/recruitment/interview-clash";
 import { getApplication, type ApplicationWithContext } from "@/lib/recruitment/applications";
 import {
   mapInterview,
@@ -77,19 +80,63 @@ export async function createInterview(
   }
 
   const supabase = recruitmentDb();
+
+  // One interviewer cannot be in two interviews at once. Checked only when there is both a person
+  // and a time: a scorecard record written by recordScreeningOutcome has no scheduled_at, and
+  // treating one as an occupied slot would refuse a real interview because somebody was screened
+  // that day.
+  const interviewerHrId = textOrNull(input.interviewerHrId);
+  const scheduledAt = textOrNull(input.scheduledAt);
+  if (interviewerHrId && scheduledAt) {
+    // Casing-blind: hr ids are mixed case here, and a plain .eq would return nothing, which reads
+    // as "this interviewer is free" - the direction that books them twice.
+    const keys = hrIdLookupKeys(interviewerHrId);
+    const { data: booked } = await supabase
+      .from("ats_interviews")
+      .select("id, interviewer_hr_id, scheduled_at")
+      .in("interviewer_hr_id", keys.length > 0 ? keys : [interviewerHrId])
+      .not("scheduled_at", "is", null);
+
+    const clash = findInterviewClash(
+      { interviewerHrId, scheduledAt },
+      ((booked ?? []) as Array<{ id: string; interviewer_hr_id: string | null; scheduled_at: string | null }>).map(
+        (row) => ({ id: String(row.id), interviewerHrId: row.interviewer_hr_id, scheduledAt: row.scheduled_at }),
+      ),
+    );
+    if (clash) {
+      // Named, not coded: the owner's standing rule is human-readable names in every message. The
+      // directory read is best-effort - a clash must still be refused if the lookup fails, so the
+      // hr id is the fallback rather than a reason to let the double-booking through.
+      let who = interviewerHrId;
+      try {
+        const key = canonicalHrIdKey(interviewerHrId);
+        const rows = await getEmployeeDirectoryRows();
+        const match = rows.find((row) => canonicalHrIdKey(row.hrId) === key);
+        if (match?.fullName) who = match.fullName;
+      } catch {
+        // Fall through with the hr id.
+      }
+      throw new Error(interviewClashMessage(clash, who));
+    }
+  }
+
   const { data, error } = await supabase
     .from("ats_interviews")
     .insert({
       application_id: applicationId,
       interview_type: input.interviewType,
-      interviewer_hr_id: textOrNull(input.interviewerHrId),
-      scheduled_at: textOrNull(input.scheduledAt),
+      interviewer_hr_id: interviewerHrId,
+      scheduled_at: scheduledAt,
       location: textOrNull(input.location),
       meeting_link: textOrNull(input.meetingLink),
       outcome: textOrNull(input.outcome),
       score: input.score ?? {},
       notes: textOrNull(input.notes),
-      created_by: access.hrId ?? access.loginId ?? null,
+      // Canonicalised: access.hrId is the LOWERCASE comparison key, and this is a THIRD shape of
+      // the write repaired across 92 sites on 2026-09-05 - one the repo-wide sweep could not see,
+      // because it makes no resolveEmployeeIdentityId call and the column is not named *_hr_id.
+      // Only the hr id is canonicalised; the login id fallback is not an hr id.
+      created_by: hrIdForStorage(access.hrId) ?? access.loginId ?? null,
     })
     .select("*")
     .single();

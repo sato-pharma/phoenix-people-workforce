@@ -150,10 +150,12 @@ file holding the full account, under
   regex stops at the first `/>` and makes a correct file look broken, openpyxl reports `images: 0` on
   every sheet because it cannot read ExcelJS DrawingML (check `xl/media/*` instead), and openpyxl
   under-reports grouped columns. `exceljs-writes-two-schema-invalid-ooxml-fragments`
-- **Two ways of LOOKING at a generated workbook lie, and both lie in the same direction — they make a
-  CORRECT file read as broken**, which is the expensive way round: you go hunting for a defect that is
-  not there. Excel is not drivable headlessly here, so LibreOffice
-  (`/c/Program Files/LibreOffice/program/soffice.exe`) is the tool, and two of its three modes mislead.
+- **THREE ways of LOOKING at a generated workbook lie, and they do NOT all lie in the same direction.**
+  Two make a CORRECT file read as broken, which is the expensive way round — you go hunting for a defect
+  that is not there. The third makes a BROKEN file read as CORRECT, which is worse: nobody goes looking
+  at all. Excel is not drivable headlessly here, so LibreOffice
+  (`/c/Program Files/LibreOffice/program/soffice.exe`) is the tool, and every one of its modes misleads
+  about something.
   **1 —** `--convert-to png` renders only the LEFTMOST columns. On a sheet whose columns are 4 / 30 / 96
   characters wide it showed columns 1-2 and stopped: every body paragraph, every live counter and the
   title (which sits in column 3) came out blank, with no error. Diagnosed as a builder bug twice in one
@@ -161,11 +163,27 @@ file holding the full account, under
   workbook with ExcelJS, `removeWorksheet`-ing the other sheets and saving **destroys the merges** (7
   `mergeCell` refs became 0) and the column widths, so headings clip mid-word — in the copy only.
   §4 already forbids that round trip for the premium closing engine's pivots and VBA; it damages an
-  ordinary workbook too, and destroys precisely what a visual review is trying to judge. **What works is
+  ordinary workbook too, and destroys precisely what a visual review is trying to judge.
+  **What works is
   `--convert-to html`**, which emits every sheet's real cell values: strip the tags and assert the
   strings you expect are present. That settled both false alarms in one command. Keep the PNG for
   STRUCTURE at a glance — masthead, rules, zebra banding, whether anything is a filled block — never for
-  whether content exists. And the structural question is separate from both: only
+  whether content exists.
+  **3 — and this one inverts the direction: `--convert-to html` cannot judge a PIVOT's freshness.**
+  LibreOffice rebuilds a pivot (its DataPilot) from the declared source on EVERY load, unconditionally
+  and regardless of `refreshOnLoad`, so it renders a STALE cache exactly as it renders a live one — the
+  defect reads as FIXED. Measured 2026-09-05 on the Weekly Sales BI workbook: the cached records were
+  poisoned to `777777` in BOTH a fixed and an unfixed build, and both rendered the true total 6,786. The
+  poison never appeared, so a clean render is no evidence at all about `refreshOnLoad`. What it CAN
+  settle is the cache SOURCE, precisely because it rebuilds from whatever source is declared — append
+  rows to the Data table, leave the cache untouched, re-convert and read the pivot's grand total:
+  `<worksheetSource name="tblWeekly"/>` gave 855,270 with the new rows in, while
+  `<worksheetSource ref="A1:O8" sheet="Data"/>` gave 6,786 with them invisible. That is a real
+  end-to-end proof that a pivot grows with its data. `refreshOnLoad` itself is provable only
+  STRUCTURALLY — the attribute present, singular, and matching the form Excel wrote in
+  `assets/closing-engine/template.xlsm`. Confirming a pivot actually OPENS fresh needs Excel; say which
+  half your evidence covers rather than letting a CLEAN render imply both.
+  And the structural question is separate from all three: only
   `node scripts/check-workbook-integrity.mjs <file>` answers "will Excel silently repair this", so run it
   as well, not instead. `looking-at-a-generated-workbook-two-ways-that-lie`
 
@@ -1288,3 +1306,59 @@ question was "how many rules are there". **Prefer the measurement that fails lou
 check over a status field, a fresh heartbeat over an absence of errors, and a verdict computed from
 the number rather than a label typed beside it — a printed `(under 30 = still beating)` sat next to
 the value `140` in this session and was read straight past.
+
+## Two ways a search reported zero and meant "I did not look" — 2026-09-05
+
+Both surfaced in one session, auditing the repo for hand-written `border-radius` the shell sweeps
+cannot see (PRs #3214, #3228, #3237, #3244). Each produced a clean-looking **0** from a tool that had
+not actually searched what it appeared to search, and a 0 in a sweep for defects reads as *the code
+is clean* — the most expensive way to be wrong.
+
+**1. `git grep -E` is POSIX ERE, and a backslash inside a bracket expression is a literal backslash.**
+
+The pattern was written for `rg` and reused verbatim:
+
+    rounded[a-zA-Z0-9_.,()\[\]-]*
+
+In Rust regex and in PCRE, `\[` and `\]` inside the class are escaped brackets. In POSIX ERE they are
+not escapes at all: the backslash is an ordinary member of the set, and the first unescaped `]`
+CLOSES the class. The expression therefore means something entirely different, and matched nothing.
+
+Measured on one file, same pattern, three engines:
+
+| engine | invocation | matches |
+| --- | --- | --- |
+| POSIX ERE | `git grep -o -E …` | **0** |
+| PCRE | `git grep -o -P …` | 9 |
+| Rust regex | `rg -o …` | 9 |
+
+A simpler class (`rounded[a-z-]*`) returns 9 from every engine, which is what makes this so quiet:
+the pattern works everywhere you test it casually, and fails only on the class that happens to carry
+escaped brackets. `-o` is NOT the culprit — that was the first diagnosis in this session and it was
+wrong; `git grep -o` works fine. The fix is `-P`, or a class with no `\[`/`\]` in it.
+
+This is the same family as the leading-slash-path entry above: **a pattern that means something else
+than you think returns 0 rather than an error.**
+
+**2. A native Windows binary cannot resolve MSYS's `/tmp`.**
+
+`/tmp` in this shell is `C:/Users/<you>/AppData/Local/Temp`. Bash resolves it, and so does any MSYS
+binary. A native Windows executable does not — it receives the literal string `/tmp/...` and fails:
+
+    echo x > /tmp/probe.txt      # bash resolves it — file is written
+    wc -c < /tmp/probe.txt       # 11        (MSYS)
+    grep -c x /tmp/probe.txt     # 1         (MSYS)
+    rg -c x /tmp/probe.txt       # IO error … The system cannot find the path specified. (os error 3)
+    curl -o /tmp/out https://…   # exit 23   "Failure writing output to destination"
+    curl https://… > /tmp/out    # exit 0    — the SHELL does the redirect, so this works
+
+The dangerous half is `rg`, because in this session it was used to count defects in a file fetched
+from production. It printed its error to stderr and `0` to stdout, and the surrounding command read
+the 0 as "the class is gone — the fix is live". Three readings were quoted from it before a positive
+control caught them. `curl -o` at least exits non-zero.
+
+**Both were caught the same way, and it is the only reliable way: a positive control.** Before
+believing any count of a thing you expect to be absent, make the same instrument report a thing you
+know is present — a marker string in the file, a byte count, a field that must exist. In this session
+the controls were `login-ember` in a login page and `--phx-` tokens in a CSS bundle; each time the
+control came back 0 or blank, the "clean" result beside it was fiction.

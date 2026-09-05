@@ -21,8 +21,8 @@
  *      covering them is an inference, not an instruction.
  *
  * NOTHING IS PADDED. Where one decision genuinely covers many declarations — every corner in one
- * email layout is one question about one medium — it is ONE row carrying the site count, not eleven
- * rows of the same question. Where the elements are genuinely distinct, they get a row each.
+ * standalone guide page is one question about one file — it is ONE row carrying the site count, not
+ * 37 rows of the same question. Where the elements are genuinely distinct, they get a row each.
  *
  * Run:  node --experimental-strip-types --experimental-specifier-resolution=node \
  *         scripts/square-edge-questions.ts
@@ -164,49 +164,6 @@ const CORNERS: CornerRow[] = [
     sites: 1,
   },
 
-  // ── Email — a different medium ────────────────────────────────────────────────────────────────
-  {
-    group: "Email",
-    what: "The main Phoenix email layout",
-    where: "src/emails/phoenix-email-layout.tsx",
-    element: "card, hero panel, badge, buttons, glow bars",
-    value: "8px–999px",
-    context:
-      "Every automated email the system sends uses this layout. Email is read in Outlook, Gmail and "
-      + "phone mail apps, not in Phoenix — so it is a different medium from the app and from a "
-      + "printed company document. Rounded buttons are ordinary there. One answer covers all 11.",
-    sites: 11,
-  },
-  {
-    group: "Email",
-    what: "Telegram-connect email",
-    where: "src/emails/telegram-connect.tsx",
-    element: "the numbered step badges",
-    value: "12px",
-    context: "The little numbered circles in the 'connect your Telegram' walkthrough email.",
-    sites: 1,
-  },
-  {
-    group: "Email",
-    what: "Google-style email template",
-    where: "templates/phoenix-google-style-email.html",
-    element: "card, button, two avatars",
-    value: "4px–50%",
-    context: "A standalone email template file. Same medium question as the rows above.",
-    sites: 4,
-  },
-  {
-    group: "Email",
-    what: "Seeded email templates in the database",
-    where: "supabase/20260517_seed_email_templates.sql",
-    element: "the call-to-action buttons",
-    value: "10px",
-    context:
-      "These are seed rows, so the live copies are in the database — changing the file alone would "
-      + "NOT change what is sent. Answer this only if you want the sent emails changed too.",
-    sites: 5,
-  },
-
   // ── A standalone page ─────────────────────────────────────────────────────────────────────────
   {
     group: "Static guide",
@@ -277,7 +234,7 @@ function buildReadMe(workbook: ExcelJS.Workbook): void {
         + "worse than asking once. (The scrollbars were a row here until PR #3209 squared them.)",
     ],
     [
-      "Corners (14 rows)",
+      "Corners (10 rows)",
       "The sign-in screen's decorations, the identity card, the offer letter and email. "
         + "The 'What it looks like' column tells you what you are looking at without opening the code.",
     ],
@@ -289,9 +246,9 @@ function buildReadMe(workbook: ExcelJS.Workbook): void {
     ],
     [
       "Where one row covers many",
-      "Three rows carry a site count above 1 — one email layout (11), one email template (4), and the "
-        + "marketing guide page (37). Those are one decision about one file, so they are one row each "
-        + "rather than 52 copies of the same question.",
+      "One row carries a site count above 1 — the marketing guide page (37). That is one decision "
+        + "about one file, so it is one row rather than 37 copies of the same question. The email "
+        + "rows that used to sit here are gone: you answered them on 2026-09-05.",
     ],
     [
       "What happens next",

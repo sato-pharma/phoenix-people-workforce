@@ -1,14 +1,19 @@
 import ExcelJS from "exceljs";
 
+// The HOUSE helpers for the cover and the tables — SATO-DIS-2026-01 v1.0. `phoenix-xlsx-style`
+// keeps serving the five other families that still read it, so it is not changed here; its
+// formats and helpers below are unaffected and still come from it.
+import { buildHouseCoverSheet, writeHouseTable } from "@/lib/export/house-table-workbook";
+
 import {
   PCT_FMT,
   VALUE_FMT,
-  buildCoverSheet,
   sanitizeSheetName,
-  writeTable,
   type CellValue,
   type TableColumn,
 } from "@/lib/export/phoenix-xlsx-style";
+import { houseGeneratedRow } from "@/lib/export/house-xlsx-identity";
+import { HOUSE_XLSX_COLORS } from "@/lib/export/house-xlsx-palette";
 import { ROI_RESULT_STATUS_LABEL } from "@/lib/marketing-requests/roi-labels";
 import type {
   MarketingCoverageExportSalesDetailRow,
@@ -87,28 +92,42 @@ function bufferOf(workbook: ExcelJS.Workbook): Promise<ArrayBuffer> {
 }
 
 /**
- * Real Excel conditional formatting (not a static fill) on the Status column: Approved =
- * green, Rejected = red, any "Pending …" label = yellow — the same 3 colors as the on-screen
- * badge in marketing-coverage-report-workspace.tsx. Uses Excel's own built-in Good/Bad/
- * Neutral color triplet so it looks native to anyone opening the file. `containsText` (not
- * `cellIs equal`) so "Pending validation" and "Pending approval" both match one rule.
+ * Real Excel conditional formatting (not a static fill) on the Status column: Approved, Rejected and
+ * any "Pending …" label each take their own colour. `containsText` (not `cellIs equal`) so "Pending
+ * validation" and "Pending approval" both match one rule.
+ *
+ * TYPE, NOT A FILL, under SATO-DIS-2026-01 v1.0. The old form was Excel's built-in Good/Bad/Neutral
+ * triplet — a green, red or yellow BLOCK behind the word. The ink rule removes it and the test for
+ * whether a fill may go is met here about as plainly as it ever is: the cell already says
+ * "Approved", "Rejected" or "Pending approval" in words, so the block was saying a second time what
+ * the reader was already reading. Colour still marks the three apart, carried by the word itself.
+ *
+ * This is the opposite call to the weekly BI workbook's heatmaps, which KEEP their fills: a colour
+ * scale over a matrix of bare numbers is the only thing saying which cells are large, and no word
+ * in those cells says it.
  */
+/** The Status column's three verdicts, as TYPE. Approved takes the brand deep rather than a
+ *  green the palette does not have; rejected takes the standard's own sanctioned red. */
+const STATUS_APPROVED = HOUSE_XLSX_COLORS.deep;
+const STATUS_REJECTED = HOUSE_XLSX_COLORS.flag;
+const STATUS_PENDING = HOUSE_XLSX_COLORS.muted;
+
 function applyStatusConditionalFormat(sheet: ExcelJS.Worksheet, ref: string, firstCellRef: string) {
   try {
-    const rule = (text: string, priority: number, bgColor: string, fontColor: string) => ({
+    const rule = (text: string, priority: number, fontColor: string) => ({
       type: "containsText" as const,
       operator: "containsText" as const,
       text,
       formulae: [`NOT(ISERROR(SEARCH("${text}",${firstCellRef})))`],
       priority,
-      style: { fill: { type: "pattern" as const, pattern: "solid" as const, bgColor: { argb: bgColor } }, font: { color: { argb: fontColor } } },
+      style: { font: { bold: true, color: { argb: fontColor } } },
     });
     sheet.addConditionalFormatting({
       ref,
       rules: [
-        rule("Approved", 1, "FFC6EFCE", "FF006100"),
-        rule("Rejected", 2, "FFFFC7CE", "FF9C0006"),
-        rule("Pending", 3, "FFFFEB9C", "FF9C6500"),
+        rule("Approved", 1, STATUS_APPROVED),
+        rule("Rejected", 2, STATUS_REJECTED),
+        rule("Pending", 3, STATUS_PENDING),
       ],
     });
   } catch {
@@ -135,12 +154,12 @@ export async function buildMarketingCoverageReportWorkbook(input: {
   workbook.created = new Date(meta.generatedAtIso);
 
   const kpi = report.kpi;
-  buildCoverSheet(workbook, {
+  buildHouseCoverSheet(workbook, {
     title: "Marketing Coverage Report",
     subtitle: "Filtered marketing requests, KPI totals, and target-pharmacy coverage, role-scoped.",
     confidentialNote: report.includedRestricted ? CONFIDENTIAL_INCLUDED : CONFIDENTIAL_EXCLUDED,
     rows: [
-      ["Generated (UTC)", meta.generatedAtIso],
+      houseGeneratedRow(meta.generatedAtIso),
       ["Exported by", `${meta.exportedByName} (${meta.exportedByHrId})`],
       ["Role", meta.role],
       ["Export ID", meta.exportId],
@@ -207,7 +226,7 @@ export async function buildMarketingCoverageReportWorkbook(input: {
   totals[11] = report.rows.reduce((s, r) => s + r.estimatedCost, 0);
   totals[12] = report.rows.reduce((s, r) => s + r.requiredRoiValue, 0);
   totals[13] = report.rows.reduce((s, r) => s + r.actualSalesValue, 0);
-  writeTable(requestSheet, 1, {
+  writeHouseTable(requestSheet, 1, {
     columns: requestColumns,
     rows: requestRows,
     title: "Requests — filtered coverage",
@@ -228,7 +247,7 @@ export async function buildMarketingCoverageReportWorkbook(input: {
   }
 
   const pharmacySheet = workbook.addWorksheet(sanitizeSheetName("Target Pharmacies"));
-  writeTable(pharmacySheet, 1, {
+  writeHouseTable(pharmacySheet, 1, {
     title: "Target pharmacies (per request)",
     columns: [
       { label: "Request", width: 14 },
@@ -246,7 +265,7 @@ export async function buildMarketingCoverageReportWorkbook(input: {
   const pharmacyNameByRequestAndCode = new Map(detail.pharmacies.map((p) => [`${p.requestId}|${p.customerCode}`, p.pharmacyName] as const));
 
   const salesDetailSheet = workbook.addWorksheet(sanitizeSheetName("Sales Detail"));
-  writeTable(salesDetailSheet, 1, {
+  writeHouseTable(salesDetailSheet, 1, {
     title: "Matched sales — by pharmacy, product and month",
     columns: [
       { label: "Request", width: 14 },

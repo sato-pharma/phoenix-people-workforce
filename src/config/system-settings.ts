@@ -1,3 +1,12 @@
+/**
+ * The employing company's registered English name.
+ *
+ * Declared here rather than inside `systemLegalEntity` below because the document metadata in
+ * `systemDocuments` needs it too, and a `const` is not hoisted — reading it from further down the
+ * file would be a temporal-dead-zone error at module load. One name, two readers, no second copy.
+ */
+const COMPANY_LEGAL_NAME_EN = "Sato Pharma";
+
 export const systemIdentity = {
   appName: "Phoenix Workforce",
   brandName: "Phoenix",
@@ -83,19 +92,34 @@ export function isForceTestingDelivery(): boolean {
 }
 
 export const systemDocuments = {
-  workbookCompany: systemIdentity.appName,
-  workbookCreator: systemIdentity.appName,
-  workbookExportScopeNote: `Generated from ${systemIdentity.appName} according to the active user access scope.`,
+  // A file's Author and Company properties say who ISSUED the document, and that is the company,
+  // not the software that rendered it — SATO-DIS-2026-01 v1.0. Every export in the repo reads these.
+  workbookCompany: COMPANY_LEGAL_NAME_EN,
+  workbookCreator: COMPANY_LEGAL_NAME_EN,
+  // The useful half of this note is that WHAT YOU SEE DEPENDS ON YOUR PERMISSIONS. The app naming
+  // itself alongside was the other half, and on the employee master it printed directly beside the
+  // house standard id — "SATO-DIS-2026-01 v1.0 · Generated from Phoenix Workforce ...", the company's
+  // standard introducing the software. The scope sentence survives intact; the introduction does not.
+  workbookExportScopeNote: "Generated according to the active user access scope.",
   titles: {
-    attendanceDeviceUserMapping: `${systemIdentity.appName} - Attendance Device User Mapping`,
-    activeEmployeeMasterData: `${systemIdentity.appName} - Active Employee Master Data`,
-    activeEmployeeMasterDataWorkbook: `${systemIdentity.appName} Active Employee Master Data`,
-    coachingReportsExport: `${systemIdentity.appName} | Coaching Reports Export`,
-    cvDatabaseUploadTemplate: `${systemIdentity.brandName} CV Database Upload Template`,
-    fingerprintAttendanceReport: `${systemIdentity.appName} - Fingerprint Attendance Report`,
-    probationExport: `${systemIdentity.appName} | Probation Export`,
-    probationPdfExport: `${systemIdentity.appName} - Probation Export`,
-    userBulkImportTemplate: `${systemIdentity.appName} Bulk Import Template`,
+    // NOT ONE OF THESE CARRIES THE APP'S NAME, and that is the whole point of the block.
+    //
+    // Each is either printed as the headline on the face of a document, or written into the file's
+    // own `title` property — which is what Explorer, SharePoint and Excel's own properties pane
+    // show. Under SATO-DIS-2026-01 v1.0 the identity a company document wears is the COMPANY's, so
+    // a title that begins "Phoenix Workforce - " is the software introducing itself on paper the
+    // company issues.
+    //
+    // `activeEmployeeMasterData` was here too and is gone: it had no reader anywhere in the
+    // repository, so it was a title nothing ever printed.
+    attendanceDeviceUserMapping: "Attendance Device User Mapping",
+    activeEmployeeMasterDataWorkbook: "Active Employee Master Data",
+    coachingReportsExport: "Coaching Reports Export",
+    cvDatabaseUploadTemplate: "CV Database Upload Template",
+    fingerprintAttendanceReport: "Fingerprint Attendance Report",
+    probationExport: "Probation Export",
+    probationPdfExport: "Probation Export",
+    userBulkImportTemplate: "Bulk Import Template",
   },
 } as const;
 
@@ -116,7 +140,7 @@ export const systemDocuments = {
  */
 export const systemLegalEntity = {
   legalNameAr: "شركة ساتو فارما",
-  legalNameEn: "Sato Pharma",
+  legalNameEn: COMPANY_LEGAL_NAME_EN,
   headOfficeAr: "القاهرة – 1 ش محمد عبد المنعم، منشية السد العالي – قسم أول السلام – القاهرة",
   /** The city named in the contract's opening line ("وفي مدينة القاهرة"). */
   contractCityAr: "القاهرة",

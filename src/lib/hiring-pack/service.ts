@@ -10,7 +10,7 @@ import {
   upsertEmployee,
   type EmployeeMutationInput,
 } from "@/lib/employees/employee-directory";
-import { canonicalHrIdForDisplay, hrIdsMatch } from "@/lib/hr-id";
+import { canonicalHrIdForDisplay, hrIdForStorage, hrIdsMatch } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { arabicDepartmentName } from "@/lib/hiring-pack/department-names";
 import { isRenewalObjectiveReasonCode } from "@/lib/hiring-pack/renewal-reasons";
@@ -1326,7 +1326,7 @@ export async function saveHiringPackProfile(
         contract_objective_reason_code: isRenewalObjectiveReasonCode(input.contractObjectiveReasonCode)
           ? cleanText(input.contractObjectiveReasonCode)
           : null,
-        updated_by_hr_id: cleanText(actorHrId),
+        updated_by_hr_id: hrIdForStorage(cleanText(actorHrId)),
       },
       { onConflict: "hr_id" },
     );
@@ -1371,7 +1371,7 @@ export async function saveOffboardingProfile(
         employer_rep_name_ar: cleanText(input.employerRepNameAr),
         employer_rep_title_ar: cleanText(input.employerRepTitleAr),
         notes: cleanText(input.notes),
-        updated_by_hr_id: cleanText(actorHrId),
+        updated_by_hr_id: hrIdForStorage(cleanText(actorHrId)),
       },
       { onConflict: "hr_id" },
     );
@@ -1466,7 +1466,7 @@ export async function markHiringPackSigned(input: MarkHiringPackSignedInput): Pr
       {
         hr_id: hrId,
         [binding.signedColumn]: signedDate,
-        updated_by_hr_id: cleanText(input.actorHrId),
+        updated_by_hr_id: hrIdForStorage(cleanText(input.actorHrId)),
         ...versionStamp,
       },
       { onConflict: "hr_id" },

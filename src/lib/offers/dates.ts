@@ -74,16 +74,7 @@ export function isIsoDate(value: string): boolean {
  * disagree about what day it is. An offer issued at 11pm Cairo must be dated tomorrow's date in
  * nobody's reckoning — it is dated today, here.
  */
-export function todayInCairo(now: Date = new Date()): string {
-  // `en-CA` renders as yyyy-mm-dd, which is the format the picker wants, without hand-assembling
-  // it from parts that each need their own padding.
-  return now.toLocaleDateString("en-CA", {
-    day: "2-digit",
-    month: "2-digit",
-    timeZone: "Africa/Cairo",
-    year: "numeric",
-  });
-}
+export { todayInCairo } from "@/lib/date-only";
 
 /**
  * `2026-09-01` → `01 September 2026`, the form the letter has always used.
