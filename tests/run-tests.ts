@@ -824,6 +824,7 @@ import { runWeeklyAreaScopeTests } from "./weekly-area-scope.test.ts";
 import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
 import { runSqlExcludeCodesFailClosedTests } from "./sql-exclude-codes-fail-closed.test.ts";
 import { runPediaMergedAreaTargetGridTests } from "./pedia-merged-area-target-grid.test.ts";
+import { runPediaTargetTemplateAndUploadFoldTests } from "./pedia-target-template-and-upload-fold.test.ts";
 import { runSosDashboardBlockedBatchTotalsTests } from "./sos-dashboard-blocked-batch-totals.test.ts";
 import { runSosDashboardGeographyIsLiveForEveryViewerTests } from "./sos-dashboard-geography-is-live-for-every-viewer.test.ts";
 import { runSosImportDashboardHeadOfficeLockTests } from "./sos-import-dashboard-head-office-lock.test.ts";
@@ -2807,6 +2808,14 @@ await runTest(
     + "target and never wrote Beni Suef's; the fold is grid-only because the roll-ups re-derive "
     + "coveredActualValue from hasTarget)",
   runPediaMergedAreaTargetGridTests,
+);
+await runTest(
+  "the Pedia target TEMPLATE offers one area for the merged pair, and the upload folds onto it "
+    + "(au_v_line_area_map carries both halves as carries_target, so the template offered \"Beni Suef\" "
+    + "and the upload stored a target on UE9 — a cell the merged grid row can never display; folding "
+    + "makes Fayoum+Beni Suef in one sheet collide, and ON CONFLICT DO UPDATE would silently keep the "
+    + "last, so the later row is rejected by name)",
+  runPediaTargetTemplateAndUploadFoldTests,
 );
 await runTest("analytics per-viewer scope (line/region/product, per role)", runAnalyticsViewerScopeTests);
 await runTest("rep achievement period resolution", runRepAchievementPeriodsTests);
