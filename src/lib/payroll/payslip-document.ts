@@ -395,7 +395,7 @@ body {
   width: 210mm;
   max-width: 100%;
   margin: 0 auto;
-  padding: 12mm 13mm;
+  padding: 10mm 13mm 9mm;
   page-break-after: always;
   break-after: page;
 }
@@ -413,12 +413,12 @@ body {
    onto a second line and is never cut, because a shortened name cannot be told from a different
    one, and the ellipsis ban is the owner's. */
 .id {
-  display: flex; flex-wrap: wrap; margin: 4mm 0 0;
+  display: flex; flex-wrap: wrap; margin: 3.5mm 0 0;
   border-top: .5pt solid var(--phx-doc-hair);
   border-inline-start: .5pt solid var(--phx-doc-hair);
 }
 .id__cell {
-  flex: 1 1 52mm; min-width: 48mm; padding: 1.7mm 2.6mm;
+  flex: 1 1 52mm; min-width: 48mm; padding: 1.4mm 2.6mm;
   border-inline-end: .5pt solid var(--phx-doc-hair);
   border-bottom: .5pt solid var(--phx-doc-hair);
 }
@@ -430,7 +430,7 @@ body {
 
 /* ---------- the figure the employee opened this for ---------- */
 .hero {
-  margin: 5mm 0 0; padding: 2.6mm 0 2.2mm;
+  margin: 4mm 0 0; padding: 2.4mm 0 2mm;
   border-top: .7mm solid var(--phx-doc-blue);
   border-bottom: .5pt solid var(--phx-doc-hair);
 }
@@ -444,7 +444,7 @@ body {
 
 /* ---------- the five reference figures ---------- */
 .ref { display: flex; flex-wrap: wrap; border-bottom: .5pt solid var(--phx-doc-hair); }
-.ref__cell { flex: 1 1 32mm; min-width: 30mm; padding: 1.8mm 2.6mm; border-inline-start: .5pt solid var(--phx-doc-hair); }
+.ref__cell { flex: 1 1 32mm; min-width: 30mm; padding: 1.6mm 2.6mm; border-inline-start: .5pt solid var(--phx-doc-hair); }
 .ref__cell:first-child { border-inline-start: 0; padding-inline-start: 0; }
 .ref__k { display: block; color: var(--phx-doc-muted); font-size: 6.4pt; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
 .ref__v { display: block; margin-top: .5mm; color: var(--phx-doc-body); font-size: 10pt; font-weight: 700; overflow-wrap: anywhere; }
@@ -453,11 +453,11 @@ body {
 /* Earnings against deductions, so the whole payslip lands on ONE sheet instead of a single column
    of 27 rows running past the fold. Below 800 px they stack — this is the same document on a
    phone, never a horizontally scrolling one. */
-.detail { display: flex; flex-wrap: wrap; gap: 0 8mm; margin: 5mm 0 0; align-items: flex-start; }
+.detail { display: flex; flex-wrap: wrap; gap: 0 8mm; margin: 3mm 0 0; align-items: flex-start; }
 .detail__col { flex: 1 1 74mm; min-width: 70mm; }
 
 .cmp { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.cmp th, .cmp td { padding: 1.5mm 2.2mm; text-align: start; vertical-align: top; overflow-wrap: anywhere; }
+.cmp th, .cmp td { padding: 1.2mm 2.2mm; text-align: start; vertical-align: top; overflow-wrap: anywhere; }
 .cmp thead th {
   color: var(--phx-doc-deep); font-size: 7.4pt; font-weight: 700;
   text-transform: uppercase; letter-spacing: .08em;
@@ -492,9 +492,9 @@ body {
 .cmp tr { break-inside: avoid; page-break-inside: avoid; }
 
 /* ---------- how the month is actually paid ---------- */
-.split { display: flex; flex-wrap: wrap; margin: 5mm 0 0; border-top: .5pt solid var(--phx-doc-hair); }
+.split { display: flex; flex-wrap: wrap; margin: 3mm 0 0; border-top: .5pt solid var(--phx-doc-hair); }
 .split__cell {
-  flex: 1 1 40mm; min-width: 38mm; padding: 2.2mm 2.6mm;
+  flex: 1 1 40mm; min-width: 38mm; padding: 2mm 2.6mm;
   border-inline-start: .5pt solid var(--phx-doc-hair);
   border-bottom: .5pt solid var(--phx-doc-hair);
 }
@@ -506,13 +506,13 @@ body {
 .split__v { display: block; margin-top: .5mm; color: var(--phx-doc-deep); font-size: 11.5pt; font-weight: 700; overflow-wrap: anywhere; }
 .split__cell--lead .split__v { font-size: 13.5pt; }
 
-.note { margin: 5mm 0 0; padding-inline-start: 2.8mm; border-inline-start: .5pt solid var(--phx-doc-hair); }
+.note { margin: 3mm 0 0; padding-inline-start: 2.8mm; border-inline-start: .5pt solid var(--phx-doc-hair); }
 .note h2 { color: var(--phx-doc-deep); font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; }
 .note p { margin-top: 1mm; color: var(--phx-doc-muted); font-size: 8pt; line-height: 1.55; }
 
 .ft {
   display: flex; flex-wrap: wrap; gap: 1mm 4mm; justify-content: space-between;
-  margin: 7mm 0 0; padding-top: 1.6mm;
+  margin: 3.5mm 0 0; padding-top: 1.4mm;
   border-top: .5pt solid var(--phx-doc-hair);
   color: var(--phx-doc-muted); font-size: 6.8pt; letter-spacing: .02em;
 }
@@ -521,7 +521,15 @@ body {
 .hero, .ref, .split, .note, .ft { break-inside: avoid; page-break-inside: avoid; }
 
 /* ---------- the phone ---------- */
-@media (max-width: 800px) {
+/* Scoped to screen, as a guard rather than a fix. A4 is 210 mm — 793.7 px at 96 dpi — and this
+   breakpoint is 800 px, so paper sits SIX PIXELS inside a rule written for phones. Measured
+   2026-09-05: Chromium's print layout does not currently apply it, and scoping this to screen
+   changed the exported PDF by zero bytes. It is kept because six pixels is not a margin worth
+   depending on, and because a future breakpoint moved a little wider would silently print every
+   payslip in the stacked phone layout.
+   This is NOT what made the export two pages — that was 11.1 mm of ordinary overflow, fixed by the
+   spacing below. */
+@media screen and (max-width: 800px) {
   .ps { padding: 7mm 5mm; }
   .id__cell { flex-basis: 100%; }
   .ref__cell { flex-basis: 50%; border-inline-start: 0; padding-inline-start: 0; border-bottom: .5pt solid var(--phx-doc-hair); }
