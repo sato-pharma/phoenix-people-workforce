@@ -434,8 +434,10 @@ function styleMasterSheet(
     cell.value = column.header;
     houseHeaderStyle(cell);
     if (!column.imported) {
-      // Not read on upload — said quietly in the type rather than with a badge.
-      cell.font = { ...cell.font, color: { argb: HOUSE_XLSX_COLORS.muted }, italic: true };
+      // Not read on upload — said quietly in the type rather than with a badge. Muted grey was that
+      // quiet voice when the header was type on white; on the Brand Blue band it is simply hard to
+      // read, so the distinction moves to italic at the same weight the rest of the header carries.
+      cell.font = { ...cell.font, italic: true };
     }
   });
 
@@ -563,6 +565,15 @@ function styleMasterSheet(
   const rowCheckColumn = sheet.getColumn(columnIndex("rowCheck"));
   rowCheckColumn.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: HOUSE_XLSX_FONT, size: 9 };
   rowCheckColumn.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
+  // A COLUMN font covers the header cell too, and it is applied after the header row is styled — so
+  // this muted grey silently overwrote the header's own type. Invisible while the header was type on
+  // white and the two greys were close; on the Brand Blue band it is grey on blue, and unreadable.
+  // The header is restyled here rather than by moving the column font, because the column font is
+  // what keeps the verdict quiet down all 356 rows.
+  const rowCheckHeader = sheet.getRow(HEADER_ROW).getCell(columnIndex("rowCheck"));
+  houseHeaderStyle(rowCheckHeader);
+  rowCheckHeader.value = "Row Check";
+  rowCheckHeader.font = { ...rowCheckHeader.font, italic: true };
 
   // --- conditional formats. Every rule gets its OWN priority: ExcelJS does not assign them, and
   // duplicate priorities are one of the defects that makes Excel silently "repair" a workbook. ---
