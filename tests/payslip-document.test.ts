@@ -211,6 +211,39 @@ export function runPayslipDocumentTests() {
     "…and the paper's Arabic name sits under it, on its own line with its own direction.",
   );
 
+  // ── one employee, one sheet of paper ───────────────────────────────────────────────────────────
+  // The redesign SHIPPED rendering two pages, the second holding nothing but the footer: the sheet
+  // came to 308.1 mm against A4's 297 mm. The check that actually answers this launches Chromium
+  // and lives in `scripts/check-payslip-page-fit.mjs`, because the house rule is that the suite does
+  // not launch a browser — CI's runner is not the app container. What CAN be asserted here is the
+  // thing that regressed: the amount of pure whitespace the layout spends vertically.
+  const bandMargins = [...PAYSLIP_DOCUMENT_CSS.matchAll(/margin:\s*([\d.]+)mm 0 0/g)]
+    .map((match) => Number(match[1]));
+  const pagePadding = /\.ps \{[\s\S]*?padding:\s*([\d.]+)mm [\d.]+mm(?: ([\d.]+)mm)?;/.exec(PAYSLIP_DOCUMENT_CSS);
+  assert.ok(pagePadding, "The sheet must declare its own page padding.");
+  const verticalPadding = Number(pagePadding[1]) + Number(pagePadding[2] ?? pagePadding[1]);
+  const whitespace = bandMargins.reduce((sum, mm) => sum + mm, 0) + verticalPadding;
+  assert.ok(
+    bandMargins.length >= 5,
+    `Expected the band margins to be found; got ${bandMargins.length}. The selector shape changed.`,
+  );
+  assert.ok(
+    whitespace <= 42,
+    `The sheet spends ${whitespace}mm of vertical whitespace (page padding + band margins). The `
+      + "budget is 42mm: above it the ordinary payslip stops fitting on one A4 sheet and the footer "
+      + "prints alone on a second. Re-run scripts/check-payslip-page-fit.mjs after changing spacing.",
+  );
+
+  // A4 is 793.7px at 96dpi — SIX PIXELS inside this breakpoint. Chromium's print layout does not
+  // currently apply it (measured: scoping this changed the exported PDF by zero bytes), but six
+  // pixels is not a margin to depend on, and an unscoped rule that did apply would print every
+  // payslip in the stacked phone layout.
+  assert.match(
+    PAYSLIP_DOCUMENT_CSS,
+    /@media screen and \(max-width: 800px\)/,
+    "The phone breakpoint must be scoped to screen — paper is 793.7px wide and is never a phone.",
+  );
+
   // ── the ellipsis ban (owner rule) ──────────────────────────────────────────────────────────────
   // The pdf-lib renderer this replaced cut any overrunning value and appended "..". Nothing in the
   // document may truncate, and nothing in the stylesheet may ask the browser to.
@@ -228,7 +261,7 @@ export function runPayslipDocumentTests() {
   assert.doesNotMatch(PAYSLIP_DOCUMENT_CSS, /overflow-x:\s*auto/, "No horizontal scroll container.");
   assert.match(
     PAYSLIP_DOCUMENT_CSS,
-    /@media \(max-width: 800px\)/,
+    /@media screen and \(max-width: 800px\)[\s\S]*?\.detail__col \{ flex-basis: 100%/,
     "The sheet must reflow to one column on a phone rather than scroll sideways.",
   );
 
