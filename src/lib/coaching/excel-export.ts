@@ -1,5 +1,7 @@
 import ExcelJS from "exceljs";
 
+import { HOUSE_XLSX_COLORS, writeHouseMasthead } from "@/lib/export/house-xlsx-identity";
+
 import { systemDocuments } from "@/config/system-settings";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import type {
@@ -10,13 +12,7 @@ import type {
   CoachingReportSummaryRow,
 } from "@/lib/coaching/types";
 
-const phoenixDark = "FF0F172A";
-const phoenixNavy = "FF111827";
-const phoenixOrange = "FFF97316";
-const phoenixOrangeSoft = "FFFFF7ED";
-const phoenixBorder = "FFE2E8F0";
-const phoenixPanel = "FFF8FAFC";
-const phoenixWhite = "FFFFFFFF";
+
 
 const completedStatuses = new Set<CoachingReportStatus>(["submitted", "reviewed_by_employee", "locked"]);
 
@@ -135,42 +131,25 @@ function setWorkbookMetadata(workbook: ExcelJS.Workbook) {
   workbook.modified = new Date();
 }
 
-function styleTitleCell(cell: ExcelJS.Cell) {
-  cell.fill = { fgColor: { argb: phoenixDark }, pattern: "solid", type: "pattern" };
-  cell.font = { bold: true, color: { argb: phoenixOrange }, size: 20 };
-  cell.alignment = { vertical: "middle" };
-}
-
-function styleSubtitleCell(cell: ExcelJS.Cell) {
-  cell.fill = { fgColor: { argb: phoenixDark }, pattern: "solid", type: "pattern" };
-  cell.font = { color: { argb: phoenixWhite }, size: 11 };
-  cell.alignment = { vertical: "middle" };
-}
-
 function styleSectionRow(row: ExcelJS.Row) {
-  row.height = 24;
+  row.height = 20;
   row.eachCell((cell) => {
-    cell.fill = { fgColor: { argb: phoenixOrange }, pattern: "solid", type: "pattern" };
-    cell.font = { bold: true, color: { argb: phoenixWhite }, size: 10 };
-    cell.alignment = { vertical: "middle" };
-    cell.border = {
-      bottom: { color: { argb: phoenixOrange }, style: "thin" },
-      top: { color: { argb: phoenixOrange }, style: "thin" },
-    };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 10 };
+    cell.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
+    // The caption sits ON the masthead's rule row, so its bottom border IS that rule — one line
+    // doing both jobs rather than a caption stacked under a bar.
+    cell.border = { bottom: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "medium" } };
   });
 }
 
 function styleHeaderRow(row: ExcelJS.Row) {
-  row.height = 24;
+  row.height = 26;
   row.eachCell((cell) => {
-    cell.fill = { fgColor: { argb: phoenixNavy }, pattern: "solid", type: "pattern" };
-    cell.font = { bold: true, color: { argb: phoenixWhite }, size: 10 };
-    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 9.5 };
+    cell.alignment = { horizontal: "left", vertical: "bottom", wrapText: true };
     cell.border = {
-      bottom: { color: { argb: phoenixBorder }, style: "thin" },
-      left: { color: { argb: phoenixBorder }, style: "thin" },
-      right: { color: { argb: phoenixBorder }, style: "thin" },
-      top: { color: { argb: phoenixBorder }, style: "thin" },
+      bottom: { color: { argb: HOUSE_XLSX_COLORS.blue }, style: "medium" },
+      top: { color: { argb: HOUSE_XLSX_COLORS.hair }, style: "thin" },
     };
   });
 }
@@ -178,18 +157,15 @@ function styleHeaderRow(row: ExcelJS.Row) {
 function styleBodyRows(worksheet: ExcelJS.Worksheet, startRow: number) {
   for (let rowNumber = startRow; rowNumber <= worksheet.rowCount; rowNumber += 1) {
     const row = worksheet.getRow(rowNumber);
+    const zebra = rowNumber % 2 === 0;
     row.eachCell((cell) => {
-      if (rowNumber % 2 === 0) {
-        cell.fill = { fgColor: { argb: phoenixPanel }, pattern: "solid", type: "pattern" };
+      if (zebra) {
+        cell.fill = { fgColor: { argb: HOUSE_XLSX_COLORS.tint }, pattern: "solid", type: "pattern" };
+      } else {
+        cell.border = { bottom: { color: { argb: HOUSE_XLSX_COLORS.hair }, style: "hair" } };
       }
       cell.alignment = { vertical: "top", wrapText: true };
-      cell.border = {
-        bottom: { color: { argb: phoenixBorder }, style: "thin" },
-        left: { color: { argb: phoenixBorder }, style: "thin" },
-        right: { color: { argb: phoenixBorder }, style: "thin" },
-        top: { color: { argb: phoenixBorder }, style: "thin" },
-      };
-      cell.font = { color: { argb: phoenixDark }, size: 10 };
+      cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 9.5 };
     });
   }
 }
@@ -208,25 +184,30 @@ function applyAutoFilter(worksheet: ExcelJS.Worksheet, headerRowNumber: number, 
 }
 
 function addTitle(
+  workbook: ExcelJS.Workbook,
   worksheet: ExcelJS.Worksheet,
   title: string,
   subtitle: string,
   span: number,
   sectionTitle?: string,
 ) {
-  worksheet.mergeCells(1, 1, 1, span);
-  worksheet.mergeCells(2, 1, 2, span);
-  worksheet.getCell(1, 1).value = sanitizeExcelText(title);
-  worksheet.getCell(2, 1).value = sanitizeExcelText(subtitle);
-  styleTitleCell(worksheet.getCell(1, 1));
-  styleSubtitleCell(worksheet.getCell(2, 1));
-  worksheet.getRow(1).height = 30;
-  worksheet.getRow(2).height = 22;
-  for (let columnNumber = 1; columnNumber <= span; columnNumber += 1) {
-    styleTitleCell(worksheet.getRow(1).getCell(columnNumber));
-    styleSubtitleCell(worksheet.getRow(2).getCell(columnNumber));
-  }
+  // Masthead on rows 1-3, table header on 4 — the rows this sheet already used, so the frozen pane
+  // and every `styleBodyRows(worksheet, 5)` call still line up.
+  //
+  // Row 3 is normally the masthead's brand rule. A sheet with a section caption takes that row
+  // instead and carries the rule as its own bottom border, so the caption and the rule share one
+  // row rather than the caption pushing the table down.
+  writeHouseMasthead(workbook, worksheet, {
+    columns: span,
+    provenance: [],
+    subtitle: sanitizeExcelText(subtitle),
+    title: sanitizeExcelText(title),
+  });
+
   if (sectionTitle) {
+    for (let columnNumber = 1; columnNumber <= span; columnNumber += 1) {
+      worksheet.getRow(3).getCell(columnNumber).fill = { pattern: "none", type: "pattern" };
+    }
     worksheet.mergeCells(3, 1, 3, span);
     worksheet.getCell(3, 1).value = sanitizeExcelText(sectionTitle);
     styleSectionRow(worksheet.getRow(3));
@@ -296,19 +277,26 @@ function buildQuarterlyRows(reports: CoachingExportReport[]): QuarterlyExportRow
   }).sort((left, right) => right.year - left.year || right.quarter - left.quarter || left.medicalRepName.localeCompare(right.medicalRepName));
 }
 
+/**
+ * The performance zone, as type.
+ *
+ * Dropping the fills is safe here because THE CELL ALREADY SAYS THE ZONE — its value is the label,
+ * "Red Zone" / "Green Zone" — so the colour was reinforcement, never the carrier. That is the test
+ * for whether a fill may go: the attendance reports grade a bare NUMBER, so their colour was doing
+ * real work and had to become weight rather than vanish.
+ *
+ * Four steps, one of which needs acting on: the flag colour is spent there and nowhere else, so the
+ * sheet does not shout in four directions at once.
+ */
 function colorZoneCell(cell: ExcelJS.Cell, zone: string | null | undefined) {
   if (zone === "critical_red" || zone === "red_zone") {
-    cell.fill = { fgColor: { argb: "FFFFF1F2" }, pattern: "solid", type: "pattern" };
-    cell.font = { bold: true, color: { argb: "FFBE123C" } };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.flag }, name: "Aptos", size: 9.5 };
   } else if (zone === "yellow_zone") {
-    cell.fill = { fgColor: { argb: "FFFFF7ED" }, pattern: "solid", type: "pattern" };
-    cell.font = { bold: true, color: { argb: "FFEA580C" } };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: "Aptos", size: 9.5 };
   } else if (zone === "green_zone") {
-    cell.fill = { fgColor: { argb: "FFECFDF5" }, pattern: "solid", type: "pattern" };
-    cell.font = { bold: true, color: { argb: "FF047857" } };
+    cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: "Aptos", size: 9.5 };
   } else if (zone === "excellence_zone") {
-    cell.fill = { fgColor: { argb: "FFFFFBEB" }, pattern: "solid", type: "pattern" };
-    cell.font = { bold: true, color: { argb: "FFD97706" } };
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.light }, name: "Aptos", size: 9.5 };
   }
 }
 
@@ -324,7 +312,7 @@ function buildEmployeeMap(reports: CoachingExportReport[]) {
 function addExecutiveSummarySheet(workbook: ExcelJS.Workbook, input: GenerateCoachingReportsWorkbookInput) {
   const worksheet = workbook.addWorksheet(safeWorksheetName("Executive Summary", "Summary"));
   applySheetBase(worksheet);
-  addTitle(worksheet, "⚡ Phoenix — Coaching Reports", "Field Coaching & Excellence Module", 8, "▶ EXECUTIVE DASHBOARD");
+  addTitle(workbook, worksheet, "Coaching Reports", "Field Coaching & Excellence Module", 8, "Executive dashboard");
 
   const metrics = buildMetrics(input.reports);
   const exportDate = input.exportDate ?? new Date();
@@ -353,19 +341,23 @@ function addExecutiveSummarySheet(workbook: ExcelJS.Workbook, input: GenerateCoa
     const labelTarget = worksheet.getCell(labelCell);
     const valueTarget = worksheet.getCell(valueCell);
     labelTarget.value = label;
-    labelTarget.fill = { fgColor: { argb: phoenixOrangeSoft }, pattern: "solid", type: "pattern" };
-    labelTarget.font = { bold: true, color: { argb: phoenixOrange }, size: 10 };
-    labelTarget.alignment = { horizontal: "center", vertical: "middle" };
-    valueTarget.value = value;
-    valueTarget.fill = { fgColor: { argb: phoenixWhite }, pattern: "solid", type: "pattern" };
-    valueTarget.font = { bold: true, color: { argb: phoenixDark }, size: 16 };
-    valueTarget.alignment = { horizontal: "center", vertical: "middle" };
-    valueTarget.border = {
-      bottom: { color: { argb: phoenixBorder }, style: "thin" },
-      left: { color: { argb: phoenixBorder }, style: "thin" },
-      right: { color: { argb: phoenixBorder }, style: "thin" },
-      top: { color: { argb: phoenixBorder }, style: "thin" },
+    // A KPI tile: a label in small caps over a figure, separated by a rule rather than boxed in.
+    labelTarget.font = {
+      bold: true,
+      color: { argb: HOUSE_XLSX_COLORS.light },
+      name: "Aptos",
+      size: 8,
     };
+    labelTarget.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
+    valueTarget.value = value;
+    valueTarget.font = {
+      bold: true,
+      color: { argb: HOUSE_XLSX_COLORS.deep },
+      name: "Aptos Display",
+      size: 15,
+    };
+    valueTarget.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
+    valueTarget.border = { bottom: { color: { argb: HOUSE_XLSX_COLORS.hair }, style: "thin" } };
   }
   worksheet.getCell("C5").numFmt = "0.0";
   worksheet.getCell("E5").numFmt = "0.0";
@@ -413,7 +405,7 @@ function addExecutiveSummarySheet(workbook: ExcelJS.Workbook, input: GenerateCoa
 function addReportsSheet(workbook: ExcelJS.Workbook, reports: CoachingExportReport[]) {
   const worksheet = workbook.addWorksheet(safeWorksheetName("Coaching Reports", "Reports"));
   applySheetBase(worksheet);
-  addTitle(worksheet, "⚡ Phoenix — Coaching Reports Export", "Detailed report records in the current export scope", 25, "▶ REPORT INFORMATION");
+  addTitle(workbook, worksheet, "Coaching Reports — Export", "Detailed report records in the current export scope", 25, "Report information");
 
   const headers = [
     "Report Number",
@@ -517,7 +509,7 @@ function addReportsSheet(workbook: ExcelJS.Workbook, reports: CoachingExportRepo
 function addScoreItemsSheet(workbook: ExcelJS.Workbook, reports: CoachingExportReport[]) {
   const worksheet = workbook.addWorksheet(safeWorksheetName("Score Items", "Scores"));
   applySheetBase(worksheet);
-  addTitle(worksheet, "⚡ Phoenix — Coaching Score Items", "Structured scoring item detail for exported coaching reports", 10, "▶ SCORE BREAKDOWN");
+  addTitle(workbook, worksheet, "Coaching Score Items", "Structured scoring item detail for exported coaching reports", 10, "Score breakdown");
 
   const headers = [
     "Report Number",
@@ -571,7 +563,7 @@ function addScoreItemsSheet(workbook: ExcelJS.Workbook, reports: CoachingExportR
 function addQuarterlySummarySheet(workbook: ExcelJS.Workbook, reports: CoachingExportReport[]) {
   const worksheet = workbook.addWorksheet(safeWorksheetName("Quarterly Summary", "Quarterly"));
   applySheetBase(worksheet);
-  addTitle(worksheet, "⚡ Phoenix — Quarterly Coaching Summary", "Filtered quarterly coaching performance summary", 13, "▶ QUARTERLY INTELLIGENCE");
+  addTitle(workbook, worksheet, "Quarterly Coaching Summary", "Filtered quarterly coaching performance summary", 13, "Quarterly intelligence");
 
   const headers = [
     "Medical Rep HR ID",
@@ -633,10 +625,14 @@ function addQuarterlySummarySheet(workbook: ExcelJS.Workbook, reports: CoachingE
   quarterlyRows.forEach((row, index) => {
     colorZoneCell(worksheet.getRow(5 + index).getCell(12), row.latestZone);
     const improvementCell = worksheet.getRow(5 + index).getCell(11);
+    // Improvement is a SIGNED NUMBER, so unlike the zone column its cell does not say in words
+    // which direction it went — the colour is doing real work and stays, in the house palette.
+    // A decline gets the flag colour; a gain gets Brand Blue rather than a green the mark has not
+    // got. The sign is still in the value, so neither reading depends on colour alone.
     if (row.improvementScore > 0) {
-      improvementCell.font = { bold: true, color: { argb: "FF047857" } };
+      improvementCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.light }, name: "Aptos", size: 9.5 };
     } else if (row.improvementScore < 0) {
-      improvementCell.font = { bold: true, color: { argb: "FFBE123C" } };
+      improvementCell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.flag }, name: "Aptos", size: 9.5 };
     }
   });
   applyAutoFilter(worksheet, 4, headers.length);

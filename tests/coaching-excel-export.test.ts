@@ -139,10 +139,24 @@ export async function runCoachingExcelExportTests() {
     ["Executive Summary", "Coaching Reports", "Score Items", "Quarterly Summary"],
   );
   assert.equal(new Set(workbook.worksheets.map((sheet) => sheet.name)).size, 4);
-  assert.equal(workbook.getWorksheet("Executive Summary")?.getCell("A1").value, "⚡ Phoenix — Coaching Reports");
-  assert.equal(workbook.getWorksheet("Coaching Reports")?.getCell("A1").value, "⚡ Phoenix — Coaching Reports Export");
-  assert.equal(workbook.getWorksheet("Score Items")?.getCell("A1").value, "⚡ Phoenix — Coaching Score Items");
-  assert.equal(workbook.getWorksheet("Quarterly Summary")?.getCell("A1").value, "⚡ Phoenix — Quarterly Coaching Summary");
+  // Each sheet still carries its own title on row 1 — but no longer in A1, and no longer prefixed
+  // with the app name. The house masthead keeps columns 1-2 clear for the company mark and sets the
+  // title beside it, and that identity is the COMPANY's (Sato Pharma), never the product's, so a
+  // document it produces does not announce itself as Phoenix. The guarantee this pinned — four
+  // sheets, four distinct titles — is unchanged and asserted by reading the row rather than a cell.
+  const titleOnRowOne = (sheetName: string) => {
+    const sheet = workbook.getWorksheet(sheetName);
+    assert.ok(sheet, `${sheetName} must exist`);
+    for (let column = 1; column <= Math.max(sheet.columnCount, 8); column += 1) {
+      const value = String(sheet.getRow(1).getCell(column).value ?? "").trim();
+      if (value && !value.startsWith("SATO-DIS-")) return value;
+    }
+    return "";
+  };
+  assert.equal(titleOnRowOne("Executive Summary"), "Coaching Reports");
+  assert.equal(titleOnRowOne("Coaching Reports"), "Coaching Reports — Export");
+  assert.equal(titleOnRowOne("Score Items"), "Coaching Score Items");
+  assert.equal(titleOnRowOne("Quarterly Summary"), "Quarterly Coaching Summary");
 
   const reportsSheet = workbook.getWorksheet("Coaching Reports");
   assert.ok(reportsSheet);
@@ -156,4 +170,44 @@ export async function runCoachingExcelExportTests() {
   assert.ok(scoreItemsSheet);
   assert.equal(scoreItemsSheet.getCell(5, 9).value, "Improve objection handling");
   assert.equal(scoreItemsSheet.getCell(5, 10).value, "Clear product message");
+
+  // ── the house identity, checked on the ARTIFACT rather than the source ──────
+  //
+  // The zone column dropped its cell fills, which is only safe because the cell already SAYS the
+  // zone — "Green Zone / Meets Expectations", asserted above. So the check here is that the grading
+  // survived as TYPE: a red zone must still be visibly different from a green one, or the export
+  // has quietly lost a distinction it used to make.
+  // The GRADED cell is on the Quarterly Summary (column 12), not on the Coaching Reports sheet —
+  // that one only prints the label. Checking the wrong cell would have "passed" against a value
+  // nothing ever coloured.
+  const quarterly = workbook.getWorksheet("Quarterly Summary");
+  assert.ok(quarterly, "the quarterly sheet must exist");
+  const zoneCell = quarterly.getCell(5, 12);
+  const zoneColour = String(zoneCell.font?.color?.argb ?? "");
+  assert.ok(
+    ["FFB3261E", "FF0A527D", "FF1A1A1A", "FF1482C2"].includes(zoneColour),
+    `the zone must still be graded by type — got ${zoneColour || "no font"}`,
+  );
+  const zoneFill = zoneCell.fill as { pattern?: string } | undefined;
+  assert.ok(
+    !zoneFill || zoneFill.pattern === "none" || zoneFill.pattern === undefined,
+    "a graded zone cell must carry no fill of its own — the grade is type now",
+  );
+
+  // The retired palettes: Phoenix orange, the two navies, and the four zone tints.
+  const retired = ["F97316", "0F172A", "111827", "FFF1F2", "ECFDF5", "FFFBEB", "BE123C", "047857"];
+  const zip = await import("jszip").then((module) => module.default.loadAsync(Buffer.from(buffer)));
+  const styles = ((await zip.file("xl/styles.xml")?.async("string")) ?? "").toUpperCase();
+  assert.ok(styles.length > 0, "the workbook must have a styles part to check");
+  for (const colour of retired) {
+    assert.ok(
+      !styles.includes(colour),
+      `${colour} belongs to a palette this export no longer wears — still in xl/styles.xml`,
+    );
+  }
+
+  // And it must open without Excel repairing it.
+  const { checkWorkbook } = await import("../scripts/check-workbook-integrity.mjs");
+  const problems = await checkWorkbook(Buffer.from(buffer), { quiet: true });
+  assert.deepEqual(problems, [], `the coaching workbook must be clean: ${problems.join("; ")}`);
 }
