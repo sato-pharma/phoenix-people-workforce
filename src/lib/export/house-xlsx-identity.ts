@@ -93,10 +93,30 @@ const HOUSE_GENERATED_TIME = new Intl.DateTimeFormat("en-US", {
   hour: "numeric", hour12: true, minute: "2-digit", timeZone: "Africa/Cairo",
 });
 
+/**
+ * An instant we stamped, in Cairo, WITHOUT the zone suffix — "05 Sept 2026, 12:00 PM".
+ *
+ * For a table CELL, where the zone belongs in the column heading: repeating "(Cairo)" down two
+ * hundred rows is noise the reader skips on every line, and it does not fit the column anyway. The
+ * cover uses the suffixed form below, because a provenance line stands alone with no heading to
+ * carry the zone for it.
+ *
+ * EMPTY IN, EMPTY OUT. These cells are nullable — a candidate nobody has decided yet has no
+ * `decidedAt` — and a blank is the honest rendering. `new Date(null)` is the epoch and
+ * `new Date(undefined)` is Invalid Date, so without this guard the sheet would print either
+ * "01 Jan 1970" or the words "Invalid Date" on a payroll document.
+ */
+export function houseCairoDateTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  return `${HOUSE_GENERATED_DATE.format(at)}, ${HOUSE_GENERATED_TIME.format(at)}`;
+}
+
 export function houseGeneratedAt(iso: string): string {
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return iso;
-  return `${HOUSE_GENERATED_DATE.format(at)}, ${HOUSE_GENERATED_TIME.format(at)} (Cairo)`;
+  return `${houseCairoDateTime(iso)} (Cairo)`;
 }
 
 /**
