@@ -65,9 +65,19 @@ function walkPages(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/** Every role the permission matrix grants `resource:action`. */
+/**
+ * Every role the permission matrix grants `resource:action`.
+ *
+ * The lookup is keyed by the literal union of all 328 permission keys, so a plain `string` cannot
+ * index it. Widened at the boundary the same way navigation-granted-but-unreachable's `canOpen()`
+ * does — that keeps the key a string here, which is what makes the assertion messages below able to
+ * name the permission they measured.
+ */
 function rolesHolding(key: string): PhoenixRole[] {
-  return phoenixRoles.filter((role) => buildPermissionLookup(permissionMatrix, role)[key]);
+  return phoenixRoles.filter((role) => {
+    const lookup: Record<string, boolean> = buildPermissionLookup(permissionMatrix, role);
+    return Boolean(lookup[key]);
+  });
 }
 
 export async function runPageGateReaderRoleInequalityGateTests(): Promise<void> {
