@@ -1,6 +1,6 @@
 import type { Workbook, Worksheet } from "@node-projects/excelforge";
 
-import { HOUSE_DOCUMENT_STANDARD } from "@/lib/export/house-xlsx-palette";
+import { HOUSE_DOCUMENT_STANDARD, HOUSE_XLSX_DISPLAY_FONT, HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 import { WEEKLY_TRACKED_LINES_LABEL } from "@/lib/sales/weekly/tracked-lines";
 import type { WeeklyDashboard } from "@/lib/sales/weekly/types";
 
@@ -137,23 +137,23 @@ export const border = () => { const s = { style: "thin" as const, color: HAIR };
 /** The rule a header sits under, and a total sits between. A line, never a band. */
 const RULE_BLUE = { style: "medium" as const, color: BLUE };
 
-export const titleStyle: CS = { font: { bold: true, size: 16, color: DEEP, name: "Aptos Display" }, alignment: { vertical: "center", indent: 1 } };
-export const subtitleStyle: CS = { font: { size: 9, color: MUTED, name: "Aptos" }, alignment: { vertical: "center", indent: 1 } };
-export const headerStyle: CS = { font: { bold: true, size: 10, color: DEEP, name: "Aptos" }, alignment: { vertical: "bottom", horizontal: "left", indent: 1 }, border: { bottom: RULE_BLUE, top: { style: "thin" as const, color: HAIR } } };
+export const titleStyle: CS = { font: { bold: true, size: 16, color: DEEP, name: HOUSE_XLSX_DISPLAY_FONT }, alignment: { vertical: "center", indent: 1 } };
+export const subtitleStyle: CS = { font: { size: 9, color: MUTED, name: HOUSE_XLSX_FONT }, alignment: { vertical: "center", indent: 1 } };
+export const headerStyle: CS = { font: { bold: true, size: 10, color: DEEP, name: HOUSE_XLSX_FONT }, alignment: { vertical: "bottom", horizontal: "left", indent: 1 }, border: { bottom: RULE_BLUE, top: { style: "thin" as const, color: HAIR } } };
 export const headerRightStyle: CS = { ...headerStyle, alignment: { vertical: "bottom", horizontal: "right", indent: 1 } };
-export const totalStyle: CS = { font: { bold: true, size: 10.5, color: DEEP, name: "Aptos" }, border: { bottom: RULE_BLUE, top: RULE_BLUE }, alignment: { vertical: "center", indent: 1 } };
-export const totalNumStyle = (fmt: string): CS => ({ font: { bold: true, size: 10.5, color: DEEP, name: "Aptos" }, border: { bottom: RULE_BLUE, top: RULE_BLUE }, alignment: { vertical: "center", horizontal: "right" }, numberFormat: { formatCode: fmt } });
+export const totalStyle: CS = { font: { bold: true, size: 10.5, color: DEEP, name: HOUSE_XLSX_FONT }, border: { bottom: RULE_BLUE, top: RULE_BLUE }, alignment: { vertical: "center", indent: 1 } };
+export const totalNumStyle = (fmt: string): CS => ({ font: { bold: true, size: 10.5, color: DEEP, name: HOUSE_XLSX_FONT }, border: { bottom: RULE_BLUE, top: RULE_BLUE }, alignment: { vertical: "center", horizontal: "right" }, numberFormat: { formatCode: fmt } });
 
 export function textCell(bold = false, zebra = false): CS {
-  return { font: { color: BODY, size: 10, bold, name: "Aptos" }, alignment: { vertical: "center", indent: 1 }, border: border(), ...(zebra ? { fill: fill(TINT) } : {}) };
+  return { font: { color: BODY, size: 10, bold, name: HOUSE_XLSX_FONT }, alignment: { vertical: "center", indent: 1 }, border: border(), ...(zebra ? { fill: fill(TINT) } : {}) };
 }
 export function numCell(fmt: string, zebra = false): CS {
-  return { font: { color: BODY, size: 10, name: "Aptos" }, alignment: { vertical: "center", horizontal: "right" }, numberFormat: { formatCode: fmt }, border: border(), ...(zebra ? { fill: fill(TINT) } : {}) };
+  return { font: { color: BODY, size: 10, name: HOUSE_XLSX_FONT }, alignment: { vertical: "center", horizontal: "right" }, numberFormat: { formatCode: fmt }, border: border(), ...(zebra ? { fill: fill(TINT) } : {}) };
 }
 /** The REPT() bar (in-cell sparkline emulation). It reads MAGNITUDE, so it takes the brand blue
  *  rather than a verdict colour — a long bar is not a good bar. */
 export function barCell(zebra = false): CS {
-  return { font: { name: "Aptos", size: 10, color: LIGHT, bold: true }, alignment: { vertical: "center", indent: 1 }, border: border(), ...(zebra ? { fill: fill(TINT) } : {}) };
+  return { font: { name: HOUSE_XLSX_FONT, size: 10, color: LIGHT, bold: true }, alignment: { vertical: "center", indent: 1 }, border: border(), ...(zebra ? { fill: fill(TINT) } : {}) };
 }
 
 /**
@@ -179,7 +179,7 @@ export function bandHeader(sheet: Worksheet, cols: number, title: string, subtit
 /** A section divider: deep type over a Brand Blue rule, no band. */
 export function sectionTitle(sheet: Worksheet, row: number, cols: number, label: string): number {
   sheet.merge(row, 1, row, cols); sheet.setValue(row, 1, cleanText(label));
-  sheet.setStyle(row, 1, { font: { bold: true, size: 10.5, color: DEEP, name: "Aptos" }, alignment: { vertical: "bottom", indent: 1 }, border: { bottom: { style: "medium" as const, color: BLUE } } });
+  sheet.setStyle(row, 1, { font: { bold: true, size: 10.5, color: DEEP, name: HOUSE_XLSX_FONT }, alignment: { vertical: "bottom", indent: 1 }, border: { bottom: { style: "medium" as const, color: BLUE } } });
   for (let c = 2; c <= cols; c += 1) sheet.setStyle(row, c, { border: { bottom: { style: "medium" as const, color: BLUE } } });
   sheet.setRowHeight(row, 20);
   return row + 1;
@@ -193,7 +193,7 @@ export function addNavLink(sheet: Worksheet, row: number, col: number) {
   } catch {
     sheet.setValue(row, col, "↑ Dashboard (first tab)");
   }
-  sheet.setStyle(row, col, { font: { bold: true, size: 9, color: BLUE, name: "Aptos", underline: "single" }, alignment: { vertical: "center", horizontal: "right", indent: 1 } });
+  sheet.setStyle(row, col, { font: { bold: true, size: 9, color: BLUE, name: HOUSE_XLSX_FONT, underline: "single" }, alignment: { vertical: "center", horizontal: "right", indent: 1 } });
 }
 
 // ── outline grouping (read-merge: setRow REPLACES the row def, setRowHeight merges) ─
@@ -224,7 +224,10 @@ export function applyPrintSetup(sheet: Worksheet, title: string, generatedAt: st
     sheet.headerFooter = {
       // The COMPANY's identity on the printed page, never the app's — a Sato Pharma document does
       // not introduce itself as the software that produced it.
-      oddHeader: `&L&"Aptos,Bold"&10 ${escAmp(title)}&R&8 ${escAmp(HOUSE_DOCUMENT_STANDARD)}`,
+      // The face is inside a header COMMAND STRING with a ",Bold" suffix, so it is reachable by no
+      // font replace — the same shape that left the Summarized Report's footer on the retired
+      // palette through a whole conversion. Interpolated, so it moves with the constant.
+      oddHeader: `&L&"${HOUSE_XLSX_FONT},Bold"&10 ${escAmp(title)}&R&8 ${escAmp(HOUSE_DOCUMENT_STANDARD)}`,
       oddFooter: `&L&8 Confidential&C&8 Page &P of &N&R&8 ${escAmp(generatedAt)}`,
     };
     sheet.printOptions = { gridLines: false, centerHorizontal: true };

@@ -73,6 +73,42 @@ export const HOUSE_MARK_SRC = "/brand/sato-pharma-logo-on-light.svg";
 export const HOUSE_MARK_WIDTH_MM = 34;
 
 /**
+ * The house typeface — WORKBOOKS ONLY, and the "only" is the whole point of this note.
+ *
+ * WHY IT IS RECORDED HERE. Eighteen export modules named "Aptos" in string literals before this
+ * constant existed, and the standard named no typeface at all — it specifies sizes, weights and
+ * colours and stops. That made the face an assumption inherited from whoever wrote the first
+ * workbook rather than a decision anyone had taken, and an assumption that load-bearing belongs
+ * where the rest of the identity lives. `house-xlsx-palette.ts` derives from this the same way it
+ * derives every colour from `HOUSE_COLORS`, so there is one name and not nineteen.
+ *
+ * WHY IT IS NOT IN `HOUSE_IDENTITY_CSS` BELOW, which is the part that would look obvious.
+ *
+ * That stylesheet renders the employment contract, the clearance, the custody receipts, the renewal
+ * and the worker-data form — every one of them BILINGUAL, and each already sets `ARABIC_FONT_STACK`
+ * (Tahoma first, through Noto Naskh, ending at sans-serif) because Arabic is what decides a face
+ * there. Aptos is a Latin family. Declaring it on the shared sheet would either be overridden by
+ * that stack, which makes it decoration, or beat it, which puts Arabic legal paperwork on a font
+ * chosen for a spreadsheet. Neither is worth having, and `paper-pdf.ts` records what happens when a
+ * quoted font stack is interpolated somewhere it was not designed for: it closed a style attribute
+ * and deleted a page footer.
+ *
+ * The government forms are untouched either way — Form 1 renders as an Authority overlay through
+ * `field-layout.ts` and never reads this file. That is checked, not assumed.
+ *
+ * WHERE IT COMES FROM. Aptos ships with Microsoft 365, which is what the field runs, and is the
+ * default face of current Excel — so a workbook that names it renders as written rather than as
+ * substituted. On a machine without it Excel falls back silently, which is the one failure this
+ * constant cannot prevent and the reason the choice is worth writing down rather than repeating.
+ */
+export const HOUSE_TYPE = {
+  /** Body, headers, totals — everything that is read rather than announced. */
+  body: "Aptos",
+  /** Titles and mastheads only. The display cut, for type above about 14pt. */
+  display: "Aptos Display",
+} as const;
+
+/**
  * The house stylesheet: the letterhead, the type scale, tables, callouts and the signature block.
  *
  * Written as CSS custom properties so a document's own stylesheet can reach the palette by name
