@@ -125,3 +125,68 @@ export const hiringManagerDecisionLabels: Record<HiringManagerDecision, string> 
 export function isHiringManagerDecision(value: unknown): value is HiringManagerDecision {
   return typeof value === "string" && (hiringManagerDecisions as readonly string[]).includes(value);
 }
+
+// ── BULK DECISIONS ──────────────────────────────────────────────────────────────────────────────
+//
+// Clearing a backlog one CV at a time is the screening bottleneck: measured 2026-09-05, 238
+// candidates were still `new` after fourteen days and 438 had never been opened by anybody, against
+// one screener and ~22 arrivals a day. A bulk verdict is the answer, but only for the verdicts that
+// are genuinely a verdict.
+
+/**
+ * The statuses a screener may apply to many candidates at once — and deliberately only these two.
+ *
+ * `shortlisted` and `rejected` are triage: one person reading a list and saying yes or no. The other
+ * three are not, and each is excluded for its own reason rather than by taste:
+ *
+ *   * `sent_to_manager` is a SIDE EFFECT, not a status. Reaching it must actually notify somebody,
+ *     stamp the candidate for that manager and write an audit row — that is what
+ *     /api/recruitment/candidates/[id]/notify-manager does. Setting the status in bulk would mark
+ *     fifty CVs as sent to a manager who was never told about any of them, and the screen would
+ *     then stop asking. A lie that silently removes work from the queue is the worst shape available.
+ *   * `hired` is guarded upstream. A hire is only real once an offer has been accepted
+ *     (hire-offer-guard.ts refuses otherwise), so a bulk shortcut here would route around the one
+ *     check that makes the hire record trustworthy.
+ *   * `new` is where a candidate starts. Moving people BACK to it in bulk would erase the record of
+ *     having been looked at, which is precisely the fact the queue is built on.
+ */
+export const bulkDecidableStatuses = ["shortlisted", "rejected"] as const;
+export type BulkDecidableStatus = (typeof bulkDecidableStatuses)[number];
+
+/**
+ * The most candidates one press may move.
+ *
+ * This is a blast-radius limit, not a performance one — the database function handles far more
+ * comfortably. It is the size of the largest mistake a single mis-aimed press should be able to
+ * make, and it is mirrored in `ats_bulk_set_candidate_status` so the cap still holds for a caller
+ * that does not come through the route.
+ */
+export const BULK_DECISION_MAX = 200;
+
+export function isBulkDecidableStatus(value: unknown): value is BulkDecidableStatus {
+  return typeof value === "string" && (bulkDecidableStatuses as readonly string[]).includes(value);
+}
+
+/**
+ * Why this bulk decision is refused, or null when it is allowed.
+ *
+ * One sentence, asked in one place, so the disabled button's tooltip, the service and the route's
+ * 400 all say the same thing rather than three wordings that drift apart the first time the rule
+ * changes — the same shape as `candidateFolderRefusal`.
+ */
+export function bulkDecisionRefusal(status: string | null | undefined, count: number): string | null {
+  if (count <= 0) return "Choose at least one candidate.";
+  if (count > BULK_DECISION_MAX) {
+    return `One decision covers up to ${BULK_DECISION_MAX} candidates; this is ${count}. Decide them in smaller batches.`;
+  }
+  const next = normalizeCandidateStatus(status);
+  if (!next) {
+    return `"${String(status ?? "").trim()}" is not a candidate status.`;
+  }
+  if (!isBulkDecidableStatus(next)) {
+    return `${candidateStatusLabels[next]} cannot be set for several candidates at once — only ${bulkDecidableStatuses
+      .map((value) => candidateStatusLabels[value])
+      .join(" and ")} can.`;
+  }
+  return null;
+}

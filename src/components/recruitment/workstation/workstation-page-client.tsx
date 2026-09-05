@@ -55,6 +55,7 @@ import type { VacancyApplicantStats } from "@/lib/recruitment/vacancy-applicants
 export function WorkstationPageClient({
   area,
   areaOptions,
+  canDecide,
   canSendToManagers,
   canWriteNotes,
   counts,
@@ -79,6 +80,14 @@ export function WorkstationPageClient({
 }: {
   area: string | null;
   areaOptions: string[];
+  /**
+   * May this reader decide candidates — the gate on both the single verdict and the bulk one.
+   *
+   * Its own prop rather than a second use of `canWriteNotes`, even though the two are the same
+   * value today. They answer different questions, and the day notes are gated separately from
+   * decisions, a shared prop would move who can reject fifty CVs without anybody editing this file.
+   */
+  canDecide: boolean;
   canSendToManagers: boolean;
   canWriteNotes: boolean;
   counts: WorkQueueCounts;
@@ -199,6 +208,7 @@ export function WorkstationPageClient({
 
   const workstation = (
     <ScreeningWorkstation
+      canDecide={canDecide}
       canSendToManagers={canSendToManagers}
       canWriteNotes={canWriteNotes}
       counts={counts}
