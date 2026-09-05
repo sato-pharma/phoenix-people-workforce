@@ -151,6 +151,32 @@ running app. `scripts/apps-script-authorize.mjs` performs the one-time consent a
 three OAuth values with `gh secret set`, piped through stdin so no credential ever reaches a
 command line (a permission allow-rule in this repo stores the literal command).
 
+### What actually runs the push
+
+`.github/workflows/apps-script-push.yml`. It fires on a push to `main` that touches
+`docs/*-live-sheet.gs`, the pusher, or the manifest — path-filtered so the repository's ordinary
+~30 commits a day cost nothing — and can also be dispatched by hand, with `check_only` for a dry
+run or `only` for a single sheet.
+
+**That workflow is the only place the credentials can be read.** GitHub Actions secrets are
+write-only, and the last local copy of `GOOGLE_APPS_SCRIPT_CLIENT_SECRET` was lost with a removed
+worktree on 2026-09-05. So deleting the workflow does not merely disable an automation — it makes
+`scripts/push-apps-script.mjs` unrunnable anywhere until somebody mints a replacement client secret
+in Google Cloud, and Google allows only **two per client**, so a third requires disabling and
+deleting one of the existing pair first.
+
+Two details in it are deliberate and should not be tidied away. It runs **no `pnpm install`**: the
+pusher uses only Node built-ins, so an install would be the slowest, most fragile step in a job that
+otherwise takes seconds, and it would add a lockfile's worth of supply chain to a job holding Google
+credentials. And it is **serialised** (`concurrency`, `cancel-in-progress: false`) because
+`projects.updateContent` replaces every file in a project: two overlapping runs would each send a
+whole file list and the loser would silently undo the winner, and a cancelled run that has already
+sent its request has still written.
+
+There is no `pull_request` leg, on purpose. Actions minutes are a real cost constraint here, and a
+PR run would either need the Google credentials on unmerged code or report nothing useful. Dispatch
+the workflow with `check_only` when you want to see a diff before merging.
+
 A service account cannot be used here. Apps Script projects belong to a PERSON, and
 `projects.updateContent` acts as the signed-in user, so the grant has to come from the account
 that owns the sheets.
