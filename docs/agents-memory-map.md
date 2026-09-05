@@ -42,6 +42,7 @@ status, give it its own line.
 - **A Windows USER env var SHADOWS every .env.local, silently.** — `windows-env-var-shadows-every-env-local-key`
 - **The local attendance agent dies at EVERY logon and loses NOTHING — do not escalate…** — `attendance-agent-crashes-at-logon-but-loses-no-attendance`
 - **ExcelJS emits two schema-invalid OOXML fragments, so Excel silently REPAIRS the…** — `exceljs-writes-two-schema-invalid-ooxml-fragments`
+- **Looking at a generated workbook has two modes that LIE (LibreOffice PNG, ExcelJS round-trip).** — `looking-at-a-generated-workbook-two-ways-that-lie` **(inline — load-bearing)**
 - **Deleting a branch does not remove its pushed commit** — `deleting-a-branch-does-not-remove-a-pushed-commit` · `reusing-a-squash-merged-branch-makes-a-conflicting-pr`
 - **git push hangs — kill at ~60s and retry.** — `git-push-to-origin-hangs-retry-immediately` · `git-push-oom-is-a-500mb-postbuffer-in-repo-config`
 - **A merge to main mid-session silently orphans your next push.** — `a-merge-mid-session-orphans-your-next-push-silently` · `two-sessions-fixed-one-bug-main-was-never-ci-validated`
@@ -114,7 +115,6 @@ status, give it its own line.
 - **Dev login is GET /api/dev-auth?role=<Role>, and it DOES role-switch the Browser pane** — `dev-auth-is-header-only-browser-pane-cannot-use-it`
 - **Turbopack 500s with 0xc0000142 when the commit charge is exhausted** — `turbopack-500s-with-0xc0000142-when-commit-is-full`
 - **Verify a 375px mobile layout with NO dev server.** — `verify-a-mobile-layout-without-a-dev-server`
-- **Looking at a generated workbook has two modes that LIE (LibreOffice PNG, ExcelJS round-trip).** — `looking-at-a-generated-workbook-two-ways-that-lie`
 - **A freeze leaves NO dump** — `commit-limit-not-ram-is-the-freeze-ceiling-pagefile-now-16gb`
 - **An interrupted session leaves the tree BROKEN ON PURPOSE.** — `an-interrupted-session-leaves-the-tree-deliberately-broken`
 
