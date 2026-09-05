@@ -127,16 +127,48 @@
   --phx-info-line: #bedcee;
 
   /* =================================================================== RADIUS
-     Lands on 4px. The reference prototype ended at 0 (fully square), which is
-     too severe for dense HR tables — 4px is its intermediate step and the one
-     to keep. --phx-radius is the default for cards, inputs and buttons. */
+     ZERO, ALL SIX. Owner's decision, 2026-09-05, answering the square-edge
+     decision sheet. The scale keeps its NAMES so the ~5,100 rounded-* class uses
+     across the app go on resolving — every step now resolves to square.
 
-  --phx-radius-xs: 2px;
-  --phx-radius-sm: 3px;
-  --phx-radius: 4px;
-  --phx-radius-lg: 6px;
-  --phx-radius-xl: 10px;
-  --phx-radius-pill: 999px;
+     WHAT THIS BLOCK USED TO SAY, kept because it is the reason corners kept
+     coming back: "Lands on 4px. The reference prototype ended at 0 (fully
+     square), which is too severe for dense HR tables — 4px is its intermediate
+     step and the one to keep. --phx-radius is the default for cards, inputs and
+     buttons." That paragraph outlived the golden rule it contradicts (AGENTS.md
+     §4, locked 2026-09-04), and a session copying a sibling component inherited
+     its 4px in good faith.
+
+     AND THIS FILE'S HEADER IS WRONG ABOUT THIS GROUP. It says nothing consumes
+     the --phx- system yet. app/globals.css maps all six into Tailwind's @theme,
+     so --phx-radius IS what rounded-lg renders:
+
+       --radius / --radius-lg  <- --phx-radius     --radius-sm  <- --phx-radius-xs
+       --radius-md             <- --phx-radius-sm  --radius-xl  <- --phx-radius-lg
+       --radius-2xl            <- --phx-radius-xl
+
+     Inside .admin-shell and .employee-portal-shell this changes nothing visible:
+     both sweeps already force border-radius to 0 there. It lands exactly where no
+     sweep reaches — the sign-in screen, app/global-error.tsx (which renders its
+     own <html> and never loads globals.css at all), and any future surface
+     outside both shells. Closing that gap at the source is the point.
+
+     TWO STEPS IN THAT @theme BLOCK DO NOT COME FROM HERE and are untouched:
+     --radius-3xl (14px) and --radius-4xl (18px) are hard-coded in globals.css.
+     rounded-4xl has no uses; rounded-3xl has 32, every one inside a shell — so
+     both are inert today, but they are the same kind of default, and a first use
+     on an unswept surface would render rounded.
+
+     --phx-radius-pill keeps its name deliberately. It has no consumer, and
+     zeroing rather than deleting it means a future var(--phx-radius-pill) renders
+     square instead of failing over to a 999px literal somebody retypes. */
+
+  --phx-radius-xs: 0;
+  --phx-radius-sm: 0;
+  --phx-radius: 0;
+  --phx-radius-lg: 0;
+  --phx-radius-xl: 0;
+  --phx-radius-pill: 0;
 
   /* =================================================================== SHADOW
      Warm-tinted and soft. Used sparingly — structure comes from lines, not from

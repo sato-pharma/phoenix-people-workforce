@@ -225,18 +225,27 @@ const STYLESHEET_INVENTORY: Record<string, string[]> = {
  * so `--phx-radius: 4px` IS `rounded-lg`, app-wide. Inside the two shells the sweeps flatten the
  * result; everywhere else — the login page, an error page, a document — it renders.
  *
- * Retiring them or redefining them to 0 is an owner decision (the `pill` at 999px loudest of all),
- * so they are pinned, not changed. Pinning them also means a silent re-point of the @theme mapping
- * — which would move every `rounded-*` utility in the app at once — cannot pass unnoticed.
+ * ANSWERED 2026-09-05: the owner set all six to 0. The scale keeps its NAMES — ~5,100 `rounded-*`
+ * class uses go on resolving — and every step now resolves to square, so the default that kept
+ * feeding corners back in is gone at the source rather than swept up after the fact.
+ *
+ * Still pinned, for the opposite reason it was pinned before: a silent re-point of the @theme
+ * mapping moves every `rounded-*` utility in the app at once, and now that the tokens read 0 such a
+ * change would be a REGRESSION rather than a discovery.
+ *
+ * `--radius-3xl` and `--radius-4xl` are NOT from the token file — they are hard-coded in globals.css
+ * and so survived an answer that covered the six `--phx-radius-*` names. `rounded-4xl` has no uses;
+ * `rounded-3xl` has 32, every one inside a shell where RULE 1 forces 0. Inert today, and pinned here
+ * so that a first use on an unswept surface is a decision rather than a surprise.
  */
 const RADIUS_TOKEN_INVENTORY: Record<string, string[]> = {
   "src/styles/tokens.css": [
-    "--phx-radius-xs: 2px",
-    "--phx-radius-sm: 3px",
-    "--phx-radius: 4px",
-    "--phx-radius-lg: 6px",
-    "--phx-radius-xl: 10px",
-    "--phx-radius-pill: 999px",
+    "--phx-radius-xs: 0",
+    "--phx-radius-sm: 0",
+    "--phx-radius: 0",
+    "--phx-radius-lg: 0",
+    "--phx-radius-xl: 0",
+    "--phx-radius-pill: 0",
   ],
   "app/globals.css": [
     "--radius: var(--phx-radius)",
@@ -329,6 +338,18 @@ const UNSWEPT_SURFACE_ROUNDING: Record<string, string[]> = {
   // Renders its own <html>, so app/globals.css never loads here at all — not the sweeps, not the
   // tokens, nothing. Its one corner was a hand-written borderRadius, already squared.
   "app/global-error.tsx": [],
+  // The password-setup page — where a new employee first meets the system. Same shape as the login
+  // screen, outside both shells, and found only because zeroing the tokens meant asking which
+  // unswept surfaces actually consume them. It carried nine corners: a card, two inputs, an error
+  // callout and both buttons.
+  //
+  // FOUR OF THEM WERE ARBITRARY VALUES — `rounded-[32px]` twice and `rounded-[14px]` — and that is
+  // the limit of what zeroing the token scale can do. A token is consulted only by a NAMED step;
+  // `rounded-[32px]` compiles the number straight into the utility and never reads
+  // `--phx-radius-*`. So the token decision squares `rounded-2xl` here for free and leaves the
+  // arbitrary ones exactly as rounded as they were. Both kinds are squared now.
+  "src/components/auth/password-setup-form.tsx": ["rounded-full"],
+  "app/password-setup/[token]/page.tsx": [],
 };
 
 // ── The test ───────────────────────────────────────────────────────────────────────────────────
