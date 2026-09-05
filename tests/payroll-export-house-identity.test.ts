@@ -50,7 +50,7 @@ function assembled(overrides: { hrId: string; fullName: string; onHold?: boolean
   } as AssembledRow;
 }
 
-async function load(buffer: Buffer): Promise<ExcelJS.Workbook> {
+async function load(buffer: ArrayBuffer | Buffer): Promise<ExcelJS.Workbook> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
   return workbook;
@@ -247,7 +247,7 @@ export async function runPayrollExportHouseIdentityTests() {
     ["part 1 sheet", part1Buffer],
     ["step template", stepBuffer],
     ["salary batch", batchBuffer],
-  ] as Array<[string, Buffer]>) {
+  ] as Array<[string, ArrayBuffer | Buffer]>) {
     const problems = await checkWorkbook(Buffer.from(buffer), { quiet: true });
     assert.deepEqual(problems, [], `${label} must be structurally clean: ${problems.join("; ")}`);
   }

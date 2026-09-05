@@ -76,10 +76,15 @@ export function salaryBatchFileName(batch: SalaryBatch): string {
   return `sato-payroll-${period}.xlsx`;
 }
 
+/**
+ * Returns an ArrayBuffer, which is what `writeBuffer` actually produces and what `Response` accepts
+ * as a BodyInit. The sibling builders cast theirs to `Buffer`, which typechecks nowhere it is
+ * streamed — the route failed on exactly that.
+ */
 export async function buildSalaryBatchWorkbook(input: {
   batch: SalaryBatch;
   records: SalaryRecord[];
-}): Promise<Buffer> {
+}): Promise<ArrayBuffer> {
   const { batch, records } = input;
   const headers = [...payrollSheetHeaders];
   const label = periodLabel(batch.month, batch.year);
@@ -179,5 +184,5 @@ export async function buildSalaryBatchWorkbook(input: {
     printTitlesRow: `1:${PAYROLL_HEADER_ROW}`,
   };
 
-  return (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
+  return (await workbook.xlsx.writeBuffer()) as ArrayBuffer;
 }
