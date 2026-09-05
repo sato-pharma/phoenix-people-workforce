@@ -30,6 +30,7 @@ import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
 export const screeningWorkQueues = [
   "new",
   "recommended",
+  "unsaved_findings",
   "manager_feedback",
   "duplicates",
   "interviews",
@@ -48,6 +49,7 @@ export const screeningWorkQueueLabels: Record<ScreeningWorkQueue, string> = {
   new: "New CVs",
   recommended: "Recommended",
   red_flagged: "Red-flagged",
+  unsaved_findings: "CV data to save",
 };
 
 /** The second line, saying what the pile actually is rather than repeating its name. */
@@ -59,6 +61,7 @@ export const screeningWorkQueueDescriptions: Record<ScreeningWorkQueue, string> 
   new: "First review required",
   recommended: "Strong role fit",
   red_flagged: "Cannot be hired",
+  unsaved_findings: "Read but never written",
 };
 
 /**
@@ -76,6 +79,8 @@ export const screeningWorkQueueEmptyLabels: Record<ScreeningWorkQueue, string> =
   new: "Every CV here has been reviewed at least once.",
   recommended: "No field-force or pharma CVs are waiting in this pool.",
   red_flagged: "Nothing here is ineligible or already rejected.",
+  unsaved_findings:
+    "Every experience, national ID and job title the CV reader found is already on the record.",
 };
 
 /**
@@ -111,6 +116,14 @@ export type WorkQueueInput = {
   interviewToday: boolean;
   /** Ineligible or already rejected — see red-flag.ts. Kept out of the "worth reading" piles. */
   redFlagged: boolean;
+  /**
+   * How many of the three checked CV findings the reader produced and the record still lacks.
+   *
+   * Three, not the whole schema — see cv-findings.ts for why the badge is a pointer rather than a
+   * total, and why reading the whole extraction for every row would be the most expensive thing the
+   * page does.
+   */
+  unsavedFindings: number;
 };
 
 /** How many whole days a CV has been sitting with a manager, as at `now`. */
@@ -181,6 +194,21 @@ export function workQueuesFor(input: WorkQueueInput): ScreeningWorkQueue[] {
   // words red-flag.ts uses about its own tabs.
   if (input.redFlagged) queues.push("red_flagged");
 
+  // ── READ, BUT NEVER WRITTEN DOWN ──────────────────────────────────────────────────────────────
+  //
+  // 271 of 582 candidates on 2026-09-05 — 47% of the pool — carried an experience figure, a national
+  // ID or a job title that the CV reader had found and nothing had saved. Not an extraction failure:
+  // cv-auto-apply writes unattended only at high confidence, and `low` correctly waits for a human.
+  // For a candidate created by automatic intake there was simply no screen where that human ever saw
+  // the proposal, so it waited for a review that never came.
+  //
+  // A pile rather than a badge alone, because a badge makes it visible and a pile makes it WORKABLE:
+  // without an address, clearing 271 of them means opening every CV in the pool to find out which.
+  //
+  // Red-flagged rows are excluded for the same reason they are excluded from every pile above —
+  // saving a rejected candidate's job title is not work waiting on anybody.
+  if (!input.redFlagged && input.unsavedFindings > 0) queues.push("unsaved_findings");
+
   return queues;
 }
 
@@ -198,6 +226,7 @@ export function emptyWorkQueueCounts(): WorkQueueCounts {
     duplicates: 0,
     interviews: 0,
     manager_feedback: 0,
+    unsaved_findings: 0,
     new: 0,
     recommended: 0,
     red_flagged: 0,

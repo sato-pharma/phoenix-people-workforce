@@ -99,6 +99,16 @@ export type WorkspaceCandidateRow = {
   /** Has THIS viewer opened the CV before. Never anybody else's reading — see candidate-views.ts. */
   seen: boolean;
   /**
+   * How many of the three checked CV findings the reader produced and the record still lacks.
+   *
+   * A POINTER, not a total: the badge checks experience, national ID and job title, because
+   * reading the whole extraction for every row costs 1,549 kB against 105 kB for these three.
+   * The CV Data tab loads everything and stays the authority on exactly what is unsaved — so
+   * this can undercount, which is the safe direction for a number whose only job is to say
+   * "this CV is worth opening". See cv-findings.ts.
+   */
+  unsavedFindings: number;
+  /**
    * The OTHER screeners who have opened it, by name. Empty when nobody else has.
    *
    * Kept apart from `seen` rather than folded into it, because the two mean different things: `seen`
