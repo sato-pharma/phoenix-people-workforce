@@ -166,9 +166,21 @@ export function describeDurationMonths(months: number | null | undefined): strin
  * font request failed is a worse failure than one that never depended on the network. Tahoma leads
  * because its Arabic metrics are the most predictable at small sizes, which is what a 19-article
  * contract on four A4 pages needs.
+ *
+ * THE NOTO ENTRIES ARE FOR THE SERVER, and they are load-bearing. Every face before them is a
+ * WINDOWS font and the container has none of them, so a filed or downloaded PDF fell through to
+ * ttf-freefont — which carries Arabic codepoints but does NOT shape them. Chromium drew each letter
+ * in its isolated form, so the words came apart into separate letters, and the wrong metrics turned
+ * a three-page contract into sixteen. Neither symptom names a font, which is why it survived until
+ * somebody opened a downloaded contract and said the font was wrong.
+ *
+ * DO NOT REMOVE THEM TO TIDY THE LIST. They are never reached on Windows, because Tahoma is first,
+ * and they are the only shaping face the server has. Installed by the Dockerfile's
+ * `font-noto-arabic`; the two must change together, which the print-banner test now pins.
  */
 export const ARABIC_FONT_STACK =
-  '"Tahoma", "Segoe UI", "Traditional Arabic", "Simplified Arabic", "Arial Unicode MS", Arial, sans-serif';
+  '"Tahoma", "Segoe UI", "Traditional Arabic", "Simplified Arabic", "Arial Unicode MS", ' +
+  '"Noto Sans Arabic", "Noto Naskh Arabic", Arial, sans-serif';
 
 /**
  * The banner every printable page carries on screen and never on paper.
