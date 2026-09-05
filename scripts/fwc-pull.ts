@@ -20,6 +20,7 @@
  *     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
  *     scripts/fwc-pull.ts <month 1-12> <year>
  */
+import { cairoTodayIso } from "@/lib/crm/dates";
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source";
 
 const month = Number(process.argv[2]);
@@ -31,7 +32,11 @@ if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(yea
 }
 
 const label = `${year}-${String(month).padStart(2, "0")}`;
-const todayIso = new Date().toISOString().slice(0, 10);
+// Africa/Cairo, not UTC. This is compared against CRM visit dates (ireports360-source.ts
+// `dateIso > todayIso`), and vendor timestamps are stored as Cairo wall-clock — see
+// crm/sync.ts. A UTC "today" runs a day behind for the ~3 hours after Cairo midnight, which
+// makes the current day read as "not happened yet" (blank) instead of "no visits" ("N").
+const todayIso = cairoTodayIso();
 
 console.log(`[fwc-pull] Building Field Workforce Compliance for ${label} from the visits mirror ...`);
 const preview = await buildFieldWorkforceCompliancePreviewFromVisitsReport({ month, todayIso, year });
