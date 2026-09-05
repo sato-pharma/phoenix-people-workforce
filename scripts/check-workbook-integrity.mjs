@@ -135,7 +135,12 @@ export async function checkWorkbook(bytes, { quiet = false } = {}) {
     const base = name.replace(/_rels\/[^/]*$/, "");
     for (const m of text[name].matchAll(/<Relationship\b[^>]*>/g)) {
       const target = (m[0].match(/Target="([^"]*)"/) ?? [])[1];
-      if (!target || /TargetMode="External"/.test(m[0]) || /^https?:/.test(target)) continue;
+      // `#'Sheet'!A1` is a FRAGMENT target: it names a place in the document, not a part in the
+      // package, and legitimately carries no TargetMode because it never leaves the file. Excel
+      // writes these for a shape that jumps to another sheet. Resolved as a path it becomes
+      // `xl/drawings/#'Sheet'!A1` and is reported missing — which reads as a corrupt workbook when
+      // the workbook is fine.
+      if (!target || /TargetMode="External"/.test(m[0]) || /^https?:/.test(target) || target.startsWith("#")) continue;
       relCount += 1;
       const joined = base + target;
       const resolved = joined.split("/").reduce((acc, part) => {

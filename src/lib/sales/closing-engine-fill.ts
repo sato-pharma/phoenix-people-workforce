@@ -286,6 +286,10 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   await hideEmblemFromPrint(zip);
   await restorePivotCacheSharedItems(zip, fill);
   await dropDeadSharedStrings(zip);
+  // Before both of the below, and for the same reason: the owner's buttons are still here, and the
+  // navigation bar is built by CLONING one of them. It also re-lays the command row, so it has to
+  // run before the Export PDF button is re-pointed at its final position.
+  if (options.macroFree) await addSheetNavigation(zip);
   // BEFORE the strip, which is what makes this possible at all: the owner's own Export PDF buttons
   // are still in the package here, and re-pointing one keeps his styling, caption and position
   // instead of authoring a new shape that would only approximate them.
@@ -1821,6 +1825,20 @@ async function dropMacroButtons(zip: JSZip): Promise<void> {
   }
 }
 
+/**
+ * Where the navigation bar can take a reader, in the order the buttons appear.
+ *
+ * FOUR, not thirteen, and the reason is measured rather than chosen. The command row sits on row 1
+ * of every sheet, and the room left to its right before the print area ends is 351 px on Overview —
+ * the narrowest, because Overview is the one portrait page — against 3,124 px on Details. A button
+ * is about 105 px. So a bar that fits Overview fits everywhere, and a bar sized for Details would
+ * hang off the side of Overview, which is the one thing the owner's fits-the-page rule forbids.
+ *
+ * Each sheet drops itself from the list and then takes as many of the rest as its own free space
+ * allows, so a narrow sheet loses the last button rather than overflowing.
+ */
+const NAV_DESTINATIONS = ["Overview", "Closing Matrix", "Rep Ranking", "Details"] as const;
+
 /** The Export PDF button, the one shape a macro-free build can keep by giving it somewhere to go. */
 const EXPORT_PDF_BUTTON = /macro="PhxExportPdf"/;
 /** `<xdr:cNvPr …>` — self-closing or paired. The hyperlink is its FIRST child in either form. */
@@ -1889,5 +1907,180 @@ async function linkPdfButtons(zip: JSZip, pdfLink: (sheet: string) => string | n
       );
 
     zip.file(found.name, found.xml.replace(button, linked));
+  }
+}
+
+/** `#'Sheet name'!A1`, with an apostrophe in a sheet name doubled the way Excel escapes it. */
+function sheetJumpTarget(sheet: string): string {
+  return `#'${sheet.replace(/'/g, "''")}'!A1`;
+}
+
+/**
+ * The right-hand edge a sheet's content may reach, from its own `<dimension>`.
+ *
+ * Read rather than carried as a second copy of each sheet's width in this file — a copy that would
+ * be wrong the first time the owner adds a column.
+ */
+function contentRightEdge(sheetXml: string, widthOf: (index: number) => number): number {
+  const ref = /<dimension\s+ref="[A-Z]+\d+:([A-Z]+)\d+"/.exec(sheetXml)?.[1];
+  if (!ref) return Number.POSITIVE_INFINITY;
+  let last = 0;
+  for (const character of ref) last = last * 26 + (character.charCodeAt(0) - 64);
+  let edge = 0;
+  for (let index = 0; index < last; index += 1) edge += widthOf(index);
+  return edge;
+}
+
+/** A unique shape name for a navigation button, in the template's own naming style. */
+function navShapeName(destination: string, taken: Set<string>): string {
+  const base = `Nav_${destination.replace(/[^0-9A-Za-z]+/g, "")}`;
+  let name = base === "Nav_" ? "Nav_Sheet" : base;
+  let suffix = 2;
+  while (taken.has(name)) {
+    name = `${base}${suffix}`;
+    suffix += 1;
+  }
+  taken.add(name);
+  return name;
+}
+
+/**
+ * Put a navigation bar on every sheet, in the owner's own button design.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * THE IDEA IS HIS, from a workbook of his own he pointed at: `Additions and deletions._8.xlsx`, a
+ * genuine macro-free `.xlsx` — no `vbaProject.bin`, not macro-enabled — whose 25 shapes carry 0
+ * macros and 17 hyperlinks. Its buttons say "Additions data sheet", "Interface", and they work.
+ * They work because every one is a JUMP: a relationship with `Target="#'Sheet'!A1"` and NO
+ * `TargetMode`, which is the form Excel itself writes and the form copied here. Marking such a link
+ * External is what turns a working button into one Excel refuses to follow.
+ *
+ * That file has no pivot tables and no slicers, which is why its buttons are enough for it. It never
+ * needed Expand, Collapse, Refresh or Reset — there is nothing in it to expand or refresh. Those
+ * four stay impossible in a `.xlsx` and are not attempted: a hyperlink goes somewhere, it does not
+ * run an Excel command. Their work is already reachable natively — the pivots keep their own `+`/`−`
+ * and each slicer its clear-filter `×`.
+ *
+ * THE DESIGN IS HIS TOO, and not by imitation — each button is a CLONE of a real button already on
+ * that sheet, so the fill, font, corner, shadow, height and row are the template's own values and
+ * are never restated here. A restyle of the template carries into this bar with no change to this
+ * function. Only the caption and the link are replaced.
+ *
+ * Cloning also inherits `fPrintsWithSheet="0"`, so the bar stays off the paper. A control is not
+ * content, and a printed page of numbers should not carry a row of dead buttons.
+ *
+ * ORDER MATCHES THE TEMPLATE: commands first, Export PDF last, which is how the owner laid out
+ * Overview's five. Export PDF is moved to sit after the new bar rather than left where it was, so
+ * the row reads left to right with no gap where the dropped commands used to be.
+ */
+async function addSheetNavigation(zip: JSZip): Promise<void> {
+  for (const sheetName of Object.keys(MANIFEST.sheets)) {
+    if (sheetName === DATA_SHEET) continue;
+
+    const found = await sheetDrawing(zip, sheetName);
+    if (!found) continue;
+
+    const anchors = found.xml.match(TWO_CELL_ANCHOR) ?? [];
+    const buttons = anchors.filter((block) => /macro="[^"]+"/.test(block));
+    if (buttons.length === 0) continue;
+
+    const widthOf = columnWidthReader(found.sheetXml);
+    const edge = (block: string, part: RegExp) => anchorX(widthOf, part.exec(block)?.[0] ?? "");
+
+    // The command row, judged by the row its buttons sit on rather than by name — the emblem sits on
+    // row 0 well to the right and must not be swept into this.
+    const band = anchorRow(ANCHOR_FROM.exec(buttons[0] ?? "")?.[0] ?? "");
+    const onBand = buttons.filter((block) => anchorRow(ANCHOR_FROM.exec(block)?.[0] ?? "") === band);
+    if (onBand.length === 0) continue;
+
+    const exportButton = onBand.find((block) => EXPORT_PDF_BUTTON.test(block)) ?? null;
+    // Prefer a command button as the stamp: it is the shape being replaced, so its width already
+    // suits a caption of this kind. Export PDF is the fallback on a sheet carrying only that one.
+    const stamp = onBand.find((block) => !EXPORT_PDF_BUTTON.test(block)) ?? exportButton;
+    if (!stamp) continue;
+
+    const measured = new Map<string, number>();
+    for (const block of onBand) {
+      const caption = /<a:t>([\s\S]*?)<\/a:t>/.exec(block)?.[1];
+      if (caption) measured.set(caption, edge(block, ANCHOR_TO) - edge(block, ANCHOR_FROM));
+    }
+
+    const startX = Math.min(...onBand.map((block) => edge(block, ANCHOR_FROM)));
+    const limit = contentRightEdge(found.sheetXml, widthOf);
+    const exportWidth = exportButton ? edge(exportButton, ANCHOR_TO) - edge(exportButton, ANCHOR_FROM) : 0;
+
+    // Fit as many as the sheet can actually hold, measured against its own right edge rather than
+    // assumed. Overview is the binding case — one portrait page, 351 px of clear room — against
+    // 3,124 px on Details. A bar sized for Details would hang off the side of Overview, which is
+    // precisely what the owner's fits-the-page rule forbids.
+    const budget = limit - startX - (exportButton ? exportWidth + BUTTON_GAP : 0);
+    const chosen: string[] = [];
+    let used = 0;
+    for (const destination of NAV_DESTINATIONS) {
+      if (destination === sheetName) continue;
+      const width = buttonWidth(destination, measured) + (chosen.length > 0 ? BUTTON_GAP : 0);
+      if (used + width > budget) break;
+      chosen.push(destination);
+      used += width;
+    }
+    if (chosen.length === 0) continue;
+
+    const relsName = found.name.replace(/drawings\/(drawing\d+)\.xml$/, "drawings/_rels/$1.xml.rels");
+    const relsFile = zip.file(relsName);
+    if (!relsFile) continue;
+    let rels = await relsFile.async("string");
+    let nextRel = Math.max(0, ...[...rels.matchAll(/Id="rId(\d+)"/g)].map((match) => Number(match[1]))) + 1;
+    let nextId = Math.max(0, ...[...found.xml.matchAll(/<xdr:cNvPr id="(\d+)"/g)].map((m) => Number(m[1]))) + 1;
+    const taken = new Set<string>();
+
+    let x = startX;
+    const bar = chosen.map((destination) => {
+      const relId = `rId${nextRel}`;
+      rels = rels.replace(
+        "</Relationships>",
+        `<Relationship Id="${relId}"`
+          + ` Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"`
+          + ` Target="${xmlEscape(sheetJumpTarget(destination)).replace(/"/g, "&quot;")}"/></Relationships>`,
+      );
+      nextRel += 1;
+
+      const width = buttonWidth(destination, measured);
+      const block = stamp
+        // Several shapes claiming one creationId is a conflict Excel resolves on load.
+        .replace(CREATION_ID, "")
+        // Emptied, not removed: `macro=""` is what Excel itself writes on a linked shape, and
+        // `dropMacroButtons` matches a NON-empty one, so this is also what keeps the bar alive
+        // through the strip two steps later.
+        .replace(/\smacro="[^"]*"/, ' macro=""')
+        .replace(
+          /<xdr:cNvPr id="\d+" name="[^"]*"/,
+          `<xdr:cNvPr id="${nextId}" name="${xmlEscape(navShapeName(destination, taken))}"`,
+        )
+        .replace(NON_VISUAL_PROPS, (props) =>
+          props.endsWith("/>")
+            ? `${props.slice(0, -2)}><a:hlinkClick xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="${relId}"/></xdr:cNvPr>`
+            : `${props}<a:hlinkClick xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="${relId}"/>`,
+        )
+        .replace(/<a:t>[\s\S]*?<\/a:t>/, `<a:t>${xmlEscape(xmlSafe(destination))}</a:t>`);
+      nextId += 1;
+
+      const placed = moveAnchor(widthOf, block, x, width);
+      x += width + BUTTON_GAP;
+      return placed;
+    });
+
+    // Every command button goes; the bar and the moved Export PDF take the row. Done as two passes
+    // so the anchor a button is replaced BY is never one this loop then searches for again.
+    let out = found.xml;
+    for (const block of onBand) {
+      if (block === exportButton) continue;
+      out = out.replace(block, "");
+    }
+    out = exportButton
+      ? out.replace(exportButton, bar.join("") + moveAnchor(widthOf, exportButton, x, exportWidth))
+      : out.replace("</xdr:wsDr>", `${bar.join("")}</xdr:wsDr>`);
+
+    zip.file(found.name, out);
+    zip.file(relsName, rels);
   }
 }
