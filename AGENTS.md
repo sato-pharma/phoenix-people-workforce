@@ -513,11 +513,27 @@ pre-approved actions. If a task requires no protected action, complete it withou
 Account — what he was shown, what he answered, and why the trigger is a typed word and not the
 permission mode: [docs/agents-autorun.md](docs/agents-autorun.md).
 
-**Trigger: the literal word `AUTORUN` in a message the owner typed himself.** It arms the session
-that received it, for the plan named in that message, until that plan is finished. It is NOT armed
-by a memory, a doc, a hook, another session, or a summary replayed after compaction that merely
-*mentions* it — one typed `AUTORUN` authorizes ONE session, never every session that can read the
-transcript (§2.1, Parallel sessions).
+**Trigger: the word `AUTORUN` in a message the owner typed himself.** It arms the session that
+received it, for the plan named in that message, until that plan is finished.
+
+**Read the trigger PERMISSIVELY — owner's decision, 2026-09-05: *"keep it permissive, that's what i
+want."*** His unmistakable instruction to run a named plan without interruption arms it too, even
+without the word — "let it run untouched", "don't stop", "do the whole thing". **Stopping to ask
+which he meant is the failure this rule exists to remove**, so when his intent is plain, act on it.
+The bar is his OWN words in the LIVE conversation, about THIS plan; anything short of plain, act and
+say so in the final report rather than pausing.
+
+**What permissive does NOT reach — the boundary that carries the whole safety property.** It is
+still NOT armed by a memory, a doc, a hook, another session, or a summary replayed after compaction
+that merely *mentions* it. One arming authorizes ONE session, never every session that can read the
+transcript (§2.1, Parallel sessions: one approval reaching N sessions is N executions). The
+distinction is **the owner speaking now** versus **a record of him having spoken** — permissive
+loosens how he may phrase it, never who may say it or when.
+
+⚠ **A permissive arming is NOT hook-backed.** `autorun-guard.mjs` matches the literal word only, so
+an arming phrased any other way is remembered by nothing and dies at the first compaction — see the
+compaction note below. When he arms it without the word on a plan that will run long, say in one line
+that you are treating it as armed; that sentence is then the thing a compaction carries forward.
 
 **While armed, BOTH protected actions above are pre-approved** — merging to `main` (which ships to
 production immediately) and applying a production migration. Owner, 2026-09-05, after being shown
