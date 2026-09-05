@@ -454,7 +454,18 @@ function foldAchievement<K>(
     totals.set(key, current);
   }
   for (const total of totals.values()) {
-    total.achievementValue = total.targetValue !== 0 ? total.coveredActualValue / total.targetValue : null;
+    // ALL of the group's actual over its target — the Monthly Closing's own division, which this
+    // page must match to the piastre. Owner ruling 2026-09-05: "FOLLOW THE OLD MONTHLY CLOSING ...
+    // MUST BE 100% IDENTICAL". `loadMonthlyAchievement` takes ONE period, so the across-months half
+    // of that rule cannot arise here; it lives in vs-target.ts, which spans a window.
+    //
+    // This divided `coveredActualValue` until then, which is exactly what made this page and the
+    // closing disagree wherever a group sold something nobody targeted: Pedia 2026-02 read 35.7%
+    // here against the closing's 67.99%, and one district manager read 2.2% against 48.5%.
+    //
+    // `coveredActualValue` is still accumulated above — it is the coverage figure the page shows
+    // BESIDE the percentage, and it is no longer the numerator inside it.
+    total.achievementValue = total.targetValue !== 0 ? total.actualValue / total.targetValue : null;
   }
   return totals;
 }

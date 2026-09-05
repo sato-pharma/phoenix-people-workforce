@@ -531,10 +531,10 @@ function familyRowsOf(ds: ReviewDataset): FamilyRow[] {
     const f = acc.get(p.family) ?? { skuCount: 0, covered: {}, target: {}, totalCovered: 0, totalTarget: 0 };
     f.skuCount += 1;
     for (const m of months) {
-      f.covered[m] = (f.covered[m] ?? 0) + (p.byMonth[m]?.covered ?? 0);
+      f.covered[m] = (f.covered[m] ?? 0) + (p.byMonth[m]?.graded ?? 0);
       f.target[m] = (f.target[m] ?? 0) + (p.byMonth[m]?.target ?? 0);
     }
-    f.totalCovered += p.total.covered;
+    f.totalCovered += p.total.graded;
     f.totalTarget += p.total.target;
     acc.set(p.family, f);
   }

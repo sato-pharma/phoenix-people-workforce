@@ -190,16 +190,16 @@ export function BusinessReviewPortal({
   const spendOk = marketingOk || outstationOk;
 
   // Achievement is ALWAYS computed on every granted area — the toggle only hides vacant rows
-  // from the lists, it never changes a percentage. It is sum(covered)/sum(target): never an
+  // from the lists, it never changes a percentage. It is sum(graded)/sum(target): never an
   // average of the per-area percentages, and never sum(sales)/sum(target) — sales on a product
   // with no target would lift the numerator against a denominator they never entered, which is
   // exactly how the admin headline came to read 130.73% for a 50.67% window.
   const totals = useMemo(() => {
     const sales = areas.reduce((sum, a) => sum + a.allProducts.sales, 0);
     const target = areas.reduce((sum, a) => sum + a.allProducts.target, 0);
-    const covered = areas.reduce((sum, a) => sum + a.allProducts.covered, 0);
+    const graded = areas.reduce((sum, a) => sum + a.allProducts.graded, 0);
     const spend = dms.reduce((sum, d) => sum + d.marketingCost + d.outstationCost, 0);
-    return { ach: target > 0 ? (100 * covered) / target : null, sales, spend, target };
+    return { ach: target > 0 ? (100 * graded) / target : null, sales, spend, target };
   }, [areas, dms]);
 
   const graded = useMemo(() => areas.filter((a) => a.hasTarget && a.allProducts.ach != null), [areas]);
