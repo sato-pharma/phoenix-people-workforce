@@ -177,6 +177,29 @@ There is no `pull_request` leg, on purpose. Actions minutes are a real cost cons
 PR run would either need the Google credentials on unmerged code or report nothing useful. Dispatch
 the workflow with `check_only` when you want to see a diff before merging.
 
+### Finding a sheet's script id, and proving it is the right one
+
+All three sheets were connected on 2026-09-05. If a fourth is ever added, or an id has to be
+recovered, two things about that hunt are worth not repeating.
+
+**Do not identify a project by its name.** Only one of the three carries a recognisable one. The
+marketing project is "Phoenix Marketing Sheet"; the direct-orders project is literally "Untitled
+project". Match it instead by hashing the project's `FEED_TOKEN` script property and comparing that
+against the live share token in Phoenix — `select left(encode(sha256(token::bytea),'hex'),16) from
+<report>_share_links where surface = 'feed' and revoked_at is null`. That is a proof of identity, not
+an inference from a label, and it never puts either token on screen.
+
+**The direct-orders project is not in this account's project list at all.** It is owned by a
+different Google account and only shared, so it appears under **Shared with me** at
+`script.google.com/home/shared`, not `/home/my`. That matters beyond finding it: the OAuth grant is
+`achieverrr303@gmail.com`'s, so writing that project depends on the sharing carrying edit rights. It
+does — proven by an actual push on 2026-09-05 — but a permission error there means the sharing, not
+the credentials.
+
+The script id itself is not in the page text on either listing; it sits in the row markup beside the
+container (spreadsheet) id, so a row's 57-character id is the script and the 44-character one is the
+sheet it is bound to.
+
 A service account cannot be used here. Apps Script projects belong to a PERSON, and
 `projects.updateContent` acts as the signed-in user, so the grant has to come from the account
 that owns the sheets.
