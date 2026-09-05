@@ -1128,6 +1128,7 @@ import { runClosingDistributorProductRollupEquivalenceTests } from "./closing-di
 import { runClosingChannelBreakdownRollupEquivalenceTests } from "./closing-channel-breakdown-rollup-equivalence.test.ts";
 import { runMonthlyAttributionRollupEquivalenceTests } from "./monthly-attribution-rollup-equivalence.test.ts";
 import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
+import { runClosingCorrectionsCellTests } from "./closing-corrections-cell.test.ts";
 import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.test.ts";
 import { runTerritoryPreviewLinkControlsTests } from "./territory-preview-link-controls.test.ts";
 
@@ -3292,6 +3293,11 @@ await runTest(
 await runTest(
   "closing corrections grouping (pair names both distorted months; late return names its origin or admits none; worst first)",
   runClosingCorrectionsTests,
+);
+
+await runTest(
+  "closing corrections: a net-negative row is the CLOSING cell, not one distributor share",
+  runClosingCorrectionsCellTests,
 );
 
 await runTest(
