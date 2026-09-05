@@ -228,8 +228,12 @@ function ExportXlsxButton({ query, disabled }: { query: string; disabled: boolea
   async function handleClick() {
     setState("working");
     try {
-      const params = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : "";
-      const res = await fetch(`/api/recruitment/manager-engagement/export${params}`, { cache: "no-store" });
+      // THE PATH STAYS LITERAL and the interpolation begins only after the `?`. An interpolation
+      // glued to the last path segment — `…/export${params}` — reads to a scanner (and to a human)
+      // as a dynamic route segment, and `recruitment-api-routes-exist` correctly refuses it: there
+      // is no `[param]` folder there. `q` is always sent; the route treats an empty one as no filter.
+      const params = new URLSearchParams({ q: query.trim() });
+      const res = await fetch(`/api/recruitment/manager-engagement/export?${params}`, { cache: "no-store" });
       if (!res.ok) throw new Error("export failed");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
