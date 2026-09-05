@@ -33,6 +33,7 @@ import {
   HIRING_PACK_DOCUMENTS,
   HOUSE_PAPER_DOCUMENTS,
   SIGNABLE_DOCUMENTS,
+  isSignableDocument,
 } from "../src/lib/hiring-pack/types.ts";
 import type {
   HiringPackData,
@@ -126,6 +127,8 @@ function profileFixture(overrides: Partial<HiringPackProfile> = {}): HiringPackP
     contractSignatoryNameAr: null,
     contractSignatoryTitleAr: null,
     contractObjectiveReasonCode: null,
+    ndaSignedDate: null,
+    ndaPrintedAt: null,
     updatedAt: null,
     ...overrides,
   };
@@ -236,11 +239,22 @@ function testAllSixAreRegisteredAndCurrent(): void {
       HIRING_PACK_DOCUMENTS.includes(document),
       `${document} must be in HIRING_PACK_DOCUMENTS or nothing can print it`,
     );
+    if (document === "nda") continue;
     assert.ok(
       !SIGNABLE_DOCUMENTS.includes(document),
       `${document} records no signature against the person — see the note in SIGNABLE_DOCUMENTS`,
     );
   }
+
+  // THE NDA IS THE EXCEPTION AND MUST STAY ONE. It is signed once in a career, like the contract,
+  // and got its own column on 2026-09-05. Asserted positively rather than left out of the loop, so
+  // that losing the register would go red instead of quietly rejoining the other five.
+  assert.ok(
+    SIGNABLE_DOCUMENTS.includes("nda"),
+    "the confidentiality undertaking records its signature against the person — it is signed once " +
+      "in a career, unlike the five house papers around it",
+  );
+  assert.equal(isSignableDocument("nda"), true);
 
   const pairs: ReadonlyArray<readonly [string, HrPaperTemplate]> = [
     ["nda", HR_PAPER_NDA_V1],

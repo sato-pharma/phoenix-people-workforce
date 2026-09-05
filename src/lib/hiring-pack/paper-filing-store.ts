@@ -201,6 +201,8 @@ function documentLabelFor(document: string): string {
       return "Social insurance Form 1";
     case "form6":
       return "Social insurance Form 6";
+    case "nda":
+      return "Confidentiality undertaking";
     case "resignation":
       return "Resignation request";
     case "mutualTermination":

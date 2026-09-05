@@ -245,17 +245,20 @@ export type PrintableDocument = HiringPackDocument | CustomHiringPackDocument;
  * decision and its own `signed_at` — so a date here would be a second, worse copy of it. See
  * `RENEWAL_DOCUMENTS`.
  *
- * SATO'S SIX OWN PAPERS ARE ABSENT TOO, and one of them is a genuine gap rather than a decision.
- * The two absence notices are issued repeatedly, and the checklist, the service-file sheet and the
- * two appointment-documents forms are sheets filed in a drawer — the worker-data form's reasoning
- * exactly. THE NDA IS THE EXCEPTION: it is signed once in a career, like the contract, and its
- * signature is worth recording. It is not here only because doing it properly means a column on
- * `employee_hiring_profile` and a migration, and it was not worth holding the other five back for.
- * Whoever adds it should add a REAL binding in `DOCUMENT_BINDINGS`, not a shared one — see the note
- * there about why the two custody receipts are written out separately.
+ * FIVE OF SATO'S SIX OWN PAPERS ARE ABSENT, and each of those five is a decision. The two absence
+ * notices are issued repeatedly; the checklist, the service-file sheet and the appointment-documents
+ * receipt are sheets filed in a drawer — the worker-data form's reasoning exactly.
+ *
+ * THE NDA IS NOT ONE OF THEM ANY MORE. It is signed once in a career, like the contract, so it has
+ * its own `nda_signed_date` and its own checklist row as of 2026-09-05. It is listed explicitly
+ * below rather than folded into a group, because the group it belongs to by SHAPE — Sato's own
+ * papers — is precisely the group whose other members must stay out.
  */
 export const SIGNABLE_DOCUMENTS: readonly HiringPackDocument[] = [
   ...HIRING_DOCUMENTS,
+  // Named on its own, deliberately. Spreading `HOUSE_JOINING_DOCUMENTS` here would sweep in the
+  // appointment-documents receipt and the service-file sheet with it, and both must stay out.
+  "nda",
   ...EXIT_DOCUMENTS,
 ];
 
@@ -371,6 +374,14 @@ export type HiringPackProfile = Required<{
   hrId: string;
   contractSignedDate: string | null;
   form1SignedDate: string | null;
+  /**
+   * The confidentiality undertaking's signature, recorded like the contract's.
+   *
+   * NOT part of `HiringPackProfileInput`: it is not something HR types into the terms form, it is
+   * stamped when the paper is marked signed — the same rule `contractSignedDate` follows.
+   */
+  ndaSignedDate: string | null;
+  ndaPrintedAt: string | null;
   contractPrintedAt: string | null;
   form1PrintedAt: string | null;
   /**

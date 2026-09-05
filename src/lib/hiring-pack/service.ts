@@ -111,7 +111,15 @@ const DOCUMENT_BINDINGS: Record<
   // one that arguably should — it is signed once in a career, like the contract — and giving it a
   // real binding means a column and a migration. Written out one per document rather than shared,
   // so that doing that later is an edit to ONE row and cannot silently move the other five.
-  nda: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  // THE ONE OF THE SIX WITH A REAL REGISTER. Signed once in a career, like the contract, so its
+  // date is recorded against the person and its checklist row ticks itself. The other five keep
+  // their nulls for the reasons set out beside them.
+  nda: {
+    table: "employee_hiring_profile",
+    signedColumn: "nda_signed_date",
+    printedColumn: "nda_printed_at",
+    checklistName: "Signed confidentiality undertaking",
+  },
   appointmentDocsReceipt: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   socialStatusSheet: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   absenceWarning: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
@@ -190,6 +198,8 @@ export type ProfileDbRow = {
   contract_signatory_name_ar: string | null;
   contract_signatory_title_ar: string | null;
   contract_objective_reason_code: string | null;
+  nda_signed_date: string | null;
+  nda_printed_at: string | null;
   contract_signed_date: string | null;
   contract_start_date: string | null;
   contract_template_version: string | null;
@@ -391,6 +401,8 @@ export function emptyProfile(hrId: string): HiringPackProfile {
     contractSignatoryNameAr: null,
     contractSignatoryTitleAr: null,
     contractObjectiveReasonCode: null,
+    ndaSignedDate: null,
+    ndaPrintedAt: null,
     contractSignedDate: null,
     form1SignedDate: null,
     contractPrintedAt: null,
@@ -432,6 +444,8 @@ export function mapProfile(row: ProfileDbRow): HiringPackProfile {
     contractObjectiveReasonCode: isRenewalObjectiveReasonCode(row.contract_objective_reason_code)
       ? cleanText(row.contract_objective_reason_code)
       : null,
+    ndaSignedDate: row.nda_signed_date,
+    ndaPrintedAt: row.nda_printed_at,
     contractSignedDate: row.contract_signed_date,
     form1SignedDate: row.form1_signed_date,
     contractPrintedAt: row.contract_printed_at,

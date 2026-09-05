@@ -653,7 +653,9 @@ function signedDatesFromPack(pack: HiringPackData | null): Record<HiringPackDocu
     // Sato's own six store no signature date here either. Five are sheets filed in a drawer, and
     // the two absence notices are issued repeatedly. The NDA is the one worth a real register some
     // day — see the note in `SIGNABLE_DOCUMENTS`.
-    nda: "",
+    // The NDA is the one of Sato's six with a real register — signed once in a career, like the
+    // contract. The other five keep "" for the reasons in `SIGNABLE_DOCUMENTS`.
+    nda: pack?.profile.ndaSignedDate ?? "",
     appointmentDocsReceipt: "",
     socialStatusSheet: "",
     absenceWarning: "",
@@ -1723,7 +1725,7 @@ export function HiringPackManager({
                 */}
                 <div className="grid gap-3 lg:grid-cols-2">
                   <DocumentCard
-                    busy={false}
+                    busy={busy === "sign-nda"}
                     canManage={canManage}
                     copies={copies.nda}
                     gaps={gapsFor(pack.gaps, "nda")}
@@ -1731,13 +1733,13 @@ export function HiringPackManager({
                     footnote="Supplements مادة (7) of the contract and now names it. Everything about the person is filled; the paper is signed by both sides."
                     onPreview={() => openPreview("nda")}
                     onPrint={() => openPrint("nda")}
-                    onSign={() => undefined}
-                    onSignDateChange={() => undefined}
-                    printedAt={null}
+                    onSign={() => void recordSignature("nda")}
+                    onSignDateChange={(value) => setSignDateFor("nda", value)}
+                    printedAt={pack.profile.ndaPrintedAt}
                     printingNote="Two copies — one filed, one handed over. Sign it on the first day, alongside the contract."
-                    signDate=""
-                    signedDate={null}
-                    signable={false}
+                    signDate={signDates.nda}
+                    signedDate={pack.profile.ndaSignedDate}
+                    signable
                     subtitle="إقرار وتعهد بعدم إفشاء المعلومات والأسرار التجارية"
                     title="Confidentiality undertaking"
                   />

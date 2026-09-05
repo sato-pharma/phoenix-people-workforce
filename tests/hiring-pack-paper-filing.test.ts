@@ -23,6 +23,7 @@ const SLOTS: FilingSlotRow[] = [
   { hiring_pack_document: "contract", id: "def-contract", is_active: true, name: "Signed employment contract" },
   { hiring_pack_document: "form1", id: "def-form1", is_active: true, name: "Social insurance form" },
   { hiring_pack_document: "form6", id: "def-form6", is_active: false, name: "Signed social insurance Form 6" },
+  { hiring_pack_document: "nda", id: "def-nda", is_active: true, name: "Signed confidentiality undertaking" },
   { hiring_pack_document: null, id: "def-birth", is_active: true, name: "Birth certificate" },
   { hiring_pack_document: null, id: "def-custom-target", is_active: true, name: "Medical check" },
   { hiring_pack_document: null, id: "def-retired", is_active: false, name: "Personal photos" },
@@ -44,6 +45,9 @@ function testEverySignablePaperHasAFilingRule() {
   );
 
   assert.equal(isFileableBuiltIn("contract"), true);
+  // The NDA is the one that drifted: it became signable a commit before it became fileable, and
+  // this pair is the line that says so the next time either list moves without the other.
+  assert.equal(isFileableBuiltIn("nda"), true);
   // The custody receipts and the worker data form record no signature and file nothing.
   assert.equal(isFileableBuiltIn("custodyLaptop"), false);
   assert.equal(isFileableBuiltIn("workerDataForm"), false);
@@ -57,6 +61,13 @@ function testAPaperFilesIntoTheSlotThatNamesIt() {
 
   const form1 = resolveBuiltInFilingSlot("form1", SLOTS);
   assert.equal(form1.filed && form1.definitionId, "def-form1");
+
+  // The NDA is the signable paper added most recently, and the one the agreement test caught
+  // filing nowhere. Its checklist slot exists from migration 20260905110000, pinned by document
+  // rather than by name — this is the resolution a real confirm now takes.
+  const nda = resolveBuiltInFilingSlot("nda", SLOTS);
+  assert.equal(nda.filed, true, "the confidentiality undertaking files like every other signable paper");
+  assert.equal(nda.filed && nda.definitionId, "def-nda");
 }
 
 /**
@@ -88,6 +99,13 @@ function testAPaperWithNowhereToGoIsRefusedRatherThanGuessed() {
     /no checklist slot names this paper/i,
     "the refusal says what is missing and where to fix it",
   );
+
+  // The refusal the NDA gave before it had a filing rule is a different sentence from the
+  // missing-slot one above, and it must stay different: "no rule" means a code list to change,
+  // not a screen to point at the paper.
+  const noRule = resolveBuiltInFilingSlot("custodyLaptop", SLOTS);
+  assert.equal(noRule.filed, false);
+  assert.match(noRule.filed ? "" : noRule.why, /no filing rule/i);
 
   // A retired slot is refused HERE rather than deeper down, where the message would be about a
   // checklist the person never mentioned.
