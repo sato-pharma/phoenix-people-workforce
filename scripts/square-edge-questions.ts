@@ -67,104 +67,6 @@ type CornerRow = {
  * few seconds without opening the code.
  */
 const CORNERS: CornerRow[] = [
-  // ── The login screen's decorations ────────────────────────────────────────────────────────────
-  {
-    group: "Login decoration",
-    what: "Halo behind the Phoenix emblem",
-    where: "app/globals.css",
-    element: ".login-logo-glow::before, .login-logo-glow::after",
-    value: "9999px",
-    context:
-      "A soft round glow behind the logo on the sign-in screen. At 9999px it is a CIRCLE, not a "
-      + "rounded box — squaring it turns the halo into a glowing square. NOTE: this one rule paints "
-      + "TWO layers (::before and ::after), so one answer moves both.",
-    sites: 1,
-  },
-  {
-    group: "Login decoration",
-    what: "Drifting ember specks",
-    where: "app/globals.css",
-    element: ".login-ember",
-    value: "9999px",
-    context:
-      "The small orange sparks that float up the sign-in screen. Circles by intent — square sparks "
-      + "would read as falling confetti.",
-    sites: 1,
-  },
-  {
-    group: "Login decoration",
-    what: "White dot inside the emblem",
-    where: "src/components/auth/premium-login-page.tsx",
-    element: "rounded-full on a 8×8px dot",
-    value: "full circle",
-    context: "A single glowing dot at the centre of the logo mark.",
-    sites: 1,
-  },
-  {
-    group: "Login decoration",
-    what: "Sign-in button's loading spinner",
-    where: "src/components/auth/premium-login-page.tsx",
-    element: "rounded-full on the spinning ring",
-    value: "full circle",
-    context:
-      "The ring that spins while signing in. A spinner has to be a circle to read as spinning — "
-      + "squared, it looks like a glitching box. Same for the row below.",
-    sites: 1,
-  },
-  {
-    group: "Login decoration",
-    what: "Fingerprint button's loading spinner",
-    where: "src/components/auth/premium-login-page.tsx",
-    element: "rounded-full on the spinning ring",
-    value: "full circle",
-    context: "The same spinner on the biometric sign-in button.",
-    sites: 1,
-  },
-
-  // ── Company documents and the identity card ───────────────────────────────────────────────────
-  {
-    group: "Identity card",
-    what: "Employee photo — outer frame",
-    where: "src/components/phoenix-signature-card/EmployeePortrait.tsx",
-    element: "the portrait's outer border",
-    value: "10–18px (scales with the card)",
-    context:
-      "The photo frame on the employee identity card. The rule names avatars as square, but this is "
-      + "a portrait on a printed-looking ID card, which is a different object from a round avatar "
-      + "chip in a table.",
-    sites: 1,
-  },
-  {
-    group: "Identity card",
-    what: "Employee photo — the image itself",
-    where: "src/components/phoenix-signature-card/EmployeePortrait.tsx",
-    element: "the portrait image inside the frame",
-    value: "8–15px (scales with the card)",
-    context: "Sits just inside the frame above. Normally answered the same way.",
-    sites: 1,
-  },
-  {
-    group: "Identity card",
-    what: "Separator dot on the card",
-    where: "src/components/phoenix-signature-card/PhoenixSignatureCard.tsx",
-    element: "a 5×5px dot at 50%",
-    value: "full circle",
-    context: "A tiny orange dot used as a separator between two pieces of text. A dot, not a corner.",
-    sites: 1,
-  },
-  {
-    group: "Offer letter",
-    what: "Circular mark beside each lead paragraph",
-    where: "src/lib/offers/render.ts",
-    element: ".lede-mark",
-    value: "50% (a 34px circle)",
-    context:
-      "IMPORTANT: the PRINT stylesheet in the same file already squares this. So the offer letter on "
-      + "PAPER is square today and only the on-screen preview is round — the two disagree. Squaring "
-      + "it makes screen match paper.",
-    sites: 1,
-  },
-
 ];
 
 function styleHeader(sheet: ExcelJS.Worksheet, rowNumber: number): void {
@@ -336,6 +238,21 @@ function nextFreePath(): string {
 }
 
 async function main(): Promise<void> {
+  // A SHEET WITH NOTHING LEFT ON IT IS NOT WRITTEN AT ALL.
+  //
+  // Every corner this sheet ever asked about has been answered — the scrollbars and the payroll glow
+  // bar in code (#3209), the radius tokens, email, the marketing guide, and on 2026-09-05 the last
+  // nine under "never rounded corners always shredded". Handing somebody a form that re-asks
+  // answered questions is how the answers stop coming back, so this exits instead.
+  //
+  // The machinery is kept, not deleted: CORNERS is empty rather than gone. If a future audit turns
+  // up a corner that is genuinely the owner's call, add the row and this runs again unchanged.
+  if (CORNERS.length === 0) {
+    console.log("Nothing outstanding — every square-edge decision has been answered. No workbook written.");
+    console.log("The gate that holds the answers: tests/square-edge-golden-rule.test.ts");
+    return;
+  }
+
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Phoenix Workforce — square-edge audit";
   workbook.created = new Date();

@@ -24,7 +24,7 @@ export function EmployeePortrait({ src, alt, name }: EmployeePortraitProps) {
       className="relative z-20 w-full overflow-hidden bg-white"
       style={{
         aspectRatio: "0.785 / 1",
-        borderRadius: "clamp(10px, 1.1cqw, 18px)",
+        
         border: "clamp(2px,0.25cqw,4px) solid transparent",
         backgroundImage: "linear-gradient(#fff,#fff), linear-gradient(145deg, #f9c06a, #f47b20 40%, #c45200 70%, #f9c06a)",
         backgroundOrigin: "border-box",
@@ -36,7 +36,7 @@ export function EmployeePortrait({ src, alt, name }: EmployeePortraitProps) {
         className="absolute overflow-hidden bg-[#f8efe5]"
         style={{
           inset: "clamp(5px, 0.5cqw, 7px)",
-          borderRadius: "clamp(8px, 0.88cqw, 15px)",
+          
         }}
       >
         {src ? (

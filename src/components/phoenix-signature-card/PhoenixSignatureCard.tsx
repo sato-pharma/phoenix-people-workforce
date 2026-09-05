@@ -200,7 +200,7 @@ export function PhoenixSignatureCard({
           {/* Orange decorative line — exact same width as name */}
           <div style={{ display: "flex", alignItems: "center", marginTop: 4, marginBottom: 4, width: mobileNameWidth ? `${mobileNameWidth}px` : "auto" }}>
             <div style={{ flex: 1, height: 1, background: "#f47b20" }} />
-            <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#f47b20", margin: "0 3px" }} />
+            <div style={{ width: 5, height: 5, background: "#f47b20", margin: "0 3px" }} />
             <div style={{ width: "18%", height: 1, background: "rgba(244,123,32,0.45)" }} />
           </div>
 

@@ -193,10 +193,11 @@ function walk(dir: string, found: string[] = []): string[] {
 /**
  * Every rounding site in the shipped stylesheets, exactly.
  *
- * BOTH ARE WITH THE OWNER as of 2026-09-05 and are deliberately NOT squared here. They are the two
- * decorative effects on the sign-in screen — a glow and an ember — and at 9999px each is a CIRCLE
- * rather than a rounded box, so squaring them turns a halo into a glowing square and a drifting
- * spark into falling confetti. That is a question for the owner, not an inference for a session.
+ * EMPTY, AND THAT IS THE FINISHED STATE. Owner, 2026-09-05: "never rounded corners always shredded."
+ * The last two entries here were the sign-in screen's glow and embers, held back on the reasoning
+ * that a 9999px circle is not a corner. He was asked and answered that the rule admits no such
+ * exception, so they were squared with the other seven. Nothing in either shipped stylesheet rounds
+ * anything any more.
  *
  * THIS LIST HELD SIX MORE UNTIL 2026-09-05: the scrollbar thumbs and tracks. PR #3209 squared them,
  * on a sharper reading of the mechanism than the one this file started with — RULE 1 sets a radius
@@ -208,11 +209,7 @@ function walk(dir: string, found: string[] = []): string[] {
  * utilities and checking they sit inside a shell ticks that case off as handled.
  */
 const STYLESHEET_INVENTORY: Record<string, string[]> = {
-  "app/globals.css": [
-    // NOTE: this rule carries ::before AND ::after, so it is two elements, not one.
-    ".login-logo-glow::before, .login-logo-glow::after | border-radius: 9999px",
-    ".login-ember | border-radius: 9999px",
-  ],
+  "app/globals.css": [],
   "src/styles/tokens.css": [],
 };
 
@@ -293,9 +290,6 @@ const REMAINING_ROUNDING: Record<string, number> = {
   // correct state — and it is the strongest answer to the token problem in the row below: a
   // generated document that resets rounding at its own root does not care what tokens.css ships.
 
-  // WITH THE OWNER — the two stylesheet sites above, counted again by the tree walk.
-  "app/globals.css": 2,
-
   // 🔒 SETTLED — EMAIL STAYS ROUNDED. Owner, 2026-09-05, asked and answered: "emails stay rounded,
   // leave them." A mail client is a different medium from the app and from a printed company
   // document, and a rounded button is ordinary there.
@@ -330,15 +324,11 @@ const REMAINING_ROUNDING: Record<string, number> = {
   // still fails until someone updates this number deliberately.
   "public/marketing-guide.html": 37,
 
-  // WITH THE OWNER — the signature card. Two are the employee portrait's own corners and one is a
-  // 5px decorative dot at 50%. The identity card that mounts this component is a PROTECTED file.
-  "src/components/phoenix-signature-card/EmployeePortrait.tsx": 2,
-  "src/components/phoenix-signature-card/PhoenixSignatureCard.tsx": 1,
-
-  // WITH THE OWNER — `.lede-mark` is a 34px circular mark on the offer letter. Note the print
-  // stylesheet in the same file already sets it to 0, so the paper is square and only the screen
-  // preview is round.
-  "src/lib/offers/render.ts": 1,
+  // NOTHING ELSE ROUNDS. The signature card's portrait frame, its inner image and its 5px separator
+  // dot, and the offer letter's 34px `.lede-mark`, were all squared on 2026-09-05 under "never
+  // rounded corners always shredded". The offer letter is worth a note: its PRINT stylesheet already
+  // set that mark to 0, so paper and screen had disagreed — squaring the screen rule closed a gap
+  // rather than opening one.
 };
 
 const SCANNED_ROOTS = ["app", "src", "templates", "public"];
@@ -365,7 +355,10 @@ const UNSWEPT_SURFACE_ROUNDING: Record<string, string[]> = {
   // The sign-in screen. Its card, inputs, checkbox, error callout and both buttons were squared;
   // what is left is a glowing dot and the two button spinners, all three with the owner. A spinner
   // has to be a circle to read as spinning.
-  "src/components/auth/premium-login-page.tsx": ["rounded-full", "rounded-full", "rounded-full"],
+  // Held three `rounded-full` — a glowing dot and the two button spinners — until 2026-09-05.
+  // Squared under "never rounded corners always shredded"; a spinner still reads as spinning because
+  // it ROTATES, not because it is round.
+  "src/components/auth/premium-login-page.tsx": [],
   "app/login/page.tsx": [],
   // Renders its own <html>, so app/globals.css never loads here at all — not the sweeps, not the
   // tokens, nothing. Its one corner was a hand-written borderRadius, already squared.

@@ -404,7 +404,7 @@ p + p{margin-top:7px}
 .lead{font-size:10.1pt}
 strong{color:var(--ink);font-weight:700}
 .lede{display:flex;align-items:flex-start;gap:14px}
-.lede-mark{flex:none;width:34px;height:34px;border-radius:50%;background:var(--tint);color:var(--brand);
+.lede-mark{flex:none;width:34px;height:34px;background:var(--tint);color:var(--brand);
   display:flex;align-items:center;justify-content:center;font-size:11pt;font-weight:700;letter-spacing:.5px}
 .lede-body{flex:1;min-width:0}
 .scope{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--frame);border:1px solid var(--frame);margin-top:12px}
