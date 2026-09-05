@@ -56,10 +56,13 @@ import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { calculatePaymentForRequest } from "@/lib/vacation/service";
 
+import { listPriorMonthHolds } from "./draft-store.ts";
+import { resolveHoldReason } from "./hold-reason.ts";
 import { monthNameAndYear } from "./step-definitions.ts";
 import type {
   DraftRow,
   PayrollPeriod,
+  PriorHold,
   RowLifecycle,
   StepKey,
   StepRow,
@@ -1952,13 +1955,47 @@ function recommendSpecialSituations(
   return rows;
 }
 
-function recommendHolds(members: PopulationMember[], drafts: Map<string, DraftRow>): StepRow[] {
+/**
+ * The hold review, with last month's hold attached to every row that had one.
+ *
+ * Two distinct jobs, deliberately not collapsed into one:
+ *
+ *  - `priorHold` is attached to EVERY row the previous month held, whether or
+ *    not this month has its own reason. It is what tells the reviewer that a
+ *    hold is a continuation rather than something new — the question they cannot
+ *    answer from this month's run alone, and the reason August 2026's thirteen
+ *    blank holds were unreadable while two of them were fully explained by July.
+ *
+ *  - The reason is PREFILLED from it only when this month has none of its own.
+ *    A reason typed for this month always wins; carry-forward fills a gap and
+ *    never overwrites. The prefilled text carries its own "Carried forward from
+ *    <month>" label (hold-reason.ts), so when the step is saved or confirmed the
+ *    stored reason still says where it came from — a UI-only marker would be
+ *    lost by the very save that made it durable, leaving a stale note reading as
+ *    a fresh assertion about this month.
+ */
+function recommendHolds(
+  members: PopulationMember[],
+  drafts: Map<string, DraftRow>,
+  priorHolds: Map<string, PriorHold>,
+): StepRow[] {
   return members.map((member) => {
     const draft = drafts.get(member.compact);
     const row = baseRow(member);
     row.context = { "Hire Date": member.employee.hireDate ?? "" };
     row.onHold = draft?.onHold ?? false;
-    row.reason = draft?.holdReason ?? null;
+
+    const prior = priorHolds.get(member.compact);
+    if (prior) row.priorHold = prior;
+
+    const resolved = resolveHoldReason({
+      onHold: row.onHold,
+      storedReason: draft?.holdReason,
+      prior,
+      priorMonthLabel: prior ? monthNameAndYear(prior.month, prior.year) : "",
+    });
+    row.reason = resolved.reason;
+    if (resolved.carriedForward) row.reasonCarriedForward = true;
     return row;
   });
 }
@@ -2112,7 +2149,9 @@ async function recommendStepRows(
       );
     case "p1_holds":
     case "p2_holds":
-      return recommendHolds(input.members, drafts);
+      // One extra read, on the two hold steps only — the carry-forward and the
+      // "held last month too" marker both need the previous run's rows.
+      return recommendHolds(input.members, drafts, await listPriorMonthHolds(input.period));
     default:
       return [];
   }

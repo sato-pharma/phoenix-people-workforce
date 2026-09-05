@@ -26,6 +26,7 @@ import {
 } from "@/lib/sales/sales-workbook-kit";
 
 import type { AssembledRow } from "../assemble.ts";
+import { HELD_NO_REASON_COMMENT, normalizeHoldReason } from "../hold-reason.ts";
 import { monthLabel } from "../notify.ts";
 import type { MonthlySalaryRun, NonEmployeePayrollRow } from "../types.ts";
 import { sortForExport, unlistedExportHrIds } from "./export-order.ts";
@@ -399,10 +400,15 @@ function coverRows(run: MonthlySalaryRun, rows: AssembledRow[], scopeLabel: stri
   // owed is the SECOND part only, so paying full net would pay part one for a second time. On the
   // sheet the fact was carried by a red fill and nothing else, which greyscale and a copied range
   // both lose. Here it is words.
+  // …and carry the REASON with the name. The sheet is what leaves the system —
+  // the draft row it was read from is not something a reviewer opens — so a
+  // cover that names who was held without saying why reproduces, on paper, the
+  // gap this module exists to close.
   for (const entry of rows.filter((candidate) => candidate.onHold)) {
     cover.push([
       `Held · ${entry.row.hrId}`,
-      `${entry.row.fullName} — NOT paid by this run. The SECOND part is what is owed; part one was already paid.`,
+      `${entry.row.fullName} — NOT paid by this run. The SECOND part is what is owed; part one was already paid. ` +
+        `Reason: ${normalizeHoldReason(entry.row.payrollComment) ?? HELD_NO_REASON_COMMENT}`,
     ]);
   }
   // Make the hand-maintained execution list's drift visible on the sheet

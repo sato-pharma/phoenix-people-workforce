@@ -4,6 +4,7 @@ import { normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import type { SalaryValidationRow } from "@/lib/payroll/salary-import";
 import type { PayrollSalarySource } from "@/lib/payroll/salary-source-model.ts";
 
+import { HELD_NO_REASON_COMMENT, normalizeHoldReason } from "./hold-reason.ts";
 import type { PopulationMember } from "./recommend.ts";
 import {
   assembleParts,
@@ -385,7 +386,16 @@ export function assembleRows(input: {
       otherAdditions: otherAdditionsTotal,
       otherDeductions: otherDeductionsTotal,
       overtime,
-      payrollComment: onHold ? draft?.holdReason ?? "HOLD" : draft?.manualReason ?? null,
+      // A held row's comment is its hold reason — the only record of why this
+      // person was not paid, since publish drops the row and writes no payslip.
+      // The fallback used to be the bare word "HOLD", which read as a status
+      // label rather than as missing information, so a blank reason looked
+      // answered. `assertHoldReasonsPresent` makes it unreachable for any hold
+      // set from now on; what reaches it is a row held before that rule existed,
+      // and those are precisely the ones that must announce themselves.
+      payrollComment: onHold
+        ? normalizeHoldReason(draft?.holdReason) ?? HELD_NO_REASON_COMMENT
+        : draft?.manualReason ?? null,
       paymentMode,
       row: index + 1,
       secondPart: parts.secondPart,
