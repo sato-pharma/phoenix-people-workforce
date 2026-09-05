@@ -900,12 +900,47 @@ function OfferCard({
       ) : null}
 
       {stage === "offer_approved" ? (
-        <div className="space-y-1 pt-1">
+        <div className="space-y-2 pt-1">
+          {/*
+            The approved terms, carried into the letter instead of retyped.
+
+            Only at offer_approved, because that is the moment the retyping happens AND the moment
+            the terms are final. The route runs the same approval gate again rather than trusting
+            this button: a stage is what the workflow registry says, and the registry is editable
+            at runtime, so approval is read from approvedAt on the server.
+          */}
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={pending}
+            onClick={() =>
+              run(async () => {
+                const data = await postJson(
+                  `/api/recruitment/applications/${applicationId}/offer-letter`,
+                  {},
+                );
+                const reference = typeof data.reference === "string" ? data.reference : "";
+                const reused = data.reused === true;
+                const inCatalogue = data.titleInCatalogue === true;
+                return (
+                  (reused
+                    ? `A draft letter already existed for this candidate and title (${reference}).`
+                    : `Offer letter ${reference} drafted with the approved terms.`)
+                  + (inCatalogue
+                    ? " Open it on the Offers screen to check it and send it."
+                    : " The job title is not in the offer catalogue, so cost of living, contract term"
+                      + " and who they report to are blank — fill them on the Offers screen before sending.")
+                );
+              })
+            }
+          >
+            Draft the offer letter
+          </Button>
           <Button size="sm" disabled={pending} onClick={() => post({ intent: "mark_sent" }, "Offer recorded as sent.")}>
             Record offer as sent
           </Button>
           <p className="text-xs text-slate-500">
-            Nothing is emailed from here. Send the letter as usual, then record it.
+            Nothing is emailed from here. Draft the letter, send it from the Offers screen, then record it.
           </p>
         </div>
       ) : null}
