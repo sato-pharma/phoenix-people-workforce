@@ -272,6 +272,7 @@ import { runRecruitmentInboundQueueTests } from "./recruitment-inbound-queue.tes
 import { runRecruitmentInboundMasteryTests } from "./recruitment-inbound-mastery.test.ts";
 import { runRecruitmentCandidateSourceContextTests } from "./recruitment-candidate-source-context.test.ts";
 import { runRecruitmentDbBatchTests } from "./recruitment-db-batch.test.ts";
+import { runAttendanceExportHouseIdentityTests } from "./attendance-export-house-identity.test.ts";
 import { runAttendanceCalendarSourceTests } from "./attendance-calendar-source.test.ts";
 import { runEmployeeStatusFilterConsolidationTests } from "./employee-status-filter-consolidation.test.ts";
 import { runAttendanceWorkingDaysTests } from "./attendance-working-days.test.ts";
@@ -1904,6 +1905,7 @@ await runTest("recruitment inbound mastery (analytics, spike, fuzzy dedup, cv-li
 await runTest("recruitment candidate source context (email subject / whatsapp first messages)", runRecruitmentCandidateSourceContextTests);
 await runTest("recruitment db batching (.in() id lists stay inside the request URL)", runRecruitmentDbBatchTests);
 await runTest("attendance calendar source", runAttendanceCalendarSourceTests);
+await runTest("attendance exports (house identity, mapping header row, incomplete warning)", runAttendanceExportHouseIdentityTests);
 await runTest("employee status filter consolidation (5 hand-rolled terminal-status filters → shared constant)", runEmployeeStatusFilterConsolidationTests);
 await runTest("attendance working days", runAttendanceWorkingDaysTests);
 await runTest("attendance Cairo-midnight boundary (shared cairoMidnightUtcIso, EEST/EET + dropped-punch regression)", runAttendanceCairoMidnightBoundaryTests);
