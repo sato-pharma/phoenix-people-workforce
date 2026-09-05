@@ -76,6 +76,59 @@ export function runWhatsAppOwnerMirrorTests() {
   );
   assert.ok(!longMirror.message.includes("END"), "the tail really is cut, not merely labelled as cut");
 
+  // ── A question the applicant was NEVER ASKED is omitted, never called unanswered ──────────────
+  //
+  // The region question became narrowable to particular job titles on 2026-09-05, the same way the
+  // area question already was. The moment the owner narrows it, an Office Coordinator completes the
+  // whole conversation without a region — and "Region: not answered" would accuse them of skipping
+  // something nobody put to them, which reads to him as the bot having lost an answer. Exactly the
+  // reason `areaApplies` exists; this is the same rule one question up.
+  const regionNotAsked = buildWhatsAppMirrorMessage({
+    areaApplies: false,
+    areaName: null,
+    backgroundLabel: "Science",
+    candidateName: "Salma Hosny",
+    expectedSalary: "9000",
+    experienceLabel: "1 - 3 years",
+    kind: "classified",
+    regionApplies: false,
+    regionLabel: null,
+    roleLabel: "Office Coordinator",
+    waId: "201001234567",
+  });
+  assert.ok(
+    !regionNotAsked.message.includes("Region:"),
+    "a region the applicant was never asked is omitted entirely, not reported as unanswered",
+  );
+  assert.ok(
+    !regionNotAsked.message.includes("not answered"),
+    "nothing this applicant was never asked may be called unanswered",
+  );
+  assert.ok(
+    regionNotAsked.message.includes("Office Coordinator") && regionNotAsked.message.includes("Salma Hosny"),
+    "the answers they DID give still reach him",
+  );
+
+  // The other direction, and the reason this is not simply "omit when null": an applicant who WAS
+  // asked the region and stopped short must still be reported as having not answered it.
+  const regionAskedButSkipped = buildWhatsAppMirrorMessage({
+    areaApplies: false,
+    areaName: null,
+    backgroundLabel: null,
+    candidateName: "Youssef Adel",
+    expectedSalary: null,
+    experienceLabel: null,
+    kind: "classified",
+    regionApplies: true,
+    regionLabel: null,
+    roleLabel: "District Manager",
+    waId: "201001234567",
+  });
+  assert.ok(
+    regionAskedButSkipped.message.includes("Region: not answered"),
+    "a region that WAS asked and not answered is still named — omitting it would hide a real gap",
+  );
+
   // ── The answers landing ───────────────────────────────────────────────────────────────────────
 
   const classified = buildWhatsAppMirrorMessage({
@@ -86,6 +139,7 @@ export function runWhatsAppOwnerMirrorTests() {
     expectedSalary: "15000",
     experienceLabel: "3 - 5 years",
     kind: "classified",
+    regionApplies: true,
     regionLabel: "Giza",
     roleLabel: "Medical Representative",
     waId: "201001234567",
@@ -109,6 +163,7 @@ export function runWhatsAppOwnerMirrorTests() {
     expectedSalary: null,
     experienceLabel: null,
     kind: "classified",
+    regionApplies: true,
     regionLabel: "Giza",
     roleLabel: "Medical Representative",
     waId: "201001234567",
@@ -130,6 +185,7 @@ export function runWhatsAppOwnerMirrorTests() {
     expectedSalary: "negotiable",
     experienceLabel: "More than 5 years",
     kind: "classified",
+    regionApplies: true,
     regionLabel: "Giza",
     roleLabel: "District Manager",
     waId: "201001234567",

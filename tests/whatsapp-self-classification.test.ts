@@ -16,6 +16,7 @@ import {
   candidateExperienceCodes,
   candidateExperienceLabels,
   classifyRowId,
+  classifyThankYouText,
   classifySessionSteps,
   cleanTypedAnswer,
   cleanTypedJobTitle,
@@ -566,6 +567,45 @@ export function runWhatsAppSelfClassificationTests() {
     offeredRoleMenuFamilies.filter((family) => !asksArea(family)).length >= 6,
     "the cascade must actually skip the non-rep roles, not wave everyone through to the area",
   );
+
+  // ── The thank-you survives a question the applicant was never asked ──────────────────────────
+  //
+  // THE ONE THAT WOULD HAVE SHIPPED SILENCE. The confirmation used to be gated on role AND region,
+  // which was safe only while the region question was asked to everybody. Narrowing it to particular
+  // job titles — which the owner can do since 2026-09-05 — meant an Office Coordinator could answer
+  // every question put to them and receive nothing at all at the end. The WhatsApp bot is live, so
+  // that is a real applicant getting real silence, and nothing would have logged it.
+  const thanksWithoutRegion = classifyThankYouText({
+    areaName: null,
+    backgroundLabel: "Science",
+    expectedSalary: "9000",
+    experienceLabel: "1 - 3 years",
+    regionLabel: null,
+    roleLabel: "Office Coordinator",
+  });
+  assert.ok(thanksWithoutRegion.includes("Office Coordinator"), "the confirmation still names their role");
+  assert.ok(thanksWithoutRegion.includes("Expected salary: 9000"), "and everything they did answer");
+  assert.ok(!thanksWithoutRegion.includes("Region:"), "the region line is omitted, not printed empty");
+  assert.ok(
+    !/null|undefined/.test(thanksWithoutRegion),
+    "an absent answer must never reach the applicant as the word null",
+  );
+  assert.ok(
+    thanksWithoutRegion.includes("Our HR team will review your CV"),
+    "the closing line is what makes this a confirmation rather than a fragment",
+  );
+
+  // Still printed for everyone who WAS asked it — the omission is about the question not being put,
+  // never about tidying a summary.
+  const thanksWithRegion = classifyThankYouText({
+    areaName: "Haram - Faisal",
+    backgroundLabel: "Pharmacy",
+    expectedSalary: "15000",
+    experienceLabel: "3 - 5 years",
+    regionLabel: "Giza",
+    roleLabel: "Medical Representative",
+  });
+  assert.ok(thanksWithRegion.includes("Region: Giza"), "a region that was asked and answered is shown");
 
   // ── Row ids round-trip, and a foreign id is never mistaken for ours ───────────────────────────
 
