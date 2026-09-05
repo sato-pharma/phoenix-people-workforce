@@ -1138,6 +1138,7 @@ import { runClosingChannelBreakdownRollupEquivalenceTests } from "./closing-chan
 import { runMonthlyAttributionRollupEquivalenceTests } from "./monthly-attribution-rollup-equivalence.test.ts";
 import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
 import { runClosingCorrectionsCellTests } from "./closing-corrections-cell.test.ts";
+import { runClosingCorrectionsOneEventTests } from "./closing-corrections-one-event.test.ts";
 import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.test.ts";
 import { runTerritoryPreviewLinkControlsTests } from "./territory-preview-link-controls.test.ts";
 
@@ -3327,6 +3328,11 @@ await runTest(
 await runTest(
   "closing corrections: a net-negative row is the CLOSING cell, not one distributor share",
   runClosingCorrectionsCellTests,
+);
+
+await runTest(
+  "closing corrections: one return is ONE situation however many detectors see it",
+  runClosingCorrectionsOneEventTests,
 );
 
 await runTest(

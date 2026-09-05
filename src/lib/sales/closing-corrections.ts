@@ -38,6 +38,18 @@ export type ClosingCorrectionRow = {
   otherValue: number | null;
 };
 
+/**
+ * The other sections a row's own (line, area, product) cell ALSO appears in.
+ *
+ * One return commonly trips more than one detector — that is the detectors working, not a fault —
+ * but the page said nothing about it, so the same money was printed two or three times at two or
+ * three different magnitudes with no reconciliation. Measured on production for 2026-07: the page
+ * listed 17 rows over 12 distinct cells, and D21/RO001 and D21/SA001 each appeared in ALL THREE
+ * sections. A reader summing the sentences for D21/SA001 got roughly 62,000 EGP of July distortion
+ * from one return whose actual effect on the closing's cell is -12,559.95.
+ */
+export type AlsoSeenIn = readonly string[];
+
 export type ReversalPair = {
   line: string;
   distributorName: string;
@@ -51,6 +63,8 @@ export type ReversalPair = {
   negativeUnits: number;
   negativeValue: number;
   impact: string;
+  /** Other sections listing this same cell. Empty when this row stands alone. */
+  alsoSeenIn: AlsoSeenIn;
 };
 
 /**
@@ -73,6 +87,8 @@ export type NetNegativeCell = {
   units: number;
   value: number;
   impact: string;
+  /** Other sections listing this same cell. Empty when this row stands alone. */
+  alsoSeenIn: AlsoSeenIn;
 };
 
 export type LateReturn = {
@@ -87,6 +103,8 @@ export type LateReturn = {
   originPeriod: string | null;
   originUnits: number | null;
   impact: string;
+  /** Other sections listing this same cell. Empty when this row stands alone. */
+  alsoSeenIn: AlsoSeenIn;
 };
 
 export type ClosingCorrectionsResult = {
@@ -96,9 +114,31 @@ export type ClosingCorrectionsResult = {
   reversalPairs: ReversalPair[];
   netNegatives: NetNegativeCell[];
   lateReturns: LateReturn[];
+  /**
+   * DISTINCT situations, not rows. One return routinely trips two or three detectors, and the
+   * headline used to add the three section lengths together — so a month with 12 real situations
+   * announced 17 (production, 2026-07). The page exists to size how far a month reads wrong before
+   * sign-off, so an inflated headline inflates exactly the judgement it is there to inform.
+   *
+   * A situation is one (line, area, product) cell: the grain the closing itself is read at, and the
+   * grain at which "this month reads wrong here" is a single fact.
+   */
+  situationCount: number;
   /** True when the month has nothing in any section — the page shows one calm all-clear. */
   isEmpty: boolean;
 };
+
+/** The three section headings, as the page prints them. Used for the cross-references. */
+const SECTION_LABEL: Record<ClosingCorrectionRow["kind"], string> = {
+  late_return: "Returns landing long after their sale",
+  net_negative: "Returns bigger than the month's sales",
+  reversal_pair: "Corrections that span two months",
+};
+
+/** One situation = one (line, area, product) cell — the grain the closing is read at. */
+function situationKey(row: { areaCode: string; line: string; productCode?: string; productName: string }): string {
+  return [row.line, row.areaCode, row.productCode ?? row.productName].join("|").toLowerCase();
+}
 
 function egp(value: number): string {
   return `${Math.abs(value).toLocaleString("en-US", {
@@ -118,10 +158,26 @@ function units(value: number): string {
 export function groupClosingCorrections(
   rows: readonly ClosingCorrectionRow[],
   period: string,
-): Pick<ClosingCorrectionsResult, "reversalPairs" | "netNegatives" | "lateReturns" | "isEmpty"> {
+): Pick<ClosingCorrectionsResult, "reversalPairs" | "netNegatives" | "lateReturns" | "situationCount" | "isEmpty"> {
   const reversalPairs: ReversalPair[] = [];
   const netNegatives: NetNegativeCell[] = [];
   const lateReturns: LateReturn[] = [];
+
+  // Which detectors each cell tripped. Built BEFORE the rows are mapped, so every row can be told
+  // where else its own cell appears — one return showing up three times is the detectors working,
+  // but the reader has to be told it is one return and not three.
+  const kindsByCell = new Map<string, Set<ClosingCorrectionRow["kind"]>>();
+  for (const row of rows) {
+    const key = situationKey(row);
+    const kinds = kindsByCell.get(key) ?? new Set<ClosingCorrectionRow["kind"]>();
+    kinds.add(row.kind);
+    kindsByCell.set(key, kinds);
+  }
+  const alsoSeenInFor = (row: ClosingCorrectionRow): string[] =>
+    [...(kindsByCell.get(situationKey(row)) ?? [])]
+      .filter((kind) => kind !== row.kind)
+      .map((kind) => SECTION_LABEL[kind])
+      .sort();
 
   for (const row of rows) {
     if (row.kind === "reversal_pair") {
@@ -143,6 +199,7 @@ export function groupClosingCorrections(
           `${row.distributorName} posted +${units(row.units)} (${egp(row.value)}) in ${row.period}, ` +
           `then took ${units(row.otherUnits ?? 0)} back in ${negativePeriod} — ` +
           `${row.period} reads high and ${negativePeriod} reads low by roughly that much.`,
+        alsoSeenIn: alsoSeenInFor(row),
       });
     } else if (row.kind === "net_negative") {
       // No distributor: the RPC sends distributorCode NULL for this kind because the row IS the
@@ -157,6 +214,7 @@ export function groupClosingCorrections(
         impact:
           `Across every distributor, returns exceed sales in this cell by ${units(row.units)} ` +
           `(${egp(row.value)}) this month.`,
+        alsoSeenIn: alsoSeenInFor(row),
       });
     } else {
       const originPeriod = row.otherPeriod;
@@ -176,6 +234,7 @@ export function groupClosingCorrections(
             `in ${originPeriod} (${units(row.otherUnits ?? 0)}) — the return lands months after its sale.`
           : `Returned ${units(row.units)} (${egp(row.value)}) with no earlier purchase on file from ` +
             `${row.distributorName} — worth checking the file with the distributor.`,
+        alsoSeenIn: alsoSeenInFor(row),
       });
     }
   }
@@ -189,6 +248,10 @@ export function groupClosingCorrections(
     reversalPairs,
     netNegatives,
     lateReturns,
+    // DISTINCT cells, never the sum of the three section lengths. Adding them counted one return
+    // as up to three situations: production 2026-07 has 17 rows over 12 cells, and two of those
+    // cells appear in ALL THREE sections.
+    situationCount: kindsByCell.size,
     isEmpty: reversalPairs.length === 0 && netNegatives.length === 0 && lateReturns.length === 0,
   };
 }
@@ -215,6 +278,7 @@ export async function loadClosingCorrections(input?: {
       reversalPairs: [],
       netNegatives: [],
       lateReturns: [],
+      situationCount: 0,
       isEmpty: true,
     };
   }
