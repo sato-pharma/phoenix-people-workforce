@@ -130,6 +130,22 @@ const JOBS = {
     // cuts at 30 regardless (see header).
     requestTimeout: 300,
   },
+  "cv-lifecycle-rotate-sheet-token": {
+    title: "Phoenix — CV lifecycle sheet token rotation",
+    path: "/api/cron/cv-lifecycle-rotate-sheet-token",
+    // 04:03 Cairo, Fridays. The third of the three weekly token rotations, twenty minutes behind
+    // marketing at 03:43 and forty behind direct orders at 03:23. Each one waits on a Google Apps
+    // Script round-trip that the route allows 60s, well past the 30s at which cron-job.org gives up
+    // on the request, so the spacing is what stops the three overlapping on the same Apps Script
+    // account. Weekly, because a feed token that reads candidates' names and phone numbers is worth
+    // replacing often and the sheet only reads it once an hour.
+    schedule: { hours: [4], minutes: [3], mdays: [-1], months: [-1], wdays: [5] },
+    // Mints a link, POSTs it to the sheet, then waits up to 40s watching for the sheet to USE it
+    // before revoking the old one — so this route is expected to run past the 30s platform cut and
+    // log a false red while succeeding. Read the outcome from the link table, not from the
+    // execution colour. 300 matches the rest of the account; the platform still cuts at 30 (header).
+    requestTimeout: 300,
+  },
   "reconciliation-check": {
     title: "Phoenix — nightly reconciliation harness",
     path: "/api/cron/reconciliation-check",

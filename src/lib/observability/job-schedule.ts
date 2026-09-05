@@ -60,6 +60,7 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   { slug: "phoenix-run-synthetic-journeys", kind: "cron", schedule: "0 * * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-direct-orders-rotate-sheet-token", kind: "cron", schedule: "23 3 * * 5", graceSeconds: 2 * HOUR },
   { slug: "phoenix-marketing-requests-rotate-sheet-token", kind: "cron", schedule: "43 3 * * 5", graceSeconds: 2 * HOUR },
+  { slug: "phoenix-cv-lifecycle-rotate-sheet-token", kind: "cron", schedule: "3 4 * * 5", graceSeconds: 2 * HOUR },
   { slug: "phoenix-brevo-keepalive", kind: "cron", schedule: "9 4 1 * *", graceSeconds: 12 * HOUR },
   { slug: "phoenix-direct-orders-expire-held", kind: "cron", schedule: "17 2 * * *", graceSeconds: 2 * HOUR },
   { slug: "phoenix-direct-orders-probation", kind: "cron", schedule: "27 2 * * *", graceSeconds: 2 * HOUR },
