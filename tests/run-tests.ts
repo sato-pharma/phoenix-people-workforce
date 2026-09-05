@@ -208,6 +208,7 @@ import { runRecruitmentThroughputTrendTests } from "./recruitment-throughput-tre
 import { runRecruitmentCvFindingsTests } from "./recruitment-cv-findings.test.ts";
 import { runRecruitmentNotACvPileTests } from "./recruitment-not-a-cv-pile.test.ts";
 import { runRecruitmentCvSearchTests } from "./recruitment-cv-search.test.ts";
+import { runRecruitmentApiRoutesExistTests } from "./recruitment-api-routes-exist.test.ts";
 import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.test.ts";
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
 import { runRecruitmentScreeningWorkstationTests } from "./recruitment-screening-workstation.test.ts";
@@ -1713,6 +1714,10 @@ await runTest(
 await runTest(
   "recruitment CV content search (every term must match, substring not lexeme, and a truncated list says so)",
   runRecruitmentCvSearchTests,
+);
+await runTest(
+  "recruitment API routes exist (a re-platform deleted a route and left its button behind, 404ing on every press)",
+  runRecruitmentApiRoutesExistTests,
 );
 await runTest(
   "recruitment screening page (the queue has an address, in both shells, and the viewer never comes from the URL)",

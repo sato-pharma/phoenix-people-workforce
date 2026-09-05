@@ -1691,21 +1691,22 @@ function RequisitionActionsControl({
           {item.label}
         </Button>
       ))}
-      {["req_open", "req_published"].includes(requisition.status) ? (
-        <Button
-          variant="secondary"
-          disabled={pending}
-          onClick={() =>
-            run(async () => {
-              const data = await postJson(`/api/recruitment/requisitions/${requisition.id}/posting`, {});
-              const path = typeof data.path === "string" ? data.path : "";
-              return `Application link: ${window.location.origin}${path}`;
-            })
-          }
-        >
-          Application link
-        </Button>
-      ) : null}
+      {/* THE "APPLICATION LINK" BUTTON WAS REMOVED HERE, 2026-09-05, because it could not work.
+          It called POST /api/recruitment/requisitions/[id]/posting. That route and its
+          `recruitment_job_postings` table were BOTH added by 670adc127 ("Phase 4a public application
+          funnel") and BOTH deleted by f8ea71fc9 ("re-platform onto ats_ tables"). The button was left
+          behind, so every press since has returned 404 — on a live screen, with four open
+          requisitions.
+
+          The capability it promised did not vanish; it was REPLACED. Applications now arrive through
+          tracked WhatsApp and email adverts — buildApplyLink and the PX- channel codes in
+          src/lib/recruitment/outreach/, with their own panel in job-advert-panel.tsx and 43 channels
+          on file. Rebuilding a hosted application page to satisfy an orphaned button would resurrect
+          the design that was deliberately retired.
+
+          A sweep added with this change (tests/recruitment-api-routes-exist.test.ts) checks every
+          /api/recruitment call in this module against the route tree. It found 42 calls and exactly
+          one orphan — this one — so the next re-platform cannot quietly leave another. */}
       {canDelete ? (
         <Button
           variant="destructive"
