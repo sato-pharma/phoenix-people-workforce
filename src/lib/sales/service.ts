@@ -319,16 +319,37 @@ function sumTargetValues(items: ScopedRecord[]) {
 /**
  * The part of these rows' sales that sits on a key carrying a target.
  *
- * Every achievement % on this dashboard divides THIS, never the raw sales total. Only 36 of
- * 142 (line, area) pairs with July sales had a target at all, so summing untargeted sales over
- * whatever targets happen to exist reports an over-achievement nobody earned — the identical
- * defect the portal's incentive tab carried. Falls back to the full sales value so a row shape
- * without the field keeps its previous meaning rather than silently reading as zero.
+ * A COVERAGE figure, and no longer the numerator of any achievement on this dashboard — see
+ * `sumSalesValues` below for what the percentages divide, and why that changed on 2026-09-05.
+ * It is still carried and still exposed (the SFE targets widget computes its own rate from it),
+ * so it stays. Falls back to the full sales value when a row shape lacks the field, rather than
+ * silently reading as zero.
  */
 function sumCoveredSalesValues(items: ScopedRecord[]) {
   return sum(items, (item) =>
     typeof item.coveredSalesValue === "number" ? item.coveredSalesValue : item.salesValue,
   );
+}
+
+/**
+ * Every pound in these rows — the numerator every achievement % on this dashboard divides.
+ *
+ * THIS DIVIDED THE COVERED SLICE UNTIL 2026-09-05, and the comment defending it said summing
+ * untargeted sales over whatever targets exist "reports an over-achievement nobody earned". The
+ * owner ruled otherwise, three times in one day: "THE OLD CLOSING IS THE CORRECT ONE", then
+ * "FOLLOW THE OLD MONTHLY CLOSING ... MUST BE 100% IDENTICAL". `closingAchievement`
+ * (monthly-closing-matrix-cells.ts) divides all sales and always has, so the covered numerator
+ * was the thing disagreeing with the closing, not protecting against it.
+ *
+ * It mattered because this dashboard feeds the PORTAL HERO CARD — the rep's own headline. Measured
+ * on production before the change, over the four months carrying targets, 7 of 85 reps were shown
+ * two different numbers for themselves: one read 63.21% on her portal against 93.76% on the
+ * closing, a 30.55-point gap straddling the 90% line. That is precisely the failure the owner's
+ * first golden rule exists to prevent — never a mismatch of sales for the same person in two
+ * places in his account.
+ */
+function sumSalesValues(items: ScopedRecord[]) {
+  return sum(items, (item) => item.salesValue);
 }
 
 function aggregate<T>(items: T[], keyBuilder: (item: T) => string) {
@@ -904,7 +925,6 @@ export async function getSalesDashboard(
   const companyRecords = classifiedRecords.filter((record) => record.ownership.include_in_company_total);
 
   const totalSales = sum(companyRecords, (record) => record.salesValue);
-  const totalCoveredSales = sumCoveredSalesValues(companyRecords);
   const totalTarget = sumTargetValues(companyRecords);
   const unitsSold = sum(companyRecords, (record) => record.salesUnits);
   const periodGroups = aggregate(companyRecords, (record) => record.period);
@@ -917,7 +937,7 @@ export async function getSalesDashboard(
       period,
       sales,
       target,
-      achievementRate: performanceMetric(sumCoveredSalesValues(items), target),
+      achievementRate: performanceMetric(sumSalesValues(items), target),
       linkedEmployees: countPersonalSalesEmployees(items),
     };
   });
@@ -933,7 +953,7 @@ export async function getSalesDashboard(
   const familyMatrix = [...familyGroupsMap.entries()].map(([name, items]) => {
     const sales = sum(items, (item) => item.salesValue);
     const target = sumTargetValues(items);
-    const achievementRate = performanceMetric(sumCoveredSalesValues(items), target);
+    const achievementRate = performanceMetric(sumSalesValues(items), target);
     const status: "green" | "yellow" | "red" | "neutral" =
       target === 0 ? "neutral" : achievementRate >= 1 ? "green" : achievementRate >= 0.8 ? "yellow" : "red";
     return { name, sales, target, achievementRate, units: sum(items, (item) => item.salesUnits), status };
@@ -949,7 +969,7 @@ export async function getSalesDashboard(
         family: items[0]?.family ?? "Unknown",
         sales,
         target,
-        achievementRate: performanceMetric(sumCoveredSalesValues(items), target),
+        achievementRate: performanceMetric(sumSalesValues(items), target),
       };
     })
     .sort((left, right) => right.sales - left.sales);
@@ -965,7 +985,7 @@ export async function getSalesDashboard(
     .map(([name, items]) => {
       const sales = sum(items, (item) => item.salesValue);
       const target = sumTargetValues(items);
-      return { name, sales, target, achievementRate: performanceMetric(sumCoveredSalesValues(items), target) };
+      return { name, sales, target, achievementRate: performanceMetric(sumSalesValues(items), target) };
     })
     .sort((left, right) => right.sales - left.sales);
 
@@ -1023,7 +1043,7 @@ export async function getSalesDashboard(
         manager,
         sales,
         target,
-        achievementRate: performanceMetric(sumCoveredSalesValues(items), target),
+        achievementRate: performanceMetric(sumSalesValues(items), target),
         line: items[0]?.line ?? "Unknown",
         topProduct: topProductEntry?.product ?? "Unknown",
         retailSales: sum(retailItems, (item) => item.salesValue),
@@ -1103,7 +1123,11 @@ export async function getSalesDashboard(
     summary: {
       totalApprovedSales: totalSales,
       totalApprovedTarget: totalTarget,
-      achievementRate: performanceMetric(totalCoveredSales, totalTarget),
+      // These three now divide: sales over target IS the rate beside them. Until 2026-09-05 the
+      // rate came from the covered slice while the sales figure above it was every pound, so the
+      // summary contradicted itself — and this is the object the PORTAL HERO CARD reads, which is
+      // how a rep came to see 63.21% for a month the closing scored 93.76%.
+      achievementRate: performanceMetric(totalSales, totalTarget),
       approvedRecords: companyRecords.length,
       dsmLinkedRecords: linkedCount,
       dsmTotalRecords: linkageTotal,
