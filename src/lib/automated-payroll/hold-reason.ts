@@ -165,3 +165,39 @@ export function assertHoldReasonsPresent(candidates: HoldReasonCandidate[]): voi
       `because a held row is dropped at publish and writes no payslip. Add one for: ${named}.`,
   );
 }
+
+/**
+ * The candidates a step CONFIRMATION is judged on: the rows it is about to
+ * persist, and only those.
+ *
+ * `saveStep` is not the only way a hold reaches `hold_reason`. Confirming a step
+ * writes back every row the step is currently showing — `stepRowToPatch` carries
+ * `onHold` and `reason` straight onto the draft row — so a reasonless hold that
+ * was never edited is persisted, and the step locks, without the save rule ever
+ * running. That is the click that matters most: it is the last one before
+ * publish drops the held rows and their reason becomes unrecoverable. Both paths
+ * share this mapping so they cannot drift into judging different things.
+ *
+ * `readOnly` rows are dropped because `confirmStep` drops them too — an
+ * informational row (an employee serving notice into a FUTURE month) is rendered
+ * but never written. Holding a confirmation open over one would block the step
+ * on a reason that no row would ever store.
+ */
+export function holdCandidatesFromStepRows(
+  rows: ReadonlyArray<{
+    hrId: string;
+    fullName?: string | null;
+    onHold?: boolean;
+    reason?: string | null;
+    readOnly?: boolean;
+  }>,
+): HoldReasonCandidate[] {
+  return rows
+    .filter((row) => !row.readOnly)
+    .map((row) => ({
+      hrId: row.hrId,
+      fullName: row.fullName ?? null,
+      onHold: row.onHold ?? false,
+      reason: row.reason ?? null,
+    }));
+}
