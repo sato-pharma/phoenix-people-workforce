@@ -781,6 +781,20 @@ export function ScreeningWorkstation({
    * field registry — and `updateCandidate` recomputes `national_id_norm` on write, which is what
    * makes an accepted national id immediately usable by the locked identity rule.
    */
+  /**
+   * Write ONE reader finding onto the record.
+   *
+   * ONE FIELD PER PRESS, deliberately, and a save-all button was built and removed on
+   * 2026-09-05 rather than shipped. These are the readings the extractor itself hedged on —
+   * `cv-auto-apply` declined them precisely because it is not confident — so a control that
+   * applies several at once is the unattended write the confidence gate exists to prevent,
+   * wearing a button. `nationalId` makes it sharper than a style preference: a wrong one feeds
+   * the locked identity rule in candidate-matching.ts and can make two different people look
+   * like one.
+   *
+   * Making the 271 candidates who have findings REACHABLE is the fix — the row badge and the
+   * pile — not making it cheaper to accept a reading without looking at it.
+   */
   const acceptReaderFinding = useCallback(
     async (fieldKey: string, value: ExtractedCvValue) => {
       const candidateId = selected?.id;

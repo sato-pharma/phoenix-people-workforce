@@ -108,6 +108,9 @@ function quietCandidate(): WorkQueueInput {
     duplicateCount: 1,
     interviewToday: false,
     redFlagged: false,
+    // Required on WorkQueueInput on purpose: a construction site that forgot it would put
+    // nobody in the "CV data to save" pile, silently. These fixtures are not about that pile.
+    unsavedFindings: 0,
     sentToManagerAt: null,
     status: "new",
   };
@@ -708,6 +711,7 @@ export async function runRecruitmentScreeningWorkstationTests() {
       duplicateCount: 1,
       interviewToday: false,
       redFlagged: false,
+      unsavedFindings: 0,
       sentToManagerAt: null,
       status: "new",
     };

@@ -205,6 +205,7 @@ import { runRecruitmentAppliedForTests } from "./recruitment-applied-for.test.ts
 import { runRecruitmentManagerGroupingTests } from "./recruitment-manager-grouping.test.ts";
 import { runRecruitmentBulkDecisionTests } from "./recruitment-bulk-decision.test.ts";
 import { runRecruitmentThroughputTrendTests } from "./recruitment-throughput-trend.test.ts";
+import { runRecruitmentCvFindingsTests } from "./recruitment-cv-findings.test.ts";
 import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.test.ts";
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
 import { runRecruitmentScreeningWorkstationTests } from "./recruitment-screening-workstation.test.ts";
@@ -1697,6 +1698,10 @@ await runTest(
 await runTest(
   "recruitment throughput trend (a span the history does not cover reads unknown, never zero, and a decision is a candidate not an event)",
   runRecruitmentThroughputTrendTests,
+);
+await runTest(
+  "recruitment CV findings (the reader found it and nobody saved it — badge, pile, and one request to accept them)",
+  runRecruitmentCvFindingsTests,
 );
 await runTest(
   "recruitment screening page (the queue has an address, in both shells, and the viewer never comes from the URL)",

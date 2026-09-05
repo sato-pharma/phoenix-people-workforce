@@ -28,6 +28,11 @@ import {
   type ManagerSend,
 } from "@/lib/recruitment/manager-sends";
 import { hrIdForStorage, hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id";
+import { ROW_FINDING_KEYS } from "@/lib/recruitment/cv-findings";
+import type {
+  ExtractedCandidateFields,
+  ExtractedCvValue,
+} from "@/lib/recruitment/cv-extraction-fields";
 import {
   listHiringManagerOptions,
   pushCandidatesToManager,
@@ -1218,6 +1223,94 @@ export async function listCandidateStatusEvents(candidateId: string): Promise<Ca
     .order("created_at", { ascending: false });
   if (error) throw error;
   return ((data ?? []) as CandidateStatusEventDbRow[]).map(mapCandidateStatusEvent);
+}
+
+/** Paging for the projected extraction read. Same shape as its siblings above. */
+const FINDING_PAGE_SIZE = 1000;
+const FINDING_PAGE_LIMIT = 50;
+
+/**
+ * The handful of CV findings the row badge checks, for every candidate, keyed by candidate id.
+ *
+ * ── WHY THIS IS A PROJECTION AND NOT A NORMAL READ ──────────────────────────────────────────────
+ *
+ * `extracted_fields` is 1,549 kB across the live pool (measured 2026-09-05) and every round trip
+ * from here crosses the Atlantic — which is exactly why `loadCvJobTitlesByCandidate` above is
+ * called with only the candidates the free evidence could not answer. Pulling the whole blob on
+ * every screening page load, to compute a badge, would be the most expensive thing the page does.
+ *
+ * PostgREST can return a jsonb member instead of the whole column, so this asks for only the three
+ * keys the badge checks: 105 kB, fifteen times less, verified against production before it was
+ * written. Each one comes back in its stored `{ value, confidence }` shape, which is exactly what
+ * `listUnappliedCvFields` expects — so the badge is computed by the same code as the CV Data tab
+ * rather than by a second opinion about what counts.
+ *
+ * THE SELECT IS BUILT FROM `ROW_FINDING_KEYS`, never written out by hand. A key added to that list
+ * and forgotten here would be silently unread, and the badge would quietly stop counting it with
+ * nothing to show that it had — the failure being designed out by construction rather than pinned
+ * by a test.
+ */
+export async function loadRowFindings(): Promise<Map<string, ExtractedCandidateFields>> {
+  const byCandidate = new Map<string, ExtractedCandidateFields>();
+  const seen = new Set<string>();
+  const supabase = recruitmentDb();
+
+  const projection = [
+    "candidate_id",
+    "created_at",
+    ...ROW_FINDING_KEYS.map((key) => `${key}:extracted_fields->${key}`),
+  ].join(",");
+
+  for (let page = 0; page < FINDING_PAGE_LIMIT; page += 1) {
+    const from = page * FINDING_PAGE_SIZE;
+    const { data, error } = await supabase
+      .from("ats_candidate_cv_extractions")
+      .select(projection)
+      // Newest first, so the FIRST row seen for a candidate is the reading that counts. A candidate
+      // can hold several extractions — a re-read writes another row rather than replacing one.
+      .order("created_at", { ascending: false })
+      .order("candidate_id", { ascending: true })
+      .range(from, from + FINDING_PAGE_SIZE - 1);
+
+    if (error) {
+      // No extractions table means no findings, which the row renders as no badge — exactly how it
+      // behaved before any of this existed.
+      if (isMissingStatusEventRelation(error)) return byCandidate;
+      throw error;
+    }
+
+    // THROUGH `unknown` DELIBERATELY. supabase-js types a select string it can parse; it cannot
+    // parse a jsonb projection (`alias:column->key`), so it falls back to GenericStringError[]
+    // and a direct cast is rejected as non-overlapping. The runtime shape is verified against
+    // production — each key returns its stored `{ value, confidence }` object.
+    const rows = (data ?? []) as unknown as Array<Record<string, unknown>>;
+    for (const row of rows) {
+      const candidateId = textOrNull(row.candidate_id);
+      if (!candidateId || seen.has(candidateId)) continue;
+      seen.add(candidateId);
+
+      const fields: ExtractedCandidateFields = {};
+      for (const key of ROW_FINDING_KEYS) {
+        const held = row[key] as { value?: unknown; confidence?: unknown } | null | undefined;
+        // A key absent from the extraction comes back null, and that is not a finding — it is the
+        // reader never having proposed anything, which is a different thing from proposing a blank.
+        if (!held || typeof held !== "object") continue;
+        fields[key] = {
+          confidence: held.confidence === "high" ? "high" : "low",
+          value: (held.value ?? null) as ExtractedCvValue,
+        };
+      }
+      if (Object.keys(fields).length > 0) byCandidate.set(candidateId, fields);
+    }
+
+    if (rows.length < FINDING_PAGE_SIZE) return byCandidate;
+  }
+
+  throw new Error(
+    `CV finding paging stopped at ${FINDING_PAGE_LIMIT * FINDING_PAGE_SIZE} rows. Refusing to report ` +
+      "a partial read as a complete one — a candidate with unsaved findings would show no badge and " +
+      "read as done.",
+  );
 }
 
 /** A runaway guard on the decision history, not a data cap. */
