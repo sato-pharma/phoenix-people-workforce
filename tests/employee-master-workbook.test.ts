@@ -9,11 +9,10 @@ import {
 import { createEmployeeColumnLookup } from "../src/lib/imports/employee-column-map.ts";
 import { normalizeHeaderName } from "../src/lib/imports/employee-normalizers.ts";
 import {
-  excelCellText,
-  excelWorksheetToJsonRows,
-  firstExcelWorksheet,
-  loadExcelWorkbook,
-} from "../src/lib/uploads/exceljs-rows.ts";
+  EMPLOYEE_UPLOAD_HEADER_SCAN_ROWS,
+  parseEmployeeUploadRows,
+} from "../src/lib/imports/employee-upload-parse.ts";
+import { firstExcelWorksheet, loadExcelWorkbook } from "../src/lib/uploads/exceljs-rows.ts";
 
 // The Employee Master workbook is both the export and the import template, so its SHAPE is a
 // contract with `app/api/imports/employees/dry-run/route.ts` rather than a matter of taste. Four
@@ -130,27 +129,6 @@ async function buildFixtureWorkbook() {
   return { buffer, employees };
 }
 
-/** The importer's own header scan, copied from the dry-run route so the test asks what it asks. */
-function findHeaderRowTheWayTheImporterDoes(sheet: {
-  columnCount: number;
-  getRow: (n: number) => { getCell: (n: number) => { value: unknown } };
-  rowCount: number;
-}) {
-  for (let rowNumber = 1; rowNumber <= Math.min(sheet.rowCount, 10); rowNumber += 1) {
-    const row = sheet.getRow(rowNumber);
-    const values = Array.from({ length: sheet.columnCount }, (_, index) =>
-      excelCellText(row.getCell(index + 1).value as never).toLowerCase(),
-    );
-    if (
-      values.some((value) => ["employee id", "hr_id", "hr id", "employee code"].includes(value)) &&
-      values.some((value) => value === "full name")
-    ) {
-      return rowNumber;
-    }
-  }
-  return null;
-}
-
 export async function runEmployeeMasterWorkbookTests() {
   const { buffer } = await buildFixtureWorkbook();
 
@@ -164,17 +142,29 @@ export async function runEmployeeMasterWorkbookTests() {
     "the importer reads worksheets[0] by POSITION — putting the cover sheet first would hand it a page of prose",
   );
 
-  // ── 2. the header row is inside the importer's ten-row scan ──────────────────
-  const headerRow = findHeaderRowTheWayTheImporterDoes(sheet as never);
-  assert.equal(
-    headerRow,
-    employeeMasterWorkbookContract.headerRow,
-    "the importer scans only rows 1-10 for a row carrying both Employee ID and Full Name",
+  // ── 2 & 3. THE REAL PARSER READS IT ─────────────────────────────────────────
+  //
+  // This runs `parseEmployeeUploadRows` — the exact function both the dry-run and the confirm
+  // route call — rather than a copy of its logic. A test that re-implements the thing it is
+  // checking agrees with itself by construction; this one can actually fail.
+  const parsed = await parseEmployeeUploadRows<Record<string, unknown>>(
+    new File([buffer], "employee-master.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
   );
-  assert.ok(headerRow !== null && headerRow <= 10, "header row must be within the ten-row scan");
+  assert.ok(!("error" in parsed), `the production parser must read the template: ${JSON.stringify(parsed)}`);
 
-  // ── 3. THE REGRESSION: spare rows must not reach the importer ────────────────
-  const rows = excelWorksheetToJsonRows(sheet as never, headerRow, { defaultValue: null });
+  assert.equal(
+    parsed.headerRowNumber,
+    employeeMasterWorkbookContract.headerRow,
+    "the importer scans only the first rows for a row carrying both Employee ID and Full Name",
+  );
+  assert.ok(
+    parsed.headerRowNumber <= EMPLOYEE_UPLOAD_HEADER_SCAN_ROWS,
+    `the header must sit within the parser's ${EMPLOYEE_UPLOAD_HEADER_SCAN_ROWS}-row scan`,
+  );
+
+  const rows = parsed.rows;
   assert.equal(
     rows.length,
     EMPLOYEE_COUNT,
