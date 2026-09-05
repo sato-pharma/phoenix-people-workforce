@@ -1257,9 +1257,15 @@ export async function runClosingEngineExportTests() {
     const contentsPart = partOf("Contents");
     assert.ok(contentsPart, "the contents page must be registered in the review build too");
     const contentsSheet = await opened.file(contentsPart!)!.async("string");
+    // Matched case-insensitively on purpose: the band's CASE is a presentation choice — it is set in
+    // small caps so a section reads as a section — and pinning the literal string would make a
+    // styling change look like a lost band. What must hold is that the band is there and that a
+    // review sheet is listed under it.
+    const bandAt = contentsSheet.toLowerCase().indexOf(">performance review</t>");
+    assert.ok(bandAt >= 0, "the review's sheets must appear under their own contents band");
     assert.ok(
-      contentsSheet.includes(">Performance review</t>"),
-      "the review's sheets must appear under their own contents band",
+      contentsSheet.slice(bandAt).includes("District Managers"),
+      "and the band must be followed by the review's own pages, not stand empty",
     );
     assert.ok(
       /HYPERLINK\("#'District Managers'!A1"/.test(contentsSheet),
@@ -1328,8 +1334,12 @@ export async function runClosingEngineExportTests() {
     // Twelve undifferentiated rows are a list; the bands are what make the page a map. They are
     // asserted on the EMITTED sheet rather than on the source table, because the thing that breaks
     // is not the table — it is the XML around it.
+    // Case-insensitive on purpose: the bands are set in small caps so a section reads as a section,
+    // and the CASE is a presentation choice. Pinning the literal string would report a styling change
+    // as a lost band. That the band is present, and named, is the invariant.
+    const lower = sheet.toLowerCase();
     for (const band of ["Start here", "By area", "By product family", "Behind the numbers"]) {
-      assert.ok(sheet.includes(`>${band}</t>`), `${label}: the contents page lost its "${band}" band`);
+      assert.ok(lower.includes(`>${band.toLowerCase()}</t>`), `${label}: the contents page lost its "${band}" band`);
     }
 
     // A band spans both columns, so every one adds a merge. A hard-coded count is a repair prompt:
