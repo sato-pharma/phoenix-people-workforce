@@ -2132,6 +2132,12 @@ async function reassignLiveManagerOwnership(input: {
   // manager_hr_id across them would restate settled payouts to match today's org chart. Sales
   // attribution now comes from SoS Monthly Closing, which resolves the manager from the seat model
   // per period, so there is nothing here left to keep in sync.
+  // `sales_targets` is EMPTY on production and has never held a row — the live sales targets are
+  // `au.monthly_targets` (see src/lib/sales/monthly-targets.ts, and the table's own Postgres
+  // COMMENT). So both PATCHes below match nothing; they cost two round-trips per manager change
+  // and change no data. They stay because tests/manager-cascade-frozen-tables.test.ts pins their
+  // presence in the required CI `validate` check — retiring the pair is a deliberate change that
+  // must update that test too, not a tidy-up.
   await patchOptionalTable(
     `sales_targets?manager_hr_id=eq.${previous}&year=gt.${year}`,
     salesPayload,
