@@ -589,7 +589,7 @@ html:has(.admin-shell) {
 
 .login-logo-glow::before,
 .login-logo-glow::after {
-  border-radius: 9999px;
+
   content: "";
   inset: 5%;
   position: absolute;
@@ -610,7 +610,7 @@ html:has(.admin-shell) {
 
 .login-ember {
   background: linear-gradient(180deg, #ffb000, #ff4d00);
-  border-radius: 9999px;
+
   bottom: -16px;
   box-shadow: 0 0 16px rgba(255, 106, 0, 0.9);
   opacity: 0;
