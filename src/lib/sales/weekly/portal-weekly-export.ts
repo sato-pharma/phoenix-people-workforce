@@ -1,6 +1,6 @@
 // Employee-portal Weekly Sales — simple 3-tab XLSX export.
 // Tabs: Summary KPIs, Week Comparison, Report Sources.
-// Uses addPhoenixTableSheet for premium Phoenix styling on every tab.
+// Uses addPhoenixTableSheet on the HOUSE theme — SATO-DIS-2026-01 v1.0 — on every tab.
 
 import ExcelJS from "exceljs";
 
@@ -69,6 +69,7 @@ export function buildPortalWeeklyWorkbook(
   ];
 
   addPhoenixTableSheet(workbook, {
+    theme: "house",
     title: "Weekly Sales Summary",
     subtitle,
     sheetName: "Summary",
@@ -93,6 +94,7 @@ export function buildPortalWeeklyWorkbook(
   }));
 
   addPhoenixTableSheet(workbook, {
+    theme: "house",
     title: "Week-by-Week Comparison",
     subtitle,
     sheetName: "Week Comparison",
@@ -119,6 +121,7 @@ export function buildPortalWeeklyWorkbook(
   }));
 
   addPhoenixTableSheet(workbook, {
+    theme: "house",
     title: "Report Sources",
     subtitle,
     sheetName: "Sources",

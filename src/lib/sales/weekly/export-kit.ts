@@ -1,6 +1,6 @@
 import type { Workbook, Worksheet } from "@node-projects/excelforge";
 
-import { systemIdentity } from "@/config/system-settings";
+import { HOUSE_DOCUMENT_STANDARD } from "@/lib/export/house-xlsx-palette";
 import { WEEKLY_TRACKED_LINES_LABEL } from "@/lib/sales/weekly/tracked-lines";
 import type { WeeklyDashboard } from "@/lib/sales/weekly/types";
 
@@ -22,19 +22,36 @@ import type { WeeklyDashboard } from "@/lib/sales/weekly/types";
 //     `makeCfPriority()` per sheet.
 // ──────────────────────────────────────────────────────────────────────────────
 
-// ── premium palette ─────────────────────────────────────────────────────────────
-export const ORANGE = "FFF97316";
-export const ORANGE_DEEP = "FFEA580C";
-export const BLUE = "FF2563EB";
-export const SLATE_900 = "FF0F172A";
-export const SLATE_800 = "FF1E293B";
+// ── the house document identity — SATO-DIS-2026-01 v1.0 ─────────────────────────
+//
+// Every colour is the COMPANY's, measured from the Sato Pharma mark, never this app's. The ink rule
+// holds: colour is carried by LINES and TYPE, never by filled area, and the one permitted fill is
+// the 6% zebra row.
+//
+// THE NAMES CHANGED, DELIBERATELY. This kit used to export `ORANGE`, `SLATE_900` and `ZEBRA` (a
+// warm orange band). Leaving those names pointed at blues would be the same mistake as naming a bag
+// of pharmacies `contacts`: the next session reads the name, believes it, and reprints the old look
+// from memory. So the names say what the values are.
+//
+// WHAT THE INK RULE DOES **NOT** REACH HERE: the conditional formats in `export-workbook.ts`. A
+// colour scale IS the analysis on a matrix sheet — there is no type-only form of a heatmap, and
+// removing it removes the reading rather than the decoration. Those are re-pointed into this palette
+// where they express MAGNITUDE (white to light to deep, a proper sequential ramp) and keep a real
+// signal colour where they express a VERDICT. Chrome follows the ink rule; data-driven emphasis is
+// the data.
+export const DEEP = "FF0A527D";
+export const BLUE = "FF0A6BA6";
+export const LIGHT = "FF1482C2";
+export const TINT = "FFF2F6FA"; // Brand Blue at 6% — the zebra, and the only fill in the chrome
+export const HAIR = "FFB9C7D4"; // hairline grey for cell grids
+export const MUTED = "FF5A6B7C"; // secondary type: sub-labels, provenance, units
+export const BODY = "FF1A1A1A";
 export const WHITE = "FFFFFFFF";
-export const INK = "FF1E293B";
-export const ZEBRA = "FFFDF3EA"; // warm light-orange band
-export const GRIDC = "FFF6C9A4"; // light-orange gridlines (admin-shell language)
-export const GREEN = "FF16A34A";
-export const AMBER = "FFF59E0B";
-export const RED = "FFDC2626";
+// Verdict colours. TYPE and data-driven emphasis only, never chrome — see the note above. The red is
+// the standard's own sanctioned non-logo colour rather than a second red invented here.
+export const GOOD = "FF0F766E";
+export const WARN = "FF9A5B08";
+export const BAD = "FFB3261E";
 
 // ── number formats ──────────────────────────────────────────────────────────────
 export const F_VALUE = "#,##0";
@@ -115,41 +132,55 @@ export function makeCfPriority() {
 // ── style helpers ────────────────────────────────────────────────────────────────
 export type CS = Parameters<Worksheet["setStyle"]>[2];
 export const fill = (argb: string) => ({ type: "pattern" as const, pattern: "solid" as const, fgColor: argb });
-export const border = () => { const s = { style: "thin" as const, color: GRIDC }; return { top: s, bottom: s, left: s, right: s }; };
+export const border = () => { const s = { style: "thin" as const, color: HAIR }; return { top: s, bottom: s, left: s, right: s }; };
 
-export const titleStyle: CS = { font: { bold: true, size: 18, color: WHITE, name: "Calibri" }, fill: fill(SLATE_900), alignment: { vertical: "center", indent: 1 } };
-export const subtitleStyle: CS = { font: { size: 10, color: ORANGE, name: "Calibri", bold: true }, fill: fill(SLATE_900), alignment: { vertical: "center", indent: 1 } };
-export const headerStyle: CS = { font: { bold: true, size: 11, color: WHITE, name: "Calibri" }, fill: fill(SLATE_900), alignment: { vertical: "center", horizontal: "left", indent: 1 }, border: border() };
-export const headerRightStyle: CS = { ...headerStyle, alignment: { vertical: "center", horizontal: "right", indent: 1 } };
-export const totalStyle: CS = { font: { bold: true, size: 11, color: WHITE, name: "Calibri" }, fill: fill(SLATE_800), border: border(), alignment: { vertical: "center", indent: 1 } };
-export const totalNumStyle = (fmt: string): CS => ({ font: { bold: true, size: 11, color: WHITE, name: "Calibri" }, fill: fill(SLATE_800), border: border(), alignment: { vertical: "center", horizontal: "right" }, numberFormat: { formatCode: fmt } });
+/** The rule a header sits under, and a total sits between. A line, never a band. */
+const RULE_BLUE = { style: "medium" as const, color: BLUE };
+
+export const titleStyle: CS = { font: { bold: true, size: 16, color: DEEP, name: "Aptos Display" }, alignment: { vertical: "center", indent: 1 } };
+export const subtitleStyle: CS = { font: { size: 9, color: MUTED, name: "Aptos" }, alignment: { vertical: "center", indent: 1 } };
+export const headerStyle: CS = { font: { bold: true, size: 10, color: DEEP, name: "Aptos" }, alignment: { vertical: "bottom", horizontal: "left", indent: 1 }, border: { bottom: RULE_BLUE, top: { style: "thin" as const, color: HAIR } } };
+export const headerRightStyle: CS = { ...headerStyle, alignment: { vertical: "bottom", horizontal: "right", indent: 1 } };
+export const totalStyle: CS = { font: { bold: true, size: 10.5, color: DEEP, name: "Aptos" }, border: { bottom: RULE_BLUE, top: RULE_BLUE }, alignment: { vertical: "center", indent: 1 } };
+export const totalNumStyle = (fmt: string): CS => ({ font: { bold: true, size: 10.5, color: DEEP, name: "Aptos" }, border: { bottom: RULE_BLUE, top: RULE_BLUE }, alignment: { vertical: "center", horizontal: "right" }, numberFormat: { formatCode: fmt } });
 
 export function textCell(bold = false, zebra = false): CS {
-  return { font: { color: INK, size: 10.5, bold, name: "Calibri" }, alignment: { vertical: "center", indent: 1 }, border: border(), ...(zebra ? { fill: fill(ZEBRA) } : {}) };
+  return { font: { color: BODY, size: 10, bold, name: "Aptos" }, alignment: { vertical: "center", indent: 1 }, border: border(), ...(zebra ? { fill: fill(TINT) } : {}) };
 }
 export function numCell(fmt: string, zebra = false): CS {
-  return { font: { color: INK, size: 10.5, name: "Calibri" }, alignment: { vertical: "center", horizontal: "right" }, numberFormat: { formatCode: fmt }, border: border(), ...(zebra ? { fill: fill(ZEBRA) } : {}) };
+  return { font: { color: BODY, size: 10, name: "Aptos" }, alignment: { vertical: "center", horizontal: "right" }, numberFormat: { formatCode: fmt }, border: border(), ...(zebra ? { fill: fill(TINT) } : {}) };
 }
-/** Orange REPT() bar style (in-cell sparkline emulation). */
+/** The REPT() bar (in-cell sparkline emulation). It reads MAGNITUDE, so it takes the brand blue
+ *  rather than a verdict colour — a long bar is not a good bar. */
 export function barCell(zebra = false): CS {
-  return { font: { name: "Calibri", size: 10.5, color: ORANGE, bold: true }, alignment: { vertical: "center", indent: 1 }, border: border(), ...(zebra ? { fill: fill(ZEBRA) } : {}) };
+  return { font: { name: "Aptos", size: 10, color: LIGHT, bold: true }, alignment: { vertical: "center", indent: 1 }, border: border(), ...(zebra ? { fill: fill(TINT) } : {}) };
 }
 
-/** Slate-900 brand band: row1 bold title, row2 orange subtitle, row3 thick orange rule. */
+/**
+ * The house masthead: row 1 the title in deep type, row 2 the subtitle in muted type, row 3 a Brand
+ * Blue rule the full width.
+ *
+ * THREE ROWS STILL, deliberately — every sheet builder in `export-workbook.ts` starts its content at
+ * row 4 and freezes there, so the footprint is what must not move. What changed is the ink: two
+ * full-width slate bands and a thick orange rule became type on white over one 3px rule, which is
+ * the single filled shape the ink rule allows outside the zebra.
+ *
+ * NO WORDMARK, and that is a limit rather than a choice: ExcelForge has no image API at all, so this
+ * workbook cannot carry the mark the way the ExcelJS exports do. The rule and the type carry the
+ * identity here.
+ */
 export function bandHeader(sheet: Worksheet, cols: number, title: string, subtitle: string) {
-  sheet.merge(1, 1, 1, cols); sheet.setValue(1, 1, cleanText(title)); sheet.setStyle(1, 1, titleStyle); sheet.setRowHeight(1, 30);
-  for (let c = 1; c <= cols; c += 1) if (c > 1) sheet.setStyle(1, c, { fill: fill(SLATE_900) });
-  sheet.merge(2, 1, 2, cols); sheet.setValue(2, 1, cleanText(subtitle)); sheet.setStyle(2, 1, subtitleStyle); sheet.setRowHeight(2, 16);
-  for (let c = 1; c <= cols; c += 1) if (c > 1) sheet.setStyle(2, c, { fill: fill(SLATE_900) });
-  for (let c = 1; c <= cols; c += 1) sheet.setStyle(3, c, { fill: fill(ORANGE) });
-  sheet.setRowHeight(3, 4);
+  sheet.merge(1, 1, 1, cols); sheet.setValue(1, 1, cleanText(title)); sheet.setStyle(1, 1, titleStyle); sheet.setRowHeight(1, 26);
+  sheet.merge(2, 1, 2, cols); sheet.setValue(2, 1, cleanText(subtitle)); sheet.setStyle(2, 1, subtitleStyle); sheet.setRowHeight(2, 15);
+  for (let c = 1; c <= cols; c += 1) sheet.setStyle(3, c, { fill: fill(BLUE) });
+  sheet.setRowHeight(3, 3);
 }
 
-/** Slate-800 section divider row (used to label a sub-table within a sheet). */
+/** A section divider: deep type over a Brand Blue rule, no band. */
 export function sectionTitle(sheet: Worksheet, row: number, cols: number, label: string): number {
   sheet.merge(row, 1, row, cols); sheet.setValue(row, 1, cleanText(label));
-  sheet.setStyle(row, 1, { font: { bold: true, size: 11, color: ORANGE, name: "Calibri" }, fill: fill(SLATE_800), alignment: { vertical: "center", indent: 1 } });
-  for (let c = 2; c <= cols; c += 1) sheet.setStyle(row, c, { fill: fill(SLATE_800) });
+  sheet.setStyle(row, 1, { font: { bold: true, size: 10.5, color: DEEP, name: "Aptos" }, alignment: { vertical: "bottom", indent: 1 }, border: { bottom: { style: "medium" as const, color: BLUE } } });
+  for (let c = 2; c <= cols; c += 1) sheet.setStyle(row, c, { border: { bottom: { style: "medium" as const, color: BLUE } } });
   sheet.setRowHeight(row, 20);
   return row + 1;
 }
@@ -162,7 +193,7 @@ export function addNavLink(sheet: Worksheet, row: number, col: number) {
   } catch {
     sheet.setValue(row, col, "↑ Dashboard (first tab)");
   }
-  sheet.setStyle(row, col, { font: { bold: true, size: 9, color: ORANGE, name: "Calibri", underline: "single" }, fill: fill(SLATE_900), alignment: { vertical: "center", horizontal: "right", indent: 1 } });
+  sheet.setStyle(row, col, { font: { bold: true, size: 9, color: BLUE, name: "Aptos", underline: "single" }, alignment: { vertical: "center", horizontal: "right", indent: 1 } });
 }
 
 // ── outline grouping (read-merge: setRow REPLACES the row def, setRowHeight merges) ─
@@ -191,7 +222,9 @@ export function applyPrintSetup(sheet: Worksheet, title: string, generatedAt: st
     sheet.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
     sheet.pageMargins = { left: 0.3, right: 0.3, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
     sheet.headerFooter = {
-      oddHeader: `&L&"Calibri,Bold"&10 ${escAmp(systemIdentity.appName)} — ${escAmp(title)}&R&8 ${escAmp(generatedAt)}`,
+      // The COMPANY's identity on the printed page, never the app's — a Sato Pharma document does
+      // not introduce itself as the software that produced it.
+      oddHeader: `&L&"Aptos,Bold"&10 ${escAmp(title)}&R&8 ${escAmp(HOUSE_DOCUMENT_STANDARD)}`,
       oddFooter: `&L&8 Confidential&C&8 Page &P of &N&R&8 ${escAmp(generatedAt)}`,
     };
     sheet.printOptions = { gridLines: false, centerHorizontal: true };

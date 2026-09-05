@@ -1,12 +1,16 @@
 import ExcelJS from "exceljs";
 
-import { systemIdentity } from "@/config/system-settings";
+import { systemLegalEntity } from "@/config/system-settings";
+// The HOUSE helpers, not the kit's. `sales-workbook-kit` is shared with the Weekly Summarized
+// Report, whose layout the owner has locked — restyling the kit in place would restyle that too.
+// `writeHouseTable` takes the same arguments and returns the same row as `writeTable`, so the
+// layout arithmetic below is unchanged; only the ink differs.
+import { writeHouseMasthead } from "@/lib/export/house-xlsx-identity";
+import { writeHouseTable } from "@/lib/export/house-table-workbook";
 import {
   UNITS_FMT,
   VALUE_FMT,
-  bandHeader,
   sanitizeSheetName,
-  writeTable,
 } from "@/lib/sales/sales-workbook-kit";
 
 export type BatchSummaryItem = {
@@ -35,7 +39,7 @@ export async function buildBatchesExportWorkbook(
   generatedAt: string,
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = systemIdentity.appName;
+  wb.creator = systemLegalEntity.legalNameEn;
   wb.created = new Date();
 
   const sorted = [...batches].sort((a, z) => {
@@ -54,14 +58,14 @@ export async function buildBatchesExportWorkbook(
   // ── Sheet 1: Summary ──────────────────────────────────────────────────────
   const SUMMARY_COLS = 7;
   const summarySheet = wb.addWorksheet("Summary");
-  bandHeader(
-    summarySheet,
-    SUMMARY_COLS,
-    "Weekly Sales — Combined Report",
-    `${sorted.length} batch${sorted.length === 1 ? "" : "es"} · ${dateRange} · Generated ${generatedAt}`,
-  );
+  const summaryFirstRow = writeHouseMasthead(wb, summarySheet, {
+    columns: SUMMARY_COLS,
+    provenance: [`Generated ${generatedAt}`],
+    subtitle: `${sorted.length} batch${sorted.length === 1 ? "" : "es"} · ${dateRange}`,
+    title: "Weekly Sales — Combined Report",
+  });
 
-  writeTable(summarySheet, 5, {
+  writeHouseTable(summarySheet, summaryFirstRow + 1, {
     title: "Selected Upload Periods",
     columns: [
       { label: "Period", width: 14 },
@@ -102,14 +106,14 @@ export async function buildBatchesExportWorkbook(
     const products = (productsByBatch.get(batch.id) ?? []).slice().sort((a, z) => z.salesValue - a.salesValue);
 
     const BATCH_COLS = 4;
-    bandHeader(
-      batchSheet,
-      BATCH_COLS,
-      batch.distributorName,
-      `Period: ${batch.weekStart ?? "—"} · Status: ${batch.status} · Generated ${generatedAt}`,
-    );
+    const batchFirstRow = writeHouseMasthead(wb, batchSheet, {
+      columns: BATCH_COLS,
+      provenance: [`Generated ${generatedAt}`],
+      subtitle: `Period: ${batch.weekStart ?? "—"} · Status: ${batch.status}`,
+      title: batch.distributorName,
+    });
 
-    writeTable(batchSheet, 5, {
+    writeHouseTable(batchSheet, batchFirstRow + 1, {
       title: "By Product",
       columns: [
         { label: "Product", width: 32 },
