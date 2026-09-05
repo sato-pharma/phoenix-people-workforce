@@ -31,25 +31,37 @@ export type AutoApplyExtractedFields = Record<
 // of an EXISTING candidate that intake matched rather than created — silently repointing someone
 // else's record.
 //
-// Of that triple, only the two DEDUPE-DECIDING keys are permanently off-limits to an unattended
-// write. fullName and email are what createCandidate matched on; rewriting either really can
-// repoint one person's record at another.
+// Of that triple, only fullName is permanently off-limits to an unattended write: it is the key
+// createCandidate matched on, and rewriting it really can repoint one person's record at another.
 //
-// `phone` is different, and blanket-excluding it cost more than it protected. Email intake takes
-// identity from the SENDER, and a sender's address carries no phone number — so an emailed CV
-// creates a candidate with phone NULL, the AI reads the real mobile off the CV, and that number
-// then sits unread in ats_candidate_cv_extractions and never reaches the column anyone dials.
-// Measured in production 2026-08-15: the AI had read a phone for 162 of the 172 extracted
-// candidates, and 134 of them still showed a blank phone (113 of those at high confidence) — a pool
-// of people nobody could ring.
+// `phone` moved first, on 2026-08-15, because blanket-excluding it cost more than it protected.
+// EMAIL intake takes identity from the SENDER, and a sender's address carries no phone number — so
+// an emailed CV creates a candidate with phone NULL, the AI reads the real mobile off the CV, and
+// that number then sits unread in ats_candidate_cv_extractions and never reaches the column anyone
+// dials. Measured then: the AI had read a phone for 162 of the 172 extracted candidates, and 134 of
+// them still showed a blank phone (113 of those at high confidence) — a pool of people nobody could
+// ring.
 //
-// Phone is therefore allowed, under one EXTRA gate on top of the four below: only when this intake
-// CREATED the candidate. On a MATCH the original hazard is real (the matched record's identity was
-// resolved by a different CV entirely), so a matched candidate still waits for a human. That gate
-// costs nothing measurable — all 113 high-confidence production cases came from candidate_created,
-// none from candidate_matched.
-const AUTO_APPLY_NEVER_KEYS: ReadonlySet<string> = new Set(["fullName", "email"]);
-const AUTO_APPLY_ON_CREATE_ONLY_KEYS: ReadonlySet<string> = new Set(["phone"]);
+// `email` moved 2026-09-05 for the MIRROR-IMAGE reason, on the same shape of measurement but a
+// larger one. WHATSAPP intake takes identity from the phone number, which carries no email address,
+// so a WhatsApp CV creates a candidate with email NULL. Production that day: the AI had read an
+// email for 507 of 521 WhatsApp candidates while only 199 carried one — 308 addresses read off a CV
+// and thrown away — against 222 of 223 populated on the email-arrival side, where the sender hands
+// it over for free. The backlog was backfilled by hand the same day (240 rows; WhatsApp coverage
+// 38% -> 84%, pre-image in ats_backup_20260905.candidate_email_backfill). This gate is what stops
+// it refilling, and it was refilling fast: 120 of those 240 candidates had been created in the
+// preceding four days.
+//
+// Both are allowed under one EXTRA gate on top of the four below: only when this intake CREATED the
+// candidate. On a MATCH the original hazard is real — the matched record's identity was resolved by
+// a different CV entirely — so a matched candidate still waits for a human. For phone that gate
+// cost nothing measurable: all 113 high-confidence production cases came from candidate_created,
+// none from candidate_matched. For email it genuinely binds, and deliberately so: the RE-READ path
+// in cv-extraction.ts passes false by construction, so re-reading an existing candidate still never
+// writes an address. That is why the historical backlog needed a hand backfill and could not simply
+// be re-read into place.
+const AUTO_APPLY_NEVER_KEYS: ReadonlySet<string> = new Set(["fullName"]);
+const AUTO_APPLY_ON_CREATE_ONLY_KEYS: ReadonlySet<string> = new Set(["email", "phone"]);
 
 // Columns that must hold ONE number somebody can dial, not whatever the CV had under "Contact".
 const PHONE_SHAPED_KEYS: ReadonlySet<string> = new Set(["phone", "whatsapp"]);
@@ -90,6 +102,32 @@ export function isSingleDiallablePhone(value: unknown): boolean {
   return digits.length === PHONE_MAX_DIGITS + 1 && digits.startsWith(PHONE_DOUBLE_ZERO_EGYPT);
 }
 
+// Columns that must hold a real address, not whatever the CV printed under "Contact".
+const EMAIL_SHAPED_KEYS: ReadonlySet<string> = new Set(["email"]);
+
+/**
+ * Whether a proposed value is ONE plausible email address.
+ *
+ * The email twin of isSingleDiallablePhone, and it exists for the same reason: the confidence gate
+ * cannot see this class at all. Measured on production 2026-09-05 over the 284 candidates whose
+ * extraction held an email their record did not, 28 — one in ten, every one at HIGH confidence —
+ * were not addresses. The AI is not wrong; it faithfully returned what the contact block said.
+ *
+ * Writing one is worse than leaving the column blank, and asymmetrically so. `email_norm` carries a
+ * partial UNIQUE index that nothing maintains but the app writer, so a junk value goes straight into
+ * the dedupe index and a later genuine application from that address then fails to match. A blank
+ * column costs nothing permanent — the value stays in `extracted_fields` for a human.
+ *
+ * Deliberately shallow: one local part, one @, a dotted domain, no whitespace. This is a shape
+ * check, not RFC 5322 and not a deliverability check. Anything cleverer starts rejecting real
+ * addresses, and a false reject here is a silent gap — the exact failure this whole gate exists to
+ * end.
+ */
+export function isPlausibleEmail(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value.trim());
+}
+
 /**
  * A candidate column counts as free to fill only when it currently holds nothing.
  *
@@ -114,16 +152,18 @@ export function isBlankCandidateValue(value: unknown): boolean {
  *      a repeating block merges into position_specific_fields, a different write shape with
  *      different merge semantics, handled by its own branch below. Anything that is neither is
  *      still declined.
- *   3. not a dedupe-deciding identity field (fullName/email), and — for phone — only when this
- *      intake created the candidate. See AUTO_APPLY_NEVER_KEYS / AUTO_APPLY_ON_CREATE_ONLY_KEYS.
+ *   3. not fullName — the key createCandidate matched on — and, for the two other dedupe-deciding
+ *      identity fields (email, phone), only when this intake CREATED the candidate. See
+ *      AUTO_APPLY_NEVER_KEYS / AUTO_APPLY_ON_CREATE_ONLY_KEYS.
  *   4. the column is currently blank — this only ever FILLS gaps, never overwrites. So a value a
  *      human typed, or one an earlier extraction already applied, always wins over a later
  *      proposal. That is what makes the feature safe to run on every inbound CV. For blocks the
  *      same rule applies at block granularity: an edited work history is never re-extracted over.
- *   5. a phone-shaped column holds ONE diallable number. This is the only gate that judges the
- *      value rather than its provenance, because it is the only failure the other four cannot see:
- *      a two-number contact line is transcribed correctly, at high confidence, into a column that
- *      is legitimately blank. See isSingleDiallablePhone.
+ *   5. a phone-shaped column holds ONE diallable number, and an email-shaped column holds ONE
+ *      plausible address. This is the only gate that judges the value rather than its provenance,
+ *      because it is the only failure the other four cannot see: a two-number contact line, or a
+ *      line of prose where the address should be, is transcribed correctly, at high confidence,
+ *      into a column that is legitimately blank. See isSingleDiallablePhone and isPlausibleEmail.
  *
  * Empty and null proposals are dropped, which also disposes of the schema's `showWhen` dependents
  * for free: the extraction instructions require medicalRepEmployer and the experience dates to be
@@ -201,9 +241,12 @@ export function selectAutoApplyFields(input: {
     // "date" values are YYYY-MM-DD strings, so they share the string check.
     if ((definition.type === "string" || definition.type === "date") && typeof value !== "string") continue;
     if (typeof value === "string" && value.trim().length === 0) continue;
-    // Gate 5: a phone column takes one diallable number or nothing. High confidence is not enough
-    // here — see isSingleDiallablePhone for why a faithful transcription can still be unusable.
+    // Gate 5: a phone column takes one diallable number or nothing, and an email column takes one
+    // plausible address or nothing. High confidence is not enough for either — see
+    // isSingleDiallablePhone and isPlausibleEmail for why a faithful transcription of a contact
+    // block can still be unusable, and why writing junk into a dedupe index is worse than a gap.
     if (PHONE_SHAPED_KEYS.has(definition.key) && !isSingleDiallablePhone(value)) continue;
+    if (EMAIL_SHAPED_KEYS.has(definition.key) && !isPlausibleEmail(value)) continue;
 
     if (!isBlankCandidateValue((input.candidate as Record<string, unknown>)[definition.key])) continue;
 

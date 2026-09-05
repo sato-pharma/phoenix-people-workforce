@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   isBlankCandidateValue,
+  isPlausibleEmail,
   isSingleDiallablePhone,
   selectAutoApplyFields,
 } from "../src/lib/recruitment/cv-auto-apply.ts";
@@ -74,9 +75,9 @@ export function runRecruitmentCvAutoApplyTests() {
   );
 
   // --- Gate 3: identity is createCandidate's alone -----------------------------------------------
-  // Re-applying name or email could rewrite an EXISTING candidate that intake MATCHED rather than
-  // created, silently repointing someone else's record and its dedupe norms. No flag ever unlocks
-  // those two.
+  // Re-applying an identity field could rewrite an EXISTING candidate that intake MATCHED rather
+  // than created, silently repointing someone else's record and its dedupe norms. On a match that
+  // stays true of all three.
   assert.deepEqual(
     selectAutoApplyFields({
       candidate: freshCandidate({ email: null, phone: null }),
@@ -90,19 +91,77 @@ export function runRecruitmentCvAutoApplyTests() {
     {},
     "on a MATCHED candidate no identity field is auto-applied, even when the column is empty",
   );
+  // fullName is the one that never unlocks: it is the key createCandidate matched on.
   assert.deepEqual(
     selectAutoApplyFields({
-      candidate: freshCandidate({ email: null, phone: null }),
+      candidate: freshCandidate({ fullName: null, email: null, phone: null }),
       candidateWasCreatedByThisIntake: true,
-      extractedFields: {
-        email: high("someone.else@example.com"),
-        fullName: high("Someone Else"),
-      },
+      extractedFields: { fullName: high("Someone Else") },
       positionKey: "medical_rep",
     }),
     {},
-    "fullName and email stay locked even when this intake created the candidate",
+    "fullName stays locked even when this intake created the candidate",
   );
+
+  // --- Email: joined phone on 2026-09-05, under the same created-only gate ----------------------
+  // WhatsApp intake takes identity from the PHONE NUMBER, which carries no email address, so a
+  // WhatsApp CV creates a candidate with email NULL while the AI reads the real address off the CV.
+  // Measured in production 2026-09-05: the AI had read an email for 507 of 521 WhatsApp candidates
+  // while only 199 carried one. 308 addresses read and thrown away; 240 were backfilled by hand and
+  // this gate is what stops the gap reopening.
+  assert.deepEqual(
+    selectAutoApplyFields({
+      candidate: freshCandidate({ email: null }),
+      candidateWasCreatedByThisIntake: true,
+      extractedFields: { email: high("mazen.new@example.com") },
+      positionKey: "medical_rep",
+    }),
+    { email: "mazen.new@example.com" },
+    "a high-confidence email fills the blank email of a candidate THIS intake created",
+  );
+  assert.deepEqual(
+    selectAutoApplyFields({
+      candidate: freshCandidate({ email: null }),
+      extractedFields: { email: high("mazen.new@example.com") },
+      positionKey: "medical_rep",
+    }),
+    {},
+    "a MATCHED candidate's blank email still waits for a human",
+  );
+  // Gate 4 still governs: an address already on the record is never overwritten by a later read.
+  assert.deepEqual(
+    selectAutoApplyFields({
+      candidate: freshCandidate({ email: "mazen@example.com" }),
+      candidateWasCreatedByThisIntake: true,
+      extractedFields: { email: high("someone.else@example.com") },
+      positionKey: "medical_rep",
+    }),
+    {},
+    "an email already on the candidate is never overwritten by an extraction",
+  );
+  // Gate 5, email half. 28 of the 284 production values — one in ten, every one at HIGH confidence
+  // — were not addresses at all. The confidence gate cannot see this class: the AI faithfully
+  // returned what the contact block said. Junk in email_norm poisons a live UNIQUE index, so a gap
+  // is the cheaper failure.
+  for (const notAnEmail of [
+    "Cairo, Egypt",
+    "mazen at example dot com",
+    "mazen@example",
+    "mazen @example.com",
+    "mazen@example.com and ahmed@example.com",
+    "",
+  ]) {
+    assert.deepEqual(
+      selectAutoApplyFields({
+        candidate: freshCandidate({ email: null }),
+        candidateWasCreatedByThisIntake: true,
+        extractedFields: { email: high(notAnEmail) },
+        positionKey: "medical_rep",
+      }),
+      {},
+      `a high-confidence value that is not an address is declined: ${JSON.stringify(notAnEmail)}`,
+    );
+  }
 
   // --- Phone: the one identity field a CREATED candidate may have filled -------------------------
   // Email intake takes identity from the SENDER, and a sender's address carries no phone — so an
@@ -190,6 +249,27 @@ export function runRecruitmentCvAutoApplyTests() {
   assert.equal(isSingleDiallablePhone(""), false);
   assert.equal(isSingleDiallablePhone(null), false);
   assert.equal(isSingleDiallablePhone(1234567890), false, "a number is not a phone string");
+
+  // --- isPlausibleEmail --------------------------------------------------------------------------
+  // Deliberately shallow: a shape check, not RFC 5322 and not deliverability. A false REJECT here
+  // is a silent gap — the exact failure the email gate exists to end — so the bar is "one local
+  // part, one @, a dotted domain, no whitespace" and nothing cleverer.
+  assert.equal(isPlausibleEmail("mazen@example.com"), true);
+  assert.equal(isPlausibleEmail("  mazen@example.com  "), true, "surrounding whitespace is trimmed");
+  assert.equal(isPlausibleEmail("mazen.kamel+cv@sub.example.co.uk"), true, "a real-world address");
+  assert.equal(isPlausibleEmail("محمد@example.com"), true, "an Arabic local part is still an address");
+  assert.equal(isPlausibleEmail("mazen@example"), false, "no dotted domain");
+  assert.equal(isPlausibleEmail("mazen at example dot com"), false, "prose, not an address");
+  assert.equal(isPlausibleEmail("Cairo, Egypt"), false, "the contact block's other line");
+  assert.equal(
+    isPlausibleEmail("mazen@example.com ahmed@example.com"),
+    false,
+    "two addresses run together — the email twin of the two-number phone",
+  );
+  assert.equal(isPlausibleEmail("@example.com"), false, "no local part");
+  assert.equal(isPlausibleEmail(""), false);
+  assert.equal(isPlausibleEmail(null), false);
+  assert.equal(isPlausibleEmail(12345), false, "a number is not an address");
 
   assert.deepEqual(
     selectAutoApplyFields({

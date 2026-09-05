@@ -1601,7 +1601,7 @@ await runTest(
   "recruitment RULE cv extraction (no-AI primary path: ligature/shredded repair, phone+email+LinkedIn patterns, section slicing, district-first governorate, work history, rule-vs-AI merge policy, escalation gate)",
   runRecruitmentRuleExtractionTests,
 );
-await runTest("recruitment cv auto-apply (high-confidence gap-fill rules; a CREATED candidate's blank phone is filled, a MATCHED one's never is)", runRecruitmentCvAutoApplyTests);
+await runTest("recruitment cv auto-apply (high-confidence gap-fill rules; a CREATED candidate's blank email and phone are filled, a MATCHED one's never are, and a value that is not an address never reaches the UNIQUE index)", runRecruitmentCvAutoApplyTests);
 await runTest("recruitment contact review (the attended path for the email auto-apply refuses to write; not-a-CV proposes nothing, run-together values never reach a UNIQUE index)", runRecruitmentContactReviewTests);
 await runTest("recruitment offers (an unapproved offer can never be sent — the guard reads the approval trail, not the stage, so a re-widened registry cannot reopen offer_initiated -> offer_sent)", runRecruitmentOffersTests);
 await runTest("recruitment hire draft (the CV and the offer carried into HR's Add Employee form; no salary is ever derived here — that belongs to payroll/policy.ts)", runRecruitmentHireDraftTests);
