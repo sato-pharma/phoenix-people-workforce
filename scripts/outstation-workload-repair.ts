@@ -151,6 +151,10 @@ function tripDates(startIso: string, endIso: string): string[] {
   const start = day(startIso);
   const end = day(endIso) || start;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return [];
+  // UTC on purpose, and NOT a "now" — this walks a DATE-ONLY trip window (trip_start_date ..
+  // trip_end_date) whose cursor is anchored at UTC midnight on the next line and stepped with
+  // setUTCDate. Anchor, step and re-serialise all agree, so the calendar day cannot shift;
+  // formatting these in Cairo would reintroduce the drift the UTC anchor prevents. Leave it.
   const dates: string[] = [];
   const cursor = new Date(`${start}T00:00:00.000Z`);
   const last = new Date(`${(end >= start ? end : start)}T00:00:00.000Z`);

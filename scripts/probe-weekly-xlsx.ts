@@ -20,6 +20,10 @@ function cellText(cell: ExcelJS.Cell | undefined): string {
   if (value == null) return "";
   if (typeof value === "string") return value.trim();
   if (typeof value === "number") return String(value);
+  // UTC on purpose, and NOT a "now" — this is a DATE-ONLY cell out of the workbook. The probe
+  // exists to show what src/lib/sales/weekly/parser.ts will see, and the parser renders such a
+  // cell with this exact expression (parser.ts:51/89/93); rendering it in Cairo here would make
+  // the probe disagree with the parser it is used to align. Change both together or neither.
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   if (typeof value === "object") {
     const obj = value as { result?: unknown; text?: unknown; richText?: { text?: string }[] };

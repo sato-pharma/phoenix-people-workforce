@@ -292,7 +292,10 @@ export function takeXlsxSnapshot({ repoRoot, snapshotRoot, now = Date.now() }) {
   const existing = (readSnapshots(snapshotRoot) ?? []).flatMap((snap) => snap.entries);
   const files = all.filter((f) => !isCovered(f, existing));
 
-  const stamp = new Date(now).toISOString().slice(0, 10);
+  // Africa/Cairo, not UTC — this names the snapshot folder the owner reads to see when the
+  // backup was taken, and dates the "same day" key the quiet-run manifest reconcile keys on.
+  // Formats the injected `now` (never a fresh clock read) so the caller stays in control.
+  const stamp = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date(now));
   const dir = path.join(snapshotRoot, `${SNAPSHOT_DIR_PREFIX}${stamp}`);
 
   if (files.length === 0) {

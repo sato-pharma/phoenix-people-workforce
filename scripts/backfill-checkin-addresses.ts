@@ -20,10 +20,16 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { hasGoogleServerKey } from "@/lib/google-maps/server";
 import { hasLocationIqKey, resolveCheckinAddress } from "@/lib/crm/checkin-geocode";
+import { cairoTodayIso } from "@/lib/crm/dates";
 import { CRM_CHECKINS_TABLE } from "@/lib/crm/tables";
 
 const dateFrom = process.argv[2];
-const dateTo = process.argv[3] ?? new Date().toISOString().slice(0, 10);
+// Africa/Cairo, not UTC. This defaults the INCLUSIVE upper bound of a `check_date` window, and
+// check_date is the agent's phone clock in Cairo time (crm/master.ts). A UTC "today" runs a day
+// behind for the ~3 hours after Cairo midnight, silently trimming the newest day off the window
+// the operator asked for. (Harmless to re-run — the script only ever selects rows still missing
+// an address — but the run would report a smaller catch-up than it was asked to do.)
+const dateTo = process.argv[3] ?? cairoTodayIso();
 
 if (!/^\d{4}-\d{2}-\d{2}$/.test(dateFrom ?? "") || !/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
   console.error("Usage: backfill-checkin-addresses <dateFrom YYYY-MM-DD> [dateTo YYYY-MM-DD]");

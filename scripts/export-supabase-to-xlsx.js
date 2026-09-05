@@ -24,7 +24,7 @@ if (!DATABASE_URL) {
 const OUTPUT_DIR = path.join(process.cwd(), "supabase-export");
 const OUTPUT_FILE = path.join(
   OUTPUT_DIR,
-  `supabase_full_export_${new Date().toISOString().slice(0, 10)}.xlsx`
+  `supabase_full_export_${new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date())}.xlsx`
 );
 
 const SYSTEM_SCHEMAS = ["pg_catalog", "information_schema", "pg_toast"];
