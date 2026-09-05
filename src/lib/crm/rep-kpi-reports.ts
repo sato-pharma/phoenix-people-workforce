@@ -169,6 +169,23 @@ export const DEFAULT_REP_KPI_STANDARDS: RepKpiStandards = {
   AM: { callRatePerDay: 2, callRateBand: null, coverageFloorPct: 95, frequencyNorms: NO_NORMS },
   PM: {
     callRatePerDay: 10,
+    // ⚠ TWO READINGS OF "8-12" ARE LIVE, and which one the owner meant changes a verdict a
+    // manager sees. Both are his own words, days apart:
+    //
+    //   THIS ONE  — "8-12 pm only and 2 am accounts": the band is PM's, AM is a flat 2.
+    //   call-rate.ts's DAILY_VISIT_RATE_MIN/MAX (PR #3319) — "call rate in month should be 10 to
+    //     achieve this should make visits / day av 8-12": the band is AM + PM SUMMED per day.
+    //
+    // They agree on most reps and disagree on a real one: 7 PM + 2 AM is 9 a day, which is
+    // IN-BAND summed and BELOW-BAND on PM alone — so one rep can read Met on the AM · PM tab and
+    // Below on the call-rate tab, with nothing on screen explaining why.
+    //
+    // Deliberately NOT reconciled by guesswork. Reusing that constant here would silently
+    // re-point it at a different population; dropping this band would silently lose the "8 is a
+    // pass" nuance he stated. Parked for the owner.
+    //
+    // Do NOT "tidy" this by making the numbers match — the numbers already match. It is the
+    // DENOMINATOR that differs.
     callRateBand: { min: 8, max: 12 },
     coverageFloorPct: 95,
     frequencyNorms: { A: 2, B: 1, C: 1 },
