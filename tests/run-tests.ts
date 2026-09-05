@@ -1098,7 +1098,7 @@ import { runStoreSplitDetailReportTests } from "./store-split-detail-report.test
 import { runMonthlyClosingExportSplitStaticTests } from "./monthly-closing-export-split-static.test.ts";
 import { runClosingExportMatchesScreenTests } from "./closing-export-matches-screen.test.ts";
 import { runSalesTruthNoMismatchTests } from "./sales-truth-no-mismatch.test.ts";
-import { runClosingPerformanceReviewTests } from "./closing-performance-review.test.ts";
+import { runClosingManagerAsOfTests, runClosingPerformanceReviewTests } from "./closing-performance-review.test.ts";
 import { runMonthlyClosingPeriodMergeTests } from "./monthly-closing-period-merge.test.ts";
 import { runClosingReviewFilterTests } from "./closing-review-filters.test.ts";
 import { runCeoMarketingApprovalInboxTests } from "./ceo-marketing-approval-inbox.test.ts";
@@ -3201,6 +3201,11 @@ await runTest(
 await runTest(
   "Performance Review never names a system state, never adds units across products, and wears the house identity (no \"Not mapped to an area\" / \"No district manager\" anywhere in the workbook, Main Store keeps its own name, the by-area growth tab is value-only, a month never uploaded renders as a dash, and the emitted file carries no fill but the Brand Blue rule and the zebra row, prints SATO-DIS-2026-01 v1.0, and never prints the app's name)",
   runClosingPerformanceReviewTests,
+);
+
+await runTest(
+  "a past month names the district manager who held the area THEN, not the one who holds it now (a dated pair closing and reopening on one day puts exactly one row in force, August sees the old seat and September the new, and February is not hard-coded to 30 days)",
+  runClosingManagerAsOfTests,
 );
 
 await runTest(
