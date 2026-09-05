@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 
 import { systemContractDefaults } from "../src/config/system-settings.ts";
 import { currentContractTemplate } from "../src/lib/hiring-pack/contract-text.ts";
+import { renderContractHtml } from "../src/lib/hiring-pack/render-contract.ts";
 import {
   buildRenewalValues,
   renderContractNonRenewalHtml,
@@ -553,6 +554,75 @@ function testThePayFiguresAreTheBaseSalaryAndItsDerivedInsuranceWage(): void {
 // The emitted artifact — never the source
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * The annex's masthead is the CONTRACT's masthead, and stays that way.
+ *
+ * `render-renewal.ts` carries its own copy of the contract's `.doc-mast` furniture on purpose: an
+ * annex is read stapled to the contract it amends, and a reader turning from page 3 of the contract
+ * to page 1 of the annex must not be able to tell that different code drew it. That file names the
+ * cost of the duplication — silent drift — and says this test defends it.
+ *
+ * IT DID NOT. Until 2026-09-05 this file had no reference to the contract renderer at all. The
+ * checks above pin the brand rule and the mark as LITERALS, which catches the annex moving; nothing
+ * caught the CONTRACT moving. Change the contract's masthead and every assertion here still passes
+ * while the two papers quietly stop matching — the exact failure the duplication was accepted for.
+ *
+ * So this renders BOTH and compares them. On the emitted HTML rather than the two source files,
+ * because the source is not what a reader gets and a shared constant could be interpolated
+ * differently in each.
+ */
+function testTheMastheadStillMatchesTheContractItAmends(): void {
+  const pack = packFixture();
+  const contract = renderContractHtml(pack, 1);
+  const annex = renderContractRenewalHtml(pack, 1);
+
+  /**
+   * Every `.doc-mast*` CSS rule the document emits — DECLARATIONS ONLY, ordered.
+   *
+   * CSS comments are stripped before comparing. The two files explain the brand rule in their own
+   * words, and comparing raw text made this fail over prose while every declaration matched — which
+   * would have taught the next person to resolve it by copying a comment across, and made the check
+   * noise rather than a guard. What must not drift is what the paper LOOKS like.
+   */
+  const mastheadRules = (html: string): string[] =>
+    [...html.matchAll(/\.doc-mast[a-zA-Z_-]*[^{}]*\{[^}]*\}/g)]
+      .map((match) => match[0].replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\s+/g, " ").trim())
+      .sort();
+
+  const contractRules = mastheadRules(contract);
+  const annexRules = mastheadRules(annex);
+
+  // A positive control first. If the extraction silently matched nothing, two empty arrays would
+  // compare equal and this test would pass while checking absolutely nothing — which is how a
+  // comparison test ends up defending the thing it was written to defend in name only.
+  assert.ok(
+    contractRules.length >= 6,
+    `the contract must emit its masthead rules for this comparison to mean anything — found ${contractRules.length}`,
+  );
+
+  assert.deepEqual(
+    annexRules,
+    contractRules,
+    "the annex's masthead must be byte-identical to the contract's: it is read stapled to that "
+      + "contract, and the duplication in render-renewal.ts was accepted only because this check "
+      + "exists. If the contract's masthead moved, move the annex's with it.",
+  );
+
+  // The structure, not only the styling: a class removed from one header and not the other changes
+  // what is drawn even when every surviving rule still matches.
+  const mastheadClasses = (html: string): string[] => {
+    const header = /<header class="doc-mast">[\s\S]*?<\/header>/.exec(html)?.[0] ?? "";
+    return [...header.matchAll(/class="([^"]+)"/g)].map((match) => match[1]).sort();
+  };
+  const contractClasses = mastheadClasses(contract);
+  assert.ok(contractClasses.length >= 3, "the contract's masthead markup must be found to compare against");
+  assert.deepEqual(
+    mastheadClasses(annex),
+    contractClasses,
+    "the annex's masthead must be built from the same elements as the contract's, not merely styled alike",
+  );
+}
+
 function testBothPapersRenderCompletely(): void {
   const pack = packFixture();
   const annex = renderContractRenewalHtml(pack, systemContractDefaults.contractRenewalCopies);
@@ -888,6 +958,7 @@ export function runHrFormsRenewalTests(): void {
   testTheJobTitleIsArabicOnlyWithNoEnglishFallback();
   testThePayFiguresAreTheBaseSalaryAndItsDerivedInsuranceWage();
   testBothPapersRenderCompletely();
+  testTheMastheadStillMatchesTheContractItAmends();
   testTheLatinRunsArePinnedLeftToRight();
   testTheIsolatesSurviveOntoThePage();
   testTheAnnexStatesTheArticle88Warning();
