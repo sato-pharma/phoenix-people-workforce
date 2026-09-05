@@ -1407,6 +1407,7 @@ import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-ca
 import { runAdminProfileCreatedAtHydrationSafeTests } from "./admin-profile-created-at-hydration-safe.test.ts";
 
 import { runEmployeeSavePreservesSalaryTests } from "./employee-save-preserves-salary.test.ts";
+import { runReportItExportSubtitleCairoDateTests } from "./report-it-export-subtitle-cairo-date.test.ts";
 
 import { runEmployeeJobTitleCasingHintTests } from "./employee-job-title-casing-hint.test.ts";
 
@@ -4458,6 +4459,11 @@ await runTest(
 await runTest(
   "confirming a payroll hold step enforces the hold reason too (the write path saveStep's rule did not cover, and the last one before publish drops the held rows)",
   runPayrollHoldConfirmStepReasonTests,
+);
+
+await runTest(
+  "report-it export subtitle date is Cairo-pinned via cairoDate(), not the runtime's own zone",
+  runReportItExportSubtitleCairoDateTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
