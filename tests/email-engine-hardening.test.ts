@@ -22,11 +22,39 @@ export function runEmailEngineHardeningTests() {
     ["Email skipped: Probation routing resolved no recipient emails.", "no_recipients"],
     ["All recipients are suppressed (bounce/complaint).", "recipient_suppressed"],
     ["No deliverable recipient (no real mailbox on file).", "no_deliverable_recipient"],
+    // The confidence gate's own string, verbatim from production. Retrying a hold cannot change
+    // it — the gate is waiting for a HUMAN, not a later moment — so it must be terminal.
+    ["Held for Super Admin review (80% confidence) — see /admin/notification-confidence.", "held_for_review"],
   ];
   for (const [reason, code] of terminalCases) {
     const result = classifyOutboxSkip(reason, "birthday");
     assert.equal(result.terminal, true, `"${reason}" must be terminal`);
     if (result.terminal) assert.equal(result.code, code, `"${reason}" code`);
+  }
+
+  // A HELD notification must never burn the retry budget or end up marked `failed`.
+  //
+  // 21 resignation emails died exactly this way on 2026-08-28: unclassified, the hold fell through
+  // to `{ terminal: false }`, the drain retried it five times, and the row was left permanently
+  // `failed` — reading as a delivery failure when the notification was intact and simply waiting
+  // for a Super Admin. That pollutes the failure metrics the drain's dead-man's-switch watches.
+  //
+  // Confidence percent varies by module (75 and 80 both occur live), so match on the phrase.
+  for (const percent of [75, 80, 95]) {
+    const held = classifyOutboxSkip(
+      `Held for Super Admin review (${percent}% confidence) — see /admin/notification-confidence.`,
+      "birthday",
+    );
+    assert.equal(held.terminal, true, `a ${percent}% hold must be terminal, never retried to failure`);
+    if (held.terminal) {
+      assert.equal(held.code, "held_for_review");
+      assert.equal(held.sentryEscalate, false, "a hold is the gate working — the held-backlog alert covers it");
+    }
+  }
+  // A hold must not escalate for a high-priority type either: it is awaiting review, not dropped.
+  for (const type of ["password_reset", "offer", undefined]) {
+    const r = classifyOutboxSkip("Held for Super Admin review (80% confidence).", type as never);
+    assert.equal(r.terminal && r.sentryEscalate, false, `a hold on ${type} must not escalate`);
   }
 
   // Bounce/complaint suppression is deterministic AND by-design — terminal, never escalates.

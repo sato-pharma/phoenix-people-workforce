@@ -1424,7 +1424,8 @@ export type OutboxSkipCode =
   | "recipient_suppressed"
   | "no_deliverable_recipient"
   | "probation_audit_failed"
-  | "payslip_email_blocked";
+  | "payslip_email_blocked"
+  | "held_for_review";
 
 export type OutboxSkipClass =
   | { terminal: true; sentryEscalate: boolean; code: OutboxSkipCode }
@@ -1480,6 +1481,25 @@ export function classifyOutboxSkip(
   // Payslip hard block. Never retries — owner rule means payslip emails never fire, period.
   if (r.includes("payslip emails are hard-blocked")) {
     return { terminal: true, sentryEscalate: false, code: "payslip_email_blocked" };
+  }
+  // HELD BY THE CONFIDENCE GATE — awaiting a Super Admin at /admin/notification-confidence.
+  //
+  // This is not a failure and retrying cannot change it: the gate re-evaluates to the same hold
+  // every cycle, because what it is waiting for is a HUMAN, not a different moment. Left
+  // unclassified it fell through to `{ terminal: false }`, so the drain called
+  // markNotificationOutboxFailed five times and then marked the row permanently `failed`.
+  //
+  // It happened: 21 resignation emails on 2026-08-28, attempts 5/5, dead in the queue. Worse than
+  // the wasted retries, the row then LIES — it reads as a delivery failure when the notification
+  // was intact and simply waiting for review, so it pollutes the failure metrics the drain's
+  // dead-man's-switch watches and hides what actually needs doing (a decision, not a fix).
+  //
+  // Terminal skip is the honest state: the outbox is done with it, and the review workspace is
+  // where it lives now. Release from there sends it; discarding closes it. No Sentry escalation —
+  // a hold is the gate working as designed, and the standing held-notification alert already
+  // covers a backlog that nobody reviews.
+  if (r.includes("held for super admin review")) {
+    return { terminal: true, sentryEscalate: false, code: "held_for_review" };
   }
   // Unknown reason (e.g. a missing/inactive template that may be republished, or
   // "already being processed") → transient: keep retrying within the attempt budget.
