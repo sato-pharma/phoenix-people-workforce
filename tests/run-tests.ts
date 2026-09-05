@@ -1388,6 +1388,7 @@ import { runCairoTodayLocaleSafeTests } from "./cairo-today-locale-safe.test.ts"
 import { runClosingWorkbookLinkOriginTests } from "./closing-workbook-link-origin.test.ts";
 import { runTalentAcquisitionRoleRetiredUiCopyTests } from "./talent-acquisition-role-retired-ui-copy.test.ts";
 import { runVacancyCloseManagerHrIdCanonicalTests } from "./vacancy-close-manager-hr-id-canonical.test.ts";
+import { runPayrollHoldReasonTests } from "./payroll-hold-reason.test.ts";
 
 import { runEmployeeImportJobTitleCasingTests } from "./employee-import-job-title-casing.test.ts";
 
@@ -4402,6 +4403,11 @@ await runTest(
 await runTest(
   "employee import job title casing (Ceo/Qppv/Sfe Manager/R And D Manager canonicalize on upload; ordinary titles and blanks unaffected)",
   runEmployeeImportJobTitleCasingTests,
+);
+
+await runTest(
+  "a payroll hold cannot be saved without a reason, and a reason inherited from last month is labelled as carried forward (never overwriting one typed for this month)",
+  runPayrollHoldReasonTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

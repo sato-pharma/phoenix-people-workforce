@@ -12,7 +12,12 @@ import {
   hasDoubleDeductionConflict,
 } from "@/lib/automated-payroll/conflicts";
 import { computeSettlementSummary } from "@/lib/automated-payroll/settlement-summary";
-import { stepDefinition, stepFieldsTotal, stepWindowLabel } from "@/lib/automated-payroll/step-definitions";
+import {
+  monthNameAndYear,
+  stepDefinition,
+  stepFieldsTotal,
+  stepWindowLabel,
+} from "@/lib/automated-payroll/step-definitions";
 import type {
   ManualRowCandidate,
   PayrollPeriod,
@@ -579,7 +584,13 @@ export function RecommendationStep({
   };
 
   const setReason = (hrId: string, reason: string) => {
-    setRows((prev) => prev.map((row) => (row.hrId === hrId ? { ...row, reason } : row)));
+    // Typing clears the carried-forward marker: the text is this month's
+    // assertion from here on, and leaving the badge up would keep calling it
+    // last month's after somebody rewrote it. The stored text keeps whatever
+    // "Carried forward from ..." prefix the editor chose to leave in place.
+    setRows((prev) =>
+      prev.map((row) => (row.hrId === hrId ? { ...row, reason, reasonCarriedForward: false } : row)),
+    );
     setDirty(true);
   };
 
@@ -973,16 +984,42 @@ export function RecommendationStep({
                         mistaken for one another. */}
                     <CardSection title="This step">
                       {definition.isHoldStep ? (
-                        <div className="flex items-center justify-between gap-3 text-sm">
-                          <span className="text-slate-500">Hold</span>
-                          {locked ? (
-                            <span className={row.onHold ? "font-semibold text-rose-700" : "text-slate-400"}>
-                              {row.onHold ? "Held" : "—"}
-                            </span>
-                          ) : (
-                            <Switch checked={row.onHold} onChange={(value) => setHold(row.hrId, value)} />
-                          )}
-                        </div>
+                        <>
+                          <div className="flex items-center justify-between gap-3 text-sm">
+                            <span className="text-slate-500">Hold</span>
+                            {locked ? (
+                              <span className={row.onHold ? "font-semibold text-rose-700" : "text-slate-400"}>
+                                {row.onHold ? "Held" : "—"}
+                              </span>
+                            ) : (
+                              <Switch checked={row.onHold} onChange={(value) => setHold(row.hrId, value)} />
+                            )}
+                          </div>
+
+                          {/* Whether this hold is a CONTINUATION or something new — the
+                              question the run being reviewed cannot answer about itself.
+                              August 2026 carried thirteen holds with no reason while two of
+                              them were fully explained by July's rows; the explanation simply
+                              never travelled, and the reviewer had no way to tell a settled
+                              owner ruling from an open question. Shown for every row the
+                              previous run held, including one it held with no reason, because
+                              "held again, still unexplained" is itself worth reading. */}
+                          {row.priorHold ? (
+                            <div className="flex flex-col gap-1 border-l-4 border-amber-400 bg-amber-50/60 px-3 py-2 text-amber-900">
+                              <span className="text-[11px] font-black uppercase tracking-wide">
+                                Also held in {monthNameAndYear(row.priorHold.month, row.priorHold.year)}
+                              </span>
+                              <span className="break-words text-[12px]">
+                                {row.priorHold.reason ??
+                                  "No reason was recorded that month either — this hold has never been explained."}
+                              </span>
+                            </div>
+                          ) : row.onHold ? (
+                            <div className="border-l-4 border-slate-300 bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
+                              New this month — the previous run did not hold this employee.
+                            </div>
+                          ) : null}
+                        </>
                       ) : null}
 
                       {definition.fields.map((field) => (
@@ -1036,18 +1073,47 @@ export function RecommendationStep({
                       ))}
 
                       {definition.hasReason ? (
-                        <label className="flex flex-col gap-1 text-sm">
-                          <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">
-                            Reason
-                          </span>
-                          <Input
-                            value={row.reason ?? ""}
-                            disabled={isRowLocked(row)}
-                            placeholder="Reason"
-                            onChange={(event) => setReason(row.hrId, event.target.value)}
-                            className={fieldClassName}
-                          />
-                        </label>
+                        (() => {
+                          // A hold with no reason cannot be saved (the service answers 400).
+                          // Say so on the row rather than only in the error that comes back
+                          // after pressing Save, so the requirement is visible while there is
+                          // still something to type it into.
+                          const reasonMissing =
+                            definition.isHoldStep && row.onHold && !(row.reason ?? "").trim();
+                          return (
+                            <label className="flex flex-col gap-1 text-sm">
+                              <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">
+                                {definition.isHoldStep ? "Reason · required to hold" : "Reason"}
+                              </span>
+                              <Input
+                                value={row.reason ?? ""}
+                                disabled={isRowLocked(row)}
+                                placeholder={
+                                  definition.isHoldStep
+                                    ? "Why is this person not being paid by this run?"
+                                    : "Reason"
+                                }
+                                onChange={(event) => setReason(row.hrId, event.target.value)}
+                                className={cn(
+                                  fieldClassName,
+                                  reasonMissing && "border-rose-400 bg-rose-50/60",
+                                )}
+                              />
+                              {row.reasonCarriedForward ? (
+                                <span className="break-words text-[11px] font-semibold text-amber-800">
+                                  Carried over from the previous month, not written for this one — check it
+                                  still applies, and rewrite it if it does not.
+                                </span>
+                              ) : null}
+                              {reasonMissing ? (
+                                <span className="break-words text-[11px] font-semibold text-rose-700">
+                                  Required. A held row is dropped at publish — no payslip is written and
+                                  nothing else records that this person was paid outside the system.
+                                </span>
+                              ) : null}
+                            </label>
+                          );
+                        })()
                       ) : null}
 
                       {/* Live total of the editable money fields above it (owner request

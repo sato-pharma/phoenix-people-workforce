@@ -13,6 +13,18 @@
 export type PayrollPeriod = { month: number; year: number };
 
 /**
+ * One employee's hold as it stood in the month before the run being edited —
+ * the record a carried-forward reason is read from. `reason` is null when that
+ * month held them and recorded nothing, which is a fact worth carrying too.
+ */
+export type PriorHold = {
+  hrId: string;
+  reason: string | null;
+  month: number;
+  year: number;
+};
+
+/**
  * Run lifecycle:
  *  part1     — HR is working Part 1 steps.
  *  part2     — Part 1 confirmed (First Part frozen); HR is working Part 2 steps.
@@ -261,6 +273,22 @@ export type StepRow = {
   selects?: Record<string, string>;
   reason: string | null;
   onHold: boolean;
+  /**
+   * True when `reason` above was inherited from the previous month's run rather
+   * than typed for this one. The stored text says so as well (hold-reason.ts's
+   * "Carried forward from <month> — "); this flag is the machine-readable half,
+   * so the UI can mark the field without parsing the prefix back out.
+   */
+  reasonCarriedForward?: boolean;
+  /**
+   * How this employee stood in the PREVIOUS month's run, when they were held in
+   * it. Present whether or not this month has its own reason — a reviewer about
+   * to publish needs "held last month too, and here is why" for every held row,
+   * not only for the ones missing an explanation. Absent means the previous
+   * month did not hold them (or had no run at all), which is what makes a hold
+   * NEW.
+   */
+  priorHold?: PriorHold;
   lifecycle?: RowLifecycle;
   /**
    * Informational row — rendered but not editable, and carrying no values to

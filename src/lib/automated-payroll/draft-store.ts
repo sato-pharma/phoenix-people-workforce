@@ -1,10 +1,13 @@
 import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { normalizeHoldReason, previousPeriod } from "./hold-reason.ts";
 import type {
   DraftRow,
   DraftRowPatch,
   MonthlySalaryRun,
+  PayrollPeriod,
+  PriorHold,
   RunPhase,
   StepInputMode,
   StepKey,
@@ -253,6 +256,49 @@ export async function listDraftRows(runId: string): Promise<DraftRow[]> {
   const { data, error } = await getSupabaseAdmin().from(DRAFT_ROWS).select("*").eq("run_id", runId);
   if (error) throw error;
   return ((data ?? []) as RunRow[]).map(mapDraftRow);
+}
+
+/**
+ * Everyone the PREVIOUS month's run held, keyed by compact HR id.
+ *
+ * Reads the latest run for that month whatever its phase — the month before an
+ * open run is normally `published`, which `findActiveRun` would skip and
+ * `findPublishedRun` would find only after it shipped. A month with no run at
+ * all, or a run whose rows carry no holds, answers with an empty map, and the
+ * caller then simply has nothing to carry forward.
+ *
+ * Rows with a blank reason are deliberately KEPT: "held last month, no reason
+ * recorded" is itself worth showing the reviewer, and dropping it would report a
+ * fresh hold for someone who has been held for months. What is missing is the
+ * explanation, not the hold.
+ *
+ * Keyed by `employee_hr_id_compact` because HR ids are mixed case — a plain
+ * equality on the raw id silently under-returns.
+ */
+export async function listPriorMonthHolds(period: PayrollPeriod): Promise<Map<string, PriorHold>> {
+  const prior = previousPeriod(period);
+  const run = await findLatestRun(prior.month, prior.year);
+  if (!run) return new Map();
+
+  const { data, error } = await getSupabaseAdmin()
+    .from(DRAFT_ROWS)
+    .select("employee_hr_id,employee_hr_id_compact,on_hold,hold_reason")
+    .eq("run_id", run.id)
+    .eq("on_hold", true);
+  if (error) throw error;
+
+  const holds = new Map<string, PriorHold>();
+  for (const row of (data ?? []) as RunRow[]) {
+    const compact = String(row.employee_hr_id_compact ?? "") || compactHrKey(String(row.employee_hr_id ?? ""));
+    if (!compact) continue;
+    holds.set(compact, {
+      hrId: String(row.employee_hr_id ?? ""),
+      reason: normalizeHoldReason(row.hold_reason as string | null),
+      month: prior.month,
+      year: prior.year,
+    });
+  }
+  return holds;
 }
 
 function draftPatchToDb(runId: string, patch: DraftRowPatch): Record<string, unknown> {
