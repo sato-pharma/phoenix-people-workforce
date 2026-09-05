@@ -745,6 +745,49 @@ this data produces a false alarm.
 
 `not-every-distributor-uploads-every-month`
 
+## A rejection notice is never sent automatically — owner decision, 2026-09-05
+
+**What he said.** Phase 6 of the ATS plan named the rejection notice as *"the real gap and the one
+with reputational weight"* — 97 candidates rejected and never told. The work was built up to the
+point of a recipient list, both sheets were sent to him for sign-off, and his answer was one line:
+
+> i dont want to auto send rejection notice
+
+No qualifier, no "not yet". It was asked as a direct question and answered plainly, so it is
+settled. **Do not re-pitch it**, and do not treat the 97 as a backlog with a missing send path.
+
+**Why the code went the same day.** The rule is what matters, but a rule that leaves working
+machinery behind does not survive: the next session finds `planRejectionNotice`, sees a finished
+function with tests and no caller, and reads that as unfinished wiring rather than as a decision.
+That failure mode was hit twice in this same session — an orphaned "Application link" button whose
+route was never written, and an ATS offer stage that records an offer and sends nothing. So
+`src/lib/recruitment/rejection-notice.ts` and `tests/recruitment-rejection-notice.test.ts` were
+deleted rather than left dormant.
+
+**What was deliberately kept, and why it is not a leftover.** One export from that module had a
+consumer: `isBatchActor`, which tells an automated sweep apart from a person by the `ops:` prefix on
+`ats_candidate_status_events.actor_hr_id`. It now lives in `src/lib/recruitment/batch-actor.ts`
+under a name that says what it does, with `tests/recruitment-batch-actor.test.ts` registered in
+`tests/run-tests.ts`.
+
+It is load-bearing. The screening throughput trend shipped hours earlier without it and read **138
+decisions for the week of 08-29 against a true 73**, because `ops:non-egyptian-reject-20260828` had
+rejected 65 candidates in one pass — telling the owner his backlog had shrunk by 69 when it had held
+level at −4. The same artefact reached the hiring-analytics plan, where "email converts at 50%
+against WhatsApp's 16%" was really 23% against 18% once the sweep came out. Five mutants were run
+against the new suite before merge and all five failed with their own headline message, including
+both pins on the live fix in `candidates.ts`.
+
+**Two traps a future session should not walk into.** The batch marker exists ONLY on the status
+event — all 65 swept candidates carry a NULL `ats_candidates.status_changed_by_hr_id`, so a caller
+reading the candidate row concludes "not a batch" and is wrong about every row that matters. And the
+match is on the `ops:` PREFIX, never on a sweep's full name: pinning the name would pass the next
+batch straight back into the numbers with nothing to show that it had.
+
+**The two sheets he was sent stay.** `xlsx/Rejection notices - decide who gets one.xlsx` (18 by
+email) and `xlsx/Rejection notices - WhatsApp.xlsx` (14) are in `xlsx/`, which git does not track and
+cannot recover. They are a record of what was asked, not a pending job.
+
 ## Section 4 was trimmed to its floor — 2026-09-01
 
 **What was done.** §4 (with §4.1) went from **14,264 → 13,995 bytes, −269 B (1.9%)**, and a further
