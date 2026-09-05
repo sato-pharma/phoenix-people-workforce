@@ -29,6 +29,7 @@ import type {
   UpdateHiringDocumentNotesInput,
   UpdateHiringDocumentStatusInput,
 } from "@/lib/hiring-documents/types";
+import { isUuid } from "@/lib/http/uuid";
 
 type EmployeeDbRow = {
   employment_status: string | null;
@@ -930,6 +931,10 @@ export async function removeHiringDocumentFile(access: AccessContext, fileId: st
 export async function getHiringDocumentFileForDownload(access: AccessContext, fileId: string) {
   const id = cleanText(fileId);
   if (!id) throw new Error("File id is required.");
+  // A malformed id is NOT FOUND, not a fault: this is a uuid column, and Postgres answers a
+  // non-uuid with 22P02 from the WHERE clause instead of with no rows, which leaves as a 500.
+  // Null is the same answer this gives for a file id that matches no row.
+  if (!isUuid(id)) return null;
 
   const { data, error } = await getSupabaseAdmin()
     .from("hiring_document_files")

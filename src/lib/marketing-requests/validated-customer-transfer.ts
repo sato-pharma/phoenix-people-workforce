@@ -5,6 +5,7 @@ import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-e
 import { loadMarketingEvidencePhoto } from "@/lib/marketing-requests/evidence-photo-storage";
 import { haversineKm } from "@/lib/sales/normalizer/geo-validate";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { isUuid } from "@/lib/http/uuid";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Validated Customers register, and the one-way door into Direct Orders.
@@ -784,6 +785,9 @@ export async function getValidatedMarketingCustomerDetail(
 
   const id = String(customerId ?? "").trim();
   if (!id) throw validationError("A customer id is required.");
+  // A malformed id is NOT FOUND, not a fault: this is a uuid column, and Postgres answers a
+  // non-uuid with 22P02 from the WHERE clause instead of with no rows, which leaves as a 500.
+  if (!isUuid(id)) throw notFoundError("That customer is not on file.");
 
   const supabase = getSupabaseAdmin();
   const { data: customerData, error } = await supabase

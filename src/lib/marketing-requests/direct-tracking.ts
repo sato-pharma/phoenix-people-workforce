@@ -2,6 +2,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { assertMarketingWorkspaceAccess } from "@/lib/marketing-requests/service";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { isUuid } from "@/lib/http/uuid";
 
 /**
  * Phase D — Super-Admin-only control for whether a marketing campaign's ROI should
@@ -34,6 +35,10 @@ export async function getMarketingRequestDirectTracking(
 
   const cleanId = String(requestId ?? "").trim();
   if (!cleanId) throw new Error("Marketing request id is required.");
+  // A malformed id is NOT FOUND, not a fault: this is a uuid column, and Postgres answers a
+  // non-uuid with 22P02 from the WHERE clause instead of with no rows, which leaves as a 500.
+  // Same error as the absent-row case below, so the two stay indistinguishable.
+  if (!isUuid(cleanId)) throw new Error("marketing_request_not_found");
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("marketing_requests")
