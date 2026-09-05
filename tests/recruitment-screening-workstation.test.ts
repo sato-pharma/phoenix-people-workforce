@@ -742,14 +742,45 @@ export async function runRecruitmentScreeningWorkstationTests() {
   // ── Is the backlog growing? The question no number on the page could answer ───────────────────
   const pageSource = read("src/components/recruitment/workstation/workstation-page-client.tsx");
   assert.match(pageSource, /function ThroughputStrip\(/, "the page must say whether the reader is keeping up");
-  assert.match(pageSource, /arrived7 - throughput\.decided7/, "in against out — the difference is the answer");
+  // IN AGAINST OUT — the difference is still the answer, but the arithmetic moved out of the
+  // component into candidate-throughput.ts on 2026-09-05, when the strip became a four-week trend.
+  // It had to move: the counting it used to do was measured wrong in both directions against the
+  // real decision history, and a trend built on that draws a confident line out of an artefact.
+  const trendSource = read("src/lib/recruitment/candidate-throughput.ts");
+  assert.match(
+    trendSource,
+    /bucket\.arrived - bucket\.decided/,
+    "in against out — the difference is the answer",
+  );
+  assert.match(
+    pageSource,
+    /throughputDirection\(throughput\)/,
+    "and the strip asks for that difference rather than recomputing it beside the module that owns it",
+  );
+
   const loaderSource = read("src/lib/recruitment/screening-workspace.ts");
-  // Over the WHOLE pool, never the narrowed view: a backlog figure that shrank because a filter was
-  // applied would answer a different question from the one it is labelled with.
+  // NEVER THE NARROWED VIEW. That is the invariant this has always guarded: a backlog figure that
+  // shrank because a URL filter was applied would answer a different question from the one it is
+  // labelled with. `rows` is the narrowed list; `allCandidates` and `pool` are not.
+  assert.doesNotMatch(
+    loaderSource,
+    /arrivals: rows\.|firstDecisions: rows\./,
+    "the throughput figures must never be computed over the filtered rows",
+  );
+  // ARRIVALS COME FROM EVERY CANDIDATE, not just the pool — tightened 2026-09-05. A CV filed to a
+  // shelf still arrived, so counting only the pool would shrink the "in" side every time somebody
+  // tidied up, and the strip would report the backlog improving because work was HIDDEN, not done.
   assert.match(
     loaderSource,
-    /arrived7: pool\.filter/,
-    "the throughput figures are computed over the pool, not over the filtered rows",
+    /arrivals: allCandidates\.map\(\(candidate\) => candidate\.createdAt\)/,
+    "arrivals are counted over every candidate that has ever arrived",
+  );
+  // And decisions come from the recorded history rather than the pool's own status stamps, which
+  // hold only the LATEST move and so counted a re-decision as fresh output.
+  assert.match(
+    loaderSource,
+    /firstDecisions: \[\.\.\.decisionHistory\.firstDecisionAt\.values\(\)\]/,
+    "decisions come from the decision history, not from the latest status stamp on the row",
   );
 
   // ── Duplicates: two kinds of evidence, and neither of them proof ──────────────────────────────

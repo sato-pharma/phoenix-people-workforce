@@ -32,6 +32,10 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, ChevronDown, ChevronUp, Maximize2, Minimize2, ScanLine } from "lucide-react";
 
 import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
+import {
+  throughputDirection,
+  type ThroughputSummary,
+} from "@/lib/recruitment/candidate-throughput";
 import { ScreeningFilterBar, ScreeningPageFrame } from "@/components/recruitment/screening-page-client";
 import { ScreeningWorkstation } from "@/components/recruitment/workstation/screening-workstation";
 import {
@@ -112,8 +116,8 @@ export function WorkstationPageClient({
   source: string | null;
   sourceOptions: string[];
   status: CandidateStatus | null;
-  /** Backlog in against backlog out — see the strip below and ScreeningWorkspace["throughput"]. */
-  throughput: { unread: number; arrived7: number; decided7: number };
+  /** Backlog in against backlog out, over four weeks — see the strip below. */
+  throughput: ThroughputSummary;
   vacancies: WorkspaceVacancy[];
   vacancyStats: VacancyApplicantStats[];
 }) {
@@ -357,26 +361,97 @@ function ThroughputStrip({
   throughput,
 }: {
   poolSize: number;
-  throughput: { unread: number; arrived7: number; decided7: number };
+  throughput: ThroughputSummary;
 }) {
-  const net = throughput.arrived7 - throughput.decided7;
+  const { improving, netLastWeek, netThisWeek } = throughputDirection(throughput);
+
   return (
+    // WRAPS, never scrolls. Six figures and a sentence do not fit a 375px phone on one line, and
+    // the rule is that the page never scrolls sideways — so the row folds instead. `gap-y` is what
+    // keeps the folded rows legible rather than stacked against each other.
     <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 border border-phx-line bg-phx-surface-2 px-3 py-1.5 text-[12px] sm:mx-2">
       <Figure label="in the pool" value={poolSize} />
       <Figure label="you have not opened" value={throughput.unread} />
-      <Figure label="arrived this week" value={throughput.arrived7} />
-      <Figure label="decided this week" value={throughput.decided7} />
-      <span className="flex items-baseline gap-1 font-bold text-phx-ink-2">
-        <span className="tabular-nums">
-          {net > 0 ? "+" : ""}
-          {net}
+      <Span label="this week" arrived={throughput.arrived7} decided={throughput.decided7} net={netThisWeek} />
+      <Span label="30 days" arrived={throughput.arrived30} decided={throughput.decided30} net={null} />
+      {/* The DIRECTION, which is the whole point of a trend: one week's net on its own says nothing
+          about whether the reader is gaining. Silent when either week is unreportable, rather than
+          comparing against a week whose decisions were never recorded. */}
+      {improving === null ? null : (
+        <span className="font-bold text-phx-ink-2">
+          {improving ? "better than last week" : "worse than last week"}
+          <span className="font-semibold text-phx-ink-soft">
+            {" "}
+            ({netLastWeek !== null && netLastWeek > 0 ? "+" : ""}
+            {netLastWeek} then)
+          </span>
         </span>
-        <span className="font-semibold text-phx-ink-soft">
-          {net > 0 ? "the backlog grew this week" : net < 0 ? "the backlog shrank this week" : "the backlog held level"}
+      )}
+      {throughput.historyCoversEveryBucket ? null : (
+        // NOT an error, and not hidden either. Decisions were only recorded from this date, so a
+        // span before it has no number — saying "0 decided" there would blame the reader for a gap
+        // in the table.
+        <span className="w-full text-[11px] leading-tight text-phx-ink-soft">
+          {throughput.historyStartsAt
+            ? `Decisions have been recorded since ${cairoDay(throughput.historyStartsAt)}. Anything before that is not counted here.`
+            : "No decision history has been recorded yet, so nothing decided can be counted here."}
         </span>
-      </span>
+      )}
     </div>
   );
+}
+
+/** One window: what came in, what went out, and the difference. */
+function Span({
+  arrived,
+  decided,
+  label,
+  net,
+}: {
+  arrived: number;
+  /** Null when the decision history does not cover the whole span — printed as words, never as 0. */
+  decided: number | null;
+  label: string;
+  net: number | null;
+}) {
+  return (
+    <span className="flex items-baseline gap-1">
+      <span className="font-semibold text-phx-ink-soft">{label}</span>
+      <span className="font-bold tabular-nums text-phx-ink">{arrived}</span>
+      <span className="font-semibold text-phx-ink-soft">in</span>
+      {decided === null ? (
+        <span className="font-semibold text-phx-ink-soft">(decisions not recorded)</span>
+      ) : (
+        <>
+          <span className="font-bold tabular-nums text-phx-ink">{decided}</span>
+          <span className="font-semibold text-phx-ink-soft">decided</span>
+        </>
+      )}
+      {net === null ? null : (
+        <span className="font-bold tabular-nums text-phx-ink-2">
+          {net > 0 ? `+${net}` : net}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * A date the owner can read, in Cairo.
+ *
+ * Cairo and not UTC because this is an instant WE stamped — `created_at` on a status event — which
+ * is the one of the three cases that belongs in local time. A date-only column or a vendor
+ * wall-clock would each be wrong here for opposite reasons.
+ */
+function cairoDay(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  return at.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+  });
 }
 
 /** One figure and its words. Tabular so the row does not jitter as the numbers change. */
