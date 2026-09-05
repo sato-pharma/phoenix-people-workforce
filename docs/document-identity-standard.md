@@ -66,12 +66,25 @@ block is not, because it reads the first strong character and would reverse the 
 Measured in a browser by comparing glyph x-positions, which is the only way to settle it — reading
 Arabic direction off a screenshot produced the wrong answer twice.
 
-## Still outstanding
+## The vector mark, and what is still outstanding
 
-**There is no vector master of the logo.** The only artwork is 401 × 158 px, which is exactly 300 dpi
-at the 34 mm letterhead size, with no headroom. Office printers commonly run 600 dpi, so the mark is
-upsampled on every document, and it cannot be enlarged for a certificate or a sign. Recovering the
-original `.ai`/`.eps`/`.svg`, or redrawing it, is the last quality gain and costs no ink.
+**A vector mark now ships, and it is what documents use.** The raster was 401 × 158 px — exactly
+300 dpi at the 34 mm letterhead size, with no headroom — so it was upsampled on every document
+printed at 600 dpi and could not be enlarged for a certificate or a sign. `HOUSE_MARK_SRC` in
+`house-identity.ts` points at `/brand/sato-pharma-logo-on-light.svg`, and the dark-ground variant is
+one fill attribute away rather than a second file to keep in sync.
+
+![Vector against the current PNG, at letterhead size, on a dark ground, and enlarged](brand/sato-logo-vector-proof.png)
+
+The comparison above is the evidence the switch was made on: indistinguishable at the 34 mm size
+they are actually used at, and only the vector holds above it.
+
+**What is still outstanding is the designer's original.** The `.svg` was TRACED from the raster and
+is bounded by what that raster knows, so it is not a substitute for the original `.ai`/`.eps` if one
+ever turns up — `house-identity.ts` says so at the constant itself. And the XLSX path is still
+raster (`HOUSE_MARK_XLSX_PATH` → `sato-pharma-logo-on-light.png`), because ExcelJS accepts png/jpeg/gif
+only and hands anything else to a part Excel then silently repairs. Neither costs ink; both are
+quality ceilings rather than defects.
 
 ## How the specimen is built
 
