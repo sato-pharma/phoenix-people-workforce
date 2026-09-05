@@ -59,6 +59,10 @@ const SHEETS = [
     // the hole already in it, three weeks after the hole was found and fixed in the other two.
     file: "../docs/cv-lifecycle-live-sheet.gs",
     refresh: "function refreshCvLifecycle()",
+    // This one takes a script lock and hands the actual work to an inner function, so the failure
+    // paths live THERE. Naming it keeps them inside the scan: without this the suite reads only the
+    // five-line lock wrapper, finds zero announced paths, and would have to be weakened to pass.
+    delegatesTo: "function refreshCvLifecycleLocked_()",
     stampWord: "refreshed",
     // No FEED_URL, unreachable, non-200, unparseable, and a payload carrying no CV rows.
     minFailurePaths: 5,
@@ -71,8 +75,11 @@ const SHEETS = [
     stateKey: "phoenixCvFeedState",
     lastGoodKey: "phoenixCvLastGoodStamp",
     staleBg: "#b91c1c",
-    // A light cover page rather than the other two's black one.
-    freshBg: "#ffffff",
+    // Black, like the other two. This was #ffffff until the v10 layout: row 2 is the LOWER half
+    // of the masthead, so restoring it to white painted a white stripe through the middle of the
+    // black band — on the one run that is supposed to signal everything is fine again.
+    // markFeedFresh restores whatever titleBand_ painted, so what this records is BLACK.
+    freshBg: "#000000",
   },
 ];
 
@@ -87,6 +94,25 @@ function refreshBody(source: string, signature: string) {
   const rest = source.slice(start + signature.length);
   const next = rest.search(/\n(?:function |\/\/ ──)/);
   return next === -1 ? rest : rest.slice(0, next);
+}
+
+/**
+ * The lines between a `return;` and the `{` that opens the block it sits in.
+ *
+ * This used to be a flat five-line window, and that window reached PAST the block into whatever
+ * came before it. Every bail-out here is four or five lines long, so the markFeedStale of the
+ * PREVIOUS failure path landed inside the next one's lookback and announced it by accident: a
+ * bare `return;` added under a fresh `if (...) {` directly below an announced path was invisible
+ * to this suite. Reading only as far back as the block opener is what makes the check local to
+ * the path it is judging.
+ */
+function guardBody(lines: string[], returnIndex: number) {
+  const out: string[] = [];
+  for (let i = returnIndex - 1; i >= 0; i -= 1) {
+    out.unshift(lines[i]);
+    if (/\{\s*$/.test(lines[i])) break;
+  }
+  return out.join("\n");
 }
 
 /**
@@ -147,20 +173,38 @@ function loadScript(source: string, tabs: Map<string, unknown>, props: Record<st
 export async function runLiveSheetStaleBannerTests() {
   for (const sheet of SHEETS) {
     const source = readSheet(sheet.file);
-    const body = refreshBody(source, sheet.refresh);
+    // The refresh may delegate to a locked inner function; both halves are the refresh, and
+    // scanning only the wrapper would find zero announced failure paths in a correct file.
+    // Read as an optional field rather than narrowing with `in`: only one of the three sheets
+    // declares it, and whether that yields a union depends on how the literal is inferred.
+    const delegatesTo = (sheet as { delegatesTo?: string }).delegatesTo;
+    const body = [sheet.refresh, ...(delegatesTo ? [delegatesTo] : [])]
+      .map((signature) => refreshBody(source, signature))
+      .join("\n");
     const lines = body.split("\n");
 
     // 1. No silent early return. Every bail-out in the refresh must first say so on the sheet —
     //    this is the actual defect, and it is invisible by nature, so only a check like this
     //    catches it coming back.
+    // A refresh that LOST a lock race is the one bail-out that must NOT paint a banner: the
+    // winner is doing the work, so announcing 'stale' over a sheet that is about to refresh
+    // successfully is a false alarm — and a false alarm teaches him to ignore the only warning
+    // this sheet has. Allowed at most once per file and only directly under a failed tryLock,
+    // so it stays a named exception rather than a hiding place for the next silent return.
     const silent: string[] = [];
     let announced = 0;
+    let lockSkips = 0;
     for (let i = 0; i < lines.length; i += 1) {
       if (!/^\s*return;/.test(lines[i])) continue;
-      const lookback = lines.slice(Math.max(0, i - 5), i).join("\n");
+      const lookback = guardBody(lines, i);
       if (lookback.includes("markFeedStale(")) announced += 1;
+      else if (/tryLock\(/.test(lookback)) lockSkips += 1;
       else silent.push(lines[i].trim());
     }
+    assert.ok(
+      lockSkips <= 1,
+      `${sheet.file}: only the lock-contention bail-out may return silently — found ${lockSkips}`,
+    );
     assert.deepEqual(
       silent,
       [],
