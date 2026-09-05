@@ -254,6 +254,35 @@ export async function runHrIdStorageCasingTests() {
     "the copilot actor must canonicalise ONLY the hr id and keep the `system` marker intact",
   );
 
+  // --- the hiring-pack sink moved INTO a helper, and the pin had to follow it ---
+  //
+  // This block used to pin two literal lines:
+  //
+  //     updated_by_hr_id: hrIdForStorage(cleanText(actorHrId)),
+  //
+  // On 2026-09-05 those lines became `...updatedByStamp(actorHrId)`, because writing the column
+  // UNCONDITIONALLY turned out to be a second, separate bug: an editor with no linked HR id
+  // (admin-HR carries a NULL hr_id by design) stamped NULL over the previous editor. B-129's
+  // profile lost Omar that way at 15:27 Cairo, three hours after the casing fix landed on it.
+  //
+  // So this test went red on a file that was MORE correct than when it was green - the classic
+  // source-pinning failure, where a fixed literal false-fails the moment the code shifts. The
+  // answer is to pin the PROPERTY through the helper, never to delete the assertion: the casing
+  // guarantee is still owed, it just moved one level down.
+  const hiringPack = readFileSync("src/lib/hiring-pack/service.ts", "utf8");
+  assert.match(
+    hiringPack,
+    /const stored = hrIdForStorage\(cleanText\(actorHrId\)\);/,
+    "updatedByStamp must still canonicalise - it is now the ONLY thing standing between "
+      + "employee_hiring_profile.updated_by_hr_id and the lowercase session key",
+  );
+  assert.equal(
+    (hiringPack.match(/\.\.\.updatedByStamp\(/g) ?? []).length,
+    3,
+    "and all three writers must go through it - the two profile savers and the document signature. "
+      + "A site that stopped spreading the helper would be writing the column some other way",
+  );
+
   // --- a column whose NAME hides it, and which does not hold only people ---
   //
   // `outstation_expenses.approved_by` feeds `expense_claims.decided_by_hr_id` through
@@ -316,17 +345,6 @@ export async function runHrIdStorageCasingTests() {
       "created_by: hrIdForStorage(cleanText(input.createdBy)),",
       "coaching_archived_evaluations.created_by has no `_hr_id` in its name, so no sweep in this "
         + "file can see it by column name - the same blind spot that hid outstation approved_by",
-    ],
-    [
-      "src/lib/hiring-pack/service.ts",
-      "updated_by_hr_id: hrIdForStorage(cleanText(actorHrId)),",
-      "employee_hiring_profile.updated_by_hr_id took a lowercase b-10 at 14:05 Cairo on 2026-09-05",
-    ],
-    [
-      "src/lib/hiring-pack/service.ts",
-      "updated_by_hr_id: hrIdForStorage(cleanText(input.actorHrId)),",
-      "the document-signing path writes the same column and would have been missed by fixing only "
-        + "the two profile writes",
     ],
   ] as const) {
     assert.ok(
