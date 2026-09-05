@@ -180,8 +180,8 @@ function addCover(wb: ExcelJS.Workbook, company: ReviewCompany, scopeLabel: stri
     s.font = { color: { argb: MUTED }, size: 9, italic: true };
     r += 1;
   };
-  kpi("Company achievement", T.allProducts.ach ?? 0, "sum(covered sales) / sum(target) — never an average of line %s, and never the full sales figure above", "pct", T.allProducts.ach);
-  kpi("Sales", T.allProducts.sales, `all products, all areas — ${fmt(T.allProducts.covered)} of it sits on a product with a target and is what the % above divides`, "egp");
+  kpi("Company achievement", T.allProducts.ach ?? 0, "sum(graded sales) / sum(target) — never an average of line %s. Graded sales are every pound inside a month that carried a target.", "pct", T.allProducts.ach);
+  kpi("Sales", T.allProducts.sales, `all products, all areas — ${fmt(T.allProducts.graded)} of it sits on a product with a target of its own`, "egp");
   kpi("Target", T.allProducts.target, "", "egp");
   kpi("Doctors reached", T.customersTotal, company.meta.doctorNote);
   kpi("Visits", T.visits, `${T.reps} reps · ${T.doubleVisits} double visits`);
@@ -544,7 +544,7 @@ function addSummarySheet(wb: ExcelJS.Workbook, review: BusinessReview, company: 
     s.font = { color: { argb: MUTED }, size: 9, italic: true };
     r += 1;
   };
-  kpi("Achievement", ach ?? 0, "sum(covered sales) / sum(target)", "pct", ach);
+  kpi("Achievement", ach ?? 0, "sum(graded sales) / sum(target)", "pct", ach);
   kpi("Sales", sales, `of ${fmt(target)} target`, "egp");
   kpi("Marketing + expenses", mkt + outn, `${fmt(mkt)} marketing + ${fmt(outn)} outstation`, "egp");
   kpi("Visits", visAvail ? visits : "N/A", visAvail ? `${docs.toLocaleString("en-US")} doctors reached` : "no CRM visits export for this line");
@@ -724,7 +724,7 @@ function addCoverageSheet(wb: ExcelJS.Workbook, review: BusinessReview) {
       "Gradeability",
       cov.ungradeable
         ? `No targets are loaded for ${describePeriods(cov.window.periods)}, so nothing in this window is graded. Values only.`
-        : "Achievement is covered actual \u00f7 target. Sales on a key with no target are reported by value and excluded from the percentage.",
+        : "Achievement is all sales \u00f7 target, following the Monthly Closing. Inside a month every pound counts; a month with no target at all is left out of both halves.",
     ],
     [
       "Sales on no line",

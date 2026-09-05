@@ -152,10 +152,27 @@ export function runPediaMergedAreaTargetGridTests() {
       + "the page feeds the roll-ups `lineRows` and not the folded grid rows — this assertion exists "
       + "to make that difference visible rather than a comment nobody re-derives",
   );
-  assert.ok(
-    fromFolded.achievementValue! > fromUnfolded.achievementValue!,
-    "and folding first INFLATES the line percentage (179% vs 121%), which is the covered-actual rule "
-      + "being defeated — never fold before a roll-up",
+  // The PERCENTAGE is no longer the thing folding corrupts. Since the owner's 2026-09-05 ruling
+  // ("FOLLOW THE OLD MONTHLY CLOSING ... MUST BE 100% IDENTICAL") achievement divides actualValue,
+  // and folding changes neither the actual nor the target — only which rows carry `hasTarget`. So
+  // the two roll-ups now agree on the grade and disagree on the COVERAGE figure beside it.
+  //
+  // That is a narrowing of the blast radius, not a reason to fold: `coveredActualValue` is what the
+  // Targets card prints as "With a target", so folding first would still overstate how much of the
+  // line was targeted — by 58,000 here — while the percentage stayed innocent. Pinned as an
+  // equality rather than deleted, because an assertion that silently starts passing for a new
+  // reason is worth less than one that says which reason.
+  assert.equal(
+    fromFolded.achievementValue,
+    fromUnfolded.achievementValue,
+    "folding no longer moves the grade — achievement divides ALL sales, and the fold changes neither "
+      + "the actual nor the target",
+  );
+  assert.notEqual(
+    fromFolded.coveredActualValue,
+    fromUnfolded.coveredActualValue,
+    "but it still corrupts the coverage figure the card prints beside that grade — never fold before "
+      + "a roll-up",
   );
 
   // ── 6. The page must wire it that way ────────────────────────────────────────────────────────

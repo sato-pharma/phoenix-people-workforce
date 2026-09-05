@@ -195,12 +195,12 @@ function sliceOf(t: VsTargetTotals): Slice {
   return {
     sales: round2(t.actualValue),
     target: round2(t.targetValue),
-    covered: round2(t.coveredActualValue),
+    graded: round2(t.gradedActualValue),
     ach: t.achievementValue == null ? null : round2(t.achievementValue * 100),
   };
 }
 
-const EMPTY_SLICE: Slice = { sales: 0, target: 0, covered: 0, ach: null };
+const EMPTY_SLICE: Slice = { sales: 0, target: 0, graded: 0, ach: null };
 
 function groupBy<T>(rows: readonly T[], key: (row: T) => string | null): Map<string, T[]> {
   const map = new Map<string, T[]>();
@@ -786,22 +786,22 @@ function buildCompany(
 ): ReviewCompany {
   const periods = ctx.window.periods;
   const company = ctx.overlays.company;
-  let sales = 0, target = 0, covered = 0, exSales = 0, exTarget = 0, exCovered = 0;
+  let sales = 0, target = 0, graded = 0, exSales = 0, exTarget = 0, exGraded = 0;
   let reps = 0, areasTotal = 0, areasVacant = 0;
-  const byMonth: Record<string, { sales: number; target: number; covered: number }> = {};
-  for (const period of periods) byMonth[period] = { sales: 0, target: 0, covered: 0 };
+  const byMonth: Record<string, { sales: number; target: number; graded: number }> = {};
+  for (const period of periods) byMonth[period] = { sales: 0, target: 0, graded: 0 };
 
   const lines: CompanyLineRow[] = REVIEW_LINE_ORDER.map(({ id, label }) => {
     const ds = datasets[id];
     const ap = ds.line.allProducts;
     const ev = ds.line.exVacant.includeOnly;
-    sales += ap.sales; target += ap.target; covered += ap.covered;
-    exSales += ev.sales; exTarget += ev.target; exCovered += ev.covered;
+    sales += ap.sales; target += ap.target; graded += ap.graded;
+    exSales += ev.sales; exTarget += ev.target; exGraded += ev.graded;
     reps += ds.line.reps;
     for (const period of periods) {
       byMonth[period].sales += ds.line.byMonth[period]?.allProducts.sales ?? 0;
       byMonth[period].target += ds.line.byMonth[period]?.allProducts.target ?? 0;
-      byMonth[period].covered += ds.line.byMonth[period]?.allProducts.covered ?? 0;
+      byMonth[period].graded += ds.line.byMonth[period]?.allProducts.graded ?? 0;
     }
     const vacant = ds.areas.filter((a) => a.vacant).length;
     areasTotal += ds.areas.length;
@@ -849,7 +849,7 @@ function buildCompany(
       })),
   ).sort((a, b) => (b.allProducts.ach ?? -1) - (a.allProducts.ach ?? -1));
 
-  // sum(covered) / sum(target) — the same division `sliceOf` performs one level down, so the
+  // sum(graded) / sum(target) — the same division `sliceOf` performs one level down, so the
   // company headline agrees with every line, area, district and rep beneath it.
   //
   // This divided sum(SALES) by sum(target) until 2026-08-23, and that is not a rounding
@@ -862,7 +862,7 @@ function buildCompany(
   const slice = (c: number, s: number, t: number): Slice => ({
     sales: round2(s),
     target: round2(t),
-    covered: round2(c),
+    graded: round2(c),
     ach: t !== 0 ? round2((c / t) * 100) : null,
   });
 
@@ -890,7 +890,7 @@ function buildCompany(
       thresholds: { ...REVIEW_THRESHOLDS },
     },
     total: {
-      allProducts: slice(covered, sales, target),
+      allProducts: slice(graded, sales, target),
       exVacant: slice(exCovered, exSales, exTarget),
       marketingCost: company.marketingCommitted,
       marketingPending: company.marketingPending,
@@ -906,7 +906,7 @@ function buildCompany(
       areas: areasTotal,
       areasVacant,
       byMonth: Object.fromEntries(
-        periods.map((p) => [p, slice(byMonth[p].covered, byMonth[p].sales, byMonth[p].target)]),
+        periods.map((p) => [p, slice(byMonth[p].graded, byMonth[p].sales, byMonth[p].target)]),
       ),
     },
     lines,
@@ -1132,7 +1132,7 @@ export function buildCoverage(input: {
       source: "targets",
       label: "Targets",
       origin: "au.monthly_targets, resolved inside the same engine call",
-      rule: "Achievement is covered actual ÷ target. Sales on a key with no target are reported beside the percentage, never inside it.",
+      rule: "Achievement is all sales ÷ target, the Monthly Closing's own rule — inside a month every pound counts, and only months carrying no target at all are left out.",
       window,
       periodsWithData: targetPeriods,
       rows: rows.filter((r) => r.hasTarget).length,
@@ -1227,11 +1227,11 @@ export function totalAreas(areas: readonly AreaSummary[]): Slice {
   for (const area of areas) {
     total.actualValue += area.allProducts.sales;
     total.targetValue += area.allProducts.target;
-    // `area.allProducts.covered`, not `area.allProducts.sales` behind a `hasTarget` flag: an area
+    // `area.allProducts.graded`, not `area.allProducts.sales` behind a `hasTarget` flag: an area
     // that has a target on one product and none on another used to contribute BOTH products'
     // sales to the numerator. The slice now carries the key-grain figure the engine computed.
-    total.coveredActualValue += area.allProducts.covered;
+    total.gradedActualValue += area.allProducts.graded;
   }
-  total.achievementValue = total.targetValue !== 0 ? total.coveredActualValue / total.targetValue : null;
+  total.achievementValue = total.targetValue !== 0 ? total.gradedActualValue / total.targetValue : null;
   return sliceOf(total);
 }
