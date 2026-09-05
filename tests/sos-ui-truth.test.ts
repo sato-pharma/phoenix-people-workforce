@@ -106,4 +106,41 @@ export function runSosUiTruthTests() {
       "the workbook must be built from the FILTERED matrix",
     );
   }
+
+  // ── 3. The macro-free workbook is reachable from the screen ─────────────────
+  //
+  // IT WAS NOT, for as long as the macro-free build existed. The route has honoured `macros: false`
+  // since that build shipped, but this screen never sent it: the string appeared in the component
+  // exactly ONCE, inside a comment describing the option. Every download was the .xlsm, and the only
+  // way to obtain the .xlsx was to call the API by hand. A capability nothing can reach is
+  // indistinguishable from one that was never built, and neither a type nor a route test can see it.
+  //
+  // Pinned on the COMMENT-STRIPPED source, which is the whole point — a grep for `macros: false`
+  // passed throughout the period the option was unreachable, because prose satisfied it.
+  {
+    const workspace = code(read("src/components/sales/monthly-closing-workspace.tsx"));
+
+    assert.match(
+      workspace,
+      /macros:\s*false/,
+      "the closing screen must actually SEND macros:false — a comment mentioning it is not a button",
+    );
+    assert.match(
+      workspace,
+      /async function handlePremiumXlsxExport\(/,
+      "the macro-free export needs its own handler, so its busy state cannot be confused with the .xlsm's",
+    );
+    assert.match(
+      workspace,
+      /onClick=\{\(\) => void handlePremiumXlsxExport\(\)\}/,
+      "and that handler must be wired to a button a reader can press",
+    );
+    // The .xlsm button is the one that must not quietly become the macro-free one: they are two
+    // formats for two audiences, and the owner asked for both to stay available.
+    assert.match(
+      workspace,
+      /onClick=\{\(\) => void handlePremiumExport\(\)\}/,
+      "the .xlsm export stays — the macro build is the one with a live button bar",
+    );
+  }
 }
