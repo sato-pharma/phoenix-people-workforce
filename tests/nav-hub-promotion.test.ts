@@ -85,12 +85,19 @@ function hubRoutesOnDisk(): string[] {
  * the rail to, and "the rail renders" is all any other test can say.
  */
 export function runNavHubPromotionTests() {
-  const hubHrefs = new Set(adminHubPromotions.map((hub) => hub.hubHref));
-  const cardHrefs = new Set(adminHubPromotions.flatMap((hub) => hub.items.map((card) => card.href)));
-  const seedHrefs = new Set(
+  // `new Set<string>` on every one of these, deliberately. The seeds are declared `as const`, so
+  // their hrefs infer as a 54-member literal union while a promotion's `hubHref` is the wider
+  // `/${string}` — and `Set<union>.has(wider)` is a type error rather than a false answer. Widening
+  // at construction keeps the comparison about hrefs instead of about which literal the compiler
+  // happened to keep.
+  const hubHrefs = new Set<string>(adminHubPromotions.map((hub) => hub.hubHref));
+  const cardHrefs = new Set<string>(
+    adminHubPromotions.flatMap((hub) => hub.items.map((card) => card.href)),
+  );
+  const seedHrefs = new Set<string>(
     adminNavigationSectionSeeds.flatMap((section) => section.items.map((item) => item.href)),
   );
-  const railHrefs = new Set(
+  const railHrefs = new Set<string>(
     adminNavigationSections.flatMap((section) => section.items.map((item) => item.href)),
   );
 
@@ -173,12 +180,12 @@ export function runNavHubPromotionTests() {
 
   for (const role of phoenixRoles as readonly PhoenixRole[]) {
     const lookup = buildPermissionLookup(permissionMatrix, role);
-    const before = new Set(
+    const before = new Set<string>(
       getSections(adminNavigationSectionSeeds, "admin", lookup, role).flatMap((section) =>
         section.items.map((item) => item.href),
       ),
     );
-    const after = new Set(
+    const after = new Set<string>(
       getSections(adminNavigationSections, "admin", lookup, role).flatMap((section) =>
         section.items.map((item) => item.href),
       ),
