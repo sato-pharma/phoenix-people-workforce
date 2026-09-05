@@ -35,7 +35,7 @@ export default async function EmployeePortalIntakeHealthPage() {
   if (!canViewInboundIntakeHealth(access)) {
     return (
       <EmployeePortalEmptyState
-        message="Inbound intake health is available to Talent Acquisition and Super Admin only."
+        message="Inbound intake health is available to HR Advisory and Super Admin only."
         title="Intake Health Unavailable"
       />
     );
@@ -57,7 +57,7 @@ export default async function EmployeePortalIntakeHealthPage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Talent Acquisition"
+      badge="CV Pipeline"
       description="How WhatsApp and email CVs are flowing into the pipeline over the last 30 days, and any that could not be processed automatically — retry re-queues them for the worker."
       errorBoundaryTitle="Intake health unavailable"
       title="Inbound CV Intake Health"

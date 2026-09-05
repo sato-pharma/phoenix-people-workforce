@@ -38,7 +38,7 @@ export default async function EmployeePortalRecruitmentPage() {
   if (!isHrAuthorityRole(access.role) || !(await canAccess(access, "recruitment", "read"))) {
     return (
       <EmployeePortalEmptyState
-        message="Recruitment tools are available to Talent Acquisition and Super Admin only."
+        message="Recruitment tools are available to HR Advisory and Super Admin only."
         title="Recruitment Unavailable"
       />
     );
@@ -46,7 +46,7 @@ export default async function EmployeePortalRecruitmentPage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Talent Acquisition"
+      badge="Recruitment & Hiring"
       description="Requisitions, candidates, and the hiring pipeline."
       errorBoundaryTitle="Recruitment unavailable"
       title="Recruitment"

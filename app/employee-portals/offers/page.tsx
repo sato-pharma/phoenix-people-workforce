@@ -39,7 +39,7 @@ export default async function EmployeePortalOffersPage() {
   if (!canRead) {
     return (
       <EmployeePortalEmptyState
-        message="Job offers are available to Talent Acquisition and Super Admin only."
+        message="Job offers are available to HR Advisory and Super Admin only."
         title="Job Offers Unavailable"
       />
     );
@@ -47,7 +47,7 @@ export default async function EmployeePortalOffersPage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Talent Acquisition"
+      badge="Recruitment & Hiring"
       description="Compose, design and send official offers of employment as Sato Pharmaceuticals."
       errorBoundaryTitle="Job offers unavailable"
       title="Job Offers"
