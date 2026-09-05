@@ -10,9 +10,9 @@
 
 /**
  * The month names, written out rather than asked for, because the ANSWER IS NOT THE SAME ON EVERY
- * ENGINE and this string gets hydrated.
+ * ENGINE and these strings get hydrated.
  *
- * `toLocaleDateString("en-GB", { month: "short" })` used to build these. CLDR 42 (ICU 72, late 2022)
+ * `toLocaleDateString("en-GB", { month: "short" })` used to build them. CLDR 42 (ICU 72, late 2022)
  * renamed the en-GB abbreviation for September from "Sep" to "Sept", so the string an engine
  * produces depends on how old its bundled ICU data is:
  *
@@ -63,13 +63,29 @@ function cairoParts(value: Date): CairoParts {
   return parts as CairoParts;
 }
 
+function parseIsoInstant(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const value = new Date(iso);
+  return Number.isNaN(value.getTime()) ? null : value;
+}
+
+function formatCairoDatePart(value: Date): string {
+  const { day, month, year } = cairoParts(value);
+  return `${day} ${CAIRO_MONTHS[Number(month) - 1]} ${year}`;
+}
+
+/** e.g. `30 Aug 2026`. An absent or unparseable value renders as an em dash, never as today. */
+export function cairoDate(iso: string | null | undefined): string {
+  const value = parseIsoInstant(iso);
+  return value ? formatCairoDatePart(value) : "—";
+}
+
 /** e.g. `30 Aug 2026 · 14:05`. An absent or unparseable value renders as an em dash, never as now. */
 export function cairoDateTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const value = new Date(iso);
-  if (Number.isNaN(value.getTime())) return "—";
-  const { day, hour, minute, month, year } = cairoParts(value);
-  return `${day} ${CAIRO_MONTHS[Number(month) - 1]} ${year} · ${hour}:${minute}`;
+  const value = parseIsoInstant(iso);
+  if (!value) return "—";
+  const { hour, minute } = cairoParts(value);
+  return `${formatCairoDatePart(value)} · ${hour}:${minute}`;
 }
 
 /**
@@ -89,9 +105,8 @@ export function cairoDateTime(iso: string | null | undefined): string {
  * value", and a dash in a date column defeats both the sort and the date parsing.
  */
 export function cairoDateTimeSortable(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const value = new Date(iso);
-  if (Number.isNaN(value.getTime())) return "";
+  const value = parseIsoInstant(iso);
+  if (!value) return "";
   const { day, hour, minute, month, year } = cairoParts(value);
   return `${year}-${month}-${day} ${hour}:${minute}`;
 }

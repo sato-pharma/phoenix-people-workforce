@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { cairoDateTime, cairoDateTimeSortable } from "../src/lib/format/cairo-datetime.ts";
+import { cairoDate, cairoDateTime, cairoDateTimeSortable } from "../src/lib/format/cairo-datetime.ts";
 
 // React error #418 is a hydration mismatch: the server renders a text node one way, the browser
 // renders it another, so React throws away the server HTML and re-renders the whole tree. React
@@ -103,6 +103,13 @@ export function runReact418HydrationSafeTextTests() {
   assert.equal(cairoDateTime("not-a-date"), "—", "an unparseable value renders a dash, never 'Invalid Date' text");
   assert.equal(cairoDateTimeSortable(null), "", "the spreadsheet form uses a blank cell, not a dash, for an absent value");
   assert.equal(cairoDateTimeSortable("2026-08-30T11:05:00Z"), "2026-08-30 14:05", "the sortable form stays all-numeric and Cairo-pinned");
+
+  // `cairoDate` (#3340) is the date-only sibling and shares formatCairoDatePart, so it inherits
+  // the same month table — and the same exposure if anyone re-borrows the name from the platform.
+  // It reaches the Report It export subtitle, which is server-rendered, so a split there would be
+  // a wrong DATE on a downloaded document rather than only a flicker.
+  assert.equal(cairoDate("2026-09-15T09:00:00.000Z"), "15 Sept 2026", "the date-only sibling must use the same engine-independent month table");
+  assert.equal(cairoDate(null), "—", "an absent value renders a dash, never today");
 
   // ── 2. ...and it takes those names from a literal table, not from the platform ──────────────
   //
