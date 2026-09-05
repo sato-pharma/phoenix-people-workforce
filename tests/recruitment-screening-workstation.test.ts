@@ -772,4 +772,36 @@ export async function runRecruitmentScreeningWorkstationTests() {
     "through the folder route — the row, its files and its history all survive",
   );
   assert.doesNotMatch(workstationSource, /method: "DELETE"/, "nothing on this screen deletes a candidate");
+
+  // --- Accept what the reader found -----------------------------------------------------------
+  //
+  // The screening workstation already RECEIVED the whole extraction and rendered it field by field;
+  // what it could not say was whether a value had ever reached the record, and it offered no way to
+  // put it there. 215 candidates carried a good yearsExperience against a null column on
+  // 2026-09-05 for exactly that reason.
+  const intelligence = read("src/components/recruitment/workstation/workstation-intelligence.tsx");
+  assert.match(
+    intelligence,
+    /listUnappliedCvFields\(extraction\.fields, candidate, schema\)/,
+    "the tab must ask the SHARED rule which findings are unsaved, never re-derive it",
+  );
+  assert.match(intelligence, /Not saved to the record/, "and say so on the row — the tab looks identical otherwise");
+  assert.match(intelligence, /Save this to the record/, "with a way to fix it");
+  // NULL, not disabled, when the viewer may not write: the button is absent rather than present and
+  // answering 403.
+  assert.match(
+    intelligence,
+    /onAcceptField: \(\(fieldKey: string, value: ExtractedCvValue\) => void\) \| null;/,
+    "a viewer who cannot write is given no button at all",
+  );
+
+  const acceptShell = read("src/components/recruitment/workstation/screening-workstation.tsx");
+  assert.match(acceptShell, /const acceptReaderFinding = useCallback/, "the shell owns the write");
+  // ONE FIELD PER PRESS. These are the readings the extractor itself hedged on, so a bulk apply
+  // would be the unattended write the confidence gate exists to prevent, wearing a button.
+  assert.doesNotMatch(acceptShell, /acceptAllReaderFindings|applyAllExtraction/, "there is no bulk apply");
+  // The SERVER's copy replaces the cache — a locally patched one leaves the button on screen
+  // whenever the server normalises the value differently from the reader's raw proposal.
+  assert.match(acceptShell, /profile: \{ \.\.\.entry\.profile, candidate: saved \}/, "the cache takes the server's record");
+  assert.match(acceptShell, /canWriteNotes \? \(key, value\)/, "and the write is gated on the update grant");
 }
