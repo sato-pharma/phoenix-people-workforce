@@ -416,6 +416,9 @@ async function loadVacationCleanupRecord(recordId: string): Promise<LoadedCleanu
 
   const [events, emailTokens, evidenceReviews] = await Promise.all([
     selectChildren("v2_vacation_request_events", "request_id", recordId),
+    // Always empty: nothing has ever issued a vacation email token, and the GET that consumed
+    // them was removed in #3274. Kept so cleanup stays exhaustive over the schema as it IS, not as
+    // it is used — see the note on vacationTokensTable in src/lib/vacation/service.ts.
     selectChildren("v2_vacation_email_tokens", "request_id", recordId),
     selectChildren("v2_vacation_evidence_reviews", "request_id", recordId),
   ]);
