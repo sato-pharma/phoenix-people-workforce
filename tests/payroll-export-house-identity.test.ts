@@ -248,7 +248,10 @@ export async function runPayrollExportHouseIdentityTests() {
     ["step template", stepBuffer],
     ["salary batch", batchBuffer],
   ] as Array<[string, ArrayBuffer | Buffer]>) {
-    const problems = await checkWorkbook(Buffer.from(buffer), { quiet: true });
+    // `Buffer.from` has no overload for the union — the three sheet builders hand back a Buffer and
+    // the batch builder an ArrayBuffer, so narrow before converting rather than casting the call.
+    const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+    const problems = await checkWorkbook(bytes, { quiet: true });
     assert.deepEqual(problems, [], `${label} must be structurally clean: ${problems.join("; ")}`);
   }
 }
