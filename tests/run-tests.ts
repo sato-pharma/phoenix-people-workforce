@@ -1342,6 +1342,7 @@ import { runNavRowWayBackTests } from "./nav-row-way-back.test.ts";
 import { runCiDependencyAuditTests } from "./ci-dependency-audit.test.ts";
 import { runAppsScriptPushTests } from "./apps-script-push.test.ts";
 import { runHeredocBackslashDamageTests } from "./heredoc-backslash-damage.test.ts";
+import { runHrFormsRenewalTests } from "./hr-forms-renewal.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4268,6 +4269,10 @@ await runTest(
 await runTest(
   "heredoc backslash damage sweep (no control byte in source, no regex built from a halved escape)",
   runHeredocBackslashDamageTests,
+);
+await runTest(
+  "contract renewal annex and non-renewal notice (every cross-reference resolves against the CURRENT contract; new term starts the day after the old one ends; annex number and objective reason stay blank)",
+  runHrFormsRenewalTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

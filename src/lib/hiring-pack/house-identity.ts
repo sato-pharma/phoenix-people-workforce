@@ -156,6 +156,8 @@ const HOUSE_NUMBERED_DOCUMENTS: ReadonlySet<string> = new Set([
   "workerDataForm",
   "custodyLaptop",
   "custodyMobile",
+  "contractRenewal",
+  "contractNonRenewal",
   "clearanceEmployee",
   "clearanceCompany",
 ]);
