@@ -1,0 +1,105 @@
+name: Apps Script Push
+
+# Ship a live sheet's Apps Script the same way everything else ships: merge it.
+#
+# WHY THIS WORKFLOW IS THE POINT OF THE WHOLE MECHANISM. The scripts behind the three live Google
+# Sheets execute in Google, not in Phoenix. Until `scripts/push-apps-script.mjs` existed, merging an
+# improvement to `docs/*-live-sheet.gs` changed precisely nothing on the sheet — it changed a review
+# copy, and somebody still had to paste ~2,000 lines into the Apps Script editor by hand. That was
+# done by hand on 2026-09-05 and took most of an hour, including one save that silently did not
+# persist and was caught only by reading the project back.
+#
+# WITHOUT THIS FILE THE PUSHER CANNOT RUN AT ALL. GitHub Actions secrets are write-only, and the
+# only local copy of GOOGLE_APPS_SCRIPT_CLIENT_SECRET went with a worktree that was removed on
+# 2026-09-05. So the credentials exist in exactly one place that can read them: this workflow. If it
+# is ever deleted, the pusher becomes unrunnable until somebody mints a second client secret in
+# Google Cloud — and Google allows only two per client, so that is not free.
+#
+# TRIGGERS, AND THE ONE THAT IS DELIBERATELY ABSENT.
+# `push` to `main`, narrowed by path so the ordinary ~30 commits a day cost nothing here, plus a
+# manual dispatch for a dry run or a single sheet. There is NO `pull_request` leg on purpose:
+# Actions minutes are a live cost constraint in this repository (branch protection's "require
+# branches up to date" was switched OFF in 2026-08 for exactly that reason), and a PR run would
+# either need the Google credentials on unmerged code or tell you nothing. Use the dispatch with
+# `check_only` when you want to see a diff before merging.
+on:
+  push:
+    branches: [main]
+    paths:
+      # The sources of truth themselves…
+      - "docs/*-live-sheet.gs"
+      # …and the machinery that decides what gets written where. A manifest typo can point a push
+      # at the wrong project, so a change to it must re-run the push under review, not wait for the
+      # next unrelated sheet edit.
+      - "scripts/push-apps-script.mjs"
+      - "scripts/apps-script-manifest.mjs"
+      - ".github/workflows/apps-script-push.yml"
+  workflow_dispatch:
+    inputs:
+      check_only:
+        description: "Report what WOULD change and write nothing"
+        type: boolean
+        default: false
+      only:
+        description: "Limit to one target (cv-lifecycle, direct-orders, marketing-requests)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+# `projects.updateContent` REPLACES EVERY FILE in an Apps Script project — there is no per-file
+# write. Two runs overlapping on the same project would each send the whole file list, and the loser
+# would quietly undo the winner. Serialise them, and never cancel one in flight: a cancelled run
+# that has already sent its request still wrote.
+concurrency:
+  group: apps-script-push
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CI_NODE_VERSION: "24"
+
+jobs:
+  push:
+    name: Push live sheet scripts into Google
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: ${{ env.CI_NODE_VERSION }}
+
+      # No `pnpm install`. The pusher uses only Node built-ins — fetch, fs, path, url — so the
+      # dependency install would be the slowest and most fragile step in a job that otherwise takes
+      # seconds, and it would add a lockfile's worth of supply chain to a job holding Google
+      # credentials. If the pusher ever grows a dependency, that trade is worth re-reading rather
+      # than silently reversing.
+      - name: Push
+        env:
+          GOOGLE_APPS_SCRIPT_CLIENT_ID: ${{ secrets.GOOGLE_APPS_SCRIPT_CLIENT_ID }}
+          GOOGLE_APPS_SCRIPT_CLIENT_SECRET: ${{ secrets.GOOGLE_APPS_SCRIPT_CLIENT_SECRET }}
+          GOOGLE_APPS_SCRIPT_REFRESH_TOKEN: ${{ secrets.GOOGLE_APPS_SCRIPT_REFRESH_TOKEN }}
+          # One id per sheet. A target whose id is unset is SKIPPED, loudly and successfully — that
+          # is the manifest's own contract, so connecting one sheet never blocks the others. Only
+          # CV Lifecycle is connected today; the other two ids do not exist as secrets yet, and
+          # their absence here is correct rather than a gap to fill in passing.
+          CV_LIFECYCLE_APPS_SCRIPT_ID: ${{ secrets.CV_LIFECYCLE_APPS_SCRIPT_ID }}
+          DIRECT_ORDERS_APPS_SCRIPT_ID: ${{ secrets.DIRECT_ORDERS_APPS_SCRIPT_ID }}
+          MARKETING_REQUESTS_APPS_SCRIPT_ID: ${{ secrets.MARKETING_REQUESTS_APPS_SCRIPT_ID }}
+          # The dispatch inputs arrive as ENVIRONMENT VARIABLES, never interpolated into the shell
+          # below. A `${{ inputs.… }}` expression inside a `run:` block is substituted as TEXT
+          # before bash sees it, so a value containing a shell metacharacter would execute in a job
+          # that holds Google credentials. This is the standard script-injection shape, and it costs
+          # nothing to avoid.
+          CHECK_ONLY: ${{ inputs.check_only }}
+          ONLY_TARGET: ${{ inputs.only }}
+        run: |
+          args=""
+          if [ "$CHECK_ONLY" = "true" ]; then args="--check"; fi
+          if [ -n "$ONLY_TARGET" ]; then args="$args --only $ONLY_TARGET"; fi
+          echo "Running: node scripts/push-apps-script.mjs $args"
+          node scripts/push-apps-script.mjs $args
