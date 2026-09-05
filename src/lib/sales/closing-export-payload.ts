@@ -46,9 +46,16 @@ export type ClosingExportSelection = {
 
 export type ClosingExportPayload = {
   fill: ClosingEngineFill;
-  /** The line and period actually resolved, which may differ from what was asked for. */
-  line: string;
-  period: string;
+  /**
+   * The line and period actually resolved, which may differ from what was asked for.
+   *
+   * Both are nullable, and that is the matrix's own type rather than a defensive widening: a line
+   * with nothing uploaded resolves to no line and no month at all. Narrowing them to `string` here
+   * would push a cast onto every caller and turn "this line has no data yet" into a label reading
+   * `null` on a printed page.
+   */
+  line: string | null;
+  period: string | null;
   /** The filter stamp in human names, or "" when nothing was narrowed. */
   filterNote: string;
   matrix: Awaited<ReturnType<typeof loadMonthlyClosingPartsWithStoreSplit>>["combined"];

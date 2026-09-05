@@ -111,8 +111,13 @@ export async function GET(request: Request) {
 
     // A stable, readable filename: the reader saves several of these in a month and sorts them by
     // name. Codes never appear in one — the standing rule is human-readable names everywhere.
-    const safe = (value: string) => value.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase();
-    const fileName = `phoenix-closing-${safe(payload.line)}-${payload.period}-${safe(sheet)}.pdf`;
+    // Both parts are nullable: a line with nothing uploaded resolves to no line and no month. The
+    // file still needs a name, so each falls back to a word rather than to the string "null".
+    const safe = (value: string | null, fallback: string) =>
+      (value?.trim() ? value : fallback).replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase();
+    const fileName =
+      `phoenix-closing-${safe(payload.line, "all-lines")}`
+      + `-${safe(payload.period, "no-month")}-${safe(sheet, "sheet")}.pdf`;
 
     return new Response(new Uint8Array(pdf), {
       headers: {

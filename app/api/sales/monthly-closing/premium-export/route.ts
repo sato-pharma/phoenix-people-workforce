@@ -118,10 +118,11 @@ export async function POST(request: Request) {
     // VBA, and that limitation is a reason to stop rebuilding, not a reason to ship without them.
     // .xlsm with the button bar is the DEFAULT, by the owner's explicit instruction on 2026-09-02:
     // "I want the buttons ... the export as PDF must be in this sheet ... I don't want to lose a
-    // single feature." A .xlsx cannot carry code at all, so a button in one is necessarily dead —
-    // there is no macro-free way to put Export PDF inside the workbook. Passing `macros: false`
-    // still builds the plain .xlsx, and that build removes the buttons rather than ship shortcuts
-    // that answer a click with "Cannot run the macro 'PhxExportPdf'".
+    // single feature." A .xlsx cannot carry code at all, so a button in one cannot RUN anything —
+    // but it can LINK. Passing `macros: false` builds the plain .xlsx, and since 2026-09-05 that
+    // build keeps Export PDF as a hyperlink to the renderer below; the remaining buttons, whose work
+    // Excel already does natively, are removed rather than shipped as shortcuts that answer a click
+    // with "Cannot run the macro 'PhxExportPdf'".
     const macros = body.macros !== false;
 
     // The macro-free build gets its Export PDF button back as a hyperlink. The origin is the one the
@@ -133,7 +134,12 @@ export async function POST(request: Request) {
       || (process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/+$/, "");
     const pdfLink = (sheet: string): string | null => {
       if (!isClosingPdfSheet(sheet)) return null;
-      const query = new URLSearchParams({ line: payload.line, period: payload.period, sheet });
+      // Only what actually resolved. An empty `line=` would narrow the PDF to a line named by the
+      // empty string, which matches nothing and renders as a page with no rows rather than an error;
+      // omitted, the route resolves the same default the workbook did.
+      const query = new URLSearchParams({ sheet });
+      if (payload.line) query.set("line", payload.line);
+      if (payload.period) query.set("period", payload.period);
       for (const code of body.regionCodes ?? []) query.append("region", code);
       for (const code of body.areaCodes ?? []) query.append("area", code);
       for (const code of body.productCodes ?? []) query.append("product", code);

@@ -235,10 +235,19 @@ function documentCss(landscape: boolean): string {
 export interface ClosingSheetPdfInput {
   fill: ClosingEngineFill;
   sheet: ClosingPdfSheet;
-  /** The line the workbook covers, for the running foot. */
-  line: string;
-  /** The period key, `YYYY-MM`. */
-  period: string;
+  /**
+   * The line the workbook covers, for the running foot. Nullable because that is what the closing
+   * matrix resolves to when a line has nothing uploaded — printed as a phrase rather than as the
+   * word "null", which is the failure a cast at the call site would have produced.
+   */
+  line: string | null;
+  /** The period key, `YYYY-MM`, or null when no month resolved. */
+  period: string | null;
+}
+
+/** A line or month that did not resolve, said in words rather than left as an empty gap. */
+function orUnknown(value: string | null, what: string): string {
+  return value?.trim() ? value.trim() : `no ${what}`;
 }
 
 /**
@@ -296,7 +305,7 @@ export function buildClosingSheetHtml(
 
   const body =
     rows.length === 0
-      ? `<p class="rpt__empty">This sheet has no rows for ${escapeHtml(input.period)}.</p>`
+      ? `<p class="rpt__empty">This sheet has no rows for ${escapeHtml(orUnknown(input.period, "month"))}.</p>`
       : `<table>
       <thead><tr>${headers
         .map((heading, index) => {
@@ -334,7 +343,7 @@ export function buildClosingSheetHtml(
     <div class="lh__rule"></div>`;
 
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(`${title} — ${input.line} ${input.period}`)}</title>
+<html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(`${title} — ${orUnknown(input.line, "line")} ${orUnknown(input.period, "month")}`)}</title>
 <style>${documentCss(chrome.landscape)}</style></head>
 <body>
 ${letterhead}
@@ -353,9 +362,9 @@ ${notesHtml}
  * default header, which prints the document title and today's date across the top of the page. The
  * header is therefore an empty span rather than nothing.
  */
-function footerTemplate(line: string, period: string): string {
+function footerTemplate(line: string | null, period: string | null): string {
   return `<div style="width:100%;padding:0 9mm;font-family:'Segoe UI',Tahoma,Arial,sans-serif;font-size:6.6pt;color:${HOUSE_COLORS.muted};display:flex;justify-content:space-between;">
-    <span>${escapeHtml(`${line} · ${period}`)}</span>
+    <span>${escapeHtml(`${orUnknown(line, "line")} · ${orUnknown(period, "month")}`)}</span>
     <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
   </div>`;
 }
