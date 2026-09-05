@@ -97,7 +97,10 @@ export function runRecruitmentCvSearchTests() {
   // "never use tsvector"; it is "cardio must still find Cardiology", which is what was actually
   // being defended.
 
-  const searchMigration = read("supabase/migrations/20260905174500_cv_search_uses_an_index.sql");
+  // The migration that defines the function TODAY. Two files now touch it; this is the later one,
+  // and reading the earlier one would pin a body that no longer runs.
+  const searchMigration = read("supabase/migrations/20260905181500_cv_search_short_terms_are_words.sql");
+  const indexMigration = read("supabase/migrations/20260905174500_cv_search_uses_an_index.sql");
   const corpusMigration = read("supabase/migrations/20260905080000_cv_content_search.sql");
 
   // Executable SQL only. This file EXPLAINS in prose why it does not use `to_tsquery`, and a naive
@@ -114,6 +117,15 @@ export function runRecruitmentCvSearchTests() {
   const searchSql = sqlOnly(searchMigration);
   assert.ok(searchSql.includes("create or replace function"), "the strip must leave the SQL behind");
 
+  // A SHORT term is the WORD; a longer one still prefixes. Owner's decision 2026-09-05: `rep`
+  // matched 401 of 745 candidates - over half the pool - on "prepare" and "reporting", and a
+  // plain prefix rule kept 382 of them because `rep:*` still reaches "representative".
+  assert.ok(
+    searchSql.includes("[1]) >= 4"),
+    "a term shorter than four characters must match the WORD, not a prefix - otherwise the noise "
+      + "the owner asked to remove survives",
+  );
+
   // THE CONCERN THE OLD RULE DEFENDED: a partial word must still match.
   assert.match(
     searchSql,
@@ -123,7 +135,7 @@ export function runRecruitmentCvSearchTests() {
   );
   assert.match(
     searchSql,
-    /case when base::text = '' then base/,
+    /case\s+when base::text = '' then base/,
     "and the prefix may only be appended to a NON-EMPTY query - ':*' alone is not a valid tsquery "
       + "and the cast would raise, turning an empty search box into a 500",
   );
@@ -178,12 +190,12 @@ export function runRecruitmentCvSearchTests() {
 
   // The index is what makes this worth doing, and it must be GENERATED so it cannot drift.
   assert.match(
-    searchSql,
+    sqlOnly(indexMigration),
     /generated always as \(\s*to_tsvector\('english', public\.ats_candidate_cv_search_text\(extracted_fields\)\)\s*\) stored/,
     "the column must be GENERATED from the SAME corpus function the old search used - a trigger "
       + "could drift, and a different corpus would silently change what the search covers",
   );
-  assert.match(searchSql, /using gin \(search_tsv\)/, "and the GIN index is the point of the exercise");
+  assert.match(sqlOnly(indexMigration), /using gin \(search_tsv\)/, "and the GIN index is the point of the exercise");
 
   // Authority, restated in the file that now defines the function.
   assert.doesNotMatch(searchSql, /security definer/i, "this reads CV contents for the whole pool");
@@ -206,7 +218,7 @@ export function runRecruitmentCvSearchTests() {
       + "the word 'name'",
   );
   assert.doesNotMatch(
-    sqlOnly(searchMigration),
+    sqlOnly(indexMigration),
     /ats_cv_extraction_search_text/,
     "there must be ONE corpus function. A second one was written and dropped the same day: it "
       + "included address and professionalSummary, which moved 'cairo' from 71 hits to 289 - a "
