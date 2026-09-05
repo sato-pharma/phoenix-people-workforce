@@ -264,6 +264,7 @@ policy):
    | `phoenix-run-synthetic-journeys` | `0 * * * *` | 1h | cron-job.org job `8220577` |
    | `phoenix-direct-orders-rotate-sheet-token` | `23 3 * * 5` | 2h | cron-job.org job `8313169` |
    | `phoenix-marketing-requests-rotate-sheet-token` | `43 3 * * 5` | 2h | cron-job.org job `8313171` |
+   | `phoenix-cv-lifecycle-rotate-sheet-token` | `3 4 * * 5` | 2h | cron-job.org job `8387636` |
    | `phoenix-brevo-keepalive` | `9 4 1 * *` | 12h | cron-job.org job `8313297` |
    | `phoenix-direct-orders-expire-held` | `17 2 * * *` | 2h | cron-job.org job `8313165` |
    | `phoenix-direct-orders-probation` | `27 2 * * *` | 2h | cron-job.org job `8313177` |
@@ -414,7 +415,9 @@ that admits a gap, so this paragraph exists instead of a green dashboard.
    routes were not merely unwatched, *nothing was calling them at all*, and the live feed tokens
    they exist to rotate had sat unchanged since 2026-08-05. cron-job.org jobs `8313169` (Fridays
    03:23) and `8313171` (Fridays 03:43) are now the schedule, and the rows above simply restate
-   them. Weekly, on the Egyptian weekend, twenty minutes apart so two 30 s requests can never
+   them. A third joined them on 2026-09-05 — `8387636`, Fridays 04:03 — rotating the CV-lifecycle
+   sheet's feed token, the one that reads candidates' names and phone numbers.
+   Weekly, on the Egyptian weekend, twenty minutes apart so two 30 s requests can never
    overlap: rotation is cheap and safely repeatable, but each run is one more chance to disturb a
    live sheet the owner reads, so it happens when nobody is reading it. **That cadence is a
    judgement call, not a requirement** — moving either job to daily is harmless, and needs only the

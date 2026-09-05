@@ -118,6 +118,16 @@ const variables = [
     // separator — is fully resolved). required:false because nothing in this codebase or CI
     // reads this value yet; it's held for future Cloudflare DNS/cache automation.
     { railway: "CLOUDFLARE_API_TOKEN", github: ["CLOUDFLARE_API_TOKEN"], required: false },
+
+    // Added 2026-09-05 with the CV-lifecycle sheet's weekly token rotation, so this pair is
+    // recoverable the same way its two siblings above are. required:false because an unset
+    // pair is a valid state the route reports as `{ rotated: false, reason: "not configured" }`
+    // rather than an error — but note the asymmetry: the URL is only an endpoint, while the
+    // SECRET must equal the sheet's own WEBHOOK_SECRET script property, which lives in Google
+    // and nowhere in this repository. Restoring one without the other leaves every rotation
+    // POST answered `denied`, which reads exactly like an unreachable sheet.
+    { railway: "CV_LIFECYCLE_SHEET_REFRESH_WEBHOOK_SECRET", github: ["CV_LIFECYCLE_SHEET_REFRESH_WEBHOOK_SECRET"], required: false },
+    { railway: "CV_LIFECYCLE_SHEET_REFRESH_WEBHOOK_URL", github: ["CV_LIFECYCLE_SHEET_REFRESH_WEBHOOK_URL"], required: false },
 ];
 
 function main() {
