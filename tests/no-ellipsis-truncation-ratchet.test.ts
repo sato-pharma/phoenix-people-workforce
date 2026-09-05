@@ -126,8 +126,27 @@ import path from "node:path";
  * would swap the ellipsis for a silent clip, which is worse for the reader. It is the same
  * exception the fits-the-screen rule already makes for a native <select>. Leaving it counted is
  * the point: the ratchet should carry a known exception, not be quietly relieved of one.
+ *
+ * 205 -> 203 on 2026-09-05: the two batch-file columns, found by the admin half of the clip sweep
+ * that followed the employee-portal chrome pass. Both cut the one string their row exists to
+ * identify, and neither carried a title, so the missing text was not recoverable by hover either.
+ * payroll-history.tsx cut 121-133px of the payroll batch name on /payroll at 768/1024/1280; since
+ * every automated batch shares the "automated-payroll:" prefix, what the ellipsis ate was the only
+ * part telling two rows apart. sales-import-workspace.tsx was worse at 154px, its ten columns
+ * competing for the same 980px.
+ *
+ * `truncate` -> `break-words` on both, the same trade as the recruitment pass: these filenames are
+ * single unbroken tokens, so `whitespace-normal` alone would still overflow them. The sales cell
+ * also took a `min-w-[220px]` floor, because once nowrap is gone the column's min-content width
+ * collapses and auto table layout squeezed it to 149px and four lines.
+ *
+ * Worth recording for whoever measures the next one: a harness reproducing these two tables at
+ * 1280px was VOID, because its control row still carrying `truncate` did not cut anything. A
+ * `max-w-[260px]` on a <td> is not a real constraint — the column simply took 500px. It is the
+ * COLUMN SQUEEZE that cuts, so a truncation site has to be measured at a width where the columns
+ * actually compete, or the reading says the defect is not there.
  */
-const BASELINE = 205;
+const BASELINE = 203;
 
 const ROOTS = ["app", "src"];
 
