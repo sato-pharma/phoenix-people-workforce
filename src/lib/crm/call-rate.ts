@@ -91,10 +91,14 @@ export const DAILY_CAMPAIGN_LIMIT = 3;
  * count is a flag, not a strength — applies here too: a caller must render the "above" band
  * distinctly from "in-band" and never colour it as a win. See {@link dailyVisitBandOf}.
  *
- * OPEN QUESTION, deliberately not resolved here: `codex/call-rate-ampm-pharmacy-split` will split
- * pharmacy visits out of AM/PM. Whether pharmacy visits count toward this band is the owner's call
- * once that ships — today it counts everything the AM/PM slices already count, because there is no
- * split yet.
+ * PHARMACY IS EXCLUDED — owner's decision, 2026-09-06, asked directly rather than assumed:
+ * once `codex/call-rate-ampm-pharmacy-split` splits pharmacy visits out of AM/PM, this band stays
+ * AM/PM ONLY. Pharmacy work is scored on its own coverage/call-rate over there, not folded back in
+ * here. So a caller implementing that split must keep {@link verifiedVisitsPerDay} fed from the
+ * AM/PM slices alone — never `am + pm + pharmacy`. Today, before that split exists, AM/PM already
+ * IS everything, so this is a forward-compatibility note rather than a present behaviour change:
+ * company visits/day will read LOWER once pharmacy is carved out (measured August 2026: 8.05/day
+ * pharmacy-inclusive vs 7.30/day AM/PM-only), which is intended, not a regression.
  */
 export const DAILY_VISIT_RATE_TARGET = 10;
 /** The band's lower edge. Under this is `"below"` — short of the standard. */
