@@ -87,7 +87,10 @@ export const systemDocuments = {
   workbookCreator: systemIdentity.appName,
   workbookExportScopeNote: `Generated from ${systemIdentity.appName} according to the active user access scope.`,
   titles: {
-    attendanceDeviceUserMapping: `${systemIdentity.appName} - Attendance Device User Mapping`,
+    // No app name on either: both are printed as the TITLE on the face of a company document,
+    // and under SATO-DIS-2026-01 v1.0 the identity a document wears is the COMPANY's. Each is
+    // read in exactly one place, so this is contained.
+    attendanceDeviceUserMapping: "Attendance Device User Mapping",
     activeEmployeeMasterData: `${systemIdentity.appName} - Active Employee Master Data`,
     activeEmployeeMasterDataWorkbook: `${systemIdentity.appName} Active Employee Master Data`,
     coachingReportsExport: `${systemIdentity.appName} | Coaching Reports Export`,
@@ -96,7 +99,7 @@ export const systemDocuments = {
     // place (src/lib/cv/cv-template.ts), so this is contained — the other titles here still
     // carry the brand and are read by seven other modules.
     cvDatabaseUploadTemplate: "CV Database Upload Template",
-    fingerprintAttendanceReport: `${systemIdentity.appName} - Fingerprint Attendance Report`,
+    fingerprintAttendanceReport: "Fingerprint Attendance Report",
     probationExport: `${systemIdentity.appName} | Probation Export`,
     probationPdfExport: `${systemIdentity.appName} - Probation Export`,
     userBulkImportTemplate: `${systemIdentity.appName} Bulk Import Template`,

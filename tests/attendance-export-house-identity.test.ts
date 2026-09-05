@@ -199,4 +199,31 @@ export async function runAttendanceExportHouseIdentityTests() {
       );
     }
   }
+
+  // ── 6. THE TITLE IS THE COMPANY'S NAME FOR THE DOCUMENT, NOT THE APP'S ──────
+  //
+  // The ink was converted first and the NAME was left behind: both of these printed
+  // "Phoenix Workforce - ..." as their headline for months afterwards, which is the app introducing
+  // itself on a document the company issues. A workbook can be perfectly on-palette and still say
+  // the wrong thing in the largest type on the page.
+  //
+  // Asserted on the TITLE CELL, not on the file as a whole, because the mapping template's
+  // instruction line legitimately names the system a filler is entering data into — "employee_hr_id
+  // must exist in Phoenix employees" tells them where the id comes from, and blanking it would make
+  // the sheet harder to fill, not more correct. Identity is the headline; this is guidance.
+  // COLUMN 3, which is where `writeHouseMasthead` merges the title from — columns 1-2 are left
+  // clear for the floating mark and column 4 onward carries the provenance block. Reading column 4
+  // instead makes this whole check pass against the document id, which contains no app name and
+  // never will: written that way it stayed green with "Phoenix Workforce" restored to the headline.
+  const titles: Array<[string, string]> = [
+    ["mapping template", String(mapping.worksheets[0].getRow(1).getCell(3).value ?? "")],
+    ["fingerprint report", String(fingerprint.worksheets[0].getRow(1).getCell(3).value ?? "")],
+  ];
+  for (const [label, title] of titles) {
+    assert.ok(title.length > 0, `${label}: the title cell must not be empty`);
+    assert.ok(
+      !/phoenix/i.test(title),
+      `${label}: the headline is the COMPANY's name for this document, never the app's. Found "${title}"`,
+    );
+  }
 }
