@@ -91,7 +91,11 @@ export const systemDocuments = {
     activeEmployeeMasterData: `${systemIdentity.appName} - Active Employee Master Data`,
     activeEmployeeMasterDataWorkbook: `${systemIdentity.appName} Active Employee Master Data`,
     coachingReportsExport: `${systemIdentity.appName} | Coaching Reports Export`,
-    cvDatabaseUploadTemplate: `${systemIdentity.brandName} CV Database Upload Template`,
+    // No app name: this title is printed on the face of a company document, and under
+    // SATO-DIS-2026-01 v1.0 the identity a document wears is the COMPANY's. Read in exactly one
+    // place (src/lib/cv/cv-template.ts), so this is contained — the other titles here still
+    // carry the brand and are read by seven other modules.
+    cvDatabaseUploadTemplate: "CV Database Upload Template",
     fingerprintAttendanceReport: `${systemIdentity.appName} - Fingerprint Attendance Report`,
     probationExport: `${systemIdentity.appName} | Probation Export`,
     probationPdfExport: `${systemIdentity.appName} - Probation Export`,
