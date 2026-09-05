@@ -3,7 +3,7 @@ import ExcelJS from "exceljs";
 import { systemIdentity } from "@/config/system-settings";
 import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
 import { logError } from "@/lib/observability/log";
-import { computeBrickCoverage, saveBrickCoverageSnapshot } from "@/lib/sales/import-coverage";
+import { collectUnmappedProducts, computeBrickCoverage, countBrickDrift, saveBrickCoverageSnapshot } from "@/lib/sales/import-coverage";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
 import { applyCustomerBrickCorrections } from "@/lib/sales/normalizer/customer-map";
@@ -558,8 +558,23 @@ export async function persistNormalizedBatch(input: {
   // that already committed successfully.
   try {
     const coverage = computeBrickCoverage(rows);
+
+    // MAPPING HEALTH — the two columns the Coverage tab exists to show.
+    //
+    // These were written as the literals 0 and [] here, so the tab was structurally incapable of
+    // reporting a mapping problem: 134 production snapshots, not one non-zero value, while 20 of
+    // them recorded fewer importable rows than total rows (5,005 rows in all). Both figures were
+    // already sitting in `input.result`; nothing had to be recomputed, only passed.
+    //
+    // Both are defined in import-coverage.ts, next to the writer and to the same definitions
+    // buildImportPreviewDiff uses, so the two writers of this table cannot disagree about what a
+    // column means. They are pure and unit-tested — see tests/coverage-mapping-health.test.ts.
+    const brickDriftCount = countBrickDrift(input.result.customerBrickCorrections);
+    const unmapped = collectUnmappedProducts(input.result.exceptions);
+
     await saveBrickCoverageSnapshot({
       batchId,
+      brickDriftCount,
       coverage,
       details: rows
         .filter((r) => String(r.brickId ?? "").trim() === "" && !r.isDirect && r.clientCode)
@@ -567,6 +582,8 @@ export async function persistNormalizedBatch(input: {
       distributorCode: input.distributorCode,
       period,
       totalRows: rows.length,
+      unmappedProducts: unmapped.products,
+      unmappedProductsCount: unmapped.count,
     });
   } catch (error) {
     logError("Failed to record SoS brick coverage for batch", {

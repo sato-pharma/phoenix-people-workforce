@@ -505,6 +505,7 @@ import { runDistributorDetectionHeaderRowTests } from "./distributor-detection-h
 import { runDistributorHeaderNormalizationTests } from "./sales-header-normalize.test.ts";
 import { runBrickSuggestionsTests } from "./brick-suggestions.test.ts";
 import { runImportCoverageTests } from "./import-coverage.test.ts";
+import { runCoverageMappingHealthTests } from "./coverage-mapping-health.test.ts";
 import { runOfficePivotTests } from "./office-pivot.test.ts";
 import { runOfficeAllocationTests } from "./office-allocation.test.ts";
 import { runOfficeGoldenRuleLockTests } from "./office-golden-rule-lock.test.ts";
@@ -2264,6 +2265,7 @@ await runTest("detect distributor header-row pick (EG-BR regression)", runDistri
 await runTest("shared header normalization (Arabic + deep scan + all sheets)", runDistributorHeaderNormalizationTests);
 await runTest("brick suggestions", runBrickSuggestionsTests);
 await runTest("import coverage aggregation", runImportCoverageTests);
+await runTest("coverage tab mapping health (drift and unmapped products are measured, not hardcoded 0)", runCoverageMappingHealthTests);
 await runTest("sos header detection", runSosHeaderDetectionTests);
 await runTest("sales strict header conformance + name-first product", runSalesStrictConformanceTests);
 await runTest("sales ROI batch dedup (one validated batch per period)", runSalesRoiBatchDedupTests);
