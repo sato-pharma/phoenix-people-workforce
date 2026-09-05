@@ -90,6 +90,25 @@ export function readHouseMark(): string | null {
   }
 }
 
+/**
+ * The mark's image id for a workbook, added at most ONCE.
+ *
+ * `workbook.addImage` appends a fresh copy of the bytes every time it is called, and it returns a
+ * different id each time — so a workbook with a masthead on six sheets embedded the same 28KB PNG
+ * six times. Measured on the payroll pack: four sheets took the file from 43KB to 103KB, and none
+ * of the extra 60KB was information. Keyed off the workbook itself so the cache cannot outlive it.
+ */
+const houseMarkIdByWorkbook = new WeakMap<ExcelJS.Workbook, number | null>();
+
+function houseMarkImageId(workbook: ExcelJS.Workbook): number | null {
+  const cached = houseMarkIdByWorkbook.get(workbook);
+  if (cached !== undefined) return cached;
+  const mark = readHouseMark();
+  const id = mark === null ? null : workbook.addImage({ base64: mark, extension: "png" });
+  houseMarkIdByWorkbook.set(workbook, id);
+  return id;
+}
+
 export type HouseMastheadInput = {
   /** Document title, e.g. "Employee Master". */
   title: string;
@@ -148,9 +167,8 @@ export function writeHouseMasthead(
   idCell.font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: "Aptos", size: 7.5 };
   idCell.alignment = { horizontal: "right", vertical: "middle", wrapText: true };
 
-  const mark = readHouseMark();
-  if (mark) {
-    const imageId = workbook.addImage({ base64: mark, extension: "png" });
+  const imageId = houseMarkImageId(workbook);
+  if (imageId !== null) {
     // 401x158 native, so 96x38 holds the 2.54:1 ratio and keeps the PHARMA counters open.
     sheet.addImage(imageId, { tl: { col: 0.2, row: 0.15 }, ext: { width: 96, height: 38 } });
   }
