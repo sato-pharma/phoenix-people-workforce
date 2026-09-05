@@ -1728,6 +1728,64 @@ function resolveEmployeeCompensationInput(input: EmployeeMutationInput) {
   };
 }
 
+/**
+ * THE MONEY COLUMNS — WRITTEN ONLY WHEN THE CALLER ACTUALLY SUPPLIED ONE.
+ *
+ * Every column below holds real salary data with no history table behind it: an overwrite is
+ * silent, produces no audit row, and cannot be recovered from this database. Writing them
+ * unconditionally meant any caller whose payload simply did not carry pay — a partial API save, a
+ * script, a client that never rendered the salary section, or a viewer whose read of those figures
+ * was redacted — blanked every one of them as a side effect of editing something else entirely,
+ * such as a phone number.
+ *
+ * So the write is keyed on the PAYLOAD, not on who is sending it. A money column is written only
+ * when this save actually carries a value for it; otherwise the key is omitted from the upsert body
+ * and PostgREST leaves that column out of its `DO UPDATE SET` list, so the stored figure survives
+ * untouched.
+ *
+ * `numberOrNull` collapses "absent" and "explicitly cleared" into the same `null` — the edit form
+ * (`formToPayload`) posts `null` for an empty box, so the two are genuinely indistinguishable here.
+ * Both therefore preserve. That is the same call the employee IMPORT already makes for these exact
+ * columns (`employeeValues` in app/api/imports/employees/confirm/route.ts guards each one with
+ * `!== null`), and it is the safe direction: failing to clear a salary is a visible no-op the user
+ * can retry, while failing to preserve one destroys payroll data nobody notices until payday.
+ * Clearing a salary outright is not reachable from this path any more, by design — it is a
+ * deliberate act that belongs in a governed flow, not a side effect of a blank box.
+ *
+ * Only on an UPDATE. On a create there is no stored figure to protect, so the columns are written
+ * exactly as before and a new row's pay is never left implicit.
+ *
+ * EXPORTED FOR THE TESTS, deliberately: `employeePayload` reaches the network on every call
+ * (manager validation, CRM uniqueness, region derivation), so the one rule worth pinning here —
+ * which money columns a given payload writes — is only reachable in isolation.
+ */
+export function employeeCompensationColumns(input: EmployeeMutationInput, isUpdate: boolean) {
+  const compensation = resolveEmployeeCompensationInput(input);
+  const columns = {
+    base_salary: compensation.baseSalary,
+    basic_salary: compensation.basicSalary,
+    extra_cost_of_living: compensation.extraCostOfLiving,
+    fuel_allowance: compensation.fuelAllowance,
+    gross_salary: compensation.grossSalary,
+    medical_insurance: numberOrNull(input.medicalInsurance),
+    net_salary: compensation.netSalary,
+    social_insurance: numberOrNull(input.socialInsurance),
+    // The insurance WAGE alone decides the statutory filing — payroll never reads
+    // social_insurance_status — so blanking it silently changes what is filed for this employee
+    // with the Authority. It is protected on exactly the same terms as the salary columns.
+    social_insurance_wage: numberOrNull(input.socialInsuranceWage),
+    taxes: numberOrNull(input.taxes),
+  };
+
+  if (!isUpdate) {
+    return columns;
+  }
+
+  return Object.fromEntries(
+    Object.entries(columns).filter(([, value]) => value !== null && value !== undefined),
+  ) as Partial<typeof columns>;
+}
+
 async function employeePayload(
   input: EmployeeMutationInput,
   isUpdate: boolean,
@@ -1801,7 +1859,6 @@ async function employeePayload(
 
   const lifecycleActive = isActiveLifecycleStatus(employmentStatus);
   const payrollEligible = lifecycleActive ? input.payrollEligible !== false : false;
-  const compensation = resolveEmployeeCompensationInput(input);
 
   // Region is authoritative from the au sales geography: derive it from (line, area) and persist the
   // code + precise name so an employee's region can never drift from their sales area. Non-sales
@@ -1811,11 +1868,10 @@ async function employeePayload(
   const regionFields = employeeRegionFields(derivedRegion, compact(input.regionName));
 
   return {
+    ...employeeCompensationColumns(input, isUpdate),
     area_id: areaId,
     bank_account: compact(input.bankAccount),
     bank_name: compact(input.bankName),
-    base_salary: compensation.baseSalary,
-    basic_salary: compensation.basicSalary,
     birth_date: compact(input.birthDate),
     contract_type: compact(input.contractType),
     crm_id: crmId,
@@ -1823,12 +1879,9 @@ async function employeePayload(
     department_id: numberOrNull(input.departmentId),
     education: compact(input.education),
     employment_status: employmentStatus,
-    extra_cost_of_living: compensation.extraCostOfLiving,
     full_name: fullName,
     nickname: compact(input.nickname),
     gender: compact(input.gender)?.toLowerCase(),
-    fuel_allowance: compensation.fuelAllowance,
-    gross_salary: compensation.grossSalary,
     has_bank_account: normalizeYesNo(input.hasBankAccount),
     hire_date: compact(input.hireDate),
     hr_id: hrId,
@@ -1838,8 +1891,6 @@ async function employeePayload(
     mobile_number: compact(input.mobileNumber),
     name_ar: compact(input.nameAr),
     national_id: compact(input.nationalId),
-    net_salary: compensation.netSalary,
-    medical_insurance: numberOrNull(input.medicalInsurance),
     medical_insurance_status: normalizeEnrollmentStatus(input.medicalInsuranceStatus),
     medical_insurance_number: compact(input.medicalInsuranceNumber),
     organogram_visible: lifecycleActive,
@@ -1851,11 +1902,8 @@ async function employeePayload(
     residence_city: compact(input.residenceCity),
     region_name: regionFields.region_name,
     region_code: regionFields.region_code,
-    social_insurance: numberOrNull(input.socialInsurance),
     social_insurance_status: normalizeEnrollmentStatus(input.socialInsuranceStatus),
     social_insurance_number: compact(input.socialInsuranceNumber),
-    social_insurance_wage: numberOrNull(input.socialInsuranceWage),
-    taxes: numberOrNull(input.taxes),
     team_id: numberOrNull(input.teamId),
     updated_at: new Date().toISOString(),
     work_email: workEmail,
@@ -2105,47 +2153,21 @@ async function reassignLiveManagerOwnership(input: {
     nextPayload,
   );
 
-  if (!effectiveDate) {
-    return;
-  }
-
-  const date = new Date(`${effectiveDate.slice(0, 10)}T00:00:00Z`);
-  if (Number.isNaN(date.getTime())) {
-    return;
-  }
-
-  const year = date.getUTCFullYear();
-  const month = date.getUTCMonth() + 1;
-  const salesPayload = {
-    manager_hr_id: newManagerHrId,
-  };
-
-  // `sales_records` is deliberately NOT cascaded here, for two independent reasons.
+  // NEITHER sales table is cascaded here, for two different reasons. The cascade ends above.
   //
-  // It is FROZEN. The Rule #1 migration revoked service_role's INSERT/UPDATE on it, so a PATCH
-  // returns `permission denied for table sales_records` (42501). patchOptionalTable only swallows
-  // missing-relation / schema-cache messages, so that error THREW — and it threw before the
-  // sales_targets calls below could run, leaving those rows on the OLD manager. A half-applied
-  // cascade plus a failed manager change, from a table nothing reads for sales any more.
+  // `sales_records` is FROZEN. The Rule #1 migration revoked service_role's INSERT/UPDATE on it,
+  // so a PATCH returns `permission denied for table sales_records` (42501). patchOptionalTable
+  // swallows only missing-relation / schema-cache messages, so that error THREW — and it threw
+  // part-way through, leaving earlier rows on the OLD manager: a half-applied cascade plus a failed
+  // manager change. It is also HISTORY. Those rows are the only record of what H1 was actually paid
+  // on, and rewriting manager_hr_id across them would restate settled payouts to match today's org
+  // chart. Sales attribution now comes from SoS Monthly Closing, which resolves the manager from
+  // the seat model per period, so there is nothing left here to keep in sync.
   //
-  // It is also HISTORY. Those rows are the only record of what H1 was actually paid on. Rewriting
-  // manager_hr_id across them would restate settled payouts to match today's org chart. Sales
-  // attribution now comes from SoS Monthly Closing, which resolves the manager from the seat model
-  // per period, so there is nothing here left to keep in sync.
-  // `sales_targets` is EMPTY on production and has never held a row — the live sales targets are
-  // `au.monthly_targets` (see src/lib/sales/monthly-targets.ts, and the table's own Postgres
-  // COMMENT). So both PATCHes below match nothing; they cost two round-trips per manager change
-  // and change no data. They stay because tests/manager-cascade-frozen-tables.test.ts pins their
-  // presence in the required CI `validate` check — retiring the pair is a deliberate change that
-  // must update that test too, not a tidy-up.
-  await patchOptionalTable(
-    `sales_targets?manager_hr_id=eq.${previous}&year=gt.${year}`,
-    salesPayload,
-  );
-  await patchOptionalTable(
-    `sales_targets?manager_hr_id=eq.${previous}&year=eq.${year}&month=gte.${month}`,
-    salesPayload,
-  );
+  // `sales_targets` is GONE. It and sales_target_batches were dropped on 2026-09-06
+  // (supabase/migrations/20260906001400_drop_the_empty_legacy_sales_target_tables.sql) after
+  // holding zero rows for their entire life. The live sales targets are `au.monthly_targets`
+  // (src/lib/sales/monthly-targets.ts). The two PATCHes that used to sit here matched nothing.
 }
 
 // Server-side backstop: an area_id must reference an existing, ACTIVE area (the 42 canonical areas).

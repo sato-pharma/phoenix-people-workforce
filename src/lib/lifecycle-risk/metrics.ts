@@ -97,7 +97,7 @@ export function resolveEmployeeLifecycleJourney(input: {
 }, referenceDate = new Date()) {
   const hireDate = input.hireDate ?? null;
   const probationEndDate = probationEndDateFromHire(hireDate);
-  const contractRenewalDate = input.contractRenewalDate ?? nextContractAnniversary(hireDate);
+  const contractRenewalDate = input.contractRenewalDate ?? nextContractAnniversary(hireDate, referenceDate);
   const daysUntilRenewal = daysUntilLifecycleDate(contractRenewalDate, referenceDate);
   const daysUntilProbationEnd = daysUntilLifecycleDate(probationEndDate, referenceDate);
 

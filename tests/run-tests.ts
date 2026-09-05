@@ -1403,6 +1403,9 @@ import { runVacancyCloseManagerHrIdCanonicalTests } from "./vacancy-close-manage
 import { runPayrollHoldReasonTests } from "./payroll-hold-reason.test.ts";
 
 import { runEmployeeImportJobTitleCasingTests } from "./employee-import-job-title-casing.test.ts";
+import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-cairo-clock.test.ts";
+
+import { runEmployeeSavePreservesSalaryTests } from "./employee-save-preserves-salary.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2312,7 +2315,7 @@ await runTest("sos normalizer persist shape", runSosNormalizerPersistShapeTests)
 await runTest("sos import template", runSosImportTemplateTests);
 await runTest("import preview diff", runImportPreviewTests);
 await runTest("employee import never resurrects a deactivated team (insert-only org entities)", runEmployeeImportTeamResurrectionGuardTests);
-await runTest("org title casing keeps acronyms (HR/QPPV/CEO/SFE/R&D) and round-trips to the same code", runOrgTitleCaseAcronymTests);
+await runTest("org title casing keeps acronyms (HR/QPPV/CEO/SFE/R&D), lower-cases minor words mid-name, and round-trips to the same code", runOrgTitleCaseAcronymTests);
 await runTest("imports line canonicalization (Anti Inf → Anti infective; no duplicate lines rows)", runImportsLineCanonicalizationTests);
 await runTest("employee import warns when an Area carries no Team (warn, never block)", runImportTeamBlankWarningTests);
 await runTest("detect distributor", runDetectDistributorTests);
@@ -3876,7 +3879,7 @@ await runTest(
   runDescribeThrownTests,
 );
 await runTest(
-  "manager cascade skips frozen tables (no sales_records PATCH — service_role lost UPDATE and it is the only record of what H1 was paid on; sales_targets still cascades)",
+  "manager cascade skips frozen tables (no sales_records PATCH — service_role lost UPDATE and it is the only record of what H1 was paid on; sales_targets was dropped 2026-09-06 and must not be PATCHed either)",
   runManagerCascadeFrozenTablesTests,
 );
 await runTest(
@@ -4423,7 +4426,7 @@ await runTest(
   runVacancyCloseManagerHrIdCanonicalTests,
 );
 await runTest(
-  "employee import job title casing (Ceo/Qppv/Sfe Manager/R And D Manager canonicalize on upload; ordinary titles and blanks unaffected)",
+  "employee import job title casing (Ceo/Qppv/Sfe Manager/R And D Manager canonicalize on upload; ordinary titles, minor words like \"Finance and Admin Manager\", and blanks unaffected)",
   runEmployeeImportJobTitleCasingTests,
 );
 
@@ -4431,6 +4434,12 @@ await runTest(
   "a payroll hold cannot be saved without a reason, and a reason inherited from last month is labelled as carried forward (never overwriting one typed for this month)",
   runPayrollHoldReasonTests,
 );
+await runTest(
+  "contract anniversary resolves Cairo's calendar day, not the server's local/UTC clock",
+  runContractAnniversaryCairoClockTests,
+);
+
+await runTest("employee save preserves stored salary when the payload omits money fields", runEmployeeSavePreservesSalaryTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
