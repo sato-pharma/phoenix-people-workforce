@@ -56,11 +56,18 @@ export const HOUSE_COLORS = {
 /**
  * The mark, as a path under `public/`.
  *
- * ALWAYS THE ON-LIGHT FILE ON PAPER. The stock `sato-pharma-logo.png` sets "SATO" in WHITE for use
- * on dark grounds; the house format has no dark grounds, so on white paper that half of the mark
- * disappears and the letterhead reads "PHARMA". That has already reached printed output once.
+ * ALWAYS THE ON-LIGHT FILE ON PAPER. The stock mark sets "SATO" in WHITE for use on dark grounds;
+ * the house format has no dark grounds, so on white paper that half of the mark disappears and the
+ * letterhead reads "PHARMA". That has already reached printed output once.
+ *
+ * VECTOR, since 2026-09-05. The raster is 401 x 158 px — exactly 300 dpi at the 34 mm below, with no
+ * headroom — so on the 600 dpi machines these papers are printed on it was being upsampled on every
+ * document, and it could not be enlarged for a certificate at all. The company has no vector master;
+ * this was traced from that raster and is bounded by what it knows, so it is not a substitute for
+ * the designer's original if that ever turns up. At 34 mm the two are indistinguishable, and above
+ * it the vector is the only one that holds.
  */
-export const HOUSE_MARK_SRC = "/brand/sato-pharma-logo-on-light.png";
+export const HOUSE_MARK_SRC = "/brand/sato-pharma-logo-on-light.svg";
 
 /** Standard width of the mark on a letterhead. Below 24 mm the PHARMA counters fill in. */
 export const HOUSE_MARK_WIDTH_MM = 34;
