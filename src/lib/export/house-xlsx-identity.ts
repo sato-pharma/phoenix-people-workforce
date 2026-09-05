@@ -67,6 +67,49 @@ export function readHouseMark(): string | null {
  * six times. Measured on the payroll pack: four sheets took the file from 43KB to 103KB, and none
  * of the extra 60KB was information. Keyed off the workbook itself so the cache cannot outlive it.
  */
+/**
+ * When a house document was generated, in Cairo — "05 Sep 2026, 12:00 PM (Cairo)".
+ *
+ * EVERY HOUSE COVER PRINTED A RAW UTC ISO STRING until 2026-09-05: `2026-09-05T09:00:00.000Z`,
+ * under the label "Generated (UTC)". Two things wrong with that, and the second is the one that
+ * costs something. It is not a time anybody reads — the owner's standing rule is Africa/Cairo,
+ * human-readable, everywhere. And it is three hours out: a reader comparing an export against the
+ * hour they asked for it sees a file apparently produced before they clicked.
+ *
+ * THIS IS THE ONE TIMESTAMP CLASS THAT BELONGS IN CAIRO, and the distinction matters because two
+ * neighbouring classes do NOT. A DATE-ONLY value — a period key, a hire date, a window bound —
+ * parses as UTC midnight and must be RENDERED in UTC, or the calendar day shifts. A vendor
+ * wall-clock (iReports360's `crm_save_date`) is already Cairo and converting it prints it hours
+ * late. Only an instant WE stamped with `new Date().toISOString()` should be converted, and that is
+ * exactly what `generatedAtIso` is. Classify by the backing value, never by the formatter's name.
+ *
+ * Returns the input unchanged when it is not a parseable instant: a cover that cannot say when it
+ * was made should show what it was given, not the words "Invalid Date".
+ */
+const HOUSE_GENERATED_DATE = new Intl.DateTimeFormat("en-GB", {
+  day: "2-digit", month: "short", timeZone: "Africa/Cairo", year: "numeric",
+});
+const HOUSE_GENERATED_TIME = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric", hour12: true, minute: "2-digit", timeZone: "Africa/Cairo",
+});
+
+export function houseGeneratedAt(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  return `${HOUSE_GENERATED_DATE.format(at)}, ${HOUSE_GENERATED_TIME.format(at)} (Cairo)`;
+}
+
+/**
+ * The cover's generated-at row, label included.
+ *
+ * A ROW RATHER THAN A BARE FORMATTER, because the label was half the defect: seven covers said
+ * "Generated (UTC)" and would have kept saying it beside a Cairo time. Handing back both means a
+ * caller cannot update one and forget the other.
+ */
+export function houseGeneratedRow(iso: string): [string, string] {
+  return ["Generated", houseGeneratedAt(iso)];
+}
+
 const houseMarkIdByWorkbook = new WeakMap<ExcelJS.Workbook, number | null>();
 
 function houseMarkImageId(workbook: ExcelJS.Workbook): number | null {
