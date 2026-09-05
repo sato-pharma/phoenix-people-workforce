@@ -1388,6 +1388,8 @@ import { runCairoTodayLocaleSafeTests } from "./cairo-today-locale-safe.test.ts"
 import { runClosingWorkbookLinkOriginTests } from "./closing-workbook-link-origin.test.ts";
 import { runVacancyCloseManagerHrIdCanonicalTests } from "./vacancy-close-manager-hr-id-canonical.test.ts";
 
+import { runEmployeeImportJobTitleCasingTests } from "./employee-import-job-title-casing.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4391,6 +4393,10 @@ await runTest(
 await runTest(
   "closeVacancyOnHire's manager_hr_id filter is canonicalized (a mixed-case manager id no longer falls through to the manager-less-vacancy fallback and closes the wrong seat)",
   runVacancyCloseManagerHrIdCanonicalTests,
+);
+await runTest(
+  "employee import job title casing (Ceo/Qppv/Sfe Manager/R And D Manager canonicalize on upload; ordinary titles and blanks unaffected)",
+  runEmployeeImportJobTitleCasingTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
