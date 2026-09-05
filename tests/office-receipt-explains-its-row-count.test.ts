@@ -68,9 +68,17 @@ function testTheLockedRegionIsUntouched() {
     locked.includes("function allocateProduct(units: number, weights: OfficeAreaWeights)"),
     "allocateProduct must remain inside the locked region",
   );
+  // This used to pin the guard as the literal `if (!(units > 0)) return [];`, to prove the receipt
+  // change had not touched it. The owner approved changing exactly that guard on 2026-09-05 and
+  // re-pinned the rule himself, so the old assertion was pinning the ANTI-pattern — the defect
+  // AGENTS.md §2.1 warns about, and it fired on the very change it should have allowed.
+  //
+  // What the test is really for survives: `allocateProduct` must stay INSIDE the locked region, so
+  // any future edit to it goes through the fingerprints rather than around them. The guard's exact
+  // wording is the rule's business, and the lock test is what polices it.
   assert.ok(
-    locked.includes("if (!(units > 0)) return [];"),
-    "the negative-units guard is the owner's to change, not this change's — it must be untouched",
+    /if \(!Number\.isFinite\(units\) \|\| units === 0\) return \[\];/.test(locked),
+    "allocateProduct's entry guard must still live inside the locked region",
   );
 }
 
