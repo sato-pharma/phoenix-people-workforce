@@ -1,4 +1,4 @@
-import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectory, getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -419,11 +419,12 @@ export function periodEndDate(period: string | null | undefined): string | null 
  * totals always reconciled, because the money was never lost — only put under the wrong name, which
  * is why nothing downstream could notice.
  *
- * WHAT THIS DOES AND DOES NOT FIX. The AREA -> SEAT resolution becomes period-aware, which is the
- * whole of the defect above. The SEAT -> PERSON resolution still reads the current tree: a seat
- * whose OCCUPANT changed would still show today's holder. Closing that needs `au.occupancy_history`,
- * and PostgREST exposes only `public`, `graphql_public` and `analytics` — so it needs a view, which
- * is a migration, which is the owner's to approve. This is deliberately the fix that needs none.
+ * BOTH HALVES ARE NOW PERIOD-AWARE. Area -> seat comes from `au_v_line_area_map_all`, and seat ->
+ * person from `au_v_seat_occupancy_all`, the history view added 2026-09-05 for exactly this. The
+ * first cut could only do the first half: the occupancy history lives in `au.occupancy_history`,
+ * and PostgREST exposes only `public`, `graphql_public` and `analytics`, so `.schema("au")` answers
+ * PGRST106. `au_v_org_tree` is still read, but ONLY for `is_other_pseudo_dm` -- a property of the
+ * seat itself, which carries no date and so cannot be got wrong by reading it today.
  *
  * FAILS SOFT. A map read that errors leaves the current-tree answer in place rather than blanking
  * every manager: a wrong-but-present name is bad, and no names at all is worse.
@@ -434,31 +435,53 @@ async function applyManagerAsOf(
 ): Promise<void> {
   if (!asOf) return;
   try {
-    const [{ data: mapRows, error: mapError }, { data: seatRows, error: seatError }] = await Promise.all([
+    const [
+      { data: mapRows, error: mapError },
+      { data: seatRows, error: seatError },
+      { data: occupancyRows, error: occupancyError },
+    ] = await Promise.all([
       getSupabaseAdmin()
         .from("au_v_line_area_map_all")
         .select("line_code,area_code,dm_seat_id,effective_from,effective_to"),
-      getSupabaseAdmin().from("au_v_org_tree").select("seat_id,occupant_hr_id,is_other_pseudo_dm"),
+      // The current tree, for ONE property: whether the seat is the organogram's catch-all. That is
+      // a fact about the seat, not about who sits in it, so it carries no date.
+      getSupabaseAdmin().from("au_v_org_tree").select("seat_id,is_other_pseudo_dm"),
+      getSupabaseAdmin()
+        .from("au_v_seat_occupancy_all")
+        .select("seat_id,occupant_hr_id,occupant_canonical_hr_id,effective_from,effective_to"),
     ]);
     if (mapError) throw mapError;
     if (seatError) throw seatError;
+    if (occupancyError) throw occupancyError;
 
-    const directory = await getEmployeeDirectory();
+    // LEAVERS INCLUDED, and that is the point of asking as-of at all. Upper Egypt 2 was run through
+    // July by a manager who resigned on 2026-08-03; the active-only directory cannot name him, so
+    // his month would read "no manager seat" — losing a real person's attribution while looking like
+    // an ordinary vacancy. A past month names whoever held the seat then, whether or not they are
+    // still here.
+    const directoryRows = await getEmployeeDirectoryRows({ includeInactive: true });
     const nameByHrId = new Map<string, string>();
-    for (const employee of directory.employees) {
+    for (const employee of directoryRows) {
       const key = canonicalHrIdKey(employee.hrId);
       if (key) nameByHrId.set(key, employee.displayName || employee.fullName);
     }
 
-    const occupantOf = new Map<string, { name: string | null; pseudo: boolean }>();
+    const pseudoSeat = new Set<string>();
     for (const row of (seatRows ?? []) as SeatRow[]) {
       const seatId = String(row.seat_id ?? "").trim();
+      if (seatId && row.is_other_pseudo_dm) pseudoSeat.add(seatId);
+    }
+
+    // Who sat in each seat ON THAT DAY. A seat with no row in force was genuinely empty then, which
+    // is a real answer rather than a gap: the organogram keeps `vacant_placeholder` rows precisely
+    // so an empty seat is stated instead of inferred from an absence.
+    const occupantOf = new Map<string, string | null>();
+    for (const row of (occupancyRows ?? []) as Array<Record<string, string | null>>) {
+      const seatId = String(row.seat_id ?? "").trim();
       if (!seatId) continue;
-      const key = canonicalHrIdKey(row.occupant_hr_id ?? "");
-      occupantOf.set(seatId, {
-        name: key ? nameByHrId.get(key) ?? null : null,
-        pseudo: Boolean(row.is_other_pseudo_dm),
-      });
+      if (!coversAsOf(row.effective_from, row.effective_to, asOf)) continue;
+      const key = canonicalHrIdKey(row.occupant_canonical_hr_id ?? row.occupant_hr_id ?? "");
+      occupantOf.set(seatId, key ? nameByHrId.get(key) ?? null : null);
     }
 
     for (const row of (mapRows ?? []) as Array<Record<string, string | null>>) {
@@ -471,9 +494,10 @@ async function applyManagerAsOf(
       const existing = assignments.get(key);
       if (!existing) continue;
 
-      const seat = row.dm_seat_id ? occupantOf.get(String(row.dm_seat_id).trim()) : undefined;
+      const seatId = row.dm_seat_id ? String(row.dm_seat_id).trim() : "";
       // A pseudo-DM seat is the organogram's catch-all for areas nobody runs; it is not a person.
-      assignments.set(key, { ...existing, managerName: seat && !seat.pseudo ? seat.name : null });
+      const managerName = seatId && !pseudoSeat.has(seatId) ? occupantOf.get(seatId) ?? null : null;
+      assignments.set(key, { ...existing, managerName });
     }
   } catch (error) {
     logError("Performance review as-of manager read failed; keeping the current-tree answer", {
