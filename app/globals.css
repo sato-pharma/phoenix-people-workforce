@@ -199,21 +199,36 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
-  /* The radius scale, taken off the multiply chain and onto real values.
-     calc(var(--radius) * 0.8) was landing rounded-md on 8px and, once --radius
-     moved to 4px, would have landed it on 3.2px — a fractional radius that
-     antialiases differently at each corner. Each step below is a whole pixel from
-     the --phx- scale. rounded-lg is the one that matters: it is the default card
-     and button class across the admin shell (1,401 uses of md/lg/xl between them),
-     and it moves 10px -> 4px. That single line is most of what makes the shell
-     read as sharp rather than soft. */
+  /* The radius scale. Every step is square, and the five that follow a --phx-
+     token are square because tokens.css set the whole scale to 0 (owner, 2026-09-05).
+
+     THE LAST TWO ARE THE POINT OF THIS BLOCK. --radius-3xl and --radius-4xl never
+     came from the token file — they were written here as literals, so the owner's
+     answer naming the six --phx-radius-* names could not reach them and they stayed
+     at 14px and 18px after everything around them went square. Zeroed here, 2026-09-05,
+     on his instruction.
+
+     NOTHING RENDERS DIFFERENTLY TODAY, which is exactly why they were easy to miss:
+     rounded-4xl has no uses at all, and all 33 rounded-3xl uses sit inside .admin-shell
+     or the portal, where RULE 1's `border-radius: 0 !important` already won. The value
+     only ever mattered on a surface outside both shells — a sign-in screen, an error
+     page, a password-setup form — and the first such use would have rendered rounded
+     with nothing to catch it.
+
+     KEEP THEM AS NAMES rather than deleting them. The utilities rounded-3xl and
+     rounded-4xl stay valid, so an existing use goes on compiling and simply lands on
+     square; deleting the names would break 33 call sites to no benefit.
+
+     The history worth keeping: this scale was once calc(var(--radius) * 0.8), which
+     landed rounded-md on a fractional 3.2px that antialiased differently at each
+     corner. Real values replaced the multiply chain; zero is where they ended up. */
   --radius-sm: var(--phx-radius-xs);
   --radius-md: var(--phx-radius-sm);
   --radius-lg: var(--phx-radius);
   --radius-xl: var(--phx-radius-lg);
   --radius-2xl: var(--phx-radius-xl);
-  --radius-3xl: 14px;
-  --radius-4xl: 18px;
+  --radius-3xl: 0;
+  --radius-4xl: 0;
 }
 
 /* DARK
