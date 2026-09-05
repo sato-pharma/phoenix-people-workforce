@@ -205,6 +205,14 @@ export type MrFieldKpis = {
   pmRate: number | null;
   amTarget: number;
   pmTarget: number;
+  /**
+   * Separate from AM/PM entirely (owner, 2026-09-05): "am/pm coverage and call rate are separate
+   * from pharmacies coverage and call rate". `pharmacyTarget` is null — no owner-set standard
+   * exists yet, see PHARMACY_CALL_RATE_TARGET — never invent one here.
+   */
+  pharmacyVerified: number;
+  pharmacyRate: number | null;
+  pharmacyTarget: number | null;
   /** False when the rep logged nothing in the window — distinct from a real zero rate. */
   hasCallRate: boolean;
 };
@@ -699,6 +707,9 @@ async function loadMrFieldKpis(access: AccessContext, hrId: string): Promise<MrF
     pmRate: row.pmRate,
     amTarget: board.amTarget,
     pmTarget: board.pmTarget,
+    pharmacyVerified: row.pharmacyVerified,
+    pharmacyRate: row.pharmacyRate,
+    pharmacyTarget: board.pharmacyTarget,
     hasCallRate: row.hasCallRate,
   };
 }

@@ -14,7 +14,7 @@ import { collapseDuplicateVisitSubmissions, queryCheckins, queryVisits } from "@
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 
 const VISIT_COLUMNS =
-  "agent_crm_id,agent_hr_id,agent_name,ampm,comment,contact_crm_id,crm_save_date,crm_visit_id,double_crm_id,visit_date,visit_type,visit_type_description";
+  "agent_crm_id,agent_hr_id,agent_name,ampm,comment,contact_crm_id,crm_save_date,crm_visit_id,double_crm_id,speciality,visit_date,visit_type,visit_type_description";
 const CHECKIN_COLUMNS = "agent_crm_id,contact_crm_id,check_date";
 
 type CheckinRow = { agent_crm_id: number | null; contact_crm_id: number | null; check_date: string | null };

@@ -52,6 +52,12 @@ export type KpiFilterableRow = {
    * carries the reasoning. */
   amAttainmentPct: number | null;
   pmAttainmentPct: number | null;
+  /** Separate from AM/PM entirely (owner, 2026-09-05) — see PHARMACY_CALL_RATE_TARGET in
+   * crm/call-rate.ts. `pharmacyAttainmentPct` is always null today; it exists so the day the owner
+   * sets a target, only that constant needs to change. */
+  pharmacyRate: number | null;
+  pharmacyVerified: number;
+  pharmacyAttainmentPct: number | null;
 
   /** THE DENOMINATOR OF BOTH PLAN KPIs — every doctor the plan names inside the scored window,
    * whether or not his day has arrived. See the window note in crm/kpis-board.ts. */
@@ -215,6 +221,7 @@ export const KPI_SORT_FIELDS = [
   "frequency",
   "am",
   "pm",
+  "pharmacy",
   "planned",
   "visited",
   "missed",
@@ -237,6 +244,8 @@ export const KPI_SORT_LABEL: Record<KpiSortField, string> = {
   frequency: "Frequency",
   am: "AM rate",
   pm: "PM rate",
+  // No target exists yet (see PHARMACY_CALL_RATE_TARGET) — the label says "rate", never "% target".
+  pharmacy: "Pharmacy rate",
   planned: "Planned doctors",
   visited: "Covered doctors",
   missed: "Not reached",
@@ -276,6 +285,8 @@ function sortKey(row: KpiFilterableRow, field: KpiSortField): number | string | 
       return row.amRate;
     case "pm":
       return row.pmRate;
+    case "pharmacy":
+      return row.pharmacyRate;
     case "planned":
       return row.plannedDoctors;
     case "visited":

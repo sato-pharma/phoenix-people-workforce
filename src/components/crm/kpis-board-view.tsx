@@ -119,6 +119,17 @@ function pmPct(row: KpiRepRow): string {
   return row.hasCallRate && row.pmAttainmentPct != null ? `${row.pmAttainmentPct}%` : "No calls";
 }
 
+/**
+ * The pharmacy call rate, separate from AM/PM entirely (owner, 2026-09-05) — never a percentage,
+ * because no target exists yet to be a percentage of (see PHARMACY_CALL_RATE_TARGET). Shows the
+ * raw rate instead, which stays honest whether or not the owner ever sets one. Zero is a NORMAL
+ * reading for a rep who logged field work — 43 of 76 in a typical month — never "No calls" the way
+ * an absent AM/PM figure would be; that string is reserved for a rep with no call rate at all.
+ */
+function pharmacyValue(row: KpiRepRow): string {
+  return row.hasCallRate ? rate(row.pharmacyRate) : "No calls";
+}
+
 type ViewContext = {
   basePath: string;
   board: KpisBoard;
@@ -649,13 +660,15 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
   return (
     <table className="hidden w-full table-fixed md:table">
       {/* The Attainment column is gone: it held (AM + PM) over one denominator, which is the
-          average the owner banned. Each side now carries its own score in its own column. */}
+          average the owner banned. Each side now carries its own score in its own column. Pharmacy
+          (2026-09-05) is narrower than AM/PM because it carries no "of target" sub-line. */}
       <colgroup>
-        <col style={{ width: "26%" }} />
-        <col style={{ width: "10%" }} />
-        <col style={{ width: "22%" }} />
-        <col style={{ width: "22%" }} />
-        <col style={{ width: "20%" }} />
+        <col style={{ width: "24%" }} />
+        <col style={{ width: "9%" }} />
+        <col style={{ width: "19%" }} />
+        <col style={{ width: "19%" }} />
+        <col style={{ width: "15%" }} />
+        <col style={{ width: "14%" }} />
       </colgroup>
       <thead className="border-y border-slate-200 bg-slate-50">
         <tr>
@@ -680,6 +693,15 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             href={sortHref(context, "pm")}
             label="PM"
             sub={`Target ${board.pmTarget}`}
+          />
+          {/* Separate from AM/PM entirely (owner, 2026-09-05) — no target yet, so "Not set" rather
+              than a target number. See PHARMACY_CALL_RATE_TARGET. */}
+          <KpiSortableTh
+            active={filters.sort === "pharmacy"}
+            direction={filters.direction}
+            href={sortHref(context, "pharmacy")}
+            label="Pharmacy"
+            sub="Not set"
           />
           {/* Merged rather than given two columns — the golden rule resolves a width collision by
               merging, never by shrinking type. */}
@@ -707,6 +729,12 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
               {rate(row.pmRate)} <span className="text-phx-3xs font-bold text-slate-400">of {board.pmTarget}</span>
               <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
                 {pmPct(row)} · {row.pmVerified} of {row.workingDays * board.pmTarget} asked for
+              </span>
+            </td>
+            <td className={NUM}>
+              {pharmacyValue(row)}
+              <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
+                {row.pharmacyVerified} verified
               </span>
             </td>
             <td className={NUM}>
@@ -926,6 +954,16 @@ function RepCard({
       label: "PM call rate",
       value: pmPct(row),
     },
+    {
+      // "noplan" here means "no target to be a percentage of" — not "no calls". kpiBandOf(null) is
+      // always this band because pharmacyAttainmentPct is always null (see
+      // PHARMACY_CALL_RATE_TARGET); the caption says why, so the chip does not read as a fault.
+      band: kpiBandOf(row.pharmacyAttainmentPct),
+      caption: row.hasCallRate ? `${row.pharmacyVerified} verified · no target set yet` : "No calls",
+      fill: null,
+      label: "Pharmacy",
+      value: pharmacyValue(row),
+    },
   ];
   const flags = kpiFlagsOf(row).filter(
     (flag) => flag !== "below-am-target" && flag !== "below-pm-target" && flag !== "over-visiting",
@@ -1100,8 +1138,9 @@ export function KpisBoardView({
             </div>
           ) : null}
 
-          {/* Five tiles since 2026-09-04: the call rate is two of them. */}
-          <div className="grid gap-3 border-t border-slate-100 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-5">
+          {/* Six tiles since 2026-09-05, when pharmacy joined as a SEPARATE tile — never averaged
+              into AM/PM, never blended with them. Call rate is now three of the six. */}
+          <div className="grid gap-3 border-t border-slate-100 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-6">
             <KpiTile
               caption={
                 // "2 working days" alone reads as a footnote; "2 of 22" is the fact that makes the
@@ -1126,6 +1165,13 @@ export function KpisBoardView({
               label="PM call rate"
               progress={totals.pmAttainmentPct}
               value={`${rate(totals.pmRate)} of ${board.pmTarget}`}
+            />
+            {/* No target yet (see PHARMACY_CALL_RATE_TARGET) — the raw rate, no percentage, no
+                progress bar to fill against a number that does not exist. */}
+            <KpiTile
+              caption={`${totals.pharmacyVerified} verified · no target set yet`}
+              label="Pharmacy call rate"
+              value={rate(totals.pharmacyRate)}
             />
             <KpiTile
               band={kpiBandOf(totals.coveragePct)}
@@ -1200,6 +1246,18 @@ export function KpisBoardView({
                         entries={podium.pmCallRate}
                         hint={`Closest to ${board.pmTarget} verified PM calls a day`}
                         title="PM call rate"
+                      />
+                    ) : null}
+                    {/* Ranked on the raw rate, not attainment — no pharmacy target exists yet (see
+                        PHARMACY_CALL_RATE_TARGET), and a rep with zero pharmacy calls is excluded
+                        from this board entirely rather than shown at 0, same as coverage/frequency
+                        exclude a rep with no measurable plan. */}
+                    {tab === "summary" || tab === "call-rate" ? (
+                      <KpiPodiumCard
+                        entries={podium.pharmacyCallRate}
+                        hint="Most verified pharmacy calls a day — no target set yet"
+                        suffix=""
+                        title="Pharmacy"
                       />
                     ) : null}
                   </div>

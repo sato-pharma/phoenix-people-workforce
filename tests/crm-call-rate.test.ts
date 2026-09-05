@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 import {
   AM_CALL_RATE_TARGET,
   DAILY_CAMPAIGN_LIMIT,
+  PHARMACY_CALL_RATE_TARGET,
   PM_CALL_RATE_TARGET,
   classifyCallProof,
   computeCallRate,
   countCallRateWorkingDays,
   isCallRateWorkingDay,
+  isPharmacyVisit,
   normalizeSession,
   weekdayOfIsoDate,
   type VisitForCallRate,
@@ -26,6 +28,7 @@ function visit(overrides: Partial<VisitForCallRate> = {}): VisitForCallRate {
     comment: null,
     contact_crm_id: DOCTOR,
     crm_save_date: "2026-08-01T11:00:00",
+    speciality: null,
     visit_date: "2026-08-01",
     visit_type: 0,
     visit_type_description: "Regular Visit",
@@ -41,6 +44,11 @@ function campaignVisit(overrides: Partial<VisitForCallRate> = {}): VisitForCallR
     visit_type_description: "Campaign (Prospection)",
     ...overrides,
   });
+}
+
+function pharmacyVisit(overrides: Partial<VisitForCallRate> = {}): VisitForCallRate {
+  // A regular visit to a registered pharmacy contact — the common case (owner, 2026-09-05).
+  return visit({ speciality: "Pharmacy", ...overrides });
 }
 
 function checkin(overrides: Partial<CheckinForMatch> = {}): CheckinForMatch {
@@ -209,7 +217,25 @@ export function runCrmCallRateTests() {
     const rep = report.reps[0];
     assert.equal(rep.pm.verifiedRate, null, "no working days must give null, not Infinity or NaN");
     assert.equal(rep.pm.attainmentPct, null);
-    assert.equal(rep.pm.total, 1, "the visit itself is still counted");
+    // A Thursday visit is now GATED OUT of the numerator too (owner, 2026-09-05) — see the next
+    // block. So the total is 0 here, not 1: nothing this rep did in this window is countable.
+    assert.equal(rep.pm.total, 0, "a Thursday-only window counts nothing, numerator included");
+  }
+
+  // ── THE 2026-09-05 FIX: Thursday is gated out of the NUMERATOR too, not just the ──
+  // ── denominator — a Thursday visit inside an otherwise-normal week must vanish ───
+  {
+    // Sat 2026-08-01 .. Fri 2026-08-07: one real week, 5 working days (Thu/Fri excluded).
+    const visits = [
+      visit({ visit_date: "2026-08-01", ampm: "AM", contact_crm_id: 5001 }), // Saturday — counts
+      visit({ visit_date: "2026-08-06", ampm: "AM", contact_crm_id: 5002 }), // Thursday — must NOT
+    ];
+    const checkins = visits.map((v) => checkin({ contact_crm_id: v.contact_crm_id, check_date: `${v.visit_date}T10:55:00` }));
+    const report = computeCallRate(visits, checkins, { dateFrom: "2026-08-01", dateTo: "2026-08-07" });
+    const rep = report.reps[0];
+    assert.equal(report.workingDays, 5, "Thu and Fri stay out of the denominator, as before");
+    assert.equal(rep.am.verified, 1, "only the Saturday visit counts — the Thursday one must be gated out entirely");
+    assert.equal(rep.am.verifiedRate, 0.2, "1 verified call over 5 working days, not 2 over 5");
   }
 
   // ── A reversed or malformed range is 0 days rather than an exception ─────────────
@@ -245,5 +271,53 @@ export function runCrmCallRateTests() {
     assert.equal(report.reps[0].campaignShare, 0.75, "3 of 4 calls were campaign");
     assert.equal(report.reps[1].campaignShare, 0, "the clean rep has no campaign calls");
     assert.equal(report.reps[1].agentHrId, "hr-2", "each rep keeps its own hr id");
+  }
+
+  // ── PHARMACIES ARE NOT AM/PM (owner, 2026-09-05) ─────────────────────────────────
+  {
+    assert.equal(PHARMACY_CALL_RATE_TARGET, null, "no owner-set pharmacy target exists — never invent one");
+
+    // A pharmacy visit tagged AM must be pulled OUT of the am slice entirely, whatever the flag says.
+    const visits = [
+      pharmacyVisit({ ampm: "AM", contact_crm_id: 6001 }),
+      visit({ ampm: "AM", contact_crm_id: 6002 }), // a real doctor, still AM
+    ];
+    const checkins = visits.map((v) => checkin({ contact_crm_id: v.contact_crm_id }));
+    const report = computeCallRate(visits, checkins, { dateFrom: "2026-08-01", dateTo: "2026-08-01" });
+    const rep = report.reps[0];
+    assert.equal(rep.am.verified, 1, "only the real doctor counts toward AM");
+    assert.equal(rep.pharmacy.verified, 1, "the pharmacy visit lands in its own slice");
+    assert.equal(rep.pharmacy.target, null, "the pharmacy slice carries no target");
+    assert.equal(rep.pharmacy.attainmentPct, null, "with no target there can be no attainment percentage");
+  }
+
+  // ── A pharmacy visit with no AM/PM flag still counts as pharmacy, not "unspecified" ─
+  {
+    const report = computeCallRate([pharmacyVisit({ ampm: null })], [checkin()], {
+      dateFrom: "2026-08-01",
+      dateTo: "2026-08-01",
+    });
+    const rep = report.reps[0];
+    assert.equal(rep.pharmacy.verified, 1, "an untagged pharmacy row is still a pharmacy call");
+    assert.equal(rep.unspecified, 0, "it must not also land in the untagged bucket");
+  }
+
+  // ── An unlabelled -30 field visit with a pharmacy-flavored comment is pharmacy too ─
+  {
+    const row = visit({ visit_type: -30, visit_type_description: "Unknown", comment: "صيدلية النور", speciality: null });
+    assert.equal(isPharmacyVisit(row), true, "the free-text pharmacy marker routes a -30 row to pharmacy");
+    assert.equal(
+      isPharmacyVisit(visit({ visit_type: -30, visit_type_description: "Unknown", comment: "د احمد" })),
+      false,
+      "a -30 row with no pharmacy signal in either field stays out of the pharmacy slice",
+    );
+  }
+
+  // ── A rep with zero pharmacy calls still gets a fully finalized, non-null slice ───
+  {
+    const report = computeCallRate([visit()], [checkin()], { dateFrom: "2026-08-01", dateTo: "2026-08-01" });
+    const rep = report.reps[0];
+    assert.equal(rep.pharmacy.verified, 0);
+    assert.equal(rep.pharmacy.verifiedRate, 0, "zero pharmacy calls over real working days is 0.00, not null");
   }
 }

@@ -79,7 +79,7 @@ import { countCallRateWorkingDays } from "@/lib/crm/call-rate";
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { getRepDoctorLists, monthLabelOf, type RepDoctorListRepRow } from "@/lib/crm/rep-doctor-lists";
 import { repsPlansRange, repsPlansWeeks, type RepsPlansRange } from "@/lib/crm/reps-plans";
-import { AM_CALL_RATE_TARGET, PM_CALL_RATE_TARGET, type RepCallRate } from "@/lib/crm/call-rate";
+import { AM_CALL_RATE_TARGET, PHARMACY_CALL_RATE_TARGET, PM_CALL_RATE_TARGET, type RepCallRate } from "@/lib/crm/call-rate";
 import type { AccessContext } from "@/lib/auth/permissions";
 
 /** One option in the board's month or period picker. */
@@ -190,6 +190,26 @@ export type KpiRepRow = {
   amAttainmentPct: number | null;
   pmAttainmentPct: number | null;
 
+  // ── Pharmacy (separate from AM/PM entirely — owner, 2026-09-05) ───────────
+  /**
+   * "am/pm coverage and call rate are separate from pharmacies coverage and call rate" / "a rep
+   * must have am/pm but not must have pharmacies." A pharmacy call never counts toward amVerified
+   * or pmVerified above, whatever AM/PM flag the CRM row happens to carry — see crm/call-rate.ts.
+   * A rep with zero pharmacy visits is NORMAL (measured production: 43 of 76 reps), never a gap to
+   * flag the way a rep with zero AM/PM calls would be.
+   */
+  pharmacyVerified: number;
+  /** verified pharmacy calls / working days. Null when the period has no working days. */
+  pharmacyRate: number | null;
+  pharmacyReported: number;
+  pharmacyReportedRate: number | null;
+  /**
+   * Always null today — THE OWNER HAS NOT SET A PHARMACY TARGET (parked question, 2026-09-05: "what
+   * is the pharmacy call-rate target per working day?"). Carried on the row so the day he answers,
+   * only PHARMACY_CALL_RATE_TARGET needs to change — nothing here may invent a number meanwhile.
+   */
+  pharmacyAttainmentPct: number | null;
+
   // ── Coverage and frequency (the scored window) ────────────────────────────
   /** Every doctor the plan names inside the window, due or not — and THE DENOMINATOR OF BOTH plan
    * KPIs. One number under both percentages, so "20 of 100" and "20%" can never disagree. */
@@ -295,9 +315,16 @@ export type KpisBoard = {
      * per-rep fields above for why the owner banned the blended figure. */
     amAttainmentPct: number | null;
     pmAttainmentPct: number | null;
+    /** Team pharmacy calls, separate from AM/PM entirely — see KpiRepRow.pharmacyVerified. */
+    pharmacyVerified: number;
+    pharmacyRate: number | null;
+    pharmacyReported: number;
+    pharmacyReportedRate: number | null;
   };
   amTarget: number;
   pmTarget: number;
+  /** Null — no owner-set pharmacy target exists yet. See KpiRepRow.pharmacyAttainmentPct. */
+  pharmacyTarget: number | null;
 };
 
 /** One place on a podium. `value` is already the percentage the caption prints. */
@@ -314,12 +341,17 @@ export type KpiPodiumEntry = { repName: string; value: number; caption: string }
  * The call rate is TWO boards, not one, since 2026-09-04: the owner ranks AM against 2 and PM
  * against 10 and forbids a combined figure, so the best morning and the best afternoon are asked
  * and answered as the different questions they are.
+ *
+ * Pharmacy is a FIFTH board, since 2026-09-05, ranked on raw verified calls per working day rather
+ * than attainment — there is no target to score attainment against yet (see
+ * PHARMACY_CALL_RATE_TARGET), and ranking by the rate itself is still honest without one.
  */
 export type KpiPodium = {
   coverage: KpiPodiumEntry[];
   frequency: KpiPodiumEntry[];
   amCallRate: KpiPodiumEntry[];
   pmCallRate: KpiPodiumEntry[];
+  pharmacyCallRate: KpiPodiumEntry[];
 };
 
 /**
@@ -362,6 +394,18 @@ export function buildKpiPodium(rows: readonly KpiRepRow[]): KpiPodium {
       (row) => row.hasCallRate && row.pmAttainmentPct != null,
       (row) => row.pmAttainmentPct ?? 0,
       (row) => `${row.pmVerified} verified PM calls in ${row.workingDays} days`,
+    ),
+    // Scored on the RATE, not an attainment percentage — no pharmacy target exists to score
+    // against (see PHARMACY_CALL_RATE_TARGET). A rep with zero pharmacy calls is excluded here for
+    // the same reason a rep with no plan is excluded from coverage: he has no value on this axis,
+    // not a bad one, and 43 of 76 reps fall in that bucket in a typical month (see the header).
+    // Rounded to 2dp, the same precision `rate()` prints everywhere else on this board — the raw
+    // ratio otherwise carries a long decimal tail that a `KpiPodiumEntry.value: number` would print
+    // verbatim (KpiPodiumCard renders it with NO formatting, unlike every other reader of a rate).
+    pharmacyCallRate: top(
+      (row) => row.hasCallRate && row.pharmacyVerified > 0,
+      (row) => Math.round((row.pharmacyRate ?? 0) * 100) / 100,
+      (row) => `${row.pharmacyVerified} verified pharmacy calls in ${row.workingDays} days`,
     ),
   };
 }
@@ -414,10 +458,13 @@ export function joinKpiRows(input: {
   /** AM/PM targets, for the call-rate attainment the bands and sorts read. */
   amTarget?: number;
   pmTarget?: number;
+  /** Null until the owner sets one — see PHARMACY_CALL_RATE_TARGET. */
+  pharmacyTarget?: number | null;
 }): KpiRepRow[] {
   const { callRates, docLists, scope, workingDays } = input;
   const amTarget = input.amTarget ?? AM_CALL_RATE_TARGET;
   const pmTarget = input.pmTarget ?? PM_CALL_RATE_TARGET;
+  const pharmacyTarget = input.pharmacyTarget ?? PHARMACY_CALL_RATE_TARGET;
 
   // Keyed on the CANONICAL hr id on both sides. Production hr ids are mixed case and carry legacy
   // aliases, and `canonicalHrIdKey` is the one comparison that handles both — a plain
@@ -457,6 +504,11 @@ export function joinKpiRows(input: {
     hasCallRate: false,
     amAttainmentPct: null,
     pmAttainmentPct: null,
+    pharmacyVerified: 0,
+    pharmacyRate: null,
+    pharmacyReported: 0,
+    pharmacyReportedRate: null,
+    pharmacyAttainmentPct: null,
     plannedDoctors: 0,
     visitedDoctors: 0,
     missedDoctors: 0,
@@ -510,6 +562,10 @@ export function joinKpiRows(input: {
     row.campaignShare = rate.campaignShare;
     row.campaignOnlyDays = rate.campaignOnlyDays;
     row.hasCallRate = true;
+    row.pharmacyVerified = rate.pharmacy.verified;
+    row.pharmacyRate = rate.pharmacy.verifiedRate;
+    row.pharmacyReported = rate.pharmacy.total;
+    row.pharmacyReportedRate = rate.pharmacy.totalRate;
   }
 
   for (const list of docLists) {
@@ -551,6 +607,7 @@ export function joinKpiRows(input: {
     }
     row.amAttainmentPct = attainmentPct(row, row.amVerified, amTarget);
     row.pmAttainmentPct = attainmentPct(row, row.pmVerified, pmTarget);
+    row.pharmacyAttainmentPct = attainmentPct(row, row.pharmacyVerified, pharmacyTarget);
   }
 
   // Scope is applied AFTER the join, never before: a rep whose hr id appears on only one of the two
@@ -580,8 +637,12 @@ export type KpiDirectoryEntry = {
  * weights a 2-call target equally with a 10-call one — was an argument against ONE particular way
  * of combining them, and it was answered by combining them a different way rather than by not
  * combining them. Two standards, two scores, is the answer he wanted.
+ *
+ * `target` is nullable so this same function serves pharmacy, which has no owner-set standard yet
+ * (see PHARMACY_CALL_RATE_TARGET) — a null target returns null rather than dividing by nothing.
  */
-function attainmentPct(row: KpiRepRow, verified: number, target: number): number | null {
+function attainmentPct(row: KpiRepRow, verified: number, target: number | null): number | null {
+  if (target == null) return null;
   const expected = row.workingDays * target;
   if (!row.hasCallRate || expected <= 0) return null;
   return Math.round((verified / expected) * 100);
@@ -640,9 +701,14 @@ export async function getKpisBoard(input: {
       frequencyPct: 0,
       amAttainmentPct: null,
       pmAttainmentPct: null,
+      pharmacyVerified: 0,
+      pharmacyRate: null,
+      pharmacyReported: 0,
+      pharmacyReportedRate: null,
     },
     amTarget: AM_CALL_RATE_TARGET,
     pmTarget: PM_CALL_RATE_TARGET,
+    pharmacyTarget: PHARMACY_CALL_RATE_TARGET,
   };
 
   if (scope.kind === "none") {
@@ -681,6 +747,7 @@ export async function getKpisBoard(input: {
     workingDays: callRate.workingDays,
     amTarget: AM_CALL_RATE_TARGET,
     pmTarget: PM_CALL_RATE_TARGET,
+    pharmacyTarget: PHARMACY_CALL_RATE_TARGET,
     directory: employees.map((employee) => ({
       hrId: employee.hrId,
       displayName: employee.displayName || employee.fullName || null,
@@ -725,6 +792,8 @@ export async function getKpisBoard(input: {
       accumulator.onPlanDoctors += row.onPlanDoctors;
       accumulator.underDoctors += row.underDoctors;
       accumulator.overDoctors += row.overDoctors;
+      accumulator.pharmacyVerified += row.pharmacyVerified;
+      accumulator.pharmacyReported += row.pharmacyReported;
       return accumulator;
     },
     {
@@ -740,6 +809,8 @@ export async function getKpisBoard(input: {
       onPlanDoctors: 0,
       underDoctors: 0,
       overDoctors: 0,
+      pharmacyVerified: 0,
+      pharmacyReported: 0,
     },
   );
 
@@ -791,6 +862,10 @@ export async function getKpisBoard(input: {
         denominator > 0 ? Math.round((totals.amVerified / (denominator * AM_CALL_RATE_TARGET)) * 100) : null,
       pmAttainmentPct:
         denominator > 0 ? Math.round((totals.pmVerified / (denominator * PM_CALL_RATE_TARGET)) * 100) : null,
+      pharmacyVerified: totals.pharmacyVerified,
+      pharmacyRate: denominator > 0 ? totals.pharmacyVerified / denominator : null,
+      pharmacyReported: totals.pharmacyReported,
+      pharmacyReportedRate: denominator > 0 ? totals.pharmacyReported / denominator : null,
     },
   };
 }

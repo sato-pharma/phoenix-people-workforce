@@ -206,10 +206,18 @@ export type PodiumEntry = { repName: string; value: number; caption: string };
 export function KpiPodiumCard({
   entries,
   hint,
+  suffix = "%",
   title,
 }: {
   entries: readonly PodiumEntry[];
   hint: string;
+  /**
+   * Appended after `entry.value`, default "%" for the four attainment-percentage boards. Pharmacy
+   * has no target to be a percentage OF (see PHARMACY_CALL_RATE_TARGET) and ranks on the raw rate
+   * instead, so its caller passes "" — a bare "3.20%" would misstate a calls-per-day count as a
+   * percentage.
+   */
+  suffix?: string;
   title: string;
 }) {
   return (
@@ -233,7 +241,10 @@ export function KpiPodiumCard({
                 </span>
                 <span className="block text-phx-3xs leading-4 text-slate-500">{entry.caption}</span>
               </span>
-              <span className="shrink-0 text-sm font-black tabular-nums text-slate-900">{entry.value}%</span>
+              <span className="shrink-0 text-sm font-black tabular-nums text-slate-900">
+                {entry.value}
+                {suffix}
+              </span>
             </li>
           ))}
         </ol>
