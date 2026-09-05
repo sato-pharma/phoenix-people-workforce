@@ -97,6 +97,12 @@ export function getHubCardSections(
  * Rail order is preserved and rail items come first within a merged section, because the rail's
  * ordering is the deliberate one and its item is the one carrying that section's badge. Hub groups
  * with no rail counterpart keep their own heading, appended in catalogue order.
+ *
+ * Two RAIL sections sharing a label are merged the same way, and that is not hypothetical: since
+ * the 2026-09-05 promotion the rail carries "People Management" twice (the promoted hub band and
+ * the section of the same name), and three labels in total. The sidebar shows them as one heading
+ * because sidebar-domains.ts groups the two ids; this panel has no domain layer, so it does the
+ * merge itself.
  */
 export function mergeCatalogueSections(
   railSections: readonly NavigationSection[],
@@ -106,12 +112,23 @@ export function mergeCatalogueSections(
   // readonly shape is restored on the way out.
   type Draft = { id: string; label: string; items: NavigationSectionItem[] };
 
-  const merged: Draft[] = railSections.map((section) => ({
-    id: section.id,
-    items: [...section.items],
-    label: section.label,
-  }));
-  const byLabel = new Map(merged.map((section) => [section.label, section]));
+  // Folded by label as it is built, not mapped then folded, because the RAIL now repeats a label
+  // too. The 2026-09-05 hub promotion gave a band the hub's own name — "People Management",
+  // "Recruitment & Hiring", "Marketing & ROI" — beside a rail section that already had it, which
+  // the sidebar renders as one heading (src/config/sidebar-domains.ts groups them) and this panel
+  // would otherwise render as two. Same defect as the rail/hub collision below, one list earlier.
+  const merged: Draft[] = [];
+  const byLabel = new Map<string, Draft>();
+  for (const section of railSections) {
+    const home = byLabel.get(section.label);
+    if (home) {
+      home.items.push(...section.items);
+      continue;
+    }
+    const draft: Draft = { id: section.id, items: [...section.items], label: section.label };
+    merged.push(draft);
+    byLabel.set(draft.label, draft);
+  }
 
   for (const hub of hubSections) {
     const home = byLabel.get(hub.label);

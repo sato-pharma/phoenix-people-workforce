@@ -193,6 +193,12 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
       // heading: it stood over exactly three rows that each opened another page of modules.
       { heading: "Admin Tools", sectionIds: ["admin-tools"] },
       { heading: "Master Data", sectionIds: ["master-data"] },
+      // A band because the "Customers Database" row inside Master Data was itself a hub door, and
+      // the owner's 2026-09-05 rule leaves none. Its own heading rather than six more rows under
+      // Master Data: the six are one module (directory, mapping, pharmacy master, marketing's
+      // customer database), and folding them in would make Master Data an eight-row list of
+      // unrelated things.
+      { heading: "Customers Database", sectionIds: ["hub-customers-database"] },
       { heading: "Access & Comms", sectionIds: ["access-communication"] },
     ],
   },

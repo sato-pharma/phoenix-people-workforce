@@ -16,25 +16,31 @@ import {
 } from "../src/lib/auth/permissions.ts";
 import { getSections, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
 
-const ceoAllowedReadOnlyRoutes = [
-  "/admin/ceo-command-center",
-  // The bare "/sales" (Source of Sales Dash) route is now a card inside the
-  // collapsed "Source of Sales" hub, not its own sidebar entry — CEO's
-  // sidebar href is the hub button itself; CEO still directly reaches the
-  // Dash card via the hub since it's no longer excluded for CEO.
-  "/sales/source-of-sales-tools",
-  "/attendance",
-  "/admin/people-management",
-  "/admin/payroll-management",
-  "/admin/outstation-expenses",
-  // /admin/analytics/source-sales and /admin/analytics/monthly-closing are not
-  // separate sidebar entries — they live as cards inside the /admin/analytics hub
-  // page itself (see salesAnalyticsPageItems below). The hub row's own sidebar
-  // visibility is Super-Admin-only as of 2026-08-11 (owner) and is asserted
-  // absent for CEO further down, so it is deliberately not listed here.
-  "/admin/marketing-roi",
-  "/leave-management",
+// ── 2026-09-05: the hub rows are gone, so seven of these eight were about to become unfailable ──
+//
+// The owner removed every rail row that opens a page of modules — "I do not want any subtitle to be
+// the one that when I press, it redirects me to a page with big modules" — so each hub's cards were
+// promoted onto the rail under the hub's own heading. /sales/source-of-sales-tools, /attendance,
+// /admin/people-management, /admin/payroll-management, /admin/outstation-expenses,
+// /admin/marketing-roi and /leave-management are in NO role's sidebar any more. Asserting the CEO has
+// them fails; deleting them would have quietly stopped checking that he can reach those seven
+// modules at all, which is the whole point of the list.
+//
+// So the contract is written the way the rail now writes it: the BAND each hub's heading became, plus
+// one real page under it. The band alone would pass on an empty band; the page alone would not notice
+// the band vanishing into another domain. The hub PAGES were not deleted or re-gated — they still
+// answer by URL, and the page-level assertions further down still exercise them.
+const ceoAllowedReadOnlyBands = [
+  ["sales-source-of-sales", "/sales"],
+  ["attendance-management", "/admin/private-calendars"],
+  ["hub-people-management", "/reports/vacancies"],
+  ["payroll", "/admin/m-payroll"],
+  ["expenses-outstation", "/admin/outstation/expense-command"],
+  ["hub-marketing-roi", "/admin/marketing-roi-report"],
+  ["leave-management", "/leave-management/vacation-report"],
 ] as const;
+
+const ceoAllowedReadOnlyRoutes = ["/admin/ceo-command-center"] as const;
 
 const ceoBlockedRedirectRoutes = [
   "/sales/monthly-dashboard",
@@ -46,10 +52,16 @@ const ceoBlockedHighRiskRoutes = [
   "/admin/data-health",
   "/attendance/device-user-mapping",
   "/attendance/policies",
-  "/admin/recruitment-hiring",
   "/payroll",
   "/admin/system-cleanup",
 ] as const;
+
+// /admin/recruitment-hiring sat in the list above until 2026-09-05. It was the CEO's blocked HUB ROW,
+// and with no hub rows left anywhere the assertion could never fail again — every role passes it now.
+// What still carries the meaning is the band the promotion created: if the recruiting cards ever
+// reach him, they arrive as rows inside this band. His own /recruitment/candidates section is
+// untouched and deliberately not named here — he always had it.
+const ceoBlockedBands = ["hub-recruitment-hiring"] as const;
 
 const ceoBlockedHighRiskResources = [
   "admin",
@@ -76,14 +88,36 @@ function lookupForCeo(): PermissionLookup {
 
 export async function runCeoAccountContractTests() {
   const ceo = createAccessContext({ hrId: "CEO-1", role: "CEO" });
-  const visibleAdminHrefs = getSections(adminNavigationSections, "admin", lookupForCeo(), "CEO")
-    .flatMap((section) => section.items.map((item) => item.href));
+  const ceoSections = getSections(adminNavigationSections, "admin", lookupForCeo(), "CEO");
+  const visibleAdminHrefs = ceoSections.flatMap((section) => section.items.map((item) => item.href));
+  const visibleAdminBands = ceoSections.map((section) => section.id);
 
   for (const href of ceoAllowedReadOnlyRoutes) {
     assert.equal(
       visibleAdminHrefs.includes(href),
       true,
       `CEO navigation must expose the approved read-only route ${href}`,
+    );
+  }
+
+  for (const [bandId, href] of ceoAllowedReadOnlyBands) {
+    assert.equal(
+      visibleAdminBands.includes(bandId),
+      true,
+      `CEO navigation must still carry the "${bandId}" band — it is what the hub row for this module became`,
+    );
+    assert.equal(
+      visibleAdminHrefs.includes(href),
+      true,
+      `CEO navigation must expose ${href}, the page standing for the "${bandId}" band`,
+    );
+  }
+
+  for (const bandId of ceoBlockedBands) {
+    assert.equal(
+      visibleAdminBands.includes(bandId),
+      false,
+      `CEO navigation must not carry the "${bandId}" band`,
     );
   }
 

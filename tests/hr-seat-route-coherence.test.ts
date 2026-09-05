@@ -196,13 +196,25 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "canViewWhatsAppOutboundLog(access) — true for Advisory, the only seat offered it. Verified by " +
     "CALLING the predicate for each seat, not by reading it: recruitmentManageRoles is [Super Admin, " +
     "HR Advisory], and Operations holds no recruitment grant so the row is never offered to her",
+  // Both added 2026-09-05 by the owner's ruling that no rail row may open a page of modules: each
+  // was a card on the /hr/attendance hub, and the hub row that fronted them is gone, so they are
+  // rail rows in their own right now. Both verified by CALLING the predicate for each seat rather
+  // than by reading it, and both are offered to HR Operations only.
+  "/hr/attendance/fingerprint-report":
+    "canAccessFingerprintReport(access) — TRUE for both seats, though only Operations is offered the " +
+    "row. The page reads attendance punches and the deduction each one implies; there is no write " +
+    "path on it to withhold from her",
+  "/hr/attendance/holiday-calendar":
+    'canAccessAttendanceSetup(access, "read") — the same predicate as the two rows below, true for ' +
+    "Operations, the only seat offered it. She also holds the setup UPDATE the page reads separately " +
+    "and hands the manager component as canEdit, so the editing this one offers is real for her " +
+    "rather than a control that 403s on use",
   "/hr/attendance/device-user-mapping": 'canAccessAttendanceSetup(access, "read") — true for Operations, the only seat offered it',
   "/hr/attendance/policies": 'canAccessAttendanceSetup(access, "read") — true for Operations, the only seat offered it',
   "/hr/admin/support-requests": "hoisted const canRead = await canAccess(access, support_requests, read) — true for both",
   "/hr/offers": "destructured Promise.all, gate is !canRead = offers:read — true for Advisory, the only seat offered it",
   "/hr/hiring-documents": "destructured Promise.all, gate is isHrAuthorityRole && employee_documents:read — true for both",
   "/hr/hiring-pack": "destructured Promise.all, gate is isHrAuthorityRole && employee_documents:read — true for both",
-  "/hr/admin/payroll-management": "any-of payroll:read || payslips:read || deductions:read — both hold deductions:read",
   // Both added 2026-08-29 with the owner's company-scope ruling, and both verified by CALLING the
   // predicate for each seat rather than by reading it: Operations true, Advisory false, on both.
   // Neither predicate is admitting her by scope — each short-circuits on scope === "system" only,
@@ -215,8 +227,17 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
   "/hr/admin/company-activity-report":
     "canReadCompanyActivityReport(access) — true for Operations, false for Advisory; the row is " +
     "offered to Operations only. The page is read-only, with no write path to withhold",
-  "/hr/attendance": "shell gate only — no permission gate underneath it",
-  "/hr/leave-management": "shell gate only — no permission gate underneath it",
+  // "/hr/admin/payroll-management", "/hr/attendance" and "/hr/leave-management" were all three here
+  // until 2026-09-05. Every one of them was a HUB row, and the owner's ruling that day — "I don't
+  // want any subtitle to be the one that when I press, it redirects me to a page with big modules"
+  // — took all three off the rail and put their cards on it instead. This map answers only for rows
+  // a rail still offers: a verdict kept for a route nobody is offered is a claim nothing re-checks,
+  // which is the same reason approvals-hub and the two intake rows left it before them.
+  //
+  // The PAGES and their gates are untouched, so the verdicts stay true and are recorded here rather
+  // than lost — payroll-management is still any-of payroll:read || payslips:read || deductions:read
+  // and both seats hold deductions:read; the other two still carry a shell gate with no permission
+  // gate underneath. If any of the three is ever a row again, its line comes back with it.
   // "/hr/admin/approvals-hub" was here until 2026-09-01. The row left the HR rail that day (owner:
   // "Remove other approvals from the sidebar"), and this map only covers rows the rail still
   // offers — a verdict kept for a route nobody is offered is a claim nothing re-checks. The ADMIN

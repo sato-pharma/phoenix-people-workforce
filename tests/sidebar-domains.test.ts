@@ -193,8 +193,15 @@ export function runSidebarDomainsTests() {
     rolesMeasured += 1;
     // Every expected list is empty, so an empty rail would satisfy the comparison below by having
     // nothing to compare. This is what stops that reading as a pass.
+    //
+    // The floor was 8 until 2026-09-05, when every hub row was replaced by the modules behind it.
+    // A band that existed only to hold a hub row whose page had nothing for that role now
+    // disappears instead of rendering — 31 role/hub pairs, Payroll Management for every sales role
+    // and Attendance for eleven roles among them — so band counts fell even as the rails gained
+    // rows. Measured for these seven roles that day: 6 Financial Advisor, 10 HR Advisory,
+    // 11 HR Operations, 12 Finance Manager, 16 SFE Manager, 20 CEO, 24 Super Admin.
     assert.ok(
-      headingsRendered >= 8,
+      headingsRendered >= 5,
       `${role}: measured ${headingsRendered} rendered heading bands — the rail collapsed, so the blank-heading check below has nothing to say`,
     );
     assert.deepEqual(

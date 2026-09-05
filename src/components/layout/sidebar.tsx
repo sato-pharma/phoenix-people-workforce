@@ -1330,17 +1330,22 @@ function SidebarNav({
                         I want them to be coloured — a different colour than the subtitles that appear
                         when I expand the big titles").
 
-                        Champagne, and deliberately NOT the accent orange: the orange version of this
-                        header lasted an hour on 2026-09-04 before the owner reversed it as "very
-                        noisy", and orange is what marks the ACTIVE row, which is what makes that row
-                        findable in a rail this long. A warm off-white reads as a colour against the
-                        two greys below it without competing for that job.
+                        THE ACCENT, matching the icon tile beside it (owner, 2026-09-05: "make the
+                        colour of the big titles the same colour of the box beside it, which is I
+                        don't know maroon or what" — the box is that tile, `bg-phx-accent/[0.18]`,
+                        which is what 18% of #f97316 over this near-black reads as). A champagne
+                        title was tried first and this replaced it on his instruction.
 
-                        The rail is three levels and each one must read as a different colour — title
-                        champagne at 13px bold, group heading the dimmest warm grey at 10px caps, rows
-                        a mid grey at 13px. Open state is carried by the icon tile and the chevron, so
-                        the title colour is free to be constant. */}
-                    <span className="min-w-0 flex-1 text-phx-md font-bold tracking-[-0.01em] text-[#EBD7B4]">
+                        It goes against the 2026-09-04 reversal, where an orange header lasted an
+                        hour before he called it "very noisy" — but that was the whole header block
+                        in orange, and this is the name alone. He asked for it after seeing the
+                        alternative, so it stands until he says otherwise.
+
+                        The rail is three levels and each reads as a different colour — title accent
+                        at 13px bold, group heading the dimmest grey at 10px caps, rows a mid grey at
+                        13px. Open state is carried by the tile fill and the chevron, so the title
+                        colour is free to be constant across all seven. */}
+                    <span className="min-w-0 flex-1 text-phx-md font-bold tracking-[-0.01em] text-phx-accent">
                       {domain.name}
                     </span>
                     <span className="shrink-0 border border-white/[0.07] bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-semibold tabular-nums leading-none text-slate-400">

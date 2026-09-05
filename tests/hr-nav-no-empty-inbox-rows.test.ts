@@ -20,6 +20,11 @@ import { getSections } from "../src/lib/navigation/active-path.ts";
  *   Other Approvals   excluded 2026-09-01 — shows resignation / contract renewal / outstation,
  *                     and her composed matrix holds NO grant for any of the three
  *
+ * Leave Management is no longer a ROW. On 2026-09-05 the owner ruled that no rail row may open a
+ * page of modules, so that hub dissolved into its three children under a band of the same name.
+ * The exclusion survives the promotion and is asked of the children now — see the repointed
+ * assertions below, which is where the reasoning for that lives.
+ *
  * The failure mode is why this is pinned rather than left to review: an always-empty inbox does not
  * read as "not for you", it reads as a broken page — and Other Approvals additionally carries a
  * pending-count badge, so it advertises a queue that can never become hers.
@@ -44,21 +49,26 @@ const LEAVE_MANAGEMENT_HREF = "/hr/leave-management";
  * `undefined`, or a row gated on it flips open. `tests/navigation-permission-lookup-total.test.ts`
  * ratchets on exactly this and caught the first draft of this file.
  */
-function offeredHrefs(seat: HrBundleName): Set<string> {
+function railFor(seat: HrBundleName) {
   const role = seat as unknown as PhoenixRole;
-  const rows = getSections(
+  const sections = getSections(
     getNavigationSections("hr"),
     "hr",
     buildPermissionLookup(permissionMatrix, role),
     role,
-  ).flatMap((section) => section.items);
+  );
+  const rows = sections.flatMap((section) => section.items);
 
   assert.ok(
     rows.length >= 10,
     `"${seat}" is offered only ${rows.length} HR nav rows — the shell did not build, so every ` +
       "assertion below would pass vacuously",
   );
-  return new Set(rows.map((row) => row.href));
+  return { rows, sections };
+}
+
+function offeredHrefs(seat: HrBundleName): Set<string> {
+  return new Set(railFor(seat).rows.map((row) => row.href));
 }
 
 export function runHrNavNoEmptyInboxRowsTests() {
@@ -83,22 +93,64 @@ export function runHrNavNoEmptyInboxRowsTests() {
   );
 
   // The 2026-08-29 precedent, pinned in the same place so the pair cannot drift apart.
+  //
+  // ── REPOINTED 2026-09-05 ──────────────────────────────────────────────────────────────────
+  //
+  // LEAVE_MANAGEMENT_HREF was a HUB — a page of modules — and the owner ruled that day that no
+  // rail row may open one: "I don't want any subtitle to be the one that when I press, it
+  // redirects me to a page with big modules. I want a recruitment and its modules under it." So
+  // the door went and its children became rows under a band still called Leave Management.
+  //
+  // Both assertions here were written against that door, and both would now be asking about a
+  // href that is on NOBODY's rail. The exclusion would pass because the row does not exist,
+  // which is unfailable rather than satisfied; the "she keeps it" check would fail for the same
+  // reason, over nothing she lost. Neither is the question. The question is whether leave
+  // ADMINISTRATION is still hers and still not the Business Partner's — so that is what is asked,
+  // of the children, which is where it now lives.
+  //
+  // Her own vacation stays out of it by construction: Request Vacation is
+  // /hr/workspace/leave-management/vacation-request, a self-service form under /hr/workspace,
+  // which is exactly the distinction `leave:read` blurs and this file exists to keep.
+  const leaveAdminRows = (rail: Set<string>) =>
+    [...rail].filter((href) => href.startsWith(`${LEAVE_MANAGEMENT_HREF}/`)).sort();
+
+  assert.deepEqual(
+    leaveAdminRows(advisory),
+    [],
+    "the HR Business Partner is offered a leave-administration row. The hub she was excluded " +
+      "from on 2026-08-29 listed 0 of 3 children for her, so promoting those children to rows of " +
+      "their own must not hand her the ones the hub was hiding",
+  );
   assert.equal(
     advisory.has(LEAVE_MANAGEMENT_HREF),
     false,
     'the HR Business Partner is offered "Leave Management", which listed 0 of 3 children for her ' +
-      "when it was excluded on 2026-08-29",
+      "when it was excluded on 2026-08-29. Kept beside the sweep above because the hub is still a " +
+      "PAGE — retiring the row is not the same as deleting the route, and re-adding the door " +
+      "would restore the original defect in one line",
   );
 
-  // ── The other seat keeps Leave Management ───────────────────────────────────
+  // ── The other seat keeps leave administration ───────────────────────────────
   // Excluding one seat from a shared row is one edit away from deleting the row. HR Operations
-  // owns leave administration, so this one must survive every narrowing aimed at HR Advisory.
-  assert.equal(
-    operations.has(LEAVE_MANAGEMENT_HREF),
-    true,
-    `the HR Operations Coordinator lost "${LEAVE_MANAGEMENT_HREF}". Excluding HR Advisory from a ` +
-      "shared row must narrow it for HER only — removing the row outright takes it from the seat " +
-      "whose job it is",
+  // owns leave administration, so this must survive every narrowing aimed at HR Advisory — and,
+  // since 2026-09-05, every promotion that dissolves the row it used to be reached through.
+  assert.ok(
+    leaveAdminRows(operations).length >= 2,
+    `the HR Operations Coordinator is offered ${leaveAdminRows(operations).length} ` +
+      "leave-administration rows. Excluding HR Advisory from a shared row must narrow it for HER " +
+      "only, and retiring the hub must move its children onto this seat's rail rather than take " +
+      "leave off it — measured 2026-09-05, she is offered Vacation Report and Vacation Control",
+  );
+
+  // …and they still sit under a band carrying the module's name, so it is findable by the word
+  // the seat's own job is called. Scattering the children into unrelated sections satisfies the
+  // count above and loses the module, which is the failure a promotion actually risks.
+  const operationsBands = railFor("HR Operations").sections.map((section) => section.label);
+  assert.ok(
+    operationsBands.includes("Leave Management"),
+    `the HR Operations rail has no "Leave Management" band — its headings are ` +
+      `${JSON.stringify(operationsBands)}. The hub row was retired on 2026-09-05 on the ` +
+      "understanding that the band replaces it as the thing carrying the name",
   );
 
   // ── Other Approvals is off HER rail too, for a DIFFERENT reason ─────────────

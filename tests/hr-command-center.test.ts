@@ -84,6 +84,43 @@ function offeredHrefs(seat: HrBundleName): Set<string> {
 }
 
 /**
+ * Dashboard destinations that are NOT rail rows — tile hrefs and chart hrefs alike, each named
+ * with the verdict that makes it safe.
+ *
+ * "Is it a row?" was this file's proxy for "can the seat open it?", and until 2026-09-05 the two
+ * were the same question. That day the owner ruled that no rail row may open a page of modules —
+ * "I don't want any subtitle to be the one that when I press, it redirects me to a page with big
+ * modules" — so every hub row was replaced by its cards. The hub PAGES were not touched: they
+ * still serve, and both seats still pass their gates. The proxy broke; the property did not.
+ *
+ * So the two hubs the dashboard still points at are listed here rather than the check being
+ * loosened to "any /hr href". Each entry carries the gate verdict, obtained by CALLING the gate for
+ * the seat rather than by reading it, and the number of cards the hub renders for her — because a
+ * link to a hub that lists nothing is worse than no link, and that is the failure this cannot see.
+ * The assertion below requires this map to match the exempted set EXACTLY, so an entry that stops
+ * being used fails loudly instead of sitting here as a standing licence.
+ *
+ * A tile is better off pointing at the page that holds its own figure, and two of the three payroll
+ * ones now could — /hr/admin/deductions became hers on 2026-09-03. That is a change to her
+ * dashboard rather than to this sidebar work, so the destinations are left as they are and the
+ * stale reason recorded beside them in src/lib/hr/command-center.ts has been corrected instead.
+ */
+const DASHBOARD_DESTINATIONS_THAT_ARE_NOT_ROWS: Record<string, string> = {
+  "/hr/admin/payroll-management":
+    "any-of payroll:read || payslips:read || deductions:read — HR Operations, the only seat with " +
+    "payroll_inputs, holds all three; measured 2026-09-05, the hub renders 3 cards for her " +
+    "(Payroll Report, Payslips Center, Deductions), so it is a real module page and not an " +
+    "empty one",
+  "/hr/attendance":
+    "no permission gate at all — the page redirects only when resolveNavigationMode(access) is " +
+    '"employee-portal", and it resolves to "admin" for BOTH seats (called, not assumed). Measured ' +
+    "2026-09-05, the hub renders 7 cards for HR Operations and 4 for HR Advisory. It stays the " +
+    "destination because the queue those three tiles count — /attendance/exceptions — is gated on " +
+    "canAccessSystemAdministratorWorkspace and is not hers to open, so there is no page holding " +
+    "the figure to send her to; the chart beside them says \"Open Attendance\" for the same reason",
+};
+
+/**
  * Every source present and empty. The point is to exercise each builder's full path — a builder
  * that returns early on a missing source would otherwise emit none of its hrefs and the loop below
  * would pass by reading nothing. `clearance` and `retention` were missing from this object until
@@ -239,6 +276,7 @@ export async function runHrCommandCenterTests() {
 
   // ── Every tile leads somewhere the seat can actually go ───────────────────────────────────────
   const failures: string[] = [];
+  const exemptionsUsed = new Set<string>();
   let tilesChecked = 0;
 
   for (const seat of seats) {
@@ -286,10 +324,16 @@ export async function runHrCommandCenterTests() {
         );
 
         if (!offered.has(tile.href)) {
-          failures.push(
-            `${seat}: tile "${tile.label}" (${group.functionKey}) links to ${tile.href}, which is ` +
-              "not a row this seat is offered — it holds no grant that opens that page",
-          );
+          if (tile.href in DASHBOARD_DESTINATIONS_THAT_ARE_NOT_ROWS) {
+            exemptionsUsed.add(tile.href);
+          } else {
+            failures.push(
+              `${seat}: tile "${tile.label}" (${group.functionKey}) links to ${tile.href}, which is ` +
+                "not a row this seat is offered and is not a recorded module page — either it holds " +
+                "no grant that opens that page, or the destination is a hub whose verdict belongs in " +
+                "DASHBOARD_DESTINATIONS_THAT_ARE_NOT_ROWS",
+            );
+          }
         }
       }
     }
@@ -381,11 +425,19 @@ export async function runHrCommandCenterTests() {
           `${seat}/${chart.key}: links to ${chart.href}, outside the /hr namespace — AppShell ` +
             "would bounce it and the seat would pay a redirect per click",
         );
-        assert.ok(
-          offered.has(chart.href),
-          `${seat}: chart "${chart.title}" links to ${chart.href}, which is not a row this seat ` +
-            "is offered — it holds no grant that opens that page",
-        );
+        // Same rule as the tiles, and the same exemption map — a chart's "Open X" affordance is
+        // the module's front door, so this is where the two hub destinations legitimately land.
+        if (chart.href in DASHBOARD_DESTINATIONS_THAT_ARE_NOT_ROWS) {
+          exemptionsUsed.add(chart.href);
+        } else {
+          assert.ok(
+            offered.has(chart.href),
+            `${seat}: chart "${chart.title}" links to ${chart.href}, which is not a row this seat ` +
+              "is offered and is not a recorded module page — either it holds no grant that opens " +
+              "that page, or the destination is a hub whose verdict belongs in " +
+              "DASHBOARD_DESTINATIONS_THAT_ARE_NOT_ROWS",
+          );
+        }
 
         assert.ok(
           chart.series.length > 0,
@@ -432,6 +484,18 @@ export async function runHrCommandCenterTests() {
     seriesChecked >= 15,
     `only ${seriesChecked} series were checked — the row/series agreement assertion, which is the ` +
       "only thing standing between a typo and a silently empty plot, read almost nothing",
+  );
+
+  // The exemption map may not outlive its subject. An entry nobody points at is a standing licence
+  // for a destination that no longer exists, and the next tile or chart aimed there would be waved
+  // through by it; an href exempted for a seat that has since been given the row is the same thing
+  // read the other way. Both are caught by requiring the map to be exactly what the two loops above
+  // consumed between them — which is why this sits after the charts rather than after the tiles.
+  assert.deepEqual(
+    Object.keys(DASHBOARD_DESTINATIONS_THAT_ARE_NOT_ROWS).sort(),
+    [...exemptionsUsed].sort(),
+    "DASHBOARD_DESTINATIONS_THAT_ARE_NOT_ROWS no longer matches the destinations the dashboard actually " +
+      "uses — add the new one with its gate verdict, or drop the entry that is now a rail row",
   );
 
   // The control that a company-wide total cannot give. Until 2026-09-01 the two seats read 5 and

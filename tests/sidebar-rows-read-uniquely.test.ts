@@ -127,14 +127,33 @@ export function runSidebarRowsReadUniquelyTests() {
   assert.ok(widestSidebar > 40, `the widest sidebar should be dozens of rows, measured ${widestSidebar}`);
 
   // The pair that prompted the sweep, pinned by name: two probation hubs, two labels. Collapsing
-  // them to one row would be wrong — they are different pages — so the fix was, and stays, a rename.
-  const superAdmin = getSections(
+  // them to one row would be wrong — they are different pages — so the fix was a rename.
+  //
+  // ── REPOINTED 2026-09-05 ─────────────────────────────────────────────────────────────────
+  //
+  // Half of the pair is no longer a row at all. The owner's rule — no rail row may open a page of
+  // modules — retired /admin/probation-tools from every rail, and its four modules are rows under
+  // a band still called "Probation Tools". So the old assertion could only ever read `null` now;
+  // left as a row lookup it would have to be deleted, and deleting it drops the pin on the half
+  // that survives. Both halves are pinned instead, each where it actually lives: the CEO's row by
+  // label, the hub by the band that replaced it.
+  const superAdminSections = getSections(
     getNavigationSections("admin"),
     "admin",
     buildPermissionLookup(permissionMatrix, "Super Admin" as PhoenixRole),
     "Super Admin" as PhoenixRole,
-  ).flatMap((section) => section.items);
+  );
+  const superAdmin = superAdminSections.flatMap((section) => section.items);
   const labelOf = (href: string) => superAdmin.find((row) => row.href === href)?.label ?? null;
   assert.equal(labelOf("/admin/ceo-probation"), "Probation", "the CEO's executive probation entry point keeps its label");
-  assert.equal(labelOf("/admin/probation-tools"), "Probation Tools", "the probation hub that carries Settings is named apart from it");
+  assert.equal(
+    labelOf("/admin/probation-tools"),
+    null,
+    "the probation hub is a page of modules, so no rail row may open it (owner, 2026-09-05)",
+  );
+  assert.equal(
+    superAdminSections.find((section) => section.id === "hub-probation-tools")?.label,
+    "Probation Tools",
+    "…and the band that replaced that row is what now carries the name, one heading above Settings",
+  );
 }

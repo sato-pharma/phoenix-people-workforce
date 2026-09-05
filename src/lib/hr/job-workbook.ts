@@ -138,11 +138,30 @@ export type SeatWorkbook = {
 // so the hub now carries resignation, contract and outstation only; and the excuse decision itself
 // belongs to leaveExcuseApproverAdminNavigationRoles — Super Admin, CEO and Financial Advisor — a
 // list this seat has never been on. Do not re-add the entry to point a line here.
+// -- 2026-09-05: five entries removed, and two of them for a reason worth reading --------------
+//
+// `attendance` (/hr/attendance), `leave` (/hr/leave-management) and `payroll`
+// (/hr/admin/payroll-management) were HUB pages. The owner ruled that day that no rail row may
+// open a page of modules - "I don't want any subtitle to be the one that when I press, it
+// redirects me to a page with big modules" - so each hub's cards became rows and the door went. A
+// workbook line is better off naming the screen the work is done on than the door to it, so every
+// reference moved to the concrete screen: Fingerprint Report, Vacation Report, Payroll Report.
+//
+// `attendanceExceptions` (/hr/attendance/exceptions) and `attendanceDayReport`
+// (/hr/attendance/employee-day-report) are a DIFFERENT case, and they were a live defect rather
+// than a consequence of the ruling. Both pages are SUPER ADMIN ONLY - exceptions gates on
+// canAccessSystemAdministratorWorkspace (scope "system" or a system-administrator role; HR
+// Operations is "company" and neither), and the day report redirects on `access.role !== "Super
+// Admin"` in as many words. Four of her lines taught her to do her work on them. Nothing caught
+// it because the reachability check in tests/hr-job-workbook.test.ts counted a page as reachable
+// when it sat under an offered row, and /hr/attendance was one - so the hub row was vouching for
+// two children it does not admit her to. Removing the hub row removed the cover, and the check
+// found them. The lines now name the screens she can actually open; whether she SHOULD hold
+// either of these two is a permission question for the owner, not one to settle by editing a book.
 const S = {
-  attendance: { href: "/hr/attendance", label: "Attendance" },
-  attendanceDayReport: { href: "/hr/attendance/employee-day-report", label: "Employee Day-by-Day Report" },
+  activityReport: { href: "/hr/admin/company-activity-report", label: "Activity Report" },
   attendanceDevices: { href: "/hr/attendance/device-user-mapping", label: "Device User Mapping" },
-  attendanceExceptions: { href: "/hr/attendance/exceptions", label: "Attendance Exceptions" },
+  attendanceFingerprint: { href: "/hr/attendance/fingerprint-report", label: "Fingerprint Report" },
   attendanceMonthly: { href: "/hr/attendance/monthly-summary", label: "Monthly Summary" },
   attendancePolicies: { href: "/hr/attendance/policies", label: "Attendance Policies" },
   coaching: { href: "/hr/coaching", label: "Field Coaching" },
@@ -150,17 +169,17 @@ const S = {
   contactReview: { href: "/hr/recruitment/contact-review", label: "Missing Contact Details" },
   contracts: { href: "/hr/contracts", label: "Contract Renewal" },
   cvDatabase: { href: "/hr/cv-database", label: "CV Database" },
+  deductions: { href: "/hr/admin/deductions", label: "Deductions" },
   employee360: { href: "/hr/employee-360", label: "Employee 360" },
   employees: { href: "/hr/employees", label: "Employee Directory" },
   hiringDocuments: { href: "/hr/hiring-documents", label: "Hiring Documents" },
   hiringPack: { href: "/hr/hiring-pack", label: "HR Forms" },
   intakeHealth: { href: "/hr/recruitment/intake-health", label: "Inbound Intake Health" },
-  leave: { href: "/hr/leave-management", label: "Leave Management" },
   mailboxOffboarding: { href: "/hr/mailbox-offboarding", label: "Mailbox Revocation" },
   offers: { href: "/hr/offers", label: "Job Offers" },
   organogram: { href: "/hr/organogram", label: "Organogram" },
   overview: { href: "/hr/admin/hr-command-center", label: "HR Overview" },
-  payroll: { href: "/hr/admin/payroll-management", label: "Payroll Management" },
+  payrollReport: { href: "/hr/payroll", label: "Payroll Report" },
   probation: { href: "/hr/probation", label: "Probation" },
   recruitment: { href: "/hr/recruitment", label: "Recruitment" },
   resignations: { href: "/hr/resignations", label: "Resignations" },
@@ -169,6 +188,7 @@ const S = {
   support: { href: "/hr/admin/support-requests", label: "HR Support Requests" },
   vacancies: { href: "/hr/reports/vacancies", label: "Vacancies Report" },
   vacationControl: { href: "/hr/leave-management/vacation-control", label: "Vacation Control" },
+  vacationRecord: { href: "/hr/leave-management/vacation-report", label: "Vacation Report" },
 } as const satisfies Record<string, WorkbookScreen>;
 
 // ── HR Business Partner (seat: HR Advisory) — 29 lines across 6 sections ───────
@@ -477,7 +497,7 @@ const HRBP_SECTIONS: readonly WorkbookSection[] = [
         id: "hrbp-5-2",
         responsibility:
           "Use HR data to identify turnover, vacancy, attendance, performance or engagement patterns that need management attention.",
-        screens: [S.overview, S.vacancies, S.attendance, S.retention],
+        screens: [S.overview, S.vacancies, S.attendanceMonthly, S.retention],
         steps: [
           "Start on HR Overview. It is built from your own responsibilities, so everything on it is something this role owns.",
           "Click a number to reach the screen behind it, instead of copying it into a file.",
@@ -666,9 +686,14 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
         id: "ops-2-1",
         responsibility:
           "Review attendance records, fingerprint inputs, approved leave, permissions, excuses and relevant field-activity inputs according to company rules.",
-        screens: [S.attendance, S.attendanceExceptions],
+        screens: [S.attendanceFingerprint, S.activityReport],
         steps: [
-          "Work the exception queue. It is simply the list of days the rules could not settle on their own.",
+          // Was "Work the exception queue" on /hr/attendance/exceptions, a Super Admin page this
+          // seat is refused (see the note on the screen table above). The Fingerprint Report is
+          // the same work on a screen she holds: it is built from the raw punches and it is where
+          // a day gets marked. The duty's own words - attendance records, fingerprint inputs -
+          // name it.
+          "Read the day on the Fingerprint Report. It is built from the raw punches, so it shows what actually happened before any rule was applied to it.",
           // The duty above says REVIEW, and review is what this seat does: an excuse or permission
           // request is DECIDED by the approver chain, and it reaches her as an already-settled input
           // on the attendance record. The old wording sent her to Other Approvals to decide them
@@ -683,10 +708,13 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
         id: "ops-2-2",
         responsibility:
           "Identify unexplained absences, missing punches or inconsistent records and follow up with the employee/manager before payroll closure.",
-        screens: [S.attendanceExceptions, S.attendanceDayReport],
+        screens: [S.attendanceFingerprint, S.attendanceMonthly],
         steps: [
-          "Open the day in the Employee Day-by-Day Report. It shows one person, any dates you choose, every day in full.",
-          "Accept or cancel that day's fingerprint deduction on the same screen, before the month closes.",
+          // Both screens this line used to name were Super Admin only. The Fingerprint Report
+          // filters by employee, by date range and by deduction, and marks each row deduct or
+          // exempt - which is this line's work, on a screen this seat is offered.
+          "Filter the Fingerprint Report to the person and the dates you are asking about. A missing punch or an unexplained day shows on its own row.",
+          "Mark the row deduct or exempt before the month closes, and follow it up with the employee or the manager while the day is still fresh.",
         ],
         evidence:
           "Payroll uses days you have decided, not raw fingerprint data. So a day nobody looked at shows up as undecided instead of quietly becoming a deduction.",
@@ -695,9 +723,13 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
       {
         id: "ops-2-3",
         responsibility: "Maintain leave balances and ensure approved leave is correctly recorded in the system.",
-        screens: [S.leave, S.vacationControl],
+        screens: [S.vacationRecord, S.vacationControl],
         steps: [
-          "Approve or refuse the request in Leave Management. The balance updates itself from your decision.",
+          // Was "Approve or refuse the request in Leave Management", which this seat cannot do and
+          // never could: her leave grants are read, create, update and export - there is no
+          // approve among them, and approving belongs to the request's own chain. The duty says
+          // RECORDED, and that is what the Vacation Report shows.
+          "Check the approved day landed on the Vacation Report. A balance is added up from the days themselves, so a day that is not recorded is a balance that is wrong.",
           "Change the rules in Vacation Control. Never by editing a number on someone's record.",
         ],
         evidence:
@@ -708,9 +740,9 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
         id: "ops-2-4",
         responsibility:
           "Prepare clean, supported monthly attendance outputs and escalate unusual or repeated cases to the HR Section Head.",
-        screens: [S.attendanceMonthly, S.attendance, S.support],
+        screens: [S.attendanceMonthly, S.attendanceFingerprint, S.support],
         steps: [
-          "Close the exceptions first, then read the Monthly Summary. In that order, or the summary is describing a month that is still moving.",
+          "Settle the open days on the Fingerprint Report first, then read the Monthly Summary. In that order, or the summary is describing a month that is still moving.",
           "If the same person keeps coming up, escalate it in writing rather than mentioning it.",
         ],
         evidence:
@@ -728,10 +760,10 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
         id: "ops-3-1",
         responsibility:
           "Prepare and validate HR-related payroll inputs such as joining dates, separation dates, attendance deductions, unpaid leave, approved salary changes and other authorized HR adjustments.",
-        screens: [S.employees, S.attendance, S.leave, S.payroll],
+        screens: [S.employees, S.attendanceFingerprint, S.vacationRecord, S.payrollReport],
         steps: [
           "Fix the record, never the payroll sheet. A joining date belongs on the employee. A leaving date on the resignation. A deduction on the decided day. Unpaid leave on the leave record.",
-          "Then open Payroll Management and check the run picked your change up.",
+          "Then open the Payroll Report and check the run picked your change up.",
         ],
         evidence:
           "There is no separate payroll input file to keep in step, because payroll reads the records themselves. That is why this account has no write access to payroll.",
@@ -740,7 +772,7 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
       {
         id: "ops-3-2",
         responsibility: "Reconcile payroll inputs against approved HR documents before submission.",
-        screens: [S.payroll, S.hiringDocuments],
+        screens: [S.payrollReport, S.hiringDocuments],
         steps: [
           "Read the payroll run against the documents behind it.",
           "Where they disagree, fix the record the figure came from. That is the only place a fix sticks.",
@@ -753,8 +785,14 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
         id: "ops-3-3",
         responsibility:
           "Ensure no deduction, addition or employee status change is processed without clear supporting evidence and approval.",
-        screens: [S.attendanceDayReport],
+        screens: [S.attendanceFingerprint, S.deductions],
         steps: [
+          // The only screen this line named was the Employee Day-by-Day Report - Super Admin
+          // only, so the one line whose whole method was a single screen pointed at a page that
+          // redirects her. Both replacements are her own rows: the Fingerprint Report is the day
+          // and the decision on it, and Deductions is the month those decisions add up to, which
+          // the owner opened to her on 2026-09-03 ("yes give HR access to the deductions
+          // screen"). Read-only on both, which is the point the evidence line below makes.
           "Every possible deduction shows the day it came from and the decision made on that day.",
           "If there is no decision behind it, it does not go through. You stop it simply by not supporting it.",
         ],
@@ -766,7 +804,7 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
         id: "ops-3-4",
         responsibility:
           "Coordinate with Finance on operational payroll questions while keeping HR approval authority with the HR Section Head.",
-        screens: [S.payroll, S.support],
+        screens: [S.payrollReport, S.support],
         steps: [
           "Ask in writing through the request queue. Include the figure and the screen you got it from.",
         ],
@@ -1099,7 +1137,7 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
       {
         id: "ops-9-3",
         responsibility: "Handle employee information with strict confidentiality and controlled access.",
-        screens: [S.employee360, S.payroll],
+        screens: [S.employee360, S.payrollReport],
         steps: [
           "If you can open it, you are allowed to open it. Do not ask a colleague to look something up for you, and do not look something up for a colleague.",
         ],
