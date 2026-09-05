@@ -29,6 +29,7 @@ import {
 } from "@/lib/recruitment/manager-sends";
 import { hrIdForStorage, hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id";
 import { ROW_FINDING_KEYS } from "@/lib/recruitment/cv-findings";
+import { isBatchActor } from "@/lib/recruitment/rejection-notice";
 import type {
   ExtractedCandidateFields,
   ExtractedCvValue,
@@ -1366,7 +1367,9 @@ export async function loadDecisionHistory(): Promise<DecisionHistory> {
     const from = page * STATUS_EVENT_PAGE_SIZE;
     const { data, error } = await supabase
       .from("ats_candidate_status_events")
-      .select("candidate_id,created_at,to_status")
+      // actor_hr_id is READ, not decoration: a batch is not a decision, and without it this
+      // function cannot tell 65 rows of an automated sweep from a week of screening.
+      .select("candidate_id,created_at,to_status,actor_hr_id")
       // Stable and unique together, so paging can neither repeat a row nor drop one.
       .order("created_at", { ascending: true })
       .order("id", { ascending: true })
@@ -1379,6 +1382,7 @@ export async function loadDecisionHistory(): Promise<DecisionHistory> {
     }
 
     const rows = (data ?? []) as Array<{
+      actor_hr_id?: string | null;
       candidate_id?: string | null;
       created_at?: string | null;
       to_status?: string | null;
@@ -1397,6 +1401,16 @@ export async function loadDecisionHistory(): Promise<DecisionHistory> {
       // not one either — the undo path writes such a row, and counting it would let one press and
       // its own undo read as two CVs cleared.
       if (normalizeCandidateStatus(row.to_status) === "new") continue;
+
+      // AND NEITHER IS A BATCH. This was missing when the throughput trend shipped on 2026-09-05,
+      // and the strip was measured wrong within hours: `ops:non-egyptian-reject-20260828` moved 65
+      // candidates in one sweep, so the week of 08-29 read 138 decisions against a true 73. The
+      // screen told the owner his backlog had SHRUNK BY 69 that week when it had held level at -4 —
+      // an automated rejection of scattergun international CVs presented as a week of screening.
+      //
+      // The whole point of this trend is that somebody acts on the direction. A number that counts
+      // a sweep as work is worse than no number, because it rewards running another sweep.
+      if (isBatchActor(row.actor_hr_id)) continue;
 
       const held = firstDecisionAt.get(candidateId);
       if (!held || at < held) firstDecisionAt.set(candidateId, at);

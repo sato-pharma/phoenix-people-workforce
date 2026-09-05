@@ -242,6 +242,28 @@ export function runRecruitmentThroughputTrendTests() {
     /if \(!held \|\| at < held\) firstDecisionAt\.set\(candidateId, at\)/,
     "the FIRST decision is kept, not the latest — the latest is what the broken method counted",
   );
+
+  // A BATCH IS NOT A DECISION, and this was MISSING when the trend first shipped.
+  //
+  // `ops:non-egyptian-reject-20260828` moved 65 candidates in one automated sweep. Counting them
+  // made the week of 08-29 read 138 decisions against a true 73 — the strip told the owner his
+  // backlog had SHRUNK BY 69 that week when it had held level at -4. An automated rejection of
+  // scattergun international CVs was presented to him as a week of screening work.
+  //
+  // The trend exists so somebody acts on the direction. A number that counts a sweep as output is
+  // worse than no number, because it rewards running another sweep.
+  assert.match(
+    service,
+    /\.select\("candidate_id,created_at,to_status,actor_hr_id"\)/,
+    "the decision history must READ the actor — without it the function cannot tell a sweep from a " +
+      "week of work, and it did not read it for the first four hours this trend was live",
+  );
+  assert.match(
+    service,
+    /if \(isBatchActor\(row\.actor_hr_id\)\) continue;/,
+    "and it must skip batch actors — the same rule the rejection notice uses, so the two can never " +
+      "disagree about what counts as a person deciding something",
+  );
   // Paged, and refusing rather than truncating: a silently short history understates real output.
   assert.match(
     service,
