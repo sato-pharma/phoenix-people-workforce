@@ -46,25 +46,45 @@ function testTheGuardAdmitsAPrintUrlAndRefusesOthers() {
   const body = (/<script>([\s\S]*?)<\/script>/u.exec(html) as RegExpExecArray)[1];
 
   const run = (href: string) => {
-    const link: { hidden: boolean; href?: string } = { hidden: true };
-    const doc = { getElementById: (id: string) => (id === "phx-pdf" ? link : null) };
-    new Function("document", "window", "URL", body)(doc, { location: { href } }, URL);
-    return link;
+    // THE STUB MUST CARRY addEventListener. The script wires the click handler inside its own
+    // try/catch, so a link object without it throws, the throw is swallowed, and the test still
+    // sees a revealed button — passing while the button does nothing, which is the exact symptom
+    // this whole file exists to catch.
+    const handlers: string[] = [];
+    const link = {
+      hidden: true,
+      href: undefined as string | undefined,
+      textContent: "Download PDF",
+      style: {} as Record<string, string>,
+      addEventListener: (event: string) => handlers.push(event),
+    };
+    const doc = {
+      getElementById: (id: string) => (id === "phx-pdf" ? link : null),
+      createElement: () => ({ click: () => {}, style: {} }),
+      body: { appendChild: () => {}, removeChild: () => {} },
+    };
+    new Function("document", "window", "URL", body)(doc, { location: { href }, fetch: () => {}, URL }, URL);
+    return { link, handlers };
   };
 
   const ok = run("https://phoenix-hr.satopharma.com/api/hiring-pack/A-12/print?document=contract&copies=4");
-  assert.equal(ok.hidden, false, "a real print URL must reveal the button");
-  assert.match(String(ok.href), /format=pdf/u, "and point at the same document as a file");
+  assert.equal(ok.link.hidden, false, "a real print URL must reveal the button");
+  assert.match(String(ok.link.href), /format=pdf/u, "and point at the same document as a file");
+  assert.deepEqual(
+    ok.handlers,
+    ["click"],
+    "the click handler must attach — without it the button shows and does nothing, which is how it was reported",
+  );
 
   const preview = run("https://phoenix-hr.satopharma.com/api/hiring-pack/A-12/print?document=contract&preview=1");
   assert.doesNotMatch(
-    String(preview.href),
+    String(preview.link.href),
     /preview=1/u,
     "preview must be dropped — downloading is not previewing, and carrying it would file the paper as never printed",
   );
 
   const elsewhere = run("https://phoenix-hr.satopharma.com/hr/hiring-pack");
-  assert.equal(elsewhere.hidden, true, "anywhere that is not the print route must leave the button hidden");
+  assert.equal(elsewhere.link.hidden, true, "anywhere that is not the print route must leave the button hidden");
 }
 
 export async function runPrintBannerScriptTests() {

@@ -208,6 +208,20 @@ export function printBanner(lines: string[]): string {
  */
 const DOWNLOAD_LINK_SCRIPT = `<script>
   (function () {
+    // "clearanceEmployee-A-12.pdf". Built from the URL rather than the document's Arabic title:
+    // Windows rejects a colon, which every uploaded company template carries in its custom:<uuid>
+    // key, and a browser that cannot read the name falls back to the last path segment — which
+    // here would be the word "print" on every paper anyone ever saved.
+    var fileName = function (url) {
+      var parts = url.pathname.split("/").filter(Boolean);
+      var hrId = parts.length > 1 ? parts[parts.length - 2] : "document";
+      var doc = url.searchParams.get("document") || "document";
+      var safe = function (value) {
+        return value.replace(/[^A-Za-z0-9._-]+/g, "-");
+      };
+      return safe(doc) + "-" + safe(hrId) + ".pdf";
+    };
+
     var link = document.getElementById("phx-pdf");
     if (!link) return;
     try {
@@ -226,6 +240,68 @@ const DOWNLOAD_LINK_SCRIPT = `<script>
       here.searchParams.delete("inventory");
       link.href = here.toString();
       link.hidden = false;
+
+      // FETCHED RATHER THAN FOLLOWED, because the server spends ten to thirty seconds in Chromium
+      // and a plain <a download> shows NOTHING for all of it — no tab, no spinner, no progress.
+      // The button was reported as "appeared but not working" for exactly that reason: it was
+      // working, silently, and silence on a click reads as a broken button.
+      //
+      // It also means a refusal can be SHOWN. Following the link would navigate the print tab to a
+      // JSON error and lose the document; here the paper stays on screen and the reason is put on
+      // the button itself.
+      var idle = link.textContent;
+      var busy = false;
+      link.addEventListener("click", function (event) {
+        if (!window.fetch || !window.URL || !window.URL.createObjectURL) return; // let the href work
+        event.preventDefault();
+        if (busy) return;
+        busy = true;
+        link.textContent = "Preparing PDF…";
+        link.style.opacity = "0.65";
+
+        var done = function (message) {
+          busy = false;
+          link.style.opacity = "";
+          link.textContent = message || idle;
+          if (message) {
+            window.setTimeout(function () {
+              link.textContent = idle;
+            }, 6000);
+          }
+        };
+
+        window
+          .fetch(link.href, { credentials: "same-origin" })
+          .then(function (response) {
+            if (response.ok) return response.blob();
+            return response
+              .json()
+              .catch(function () {
+                return {};
+              })
+              .then(function (body) {
+                throw new Error(body && body.message ? body.message : "The PDF could not be built.");
+              });
+          })
+          .then(function (blob) {
+            var href = window.URL.createObjectURL(blob);
+            var save = document.createElement("a");
+            save.href = href;
+            save.download = fileName(here);
+            document.body.appendChild(save);
+            save.click();
+            document.body.removeChild(save);
+            window.setTimeout(function () {
+              window.URL.revokeObjectURL(href);
+            }, 30000);
+            done();
+          })
+          .catch(function (error) {
+            // The message is the server's own words where it sent any — a refusal names the file it
+            // could not read, which is the difference between a fixable report and a mystery.
+            done(String((error && error.message) || "Could not build the PDF"));
+          });
+      });
     } catch (error) {
       /* No link rather than a broken one. */
     }
