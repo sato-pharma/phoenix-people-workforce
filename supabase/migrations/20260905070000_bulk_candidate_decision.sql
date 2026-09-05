@@ -100,7 +100,7 @@ end;
 $$;
 
 comment on function public.ats_bulk_set_candidate_status(uuid[], text, text, text) is
-  'One screening decision across many candidates, atomically: moves each candidate and writes its status-history row in the same transaction, returning one row per candidate actually moved with the status it came from. Capped at 200 per call as a blast-radius limit. Does not validate the status vocabulary (TypeScript is the single authority) and is not SECURITY DEFINER. Added 2026-09-05 to make clearing a 238-CV backlog one press instead of 238.';
+  'One screening decision across many candidates, atomically: moves each candidate and writes its status-history row in the same transaction, returning one row per candidate actually moved with the status it came from. Capped at 200 per call as a blast-radius limit. Does not validate the status vocabulary (TypeScript is the single authority) and runs as its caller rather than as the table owner. Added 2026-09-05 to make clearing a 238-CV backlog one press instead of 238.';
 
 
 -- ── UNDO ────────────────────────────────────────────────────────────────────────────────────────
@@ -197,6 +197,33 @@ begin
   join logged l on l.candidate_id = b.id;
 end;
 $$;
+
+-- ── WHO MAY CALL THESE ──────────────────────────────────────────────────────────────────────────
+--
+-- A function created in `public` inherits PostgreSQL's default EXECUTE grant to PUBLIC, and both
+-- `anon` and `authenticated` are members of PUBLIC — so without these lines each of these is
+-- reachable over PostgREST as /rest/v1/rpc/<name> with nothing but the public anonymous key.
+--
+-- Neither function elevates (they run as their caller, so `anon` would still be stopped by having
+-- no UPDATE on `ats_candidates` — verified in production 2026-09-05), so this is a second layer
+-- rather than the only one. It is added anyway: this repository has already lost 412 customer names
+-- for two days to a schema default that nobody granted on purpose, and "the other layer holds" is
+-- exactly what was believed then too.
+--
+-- REVOKING ONLY anon AND authenticated WOULD BE A NO-OP — they inherit through PUBLIC membership,
+-- so PUBLIC itself has to be named. And revoking PUBLIC from a default ACL strips `service_role`
+-- with it, which is why each is granted back explicitly afterwards: `service_role` is the
+-- application's own client and the only caller these are built for.
+
+revoke execute on function public.ats_bulk_set_candidate_status(uuid[], text, text, text)
+  from public, anon, authenticated;
+grant execute on function public.ats_bulk_set_candidate_status(uuid[], text, text, text)
+  to service_role;
+
+revoke execute on function public.ats_revert_candidate_status(uuid[], text[], text[], text)
+  from public, anon, authenticated;
+grant execute on function public.ats_revert_candidate_status(uuid[], text[], text[], text)
+  to service_role;
 
 comment on function public.ats_revert_candidate_status(uuid[], text[], text[], text) is
   'Puts candidates back to their own previous status and note, atomically — the undo behind a screening decision. Positional arrays, one status and one note per id, refused on a length mismatch. Writes a history row per candidate rather than erasing the original decision, so the record shows the change of mind. Deliberately separate from ats_bulk_set_candidate_status because a revert restores a per-row status and is not bound by the bulk-decision vocabulary. Added 2026-09-05.';

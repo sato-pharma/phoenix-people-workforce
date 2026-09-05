@@ -144,6 +144,16 @@ export function runRecruitmentBulkDecisionTests() {
   );
 
   const migration = read("supabase/migrations/20260905070000_bulk_candidate_decision.sql");
+  // The EXECUTABLE SQL: `--` prose removed and newlines collapsed, so a statement wrapped across
+  // two lines still reads as one string and an example sitting in a comment cannot satisfy a check.
+  const migrationSql = migration
+    .split(/\r?\n/)
+    .map((line) => {
+      const idx = line.indexOf("--");
+      return idx >= 0 ? line.slice(0, idx) : line;
+    })
+    .join(" ")
+    .replace(/\s+/g, " ");
   // The history insert has to live inside the SAME statement as the update. Split across two
   // statements it can succeed while the other fails, which is the state nobody can untangle later.
   assert.match(
@@ -188,6 +198,54 @@ export function runRecruitmentBulkDecisionTests() {
     /200/,
     "the cap is repeated in SQL so it still holds for a caller that does not come through the route",
   );
+
+  // ── WHO MAY CALL THEM ─────────────────────────────────────────────────────────────────────────
+  //
+  // A function created in `public` inherits PostgreSQL's default EXECUTE grant to PUBLIC, and both
+  // `anon` and `authenticated` are members of PUBLIC — so without a revoke each of these is
+  // reachable over PostgREST as /rest/v1/rpc/<name> with the public anonymous key. It was, on
+  // production, for the few minutes between the first apply and this fix.
+  // Plain string containment, not a constructed RegExp: the signatures are full of brackets and
+  // dots, and every escaping layer between here and the file is somewhere the check can quietly
+  // become vacuous. `migrationSql` has already had its newlines collapsed to spaces.
+  for (const fn of ["ats_bulk_set_candidate_status", "ats_revert_candidate_status"]) {
+    const revoked = migrationSql.includes(
+      `revoke execute on function public.${fn}(`,
+    );
+    assert.ok(
+      revoked,
+      `${fn} must revoke EXECUTE on itself — a function in \`public\` inherits the default grant`,
+    );
+    assert.ok(
+      migrationSql.includes("from public, anon, authenticated;"),
+      `${fn} must revoke from PUBLIC BY NAME — revoking only anon and authenticated is a no-op, ` +
+        "because both inherit EXECUTE through PUBLIC membership",
+    );
+    assert.ok(
+      migrationSql.includes(`grant execute on function public.${fn}(`),
+      `${fn} must be granted back to service_role — revoking PUBLIC from a default ACL strips ` +
+        "service_role with it, which would leave the application unable to call its own function",
+    );
+  }
+  assert.ok(
+    migrationSql.includes("to service_role;"),
+    "the re-grant names service_role, the application's own client and the only intended caller",
+  );
+
+  // And the phrase must NOT appear in a `comment on function` string literal. scripts/check-
+  // migrations.mjs strips `--` comments but not string literals, so prose there reads as a
+  // declaration: this file failed CI once for saying, inside a comment string, that it was NOT a
+  // definer. The `--` prose above is fine precisely because it IS stripped.
+  const commentLiterals = [...migration.matchAll(/comment on function[\s\S]*?;/g)].map((m) => m[0]);
+  assert.equal(commentLiterals.length, 2, "both functions carry a comment");
+  for (const literal of commentLiterals) {
+    assert.doesNotMatch(
+      literal,
+      /security definer/i,
+      "a comment STRING may not contain the phrase SECURITY DEFINER — comment-stripping scanners " +
+        "cannot see inside a string literal and read it as a declaration",
+    );
+  }
 
   // ── 4. UNDO IS NOT BOUND BY THE DECISION VOCABULARY ───────────────────────────────────────────
 
