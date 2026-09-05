@@ -200,6 +200,20 @@ export async function runClosingEngineExportTests() {
   const fill = buildClosingEngineFill({ matrix: july, priorMatrix: june, review });
   const macroBook = await fillClosingEngine(fill, {});
   const plainBook = await fillClosingEngine(fill, { macroFree: true });
+  const reviewBook = await fillClosingEngine(fill, {
+    macroFree: true,
+    reviewSheets: [
+      {
+        headers: ["District manager", "Region", "Areas", "Sales value", "Target value", "Achievement"],
+        name: "District Managers",
+        rows: [["Dina Fadel", "Delta (1)", 4, 120000, 150000, 0.8]],
+        subtitle: "rolled up by manager",
+        title: "District Managers   Jul 2026   CNS",
+        what: "Every district manager's areas rolled into one row.",
+        widths: [30, 18, 9, 16, 16, 14],
+      },
+    ],
+  });
   const linkedBook = await fillClosingEngine(fill, {
     macroFree: true,
     pdfLink: (sheet) =>
@@ -1195,6 +1209,77 @@ export async function runClosingEngineExportTests() {
 
   assert.ok(!isClosingPdfSheet("Closing Matrix"), "a pivot page has no rows in the file and cannot be rendered");
   assert.ok(!isClosingPdfSheet("Data"), "the hidden source block is not a page");
+
+  // ── Every sheet owns its OWN part ────────────────────────────────────────────────────────────
+  //
+  // THIS ONE SILENTLY DESTROYED A SHEET. The contents page hard-coded `sheet14.xml`, which was free
+  // while it was the only sheet being added; once the review sheets were added first they took that
+  // name and the contents page overwrote one of them. Two <sheet> entries pointed at one part, and
+  // District Managers showed the contents page. Every relationship resolved, so the package
+  // integrity check passed it — the only symptom is a tab showing another tab's content.
+  {
+    const opened = await JSZip.loadAsync(reviewBook);
+    const workbook = await opened.file("xl/workbook.xml")!.async("string");
+    const wbRels = await opened.file("xl/_rels/workbook.xml.rels")!.async("string");
+    const target = Object.fromEntries(
+      [...wbRels.matchAll(/Id="(rId\d+)"[^>]*Target="([^"]+)"/g)].map((m) => [m[1], m[2]]),
+    );
+    const owned = new Map<string, string>();
+    for (const m of workbook.matchAll(/<sheet name="([^"]+)"[^>]*?r:id="(rId\d+)"/g)) {
+      const part = target[m[2]];
+      assert.ok(part, `${m[1]}: ${m[2]} does not resolve to a part`);
+      const already = owned.get(part!);
+      assert.ok(!already, `${already} and ${m[1]} both point at ${part} — one has overwritten the other`);
+      owned.set(part!, m[1]);
+    }
+
+    // And the review's own sheets carry their own headings, not another sheet's.
+    const partOf = (name: string) => {
+      const hit = /<sheet name="SHEET"[^>]*?r:id="(rId\d+)"/.source.replace("SHEET", name);
+      const m = new RegExp(hit).exec(workbook);
+      return m ? `xl/${target[m[1]]}` : null;
+    };
+    const managers = partOf("District Managers");
+    assert.ok(managers, "the review's District Managers sheet must be registered");
+    const sheet = await opened.file(managers!)!.async("string");
+    const headers = [...(/<row r="4"[^>]*>([\s\S]*?)<\/row>/.exec(sheet)?.[1] ?? "").matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((t) => t[1]);
+    assert.deepEqual(
+      headers,
+      ["District manager", "Region", "Areas", "Sales value", "Target value", "Achievement"],
+      "District Managers is showing another sheet's headings",
+    );
+    // Value columns must carry the engine's own money format, or they print as bare digits.
+    assert.match(sheet, /s="43"/, "money columns take the engine's #,##0 format");
+
+    // The review's sheets get their OWN contents band. Neither side of the merge that introduced
+    // this had a test for it: the bands came from one branch and the review sheets from the other,
+    // so the join between them is the part nothing was watching.
+    const contentsPart = partOf("Contents");
+    assert.ok(contentsPart, "the contents page must be registered in the review build too");
+    const contentsSheet = await opened.file(contentsPart!)!.async("string");
+    assert.ok(
+      contentsSheet.includes(">Performance review</t>"),
+      "the review's sheets must appear under their own contents band",
+    );
+    assert.ok(
+      /HYPERLINK\("#'District Managers'!A1"/.test(contentsSheet),
+      "District Managers must be reachable from the contents page",
+    );
+
+    // And the band goes away with its sheets. A heading standing over nothing is the failure mode
+    // of appending a band unconditionally, and it only shows on the build that omits the review.
+    const plainOpened = await JSZip.loadAsync(plainBook);
+    const plainWorkbook = await plainOpened.file("xl/workbook.xml")!.async("string");
+    const plainRels = await plainOpened.file("xl/_rels/workbook.xml.rels")!.async("string");
+    const plainRid = /<sheet name="Contents"[^>]*?r:id="(rId\d+)"/.exec(plainWorkbook)![1];
+    const plainTarget = new RegExp(`Id="${plainRid}"[^>]*?Target="([^"]+)"`).exec(plainRels)![1];
+    const plainContents = await plainOpened.file(`xl/${plainTarget}`)!.async("string");
+    assert.ok(
+      !plainContents.includes(">Performance review</t>"),
+      "a build with no review sheets must not carry an empty Performance review band",
+    );
+  }
+
 
   // ── The contents page ───────────────────────────────────────────────────────────────────────
   //

@@ -394,7 +394,7 @@ function BrandPanel() {
 
               return (
                 <div className="flex items-center gap-4 sm:gap-5" key={feature.title}>
-                  <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center border border-[#ff6a00]/80 bg-black/35 text-[#ff6a00] shadow-[0_0_24px_rgba(255,106,0,0.16)] sm:h-[62px] sm:w-[62px] sm:rounded-2xl">
+                  <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center border border-[#ff6a00]/80 bg-black/35 text-[#ff6a00] shadow-[0_0_24px_rgba(255,106,0,0.16)] sm:h-[62px] sm:w-[62px]">
                     <FeatureIcon className="h-6 w-6 sm:h-7 sm:w-7" strokeWidth={2.3} />
                   </span>
                   <div>

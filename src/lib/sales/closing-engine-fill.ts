@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 
+import type { ReviewSheet } from "./closing-review-sheets";
 import {
   CLOSING_ENGINE_TEMPLATE_MANIFEST,
   closingEngineTemplateBytes,
@@ -256,6 +257,11 @@ export type FillOptions = {
    * time, which a shape's fixed hyperlink cannot do.
    */
   repCardPdfBase?: string;
+  /**
+   * The Performance Review's sheets, appended to the workbook. Built by `closing-review-sheets.ts`
+   * so the knowledge of what the review holds stays in the domain and this file stays a filler.
+   */
+  reviewSheets?: ReviewSheet[];
 };
 
 export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOptions = {}): Promise<Buffer> {
@@ -290,7 +296,8 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   await dropStaleLabelFormats(zip);
   await clearTitleEmblem(zip, fill);
   await hideEmblemFromPrint(zip);
-  await addIndexSheet(zip, fill);
+  const reviewAdded = options.reviewSheets ? await addReviewSheets(zip, options.reviewSheets) : [];
+  await addIndexSheet(zip, fill, reviewAdded);
   await openOnFirstSheet(zip);
   await restorePivotCacheSharedItems(zip, fill);
   await dropDeadSharedStrings(zip);
@@ -2121,10 +2128,15 @@ async function openOnFirstSheet(zip: JSZip): Promise<void> {
     workbook.replace(/(<workbookView\b[^>]*?)\s*activeTab="\d+"/, "$1").replace(/<workbookView\b/, '<workbookView activeTab="0"'),
   );
 
-  const parts: Array<{ name: string; file: string }> = [
-    ...Object.entries(MANIFEST.sheets).map(([name, spec]) => ({ file: spec.file, name })),
-    { file: INDEX_PART, name: INDEX_SHEET },
-  ];
+  // Resolved from the workbook and its relationships, not from the manifest: sheets are added at
+  // fill time now, and a list built from the manifest cannot see them.
+  const workbookRels = (await zip.file("xl/_rels/workbook.xml.rels")?.async("string")) ?? "";
+  const relTarget = Object.fromEntries(
+    [...workbookRels.matchAll(/Id="(rId\d+)"[^>]*Target="([^"]+)"/g)].map((m) => [m[1], m[2]]),
+  );
+  const parts = [...workbook.matchAll(/<sheet name="([^"]+)"[^>]*?r:id="(rId\d+)"/g)]
+    .map((m) => ({ file: `xl/${(relTarget[m[2]] ?? "").replace(/^\/?(xl\/)?/, "")}`, name: unescapeSheetName(m[1]) }))
+    .filter((entry) => entry.file !== "xl/");
   for (const { file: partName, name: sheetName } of parts) {
     const file = zip.file(partName);
     if (!file) continue;
@@ -2260,8 +2272,21 @@ const INDEX_SECTIONS: ReadonlyArray<{ band: string; entries: ReadonlyArray<{ she
 const INDEX_FOOTNOTE =
   "The three matrix pages are pivot tables — Excel builds them from the hidden Data sheet when the workbook opens.";
 
-/** The part the contents page is written to. `sheet13` is taken, so this is the next free name. */
-const INDEX_PART = "xl/worksheets/sheet14.xml";
+/**
+ * The next free `xl/worksheets/sheetN.xml`, read from the package.
+ *
+ * A CONSTANT HERE COST A WHOLE SHEET. The contents page used to hard-code `sheet14.xml`, which was
+ * free when it was the only sheet being added. Once the review sheets were added first they took
+ * that name, and the contents page then OVERWROTE one of them — two `<sheet>` entries pointing at
+ * one part, District Managers replaced by the contents page. Structurally valid, so the package
+ * integrity check passed it; the only symptom is a tab showing another tab's contents.
+ */
+function nextWorksheetPart(zip: JSZip): string {
+  const used = Object.keys(zip.files)
+    .map((name) => Number(/^xl\/worksheets\/sheet(\d+)\.xml$/.exec(name)?.[1] ?? 0));
+  return `xl/worksheets/sheet${Math.max(0, ...used) + 1}.xml`;
+}
+
 const INDEX_SHEET = "Contents";
 
 /**
@@ -2287,7 +2312,7 @@ const INDEX_SHEET = "Contents";
  * extension the workbook has, and a reader opening the `.xlsm` should not get a worse front page
  * than one opening the `.xlsx`.
  */
-async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill): Promise<void> {
+async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewSheet[] = []): Promise<void> {
   const workbookFile = zip.file("xl/workbook.xml");
   const relsFile = zip.file("xl/_rels/workbook.xml.rels");
   const typesFile = zip.file("[Content_Types].xml");
@@ -2296,6 +2321,7 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill): Promise<void>
   const workbook = await workbookFile.async("string");
   if (workbook.includes(`<sheet name="${INDEX_SHEET}"`)) return;
 
+  const indexPart = nextWorksheetPart(zip);
   const rels = await relsFile.async("string");
   const nextRel = Math.max(0, ...[...rels.matchAll(/Id="rId(\d+)"/g)].map((m) => Number(m[1]))) + 1;
   const nextSheetId = Math.max(0, ...[...workbook.matchAll(/sheetId="(\d+)"/g)].map((m) => Number(m[1]))) + 1;
@@ -2306,7 +2332,19 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill): Promise<void>
   const present = new Set(
     [...workbook.matchAll(/<sheet name="([^"]+)"/g)].map((m) => unescapeSheetName(m[1])),
   );
-  const sections = INDEX_SECTIONS
+  const sections = [
+    ...INDEX_SECTIONS,
+    // The Performance Review's sheets are built at export time from the month's own data, so they
+    // cannot sit in the literal above. They get their OWN band rather than being appended to
+    // "Behind the numbers": they answer a different question, and when the review is not included
+    // the band disappears with them instead of leaving a heading over nothing.
+    ...(extra.length > 0
+      ? [{
+          band: "Performance review",
+          entries: extra.map((sheet) => ({ sheet: sheet.name, what: sheet.what })),
+        }]
+      : []),
+  ]
     .map((section) => ({ ...section, entries: section.entries.filter((entry) => present.has(entry.sheet)) }))
     .filter((section) => section.entries.length > 0);
   if (sections.length === 0) return;
@@ -2371,13 +2409,13 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill): Promise<void>
   const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:B${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><selection activeCell="A1" sqref="A1"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="26" customWidth="1"/><col min="2" max="2" width="96" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait"/></worksheet>`;
 
-  zip.file(INDEX_PART, sheetXml);
+  zip.file(indexPart, sheetXml);
 
   zip.file(
     "[Content_Types].xml",
     (await typesFile.async("string")).replace(
       "</Types>",
-      `<Override PartName="/${INDEX_PART}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`,
+      `<Override PartName="/${indexPart}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`,
     ),
   );
 
@@ -2385,7 +2423,7 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill): Promise<void>
     "xl/_rels/workbook.xml.rels",
     rels.replace(
       "</Relationships>",
-      `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet14.xml"/></Relationships>`,
+      `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="${indexPart.replace("xl/", "")}"/></Relationships>`,
     ),
   );
 
@@ -2429,4 +2467,145 @@ function unescapeSheetName(value: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, "&");
+}
+
+/**
+ * Number formats taken from the engine's own catalogue, not invented.
+ *
+ * s43 is `#,##0;-#,##0;"—"` — thousands separated, and an em dash where a zero would otherwise read
+ * as "sold nothing". s44 is `0.0%`. s46 is `+0.0%;-0.0%;0.0%`, which signs a growth figure so a fall
+ * is unmistakable. Using the engine's own styles is what keeps these sheets looking like the ones
+ * beside them through any restyle of the template.
+ */
+const REVIEW_STYLE = { header: "8", money: "43", percent: "44", growth: "46", text: "9", title: "77", subtitle: "79", link: "81" } as const;
+
+/**
+ * Which format a column takes, decided by its HEADING.
+ *
+ * The heading is the only thing that travels with the value — the row arrives as bare numbers, and a
+ * ratio printed as `0.86` where the sheet beside it says `86.3%` is unreadable rather than wrong,
+ * which is the harder kind of defect to notice.
+ */
+function reviewColumnStyle(heading: string): string {
+  const name = heading.trim().toLowerCase();
+  if (name.startsWith("against the month before")) return REVIEW_STYLE.growth;
+  if (name.startsWith("achievement") || name.startsWith("share")) return REVIEW_STYLE.percent;
+  return REVIEW_STYLE.money;
+}
+
+/**
+ * Write the Performance Review's sheets into the workbook.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * APPENDED, NEVER INSERTED. These go on the END of the sheet list, and that is not a cosmetic
+ * choice: `localSheetId` on a defined name is a POSITION in that list, so a sheet added at the FRONT
+ * silently re-attaches every print area and print title to its neighbour. The contents page pays
+ * that cost deliberately and shifts them; these do not have to, so they do not.
+ *
+ * Each sheet opens with a link back to the contents page. They carry no drawing, so they get no
+ * navigation bar — the bar is built by cloning a button that exists on a sheet, and there is none
+ * here to clone. One link back is the honest substitute.
+ */
+async function addReviewSheets(zip: JSZip, sheets: ReviewSheet[]): Promise<ReviewSheet[]> {
+  if (sheets.length === 0) return [];
+
+  const workbookFile = zip.file("xl/workbook.xml");
+  const relsFile = zip.file("xl/_rels/workbook.xml.rels");
+  const typesFile = zip.file("[Content_Types].xml");
+  if (!workbookFile || !relsFile || !typesFile) return [];
+
+  let workbook = await workbookFile.async("string");
+  let rels = await relsFile.async("string");
+  let types = await typesFile.async("string");
+
+  // Next free part number, read from the package rather than assumed — the template numbers its
+  // worksheets by file name and the contents page has already taken one.
+  let nextPart = Number(/sheet(\d+)\.xml$/.exec(nextWorksheetPart(zip))?.[1] ?? 1);
+  let nextRel = Math.max(0, ...[...rels.matchAll(/Id="rId(\d+)"/g)].map((m) => Number(m[1]))) + 1;
+  let nextSheetId = Math.max(0, ...[...workbook.matchAll(/sheetId="(\d+)"/g)].map((m) => Number(m[1]))) + 1;
+
+  const existing = new Set(
+    [...workbook.matchAll(/<sheet name="([^"]+)"/g)].map((m) => unescapeSheetName(m[1])),
+  );
+  const written: ReviewSheet[] = [];
+
+  for (const sheet of sheets) {
+    // A name the engine already uses would put two identically named tabs in one file, and Excel
+    // would not open it. The review's Rep Ranking and Family Performance are exactly this case.
+    if (existing.has(sheet.name)) continue;
+
+    const part = `xl/worksheets/sheet${nextPart}.xml`;
+    const relId = `rId${nextRel}`;
+    const columns = sheet.headers.length;
+
+    const inline = (ref: string, style: string, value: string) =>
+      `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(xmlSafe(value))}</t></is></c>`;
+
+    const rows: string[] = [];
+    rows.push(`<row r="1" ht="33.95" customHeight="1">${inline("A1", REVIEW_STYLE.title, sheet.title)}</row>`);
+    rows.push(`<row r="2" ht="18" customHeight="1">${inline("A2", REVIEW_STYLE.subtitle, sheet.subtitle)}</row>`);
+    rows.push(
+      `<row r="3" ht="18" customHeight="1">`
+        + `<c r="A3" s="${REVIEW_STYLE.link}"><f>${xmlEscape(`HYPERLINK("#'${INDEX_SHEET}'!A1","◂ Contents")`)}</f></c>`
+        + "</row>",
+    );
+
+    rows.push(
+      `<row r="4" ht="21.95" customHeight="1">`
+        + sheet.headers.map((heading, index) => inline(`${columnLetters(index + 1)}4`, REVIEW_STYLE.header, heading)).join("")
+        + "</row>",
+    );
+
+    sheet.rows.forEach((record, index) => {
+      const rowNumber = 5 + index;
+      const cells = sheet.headers.map((heading, column) => {
+        const ref = `${columnLetters(column + 1)}${rowNumber}`;
+        const value = record[column] ?? null;
+        if (value === null || value === "") return `<c r="${ref}" s="${REVIEW_STYLE.text}"/>`;
+        if (typeof value === "number") {
+          return Number.isFinite(value)
+            ? `<c r="${ref}" s="${reviewColumnStyle(heading)}"><v>${value}</v></c>`
+            : `<c r="${ref}" s="${REVIEW_STYLE.text}"/>`;
+        }
+        return inline(ref, REVIEW_STYLE.text, String(value));
+      });
+      rows.push(`<row r="${rowNumber}">${cells.join("")}</row>`);
+    });
+
+    const lastRow = 4 + sheet.rows.length;
+    const cols = sheet.headers
+      .map((_heading, index) => `<col min="${index + 1}" max="${index + 1}" width="${sheet.widths[index] ?? 16}" customWidth="1"/>`)
+      .join("");
+
+    zip.file(
+      part,
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${columnLetters(columns)}${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A5" sqref="A5"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>${cols}</cols><sheetData>${rows.join("")}</sheetData><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`,
+    );
+
+    types = types.replace(
+      "</Types>",
+      `<Override PartName="/${part}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`,
+    );
+    rels = rels.replace(
+      "</Relationships>",
+      `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${nextPart}.xml"/></Relationships>`,
+    );
+    workbook = workbook.replace(
+      "</sheets>",
+      () => `<sheet name="${xmlEscape(sheet.name)}" sheetId="${nextSheetId}" r:id="${relId}"/></sheets>`,
+    );
+
+    existing.add(sheet.name);
+    written.push(sheet);
+    nextPart += 1;
+    nextRel += 1;
+    nextSheetId += 1;
+  }
+
+  if (written.length === 0) return [];
+  zip.file("xl/workbook.xml", workbook);
+  zip.file("xl/_rels/workbook.xml.rels", rels);
+  zip.file("[Content_Types].xml", types);
+  return written;
 }
