@@ -50,9 +50,9 @@
  */
 
 import ExcelJS from "exceljs";
-import { HOUSE_XLSX_DISPLAY_FONT, HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
+import { HOUSE_XLSX_DISPLAY_FONT, HOUSE_XLSX_FONT, HOUSE_XLSX_MONO_FONT } from "@/lib/export/house-xlsx-palette";
 
-import { systemDocuments } from "@/config/system-settings";
+import { systemDocuments, systemLegalEntity } from "@/config/system-settings";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveEmployeeMasterExportSalary } from "@/lib/employees/employee-master-export";
 import {
@@ -669,7 +669,7 @@ function addStartHereSheet(workbook: ExcelJS.Workbook, recordCount: number, last
   writeHouseMasthead(workbook, sheet, {
     title: "Employee Master — Start Here",
     subtitle: "What this file is, how to fill it in, and what will stop it from uploading.",
-    provenance: [`${recordCount} record${recordCount === 1 ? "" : "s"}`, "Sato Pharma · Phoenix"],
+    provenance: [`${recordCount} record${recordCount === 1 ? "" : "s"}`, systemLegalEntity.legalNameEn],
     columns: 3,
   });
 
@@ -793,7 +793,7 @@ function addFieldGuideSheet(workbook: ExcelJS.Workbook) {
   writeHouseMasthead(workbook, sheet, {
     title: "Field Guide",
     subtitle: "Every column on the Employee Master sheet, and what the upload does with it.",
-    provenance: [`${columns.length} columns`, "Sato Pharma · Phoenix"],
+    provenance: [`${columns.length} columns`, systemLegalEntity.legalNameEn],
     columns: widths.length,
   });
 
@@ -855,7 +855,7 @@ function addUploadRulesSheet(workbook: ExcelJS.Workbook) {
   writeHouseMasthead(workbook, sheet, {
     title: "Upload Rules",
     subtitle: "What the server checks, what it calls each result, and whether it stops the row.",
-    provenance: ["Employee import", "Sato Pharma · Phoenix"],
+    provenance: ["Employee import", systemLegalEntity.legalNameEn],
     columns: widths.length,
   });
 
@@ -915,7 +915,7 @@ function addUploadRulesSheet(workbook: ExcelJS.Workbook) {
       name: HOUSE_XLSX_FONT,
       size: 9,
     };
-    row.getCell(2).font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: "Consolas", size: 8.5 };
+    row.getCell(2).font = { color: { argb: HOUSE_XLSX_COLORS.muted }, name: HOUSE_XLSX_MONO_FONT, size: 8.5 };
     row.height = 18;
   });
 
@@ -948,7 +948,7 @@ function addReferenceDataSheet(workbook: ExcelJS.Workbook, lookups: MasterLookup
   writeHouseMasthead(workbook, sheet, {
     title: "Reference Data",
     subtitle: "The live lists behind the dropdowns, as they stood when this file was generated.",
-    provenance: [`${lookups.areas.length} areas`, "Sato Pharma · Phoenix"],
+    provenance: [`${lookups.areas.length} areas`, systemLegalEntity.legalNameEn],
     columns: blocks.length,
   });
 
