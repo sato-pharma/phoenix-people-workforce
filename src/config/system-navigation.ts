@@ -3,6 +3,7 @@ import {
   Archive,
   BellRing,
   BookUser,
+  Briefcase,
   BriefcaseBusiness,
   Building2,
   CalendarCheck,
@@ -475,6 +476,27 @@ export const adminNavigationSectionSeeds = [
       // he keeps leave:create and reaches the identical page through the new button.
       { href: "/workspace/leave-management/vacation-request", icon: CalendarCheck, label: "Request Vacation", permissions: [{ resource: "leave", action: "create" }], roles: adminShellEmployeeRoles, excludedRoles: ["Finance Manager"] },
       { href: "/workspace/excuses", icon: CalendarClock, label: "Submit Excuse", roles: adminShellEmployeeRoles, excludedRoles: ["Finance Manager"] },
+      // The DOOR to the personal workspace (owner, 2026-09-05). The fifteen pages about a person's
+      // own record — payslip, incentive, deductions, vacation balance, fingerprint, plans, expenses
+      // — got a real home on 2026-08-30 (personalWorkspaceTabs, rendered as a tab strip inside the
+      // workspace frame), but the only way IN was the account menu in the topbar. Everything worked
+      // and nothing advertised it. This is that door, on the rail, beside the two workspace pages
+      // that already had rows.
+      //
+      // NOT the fifteen pages as fifteen rows, deliberately: the same day this shipped, the rail
+      // was rebalanced specifically to stop a domain being a wall of rows, and the strip on the
+      // other side of this link already lists all fifteen with their own groups.
+      //
+      // THE GATE MIRRORS THE PAGE, INCLUDING ITS SECOND HALF. WorkspaceDashboardPage asks
+      // requireAdminShellEmployeeWorkspaceAccess({ resource: "employee_profile" }) and THEN
+      // redirects any HR-bundle seat to /hr/admin/hr-command-center — so HR Advisory and HR
+      // Operations are in `adminShellEmployeeRoles` and still never see this page. Naming the three
+      // roles rather than reusing that list is what keeps them off the row; giving them one would
+      // be a link that throws them somewhere else, which reads as the app malfunctioning rather
+      // than as "not for you". They lose nothing: both seats reach the same personal pages through
+      // the /hr namespace's own "My Pages" strip. Super Admin passes by the waiver in
+      // navigationItemVisible, exactly as canAccessAdminShellEmployeeWorkspacePage lets him past.
+      { href: "/workspace", icon: Briefcase, label: "My Workspace", permissions: [{ resource: "employee_profile" }], roles: ["SFE Manager", "Finance Manager", "Financial Advisor"] },
     ],
     // This section was born headless (it postdates the pre-2026-08-02 sidebar, so it has no
     // "before" to restore). Given a title on 2026-08-08 so it is not the one unlabelled block
