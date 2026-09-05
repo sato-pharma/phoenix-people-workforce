@@ -710,7 +710,7 @@ function writeProductStrip(
     ] as const).forEach(([target, label, fill]) => {
       const c = target.getCell(1);
       c.value = label;
-      c.font = { bold: true, color: { argb: MUTED_WARM }, name: HOUSE_XLSX_FONT, size: 7.5 };
+      c.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: 7.5 };
       paint(c, fill);
       c.alignment = { horizontal: "center", vertical: "middle" };
     });
@@ -719,7 +719,7 @@ function writeProductStrip(
       const col = 2 + index;
       const name = nameRow.getCell(col);
       name.value = product.label;
-      name.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 8 };
+      name.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: 8 };
       paint(name, BONE);
       name.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
       name.border = { bottom: rule(INK_SOFT), ...(index > 0 ? { left: rule(HAIRLINE) } : {}) };
@@ -794,7 +794,12 @@ const MUTED_WARM = HOUSE_XLSX_COLORS.muted; // secondary text
 const MUTED_ON_INK = HOUSE_XLSX_COLORS.muted;
 const CREAM = NO_FILL; // the page ground is the paper — the ink rule spends its fill on the zebra
 const CREAM_ALT = HOUSE_XLSX_COLORS.tint; // alternating row tint: Brand Blue at 6%, still barely there
-const BONE = NO_FILL; // column headers are TYPE UNDER A RULE now, so their ground is the page
+// The column-header ground. It was the warm bone, then NO_FILL under the ink rule, and is now the
+// Brand Blue band — the treatment every other export took on 2026-09-05. The original note here
+// said a second DARK band fought the block title above and the total below; that judgement was
+// about weight and it still holds, which is why this is the mid blue rather than the deep the
+// block titles use. Anything painted with it takes WHITE type: deep on blue is unreadable.
+const BONE = HOUSE_XLSX_COLORS.blue;
 const HAIRLINE = HOUSE_XLSX_COLORS.hair; // the only rule colour used inside tables
 const ACCENT = HOUSE_XLSX_COLORS.blue; // the accent rule and nothing else — unchanged in role
 const CLAY = HOUSE_XLSX_COLORS.deep; // total rows: the single close to each block, now by weight
@@ -1076,7 +1081,7 @@ function writeRegionProductBlock(
   sheet.mergeCells(row, 1, row + 1, 1);
   const regionHead = productHeader.getCell(1);
   regionHead.value = "REGION";
-  regionHead.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 9 };
+  regionHead.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: 9 };
   paint(regionHead, BONE);
   regionHead.alignment = { horizontal: "center", vertical: "middle" };
   regionHead.border = { bottom: rule(INK_SOFT) };
@@ -1086,7 +1091,7 @@ function writeRegionProductBlock(
   sheet.mergeCells(row, PAGE_COLS, row + 1, PAGE_COLS);
   const trendHead = productHeader.getCell(PAGE_COLS);
   trendHead.value = "TREND";
-  trendHead.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 9 };
+  trendHead.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: 9 };
   paint(trendHead, BONE);
   trendHead.alignment = { horizontal: "center", vertical: "middle" };
   trendHead.border = { bottom: rule(INK_SOFT), left: rule(HAIRLINE) };
@@ -1101,7 +1106,7 @@ function writeRegionProductBlock(
     const head = productHeader.getCell(from);
     head.value = product.label;
     // Warm bone, ink type. A second dark band here fought the block title above and the total below.
-    head.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 10.5 };
+    head.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: 10.5 };
     paint(head, BONE);
     head.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     // Hairline between products, so the eye can separate them without a full grid.
@@ -1110,7 +1115,7 @@ function writeRegionProductBlock(
     ([["UNITS", unitsCell], ["STOCK", stockCell]] as const).forEach(([label, cellIndex]) => {
       put(subHeader, cellIndex, (c) => {
         c.value = label;
-        c.font = { bold: true, color: { argb: MUTED_WARM }, name: HOUSE_XLSX_FONT, size: 7.5 };
+        c.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: 7.5 };
         paint(c, BONE);
         c.alignment = { horizontal: "center", vertical: "middle" };
         c.border = { bottom: rule(INK_SOFT), ...(cellIndex === unitsCell && index > 0 ? { left: rule(HAIRLINE) } : {}) };
@@ -1676,7 +1681,7 @@ function writeManagerAreaBlock(
   sheet.mergeCells(row, 1, row + 1, 1);
   const areaHead = productHeader.getCell(1);
   areaHead.value = isArea ? "AREA" : "BRANCH";
-  areaHead.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 9 };
+  areaHead.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: 9 };
   paint(areaHead, BONE);
   areaHead.alignment = { horizontal: "center", vertical: "middle" };
   areaHead.border = { bottom: rule(INK_SOFT) };
@@ -1685,7 +1690,7 @@ function writeManagerAreaBlock(
   sheet.mergeCells(row, MGR_PAGE_COLS, row + 1, MGR_PAGE_COLS);
   const trendHead = productHeader.getCell(MGR_PAGE_COLS);
   trendHead.value = "TREND";
-  trendHead.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 9 };
+  trendHead.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: 9 };
   paint(trendHead, BONE);
   trendHead.alignment = { horizontal: "center", vertical: "middle" };
   trendHead.border = { bottom: rule(INK_SOFT), left: rule(HAIRLINE) };
@@ -1697,7 +1702,7 @@ function writeManagerAreaBlock(
     sheet.mergeCells(row, cellRange(unitsCell).from, row, cellRange(stockCell).to);
     const head = productHeader.getCell(cellRange(unitsCell).from);
     head.value = product.label;
-    head.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 10.5 };
+    head.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: 10.5 };
     paint(head, BONE);
     head.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     head.border = { left: rule(index > 0 ? HAIRLINE : INK_SOFT) };
@@ -1705,7 +1710,7 @@ function writeManagerAreaBlock(
     ([["UNITS", unitsCell], ["STOCK", stockCell]] as const).forEach(([label, i]) => {
       put(subHeader, i, (c) => {
         c.value = label;
-        c.font = { bold: true, color: { argb: MUTED_WARM }, name: HOUSE_XLSX_FONT, size: 7.5 };
+        c.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: 7.5 };
         paint(c, BONE);
         c.alignment = { horizontal: "center", vertical: "middle" };
         c.border = { bottom: rule(INK_SOFT), ...(i === unitsCell ? { left: rule(index > 0 ? HAIRLINE : INK_SOFT) } : {}) };
@@ -1988,7 +1993,7 @@ function writeProductDistributorBlock(
   sheet.mergeCells(row, 1, row + 1, 1);
   const productHead = header.getCell(1);
   productHead.value = "PRODUCT";
-  productHead.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 9 };
+  productHead.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: 9 };
   paint(productHead, BONE);
   productHead.alignment = { horizontal: "center", vertical: "middle" };
   productHead.border = { bottom: rule(INK_SOFT) };
@@ -1999,7 +2004,7 @@ function writeProductDistributorBlock(
     sheet.mergeCells(row, unitsCol, row, unitsCol + 1);
     const head = header.getCell(unitsCol);
     head.value = dist.label;
-    head.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 10.5 };
+    head.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: 10.5 };
     paint(head, BONE);
     head.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     head.border = { left: rule(i > 0 ? HAIRLINE : INK_SOFT) };
@@ -2007,7 +2012,7 @@ function writeProductDistributorBlock(
     ([[labels.unitsLabel, unitsCol], [labels.stockLabel, unitsCol + 1]] as const).forEach(([text, c], k) => {
       const sub = subHeader.getCell(c);
       sub.value = text.toUpperCase();
-      sub.font = { bold: true, color: { argb: MUTED_WARM }, name: HOUSE_XLSX_FONT, size: 7.5 };
+      sub.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: 7.5 };
       paint(sub, BONE);
       sub.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
       sub.border = { bottom: rule(INK_SOFT), ...(k === 0 ? { left: rule(i > 0 ? HAIRLINE : INK_SOFT) } : {}) };
@@ -2287,7 +2292,7 @@ function buildLowSalesSheet(
     ).forEach(([label, width], i) => {
       const cell = header.getCell(i + 1);
       cell.value = label;
-      cell.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 9 };
+      cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: 9 };
       paint(cell, BONE);
       cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
       cell.border = { bottom: rule(INK_SOFT), ...(i >= 4 ? { left: rule(HAIRLINE) } : {}) };
@@ -2770,7 +2775,7 @@ function buildVsTargetSheet(
     ).forEach(([label, width], i) => {
       const cell = header.getCell(i + 1);
       cell.value = label;
-      cell.font = { bold: true, color: { argb: INK }, name: HOUSE_XLSX_FONT, size: 9 };
+      cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: 9 };
       paint(cell, BONE);
       cell.alignment = { horizontal: i === 0 ? "left" : "center", indent: i === 0 ? 1 : 0, vertical: "middle", wrapText: true };
       cell.border = { bottom: rule(INK_SOFT), ...(i >= 1 ? { left: rule(HAIRLINE) } : {}) };

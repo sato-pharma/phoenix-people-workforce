@@ -456,22 +456,37 @@ export async function runClosingPerformanceReviewTests() {
 
   // ── (10) THE HOUSE IDENTITY, ASSERTED ON THE EMITTED FILE ──────────────────
   //
-  // The ink rule is the one part of SATO-DIS-2026-01 a reader cannot check by eye. A navy band is
-  // obvious, but a 6%-tint region wash down five columns of every row is nearly invisible on screen
-  // and survives review — which is how it lived here for months. So this counts every solid fill in
-  // the emitted workbook and names any that is neither of the two the standard allows: the Brand
-  // Blue masthead rule, and the zebra row.
+  // A 6%-tint region wash down five columns of every row is nearly invisible on screen and survives
+  // review — which is how it lived here for months. So this counts every solid fill in the emitted
+  // workbook and names any outside the closed set below.
+  //
+  // THE SET GREW BY ONE ON 2026-09-05, deliberately and at the owner's instruction. The header was
+  // type on white under a rule; on a sheet whose product grids run to twenty-odd columns that does
+  // not separate a header from its data, and he said so looking at a real export. The rule it came
+  // from measures PAGE COVERAGE and was written for contracts that print in volume — it is a rule
+  // about paper, and this is read on screen. So a header band is now allowed and NOTHING ELSE IS:
+  // the region wash this test was written to catch is still a failure, and so is any other slab.
   //
   // It reads the FILE, not the source, because the file is the only place the fills exist.
   const fills = await workbookFills(buffer);
-  const allowed = new Set<string>([HOUSE_XLSX_COLORS.blue, HOUSE_XLSX_COLORS.tint]);
+  const allowed = new Set<string>([
+    HOUSE_XLSX_COLORS.blue, // the masthead rule, and the column-header band
+    HOUSE_XLSX_COLORS.light, // the lighter band on a grouping strip above a header
+    HOUSE_XLSX_COLORS.tint, // the 6% zebra row
+  ]);
   const strays = fills.filter((entry) => !allowed.has(entry.argb));
   assert.deepEqual(
     strays.slice(0, 6),
     [],
-    "the ink rule: colour is carried by lines and type, never by filled area. The only fills this " +
-      "workbook may carry are the Brand Blue masthead rule and the 6% zebra row. " +
-      `Found ${strays.length} other filled cell(s).`,
+    "colour is carried by lines, type and the header band — never by a slab behind the data. This " +
+      "workbook may carry only the Brand Blue rule and header, the lighter grouping band, and the " +
+      `6% zebra row. Found ${strays.length} other filled cell(s).`,
+  );
+
+  // The header band is really there, so widening the set above cannot have hidden its absence.
+  assert.ok(
+    fills.some((entry) => entry.argb === HOUSE_XLSX_COLORS.blue && entry.row > 5),
+    "the column headers carry the Brand Blue band, not just the masthead rule on row 5",
   );
 
   // ...and the two that ARE allowed are really there, so the assertion above cannot pass by the
