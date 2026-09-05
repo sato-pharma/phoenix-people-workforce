@@ -316,6 +316,32 @@ export async function runRepoDoctorXlsxSnapshotTests() {
       );
     }
     assert.match(manifest, /Holds\s+: 3 file\(s\) in this folder; this run added 1/);
+
+    // And a QUIET run must reconcile a stale manifest. This is the case that actually bit: the
+    // live backup's manifest was wrong, and the repair run copied nothing, took the early return
+    // before any manifest was written, and left the record exactly as wrong as it found it. No
+    // other path would ever have fixed it - a wrong manifest was only rewritten when a new file
+    // happened to appear.
+    writeFileSync(join(oneDir, "MANIFEST.txt"), "stale - written by some earlier run\n");
+    const quiet = takeXlsxSnapshot({ repoRoot: mRepo, snapshotRoot: mRoot, now: day });
+    assert.equal(quiet.dir, null, "a run with nothing to copy still creates no directory");
+    assert.equal(quiet.manifestHolds, 3, "the quiet run must reconcile the manifest it found");
+
+    const healed = readFileSync(join(oneDir, "MANIFEST.txt"), "utf8");
+    for (const name of onDisk) {
+      assert.ok(healed.includes(name), `the reconciled manifest must list ${name}`);
+    }
+    assert.match(healed, /Holds\s+: 3 file\(s\) in this folder; this run added 0/);
+
+    // Reconciling must never CREATE a folder. A day with no snapshot is not a day to invent one.
+    const otherDay = takeXlsxSnapshot({ repoRoot: mRepo, snapshotRoot: mRoot, now: Date.UTC(2026, 8, 9) });
+    assert.equal(otherDay.dir, null);
+    assert.equal(otherDay.manifestHolds, 0, "no folder for that day, so nothing to reconcile");
+    assert.equal(
+      readdirSync(mRoot).filter((n) => n.includes("2026-09-09")).length,
+      0,
+      "a quiet run on a fresh day must not create an empty snapshot folder",
+    );
   } finally {
     rmSync(mRepo, { recursive: true, force: true });
     rmSync(mRoot, { recursive: true, force: true });

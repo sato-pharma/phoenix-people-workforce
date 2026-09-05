@@ -228,6 +228,43 @@ const MANIFEST_NAME = "MANIFEST.txt";
 const sha256 = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 
 /**
+ * Write MANIFEST.txt describing THE FOLDER, not the run that happened to call this.
+ *
+ * Re-running on the same day reuses that day's directory, so a manifest built from the current
+ * run's copies silently drops every file an earlier run put there. Measured 2026-09-05: the base
+ * folder held 109 files while its own manifest listed 4, under a heading calling it the full base.
+ * Coverage is computed from real directory contents, so the BACKUP was never at risk — but the
+ * manifest is the audit record, and one that under-reports by 105 files invites the reader to
+ * conclude the backup is nearly empty.
+ */
+function writeManifest({ dir, repoRoot, now, added }) {
+  const held = statEntries(dir)
+    .filter((e) => e.name !== MANIFEST_NAME)
+    .map((e) => ({ name: e.name, bytes: e.bytes, hash: sha256(path.join(dir, e.name)) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const manifest = [
+    "xlsx/ snapshot — untracked working files from the Phoenix Workforce repo",
+    `Taken     : ${new Date(now).toISOString()}`,
+    `Source    : ${path.join(repoRoot, "xlsx")}`,
+    `Holds     : ${held.length} file(s) in this folder; this run added ${added}`,
+    "",
+    "WHY THIS EXISTS: .gitignore ignores *.xlsx, so none of these files are in git. Written by",
+    "scripts/repo-doctor-xlsx-snapshot.mjs — see that file's header for the incident behind it.",
+    "",
+    "THIS IS A DELTA. It holds only the files no earlier snapshot already held. To restore, apply",
+    "every xlsx-snapshot-* folder in DATE ORDER, oldest first, letting the newest copy of each file",
+    "win. xlsx-snapshot-2026-09-05 is the full base.",
+    "",
+    "SHA256                                                            BYTES  NAME",
+    "----------------------------------------------------------------------------",
+    ...held.map((r) => `${r.hash}  ${String(r.bytes).padStart(9)}  ${r.name}`),
+  ].join("\n");
+  fs.writeFileSync(path.join(dir, MANIFEST_NAME), `${manifest}\n`);
+  return held.length;
+}
+
+/**
  * Copy the untracked spreadsheets that NO existing snapshot holds into a dated one, VERIFY each,
  * then write a manifest.
  *
@@ -254,10 +291,19 @@ export function takeXlsxSnapshot({ repoRoot, snapshotRoot, now = Date.now() }) {
   // the report, and the report is what tells anyone whether to trust the backup.
   const existing = (readSnapshots(snapshotRoot) ?? []).flatMap((snap) => snap.entries);
   const files = all.filter((f) => !isCovered(f, existing));
-  if (files.length === 0) return { dir: null, copied: 0, skipped: all.length, verified: 0, mismatched: [] };
 
   const stamp = new Date(now).toISOString().slice(0, 10);
   const dir = path.join(snapshotRoot, `${SNAPSHOT_DIR_PREFIX}${stamp}`);
+
+  if (files.length === 0) {
+    // Nothing to copy — but an earlier run TODAY may have left a manifest describing only itself,
+    // and no other code path will ever repair it: a wrong manifest is only rewritten when a new
+    // file happens to appear. Reconcile it here so the record self-heals on the next quiet run.
+    // Creates nothing: a day with no snapshot folder stays a day with no snapshot folder.
+    const manifestHolds = fs.existsSync(dir) ? writeManifest({ dir, repoRoot, now, added: 0 }) : 0;
+    return { dir: null, copied: 0, skipped: all.length, verified: 0, mismatched: [], manifestHolds };
+  }
+
   fs.mkdirSync(dir, { recursive: true });
 
   const rows = [];
@@ -274,35 +320,7 @@ export function takeXlsxSnapshot({ repoRoot, snapshotRoot, now = Date.now() }) {
     rows.push({ name: f.name, bytes: f.bytes, hash: a });
   }
 
-  // The manifest must describe THE FOLDER, not just this run. Re-running on the same day reuses
-  // that day's directory, so a manifest built from `rows` alone silently drops every file an
-  // earlier run put there. Measured 2026-09-05: the base folder held 109 files while its own
-  // manifest listed 4 — under a heading calling it the full base. Coverage is computed from real
-  // directory contents, so the BACKUP was never at risk; the manifest is the audit record, and one
-  // that under-reports by 105 files invites the reader to conclude the backup is nearly empty.
-  const held = statEntries(dir)
-    .filter((e) => e.name !== MANIFEST_NAME)
-    .map((e) => ({ name: e.name, bytes: e.bytes, hash: sha256(path.join(dir, e.name)) }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  const manifest = [
-    "xlsx/ snapshot — untracked working files from the Phoenix Workforce repo",
-    `Taken     : ${new Date(now).toISOString()}`,
-    `Source    : ${path.join(repoRoot, "xlsx")}`,
-    `Holds     : ${held.length} file(s) in this folder; this run added ${rows.length}`,
-    "",
-    "WHY THIS EXISTS: .gitignore ignores *.xlsx, so none of these files are in git. Written by",
-    "scripts/repo-doctor-xlsx-snapshot.mjs — see that file's header for the incident behind it.",
-    "",
-    "THIS IS A DELTA. It holds only the files no earlier snapshot already held. To restore, apply",
-    "every xlsx-snapshot-* folder in DATE ORDER, oldest first, letting the newest copy of each file",
-    "win. xlsx-snapshot-2026-09-05 is the full base.",
-    "",
-    "SHA256                                                            BYTES  NAME",
-    "----------------------------------------------------------------------------",
-    ...held.map((r) => `${r.hash}  ${String(r.bytes).padStart(9)}  ${r.name}`),
-  ].join("\n");
-  fs.writeFileSync(path.join(dir, MANIFEST_NAME), `${manifest}\n`);
+  const holds = writeManifest({ dir, repoRoot, now, added: rows.length });
 
   return {
     dir,
@@ -310,6 +328,7 @@ export function takeXlsxSnapshot({ repoRoot, snapshotRoot, now = Date.now() }) {
     skipped: all.length - files.length,
     verified: files.length - mismatched.length,
     mismatched,
+    manifestHolds: holds,
   };
 }
 
@@ -360,7 +379,12 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
 
   const result = takeXlsxSnapshot({ repoRoot, snapshotRoot });
   if (result.dir === null) {
-    console.log(`${stamp} OK — nothing new; all ${result.skipped} sheet(s) are already in a snapshot.`);
+    const also = result.manifestHolds
+      ? ` Manifest reconciled: ${result.manifestHolds} file(s) in today's folder.`
+      : "";
+    console.log(
+      `${stamp} OK — nothing new; all ${result.skipped} sheet(s) are already in a snapshot.${also}`,
+    );
     process.exit(0);
   }
   console.log(
