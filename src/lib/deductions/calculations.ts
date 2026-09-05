@@ -2,7 +2,14 @@
 // Ported from deductions-governance/calculations.ts.
 
 import { calendarDaysInMonth } from "@/lib/payroll/copilot/proration.ts";
-import type { DeductionsCategory, DeductionsCategoryConfig, DeductionsSalaryRecordsColumn } from "./types.ts";
+import { deductionsCalculationStatuses, deductionsUnits } from "./types.ts";
+import type {
+  DeductionsCalculationStatus,
+  DeductionsCategory,
+  DeductionsCategoryConfig,
+  DeductionsSalaryRecordsColumn,
+  DeductionsUnit,
+} from "./types.ts";
 
 // Static mirror of the deductions_categories seed rows (20260725115137_deductions_module.sql).
 // Kept as a pure, synchronous lookup — same convention the legacy module used for
@@ -73,6 +80,63 @@ export const DEDUCTIONS_CATEGORY_CONFIG: Record<DeductionsCategory, DeductionsCa
 
 export function deductionsCategoryLabel(category: DeductionsCategory): string {
   return DEDUCTIONS_CATEGORY_CONFIG[category].label;
+}
+
+/**
+ * The two enums a reader meets on a deduction export, in words.
+ *
+ * The detail sheets printed the stored values — `days`, `requires_review` — straight out of the
+ * database, beside columns already written for a person. That is the same defect as a raw HR code
+ * on a screen: it reads as a table dump rather than a document, and `requires_review` is precisely
+ * the row a reviewer most needs to notice.
+ *
+ * `sourceSystem` is deliberately NOT here. Its values — `crm_visits_mirror`, `holiday_bridge`,
+ * `fingerprint_report` — are provenance identifiers, and an audit reader wants the exact string
+ * that was recorded. Prettifying an identifier is how a workbook stops being traceable back to
+ * whatever produced it.
+ *
+ * DECISION STATUS is not here either, and needs no helper: `deductionsDecisionStatuses` is already
+ * written in words ("Approved for Payroll", "Do Not Take Action"). A pass-through map for it would
+ * only be a second place to keep the same strings in step.
+ */
+const DEDUCTIONS_UNIT_LABELS: Record<DeductionsUnit, string> = {
+  amount: "Amount",
+  days: "Days",
+};
+
+const DEDUCTIONS_CALCULATION_STATUS_LABELS: Record<DeductionsCalculationStatus, string> = {
+  calculated: "Calculated",
+  requires_review: "Requires review",
+};
+
+/** "Days" / "Amount" — what this row's `rawValue` is counted in. */
+export function deductionsUnitLabel(unit: DeductionsUnit): string {
+  return DEDUCTIONS_UNIT_LABELS[unit] ?? unit;
+}
+
+/** "Calculated" / "Requires review" — whether the amount could be worked out. */
+export function deductionsCalculationStatusLabel(status: DeductionsCalculationStatus): string {
+  return DEDUCTIONS_CALCULATION_STATUS_LABELS[status] ?? status;
+}
+
+/**
+ * Every enum member has a label.
+ *
+ * An exhaustive `Record` does NOT gate the build here — `ignoreBuildErrors` lets a missing key
+ * compile, build and deploy, and the cell would then print `undefined` on a payroll document. The
+ * `??` fallbacks above stop that being blank; this stops it shipping at all. Called by the
+ * registered test, never at import time: a missing label is a developer error, and throwing on
+ * import would take down the deductions module in production over it.
+ */
+export function assertEveryDeductionsEnumIsLabelled(): void {
+  for (const unit of deductionsUnits) {
+    if (!DEDUCTIONS_UNIT_LABELS[unit]) throw new Error(`Deductions unit "${unit}" has no label.`);
+  }
+  for (const status of deductionsCalculationStatuses) {
+    if (!DEDUCTIONS_CALCULATION_STATUS_LABELS[status]) {
+      throw new Error(`Deductions calculation status "${status}" has no label.`);
+    }
+  }
 }
 
 export function deductionsCategoryRequiresApproval(category: DeductionsCategory): boolean {

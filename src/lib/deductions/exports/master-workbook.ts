@@ -31,7 +31,9 @@ import { houseGeneratedRow } from "@/lib/export/house-xlsx-identity";
 import { sanitizeSheetName } from "@/lib/export/phoenix-xlsx-style";
 import {
   DEDUCTIONS_CATEGORY_CONFIG,
+  deductionsCalculationStatusLabel,
   deductionsCategoryLabel,
+  deductionsUnitLabel,
   isEligibleForPublish,
   resolveAppliedDeductionDates,
   resolvePublishedAppliedAmount,
@@ -263,10 +265,10 @@ function detailRow(
     org?.managerName ?? "",
     candidate.hireDate ?? "",
     candidate.monthKey,
-    candidate.unit,
+    deductionsUnitLabel(candidate.unit),
     candidate.rawValue,
     money(candidate.estimatedAmount),
-    candidate.calculationStatus,
+    deductionsCalculationStatusLabel(candidate.calculationStatus),
     candidate.severity ?? "",
     candidate.reason ?? "",
     joinDates(candidate.dates),
