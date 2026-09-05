@@ -3,6 +3,14 @@ import path from "node:path";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import {
+  BATCH_CASCADE_CHILD_TABLES,
+  LINKED_RUN_STEP_TABLE,
+  assertBackupCoversCascade,
+  classifyDirectCleanupBatches,
+  cleanupSafetyBanner,
+} from "../src/lib/sales/direct-cleanup-safety.ts";
+
 type Options = Record<string, string | boolean>;
 type SupabaseQueryResult = {
   count?: number | null;
@@ -30,9 +38,7 @@ Commands:
   apply   --backup-dir outputs/sos-direct-cleanup-backup --apply --confirm-production-delete
 
 Notes:
-  - preview is read-only.
-  - apply refuses to run without both --apply and --confirm-production-delete.
-  - apply backs up affected batches, rows, summaries, and linked monthly runs before deletion.
+${cleanupSafetyBanner()}
   - if affected batches contain only Direct rows, apply deletes those batches and lets row/summary cascades run.
   - if affected batches contain mixed rows, apply deletes only Direct rows and keeps the mixed batches.
 `);
@@ -120,13 +126,30 @@ async function countRows(supabase: SupabaseClient, table: string, build: Supabas
   return count ?? 0;
 }
 
-async function maybeFetchByBatchIds<T>(supabase: SupabaseClient, table: string, batchIds: string[]): Promise<T[]> {
+// Fetch every row of `table` linked to these batches.
+//
+// This used to swallow "does not exist" and return [], which is precisely how the backup came to be
+// silently incomplete: it read `monthly_sales_runs`, a table that has never existed, caught the
+// error, returned nothing, and printed a count of 0 — indistinguishable from "there were none to
+// back up". A missing table is now fatal, because on this path an empty result and an absent table
+// have opposite meanings and only one of them is safe to delete against.
+//
+// PostgREST answers a missing table with PGRST205, not 42P01, so both spellings are treated as one
+// set — see AGENTS.md §2.1.
+async function fetchByBatchIds<T>(supabase: SupabaseClient, table: string, batchIds: string[]): Promise<T[]> {
   if (batchIds.length === 0) return [];
   try {
     return await fetchAll<T>(supabase, table, "*", (query) => query.in("batch_id", batchIds));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (message.includes("does not exist") || message.includes("Could not find the table")) return [];
+    if (message.includes("does not exist") || message.includes("Could not find the table") || message.includes("PGRST205")) {
+      throw new Error(
+        `${table} does not exist, so the cleanup cannot prove what it is about to delete. ` +
+          `Refusing rather than backing up nothing and reporting success. ` +
+          `(If this table was renamed, fix BATCH_CASCADE_CHILD_TABLES / LINKED_RUN_STEP_TABLE in ` +
+          `src/lib/sales/direct-cleanup-safety.ts against pg_constraint — never by guessing a name.)`,
+      );
+    }
     throw error;
   }
 }
@@ -157,10 +180,24 @@ async function buildSnapshot(supabase: SupabaseClient) {
       "*",
       (query) => query.in("id", directBatchIds).order("period", { ascending: true }),
     );
-  const [affectedBatchRows, summaries, monthlyRuns, directBatchCount, directRowCount, isDirectRowCount, directAreaRowCount, nationalRowCount] = await Promise.all([
-    maybeFetchByBatchIds<Record<string, unknown>>(supabase, "source_of_sales_import_rows", directBatchIds),
-    maybeFetchByBatchIds<Record<string, unknown>>(supabase, "source_of_sales_import_summaries", directBatchIds),
-    maybeFetchByBatchIds<Record<string, unknown>>(supabase, "monthly_sales_runs", directBatchIds),
+  // Back up EVERY table the database removes by itself, plus the linked run steps whose FK is
+  // SET NULL. Previously only rows + summaries were captured and five rollup tables were destroyed
+  // by cascade into no backup at all.
+  const cascade: Record<string, Array<Record<string, unknown>>> = {};
+  for (const table of [...BATCH_CASCADE_CHILD_TABLES, LINKED_RUN_STEP_TABLE]) {
+    cascade[table] = await fetchByBatchIds<Record<string, unknown>>(supabase, table, directBatchIds);
+  }
+  const cascadeRowCounts = Object.fromEntries(
+    Object.entries(cascade).map(([table, rows]) => [table, rows.length]),
+  ) as Record<string, number>;
+
+  const [affectedBatchRows, summaries, monthlyRuns] = [
+    cascade["source_of_sales_import_rows"] ?? [],
+    cascade["source_of_sales_import_summaries"] ?? [],
+    cascade[LINKED_RUN_STEP_TABLE] ?? [],
+  ];
+
+  const [directBatchCount, directRowCount, isDirectRowCount, directAreaRowCount, nationalRowCount] = await Promise.all([
     countRows(supabase, "source_of_sales_import_batches", (query) => query.ilike("distributor_code", "DIRECT")),
     countRows(supabase, "source_of_sales_import_rows", (query) => query.ilike("distributor_code", "DIRECT")),
     countRows(supabase, "source_of_sales_import_rows", (query) => query.eq("is_direct", true)),
@@ -174,6 +211,8 @@ async function buildSnapshot(supabase: SupabaseClient) {
   const deletionMode = nonDirectRowsInAffectedBatches.length === 0 ? "delete_batches" : "delete_direct_rows_only";
 
   return {
+    cascade,
+    cascadeRowCounts,
     counts: {
       affectedBatchCount: directBatches.length,
       affectedBatchTotalRowCount: affectedBatchRows.length,
@@ -250,12 +289,44 @@ async function apply(options: Options) {
 
   const supabase = supabaseClient();
   const snapshot = await buildSnapshot(supabase);
-  const batchIds = snapshot.directBatches.map((batch) => String(batch.id));
+
+  // ── GUARD 1: never delete the live vintage ───────────────────────────────────────────────────
+  // The row filter matches on `is_direct`, which is true for the system's own direct orders as well
+  // as the retired Excel uploads. Measured on production 2026-09-05: 8 batches / 10,789,398.01 EGP
+  // matched, of which 2026-08 `DirectReq` (23 rows, 293,837.57 EGP) matched ONLY via `is_direct`.
+  // Deleting that destroys sales Finance has booked, in the month it booked them — AGENTS.md §4.
+  const { deletable, protectedLive } = classifyDirectCleanupBatches(
+    snapshot.directBatches.map((batch) => ({
+      distributor_code: batch.distributor_code == null ? null : String(batch.distributor_code),
+      id: String(batch.id),
+      period: batch.period == null ? null : String(batch.period),
+      status: batch.status == null ? null : String(batch.status),
+    })),
+  );
+
+  if (protectedLive.length > 0) {
+    console.log(`\nREFUSED — ${protectedLive.length} batch(es) are protected and will NOT be deleted:`);
+    for (const batch of protectedLive) console.log(`  ${batch.period} ${batch.distributor_code} (${batch.id}) — ${batch.reason}`);
+  }
+  if (deletable.length === 0) {
+    throw new Error("Nothing is safely deletable: every matched batch is protected. Refusing to run.");
+  }
+
+  const batchIds = deletable.map((batch) => String(batch.id));
   const backupDir = optionText(options, "backup-dir", "outputs/sos-direct-cleanup-backup");
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const backupPath = path.join(backupDir, `source-of-sales-direct-imports-${timestamp}.json`);
   writeJson(backupPath, snapshot);
-  console.log(`Backup written: ${backupPath}`);
+
+  // ── GUARD 2: prove the backup on DISK covers the cascade, before deleting ─────────────────────
+  // "Backup written" was previously printed by a call that had captured neither the five cascaded
+  // rollup tables nor the run steps. A written file is not a backup of the right thing, so this
+  // reads the file back and checks it row-for-row against what the delete will remove. Production
+  // has no PITR; this file is the only recovery path.
+  const written = JSON.parse(readFileSync(backupPath, "utf8")) as { cascade?: Record<string, unknown> };
+  assertBackupCoversCascade(written.cascade ?? {}, snapshot.cascadeRowCounts);
+  console.log(`Backup written and verified against the cascade: ${backupPath}`);
+  console.log(`Deleting ${deletable.length} retired batch(es); ${protectedLive.length} protected.`);
 
   if (snapshot.deletionMode === "delete_batches") {
     for (const batchId of batchIds) {
@@ -263,14 +334,29 @@ async function apply(options: Options) {
       if (error) throw new Error(`delete batch ${batchId}: ${error.message}`);
     }
   } else {
-    for (const row of snapshot.rows) {
+    // Only rows belonging to a batch that passed GUARD 1. `snapshot.rows` spans every matched
+    // batch, so iterating it directly would delete the live vintage's rows one at a time while the
+    // batch-level guard reported them protected — the guard has to reach both deletion modes.
+    const deletableBatchIds = new Set(batchIds);
+    const rowsToDelete = snapshot.rows.filter((row) => deletableBatchIds.has(String(row.batch_id)));
+    console.log(`Row mode: ${rowsToDelete.length} of ${snapshot.rows.length} matched rows are in deletable batches.`);
+    for (const row of rowsToDelete) {
       const { error } = await supabase.from("source_of_sales_import_rows").delete().eq("id", row.id);
       if (error) throw new Error(`delete direct row ${row.id}: ${error.message}`);
     }
   }
 
   const after = await buildSnapshot(supabase);
-  console.log(JSON.stringify({ after: after.counts, deletedBatchIds: snapshot.deletionMode === "delete_batches" ? batchIds : [], deletedRowCount: snapshot.deletionMode === "delete_direct_rows_only" ? snapshot.rows.length : 0 }, null, 2));
+  const deletableBatchIds = new Set(batchIds);
+  console.log(JSON.stringify({
+    after: after.counts,
+    backupPath,
+    deletedBatchIds: snapshot.deletionMode === "delete_batches" ? batchIds : [],
+    deletedRowCount: snapshot.deletionMode === "delete_direct_rows_only"
+      ? snapshot.rows.filter((row) => deletableBatchIds.has(String(row.batch_id))).length
+      : 0,
+    protectedBatches: protectedLive.map((batch) => ({ id: batch.id, period: batch.period, reason: batch.reason })),
+  }, null, 2));
 }
 
 async function main() {

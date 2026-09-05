@@ -72,6 +72,15 @@ const payslipRouteSource = readFileSync(
   "utf8",
 );
 
+// The payslip DOCUMENT moved out of the route on 2026-09-05, when it was redrawn on the house
+// identity and the PDF export stopped carrying a second, hand-drawn copy of it. The route now does
+// permissions and record selection; everything about what the paper SAYS is in this module, so the
+// assertions below that are about the document read it here.
+const payslipDocumentSource = readFileSync(
+  new URL("../src/lib/payroll/payslip-document.ts", import.meta.url),
+  "utf8",
+);
+
 const payrollDashboardSource = readFileSync(
   new URL("../src/components/payroll/payroll-dashboard.tsx", import.meta.url),
   "utf8",
@@ -361,45 +370,45 @@ export function runPayrollEngineHardeningTests() {
     /Print \/ Save PDF/,
     "Payslip route must not render the print/save toolbar button.",
   );
+  // ── what the paper says now lives in the document module ─────────────────────────────────────
+  // Same intent as before the 2026-09-05 redesign, read from where the document actually is. The
+  // three per-total CSS hooks became ONE `.sum` class, because the totals are no longer
+  // colour-coded fills — they are a brand-blue rule above and below, set bold in Brand Deep, and a
+  // separate hook per total existed only to give each its own colour.
   assert.match(
-    payslipRouteSource,
-    /payslipHiddenHeaders[\s\S]*"Policy Comment"/,
-    "Payslip route must hide Policy Comment from the displayed detail table.",
+    payslipDocumentSource,
+    /IDENTITY_HEADERS[\s\S]*"Policy Comment"/,
+    "The payslip must keep Policy Comment out of the displayed detail tables.",
   );
   assert.match(
-    payslipRouteSource,
-    /payslipDisplayHeaders = payrollSheetHeaders\.filter\(\(header\) => !payslipHiddenHeaders\.has\(header\)\)/,
-    "Payslip route must derive display headers from the canonical payroll sheet headers.",
+    payslipDocumentSource,
+    /payrollSheetHeaders\s*\n?\s*\.slice\(section\.start - 1, section\.end\)\s*\n?\s*\.filter\(\(header\) => !IDENTITY_HEADERS\.has\(header\)\)/,
+    "Displayed components must be derived from the canonical payroll sheet headers, minus the identity block.",
   );
   assert.match(
-    payslipRouteSource,
+    payslipDocumentSource,
     /payrollSheetHeaders/,
-    "Payslip route must keep the canonical uploaded payroll sheet order for displayed payroll values.",
+    "The payslip must keep the canonical uploaded payroll sheet order for displayed payroll values.",
   );
   assert.match(
-    payslipRouteSource,
+    payslipDocumentSource,
     /payrollSheetValue/,
-    "Payslip route values must come from the same canonical uploaded-sheet mapping.",
+    "Payslip values must come from the same canonical uploaded-sheet mapping.",
   );
   assert.match(
-    payslipRouteSource,
-    /<thead><tr><th>Component<\/th><th>Amount \/ Value<\/th><\/tr><\/thead>/,
-    "Payslip route must render only Component and Amount / Value columns.",
+    payslipDocumentSource,
+    /<th scope="col" class="num">Amount<\/th>/,
+    "A component table carries only its heading and one Amount column.",
   );
   assert.match(
-    payslipRouteSource,
-    /total-additions-row/,
-    "Payslip route must give Total Additions a dedicated styling hook.",
+    payslipDocumentSource,
+    /class="sum"/,
+    "Total rows must keep a dedicated styling hook, so a total never reads as an ordinary line.",
   );
   assert.match(
-    payslipRouteSource,
-    /governmental-deductions-row/,
-    "Payslip route must give Governmental Deductions a dedicated styling hook.",
-  );
-  assert.match(
-    payslipRouteSource,
-    /total-deductions-row/,
-    "Payslip route must give Total Deductions a dedicated styling hook.",
+    payslipDocumentSource,
+    /\.cmp \.sum td \{[\s\S]*?border-top: \.5pt solid var\(--phx-doc-blue\)/,
+    "…and that hook must be a RULE, not a fill — the ink rule allows one filled element and it is the zebra row.",
   );
   assert.match(
     payslipRouteSource,
