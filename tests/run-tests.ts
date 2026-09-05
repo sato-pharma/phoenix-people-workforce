@@ -847,6 +847,7 @@ import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-bric
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
+import { runExecPanelsConfidentialRevealTests } from "./exec-panels-confidential-reveal.test.ts";
 import { runFactoryPriceRestatementAuditTests } from "./factory-price-restatement-audit.test.ts";
 import { runSosDirectCleanupSafetyTests } from "./sos-direct-cleanup-safety.test.ts";
 import { runClosingPublicationSnapshotTests } from "./closing-publication-snapshot.test.ts";
@@ -2849,6 +2850,7 @@ await runTest("SoS backfill matches the empty-string brick sentinel, not just NU
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
+await runTest('exec panels honour the confidential-product reveal (footer must not lie)', runExecPanelsConfidentialRevealTests);
 await runTest('A factory-price edit that restates a settled closing records it (never refuses it)', runFactoryPriceRestatementAuditTests);
 await runTest('SoS direct cleanup refuses the live vintage and an incomplete backup', runSosDirectCleanupSafetyTests);
 await runTest('Publishing a closing records what was published (insert-only snapshot)', runClosingPublicationSnapshotTests);

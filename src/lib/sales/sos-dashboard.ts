@@ -468,7 +468,12 @@ const fetchSosDashboardRpcRowsUncached = async (inputs: SosRpcInputs): Promise<S
     // two differently-scoped viewers still cannot share an entry.
     const geoArgsFor = (period: string): Record<string, unknown> => ({
       p_period: period,
-      ...(trendExcludeCodes.length > 0 ? { p_exclude_codes: trendExcludeCodes } : {}),
+      // ALWAYS pass the array, including when it is empty. Omitting it let the SQL DEFAULT
+      // (ARRAY['LA003','LA004','SS001']) apply, so a CEO who ticked "include confidential products"
+      // — where excludeCodes and headOfficeProductCodes are both empty — got the panels computed
+      // WITH the exclusion while the headline beside them was computed without it. The trend RPC
+      // above always passes it, which is precisely why only these two panels disagreed.
+      p_exclude_codes: trendExcludeCodes,
       p_lines: trendLineNames ?? null,
       p_products: trendProductCodes ?? null,
       p_regions: trendRegionCodes ?? null,
