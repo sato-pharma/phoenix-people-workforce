@@ -2220,22 +2220,57 @@ async function addRepCardPdfLink(zip: JSZip, base: string): Promise<void> {
  * engine later is simply absent from the contents until somebody writes a line for it, rather than
  * appearing with a blank description. `Data` is deliberately not here: it is `veryHidden`, it is the
  * source block the pivots and the Rep Card read, and it is not a page anybody navigates to.
+ *
+ * GROUPED, because twelve undifferentiated rows are a list and a reader arriving with a question —
+ * "where do I see product families?" — has to read all twelve to answer it. The four bands are the
+ * questions the workbook actually answers, and they are in TAB ORDER: a contents page that sorts
+ * its own way disagrees with the tab strip underneath it, and then the reader has to hold two
+ * orders in their head. Every band is a heading the owner would say out loud, not a taxonomy.
  */
-const INDEX_ENTRIES: ReadonlyArray<{ sheet: string; what: string }> = [
-  { sheet: "Overview", what: "The month at a glance — sales, target and achievement for every region, and how many areas reached their target." },
-  { sheet: "Rep Ranking", what: "Every area ranked by achievement against its own target, with its medical rep and district manager." },
-  { sheet: "Rep Card", what: "One rep at a time, picked from the dropdown — their month, every product, and an Export PDF for that card." },
-  { sheet: "Top Achievers", what: "The ten highest against their own target." },
-  { sheet: "Closing Matrix", what: "Sales value against target, per area, with each region foldable and the Region slicer above it." },
-  { sheet: "Units Matrix", what: "Units against target — never summed across products, because each has its own target." },
-  { sheet: "Area x Product", what: "Value against target, opened one region at a time." },
-  { sheet: "Family Performance", what: "Each product family by value, and its share of the line." },
-  { sheet: "Family by Month", what: "The families month by month, oldest first, as the series fills forward." },
-  { sheet: "Watch List", what: "Every area and product still short of target, largest shortfall first." },
-  { sheet: "Top Customers", what: "Every named customer, largest first, with each one's share and the running share." },
-  { sheet: "Details", what: "Every invoice row behind the month — the workings for all of the above." },
+const INDEX_SECTIONS: ReadonlyArray<{ band: string; entries: ReadonlyArray<{ sheet: string; what: string }> }> = [
+  {
+    band: "Start here",
+    entries: [
+      { sheet: "Overview", what: "The month at a glance — sales, target and achievement for every region, and how many areas reached their target." },
+      { sheet: "Rep Ranking", what: "Every area ranked by achievement against its own target, with its medical rep and district manager." },
+      { sheet: "Rep Card", what: "One rep at a time, picked from the dropdown — their month, every product, and an Export PDF for that card." },
+      { sheet: "Top Achievers", what: "The ten highest against their own target." },
+    ],
+  },
+  {
+    band: "By area",
+    entries: [
+      { sheet: "Closing Matrix", what: "Sales value against target, per area, with each region foldable and the Region slicer above it." },
+      { sheet: "Units Matrix", what: "Units against target — never summed across products, because each has its own target." },
+      { sheet: "Area x Product", what: "Value against target, opened one region at a time." },
+    ],
+  },
+  {
+    band: "By product family",
+    entries: [
+      { sheet: "Family Performance", what: "Each product family by value, and its share of the line." },
+      { sheet: "Family by Month", what: "The families month by month, oldest first, as the series fills forward." },
+    ],
+  },
+  {
+    band: "Behind the numbers",
+    entries: [
+      { sheet: "Watch List", what: "Every area and product still short of target, largest shortfall first." },
+      { sheet: "Top Customers", what: "Every named customer, largest first, with each one's share and the running share." },
+      { sheet: "Details", what: "Every invoice row behind the month — the workings for all of the above." },
+    ],
+  },
 ];
 
+/**
+ * The closing line, set under the table.
+ *
+ * It answers the one question the page otherwise invites: three of the tabs listed above hold no
+ * rows in the file at all, so a reader who opens `Closing Matrix` on a machine that has not
+ * recalculated sees an empty grid and concludes the export is broken. Saying so here costs one line.
+ */
+const INDEX_FOOTNOTE =
+  "The three matrix pages are pivot tables — Excel builds them from the hidden Data sheet when the workbook opens.";
 
 /**
  * The next free `xl/worksheets/sheetN.xml`, read from the package.
@@ -2297,14 +2332,28 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   const present = new Set(
     [...workbook.matchAll(/<sheet name="([^"]+)"/g)].map((m) => unescapeSheetName(m[1])),
   );
-  const entries = [
-    ...INDEX_ENTRIES,
-    ...extra.map((sheet) => ({ sheet: sheet.name, what: sheet.what })),
-  ].filter((entry) => present.has(entry.sheet));
-  if (entries.length === 0) return;
+  const sections = [
+    ...INDEX_SECTIONS,
+    // The Performance Review's sheets are built at export time from the month's own data, so they
+    // cannot sit in the literal above. They get their OWN band rather than being appended to
+    // "Behind the numbers": they answer a different question, and when the review is not included
+    // the band disappears with them instead of leaving a heading over nothing.
+    ...(extra.length > 0
+      ? [{
+          band: "Performance review",
+          entries: extra.map((sheet) => ({ sheet: sheet.name, what: sheet.what })),
+        }]
+      : []),
+  ]
+    .map((section) => ({ ...section, entries: section.entries.filter((entry) => present.has(entry.sheet)) }))
+    .filter((section) => section.entries.length > 0);
+  if (sections.length === 0) return;
 
   const line = String(fill.sheets.Overview?.cells?.A1 ?? "").trim();
   const rows: string[] = [];
+  // Collected as the rows are written rather than counted afterwards: every band adds one, so a
+  // hard-coded `count` is a repair prompt waiting for the next section.
+  const merges: string[] = ["A1:B1", "A2:B2"];
   let rowNumber = 1;
 
   const inline = (ref: string, style: string, value: string) =>
@@ -2324,22 +2373,41 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   );
   rowNumber += 1;
 
-  for (const entry of entries) {
-    // The jump is the same form Excel writes for a shape's in-document link, spelled as a formula so
-    // the cell itself is the control. `#` and the quoted sheet name are both required.
-    const jump = xmlEscape(`HYPERLINK("#'${entry.sheet.replace(/'/g, "''")}'!A1","${entry.sheet}")`);
+  for (const section of sections) {
+    // The band label spans both columns and carries the subtitle style, whose hairline blue rule
+    // draws the divider — a line, never a filled bar, which is the house rule for how colour is
+    // allowed to mark a document.
+    merges.push(`A${rowNumber}:B${rowNumber}`);
     rows.push(
-      `<row r="${rowNumber}" ht="22.5" customHeight="1">`
-        + `<c r="A${rowNumber}" s="${INDEX_STYLE.link}"><f>${jump}</f></c>`
-        + inline(`B${rowNumber}`, INDEX_STYLE.body, entry.what)
+      `<row r="${rowNumber}" ht="24" customHeight="1">`
+        + inline(`A${rowNumber}`, INDEX_STYLE.subtitle, section.band)
+        + `<c r="B${rowNumber}" s="${INDEX_STYLE.subtitle}"/>`
         + "</row>",
     );
     rowNumber += 1;
+
+    for (const entry of section.entries) {
+      // The jump is the same form Excel writes for a shape's in-document link, spelled as a formula
+      // so the cell itself is the control. `#` and the quoted sheet name are both required.
+      const jump = xmlEscape(`HYPERLINK("#'${entry.sheet.replace(/'/g, "''")}'!A1","${entry.sheet}")`);
+      rows.push(
+        `<row r="${rowNumber}" ht="22.5" customHeight="1">`
+          + `<c r="A${rowNumber}" s="${INDEX_STYLE.link}"><f>${jump}</f></c>`
+          + inline(`B${rowNumber}`, INDEX_STYLE.body, entry.what)
+          + "</row>",
+      );
+      rowNumber += 1;
+    }
   }
 
-  const lastRow = rowNumber - 1;
+  // The footnote, one blank row below the last band.
+  rowNumber += 1;
+  merges.push(`A${rowNumber}:B${rowNumber}`);
+  rows.push(`<row r="${rowNumber}" ht="18" customHeight="1">${inline(`A${rowNumber}`, INDEX_STYLE.subtitle, INDEX_FOOTNOTE)}</row>`);
+
+  const lastRow = rowNumber;
   const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:B${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><selection activeCell="A1" sqref="A1"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="26" customWidth="1"/><col min="2" max="2" width="96" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><mergeCells count="2"><mergeCell ref="A1:B1"/><mergeCell ref="A2:B2"/></mergeCells><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait"/></worksheet>`;
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:B${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><selection activeCell="A1" sqref="A1"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="26" customWidth="1"/><col min="2" max="2" width="96" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait"/></worksheet>`;
 
   zip.file(indexPart, sheetXml);
 
