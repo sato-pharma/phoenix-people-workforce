@@ -1,3 +1,6 @@
+// Runtime-safe: closing-area-merges pulls only TYPES from monthly-distributor-import (erased at
+// build time), so this does not close the monthly-distributor-import -> monthly-targets value cycle.
+import { foldAreaCodeForLine, foldAreaOptionsForLine } from "@/lib/sales/closing-area-merges";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,6 +189,8 @@ export function validateTargetRows(
 ): TargetValidationResult {
   const valid: ResolvedTargetRow[] = [];
   const errors: TargetIssue[] = [];
+  /** (period, line, FOLDED area, product) already claimed, and by which row — see the fold below. */
+  const seenCells = new Map<string, { rowNumber: number; areaCode: string }>();
 
   for (const row of rows) {
     const rowNumber = row.rowNumber;
@@ -239,10 +244,41 @@ export function validateTargetRows(
       continue;
     }
 
+    // Store the merged pair's target on the surviving code. A sheet naming "Beni Suef" for Pedia is
+    // ACCEPTED and folded onto GZ6 rather than rejected — under the owner's ruling it is the same
+    // area, so the row means what the author intended. Validation above deliberately ran on the
+    // ORIGINAL code, so a genuinely unmapped or "Other" area still reports itself by name.
+    const targetAreaCode = foldAreaCodeForLine(lineCode, areaCode);
+
+    // Folding makes a collision reachable that the sheet does not look like it has: Fayoum on one
+    // row and Beni Suef on another now resolve to ONE cell. `phx_upsert_monthly_targets` is
+    // ON CONFLICT DO UPDATE, so both would be sent and the LAST would silently win — the same
+    // last-write-wins loss this pair already caused in the grid. Reject the later row and say which
+    // one it collides with; never guess whether the author meant to replace or to sum.
+    const cellKey = `${row.period}|${lineCode}|${targetAreaCode}|${productCode}`;
+    const clash = seenCells.get(cellKey);
+    if (clash) {
+      const folded = targetAreaCode !== areaCode || clash.areaCode !== targetAreaCode;
+      errors.push({
+        rowNumber,
+        field: "area",
+        code: "duplicate_target_cell",
+        message:
+          `Row ${clash.rowNumber} already sets a ${row.period} target for ${productCode} in `
+          + `"${targetAreaCode}"`
+          + (folded
+            ? ` — on "${lineCode}" areas "${clash.areaCode}" and "${areaCode}" are ONE area, so both rows are the same cell.`
+            : ".")
+          + " Combine them into a single row.",
+      });
+      continue;
+    }
+    seenCells.set(cellKey, { rowNumber, areaCode });
+
     valid.push({
       period: row.period,
       line_code: lineCode,
-      area_code: areaCode,
+      area_code: targetAreaCode,
       product_code: productCode,
       target_units: targetUnits,
       target_value: targetValue,
@@ -854,7 +890,7 @@ export async function loadTargetableAreas(lineCode: string): Promise<TargetableA
     .eq("carries_target", true)
     .order("area_code");
   if (error) throw error;
-  return (data ?? []).map((row) => {
+  const areas = (data ?? []).map((row) => {
     const record = row as Record<string, unknown>;
     return {
       areaCode: str(record.area_code),
@@ -863,6 +899,17 @@ export async function loadTargetableAreas(lineCode: string): Promise<TargetableA
       areaState: str(record.area_state) || null,
     };
   });
+
+  // ONE option per merged pair. `au_v_line_area_map` carries Pedia's GZ6 and UE9 as two rows, both
+  // `carries_target = true`, so the download template used to offer "Beni Suef" as its own target
+  // area for Pedia — a target nobody can then see or edit, because the grid renders the pair as the
+  // single merged row "Fayoum - Beni Suef" (owner: on Pedia they are one area). Offering a cell that
+  // the only screen able to display it will never show is how a target gets authored and lost.
+  //
+  // No `expandAreaCodeForLine` is needed here, unlike a picker: the code chosen here is not scoping
+  // a query, it IS the cell the target is stored on, and the merged pair's target belongs to the
+  // keep-code by that same ruling. CNS and Anti Infective have no rule and pass through untouched.
+  return foldAreaOptionsForLine(lineCode, areas);
 }
 
 export type TargetableProduct = {
