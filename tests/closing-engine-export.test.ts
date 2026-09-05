@@ -715,6 +715,9 @@ export async function runClosingEngineExportTests() {
   const workbook = await zip.file("xl/workbook.xml")!.async("string");
   const order = [...workbook.matchAll(/<sheet name="([^"]*)"/g)].map((one) => one[1]!);
   assert.deepEqual(order, [
+    // The contents page, added 2026-09-05, sits FIRST — and adding it in front is precisely the
+    // renumbering this block warns about: every localSheetId after it had to move with it.
+    "Contents",
     "Overview",
     "Rep Ranking",
     "Rep Card",
@@ -1192,6 +1195,50 @@ export async function runClosingEngineExportTests() {
 
   assert.ok(!isClosingPdfSheet("Closing Matrix"), "a pivot page has no rows in the file and cannot be rendered");
   assert.ok(!isClosingPdfSheet("Data"), "the hidden source block is not a page");
+
+  // ── The contents page ───────────────────────────────────────────────────────────────────────
+  //
+  // A whole SHEET added to the package, which is the most repair-prone thing this file does: a
+  // worksheet part needs its content-type override, its workbook relationship AND its <sheet> entry,
+  // and Excel repairs the workbook if any one of the three is missing. All three are asserted, on
+  // the emitted package, for both builds — a contents page carries no macro and no shape, so the
+  // .xlsm reader must not get a worse front page than the .xlsx reader.
+  for (const [label, book] of [["xlsm", macroBook], ["xlsx", plainBook]] as const) {
+    const opened = await JSZip.loadAsync(book);
+    const workbook = await opened.file("xl/workbook.xml")!.async("string");
+    const types = await opened.file("[Content_Types].xml")!.async("string");
+    const wbRels = await opened.file("xl/_rels/workbook.xml.rels")!.async("string");
+
+    const names = [...workbook.matchAll(/<sheet name="([^"]+)"/g)].map((m) => m[1]);
+    assert.equal(names[0], "Contents", `${label}: the contents page must be the FIRST tab — that is what makes it page one`);
+
+    const entry = /<sheet name="Contents"[^>]*r:id="(rId\d+)"[^>]*\/>/.exec(workbook);
+    assert.ok(entry, `${label}: the contents sheet needs a <sheet> entry`);
+    const target = new RegExp(`Id="${entry![1]}"[^>]*Target="([^"]+)"`).exec(wbRels);
+    assert.ok(target, `${label}: ${entry![1]} must resolve in the workbook relationships`);
+    const part = `xl/${target![1]}`;
+    assert.ok(opened.file(part), `${label}: the relationship points at ${part}, which is not in the zip`);
+    assert.ok(
+      types.includes(`PartName="/${part}"`),
+      `${label}: a worksheet part with no content-type override is a repair prompt`,
+    );
+
+    // Sheet ids must stay unique, or Excel rebuilds them and the workbook is "repaired".
+    const ids = [...workbook.matchAll(/sheetId="(\d+)"/g)].map((m) => m[1]);
+    assert.equal(new Set(ids).size, ids.length, `${label}: duplicate sheetId — Excel repairs that`);
+
+    // Every jump must land on a tab that is actually there. A contents page promising a page the
+    // workbook does not carry is worse than one that is short.
+    const sheet = await opened.file(part)!.async("string");
+    const jumps = [...sheet.matchAll(/HYPERLINK\("#'([^']+)'!A1"/g)].map((m) => m[1]);
+    assert.ok(jumps.length >= 10, `${label}: expected a row per page, got ${jumps.length}`);
+    for (const jump of jumps) {
+      assert.ok(names.includes(jump), `${label}: contents offers "${jump}", which is not a tab in this workbook`);
+    }
+    assert.ok(!jumps.includes("Data"), `${label}: Data is veryHidden and is not a page anybody navigates to`);
+    assert.equal(new Set(jumps).size, jumps.length, `${label}: a page is listed twice`);
+  }
+
 
   // ── The Rep Card's Export PDF is a FORMULA, and it must read the right cell ─────────────────
   //

@@ -290,6 +290,7 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   await dropStaleLabelFormats(zip);
   await clearTitleEmblem(zip, fill);
   await hideEmblemFromPrint(zip);
+  await addIndexSheet(zip, fill);
   await openOnFirstSheet(zip);
   await restorePivotCacheSharedItems(zip, fill);
   await dropDeadSharedStrings(zip);
@@ -2110,7 +2111,9 @@ async function openOnFirstSheet(zip: JSZip): Promise<void> {
   if (!workbookFile) return;
   const workbook = await workbookFile.async("string");
 
-  const first = Object.keys(MANIFEST.sheets)[0];
+  // The workbook's OWN order, not the manifest's: the contents page is added ahead of everything and
+  // is not in the manifest at all, so a manifest-ordered answer would select the wrong tab.
+  const first = unescapeSheetName(/<sheet name="([^"]+)"/.exec(workbook)?.[1] ?? "");
   if (!first) return;
 
   zip.file(
@@ -2118,8 +2121,12 @@ async function openOnFirstSheet(zip: JSZip): Promise<void> {
     workbook.replace(/(<workbookView\b[^>]*?)\s*activeTab="\d+"/, "$1").replace(/<workbookView\b/, '<workbookView activeTab="0"'),
   );
 
-  for (const [sheetName, spec] of Object.entries(MANIFEST.sheets)) {
-    const file = zip.file(spec.file);
+  const parts: Array<{ name: string; file: string }> = [
+    ...Object.entries(MANIFEST.sheets).map(([name, spec]) => ({ file: spec.file, name })),
+    { file: INDEX_PART, name: INDEX_SHEET },
+  ];
+  for (const { file: partName, name: sheetName } of parts) {
+    const file = zip.file(partName);
     if (!file) continue;
     const xml = await file.async("string");
     const selected = sheetName === first;
@@ -2127,7 +2134,7 @@ async function openOnFirstSheet(zip: JSZip): Promise<void> {
       const bare = tag.replace(/\s*tabSelected="[^"]*"/, "");
       return selected ? bare.replace(/<sheetView\b/, '<sheetView tabSelected="1"') : bare;
     });
-    if (next !== xml) zip.file(spec.file, next);
+    if (next !== xml) zip.file(partName, next);
   }
 }
 
@@ -2192,4 +2199,174 @@ async function addRepCardPdfLink(zip: JSZip, base: string): Promise<void> {
   if (withCell === row) return;
 
   zip.file(spec!.file, xml.replace(row, withCell));
+}
+
+/**
+ * What each page holds, in the owner's own vocabulary.
+ *
+ * A SET OF THE ONES THAT GET A ROW, never a list of the ones that do not — a sheet added to the
+ * engine later is simply absent from the contents until somebody writes a line for it, rather than
+ * appearing with a blank description. `Data` is deliberately not here: it is `veryHidden`, it is the
+ * source block the pivots and the Rep Card read, and it is not a page anybody navigates to.
+ */
+const INDEX_ENTRIES: ReadonlyArray<{ sheet: string; what: string }> = [
+  { sheet: "Overview", what: "The month at a glance — sales, target and achievement for every region, and how many areas reached their target." },
+  { sheet: "Rep Ranking", what: "Every area ranked by achievement against its own target, with its medical rep and district manager." },
+  { sheet: "Rep Card", what: "One rep at a time, picked from the dropdown — their month, every product, and an Export PDF for that card." },
+  { sheet: "Top Achievers", what: "The ten highest against their own target." },
+  { sheet: "Closing Matrix", what: "Sales value against target, per area, with each region foldable and the Region slicer above it." },
+  { sheet: "Units Matrix", what: "Units against target — never summed across products, because each has its own target." },
+  { sheet: "Area x Product", what: "Value against target, opened one region at a time." },
+  { sheet: "Family Performance", what: "Each product family by value, and its share of the line." },
+  { sheet: "Family by Month", what: "The families month by month, oldest first, as the series fills forward." },
+  { sheet: "Watch List", what: "Every area and product still short of target, largest shortfall first." },
+  { sheet: "Top Customers", what: "Every named customer, largest first, with each one's share and the running share." },
+  { sheet: "Details", what: "Every invoice row behind the month — the workings for all of the above." },
+];
+
+/** The part the contents page is written to. `sheet13` is taken, so this is the next free name. */
+const INDEX_PART = "xl/worksheets/sheet14.xml";
+const INDEX_SHEET = "Contents";
+
+/**
+ * Add the contents page, and put it first.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * THE OWNER ASKED FOR THIS as "page one": every tab as something you can press, with a line beside it
+ * saying what that tab holds. Thirteen sheets is more than a tab strip communicates, and the tab
+ * strip does not say what any of them contains.
+ *
+ * WRITTEN AS CELLS, NOT SHAPES, and that is a deliberate difference from the navigation bar. The bar
+ * clones a real button because it sits on a crowded command row where it has to match the buttons
+ * beside it. This page has no such row and needs a NAME AND A DESCRIPTION side by side — which is a
+ * table, and a table of thirteen floating shapes with thirteen text boxes beside them would be worse
+ * to read and far more fragile. `HYPERLINK("#'Sheet'!A1", …)` jumps exactly as a shape's link does.
+ *
+ * STYLES ARE BORROWED, never authored. Every style index used here already exists in the template's
+ * `styles.xml` — the title, the subtitle, the blue table header and the body row are the ones the
+ * other sheets use. Adding entries to `styles.xml` would mean this file owning a look that the
+ * owner's own template should own.
+ *
+ * BOTH BUILDS. The contents page carries no macro and no shape, so nothing about it depends on which
+ * extension the workbook has, and a reader opening the `.xlsm` should not get a worse front page
+ * than one opening the `.xlsx`.
+ */
+async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill): Promise<void> {
+  const workbookFile = zip.file("xl/workbook.xml");
+  const relsFile = zip.file("xl/_rels/workbook.xml.rels");
+  const typesFile = zip.file("[Content_Types].xml");
+  if (!workbookFile || !relsFile || !typesFile) return;
+
+  const workbook = await workbookFile.async("string");
+  if (workbook.includes(`<sheet name="${INDEX_SHEET}"`)) return;
+
+  const rels = await relsFile.async("string");
+  const nextRel = Math.max(0, ...[...rels.matchAll(/Id="rId(\d+)"/g)].map((m) => Number(m[1]))) + 1;
+  const nextSheetId = Math.max(0, ...[...workbook.matchAll(/sheetId="(\d+)"/g)].map((m) => Number(m[1]))) + 1;
+  const relId = `rId${nextRel}`;
+
+  // Only the pages this workbook actually carries. A filtered export drops no sheets today, but a
+  // contents page that promises a tab which is not there is worse than one that is short.
+  const present = new Set(
+    [...workbook.matchAll(/<sheet name="([^"]+)"/g)].map((m) => unescapeSheetName(m[1])),
+  );
+  const entries = INDEX_ENTRIES.filter((entry) => present.has(entry.sheet));
+  if (entries.length === 0) return;
+
+  const line = String(fill.sheets.Overview?.cells?.A1 ?? "").trim();
+  const rows: string[] = [];
+  let rowNumber = 1;
+
+  const inline = (ref: string, style: string, value: string) =>
+    `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(xmlSafe(value))}</t></is></c>`;
+
+  rows.push(`<row r="${rowNumber}" ht="33.95" customHeight="1">${inline(`A${rowNumber}`, INDEX_STYLE.title, line || "Monthly Closing")}</row>`);
+  rowNumber += 1;
+  rows.push(`<row r="${rowNumber}" ht="18" customHeight="1">${inline(`A${rowNumber}`, INDEX_STYLE.subtitle, "Every page in this workbook. Press a name to go there.")}</row>`);
+  rowNumber += 2; // one blank row, as the other sheets space their header off the title
+
+  const headerRow = rowNumber;
+  rows.push(
+    `<row r="${headerRow}" ht="21.95" customHeight="1">`
+      + inline(`A${headerRow}`, INDEX_STYLE.header, "Page")
+      + inline(`B${headerRow}`, INDEX_STYLE.header, "What it holds")
+      + "</row>",
+  );
+  rowNumber += 1;
+
+  for (const entry of entries) {
+    // The jump is the same form Excel writes for a shape's in-document link, spelled as a formula so
+    // the cell itself is the control. `#` and the quoted sheet name are both required.
+    const jump = xmlEscape(`HYPERLINK("#'${entry.sheet.replace(/'/g, "''")}'!A1","${entry.sheet}")`);
+    rows.push(
+      `<row r="${rowNumber}" ht="22.5" customHeight="1">`
+        + `<c r="A${rowNumber}" s="${INDEX_STYLE.link}"><f>${jump}</f></c>`
+        + inline(`B${rowNumber}`, INDEX_STYLE.body, entry.what)
+        + "</row>",
+    );
+    rowNumber += 1;
+  }
+
+  const lastRow = rowNumber - 1;
+  const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:B${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><selection activeCell="A1" sqref="A1"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="26" customWidth="1"/><col min="2" max="2" width="96" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><mergeCells count="2"><mergeCell ref="A1:B1"/><mergeCell ref="A2:B2"/></mergeCells><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait"/></worksheet>`;
+
+  zip.file(INDEX_PART, sheetXml);
+
+  zip.file(
+    "[Content_Types].xml",
+    (await typesFile.async("string")).replace(
+      "</Types>",
+      `<Override PartName="/${INDEX_PART}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`,
+    ),
+  );
+
+  zip.file(
+    "xl/_rels/workbook.xml.rels",
+    rels.replace(
+      "</Relationships>",
+      `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet14.xml"/></Relationships>`,
+    ),
+  );
+
+  // FIRST in the list, because the tab order is this list's order — that is what makes it page one.
+  //
+  // AND EVERY DEFINED NAME MOVES WITH IT. `localSheetId` is a POSITIONAL index into this same list,
+  // not a name, so inserting a sheet at the front silently re-attaches every print area, print title
+  // and filter range to the sheet before it — the Overview's print area becomes the contents page's,
+  // and so on down. Nothing about that is visible in the sheets themselves; it surfaces as the wrong
+  // rows printing, which is the sort of defect that reaches paper before anybody notices. The
+  // package integrity check catches it, and this is the fix it demanded.
+  const shifted = workbook.replace(
+    /<definedName\b([^>]*?)\blocalSheetId="(\d+)"/g,
+    (_match, before: string, id: string) => `<definedName${before}localSheetId="${Number(id) + 1}"`,
+  );
+
+  zip.file(
+    "xl/workbook.xml",
+    shifted.replace(
+      "<sheets>",
+      () => `<sheets><sheet name="${INDEX_SHEET}" sheetId="${nextSheetId}" r:id="${relId}"/>`,
+    ),
+  );
+}
+
+/**
+ * Style indices borrowed from the template — the look the other sheets already use.
+ *
+ * CHOSEN BY READING THE CATALOGUE, not by guessing an index: s81 is bold 12pt in the brand blue
+ * `#0868A8`, s8 is white on that same blue, s77 the 13pt title, s79 the grey subtitle, s9 the body.
+ * The first version used s9 for the link too, which is 9.5pt plain dark — the page rendered as a
+ * wall of identical text with nothing to press.
+ */
+const INDEX_STYLE = { title: "77", subtitle: "79", header: "8", link: "81", body: "9" } as const;
+
+/** Sheet names reach `workbook.xml` XML-escaped; the comparisons here do not. */
+function unescapeSheetName(value: string): string {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
 }
