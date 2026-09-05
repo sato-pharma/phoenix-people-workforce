@@ -268,5 +268,13 @@ begin
 end;
 $function$;
 
+-- CREATE FUNCTION grants EXECUTE to PUBLIC by default, which would expose these to anon and
+-- authenticated. The originals (baseline 20260711135352) were service_role/postgres only, and
+-- phx_weekly_plan_decide is SECURITY DEFINER with its authorization done in the app layer, so a
+-- PUBLIC grant is a privilege-escalation path (any authenticated user could decide any plan by
+-- id via PostgREST RPC). Revoke the default, then grant only service_role — matching the originals.
+revoke execute on function public.phx_weekly_plan_next_status(text, text, boolean, boolean) from public, anon, authenticated;
+revoke execute on function public.phx_weekly_plan_decide(uuid, integer, text, text, text, text, text, jsonb, boolean) from public, anon, authenticated;
+
 grant execute on function public.phx_weekly_plan_next_status(text, text, boolean, boolean) to service_role;
 grant execute on function public.phx_weekly_plan_decide(uuid, integer, text, text, text, text, text, jsonb, boolean) to service_role;
