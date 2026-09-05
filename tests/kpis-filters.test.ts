@@ -8,6 +8,7 @@ import {
   amBandOf,
   pmBandOf,
   coverageBandOf,
+  COVERAGE_TARGET_FLOOR_PCT,
   EMPTY_KPI_FILTERS,
   frequencyBandOf,
   kpiFiltersToParams,
@@ -73,10 +74,16 @@ function row(overrides: Partial<KpiRepRow> = {}): KpiRepRow {
     hasCallRate: true,
     amAttainmentPct: 100,
     pmAttainmentPct: 100,
+    // (40 + 200) / 20 = 12 — the band's own upper edge, deliberately: it pins the boundary as
+    // in-band rather than above, matching dailyVisitBandOf's "over this is above" wording.
+    visitsPerDay: 12,
+    dailyVisitBand: "in-band",
     plannedDoctors: 100,
     visitedDoctors: 95,
     missedDoctors: 5,
     coveragePct: 95,
+    // 95 clears the 95% floor exactly — the boundary is inclusive.
+    meetsCoverageFloor: true,
     onPlanDoctors: 95,
     underDoctors: 5,
     overDoctors: 0,
@@ -518,6 +525,45 @@ export function runKpiAttainmentAndIdentityTests() {
   });
   assert.equal(withoutIdentity?.lineName, null, "an unresolved rep keeps a null line rather than borrowing one");
   assert.equal(withoutIdentity?.repName, "Vendor Spelling", "and keeps the name the CRM did supply");
+
+  // THE OWNER'S FLOOR AND BAND, 2026-09-05: "call rate in month should be 10 to achieve this
+  // should make visits / day av 8-12 and coverage no less than 95%." The constant, the flag and
+  // the rendering are three different things that could each independently drift; this pins the
+  // constant and the flag together so a change to one without the other fails here.
+  assert.equal(COVERAGE_TARGET_FLOOR_PCT, 95, "the owner's own number, pinned");
+
+  assert.ok(
+    kpiFlagsOf(row({ hasMeasurablePlan: true, coveragePct: 94, meetsCoverageFloor: false })).includes(
+      "below-coverage-floor",
+    ),
+    "94% has a measurable plan and misses the 95% floor by one point",
+  );
+  assert.ok(
+    !kpiFlagsOf(row({ hasMeasurablePlan: true, coveragePct: 95, meetsCoverageFloor: true })).includes(
+      "below-coverage-floor",
+    ),
+    "95% itself clears the floor — the boundary is inclusive",
+  );
+  assert.ok(
+    !kpiFlagsOf(row({ hasMeasurablePlan: false, coveragePct: 0, meetsCoverageFloor: null })).includes(
+      "below-coverage-floor",
+    ),
+    "no plan means nothing to have missed — never flagged as below the floor",
+  );
+
+  assert.ok(
+    kpiFlagsOf(row({ visitsPerDay: 12.5, dailyVisitBand: "above" })).includes("above-daily-visit-band"),
+    "over 12 a day is flagged — a volume question, not automatically a win",
+  );
+  assert.ok(
+    kpiFlagsOf(row({ visitsPerDay: 6, dailyVisitBand: "below" })).includes("below-daily-visit-band"),
+    "under 8 a day is flagged as short of the band",
+  );
+  assert.ok(
+    !kpiFlagsOf(row({ visitsPerDay: 10, dailyVisitBand: "in-band" })).includes("above-daily-visit-band") &&
+      !kpiFlagsOf(row({ visitsPerDay: 10, dailyVisitBand: "in-band" })).includes("below-daily-visit-band"),
+    "on standard raises neither daily-visit-band flag",
+  );
 }
 
 // ── 8. The board is medical reps only ─────────────────────────────────────────────────────────
