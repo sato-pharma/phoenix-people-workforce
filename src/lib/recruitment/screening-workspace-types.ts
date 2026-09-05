@@ -28,6 +28,16 @@ import type { ScreeningWorkQueue } from "@/lib/recruitment/screening-queues";
 export type RowFact = { confirmed: boolean; value: string } | null;
 
 /**
+ * WHY a pair is being offered as a possible duplicate. Never a claim that they ARE one.
+ *
+ * `phone` is the stronger of the two and still not proof — families share a handset, and
+ * candidate-matching.ts records phone matching once merging three different applicants into one
+ * record. `name` is weaker again. The identity rule that actually merges is LOCKED to national ID
+ * and email, neither of which has a single collision in production.
+ */
+export type DuplicateReason = "phone" | "name";
+
+/**
  * One line in the candidate list, and the source for the header above the CV.
  *
  * Everything here is a STRING the screen prints, resolved server-side. The client re-derives
@@ -77,12 +87,14 @@ export type WorkspaceCandidateRow = {
   /** The job the fit was read AGAINST, so a score is never shown without saying against what. */
   fitRoleLabel: string;
 
-  /** How many records share this phone, counting this one. 1 means no twin. */
+  /** How many records look like this person, counting this one. 1 means no twin — never 0. */
   duplicateCount: number;
   /** The OTHER names on that number — the whole difference between a re-upload and two people. */
   duplicateNames: string[];
   /** Those other records' ids, so a reader can open the twin and compare rather than guess. */
   duplicateIds: string[];
+  /** The strongest evidence behind the pairing, so the screen never implies more than it has. */
+  duplicateReason: DuplicateReason | null;
 
   /** Has THIS viewer opened the CV before. Never anybody else's reading — see candidate-views.ts. */
   seen: boolean;

@@ -11,8 +11,10 @@ import { candidateAppliedFor, freeAppliedForEvidence } from "@/lib/recruitment/a
 import { isBackgroundConfirmationOutcome } from "@/lib/recruitment/background-review";
 import {
   candidateFolderRefusal,
+  DUPLICATE_FOLDER_KEY,
+  DUPLICATE_FOLDER_KIND,
+  isStorableFolderKind,
   cleanFolderKey,
-  isCandidateFolderKind,
   PARAMEDICAL_FOLDER_KEY,
 } from "@/lib/recruitment/candidate-folder";
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
@@ -824,7 +826,9 @@ export async function fileCandidateToFolder(
   kind: string,
   key: string,
 ): Promise<Candidate> {
-  if (!isCandidateFolderKind(kind)) {
+  // Storable, not just a shelf: the duplicate archive shares these columns and is not one of the
+  // four the owner named. See DUPLICATE_FOLDER_KIND for why the two vocabularies are separate.
+  if (!isStorableFolderKind(kind)) {
     throw new Error(`"${String(kind ?? "").trim()}" is not a folder kind.`);
   }
   const cleanKey = cleanFolderKey(key);
@@ -837,11 +841,20 @@ export async function fileCandidateToFolder(
   // screen lists and nobody would think to look in. The CV would be filed, gone from the pool, and
   // effectively lost. Normalised here rather than in the route so that every caller is covered by
   // one rule: the recruiter's picker, and confirmCandidateBackground below it.
-  const folderKey = kind === "paramedical" ? PARAMEDICAL_FOLDER_KEY : cleanKey;
+  // The duplicate shelf holds ONE folder for the same reason and by the same mechanism.
+  const folderKey =
+    kind === "paramedical"
+      ? PARAMEDICAL_FOLDER_KEY
+      : kind === DUPLICATE_FOLDER_KIND
+        ? DUPLICATE_FOLDER_KEY
+        : cleanKey;
 
   const existing = await getCandidate(id);
   if (!existing) throw new Error("Candidate not found.");
-  const refusal = candidateFolderRefusal(existing);
+  // The KIND decides the rule. Position shelves refuse a rejected CV — they are for good CVs waiting
+  // on a seat — while the duplicate shelf is a discard of a redundant record and must be able to
+  // take one, since a duplicate is at least as likely to be rejected as anything else.
+  const refusal = candidateFolderRefusal(existing, kind);
   if (refusal) throw new Error(refusal);
 
   const filedAt = new Date().toISOString();
