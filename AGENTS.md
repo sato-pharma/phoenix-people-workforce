@@ -554,12 +554,20 @@ has forgotten it and will read only the final report.
 applied, the parked questions, and anything left undone. That report is the owner's only view of a
 run he did not watch.
 
-🔴 **AUTORUN DOES NOT SURVIVE COMPACTION, and this is the known hole in it.** The arming word is one
-line in one message; a run lasting days is compacted many times, and §1.4 is explicit that a
-replayed summary is not a live instruction. So the word scrolls out of context and the session
-quietly reverts to stopping between phases — the exact behaviour AUTORUN exists to remove, failing
-in the one direction nobody notices, because a session asking permission looks correct.
-**Two mitigations, in order:**
+🔴 **AUTORUN survives compaction only where the guard hook is loaded — and it is not loaded
+everywhere.** `.claude/hooks/autorun-guard.mjs` (UserPromptSubmit, live 2026-09-05) records the
+arming per `session_id` and re-states it every turn; `AUTORUN OFF` stands it down. **It can re-state
+an arming, never create one** — only the owner's typed word arms AUTORUN, because a hook able to arm
+itself would let a doc or another session's transcript authorise a production merge (§2.1, Parallel
+sessions).
+
+**Never assume it is running.** Hooks load at SESSION START, so a session opened before the hook
+merged does not have it; and each worktree carries its own `.claude/settings.json` from ITS branch,
+so a worktree on a branch predating 2026-09-05 has no entry at all. Without the hook the original
+hole is intact: the arming word ages out of context and the session quietly reverts to stopping
+between phases — the exact behaviour AUTORUN exists to remove, failing in the one direction nobody
+notices, because a session asking permission looks correct. **Both mitigations therefore stand, and
+the second is the load-bearing half:**
 
 1. **Carry it forward yourself.** While armed, restate `AUTORUN ARMED — <plan>` at the top of every
    summary you write and in every hand-off, so a compaction carries it as live text rather than as
@@ -568,8 +576,8 @@ in the one direction nobody notices, because a session asking permission looks c
    finish the current phase, then say so in one line and continue asking as normal. Never assume the
    arming from a transcript that merely mentions the word.
 
-A `UserPromptSubmit` hook re-injecting the arming every turn would close this properly and is the
-right fix; it is not built yet. Do not treat its absence as a reason to infer arming.
+Do not treat the hook's silence as a reason to infer arming: it is silent both when you are not
+armed and when it is not loaded, and those two look identical from inside the session.
 
 **Git hygiene.** Review `git status`, `git diff`, `git diff --cached` before committing. Stage only
 files owned by the task. Never commit `.env*`, `.vercel/`, credentials, local artifacts,
