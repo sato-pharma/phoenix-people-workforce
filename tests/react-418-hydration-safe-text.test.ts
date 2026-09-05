@@ -12,7 +12,7 @@ import { cairoDateTime, cairoDateTimeSortable } from "../src/lib/format/cairo-da
 // differed was always the CONTENT of a text node, never the element structure around it.
 //
 // There are two ways for one instant to render as two different strings, and they need different
-// fixes. This file pins both.
+// fixes. This file pins the FIRST; the second is fixed and pinned by #3336, next door.
 //
 //   1. THE FORMAT differs. `Intl` output depends on the engine's bundled Unicode locale data, and
 //      that data changes between releases: CLDR 42 (ICU 72, late 2022) renamed en-GB's abbreviated
@@ -24,7 +24,8 @@ import { cairoDateTime, cairoDateTimeSortable } from "../src/lib/format/cairo-da
 //
 //   2. THE INSTANT differs. `new Date()` called during render is evaluated once by Node when the
 //      HTML is built and again by the browser when React hydrates. Across the Cairo midnight
-//      boundary those are different days (/employee-portals/plans, 23:28 Cairo, 2026-09-05).
+//      boundary those are different days (/employee-portals/plans, 23:28 Cairo, 2026-09-05). That
+//      one is the employee-portal header chip, fixed on main by #3336 and pinned by its own test.
 //
 // NOT every UTC-rendered timestamp is a bug, and a blanket sweep to Cairo breaks the ones that are
 // right. A DATE-ONLY value (a `date` column, a period key) parses as UTC midnight and UTC is what
@@ -48,7 +49,6 @@ const codeOnly = (source: string) =>
 const CAIRO_DATETIME_PATH = "src/lib/format/cairo-datetime.ts";
 const PASSWORD_SETUP_FORM_PATH = "src/components/auth/password-setup-form.tsx";
 const PASSWORD_SETUP_PAGE_PATH = "app/password-setup/[token]/page.tsx";
-const PORTAL_LAYOUT_PATH = "src/components/employee-portal/employee-portal-layout.tsx";
 
 export function runReact418HydrationSafeTextTests() {
   // ── 1. The shared Cairo formatter renders the same bytes on every engine ────────────────────
@@ -157,35 +157,13 @@ export function runReact418HydrationSafeTextTests() {
     "the finished string must be handed to the form as expiryLabel",
   );
 
-  // ── 4. The portal shell's today-chip reads the clock, and says so ───────────────────────────
+  // ── 4. The portal shell clock is NOT pinned here — #3336 owns it ─────────────────────
   //
-  // Shared by every employee-portal route, which is why one unguarded `new Date()` here surfaced as
-  // #418 on five different portal pages. The zone is pinned and the en-US month abbreviations are
-  // ICU-stable, so the FORMAT is fine — the INSTANT is what differs, across midnight.
-  // suppressHydrationWarning is React's documented answer for a rendered clock, and a real fix
-  // rather than a muted warning: react-dom checks the flag before calling throwOnHydrationMismatch,
-  // so no recoverable error is raised and nothing reaches the error reporter.
-  // Located by CONTENT rather than by position: the element is found by looking for the span that
-  // actually reads the clock, so the assertion survives the file being reordered or the chip moving
-  // — a fixed byte window would false-fail on an unrelated edit above it.
-  const portalSource = read(PORTAL_LAYOUT_PATH);
-  const clockSpans = (portalSource.match(/<span[^>]*>[\s\S]*?<\/span>/g) ?? []).filter((span) =>
-    span.includes("new Date().toLocaleDateString"),
-  );
-  assert.equal(
-    clockSpans.length,
-    1,
-    "exactly one span in the portal shell may render the clock during render — a second one is a second copy of this bug, and zero means the chip moved somewhere this test can no longer see it",
-  );
-  const todayChip = clockSpans[0];
-  assert.match(
-    todayChip,
-    /suppressHydrationWarning/,
-    "the today-chip evaluates new Date() during render, so the server and the browser produce different text across the Cairo midnight boundary; without suppressHydrationWarning React discards the server HTML for the entire portal shell and reports error #418",
-  );
-  assert.match(
-    todayChip,
-    /timeZone: "Africa\/Cairo"/,
-    "the chip must stay pinned to Cairo — the owner reads Cairo local time, never the server's UTC",
-  );
+  // The employee-portal header chip was the second cause on these routes: it called `new Date()`
+  // during render, so Node and the browser disagreed across Cairo midnight
+  // (/employee-portals/plans, 23:28 Cairo, 2026-09-05). That is fixed on main by #3336, which
+  // moved the read into a mount effect so the server renders nothing at all, and it carries its
+  // own regression test — tests/employee-portal-header-clock-hydration.test.ts. Deliberately not
+  // re-pinned here: two tests guarding one line disagree the moment either is edited, and the one
+  // that lives beside the fix is the one that will be kept honest.
 }

@@ -463,6 +463,48 @@ function buildEmployeePortalSections({
   ].filter((section) => section.items.length > 0);
 }
 
+/**
+ * The header's "today" chip is genuinely hydration-unsafe if computed inline: React
+ * server-renders this component once (capturing "now" at the server's render instant) and
+ * hydrates it client-side once more (capturing "now" again, independently, moments later).
+ * `timeZone: "Africa/Cairo"` is already correct, so this is NOT the UTC-vs-Cairo bug class —
+ * almost every render lands within the same Cairo calendar day and produces identical text, but a
+ * page load straddling the Cairo midnight boundary lands the two computations on different days,
+ * throwing React hydration error #418 (63% of production errors over the trailing 7 days,
+ * confirmed live against public.app_error_events, spread across nearly every /employee-portals/*
+ * route this header renders on).
+ *
+ * Same "server default, then correct after mount" shape as ThemeProvider
+ * (src/components/layout/theme-provider.tsx): render nothing until mounted, so the server's HTML
+ * and the client's first hydration pass are byte-identical regardless of which instant either side
+ * lands on, then fill in the real date a moment later.
+ */
+function EmployeePortalHeaderDate() {
+  const [label, setLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Deferred through rAF rather than called synchronously in the effect body — same shape as
+    // ThemeProvider — because this repo's react-hooks/set-state-in-effect lint rule is an ERROR,
+    // not a warning, on a bare setState() inside useEffect.
+    const frame = window.requestAnimationFrame(() => {
+      setLabel(
+        new Date().toLocaleDateString("en-US", {
+          day: "numeric",
+          month: "short",
+          timeZone: "Africa/Cairo",
+          year: "numeric",
+        }),
+      );
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  if (!label) return null;
+
+  return <span className="whitespace-nowrap">{label}</span>;
+}
+
 function dispatchEmployeePortalRoutePending(href: string) {
   window.dispatchEvent(new CustomEvent(EMPLOYEE_ROUTE_PENDING_EVENT, { detail: { href } }));
 }
@@ -804,30 +846,7 @@ export function EmployeePortalTopNav({
           <InternalMessagesMenu isAdminMode={false} />
           <div className="hidden items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-semibold text-slate-500 lg:flex">
             <CalendarClock className="h-3 w-3 text-slate-400" />
-            {/* READS THE CLOCK DURING RENDER, and that is why it carries suppressHydrationWarning.
-
-                The zone is already pinned to Cairo and the en-US abbreviations are stable across
-                every ICU version, so the FORMAT is not the problem here — the INSTANT is. This is a
-                client component: Node evaluates `new Date()` when the HTML is built and the browser
-                evaluates it again when React hydrates. Almost always the two land on the same Cairo
-                day and the text matches; across the midnight boundary they do not, and React then
-                discards the server HTML for the whole shell and re-renders it (hydration error
-                #418, seen on /employee-portals/plans at 23:28 Cairo on 2026-09-05).
-
-                suppressHydrationWarning is React's own answer for exactly this — a rendered clock —
-                and it is a real fix rather than a muted warning: react-dom checks the flag BEFORE
-                calling throwOnHydrationMismatch, so no recoverable error is raised and nothing
-                reaches GlobalErrorReporter. React keeps the server's text, which is the better of
-                the two anyway: the Railway clock is authoritative where a phone's may simply be
-                wrong. It applies one level deep, to this span's own text and nothing else.
-
-                Do NOT widen it to a parent, and do not copy it onto a value that MATTERS. It is
-                right for a decorative today-chip and wrong for anything a reader would act on —
-                there, format on the server and pass the finished string down, the way
-                app/password-setup/[token]/page.tsx does. */}
-            <span className="whitespace-nowrap" suppressHydrationWarning>
-              {new Date().toLocaleDateString("en-US", { day: "numeric", month: "short", timeZone: "Africa/Cairo", year: "numeric" })}
-            </span>
+            <EmployeePortalHeaderDate />
           </div>
           {visibility.showMyPerformanceTab === false ? null : (
             <div className="hidden items-center gap-1.5 rounded border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-phx-xs font-bold text-orange-700 lg:flex">

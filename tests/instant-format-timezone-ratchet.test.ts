@@ -59,7 +59,10 @@ import path from "node:path";
 // Lowered 15 -> 13 retiring the legacy probation feedback path (2026-09-01): both sites were in
 // feedback-form-panel.tsx — the submission stamp and the comment stamp, each an unzoned
 // Intl.DateTimeFormat over a stored instant. That file is deleted, so they cannot come back.
-const CLIENT_BASELINE = 13;
+// Lowered 13 -> 12 fixing admin-profile-form.tsx's React hydration error #418 (2026-09-05): its
+// formattedCreatedAt was a bare, zone-less Intl.DateTimeFormat, now routed through the shared
+// cairoDateTime() helper, so the site is zoned and no longer counts as unzoned.
+const CLIENT_BASELINE = 12;
 
 /**
  * Not a baseline — a rule. A server-rendered instant with no zone is wrong in

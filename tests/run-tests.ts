@@ -1404,8 +1404,15 @@ import { runPayrollHoldReasonTests } from "./payroll-hold-reason.test.ts";
 
 import { runEmployeeImportJobTitleCasingTests } from "./employee-import-job-title-casing.test.ts";
 import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-cairo-clock.test.ts";
+import { runAdminProfileCreatedAtHydrationSafeTests } from "./admin-profile-created-at-hydration-safe.test.ts";
 
 import { runEmployeeSavePreservesSalaryTests } from "./employee-save-preserves-salary.test.ts";
+import { runEmployeePortalHeaderClockHydrationTests } from "./employee-portal-header-clock-hydration.test.ts";
+
+import { runEmployeeJobTitleCasingHintTests } from "./employee-job-title-casing-hint.test.ts";
+
+import { runPayrollHoldConfirmStepReasonTests } from "./payroll-hold-confirm-step-reason.test.ts";
+
 import { runReact418HydrationSafeTextTests } from "./react-418-hydration-safe-text.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -4439,9 +4446,28 @@ await runTest(
   "contract anniversary resolves Cairo's calendar day, not the server's local/UTC clock",
   runContractAnniversaryCairoClockTests,
 );
+await runTest(
+  "admin profile 'Account created' is built from the Cairo-pinned formatter (regression for React hydration error #418)",
+  runAdminProfileCreatedAtHydrationSafeTests,
+);
 
 await runTest("employee save preserves stored salary when the payload omits money fields", runEmployeeSavePreservesSalaryTests);
-await runTest("hydration-safe Cairo text: engine-independent month names, server-formatted password-setup expiry, guarded portal clock (React #418)", runReact418HydrationSafeTextTests);
+await runTest(
+  "employee portal header 'today' chip defers to a mount effect (regression for React hydration error #418)",
+  runEmployeePortalHeaderClockHydrationTests,
+);
+
+await runTest(
+  "employee job title casing hint (offers CEO/QPPV/SFE/R&D/HR and the minor-word fix; stays silent on QA/QC, eCommerce, Arabic and already-correct titles)",
+  runEmployeeJobTitleCasingHintTests,
+);
+
+await runTest(
+  "confirming a payroll hold step enforces the hold reason too (the write path saveStep's rule did not cover, and the last one before publish drops the held rows)",
+  runPayrollHoldConfirmStepReasonTests,
+);
+
+await runTest("hydration-safe Cairo text: engine-independent month names and a server-formatted password-setup expiry (React #418)", runReact418HydrationSafeTextTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
