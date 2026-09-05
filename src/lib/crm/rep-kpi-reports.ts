@@ -161,12 +161,19 @@ const NO_NORMS: Readonly<Record<DoctorCoverageGradeTier, number | null>> = { A: 
  * The 95% coverage floor is the stated AM/PM standard. PM's frequency norms are the LIVE production
  * `doctor_coverage_config.norms.sp` values ({A:2,B:1,C:1}), which is what scores PM doctors today.
  *
- * Everything else is null on purpose, and each null is a question waiting on the owner:
- *   - AM frequency norms       → parked question 4 (today's HCP norm is 0 = unscored)
- *   - every pharmacy number    → parked questions 1, 2 and 3
+ * ANSWERED BY THE OWNER 2026-09-06 (xlsx/kpi-standards-decisions-2026-09-06.xlsx):
+ *   - AM frequency norm A = 1      → a grade A account is visited once a month. 787 of the
+ *     887 AM accounts are grade A, and this norm had sat at 0 (= unscored) since 2026-08-19.
+ *   - Pharmacy coverage floor = 50 → deliberately NOT the AM/PM 95%. Pharmacy coverage ran
+ *     at 40.6% in August (760 of 1,872), so a 95% floor would put every rep in the red on
+ *     day one. Do NOT 'align' it with the AM/PM number.
+ *
+ * Still null on purpose, still questions waiting on the owner:
+ *   - pharmacy call rate per day and pharmacy frequency norms → parked questions 1, 2 and 3
+ *   - every grade B norm → he left those blank, which means 'keep it as it is today'
  */
 export const DEFAULT_REP_KPI_STANDARDS: RepKpiStandards = {
-  AM: { callRatePerDay: 2, callRateBand: null, coverageFloorPct: 95, frequencyNorms: NO_NORMS },
+  AM: { callRatePerDay: 2, callRateBand: null, coverageFloorPct: 95, frequencyNorms: { A: 1, B: null, C: null } },
   PM: {
     callRatePerDay: 10,
     // ⚠ TWO READINGS OF "8-12" ARE LIVE, and which one the owner meant changes a verdict a
@@ -190,7 +197,7 @@ export const DEFAULT_REP_KPI_STANDARDS: RepKpiStandards = {
     coverageFloorPct: 95,
     frequencyNorms: { A: 2, B: 1, C: 1 },
   },
-  Pharmacy: { callRatePerDay: null, callRateBand: null, coverageFloorPct: null, frequencyNorms: NO_NORMS },
+  Pharmacy: { callRatePerDay: null, callRateBand: null, coverageFloorPct: 50, frequencyNorms: NO_NORMS },
 };
 
 /**

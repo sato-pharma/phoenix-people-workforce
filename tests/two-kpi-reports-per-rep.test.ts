@@ -208,11 +208,16 @@ export function runTwoKpiReportsApplicabilityTests() {
   );
   assert.equal(unscoredLabel("no-standard-set"), "Not scored");
 
-  // All three pharmacy numbers are parked questions, and none may be invented.
+  // Still parked, and none may be invented.
   assert.equal(DEFAULT_REP_KPI_STANDARDS.Pharmacy.callRatePerDay, null, "parked question 1");
   assert.equal(DEFAULT_REP_KPI_STANDARDS.Pharmacy.frequencyNorms.A, null, "parked question 2");
-  assert.equal(DEFAULT_REP_KPI_STANDARDS.Pharmacy.coverageFloorPct, null, "parked question 3");
-  assert.equal(DEFAULT_REP_KPI_STANDARDS.AM.frequencyNorms.A, null, "parked question 4 — AM is unscored today");
+
+  // ANSWERED by the owner 2026-09-06 — these two are now the standard, not a guess.
+  // 50 is NOT a typo for the AM/PM 95: pharmacy coverage ran at 40.6% in August, so a 95%
+  // floor would fail every rep on day one. Do not "align" these two numbers.
+  assert.equal(DEFAULT_REP_KPI_STANDARDS.Pharmacy.coverageFloorPct, 50, "owner answer: pharmacy coverage floor is 50%");
+  assert.equal(DEFAULT_REP_KPI_STANDARDS.AM.frequencyNorms.A, 1, "owner answer: a grade A AM account is visited once a month");
+  assert.equal(DEFAULT_REP_KPI_STANDARDS.AM.frequencyNorms.B, null, "he left grade B blank = keep as today");
 }
 
 // ── A zero norm is "not scored", never green ─────────────────────────────────────────────────
@@ -338,8 +343,8 @@ export function runTwoKpiReportsGradeAndBandTests() {
 // ── Every number is configurable ──────────────────────────────────────────────────────────────
 
 export function runTwoKpiReportsConfigurableTests() {
-  // No stored standard yet — the reports run on today's real numbers with the four unanswered ones
-  // null. This is the state that ships.
+  // No stored standard yet — the reports run on today's real numbers, with the still-unanswered
+  // ones null and the owner's 2026-09-06 answers baked into the defaults. This is what ships.
   assert.deepEqual(resolveRepKpiStandards(null), DEFAULT_REP_KPI_STANDARDS);
   assert.deepEqual(resolveRepKpiStandards(undefined), DEFAULT_REP_KPI_STANDARDS);
 
@@ -348,8 +353,12 @@ export function runTwoKpiReportsConfigurableTests() {
   // number on the board with nothing on screen to say why.
   const answered = resolveRepKpiStandards({ Pharmacy: { callRatePerDay: 4 } });
   assert.equal(answered.Pharmacy.callRatePerDay, 4, "the owner's answer is taken");
-  assert.equal(answered.Pharmacy.coverageFloorPct, null, "the questions he has NOT answered stay unanswered");
-  assert.equal(answered.Pharmacy.frequencyNorms.A, null);
+  assert.equal(
+    answered.Pharmacy.coverageFloorPct,
+    50,
+    "a key the edit does not name keeps its default — here the owner's answered 50% floor",
+  );
+  assert.equal(answered.Pharmacy.frequencyNorms.A, null, "and a still-open question stays unanswered");
   assert.deepEqual(answered.PM, DEFAULT_REP_KPI_STANDARDS.PM, "and the list he did not name is untouched");
   assert.deepEqual(answered.AM, DEFAULT_REP_KPI_STANDARDS.AM);
 
