@@ -24,13 +24,16 @@
 
 import ExcelJS from "exceljs";
 
-import { systemIdentity } from "@/config/system-settings";
+// The HOUSE helpers for the cover and the tables — SATO-DIS-2026-01 v1.0. `phoenix-xlsx-style`
+// keeps serving the families that still read it, and its helpers reach `sales-workbook-kit`,
+// which the LOCKED Weekly Summarized Report shares — so it is not changed here.
+import { buildHouseCoverSheet, writeHouseTable } from "@/lib/export/house-table-workbook";
+
+import { systemLegalEntity } from "@/config/system-settings";
 import {
-  buildCoverSheet,
   phoenixBandHeader,
   sanitizeSheetName,
   UNITS_FMT,
-  writeTable,
   type CellValue,
   type TableColumn,
 } from "@/lib/export/phoenix-xlsx-style";
@@ -186,7 +189,7 @@ export async function buildManagerEngagementWorkbook(input: {
 
   const workbook = new ExcelJS.Workbook();
 
-  buildCoverSheet(workbook, {
+  buildHouseCoverSheet(workbook, {
     title: "Manager CV Engagement",
     subtitle: `${stamp} · ${scopeLabel}`,
     confidentialNote: CONFIDENTIAL_NOTE,
@@ -210,7 +213,7 @@ export async function buildManagerEngagementWorkbook(input: {
     properties: { defaultColWidth: 16 },
   });
   phoenixBandHeader(managerSheet, MANAGER_COLUMNS.length, "Manager CV Engagement", `${stamp} · ${scopeLabel}`);
-  writeTable(managerSheet, 4, {
+  writeHouseTable(managerSheet, 4, {
     columns: MANAGER_COLUMNS,
     rows: managerRows(rows),
     title: "Managers",
@@ -222,7 +225,7 @@ export async function buildManagerEngagementWorkbook(input: {
   const cvSheet = workbook.addWorksheet(sanitizeSheetName("CVs"), { properties: { defaultColWidth: 16 } });
   phoenixBandHeader(cvSheet, CV_COLUMNS.length, "Manager CV Engagement — every CV", `${stamp} · ${scopeLabel}`);
   const cvRows = candidateRows(rows);
-  writeTable(cvSheet, 4, {
+  writeHouseTable(cvSheet, 4, {
     columns: CV_COLUMNS,
     rows: cvRows,
     title: "CVs behind the numbers",
@@ -238,8 +241,9 @@ export async function buildManagerEngagementWorkbook(input: {
     cvSheet.autoFilter = { from: { row: 5, column: 1 }, to: { row: 5 + cvRows.length, column: CV_COLUMNS.length } };
   }
 
-  workbook.creator = systemIdentity.appName;
-  workbook.company = systemIdentity.appName;
+  // The file's author and company are the COMPANY that issued it, not the software that rendered it.
+  workbook.creator = systemLegalEntity.legalNameEn;
+  workbook.company = systemLegalEntity.legalNameEn;
   workbook.created = new Date(meta.generatedAtIso);
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
