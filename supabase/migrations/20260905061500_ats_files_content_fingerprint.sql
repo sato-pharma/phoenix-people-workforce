@@ -1,5 +1,11 @@
 -- Recruitment / ATS — the CV's own fingerprint.
 --
+-- APPLY THIS BEFORE THE CODE SHIPS. uploadCandidateFile writes content_md5 on EVERY insert, and a
+-- merge to main deploys to production within minutes. Deploy first and every CV upload fails on a
+-- column that does not exist yet — the deploy-before-migration window, on the one path the whole
+-- recruitment intake runs through. This file is additive and re-runnable, so it is safe to apply
+-- against the code currently live; the reverse order is not.
+--
 -- WHY. createCandidate dedupes on national ID, then email. candidate-matching.ts deliberately keeps
 -- phone OUT of that decision, because phone matching once merged three different applicants into one
 -- record. A WhatsApp CV usually carries neither a national ID nor an email, and its phone belongs to
