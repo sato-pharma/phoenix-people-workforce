@@ -20,9 +20,10 @@
  *      Squaring any of them would be a visible change nobody asked for, and reading the rule as
  *      covering them is an inference, not an instruction.
  *
- * NOTHING IS PADDED. Where one decision genuinely covers many declarations — every corner in one
- * standalone guide page is one question about one file — it is ONE row carrying the site count, not
- * 37 rows of the same question. Where the elements are genuinely distinct, they get a row each.
+ * NOTHING IS PADDED, and nothing is grouped any more either. The two bulk rows this sheet used to
+ * carry — email and the marketing guide — were each ONE question about one medium or one file
+ * rather than 21 and 37 copies of the same question. Both were answered on 2026-09-05, so every
+ * remaining row is a single element the owner can picture without opening the code.
  *
  * Run:  node --experimental-strip-types --experimental-specifier-resolution=node \
  *         scripts/square-edge-questions.ts
@@ -164,19 +165,6 @@ const CORNERS: CornerRow[] = [
     sites: 1,
   },
 
-  // ── A standalone page ─────────────────────────────────────────────────────────────────────────
-  {
-    group: "Static guide",
-    what: "Marketing user guide page",
-    where: "public/marketing-guide.html",
-    element: "cards, pills, badges, step circles",
-    value: "4px–100px",
-    context:
-      "A standalone illustrated guide served at /marketing-guide.html. Nothing in the app links to "
-      + "it — it is reachable only by typing the address — and it sits outside both shells, so no "
-      + "sweep touches it. 37 corners; one answer covers the file.",
-    sites: 37,
-  },
 ];
 
 function styleHeader(sheet: ExcelJS.Worksheet, rowNumber: number): void {
@@ -234,7 +222,7 @@ function buildReadMe(workbook: ExcelJS.Workbook): void {
         + "worse than asking once. (The scrollbars were a row here until PR #3209 squared them.)",
     ],
     [
-      "Corners (10 rows)",
+      "Corners (9 rows)",
       "The sign-in screen's decorations, the identity card, the offer letter and email. "
         + "The 'What it looks like' column tells you what you are looking at without opening the code.",
     ],
@@ -245,10 +233,10 @@ function buildReadMe(workbook: ExcelJS.Workbook): void {
         + "what stops a newly copied screen inheriting a corner.",
     ],
     [
-      "Where one row covers many",
-      "One row carries a site count above 1 — the marketing guide page (37). That is one decision "
-        + "about one file, so it is one row rather than 37 copies of the same question. The email "
-        + "rows that used to sit here are gone: you answered them on 2026-09-05.",
+      "Every row is now one thing",
+      "Nothing left is a bulk decision. The two that were — email (21 corners) and the marketing "
+        + "guide (37) — you answered on 2026-09-05, and they are gone from here. Each of the nine "
+        + "rows below is a single element you can picture.",
     ],
     [
       "What happens next",
