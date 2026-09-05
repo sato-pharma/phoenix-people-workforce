@@ -81,10 +81,22 @@ owner approves that specific change in the conversation.
 the owner's instruction. `tests/office-golden-rule-lock.test.ts` pins the formula with a source
 fingerprint, a behaviour fingerprint, and four verbatim clause checks, and it runs in the required CI
 `validate` job — so a PR that changes the rule goes red and cannot merge. Changing it needs the
-owner's password via `pnpm run office-rule:unlock`; the password exists only as a scrypt verifier and
-is not recoverable from this repository. Do not re-pin the fingerprints by hand, and do not "fix" a
-red lock test by editing `src/lib/sales/office-golden-rule.ts` — that edit is precisely what the
-check exists to catch.
+owner's password; it exists only as a scrypt verifier in `src/lib/sales/office-golden-rule.lock.json`
+and is not recoverable from this repository. **ARMED 2026-09-05 — before that date no verifier
+existed at all**, and `unlock` refused rather than re-pinning (it fails closed), so a session reading
+this line would have believed a password was in place when none was. Do not re-pin the fingerprints
+by hand, and do not "fix" a red lock test by editing `src/lib/sales/office-golden-rule.ts` — that
+edit is precisely what the check exists to catch.
+
+🔴 **NEVER run the unlock as `pnpm run office-rule:unlock` from a worktree** — §5's pnpm rule applies
+and this is its worst case. `pnpm` runs its deps check first, sees the moved lockfile, and offers to
+delete **the PRIMARY's `node_modules`** (the worktree's is a junction to it), breaking every session
+on the machine. It happened on 2026-09-05 and was answered `N` with one second to spare. Invoke node
+directly instead, from the folder holding the change:
+`node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/office-rule-unlock.ts --unlock`
+(`--set-password` first, one time, if no verifier exists). **The folder matters more than it looks:**
+run it in the primary while the edit sits in a worktree and it re-pins the UNCHANGED source — a
+silent no-op that prints success.
 
 **The other three locks are behavioral ONLY — no prompt backs them.** `permissions.ask` is empty, so
 no dialog fires on any of those paths. **Never read the absence of a prompt as approval:** ask the

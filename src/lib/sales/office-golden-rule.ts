@@ -119,7 +119,7 @@ export const OFFICE_RULE_REQUIRED_CLAUSES = Object.freeze([
  * Re-pinned ONLY by `pnpm run office-rule:unlock`.
  */
 export const OFFICE_RULE_SOURCE_FINGERPRINT =
-  "115069c09233e093a96db995740973d6822919613a01c1d4e6b16b6f729b19c6";
+  "0020059e52e87ebc711d25849b8b666c7e50555694449091ce2d1127592b57dd";
 
 /**
  * sha256 of the allocation's output over the fixed dataset in `scripts/check-office-golden-rule.ts`.
