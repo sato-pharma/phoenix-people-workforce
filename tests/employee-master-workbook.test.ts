@@ -103,7 +103,7 @@ function fixtureEmployee(index: number) {
 
 const EMPLOYEE_COUNT = 12;
 
-async function buildFixtureWorkbook() {
+export async function buildFixtureWorkbook() {
   const employees = Array.from({ length: EMPLOYEE_COUNT }, (_, index) => fixtureEmployee(index + 1));
   const workbook = await buildEmployeeMasterWorkbook({
     employees: employees as never,

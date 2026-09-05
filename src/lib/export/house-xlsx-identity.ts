@@ -227,33 +227,58 @@ export function writeHouseMasthead(
   return HOUSE_MASTHEAD_ROWS + 1;
 }
 
-/** The house table header: deep bold type on white under a Brand Blue rule. Never a filled band. */
+/**
+ * The house table header: white type on a Brand Blue band, ruled between columns.
+ *
+ * THIS WAS TYPE ON WHITE UNDER A RULE, and the owner changed it on 2026-09-05 looking at a real
+ * export: "put borders zebra tabled colored headers". He was right, and the reason is worth keeping
+ * because it decides where the ink rule applies and where it does not.
+ *
+ * THE INK RULE IS A RULE ABOUT PAPER. Its own measurement is PAGE COVERAGE — 9.97% down to 3.18% —
+ * and it exists because contracts print in volume on office machines. It was carried into the
+ * workbooks by this module, not by the owner, on the reasoning that filled area "still reads as
+ * heavier than it needs to be". On a fifty-column data grid read on screen that reasoning is simply
+ * wrong: a header with no ground does not separate from its data, and a reader scanning 356 rows
+ * needs the structure more than the restraint. The paper standard is unchanged and still governs
+ * every document `house-identity.ts` renders. This is the spreadsheet's own treatment.
+ */
 export function houseHeaderStyle(cell: ExcelJS.Cell, options: { size?: number; center?: boolean } = {}) {
-  cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: options.size ?? 10 };
+  cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: options.size ?? 10 };
   cell.alignment = {
     horizontal: options.center ? "center" : "left",
-    vertical: "bottom",
+    vertical: "middle",
     wrapText: true,
   };
+  cell.fill = { fgColor: { argb: HOUSE_XLSX_COLORS.blue }, pattern: "solid", type: "pattern" };
+  // Ruled in the DEEP against its own blue, so the columns separate on the header the same way they
+  // do in the body. A hairline in hair grey would vanish against this ground.
   cell.border = {
-    bottom: { style: "medium", color: { argb: HOUSE_XLSX_COLORS.blue } },
-    top: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.hair } },
+    bottom: { style: "medium", color: { argb: HOUSE_XLSX_COLORS.deep } },
+    left: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.deep } },
+    right: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.deep } },
+    top: { style: "medium", color: { argb: HOUSE_XLSX_COLORS.deep } },
   };
 }
 
 /**
- * Body type, with the hairline the zebra row REPLACES rather than joins.
+ * Body type on a full hairline grid, with the zebra ON TOP of the grid rather than instead of it.
  *
- * That substitution is the specimen's, not a shortcut: a tinted row already reads as a band, so
- * ruling it as well draws the eye twice for one row.
+ * THE OLD FORM GAVE A TINTED ROW NO BORDER AT ALL, on the specimen's reasoning that a tinted row
+ * already reads as a band so ruling it draws the eye twice. That holds for a five-column table on
+ * paper. On the employee master — FIFTY columns, 356 rows — it left the sheet with horizontal rules
+ * on alternate rows and NO VERTICAL RULES ANYWHERE, so the columns ran into each other and the
+ * banding read as a wash rather than as structure. The owner said so looking at a real export.
+ *
+ * Every cell is now ruled on all four sides in hair grey, and the zebra sits over it. The grid is
+ * what makes fifty columns readable; the tint is what keeps a row together across them.
  */
 export function houseBodyStyle(cell: ExcelJS.Cell, options: { zebra?: boolean; size?: number } = {}) {
+  const hair = { style: "hair" as const, color: { argb: HOUSE_XLSX_COLORS.hair } };
   cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: options.size ?? 10 };
   cell.alignment = { vertical: "middle" };
+  cell.border = { bottom: hair, left: hair, right: hair, top: hair };
   if (options.zebra) {
     cell.fill = { fgColor: { argb: HOUSE_XLSX_COLORS.tint }, pattern: "solid", type: "pattern" };
-  } else {
-    cell.border = { bottom: { style: "hair", color: { argb: HOUSE_XLSX_COLORS.hair } } };
   }
 }
 

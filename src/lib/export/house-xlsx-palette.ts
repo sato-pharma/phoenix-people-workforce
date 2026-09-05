@@ -75,3 +75,4 @@ export const HOUSE_DOCUMENT_STANDARD = "SATO-DIS-2026-01 v1.0";
  */
 export const HOUSE_XLSX_FONT = HOUSE_TYPE.body;
 export const HOUSE_XLSX_DISPLAY_FONT = HOUSE_TYPE.display;
+export const HOUSE_XLSX_MONO_FONT = HOUSE_TYPE.mono;
