@@ -54,7 +54,7 @@ import {
 import { DUPLICATE_FOLDER_KEY, DUPLICATE_FOLDER_KIND } from "@/lib/recruitment/candidate-folder";
 import { FREE_POSITION, NO_POSITION } from "@/components/recruitment/vacancy-picker";
 import { primaryCvFile } from "@/lib/recruitment/cv-file-choice";
-import type { StoredCvExtraction } from "@/lib/recruitment/cv-extraction-fields";
+import type { ExtractedCvValue, StoredCvExtraction } from "@/lib/recruitment/cv-extraction-fields";
 import type {
   WorkspaceCandidateRow,
   WorkspaceManager,
@@ -465,6 +465,58 @@ export function ScreeningWorkstation({
     [busy, goToNext],
   );
 
+  /**
+   * Write ONE reader finding onto the candidate record.
+   *
+   * The reason this exists at all: `cv-auto-apply.ts` writes a finding unattended only at high
+   * confidence, and that gate is correct. But for a candidate created by automatic intake there was
+   * no screen where a human ever saw the low-confidence proposals, so they waited for a review that
+   * never came — 215 candidates carrying a good yearsExperience against a null column on 2026-09-05,
+   * and 120 carrying a nationalId on a pool holding four. This puts them in front of the one person
+   * already reading the CV.
+   *
+   * ONE FIELD PER PRESS, deliberately. These are the readings the extractor itself hedged on, so a
+   * person confirms each against the document in front of them; a bulk "apply everything" would be
+   * the unattended write the confidence gate exists to prevent, wearing a button.
+   *
+   * The route is schema-driven (`listWritableCvFields`), so no allow-list here can drift from the
+   * field registry — and `updateCandidate` recomputes `national_id_norm` on write, which is what
+   * makes an accepted national id immediately usable by the locked identity rule.
+   */
+  const acceptReaderFinding = useCallback(
+    async (fieldKey: string, value: ExtractedCvValue) => {
+      const candidateId = selected?.id;
+      if (!candidateId || busy) return;
+      setBusy(true);
+      setActionError(null);
+      try {
+        const res = await fetch(`/api/recruitment/candidates/${candidateId}`, {
+          body: JSON.stringify({ [fieldKey]: value }),
+          headers: { "Content-Type": "application/json" },
+          method: "PATCH",
+        });
+        const data = (await res.json().catch(() => ({}))) as { candidate?: Candidate; message?: string };
+        if (!res.ok) throw new Error(data.message ?? "Could not save that reading.");
+        // Replace the cached record with the SERVER's, so the row stops offering a finding that is
+        // now saved. Trusting a locally patched copy would leave the button on screen until reload
+        // whenever the server normalised the value differently from the reader's raw proposal.
+        const saved = data.candidate;
+        if (saved) {
+          setLoaded((prev) => {
+            const entry = prev[candidateId];
+            if (!entry) return prev;
+            return { ...prev, [candidateId]: { ...entry, profile: { ...entry.profile, candidate: saved } } };
+          });
+        }
+      } catch (caught) {
+        setActionError(caught instanceof Error ? caught.message : "Could not save that reading.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, selected],
+  );
+
   const suggestedVacancyIds = selected?.vacancyIds ?? [];
 
   const listTitle = screeningWorkQueueLabels[queue];
@@ -658,6 +710,7 @@ export function ScreeningWorkstation({
               loadError={entryError}
               loading={Boolean(activeId) && !entry && !entryError}
               noteCount={selected ? (noteCounts[selected.id] ?? selected.noteCount) : 0}
+              onAcceptField={canWriteNotes ? (key, value) => void acceptReaderFinding(key, value) : null}
               onCollapse={() => setPanelOpen(false)}
               onNoteCountChange={(count) => {
                 // Keyed on the VISIBLE selection, like every other write on this screen — the panel
