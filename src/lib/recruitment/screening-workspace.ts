@@ -49,7 +49,8 @@ import {
   listOtherViewersByCandidate,
   resolveViewerNames,
 } from "@/lib/recruitment/candidate-views";
-import { listCandidates, loadDecisionHistory } from "@/lib/recruitment/candidates";
+import { listCandidates, loadDecisionHistory, loadRowFindings } from "@/lib/recruitment/candidates";
+import { countRowFindings } from "@/lib/recruitment/cv-findings";
 import { buildThroughput, type ThroughputSummary } from "@/lib/recruitment/candidate-throughput";
 import { listHiringManagerOptions, type HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import {
@@ -224,6 +225,7 @@ export async function loadScreeningWorkspace(
     positionSuggestions,
     interviewToday,
     decisionHistory,
+    rowFindings,
   ] = await Promise.all([
     // WITHOUT the repeating CV blocks. Nothing below reads them, and on production they are 59%
     // of the bytes this read moves — see CANDIDATE_COLUMNS_WITHOUT_REPEATING_BLOCKS.
@@ -241,6 +243,9 @@ export async function loadScreeningWorkspace(
     // The decision history, for the throughput trend. A separate read because the pool's own status
     // stamps cannot answer "when was this candidate FIRST decided" — they hold only the latest move.
     loadDecisionHistory(),
+    // Three CV findings per candidate, projected rather than read whole — 105 kB against the
+    // 1,549 kB the full extraction blob would cost. See loadRowFindings.
+    loadRowFindings(),
   ]);
 
   // A shelved CV leaves the workstation exactly as it leaves the queue: the whole purpose of the
@@ -362,6 +367,9 @@ export async function loadScreeningWorkspace(
       redFlagged: redFlags.length > 0,
       sentToManagerAt: sentAt,
       status,
+      // Counted by listUnappliedCvFields through a narrowed schema, so the badge and the CV
+      // Data tab can never disagree about what counts as a finding still owed to the record.
+      unsavedFindings: countRowFindings(rowFindings.get(candidate.id), candidate),
     };
 
     return {
@@ -396,6 +404,7 @@ export async function loadScreeningWorkspace(
       regionCode: place.regionCode,
       alsoReadBy: (otherViewers.get(candidate.id) ?? []).map((hrId) => viewerNames.get(hrId) ?? hrId),
       seen: Boolean(views[candidate.id]),
+      unsavedFindings: queueInput.unsavedFindings,
       sentForLabel: candidate.sentFor ? positionFolderLabel(candidate.sentFor) : null,
       sentForVacancyId: candidate.sentFor?.vacancyId ?? null,
       sentToManagerAt: sentAt,
@@ -461,6 +470,7 @@ export async function loadScreeningWorkspace(
       redFlagged: row.redFlags.length > 0,
       sentToManagerAt: row.sentToManagerAt,
       status: row.status,
+      unsavedFindings: row.unsavedFindings,
     }),
     now,
   );

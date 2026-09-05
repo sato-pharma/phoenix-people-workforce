@@ -314,6 +314,19 @@ function CandidateBlock({
             {row.alsoReadBy.length === 1 ? row.alsoReadBy[0] : `${row.alsoReadBy.length} others`}
           </Pill>
         ) : null}
+        {/* THE CV READER FOUND SOMETHING NOBODY SAVED. 271 of 582 candidates carried one of these on
+            2026-09-05 and there was no way to tell from the list which. Not an extraction failure:
+            cv-auto-apply writes unattended only at high confidence and `low` waits for a human, so
+            for an automatically-created candidate it waited for a review that never came. The title
+            names the three fields checked rather than claiming to be a total — see cv-findings.ts. */}
+        {row.unsavedFindings > 0 ? (
+          <Pill
+            tone="warn"
+            title="The CV reader found an experience figure, a national ID or a job title that is not on the record yet. Open the CV Data tab to save it."
+          >
+            {row.unsavedFindings} to save
+          </Pill>
+        ) : null}
         {row.locationLabel ? (
           <span className="text-[11px] text-phx-ink-soft" title={row.locationDeclared ? "The applicant asked for this." : "Worked out from the address on the CV."}>
             {row.locationLabel}
