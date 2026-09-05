@@ -55,14 +55,15 @@ function testEveryBuiltInTableIsComplete() {
 
 /** Every built-in document resolves all three answers, through the public functions. */
 function testEveryBuiltInDocumentResolvesAllThree() {
-  // TWELVE since 2026-09-05, when the two renewal papers were added — the annual renewal annex
-  // and the non-renewal notice. This number is deliberately hard-coded rather than derived: it
-  // is what makes adding a document a decision somebody had to write down, in a repo where
-  // `ignoreBuildErrors` means an incomplete Record compiles and deploys perfectly happily.
+  // EIGHTEEN since 2026-09-05: ten, plus the two renewal papers, plus Sato's own six — the
+  // confidentiality undertaking, both appointment-documents forms, both absence notices and the
+  // service-file sheet. Deliberately hard-coded rather than derived: it is what makes adding a
+  // document a decision somebody had to write down, in a repo where `ignoreBuildErrors` means an
+  // incomplete Record compiles and deploys perfectly happily.
   assert.equal(
     HIRING_PACK_DOCUMENTS.length,
-    12,
-    "the built-in document list should still be twelve — update this only alongside the four " +
+    18,
+    "the built-in document list should still be eighteen — update this only alongside the four " +
       "tables in document-registry.ts, the surfaces, the renderers and the template registry",
   );
 
@@ -232,22 +233,42 @@ function testEveryDocumentIsInExactlyOnePackage() {
   // tabs print, and a document moving between them changes what HR hands somebody on their last day.
   assert.deepEqual(
     seen.get("joining")?.sort(),
-    ["contract", "form1", "workerDataForm"],
-    "the joining package is the contract, Form 1 and the worker data form",
+    ["appointmentDocsReceipt", "contract", "form1", "nda", "socialStatusSheet", "workerDataForm"].sort(),
+    "the joining package is the contract, Form 1, the worker data form, and Sato's own three " +
+      "arrival papers — the confidentiality undertaking, the appointment-documents receipt and the " +
+      "Article 92 service-file sheet",
   );
   assert.deepEqual(
     seen.get("leaving")?.sort(),
-    ["clearanceCompany", "clearanceEmployee", "form6", "mutualTermination", "resignation"].sort(),
-    "the leaving package is Form 6, both labour templates and both clearances",
+    [
+      "appointmentDocsReturn",
+      "clearanceCompany",
+      "clearanceEmployee",
+      "form6",
+      "mutualTermination",
+      "resignation",
+    ].sort(),
+    "the leaving package is Form 6, both labour templates, both clearances, and the employee's " +
+      "receipt for his own certificates coming back — whose sibling is in the JOINING package, " +
+      "which is the pairing this assertion exists to keep straight",
   );
   assert.deepEqual(
     seen.get("other")?.sort(),
-    ["contractNonRenewal", "contractRenewal", "custodyLaptop", "custodyMobile"].sort(),
+    [
+      "absenceWarning",
+      "contractNonRenewal",
+      "contractRenewal",
+      "custodyLaptop",
+      "custodyMobile",
+      "deemedResignation",
+    ].sort(),
     "\"other\" is the DURING-employment package: a custody receipt is printed whenever a device " +
       "changes hands, and the two renewal papers whenever a fixed term is coming to its end. Neither " +
       "is arriving or leaving. The non-renewal notice is here rather than in the leaving package on " +
       "purpose — it is one half of a decision made before anybody has left, and filing it under " +
-      "leaving would hide it until after the decision it announces.",
+      "leaving would hide it until after the decision it announces. The two absence notices are " +
+      "here for the same reason: they are served on somebody who is still employed, and only one " +
+      "of them ends anything.",
   );
 }
 

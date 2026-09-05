@@ -618,6 +618,12 @@ function signDatesShape(value: (document: HiringPackDocument) => string): Record
     custodyMobile: value("custodyMobile"),
     contractRenewal: value("contractRenewal"),
     contractNonRenewal: value("contractNonRenewal"),
+    nda: value("nda"),
+    appointmentDocsReceipt: value("appointmentDocsReceipt"),
+    socialStatusSheet: value("socialStatusSheet"),
+    absenceWarning: value("absenceWarning"),
+    deemedResignation: value("deemedResignation"),
+    appointmentDocsReturn: value("appointmentDocsReturn"),
     form6: value("form6"),
     resignation: value("resignation"),
     mutualTermination: value("mutualTermination"),
@@ -644,6 +650,15 @@ function signedDatesFromPack(pack: HiringPackData | null): Record<HiringPackDocu
     // only the newest of them. See `RENEWAL_DOCUMENTS`.
     contractRenewal: "",
     contractNonRenewal: "",
+    // Sato's own six store no signature date here either. Five are sheets filed in a drawer, and
+    // the two absence notices are issued repeatedly. The NDA is the one worth a real register some
+    // day — see the note in `SIGNABLE_DOCUMENTS`.
+    nda: "",
+    appointmentDocsReceipt: "",
+    socialStatusSheet: "",
+    absenceWarning: "",
+    deemedResignation: "",
+    appointmentDocsReturn: "",
     form6: pack?.offboarding.form6SignedDate ?? "",
     resignation: pack?.offboarding.resignationSignedDate ?? "",
     mutualTermination: pack?.offboarding.mutualTerminationSignedDate ?? "",
@@ -1702,6 +1717,120 @@ export function HiringPackManager({
                   />
                 </div>
 
+                {/*
+                  SATO'S OWN JOINING PAPERS — signed or completed on the day somebody arrives, beside
+                  the contract and Form 1 rather than after them, because that is when they are used.
+                */}
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <DocumentCard
+                    busy={false}
+                    canManage={canManage}
+                    copies={copies.nda}
+                    gaps={gapsFor(pack.gaps, "nda")}
+                    onCopiesChange={(value) => setCopiesFor("nda", value)}
+                    footnote="Supplements مادة (7) of the contract and now names it. Everything about the person is filled; the paper is signed by both sides."
+                    onPreview={() => openPreview("nda")}
+                    onPrint={() => openPrint("nda")}
+                    onSign={() => undefined}
+                    onSignDateChange={() => undefined}
+                    printedAt={null}
+                    printingNote="Two copies — one filed, one handed over. Sign it on the first day, alongside the contract."
+                    signDate=""
+                    signedDate={null}
+                    signable={false}
+                    subtitle="إقرار وتعهد بعدم إفشاء المعلومات والأسرار التجارية"
+                    title="Confidentiality undertaking"
+                  />
+                  <DocumentCard
+                    busy={false}
+                    canManage={canManage}
+                    copies={copies.appointmentDocsReceipt}
+                    gaps={gapsFor(pack.gaps, "appointmentDocsReceipt")}
+                    onCopiesChange={(value) => setCopiesFor("appointmentDocsReceipt", value)}
+                    footnote="Every verdict box prints blank by design: Phoenix holds no register of which certificates were handed over, and a ticked box on a signed form asserts that a document was seen."
+                    onPreview={() => openPreview("appointmentDocsReceipt")}
+                    onPrint={() => openPrint("appointmentDocsReceipt")}
+                    onSign={() => undefined}
+                    onSignDateChange={() => undefined}
+                    printedAt={null}
+                    printingNote="Two copies. Complete it with the certificates on the desk, and set the deadline for anything missing."
+                    signDate=""
+                    signedDate={null}
+                    signable={false}
+                    subtitle="إيصال استلام مسوغات التعيين — 12 مستندًا"
+                    title="Appointment documents receipt"
+                  />
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <DocumentCard
+                    busy={false}
+                    canManage={canManage}
+                    copies={copies.socialStatusSheet}
+                    gaps={gapsFor(pack.gaps, "socialStatusSheet")}
+                    onCopiesChange={(value) => setCopiesFor("socialStatusSheet", value)}
+                    footnote="The service-file sheet the law requires the employer to keep. Name, ID, job, dates and insurance number are filled; religion, military status and marital status print blank because this system holds none of them."
+                    onPreview={() => openPreview("socialStatusSheet")}
+                    onPrint={() => openPrint("socialStatusSheet")}
+                    onSign={() => undefined}
+                    onSignDateChange={() => undefined}
+                    printedAt={null}
+                    printingNote="One copy, one sheet. Filed — never handed over. The dependants table is completed by the employee, who signs that it is true."
+                    signDate=""
+                    signedDate={null}
+                    signable={false}
+                    subtitle="صحيفة الحالة الاجتماعية — المادة (92)"
+                    title="Social status sheet"
+                  />
+                </div>
+
+                {/*
+                  THE TWO ABSENCE NOTICES. They are NOT alternatives the way the exit forms are —
+                  Article 166 requires a warning BEFORE a worker can be deemed resigned, so the first
+                  is a precondition of the second. Both are shown so that is visible, and neither
+                  carries a date Phoenix guessed.
+                */}
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <DocumentCard
+                    busy={false}
+                    canManage={canManage}
+                    copies={copies.absenceWarning}
+                    gaps={gapsFor(pack.gaps, "absenceWarning")}
+                    onCopiesChange={(value) => setCopiesFor("absenceWarning", value)}
+                    footnote="Issued after five consecutive days, as مادة (8) of the contract provides. The absence dates print blank: attendance is not resolved here, and a wrong date on this page cannot be walked back."
+                    onPreview={() => openPreview("absenceWarning")}
+                    onPrint={() => openPrint("absenceWarning")}
+                    onSign={() => undefined}
+                    onSignDateChange={() => undefined}
+                    printedAt={null}
+                    printingNote="Two copies. Serve it and take his signature; if he refuses, the witness block at the foot is the record."
+                    signDate=""
+                    signedDate={null}
+                    signable={false}
+                    subtitle="إنذار أول بالتغيب عن العمل — المادة (166)"
+                    title="Absence warning — first"
+                  />
+                  <DocumentCard
+                    busy={false}
+                    canManage={canManage}
+                    copies={copies.deemedResignation}
+                    gaps={gapsFor(pack.gaps, "deemedResignation")}
+                    onCopiesChange={(value) => setCopiesFor("deemedResignation", value)}
+                    footnote="Only after MORE THAN ten consecutive days, and only once the first warning has been served — Article 166 requires both. It declares a deemed resignation; it does not accept one, because the employee wrote none."
+                    onPreview={() => openPreview("deemedResignation")}
+                    onPrint={() => openPrint("deemedResignation")}
+                    onSign={() => undefined}
+                    onSignDateChange={() => undefined}
+                    printedAt={null}
+                    printingNote="Two copies. This one ends service — check the dates against attendance before it leaves the desk."
+                    signDate=""
+                    signedDate={null}
+                    signable={false}
+                    subtitle="إخطار باعتبار العامل مستقيلًا حكمًا — المادة (166)"
+                    title="Deemed resignation notice"
+                  />
+                </div>
+
                 <PackageCompanyTemplates
                   employeeSelected={Boolean(pack)}
                   onOpen={(template) => openTemplate(template, "preview")}
@@ -1941,6 +2070,34 @@ export function HiringPackManager({
                     signedDate={pack.offboarding.clearanceCompanySignedDate}
                     subtitle="إخلاء طرف شركة — يقر به الموظف، وتحتفظ به الشركة"
                     title="Company clearance"
+                  />
+                </div>
+
+                {/*
+                  THE OTHER END OF THE APPOINTMENT-DOCUMENTS LOOP. Its sibling — the receipt taken
+                  when the certificates came IN — is in the joining tab. They were supplied as two
+                  files with almost the same name, and the one mistake worth designing against is
+                  filing the wrong one at the wrong end of a career.
+                */}
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <DocumentCard
+                    busy={false}
+                    canManage={canManage}
+                    copies={copies.appointmentDocsReturn}
+                    gaps={gapsFor(pack.gaps, "appointmentDocsReturn")}
+                    onCopiesChange={(value) => setCopiesFor("appointmentDocsReturn", value)}
+                    footnote="The employee's receipt for his own original certificates coming back. It carries the last working day, and says in terms that it covers the papers only — it is not a release of any statutory or financial entitlement."
+                    onPreview={() => openPreview("appointmentDocsReturn")}
+                    onPrint={() => openPrint("appointmentDocsReturn")}
+                    onSign={() => undefined}
+                    onSignDateChange={() => undefined}
+                    printedAt={null}
+                    printingNote="Two copies. Print it when the certificates are physically handed back, not before — it is the proof they were."
+                    signDate=""
+                    signedDate={null}
+                    signable={false}
+                    subtitle="إقرار استلام مسوغات التعيين — عند انتهاء الخدمة"
+                    title="Appointment documents returned"
                   />
                 </div>
 

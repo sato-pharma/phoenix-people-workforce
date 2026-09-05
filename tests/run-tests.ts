@@ -1353,6 +1353,7 @@ import { runAppsScriptPushTests } from "./apps-script-push.test.ts";
 import { runHeredocBackslashDamageTests } from "./heredoc-backslash-damage.test.ts";
 import { runHrFormsRenewalTests } from "./hr-forms-renewal.test.ts";
 import { runMalformedUuidIdGuardsTests } from "./malformed-uuid-id-guards.test.ts";
+import { runHrFormsHousePapersTests } from "./hr-forms-house-papers.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4296,6 +4297,10 @@ await runTest(
 await runTest(
   "malformed uuid id guards (a non-uuid path segment is 404, never 500, across 18 dynamic routes)",
   runMalformedUuidIdGuardsTests,
+);
+await runTest(
+  "Sato house HR papers (absence threshold is MORE THAN ten days; the second notice declares a deemed resignation rather than accepting one; checklist boxes and service-ending dates stay blank)",
+  runHrFormsHousePapersTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

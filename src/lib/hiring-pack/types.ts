@@ -19,6 +19,12 @@ export type HiringPackDocument =
   | "workerDataForm"
   | "custodyLaptop"
   | "custodyMobile"
+  | "nda"
+  | "appointmentDocsReceipt"
+  | "socialStatusSheet"
+  | "absenceWarning"
+  | "deemedResignation"
+  | "appointmentDocsReturn"
   | "contractRenewal"
   | "contractNonRenewal"
   | "form6"
@@ -74,6 +80,41 @@ export const ASSET_DOCUMENTS = ["custodyLaptop", "custodyMobile"] as const;
 export const RENEWAL_DOCUMENTS = ["contractRenewal", "contractNonRenewal"] as const;
 
 /**
+ * Sato's own HR papers — the six the owner supplied on 2026-09-05, split by WHEN they are used
+ * rather than by what they look like.
+ *
+ * `HOUSE_JOINING_DOCUMENTS` are signed or completed on the day somebody arrives: the confidentiality
+ * undertaking, the appointment-documents receipt, and the Article 92 service-file sheet.
+ *
+ * `HOUSE_ATTENDANCE_DOCUMENTS` are the two absence notices, which belong to neither end of a career
+ * — they are issued while somebody is employed, and only one of them ends anything. THEY ARE NOT
+ * ALTERNATIVES the way the exit pair is: the first warning is a PRECONDITION of the second, because
+ * Article 166 requires a warning before a worker can be deemed resigned. Printing the second without
+ * having served the first is the defect this grouping exists to make visible.
+ *
+ * `HOUSE_LEAVING_DOCUMENTS` is the exit half of the appointment-documents pair — the employee's
+ * receipt for his own certificates coming back. Its sibling is in the joining list; they were
+ * supplied as two files with almost the same name, and reading them as alternatives rather than as
+ * two ends of one loop would file the wrong one at the wrong end of a career.
+ */
+export const HOUSE_JOINING_DOCUMENTS = [
+  "nda",
+  "appointmentDocsReceipt",
+  "socialStatusSheet",
+] as const;
+
+export const HOUSE_ATTENDANCE_DOCUMENTS = ["absenceWarning", "deemedResignation"] as const;
+
+export const HOUSE_LEAVING_DOCUMENTS = ["appointmentDocsReturn"] as const;
+
+/** All six of Sato's own papers, in the order a career runs through them. */
+export const HOUSE_PAPER_DOCUMENTS = [
+  ...HOUSE_JOINING_DOCUMENTS,
+  ...HOUSE_ATTENDANCE_DOCUMENTS,
+  ...HOUSE_LEAVING_DOCUMENTS,
+] as const;
+
+/**
  * The two clearance papers — إخلاء طرف — which are Sato's own instruments rather than a government
  * form, and which run in OPPOSITE directions.
  *
@@ -107,6 +148,7 @@ export const HIRING_PACK_DOCUMENTS: readonly HiringPackDocument[] = [
   ...HIRING_DOCUMENTS,
   ...ONBOARDING_FORM_DOCUMENTS,
   ...ASSET_DOCUMENTS,
+  ...HOUSE_PAPER_DOCUMENTS,
   ...RENEWAL_DOCUMENTS,
   ...EXIT_DOCUMENTS,
 ];
@@ -208,6 +250,15 @@ export type PrintableDocument = HiringPackDocument | CustomHiringPackDocument;
  * them. `contract_renewal_requests` is the register — one row per renewal, carrying its own
  * decision and its own `signed_at` — so a date here would be a second, worse copy of it. See
  * `RENEWAL_DOCUMENTS`.
+ *
+ * SATO'S SIX OWN PAPERS ARE ABSENT TOO, and one of them is a genuine gap rather than a decision.
+ * The two absence notices are issued repeatedly, and the checklist, the service-file sheet and the
+ * two appointment-documents forms are sheets filed in a drawer — the worker-data form's reasoning
+ * exactly. THE NDA IS THE EXCEPTION: it is signed once in a career, like the contract, and its
+ * signature is worth recording. It is not here only because doing it properly means a column on
+ * `employee_hiring_profile` and a migration, and it was not worth holding the other five back for.
+ * Whoever adds it should add a REAL binding in `DOCUMENT_BINDINGS`, not a shared one — see the note
+ * there about why the two custody receipts are written out separately.
  */
 export const SIGNABLE_DOCUMENTS: readonly HiringPackDocument[] = [
   ...HIRING_DOCUMENTS,
