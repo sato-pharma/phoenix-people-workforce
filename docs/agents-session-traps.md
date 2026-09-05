@@ -1288,3 +1288,59 @@ question was "how many rules are there". **Prefer the measurement that fails lou
 check over a status field, a fresh heartbeat over an absence of errors, and a verdict computed from
 the number rather than a label typed beside it — a printed `(under 30 = still beating)` sat next to
 the value `140` in this session and was read straight past.
+
+## Two ways a search reported zero and meant "I did not look" — 2026-09-05
+
+Both surfaced in one session, auditing the repo for hand-written `border-radius` the shell sweeps
+cannot see (PRs #3214, #3228, #3237, #3244). Each produced a clean-looking **0** from a tool that had
+not actually searched what it appeared to search, and a 0 in a sweep for defects reads as *the code
+is clean* — the most expensive way to be wrong.
+
+**1. `git grep -E` is POSIX ERE, and a backslash inside a bracket expression is a literal backslash.**
+
+The pattern was written for `rg` and reused verbatim:
+
+    rounded[a-zA-Z0-9_.,()\[\]-]*
+
+In Rust regex and in PCRE, `\[` and `\]` inside the class are escaped brackets. In POSIX ERE they are
+not escapes at all: the backslash is an ordinary member of the set, and the first unescaped `]`
+CLOSES the class. The expression therefore means something entirely different, and matched nothing.
+
+Measured on one file, same pattern, three engines:
+
+| engine | invocation | matches |
+| --- | --- | --- |
+| POSIX ERE | `git grep -o -E …` | **0** |
+| PCRE | `git grep -o -P …` | 9 |
+| Rust regex | `rg -o …` | 9 |
+
+A simpler class (`rounded[a-z-]*`) returns 9 from every engine, which is what makes this so quiet:
+the pattern works everywhere you test it casually, and fails only on the class that happens to carry
+escaped brackets. `-o` is NOT the culprit — that was the first diagnosis in this session and it was
+wrong; `git grep -o` works fine. The fix is `-P`, or a class with no `\[`/`\]` in it.
+
+This is the same family as the leading-slash-path entry above: **a pattern that means something else
+than you think returns 0 rather than an error.**
+
+**2. A native Windows binary cannot resolve MSYS's `/tmp`.**
+
+`/tmp` in this shell is `C:/Users/<you>/AppData/Local/Temp`. Bash resolves it, and so does any MSYS
+binary. A native Windows executable does not — it receives the literal string `/tmp/...` and fails:
+
+    echo x > /tmp/probe.txt      # bash resolves it — file is written
+    wc -c < /tmp/probe.txt       # 11        (MSYS)
+    grep -c x /tmp/probe.txt     # 1         (MSYS)
+    rg -c x /tmp/probe.txt       # IO error … The system cannot find the path specified. (os error 3)
+    curl -o /tmp/out https://…   # exit 23   "Failure writing output to destination"
+    curl https://… > /tmp/out    # exit 0    — the SHELL does the redirect, so this works
+
+The dangerous half is `rg`, because in this session it was used to count defects in a file fetched
+from production. It printed its error to stderr and `0` to stdout, and the surrounding command read
+the 0 as "the class is gone — the fix is live". Three readings were quoted from it before a positive
+control caught them. `curl -o` at least exits non-zero.
+
+**Both were caught the same way, and it is the only reliable way: a positive control.** Before
+believing any count of a thing you expect to be absent, make the same instrument report a thing you
+know is present — a marker string in the file, a byte count, a field that must exist. In this session
+the controls were `login-ember` in a login page and `--phx-` tokens in a CSS bundle; each time the
+control came back 0 or blank, the "clean" result beside it was fiction.
