@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
     });
     if (!validation.ok) return NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status });
 
-    const uploadedBy = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+    const uploadedBy = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
     // Confidential products (LA003/LA004/SS001) must never appear in the blocked-commit preview
     // either — a blocked commit still returns a raw row sample, same rule as analyze.
     const excludeProductCodes = canViewRestrictedProducts(access.role) ? [] : [...RESTRICTED_PRODUCT_CODES];

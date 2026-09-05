@@ -169,61 +169,85 @@ export async function runHrIdStorageCasingTests() {
     );
   }
 
-  // --- THE EXPRESSION, not the column: no raw actor id anywhere PAYROLL writes ---
+  // --- THE EXPRESSION, not the column: repo-wide ---
   //
-  // One expression appears four times in this repository, and each copy was found separately and
-  // late, because none of them looks like the column-shaped pattern the sweep above matches:
+  // One expression appeared 93 times in this repository:
   //
-  //     resolveEmployeeIdentityId(access) ?? access.loginId ?? "system"
+  //     resolveEmployeeIdentityId(access) ?? access.loginId ?? <fallback>
   //
-  // outstation's approvedBy, automated payroll's actorId, the Payroll Copilot's actor, and the
-  // resignation-candidate upload route. It carries the lowercase comparison key into a stored
-  // column every time, and it is written as a local or a parameter, so nothing keyed on a column
-  // name will ever see it.
+  // `resolveEmployeeIdentityId` returns the LOWERCASE comparison key. Where the result is STORED,
+  // that is the bug this whole file exists for; it is written as a local or a parameter, so no
+  // pattern keyed on a column name can see it, which is why four copies were found one at a time.
   //
-  // Scoped to the paths that touch MONEY. Repo-wide there are ~96 further copies (mostly
-  // `actorLoginId`, which feeds the audit log's login-id field rather than an hr id) - a separate
-  // tranche, deliberately not swept here rather than quietly folded in.
-  const PAYROLL_ROOTS = [
-    "src/lib/payroll",
-    "src/lib/automated-payroll",
-    "src/lib/outstation",
-    "app/api/payroll",
-  ];
-  const RAW_ACTOR = /resolveEmployeeIdentityId\(\s*(?:access|accessContext)\s*\)\s*\?\?/;
+  // ── THE TWO WAYS TO GET THIS WRONG, IN OPPOSITE DIRECTIONS ──────────────────────────────────
+  //
+  // 1. CANONICALISE THE WHOLE EXPRESSION. The fallbacks are not hr ids: `system` means no session
+  //    did this, a login id names no employee, and one variant falls back to `access.role`. Running
+  //    the lot through hrIdForStorage stores SYSTEM, DEV.PREVIEW and SUPER ADMIN as the person who
+  //    acted. Only the hr-id branch may be canonicalised.
+  //
+  // 2. SWEEP THE COMPARISON SITES TOO. Some of these resolve WHO IS ASKING, to match against other
+  //    values — seat-area-scope decides which areas a manager sees, portal-sos-dashboard decides a
+  //    rep's own dashboard, excuses compares the actor against the assigned manager. There the
+  //    lowercase key is CORRECT, and canonicalising breaks a viewer's own scope: the same shape as
+  //    the picker that once offered a Medical Rep the names of all 73 reps.
+  //
+  // So the exemptions are listed with reasons rather than left implicit, and each is a claim that
+  // can be checked by opening the file.
+  const AUDIT_LOGIN_ID = /actorLoginId/;
+  const COMPARISON_WRAPPED = /canonicalHrIdKey\(|hrKey\(|normalizeHrId\(|normalizedHrKey\(/;
+  const SCOPE_OR_COMPARISON_FILES = new Set([
+    "src/lib/direct-orders/service.ts",
+    "src/lib/double-visit-analytics/service.ts",
+    "src/lib/excuses/service.ts",
+    "src/lib/sales/monthly-closing-portal.ts",
+    "src/lib/sales/seat-area-scope.ts",
+    "src/lib/sales/portal-sos-dashboard.ts",
+    "src/lib/sales/weekly/access.ts",
+    // loginId FIRST by design - a LOGIN id field, the same contract as the audit log's actorLoginId.
+    "src/lib/hiring-documents/service.ts",
+  ]);
+  const RAW_ACTOR = /resolveEmployeeIdentityId\(\s*(?:access|accessContext|ctx)\s*\)\s*\?\?/;
+
   const rawActorSites: string[] = [];
-  for (const root of PAYROLL_ROOTS) {
+  let actorSitesSeen = 0;
+  for (const root of ["src", "app"]) {
     for (const file of sourceFilesUnder(root)) {
+      const rel = file.split(sep).join("/");
       const text = readFileSync(file, "utf8");
       text.split("\n").forEach((line, index) => {
         if (!RAW_ACTOR.test(line)) return;
+        actorSitesSeen += 1;
         // The CORRECT shape puts the hr id through hrIdForStorage FIRST and lets the markers fall
         // through untouched, so a line holding both is the repair, not the offence.
         if (line.includes("hrIdForStorage")) return;
-        // `actorLoginId` is the audit log's LOGIN id, not an hr id. Those sites put
-        // access.loginId FIRST on purpose, and canonicalising a login id as though it were an
-        // hr id would be a different bug rather than a repair.
-        if (/\bactorLoginId\b/.test(line)) return;
-        rawActorSites.push(`${file.split(sep).join("/")}:${index + 1}  ${line.trim()}`);
+        if (AUDIT_LOGIN_ID.test(line)) return;
+        if (COMPARISON_WRAPPED.test(line)) return;
+        if (SCOPE_OR_COMPARISON_FILES.has(rel)) return;
+        rawActorSites.push(`${rel}:${index + 1}  ${line.trim()}`);
       });
     }
   }
+
+  // A positive control. If the expression is ever renamed, every file reads as clean and this whole
+  // sweep certifies nothing while looking green - the failure mode that let four copies survive.
+  assert.ok(
+    actorSitesSeen >= 80,
+    `only ${actorSitesSeen} actor-resolution sites found; the expression this sweep keys on has `
+      + "moved, so it is measuring nothing",
+  );
+
   assert.deepEqual(
     rawActorSites,
     [],
-    "these payroll paths derive a stored actor id without canonicalising it. Put ONLY the hr id "
-      + "through hrIdForStorage - `hrIdForStorage(access.hrId) ?? <the existing chain>` - because "
-      + "canonicalising the whole expression stores SYSTEM, DEV.PREVIEW or a ROLE NAME as the "
-      + `person who acted:\n${rawActorSites.join("\n")}`,
+    "these sites STORE the raw lowercase session key. Put ONLY the hr id through hrIdForStorage - "
+      + "`hrIdForStorage(access.hrId) ?? <the existing chain>` - because canonicalising the whole "
+      + "expression stores SYSTEM, DEV.PREVIEW or a ROLE NAME as the person who acted. If the value "
+      + "is COMPARED rather than stored, the lowercase key is correct: add the file to "
+      + `SCOPE_OR_COMPARISON_FILES with the reason:\n${rawActorSites.join("\n")}`,
   );
 
-  // A positive control: the sweep must actually be reading files, or an empty result means nothing.
-  assert.ok(
-    PAYROLL_ROOTS.every((root) => sourceFilesUnder(root).length > 0),
-    "the payroll actor sweep found no source files at all - it is certifying nothing",
-  );
-
-  // And the two repaired here keep the marker fallback that makes them safe.
+  // And the two repaired alongside their writes keep the marker fallback that makes them safe.
   const copilotAccess = readFileSync("src/lib/payroll/copilot/access.ts", "utf8");
   assert.ok(
     copilotAccess.includes('hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system"'),

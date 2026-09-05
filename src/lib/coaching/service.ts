@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import {
@@ -170,7 +171,7 @@ function idsMatch(left: string | null | undefined, right: string | null | undefi
 }
 
 function actorId(access: AccessContext) {
-  return resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
+  return hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
 }
 
 function requireActorHrId(access: AccessContext) {

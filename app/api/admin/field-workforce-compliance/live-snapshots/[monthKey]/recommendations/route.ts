@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -28,7 +29,7 @@ type RouteContext = {
 };
 
 function actorFromAccess(access: Awaited<ReturnType<typeof resolveAccessContext>>) {
-  return resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+  return hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
 }
 
 function isDecisionStatus(value: unknown): value is FieldWorkforceDecisionStatus {

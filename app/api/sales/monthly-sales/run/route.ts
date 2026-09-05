@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
     await assertPermission(access, "sales", "import");
     const body = (await request.json().catch(() => ({}))) as { period?: string };
     const period = String(body?.period ?? "").trim();
-    const actorId = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+    const actorId = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
     const run = await startOrGetRun(period, actorId);
     return NextResponse.json({ success: true, data: run });
   } catch (error) {
