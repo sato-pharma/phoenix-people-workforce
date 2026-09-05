@@ -21,6 +21,7 @@ import {
 import {
   pageFileFor as resolvePageFile,
   permissionGateKeys,
+  roleSetGates,
 } from "./support/page-gate-reader.ts";
 
 /**
@@ -82,10 +83,26 @@ import {
  *     await assertPermission(access, "<resource>", "<action>");
  *     if (!await canAccess(access, "<resource>", "<action>")) { redirect(...) }
  *
- * CANNOT SEE role-name guards (`access.role !== "Super Admin"` — that is what
- * sfe-manager-nav-dead-links.test.ts is for, so do not delete it in favour of this), gates inside
- * conditionals, gates in imported child components, and scope filters that render an empty page
- * rather than bouncing.
+ * ALSO SEES, since 2026-09-05, the ROLE-SET gate — the admit list a page states by name rather
+ * than by permission, in either of the two spellings the codebase uses:
+ *
+ *     if (!VIEW_ROLES.has(access.role)) redirect(...);          // a named set, 6 pages
+ *     if (access.role !== "Super Admin") redirect(...);         // an inequality, 18 pages
+ *
+ * This was listed here as a blind spot until the shared reader learned to read it. The direction
+ * of that miss was the same one described below for permission gates: an unread role gate is an
+ * empty admit list, and an empty admit list bounces nobody, so a page admitting one role by name
+ * read as safe for all 17.
+ *
+ * **`sfe-manager-nav-dead-links.test.ts` still has a job — do not delete it in favour of this.**
+ * It pins the guard's literal source text on six specific pages, and it covers `app/api/**` route
+ * handlers, which have no nav link and are therefore invisible here.
+ *
+ * CANNOT SEE a role gate hoisted into a boolean (`!canReadPlans && access.role !== "CEO" && …`,
+ * 5 pages — the reader refuses those on purpose, because the hoisted half is an alternative way
+ * IN and reducing it would make this test accuse links that work), gates inside conditionals,
+ * gates in imported child components, and scope filters that render an empty page rather than
+ * bouncing.
  *
  * The portal registry is read as SOURCE TEXT, not imported: it pulls in lucide-react, which a
  * node test cannot load. employee-portal-bottom-nav.test.ts reads it the same way for the same
@@ -189,6 +206,18 @@ function roleHolds(role: PhoenixRole, grant: RequiredGrant): boolean {
   return permissionMatrix[role]?.[grant.resource]?.includes(grant.action) ?? false;
 }
 
+/**
+ * The admit lists the page states by ROLE NAME. Each one is an independent requirement — a page
+ * carrying two admits the intersection — so the visitor must appear in every list.
+ *
+ * Unlike a permission gate there is nothing to look up: the page names who gets in, so a role
+ * absent from the literal is redirected. That is what makes this shape worth reading here and
+ * unreadable by the permission matrix, which is the only thing `system-navigation.ts` consults.
+ */
+function admitListsFor(file: string): string[][] {
+  return roleSetGates(readFileSync(file, "utf8"));
+}
+
 export function runEveryOfferedLinkOpensTests() {
   const registry = parsePortalRegistry();
 
@@ -204,6 +233,7 @@ export function runEveryOfferedLinkOpensTests() {
   const unresolved = new Set<string>();
   let hrefsChecked = 0;
   let gatesRead = 0;
+  let admitListsRead = 0;
   let portalHrefsChecked = 0;
 
   for (const role of phoenixRoles) {
@@ -225,6 +255,16 @@ export function runEveryOfferedLinkOpensTests() {
           deadLinks.push(
             `${role} (${mode}) is offered ${href} — the page demands ` +
               `${grant.resource}:${grant.action}, which ${role} does not hold  ` +
+              `[${path.relative(REPO_ROOT, file).split(path.sep).join("/")}]`,
+          );
+        }
+      }
+      for (const admits of admitListsFor(file)) {
+        admitListsRead += 1;
+        if (!admits.includes(role)) {
+          deadLinks.push(
+            `${role} (${mode}) is offered ${href} — the page admits only ` +
+              `${admits.join(", ")} by name and redirects everyone else  ` +
               `[${path.relative(REPO_ROOT, file).split(path.sep).join("/")}]`,
           );
         }
@@ -256,15 +296,31 @@ export function runEveryOfferedLinkOpensTests() {
       "the evidence, and it is not being exercised",
   );
   assert.ok(gatesRead >= 50, `parsed only ${gatesRead} page gates — the gate reader is broken`);
+  // The role-set arm needs its own floor for the same reason, and it cannot borrow the one above:
+  // `gatesRead` counts PERMISSION gates only, so it stays comfortably over 50 while every admit
+  // list silently stops being read. Measured 2026-09-05: 24 admit lists across 511 offered links
+  // (278 permission gates), so the floor sits well under the live figure and ordinary nav churn
+  // will not trip it.
+  assert.ok(
+    admitListsRead >= 10,
+    `parsed only ${admitListsRead} role-name admit lists across every offered link — a page that ` +
+      "names who gets in bounces everyone else, so with none of them read this test is back to " +
+      "reporting those pages as safe for all 17 roles",
+  );
 
   // ── 3. Report the blind spot rather than implying it is covered ──────────────────────────
-  // Not an assertion: a nav href with no page.tsx is legitimate (route handlers, external links,
-  // dynamic segments). Printed so the gap is visible in the run.
-  if (unresolved.size > 0) {
-    console.log(
-      `    [every-offered-link-opens] ${hrefsChecked} links checked ` +
-        `(${portalHrefsChecked} portal), ${gatesRead} gates read; ${unresolved.size} hrefs have ` +
-        `no page.tsx and were not checked: ${[...unresolved].sort().join(", ")}`,
-    );
-  }
+  // Printed every run, not only when something is unresolved: these four counts are the evidence
+  // that the green above was earned rather than vacuous, and a reader should not have to break the
+  // test to find out how much it looked at. An unresolved href is not an assertion — a nav target
+  // with no page.tsx is legitimate (route handlers, external links, dynamic segments) — so it is
+  // appended to the same line rather than failing.
+  console.log(
+    `    [every-offered-link-opens] ${hrefsChecked} links checked ` +
+      `(${portalHrefsChecked} portal), ${gatesRead} permission gates and ${admitListsRead} ` +
+      `role-name admit lists read` +
+      (unresolved.size > 0
+        ? `; ${unresolved.size} hrefs have no page.tsx and were not checked: ` +
+          `${[...unresolved].sort().join(", ")}`
+        : "; every offered href resolved to a page file"),
+  );
 }

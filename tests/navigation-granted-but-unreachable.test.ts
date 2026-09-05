@@ -375,6 +375,15 @@ export async function runNavigationGrantedButUnreachableTests(): Promise<void> {
   // joins them without a word. That is the same failure shape this file's own header warns about,
   // one level up: the guard ships green while the thing it guards goes unmeasured.
   //
+  // 2026-09-05: 134 of 357. The three that left are /admin/dev-preview,
+  // /admin/notification-confidence and /admin/sfe-command-center, and none of them MOVED — the
+  // reader learned to read `if (access.role !== "Super Admin") redirect(…)`, so pages that were
+  // being skipped are now measured, and all three turn out to be properly linked. The orphan set,
+  // every route's role count and every bucket came out byte-identical across that change; only this
+  // number moved. 15 more pages gained an admit list without leaving the blind spot, because they
+  // already carried a readable permission or shell gate — for those the gain is that `canOpen()`
+  // stopped answering true for roles the page redirects.
+  //
   // The skip only HIDES something when the route is also offered to nobody, so that intersection is
   // what gets a roll-call. Redirect-only stubs are exempted mechanically rather than recorded — a
   // page that renders nothing and forwards is a link, and 18 of these are exactly that. Everything
@@ -404,7 +413,7 @@ export async function runNavigationGrantedButUnreachableTests(): Promise<void> {
   // it to still be measuring something, and require the stub exemption to still be finding stubs.
   assert.ok(
     blindSpot.length >= 50,
-    `expected the unreadable-gate blind spot to still hold 50+ routes, measured ${blindSpot.length} (137 on 2026-09-04) — if the reader genuinely got this much better, lower this floor deliberately rather than deleting it`,
+    `expected the unreadable-gate blind spot to still hold 50+ routes, measured ${blindSpot.length} (137 on 2026-09-04, 134 on 2026-09-05 once the reader learned role-inequality gates) — if the reader genuinely got this much better, lower this floor deliberately rather than deleting it`,
   );
   assert.ok(
     blindSpot.filter((gate) => gate.redirectOnly).length >= 10,

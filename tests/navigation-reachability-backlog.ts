@@ -51,6 +51,16 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
  * now asserts it by identity like every other slice. Redirect-only stubs are excluded mechanically
  * (`isRedirectOnlyStub`) rather than recorded: a stub that renders nothing is a link, not a page.
  *
+ * 2026-09-05: 134 of 357, after the shared reader learned the two entry-gate shapes it had been
+ * under-reading — a bare `access.role !== "X"` inequality (25 pages) and a predicate hoisted into a
+ * const (8 pages). **No row below changed.** The three routes that left the blind spot
+ * (/admin/dev-preview, /admin/notification-confidence, /admin/sfe-command-center) turned out to be
+ * properly linked once they could be measured at all, and every other slice — the orphan routes,
+ * each one's role count, each one's bucket, and the eleven `gate-unreadable-and-unlinked` rows —
+ * came out byte-identical. That is the expected shape rather than a surprise: a narrower admit list
+ * removes a route from the orphan set only if it leaves NOBODY able to open it, and Super Admin is
+ * admitted by every one of those gates.
+ *
  * These rows are NOT role-scoped — the whole point is that the roles cannot be computed — so every
  * one carries `roles: "all"`.
  *

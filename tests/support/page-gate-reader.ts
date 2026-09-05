@@ -155,6 +155,249 @@ export const PAGE_PORTAL_TWIN_GATE =
 /** Does the page refuse anyone at all? Used to tell "ungated" from "gated in an unreadable shape". */
 export const PAGE_ENTRY_EXIT = /\b(?:redirect|notFound)\(/;
 
+/**
+ * ── Reading an ENTRY CONDITION, not just a pattern ───────────────────────────────────────────────
+ *
+ * Every pattern above matches a shape wherever it appears in the file. The two gate shapes below
+ * cannot be read that way: both need to know which `if (…)` a fragment belongs to, and what that
+ * `if` DOES when it fires. So this section does the small amount of structural reading they need —
+ * balanced brackets and top-level operator splitting, nothing more.
+ *
+ * All of it runs on `blankOut(source)`, whose length is preserved, so an offset found in the blanked
+ * text indexes the ORIGINAL. That is what makes it safe: a `&&` inside a string literal cannot split
+ * a condition, and a `redirect(` inside a comment cannot qualify one.
+ */
+
+/** Index of the bracket closing the one at `open`, or -1 if it is unbalanced. */
+function matchingBracket(blanked: string, open: number): number {
+  const closerFor: Record<string, string> = { "(": ")", "[": "]", "{": "}" };
+  const wanted = closerFor[blanked[open]!];
+  if (!wanted) return -1;
+  let depth = 0;
+  for (let i = open; i < blanked.length; i += 1) {
+    const c = blanked[i]!;
+    if (c === "(" || c === "[" || c === "{") depth += 1;
+    else if (c === ")" || c === "]" || c === "}") {
+      depth -= 1;
+      if (depth === 0) return c === wanted ? i : -1;
+    }
+  }
+  return -1;
+}
+
+/** The spans of `blanked[start,end)` separated by `operator` at bracket depth 0. */
+function splitTopLevel(
+  blanked: string,
+  start: number,
+  end: number,
+  operator: "||" | "&&",
+): [number, number][] {
+  const spans: [number, number][] = [];
+  let depth = 0;
+  let from = start;
+  for (let i = start; i < end; i += 1) {
+    const c = blanked[i]!;
+    if (c === "(" || c === "[" || c === "{") depth += 1;
+    else if (c === ")" || c === "]" || c === "}") depth -= 1;
+    else if (depth === 0 && blanked.startsWith(operator, i)) {
+      spans.push([from, i]);
+      i += operator.length - 1;
+      from = i + 1;
+    }
+  }
+  spans.push([from, end]);
+  return spans;
+}
+
+/**
+ * Drop surrounding whitespace and redundant wrapping parentheses, keeping absolute offsets.
+ *
+ * Whitespace is judged on the SOURCE and brackets on the BLANKED text, and mixing those up is not a
+ * style choice — `blankOut` replaces a string literal INCLUDING ITS QUOTES with spaces, so
+ * `access.role !== "Super Admin"` ends in twelve blanks. Trimming on the blanked text ate the role
+ * name and left `access.role !==`, which matches nothing: the first cut of this function read zero
+ * gates on all 25 files while looking like it worked.
+ */
+function tighten(source: string, blanked: string, span: [number, number]): [number, number] {
+  let [start, end] = span;
+  for (;;) {
+    while (start < end && /\s/.test(source[start]!)) start += 1;
+    while (end > start && /\s/.test(source[end - 1]!)) end -= 1;
+    if (start < end && blanked[start] === "(" && matchingBracket(blanked, start) === end - 1) {
+      start += 1;
+      end -= 1;
+      continue;
+    }
+    return [start, end];
+  }
+}
+
+/**
+ * What an entry gate's body does when it fires: it forwards, or it returns a bounce screen instead
+ * of the page. The JSX arm is not a nicety — `app/employee-portals/account-activation/page.tsx`
+ * refuses everyone but HR Advisory by returning `<EmployeePortalEmptyState … />`, and the permission
+ * half of that very condition is already counted as a gate by `PAGE_ENTRY_GATE`, which matches
+ * regardless of consequent. Reading one half and not the other would be the inconsistency.
+ */
+const CONSEQUENT_FORWARDS = /\b(?:permanentRedirect|redirect|notFound)\s*\(/;
+const CONSEQUENT_RETURNS_JSX = /return\s*\(?\s*</;
+
+/**
+ * Only the consequent's OWN statements count, never a nested block's.
+ * `if (cond) { if (somethingElse) redirect(…) }` forwards CONDITIONALLY, and reading it as an
+ * unconditional gate would invent an admit list the page does not enforce — the fail-CLOSED mirror
+ * of the fail-open this module exists to prevent, and just as wrong. Everything inside a nested
+ * `{…}` is blanked; the braces themselves go too, so the depth test cannot be fooled by a JSX
+ * expression container.
+ */
+function ownStatementsOf(body: string): string {
+  let depth = 0;
+  let out = "";
+  for (const c of body) {
+    if (c === "{") {
+      depth += 1;
+      out += " ";
+    } else if (c === "}") {
+      depth = Math.max(0, depth - 1);
+      out += " ";
+    } else {
+      out += depth === 0 ? c : " ";
+    }
+  }
+  return out;
+}
+
+/** Every `if (…)` in the file whose consequent exits the page, as offsets into the source. */
+function entryGateConditions(blanked: string): [number, number][] {
+  const conditions: [number, number][] = [];
+  const ifKeyword = /\bif\s*\(/g;
+  let match: RegExpExecArray | null;
+  while ((match = ifKeyword.exec(blanked))) {
+    const open = match.index + match[0].length - 1;
+    const close = matchingBracket(blanked, open);
+    if (close < 0) continue;
+
+    let at = close + 1;
+    while (at < blanked.length && /\s/.test(blanked[at]!)) at += 1;
+    let body: string;
+    if (blanked[at] === "{") {
+      const blockEnd = matchingBracket(blanked, at);
+      if (blockEnd < 0) continue;
+      body = blanked.slice(at + 1, blockEnd);
+    } else {
+      let depth = 0;
+      let end = at;
+      while (end < blanked.length) {
+        const c = blanked[end]!;
+        if (c === "(" || c === "[" || c === "{") depth += 1;
+        else if (c === ")" || c === "]" || c === "}") depth -= 1;
+        else if (c === ";" && depth === 0) break;
+        end += 1;
+      }
+      body = blanked.slice(at, end);
+    }
+
+    const own = ownStatementsOf(body);
+    if (CONSEQUENT_FORWARDS.test(own) || CONSEQUENT_RETURNS_JSX.test(own)) {
+      conditions.push([open + 1, close]);
+    }
+  }
+  return conditions;
+}
+
+/** A conjunct that is exactly one role inequality, and nothing else. */
+const ROLE_INEQUALITY_ALONE = /^access\.role\s*!==\s*"([^"]+)"$/;
+/** `access.scope !== "system"` — some OTHER access field compared to a literal. */
+const ACCESS_FIELD_INEQUALITY_ALONE = /^access\.[A-Za-z_$][\w$]*\s*!==\s*"[^"]*"$/;
+
+/**
+ * SHAPE A — the admit list a page states by INEQUALITY rather than by a named set.
+ *
+ *     if (access.role !== "Super Admin") redirect("/employee-portals");
+ *
+ * 25 page files carry this and none of it was readable until 2026-09-05.
+ * `app/(admin)/attendance/employee-day-report/page.tsx` is the worked example: its own comment says
+ * *"gate it to Super Admin only, not just the coarse attendance:read permission"*, and this reader
+ * reported its gate as `attendance:read` alone — so every role holding that grant read as able to
+ * open it. Same for /attendance/analytics and /sales/normalizer.
+ *
+ * ## Why it is read as OR-of-ANDs, and why some groups are deliberately refused
+ *
+ * The condition is a DENY condition, so the admit set is its negation. That inverts both operators,
+ * and the two halves then behave differently — which is the whole reason this is not one regex:
+ *
+ *   · `a || b` denies ⇒ admit needs ¬a AND ¬b. Each OR-group is an INDEPENDENT requirement, so each
+ *     yields its own admit list and the caller intersects them by requiring all of them. Dropping a
+ *     group whose shape is unreadable is safe — the permission half of `role !== "X" || !(await
+ *     canAccess(…))` is separately read by `PAGE_ENTRY_GATE` and separately required.
+ *   · `a && b` denies ⇒ admit needs ¬a OR ¬b. Here each conjunct is an ALTERNATIVE way IN, so
+ *     dropping one silently NARROWS the admit list and starts accusing pages of bouncing people they
+ *     admit. A group is therefore reduced only when EVERY conjunct is an `access.<field> !== "…"`
+ *     comparison, and refused whole otherwise.
+ *
+ * That refusal is not theoretical. Five files write the deny condition with a hoisted boolean:
+ *
+ *     const canReadPlans = await canAccess(access, "weekly_plans", "read");
+ *     if (!canReadPlans && access.role !== "CEO" && access.role !== "Super Admin") redirect(…);
+ *
+ * — /admin/weekly-plans, /admin/weekly-plans/calendar and /employee-portals/plans on `canReadPlans`,
+ * /sales/monthly-closing and its performance-review on `isSystemAdministratorViewer`. Reducing those
+ * to {CEO, Super Admin} and {SFE Manager} would be WRONG, not merely conservative: everyone holding
+ * weekly_plans:read gets in, and so does Super Admin. hr-seat-route-coherence.test.ts already records
+ * /hr/admin/weekly-plans/calendar as unparseable for exactly this reason — *"an OR chain … which is
+ * why it cannot be parsed"* — and both HR seats hold weekly_plans:read, so a naive admit list would
+ * have made that test accuse two rows that work.
+ *
+ * ## What the four reducible forms measure to, checked one by one on 2026-09-05
+ *
+ *   `role !== "X"`                          EXACT  — 12 files, e.g. /attendance/employee-day-report
+ *   `role !== "X" && role !== "Y"`          EXACT  — the admit set is precisely both names
+ *   `role !== "X" || <another gate>`        EXACT  — 2 files; the other disjunct is `!(await
+ *                                                   canAccess(…))` in both, read and required
+ *                                                   separately, so the intersection is the truth
+ *   `role !== "X" && access.scope !== "…"`  EXACT  — 5 files; `scopeForRole()` in
+ *                                                   src/lib/auth/permissions.ts returns
+ *                                                   self|team|hierarchy|line|company|none and never
+ *                                                   "system", and `createAccessContext` derives
+ *                                                   scope from role alone, so that conjunct admits
+ *                                                   nobody today. It is dropped the way an
+ *                                                   unreadable conjunct would be, which makes the
+ *                                                   list a LOWER bound — exact while that holds, and
+ *                                                   narrowing, never widening, if a role ever gains
+ *                                                   system scope.
+ *
+ * Two of the 25 grep hits are not entry gates at all, and are excluded by the consequent test rather
+ * than by a name list: /admin/field-workforce-compliance writes the inequality as a JSX PROP with no
+ * `if` at all, and /coaching/[id] writes `if (access.role !== "Training Manager") return true;`
+ * inside a helper that answers a question about ownership.
+ */
+function roleAdmitLists(source: string, blanked: string): string[][] {
+  const lists: string[][] = [];
+  for (const [conditionStart, conditionEnd] of entryGateConditions(blanked)) {
+    for (const group of splitTopLevel(blanked, conditionStart, conditionEnd, "||")) {
+      const [groupStart, groupEnd] = tighten(source, blanked, group);
+      const admits: string[] = [];
+      let reducible = true;
+      for (const conjunct of splitTopLevel(blanked, groupStart, groupEnd, "&&")) {
+        const [start, end] = tighten(source, blanked, conjunct);
+        const text = source.slice(start, end);
+        const role = ROLE_INEQUALITY_ALONE.exec(text);
+        if (role) {
+          admits.push(role[1]!);
+          continue;
+        }
+        // Another access-field inequality narrows the deny condition further; ignoring it can only
+        // shrink the admit list, never grow it. Anything else is an alternative way IN — refuse.
+        if (ACCESS_FIELD_INEQUALITY_ALONE.test(text)) continue;
+        reducible = false;
+        break;
+      }
+      if (reducible && admits.length) lists.push(admits);
+    }
+  }
+  return lists;
+}
+
 function literalStrings(body: string): string[] {
   const names: string[] = [];
   PAGE_ROLE_SET_MEMBER.lastIndex = 0;
@@ -197,6 +440,11 @@ export function roleSetGates(source: string): string[][] {
     const names = literalStrings(inline[1]!);
     if (names.length) gates.push(names);
   }
+
+  // SHAPE A — the same statement written as inequalities instead of a named set. Appended rather
+  // than merged: each list is an independent requirement and a caller satisfies them all, which is
+  // exactly the semantics an OR-group needs (see roleAdmitLists).
+  gates.push(...roleAdmitLists(source, blankOut(source)));
   return gates;
 }
 
@@ -249,6 +497,77 @@ export function portalTwinRedirect(source: string): string | null {
 const PAGE_UNREADABLE_PREDICATE = /!\s*\(?\s*(?:await\s+)?([A-Za-z_$][\w$]*)\s*\(\s*access\b/g;
 const PREDICATES_THIS_READER_PARSES = new Set(["canAccess", "assertPermission", "resolveNavigationMode"]);
 
+/**
+ * A call taking the WHOLE access context as its first argument, anywhere inside a const initializer.
+ *
+ * `access` must be followed by `,` or `)` — a predicate about the viewer is handed the context, not
+ * one of its fields. Without that, `normalizeHrId(access.hrId)` in
+ * app/employee-portals/training-manager/field-coaching/page.tsx read as a gate predicate, which is
+ * simply a string helper on an id.
+ */
+const CALL_ON_ACCESS = /\b([A-Za-z_$][\w$]*)\s*\(\s*access\s*[,)]/g;
+/** Any identifier, so a const initializer can be followed through to the const it names. */
+const ANY_IDENTIFIER = /\b([A-Za-z_$][\w$]*)\b/g;
+/**
+ * `!allowed` — a negated NAME that is NOT itself a call and NOT a property read. `!pred(access)` is
+ * the direct shape above, and `!access.loginId` is a field test, so both are skipped here.
+ */
+const NEGATED_NAME = /!\s*\(?\s*([A-Za-z_$][\w$]*)\s*([(.]?)/g;
+
+/** `const NAME = <initializer>` for every simple const in the file, keyed by name. */
+function constInitializers(blanked: string): Map<string, string> {
+  const bindings = new Map<string, string>();
+  const declaration = /\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*/g;
+  let match: RegExpExecArray | null;
+  while ((match = declaration.exec(blanked))) {
+    const from = match.index + match[0].length;
+    let depth = 0;
+    let at = from;
+    while (at < blanked.length) {
+      const c = blanked[at]!;
+      if (c === "(" || c === "[" || c === "{") depth += 1;
+      else if (c === ")" || c === "]" || c === "}") {
+        if (depth === 0) break;
+        depth -= 1;
+      } else if (c === ";" && depth === 0) break;
+      at += 1;
+    }
+    bindings.set(match[1]!, blanked.slice(from, at));
+  }
+  return bindings;
+}
+
+/**
+ * The unreadable predicates a const name stands for, following const → const until it runs out.
+ * Two hops are needed by real code: `app/(admin)/admin/email-control-center/page.tsx` writes
+ * `const isSuperAdmin = canAccessSystemAdministratorWorkspace(access)` and then
+ * `const allowed = access.role === "CEO" || isSuperAdmin`, and the gate negates `allowed`.
+ */
+function predicatesBehindConst(
+  name: string,
+  bindings: Map<string, string>,
+  seen: Set<string>,
+): string[] {
+  if (seen.has(name)) return [];
+  seen.add(name);
+  const initializer = bindings.get(name);
+  if (initializer === undefined) return [];
+
+  const predicates: string[] = [];
+  CALL_ON_ACCESS.lastIndex = 0;
+  let call: RegExpExecArray | null;
+  while ((call = CALL_ON_ACCESS.exec(initializer))) {
+    if (!PREDICATES_THIS_READER_PARSES.has(call[1]!)) predicates.push(call[1]!);
+  }
+  ANY_IDENTIFIER.lastIndex = 0;
+  let identifier: RegExpExecArray | null;
+  while ((identifier = ANY_IDENTIFIER.exec(initializer))) {
+    const next = identifier[1]!;
+    if (bindings.has(next)) predicates.push(...predicatesBehindConst(next, bindings, seen));
+  }
+  return predicates;
+}
+
 export function unreadableGatePredicates(source: string): string[] {
   const found = new Set<string>();
   PAGE_UNREADABLE_PREDICATE.lastIndex = 0;
@@ -256,6 +575,49 @@ export function unreadableGatePredicates(source: string): string[] {
   while ((match = PAGE_UNREADABLE_PREDICATE.exec(source))) {
     const name = match[1]!;
     if (!PREDICATES_THIS_READER_PARSES.has(name)) found.add(name);
+  }
+
+  // SHAPE B — the same predicate reached through a const, which the pattern above cannot see
+  // because it requires the `!` immediately before the CALL:
+  //
+  //     const allowed = access.role === "CEO" || canAccessSystemAdministratorWorkspace(access);
+  //     if (!allowed) redirect("/admin");
+  //
+  // 8 page files are written this way — the CEO, finance and payroll command centres, the company
+  // calendar, email control center and system issues — and every one of them reported NO role gate
+  // at all until 2026-09-05, so `canOpen()` answered true for every admin-shell role on pages that
+  // admit two. The predicate is genuinely unevaluable here, so it is reported as one rather than
+  // guessed at: the `"CEO"` literal beside it is only ONE arm of an `||`, and an admit list of
+  // {CEO} would silently lock out the Super Admin the other arm lets in.
+  //
+  // Scoped to entry conditions on purpose. The direct pattern above matches anywhere, which it can
+  // afford to because `!pred(access)` is unambiguous; a bare `!name` is not, and a page holds many
+  // that gate nothing.
+  //
+  // Measured 2026-09-05, this arm adds a name on 23 pages across `app/`. Eight are the shape above
+  // and eight more are the same idea written once — `const audience = resolvePayslipCenterAudience(access)`,
+  // `const canView = await canViewAllReports(access)`, `canAccessCompanyOrganogram`,
+  // `resolveEmployeeCoachingPortalMode`, `canViewProbationAnalytics`, `resolveEarlyBirdsScope`. The
+  // remaining seven are DATA loads whose empty result bounces the visitor — `const data = await
+  // getNsmTeamCalendar(access, …); if (!data) notFound()` and its six siblings. Those are reported
+  // too, and deliberately: the export's claim is "the page refuses on this and nothing here can say
+  // who for", which is exactly true of a 404 on an empty load. It is a WIDER claim than "role gate",
+  // so a caller that wants only role gates must read `roleSetGates`, not this.
+  //
+  // An "await means it is a loader, not a gate" filter was considered and rejected on the evidence:
+  // `canViewAllReports` is awaited and is a real gate, so that rule would have dropped one.
+  const blanked = blankOut(source);
+  const bindings = constInitializers(blanked);
+  for (const [start, end] of entryGateConditions(blanked)) {
+    const condition = blanked.slice(start, end);
+    NEGATED_NAME.lastIndex = 0;
+    let negated: RegExpExecArray | null;
+    while ((negated = NEGATED_NAME.exec(condition))) {
+      if (negated[2] === "(" || negated[2] === ".") continue;
+      for (const predicate of predicatesBehindConst(negated[1]!, bindings, new Set())) {
+        found.add(predicate);
+      }
+    }
   }
   return [...found].sort();
 }
