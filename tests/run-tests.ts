@@ -1413,6 +1413,8 @@ import { runEmployeeJobTitleCasingHintTests } from "./employee-job-title-casing-
 
 import { runPayrollHoldConfirmStepReasonTests } from "./payroll-hold-confirm-step-reason.test.ts";
 
+import { runPayrollHoldReviewTests } from "./payroll-hold-review.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4463,6 +4465,11 @@ await runTest(
 await runTest(
   "confirming a payroll hold step enforces the hold reason too (the write path saveStep's rule did not cover, and the last one before publish drops the held rows)",
   runPayrollHoldConfirmStepReasonTests,
+);
+
+await runTest(
+  "the pre-publish held-employee review names who is not being paid and why (unexplained holds sort first; a carried-forward reason stays labelled after it is saved)",
+  runPayrollHoldReviewTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
