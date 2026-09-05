@@ -79,91 +79,138 @@ export function runRecruitmentCvSearchTests() {
   );
 
   // ── 4 · THE SQL ───────────────────────────────────────────────────────────────────────────────
+  //
+  // THIS SECTION OVERTURNS AN EARLIER DECISION IN THIS FILE, ON PURPOSE.
+  //
+  // It used to assert the SQL must NOT contain `to_tsquery` or `@@`, with a stated reason: "a
+  // recruiter types 'cardio' and a lexeme match would find nothing while the candidate sits there
+  // with 'Cardiology' in their skills". That reason was RIGHT, and it is why the search stayed on
+  // ILIKE.
+  //
+  // The substring match it protected also cost two things, measured on production 2026-09-05:
+  // "managing" found 15 candidates and "managed" found 8, neither reaching somebody who wrote
+  // "manager"; and "rep" matched 395 because '%rep%' also hits "prepare" and "reporting".
+  //
+  // Appending `:*` to the final lexeme answers the original objection instead of ignoring it —
+  // "cardio" becomes a PREFIX and finds "Cardiology" again. Measured on staging, same corpus:
+  // cardio 4 before, 1 with plain lexemes, 4 with the prefix. So the assertion below is no longer
+  // "never use tsvector"; it is "cardio must still find Cardiology", which is what was actually
+  // being defended.
 
-  const migration = read("supabase/migrations/20260905080000_cv_content_search.sql");
-  // THE EXECUTABLE SQL ONLY. Every `doesNotMatch` below must ask the code, not the prose: this
-  // file EXPLAINS in its header why it does not use `to_tsquery`, and a naive search for that
-  // word fails on a correct migration. That is the fourth time in this module a comment has been
-  // mistaken for a declaration, so the strip is done once and reused.
-  const migrationSql = migration
-    .split(String.fromCharCode(10))
-    .map((line) => {
-      const idx = line.indexOf("--");
-      return idx >= 0 ? line.slice(0, idx) : line;
-    })
-    .join(" ");
-  assert.ok(migrationSql.includes("create or replace function"), "the strip must leave the SQL behind");
-  const headers = [...migration.matchAll(/create or replace function[\s\S]*?as \$\$/g)].map((m) => m[0]);
-  assert.equal(headers.length, 2, "both functions must be found — otherwise the checks below ask nothing");
-  for (const header of headers) {
-    assert.doesNotMatch(
-      header,
-      /security definer/i,
-      "neither function may be SECURITY DEFINER — these read CV contents for the whole pool",
-    );
-    assert.match(header, /set search_path = ''/, "each pins an empty search_path, as the house style does");
-  }
+  const searchMigration = read("supabase/migrations/20260905174500_cv_search_uses_an_index.sql");
+  const corpusMigration = read("supabase/migrations/20260905080000_cv_content_search.sql");
 
-  // EVERY term, not any.
+  // Executable SQL only. This file EXPLAINS in prose why it does not use `to_tsquery`, and a naive
+  // scan for that word fails on a correct migration - the fourth time in this module a comment has
+  // been mistaken for a declaration.
+  const sqlOnly = (text: string) =>
+    text
+      .split(String.fromCharCode(10))
+      .map((line) => {
+        const idx = line.indexOf("--");
+        return idx >= 0 ? line.slice(0, idx) : line;
+      })
+      .join(" ");
+  const searchSql = sqlOnly(searchMigration);
+  assert.ok(searchSql.includes("create or replace function"), "the strip must leave the SQL behind");
+
+  // THE CONCERN THE OLD RULE DEFENDED: a partial word must still match.
   assert.match(
-    migration,
-    /bool_and\(h\.body ilike '%' \|\| t \|\| '%'\)/,
-    "every term must match — bool_and, never bool_or: 'pharmacist cairo' means both, and an OR " +
-      "would return most of the pool for any two-word query",
+    searchSql,
+    /base::text \|\| ':\*'/,
+    "the final lexeme must be a PREFIX - without it 'cardio' stops finding 'Cardiology', which is "
+      + "exactly why this search was kept on ILIKE in the first place",
   );
-  assert.doesNotMatch(migrationSql, /bool_or\(/, "an OR match must never appear here");
+  assert.match(
+    searchSql,
+    /case when base::text = '' then base/,
+    "and the prefix may only be appended to a NON-EMPTY query - ':*' alone is not a valid tsquery "
+      + "and the cast would raise, turning an empty search box into a 500",
+  );
 
-  // Substring, not lexemes.
+  // websearch, never to_tsquery: the raw parser throws on punctuation a person types by accident.
+  assert.match(searchSql, /websearch_to_tsquery\('english'/, "the forgiving parser, not the raw one");
   assert.doesNotMatch(
-    migrationSql,
-    /to_tsquery|plainto_tsquery|websearch_to_tsquery|@@/,
-    "substring matching, NOT tsvector — a recruiter types 'cardio' and a lexeme match would find " +
-      "nothing while the candidate sits there with 'Cardiology' in their skills",
+    searchSql,
+    /[^_]to_tsquery\('english', coalesce\(btrim\(p_query/,
+    "p_query must never reach to_tsquery directly - 'sales & marketing' and '!!!' would raise",
   );
 
-  // Skill NAMES, never the raw [{"name": ...}] JSON.
+  // EVERY term, not any - unchanged in meaning, new in mechanism.
+  assert.doesNotMatch(searchSql, /bool_or\(|\|\|'\s*\|\s*'/, "an OR match must never appear here");
+
+  // An empty or unusable query returns NOTHING, not everything.
   assert.match(
-    migration,
-    /string_agg\(s ->> 'name', ' '\)/,
-    "skills are pulled out by name — casting the raw JSON would make EVERY candidate match the word " +
-      "'name', which is exactly what a search for a common word would then return",
+    searchSql,
+    /q\.tsq != ''::tsquery/,
+    "an empty query returns NOTHING - 'search for nothing' must never read as 'here is everyone'",
   );
 
-  // An empty query returns nothing, not everything.
+  // The newest reading only - a re-extraction adds a row rather than replacing one.
   assert.match(
-    migration,
-    /if v_terms is null or cardinality\(v_terms\) = 0 then\s*\n\s*return;/,
-    "an empty query returns NOTHING — 'search for nothing' must never read as 'here is everyone'",
-  );
-  assert.match(
-    migration,
-    /where length\(t\) > 1/,
-    "single-character terms are dropped rather than matching nearly every CV",
+    searchSql,
+    /select distinct on \(e\.candidate_id\) e\.candidate_id, e\.created_at/,
+    "the NEWEST extraction per candidate, or somebody matches on a superseded reading",
   );
 
-  // The newest reading only.
+  // Ranked, so the cap keeps the BEST rows rather than an arbitrary slice.
   assert.match(
-    migration,
-    /select distinct on \(f\.candidate_id\) f\.candidate_id, f\.extracted_fields/,
-    "the NEWEST extraction per candidate — a re-extraction writes another row rather than replacing " +
-      "one, so without this a candidate could match on a superseded reading",
+    searchSql,
+    /order by ts_rank\(m\.search_tsv, q\.tsq\) desc/,
+    "results must be ranked - the caller caps at 200 and reports truncation, so an unordered cut "
+      + "tells a recruiter they are missing an unknown set rather than the tail",
   );
 
-  // The grant, by name.
-  for (const fn of ["ats_candidate_cv_search_text", "ats_search_candidate_cvs"]) {
-    assert.ok(
-      migration.includes(`revoke execute on function public.${fn}(`),
-      `${fn} must revoke EXECUTE — a function in \`public\` inherits the default grant to PUBLIC, ` +
-        "and these read CV contents for the whole pool",
-    );
-    assert.ok(
-      migration.includes(`grant execute on function public.${fn}(`),
-      `${fn} must be granted back to service_role — revoking PUBLIC strips it too`,
-    );
-  }
+  // The snippet says WHY, and obeys the house rules on text.
+  assert.match(searchSql, /ts_headline\(/, "matched_on must be the matching text, not the first 160 characters");
+  assert.match(
+    searchMigration,
+    /FragmentDelimiter=" · "/,
+    "fragments are joined with the house separator - never an ellipsis, which is banned for text",
+  );
+  assert.doesNotMatch(searchMigration, /FragmentDelimiter="[^"]*(…|\.\.\.)/, "no ellipsis in the delimiter");
+  assert.match(
+    searchSql,
+    /StartSel="", StopSel=""/,
+    "no markup in the snippet - the caller renders it as plain text and ts_headline's default <b> "
+      + "tags would appear literally on screen",
+  );
+
+  // The index is what makes this worth doing, and it must be GENERATED so it cannot drift.
+  assert.match(
+    searchSql,
+    /generated always as \(\s*to_tsvector\('english', public\.ats_candidate_cv_search_text\(extracted_fields\)\)\s*\) stored/,
+    "the column must be GENERATED from the SAME corpus function the old search used - a trigger "
+      + "could drift, and a different corpus would silently change what the search covers",
+  );
+  assert.match(searchSql, /using gin \(search_tsv\)/, "and the GIN index is the point of the exercise");
+
+  // Authority, restated in the file that now defines the function.
+  assert.doesNotMatch(searchSql, /security definer/i, "this reads CV contents for the whole pool");
+  assert.match(searchSql, /set search_path to ''/, "an empty search_path, as the house style does");
   assert.ok(
-    migration.includes("from public, anon, authenticated;"),
-    "the revoke names PUBLIC — revoking only anon and authenticated is a no-op, they inherit it",
+    searchMigration.includes("revoke execute on function public.ats_search_candidate_cvs(text, integer) from public, anon, authenticated;"),
+    "EXECUTE must be revoked from PUBLIC - a function in `public` inherits the default grant, and "
+      + "this one returns candidate ids for any keyword",
+  );
+  assert.ok(
+    searchMigration.includes("grant execute on function public.ats_search_candidate_cvs(text, integer) to service_role;"),
+    "and granted back to service_role - revoking PUBLIC strips it too",
+  );
+
+  // The CORPUS is untouched, and its own guard still stands in the migration that defines it.
+  assert.match(
+    corpusMigration,
+    /string_agg\(s ->> 'name', ' '\)/,
+    "skills are still pulled out by name - casting the raw JSON would make EVERY candidate match "
+      + "the word 'name'",
+  );
+  assert.doesNotMatch(
+    sqlOnly(searchMigration),
+    /ats_cv_extraction_search_text/,
+    "there must be ONE corpus function. A second one was written and dropped the same day: it "
+      + "included address and professionalSummary, which moved 'cairo' from 71 hits to 289 - a "
+      + "different search wearing the same name",
   );
 
   // ── 5 · THE SCREEN ────────────────────────────────────────────────────────────────────────────
