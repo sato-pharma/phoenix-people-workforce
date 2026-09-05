@@ -29,7 +29,7 @@ import {
 } from "@/lib/recruitment/manager-sends";
 import { hrIdForStorage, hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id";
 import { ROW_FINDING_KEYS } from "@/lib/recruitment/cv-findings";
-import { isBatchActor } from "@/lib/recruitment/rejection-notice";
+import { isBatchActor } from "@/lib/recruitment/batch-actor";
 import type {
   ExtractedCandidateFields,
   ExtractedCvValue,

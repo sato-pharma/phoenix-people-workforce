@@ -210,7 +210,7 @@ import { runRecruitmentCvFindingsTests } from "./recruitment-cv-findings.test.ts
 import { runRecruitmentNotACvPileTests } from "./recruitment-not-a-cv-pile.test.ts";
 import { runRecruitmentCvSearchTests } from "./recruitment-cv-search.test.ts";
 import { runRecruitmentApiRoutesExistTests } from "./recruitment-api-routes-exist.test.ts";
-import { runRecruitmentRejectionNoticeTests } from "./recruitment-rejection-notice.test.ts";
+import { runRecruitmentBatchActorTests } from "./recruitment-batch-actor.test.ts";
 import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.test.ts";
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
 import { runRecruitmentScreeningWorkstationTests } from "./recruitment-screening-workstation.test.ts";
@@ -1732,8 +1732,8 @@ await runTest(
   runRecruitmentApiRoutesExistTests,
 );
 await runTest(
-  "recruitment rejection notice (a batch is not a decision — 59 of the 97 were never read by a person)",
-  runRecruitmentRejectionNoticeTests,
+  "recruitment batch actor (a sweep is not a person — 65 rejections read as a week of screening)",
+  runRecruitmentBatchActorTests,
 );
 await runTest(
   "recruitment screening page (the queue has an address, in both shells, and the viewer never comes from the URL)",
