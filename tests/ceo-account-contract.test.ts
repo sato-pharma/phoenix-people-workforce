@@ -365,23 +365,18 @@ export async function runCeoAccountContractTests() {
     );
   }
 
-  // AND THE REST MUST NOT GROW. 26 such declarations survive across three resources, measured
-  // 2026-09-05. They are RECORDED, not approved: `support_requests` is the special case that
-  // applyHardPermissionBoundaries overwrites rather than intersects, `employees` is Super-Admin-only
-  // by a boundary the file documents at its own declaration, and `employee_documents` is HR-authority
-  // only. Clearing them is its own pass over a security file and does not belong in a screening
-  // change; what this pin buys is that a NEW one cannot be added quietly beside them.
-  const deadByResource = new Map<string, number>();
-  for (const grant of deadMatrixGrants()) {
-    deadByResource.set(grant.resource, (deadByResource.get(grant.resource) ?? 0) + 1);
-  }
+  // AND THERE ARE NONE LEFT. 28 such declarations were cleared on 2026-09-05, and the EFFECTIVE
+  // matrix was byte-identical before and after — every one of them was inert. support_requests was
+  // the largest group and the most misleading: applyHardPermissionBoundaries OVERWRITES that one
+  // rather than intersecting it, so whatever a role declared was replaced wholesale, and fifteen
+  // roles carried a line that could never take effect.
+  //
+  // Empty is now the only acceptable answer. A declaration the boundary strips is not a safety net;
+  // it is a sentence in a security file that says the opposite of what the system does, in the most
+  // authoritative-looking place a reader will check.
   assert.deepEqual(
-    [...deadByResource.entries()].sort(([a], [b]) => a.localeCompare(b)),
-    [
-      ["employee_documents", 11],
-      ["employees", 2],
-      ["support_requests", 13],
-    ],
-    "a role now declares a permission the hard boundary strips — either grant it in hardBoundaryAllowedActions or stop declaring it",
+    deadMatrixGrants(),
+    [],
+    "a role declares a permission the hard boundary strips — either grant it in hardBoundaryAllowedActions or stop declaring it",
   );
 }

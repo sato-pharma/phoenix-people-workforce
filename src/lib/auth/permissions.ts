@@ -774,7 +774,6 @@ const defaultPermissionMatrix: PermissionMap = {
     sales: allActions,
     direct_orders: allActions,
     weekly_sales: allActions,
-    support_requests: allActions,
     team: allActions,
     user_admin: allActions,
     vacancies: allActions,
@@ -809,7 +808,6 @@ const defaultPermissionMatrix: PermissionMap = {
     // NOTE: hard boundary (hardBoundaryAllowedActions → "employees" → Super Admin only) removes
     // these actions at runtime. CEO sees only their own employee record via canSeeEmployee().
     // getEmployeeDirectoryRows() (unfiltered) is used on the command center for headcount only.
-    employees: ["read", "export"],
     // SoD: read/export only — expense approval belongs to managers + Finance/Super Admin.
     expenses: ["read", "export"],
     // SoD: read/export only — outstation approval belongs to managers + Super Admin.
@@ -845,7 +843,6 @@ const defaultPermissionMatrix: PermissionMap = {
     resignations: ["read", "export"],
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
-    support_requests: ["read", "export"],
     team: ["read", "export"],
     vacancies: ["read", "export"],
     // NO `recruitment` and NO `candidates`, and their absence is the accurate statement.
@@ -905,7 +902,6 @@ const defaultPermissionMatrix: PermissionMap = {
     direct_orders: ["read", "export"],
     attendance: ["read", "export"],
     crm_visits: ["read"],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     // NO `outstation` key at all (owner, 2026-08-10): "exclude him 100% from outstation or
     // expenses". Outstation expense claims are a field-operations module the HR Manager approves
@@ -992,7 +988,6 @@ const defaultPermissionMatrix: PermissionMap = {
     // fail-closed and currently lists Super Admin / CEO / the HR bundles), and a company-scope
     // branch in canSeeEmployee — which has none, so today he can only act on his own record.
     resignations: ["read"],
-    support_requests: ["read", "create"],
     workflow_registry: ["read"],
     report_it: ["read", "create", "export"],
   },
@@ -1006,7 +1001,6 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     leave: ["read", "create"],
     payslips: ["read", "export"],
-    support_requests: ["create"],
     report_it: ["read", "create"],
   },
   Employee: {
@@ -1014,7 +1008,6 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_visits: ["read"],
     overview: [],
     coaching: ["read"],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
@@ -1023,7 +1016,6 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     probation: ["read"],
     sales: ["read", "export"],
-    support_requests: ["read", "create"],
     report_it: ["read", "create"],
   },
   "Medical Rep": {
@@ -1032,7 +1024,6 @@ const defaultPermissionMatrix: PermissionMap = {
     early_birds: ["read"],
     overview: [],
     coaching: ["read"],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
@@ -1042,7 +1033,6 @@ const defaultPermissionMatrix: PermissionMap = {
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
     payslips: ["read", "export"],
-    support_requests: ["read", "create"],
     report_it: ["read", "create"],
   },
   "District Manager": {
@@ -1055,7 +1045,6 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_plans: ["read", "approve"],
     early_birds: ["read", "approve"],
     overview: [],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     double_visit_analytics: ["read", "export"],
@@ -1068,7 +1057,6 @@ const defaultPermissionMatrix: PermissionMap = {
     probation: ["read", "export"],
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
-    support_requests: ["read", "create"],
     team: ["read", "export"],
     vacancies: ["read", "export"],
     weekly_plans: ["read", "create", "update", "approve"],
@@ -1094,7 +1082,6 @@ const defaultPermissionMatrix: PermissionMap = {
     // read-only role download every employee's deduction amounts for any month.
     // A Regional Manager still sees their OWN deductions: the portal page and its nav entry both
     // gate on `employee_profile`, not on this resource.
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     double_visit_analytics: ["read", "export"],
@@ -1112,7 +1099,6 @@ const defaultPermissionMatrix: PermissionMap = {
     probation: ["read", "export"],
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
-    support_requests: ["read", "create"],
     team: ["read", "export"],
     // Same undeclared-access correction as `deductions` above: getEmployeePortalVacancies already
     // has an explicit Regional Manager branch that bounds open seats to the RM's own line AND the
@@ -1131,7 +1117,6 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_visits: ["read"],
     early_birds: ["read"],
     overview: [],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     double_visit_analytics: ["read", "export"],
@@ -1143,7 +1128,6 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
-    support_requests: ["read", "create"],
     team: ["read", "export"],
     organogram: ["read"],
     vacancies: ["read", "export"],
@@ -1162,7 +1146,6 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_visits: ["read", "update"],
     early_birds: ["read"],
     overview: [],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     double_visit_analytics: ["read", "export"],
@@ -1176,7 +1159,6 @@ const defaultPermissionMatrix: PermissionMap = {
     organogram: ["read"],
     vacancies: ["read"],
     probation: ["read"],
-    support_requests: ["read", "create"],
     weekly_plans: ["read", "create", "update"],
     hiring_interviews: ["read", "update"],
     report_it: ["read", "create"],
@@ -1192,7 +1174,6 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_visits: ["read", "update"],
     early_birds: ["read"],
     overview: [],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     double_visit_analytics: ["read", "export"],
@@ -1206,7 +1187,6 @@ const defaultPermissionMatrix: PermissionMap = {
     organogram: ["read"],
     vacancies: ["read"],
     probation: ["read"],
-    support_requests: ["read", "create"],
     weekly_plans: ["read", "create", "update"],
     hiring_interviews: ["read", "update"],
     report_it: ["read", "create"],
@@ -1230,7 +1210,6 @@ const defaultPermissionMatrix: PermissionMap = {
     // Field Workforce Compliance gates on hr_calendar:read. Read-only: it is the working-day
     // calendar the compliance view is computed against, not an HR authoring grant.
     hr_calendar: ["read"],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
     double_visit_analytics: ["read", "export"],
@@ -1245,7 +1224,6 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     sales: ["read", "import", "export"],
     weekly_sales: allActions,
-    support_requests: ["read", "create"],
     weekly_plans: ["read", "create", "update"],
     report_it: ["read", "create"],
   },
@@ -1254,7 +1232,6 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_visits: ["read"],
     early_birds: ["read"],
     overview: [],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     // NOTE: the `employees` (employee-master admin) resource is intentionally NOT granted —
     // it is Super-Admin-only at the hard boundary. Training Manager's org-wide directory
@@ -1268,7 +1245,6 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     probation: ["read", "export"],
-    support_requests: ["read", "create"],
     team: ["read"],
     vacancies: ["read"],
     organogram: ["read"],
@@ -1300,7 +1276,6 @@ const defaultPermissionMatrix: PermissionMap = {
     probation: ["read"],
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
-    support_requests: ["create"],
     weekly_plans: ["read", "create", "update"],
     hiring_interviews: ["read", "update"],
     report_it: ["read", "create"],
@@ -1309,9 +1284,7 @@ const defaultPermissionMatrix: PermissionMap = {
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],
     overview: [],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
-    employees: ["read", "export"],
     expenses: ["read", "export"],
     double_visit_analytics: ["read", "export"],
     outstation: ["read", "create"],
@@ -1338,7 +1311,6 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     probation: ["read"],
     sales: ["read", "export"],
-    support_requests: ["read", "create"],
     team: ["read", "export"],
     weekly_plans: ["read", "approve"],
     hiring_interviews: ["read", "update"],
