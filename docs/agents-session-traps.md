@@ -1046,6 +1046,50 @@ trap at all, which is the exact inversion AGENTS.md 2.2 exists to prevent: the h
 there, the evidence belongs here. Dropping the copy took the bytes back and this section is
 where its extra detail went.
 
+## Verifying the source instead of the emitted artifact — 2026-09-05
+
+Three defects reached production in one night, on one button, every one with `typecheck` green,
+`validate` green and all four required checks green. They share a single cause: **the thing that was
+checked was not the thing the browser receives.**
+
+**1. A backslash died in a template literal.** The Download PDF guard was written `/\/print\/?$/`
+inside a `<script>` authored in a TypeScript template literal. A backslash there is an escape *for
+the template*, so the browser got `//print/?$/` — a line comment. The script died on a `SyntaxError`
+before the line that unhides the link, so the button was present in the HTML of every document and
+hidden on every one.
+
+It had been "verified in a browser". The verification pulled the script text **out of the source
+file** and ran that, which is the one copy that was correct.
+
+**2. A font stack fixed in one of the two places that hold it.** The production image installs only
+`ttf-freefont`, and every family in `ARABIC_FONT_STACK` is a Windows font — so a server-rendered PDF
+fell through to FreeSans, which carries Arabic codepoints but does **not shape** them. Chromium drew
+each letter isolated and the wrong metrics turned a three-page contract into sixteen. The body was
+fixed by adding Noto; the footer template carried its own hardcoded copy of the stack and was missed,
+so the document shaped correctly above a footer that did not.
+
+**3. A quoted font name closed a quoted attribute.** Interpolating `ARABIC_FONT_STACK` — whose
+families are quoted, `"Tahoma", "Segoe UI"` — into a double-quoted `style="…"` closed the attribute
+at the first family. The div was malformed from that byte on, Chrome dropped the footer entirely, and
+the page numbers vanished after being correct the build before. A single-quoted attribute holds
+double quotes legally.
+
+**Why none of it went red.** None are type errors. None are string mismatches — the HTML compared
+equal in every test that looked at it. The stack has nothing that renders a page and asserts on the
+result, so the only place the defect exists is the printed output. All three were found by the owner
+opening the file.
+
+**What to do instead.** Export the generated constant so a test can assert on the emitted string
+rather than a retyped copy — `PAGE_NUMBER_FOOTER` and the print banner's script are exported for
+this. Compile an injected script with `new Function`, which catches a lost escape without executing
+anything; `tests/print-banner-script.test.ts` does that and was proven RED against the real defect
+before being trusted. For a PDF, render it and read it back: extract the text, crop the region to an
+image and look at it. **Page count is the cheapest tell** — a three-page contract arriving as sixteen
+is a font problem, not a layout one.
+
+And whenever a value is interpolated into markup, check the delimiters. A font stack, a name with an
+apostrophe, an Arabic title — any of them can close the attribute they are dropped into.
+
 ## Relocated from AGENTS.md — 2026-09-01
 
 Verbatim, unabridged. These entries had grown from cues into full accounts inside `AGENTS.md`,
