@@ -195,14 +195,50 @@ export async function runHrOperationsCompanyScopeTests() {
   assert.equal(canReadCompanyActivityReport(advisory), false, "leave administration is Yasmine's section 2");
   assert.equal(mapPhoenixRoleToAccessScopeType(ADVISORY), "SELF", "her provisioning mirror moves with her scope");
 
-  // ── 4. No hub a seat is offered opens empty ────────────────────────────────────────────────
-  // A hub page renders a list of child links, each gated on its own permission or role list. The
-  // sidebar row that opens the hub is gated SEPARATELY, so a seat can hold the row's permission and
-  // none of the children's. The row then looks like a working module and opens a blank page — and
-  // "nothing here" and "not for you" are the same screen from the outside.
+  // ── 4. No row a seat is offered opens a hub AT ALL ─────────────────────────────────────────
+  //
+  // ── REPOINTED 2026-09-05, because the subject was removed rather than fixed ─────────────────
+  //
+  // This section used to say "no hub a seat is offered opens EMPTY". A hub page renders a list of
+  // child links, each gated on its own permission or role list, while the sidebar row that opens it
+  // is gated SEPARATELY — so a seat could hold the row's permission and none of the children's, and
+  // the row would look like a working module and open a blank page. "Nothing here" and "not for
+  // you" are the same screen from the outside.
+  //
+  // The owner then removed the shape entirely: "I don't want any subtitle to be the one that when I
+  // press, it redirects me to a page with big modules." Every hub row on every rail was replaced by
+  // that hub's cards. So the old check now examines ZERO hubs and its own floor says so — which is
+  // the honest outcome, not a defect. Left as it was it would have been a check with no subject:
+  // green forever, and green the day somebody adds a hub row back.
+  //
+  // What it asserts instead is the stronger property that replaced it, over the same rows and with
+  // the same extractor: not one row either seat is offered renders a *PageItems list. An empty hub
+  // cannot be reached from the rail because no hub can.
   const catalog = getNavigationSections("hr");
-  const emptyHubs: string[] = [];
-  let hubsChecked = 0;
+  const hubRows: string[] = [];
+  const visibleChildrenOf = (
+    lists: readonly string[],
+    lookup: ReturnType<typeof denseLookup>,
+    seat: PhoenixRole,
+  ) => {
+    const children = lists.flatMap(
+      (name) => (navigation as Record<string, unknown>)[name] as readonly AdminToolsPageItem[],
+    );
+    return children.filter(
+      (child) =>
+        permissionAllowed(lookup, child.permissions) &&
+        roleAllowed(seat, child.roles) &&
+        roleNotExcluded(seat, child.excludedRoles),
+    );
+  };
+  // Which exported nav list does a page render? A page that renders none is not a hub.
+  const listsRenderedBy = (file: string): string[] => {
+    const source = readFileSync(file, "utf8");
+    return [...new Set([...source.matchAll(/\b(\w+PageItems)\b/g)].map((match) => match[1]!))].filter(
+      (name) => Array.isArray((navigation as Record<string, unknown>)[name]),
+    );
+  };
+
   for (const seat of [OPERATIONS, ADVISORY]) {
     const lookup = denseLookup(seat);
     const rows = getSections(catalog, "hr", lookup, seat).flatMap((section) => section.items);
@@ -211,42 +247,44 @@ export async function runHrOperationsCompanyScopeTests() {
     for (const row of rows) {
       const file = pageFileFor(row.href);
       if (!file) continue; // A row with no page file is the route-coherence suite's failure, not this one.
-      const source = readFileSync(file, "utf8");
-      // Which exported nav list does this page render? A page that renders none is not a hub.
-      const lists = [...new Set([...source.matchAll(/\b(\w+PageItems)\b/g)].map((match) => match[1]!))].filter(
-        (name) => Array.isArray((navigation as Record<string, unknown>)[name]),
-      );
+      const lists = listsRenderedBy(file);
       if (!lists.length) continue;
-
-      hubsChecked += 1;
-      const children = lists.flatMap(
-        (name) => (navigation as Record<string, unknown>)[name] as readonly AdminToolsPageItem[],
+      hubRows.push(
+        `${seat}: "${row.label}" (${row.href}) renders ${lists.join(" + ")} — it is a hub page, and ` +
+          "the owner's 2026-09-05 rule is that no rail row opens one. Promote its cards onto the " +
+          "rail under the hub's own heading instead of listing the door",
       );
-      const visible = children.filter(
-        (child) =>
-          permissionAllowed(lookup, child.permissions) &&
-          roleAllowed(seat, child.roles) &&
-          roleNotExcluded(seat, child.excludedRoles),
-      );
-      if (!visible.length) {
-        emptyHubs.push(
-          `${seat}: "${row.label}" (${row.href}) is in the sidebar but none of its ${children.length} ` +
-            "children are visible to this seat — it opens a blank page. Either grant one of the " +
-            "children or take the row out of the seat's navigation",
-        );
-      }
     }
   }
-  // Same floor discipline as section 1: if the page-to-list extractor stops matching, every hub
-  // disappears and this section passes by examining nothing. Four is what both seats' sidebars
-  // resolve to today — Attendance for each, plus Leave Management and Payroll Management for
-  // HR Operations.
-  assert.ok(
-    hubsChecked >= 4,
-    `only ${hubsChecked} hub pages were examined — the *PageItems extractor has probably stopped ` +
-      "matching, which would make the empty-hub check pass by doing nothing",
-  );
-  assert.deepEqual(emptyHubs, [], emptyHubs.join(String.fromCharCode(10) + "  "));
+  assert.deepEqual(hubRows, [], hubRows.join(String.fromCharCode(10) + "  "));
+
+  // The floor, which the assertion above cannot supply for itself: an extractor that has stopped
+  // matching finds no hub anywhere, and "no hub is offered" then passes by doing nothing — the same
+  // vacuity the old `hubsChecked >= 4` guarded against, on a claim that has flipped sign.
+  //
+  // It is also the surviving half of the property this section used to make. The two hub pages the
+  // HR command centre still points at (tiles and charts, see DASHBOARD_DESTINATIONS_THAT_ARE_NOT_
+  // ROWS in tests/hr-command-center.test.ts) are the ones an empty hub would still hurt on, so the
+  // control runs on exactly those: the extractor must find their lists, and HR Operations — the
+  // seat sent to both — must see cards on each.
+  for (const [href, floor] of [["/hr/attendance", 5], ["/hr/admin/payroll-management", 2]] as const) {
+    const file = pageFileFor(href);
+    assert.ok(file, `${href} has no page file — the hub the command centre links to is gone`);
+    const lists = listsRenderedBy(file!);
+    assert.ok(
+      lists.length > 0,
+      `the *PageItems extractor found no nav list on ${href}, a page that is one — it has stopped ` +
+        "matching, and the hub assertion above is passing by examining nothing",
+    );
+    const visible = visibleChildrenOf(lists, denseLookup(OPERATIONS), OPERATIONS);
+    assert.ok(
+      visible.length >= floor,
+      `HR Operations sees ${visible.length} card(s) on ${href}, below the ${floor} measured on ` +
+        "2026-09-05. Her command centre sends her there from a tile or a chart, so a hub that has " +
+        "emptied out is a figure that leads to a blank page — the exact shape this section was " +
+        "written for, on the one route the rail no longer covers",
+    );
+  }
 
   // ── 5. What company scope moves OUTSIDE canAccess — and why she is still refused ────────────
   // Section 1 proves the permission matrix is scope-invariant. That is not the whole story, and

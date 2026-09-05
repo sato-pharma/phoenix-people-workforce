@@ -505,12 +505,17 @@ const TILES_BY_FUNCTION: Record<
     if (!summary) return null;
     // READ-ONLY for this seat, deliberately: `payroll_inputs` grants deductions:read and nothing
     // more, because approving a disciplinary penalty is a JD boundary (HR_ROLE_BOUNDARIES). These
-    // tiles report the month; the decisions behind them are not hers to take. The two deduction tiles
-    // drill down to Payroll Management (a page this seat can open), NOT to a deductions-review page:
-    // the retired Deductions Governance page was her only such screen, and its unified replacement
-    // (/admin/deductions) is gated to Super Admin / CEO. So as of the C6 cutover (2026-08-30, owner
-    // decision) the count stays visible here and Payroll Management is where she reconciles it. The
-    // counts themselves come from the unified module (getCompanyMonthSummaryByCategory) and are unchanged.
+    // tiles report the month; the decisions behind them are not hers to take. The counts come from
+    // the unified module (getCompanyMonthSummaryByCategory).
+    //
+    // All three drill down to Payroll Management, a module page this seat can open — measured
+    // 2026-09-05, it renders three cards for her. That was a CONSTRAINT until 2026-09-03 and is a
+    // CHOICE now, which is worth writing down because the old wording read as the former: it said
+    // the unified /admin/deductions was "gated to Super Admin / CEO", true at the C6 cutover
+    // (2026-08-30) and reversed three days later when the owner said "yes give HR access to the
+    // deductions screen". The page names HR Operations, and since 2026-09-05 Deductions is a row on
+    // her own rail. So these three could point straight at the screen holding their figure; leaving
+    // them one hop away is now a decision about her dashboard, not something the permissions force.
     const pendingCandidates = Object.values(summary.pending).reduce((total, bucket) => total + bucket.candidateCount, 0);
     const willPublishCandidates = Object.values(summary.willPublish).reduce((total, bucket) => total + bucket.candidateCount, 0);
     return [

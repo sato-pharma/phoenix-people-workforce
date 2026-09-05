@@ -164,27 +164,53 @@ export function runHrUrlNamespaceTests() {
   assert.equal(getNavigationSections("admin"), adminNavigationSections);
   assert.equal(getNavigationSections("employee-portal"), employeePortalNavigationSections);
 
-  // 4 ── HEADLINE A: the three pages a DERIVED namespace would have leaked are gone.
+  // 4 ── HEADLINE A: what a DERIVED namespace would have added, and the authored one leaves out.
   //
   // Each is a presentation leak, not a permission leak — the pages behind them re-assert their own
   // grants — but the owner asked for a surface with nothing on it these seats should not see.
   // Asserted in BOTH directions: present in the derived closure (so this is a real subtraction, not
   // a list of hrefs that never applied), absent from the authored namespace.
+  //
+  // ── 2026-09-05: two of the three original entries stopped applying, and WHY is the point ──────
+  //
+  // The owner removed every rail row that opens a page of modules, so a derived namespace can no
+  // longer pick up a HUB PAGE at all — it picks up that hub's CARDS. For Pharmacovigilance and Field
+  // Coaching those cards (/admin/report-it/new, /coaching, /coaching/analytics) are ALREADY AUTHORED
+  // into /hr, deliberately, so those two leaks closed themselves. For the CRM hub the one card either
+  // seat clears is /admin/field-workforce-compliance, which is NOT authored — so that leak survived
+  // the reversal with a different href, and is pinned below in its new form.
+  //
+  // The fail-open that produced all three is untouched and is not meant to be fixed here:
+  // permissionAllowed returns true for an item naming no resource, and the promoted
+  // hub-pharmacovigilance band still gates on excludedRoles: ['Finance Manager'] and nothing else.
+  // That is precisely why this namespace stays an AUTHORED allowlist — the next card added to one of
+  // those hubs would enter a derived namespace silently, with no permission clause anywhere to stop
+  // it. The three retired entries are kept below rather than deleted so a returning hub row fails.
   const LEAKED_BY_DERIVATION: { href: string; roles: PhoenixRole[]; why: string }[] = [
+    {
+      href: "/admin/field-workforce-compliance",
+      roles: HR_ROLES,
+      why: "a People Management row on the admin rail and the only CRM-hub card either seat clears — reached on people_records, and a sales-supervision board neither HR seat has business opening",
+    },
+  ];
+  // Retired claims: these three WERE the leak until the hub rows were removed. Asserted absent from
+  // the derived closure as well as from the namespace, so restoring a hub row anywhere fails here
+  // rather than quietly re-opening a page of modules to an HR seat.
+  const NO_LONGER_LEAKED_BY_DERIVATION: { href: string; roles: PhoenixRole[]; why: string }[] = [
     {
       href: "/admin/pharmacovigilance",
       roles: HR_ROLES,
-      why: "no permission gate at all — only excludedRoles: ['Finance Manager'], so every other role passes",
+      why: "the hub row is gone; its one card /admin/report-it/new is authored into /hr on purpose",
     },
     {
       href: "/admin/field-coaching",
       roles: HR_ROLES,
-      why: "a sales-management hub reached on the coaching grant",
+      why: "the hub row is gone; /coaching and /coaching/analytics are authored into /hr on purpose",
     },
     {
       href: "/admin/crm-tools",
       roles: ["HR Operations"],
-      why: "a CRM hub whose only reachable card is Workforce Compliance, which she already has",
+      why: "the hub row is gone, and its one reachable card moved into the entry above",
     },
   ];
   const stillLeaking: string[] = [];
@@ -199,10 +225,26 @@ export function runHrUrlNamespaceTests() {
       stillLeaking.push(`${href} (${why})`);
     }
   }
+  const backInTheClosure: string[] = [];
+  for (const { href, roles, why } of NO_LONGER_LEAKED_BY_DERIVATION) {
+    for (const role of roles) {
+      if (derivedAdminClosure(role).has(href)) {
+        backInTheClosure.push(`${role} -> ${href} (${why})`);
+      }
+    }
+    if (hrItems.some((item) => underlyingPath(item.href) === href)) {
+      stillLeaking.push(`${href} (${why})`);
+    }
+  }
   assert.deepEqual(
     neverApplied,
     [],
     "this test claims these hrefs leak through a DERIVED namespace — if one no longer does, the claim is stale and the reason must be re-checked, not the assertion deleted",
+  );
+  assert.deepEqual(
+    backInTheClosure,
+    [],
+    "a hub page is offered to an HR seat again — the 2026-09-05 promotion removed every rail row that opens a page of modules, so this is either a reverted reversal or a new hub row, and either way the reason recorded above no longer holds",
   );
   assert.deepEqual(
     stillLeaking,

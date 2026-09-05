@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 
 import { crmPageItems, getNavigationSections } from "../src/config/system-navigation.ts";
-import { getSections, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
+import {
+  getSections,
+  navigationItemVisible,
+  type PermissionLookup,
+} from "../src/lib/navigation/active-path.ts";
 import {
   permissionActions,
   permissionMatrix,
@@ -65,7 +69,13 @@ import {
  * mode here is never exposure. It is a page nobody can find.
  */
 
+// The hub page. Still on disk, still answers by URL — but since 2026-09-05 no rail row opens it, on
+// any role, because the owner removed every row that opens a page of modules. Its cards were promoted
+// onto the rail under the hub's own heading, which is the `crm` band. So this constant no longer
+// names a route anyone can click, and every "or via the hub" escape below is gone with it: a card is
+// reachable now only by being a ROW.
 const CRM_HUB_HREF = "/admin/crm-tools";
+const CRM_BAND_ID = "crm";
 
 function permissionLookupFor(role: PhoenixRole): PermissionLookup {
   const lookup: PermissionLookup = {};
@@ -91,13 +101,30 @@ function adminHrefsFor(role: PhoenixRole): Set<string> {
   return new Set(sections.flatMap((section) => section.items.map((item) => item.href)));
 }
 
+/** The rows the CRM band actually draws for a role — [] when the band is gated away entirely. */
+function crmBandRowsFor(role: PhoenixRole): string[] {
+  const band = getSections(getNavigationSections("admin"), "admin", permissionLookupFor(role), role).find(
+    (section) => section.id === CRM_BAND_ID,
+  );
+  return (band?.items ?? []).map((item) => item.href).sort();
+}
+
+/** The cards the HUB PAGE would render for a role, through the same helper the rail uses. */
+function crmCardsFor(role: PhoenixRole): string[] {
+  const lookup = permissionLookupFor(role);
+  return crmPageItems
+    .filter((card) => card.href !== CRM_HUB_HREF && navigationItemVisible(card, lookup, role))
+    .map((card) => card.href)
+    .sort();
+}
+
 export function runCrmHubCardReachabilityTests() {
   // ── 1. The headline: Reps Plans is reachable, and the route is now the hub ───────────────────
   const superAdminHrefs = adminHrefsFor("Super Admin");
 
   assert.ok(
-    superAdminHrefs.has(CRM_HUB_HREF) || superAdminHrefs.has("/admin/reps-plans"),
-    "Super Admin is the ONLY role Reps Plans admits, so he needs a route to it — the CRM hub button, or a row of its own. With neither, the page is reachable by nobody except a typed URL",
+    superAdminHrefs.has("/admin/reps-plans"),
+    "Super Admin needs a route to Reps Plans, and since 2026-09-05 a row of its own is the only route there is — the hub button that used to count as the second answer is gone from every rail. With neither, the page is reachable by nobody except a typed URL",
   );
 
   // The 2026-08-30 collapse (owner, asked directly). Super Admin previously had NINE CRM rows and
@@ -127,13 +154,19 @@ export function runCrmHubCardReachabilityTests() {
     "/admin/double-visit-analytics",
     "/admin/double-visit-data-integrity",
   ] as const;
-  const duplicatedByTheHub = superAdminHrefs.has(CRM_HUB_HREF)
-    ? CRM_ROWS_COLLAPSED_2026_08_30.filter((href) => superAdminHrefs.has(href))
-    : [];
+  // 2026-09-05 settled it a third way, and this time by removing one of the two options rather than
+  // by choosing between them: there is no hub button on any rail, so the duplication is unreachable
+  // by construction. Both halves are still asserted, because "unreachable by construction" is a
+  // property of the current promotion and not a law.
+  assert.ok(
+    !superAdminHrefs.has(CRM_HUB_HREF),
+    "no rail row may open the CRM hub page — the owner removed every row that opens a page of modules",
+  );
+  const collapsedRowsMissing = CRM_ROWS_COLLAPSED_2026_08_30.filter((href) => !superAdminHrefs.has(href));
   assert.deepEqual(
-    duplicatedByTheHub,
+    collapsedRowsMissing,
     [],
-    "Super Admin must not see the CRM hub button AND rows for the cards it already lists — that duplication is what both the 2026-08-08 expansion and the 2026-08-30 collapse exist to avoid",
+    "the eight rows the 2026-08-30 collapse folded into the CRM hub are back on Super Admin's rail as of 2026-09-05, under the hub's own heading — with the hub button gone, a missing row is a page he can no longer reach",
   );
   // Every one of those eight is still a card here, so the collapse removed a row and not a route.
   for (const href of CRM_ROWS_COLLAPSED_2026_08_30) {
@@ -164,22 +197,22 @@ export function runCrmHubCardReachabilityTests() {
   // so the same reachability rule covers him. It is kept as its own assertion because he is the
   // role every one of these cards names, and a failure here should say so by name.
   const superAdminCannotReach = crmPageItems
-    .filter((card) => !superAdminHrefs.has(card.href) && !superAdminHrefs.has(CRM_HUB_HREF))
+    .filter((card) => card.href !== CRM_HUB_HREF && !superAdminHrefs.has(card.href))
     .map((card) => card.href)
     .sort();
 
   assert.deepEqual(
     superAdminCannotReach,
     [],
-    "every CRM hub card must be reachable by Super Admin — via the hub row, or a row of its own. With neither, the page is reachable by nobody except a typed URL",
+    "every CRM hub card must be a row on Super Admin's rail — since 2026-09-05 that is the only route, the hub button having been removed. Without one the page is reachable by nobody except a typed URL",
   );
 
   // ── 2b. The same rule, every role a card names ─────────────────────────────────────
   const unreachable: string[] = [];
   for (const card of crmPageItems) {
+    if (card.href === CRM_HUB_HREF) continue;
     for (const role of card.roles ?? []) {
-      const hrefs = adminHrefsFor(role);
-      if (!hrefs.has(card.href) && !hrefs.has(CRM_HUB_HREF)) {
+      if (!adminHrefsFor(role).has(card.href)) {
         unreachable.push(`${role} -> ${card.label} (${card.href})`);
       }
     }
@@ -187,21 +220,49 @@ export function runCrmHubCardReachabilityTests() {
   assert.deepEqual(
     unreachable,
     [],
-    "a CRM card that names a role must be reachable by that role — as its own sidebar row, or via a hub row it can actually see",
+    "a CRM card that names a role must be a sidebar row for that role — the hub row that used to count as the second route is gone, so a card the rail drops is reachable by nobody except a typed URL",
   );
 
-  // ── 3. Nobody else's route changed ───────────────────────────────────────────────────────────
-  // Every other role reaches these pages the way it always did: as cards on the hub, with no direct
-  // row. That was true before the 2026-08-30 collapse and is still true after it — the collapse
-  // moved Super Admin ONTO their arrangement, it did not move them. /admin/rep-doctor-lists is
-  // absent for a second reason since 2026-08-28 — the owner retired it, so there is no row for any
-  // role and no card either.
+  // ── 3. The promotion is a MOVE, not a rebuild ───────────────────────────────────────────────
+  //
+  // This block asserted two things until 2026-09-05, and the reversal changed what each one means.
+  //
+  // It asserted the hub BUTTON for these three. There is no hub button on any rail now, so that
+  // could only fail — and the routes it stood for did not disappear, they became rows.
+  //
+  // And it asserted that none of the three gains a direct /admin/reps-plans row, on the stated
+  // grounds that "the cards stay Super-Admin-only". That has not been true since 2026-09-03: the
+  // card names `["Super Admin", "SFE Manager"]`, so the SFE Manager clears it, opens it, and now
+  // legitimately holds a row for it. Keeping the assertion would have pinned a card gate the owner
+  // had already widened — an old permission set defended by a navigation test, which is the shape
+  // the header of this file warns about.
+  //
+  // So the rule is stated as the promotion's own promise instead, which is stronger than either:
+  // a role's CRM rows are EXACTLY the CRM cards that role clears. A card that stops being a row
+  // fails here, and so does a row for a card the role cannot open — the dead-link half, which used
+  // to need its own assertion.
+  //
+  // Super Admin is deliberately not in this loop. He clears one card more than he has rows for:
+  // /admin/field-workforce-compliance is a People Management row of his as well as a CRM card, and
+  // dedupeSectionsByHref drops the second copy. That is the "one page filed under two modules"
+  // arrangement described above, not a dropped route, and §1 and §2a already cover him.
   for (const role of ["SFE Manager", "CEO", "National Sales Manager"] as const) {
-    const hrefs = adminHrefsFor(role);
-    assert.ok(hrefs.has(CRM_HUB_HREF), `${role} still reaches the CRM hub`);
+    assert.deepEqual(
+      crmBandRowsFor(role),
+      crmCardsFor(role),
+      `${role}: the CRM band on the rail must list exactly the cards the CRM hub page would show ` +
+        "— the 2026-09-05 promotion moved the cards onto the rail, so any difference is a route " +
+        "gained or lost rather than moved",
+    );
     assert.ok(
-      !hrefs.has("/admin/reps-plans") && !hrefs.has("/admin/rep-doctor-lists"),
-      `${role} must NOT gain a direct row — the cards stay Super-Admin-only and a visible row he cannot open is the opposite bug`,
+      crmBandRowsFor(role).length > 0,
+      `${role} must still reach the CRM module — the band is the route now that the hub button is gone`,
+    );
+    // Retired 2026-08-28 by the owner: no row for any role, and no card either. Kept because a
+    // restored page with no navigation entry is how this whole file started.
+    assert.ok(
+      !adminHrefsFor(role).has("/admin/rep-doctor-lists"),
+      `${role} must not have a /admin/rep-doctor-lists row — the owner retired that board`,
     );
   }
 }
