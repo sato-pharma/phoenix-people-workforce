@@ -53,9 +53,20 @@ export type ReversalPair = {
   impact: string;
 };
 
+/**
+ * One AREA x PRODUCT cell of the closing that nets below zero — every distributor together, which
+ * is how phx_monthly_closing_matrix groups it, and therefore what "the closing shows a negative
+ * there" actually means.
+ *
+ * THERE IS DELIBERATELY NO `distributorName` HERE. It used to carry one, because the RPC grouped by
+ * distributor as well, so every row was one distributor's share of the cell presented as the cell.
+ * Measured on production 2026-09-05 across 2026-05..07: 7 of the 10 rows disagreed with the
+ * closing, three of them in SIGN — AB4/RO001 read -34 units on a cell that is +31, and D21/SA001
+ * read -179 on a cell that is -13. A cell built from several distributors has no single
+ * distributor, and naming one is what made this page contradict the closing it exists to explain.
+ */
 export type NetNegativeCell = {
   line: string;
-  distributorName: string;
   areaCode: string;
   areaName: string;
   productName: string;
@@ -134,15 +145,18 @@ export function groupClosingCorrections(
           `${row.period} reads high and ${negativePeriod} reads low by roughly that much.`,
       });
     } else if (row.kind === "net_negative") {
+      // No distributor: the RPC sends distributorCode NULL for this kind because the row IS the
+      // closing's cell, summed across every distributor. See NetNegativeCell.
       netNegatives.push({
         line: row.line,
-        distributorName: row.distributorName,
         areaCode: row.areaCode,
         areaName: row.areaName,
         productName: row.productName,
         units: row.units,
         value: row.value,
-        impact: `Returns exceed sales here by ${units(row.units)} (${egp(row.value)}) this month.`,
+        impact:
+          `Across every distributor, returns exceed sales in this cell by ${units(row.units)} ` +
+          `(${egp(row.value)}) this month.`,
       });
     } else {
       const originPeriod = row.otherPeriod;
