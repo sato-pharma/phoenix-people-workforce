@@ -412,19 +412,56 @@ function styleMasterSheet(
   });
 
   // --- section band: type and a rule, never a filled block ---
+  // ── the section band ────────────────────────────────────────────────────────
+  //
+  // Eight sections across fifty columns, and until 2026-09-05 each was a 7.5pt label sitting in the
+  // FIRST cell of its run with the rest of the run left blank and unmerged — so "PAYROLL REFERENCE
+  // INFORMATION" floated above one column of the nine it covers and told the reader nothing about
+  // where the section ended. The owner said the sheet needed more, and this was the largest part of
+  // what was missing: the grouping existed in the data and not on the page.
+  //
+  // Each run is now MERGED across its own columns and given the deep ground, which makes the header
+  // two-tier — section over column — and lets a reader see at a glance that columns 24 to 32 are one
+  // idea. The merge is what does the work; the ground is what makes the merge visible.
   const sectionRow = sheet.getRow(SECTION_ROW);
-  sectionRow.height = 16;
+  sectionRow.height = 18;
+  const runs: Array<{ from: number; label: string; to: number }> = [];
   columns.forEach((column, index) => {
     const previous = columns[index - 1];
-    const isSectionStart = !previous || previous.section !== column.section;
-    const cell = sectionRow.getCell(index + 1);
-    cell.value = isSectionStart ? column.section.toUpperCase() : null;
-    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.light }, name: HOUSE_XLSX_FONT, size: 7.5 };
-    cell.alignment = { horizontal: "left", vertical: "bottom" };
-    // `{}` rather than `undefined` — the property is `Partial<Borders>`, which does not accept it.
-    cell.border = isSectionStart
-      ? { left: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.light } } }
-      : {};
+    if (!previous || previous.section !== column.section) {
+      runs.push({ from: index + 1, label: column.section.toUpperCase(), to: index + 1 });
+    } else {
+      runs[runs.length - 1].to = index + 1;
+    }
+  });
+  for (const run of runs) {
+    if (run.to > run.from) sheet.mergeCells(SECTION_ROW, run.from, SECTION_ROW, run.to);
+    const cell = sectionRow.getCell(run.from);
+    cell.value = run.label;
+    cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.white }, name: HOUSE_XLSX_FONT, size: 8 };
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+    for (let column = run.from; column <= run.to; column += 1) {
+      const banded = sectionRow.getCell(column);
+      banded.fill = { fgColor: { argb: HOUSE_XLSX_COLORS.deep }, pattern: "solid", type: "pattern" };
+      // A hairline in the blue between sections, so two adjacent runs do not read as one long band.
+      banded.border = {
+        left: column === run.from ? { style: "thin", color: { argb: HOUSE_XLSX_COLORS.blue } } : undefined,
+        right: column === run.to ? { style: "thin", color: { argb: HOUSE_XLSX_COLORS.blue } } : undefined,
+      };
+    }
+  }
+
+  // ── collapsible groups over the columns the upload does NOT read ─────────────
+  //
+  // Fifty columns is more than fits a screen, and a third of them are reference the importer
+  // ignores. Those get an outline group, so a reader filling the sheet can fold away everything
+  // that cannot affect the upload and keep what can.
+  //
+  // Grouped, NOT hidden: the +/- control appears and the columns stay visible until someone chooses
+  // otherwise. Hiding a column on an upload template by default would be a way to lose a value
+  // silently, which is the opposite of what this sheet is for.
+  columns.forEach((column, index) => {
+    if (!column.imported) sheet.getColumn(index + 1).outlineLevel = 1;
   });
 
   const headerRow = sheet.getRow(HEADER_ROW);
@@ -671,7 +708,10 @@ function countMoneyFilled(row: MasterRow | undefined): number {
  * so that opening the file still lands here.
  */
 function addStartHereSheet(workbook: ExcelJS.Workbook, recordCount: number, lastFormulaRow: number) {
-  const sheet = workbook.addWorksheet("Start Here", { properties: { defaultRowHeight: 18 } });
+  // The four guide tabs take the lighter blue: same family as the sheet you work in, plainly not it.
+  const sheet = workbook.addWorksheet("Start Here", {
+    properties: { defaultRowHeight: 18, tabColor: { argb: HOUSE_XLSX_COLORS.light } },
+  });
   sheet.getColumn(1).width = 4;
   sheet.getColumn(2).width = 30;
   sheet.getColumn(3).width = 96;
@@ -794,7 +834,7 @@ function addStartHereSheet(workbook: ExcelJS.Workbook, recordCount: number, last
 
 /** "Field Guide" — one row per column, so nobody has to guess what a header means. */
 function addFieldGuideSheet(workbook: ExcelJS.Workbook) {
-  const sheet = workbook.addWorksheet("Field Guide");
+  const sheet = workbook.addWorksheet("Field Guide", { properties: { tabColor: { argb: HOUSE_XLSX_COLORS.light } } });
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: HEADER_ROW }];
   const widths = [26, 22, 12, 34, 74];
   widths.forEach((width, index) => {
@@ -856,7 +896,7 @@ function addFieldGuideSheet(workbook: ExcelJS.Workbook) {
  * into a sentence.
  */
 function addUploadRulesSheet(workbook: ExcelJS.Workbook) {
-  const sheet = workbook.addWorksheet("Upload Rules");
+  const sheet = workbook.addWorksheet("Upload Rules", { properties: { tabColor: { argb: HOUSE_XLSX_COLORS.light } } });
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: HEADER_ROW }];
   const widths = [16, 30, 30, 76];
   widths.forEach((width, index) => {
@@ -938,7 +978,7 @@ function addUploadRulesSheet(workbook: ExcelJS.Workbook) {
 
 /** "Reference Data" — the dropdown lists, visible and searchable. */
 function addReferenceDataSheet(workbook: ExcelJS.Workbook, lookups: MasterLookups) {
-  const sheet = workbook.addWorksheet("Reference Data");
+  const sheet = workbook.addWorksheet("Reference Data", { properties: { tabColor: { argb: HOUSE_XLSX_COLORS.light } } });
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: HEADER_ROW }];
 
   const blocks: Array<{ title: string; values: string[] }> = [
@@ -1037,7 +1077,9 @@ export async function buildEmployeeMasterWorkbook(
   workbook.calcProperties.fullCalcOnLoad = true;
 
   // FIRST, ALWAYS. The importer reads worksheets[0].
-  const sheet = workbook.addWorksheet("Employee Master", { properties: { defaultRowHeight: 18 } });
+  const sheet = workbook.addWorksheet("Employee Master", {
+    properties: { defaultRowHeight: 18, tabColor: { argb: HOUSE_XLSX_COLORS.deep } },
+  });
   sheet.columns = columns.map((column) => ({ key: column.key, width: column.width }));
 
   const rows = employees.map(employeeToMasterRow);
