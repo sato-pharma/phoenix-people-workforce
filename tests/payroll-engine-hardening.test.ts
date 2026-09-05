@@ -41,6 +41,17 @@ const downloadRouteSource = readFileSync(
   "utf8",
 );
 
+/**
+ * The batch download's workbook moved out of the route into a domain module, so the two canonical
+ * -header guarantees below are pinned HERE now. The guarantee is unchanged — the export must be
+ * built from the same headers and the same value resolver as the upload template — only its
+ * address is. The permission assertion stays on the route, which is where the gate still lives.
+ */
+const salaryBatchWorkbookSource = readFileSync(
+  new URL("../src/lib/payroll/salary-batch-workbook.ts", import.meta.url),
+  "utf8",
+);
+
 const employeePortalServiceSource = readFileSync(
   new URL("../src/lib/employee-portal/service.ts", import.meta.url),
   "utf8",
@@ -311,12 +322,12 @@ export function runPayrollEngineHardeningTests() {
     "Updated payroll replace RPC must stay service-role only.",
   );
   assert.match(
-    downloadRouteSource,
+    salaryBatchWorkbookSource,
     /payrollSheetHeaders/,
     "Payroll XLSX export must use the same canonical headers as the upload template.",
   );
   assert.match(
-    downloadRouteSource,
+    salaryBatchWorkbookSource,
     /payrollSheetValue/,
     "Payroll XLSX export rows must be generated from canonical uploaded-sheet fields.",
   );
@@ -557,8 +568,11 @@ export function runPayrollEngineHardeningTests() {
   );
   assert.match(
     templateRouteSource,
-    /Phoenix Salary Upload Policy/,
-    "Payroll template must include the current salary policy reference sheet.",
+    /Salary Upload Policy/,
+    "Payroll template must include the current salary policy reference sheet. The title lost its " +
+      "\"Phoenix\" prefix when the pack moved onto the house document identity: that identity is the " +
+      "COMPANY's (Sato Pharma), never the app's, so a company document does not carry the product " +
+      "name. The sheet itself is unchanged — this pin is about it existing, not about the prefix.",
   );
   assert.match(
     templateRouteSource,

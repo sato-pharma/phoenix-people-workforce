@@ -1,6 +1,17 @@
 import ExcelJS from "exceljs";
 
-import { buildCoverSheet } from "@/lib/export/phoenix-xlsx-style";
+import { HOUSE_XLSX_COLORS, writeHouseMasthead } from "@/lib/export/house-xlsx-identity";
+import {
+  buildPayrollCoverSheet,
+  HELD_ROW_NOTE,
+  PAYROLL_HEADER_ROW,
+  payrollBodyCell,
+  payrollHeaderCell,
+  payrollTotalsCell,
+  resolvePayrollBands,
+  writePayrollSectionBand,
+  writePayrollSheetMasthead,
+} from "@/lib/payroll/payroll-sheet-style";
 import {
   isPayrollNumericHeader,
   payrollMoneyHeaders,
@@ -10,14 +21,7 @@ import {
 } from "@/lib/payroll/salary-sheet-fields";
 import type { SalaryRecord } from "@/lib/payroll/types";
 import {
-  AMBER,
-  BLACK,
-  bandHeader,
-  gridBorder,
-  SLATE,
   VALUE_FMT,
-  WHITE,
-  ZEBRA,
 } from "@/lib/sales/sales-workbook-kit";
 
 import type { AssembledRow } from "../assemble.ts";
@@ -25,11 +29,7 @@ import { monthLabel } from "../notify.ts";
 import type { MonthlySalaryRun, NonEmployeePayrollRow } from "../types.ts";
 import { sortForExport, unlistedExportHrIds } from "./export-order.ts";
 
-const HELD_FILL = "FFFEE2E2";
-const HELD_TEXT = "FF991B1B";
 /** The First Part is the amount HR/finance actually executes (pays out) this Part-1 run. */
-const EXECUTION_FILL = "FFDCFCE7";
-const EXECUTION_HEADER_FILL = "FF166534";
 
 /**
  * The Part-1 sheet's focused column subset (first installment). "First Part" is
@@ -186,23 +186,32 @@ export async function writePayrollWorksheet(
   const executionColumnIndex = headers.indexOf("First Part");
 
   const sheet = workbook.addWorksheet(options.sheetName);
-  bandHeader(sheet, colCount, options.title, options.subtitle);
+  sheet.views = [{ showGridLines: false }];
+  writeHouseMasthead(workbook, sheet, {
+    columns: colCount,
+    provenance: [`${rows.length} row${rows.length === 1 ? "" : "s"}`, options.subtitle],
+    subtitle: options.subtitle,
+    title: options.title,
+  });
+  // The bands are resolved from the headers actually written, never from the canonical column
+  // numbers — the Part-1 sheet writes a subset, and absolute positions would caption the wrong
+  // money on it. See `resolvePayrollBands`.
+  writePayrollSectionBand(sheet, resolvePayrollBands(headers, extraColumns.map((column) => column.label)));
 
-  const headerRowNumber = 5;
+  // Masthead 1-3, section band 4, header 5 — the positions the sheet already used, so nothing that
+  // reads it moves.
+  const headerRowNumber = PAYROLL_HEADER_ROW;
   const headerRow = sheet.getRow(headerRowNumber);
   labels.forEach((label, index) => {
     const cell = headerRow.getCell(index + 1);
     cell.value = label;
-    cell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 10.5 };
-    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-    // The execution column (First Part — the amount actually paid this run) gets
-    // its own header color so it stands out from every other column at a glance.
-    cell.fill = {
-      fgColor: { argb: index === executionColumnIndex ? EXECUTION_HEADER_FILL : BLACK },
-      pattern: "solid",
-      type: "pattern",
-    };
-    cell.border = gridBorder();
+    // The execution column (First Part — the amount actually paid this run) is marked by a HEAVIER
+    // rule rather than its own fill, so it still reads as the one column that matters on a sheet
+    // that no longer paints anything.
+    payrollHeaderCell(cell, {
+      execution: index === executionColumnIndex,
+      numeric: index < headers.length ? isPayrollNumericHeader(headers[index]) : false,
+    });
     if (options.protect) cell.protection = { locked: true };
   });
   headerRow.height = 26;
@@ -218,30 +227,32 @@ export async function writePayrollWorksheet(
       const value = payrollSheetValue(record, run.month, run.year, index + 1, header);
       cell.value = value as ExcelJS.CellValue;
       if (payrollMoneyHeaders.has(header) && typeof value === "number") cell.numFmt = VALUE_FMT;
-      cell.font = {
-        color: { argb: entry.onHold ? HELD_TEXT : SLATE },
-        bold: entry.onHold,
-        name: "Calibri",
-        size: 10,
-      };
-      cell.alignment = { horizontal: isPayrollNumericHeader(header) ? "right" : "left", vertical: "middle" };
-      cell.border = gridBorder();
-      if (entry.onHold) cell.fill = { fgColor: { argb: HELD_FILL }, pattern: "solid", type: "pattern" };
-      else if (ci === executionColumnIndex) {
-        cell.fill = { fgColor: { argb: EXECUTION_FILL }, pattern: "solid", type: "pattern" };
-        cell.font = { ...cell.font, bold: true };
-      } else if (zebra) cell.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
+      payrollBodyCell(cell, {
+        execution: ci === executionColumnIndex,
+        header,
+        held: entry.onHold,
+        leading: ci === 0,
+        zebra,
+      });
       if (options.protect) cell.protection = { locked: true };
     });
+
+    // What "held" costs, in words, on the row itself — so the fact travels with the row instead of
+    // living only in a colour, which greyscale, a copied range and a colour-blind reader all lose.
+    if (entry.onHold) {
+      const noteColumn = headers.indexOf("HR_ID") >= 0 ? headers.indexOf("HR_ID") + 1 : 1;
+      excelRow.getCell(noteColumn).note = HELD_ROW_NOTE;
+    }
 
     extraColumns.forEach((column, ei) => {
       const cell = excelRow.getCell(headers.length + ei + 1);
       cell.value = column.value ? (column.value(entry) ?? "") : "";
       if (column.kind === "money") cell.numFmt = VALUE_FMT;
-      cell.border = gridBorder();
-      cell.alignment = { horizontal: column.kind === "money" ? "right" : "left", vertical: "middle" };
-      if (entry.onHold) cell.fill = { fgColor: { argb: HELD_FILL }, pattern: "solid", type: "pattern" };
-      else if (zebra) cell.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
+      payrollBodyCell(cell, {
+        held: entry.onHold,
+        numeric: column.kind === "money",
+        zebra,
+      });
       // Finance-edit columns stay editable even on a protected sheet.
       if (options.protect) cell.protection = { locked: false };
     });
@@ -273,13 +284,13 @@ export async function writePayrollWorksheet(
       else if (moneyColumns.has(header)) value = entry.totalSalary;
       cell.value = value as ExcelJS.CellValue;
       if (payrollMoneyHeaders.has(header) && typeof value === "number") cell.numFmt = VALUE_FMT;
-      cell.font = { color: { argb: SLATE }, name: "Calibri", size: 10 };
-      cell.alignment = { horizontal: isPayrollNumericHeader(header) ? "right" : "left", vertical: "middle" };
-      cell.border = gridBorder();
-      if (ci === executionColumnIndex) {
-        cell.fill = { fgColor: { argb: EXECUTION_FILL }, pattern: "solid", type: "pattern" };
-        cell.font = { ...cell.font, bold: true };
-      } else if (zebra) cell.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
+      payrollBodyCell(cell, {
+        execution: ci === executionColumnIndex,
+        header,
+        held: false,
+        leading: ci === 0,
+        zebra,
+      });
       if (options.protect) cell.protection = { locked: true };
     });
 
@@ -289,9 +300,7 @@ export async function writePayrollWorksheet(
       else if (column.label === "Bank Account") cell.value = entry.bankAccount ?? "";
       else cell.value = "";
       if (column.kind === "money") cell.numFmt = VALUE_FMT;
-      cell.border = gridBorder();
-      cell.alignment = { horizontal: column.kind === "money" ? "right" : "left", vertical: "middle" };
-      if (zebra) cell.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
+      payrollBodyCell(cell, { held: false, numeric: column.kind === "money", zebra });
       if (options.protect) cell.protection = { locked: false };
     });
 
@@ -324,10 +333,7 @@ export async function writePayrollWorksheet(
       if (header === "First Part") firstPartTotal = rounded;
       if (header === "Month Salary") monthSalaryTotal = rounded;
     }
-    cell.font = { bold: true, color: { argb: BLACK }, name: "Calibri", size: 10.5 };
-    cell.fill = { fgColor: { argb: AMBER }, pattern: "solid", type: "pattern" };
-    cell.border = gridBorder();
-    cell.alignment = { horizontal: isPayrollNumericHeader(header) ? "right" : "left", vertical: "middle" };
+    payrollTotalsCell(cell, { numeric: isPayrollNumericHeader(header) });
     if (options.protect) cell.protection = { locked: true };
   });
 
@@ -337,7 +343,17 @@ export async function writePayrollWorksheet(
     column.width = Math.max(column.width ?? 9, Math.min(28, Math.max(12, label.length + 2)));
   });
   sheet.getColumn(5).width = 26; // Full Name
-  sheet.views = [{ state: "frozen", xSplit: 0, ySplit: headerRowNumber, showGridLines: false }];
+  // Freeze through Full Name: with 37 money columns, scrolling to "Second Part" otherwise leaves
+  // the reader looking at a row of figures with no idea whose they are.
+  const nameColumn = headers.indexOf("Full Name");
+  sheet.views = [
+    {
+      showGridLines: false,
+      state: "frozen",
+      xSplit: nameColumn >= 0 ? nameColumn + 1 : 0,
+      ySplit: headerRowNumber,
+    },
+  ];
 
   if (options.protect) {
     await sheet.protect("", {
@@ -374,6 +390,20 @@ function coverRows(run: MonthlySalaryRun, rows: AssembledRow[], scopeLabel: stri
   if (recovered > 0) {
     cover.push(["Recovered (prev. overpayments)", String(Math.round(recovered * 100) / 100)]);
   }
+  // NAME the held people, do not just count them.
+  //
+  // A held row is dropped entirely at publish — `publishToPayslips` filters `!onHold`, so no salary
+  // record is written and nothing in the system records that the person was paid outside it. "On
+  // hold: 2" tells a reader a number; it does not tell them WHO, and it does not say that what is
+  // owed is the SECOND part only, so paying full net would pay part one for a second time. On the
+  // sheet the fact was carried by a red fill and nothing else, which greyscale and a copied range
+  // both lose. Here it is words.
+  for (const entry of rows.filter((candidate) => candidate.onHold)) {
+    cover.push([
+      `Held · ${entry.row.hrId}`,
+      `${entry.row.fullName} — NOT paid by this run. The SECOND part is what is owed; part one was already paid.`,
+    ]);
+  }
   // Make the hand-maintained execution list's drift visible on the sheet
   // itself, so it can't keep degrading unnoticed month after month.
   if (unlisted.length > 0) {
@@ -408,7 +438,7 @@ export async function buildFullSheetWorkbook(input: {
   nonEmployees?: NonEmployeePayrollRow[];
 }): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  buildCoverSheet(workbook, {
+  buildPayrollCoverSheet(workbook, {
     title: "Automated Payroll — Full Monthly Sheet",
     subtitle: `${monthLabel(input.run.month, input.run.year)} · HR-confirmed`,
     rows: coverRows(input.run, input.rows, "Full monthly sheet"),
@@ -481,7 +511,7 @@ function addExecutiveSummarySheet(
   const subtitle = input.previous
     ? `${monthLabel(input.run.month, input.run.year)} · ${input.scopeLabel} · vs. previous month`
     : `${monthLabel(input.run.month, input.run.year)} · ${input.scopeLabel} · no previous month to compare`;
-  bandHeader(sheet, 5, title, subtitle);
+  writePayrollSheetMasthead(workbook, sheet, { columns: 5, subtitle, title });
 
   const headerRowNumber = 5;
   const labels = ["Metric", "This Month", "Last Month", "Change", "% Change"];
@@ -489,10 +519,7 @@ function addExecutiveSummarySheet(
   labels.forEach((label, index) => {
     const cell = headerRow.getCell(index + 1);
     cell.value = label;
-    cell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 10.5 };
-    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-    cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
-    cell.border = gridBorder();
+    payrollHeaderCell(cell, { numeric: index > 0 });
   });
   headerRow.height = 26;
 
@@ -522,16 +549,16 @@ function addExecutiveSummarySheet(
       if (metric.money && (ci === 1 || ci === 2 || ci === 3) && typeof value === "number") cell.numFmt = VALUE_FMT;
       cell.font = {
         bold: ci === 0 || ci === 3,
-        color: { argb: ci === 3 && hasPrevious ? (increase ? INCREASE_TEXT : decrease ? DECREASE_TEXT : SLATE) : SLATE },
-        name: "Calibri",
+        color: { argb: ci === 3 && hasPrevious ? (increase ? INCREASE_TEXT : decrease ? DECREASE_TEXT : HOUSE_XLSX_COLORS.body) : HOUSE_XLSX_COLORS.body },
+        name: "Aptos",
         size: ci === 0 ? 11 : 10,
       };
       cell.alignment = { horizontal: ci === 0 ? "left" : "right", vertical: "middle" };
-      cell.border = gridBorder();
+      cell.border = { bottom: { style: "hair", color: { argb: HOUSE_XLSX_COLORS.hair } } };
       if (ci === 3 && hasPrevious && (increase || decrease)) {
         cell.fill = { fgColor: { argb: increase ? INCREASE_FILL : DECREASE_FILL }, pattern: "solid", type: "pattern" };
       } else if (index % 2 === 1) {
-        cell.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
+        cell.fill = { fgColor: { argb: HOUSE_XLSX_COLORS.tint }, pattern: "solid", type: "pattern" };
       }
     });
   });
@@ -573,7 +600,7 @@ function addSalaryChangesSheet(
   const sheet = workbook.addWorksheet("Salary Changes");
   const title = "Salary Changes vs. Previous Month";
   const subtitle = `${monthLabel(input.run.month, input.run.year)} · green = increase, red = decrease`;
-  bandHeader(sheet, 5, title, subtitle);
+  writePayrollSheetMasthead(workbook, sheet, { columns: 5, subtitle, title });
 
   const headerRowNumber = 5;
   const labels = ["HR_ID", "Full Name", "Previous Net Salary", "Current Net Salary", "Change"];
@@ -581,10 +608,7 @@ function addSalaryChangesSheet(
   labels.forEach((label, index) => {
     const cell = headerRow.getCell(index + 1);
     cell.value = label;
-    cell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 10.5 };
-    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-    cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
-    cell.border = gridBorder();
+    payrollHeaderCell(cell, { numeric: index > 0 });
   });
   headerRow.height = 26;
 
@@ -599,9 +623,9 @@ function addSalaryChangesSheet(
       const cell = excelRow.getCell(ci + 1);
       cell.value = value as ExcelJS.CellValue;
       if (ci >= 2) cell.numFmt = VALUE_FMT;
-      cell.font = { color: { argb: text }, bold: ci === 4, name: "Calibri", size: 10 };
+      cell.font = { color: { argb: text }, bold: ci === 4, name: "Aptos", size: 10 };
       cell.alignment = { horizontal: ci >= 2 ? "right" : "left", vertical: "middle" };
-      cell.border = gridBorder();
+      cell.border = { bottom: { style: "hair", color: { argb: HOUSE_XLSX_COLORS.hair } } };
       cell.fill = { fgColor: { argb: fill }, pattern: "solid", type: "pattern" };
     });
   });
@@ -626,7 +650,7 @@ export async function buildPart1SheetWorkbook(input: {
   previousSummary?: PeriodSummary | null;
 }): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  buildCoverSheet(workbook, {
+  buildPayrollCoverSheet(workbook, {
     title: "Automated Payroll — Part 1 Sheet",
     subtitle: `${monthLabel(input.run.month, input.run.year)} · first installment`,
     rows: coverRows(input.run, input.rows, "Part 1 (first installment)"),
