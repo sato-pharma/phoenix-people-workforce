@@ -504,6 +504,71 @@ pre-approved actions. If a task requires no protected action, complete it withou
 1. Merging any branch or Pull Request into `main` or any production branch.
 2. Running or applying any database migration against the production database/environment.
 
+**Both are pre-approved while §6.1 AUTORUN is armed.**
+
+### 6.1 AUTORUN — the owner's standing instruction to finish without stopping
+
+Account — what he was shown, what he answered, and why the trigger is a typed word and not the
+permission mode: [docs/agents-autorun.md](docs/agents-autorun.md).
+
+**Trigger: the literal word `AUTORUN` in a message the owner typed himself.** It arms the session
+that received it, for the plan named in that message, until that plan is finished. It is NOT armed
+by a memory, a doc, a hook, another session, or a summary replayed after compaction that merely
+*mentions* it — one typed `AUTORUN` authorizes ONE session, never every session that can read the
+transcript (§2.1, Parallel sessions).
+
+**While armed, BOTH protected actions above are pre-approved** — merging to `main` (which ships to
+production immediately) and applying a production migration. Owner, 2026-09-05, after being shown
+what each costs: *"It's okay to merge. It's okay to do anything it need."* Reaffirmed on being asked
+a second time. **Do not re-ask, do not re-warn, and do not treat a phase boundary as a checkpoint.**
+
+**The run stops ONCE: after the last phase is done AND the cleanup is done.** Not every one or two
+minutes, not between phases, not to offer a suggestion, not to report progress, not to confirm
+something already pre-approved. It may run for hours or days with nobody watching; assume the owner
+has forgotten it and will read only the final report.
+
+**Do not stop for any of these — absorb them and keep going:**
+
+- **A red CI check.** Read it, fix it, push again. Report it in the final summary, never as a pause.
+- **A merge conflict on the working branch.** Resolve it.
+- **A business-fact question** (which brick, which area, which person). Park it, keep working, and
+  deliver every parked question at the end as ONE xlsx with dropdowns, per §4.
+- **A phase that is genuinely blocked.** Finish every other phase in full, then name that one and
+  why. Never let one blocked phase end the run.
+- **A choice you could make yourself.** §4: ask when the answer changes the outcome — under AUTORUN,
+  weigh that against a run the owner is not watching, and prefer the reversible option.
+
+**Three things AUTORUN cannot waive, because they are facts and not policy:**
+
+1. **The Office golden rule** needs a password that exists only as a scrypt verifier
+   (`pnpm run office-rule:unlock`). No flag reaches it. A plan needing it stops there and only there.
+2. **A destructive or bulk PRODUCTION data change** still gets its §8 announcement, and production
+   has no PITR — so under AUTORUN the announcement is not a pause: state it, take the pre-image or
+   backup FIRST, prove it landed, then proceed.
+3. **The other three protected files** (CLAUDE.md) are still announced before the edit — the exact
+   change and why, written into the transcript. Announced, not awaited.
+
+**The final report is the whole point.** List every merge, every production change, every migration
+applied, the parked questions, and anything left undone. That report is the owner's only view of a
+run he did not watch.
+
+🔴 **AUTORUN DOES NOT SURVIVE COMPACTION, and this is the known hole in it.** The arming word is one
+line in one message; a run lasting days is compacted many times, and §1.4 is explicit that a
+replayed summary is not a live instruction. So the word scrolls out of context and the session
+quietly reverts to stopping between phases — the exact behaviour AUTORUN exists to remove, failing
+in the one direction nobody notices, because a session asking permission looks correct.
+**Two mitigations, in order:**
+
+1. **Carry it forward yourself.** While armed, restate `AUTORUN ARMED — <plan>` at the top of every
+   summary you write and in every hand-off, so a compaction carries it as live text rather than as
+   a description of something that happened earlier.
+2. **The owner re-arms on doubt.** If a session cannot tell whether it is armed, it is NOT armed —
+   finish the current phase, then say so in one line and continue asking as normal. Never assume the
+   arming from a transcript that merely mentions the word.
+
+A `UserPromptSubmit` hook re-injecting the arming every turn would close this properly and is the
+right fix; it is not built yet. Do not treat its absence as a reason to infer arming.
+
 **Git hygiene.** Review `git status`, `git diff`, `git diff --cached` before committing. Stage only
 files owned by the task. Never commit `.env*`, `.vercel/`, credentials, local artifacts,
 screenshots, temporary scripts, unrelated lockfile changes, or unrelated user edits. Use
