@@ -59,6 +59,15 @@ export async function POST(request: Request) {
       normalizedAlias?: string;
     };
     const actorLoginId = actor(access);
+    // Same rule as the customer map: an alias DELETE needs sales:delete, which the outer
+    // sales:import assert does not imply. Asserted once here rather than in each of the two
+    // branches below, so a third alias type added later cannot be given a delete path that skips
+    // it. An alias is how a distributor's own product or territory wording resolves to a Phoenix
+    // code, so deleting one silently sends every future row carrying that wording to the
+    // exceptions pile. Pinned by tests/mapping-delete-needs-delete-permission.test.ts.
+    if (body.action === "delete") {
+      await assertPermission(access, "sales", "delete");
+    }
     if (body.type === "product") {
       if (body.action === "delete") {
         await deleteProductAlias({ actorLoginId, distributorCode: String(body.distributorCode ?? ""), normalizedAlias: String(body.normalizedAlias ?? "") });
