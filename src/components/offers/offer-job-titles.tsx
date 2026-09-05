@@ -52,7 +52,7 @@ export function OfferJobTitleCatalogue({
   templates,
 }: {
   /**
-   * `offers:delete`, which Talent Acquisition does not hold — it can add a title and change a
+   * `offers:delete`, which HR Advisory does not hold — she can add a title and change a
    * figure but not retire a title. Separate from `canManage` so the button matches the route.
    */
   canDelete: boolean;

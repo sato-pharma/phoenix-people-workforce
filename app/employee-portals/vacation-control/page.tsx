@@ -21,7 +21,7 @@ export default async function EmployeePortalVacationControlPage() {
   if (!isHrAuthorityRole(access.role) || !(await canAccess(access, "leave", "update"))) {
     return (
       <EmployeePortalEmptyState
-        message="Vacation policy control is available to Talent Acquisition and Super Admin only."
+        message="Vacation policy control is available to HR Operations and Super Admin only."
         title="Vacation Control Unavailable"
       />
     );
@@ -38,7 +38,7 @@ export default async function EmployeePortalVacationControlPage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Talent Acquisition"
+      badge="Leave Management"
       description="Configure vacation policy and entitlement rules."
       errorBoundaryTitle="Vacation Control unavailable"
       title="Vacation Control"

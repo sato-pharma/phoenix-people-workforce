@@ -57,7 +57,7 @@ export default async function EmployeePortalHiringPackPage({
   if (!isHrAuthorityRole(access.role) || !canRead) {
     return (
       <EmployeePortalEmptyState
-        message="The hiring pack is available to Talent Acquisition and Super Admin only."
+        message="The hiring pack is available to HR Advisory, HR Operations, and Super Admin only."
         title="HR Forms Unavailable"
       />
     );
@@ -67,7 +67,7 @@ export default async function EmployeePortalHiringPackPage({
 
   return (
     <EmployeePortalPageShell
-      badge="Talent Acquisition"
+      badge="Recruitment & Hiring"
       description="Fill, print and record the employment contract and social insurance Form 1."
       errorBoundaryTitle="HR Forms unavailable"
       title="HR Forms"

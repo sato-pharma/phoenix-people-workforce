@@ -30,7 +30,7 @@ import type { Candidate } from "@/lib/recruitment/types";
  * row. The recruiter's near-identical control files through the route under
  * `api/recruitment/candidates/[id]/folder`, which takes the CV out of the pool every recruiter works
  * from; this one files through `api/recruitment/hiring-manager/candidates/[candidateId]/folder` and
- * Talent Acquisition's screen does not move. Pointing this at the other URL would make a District
+ * the recruiter's screen does not move. Pointing this at the other URL would make a District
  * Manager tidying his inbox delete CVs from recruitment's queue, invisibly. See
  * manager-folder-shelf.ts.
  *
