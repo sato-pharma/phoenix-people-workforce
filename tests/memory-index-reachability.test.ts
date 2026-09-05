@@ -24,6 +24,7 @@ import { join } from "node:path";
 
 import {
   classifyMemoryReachability,
+  classifyMemoryReachabilityAcrossRefs,
   memoryReachabilityLines,
   namedInAgents,
   strandedLines,
@@ -349,5 +350,101 @@ export function runMemoryIndexReachabilityTests() {
     noneStranded,
     /Give each a line/,
     "a clean report must not print routing advice for a backlog that does not exist",
+  );
+
+  // ── 9. THE REPORTING-DIRECTION FIX — a stale primary must not report a merged hook as ORPHAN ──
+  // WHY THIS EXISTS. Measured 2026-09-05: the primary checkout was 29 commits behind origin/main,
+  // and `repo-doctor`'s MEMORY INDEX section resolved every slug against ONLY the working tree's
+  // AGENTS.md. `main-is-not-the-primary-checkout` was already backticked on origin/main (added by
+  // PR #3298) but read as ORPHAN here — and the section's own remedy ("give it a line in
+  // MEMORY.md") would have written a SECOND hook for a rule already live on `main`, reproducing the
+  // exact duplicate PR #3298 existed to clean up. `classifyMemoryReachabilityAcrossRefs` is the fix:
+  // it unions the local read with origin/main's before calling a memory an orphan.
+  const acrossFiles = ["merged-elsewhere.md", "never-merged-anywhere.md"];
+  const acrossIndexText = "";
+
+  // The exact shape of the incident: the slug is on origin/main, not on the stale local copy.
+  const staleLocal = classifyMemoryReachabilityAcrossRefs({
+    files: acrossFiles,
+    indexText: acrossIndexText,
+    agentsText: "",
+    originAgentsText: tick("merged-elsewhere"),
+  });
+  assert.deepEqual(
+    staleLocal.orphans,
+    ["never-merged-anywhere.md"],
+    "a slug present on origin/main but absent from the stale local AGENTS.md must NOT read as an "
+      + "orphan — this is the exact 2026-09-05 case, and getting it wrong means telling the next "
+      + "session to write a duplicate index line",
+  );
+  assert.deepEqual(
+    staleLocal.relocated,
+    ["merged-elsewhere.md"],
+    "the rescued file must still count as relocated (reachable), not silently disappear from both "
+      + "buckets",
+  );
+  assert.deepEqual(
+    staleLocal.rescuedByOrigin,
+    ["merged-elsewhere.md"],
+    "the file must be named as rescued-by-origin specifically, so the report can say the checkout "
+      + "is behind rather than presenting a plain, unexplained 'reachable'",
+  );
+
+  // A slug on NEITHER copy is still a genuine orphan — the fix must not blind the check entirely.
+  assert.deepEqual(
+    staleLocal.rescuedByOrigin.includes("never-merged-anywhere.md"),
+    false,
+    "a file reachable from neither ref must not be marked rescued",
+  );
+
+  // A slug already present locally (no staleness in play) must not be reported as rescued — it was
+  // never an orphan to begin with, and marking it rescued would misattribute an ordinary relocation
+  // to the origin/main union.
+  const alreadyLocal = classifyMemoryReachabilityAcrossRefs({
+    files: ["already-local.md"],
+    indexText: "",
+    agentsText: tick("already-local"),
+    originAgentsText: "",
+  });
+  assert.deepEqual(alreadyLocal.relocated, ["already-local.md"]);
+  assert.deepEqual(
+    alreadyLocal.rescuedByOrigin,
+    [],
+    "a file already reachable via the LOCAL AGENTS.md must not be marked rescued-by-origin — it was "
+      + "never an orphan in the first place",
+  );
+
+  // THE SAFE DIRECTION, restated for this fix: when origin/main cannot be read at all (offline, no
+  // remote-tracking ref, git failure — repo-doctor passes "" in that case, same as an unreadable
+  // local file), this must degrade to the ORIGINAL local-only answer, never to a false "reachable".
+  const originUnreadable = classifyMemoryReachabilityAcrossRefs({
+    files: acrossFiles,
+    indexText: acrossIndexText,
+    agentsText: "",
+    originAgentsText: "",
+  });
+  assert.deepEqual(
+    originUnreadable.orphans,
+    [...acrossFiles].sort(),
+    "with origin/main unreadable, every file must fall back to the pre-fix, local-only answer — "
+      + "under-claiming reachability is the one safe failure this file tolerates",
+  );
+  assert.deepEqual(originUnreadable.rescuedByOrigin, []);
+
+  // The trimming CLI (memory-index-reachability.mjs's own main()) must stay untouched by this fix:
+  // `classifyMemoryReachability` (not `...AcrossRefs`) is still what it calls, and passing it only
+  // the local agentsText must still call an origin/main-only slug an orphan — the correct answer
+  // for "is it safe to delete this line from THIS checkout right now".
+  const trimCheck = classifyMemoryReachability({
+    files: ["merged-elsewhere.md"],
+    indexText: "",
+    agentsText: "",
+  });
+  assert.deepEqual(
+    trimCheck.orphans,
+    ["merged-elsewhere.md"],
+    "the trim-direction check must remain local-only — origin/main having a slug today says "
+      + "nothing about whether an in-progress local edit is about to remove the only copy that "
+      + "will exist once it merges",
   );
 }

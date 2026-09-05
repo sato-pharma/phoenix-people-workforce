@@ -67,6 +67,50 @@ export function classifyMemoryReachability({ files, indexText = "", agentsText =
 }
 
 /**
+ * Like {@link classifyMemoryReachability}, but for `repo-doctor.mjs`'s REPORTING question rather
+ * than `memory-index-reachability.mjs`'s own CLI TRIMMING question — see docs/memory-index-budget.md,
+ * "The same trap, fired the other way".
+ *
+ * A relocated memory is reachable the moment its slug is backticked ANYWHERE a session might load
+ * `AGENTS.md` from — which includes `origin/main`, not only the working tree this happens to run
+ * in. A checkout can be behind `origin/main` (a merge landed and this disk has not pulled it yet),
+ * and reporting that as an ORPHAN is actively wrong: the printed remedy is to add an index line,
+ * which would create a SECOND hook for a rule that already shipped.
+ *
+ * This must NOT be used for a trim decision — deleting a line from `AGENTS.md` has to key on what
+ * THIS checkout holds after the edit, never on what a different ref happens to have; `origin/main`
+ * having a slug today says nothing about whether the edit in progress is about to remove the only
+ * copy that will exist once it merges. `memory-index-reachability.mjs`'s own CLI stays
+ * local-only for exactly that reason.
+ *
+ * @param {object} input
+ * @param {string[]} input.files
+ * @param {string} input.indexText
+ * @param {string} input.agentsText the working tree's `AGENTS.md`; empty when unreadable
+ * @param {string} input.originAgentsText `origin/main`'s `AGENTS.md`; empty when unreadable or
+ *   unreachable (offline, no remote-tracking ref) — degrades to the local-only answer, never to a
+ *   false "reachable"
+ * @returns {{ linked: string[], relocated: string[], orphans: string[], rescuedByOrigin: string[] }}
+ */
+export function classifyMemoryReachabilityAcrossRefs({
+  files,
+  indexText = "",
+  agentsText = "",
+  originAgentsText = "",
+}) {
+  const localOnly = classifyMemoryReachability({ files, indexText, agentsText });
+  const combined = classifyMemoryReachability({
+    files,
+    indexText,
+    agentsText: agentsText + "\n" + originAgentsText,
+  });
+  // Reachable in the union but not locally: the checkout is behind, not the memory. Named
+  // separately so the caller can say so rather than folding it into a silent "reachable".
+  const rescuedByOrigin = localOnly.orphans.filter((f) => !combined.orphans.includes(f)).sort();
+  return { ...combined, rescuedByOrigin };
+}
+
+/**
  * Is this memory named in `AGENTS.md` as a backticked slug?
  *
  * @param {string} file a memory filename ending in `.md`
@@ -318,6 +362,15 @@ function main() {
   const files = readdirSync(memoryDir).filter(
     (f) => f.endsWith(".md") && !INDEX_FILES.includes(f) && !f.includes(".bak"),
   );
+  // LOCAL ONLY, deliberately — this CLI answers "is it safe to trim a line from THIS checkout's
+  // AGENTS.md", and that question must key on what this checkout holds, never on what merged
+  // elsewhere (see primaryRootOrNull above, and "Merged is not the condition" in
+  // docs/memory-index-budget.md). `repo-doctor.mjs`'s own MEMORY INDEX section asks a different
+  // question — "has this memory been relocated anywhere a session might load it from" — and for
+  // THAT question it additionally unions in `git show origin/main:AGENTS.md` before calling this
+  // same classifier. Do not import that union here: it would tell someone mid-trim that a slug is
+  // still safe to delete because origin/main has it, which says nothing about whether their own
+  // edit is about to remove the only copy that matters once it merges.
   const agentsText = readTextOr(join(root, "AGENTS.md"));
   const { linked, relocated, orphans } = classifyMemoryReachability({ files, indexText, agentsText });
 

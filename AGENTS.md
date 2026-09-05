@@ -262,6 +262,7 @@ and the arithmetic behind the budget are in
 sit in [docs/agents-memory-map.md](docs/agents-memory-map.md), and the rows it marks
 `(inline — load-bearing)` are the ones this file is the ONLY pointer for. **No count is written down,
 deliberately: the set changes as the index does, and `pnpm run repo:doctor` is what answers it.**
+- **The same trap fires in reverse, on REPORTING rather than trimming.** `repo-doctor`'s MEMORY INDEX section used to resolve a slug against only the local checkout's `AGENTS.md`, so a primary sitting behind `origin/main` printed a merged hook as `ORPHAN` — and following its own advice would have written a SECOND `MEMORY.md` line for a hook already backticked on `origin/main`. Fixed 2026-09-05: it now unions the local read with `git show origin/main:AGENTS.md` (local ref, no fetch) and calls a memory an orphan only when unreachable from BOTH, naming which files that rescued since the read stays conditional on a pull. **The trimming direction above is UNCHANGED and must stay local-only** — removing a line keys on what the checkout you trim FROM holds, never on what shipped elsewhere. [docs/memory-index-budget.md](docs/memory-index-budget.md).
 - **No required check can gate any of this.** `MEMORY.md` lives outside the repository, so CI never sees it — the displacement rule is behavioural.
 
 ### 2.3 Production and approval hooks

@@ -116,7 +116,7 @@ import {
   autoloadFootprintLines,
   memoryIndexBudgetLines,
 } from "./memory-index-budget.mjs";
-import { classifyMemoryReachability, memoryReachabilityLines } from "./memory-index-reachability.mjs";
+import { classifyMemoryReachabilityAcrossRefs, memoryReachabilityLines } from "./memory-index-reachability.mjs";
 import { classifyBranchPr, listBranchPrs } from "./branch-pr-state.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
 import { archivePushTarget, listArchiveRefs, strandedArchives } from "./repo-doctor-archive-refs.mjs";
@@ -1150,7 +1150,8 @@ let autoloadedIndexBytes = null;
     // from the worktree this command happens to run in — the same lookup the memory dir uses, and
     // the one that makes this agree with 2.2's both-halves rule: a relocation is only finished when
     // the destination is MERGED, so a hook written on an unmerged branch SHOULD still read as an
-    // orphan here. An unreadable file yields "", and every memory then falls through to the
+    // orphan here (this local read, and the origin/main read below, both miss an unmerged branch —
+    // correctly). An unreadable file yields "", and every memory then falls through to the
     // pre-2026-08-29 answer — a false orphan, never a false "reachable".
     let agentsText = "";
     try {
@@ -1159,11 +1160,29 @@ let autoloadedIndexBytes = null;
       // Left empty on purpose. See above: the safe failure is to under-claim reachability.
     }
 
-    const { relocated, orphans } = classifyMemoryReachability({
+    // But the working tree read above can ALSO be stale in the other direction: the PRIMARY sitting
+    // behind origin/main (see the footprint section below) means a slug merged there minutes ago is
+    // absent from THIS AGENTS.md purely because nobody pulled — not because the relocation never
+    // happened. Measured 2026-09-05: `main-is-not-the-primary-checkout` reported ORPHAN against a
+    // checkout 29 commits behind, and following the advice below would have written a SECOND index
+    // line for a hook already backticked on origin/main — the exact duplicate PR #3298 cleaned up.
+    // That is a different case from the comment above (an unmerged branch correctly orphaning its
+    // own hook): here the destination already shipped, just not to this disk yet. Resolve against
+    // origin/main's copy too — the LOCAL remote-tracking ref, no fetch, same offline-cheap tradeoff
+    // the footprint section takes below — and call a memory an orphan only when unreachable from
+    // BOTH. This does not touch 2.2's opposite (trimming) rule: that one governs REMOVING a line
+    // from the checkout you trim FROM, which must still key on what THAT checkout holds, never on
+    // what shipped elsewhere.
+    const originAgentsText = git(["show", "origin/main:AGENTS.md"], { cwd: primaryRoot }) ?? "";
+
+    const { relocated, orphans, rescuedByOrigin: rescuedByOriginList } = classifyMemoryReachabilityAcrossRefs({
       files: memoryFiles,
       indexText,
       agentsText,
+      originAgentsText,
     });
+    // Set form for the `.has()` lookup the --deep AGENTS line below needs.
+    const rescuedByOrigin = new Set(rescuedByOriginList);
 
     // A markdown pointer to a `.md` inside the memory directory. Relative links only — an index
     // line may legitimately point at a repo file or a URL, and neither is this check's business.
@@ -1191,6 +1210,18 @@ let autoloadedIndexBytes = null;
     for (const line of memoryIndexBudgetLines(assessMemoryIndexSize(indexBytes))) console.log(line);
     autoloadedIndexBytes = indexBytes;
 
+    if (rescuedByOrigin.size > 0) {
+      console.log(
+        "  " +
+          rescuedByOrigin.size +
+          " file(s) read as ORPHAN against this checkout's AGENTS.md but are named on origin/main's —",
+      );
+      console.log(
+        "  the checkout is behind, not the memory. Pull before giving any of these an index line:",
+      );
+      console.log("  " + [...rescuedByOrigin].map((f) => f.replace(/\.md$/, "")).sort().join(", "));
+    }
+
     // No silent caps: when the list is long the count that was not printed is stated out loud, and
     // so is the flag that prints the rest. A truncated list that does not say it was truncated
     // reads as "that is all of them", which is the confidently-wrong outcome this repo bans.
@@ -1203,7 +1234,14 @@ let autoloadedIndexBytes = null;
     // Relocated files are named only under --deep. They are a healthy state, not a backlog, so
     // listing them by default would grow with every relocation and train people to skim past the
     // ORPHAN lines sitting next to them.
-    if (deep) for (const f of relocated) console.log("  AGENTS  " + f + "  (named in AGENTS.md — reachable, not an orphan)");
+    if (deep) {
+      for (const f of relocated) {
+        const note = rescuedByOrigin.has(f)
+          ? "  (named on origin/main's AGENTS.md, not yet this checkout's — pull to see it locally)"
+          : "  (named in AGENTS.md — reachable, not an orphan)";
+        console.log("  AGENTS  " + f + note);
+      }
+    }
     for (const f of broken) console.log("  BROKEN  " + f + "  (pointed at by an index, file does not exist)");
 
     for (const line of memoryReachabilityLines({ relocated, orphans, broken })) console.log(line);
