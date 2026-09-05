@@ -18,9 +18,15 @@ import { listManagerEngagementCandidateFiles } from "../src/lib/recruitment/mana
 // rows — it raises 22P02 from the WHERE clause before any row is considered, which reaches the
 // route as a PostgrestError and is correctly classified as infrastructure, i.e. a 500.
 //
-// So the caller who mistyped a link is told the system is broken, and the fault is recorded in
-// `app_error_events` as a real one — raising the noise floor on the table that /admin/error-monitor
-// and /admin/system-issues are read from.
+// So the caller who mistyped a link is told the system is broken rather than that their link is
+// wrong. And on a route that builds its own error response from `error.message` rather than
+// going through toApiError, 5 of the 18 handed back the raw Postgres sentence naming the column
+// type — the leak toApiError's redaction exists to prevent.
+//
+// This does NOT pollute `app_error_events`, though it reads like it should: that table is written
+// by the CLIENT error reporter, and a server-side API 500 never reaches it. Measured on
+// production 2026-09-05 — four deliberate 500s wrote no row while the table was live. Recorded
+// so the claim is not made again on the strength of how plausible it sounds.
 //
 // A sweep of all 95 dynamic GET routes found 18 sharing the shape, so these guards are spread
 // across six domains. The fix is deliberately NOT in toApiError: 22P02 is raised by a malformed
