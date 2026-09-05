@@ -225,15 +225,33 @@ export function readSnapshots(snapshotRoot) {
 const sha256 = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 
 /**
- * Copy every untracked spreadsheet into a dated snapshot, VERIFY it, then write a manifest.
+ * Copy the untracked spreadsheets that NO existing snapshot holds into a dated one, VERIFY each,
+ * then write a manifest.
  *
- * Creates only. Never deletes, never writes inside the repo, never touches the legacy copy.
+ * A DELTA, not a full copy, and the disk is why. Measured 2026-09-05: the folder is 103 files and
+ * 56.1 MB, but only 16 files and ~3 MB change on a given day. Copying all of it daily writes ~20 GB
+ * a year against 21.9 GB free on this drive — a scheduled full snapshot would fill the disk inside a
+ * year and take the backups down with it. A delta writes about 1 GB a year.
+ *
+ * SO THE SNAPSHOT SET IS A FULL BASE PLUS DELTAS. xlsx-snapshot-2026-09-05 was taken complete by
+ * hand; every later folder holds only what was newly at risk that day. To restore, apply the folders
+ * in date order, oldest first, and the newest copy of each file wins. Every manifest repeats that.
+ * COVERAGE IS ALREADY COMPUTED ACROSS ALL FOLDERS — classifyXlsxSnapshot flattens them — so the
+ * report cannot be fooled by a file living in an older folder than the newest one.
+ *
+ * Creates only. Never deletes, never writes inside the repo, never touches the legacy copy. Nothing
+ * uncovered means no directory is created at all, so a quiet day leaves no empty folder behind.
  * Re-running on the same day reuses that day's directory and overwrites its own earlier copies, so a
  * half-finished run self-heals on the next one rather than leaving a partial snapshot to be trusted.
  */
 export function takeXlsxSnapshot({ repoRoot, snapshotRoot, now = Date.now() }) {
-  const files = (readSourceFiles(repoRoot) ?? []).filter((f) => !isLockFile(f.name));
-  if (files.length === 0) return { dir: null, copied: 0, verified: 0, mismatched: [] };
+  const all = (readSourceFiles(repoRoot) ?? []).filter((f) => !isLockFile(f.name));
+  // Held against EVERY existing snapshot, by the same content test the report uses. Sharing one
+  // predicate is the point: a write path with its own idea of "already backed up" would drift from
+  // the report, and the report is what tells anyone whether to trust the backup.
+  const existing = (readSnapshots(snapshotRoot) ?? []).flatMap((snap) => snap.entries);
+  const files = all.filter((f) => !isCovered(f, existing));
+  if (files.length === 0) return { dir: null, copied: 0, skipped: all.length, verified: 0, mismatched: [] };
 
   const stamp = new Date(now).toISOString().slice(0, 10);
   const dir = path.join(snapshotRoot, `${SNAPSHOT_DIR_PREFIX}${stamp}`);
@@ -261,11 +279,21 @@ export function takeXlsxSnapshot({ repoRoot, snapshotRoot, now = Date.now() }) {
     "WHY THIS EXISTS: .gitignore ignores *.xlsx, so none of these files are in git. Written by",
     "scripts/repo-doctor-xlsx-snapshot.mjs — see that file's header for the incident behind it.",
     "",
+    "THIS IS A DELTA. It holds only the files no earlier snapshot already held. To restore, apply",
+    "every xlsx-snapshot-* folder in DATE ORDER, oldest first, letting the newest copy of each file",
+    "win. xlsx-snapshot-2026-09-05 is the full base.",
+    "",
     "SHA256                                                            BYTES  NAME",
     "----------------------------------------------------------------------------",
     ...rows.map((r) => `${r.hash}  ${String(r.bytes).padStart(9)}  ${r.name}`),
   ].join("\n");
   fs.writeFileSync(path.join(dir, "MANIFEST.txt"), `${manifest}\n`);
 
-  return { dir, copied: files.length, verified: files.length - mismatched.length, mismatched };
+  return {
+    dir,
+    copied: files.length,
+    skipped: all.length - files.length,
+    verified: files.length - mismatched.length,
+    mismatched,
+  };
 }

@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   classifyXlsxSnapshot,
   isCovered,
   isLockFile,
+  readSnapshots,
+  readSourceFiles,
+  takeXlsxSnapshot,
   xlsxSnapshotLines,
 } from "../scripts/repo-doctor-xlsx-snapshot.mjs";
 import { stripComments } from "./support/comment-strip.ts";
@@ -33,6 +39,13 @@ import { stripComments } from "./support/comment-strip.ts";
  *      not write, and other sessions rely on that. Only `--snapshot-xlsx` may copy, and the module
  *      may never delete anything at all. Checked at the SOURCE level, because the regression would be
  *      a one-line change in repo-doctor.mjs that no synthetic input can see.
+ *
+ *   3. THE WRITE IS A DELTA, and it consults the SAME coverage predicate the report does. Measured
+ *      2026-09-05: the folder is 56.1 MB but only ~3 MB of it changes on a given day, so a
+ *      scheduled FULL copy writes ~20 GB a year against 21.9 GB free — it would fill the disk
+ *      inside a year and take the backups with it. A write path with its own idea of "already
+ *      backed up" would drift from the report, and the report is what tells anyone whether to
+ *      trust the backup at all.
  */
 
 const DOCTOR = "scripts/repo-doctor.mjs";
@@ -160,5 +173,58 @@ export async function runRepoDoctorXlsxSnapshotTests() {
       new RegExp(`\\b${forbidden}\\b`),
       `${MODULE} must never ${forbidden} — it creates copies and nothing else`,
     );
+  }
+
+  // --- 6. The write is a delta, against a real repo and a real snapshot root --------------------
+
+  const repo = mkdtempSync(join(tmpdir(), "phx-xlsx-src-"));
+  const root = mkdtempSync(join(tmpdir(), "phx-xlsx-dst-"));
+  try {
+    execFileSync("git", ["-C", repo, "init", "--quiet"], { stdio: ["ignore", "pipe", "pipe"] });
+    mkdirSync(join(repo, "xlsx"));
+    writeFileSync(join(repo, "xlsx", "keeps-still.xlsx"), "a".repeat(100));
+    writeFileSync(join(repo, "xlsx", "gets-filled-in.xlsx"), "b".repeat(100));
+
+    const first = takeXlsxSnapshot({ repoRoot: repo, snapshotRoot: root, now: Date.UTC(2026, 8, 5) });
+    assert.equal(first.copied, 2, "the first run has no earlier snapshot, so it copies everything");
+    assert.equal(first.mismatched.length, 0, "every copy must verify by SHA256");
+    assert.ok(readdirSync(first.dir).includes("MANIFEST.txt"), "a snapshot without a manifest cannot be audited");
+
+    // The owner fills one sheet in and adds another. The untouched one must NOT be copied again.
+    writeFileSync(join(repo, "xlsx", "gets-filled-in.xlsx"), "b".repeat(4096));
+    writeFileSync(join(repo, "xlsx", "brand-new.xlsx"), "c".repeat(50));
+
+    const second = takeXlsxSnapshot({ repoRoot: repo, snapshotRoot: root, now: Date.UTC(2026, 8, 6) });
+    assert.equal(second.copied, 2, "only the changed sheet and the new one");
+    assert.equal(second.skipped, 1, "the untouched sheet is already held and must be skipped");
+    const wrote = readdirSync(second.dir).filter((n) => n !== "MANIFEST.txt").sort();
+    assert.deepEqual(wrote, ["brand-new.xlsx", "gets-filled-in.xlsx"]);
+    assert.ok(
+      !wrote.includes("keeps-still.xlsx"),
+      "re-copying an unchanged 56 MB folder daily is what fills the disk — the whole point of the delta",
+    );
+
+    // A delta is only restorable if its manifest says so. A folder holding two of three files, with
+    // nothing explaining that, is a backup someone will restore from and quietly lose a file.
+    const manifest = readFileSync(join(second.dir, "MANIFEST.txt"), "utf8");
+    assert.match(manifest, /THIS IS A DELTA/);
+    assert.match(manifest, /DATE ORDER, oldest first/);
+
+    // A quiet day writes nothing at all — no empty directory to mistake for a failed run.
+    const third = takeXlsxSnapshot({ repoRoot: repo, snapshotRoot: root, now: Date.UTC(2026, 8, 7) });
+    assert.equal(third.dir, null, "nothing uncovered means no directory is created");
+    assert.equal(third.skipped, 3);
+
+    // And the REPORT agrees with the write — the two must never disagree about what is backed up.
+    const after = classifyXlsxSnapshot({
+      destinationExists: true,
+      sourceFiles: readSourceFiles(repo),
+      snapshots: readSnapshots(root),
+      now: Date.UTC(2026, 8, 7),
+    });
+    assert.equal(after.status, "covered", "after a delta run the report must read covered, not gap");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
   }
 }
