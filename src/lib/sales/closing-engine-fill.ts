@@ -2392,20 +2392,20 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
 
   if (own && kpiCells.length > 0) {
     for (const cell of kpiCells) {
+      // THE NOTE BELONGS TO THE LABEL, not to a second column. It used to sit in B, which begins 26
+      // characters to the right of a figure that is seven characters long — so "EGP, August 2026"
+      // floated away from the 477,499 it qualifies and read as an unrelated remark. Folded into the
+      // label above the figure, the three parts are one block, and column B is left to the
+      // descriptions it exists for.
+      const heading = cell.note ? `${cell.label}  ·  ${cell.note}` : cell.label;
       rows.push(
         `<row r="${rowNumber}" ht="15" customHeight="1">`
-          + inline(`A${rowNumber}`, own.kpiLabel, cell.label)
-          + `<c r="A${rowNumber + 1}" s="${cell.percent ? own.kpiPercent : own.kpiMoney}"><v>${cell.value}</v></c>`
-          + inline(`B${rowNumber + 1}`, own.kpiNote, cell.note)
+          + inline(`A${rowNumber}`, own.kpiLabel, heading)
           + "</row>",
       );
-      // The value and its note share a row of their own, so the label sits above the figure the way
-      // every other header block in this workbook reads.
-      rows[rows.length - 1] = `<row r="${rowNumber}" ht="15" customHeight="1">${inline(`A${rowNumber}`, own.kpiLabel, cell.label)}</row>`;
       rows.push(
         `<row r="${rowNumber + 1}" ht="21" customHeight="1">`
           + `<c r="A${rowNumber + 1}" s="${cell.percent ? own.kpiPercent : own.kpiMoney}"><v>${cell.value}</v></c>`
-          + inline(`B${rowNumber + 1}`, own.kpiNote, cell.note)
           + "</row>",
       );
       rowNumber += 2;
