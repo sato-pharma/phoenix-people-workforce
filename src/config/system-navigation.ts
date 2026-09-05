@@ -358,6 +358,16 @@ export const adminNavigationSectionSeeds = [
       // through the portal twin. A plain sidebar row, NOT a hub card — hub cards trip four extra CI
       // gates for no more reach. The managers being measured never see any of it.
       { href: "/recruitment/manager-engagement", icon: ClipboardList, label: "Manager CV Engagement", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["CEO", "HR Advisory"] },
+      // Hiring Analytics: channel effectiveness and where the pipeline stops. Reads across
+      // EVERY candidate, so it is gated on `candidates: read` rather than the per-manager
+      // hiring_interviews grant, and has no portal twin - a portal role would be shown a
+      // company-wide report scoped to nobody. A plain sidebar row for the same reason as the
+      // row above it.
+      //
+      // NO `roles` list, deliberately. Naming CEO here looked right and grants NOTHING: the
+      // CEO holds no `candidates` permission at all, which permissions.ts states outright.
+      // nav-roles-name-only-permission-holders caught it. The permission alone is the gate.
+      { href: "/recruitment/hiring-analytics", icon: ChartNoAxesColumnIncreasing, label: "Hiring Analytics", permissions: [{ resource: "candidates", action: "read" }] },
     ],
     label: "Hiring",
   },
