@@ -15,7 +15,7 @@ import { buildFabSheetWorkbook, defaultFabValueDate, fabRowsForNonEmployees, fab
 import { buildFullSheetWorkbook, buildPart1SheetWorkbook, type PeriodSummary } from "./exports/sheet.ts";
 import { buildStepTemplateWorkbook } from "./exports/step-template.ts";
 import { diffStepUpload, parseStepWorkbook } from "./imports/step-parser.ts";
-import { assertHoldReasonsPresent } from "./hold-reason.ts";
+import { assertHoldReasonsPresent, holdCandidatesFromStepRows } from "./hold-reason.ts";
 import {
   markCarryForwardApplied,
   outstandingCarryForwardFor,
@@ -522,6 +522,23 @@ export async function confirmStep(
   const period: PayrollPeriod = { month: run.month, year: run.year };
   const { members, sources, draftRows } = await loadRunContext(period, runId);
   const rows = await recommendStep({ access, period, stepKey, members, sources, draftRows });
+
+  // A hold may not be CONFIRMED without a reason either.
+  //
+  // saveStep guards the two paths a hold is EDITED by (the inline grid and the
+  // xlsx re-upload). Confirming is the third way one is written: it persists
+  // every row the step is showing, and `stepRowToPatch` carries `onHold` and
+  // `reason` straight onto the draft row, so a hold nobody touched this session
+  // is re-saved with an empty reason and the step locks — the save rule never
+  // running because nothing was "edited". That is the click this rule most needs
+  // to cover: it is the last one before publish drops the held rows, and once
+  // published the reason is unrecoverable because no salary_record is written.
+  //
+  // Rows carrying a reason inherited from last month pass without retyping —
+  // recommendHolds has already resolved carry-forward into `row.reason` by here.
+  if (stepDefinition(stepKey).isHoldStep) {
+    assertHoldReasonsPresent(holdCandidatesFromStepRows(rows));
+  }
 
   // Informational rows never persist. A notice-period employee is shown on the
   // Resignations step so HR can see the resignation, but their settlement
