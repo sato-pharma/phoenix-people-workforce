@@ -84,9 +84,13 @@ jobs:
           GOOGLE_APPS_SCRIPT_CLIENT_SECRET: ${{ secrets.GOOGLE_APPS_SCRIPT_CLIENT_SECRET }}
           GOOGLE_APPS_SCRIPT_REFRESH_TOKEN: ${{ secrets.GOOGLE_APPS_SCRIPT_REFRESH_TOKEN }}
           # One id per sheet. A target whose id is unset is SKIPPED, loudly and successfully — that
-          # is the manifest's own contract, so connecting one sheet never blocks the others. Only
-          # CV Lifecycle is connected today; the other two ids do not exist as secrets yet, and
-          # their absence here is correct rather than a gap to fill in passing.
+          # is the manifest's own contract, so connecting one sheet never blocks the others.
+          #
+          # All three have been connected since 2026-09-05, and all three were byte-identical to
+          # their repository copy when they were. Each was matched to its project by hashing the
+          # project's FEED_TOKEN script property against Phoenix's live share token for that report
+          # — NOT by the project's name, which is "Untitled project" for direct orders and
+          # "Phoenix Marketing Sheet" for marketing, neither of which identifies anything.
           CV_LIFECYCLE_APPS_SCRIPT_ID: ${{ secrets.CV_LIFECYCLE_APPS_SCRIPT_ID }}
           DIRECT_ORDERS_APPS_SCRIPT_ID: ${{ secrets.DIRECT_ORDERS_APPS_SCRIPT_ID }}
           MARKETING_REQUESTS_APPS_SCRIPT_ID: ${{ secrets.MARKETING_REQUESTS_APPS_SCRIPT_ID }}
