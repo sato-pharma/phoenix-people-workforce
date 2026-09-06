@@ -89,6 +89,29 @@ export const JOB_TITLE_AR_SEEDS: readonly ArabicSeed[] = [
   { en: "Regulatory Affairs Supervisior", ar: "مشرف الشئون التنظيمية", confirmed: true, people: 1 },
   { en: "Sfe Manager", ar: "مدير فعالية القوى البيعية", confirmed: true, people: 1 },
   { en: "Training Manager", ar: "مدير التدريب", confirmed: true, people: 1 },
+
+  // ── Answered 2026-09-06, from `xlsx/arabic-job-titles-outstanding-2026-09-06.xlsx` ────────────
+  //
+  // The 2026-09-06 backfill wrote his 2026-09-03 answers onto 176 of 185 employees and could not
+  // answer these five, so they went back to him as a workbook. Four he accepted as proposed; the
+  // fifth he reworded, and the rewording is the point again — see `Talent Acquisition` below.
+  //
+  // 🔴 TWO OF THESE ARE NEW ROWS FOR A JOB THAT ALREADY HAD AN ANSWER, and that is deliberate.
+  // `R&D Manager` is the same job as `R And D Manager` above and carries the identical Arabic; the
+  // employee record simply spells it with an ampersand, and `key()` folds case and whitespace but
+  // NOT punctuation, so the existing row could never match it. The same goes for `Admin Assist`
+  // against `Admin Assistant`. EDITING the older row instead would have been wrong twice over: it
+  // is the wording on contracts already signed against it, and this table's stated job is to MATCH
+  // the data rather than to correct it. Two rows, one answer, no row rewritten.
+  { en: "R&D Manager", ar: "مدير البحث والتطوير", confirmed: true, people: 1 },
+  { en: "Regulatory Affairs", ar: "أخصائي الشئون التنظيمية", confirmed: true, people: 2 },
+  // HIS WORDING, NOT THE PROPOSAL. The draft read أخصائي استقطاب المواهب, a literal rendering of
+  // "talent acquisition". He answered اخصائي موارد بشرية — the same title he confirmed for
+  // `HR Operations Coordinator` on 2026-09-03: the company contracts this person as an HR
+  // specialist, and that is what the Ministry expects to read. Do not "restore" the literal one.
+  { en: "Talent Acquisition", ar: "اخصائي موارد بشرية", confirmed: true, people: 1 },
+  { en: "Office Coordinator", ar: "منسق إداري", confirmed: true, people: 1 },
+  { en: "Admin Assist", ar: "مساعد إداري", confirmed: true, people: 1 },
 ];
 
 /**

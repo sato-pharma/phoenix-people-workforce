@@ -402,6 +402,11 @@ function testTheOwnersOwnWordingIsNotTidiedAway(): void {
     ["HR Business Partner", "مشرف موارد بشرية"],
     ["HR Operations Coordinator", "اخصائي موارد بشرية"],
     ["HR Section Head", "مدير ادارة الموارد البشرية"],
+    // Answered 2026-09-06. The proposal was أخصائي استقطاب المواهب, a literal rendering of "talent
+    // acquisition"; he answered with the HR-specialist title he had already confirmed for
+    // `HR Operations Coordinator`. Same shape as the seven above, and the literal translation is
+    // exactly what a later editor would "correct" it back to.
+    ["Talent Acquisition", "اخصائي موارد بشرية"],
   ];
 
   for (const [en, ar] of pinned) {
