@@ -92,6 +92,7 @@ export type PermissionResource =
   | "double_visit_analytics"
   | "weekly_plans"
   | "expenses"
+  | "market_awareness"
   | "vacancies"
   | "organogram"
   | "offers"
@@ -157,6 +158,7 @@ export const permissionResources: PermissionResource[] = [
   "double_visit_analytics",
   "weekly_plans",
   "expenses",
+  "market_awareness",
   "employees",
   "team",
   "offers",
@@ -732,6 +734,7 @@ function applyHardPermissionBoundaries<T extends PermissionMap>(matrix: T): T {
 
 const defaultPermissionMatrix: PermissionMap = {
   "Super Admin": {
+    market_awareness: allActions,
     admin: allActions,
     attendance: allActions,
     // `update` added 2026-08-09 for the Doctor Coverage visit-norms editor
@@ -788,6 +791,10 @@ const defaultPermissionMatrix: PermissionMap = {
     synthetic_journeys: ["read"],
   },
   CEO: {
+    // Market Awareness: he is the second and final approval on every activity — no cost
+    // threshold skips him (owner answer 36). `approve` here is HIS action; nothing in this module
+    // may ever write a decision row on his behalf.
+    market_awareness: ["read", "approve", "export"],
     // Segregation of duties: the CEO account is observational on irreversible HR/finance
     // workflows. It may read/export attendance but not create/update/delete records.
     attendance: ["read", "export"],
@@ -894,6 +901,9 @@ const defaultPermissionMatrix: PermissionMap = {
   //
   // (The comment that used to sit here described Financial Advisor, whose real block is below.)
   "Finance Manager": {
+    // Market Awareness: informed for execution, plus the paid / not-paid mark — `update`. This is
+    // deliberately NOT the marketing invoice obligation (no hold, no overdue nudge).
+    market_awareness: ["read", "update", "export"],
     // No `update`: it is asserted NOWHERE in the codebase, so it granted nothing — but it would
     // have silently handed him order mutation the day anyone added an
     // assertPermission(access, "direct_orders", "update") to an edit route. `read` is what the
@@ -1036,6 +1046,9 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "District Manager": {
+    // Market Awareness: informed when an activity in his region is approved. Read only — an
+    // informed person may comment but never approve (owner answer 43).
+    market_awareness: ["read"],
     direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],
@@ -1112,6 +1125,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "National Sales Manager": {
+    market_awareness: ["read", "export"],
     direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],
@@ -1136,6 +1150,9 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "Product Manager": {
+    // Market Awareness: raises activities, sees his OWN only. The narrowing to his own rows is in
+    // scope.ts, not here — the matrix says he may read the module, never whose rows.
+    market_awareness: ["read", "create", "export"],
     direct_orders: ["read", "create", "update", "export"],
     attendance: ["read"],
     // `update` = the Doctor Coverage visit-norms editor only (owner, 2026-08-09: PM, GPM and
@@ -1164,6 +1181,8 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "Group Product Manager": {
+    // Market Awareness: raises activities AND is the manager step for the PMs who report to her.
+    market_awareness: ["read", "create", "approve", "export"],
     direct_orders: ["read", "create", "update", "export"],
     attendance: ["read"],
     // `update` = the Doctor Coverage visit-norms editor only (owner, 2026-08-09: PM, GPM and
@@ -1192,6 +1211,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "SFE Manager": {
+    market_awareness: ["read", "export"],
     // `approve` added 2026-08-02 on owner instruction, alongside the Direct Orders Approvals
     // sidebar entry. This is APPROVAL AUTHORITY over direct orders, not just visibility — the
     // page carries no guard of its own, so showing it without this grant would only produce
@@ -1254,6 +1274,10 @@ const defaultPermissionMatrix: PermissionMap = {
   // Marketing Manager uses the employee portal like PM/GPM for reports and sidebar modules,
   // while HR authority remains blocked.
   "Marketing Manager": {
+    // Market Awareness: raises activities and is the manager step for the PMs reporting to him.
+    // His own request skips the manager step and goes straight to the CEO — he reports to the CEO,
+    // so there is no step underneath (owner answer 35).
+    market_awareness: ["read", "create", "approve", "export"],
     attendance: ["read"],
     // `update` = the Doctor Coverage visit-norms editor only (owner, 2026-08-09: PM, GPM and
     // Marketing Manager set the norms themselves). The CRM visit MIRROR stays read-only for

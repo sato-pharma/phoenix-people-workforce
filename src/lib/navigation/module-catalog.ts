@@ -60,6 +60,7 @@ export const MODULE_LABELS: Record<PermissionResource, string> = {
   leave: "Leave & Vacations",
   mailbox_monitor: "Mailbox Monitor",
   mailbox_offboarding: "Mailbox Revocation",
+  market_awareness: "Market Awareness",
   offers: "Offers",
   organogram: "Organogram",
   outstation: "Outstation",
