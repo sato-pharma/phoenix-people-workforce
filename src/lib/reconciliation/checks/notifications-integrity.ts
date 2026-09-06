@@ -1,6 +1,7 @@
 import { summarizeNotificationMonitoring } from "@/lib/communication/metrics";
 import { addDaysToDateOnly } from "@/lib/date-only";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { identityGuardFailurePrefix } from "@/lib/notifications/email";
 import { resolveNotificationRecipientsWithGovernance } from "@/lib/notifications/policy";
 import {
   canViewerSeeNotification,
@@ -22,6 +23,16 @@ type SentInAppDeliveryRow = {
     employee_hr_id: string | null;
     recipients: unknown;
     created_at: string | null;
+    module: string | null;
+  } | null;
+};
+
+type IdentityGuardRejectionRow = {
+  id: string;
+  created_at: string | null;
+  last_error: string | null;
+  notification_events: {
+    event_type: string | null;
     module: string | null;
   } | null;
 };
@@ -337,9 +348,88 @@ const sentInAppRecipientMustBeAbleToSeeIt: ReconciliationCheck = {
   },
 };
 
+/**
+ * Check 17 — the email identity guard refused nothing in the last 24 hours.
+ *
+ * The guard is correct and this check does not question it: refusing to send an official workflow
+ * email whose data subject cannot be identified is the right behaviour, because the alternative is
+ * mailing one employee's details under another employee's name. What was wrong is that a refusal
+ * was INVISIBLE. It is written as `status = 'skipped'`, not `'failed'` — nothing alarms on skipped
+ * and no dashboard counts it — so a caller that stopped naming its subject looked exactly like a
+ * caller with nothing to send.
+ *
+ * Measured on production 2026-09-06: 159 official workflow emails refused across 68 days and 13
+ * event types, and nobody knew. Had this check existed it would have fired on 30 June, the first
+ * day, and on 24 separate days in August. The three live causes (a rep/manager mix-up in the
+ * subject slot, a query that never selected the subject, and a digest with no single subject) were
+ * fixed in #3354 and #3358, so the expected steady state is ZERO and this check should stay quiet.
+ *
+ * Quiet is the design goal, not a nice-to-have. A check that fires at the normal working level
+ * becomes wallpaper — this repo has already watched a session-count warning sit at 9 for hours
+ * with nobody acting on it. So this counts ONLY guard refusals, never `skipped` in general: the
+ * common skips (`EMAIL_NOTIFICATIONS_ENABLED is not true`, `No active push subscription`) are
+ * legitimate and would drown the signal from day one.
+ */
+async function loadRecentIdentityGuardRejections(): Promise<IdentityGuardRejectionRow[]> {
+  // 24h, matching noDueScheduledNotificationLeftUnprocessed above. Paginated for the same reason
+  // the in_app read is: PostgREST caps a response at 1,000 with no marker, and the run where that
+  // matters is precisely the runaway regression this check exists to catch.
+  const sinceIso = new Date(Date.now() - 24 * 3_600_000).toISOString();
+  return fetchAllRows<IdentityGuardRejectionRow>(
+    () =>
+      getSupabaseAdmin()
+        .from("notification_deliveries")
+        .select("id,created_at,last_error,notification_events(event_type,module)")
+        .eq("channel", "email")
+        .eq("status", "skipped")
+        .gte("created_at", sinceIso)
+        // The guard's own prefix, imported rather than copied, so a reworded refusal cannot
+        // silently empty this check and report green.
+        .ilike("last_error", `${identityGuardFailurePrefix}%`),
+    "id",
+  );
+}
+
+const emailIdentityGuardRefusedNothing: ReconciliationCheck = {
+  id: "email-identity-guard-refused-no-official-workflow-email",
+  title: "No official workflow email was refused by the email identity guard in the last 24 hours",
+  domain: "notifications-integrity",
+  severity: "high",
+  expectation: "holds",
+  async run(): Promise<ReconciliationOutcome> {
+    const rejections = await loadRecentIdentityGuardRejections();
+    const cap = 10;
+
+    return {
+      left: {
+        source: `notification_deliveries where channel = email, status = skipped and last_error starts "${identityGuardFailurePrefix}", last 24h`,
+        value: `${formatCount(rejections.length, "official workflow email")} the guard refused to send`,
+      },
+      right: {
+        source:
+          "the standing expectation: a caller that cannot name the subject of its own email is a bug, so this set is empty",
+        value: "0 refusals",
+      },
+      holds: rejections.length === 0,
+      detail:
+        rejections.length === 0
+          ? "No official workflow email was refused for want of a subject identity in the last 24 hours."
+          : `${formatList(
+              rejections
+                .slice(0, cap)
+                .map(
+                  (row) =>
+                    `${row.notification_events?.event_type ?? "unknown event"} (${row.notification_events?.module ?? "unknown module"}) on ${cairoTimestamp(row.created_at)} — ${row.last_error ?? "no reason recorded"}`,
+                ),
+            )}${rejections.length > cap ? ` (first ${cap} of ${rejections.length})` : ""}`,
+    };
+  },
+};
+
 export const notificationsIntegrityReconciliationChecks: ReconciliationCheck[] = [
   sentInAppMustBeBellRenderable,
   fanoutHasNoDuplicateHuman,
   noDueScheduledNotificationLeftUnprocessed,
   sentInAppRecipientMustBeAbleToSeeIt,
+  emailIdentityGuardRefusedNothing,
 ];

@@ -1117,7 +1117,13 @@ function notificationSchemaMissing(error: unknown) {
   );
 }
 
-const identityGuardFailurePrefix = "Email identity guard failed";
+/**
+ * Exported so the reconciliation check that counts guard rejections matches on the guard's OWN
+ * wording rather than a copy of it. A rejection is recorded as `notification_deliveries.last_error`
+ * with this prefix and `status = 'skipped'` — a status nothing alarms on — which is how 159 refused
+ * official workflow emails stayed invisible for 68 days.
+ */
+export const identityGuardFailurePrefix = "Email identity guard failed";
 
 function normalizeIdentityHrId(value: unknown) {
   return String(value ?? "").trim().toUpperCase();

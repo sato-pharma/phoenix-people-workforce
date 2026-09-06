@@ -213,4 +213,61 @@ export function runEmailIdentityGuardCallersTests() {
     "a supplied subject must always be verified — the digest exemption may only apply when no candidate was " +
       "passed at all",
   );
+
+  // ── A GUARD REJECTION MUST BE VISIBLE SOMEWHERE ────────────────────────────────────────
+  // The whole reason 159 refusals went unnoticed for 68 days is that a refusal is recorded as
+  // status='skipped', which nothing alarms on and no dashboard counts. Fixing the callers stops
+  // today's bleed; this reconciliation check is what makes the NEXT one visible within a day.
+  const reconciliationSource = source("src/lib/reconciliation/checks/notifications-integrity.ts");
+  const emailModuleSource = source("src/lib/notifications/email.ts");
+
+  assert.match(
+    reconciliationSource,
+    /id: "email-identity-guard-refused-no-official-workflow-email",/,
+    "the guard-rejection reconciliation check must exist — a refusal that alarms nothing is how this " +
+      "defect stayed invisible for 68 days",
+  );
+  assert.match(
+    reconciliationSource,
+    /emailIdentityGuardRefusedNothing,\s*\n\];/,
+    "the check must be REGISTERED in notificationsIntegrityReconciliationChecks — an unregistered check " +
+      "never runs, which is the same silence it was written to end",
+  );
+  assert.match(
+    reconciliationSource,
+    /expectation: "holds",/,
+    "the check must expect to hold: the steady state after #3354 and #3358 is zero refusals",
+  );
+
+  // It must match on the guard's OWN prefix, imported rather than copied. A copy silently empties
+  // the check the day somebody rewords the refusal, and an empty check reports green.
+  assert.match(
+    emailModuleSource,
+    /export const identityGuardFailurePrefix = "Email identity guard failed";/,
+    "the guard failure prefix must be exported so the check can match the guard's own wording",
+  );
+  assert.match(
+    reconciliationSource,
+    /import \{ identityGuardFailurePrefix \} from "@\/lib\/notifications\/email";/,
+    "the check must import the prefix, never restate it — a copy drifts and a drifted check reports green",
+  );
+  assert.match(
+    reconciliationSource,
+    /\.ilike\("last_error", `\$\{identityGuardFailurePrefix\}%`\)/,
+    "the check must filter on the guard prefix",
+  );
+
+  // Scope: guard refusals ONLY. Counting every 'skipped' row would fire constantly on legitimate
+  // skips and become wallpaper — the failure mode this repo has already lived through with a
+  // session count that read 9 for hours while nobody acted.
+  assert.doesNotMatch(
+    reconciliationSource,
+    /const emailIdentityGuardRefusedNothing[\s\S]*?holds: rejections\.length >= /,
+    "the check must breach on ANY guard refusal, never on a threshold above zero",
+  );
+  assert.match(
+    reconciliationSource,
+    /holds: rejections\.length === 0,/,
+    "one refused official workflow email is already a defect — the check holds only at zero",
+  );
 }
