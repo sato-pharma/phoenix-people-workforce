@@ -1,5 +1,9 @@
 import { strict as assert } from "node:assert";
 
+import {
+  COMPANY_DETAILS_DEFAULT,
+  isCompanyDetailKey,
+} from "../src/lib/hiring-pack/company-details.ts";
 import { arabicDepartmentName } from "../src/lib/hiring-pack/department-names.ts";
 import {
   INSURANCE_WAGE_CEILING,
@@ -157,6 +161,7 @@ function packFixture(
     offboarding,
     exit: null,
     renewal: null,
+    company: COMPANY_DETAILS_DEFAULT,
     suggestedJobTitleAr: null,
     gaps: collectHiringPackGaps(employee, profile, offboarding, null),
     terms: resolveContractTerms(employee, profile, offboarding, null),
@@ -170,6 +175,11 @@ function sampleFor(binding: PaperFieldBinding): string {
   if (binding.kind === "dateDay") return "05";
   if (binding.kind === "dateMonth") return "07";
   if (binding.kind === "dateYear") return "2027";
+  // A tax-registration group is one printed run of digits, never free text — the form draws three
+  // of them with its own "/" between.
+  if (binding.kind === "taxPart1" || binding.kind === "taxPart2" || binding.kind === "taxPart3") {
+    return "555";
+  }
   return "قيمة";
 }
 
@@ -257,6 +267,30 @@ export function runHiringPackPaperEditorTests() {
       assert.ok(patch.ok, `${key} rejected its own sample value: ${patch.ok ? "" : patch.message}`);
       assert.equal(patch.store, binding.store, `${key} saved to the wrong store`);
 
+      // THE COMPANY STORE IS PROVED DIFFERENTLY, because its body is genuinely a different shape.
+      //
+      // The three per-employee endpoints write a hand-listed object literal, so the danger there is
+      // a payload that silently omits the field. `hiring_pack_company_details` holds one row per
+      // value: the body names the row, so the equivalent question is whether that name is a key the
+      // store actually knows. A binding pointing at an invented key would be rejected by the route
+      // with a 400, which on a legal document reads as the save being broken.
+      if (binding.store === "company") {
+        assert.ok(
+          isCompanyDetailKey(binding.field),
+          `${key} binds to company value "${binding.field}", which COMPANY_DETAIL_FIELDS does not carry — the save would be refused`,
+        );
+        assert.equal(
+          (patch.body as { key?: unknown }).key,
+          binding.field,
+          `${key} must name its own row in the body — a company save that names another row edits the wrong value`,
+        );
+        assert.ok(
+          binding.alsoOn,
+          `${key} changes every employee's papers and MUST say so: the editor reports the scope from alsoOn`,
+        );
+        continue;
+      }
+
       // Read the payload WITHOUT this binding's own override sitting on top of it.
       //
       // The patch is `{ ...payload, [field]: value }`, so the edited key is spread in whether or not
@@ -281,35 +315,30 @@ export function runHiringPackPaperEditorTests() {
 
   // ── 3. The allow-list stays an allow-list ────────────────────────────────────────────────────
   //
-  // Each of these prints on a document and none of them may be typed over there. The company ones
-  // belong to the legal entity and are shared by every employee; the derived ones must keep
-  // agreeing with the value they are computed from.
+  // What is left in this list is DERIVED, and that is now the only reason a printed value is locked.
   //
-  // CONTRACT_SIGNATORY used to sit in this list, on the first reading — the man who signs for the
-  // company looked like company data. He is not. The owner's rule (2026-09-04) is that somebody
-  // else signs sometimes, and the paper must then name that person, so the signatory is a property
-  // of the CONTRACT rather than of the legal entity. It moved to the positive check below; the rest
-  // of the list is unchanged, and COMPANY_NAME and its neighbours stay shut.
+  // The list used to be twice this length, and the other half was the company's own data —
+  // COMPANY_NAME, COMPANY_HEAD_OFFICE, the register numbers, the tax registration groups. They were
+  // shut for a real reason (typing over the company on one contract must not rewrite it for one
+  // employee) and the effect was that the company's registered address could only be corrected by
+  // changing the code. The owner ended that on 2026-09-06: the address on the HR forms must be
+  // editable, "every single thing should be editable".
+  //
+  // They did not simply open. They moved to a FOURTH store whose scope is the company — see 3c
+  // below, which pins that they save company-wide and never onto one person's record. So the old
+  // failure is still prevented; it is prevented by writing the value in the right place instead of
+  // by refusing to write it at all.
+  //
+  // CONTRACT_SIGNATORY left this list earlier, on 2026-09-04, and for the opposite reason: the man
+  // who signs looked like company data and is not, because a delegate sometimes signs one contract.
   for (const key of [
-    "COMPANY_NAME",
-    "COMPANY_LEGAL_FORM",
-    "COMPANY_HEAD_OFFICE",
-    "COMPANY_HEAD_OFFICE_FULL",
-    "COMMERCIAL_REGISTER",
-    "UNIFIED_REGISTER",
-    "TAX_CARD",
-    "RESPONSIBLE_MANAGER",
     "SALARY_WORDS",
     "DURATION",
     "DEPARTMENT",
     "HR_ID",
     "ISSUE_DATE",
-    "taxRegPart1",
-    "taxRegPart2",
-    "taxRegPart3",
-    "establishmentNumber",
-    "sectorCode",
-    "companyName",
+    // The day the form is filled in. Not derived from another FIELD, but not anybody's to type
+    // either — a Form 1 that states it was written on a day it was not is a false declaration.
     "writtenDay",
     "writtenMonth",
     "writtenYear",
@@ -317,7 +346,7 @@ export function runHiringPackPaperEditorTests() {
     assert.equal(
       paperFieldBinding(key),
       null,
-      `${key} must NOT be editable on the page — it is the company's own value or is derived from another`,
+      `${key} must NOT be editable on the page — it is derived from another value, or is the date the form is written`,
     );
   }
 
@@ -340,6 +369,97 @@ export function runHiringPackPaperEditorTests() {
     );
     assert.equal(binding.kind, "text", `${key} is free text — a delegate's name is not a date or a number`);
     assert.ok(binding.labelEn, `${key} needs an English label or it prints as a bare token in the editor`);
+  }
+
+  // ── 3c. The company's own values are editable, and saved COMPANY-WIDE ────────────────────────
+  //
+  // The owner's instruction of 2026-09-06, pinned from both sides. The first assertion stops a
+  // future session shutting them again on the old reasoning — which is written down in this very
+  // file's history and reads perfectly convincing. The second is the load-bearing one: it stops
+  // somebody "fixing" the scope by pointing the head office at the employee record, which would
+  // compile, save, return 200, and leave two employees' contracts stating different addresses for
+  // the same company. That is a worse defect than the one being fixed and it is invisible on screen.
+  for (const key of [
+    "COMPANY_NAME",
+    "companyName",
+    "COMPANY_HEAD_OFFICE",
+    "companyAddress",
+    "companyHeadOffice",
+    "COMPANY_HEAD_OFFICE_FULL",
+    "COMPANY_CITY",
+    "COMPANY_LEGAL_FORM",
+    "COMPANY_BRANCH_REGISTRY",
+    "COMMERCIAL_REGISTER",
+    "COMMERCIAL_REGISTER_OFFICE",
+    "UNIFIED_REGISTER",
+    "TAX_CARD",
+    "RESPONSIBLE_MANAGER",
+    "RESPONSIBLE_MANAGER_TITLE",
+    "establishmentNumber",
+    "sectorCode",
+    "taxRegPart1",
+    "taxRegPart2",
+    "taxRegPart3",
+  ]) {
+    const binding = paperFieldBinding(key);
+    assert.ok(
+      binding,
+      `${key} MUST be editable on the page — the owner asked for the company's own details to be editable`,
+    );
+    assert.equal(
+      binding.store,
+      "company",
+      `${key} must save to the COMPANY store — on any employee store it would give one person's ` +
+        "papers a different employer from everybody else's",
+    );
+  }
+
+  // The three spellings of the head office that mean the SAME row. One company, one address: the
+  // contract, Form 1 and the Ministry of Labour form each name it differently, and if these ever
+  // stopped agreeing a personnel file would contain two addresses for one employer.
+  {
+    const spellings = ["COMPANY_HEAD_OFFICE", "companyAddress", "companyHeadOffice"].map(
+      (key) => paperFieldBinding(key)?.field,
+    );
+    assert.deepEqual(
+      spellings,
+      ["headOfficeAr", "headOfficeAr", "headOfficeAr"],
+      "the contract, Form 1 and the labour forms must write the head office to one row",
+    );
+
+    // …and the recital's full address is a DIFFERENT row, which is the trap in the other direction:
+    // merging the two is the obvious tidy-up, and it would print the government forms' short address
+    // into the contract's recital, where the registered address has to appear in full.
+    assert.equal(
+      paperFieldBinding("COMPANY_HEAD_OFFICE_FULL")?.field,
+      "recitalHeadOfficeAr",
+      "the contract recital's written-out address is its own value and must not collapse into the short one",
+    );
+  }
+
+  // ── 3d. One printed group of the tax number is patched, never the whole number ───────────────
+  //
+  // Form 1 draws the tax registration as three runs. Retyping the middle group must leave the other
+  // two byte for byte alone — the failure being pinned is a save that reads "555" off one box and
+  // stores it as the entire number, which prints as a form with two thirds of the number missing.
+  {
+    const pack = packFixture();
+    const middle = paperFieldBinding("taxRegPart2");
+    assert.ok(middle);
+    const patch = buildPaperEditPatch(pack, middle, "555");
+    assert.ok(patch.ok);
+    assert.equal(patch.store, "company");
+    assert.equal((patch.body as { key?: unknown }).key, "taxRegistrationNumber");
+    assert.equal(
+      (patch.body as { value?: unknown }).value,
+      "318-555-477",
+      "editing the middle group must keep the first and last groups exactly as they were",
+    );
+
+    // Non-digits are refused rather than silently stripped to nothing: a group that quietly became
+    // empty would print a form the insurance office rejects, with no error anywhere.
+    const rejected = buildPaperEditPatch(pack, middle, "abc");
+    assert.equal(rejected.ok, false);
   }
 
   // ── 4. Dates, money, and the invisible direction marks ───────────────────────────────────────

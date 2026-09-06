@@ -1,4 +1,3 @@
-import { systemLegalEntity } from "@/config/system-settings";
 import { layeredPages, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
   LABOUR_PAGE_HEIGHT_PT,
@@ -63,9 +62,9 @@ export function buildExitValues(data: HiringPackData): Record<string, string> {
     // ── The resignation letter's addressee ──────────────────────────────────────────────────
     // Defaults to the manager who signs as الطرف الأول on the employment contract: the resignation
     // is addressed to the person with authority to accept it, and that is the same person.
-    addresseeName: data.offboarding.addresseeNameAr ?? systemLegalEntity.responsibleManagerAr,
+    addresseeName: data.offboarding.addresseeNameAr ?? data.company.responsibleManagerAr,
     addresseeTitle:
-      data.offboarding.addresseeTitleAr ?? systemLegalEntity.responsibleManagerTitleAr,
+      data.offboarding.addresseeTitleAr ?? data.company.responsibleManagerTitleAr,
 
     // ── The person leaving ──────────────────────────────────────────────────────────────────
     // The Arabic name and the Arabic job title: these are Arabic-language legal documents, and
@@ -107,8 +106,8 @@ export function buildExitValues(data: HiringPackData): Record<string, string> {
     agreementYear: agreementParts?.year ?? "",
     employerRepName: terms.employerRepNameAr,
     employerRepTitle: terms.employerRepTitleAr,
-    companyName: systemLegalEntity.legalNameAr,
-    companyHeadOffice: systemLegalEntity.headOfficeAr,
+    companyName: data.company.legalNameAr,
+    companyHeadOffice: data.company.headOfficeAr,
   };
 }
 

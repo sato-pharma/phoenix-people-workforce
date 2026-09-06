@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
 import { systemContractDefaults } from "../src/config/system-settings.ts";
+import { COMPANY_DETAILS_DEFAULT } from "../src/lib/hiring-pack/company-details.ts";
 import {
   FORM6_PAGE_1_PLACEMENTS,
   FORM6_PAGE_1_SVG,
@@ -174,6 +175,7 @@ function packFixture(
     offboarding,
     exit,
     renewal: null,
+    company: COMPANY_DETAILS_DEFAULT,
     suggestedJobTitleAr: null,
     gaps: collectHiringPackGaps(employee, profile, offboarding, exit),
     terms: resolveContractTerms(employee, profile, offboarding, exit),

@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
 
+import { COMPANY_DETAILS_DEFAULT } from "../src/lib/hiring-pack/company-details.ts";
 import { documentSurfaceOf } from "../src/lib/hiring-pack/document-registry.ts";
 import type { DocumentFieldRow } from "../src/lib/hiring-pack/field-layout.ts";
 import { PAPER_FIELD_BINDINGS } from "../src/lib/hiring-pack/paper-fields.ts";
@@ -132,6 +133,7 @@ function packFixture(
     offboarding,
     exit: null,
     renewal: null,
+    company: COMPANY_DETAILS_DEFAULT,
     suggestedJobTitleAr: null,
     gaps: collectHiringPackGaps(employee, profile, offboarding, null),
     terms: resolveContractTerms(employee, profile, offboarding, null),
