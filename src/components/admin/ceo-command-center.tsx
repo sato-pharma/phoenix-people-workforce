@@ -405,6 +405,100 @@ export function QuickLinkCard({
   );
 }
 
+/**
+ * The company field-sales dashboards, as one rail.
+ *
+ * WHAT THIS REPLACED. The third column of the Sales & marketing row held a single "Weekly Sales"
+ * QuickLinkCard whose whole content was the words "Open →". Beside a Source of Sales card carrying
+ * two full tables it stretched to match, and the result was the largest blank area on the page —
+ * the owner sent a screenshot of it. It was also redundant: "Weekly Sales · Company" in the row
+ * underneath opens the same module.
+ *
+ * So the five dashboard names from that row moved up into the empty column, and the row is gone.
+ * One name per line, each its own link, in the space that was holding nothing.
+ *
+ * SQUARE, like everything in the admin shell — no rounded corners anywhere (owner rule). The hover
+ * accent is a 2px bar that appears on the left rather than a colour wash, so a scan down the rail
+ * reads as one object rather than five buttons.
+ */
+function FieldSalesCommandRail() {
+  const links: Array<{ blurb: string; href: string; icon: ReactNode; title: string }> = [
+    {
+      blurb: "All lines, all regions, week over week",
+      href: "/admin/field-sales/weekly-sales",
+      icon: <Activity className="h-3.5 w-3.5" />,
+      title: "Weekly Sales",
+    },
+    {
+      blurb: "Channel mix, regions, areas, products, distributors",
+      href: "/admin/field-sales/source-of-sales",
+      icon: <BarChart3 className="h-3.5 w-3.5" />,
+      title: "Source of Sales",
+    },
+    {
+      blurb: "Every line's district managers against target",
+      href: "/admin/field-sales/dsm-performance",
+      icon: <BarChart3 className="h-3.5 w-3.5" />,
+      title: "DSM Performance",
+    },
+    {
+      blurb: "Every line's reps, grouped by district",
+      href: "/admin/field-sales/med-reps-performance",
+      icon: <Activity className="h-3.5 w-3.5" />,
+      title: "Med-Rep Performance",
+    },
+    {
+      blurb: "Coverage, AM/PM split, per-rep intensity",
+      href: "/admin/double-visit-analytics",
+      icon: <MapPinned className="h-3.5 w-3.5" />,
+      title: "Double-Visit Intelligence",
+    },
+  ];
+
+  return (
+    <div className="flex min-w-0 flex-col border border-slate-200 bg-white">
+      <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-900 px-4 py-3">
+        <span className="text-orange-400">
+          <Target className="h-3.5 w-3.5" />
+        </span>
+        <span className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-300">
+          Company field sales
+        </span>
+      </div>
+      <ul className="flex flex-1 flex-col divide-y divide-slate-100">
+        {links.map((link) => (
+          <li className="min-w-0 flex-1" key={link.href}>
+            <Link
+              className="group flex h-full min-w-0 items-center gap-3 px-4 py-3 hover:bg-slate-50"
+              href={link.href}
+            >
+              {/* The hover accent. `shrink-0` on a 2px bar cannot squeeze the text beside it. */}
+              <span
+                aria-hidden="true"
+                className="h-8 w-[2px] shrink-0 bg-slate-200 transition-colors group-hover:bg-orange-500"
+              />
+              <span className="shrink-0 text-slate-400 group-hover:text-orange-500">{link.icon}</span>
+              <span className="min-w-0 flex-1">
+                {/* break-words, never truncate — the owner's ellipsis ban. */}
+                <span className="block break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-900">
+                  {link.title}
+                </span>
+                <span className="mt-0.5 block break-words text-phx-xs text-slate-500">{link.blurb}</span>
+              </span>
+              <span
+                aria-hidden="true"
+                className="shrink-0 text-sm font-black text-slate-300 group-hover:text-orange-500"
+              >
+                →
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 /**
@@ -793,14 +887,14 @@ export function CeoCommandCenter({
             Read this as the rule for every grid on this page: the column count must match the
             number of cards that actually render for THAT variant. A card removed by a ruling and a
             column count left behind is exactly how these gaps appear. */}
-        <div className={cn("grid divide-x divide-slate-200", isSfe ? "lg:grid-cols-1" : "lg:grid-cols-3")}>
+        <div className="grid divide-x divide-slate-200 lg:grid-cols-3">
           {/* SoS — immediate. The month in progress rides on this card's own header line, next to
               the units: the one place a reader looking at a deliberately-last-month figure is
               already looking. `whitespace-nowrap` on that badge because an owner rule forbids this
               text wrapping, and it uses a plain className rather than cn(), which silently drops
               text-phx-* named sizes. */}
           <PerfCard
-            className={cn(!isSfe && "lg:col-span-2")}
+            className="lg:col-span-2"
             title="Source of Sales"
             icon={<BarChart3 className="h-3.5 w-3.5" />}
             headline={sos ? egp(sos.totalValue) : "—"}
@@ -839,68 +933,23 @@ export function CeoCommandCenter({
             </div>
           </PerfCard>
 
-          {/* Weekly Sales — a shortcut for the CEO. The SFE Manager gets the real week-over-week
-              series instead (the "Weekly sales trend" section in Phase B), because weekly sales
-              is his job rather than something he occasionally clicks through to. */}
-          {!isSfe ? <QuickLinkCard
-            title="Weekly Sales"
-            icon={<Activity className="h-3.5 w-3.5" />}
-            headline="7-week trend + region breakdown"
-            sub="Click to open Weekly Sales"
-            href="/sales/weekly/dashboard"
-          /> : null}
+          {/* THE FIVE DASHBOARD NAMES LIVE HERE NOW — see FieldSalesCommandRail.
+              This column used to hold a lone "Weekly Sales" QuickLinkCard: one link, stretched to
+              the height of the Source of Sales card beside it, and the largest blank area on the
+              page. It was redundant too — "Weekly Sales · Company" in the row below opened the same
+              module — so the row below moved up into it and the row is gone.
+
+              Both variants get it. The SFE Manager's row was single-column only because he was the
+              one who did not get that empty card; with real content in the column there is no
+              reason to hold it back from him, and he already had all five names in the row. */}
+          <FieldSalesCommandRail />
 
         </div>
 
-        {/* ── Company field-sales command — NSM-parity dashboards at company scope ── */}
-        {/* FIVE cards, so five columns - one full row, no blank cells. It said "six cards" and
-            split 3/4 until 2026-08-30, which was true until ruling 11 removed the Sales Analytics
-            card and left the column counts behind: the CEO saw 4 + 1 with three empty cells
-            (413px), the SFE Manager 3 + 2 with one. Count the cards below before changing this. */}
-        <div className="grid divide-x divide-slate-200 border-t border-slate-200 sm:grid-cols-2 lg:grid-cols-5">
-          <QuickLinkCard
-            title="Weekly Sales · Company"
-            icon={<Activity className="h-3.5 w-3.5" />}
-            headline="All lines · all regions · week-over-week"
-            sub="Open the company weekly dashboard"
-            href="/admin/field-sales/weekly-sales"
-          />
-          <QuickLinkCard
-            title="Source of Sales · Company"
-            icon={<BarChart3 className="h-3.5 w-3.5" />}
-            headline="Channel mix, regions, areas, products, distributors"
-            sub="Open the company SoS dashboard"
-            href="/admin/field-sales/source-of-sales"
-          />
-          <QuickLinkCard
-            title="DSM Performance"
-            icon={<BarChart3 className="h-3.5 w-3.5" />}
-            headline="Every line's district managers vs target"
-            sub="Open company DSM performance"
-            href="/admin/field-sales/dsm-performance"
-          />
-          <QuickLinkCard
-            title="Med-Rep Performance"
-            icon={<Activity className="h-3.5 w-3.5" />}
-            headline="Every line's reps, grouped by district"
-            sub="Open company med-rep performance"
-            href="/admin/field-sales/med-reps-performance"
-          />
-          {/*
-            "Sales Analytics" (/admin/analytics) removed by ruling 11 — "no analytics module, no
-            sales analytics". This was the CEO's last shortcut into that hub; the SFE Manager's
-            equivalent in ceo-phase-b.tsx went in the same change. The Source of Sales and Med-Rep
-            Performance cards around it still open their own dashboards directly, so no number the
-            CEO reads from this page moved — only the hub door closed.
-          */}
-          <QuickLinkCard
-            title="Double-Visit Intelligence"
-            icon={<MapPinned className="h-3.5 w-3.5" />}
-            headline="Coverage, AM/PM split, per-rep intensity"
-            sub="Open Double-Visit Analytics"
-            href="/admin/double-visit-analytics"
-          />
-        </div>
+        {/* The five company field-sales dashboards used to be a second row of QuickLinkCards here.
+            They are now the rail in the column above, which is where the blank space was. Removing
+            the row also removed the duplicate: "Weekly Sales · Company" and the card above it
+            opened the same module from two places on one screen. */}
       </SectionShell>
 
       {/* ── Operations hubs — consolidated cross-module quick links ─────────── */}

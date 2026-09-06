@@ -584,10 +584,24 @@ export function runCeoCommandCenterTests() {
     !PHASE_B_SKELETON_TITLES_SFE_SOURCE_CHECK.test(ceoPhaseBSource),
     "the SFE skeleton must NOT announce a Doctor coverage section — it is retired, and a skeleton row with no section behind it reads as a stuck load",
   );
-  assert.match(
+  // THE DECISION: the SFE Manager gets the real week-over-week series (asserted just above via
+  // `includeWeeklyTrend: isSfe`), never the click-through shortcut, because weekly sales is his job
+  // rather than something he occasionally opens.
+  //
+  // This used to be pinned as `{!isSfe ? <QuickLinkCard title="Weekly Sales"` — the literal shape of
+  // the card. That card is GONE (2026-09-07): it was one link stretched to the height of the Source
+  // of Sales table beside it, the largest blank area on the page, and it duplicated
+  // "Weekly Sales · Company" in the row below. Both were replaced by FieldSalesCommandRail.
+  //
+  // So the decision now holds MORE strongly than the old assertion required — nobody has the
+  // shortcut, not just the SFE — and pinning the vanished code shape would have blocked the removal
+  // while protecting nothing. Pin the outcome instead: this component links to that route for no
+  // one. The rail's own Weekly Sales entry is a different route (/admin/field-sales/weekly-sales,
+  // the COMPANY dashboard), which the SFE Manager already had in the row that the rail replaced.
+  assert.doesNotMatch(
     ceoComponentSource,
-    /\{!isSfe \? <QuickLinkCard\s+title="Weekly Sales"/,
-    "the SFE overview must show the weekly trend, not the CEO's click-through Weekly Sales shortcut",
+    /href="\/sales\/weekly\/dashboard"/,
+    "the CEO's click-through Weekly Sales shortcut must not come back to this component — the SFE's own weekly trend is asserted above",
   );
   const crmFieldSource = readFileSync("src/lib/crm/sfe-field-analytics.ts", "utf8");
   assert.match(
