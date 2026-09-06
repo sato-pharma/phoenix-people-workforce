@@ -628,6 +628,35 @@ this file already gives them)
   escaped only because the surplus argument was also a `TS2554`. One `await runTest(name, fn)` per
   test (`docs/testing.md` step 5). Check by AST, not a local `tsc`: 883 `runTest` calls, all 2-arg,
   the new fn a second argument exactly once — a comma count cannot work, the names are long prose.
+
+  **A MERGE CONFLICT is now the commonest route into that shape, and it arrives pre-built.** Every
+  new-test PR appends at the same single anchor in `run-tests.ts`, so two of them in flight always
+  conflict there — and because the anchor sits mid-call, git renders the conflict INSIDE one
+  `await runTest(` invocation, with each side offering a name/fn pair:
+
+  ```
+  await runTest(
+  <<<<<<< HEAD
+    "employee RLS policy lock (...)",
+    runEmployeeRlsPolicyLockTests,
+  =======
+    "a failed SoS aggregate reaches the screen (...)",
+    runSosDashboardIncompleteReadIsVisibleTests,
+  >>>>>>> origin/main
+  );
+  ```
+
+  Taking both sides — the obvious resolution, and what "keep both" tooling produces — yields ONE
+  call with four arguments. It compiles, CI is green, and the OTHER PR’s test is silently retired:
+  the damage lands on someone else’s change, so nobody who reviews either PR sees it. The #2357
+  `TS2554` rescue above does NOT fire here, because `runTest` is declared
+  `(name: string, execute: () => void | Promise<void>)` and the surplus pair is still string+fn.
+
+  Resolve as TWO separate `await runTest(...)` calls, main’s first. Verify structurally, never by
+  eye — 2026-09-06, resolving #3388 against #3387: all **1,341** `runTest` calls parsed to exactly
+  2 arguments, and each function had exactly 1 import and 1 registration. Then confirm the other
+  side actually RUNS by calling its exported function directly; a green suite cannot tell you,
+  since the retired test simply is not in the count.
 - **RAM-saturated? WAIT — do not skip validation for it.** `dont-skip-validation-for-ram-wait-instead`
 - **Source-pinning tests slice a fixed BYTE window and false-FAIL** when the file shifts.
   `source-pinning-tests-slice-a-fixed-byte-window`
