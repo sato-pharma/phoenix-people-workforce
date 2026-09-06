@@ -1434,6 +1434,7 @@ import { runImportCoverageColumnMeaningTests } from "./import-coverage-column-me
 import { runSosDashboardIncompleteReadIsVisibleTests } from "./sos-dashboard-incomplete-read-is-visible.test.ts";
 import { runEmployeeRlsPolicyLockTests } from "./employee-rls-policy-lock.test.ts";
 import { runImportDiagnosticsVerdictTests } from "./import-diagnostics-verdict.test.ts";
+import { runMonthlySalesRunReconcileTests } from "./monthly-sales-run-reconcile.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4559,6 +4560,10 @@ await runTest(
 await runTest(
   "sales diagnostics verdict (strict-check errors can never sit behind a green would-import-cleanly banner)",
   runImportDiagnosticsVerdictTests,
+);
+await runTest(
+  "monthly sales run reconcile (a failed batch read must not un-confirm the whole month)",
+  runMonthlySalesRunReconcileTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
