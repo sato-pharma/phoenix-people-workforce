@@ -347,6 +347,42 @@ export async function listActivities(
   return hydrate((data as ActivityRow[] | null) ?? [], lines);
 }
 
+/**
+ * What is waiting for THIS person to decide.
+ *
+ * The inbox is derived from the same `canDecideStep` the decision route enforces, never from a
+ * second rule. A list built from its own predicate is how an inbox comes to show a row the server
+ * then refuses — the manager step is identity-checked, so a Group Product Manager sees only the
+ * activities routed to HER, not every Product Manager's.
+ *
+ * Fetch-then-filter rather than a clever WHERE: the CEO step is role-based and the manager step is
+ * identity-based, and expressing both in one PostgREST filter would mean restating the rule.
+ * Pending activities are a handful by construction — this module has four possible requesters.
+ */
+export async function listDecisionInbox(
+  access: AccessContext,
+): Promise<MarketAwarenessActivity[]> {
+  await assertPermission(access, "market_awareness", "read");
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("market_awareness_activities")
+    .select("*")
+    .in("status", ["pending_manager", "pending_ceo"])
+    .order("submitted_at", { ascending: true })
+    .limit(500);
+  if (error) throw toQueryError(error);
+
+  const lines = await loadMarketAwarenessLines();
+  const pending = await hydrate((data as ActivityRow[] | null) ?? [], lines);
+
+  return pending.filter((activity) => {
+    const step = currentStep(activity.status);
+    if (!step) return false;
+    return canDecideStep({ access, managerHrId: activity.managerHrId, step });
+  });
+}
+
 export async function getActivity(
   access: AccessContext,
   activityId: string,

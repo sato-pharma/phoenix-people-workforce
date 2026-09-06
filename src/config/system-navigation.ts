@@ -1594,6 +1594,19 @@ const employeePortalNavigationSectionSeeds = [
           "Super Admin",
         ],
       },
+      {
+        href: "/employee-portals/market-awareness/inbox",
+        icon: Inbox,
+        label: "Awareness Approvals",
+        // The DECISION surface, not the module — so a much shorter list than the tab above: the two
+        // seats a requester's manager step can resolve to, plus the CEO. Like every list here it is
+        // UX only. listDecisionInbox calls assertPermission(market_awareness, read) and then filters
+        // through the same canDecideStep the decision route enforces, so a role on this list who
+        // holds no decision sees an empty queue rather than a refusal, and one off it could not act
+        // even if the link were rendered.
+        permissions: [{ resource: "market_awareness", action: "read" }],
+        roles: ["Group Product Manager", "Marketing Manager", "CEO", "Super Admin"],
+      },
     ],
     label: "Market Awareness",
   },

@@ -1,0 +1,44 @@
+import { redirect } from "next/navigation";
+
+import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
+import { MarketAwarenessInbox } from "@/components/market-awareness/market-awareness-inbox";
+import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * Market Awareness approvals — its own inbox under Approvals Hub, beside Marketing Inbox.
+ *
+ * The gate is INLINE, matching every other portal page: a nav entry's `permission` mirrors what the
+ * page itself enforces, and the guard that keeps the two honest re-derives the truth by reading this
+ * file, so a gate hidden in a helper reads as "this page enforces nothing".
+ *
+ * `read` is deliberately the gate, not `approve`. The queue is scoped server-side to the decisions
+ * that are actually the caller's, so someone with read alone sees an empty queue rather than a
+ * refusal — and the CEO, who holds approve, is admitted by the same check.
+ */
+export default async function EmployeePortalMarketAwarenessInboxPage() {
+  const access = await resolveAccessContextFromPage();
+
+  if (resolveNavigationMode(access) !== "employee-portal") {
+    redirect("/overview");
+  }
+  if (!(await canAccess(access, "market_awareness", "read"))) {
+    redirect("/employee-portals");
+  }
+
+  // Only the CEO step may approve at an amended amount, so only he is offered the field. The route
+  // enforces the same thing — this decides whether the input is drawn, never whether it is allowed.
+  const isCeoStepHolder = access.role === "CEO" || access.role === "Super Admin";
+
+  return (
+    <EmployeePortalPageShell
+      badge="Approvals"
+      description="Awareness activities waiting on your decision — approve, return for changes, or reject. Only the decisions that are actually yours appear here."
+      title="Awareness Approvals"
+    >
+      <MarketAwarenessInbox isCeoStepHolder={isCeoStepHolder} />
+    </EmployeePortalPageShell>
+  );
+}
