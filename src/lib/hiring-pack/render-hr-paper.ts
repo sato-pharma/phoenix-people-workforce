@@ -491,6 +491,15 @@ export function renderHrPaperHtml(
   @page { size: A4; margin: 10.7mm 10.2mm 12.7mm; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #e2e8f0; }
+  /* 🔴 KEEP THE ZEBRA BANDS WHEN A BROWSER PRINTS. Chrome's print dialog ships with "Background
+     graphics" UNTICKED, and every tint on these papers is a CSS background — so Print produced a
+     black-and-white page while the preview beside it was blue. The saved PDF was never affected
+     (paper-pdf.ts passes printBackground: true), which is why the two paths agreed on screen and
+     disagreed on paper. These papers keep their own stylesheet rather than importing
+     HOUSE_IDENTITY_CSS, so the line has to be here as well as there.
+
+     NO BACKTICKS IN THIS COMMENT — it is inside a template literal and one would close the string. */
+  html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body {
     font-family: ${ARABIC_FONT_STACK};
     color: #111;
