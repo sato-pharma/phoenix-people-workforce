@@ -104,6 +104,7 @@ import {
 import {
   computeDirectOrderSalesValue,
   computeDiscountSalesValue,
+  decidedStatusPatch,
   directOrderChainMissingManagementLine,
   directOrderRoleRequiresManagementLine,
   evaluateStepAction,
@@ -1585,7 +1586,7 @@ export async function rejectDirectOrderPharmacy(
   // decision already taken — `approved` is the only one that is.
   const { data: openOrders, error: ordersError } = await supabase
     .from("direct_order_requests")
-    .update({ status: "rejected" })
+    .update(decidedStatusPatch("rejected"))
     .eq("pharmacy_id", input.pharmacyId)
     .in("status", ["held", "pending_approval", "returned", "draft"])
     .select("id");
@@ -2308,7 +2309,7 @@ export async function expireStaleHeldDirectOrders(
     });
     const { error: updateError } = await supabase
       .from("direct_order_requests")
-      .update({ status: "expired" })
+      .update(decidedStatusPatch("expired"))
       .eq("id", request.id)
       .eq("status", "held");
     if (updateError) throw updateError;
@@ -2409,7 +2410,7 @@ export async function cancelHeldDirectOrder(
   const supabase = getSupabaseAdmin();
   const { data: updated, error: updateError } = await supabase
     .from("direct_order_requests")
-    .update({ status: "cancelled" })
+    .update(decidedStatusPatch("cancelled"))
     .eq("id", detail.request.id)
     .eq("status", "held")
     .select("id");
@@ -7691,7 +7692,7 @@ export async function confirmDirectOrderCleanup(
 
       const { data: updated, error: cancelError } = await supabase
         .from("direct_order_requests")
-        .update({ status: "cancelled", duplicate_of_request_id: group.keeperId, decided_at: new Date().toISOString() })
+        .update({ ...decidedStatusPatch("cancelled"), duplicate_of_request_id: group.keeperId })
         .eq("id", duplicateId)
         .eq("status", status)
         .select("id");
