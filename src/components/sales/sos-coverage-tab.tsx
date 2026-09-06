@@ -87,7 +87,9 @@ function DistributorCoverageTable({ rows }: { rows: DistributorCoverageRow[] }) 
     columns: [
       { key: "distributorCode", accessor: (row) => row.distributorCode, type: "string" },
       { key: "latestResolvedPct", accessor: (row) => row.latestResolvedPct, type: "number" },
-      { key: "latestNewCustomers", accessor: (row) => row.latestNewCustomers, type: "number" },
+      // null means this writer never measured new customers. Sort it below every real count rather
+      // than as 0, which would rank "not measured" alongside "none found".
+      { key: "latestNewCustomers", accessor: (row) => row.latestNewCustomers ?? -1, type: "number" },
       { key: "latestUnmappedProducts", accessor: (row) => row.latestUnmappedProducts, type: "number" },
       { key: "latestBrickDrift", accessor: (row) => row.latestBrickDrift, type: "number" },
       { key: "importCount", accessor: (row) => row.importCount, type: "number" },
@@ -130,7 +132,9 @@ function DistributorCoverageTable({ rows }: { rows: DistributorCoverageRow[] }) 
                 <td className="px-4 py-2.5 font-black text-phx-ink">{row.distributorCode}</td>
                 <td className="px-4 py-2.5 text-right"><PctBadge pct={row.latestResolvedPct} /></td>
                 <td className="px-4 py-2.5"><TrendDots values={row.trend} /></td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-phx-ink">{formatNumber(row.latestNewCustomers)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-phx-ink">
+                  {row.latestNewCustomers === null ? <span className="text-phx-ink-subtle">not measured</span> : formatNumber(row.latestNewCustomers)}
+                </td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-phx-ink">{formatNumber(row.latestUnmappedProducts)}</td>
                 <td className="px-4 py-2.5 text-right">
                   {row.latestBrickDrift > 0
@@ -378,7 +382,15 @@ export function SosCoverageTab({ bricks }: Props) {
         ) : (
           <div className="space-y-5 p-5">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <StatCard label="Total imports tracked" value={formatNumber(summary!.totalImports)} />
+              <StatCard
+                label="Imports tracked"
+                value={formatNumber(summary!.totalImports)}
+                sub={
+                  summary!.totalImports >= summary!.snapshotWindow
+                    ? `most recent ${formatNumber(summary!.snapshotWindow)} — older imports are not in this view`
+                    : "every import whose batch still exists"
+                }
+              />
               <StatCard label="Avg resolved %" value={`${summary!.avgResolvedPct.toFixed(1)}%`} sub="across all tracked uploads" />
               <StatCard label="Distributors tracked" value={formatNumber(summary!.byDistributor.length)} />
             </div>

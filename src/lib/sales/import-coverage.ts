@@ -12,11 +12,23 @@ export type CoverageSnapshot = {
   distributorCode: string;
   id: string;
   importableRows: number;
-  importableValue: number;
+  /**
+   * EGP, or `null` when the writer did not measure money. The brick-coverage writer knows rows and
+   * units but never a value, and it used to store `unitsWithBrick` here — a unit COUNT in a money
+   * column, for 100 of the 134 live snapshots. `null` is the truthful answer, so read it as
+   * "not measured" and never as zero.
+   */
+  importableValue: number | null;
   mappedCustomers: number;
   newCustomerCodes: string[];
   newCustomerDetails: NewCustomerDetail[];
-  newCustomers: number;
+  /**
+   * Customers this sheet had never seen before, or `null` when the writer did not measure that.
+   * The brick-coverage writer stored `customersNeedingBrick - customersWithBrick` here — the
+   * BRICK-LESS count, a different question, already recoverable from `distinctCustomers` minus
+   * `mappedCustomers`.
+   */
+  newCustomers: number | null;
   period: string | null;
   resolvedPct: number;
   totalRows: number;
@@ -39,7 +51,8 @@ export type DistributorCoverageRow = {
   importCount: number;
   latestBrickDrift: number;
   latestCommittedAt: string;
-  latestNewCustomers: number;
+  /** `null` when the latest snapshot for this distributor did not measure new customers. */
+  latestNewCustomers: number | null;
   latestResolvedPct: number;
   latestUnmappedProducts: number;
   trend: number[]; // resolved pct for last ≤5 imports, oldest first
@@ -55,10 +68,24 @@ export type CoverageSummary = {
     distributorCode: string;
   }[];
   persistentUnmapped: PersistentUnmappedCustomer[]; // codes appearing as "new" in 3+ snapshots
+  /**
+   * Live snapshots this summary was built from — orphans (batch deleted) excluded. NOT every
+   * snapshot ever written: it is bounded by `snapshotWindow`.
+   */
   totalImports: number;
+  /**
+   * The read cap. When `totalImports` reaches it, older snapshots exist that the persistent-unmapped
+   * worklist could not see — and the oldest recurring offenders are exactly what that worklist is
+   * for, so the tab must say it is showing a window rather than imply a total.
+   */
+  snapshotWindow: number;
 };
 
-function mapSnapshot(row: Record<string, unknown>): CoverageSnapshot {
+/**
+ * One snapshot row -> CoverageSnapshot. Exported for tests: the whole point of this mapper is that a
+ * NULL money or new-customer column stays null instead of collapsing to a plausible 0.
+ */
+export function mapSnapshot(row: Record<string, unknown>): CoverageSnapshot {
   return {
     batchId: String(row.batch_id ?? ""),
     brickDriftCount: Number(row.brick_drift_count ?? 0),
@@ -67,7 +94,7 @@ function mapSnapshot(row: Record<string, unknown>): CoverageSnapshot {
     distributorCode: String(row.distributor_code ?? ""),
     id: String(row.id ?? ""),
     importableRows: Number(row.importable_rows ?? 0),
-    importableValue: Number(row.importable_value ?? 0),
+    importableValue: row.importable_value == null ? null : Number(row.importable_value),
     mappedCustomers: Number(row.mapped_customers ?? 0),
     newCustomerCodes: Array.isArray(row.new_customer_codes) ? row.new_customer_codes.map(String) : [],
     newCustomerDetails: Array.isArray(row.new_customer_details)
@@ -77,7 +104,7 @@ function mapSnapshot(row: Record<string, unknown>): CoverageSnapshot {
           name: String(d.name ?? ""),
         }))
       : [],
-    newCustomers: Number(row.new_customers ?? 0),
+    newCustomers: row.new_customers == null ? null : Number(row.new_customers),
     period: row.period ? String(row.period) : null,
     resolvedPct: Number(row.resolved_pct ?? 0),
     totalRows: Number(row.total_rows ?? 0),
@@ -283,11 +310,19 @@ export async function saveBrickCoverageSnapshot(input: {
     distinct_customers: coverage.customersNeedingBrick,
     distributor_code: input.distributorCode,
     importable_rows: coverage.rowsWithBrick,
-    importable_value: coverage.unitsWithBrick,
+    // NOT `coverage.unitsWithBrick`. This column is EGP — the other writer of this table fills it
+    // from `diff.importableValue` — and brick coverage never measures money. Storing units here put
+    // a unit COUNT in a money column for 100 of the 134 live snapshots, and the Coverage tab then
+    // averaged the two together. Null is the truthful answer: this writer did not measure it.
+    importable_value: null,
     mapped_customers: coverage.customersWithBrick,
     new_customer_codes: coverage.unmappedCustomerCodes.slice(0, MAX_SNAPSHOT_DETAILS),
     new_customer_details: (input.details ?? []).slice(0, MAX_SNAPSHOT_DETAILS) || null,
-    new_customers: coverage.customersNeedingBrick - coverage.customersWithBrick,
+    // NOT `customersNeedingBrick - customersWithBrick`. That is the BRICK-LESS count, which is a
+    // different question from "customers we had never seen before" and is already recoverable from
+    // distinct_customers - mapped_customers, both stored above. Writing it here made the tab's
+    // "New customers" column mean one thing for one writer and another for the other.
+    new_customers: null,
     period: input.period ?? null,
     resolved_pct: coverage.coveragePct,
     total_rows: input.totalRows,
@@ -337,6 +372,15 @@ export async function saveCoverageSnapshot(input: {
   }
 }
 
+/**
+ * Snapshots whose batch still exists, newest first.
+ *
+ * `sos_import_coverage_snapshots.batch_id` is TEXT while `source_of_sales_import_batches.id` is
+ * UUID, so no foreign key could ever have been declared and deleting a batch cascades to nothing.
+ * The orphans it leaves behind are indistinguishable from real imports: 42 of the 134 live
+ * snapshots (31%) point at a batch that is gone, and every one of them was being counted as a
+ * tracked import and averaged into the resolved-percentage headline.
+ */
 async function listCoverageSnapshots(opts?: { limit?: number }): Promise<CoverageSnapshot[]> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -345,8 +389,41 @@ async function listCoverageSnapshots(opts?: { limit?: number }): Promise<Coverag
     .order("committed_at", { ascending: false })
     .limit(opts?.limit ?? 500);
   if (error) throw error;
-  return (data ?? []).map((row) => mapSnapshot(row as Record<string, unknown>));
+  const rows = (data ?? []).map((row) => mapSnapshot(row as Record<string, unknown>));
+  const live = await liveBatchIds(rows.map((r) => r.batchId));
+  return rows.filter((r) => live.has(r.batchId));
 }
+
+/**
+ * Which of these batch ids still exist. Chunked: a PostgREST `.in()` carrying several hundred ids
+ * returns ZERO rows and no error, which here would empty the whole Coverage tab rather than fail.
+ */
+async function liveBatchIds(batchIds: readonly string[]): Promise<Set<string>> {
+  const distinct = [...new Set(batchIds.filter(Boolean))];
+  const live = new Set<string>();
+  const supabase = getSupabaseAdmin();
+  for (let i = 0; i < distinct.length; i += BATCH_ID_CHUNK) {
+    const chunk = distinct.slice(i, i + BATCH_ID_CHUNK);
+    const { data, error } = await supabase.from("source_of_sales_import_batches").select("id").in("id", chunk);
+    if (error) {
+      // Fail OPEN rather than blanking the tab: an unreadable batch table must not make every
+      // snapshot look orphaned. Better a stale count than an empty screen that reads as "no imports".
+      logError("Coverage tab could not verify which import batches still exist", {
+        labels: { event: "sos_coverage_batch_check_failed", chunkSize: String(chunk.length) },
+        error,
+      });
+      distinct.forEach((id) => live.add(id));
+      return live;
+    }
+    for (const row of (data ?? []) as { id: unknown }[]) live.add(String(row.id));
+  }
+  return live;
+}
+
+const BATCH_ID_CHUNK = 50;
+
+/** How many recent snapshots the Coverage tab reads. Everything it shows is built from these. */
+export const SNAPSHOT_WINDOW = 500;
 
 const PERSISTENT_MIN_IMPORTS = 3;
 const PERSISTENT_CAP = 50;
@@ -439,11 +516,12 @@ async function backfillNamesFromImportRows(items: PersistentUnmappedCustomer[]):
 }
 
 export async function getCoverageSummary(): Promise<CoverageSummary> {
-  const snapshots = await listCoverageSnapshots({ limit: 500 });
+  const snapshots = await listCoverageSnapshots({ limit: SNAPSHOT_WINDOW });
 
   if (snapshots.length === 0) {
-    return { avgResolvedPct: 0, byDistributor: [], driftAlerts: [], persistentUnmapped: [], totalImports: 0 };
+    return { avgResolvedPct: 0, byDistributor: [], driftAlerts: [], persistentUnmapped: [], snapshotWindow: 0, totalImports: 0 };
   }
+
 
   // Group by distributor (snapshots already ordered desc by committed_at from the query)
   const byDist = new Map<string, CoverageSnapshot[]>();
@@ -487,5 +565,8 @@ export async function getCoverageSummary(): Promise<CoverageSummary> {
       distributorCode: s.distributorCode,
     }));
 
-  return { avgResolvedPct, byDistributor, driftAlerts, persistentUnmapped, totalImports: snapshots.length };
+  // totalImports is what this tab actually knows about: live snapshots inside the window it read.
+  // snapshotWindow is the cap, so the caller can tell a complete picture from a truncated one —
+  // when the two are equal there are older snapshots the worklist below could not see.
+  return { avgResolvedPct, byDistributor, driftAlerts, persistentUnmapped, snapshotWindow: SNAPSHOT_WINDOW, totalImports: snapshots.length };
 }
