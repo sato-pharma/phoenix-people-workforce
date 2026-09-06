@@ -27,6 +27,7 @@ import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/emplo
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { forbiddenError, validationError } from "@/lib/http/api-errors";
 import { buildCaseFileDecisionBar } from "@/lib/marketing-requests/case-file-decision-bar";
+import { canReopenRejectedMarketingRequest } from "@/lib/marketing-requests/reopen-rule";
 import {
   canPlaceMarketingRequestOnFinanceHold,
   MARKETING_FINANCE_HOLD_STATUS,
@@ -1494,6 +1495,10 @@ function buildViewer(
         canManageFinanceHold
         && request.status !== MARKETING_FINANCE_HOLD_STATUS
         && canPlaceMarketingRequestOnFinanceHold(request.status),
+      // Super Admin + a refused request. Read from the domain rule rather than spelled out here,
+      // for the reason this file already gives about the finance hold: a component or a second
+      // copy re-listing a rule is where the two drift.
+      reopen: canReopenRejectedMarketingRequest({ role: access.role, status: request.status }),
       resubmit: Boolean(
         viewerHrId && request.status === "returned" && normalizeHrId(request.requesterHrId) === viewerHrId,
       ),

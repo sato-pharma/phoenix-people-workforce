@@ -73,6 +73,7 @@ import { runActiveRosterOnlyTests } from "./active-roster-only.test.ts";
 import { runEarlyBirdsEmailBlockTests } from "./early-birds-email-block.test.ts";
 import { runMarketingSlaEmailBlockTests } from "./marketing-sla-email-block.test.ts";
 import { runMarketingReopenedRungRenotifyTests } from "./marketing-reopened-rung-renotify.test.ts";
+import { runMarketingReopenRejectedRequestTests } from "./marketing-reopen-rejected-request.test.ts";
 import { runRecruitmentAttachmentFilenameNameTests } from "./recruitment-attachment-filename-name.test.ts";
 import { runRecruitmentCvNoEmailTests } from "./recruitment-cv-no-email.test.ts";
 import { runCandidateAssignedEmailBlockTests } from "./candidate-assigned-email-block.test.ts";
@@ -1571,6 +1572,7 @@ await runTest("notification step runner (per-step timeout budget + overlap guard
 await runTest("payslip email block (payslips never emailed)", runPayslipEmailBlockTests);
 await runTest("marketing SLA email block (SLA reminders never emailed)", runMarketingSlaEmailBlockTests);
 await runTest("marketing reopened rung re-notify (only a rung opened twice gets a fresh key)", runMarketingReopenedRungRenotifyTests);
+await runTest("marketing reopen rejected request (Super Admin only; only refusal-closed rungs restored)", runMarketingReopenRejectedRequestTests);
 await runTest("Early Birds email block (in-app + Telegram only)", runEarlyBirdsEmailBlockTests);
 await runTest("recruitment attachment filename never becomes an envelope name", runRecruitmentAttachmentFilenameNameTests);
 await runTest("recruitment CV-received notice never emails (in-app + Telegram only)", runRecruitmentCvNoEmailTests);
