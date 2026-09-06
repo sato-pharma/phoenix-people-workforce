@@ -33,11 +33,24 @@ export type HrPaperKind =
   | "checklist"
   /** A letter from the company to one employee. */
   | "letter"
+  /**
+   * A statement of fact the company issues ABOUT an employee, to be read by somebody else.
+   *
+   * NOT a `letter`, and the distinction earns its keep twice. `renderHrPaperHtml` resolves an
+   * archived version only within the same kind, so folding a certificate in with the two absence
+   * notices would put it in a pool with papers that END somebody's service. And the print banner
+   * keyed on `letter` warns about blank absence dates, which is true of both notices and nonsense
+   * on a certificate — a warning that does not apply is one a reader learns to skip.
+   *
+   * It is also the one kind nobody signs back: it is addressed to a future employer, an embassy or
+   * a bank, so it carries the company's signature and stamp alone.
+   */
+  | "certificate"
   /** A data sheet for the service file: labelled grids and a repeating table. */
   | "dataSheet";
 
 /**
- * Every token these six papers can carry.
+ * Every token these papers can carry.
  *
  * One union across all of them, as the contract and the renewal papers each have — so one value bag
  * fills whichever paper is printing, and a paper referencing a token that is not here fails its test
@@ -82,6 +95,16 @@ export type HrPaperToken =
   | "HIRE_DATE"
   | "CONTRACT_DATE"
   | "LAST_WORKING_DATE"
+  // The period of service, as a certificate states it
+  //
+  // THREE TOKENS RATHER THAN ONE SENTENCE, because a certificate says the same thing two ways
+  // depending on whether the person has left, and a paper that gets that wrong asserts somebody
+  // resigned who is at his desk. `SERVICE_END` closes the period — a date for a leaver, «تاريخه»
+  // for somebody still serving; `SERVICE_STATUS` states which of the two in words, so the reading
+  // never rests on one word; `SERVICE_DURATION` is the span, counted inclusive of the last day.
+  | "SERVICE_END"
+  | "SERVICE_STATUS"
+  | "SERVICE_DURATION"
   // The absence being warned about
   | "ABSENCE_FROM"
   | "ABSENCE_TO"

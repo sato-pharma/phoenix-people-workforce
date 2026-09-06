@@ -402,6 +402,12 @@ export type MarketingCaseFileViewer = {
      * holdable: a draft or rejected request carries no committed money to freeze.
      */
     placeFinanceHold: boolean;
+    /**
+     * Whether this viewer may reopen a REFUSED request onto the rung that refused it. Super Admin
+     * and a `rejected` status, from `reopen-rule.ts` — the same predicate the service enforces, so
+     * the control and the write cannot drift. Affordance only; the route re-checks before writing.
+     */
+    reopen: boolean;
     resubmit: boolean;
   };
   /**

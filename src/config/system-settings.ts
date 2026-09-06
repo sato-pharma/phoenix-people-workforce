@@ -304,7 +304,7 @@ export const systemContractDefaults = {
    */
   contractNonRenewalCopies: 2,
   /**
-   * Sato's own six papers. Each count is the paper's own stated requirement, written out one per
+   * Sato's own papers. Each count is the paper's own stated requirement, written out one per
    * document rather than shared — the rule every count in this block follows, because two papers
    * that happen to need the same number today must not move together tomorrow.
    *
@@ -313,6 +313,11 @@ export const systemContractDefaults = {
    * served or received. The service-file sheet is ONE — its own subtitle says «تُحفظ بملف خدمة
    * العامل», it is filed and never handed over, and a second copy of a sheet nobody receives is a
    * sheet somebody has to shred.
+   *
+   * The certificate of experience is TWO for a different reason from the rest: nobody signs it back,
+   * so the second copy is not a proof of service but the company's own record of what it certified
+   * about somebody — which is the copy that matters if the certificate is ever disputed or a second
+   * one is asked for years later.
    */
   ndaCopies: 2,
   appointmentDocsReceiptCopies: 2,
@@ -320,6 +325,7 @@ export const systemContractDefaults = {
   absenceWarningCopies: 2,
   deemedResignationCopies: 2,
   appointmentDocsReturnCopies: 2,
+  experienceCertificateCopies: 2,
 } as const;
 
 export const systemAuthEmailText = {

@@ -745,7 +745,11 @@ export async function runClosingEngineExportTests() {
     "Watch List",
     "Top Customers",
     "Details",
-  ]);
+    // APPENDED, never inserted — which is the whole reason it is safe. A sheet added at the FRONT
+    // renumbers every localSheetId after it (see the contents page above); one added at the END
+    // leaves all of them where they were, so the loop below still passes unchanged.
+    "Matrix (Mobile)",
+  ], "the workbook's sheet list changed: a sheet added at the FRONT renumbers every localSheetId, and a sheet MISSING is a page nobody can reach");
   for (const match of workbook.matchAll(/<definedName name="([^"]*)" localSheetId="(\d+)"[^>]*>([^<]*)<\/definedName>/g)) {
     const named = /^'?([^'!]+)'?!/.exec(match[3]!);
     if (!named) continue;
@@ -1504,4 +1508,214 @@ export async function runClosingEngineExportTests() {
   for (const target of jumpTargets) {
     assert.match(target, /^#'[^']+'!A1$/, `a jump target must be #'Sheet'!A1, not ${target}`);
   }
+
+  // ── The three matrix pages render NOTHING on a phone, so a page that does ships beside them ──
+  //
+  // `Closing Matrix`, `Units Matrix` and `Area x Product` are pivot tables, and a pivot table holds
+  // no cells of its own in the file: Excel materialises the grid from the pivot cache on open. The
+  // template ships that cache EMPTY (its contents were one line's real areas and reps) and sets
+  // `refreshOnLoad="1"` to have Excel rebuild it. Desktop Excel does. **Excel for iOS/Android and
+  // WPS Office do not refresh a pivot cache at all** — they open a PivotTable read-only from the
+  // records it already has — so on the two apps the owner reads this workbook on, those three tabs
+  // were permanently blank, and the numbers behind them unreachable: the `Data` sheet that feeds
+  // them is `veryHidden`, which a phone cannot unhide.
+  //
+  // The first assertion is the PREMISE, not the fix. If someone ever makes the pivots carry their
+  // own grid, this block's reason for existing has changed and the reader should be sent back here
+  // rather than left with a duplicate page nobody can account for.
+  for (const [label, book] of [["xlsm", macroBook], ["xlsx", plainBook]] as const) {
+    const opened = await JSZip.loadAsync(book);
+    const workbook = await opened.file("xl/workbook.xml")!.async("string");
+    const wbTypes = await opened.file("[Content_Types].xml")!.async("string");
+    const wbRels = await opened.file("xl/_rels/workbook.xml.rels")!.async("string");
+    const target = Object.fromEntries(
+      [...wbRels.matchAll(/Id="(rId\d+)"[^>]*Target="([^"]+)"/g)].map((m) => [m[1], m[2]]),
+    );
+    const partOf = (name: string): string | null => {
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const m = new RegExp(`<sheet name="${escaped}"[^>]*r:id="(rId\\d+)"`).exec(workbook);
+      return m && target[m[1]] ? `xl/${target[m[1]]}` : null;
+    };
+
+    for (const pivotSheet of ["Closing Matrix", "Units Matrix", "Area x Product"]) {
+      const part = partOf(pivotSheet);
+      assert.ok(part, `${label}: ${pivotSheet} must still be in the package`);
+      const xml = await opened.file(part!)!.async("string");
+      const cells = (xml.match(/<c[ >]/g) ?? []).length;
+      assert.ok(
+        cells <= 8,
+        `${label}: ${pivotSheet} carries ${cells} cells — it is supposed to be an empty pivot host.`
+          + " If it now ships its own grid, re-read why Matrix (Mobile) exists before keeping both.",
+      );
+    }
+    const cacheRecords = await opened.file("xl/pivotCache/pivotCacheRecords1.xml")!.async("string");
+    assert.equal(
+      (cacheRecords.match(/<r>/g) ?? []).length,
+      0,
+      `${label}: the cache ships empty and is rebuilt on open — which is exactly what a phone cannot do`,
+    );
+
+    // ── The page that answers it ──────────────────────────────────────────────────────────────
+    const mobilePart = partOf("Matrix (Mobile)");
+    assert.ok(mobilePart, `${label}: Matrix (Mobile) must be registered — a phone has nothing else to read`);
+    const mobile = await opened.file(mobilePart!)!.async("string");
+
+    assert.ok(
+      wbTypes.includes(`PartName="/${mobilePart!}"`),
+      `${label}: a worksheet part with no content-type override is a workbook Excel offers to repair`,
+    );
+
+    assert.deepEqual(
+      [...(/<row r="4"[^>]*>([\s\S]*?)<\/row>/.exec(mobile)?.[1] ?? "").matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((t) => t[1]),
+      [
+        "Region",
+        "Area",
+        "Product",
+        "Units",
+        "Target units",
+        "Achievement (units)",
+        "Sales value",
+        "Target value",
+        "Achievement (value)",
+      ],
+      `${label}: Matrix (Mobile) is showing another sheet's headings`,
+    );
+
+    // One row per SalesData row, and nothing else. The count is also the guard against a totals row
+    // being added here later — see the units rule below.
+    const dataRows = rowNumbers(mobile).filter((row) => row >= 5);
+    assert.equal(
+      dataRows.length,
+      fill.data.salesData.length,
+      `${label}: every SalesData row must reach the page — a phone has no other way to these numbers`,
+    );
+
+    // The figures themselves, against the fixture. Cairo 1 sells 1,000 units of Tebofortin 40mg for
+    // 500,000 against a 450,000 target: four numbers that are nothing like each other, so a column
+    // read one place to the left cannot pass by coincidence.
+    const first = readRow(mobile, 5);
+    assert.deepEqual(
+      [first.A, first.B, first.C, first.D, first.E, first.G, first.H],
+      ["Cairo", "Cairo 1", "Tebofortin 40mg", "1000", "900", "500000", "450000"],
+      `${label}: the first row must be Cairo 1's Tebofortin 40mg, in SalesData's own order`,
+    );
+    assert.equal(Number(first.F).toFixed(4), (1000 / 900).toFixed(4), `${label}: units achievement is units over target units`);
+    assert.equal(Number(first.I).toFixed(4), (500000 / 450000).toFixed(4), `${label}: value achievement is sales over target value`);
+
+    // NO TARGET IS WORDS, NEVER A ZERO. Cairo 2 sells and was given no target; printing 0% would
+    // accuse an area of failing at something nobody asked of it. That is the owner's own rule and
+    // what every other presentation sheet in this engine already does.
+    const untargeted = readRow(mobile, 8);
+    assert.equal(untargeted.B, "Cairo 2", `${label}: row 8 should be the untargeted area`);
+    for (const column of ["E", "F", "H", "I"] as const) {
+      assert.equal(
+        untargeted[column],
+        "no target",
+        `${label}: an area with no target must say so in ${column}, never be scored 0`,
+      );
+    }
+
+    // UNITS OF DIFFERENT PRODUCTS ARE NEVER ADDED, and the layout is what guarantees it: one row is
+    // one product code. The danger is a totals row being added later — Cairo 1's three products sum
+    // to 1,250 units and 820,000 EGP, so neither figure may appear anywhere on this page.
+    const numbers = [...mobile.matchAll(/<v>([\d.]+)<\/v>/g)].map((m) => Number(m[1]));
+    assert.ok(!numbers.includes(1250), `${label}: 1,250 is Cairo 1's units summed across three products — units are never added`);
+    assert.ok(!numbers.includes(820000), `${label}: a totals row has appeared; the month's totals belong on Overview`);
+
+    // Both achievement columns must carry the engine's percentage format. `reviewColumnStyle` picks
+    // the format from the HEADING, and only one beginning "achievement" gets it — "Units
+    // achievement" would have printed 1.111 beside a sibling sheet reading 111.1%, which is
+    // unreadable rather than wrong and therefore the harder kind of defect to notice.
+    const row5 = /<row r="5"[^>]*>([\s\S]*?)<\/row>/.exec(mobile)?.[1] ?? "";
+    for (const column of ["F", "I"] as const) {
+      assert.ok(
+        row5.includes(`<c r="${column}5" s="44"`),
+        `${label}: ${column} is an achievement and must take the engine's 0.0% format, not the money one`,
+      );
+    }
+
+    // ── The contents page has to send a phone reader there ────────────────────────────────────
+    const contentsPart = partOf("Contents");
+    assert.ok(contentsPart, `${label}: the contents page must be registered`);
+    const contents = await opened.file(contentsPart!)!.async("string");
+    assert.match(
+      contents,
+      /HYPERLINK\("#'Matrix \(Mobile\)'!A1"/,
+      `${label}: Matrix (Mobile) must be reachable from the contents page`,
+    );
+    // Listed BESIDE the matrices it stands in for, not under the review's band at the bottom — a
+    // reader looking for the matrix reads that band and stops there.
+    const byArea = contents.toLowerCase().indexOf(">by area</t>");
+    const byFamily = contents.toLowerCase().indexOf(">by product family</t>");
+    const mobileAt = contents.indexOf("Matrix (Mobile)");
+    assert.ok(byArea >= 0 && byFamily > byArea, `${label}: the contents bands are missing or out of order`);
+    assert.ok(
+      mobileAt > byArea && mobileAt < byFamily,
+      `${label}: Matrix (Mobile) must be listed in the "By area" band, with the pages it stands in for`,
+    );
+    assert.match(
+      contents,
+      /A phone cannot: read Matrix \(Mobile\) instead/,
+      `${label}: the footnote has to name the limitation and the page that answers it`,
+    );
+    // And it has to be READABLE. The footnote row is merged across A:B — 26 + 96 character widths —
+    // and a merged cell CLIPS rather than overflowing into the column beside it, so a longer line
+    // loses its end silently. Measured on the emitted text, not on the constant.
+    const footnote = [...contents.matchAll(/<t xml:space="preserve">([^<]*)<\/t>/g)]
+      .map((m) => m[1]!)
+      .find((text) => text.startsWith("The three matrix pages"));
+    assert.ok(footnote, `${label}: the contents page lost its footnote`);
+    assert.ok(
+      footnote!.length <= 122,
+      `${label}: the footnote is ${footnote!.length} characters and the merged cell holds 122 — the end would be clipped`,
+    );
+
+    // ── Every formula in this workbook ships with no cached value ─────────────────────────────
+    //
+    // The Rep Card is 35 of them and the contents page 12 more, and there is no `xl/calcChain.xml`.
+    // Desktop Excel builds a chain and calculates regardless, which is why this went unnoticed; a
+    // reader that does not shows those cells blank. `fullCalcOnLoad` asks every reader to.
+    //
+    // The COUNT is asserted as well as the attribute, and that is not belt-and-braces: the first
+    // version of this matched `<calcPr` with a mangled escape, found nothing, and fell to its own
+    // fallback branch — appending a SECOND <calcPr> after </extLst>, which is a schema violation and
+    // exactly the repair prompt this export has already been through once.
+    assert.equal(
+      (workbook.match(/<calcPr/g) ?? []).length,
+      1,
+      `${label}: a workbook carries exactly one <calcPr>; two is a package Excel offers to repair`,
+    );
+    assert.match(
+      workbook,
+      /<calcPr[^>]*fullCalcOnLoad="1"/,
+      `${label}: without this the Rep Card and the contents links are blank wherever the reader does not calculate`,
+    );
+  }
+
+  // The mobile sheet is appended by the same path the review's sheets take, so the one thing that
+  // can go wrong is it being listed TWICE — once where it belongs and once under "Performance
+  // review". Only the review build can show that.
+  {
+    const opened = await JSZip.loadAsync(reviewBook);
+    const workbook = await opened.file("xl/workbook.xml")!.async("string");
+    const rels = await opened.file("xl/_rels/workbook.xml.rels")!.async("string");
+    const rid = /<sheet name="Contents"[^>]*?r:id="(rId\d+)"/.exec(workbook)![1];
+    const contentsTarget = new RegExp(`Id="${rid}"[^>]*?Target="([^"]+)"`).exec(rels)![1];
+    const contents = await opened.file(`xl/${contentsTarget}`)!.async("string");
+    assert.equal(
+      (contents.match(/HYPERLINK\("#'Matrix \(Mobile\)'!A1"/g) ?? []).length,
+      1,
+      "Matrix (Mobile) is listed once, in the By area band — not a second time under the review's own",
+    );
+    const band = contents.toLowerCase().indexOf(">performance review</t>");
+    assert.ok(band >= 0, "the review build must still carry the review band");
+    // The LINK, not the name. The footnote at the foot of the page names Matrix (Mobile) too, and it
+    // sits below every band — so a plain "does the tail mention it" check reads that footnote as a
+    // second listing and fails on a page that is completely correct. It did, first run.
+    assert.ok(
+      contents.indexOf(`HYPERLINK("#'Matrix (Mobile)'!A1"`) < band,
+      "Matrix (Mobile) is not one of the review's pages and must be linked above that band, not under it",
+    );
+  }
+
 }

@@ -73,6 +73,7 @@ import { runActiveRosterOnlyTests } from "./active-roster-only.test.ts";
 import { runEarlyBirdsEmailBlockTests } from "./early-birds-email-block.test.ts";
 import { runMarketingSlaEmailBlockTests } from "./marketing-sla-email-block.test.ts";
 import { runMarketingReopenedRungRenotifyTests } from "./marketing-reopened-rung-renotify.test.ts";
+import { runMarketingReopenRejectedRequestTests } from "./marketing-reopen-rejected-request.test.ts";
 import { runRecruitmentAttachmentFilenameNameTests } from "./recruitment-attachment-filename-name.test.ts";
 import { runRecruitmentCvNoEmailTests } from "./recruitment-cv-no-email.test.ts";
 import { runCandidateAssignedEmailBlockTests } from "./candidate-assigned-email-block.test.ts";
@@ -1421,6 +1422,7 @@ import { runReact418HydrationSafeTextTests } from "./react-418-hydration-safe-te
 import { runPayrollHoldReviewTests } from "./payroll-hold-review.test.ts";
 import { runPmCallRateBandTests } from "./pm-call-rate-band.test.ts";
 import { runDmPlanHasNoCeoStageTests } from "./dm-plan-has-no-ceo-stage.test.ts";
+import { runEmailIdentityGuardCallersTests } from "./email-identity-guard-callers.test.ts";
 import { runMarketingRequestVenueRequiredTests } from "./marketing-request-venue-required.test.ts";
 import { runMarketingCustomerMergeTombstoneTests } from "./marketing-customer-merge-tombstone.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -1573,6 +1575,7 @@ await runTest("notification step runner (per-step timeout budget + overlap guard
 await runTest("payslip email block (payslips never emailed)", runPayslipEmailBlockTests);
 await runTest("marketing SLA email block (SLA reminders never emailed)", runMarketingSlaEmailBlockTests);
 await runTest("marketing reopened rung re-notify (only a rung opened twice gets a fresh key)", runMarketingReopenedRungRenotifyTests);
+await runTest("marketing reopen rejected request (Super Admin only; only refusal-closed rungs restored)", runMarketingReopenRejectedRequestTests);
 await runTest("Early Birds email block (in-app + Telegram only)", runEarlyBirdsEmailBlockTests);
 await runTest("recruitment attachment filename never becomes an envelope name", runRecruitmentAttachmentFilenameNameTests);
 await runTest("recruitment CV-received notice never emails (in-app + Telegram only)", runRecruitmentCvNoEmailTests);
@@ -4499,6 +4502,10 @@ await runTest(
 await runTest(
   "a DM plan has no CEO stage — a stamped header is never attributed to the CEO, and non-DM plans keep theirs",
   runDmPlanHasNoCeoStageTests,
+);
+await runTest(
+  "every official workflow email supplies exactly one subject HR ID (never zero, never two; digests exempt by event type)",
+  runEmailIdentityGuardCallersTests,
 );
 await runTest(
   "a marketing request must name at least one target venue (blocker list + create + resubmit)",
