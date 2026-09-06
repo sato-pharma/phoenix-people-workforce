@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 import {
   pageHeaderDescriptionClassName,
   pageHeaderKickerClassName,
@@ -6,7 +8,8 @@ import {
   pageHeaderTitleClassName,
 } from "@/components/admin/admin-design-tokens";
 import { MarketAwarenessWorkspace } from "@/components/market-awareness/market-awareness-workspace";
-import { assertMarketAwarenessAdminAccess } from "@/lib/market-awareness/page-guard";
+import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canCreateActivity } from "@/lib/market-awareness/scope";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +20,16 @@ export const dynamic = "force-dynamic";
  * behaviours; the shell around it is what differs.
  */
 export default async function AdminMarketAwarenessPage() {
-  const access = await assertMarketAwarenessAdminAccess();
+  // Inline for the same reason the portal page is: a nav entry's `permission` mirrors the gate the
+  // page itself enforces, and the guard that keeps them honest reads this file.
+  const access = await resolveAccessContextFromPage();
+
+  if (resolveNavigationMode(access) === "employee-portal") {
+    redirect("/employee-portals/market-awareness");
+  }
+  if (!(await canAccess(access, "market_awareness", "read"))) {
+    redirect("/overview");
+  }
 
   return (
     <div className="space-y-6 p-6 sm:p-8">
