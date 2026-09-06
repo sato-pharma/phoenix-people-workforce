@@ -276,12 +276,18 @@ Two things follow, and both are already handled in code (built 2026-08-23, never
    freshness measure at once — the same failure as a bulk forward, but with months of messages —
    and would thank every past applicant for a CV they sent weeks ago.
 
-**`history` is not subscribed yet.** Read live 2026-08-23, the app's `whatsapp_business_account`
-subscription carries 10 fields — `messages` among them — but **not** `history`,
-`smb_message_echoes` or `smb_app_state_sync`. **Not re-read since**, so treat it as unknown rather
-than settled. So new CVs will flow the moment a scan actually takes effect; the backlog will not,
-until `history` is added in the Meta app dashboard. Adding it is what triggers the replay this code
-understands.
+**`history` IS subscribed — re-read live 2026-09-06, and this reverses the 2026-08-23 reading.**
+On 2026-08-23 the app's `whatsapp_business_account` subscription carried 10 fields, `messages`
+among them but **not** `history`; it now carries 11 and `history` (v25.0) is one of them. The full
+subscribed set today: `account_alerts`, `account_review_update`, `account_update`, `calls`,
+**`history`**, `message_template_quality_update`, `message_template_status_update`, **`messages`**,
+`phone_number_name_update`, `phone_number_quality_update`, `security`. So when the handset links
+and the flow's history sync is confirmed, the backlog **will** be delivered and this parser is what
+receives it — that path has still never run against real data.
+
+`smb_message_echoes` and `smb_app_state_sync` are deliberately **not** subscribed. Meta offers them
+alongside coexistence for echoing the owner's own outgoing messages and syncing app state; neither is
+parsed here and neither is needed to capture a CV. Do not subscribe them without a reason.
 
 > **The exclusion filter has a NULL trap, measured, not guessed.** `historyImport` is *absent* on a
 > live row, and PostgREST `raw_metadata->>historyImport=neq.true` evaluates to NULL — not true — for
