@@ -52,6 +52,7 @@ import {
   HR_PAPER_NDA_V1,
   HR_PAPER_SOCIAL_STATUS_V1,
 } from "@/lib/hiring-pack/hr-paper-text";
+import { renderExperienceCertificateEnHtml } from "@/lib/hiring-pack/experience-certificate-en";
 import { renderHrPaperHtml } from "@/lib/hiring-pack/render-hr-paper";
 import type { HrPaperTemplate } from "@/lib/hiring-pack/hr-paper-template";
 import { renderForm1Html } from "@/lib/hiring-pack/render-form1";
@@ -148,6 +149,12 @@ const RENDERERS: Record<
   },
   experienceCertificate: {
     render: housePaper(HR_PAPER_EXPERIENCE_CERTIFICATE_V1),
+    copies: systemContractDefaults.experienceCertificateCopies,
+  },
+  // THE ENGLISH CERTIFICATE IS NOT A HOUSE PAPER and does not go through `housePaper`: it is an
+  // English-facing document with its own renderer, the way the payslip is. See its module header.
+  experienceCertificateEn: {
+    render: renderExperienceCertificateEnHtml,
     copies: systemContractDefaults.experienceCertificateCopies,
   },
   contractRenewal: {

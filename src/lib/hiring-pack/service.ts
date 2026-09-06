@@ -131,6 +131,9 @@ const DOCUMENT_BINDINGS: Record<
   // A single date on the employee row could hold only the newest, which is the trap the custody
   // receipts and the renewal papers are kept out of this table for.
   experienceCertificate: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  // The English certificate, for the same reasons and written out separately rather than shared,
+  // so that giving either language a real register later cannot silently move the other.
+  experienceCertificateEn: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   contractRenewal: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   contractNonRenewal: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   form6: {
