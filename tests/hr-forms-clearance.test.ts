@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
+import { COMPANY_DETAILS_DEFAULT } from "../src/lib/hiring-pack/company-details.ts";
 import {
   CLEARANCE_BLANK_RULE,
   CLEARANCE_BLANK_RULE_WIDE,
@@ -172,6 +173,7 @@ function packFixture(
     offboarding,
     exit,
     renewal: null,
+    company: COMPANY_DETAILS_DEFAULT,
     suggestedJobTitleAr: null,
     gaps: collectHiringPackGaps(employee, profile, offboarding, exit),
     terms: resolveContractTerms(employee, profile, offboarding, exit),

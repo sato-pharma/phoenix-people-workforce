@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { createHash } from "node:crypto";
 
 import { systemLegalEntity } from "../src/config/system-settings.ts";
+import { COMPANY_DETAILS_DEFAULT } from "../src/lib/hiring-pack/company-details.ts";
 import {
   CONTRACT_BLANK_RULE,
   contractTemplateStrings,
@@ -151,6 +152,7 @@ function packFixture(profileOverrides: Partial<HiringPackProfile> = {}): HiringP
     offboarding,
     exit: null,
     renewal: null,
+    company: COMPANY_DETAILS_DEFAULT,
     suggestedJobTitleAr: null,
     gaps: collectHiringPackGaps(employee, profile, offboarding, null),
     terms: resolveContractTerms(employee, profile, offboarding, null),

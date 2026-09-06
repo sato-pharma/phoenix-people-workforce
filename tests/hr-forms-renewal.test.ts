@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 
 import { systemContractDefaults } from "../src/config/system-settings.ts";
+import { COMPANY_DETAILS_DEFAULT } from "../src/lib/hiring-pack/company-details.ts";
 import { currentContractTemplate } from "../src/lib/hiring-pack/contract-text.ts";
 import { renderContractHtml } from "../src/lib/hiring-pack/render-contract.ts";
 import {
@@ -167,6 +168,7 @@ function packFixture(
     offboarding,
     exit: null,
     renewal: overrides.renewal ?? null,
+    company: COMPANY_DETAILS_DEFAULT,
     suggestedJobTitleAr: null,
     gaps: collectHiringPackGaps(employee, profile, offboarding, null),
     terms: resolveContractTerms(employee, profile, offboarding, null),

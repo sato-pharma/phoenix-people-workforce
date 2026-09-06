@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 
 import { systemContractDefaults, systemLegalEntity } from "../src/config/system-settings.ts";
+import { COMPANY_DETAILS_DEFAULT } from "../src/lib/hiring-pack/company-details.ts";
 import { spellEgyptianAmount, splitPoundsAndPiastres } from "../src/lib/hiring-pack/arabic-amount.ts";
 import {
   FORM1_PAGE_1_PLACEMENTS,
@@ -173,6 +174,7 @@ function packFixture(
     offboarding,
     exit,
     renewal: null,
+    company: COMPANY_DETAILS_DEFAULT,
     suggestedJobTitleAr: null,
     gaps: collectHiringPackGaps(employee, profile, offboarding, exit),
     terms: resolveContractTerms(employee, profile, offboarding, exit),

@@ -14,6 +14,7 @@
  *   company is clear of him and the company files it. A departure produces both.
  */
 
+import type { CompanyDetails } from "@/lib/hiring-pack/company-details";
 import { isUuid } from "@/lib/http/uuid";
 
 export type HiringPackDocument =
@@ -641,6 +642,20 @@ export type HiringPackData = {
   employee: HiringPackEmployeeFacts;
   profile: HiringPackProfile;
   offboarding: OffboardingProfile;
+  /**
+   * The company as the papers will print it — the stored record, or the compiled default.
+   *
+   * ON THE PACK RATHER THAN IMPORTED BY EACH RENDERER, and that is what makes it editable at all.
+   * Nine renderers used to read `systemLegalEntity` directly, which is a module constant: there is
+   * no point in that chain where a stored correction could enter. Carrying it here means the
+   * company is resolved once, in `getHiringPack`, and every document in the pack necessarily
+   * agrees — which is the property that matters, because the contract, Form 1 and the Ministry of
+   * Labour forms state the same company to three different readers.
+   *
+   * IT IS THE COMPANY'S RECORD, NOT THIS EMPLOYEE'S. Editing it on one person's paper changes it on
+   * everybody's. `company-details.ts` explains why that is the correct behaviour and not a leak.
+   */
+  company: CompanyDetails;
   /** The departure as the system records it, or null when nobody has recorded one. */
   exit: ExitFacts | null;
   /**

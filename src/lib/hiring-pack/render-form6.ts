@@ -1,4 +1,3 @@
-import { systemLegalEntity } from "@/config/system-settings";
 import { layeredPages, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
   FORM6_PAGE_1_PLACEMENTS,
@@ -44,7 +43,7 @@ import type { HiringPackData } from "@/lib/hiring-pack/types";
  */
 export function buildForm6Values(data: HiringPackData): Record<string, string> {
   const { employee, profile, terms } = data;
-  const registration = systemLegalEntity.registration;
+  const registration = data.company.registration;
 
   const end = splitIsoDate(terms.lastWorkingDate);
   const [taxRegPart1, taxRegPart2, taxRegPart3] = splitTaxRegistration(
@@ -55,7 +54,7 @@ export function buildForm6Values(data: HiringPackData): Record<string, string> {
     insuranceOffice: profile.insuranceOffice ?? registration.defaultInsuranceOffice,
 
     establishmentNumber: registration.insuranceEstablishmentNumber,
-    companyName: systemLegalEntity.legalNameAr,
+    companyName: data.company.legalNameAr,
     taxRegPart1,
     taxRegPart2,
     taxRegPart3,

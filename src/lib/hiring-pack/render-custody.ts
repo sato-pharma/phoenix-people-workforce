@@ -1,4 +1,4 @@
-import { systemLegalEntity } from "@/config/system-settings";
+import type { CompanyDetails } from "@/lib/hiring-pack/company-details";
 import {
   houseLetterhead,
   HOUSE_COLORS,
@@ -51,10 +51,10 @@ import type { HiringPackData } from "@/lib/hiring-pack/types";
 /** Every blank this document can fill, resolved once. */
 export function buildCustodyValues(data: HiringPackData): Partial<Record<CustodyToken, string>> {
   const { employee, profile } = data;
-  const recital = systemLegalEntity.contractRecital;
+  const recital = data.company.contractRecital;
 
   return {
-    COMPANY_NAME: systemLegalEntity.legalNameAr,
+    COMPANY_NAME: data.company.legalNameAr,
     COMPANY_LEGAL_FORM: recital.legalFormAr,
     COMMERCIAL_REGISTER: pinLtr(recital.commercialRegisterNumber),
     COMMERCIAL_REGISTER_OFFICE: recital.commercialRegisterOfficeAr,
@@ -225,6 +225,10 @@ function returnProtocol(template: CustodyTemplate): string {
 function renderCopy(
   template: CustodyTemplate,
   values: Partial<Record<CustodyToken, string>>,
+  // The letterhead names the company in both languages, and only one of those is a document
+  // TOKEN — so the resolved record is passed rather than read from the module, which is what
+  // makes the masthead follow an edited company name instead of the compiled one.
+  company: CompanyDetails,
 ): string {
   const header = [
     `${template.headerLabelsAr[0]}: ${template.formNumberAr}`,
@@ -260,8 +264,8 @@ function renderCopy(
     ${houseLetterhead({
       titleAr: template.titleAr,
       subtitleAr: template.subtitleAr,
-      legalNameAr: systemLegalEntity.legalNameAr,
-      legalNameEn: systemLegalEntity.legalNameEn,
+      legalNameAr: company.legalNameAr,
+      legalNameEn: company.legalNameEn,
     })}
 
     <section class="recital">
@@ -319,7 +323,9 @@ function renderCustody(
   const template = requested && requested.variant === fallback.variant ? requested : fallback;
   const values = buildCustodyValues(data);
   const total = Math.max(1, copies);
-  const body = Array.from({ length: total }, () => renderCopy(template, values)).join("\n");
+  const body = Array.from({ length: total }, () =>
+    renderCopy(template, values, data.company),
+  ).join("\n");
   const employeeName = data.employee.nameAr ?? data.employee.fullName;
 
   return `<!doctype html>

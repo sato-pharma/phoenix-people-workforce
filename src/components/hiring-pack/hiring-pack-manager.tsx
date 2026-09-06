@@ -1160,6 +1160,11 @@ export function HiringPackManager({
         */}
         {pack && preview ? (
           <HiringPackPaperEditor
+            // THE SAME AUTHORITY THE COMPANY-TEMPLATE UPLOAD USES, and the same one the
+            // company-details route enforces: Super Admin, answered by the SERVER rather than
+            // guessed from a role in the browser. Changing what every future contract states about
+            // the employer is that class of act, not the class of correcting one person's ID.
+            canEditCompany={companyTemplates.canManage}
             copies={resolveCopyCount(copies[preview.documentKey], preview.documentKey)}
             documentLabel={documentLabel(preview.documentKey, customTemplateNames)}
             hrId={pack.employee.hrId}

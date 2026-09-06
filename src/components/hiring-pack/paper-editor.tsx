@@ -68,7 +68,7 @@ import {
   PAPER_FIELD_BINDINGS,
   paperFieldBinding,
   paperFieldCurrentValue,
-  paperStoreEndpoint,
+  paperStoreUrl,
   stripDirectionMarks,
   type PaperFieldBinding,
 } from "@/lib/hiring-pack/paper-fields";
@@ -106,6 +106,25 @@ function applyFreeEdit(doc: Document, on: boolean): void {
   // region to the accessibility tree, announced to a screen reader as a text field the size of a
   // contract.
   doc.body.removeAttribute("contenteditable");
+}
+
+/**
+ * The pack as the server holds it right now.
+ *
+ * Only the company store needs this: its own endpoint answers with the company, having no idea which
+ * employee is on screen, so the pack has to be asked for separately. `null` on any failure, and the
+ * caller says so rather than leaving the screen showing a value it cannot prove was saved.
+ */
+async function readPackFromServer(hrId: string): Promise<HiringPackData | null> {
+  try {
+    const response = await fetch(`/api/hiring-pack/${encodeURIComponent(hrId)}`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as HiringPackData;
+  } catch {
+    return null;
+  }
 }
 
 /** Turn layout mode, and its "add a field" sub-mode, on or off inside the framed document. */
@@ -221,6 +240,17 @@ type PaperEditorCommonProps = {
   documentLabel: string;
   copies: number;
   pack: HiringPackData;
+  /**
+   * Whether this viewer may change the COMPANY's own values — the head office, the register
+   * numbers, the responsible manager. Super Admin only, and the server enforces it; this prop only
+   * decides whether the span looks editable.
+   *
+   * IT IS NOT COSMETIC. `paper-fields.ts` states the rule it serves: a value that cannot be saved
+   * must not look like one that can. Without it an HR Operations user would type over the company's
+   * address, watch it accept the keystrokes, and get a 403 on blur — which reads as the editor
+   * being broken rather than as a permission they do not have.
+   */
+  canEditCompany: boolean;
   onPackChange: (pack: HiringPackData) => void;
   onClose: () => void;
 };
@@ -409,6 +439,7 @@ export function HiringPackPaperEditor({
   copies,
   versionId,
   pack,
+  canEditCompany,
   onPackChange,
   onClose,
 }: PaperEditorProps) {
@@ -591,6 +622,12 @@ export function HiringPackPaperEditor({
    * The response is the whole re-read pack, which is what the fill screen above re-renders from, so
    * a correction made on the paper immediately shows up in the boxes too — they are two views of one
    * record and must never disagree.
+   *
+   * THE COMPANY STORE ANSWERS WITH THE COMPANY, NOT WITH THE PACK, because it does not know which
+   * employee is on screen — it is not an employee's record. So that one save is followed by a fresh
+   * GET of the pack. Two requests, and the alternative was worse: patching the returned company into
+   * the pack in the browser would put a value on screen that no server response ever produced, which
+   * is the exact class of "the screen disagreed with the paper" defect this component exists to end.
    */
   const commit = useCallback(
     async (binding: PaperFieldBinding, typed: string, element?: HTMLElement) => {
@@ -606,14 +643,11 @@ export function HiringPackPaperEditor({
       setNotice(null);
       element?.setAttribute("data-hp-saving", "true");
       try {
-        const response = await fetch(
-          `/api/hiring-pack/${encodeURIComponent(hrId)}${paperStoreEndpoint(patch.store)}`,
-          {
-            body: JSON.stringify(patch.body),
-            headers: { "Content-Type": "application/json" },
-            method: "PUT",
-          },
-        );
+        const response = await fetch(paperStoreUrl(patch.store, hrId), {
+          body: JSON.stringify(patch.body),
+          headers: { "Content-Type": "application/json" },
+          method: "PUT",
+        });
         if (!response.ok) {
           let message = `Could not save (${response.status}).`;
           try {
@@ -625,7 +659,14 @@ export function HiringPackPaperEditor({
           setError(message);
           return;
         }
-        const next = (await response.json()) as HiringPackData;
+        const next =
+          patch.store === "company"
+            ? await readPackFromServer(hrId)
+            : ((await response.json()) as HiringPackData);
+        if (!next) {
+          setError("Saved, but the document could not be read back. Reload the page.");
+          return;
+        }
         onPackChange(next);
         packRef.current = next;
         setNotice(
@@ -1238,12 +1279,30 @@ export function HiringPackPaperEditor({
       const binding = paperFieldBinding(key);
       if (!binding || !key) {
         element.setAttribute("data-hp-locked", "true");
+        // The company's own values are no longer in this bucket — since 2026-09-06 they are bound to
+        // the company store and editable here like anything else. What is left is genuinely derived:
+        // the salary in words, the contract's duration, the department, today's date.
         element.title =
-          "This value is not stored against this employee — it comes from the company record or is worked out from another value.";
+          "This value is worked out from another one, so it follows that value instead of being typed here.";
         continue;
       }
 
-      element.title = `${binding.labelEn} — click to edit`;
+      // A company value this viewer may not change is shown as LOCKED, not as an editable span that
+      // will be refused on blur. `paper-fields.ts`: a value that cannot be saved must not look like
+      // one that can — and here the reason is a permission, so it is the reason that is shown.
+      if (binding.store === "company" && !canEditCompany) {
+        element.setAttribute("data-hp-locked", "true");
+        element.title = `${binding.labelEn} — this is the company's own value, and only a Super Admin can change it. It prints on every employee's documents.`;
+        continue;
+      }
+
+      // The scope is said BEFORE the edit, not only in the confirmation after it. A company value
+      // reaches every employee's papers, and an operator who learns that from the "saved" message
+      // has already changed all of them.
+      element.title =
+        binding.store === "company"
+          ? `${binding.labelEn} — click to edit. This is the COMPANY's own value: changing it changes ${binding.alsoOn ?? "every document"}.`
+          : `${binding.labelEn} — click to edit`;
 
       // A box grid writes one character per printed cell, so its text is a row of absolutely
       // positioned children. Typing into that directly would destroy the grid, so those are
@@ -1307,7 +1366,7 @@ export function HiringPackPaperEditor({
     applyLayoutClasses(doc, layoutModeRef.current, addModeRef.current);
 
     setLoadedKey(frameKey);
-  }, [frameKey, onLayoutPointerDown]);
+  }, [canEditCompany, frameKey, onLayoutPointerDown]);
 
   /** Turn free typing on or off, on the page and in the frame, in one action. */
   const toggleFreeEdit = useCallback(() => {

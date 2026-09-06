@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
 
+import { COMPANY_DETAILS_DEFAULT } from "../src/lib/hiring-pack/company-details.ts";
 import { renderWorkerFormHtml } from "../src/lib/hiring-pack/render-worker-form.ts";
 import {
   collectHiringPackGaps,
@@ -140,6 +141,7 @@ function packFixture(
     offboarding,
     exit: null,
     renewal: null,
+    company: COMPANY_DETAILS_DEFAULT,
     suggestedJobTitleAr: null,
     gaps: collectHiringPackGaps(employee, profile, offboarding, null),
     terms: resolveContractTerms(employee, profile, offboarding, null),
