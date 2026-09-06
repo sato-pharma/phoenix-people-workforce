@@ -2,120 +2,149 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 /**
- * Every admin landing surface carries the identity strip, and no shared component does.
+ * Every admin landing surface carries an identity — and WHICH one it carries is pinned per surface.
  *
- * WHY THIS EXISTS. The identity on these pages has been removed and restored by the owner three
- * times in four days, each time by instruction, and the state in between was invisible: a landing
- * page with no identity renders perfectly, CI stays green, and the only signal is the person whose
- * own page it is noticing months later that their name is not on it. That is exactly how the SFE
- * Manager's went unnoticed from 2026-09-03 to 2026-09-06 — he was the only seat in the app whose
- * landing page greeted nobody, and he had to report it himself.
+ * WHY THIS EXISTS. The identity on these pages was removed and restored four times in four days,
+ * every time by the owner's own instruction, and every intermediate state was invisible: a landing
+ * page with the wrong identity — or none — renders perfectly, CI stays green, and the only signal
+ * is the person whose page it is noticing. The SFE Manager's went missing from 2026-09-03 to
+ * 2026-09-06 and he had to report it himself.
  *
- * THE HISTORY, because a session holding one instruction will undo another:
+ * THE HISTORY, because a session holding any three of these will undo the fourth:
  *
- *   1. 2026-09-03 — the full-bleed black band (`AdminHeroFrame` + `CeoHeroIdentity`) was removed
- *      from 131 admin pages: "remove from all pages this dump block".
- *   2. Later the same day — the identity back, in the employee portal's idiom, thin: "I want it to
- *      be narrow, to have much space for the page to show data", under 96px by his own measure.
- *      That is `PhoenixIdentityStrip`, 88px on a phone and 92px from `sm`, both fixed. It shipped
- *      on the HR overview and /admin, and the other three boards were excluded by name: "you will
- *      keep the CEO and the SFE and the finance as they are today."
- *   3. 2026-09-06 — the exclusion retired, in two steps: "in the SFE manager account recover his
- *      identity banner", then "yes recover the ceo and finance banners too".
+ *   1. 2026-09-03 — the full-bleed band (`AdminHeroFrame` + `CeoHeroIdentity`) removed from 131
+ *      admin pages: "remove from all pages this dump block".
+ *   2. Later the same day — the identity back, but THIN: "I want it to be narrow, to have much
+ *      space for the page to show data", under 96px by his own measure. That is
+ *      `PhoenixIdentityStrip`, and it went to the HR overview and then /admin ("and /admin").
+ *   3. 2026-09-06 — the SFE board found to have no identity at all, and the CEO and Finance boards
+ *      the same. All three were given the STRIP.
+ *   4. Same day, immediately: "I WANT THE SFE AND THE FINANCE AND CEO TO HAVE THEIR PREVIOUS
+ *      IDENTITY BANNER, THE NEW ONE IS ONLY FOR HRs." Asked directly whether /admin reverted too,
+ *      he said no — it keeps the strip.
  *
- * So the rule that survived all three is: the strip is PRESENT on every admin landing surface, and
- * its HEIGHT is what may never grow. The black band stays gone — pinned separately, by name, in
- * tests/ceo-command-center.test.ts.
+ * So there are TWO identities, and which surface wears which is a decision, not a detail:
  *
- * THE SECOND HALF IS THE ONE THAT BITES. Each mount lives in the PAGE, never in a shared command
- * centre component. `CeoCommandCenter` serves three variants (CEO, SFE and the Super Admin's
- * /admin), so a single strip inside it would draw the identity three times over; and the Finance
- * bands are reused on the Super Admin overview through `FinanceAdminBands`, which already carries
- * a strip one level up, so a strip inside `FinanceCommandCenter` would stack two identities on his
- * page. Two stacked heroes is a defect this repo has shipped three times — the reason
- * tests/workspace-single-hero.test.ts exists — and the tidy-looking refactor that causes it here
- * is "mount it once in the shared component instead of five times in the pages".
+ *   BAND  (`CeoHeroIdentity` in a dark `AdminHeroFrame`) — CEO, SFE, Finance
+ *   STRIP (`PhoenixIdentityStrip`, 92px)                 — /admin, HR
+ *
+ * Getting it wrong in EITHER direction has now happened, so both directions are asserted. A test
+ * that only checked "an identity is present" would have passed on 2026-09-06 while three boards
+ * wore the wrong one.
  */
 
+type Identity = "band" | "strip";
+
 /**
- * The five admin-shell landing surfaces, and who lands on each (src/lib/auth/landing.ts).
+ * The five admin-shell landing surfaces (src/lib/auth/landing.ts), and which identity each wears.
  *
- * The FILE is wherever the strip is actually drawn, which is not always the `page.tsx`. Two seats
- * are drawn by a component that only one route imports — `SystemAdminOverview` for /admin and
- * `HrCommandCenter` for the HR namespace — and a single-surface component is the same thing as the
- * page for this rule. What matters is that no ONE file feeds several surfaces; that is the list
- * below.
+ * The FILE is wherever the identity is actually drawn, which is not always the `page.tsx`. Three
+ * surfaces are drawn by a component only one route imports — `SystemAdminOverview` for /admin,
+ * `HrCommandCenter` for the HR namespace, `FinanceCommandCenter` for Finance — and a single-surface
+ * component is the same thing as the page for this rule. The CEO and SFE boards SHARE
+ * `CeoCommandCenter`, so theirs is asserted on the shared component once, below.
  */
-const LANDING_PAGES: readonly { file: string; seat: string }[] = [
-  { file: "src/components/admin/system-admin-overview.tsx", seat: "Super Admin (/admin)" },
+const LANDING_SURFACES: readonly { file: string; seat: string; wears: Identity }[] = [
+  { file: "src/components/admin/system-admin-overview.tsx", seat: "Super Admin (/admin)", wears: "strip" },
+  { file: "src/components/hr/hr-command-center.tsx", seat: "HR Advisory / HR Operations", wears: "strip" },
+  { file: "src/components/admin/ceo-command-center.tsx", seat: "CEO and SFE Manager", wears: "band" },
+  { file: "src/components/admin/finance-command-center.tsx", seat: "Finance Manager", wears: "band" },
+];
+
+/** The page that must supply the band's subject, and the prop it passes. */
+const BAND_CALL_SITES: readonly { file: string; seat: string }[] = [
   { file: "app/(admin)/admin/ceo-command-center/page.tsx", seat: "CEO" },
   { file: "app/(admin)/admin/sfe-command-center/page.tsx", seat: "SFE Manager" },
   { file: "app/(admin)/admin/finance-command-center/page.tsx", seat: "Finance Manager" },
-  { file: "src/components/hr/hr-command-center.tsx", seat: "HR Advisory / HR Operations" },
 ];
+
+const BAND = /<CeoHeroIdentity\b/;
+const STRIP = /<PhoenixIdentityStrip\b/;
 
 /**
- * Components a strip must NOT be mounted in — the ones feeding MORE THAN ONE surface.
+ * The file with its comments removed.
  *
- * `system-admin-overview.tsx` and `hr-command-center.tsx` are deliberately absent: they are
- * components, but each is imported by exactly one route, so they are landing surfaces and are
- * listed above instead.
+ * NOT optional rigour — it is the whole reason assertion 2 works. Every file this test reads
+ * discusses BOTH identities at length, by name, and quotes the props it must pass; that is
+ * deliberate, so the rule is readable exactly where the mistake gets made. The first version of
+ * assertion 2 matched `welcome={null}` anywhere in the source, and system-admin-overview.tsx says
+ * those very characters in the note above the prop — so breaking the prop on purpose left the test
+ * GREEN. Measured, while proving this file red.
+ *
+ * Line comments and block comments only; a `//` inside a string literal would be eaten too, which
+ * no file here has and which would fail loudly (a missing assertion) rather than silently.
  */
-const SHARED_COMPONENTS: readonly string[] = [
-  "src/components/admin/ceo-command-center.tsx",
-  "src/components/admin/finance-command-center.tsx",
-];
+function codeOnly(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+}
 
 export function runAdminLandingIdentityStripTests() {
-  // ── 1. every landing surface mounts it ──────────────────────────────────────
-  const missing: string[] = [];
-  for (const { file, seat } of LANDING_PAGES) {
-    const source = readFileSync(file, "utf8");
-    // Anchored to the JSX mount, not to the import: a page can import the component and never
-    // render it, which is precisely the state /admin/sfe-command-center was NOT in — it had
-    // neither — but is the shape a half-finished revert would leave.
-    if (!/<PhoenixIdentityStrip\b/.test(source)) missing.push(`${file} (${seat})`);
+  // ── 1. each surface wears its OWN identity, and only that one ───────────────
+  const wrong: string[] = [];
+  for (const { file, seat, wears } of LANDING_SURFACES) {
+    // Comments stripped first, then anchored to the JSX element rather than the name: these
+    // files discuss both identities at length, and a name-match would see every mention.
+    const source = codeOnly(readFileSync(file, "utf8"));
+    const hasBand = BAND.test(source);
+    const hasStrip = STRIP.test(source);
+    const want = wears === "band" ? hasBand : hasStrip;
+    const other = wears === "band" ? hasStrip : hasBand;
+    if (!want) wrong.push(`${file} (${seat}) draws no ${wears}`);
+    if (other) wrong.push(`${file} (${seat}) draws a ${wears === "band" ? "strip" : "band"} as well`);
   }
   assert.deepEqual(
-    missing,
+    wrong,
     [],
-    "these admin landing surfaces render no identity strip, so the seat that lands there is " +
-      `greeted by nobody: ${missing.join(", ")}. The owner asked for the identity on all five ` +
-      "(2026-09-06, retiring his own 2026-09-03 exclusion). If one is being removed deliberately, " +
-      "his instruction to do so belongs in this test beside the entry.",
+    "the identity on an admin landing surface is not the one the owner assigned it:\n  " +
+      wrong.join("\n  ") +
+      "\n\nBAND (CeoHeroIdentity) = CEO / SFE / Finance. STRIP (PhoenixIdentityStrip) = /admin, HR. " +
+      "Both directions have been got wrong inside four days, so if this is a deliberate change, " +
+      "his instruction belongs here beside the entry.",
   );
 
-  // ── 2. …and no shared component does ────────────────────────────────────────
-  const doubled: string[] = [];
-  for (const file of SHARED_COMPONENTS) {
-    const source = readFileSync(file, "utf8");
-    // Comments in these files discuss the strip at length and name it — deliberately, so the rule
-    // is readable where the mistake would be made. Match the JSX element only.
-    if (/<PhoenixIdentityStrip\b/.test(source)) doubled.push(file);
+  // ── 2. /admin passes welcome={null}, which is what keeps it to ONE identity ─
+  //
+  // `CeoCommandCenter` draws the band whenever `welcome` is non-null. /admin renders that same
+  // component AND its own strip, so a profile passed there would stack two identities on one page
+  // — the defect tests/workspace-single-hero.test.ts exists for, reached by a different route.
+  const adminOverview = codeOnly(readFileSync("src/components/admin/system-admin-overview.tsx", "utf8"));
+  assert.match(
+    adminOverview,
+    /welcome=\{null\}/,
+    "/admin must pass welcome={null} to CeoCommandCenter. It carries the thin strip itself, so a " +
+      "profile here would draw a band underneath it — two identities on the Super Admin's page.",
+  );
+
+  // ── 3. every band call site actually supplies a subject ─────────────────────
+  //
+  // The band is conditional on `welcome`, so a page that stops passing one loses its identity in
+  // total silence — no error, no empty frame, just a board that greets nobody. That is precisely
+  // what happened to the SFE Manager for three days.
+  const starved: string[] = [];
+  for (const { file, seat } of BAND_CALL_SITES) {
+    const source = codeOnly(readFileSync(file, "utf8"));
+    if (!/welcome=\{/.test(source)) starved.push(`${file} (${seat})`);
   }
   assert.deepEqual(
-    doubled,
+    starved,
     [],
-    `${doubled.join(", ")} mounts the identity strip. It must be mounted by the PAGE instead: ` +
-      "CeoCommandCenter serves three variants so one mount there draws three identities, and the " +
-      "Finance bands are reused on the Super Admin overview which already carries a strip — so a " +
-      "mount here stacks two on his page.",
+    `these pages render a command centre but pass no welcome profile, so the identity band is ` +
+      `silently omitted: ${starved.join(", ")}`,
   );
 
-  // ── 3. anti-vacuity ─────────────────────────────────────────────────────────
-  // Every path above is read from disk, so a renamed or moved file would make assertion 1 fail
-  // loudly (readFileSync throws) rather than pass on an empty set — but assertion 2 CAN pass
-  // vacuously if both component paths stop existing, and it would then be watching nothing.
+  // ── 4. anti-vacuity ─────────────────────────────────────────────────────────
+  // Assertion 1 reads every path from disk, so a moved file throws rather than passing on an empty
+  // set. The counts are what stop the LISTS being quietly shortened, which would leave the
+  // assertions running against fewer surfaces with nothing to say about it.
   assert.equal(
-    SHARED_COMPONENTS.length,
-    2,
-    "the shared-component list must still name both command centres; a shortened list is a " +
-      "check that stopped watching rather than a rule that changed",
+    LANDING_SURFACES.length,
+    4,
+    "four files draw the five admin landing identities (the CEO and SFE boards share one). A " +
+      "shorter list is a check that stopped watching, not a rule that changed",
   );
   assert.equal(
-    LANDING_PAGES.length,
-    5,
-    "five admin-shell landing surfaces were pinned when this was written (src/lib/auth/landing.ts). " +
-      "A sixth seat with its own landing page must be added here, or its identity goes unwatched",
+    BAND_CALL_SITES.length,
+    3,
+    "three pages must supply a band subject — CEO, SFE and Finance",
   );
 }

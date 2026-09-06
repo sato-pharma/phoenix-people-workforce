@@ -15,7 +15,9 @@ import {
   Wallet,
 } from "lucide-react";
 
+import { AdminHeroFrame } from "@/components/admin/admin-design-system";
 import { AreaSparkline, SectionShell } from "@/components/admin/ceo-command-center";
+import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
 import { APPROVALS_SLA_THRESHOLDS, slaTone } from "@/components/approvals-hub/sla-thresholds";
 import type {
   FinanceCommandCenterData,
@@ -24,11 +26,22 @@ import type {
   FinancePayrollRun,
 } from "@/lib/finance/command-center";
 
-// `welcome` IS GONE. The identity banner it fed was removed 2026-09-03 at the owner's
-// instruction — "remove from all pages this dump block" — so nothing on this page reads a viewer
-// name, role label or portrait any more. Dropping the prop rather than leaving it unread also
-// drops the `resolveViewerIdentityFromPage` round trip and, on /admin, a Storage lookup for an
-// uploaded photo. The name and role are in the shell's topbar chip, resolved once for every page.
+/**
+ * The identity band's subject. Back, and it is the ORIGINAL band, not the thin strip.
+ *
+ * Removed 2026-09-03 ("remove from all pages this dump block") and restored 2026-09-06 on the
+ * owner's instruction: "I WANT THE SFE AND THE FINANCE AND CEO TO HAVE THEIR PREVIOUS IDENTITY
+ * BANNER, THE NEW ONE IS ONLY FOR HRs." The thin `PhoenixIdentityStrip` briefly went on this page
+ * that same day and was wrong — it belongs to the HR overview and /admin. Full account on
+ * `CeoWelcomeProfile` in ceo-command-center.tsx, which this mirrors.
+ */
+export type FinanceWelcomeProfile = {
+  fullName: string;
+  roleLabel: string;
+  hrId: string | null;
+  imageUrl?: string | null;
+  initials?: string;
+};
 
 // ── Formatters ───────────────────────────────────────────────────────────────
 // Same shape as the CEO centre's local helpers (they are not exported). Compact for tiles so a
@@ -739,8 +752,11 @@ export function FinanceAdminBands({ view }: { view: FinanceCommandCenterView }) 
 
 export function FinanceCommandCenter({
   view,
+  welcome,
 }: {
   view: FinanceCommandCenterView;
+  /** The Finance Manager, for the identity band. See `FinanceWelcomeProfile`. */
+  welcome: FinanceWelcomeProfile;
 }) {
   const { data } = view;
 
@@ -748,22 +764,36 @@ export function FinanceCommandCenter({
 
   return (
     <div className="space-y-0 divide-y divide-slate-200">
-      {/* NO IDENTITY BANNER. Removed 2026-09-03 at the owner's instruction — "remove from all
-          pages this dump block". This was an `AdminHeroFrame` holding `CeoHeroIdentity`: a
-          full-bleed black band with the Finance Manager's photo, a greeting and a role chip, costing most of
-          the first fold before any real content. The same removal was made on the HR command
-          center and, via `AdminPageHero`, on the other 131 admin pages the same day.
+      {/* THE ORIGINAL IDENTITY BAND, restored 2026-09-06: "I WANT THE SFE AND THE FINANCE AND CEO
+          TO HAVE THEIR PREVIOUS IDENTITY BANNER, THE NEW ONE IS ONLY FOR HRs." Byte-for-byte the
+          block removed on 2026-09-03.
 
-          Do not restore the BAND here.
+          `subGreeting={null}` — not undefined — and that is load-bearing. The shared default is
+          "Here is where sales and the field stand today", and the Finance Manager holds no `sales`
+          grant at all, so the default would promise him a page he cannot open. `??` inside
+          CeoHeroIdentity falls straight through an empty string, which is why the removal has to
+          be an explicit null.
 
-          THE THIN STRIP IS A DIFFERENT THING AND IT IS BACK. Later on 2026-09-03 the owner asked
-          for the identity in the employee portal's idiom, narrow, under 96px — that is
-          `PhoenixIdentityStrip`, and on 2026-09-06 he put it on this page too ("yes recover the ceo
-          and finance banners too"). It is mounted in
-          app/(admin)/admin/finance-command-center/page.tsx, NOT here: this component's bands are
-          reused by the Super Admin overview through `FinanceAdminBands`, which already carries a
-          strip one level up, so a strip in this file would stack two identities on his page. All
-          five admin landing surfaces mount their own for that reason. */}
+          SAFE IN THIS COMPONENT, unlike the strip. `FinanceCommandCenter` has exactly one call
+          site — app/(admin)/admin/finance-command-center/page.tsx. The Super Admin's overview
+          reuses `FinanceAdminBands`, a DIFFERENT export further down this file, which draws no
+          identity: /admin carries the thin strip and would otherwise show two. */}
+      <AdminHeroFrame className="z-10 overflow-visible">
+        <div className="p-5 sm:p-6 lg:p-8">
+          <div className="mb-5 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-phx-3xs font-black uppercase tracking-[0.22em] text-orange-100">
+            <Landmark aria-hidden="true" className="h-3.5 w-3.5" />
+            Finance Command Center
+          </div>
+          <CeoHeroIdentity
+            flushToEdges
+            fullName={welcome.fullName}
+            imageUrl={welcome.imageUrl}
+            initials={welcome.initials}
+            roleLabel={welcome.roleLabel}
+            subGreeting={null}
+          />
+        </div>
+      </AdminHeroFrame>
 
       <UnavailableNotice sources={view.unavailable} />
 

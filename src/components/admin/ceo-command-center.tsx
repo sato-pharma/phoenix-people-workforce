@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Fingerprint,
+  HeartPulse,
   MapPinned,
   Megaphone,
   ShieldCheck,
@@ -19,6 +20,8 @@ import {
   Wallet,
 } from "lucide-react";
 
+import { AdminHeroFrame } from "@/components/admin/admin-design-system";
+import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
 import { CeoTopMoversTable } from "@/components/admin/ceo-top-movers-table";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type {
@@ -28,15 +31,37 @@ import type {
 import { sosPeriodDisplayLabel } from "@/lib/ceo/command-center";
 import { cn } from "@/lib/utils";
 
-// `welcome` IS GONE. The identity banner it fed was removed 2026-09-03 at the owner's
-// instruction — "remove from all pages this dump block" — so nothing on this page reads a viewer
-// name, role label or portrait any more. Dropping the prop rather than leaving it unread also
-// drops the `resolveViewerIdentityFromPage` round trip and, on /admin, a Storage lookup for an
-// uploaded photo. The name and role are in the shell's topbar chip, resolved once for every page.
-//
-// The `CeoWelcomeProfile` type went with it. It was exported and `SystemAdminOverview` imported
-// it purely to pass the object straight through, so leaving it behind would have kept three files
-// carrying a shape nothing renders.
+/**
+ * The identity band's data. Back, and it is the ORIGINAL band, not the thin strip.
+ *
+ * THE HISTORY, because four instructions now sit on this one block and a session holding any
+ * three of them will undo the fourth:
+ *
+ *   1. 2026-09-03 — the band went from here and from 131 other admin pages: "remove from all
+ *      pages this dump block". `welcome`, this type and the `resolveViewerIdentityFromPage` round
+ *      trips that fed it were all deleted.
+ *   2. Later the same day — the identity back, but THIN: "I want it to be narrow, to have much
+ *      space for the page to show data", under 96px. That is `PhoenixIdentityStrip`, and it
+ *      shipped on the HR overview and on /admin.
+ *   3. 2026-09-06 — the strip put on the SFE, CEO and Finance boards too. WRONG, and he said so
+ *      immediately: "I WANT THE SFE AND THE FINANCE AND CEO TO HAVE THEIR PREVIOUS IDENTITY
+ *      BANNER, THE NEW ONE IS ONLY FOR HRs."
+ *   4. So this band is restored on those three, byte-for-byte what it was before (1), and the
+ *      strip stays where he put it: the HR overview and /admin. Asked and answered the same day
+ *      — /admin keeps the strip, because he named only the other three.
+ *
+ * `welcome: null` is what /admin passes, and it is REQUIRED rather than optional on purpose:
+ * this component serves three variants, so a call site has to state its answer at compile time
+ * instead of silently inheriting a band — or silently losing one, which is exactly how the SFE
+ * Manager's identity went missing for three days.
+ */
+export type CeoWelcomeProfile = {
+  fullName: string;
+  roleLabel: string;
+  hrId: string | null;
+  imageUrl?: string | null;
+  initials?: string;
+};
 
 // ── Formatters ───────────────────────────────────────────────────────────────
 
@@ -394,12 +419,20 @@ export function QuickLinkCard({
 export function CeoCommandCenter({
   data,
   extraBands,
+  welcome,
   access: _access,
   variant = "ceo",
 }: {
   data: CeoCommandCenterData;
   /** Rendered as the last band before the footer. The admin overview passes its Finance bands here. */
   extraBands?: ReactNode;
+  /**
+   * The identity band's subject, or `null` for a surface that draws its own identity another way.
+   * /admin passes null — it carries `PhoenixIdentityStrip` one level up in
+   * `SystemAdminOverview`, and a band here as well would stack two identities on that page.
+   * See `CeoWelcomeProfile` for why this is required rather than optional.
+   */
+  welcome: CeoWelcomeProfile | null;
   access: AccessContext;
   variant?: "admin" | "ceo" | "sfe";
 }) {
@@ -446,29 +479,54 @@ export function CeoCommandCenter({
     <div className="space-y-0 divide-y divide-slate-200">
 
       {/* ── Hero ────────────────────────────────────────────────────────────── */}
-      {/* NO IDENTITY BANNER. Removed 2026-09-03 at the owner's instruction — "remove from all
-          pages this dump block". This was an `AdminHeroFrame` holding `CeoHeroIdentity`: a
-          full-bleed black band with the viewer's photo, a greeting and a role chip, costing most of
-          the first fold before any real content. The same removal was made on the HR command
-          center and, via `AdminPageHero`, on the other 131 admin pages the same day.
+      {/* THE ORIGINAL IDENTITY BAND, restored 2026-09-06 on the owner's instruction: "I WANT THE
+          SFE AND THE FINANCE AND CEO TO HAVE THEIR PREVIOUS IDENTITY BANNER, THE NEW ONE IS ONLY
+          FOR HRs."
 
-          Nothing was lost. The name and role label are in the topbar chip on every page of the
-          shell, from `resolveViewerIdentityFromPage`. Do not restore the BAND here.
+          It is byte-for-byte the block removed on 2026-09-03 ("remove from all pages this dump
+          block"), and the two halves of that day are NOT the same decision:
 
-          WHAT THAT LAST SENTENCE USED TO SAY, and why it changed. It read "do not restore parity
-          with another command center — none of them carry one any more", and that is no longer
-          true of ANY of them: /admin, the HR overview and — since 2026-09-06 — the SFE, CEO and
-          Finance boards all mount a `PhoenixIdentityStrip`. That is the thin 92px identity the
-          owner asked for later on 2026-09-03, and it is a different thing from the black band this
-          note is about. His 2026-09-03 exclusion ("you will keep the CEO and the SFE and the
-          finance as they are today") was retired by him on 2026-09-06, in two steps: the SFE
-          Manager first, then "yes recover the ceo and finance banners too".
+            • the BAND — this one — came off every page, including this one;
+            • the STRIP (`PhoenixIdentityStrip`, 92px) was what he asked for INSTEAD, later the
+              same day, and it belongs to the HR overview and /admin. It is not a smaller version
+              of this band to be swapped in here. Putting it on these three boards on 2026-09-06
+              was the mistake this restore reverses, within the hour.
 
-          NONE OF THOSE FIVE MOUNTS IS IN THIS FILE, and that is not a leftover of the exclusion —
-          it is the rule. This component serves three variants (CEO, SFE, and the Super Admin's
-          /admin), so one strip here would draw an identity three times over, and stack a second
-          one on any page whose own layout already carries it. The strip belongs to the PAGE.
-          Nothing identity-shaped goes in THIS file. */}
+          So: the CEO, SFE and Finance boards wear THIS band; the HR overview and /admin wear the
+          strip. `tests/admin-landing-identity-strip.test.ts` pins that split per surface, in both
+          directions, so neither can quietly become the other again.
+
+          `welcome === null` is /admin, and it is the whole reason this is a conditional rather
+          than an unconditional block: that page carries the strip in `SystemAdminOverview`, one
+          level up, so a band here as well would stack two identities on it. */}
+      {welcome ? (
+        <AdminHeroFrame className="z-10 overflow-visible">
+          <div className="p-5 sm:p-6 lg:p-8">
+            <div className="mb-5 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-phx-3xs font-black uppercase tracking-[0.22em] text-orange-100">
+              <HeartPulse aria-hidden="true" className="h-3.5 w-3.5" />
+              {surfaceLabel}
+            </div>
+            <CeoHeroIdentity
+              fullName={welcome.fullName}
+              roleLabel={welcome.roleLabel}
+              imageUrl={welcome.imageUrl}
+              initials={welcome.initials}
+              // The CEO's OWN greeting — "Good morning, Dr. Anwar" and the note written for the
+              // Chief Executive — belongs to exactly one person. `!isSfe` handed both to the Super
+              // Admin the moment the admin variant existed, which is why this asks for the CEO by
+              // name rather than for "not the SFE". Pinned by tests/ceo-command-center.test.ts.
+              personal={variant === "ceo"}
+              // The shared fallback sub-line is "Here is where sales and the field stand today."
+              // True for a sales seat, wrong for the one that also owns access, data and payroll.
+              subGreeting={
+                variant === "admin"
+                  ? "Everything the company is doing, and everything only you can fix."
+                  : undefined
+              }
+            />
+          </div>
+        </AdminHeroFrame>
+      ) : null}
 
       <DataUnavailableNotice
         owner={variant === "sfe" ? "SFE" : variant === "admin" ? "system" : "CEO"}

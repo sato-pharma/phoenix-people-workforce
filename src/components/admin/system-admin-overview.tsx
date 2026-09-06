@@ -75,15 +75,19 @@ export function SystemAdminOverview({
 
           WHY IT IS MOUNTED HERE AND NOT IN `CeoCommandCenter`. That component hosts three
           variants (CEO, SFE and this one), so a strip inside it would draw the identity three
-          times over. This file is imported by `/admin` alone. The "do not restore it" note in
-          ceo-command-center.tsx still stands and is not contradicted here: what it forbids is the
-          black hero band.
+          times over. This file is imported by `/admin` alone.
 
-          THE 2026-09-03 EXCLUSION IS RETIRED. It read "you will keep the CEO and the SFE and the
-          finance as they are today. Exactly, you will not touch them", and the owner lifted it
-          himself on 2026-09-06 — the SFE Manager first, then "yes recover the ceo and finance
-          banners too". All five admin landing surfaces now carry the strip, each mounted in its
-          own page for the reason above. */}
+          /admin IS ONE OF EXACTLY TWO SURFACES THAT WEAR THE STRIP. The other is the HR overview.
+          The CEO, SFE and Finance boards wear the ORIGINAL BAND instead — owner, 2026-09-06: "I
+          WANT THE SFE AND THE FINANCE AND CEO TO HAVE THEIR PREVIOUS IDENTITY BANNER, THE NEW ONE
+          IS ONLY FOR HRs", after all three were briefly given the strip earlier the same day. He
+          was asked directly whether /admin went back to the band too and said no: it keeps the
+          strip he asked for on 2026-09-03 ("and /admin").
+
+          That is why the `welcome={null}` below is not a tidy-up. `CeoCommandCenter` draws the
+          band whenever `welcome` is non-null, so passing a profile here would put a band UNDER
+          this strip — two identities on one page. tests/admin-landing-identity-strip.test.ts pins
+          the split per surface, both directions. */}
       <PhoenixIdentityStrip
         employeeCode={identity.employeeCode}
         name={identity.displayName}
@@ -93,6 +97,13 @@ export function SystemAdminOverview({
       <CeoCommandCenter
         access={access}
         data={data.ceo}
+        // NULL, deliberately: this page draws the thin strip above, so the band `CeoCommandCenter`
+        // renders for the CEO and SFE variants must not also appear here — that would stack two
+        // identities. The prop is required rather than optional precisely so this page has to say
+        // so out loud. Owner, 2026-09-06, asked and answered: the CEO, SFE and Finance boards go
+        // back to the band, "the new one is only for HRs", and /admin KEEPS the strip he asked for
+        // on 2026-09-03 ("and /admin").
+        welcome={null}
         extraBands={
           <>
             {/* Omitted rather than zeroed when the finance aggregates did not answer — see
