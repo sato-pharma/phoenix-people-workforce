@@ -44,10 +44,18 @@ export function runSalesMasterDataEditDeleteTests() {
     /resolveParentValues\(def, effective, parentMaps\)/,
     "updateSingleMasterRow re-resolves parent FKs from the post-edit effective row",
   );
-  assert.match(
-    serviceSource,
-    /def\.master === "products" && Object\.prototype\.hasOwnProperty\.call\(updatePayload, "factory_price"\)[\s\S]{0,120}phx_recompute_weekly_sales_value/,
-    "editing a product's factory_price resyncs stored weekly-sales value, same as bulk import",
+  // A factory_price edit does NOT resync any stored weekly-sales value, and must not pretend to.
+  // This assertion used to require the opposite, pinning a call that could never work:
+  // `phx_recompute_weekly_sales_value` has never existed in production (checked 2026-09-06 — zero
+  // rows in pg_proc, and no %recompute% or %weekly%sales% function at all), and `supabase.rpc()`
+  // RESOLVES with { data, error } rather than throwing, so the try/catch around it caught nothing
+  // and the error object was discarded. Nothing goes stale: the weekly surfaces recompute every
+  // non-Direct row from the CURRENT master price at read time.
+  assert.ok(
+    // Match the CALL, not the mention: the comments above the removal name the function while
+    // explaining why it is gone, so a bare substring check on the name fails against its own docs.
+    !serviceSource.includes('rpc("phx_recompute_weekly_sales_value"'),
+    "no call to a resync function that does not exist — it did nothing on every run and could not report it",
   );
 
   // setMasterRowActive: the soft-delete/reactivate toggle, with a guard for the code-defined system
