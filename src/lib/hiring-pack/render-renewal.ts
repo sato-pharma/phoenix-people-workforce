@@ -518,6 +518,13 @@ function renderRenewal(
   @page { size: A4; margin: 10.7mm 10.2mm 12.7mm; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #e2e8f0; }
+  /* 🔴 KEEP THE ZEBRA BANDS WHEN A BROWSER PRINTS — see the same note in render-hr-paper.ts.
+     Chrome's "Background graphics" is unticked by default and every tint here is a background, so
+     Print dropped them while the saved PDF kept them. The renewal pair keep their own stylesheet
+     rather than importing HOUSE_IDENTITY_CSS, so the line has to be here too.
+
+     NO BACKTICKS IN THIS COMMENT — it is inside a template literal and one would close the string. */
+  html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body {
     font-family: ${ARABIC_FONT_STACK};
     color: #111;
