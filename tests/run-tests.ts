@@ -1420,6 +1420,7 @@ import { runPayrollHoldConfirmStepReasonTests } from "./payroll-hold-confirm-ste
 import { runReact418HydrationSafeTextTests } from "./react-418-hydration-safe-text.test.ts";
 import { runPayrollHoldReviewTests } from "./payroll-hold-review.test.ts";
 import { runPmCallRateBandTests } from "./pm-call-rate-band.test.ts";
+import { runDmPlanHasNoCeoStageTests } from "./dm-plan-has-no-ceo-stage.test.ts";
 import { runMarketingRequestVenueRequiredTests } from "./marketing-request-venue-required.test.ts";
 import { runMarketingCustomerMergeTombstoneTests } from "./marketing-customer-merge-tombstone.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -4494,6 +4495,10 @@ await runTest(
 await runTest(
   "PM call-rate band is PM alone (7 PM + 2 AM = 9 a day is BELOW band, because only the 7 counts)",
   runPmCallRateBandTests,
+);
+await runTest(
+  "a DM plan has no CEO stage — a stamped header is never attributed to the CEO, and non-DM plans keep theirs",
+  runDmPlanHasNoCeoStageTests,
 );
 await runTest(
   "a marketing request must name at least one target venue (blocker list + create + resubmit)",
