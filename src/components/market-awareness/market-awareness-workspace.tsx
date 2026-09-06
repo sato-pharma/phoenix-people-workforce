@@ -1210,12 +1210,30 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
   const [expectedUpliftPct, setExpectedUpliftPct] = useState("");
 
   useEffect(() => {
+    // A FAILED OPTIONS CALL MUST SAY SO. The first version of this silently kept the empty arrays
+    // when the request was refused or errored, so a 403 rendered as "the dropdowns are empty" with
+    // nothing on screen explaining why — a confident zero, which is worse than an error.
     void (async () => {
-      const response = await fetch("/api/market-awareness/options", { cache: "no-store" });
-      const payload = await response.json();
-      if (payload.success) {
+      try {
+        const response = await fetch("/api/market-awareness/options", { cache: "no-store" });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.success) {
+          throw new Error(
+            payload?.message ??
+              `Could not load the form options (HTTP ${response.status}). The lists below stay empty until this succeeds.`,
+          );
+        }
         setTypes(payload.activityTypes ?? []);
         setLines(payload.lines ?? []);
+        if ((payload.activityTypes ?? []).length === 0 || (payload.lines ?? []).length === 0) {
+          setFormError(
+            "The form loaded but the activity types or lines came back empty. That is a data problem, not a permission one — tell whoever maintains the module.",
+          );
+        }
+      } catch (caught) {
+        setFormError(
+          caught instanceof Error ? caught.message : "Could not load the form options.",
+        );
       }
     })();
   }, []);
@@ -1239,11 +1257,17 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
         `/api/market-awareness/options?lineCode=${encodeURIComponent(primaryLine.lineCode)}`,
         { cache: "no-store" },
       );
-      const payload = await response.json();
-      if (payload.success) {
-        setRegions(payload.regions ?? []);
-        setProducts(payload.products ?? []);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.success) {
+        setFormError(
+          payload?.message ??
+            `Could not load the regions and products for that line (HTTP ${response.status}).`,
+        );
+        return;
       }
+      setRegions(payload.regions ?? []);
+      setProducts(payload.products ?? []);
+      setFormError(null);
     })();
   }, [primaryLine]);
 
@@ -1257,8 +1281,14 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
         `/api/market-awareness/options?areaCode=${encodeURIComponent(areaCode)}`,
         { cache: "no-store" },
       );
-      const payload = await response.json();
-      if (payload.success) setBricks(payload.bricks ?? []);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.success) {
+        setFormError(
+          payload?.message ?? `Could not load the bricks for that area (HTTP ${response.status}).`,
+        );
+        return;
+      }
+      setBricks(payload.bricks ?? []);
     })();
   }, [areaCode]);
 
