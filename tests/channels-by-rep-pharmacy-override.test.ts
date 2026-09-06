@@ -30,12 +30,20 @@ export function runChannelsByRepPharmacyOverrideTests() {
     "the pharmacy override applies at every distributor — it is keyed by customer code alone",
   );
 
-  // 2. Without the ruling those same names ARE stores, which is what makes the override load-bearing
-  //    rather than decorative.
+  // 2. Without the ruling, a name carrying the same store keyword IS a store, which is what makes
+  //    the CODE override load-bearing rather than decorative.
+  //
+  //    NOT the same two real names with a fake code: PR #3391 (2026-09-06, merged after this test
+  //    was written) added PHARMACY_OVERRIDE_CHAINS, which independently marks "الطرشوبى" and
+  //    "عابدين" pharmacies BY NAME regardless of customer code — so both real examples above now
+  //    read "pharmacy" on ANY code, which would make this assertion pass for the wrong reason (the
+  //    chain override, not the code override) or fail outright once #3391's list changes again. A
+  //    synthetic name that carries a store keyword and nothing else isolates the ONE override this
+  //    test is actually about.
   assert.equal(
-    classifyCustomerChannel("مخزن الطرشوبى للادويه", "999999", "PS"),
+    classifyCustomerChannel("مخزن قنا للادوية", "999999", "PS"),
     "store",
-    "the same name without a ruling is a store — the override is doing the work here",
+    "a store-keyword name with no ruling anywhere is a store — the CODE override is doing the work above, not the name",
   );
 
   // 3. Hospital still wins over the pharmacy override, matching the documented precedence.
