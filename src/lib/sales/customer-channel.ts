@@ -247,6 +247,19 @@ export const PHARMACY_OVERRIDE_CHAINS: readonly ChannelNameKeyword[] = [
  */
 export const STORE_OVERRIDE_NAMES: readonly ChannelNameKeyword[] = [
   { label: "الفرسان انترناشيونال جروب", stem: "الفرسان انترناشيونال" },
+  // THE SAME COMPANY, SPELLED THE WAY EL QEMA WRITES IT — «انترناشول», no ي. Owner confirmed
+  // 2026-09-07 that الفرسان بنها is a «مخزن جملة». Phoenix's own files spell it «انترناشيونال» and
+  // carry zero rows of this spelling, so the stem above matched everything until El Qema's export
+  // arrived — a latent gap that went live the moment a new distributor was registered. Two stems
+  // rather than one broadened to «الفرسان», because plain «الفرسان» and «الفرسان - الزاوية» are
+  // separate customers the owner has never ruled on, and widening the stem would silently make them
+  // warehouses too.
+  { label: "الفرسان انترناشول جروب (El Qema spelling)", stem: "الفرسان انترناشول" },
+  // «الفرسان بنها جملة» — «جملة» means WHOLESALE and is not one of the six keywords. Deliberately
+  // NOT added as a general keyword: the owner ruled «شركه أيه ام جروب» a PHARMACY on 2026-09-06, and
+  // El Qema sells to «ايه ام جروب الجمله» — the same business carrying جملة. A blanket جملة keyword
+  // would reverse a ruling he had just made.
+  { label: "الفرسان بنها جملة", stem: "الفرسان بنها" },
   { label: "طيبة جروب", stem: "طيبه جروب" },
   { label: "ابو عميرة", stem: "ابو عميره" },
   { label: "ابوعميرة", stem: "ابوعميره" },
