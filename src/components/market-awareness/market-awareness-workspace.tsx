@@ -11,6 +11,7 @@ import {
   MapPin,
   Plus,
   RefreshCcw,
+  Send,
   Sparkles,
   TrendingDown,
   TrendingUp,
@@ -574,6 +575,8 @@ export function MarketAwarenessWorkspace({ canCreate }: { canCreate: boolean }) 
   const loading = activities === null;
   const rows = useMemo(() => activities ?? [], [activities]);
 
+  const [busyId, setBusyId] = useState<string | null>(null);
+
   const loadActivities = useCallback(async () => {
     try {
       const response = await fetch("/api/market-awareness", { cache: "no-store" });
@@ -629,6 +632,34 @@ export function MarketAwarenessWorkspace({ canCreate }: { canCreate: boolean }) 
       cancelled = true;
     };
   }, [selectedId, tab]);
+
+  /**
+   * Submit a draft. Without this the module is a drawer: an activity could be created and never
+   * reach anybody, which is exactly how it shipped the first time.
+   */
+  const submitActivity = useCallback(
+    async (activityId: string) => {
+      setBusyId(activityId);
+      setError(null);
+      try {
+        const response = await fetch(`/api/market-awareness/${activityId}/submit`, {
+          method: "POST",
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.success) {
+          throw new Error(
+            payload?.message ?? `Could not submit that activity (HTTP ${response.status}).`,
+          );
+        }
+        await loadActivities();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Could not submit that activity.");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [loadActivities],
+  );
 
   const stats = useMemo(() => {
     const live = rows.filter((a) => a.status === "pending_manager" || a.status === "pending_ceo");
@@ -702,8 +733,10 @@ export function MarketAwarenessWorkspace({ canCreate }: { canCreate: boolean }) 
       {tab === "request" ? (
         <RequestTab
           activities={rows}
+          busyId={busyId}
           canCreate={canCreate}
           loading={loading}
+          onSubmitActivity={(id) => void submitActivity(id)}
           onCreated={() => {
             setShowForm(false);
             void loadActivities();
@@ -732,19 +765,23 @@ export function MarketAwarenessWorkspace({ canCreate }: { canCreate: boolean }) 
 
 function RequestTab({
   activities,
+  busyId,
   canCreate,
   loading,
   onCreated,
   onRefresh,
+  onSubmitActivity,
   onTrack,
   setShowForm,
   showForm,
 }: {
   activities: Activity[];
+  busyId: string | null;
   canCreate: boolean;
   loading: boolean;
   onCreated: () => void;
   onRefresh: () => void;
+  onSubmitActivity: (id: string) => void;
   onTrack: (id: string) => void;
   setShowForm: (value: boolean) => void;
   showForm: boolean;
@@ -839,6 +876,20 @@ function RequestTab({
                     </td>
                     <td className="px-2 py-3">
                       <StatusChip status={activity.status} />
+                      {["draft", "returned"].includes(activity.status) ? (
+                        <button
+                          className="mt-1.5 inline-flex items-center gap-1.5 border border-phx-accent bg-phx-accent px-2 py-1 text-phx-3xs font-black uppercase tracking-[0.10em] text-phx-accent-ink transition hover:bg-phx-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={busyId === activity.id}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onSubmitActivity(activity.id);
+                          }}
+                          type="button"
+                        >
+                          <Send aria-hidden="true" className="h-3 w-3 shrink-0" />
+                          <span>{busyId === activity.id ? "Sending" : "Submit"}</span>
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 ))}
@@ -863,6 +914,20 @@ function RequestTab({
                     <span className="block break-words text-phx-3xs font-medium text-phx-ink-faint">
                       {activity.activityCode}
                     </span>
+                    {["draft", "returned"].includes(activity.status) ? (
+                      <span
+                        className="inline-flex w-fit items-center gap-1.5 border border-phx-accent bg-phx-accent px-2.5 py-1.5 text-phx-3xs font-black uppercase tracking-[0.10em] text-phx-accent-ink"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onSubmitActivity(activity.id);
+                        }}
+                        role="button"
+                        tabIndex={-1}
+                      >
+                        <Send aria-hidden="true" className="h-3 w-3 shrink-0" />
+                        <span>{busyId === activity.id ? "Sending" : "Submit for approval"}</span>
+                      </span>
+                    ) : null}
                     <span className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-phx-line pt-2">
                       <span className="inline-flex min-w-0 items-center gap-1.5 text-phx-2xs font-bold text-phx-ink-soft">
                         <MapPin aria-hidden="true" className="h-3 w-3 shrink-0 text-phx-ink-faint" />
