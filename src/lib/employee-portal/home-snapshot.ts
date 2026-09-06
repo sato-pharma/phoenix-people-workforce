@@ -27,6 +27,7 @@ import type { DoubleVisitPortalFocus } from "@/lib/double-visit-analytics/types"
 import { getNsmCrmCompliance, nsmCrmComplianceUnavailable, type NsmCrmComplianceData } from "@/lib/employee-portal/nsm-crm-compliance";
 import { getLatestLineEarlyBirds, type EarlyBirdsWinnerRecord } from "@/lib/early-birds/service";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
+import { logError } from "@/lib/observability/log";
 import { loadPortalPlanAdherence, type PortalPlanAdherence } from "@/lib/weekly-planning/plan-adherence-data";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import {
@@ -355,6 +356,13 @@ export type PortalHomeSnapshot = {
       }
     | null;
   plansAwaitingManagerApproval: number | null;
+  /**
+   * False when the plans-awaiting-approval lookup failed rather than genuinely finding zero.
+   * Same idea as pendingCountsAvailable above — see resolvePlansAwaitingApproval. Every dashboard
+   * that folds plansAwaitingManagerApproval into a "pending" total must gate on this too, or a
+   * failed lookup (defaulting to 0) silently understates that total instead of reading as unknown.
+   */
+  plansCountAvailable: boolean;
   /** DM/RM/NSM/PM/GPM/TM only: personal DV trend, scope coverage, and probation DV watchlist. */
   dvFocus: DoubleVisitPortalFocus | null;
 };
@@ -793,6 +801,35 @@ export async function getMrHomeStats(
 const wrapPromise = <T,>(thenable: PromiseLike<T>): Promise<T> =>
   new Promise((resolve, reject) => thenable.then(resolve, reject));
 
+/**
+ * Turns the settled result of the plans-awaiting-approval lookup into the pair the snapshot and
+ * every consuming dashboard need, distinguishing a real zero from a data source that failed.
+ *
+ * countPlanAwaiting() (src/lib/approvals-hub/service.ts) already catches its own failures and
+ * resolves to 0 rather than rejecting — pinned by tests/portal-home-plan-count-canonical.test.ts,
+ * which requires this file keep calling it exactly that way, so that path can never surface here
+ * as "rejected" today. This function is the second, outer net: if that inner contract ever
+ * changes (or something between the `.then()` and Promise.allSettled itself throws), a rejection
+ * must still read as unavailable rather than silently collapsing to the same 0 a genuine "nothing
+ * awaiting approval" produces — a manager cannot tell those apart from a bare number, and "0 plans
+ * awaiting your approval" is a positive claim, not a neutral one.
+ */
+export function resolvePlansAwaitingApproval(
+  result: PromiseSettledResult<{ count: number } | null>,
+  context: { hrId: string; role: string },
+): { plansAwaitingManagerApproval: number | null; plansCountAvailable: boolean } {
+  if (result.status === "rejected") {
+    logError("Plans-awaiting-manager-approval lookup failed; portal home reports it as unavailable rather than 0", {
+      labels: { event: "portal_home_plans_awaiting_approval_failed", hrId: context.hrId, role: context.role },
+      error: result.reason,
+    });
+    return { plansAwaitingManagerApproval: null, plansCountAvailable: false };
+  }
+  const data = result.value;
+  const plansAwaitingManagerApproval = data && "count" in data && data.count !== null ? data.count : null;
+  return { plansAwaitingManagerApproval, plansCountAvailable: true };
+}
+
 export async function getPortalHomeSnapshot(access: AccessContext): Promise<PortalHomeSnapshot> {
   const shell = await getEmployeePortalShellData(access);
   const hrId = normalizeHrId(access.hrId) ?? "";
@@ -973,16 +1010,12 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     // null on failure
   }
 
-  // Plans awaiting this manager's approval.
-  let plansAwaitingManagerApproval: PortalHomeSnapshot["plansAwaitingManagerApproval"] = null;
-  try {
-    const mpData = managerPlanResult.status === "fulfilled" ? managerPlanResult.value : null;
-    if (mpData && "count" in mpData && mpData.count !== null) {
-      plansAwaitingManagerApproval = mpData.count;
-    }
-  } catch {
-    // null on failure
-  }
+  // Plans awaiting this manager's approval. See resolvePlansAwaitingApproval's own doc: a failed
+  // lookup must read as unavailable, never fold into the same 0 a genuine "nothing awaiting" gives.
+  const { plansAwaitingManagerApproval, plansCountAvailable } = resolvePlansAwaitingApproval(managerPlanResult, {
+    hrId,
+    role,
+  });
 
   // Pure calculation — no DB.
   const balance = getVacationBalancePeriod({ hireDate: shell.hrContract.hireDate, referenceDate: today });
@@ -1019,6 +1052,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     mrPendingExpenseCount,
     ...roleExtras,
     plansAwaitingManagerApproval,
+    plansCountAvailable,
     dvFocus,
   };
 }

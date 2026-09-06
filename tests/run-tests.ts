@@ -1423,6 +1423,7 @@ import { runPayrollHoldReviewTests } from "./payroll-hold-review.test.ts";
 import { runPmCallRateBandTests } from "./pm-call-rate-band.test.ts";
 import { runDmPlanHasNoCeoStageTests } from "./dm-plan-has-no-ceo-stage.test.ts";
 import { runEmailIdentityGuardCallersTests } from "./email-identity-guard-callers.test.ts";
+import { runPlansAwaitingApprovalAvailabilityTests } from "./plans-awaiting-approval-availability.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4504,6 +4505,10 @@ await runTest(
 await runTest(
   "every official workflow email supplies exactly one subject HR ID (never zero, never two; digests exempt by event type)",
   runEmailIdentityGuardCallersTests,
+);
+await runTest(
+  "a failed plans-awaiting-approval lookup reports itself as unavailable, never as a bare 0",
+  runPlansAwaitingApprovalAvailabilityTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
