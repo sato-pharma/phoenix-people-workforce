@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 
-import { isStoreCustomer } from "../src/lib/sales/customer-channel.ts";
+import {
+  isStoreCustomer,
+  isStoreCustomerForPeriod,
+  legacyIsStoreCustomer,
+  WAREHOUSE_RULE_FROM_PERIOD,
+} from "../src/lib/sales/customer-channel.ts";
 
 /**
  * THE OWNER'S OWN RULINGS, ONE ROW PER CUSTOMER — the ground truth the warehouse rule is built on.
@@ -233,4 +238,47 @@ export function runSosWarehouseOwnerRulingsTests() {
       `government depot must never split: ${name}`,
     );
   }
+
+  // ── THE PERIOD GATE ────────────────────────────────────────────────────────────────────────────
+  // The rulings land in SEPTEMBER. August 2026 Anti Infective was published on 2026-09-06, hours
+  // before they were made, so August keeps the classification it was published with — owner's
+  // decision when he was shown that adopting them immediately would move 14,150 EGP of store value
+  // between areas inside a closing his managers already had.
+  assert.equal(WAREHOUSE_RULE_FROM_PERIOD, "2026-09", "the cutover the owner chose");
+
+  // A customer the new rule ADDS: the name states a medicines trading business, but carries none of
+  // the six words. Splits from September; untouched in August and every month before it.
+  const newlyWarehouse = "الدولية لتجارة الادوية";
+  assert.equal(isStoreCustomerForPeriod(newlyWarehouse, "402301", "IS", "2026-07"), false);
+  assert.equal(isStoreCustomerForPeriod(newlyWarehouse, "402301", "IS", "2026-08"), false);
+  assert.equal(
+    isStoreCustomerForPeriod(newlyWarehouse, "402301", "IS", "2026-09"),
+    true,
+    "a trading company starts splitting in September, not in the published August",
+  );
+
+  // A customer the new rule REMOVES: صيدلية تكنوفارم ايجيبت matched فارم and was splitting. It stops
+  // in September. It must KEEP splitting in August, or the published month silently changes.
+  const nowPharmacy = "صيدلية تكنوفارم ايجيبت";
+  assert.equal(
+    isStoreCustomerForPeriod(nowPharmacy, "0001502569", "PS", "2026-08"),
+    true,
+    "August keeps the answer it was published with — a pharmacy matching فارم still split then",
+  );
+  assert.equal(isStoreCustomerForPeriod(nowPharmacy, "0001502569", "PS", "2026-09"), false);
+
+  // A malformed or missing period must fall to the OLD rule. Splitting a month early restates a
+  // closing somebody already has; failing to adopt the new rule merely leaves a number alone.
+  for (const bad of [null, undefined, "", "not-a-period", "2026", "2026-9"]) {
+    assert.equal(
+      isStoreCustomerForPeriod(newlyWarehouse, "402301", "IS", bad),
+      false,
+      `an unreadable period must fall back to the old rule, not the new one: ${String(bad)}`,
+    );
+  }
+
+  // And the legacy rule is genuinely the OLD one, not the new one wearing a different name — if it
+  // ever drifts into agreement, August stops being reproducible from this repository.
+  assert.equal(legacyIsStoreCustomer(newlyWarehouse, "402301", "IS"), false);
+  assert.equal(legacyIsStoreCustomer(nowPharmacy, "0001502569", "PS"), true);
 }
