@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 
 import {
+  isStoreCustomerForPeriod,
+  isWholesaleOnlyDistributor,
+  WHOLESALE_ONLY_DISTRIBUTORS,
+} from "../src/lib/sales/customer-channel.ts";
+import {
   DISTRIBUTOR_SPLIT_TARGETS,
   isSplitEligible,
   splitStoreSalesAcrossCityAreas,
@@ -144,6 +149,41 @@ export function runQemaQalubeyaSplitTests() {
     false,
     "the override decides WHERE a store's money goes — it never makes a pharmacy into a store",
   );
+
+  // ── EVERY El Qema customer is a wholesaler — owner, 2026-09-07 ───────────────────────────────
+  //
+  // "all here are wholeslars to be splitted". El Qema sells ON to other wholesalers rather than to
+  // pharmacies, so the name test has nothing to add: of their 30 customers the six keywords catch
+  // only 10, and the other 20 would have stayed put.
+  assert.ok(isWholesaleOnlyDistributor("QM"), "El Qema is a wholesale-only distributor");
+  assert.ok(isWholesaleOnlyDistributor("qm"), "and the check is case-insensitive");
+  assert.equal(WHOLESALE_ONLY_DISTRIBUTORS.size, 1, "El Qema is the ONLY one — adding another is his call");
+
+  // Real names from their August book that carry NO store keyword and no trade phrase. Each one is
+  // a store through QM and a pharmacy through anyone else, which is the whole point of the rule.
+  for (const name of ["كيان قنا", "دلة الفيوم", "رويال الاسماعيليه", "هانى براعى المنيا", "الدكتور محمد شعير"]) {
+    assert.equal(
+      isStoreCustomerForPeriod(name, null, "QM", "2026-09"),
+      true,
+      `${name} is a wholesaler because El Qema sold it, not because of its name`,
+    );
+    assert.equal(
+      isStoreCustomerForPeriod(name, null, "PS", "2026-09"),
+      false,
+      `${name} through Overseas is unchanged — the rule is about the DISTRIBUTOR, not the customer`,
+    );
+  }
+
+  // A hospital or a government depot still does not split, whoever sold it. Deliberately below the
+  // "never a store" words: 17 of the owner's 2026-09-06 rulings say a government store supplies its
+  // own institutions wherever it bought from.
+  for (const name of ["مستشفى المنزله العام", "ت.ص.مخازن السيوف", "صيدلية النور"]) {
+    assert.equal(
+      isStoreCustomerForPeriod(name, null, "QM", "2026-09"),
+      false,
+      `${name} does not become a wholesaler just because El Qema invoiced it`,
+    );
+  }
 
   // ── And the period gate still governs ─────────────────────────────────────────────────────────
   assert.equal(
