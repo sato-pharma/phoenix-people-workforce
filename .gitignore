@@ -124,7 +124,6 @@ _wt-*/
 .env*
 
 env.yaml
-generate-cron-secret.js
 generate-env.js
 cloud-run-env.yaml
 cloud-run-env-all.yaml
