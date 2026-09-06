@@ -1524,3 +1524,51 @@ that subquery is NULL, so the disjunct never grants; and `authenticated` holds n
 either table, so the policies are unreachable regardless. Both facts were measured, not inferred.
 
 Related: [[a-missing-table-answers-pgrst205-not-42p01]]
+
+## A deregistered worktree's reads lie by SUCCEEDING, and a positive control certifies the lie — 2026-09-06
+
+§2.1 already warned that a shell sitting in a deregistered worktree resolves git against the
+PRIMARY checkout. Its advice on how to detect that was wrong in a way that made it worse.
+
+The old wording said path-filtered reads there "come back EMPTY for a file that exists", and told
+you to "verify with a POSITIVE CONTROL (bytes read, fields found), never a clean-looking blank".
+Both halves fail.
+
+**The read does not always come back empty.** A session sitting in the deregistered
+`.claude/worktrees/jovial-kirch-7d47e1` ran
+
+```
+git show HEAD:src/lib/marketing-requests/field-capture-backlog.ts
+```
+
+and got **473 lines of perfectly healthy-looking source**. Not a blank, not an error. It succeeded
+because the PRIMARY holds that same path on `main`, so the read was answered — by the wrong
+repository. A blank is at least suspicious; this has no tell at all.
+
+**And the recommended control is exactly the thing that certifies it.** A positive control proves
+that resolution is *working* — bytes came back, fields were found. It says nothing about *which
+repository answered*. In this failure mode the control passes, loudly, and confirms the wrong
+result. It is not a weaker check here; it points the wrong way.
+
+**The reliable check is `git rev-parse --show-toplevel`.** It names the repository that will answer,
+which is the actual question. `git branch --show-current` is a useful second reading — in this case
+it returned `main`, which is how the danger surfaced at all.
+
+Why the danger had escalated by the time this was found: when the same trap hit earlier in the day
+the primary was on a `codex/*` feature branch, so a stray commit would have landed on someone's
+feature work. By 2026-09-06 evening the primary was on `main` — production's branch — where a
+commit lands with no error and no warning.
+
+Sweep for it with the toplevel check rather than by comparing folder lists, which is easy to get
+wrong: an `ls` of `.claude/worktrees` yields trailing slashes and a naive `comm` against
+`git worktree list` then reports **every** folder as deregistered. Ask each folder who answers:
+
+```
+for d in .claude/worktrees/*/; do
+  echo "$d -> $(git -C "$d" rev-parse --show-toplevel 2>/dev/null)"
+done
+```
+
+A healthy worktree names itself. A broken one names the primary.
+
+Related: [[main-is-not-the-primary-checkout]]
