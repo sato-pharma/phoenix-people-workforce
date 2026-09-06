@@ -152,16 +152,18 @@ const INPUT_CLASS =
 
 export function MarketAwarenessWorkspace({ canCreate }: { canCreate: boolean }) {
   const [tab, setTab] = useState<"request" | "tracking">("request");
-  const [activities, setActivities] = useState<Activity[]>([]);
+  // `null` means "not loaded yet", so loading is DERIVED rather than set. An effect that calls a
+  // loader which sets state before its first `await` is still a synchronous setState — the async
+  // body runs synchronously up to that point — and that is a lint ERROR here, not a warning.
+  const [activities, setActivities] = useState<Activity[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tracking, setTracking] = useState<Tracking | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
 
+  const loading = activities === null;
+
   const loadActivities = useCallback(async () => {
-    setLoading(true);
-    setError(null);
     try {
       const response = await fetch("/api/market-awareness", { cache: "no-store" });
       const payload = await response.json();
@@ -169,10 +171,10 @@ export function MarketAwarenessWorkspace({ canCreate }: { canCreate: boolean }) 
         throw new Error(payload.message ?? "Could not load awareness activities.");
       }
       setActivities(payload.activities ?? []);
+      setError(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load awareness activities.");
-    } finally {
-      setLoading(false);
+      setActivities([]);
     }
   }, []);
 
@@ -181,7 +183,7 @@ export function MarketAwarenessWorkspace({ canCreate }: { canCreate: boolean }) 
   }, [loadActivities]);
 
   const selected = useMemo(
-    () => activities.find((activity) => activity.id === selectedId) ?? null,
+    () => (activities ?? []).find((activity) => activity.id === selectedId) ?? null,
     [activities, selectedId],
   );
 
@@ -251,7 +253,7 @@ export function MarketAwarenessWorkspace({ canCreate }: { canCreate: boolean }) 
 
       {tab === "request" ? (
         <RequestTab
-          activities={activities}
+          activities={activities ?? []}
           canCreate={canCreate}
           loading={loading}
           onCreated={() => {
@@ -268,7 +270,7 @@ export function MarketAwarenessWorkspace({ canCreate }: { canCreate: boolean }) 
         />
       ) : (
         <TrackingTab
-          activities={activities}
+          activities={activities ?? []}
           onSelect={setSelectedId}
           selected={selected}
           tracking={tracking}

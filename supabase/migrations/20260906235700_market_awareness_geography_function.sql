@@ -95,9 +95,10 @@ comment on function public.phx_market_awareness_areas(text) is
   'au.occupancy_history. Non-territory areas are returned with selectable = false and a reason '
   'rather than filtered out, because the owner chose to show them greyed (2026-09-06).';
 
-revoke all on function public.phx_market_awareness_areas(text) from public;
-revoke all on function public.phx_market_awareness_areas(text) from anon;
-revoke all on function public.phx_market_awareness_areas(text) from authenticated;
+-- ONE statement, naming public FIRST. anon and authenticated inherit EXECUTE through
+-- PUBLIC membership, so revoking only those two is a no-op — and revoking PUBLIC on a
+-- default ACL also strips service_role, which is why the grant below is not optional.
+revoke execute on function public.phx_market_awareness_areas(text) from public, anon, authenticated;
 grant execute on function public.phx_market_awareness_areas(text) to service_role;
 
 -- The tracked lines, from au.lines rather than derived from a display name. `is_closing_line` is the
@@ -117,9 +118,10 @@ as $function$
   order by l.line_id;
 $function$;
 
-revoke all on function public.phx_market_awareness_lines() from public;
-revoke all on function public.phx_market_awareness_lines() from anon;
-revoke all on function public.phx_market_awareness_lines() from authenticated;
+-- ONE statement, naming public FIRST. anon and authenticated inherit EXECUTE through
+-- PUBLIC membership, so revoking only those two is a no-op — and revoking PUBLIC on a
+-- default ACL also strips service_role, which is why the grant below is not optional.
+revoke execute on function public.phx_market_awareness_lines() from public, anon, authenticated;
 grant execute on function public.phx_market_awareness_lines() to service_role;
 
 -- The products a Market Awareness activity may target, for one line.
@@ -159,9 +161,10 @@ as $function$
   order by p.product_name;
 $function$;
 
-revoke all on function public.phx_market_awareness_products(text) from public;
-revoke all on function public.phx_market_awareness_products(text) from anon;
-revoke all on function public.phx_market_awareness_products(text) from authenticated;
+-- ONE statement, naming public FIRST. anon and authenticated inherit EXECUTE through
+-- PUBLIC membership, so revoking only those two is a no-op — and revoking PUBLIC on a
+-- default ACL also strips service_role, which is why the grant below is not optional.
+revoke execute on function public.phx_market_awareness_products(text) from public, anon, authenticated;
 grant execute on function public.phx_market_awareness_products(text) to service_role;
 
 -- Every district manager in one region, for one line. The owner's answer 32: on CEO approval it is
@@ -203,9 +206,10 @@ comment on function public.phx_market_awareness_region_managers(text, text) is
   'Every district manager seat in one region for one line, with its current occupant. A seat with a '
   'null dm_hr_id is a real vacancy, not a missing join — return it and let the caller say so.';
 
-revoke all on function public.phx_market_awareness_region_managers(text, text) from public;
-revoke all on function public.phx_market_awareness_region_managers(text, text) from anon;
-revoke all on function public.phx_market_awareness_region_managers(text, text) from authenticated;
+-- ONE statement, naming public FIRST. anon and authenticated inherit EXECUTE through
+-- PUBLIC membership, so revoking only those two is a no-op — and revoking PUBLIC on a
+-- default ACL also strips service_role, which is why the grant below is not optional.
+revoke execute on function public.phx_market_awareness_region_managers(text, text) from public, anon, authenticated;
 grant execute on function public.phx_market_awareness_region_managers(text, text) to service_role;
 
 -- ─────────────────────────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import { canonicalHrIdKey, hrIdForStorage } from "@/lib/hr-id";
 import { findLineById, loadMarketAwarenessLines } from "@/lib/market-awareness/lines";
 import type { MarketAwarenessLine } from "@/lib/market-awareness/lines";
 import { findArea, loadRegionManagers } from "@/lib/market-awareness/geography";
+import { notifyActivityApproved } from "@/lib/market-awareness/notifications";
 import {
   canCloseActivity,
   canCreateActivity,
@@ -96,6 +97,30 @@ async function loadEmployees(hrIds: Array<string | null | undefined>) {
     }
   }
   return byKey;
+}
+
+/**
+ * HR ids holding any of these roles, from `app_auth_users` — the role directory the marketing module
+ * resolves its approvers through.
+ *
+ * Filtered in JS rather than with `.in("role", ...)`: the column is free text and its casing is not
+ * guaranteed, and a case-sensitive match here would return nobody and silently notify an empty list,
+ * which looks exactly like "nobody holds that role".
+ */
+async function loadRoleHolderHrIds(roles: string[]): Promise<string[]> {
+  const wanted = new Set(roles.map((role) => role.trim().toLowerCase()));
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("app_auth_users")
+    .select("hr_id, role, is_active")
+    .eq("is_active", true)
+    .limit(1000);
+  if (error) throw toQueryError(error);
+
+  return ((data as Array<{ hr_id?: string | null; role?: string | null }> | null) ?? [])
+    .filter((row) => wanted.has(String(row.role ?? "").trim().toLowerCase()))
+    .map((row) => row.hr_id)
+    .filter((hrId): hrId is string => Boolean(hrId?.trim()));
 }
 
 /** Is this HR id the CEO — i.e. is there no approval step above them? */
@@ -658,7 +683,25 @@ export async function decideActivity(
   });
   if (decisionError) throw toQueryError(decisionError);
 
-  return getActivity(access, activityId);
+  const decided = await getActivity(access, activityId);
+
+  // On CEO approval, tell everyone the owner named: every district manager in the region for this
+  // line, the NSM, the SFE Manager, the area's medical rep and Finance. Best-effort by contract —
+  // notifyActivityApproved swallows and logs, because an undelivered notification must never undo
+  // a decision the CEO actually made.
+  if (transition.to === "approved") {
+    await notifyActivityApproved({
+      activity: decided,
+      actionUrl: `/employee-portals/market-awareness?activity=${decided.id}`,
+      roleRecipientHrIds: await loadRoleHolderHrIds([
+        "National Sales Manager",
+        "SFE Manager",
+        "Finance Manager",
+      ]),
+    });
+  }
+
+  return decided;
 }
 
 export async function withdrawActivity(

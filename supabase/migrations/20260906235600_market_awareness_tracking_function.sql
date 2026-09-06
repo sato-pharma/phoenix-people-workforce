@@ -135,9 +135,10 @@ comment on function public.phx_market_awareness_tracking(text, text, text, text,
   'tracked lines for 2026-08). Returns both halves of the closing separately so a caller can never '
   'quote one of them by accident.';
 
-revoke all on function public.phx_market_awareness_tracking(text, text, text, text, text[], text[]) from public;
-revoke all on function public.phx_market_awareness_tracking(text, text, text, text, text[], text[]) from anon;
-revoke all on function public.phx_market_awareness_tracking(text, text, text, text, text[], text[]) from authenticated;
+-- ONE statement, naming public FIRST. anon and authenticated inherit EXECUTE through
+-- PUBLIC membership, so revoking only those two is a no-op — and revoking PUBLIC on a
+-- default ACL also strips service_role, which is why the grant below is not optional.
+revoke execute on function public.phx_market_awareness_tracking(text, text, text, text, text[], text[]) from public, anon, authenticated;
 grant execute on function public.phx_market_awareness_tracking(text, text, text, text, text[], text[]) to service_role;
 
 -- The last period any closing has been published for. The Tracking tab can never show the running
@@ -156,9 +157,10 @@ as $function$
     on b.id = f.batch_id and b.status = 'validated';
 $function$;
 
-revoke all on function public.phx_market_awareness_last_closed_period() from public;
-revoke all on function public.phx_market_awareness_last_closed_period() from anon;
-revoke all on function public.phx_market_awareness_last_closed_period() from authenticated;
+-- ONE statement, naming public FIRST. anon and authenticated inherit EXECUTE through
+-- PUBLIC membership, so revoking only those two is a no-op — and revoking PUBLIC on a
+-- default ACL also strips service_role, which is why the grant below is not optional.
+revoke execute on function public.phx_market_awareness_last_closed_period() from public, anon, authenticated;
 grant execute on function public.phx_market_awareness_last_closed_period() to service_role;
 
 -- ─────────────────────────────────────────────────────────────────────────────
