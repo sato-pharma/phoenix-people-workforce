@@ -25,13 +25,23 @@ export const RETENTION_RISK_EVENT_TYPE = "retention_risk_flagged" as const;
 export const RETENTION_RISK_PRE_PAYROLL_EVENT_TYPE = "retention_risk_pre_payroll" as const;
 
 /**
- * In-app, email and Telegram — the three the owner named on 2026-09-06, and only those.
+ * In-app and Telegram, and only those.
  *
- * Push is deliberately absent. He did not ask for it, and it is the one channel that puts a named
- * employee and the words "no CRM activity" on an unlocked-phone preview, where anyone holding the
- * handset can read it. The other three all require the recipient to open something.
+ * EMAIL WAS REMOVED ON THE OWNER'S INSTRUCTION, 2026-09-07: "remove email keep in-app and
+ * telegram", asked directly after he confirmed the four recipients. It shipped in review as
+ * in_app + email + telegram; do not add it back without asking him again.
+ *
+ * The reason it is the wrong channel here is what the alert says, not how it is delivered: it
+ * names a colleague as a possible resignation risk, and email is the half that leaves a durable
+ * copy of that sitting in four inboxes indefinitely. The house already draws this line — Early
+ * Birds is in-app and Telegram and never email, "new CV received" the same, and a candidate push
+ * to a hiring manager is never emailed. An alert about a named employee belongs with those.
+ *
+ * Push is deliberately absent too. He did not ask for it, and it is the one channel that puts a
+ * named employee and the words "no CRM activity" on an unlocked-phone preview, where anyone
+ * holding the handset can read it.
  */
-export const RETENTION_RISK_CHANNELS: readonly SystemNotificationChannel[] = ["in_app", "email", "telegram"];
+export const RETENTION_RISK_CHANNELS: readonly SystemNotificationChannel[] = ["in_app", "telegram"];
 
 /**
  * A date-only value (YYYY-MM-DD) is a CALENDAR day, not an instant, and it parses as UTC midnight.
