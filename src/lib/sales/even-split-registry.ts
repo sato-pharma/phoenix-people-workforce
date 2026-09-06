@@ -11,7 +11,7 @@
 // split-eligible line — so on its face it qualifies, and the split would deal its units out again
 // on top of a distribution the database has already made. Two rules would then own the same units.
 //
-// The split's existing exemption cannot see this. customersAlreadySplitAcrossAreas spots a customer
+// The split's existing exemption cannot see this. Until 2026-09-07 the split also spotted a customer
 // a HUMAN apportioned, by noticing rows that point away from the brick they all still carry. EZ's
 // rows carry no such tell: the split reads source_of_sales_import_rows, which is the raw invoice,
 // where EZ is a single Cairo East 1 row for the whole month. The distribution happens later, in the

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { evenSplitKey } from "../src/lib/sales/even-split-registry.ts";
 import {
   CITY_AREAS,
-  customersAlreadySplitAcrossAreas,
+  customersExemptFromCitySplit,
   detailStoreSplitByCustomer,
   isSplitEligible,
   splitStoreSalesAcrossCityAreas,
@@ -26,11 +26,11 @@ import {
 //   a split-eligible line. So on its face it qualifies.
 //
 // WHY THE EXISTING EXEMPTION CANNOT SEE IT — and this is the whole reason this file exists.
-// customersAlreadySplitAcrossAreas spots a customer a HUMAN apportioned, by noticing rows that
+// customersExemptFromCitySplit spots a customer a HUMAN apportioned, by noticing rows that
 // point away from the single brick they all still carry. EZ leaves no such trace. The split reads
 // source_of_sales_import_rows, the raw invoice, where EZ is ONE Cairo East 1 row for the whole
 // month; the sharing happens afterwards, in the rollup the Closing Matrix reads. Probed on live
-// production 2026-09-05: customersAlreadySplitAcrossAreas over EZ's real rows returns false,
+// production 2026-09-05: customersExemptFromCitySplit over EZ's real rows returns false,
 // because not one of them is re-booked.
 //
 // WHAT IT WOULD HAVE COST. The Matrix holds 331.25 EZ units in Cairo East 1 — one eighth of July.
@@ -178,7 +178,7 @@ export async function runClosingStoreSplitHonoursEvenSplitRegistryTests() {
     1,
     "a genuine wholesaler beside a registry customer still splits normally",
   );
-  const exempt = customersAlreadySplitAcrossAreas([row({ evenSplitApplied: true }), neighbour]);
+  const exempt = customersExemptFromCitySplit([row({ evenSplitApplied: true }), neighbour]);
   assert.equal(exempt.has(EZ_CODE), true, "EZ is exempt");
   assert.equal(exempt.has("1099999"), false, "its neighbour is not");
 
@@ -222,8 +222,8 @@ export async function runClosingStoreSplitHonoursEvenSplitRegistryTests() {
     "utf8",
   );
   assert.ok(
-    splitSource.includes("if (row.evenSplitApplied) registered.add(code);"),
-    "and the split exempts a registered customer on the flag alone",
+    splitSource.includes("if (!row.evenSplitApplied) continue;"),
+    "and the split exempts a registered customer on the flag alone — the ONLY exemption left after the owner retired the hand-apportionment route on 2026-09-07",
   );
 
   // Both live call sites derive their rows from loadMonthlyClosingDetails, which is what makes one

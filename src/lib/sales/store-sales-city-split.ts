@@ -19,7 +19,7 @@
 // untouched. Direct rows carry no area and are already attributed to line+region only, so they
 // are passed through untouched too.
 
-import { closingAreaOf, isRebookedRow } from "@/lib/sales/closing-row-area";
+import { closingAreaOf } from "@/lib/sales/closing-row-area";
 import { isStoreCustomerForPeriod } from "@/lib/sales/customer-channel";
 
 /**
@@ -169,7 +169,7 @@ export type StoreSplitRow = {
    *
    * Read for ONE purpose: detecting that a human already apportioned this customer by hand. It is
    * never booked against, never returned on a split row, and changes no area total. See
-   * customersAlreadySplitAcrossAreas for why the resolved area cannot answer that question.
+   * customersExemptFromCitySplit for what survives of that question.
    */
   sheetAreaCode?: string;
   /**
@@ -194,7 +194,7 @@ export type StoreSplitRow = {
    * valid; absent means "not registered", which is what every ordinary customer is.
    *
    * It cannot be inferred from the rows. See even-split-registry.ts for why the existing
-   * hand-apportioned tell (customersAlreadySplitAcrossAreas) is blind to this case.
+   * hand-apportioned tell, removed 2026-09-07, was blind to this case.
    */
   evenSplitApplied?: boolean;
   officialLine: string;
@@ -204,79 +204,56 @@ export type StoreSplitRow = {
 };
 
 /**
- * Customers whose rows ALREADY sit in more than one area — someone distributed them on purpose, so
- * the city split must not distribute them again.
+ * The ONLY customers the city split leaves alone.
  *
- * The case that forced this (owner, 2026-08-06): client 441164 ريونيون للتجارة والاستثمار returned
- * its whole June purchase in July, -400 units / -34,380.00, and the owner ruled that return splits
- * evenly between Dakahlia 2 and Port Said - Domiat. Its sales rows were split accordingly. But the
- * name marks it a wholesaler, so the city split then took the WHOLE -34,380.00 back out of its
- * customer-map area (Dakahlia 1) and shared it three ways across Dakahlia 1, 2 and 3 — handing a
- * third of a return to Dakahlia 3, which had nothing to do with it, and dropping Port Said entirely
- * because it is a different city. The workbook's Closing Matrix showed fractional units
- * (182.333333) while the frontend, which never runs this split, correctly showed 29.
+ * 🔒 OWNER RULE, 2026-09-07: **the city rule always wins, except EZ and Office on CNS.** Asked
+ * directly whether he wanted the ability to override the even city share for a named customer, he
+ * answered that he did not. So there is exactly one exemption left, and it is not a judgement about
+ * where a customer's goods went — it is arithmetic: a customer the DATABASE has ALREADY distributed
+ * must not be distributed a second time.
  *
- * A deliberate distribution beats a rule-of-thumb one. The even city share is an ESTIMATE for a
- * wholesaler nobody has apportioned; once a human has said where the sales go, that answer wins.
+ * `evenSplitApplied` marks such a customer — the even-split registry, EZ (client 1011654) today.
+ * The flag cannot be inferred from these rows: this function reads the raw invoice, where EZ is a
+ * single Cairo East 1 row for the whole month, while the distribution it is exempt for happens later,
+ * in the rollup the Closing Matrix reads. See even-split-registry.ts.
  *
- * WHY IT MUST NOT ASK `areaCode`. That field is the RESOLVED area — loadMonthlyClosingDetails sets
- * it to the row's BRICK's master area and only falls back to the sheet's own area when the brick is
- * unmapped. A hand-split is applied to the fact rows, NOT to the brick: 441164's four July rows all
- * still carry brick B186-1, whose master area is Dakahlia 1. So the resolved view of that customer
- * is a single area, the customer looked un-split, and the city rule re-split it anyway — the fix
- * shipped, the migration applied, and the exported workbook did not change. Asking the ORIGINAL
- * allocation is the whole point: it is the only field the human's decision was written to.
+ * OFFICE NEEDS NO ENTRY HERE and that is not an oversight — it is excluded twice over. Office rows
+ * carry no customer at all (`clientCode` is null by construction), so `isStoreCustomer` answers false
+ * and `isSplitEligible` never reaches this function; and `loadMonthlyClosingPartsWithStoreSplit`
+ * passes the `office` grid through without applying any net. Adding Office here would be a third
+ * copy of a rule already stated twice.
  *
- * TWO CONDITIONS, NOT ONE — and the second is what keeps a real wholesaler splitting. "Sits in more
- * than one area" alone cannot tell a deliberate apportionment from a chain that simply trades in two
- * places, and exempting the latter would silently switch the city rule off for a customer nobody has
- * apportioned. The discriminator is `isRebookedRow`: a genuine two-depot store has fact == resolved
- * in each of its areas, while a hand-split has rows pointing AWAY from the single brick they all
- * still carry. So a customer is exempt only when its rows span more than one closing area AND at
- * least one of them was booked somewhere other than its own master location.
+ * ── WHAT WAS REMOVED ON 2026-09-07, AND WHY IT IS NOT COMING BACK ────────────────────────────────
+ * Until this date a SECOND route existed: a customer whose rows spanned more than one closing area
+ * AND had at least one row booked away from its own brick was read as "a human apportioned this by
+ * hand" and exempted. It existed for one case — client 441164 ريونيون للتجارةوالاستثمار, whose July
+ * 2026 return the owner ruled on 2026-08-06 should split between Dakahlia 2 and Port Said - Domiat.
  *
- * Measured on live production 2026-08-06, all 153,053 (period, line, client) groups: 6 span more
- * than one closing area, and exactly ONE of those is re-booked — 441164 / 2026-07 / Anti Infective,
- * the case above. The other five are four pharmacies and one Head Office customer; the classifier
- * only ever demotes store → pharmacy and Head Office is an excluded line, so not one of them could
- * ever have been split and dropping their exemption moves no number.
+ * It is gone for two independent reasons, and either alone would be enough:
  *
- * A THIRD ROUTE IN, which those two conditions cannot reach: `evenSplitApplied`. That flag marks a
- * customer the DATABASE has already distributed — the even-split registry, EZ today — and such a
- * customer is exempt on the flag alone. The two conditions above are evidence-based, and there is no
- * evidence to find: this function reads the raw invoice rows, where EZ is one Cairo East 1 row for
- * the whole month, while the distribution it is exempt for happens later, in the rollup the Closing
- * Matrix reads. Both conditions therefore read false and the city rule would deal the units out a
- * second time. See even-split-registry.ts.
+ *   1. IT MATCHED NOTHING. The hand-split lived in the fact ROWS, and a re-import of the Ibn
+ *      Sina-Sato July file on 2026-08-09 rewrote them — the day after July Anti Infective was
+ *      published. Swept live on 2026-09-06 across ALL 323,952 non-Office non-direct import rows:
+ *      every single one has fact area == its brick's master area. Zero re-booked rows exist, so the
+ *      condition could not fire for anybody.
+ *   2. THE OWNER RETIRED THE IDEA. He was shown the measured cost of restoring 441164 (Dakahlia 1
+ *      +34,370.00, Dakahlia 2 -17,185.00, Port Said -17,185.00, one rep's July achievement moving
+ *      -22.0% to +41.9%) and declined, both because July is published — see
+ *      never-fix-a-published-and-announced-month — and because the city rule is the rule.
+ *
+ * So do NOT reintroduce a per-customer apportionment override, and do not read the 441164 history in
+ * git as unfinished work. The even city share is no longer "an estimate until a human says otherwise";
+ * it IS the answer. A customer whose goods genuinely leave its city is a business fact the owner has
+ * chosen not to model.
  */
-export function customersAlreadySplitAcrossAreas(rows: readonly StoreSplitRow[]): ReadonlySet<string> {
-  const closingAreas = new Map<string, Set<string>>();
-  const rebooked = new Set<string>();
-  // Registry customers are exempt on their own — no multi-area evidence is required, because the
-  // rows this function reads cannot carry any. See the field doc on StoreSplitRow.evenSplitApplied.
-  const registered = new Set<string>();
-
+export function customersExemptFromCitySplit(rows: readonly StoreSplitRow[]): ReadonlySet<string> {
+  const exempt = new Set<string>();
   for (const row of rows) {
     if (row.isDirect || !row.includedInClosing) continue;
+    if (!row.evenSplitApplied) continue;
     const code = String(row.clientCode ?? "").trim();
-    if (!code) continue;
-    if (row.evenSplitApplied) registered.add(code);
-    const area = closingAreaOf(row);
-    if (area) {
-      let seen = closingAreas.get(code);
-      if (!seen) {
-        seen = new Set<string>();
-        closingAreas.set(code, seen);
-      }
-      seen.add(area);
-    }
-    if (isRebookedRow(row)) rebooked.add(code);
+    if (code) exempt.add(code);
   }
-
-  const exempt = new Set<string>(registered);
-  closingAreas.forEach((areas, code) => {
-    if (areas.size > 1 && rebooked.has(code)) exempt.add(code);
-  });
   return exempt;
 }
 
@@ -388,8 +365,9 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
   const out: T[] = [];
 
   // A customer already distributed across areas by hand is never redistributed by the city rule.
-  // See customersAlreadySplitAcrossAreas for the case that forced this.
-  const exemptCustomers = customersAlreadySplitAcrossAreas(rows);
+  // The one exemption left: a customer the database has already distributed. See
+  // customersExemptFromCitySplit for why it is the only one.
+  const exemptCustomers = customersExemptFromCitySplit(rows);
   const movements = new Map<string, StoreSplitAreaMovement>();
   const exemptStoreValueByBrick = new Map<string, number>();
   let splitRowCount = 0;
@@ -679,7 +657,7 @@ export function detailStoreSplitByCustomer<
 
   // Same exemption as the split itself, or the detail sheet would report a store as "split" that
   // the matrix left alone — the two tabs must describe the same operation.
-  const detailExempt = customersAlreadySplitAcrossAreas(rows);
+  const detailExempt = customersExemptFromCitySplit(rows);
 
   const byKey = new Map<string, StoreSplitDetailRow>();
   for (const row of rows) {
