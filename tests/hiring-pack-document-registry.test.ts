@@ -55,15 +55,15 @@ function testEveryBuiltInTableIsComplete() {
 
 /** Every built-in document resolves all three answers, through the public functions. */
 function testEveryBuiltInDocumentResolvesAllThree() {
-  // EIGHTEEN since 2026-09-05: ten, plus the two renewal papers, plus Sato's own six — the
+  // NINETEEN since 2026-09-06: ten, plus the two renewal papers, plus Sato's own six — the
   // confidentiality undertaking, both appointment-documents forms, both absence notices and the
-  // service-file sheet. Deliberately hard-coded rather than derived: it is what makes adding a
-  // document a decision somebody had to write down, in a repo where `ignoreBuildErrors` means an
-  // incomplete Record compiles and deploys perfectly happily.
+  // service-file sheet — plus the certificate of experience. Deliberately hard-coded rather than
+  // derived: it is what makes adding a document a decision somebody had to write down, in a repo
+  // where `ignoreBuildErrors` means an incomplete Record compiles and deploys perfectly happily.
   assert.equal(
     HIRING_PACK_DOCUMENTS.length,
-    18,
-    "the built-in document list should still be eighteen — update this only alongside the four " +
+    19,
+    "the built-in document list should still be nineteen — update this only alongside the four " +
       "tables in document-registry.ts, the surfaces, the renderers and the template registry",
   );
 
@@ -244,13 +244,16 @@ function testEveryDocumentIsInExactlyOnePackage() {
       "appointmentDocsReturn",
       "clearanceCompany",
       "clearanceEmployee",
+      "experienceCertificate",
       "form6",
       "mutualTermination",
       "resignation",
     ].sort(),
-    "the leaving package is Form 6, both labour templates, both clearances, and the employee's " +
+    "the leaving package is Form 6, both labour templates, both clearances, the employee's " +
       "receipt for his own certificates coming back — whose sibling is in the JOINING package, " +
-      "which is the pairing this assertion exists to keep straight",
+      "which is the pairing this assertion exists to keep straight — and the certificate of " +
+      "experience, which is filed here because that is when HR reaches for it, not because a " +
+      "serving employee cannot ask for one",
   );
   assert.deepEqual(
     seen.get("other")?.sort(),

@@ -14,6 +14,7 @@ import {
   HR_PAPER_DEEMED_RESIGNATION_V1,
   HR_PAPER_DOCUMENTS_RECEIPT_V1,
   HR_PAPER_DOCUMENTS_RETURN_V1,
+  HR_PAPER_EXPERIENCE_CERTIFICATE_V1,
   HR_PAPER_NDA_V1,
   HR_PAPER_SOCIAL_STATUS_V1,
   hrPaperById,
@@ -22,7 +23,10 @@ import {
   buildHrPaperValues,
   renderHrPaperHtml,
 } from "../src/lib/hiring-pack/render-hr-paper.ts";
-import { PRINT_BANNER_CSS } from "../src/lib/hiring-pack/render-shared.ts";
+import {
+  describeServiceDuration,
+  PRINT_BANNER_CSS,
+} from "../src/lib/hiring-pack/render-shared.ts";
 import {
   collectHiringPackGaps,
   emptyOffboardingProfile,
@@ -231,8 +235,12 @@ function testTheSecondNoticeDeclaresRatherThanAcceptsAResignation(): void {
 // Registration
 // ---------------------------------------------------------------------------------------------
 
-function testAllSixAreRegisteredAndCurrent(): void {
-  assert.equal(HR_PAPERS.length, 6, "six papers were supplied and six are registered");
+function testEveryPaperIsRegisteredAndCurrent(): void {
+  // SIX supplied by the owner on 2026-09-05, plus the certificate of experience drawn on
+  // 2026-09-06. Hard-coded on purpose, like the count in the registry test: adding a paper to this
+  // module touches nine files, and a number somebody has to change is what makes that a decision
+  // rather than an omission.
+  assert.equal(HR_PAPERS.length, 7, "six papers were supplied, and the certificate makes seven");
 
   for (const document of HOUSE_PAPER_DOCUMENTS) {
     assert.ok(
@@ -263,6 +271,7 @@ function testAllSixAreRegisteredAndCurrent(): void {
     ["absenceWarning", HR_PAPER_ABSENCE_WARNING_V1],
     ["deemedResignation", HR_PAPER_DEEMED_RESIGNATION_V1],
     ["appointmentDocsReturn", HR_PAPER_DOCUMENTS_RETURN_V1],
+    ["experienceCertificate", HR_PAPER_EXPERIENCE_CERTIFICATE_V1],
   ];
   for (const [document, template] of pairs) {
     const version = currentTemplateVersion(document as (typeof HOUSE_PAPER_DOCUMENTS)[number]);
@@ -320,6 +329,9 @@ function testEveryPaperHasUniqueIdAndKnownTokens(): void {
     "FIRST_WARNING_FROM",
     "FIRST_WARNING_TO",
     "COMPLETION_DEADLINE",
+    "SERVICE_END",
+    "SERVICE_STATUS",
+    "SERVICE_DURATION",
   ]);
   for (const paper of HR_PAPERS) {
     for (const token of hrPaperTemplateTokens(paper)) {
@@ -488,10 +500,152 @@ function testAnAbsentValueStillPrintsARule(): void {
   assert.ok(!html.includes("{{"), "and no raw token survives");
 }
 
+// ---------------------------------------------------------------------------------------------
+// 🔴 The certificate of experience
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * THE ONE ERROR ON THIS PAPER THAT COSTS SOMEBODY A JOB: describing a serving employee as having
+ * left, or a leaver as still employed.
+ *
+ * The certificate is issued to both — a leaver takes it to his next employer, and a man at his desk
+ * takes one to an embassy — and it says the opposite thing in each case. The three tokens that carry
+ * that are resolved from `employee.departed`, and this pins all three in BOTH states, plus the case
+ * that reads either way if it is got wrong: a leaver whose last working date nobody ever recorded.
+ * An absent date means "unrecorded", never "still here".
+ */
+function testTheCertificateStatesServiceBothWays(): void {
+  const leaver = packFixture({
+    hireDate: "2023-03-01",
+    departed: true,
+    lastWorkingDate: "2026-08-31",
+  });
+  const serving = packFixture({ hireDate: "2023-03-01", departed: false, lastWorkingDate: null });
+
+  const leaverValues = buildHrPaperValues(leaver);
+  assert.ok(
+    leaverValues.SERVICE_END?.includes("31 / 08 / 2026"),
+    "a leaver's period closes on his last working day",
+  );
+  assert.ok(
+    leaverValues.SERVICE_STATUS?.includes("انتهت خدمته"),
+    "a leaver is stated to have ended service",
+  );
+  // 1 Mar 2023 to 31 Aug 2026 is three years and six months, because the last working day is a day
+  // WORKED. Five months and thirty days would read as the company shaving the end of his service.
+  assert.equal(leaverValues.SERVICE_DURATION, "3 سنوات و6 أشهر");
+
+  const servingValues = buildHrPaperValues(serving);
+  assert.equal(
+    servingValues.SERVICE_END,
+    "تاريخه",
+    "a serving employee's period closes at the issue date in words, never on a dotted rule",
+  );
+  assert.ok(
+    servingValues.SERVICE_STATUS?.includes("لا يزال على رأس العمل"),
+    "a serving employee is stated to be still employed",
+  );
+  assert.ok(
+    (servingValues.SERVICE_DURATION ?? "").length > 0,
+    "a serving employee's span is counted to today",
+  );
+
+  const undated = buildHrPaperValues(
+    packFixture({ hireDate: "2023-03-01", departed: true, lastWorkingDate: null }),
+  );
+  assert.ok(
+    undated.SERVICE_STATUS?.includes("انتهت خدمته"),
+    "a leaver whose date nobody recorded is still a leaver — the flag decides, not the date",
+  );
+  assert.equal(undated.SERVICE_END, "", "and his period end rules rather than defaulting to today");
+  assert.equal(undated.SERVICE_DURATION, "", "and his span rules rather than being counted to today");
+}
+
+/**
+ * WHAT THE CERTIFICATE DELIBERATELY DOES NOT SAY — asserted on the EMITTED PAGE, never on the
+ * template, because that is the artifact a future employer reads.
+ *
+ * Each of the three is an omission somebody decided on, not an unfinished half, so each is pinned:
+ * a later session adding a salary line or «حسن السير والسلوك» to make the paper look more like the
+ * Egyptian house style turns this red rather than shipping a testimonial the company never made.
+ */
+function testTheCertificateOmitsPaySeparationAndConduct(): void {
+  const html = renderHrPaperHtml(
+    packFixture({ departed: true, lastWorkingDate: "2026-08-31" }),
+    1,
+    HR_PAPER_EXPERIENCE_CERTIFICATE_V1,
+  );
+
+  for (const forbidden of ["11,000", "11000", "14,300", "الأجر", "راتب", "مرتب"]) {
+    assert.ok(!html.includes(forbidden), `a certificate of experience states no pay — found "${forbidden}"`);
+  }
+  for (const forbidden of ["استقالة", "استقال", "فصل", "سبب"]) {
+    assert.ok(
+      !html.includes(forbidden),
+      `a certificate of experience states no reason for leaving — found "${forbidden}"`,
+    );
+  }
+  for (const forbidden of ["حسن السير", "السلوك", "تزكية"]) {
+    assert.ok(
+      !html.includes(forbidden),
+      `this paper prints from a button for anybody, so it makes no testimonial — found "${forbidden}"`,
+    );
+  }
+
+  // It is its own kind, which is what keeps it out of the pool an archived LETTER resolves within
+  // and off the absence-date warning that belongs to the two notices.
+  assert.ok(html.includes("copy--certificate"), "the certificate is not rendered as a letter");
+  assert.ok(
+    !html.includes("The absence dates print blank"),
+    "the absence-date warning belongs to the notices, not here",
+  );
+  // ...and the notices KEPT it, now that the banner is keyed on the tokens rather than the kind.
+  assert.ok(
+    renderHrPaperHtml(packFixture(), 1, HR_PAPER_ABSENCE_WARNING_V1).includes(
+      "The absence dates print blank",
+    ),
+    "the absence warning must keep its own warning",
+  );
+
+  // Nobody signs it back: it is addressed to a reader outside the company.
+  assert.ok(!html.includes("العامل — المُقِر"), "the employee is the subject, not a party");
+}
+
+/**
+ * The Arabic span, which counts in three bands either side of one, two and ten.
+ *
+ * Pinned separately from the certificate because getting the agreement wrong is invisible to anyone
+ * reading the code — «3 سنة» is grammatical nonsense that renders perfectly.
+ */
+function testTheServiceSpanCountsInArabic(): void {
+  const cases: ReadonlyArray<readonly [string, string, string]> = [
+    ["2023-03-01", "2026-08-31", "3 سنوات و6 أشهر"],
+    ["2023-03-15", "2026-08-31", "3 سنوات و5 أشهر و17 يومًا"],
+    ["2025-01-01", "2025-12-31", "سنة واحدة"],
+    ["2024-01-01", "2025-12-31", "سنتان"],
+    ["2026-02-01", "2026-02-28", "شهر واحد"],
+    ["2026-01-01", "2026-02-28", "شهران"],
+    ["2026-01-10", "2026-01-10", "يوم واحد"],
+    ["2026-01-10", "2026-01-11", "يومان"],
+    ["2026-01-10", "2026-01-14", "5 أيام"],
+    ["2026-01-01", "2026-01-15", "15 يومًا"],
+    ["2014-06-01", "2026-08-31", "12 سنة و3 أشهر"],
+  ];
+  for (const [from, to, expected] of cases) {
+    assert.equal(describeServiceDuration(from, to), expected, `${from} → ${to}`);
+  }
+  assert.equal(describeServiceDuration("2023-03-01", null), "", "a missing end rules");
+  assert.equal(
+    describeServiceDuration("2026-03-01", "2023-03-01"),
+    "",
+    "a reversed period rules rather than printing a negative span",
+  );
+}
+
 export function runHrFormsHousePapersTests(): void {
   testTheAbsenceThresholdIsMoreThanTenDays();
   testTheSecondNoticeDeclaresRatherThanAcceptsAResignation();
-  testAllSixAreRegisteredAndCurrent();
+  testEveryPaperIsRegisteredAndCurrent();
   testEveryPaperHasUniqueIdAndKnownTokens();
   testTheCompanyIsNoLongerABlank();
   testTheDatesThatCouldEndAServiceStayBlank();
@@ -503,4 +657,7 @@ export function runHrFormsHousePapersTests(): void {
   testCopyCountsAreEachPapersOwnRequirement();
   testTheNdaNamesTheArticleItSupplements();
   testAnAbsentValueStillPrintsARule();
+  testTheCertificateStatesServiceBothWays();
+  testTheCertificateOmitsPaySeparationAndConduct();
+  testTheServiceSpanCountsInArabic();
 }
