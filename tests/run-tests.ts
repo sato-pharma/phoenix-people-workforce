@@ -1436,6 +1436,7 @@ import { runSosDashboardIncompleteReadIsVisibleTests } from "./sos-dashboard-inc
 import { runEmployeeRlsPolicyLockTests } from "./employee-rls-policy-lock.test.ts";
 import { runImportDiagnosticsVerdictTests } from "./import-diagnostics-verdict.test.ts";
 import { runMonthlySalesRunReconcileTests } from "./monthly-sales-run-reconcile.test.ts";
+import { runWorktreeNodeModulesJunctionTests } from "./worktree-node-modules-junction.test.ts";
 import { runChannelsByRepPharmacyOverrideTests } from "./channels-by-rep-pharmacy-override.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4570,6 +4571,10 @@ await runTest(
 await runTest(
   "monthly sales run reconcile (a failed batch read must not un-confirm the whole month)",
   runMonthlySalesRunReconcileTests,
+);
+await runTest(
+  "worktree node_modules junction (links a fresh worktree, never clobbers an existing one, refuses a missing primary, dry-runs clean)",
+  runWorktreeNodeModulesJunctionTests,
 );
 await runTest(
   "channels by rep honours the owner pharmacy overrides (578,248.77 EGP read as stores on one tab)",

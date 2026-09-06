@@ -33,6 +33,8 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
+import { linkNodeModules } from "./lib/link-node-modules.mjs";
+
 // Commit charge, not RAM, is what freezes this machine — and a freeze leaves no
 // dump. Below the floor a new session is refused; below the warn line it is
 // allowed but called out. Sessions themselves are cheap (~0.5 GB each, measured
@@ -134,15 +136,10 @@ function ready(dir) {
 }
 
 function linkModules(dir) {
-  const srcMods = path.join(primaryRoot, "node_modules");
-  if (!fs.existsSync(srcMods)) return "the primary has no node_modules — run pnpm install THERE first";
-  if (fs.existsSync(path.join(dir, "node_modules"))) return "already present";
-  try {
-    fs.symlinkSync(srcMods, path.join(dir, "node_modules"), "junction");
-    return "junctioned";
-  } catch (err) {
-    return "could not link: " + err.message;
-  }
+  // Shared with sync-worktree-env.mjs so both create the junction identically —
+  // see scripts/lib/link-node-modules.mjs for why a worktree is junctioned and
+  // never installed.
+  return linkNodeModules(dir, primaryRoot);
 }
 
 function syncEnv(dir) {
