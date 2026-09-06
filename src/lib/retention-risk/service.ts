@@ -145,7 +145,7 @@ async function loadLeaveDates(startDate: string, endDate: string): Promise<Map<s
  * A PostgREST `.in()` carrying several hundred values returns ZERO ROWS AND NO ERROR in this
  * system. That failure would be catastrophic here in a way it is not elsewhere: zero activity rows
  * means every rep reads as silent, so the board would name the entire field force and the sweep
- * would email HR about all of them — a silent read fault presenting as sixty-nine resignations.
+ * would notify HR about all of them — a silent read fault presenting as sixty-nine resignations.
  *
  * `queryVisits` sprays each id's casing variants (`expandHrIdFilterValues`), roughly doubling the
  * count, and its own doc comment warns that its hr-id lists are meant to be per-employee or

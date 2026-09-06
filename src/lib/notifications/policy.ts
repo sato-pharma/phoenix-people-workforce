@@ -192,20 +192,26 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // the bare default applies, and that default carries email and omits Telegram: the exact inverse
   // of the rule, arrived at silently.
   "sales.distributor_upload_overdue": { channels: ["in_app", "telegram", "push"], priority: "high", recipientStrategy: ["role_based"], telegramAllowed: true },
-  // Owner's choice 2026-09-06, asked directly: in-app, email and Telegram. PUSH IS ABSENT ON
-  // PURPOSE — it is the only one of the four that renders a named employee and the words "no CRM
-  // activity" on a phone's lock screen, readable by anyone holding the handset, and he did not ask
-  // for it. Both rows exist because the bare default carries email but omits Telegram, so falling
-  // through would drop the channel that actually reaches an HR seat in the field. Same two-layer
-  // shape as sales.distributor_upload_overdue above: the call site in retention-risk/notify.ts
-  // passes these same three explicitly and an explicit `channels` wins, so these rows are the
-  // INDEPENDENT layer that still holds if that argument is ever dropped.
+  // IN-APP AND TELEGRAM, NEVER EMAIL. Owner instruction 2026-09-07, in review: "remove email keep
+  // in-app and telegram". His original request on 2026-09-06 did say email, and this reverses that
+  // half of it — the recipients he picked are unchanged. The alert names a colleague as a possible
+  // resignation risk, and email is the half that leaves a durable copy of that in four inboxes
+  // indefinitely; the house already draws this line for Early Birds, "new CV received" and a
+  // candidate push to a hiring manager.
+  //
+  // THESE ROWS ARE THE HALF THAT ACTUALLY HOLDS. The call site passes the same list explicitly and
+  // an explicit `channels` wins, so if these rows still carried email they would restore it the
+  // moment that argument was dropped — the bare default carries email and omits Telegram, which is
+  // the exact inverse of the rule. Two co-operating config values are precisely what drifts apart.
+  //
+  // Push is absent too: it is the only channel that renders a named employee and the words "no CRM
+  // activity" on a phone's lock screen, and he never asked for it.
   //
   // No `permissionResource`: recipients are resolved from the admin-editable role policy and from
   // the subject's own reporting line, and a District Manager — the whole point of naming the line
   // manager — holds no company-wide HR resource to be gated on.
-  "retention_risk.retention_risk_flagged": { channels: ["in_app", "email", "telegram"], priority: "high", recipientStrategy: ["role_based"], telegramAllowed: true },
-  "retention_risk.retention_risk_pre_payroll": { channels: ["in_app", "email", "telegram"], priority: "high", recipientStrategy: ["role_based"], telegramAllowed: true },
+  "retention_risk.retention_risk_flagged": { channels: ["in_app", "telegram"], priority: "high", recipientStrategy: ["role_based"], telegramAllowed: true },
+  "retention_risk.retention_risk_pre_payroll": { channels: ["in_app", "telegram"], priority: "high", recipientStrategy: ["role_based"], telegramAllowed: true },
   "system.announcement": { channels: ["in_app", "email", "push"], recipientStrategy: ["employee"] },
   // Live sender (telegram-operations.ts) passes explicit channels and doesn't consult this
   // entry today, but kept push-inclusive here too in case a future caller relies on policy

@@ -46,15 +46,20 @@ function signal(overrides: Partial<RetentionRiskSignal> = {}): RetentionRiskSign
 }
 
 export function runRetentionRiskNotifyTests() {
-  // ── The channels the owner asked for, and nothing else ─────────────────────────────────────
+  // ── In-app and Telegram, and nothing else ──────────────────────────────────────────────────
   //
-  // He named in-app, Telegram and email on 2026-09-06. PUSH IS THE ONE THAT MATTERS HERE: it is
-  // the only channel that renders a named employee and the words "no CRM activity" on a phone's
-  // lock screen, readable by whoever is holding the handset, and he did not ask for it.
+  // He asked for email on 2026-09-06 and REMOVED IT IN REVIEW on 2026-09-07: "remove email keep
+  // in-app and telegram". Both of the excluded channels leave a trace this alert must not leave —
+  // email a durable copy of "possible resignation risk" against a named colleague sitting in four
+  // inboxes, push that same sentence on a lock screen anyone holding the handset can read.
   assert.deepEqual(
     [...RETENTION_RISK_CHANNELS],
-    ["in_app", "email", "telegram"],
-    "the owner named exactly these three on 2026-09-06",
+    ["in_app", "telegram"],
+    "email was removed on the owner's instruction 2026-09-07; do not add it back without asking him",
+  );
+  assert.ok(
+    !RETENTION_RISK_CHANNELS.includes("email"),
+    "stated separately from the deepEqual so a reordering of the list can never quietly restore email",
   );
   assert.ok(
     !RETENTION_RISK_CHANNELS.includes("push"),
@@ -68,7 +73,10 @@ export function runRetentionRiskNotifyTests() {
   // field.
   for (const eventType of [RETENTION_RISK_EVENT_TYPE, RETENTION_RISK_PRE_PAYROLL_EVENT_TYPE]) {
     const channels = resolveNotificationPolicy({ eventType, module: RETENTION_RISK_MODULE }).channels;
-    assert.ok(channels.includes("email"), `${eventType} must keep email — the owner asked for it by name`);
+    assert.ok(
+      !channels.includes("email"),
+      `${eventType} must not carry email in the policy table — the bare default DOES, so a row that kept it would restore email the moment the call site's explicit list was dropped`,
+    );
     assert.ok(channels.includes("telegram"), `${eventType} must keep Telegram — the bare default omits it`);
     assert.ok(channels.includes("in_app"), `${eventType} must keep in-app`);
     assert.ok(
