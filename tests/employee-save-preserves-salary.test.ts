@@ -12,9 +12,11 @@ import { employeeCompensationColumns } from "../src/lib/employees/employee-direc
  * figures was redacted — blanked real payroll data as a side effect of editing a phone number.
  *
  * The route-level guard that stood in for this keyed on WHO WAS VIEWING
- * (`isSalaryRedactedForViewer`: HR Advisory / HR Operations, and only for a named list of HR ids),
- * so it never fired for Super Admin, nor for anyone off that list. These tests pin the rule on the
- * PAYLOAD instead, which is what actually decides whether a figure exists to write.
+ * (`isSalaryRedactedForViewer`: HR Advisory only since 2026-09-06, both HR seats before that, and
+ * in either case only for a named list of HR ids), so it never fired for Super Admin, nor for
+ * anyone off that list. These tests pin the rule on the PAYLOAD instead, which is what actually
+ * decides whether a figure exists to write — which is why taking HR Operations off that viewer
+ * list did not reopen this hole.
  */
 export function runEmployeeSavePreservesSalaryTests() {
   const MONEY_COLUMNS = [

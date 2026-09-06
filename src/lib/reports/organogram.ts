@@ -127,7 +127,9 @@ export function canAccessHeadOffice(access: AccessContext) {
     // it. The salary carve-out that governs the directory governs the chart popup too —
     // isSalaryRedactedForViewer blanks the money figures for her own manager chain and the
     // named seniors, and the node-detail route applies it (app/api/reports/organogram/
-    // employee/[hrId]/route.ts).
+    // employee/[hrId]/route.ts). Since 2026-09-06 that carve-out is HR ADVISORY'S alone: HR
+    // Operations maintains the employee master, salary columns included, so nothing is blanked
+    // for her on either surface.
     access.role === "HR Advisory" ||
     access.role === "HR Operations" ||
     // Training Manager added 2026-09-03 (owner: "the training manager ui want to make him able to
