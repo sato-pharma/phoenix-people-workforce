@@ -139,38 +139,57 @@ async function loadLeaveDates(startDate: string, endDate: string): Promise<Map<s
  * was still touching the system. Only a day with NOTHING at all counts as silence, which is the
  * narrowest and least accusatory reading of the owner's rule.
  */
+/**
+ * How many hr ids go into one `.in()`.
+ *
+ * A PostgREST `.in()` carrying several hundred values returns ZERO ROWS AND NO ERROR in this
+ * system. That failure would be catastrophic here in a way it is not elsewhere: zero activity rows
+ * means every rep reads as silent, so the board would name the entire field force and the sweep
+ * would email HR about all of them — a silent read fault presenting as sixty-nine resignations.
+ *
+ * `queryVisits` sprays each id's casing variants (`expandHrIdFilterValues`), roughly doubling the
+ * count, and its own doc comment warns that its hr-id lists are meant to be per-employee or
+ * per-cohort rather than company-wide. Sixty-nine reps is company-wide by that standard, so this
+ * chunks — and `loadCrmActivity` reports the row count so a zero can never pass as an answer.
+ */
+const HR_ID_FILTER_CHUNK = 40;
+
 async function loadCrmActivity(
   hrIds: readonly string[],
   scanStart: string,
   scanEnd: string,
-): Promise<{ activity: Map<string, Set<string>>; firstSeen: Map<string, string> }> {
+): Promise<{ activity: Map<string, Set<string>>; firstSeen: Map<string, string>; rowCount: number }> {
   const activity = new Map<string, Set<string>>();
   const firstSeen = new Map<string, string>();
-  if (hrIds.length === 0) return { activity, firstSeen };
+  if (hrIds.length === 0) return { activity, firstSeen, rowCount: 0 };
 
-  const rows = await queryVisits<VisitDayRow>({
-    agentHrIds: hrIds,
-    columns: "agent_hr_id,visit_date",
-    dateFrom: scanStart,
-    dateTo: scanEnd,
-    // A rep who has already left is not a flight risk, and their rows would be excluded anyway;
-    // leaving the default in place keeps departed-agent data invisible here as everywhere else.
-    requireAgentHrId: true,
-  });
+  let rowCount = 0;
+  for (let index = 0; index < hrIds.length; index += HR_ID_FILTER_CHUNK) {
+    const rows = await queryVisits<VisitDayRow>({
+      agentHrIds: hrIds.slice(index, index + HR_ID_FILTER_CHUNK),
+      columns: "agent_hr_id,visit_date",
+      dateFrom: scanStart,
+      dateTo: scanEnd,
+      // A rep who has already left is not a flight risk, and their rows would be excluded anyway;
+      // leaving the default in place keeps departed-agent data invisible here as everywhere else.
+      requireAgentHrId: true,
+    });
+    rowCount += rows.length;
 
-  for (const row of rows) {
-    const key = canonicalHrIdKey(row.agent_hr_id);
-    if (!key || !row.visit_date) continue;
-    let bucket = activity.get(key);
-    if (!bucket) {
-      bucket = new Set<string>();
-      activity.set(key, bucket);
+    for (const row of rows) {
+      const key = canonicalHrIdKey(row.agent_hr_id);
+      if (!key || !row.visit_date) continue;
+      let bucket = activity.get(key);
+      if (!bucket) {
+        bucket = new Set<string>();
+        activity.set(key, bucket);
+      }
+      bucket.add(row.visit_date);
+      const earliest = firstSeen.get(key);
+      if (!earliest || row.visit_date < earliest) firstSeen.set(key, row.visit_date);
     }
-    bucket.add(row.visit_date);
-    const earliest = firstSeen.get(key);
-    if (!earliest || row.visit_date < earliest) firstSeen.set(key, row.visit_date);
   }
-  return { activity, firstSeen };
+  return { activity, firstSeen, rowCount };
 }
 
 /**
@@ -245,18 +264,25 @@ async function computeRetentionRisk(nowIso: string): Promise<RetentionRiskView> 
 
   const subjects = buildSubjects(employees, crm?.firstSeen ?? new Map());
 
-  // A CRM outage must not silently print an empty board — with no activity rows every rep reads
-  // as silent, so the honest answer is to drop the silence half entirely and say why.
-  const usableSubjects = crm
+  // A CRM outage must not silently print an empty board — with no activity rows every rep reads as
+  // silent, so the honest answer is to drop the silence half entirely and say why.
+  //
+  // THE SECOND CONDITION IS THE IMPORTANT ONE. A thrown error is the easy case; the dangerous case
+  // is a read that SUCCEEDS and returns nothing, which is what an oversized `.in()` does here. Zero
+  // rows across a 66-day scan of the whole field force is not a quiet quarter — production carries
+  // roughly forty thousand — so it is a broken read every time, and treating it as data would name
+  // every rep in the company at once.
+  const crmUsable = crm !== null && (repHrIds.length === 0 || crm.rowCount > 0);
+  const usableSubjects = crmUsable
     ? subjects
     : subjects.map((subject) => ({ ...subject, watchCrmSilence: false }));
 
   return {
     computedAt: nowIso,
-    crmUnavailable: crm === null,
+    crmUnavailable: !crmUsable,
     measurableThrough: window.measurableThrough,
     signals: buildRetentionRiskSignals({
-      crmActivityByHrId: crm?.activity ?? new Map(),
+      crmActivityByHrId: crmUsable && crm ? crm.activity : new Map(),
       leaveByHrId,
       measurableThrough: window.measurableThrough,
       publicHolidays,
