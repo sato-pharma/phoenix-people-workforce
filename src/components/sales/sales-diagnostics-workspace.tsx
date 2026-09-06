@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { SalesDistributorEntry } from "@/lib/sales/distributor-registry";
+import { importDiagnosticsVerdict } from "@/lib/sales/import-diagnostics-verdict";
 import { cn } from "@/lib/utils";
 
 type Props = { distributors: SalesDistributorEntry[] };
@@ -62,6 +63,12 @@ export function SalesDiagnosticsWorkspace({ distributors }: Props) {
 
   const analyze = result?.analyze;
   const unknowns = analyze?.status === "ok" ? analyze.preview.unknownProducts.length + analyze.preview.unknownTerritories.length + analyze.preview.unknownCustomers.length : 0;
+  // Strict-check errors are rendered further down but used to have no say in the verdict banner, so
+  // a file with errors and no unmapped items was told it "would import cleanly".
+  const verdict = importDiagnosticsVerdict({
+    unmappedCount: unknowns,
+    strictErrorCount: analyze?.status === "ok" ? (analyze.validation?.errorCount ?? 0) : 0,
+  });
 
   return (
     <div className="space-y-5">
@@ -130,7 +137,12 @@ export function SalesDiagnosticsWorkspace({ distributors }: Props) {
                 <span className="rounded-full border border-phx-line bg-[#FCFDFE] px-3 py-1 text-phx-ink">value {Math.round(analyze.reconciliation.totalValue).toLocaleString()}</span>
                 {unknowns > 0 ? <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-rose-700">{unknowns} unmapped</span> : null}
               </div>
-              {unknowns > 0 ? (
+              {/* The green verdict needs BOTH clean. Strict-check errors used to be rendered only in
+                  the box below and had no say here, so a file with zero unmapped items and a dozen
+                  errors was told it "would import cleanly". */}
+              {verdict === "danger" ? (
+                <AdminCallout tone="danger"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{analyze.validation?.errorCount} strict-check error(s) — this file would NOT import cleanly. See Strict checks below.</span></AdminCallout>
+              ) : verdict === "warning" ? (
                 <AdminCallout tone="warning"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{unknowns} unmapped item(s) would block import. Fix them in <Link className="font-semibold text-phx-accent-press underline" href="/sales/mapping-database">Mapping Database</Link>.</span></AdminCallout>
               ) : (
                 <AdminCallout tone="success"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /><span>Fully recognized — this file would import cleanly{analyze.needsPeriod ? " (pick a period — no date column)" : ""}.</span></AdminCallout>
