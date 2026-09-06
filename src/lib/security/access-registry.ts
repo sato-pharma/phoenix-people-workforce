@@ -656,6 +656,9 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/market-awareness", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness", permission: { resource: "market_awareness", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/market-awareness/options", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
+  // The approvals queue. Gated on `read`, not `approve`: it is scoped inside the service to the
+  // decisions that are actually the caller's, so a reader sees an empty queue rather than a refusal.
+  sessionApi({ methods: ["GET"], pattern: "/api/market-awareness/inbox", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: ["GET"], pattern: "/api/market-awareness/:activityId", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/market-awareness/:activityId", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/market-awareness/:activityId/tracking", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
