@@ -1068,54 +1068,133 @@ function columnLetters(column: number): string {
 }
 
 /**
- * Widen the two matrices' grand-total columns to fit their own headings.
+ * Column widths for the three matrix pages, in Excel's character units.
  *
- * Both matrices repeat three columns per product — Sales Value, Target Value, Ach — and the
- * template sizes every one of them at 12.71 characters, which is right. What it also sizes at
- * 12.71 is the block after them: the grand total, whose headings are those same names with the
- * word "Total" in front. "Total Sales Value" does not fit in the width "Sales Value" fits in, so
- * the two most-read columns on the page shipped saying "Total Sales Val" and "Total Target V".
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * A NUMBER TOO NARROW FOR ITS COLUMN RENDERS AS `#####`, which is the same complaint this whole
+ * change exists to answer — data that is present and not readable. So every width here is set from
+ * the longest thing the column actually holds, never from how much room is wanted:
  *
- * The block exists only where the pivot asks for it — the Units Matrix sets `colGrandTotals="0"`
- * and has none — so the width lands on whatever sits past the last product group, and on nothing
- * at all when there is nothing there.
+ *   region  16   holds "<Region> Total" as well as the region — "Delta (1) Total" is 15 characters,
+ *                and column A CLIPS rather than overflowing, because column B beside it is filled.
+ *   area    20   area names, and "<Area> Total" on Area x Product.
+ *   product 24   the longest product name on any line, with room for a concentration suffix.
+ *   money   11   "-12,345,678" is 11. The em dash a zero prints as is one.
+ *   percent  8   "1234.5%" is 7.
+ *
+ * `grandMoney` is deliberately LEFT WIDE at the template's own 17.71. Its heading is "Total Sales
+ * Value", which does not fit in the width "Sales Value" fits in — the two most-read columns on the
+ * page once shipped saying "Total Sales Val" and "Total Target V", and narrowing this would put
+ * that back.
+ */
+const MATRIX_WIDTH = {
+  area: 20,
+  // Area x Product is only six columns, so its total width is set almost entirely by its three
+  // label columns — and A SHEET CANNOT BE NARROWER THAN ITS OWN CAPTION. A1 runs right until it
+  // meets the emblem and `clearTitleEmblem` slides the emblem clear of it; cut these to the
+  // matrices widths and the caption slides the logo 61px PAST THE LAST COLUMN, where it floats
+  // over nothing. Measured, and caught by the emblem check in the export tests.
+  areaProductArea: 24,
+  areaProductRegion: 18,
+  grandMoney: 17.7109375,
+  grandPercent: 10,
+  money: 11,
+  percent: 8,
+  // "Tebofortin Retard 480mg" is 23 characters and real names run longer; a clipped product name
+  // is the ellipsis the owner has banned.
+  product: 30,
+  region: 16,
+} as const;
+
+/**
+ * Re-cut every column on the three matrix pages to what it actually holds.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * THE FROZEN PANE WAS WIDER THAN A PHONE. The template gives column B — the AREA name, "Cairo 1" —
+ * a width of 86.71 characters, about 610px, and both matrices freeze at `xSplit="2"`, so columns A
+ * and B are pinned on screen. That is 724px of frozen label on a 375px phone: the pinned block alone
+ * is twice the screen, so scrolling right never reaches a number. Re-cut to 16 and 20 it is 252px,
+ * which leaves room for the data to arrive beside it.
+ *
+ * The rest is arithmetic and it is worth stating plainly, because it bounds what this can achieve: a
+ * line with 24 products spends 24 x 3 columns on the products alone. At the widths above that is
+ * about 5,600px, and no honest re-sizing brings a matrix of that shape onto a 375px screen. What it
+ * does is make the page usable — labels pinned and visible, numbers reachable by scrolling — rather
+ * than fit it. `Area x Product` is the page that genuinely fits, and it holds the same figures.
+ *
+ * The grand-total block exists only where the pivot asks for it: the Units Matrix sets
+ * `colGrandTotals="0"` and has none, which is also the flag that stops units being totalled across
+ * products. It is read from the pivot rather than assumed here.
  */
 async function sizeMatrixColumns(zip: JSZip, fill: ClosingEngineFill): Promise<void> {
   const products = distinctColumn(fill.data.salesData, 5).length;
   if (!products) return;
 
-  for (const sheetName of SLICER_SHEETS) {
+  for (const sheetName of [...SLICER_SHEETS, AREA_PRODUCT_SHEET]) {
     const spec = MANIFEST.sheets[sheetName];
     const file = spec ? zip.file(spec.file) : null;
     if (!spec || !file) continue;
     const xml = await file.async("string");
     const cols = /<cols>[\s\S]*?<\/cols>/.exec(xml)?.[0];
-    // The run the template gives the value columns is the one carrying their style and width, so it
-    // is re-cut rather than replaced: same attributes, new bounds.
-    const run = cols ? /<col\b[^>]*\bmin="3"[^>]*\/>/.exec(cols)?.[0] : null;
-    if (!cols || !run) continue;
+    if (!cols) continue;
 
-    // Two row-field columns, then three value columns per product. Anything past that is the grand
-    // total, which the pivot writes only when it is asked for.
-    const lastProductColumn = 2 + products * 3;
-    const totals = /\bcolGrandTotals="0"/.test((await pivotPartFor(zip, spec))?.xml ?? "") ? 0 : 3;
-    const runMax = Number(/\bmax="(\d+)"/.exec(run)?.[1] ?? 0);
-    const values = run.replace(/\bmax="\d+"/, `max="${lastProductColumn}"`);
-    const grand = totals
-      ? run
-          .replace(/\bmin="3"/, `min="${lastProductColumn + 1}"`)
-          .replace(/\bmax="\d+"/, `max="${lastProductColumn + totals}"`)
-          .replace(/\bwidth="[\d.]+"/, `width="17.7109375"`)
-      : "";
-    // The template's run reaches well past the widest month it was cut for, and a shorter month
-    // must not lose the columns beyond its own totals: they are still inside the run being
-    // re-cut, so a two-piece rewrite silently drops them back to the default width with no style,
-    // leaving a bare band beside the grand total on every sheet narrower than the template. Re-cut
-    // in three pieces, the tail keeping exactly what the template gave it.
-    const tail = runMax > lastProductColumn + totals
-      ? run.replace(/\bmin="3"/, `min="${lastProductColumn + totals + 1}"`)
-      : "";
-    zip.file(spec.file, xml.replace(cols, cols.replace(run, `${values}${grand}${tail}`)));
+    // The template's own run for the value columns carries the style these pages are drawn in, so
+    // it is re-cut rather than replaced — a hand-written <col> would lose `style="2"` and leave a
+    // band of default-formatted columns across the sheet.
+    const stamp = /<col\b[^>]*\bmin="3"[^>]*\/>/.exec(cols)?.[0];
+    if (!stamp) continue;
+    const style = /\bstyle="(\d+)"/.exec(stamp)?.[1];
+    const column = (index: number, width: number): string =>
+      `<col min="${index}" max="${index}" width="${width}"${style ? ` style="${style}"` : ""} customWidth="1"/>`;
+
+    const widths: number[] = [];
+    if (sheetName === AREA_PRODUCT_SHEET) {
+      // Three row-label columns — Region, Area, Product — then one column per measure.
+      widths.push(MATRIX_WIDTH.areaProductRegion, MATRIX_WIDTH.areaProductArea, MATRIX_WIDTH.product);
+      widths.push(MATRIX_WIDTH.money, MATRIX_WIDTH.money, MATRIX_WIDTH.percent);
+    } else {
+      widths.push(MATRIX_WIDTH.region, MATRIX_WIDTH.area);
+      for (let index = 0; index < products; index += 1) {
+        widths.push(MATRIX_WIDTH.money, MATRIX_WIDTH.money, MATRIX_WIDTH.percent);
+      }
+      const hasTotals = !/\bcolGrandTotals="0"/.test((await pivotPartFor(zip, spec))?.xml ?? "");
+      if (hasTotals) widths.push(MATRIX_WIDTH.grandMoney, MATRIX_WIDTH.grandMoney, MATRIX_WIDTH.grandPercent);
+    }
+
+    // Adjacent columns of the same width are emitted as one run, which is what Excel writes and
+    // what keeps a 24-product line from carrying 75 separate <col> elements.
+    const runs: string[] = [];
+    let start = 1;
+    for (let index = 0; index < widths.length; index += 1) {
+      const next = widths[index + 1];
+      if (next === widths[index]) continue;
+      const width = widths[index]!;
+      runs.push(
+        start === index + 1
+          ? column(start, width)
+          : `<col min="${start}" max="${index + 1}" width="${width}"${style ? ` style="${style}"` : ""} customWidth="1"/>`,
+      );
+      start = index + 2;
+    }
+
+    // EVERYTHING PAST THE LAST USED COLUMN KEEPS WHAT THE TEMPLATE GAVE IT. The template's runs
+    // reach well beyond the widest month it was cut for, and dropping them would leave a bare
+    // default-width, style-less band across every sheet narrower than the template — which is a
+    // visible defect on the page rather than a tidy-up.
+    // A run that STRADDLES the boundary is re-cut, never dropped: the template's value run is
+    // `min="3" max="50"`, so a month using 14 columns would otherwise leave 15..50 with no run at
+    // all. Filtering on `min` alone is the mistake that produces the bare band.
+    const tail = [...cols.matchAll(/<col\b[^>]*?\/>/g)]
+      .map((one) => one[0])
+      .map((one) => {
+        const min = Number(/\bmin="(\d+)"/.exec(one)?.[1] ?? 0);
+        const max = Number(/\bmax="(\d+)"/.exec(one)?.[1] ?? 0);
+        if (max <= widths.length) return "";
+        return min > widths.length ? one : one.replace(/\bmin="\d+"/, `min="${widths.length + 1}"`);
+      })
+      .join("");
+
+    zip.file(spec.file, xml.replace(cols, `<cols>${runs.join("")}${tail}</cols>`));
   }
 }
 

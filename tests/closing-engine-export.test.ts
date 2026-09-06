@@ -1655,6 +1655,32 @@ export async function runClosingEngineExportTests() {
       // the title and the completeness note, and overwriting those loses the month and the caveat.
       assert.ok(rowsByNumber.has(firstRow), `${label}: ${sheetName} has no row at the pivot's own first row`);
       assert.match(cellsOf(1).A ?? "", /^\S/, `${label}: ${sheetName} must keep its title on row 1`);
+
+      // ── THE FROZEN BLOCK MUST BE NARROWER THAN A PHONE ──────────────────────────────────────
+      //
+      // Both matrices freeze at `xSplit="2"`, pinning Region and Area on screen. The template gave
+      // column B — an AREA NAME, "Cairo 1" — a width of 86.71 characters, so the pinned block came
+      // to 734px against a 375px phone: TWICE THE SCREEN. Scrolling right then never reaches a
+      // number, because the frozen columns never let go. Writing the grid into the cells fixed
+      // nothing a reader could see while that held.
+      //
+      // Measured in pixels, with Excel's own conversion — px = round(width * 7) + 5, the same one
+      // the Rep Card's emblem check uses — because character units hide the problem completely.
+      const runs = [...(/<cols>[\s\S]*?<\/cols>/.exec(sheet)?.[0] ?? "").matchAll(/<col\b[^>]*?\/>/g)].map((one) => ({
+        max: Number(/max="(\d+)"/.exec(one[0])?.[1] ?? 0),
+        min: Number(/min="(\d+)"/.exec(one[0])?.[1] ?? 0),
+        width: Number(/width="([\d.]+)"/.exec(one[0])?.[1] ?? 9.140625),
+      }));
+      const xSplit = Number(/<pane\b[^>]*xSplit="(\d+)"/.exec(sheet)?.[1] ?? 0);
+      let frozenPx = 0;
+      for (let column = 1; column <= xSplit; column += 1) {
+        const run = runs.find((one) => column >= one.min && column <= one.max);
+        frozenPx += Math.round((run ? run.width : 9.140625) * 7) + 5;
+      }
+      assert.ok(
+        frozenPx < 375,
+        `${label}: ${sheetName} pins ${frozenPx}px of frozen columns on a 375px phone — the data behind them is unreachable`,
+      );
     }
 
     // ── The numbers, against the rest of the workbook ─────────────────────────────────────────
