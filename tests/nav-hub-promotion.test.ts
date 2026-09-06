@@ -7,6 +7,7 @@ import {
   adminNavigationSectionSeeds,
   adminNavigationSections,
   salesAnalyticsPageItems,
+  type NavigationSection,
 } from "../src/config/system-navigation.ts";
 import {
   buildPermissionLookup,
@@ -202,8 +203,13 @@ export function runNavHubPromotionTests() {
   // sales month — the Finance Manager's one exclusive duty and the only queue in the product with
   // no chaser of any kind behind it. Rebuilding the row from the card would put the link back and
   // leave the badge gone, which is the same defect wearing a fix.
+  //
+  // `widenedSeeds`, because the seeds are declared `as const`: `flatMap` over them yields a union
+  // of 37 literal TUPLES, and reading `.navBadge` off that union is a type error on every member
+  // that happens not to carry one. Same reason `new Set<string>` is spelled out above.
+  const widenedSeeds: readonly NavigationSection[] = adminNavigationSectionSeeds;
   for (const href of MODULE_ANCHORS) {
-    const seedRow = adminNavigationSectionSeeds
+    const seedRow = widenedSeeds
       .flatMap((section) => section.items)
       .find((item) => item.href === href);
     const railRow = adminNavigationSections
