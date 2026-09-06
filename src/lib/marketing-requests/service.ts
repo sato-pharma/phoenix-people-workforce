@@ -4681,7 +4681,12 @@ async function fetchPharmacyCodes(supabase: SupabaseClient, distributorCodeIds: 
  */
 async function assertMarketingCustomerHasValidatedVenue(
   supabase: SupabaseClient,
-  customerId: string,
+  // `string | null`, because `normalizeMarketingRequestDraftInput` runs the id through `cleanText`.
+  // Null is passed straight to `.eq` rather than guarded, which is exactly what the inline version
+  // did: it matches no row and falls into the same refusal below. Both callers have already thrown
+  // `customer_not_found` on a null id anyway, so this branch is unreachable in practice — narrowing
+  // the parameter instead would only move the failure to a cast at each call site.
+  customerId: string | null,
 ): Promise<void> {
   const validatedCustomerLinkResult = await supabase
     .from("marketing_customer_pharmacies")
