@@ -21,13 +21,31 @@
  * WHY IT IS NOT AUTO-MERGED. AGENTS.md §2.3: a shared distributor customer code cannot prove two
  * venues are the same, and identity is never settled on name similarity or on a session's own
  * inference. Every rule below is a CANDIDATE FINDER whose only job is to put a short, ranked list in
- * front of the owner. Nothing here writes to the database.
+ * front of the owner. No rule here decides an identity or merges anything on its own.
  *
  * Run:  node --experimental-strip-types --experimental-specifier-resolution=node \
  *         scripts/marketing-pharmacy-code-questions.ts
  *
- * Reads PRODUCTION through `SUPABASE_DB_URL` in `.env.local` (read-only: SELECT plus two `pg_temp`
- * helper functions, which live in this session's temp schema and vanish with the connection).
+ * 🔴 THIS SCRIPT HAS TWO MODES, AND ONE OF THEM WRITES TO PRODUCTION.
+ *
+ *   (no arguments)          Builds the workbook. READ-ONLY: SELECT plus two `pg_temp` helper
+ *                           functions, which live in this session's temp schema and vanish with
+ *                           the connection.
+ *
+ *   --apply <answers.xlsx>  Reads the owner's answers back and MUTATES
+ *                           `public.marketing_pharmacy_distributor_codes`: it deactivates code
+ *                           links he unlinked (`active = false`, with a dated note) and inserts
+ *                           the ones he confirmed. Add `--dry-run` to see the plan without
+ *                           writing. A pre-image is taken first — `codes_pre` (deactivated) and
+ *                           `codes_added` (inserted) in the run's backup schema — and the exact
+ *                           reversal SQL is printed at the end.
+ *
+ * That table is not incidental: the realized-ROI builder joins THROUGH it to decide which sales a
+ * marketing request is credited for, so a wrong link moves money on a report. The header said
+ * "nothing here writes to the database" until 2026-09-06, which was true of the default path and
+ * false of `--apply` — the sentence a session would read before running the mutating one.
+ *
+ * Reads PRODUCTION through `SUPABASE_DB_URL` in `.env.local`.
  *
  * NO IMAGES AND NO OUTLINE GROUPS, deliberately. ExcelJS writes two schema-invalid OOXML fragments
  * that make Excel silently "repair" a workbook: `outlineProperties` together with
