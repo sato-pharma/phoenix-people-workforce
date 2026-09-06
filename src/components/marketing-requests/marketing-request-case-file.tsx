@@ -642,11 +642,17 @@ export function MarketingRequestCaseFileView({ caseFile }: { caseFile: Marketing
    * `order by sequence desc limit 1`: a request refused, reopened and refused again further up
    * must name the LATEST refusal, never the first. CC rows are excluded — they are never gates.
    */
-  const refusedRung = viewer.can.reopen
-    ? [...chain.rungs]
-        .filter((rung) => !rung.isCc && rung.status === "rejected")
-        .sort((left, right) => right.sequence - left.sequence)[0] ?? null
-    : null;
+  //
+  // `chain` is a CaseFileBlock, so it may be withheld ("unavailable") for this viewer. That is not
+  // a reason to hide the control: the RPC finds the refused rung itself, so a reopen still works
+  // with no chain to read. Only the panel's naming of WHO refused it degrades, which the copy below
+  // already handles.
+  const refusedRung =
+    viewer.can.reopen && chain.state === "ok"
+      ? [...chain.value.rungs]
+          .filter((rung) => !rung.isCc && rung.status === "rejected")
+          .sort((left, right) => right.sequence - left.sequence)[0] ?? null
+      : null;
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-8">
