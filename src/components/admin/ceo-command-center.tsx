@@ -23,6 +23,7 @@ import {
 import { AdminHeroFrame } from "@/components/admin/admin-design-system";
 import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
 import { CeoTopMoversTable } from "@/components/admin/ceo-top-movers-table";
+import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type {
   CeoAttentionTone,
@@ -527,6 +528,12 @@ export function CeoCommandCenter({
           </div>
         </AdminHeroFrame>
       ) : null}
+
+      {/* Outside the `welcome ?` guard on purpose: this band renders for all three variants
+          (CEO, SFE, admin) including /admin, which passes `welcome={null}` and draws its own
+          identity strip one level up in SystemAdminOverview. One nudge here reaches all three
+          admin-shell home surfaces this component serves. */}
+      <PushOptInNudge />
 
       <DataUnavailableNotice
         owner={variant === "sfe" ? "SFE" : variant === "admin" ? "system" : "CEO"}

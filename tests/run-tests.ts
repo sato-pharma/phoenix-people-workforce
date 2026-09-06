@@ -1425,6 +1425,7 @@ import { runDmPlanHasNoCeoStageTests } from "./dm-plan-has-no-ceo-stage.test.ts"
 import { runEmailIdentityGuardCallersTests } from "./email-identity-guard-callers.test.ts";
 import { runMarketingRequestVenueRequiredTests } from "./marketing-request-venue-required.test.ts";
 import { runMarketingCustomerMergeTombstoneTests } from "./marketing-customer-merge-tombstone.test.ts";
+import { runPushOptInNudgeTests } from "./push-opt-in-nudge.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4514,6 +4515,10 @@ await runTest(
 await runTest(
   "a retired marketing customer names its successor in a column, and the migration backfills nothing",
   runMarketingCustomerMergeTombstoneTests,
+);
+await runTest(
+  "push opt-in nudge (never shown with an active subscription, dismissal is permanent and additive)",
+  runPushOptInNudgeTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

@@ -23,6 +23,7 @@ import {
 
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { IdentityCard } from "@/components/employee-portal/identity-card";
+import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { DsmCommandCenter } from "@/components/employee-portal/dashboards/dsm-command-center";
 import { NsmCommandCenter } from "@/components/employee-portal/dashboards/nsm-command-center";
@@ -294,6 +295,10 @@ export function PortalIdentityBand({
       {planAdherence?.latest ? (
         <PlanAdherenceDashboardCard adherence={planAdherence} planBaseHref="/employee-portals/approvals/plan" />
       ) : null}
+      {/* Travels with the identity band, per the design note above — every role lands here, so
+          this is the one place a push opt-in nudge reaches every employee-portal role's home in
+          a single edit. Renders nothing until it has checked this person's own state. */}
+      <PushOptInNudge />
     </>
   );
 }

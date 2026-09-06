@@ -4,6 +4,16 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { buildTelegramDeepLinkFromToken, hashTelegramToken, resolveTelegramBotUsername } from "@/lib/notifications/telegram";
+import { withPushOptInNudgeDismissed } from "@/lib/notifications/push-opt-in-nudge-rules";
+// Re-exported for existing callers/tests — the rules themselves live in push-opt-in-nudge-rules.ts
+// (no server-only imports) so the "use client" nudge card can depend on the RULE without pulling
+// this whole server module (getSupabaseAdmin, writeAuditLog, `crypto`) into the browser bundle.
+export {
+  PUSH_OPT_IN_NUDGE_DISMISSED_KEY,
+  isPushOptInNudgeDismissed,
+  shouldShowPushOptInNudge,
+  withPushOptInNudgeDismissed,
+} from "@/lib/notifications/push-opt-in-nudge-rules";
 
 export type NotificationPreferences = {
   emailEnabled: boolean;
@@ -200,6 +210,43 @@ export async function saveNotificationPreferences(
     newValues: payload,
     summary: "Notification preferences updated.",
   });
+
+  return getNotificationSettings(access);
+}
+
+/**
+ * Records that this person dismissed the push opt-in nudge, so it never asks again on any
+ * device. Read-modify-write on `module_preferences` — a plain upsert with only this key would
+ * overwrite (not merge into) the stored jsonb and could silently erase another feature's
+ * preference living in the same column.
+ */
+export async function dismissPushOptInNudge(access: Pick<AccessContext, "hrId" | "loginId">): Promise<NotificationSettings> {
+  const userId = userIdFromAccess(access);
+  if (!userId) throw new Error("Authentication is required.");
+
+  const supabase = getSupabaseAdmin();
+  const existing = await supabase
+    .from("notification_preferences")
+    .select("module_preferences")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (existing.error) throw existing.error;
+
+  const currentModule = (existing.data as { module_preferences?: unknown } | null)?.module_preferences;
+  const payload = {
+    hr_id: access.hrId ?? null,
+    module_preferences: withPushOptInNudgeDismissed(
+      currentModule && typeof currentModule === "object" && !Array.isArray(currentModule)
+        ? (currentModule as Record<string, unknown>)
+        : {},
+      new Date().toISOString(),
+    ),
+    updated_at: new Date().toISOString(),
+    user_id: userId,
+  };
+
+  const { error } = await supabase.from("notification_preferences").upsert(payload, { onConflict: "user_id" });
+  if (error) throw error;
 
   return getNotificationSettings(access);
 }
