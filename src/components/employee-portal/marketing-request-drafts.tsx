@@ -1013,6 +1013,7 @@ function MarketingRequestDraftWorkspaceInner() {
         requestTypeId,
         requiresDescription: Boolean(selectedRequestType?.requiresDescription),
         roiDurationMonths,
+        selectedPharmacyCount: selectedPharmacyIds.length,
         unverifiedCodesMissingReason: unverifiedSelectionsMissingReason.length,
       }),
     [
@@ -1023,6 +1024,7 @@ function MarketingRequestDraftWorkspaceInner() {
       requestTypeId,
       roiDurationMonths,
       roiPreview.products,
+      selectedPharmacyIds,
       selectedRequestType,
       unverifiedSelectionsMissingReason,
     ],
@@ -1764,7 +1766,8 @@ function MarketingRequestDraftWorkspaceInner() {
                       )}
                       {pharmacyOptions.length > 0 && selectedPharmacyIds.length === 0 ? (
                         <p className="mt-1 text-xs text-amber-700">
-                          No pharmacies selected — this request could never be credited any sales.
+                          No pharmacies selected — a request with no target can never be credited
+                          any sales, so it cannot be saved. Tick the pharmacy this request is for.
                         </p>
                       ) : null}
                     </Field>

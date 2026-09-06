@@ -7,6 +7,7 @@ export type MarketingDraftBlockerInput = {
   requestTypeId: string;
   requiresDescription: boolean;
   roiDurationMonths: string;
+  selectedPharmacyCount: number;
   unverifiedCodesMissingReason: number;
 };
 
@@ -45,7 +46,20 @@ export function marketingDraftBlockers(
 
   if (!input.customerId) blockers.push("Select a customer");
 
-  // Second because Target Pharmacies is the block directly under the customer select — but also
+  // A request that names no target venue can never be credited a sale, and until 2026-09-06 the
+  // form only WARNED about it in amber while Save stayed live. That is how MKT-REQ-20260831-F060E9FF
+  // reached pending_approval carrying 2,500 EGP and no venue at all: its customer's only pharmacy
+  // held distributor code 1536256, which the reference database cannot find, and the blocker below
+  // offers unticking as the alternative to writing a justification. Unticking the ONLY pharmacy is
+  // not an alternative, it is an empty request — so the two rules have to sit next to each other.
+  //
+  // Ordered before the code-justification blocker because the reason is demanded per SELECTED
+  // pharmacy: with nothing selected there is nothing to justify, so this is the only one that can
+  // fire, and naming it first sends the requester to the tick box rather than to a reason box that
+  // is no longer on screen.
+  if (input.selectedPharmacyCount <= 0) blockers.push("Select a target pharmacy");
+
+  // Third because Target Pharmacies is the block directly under the customer select — but also
   // because it is the one gate here whose fix a requester will not guess. The row has said "code
   // not recognised" since #2185, yet the code is already typed and the row already ticked, so
   // nothing there reads as "and Save will refuse until you write down why".

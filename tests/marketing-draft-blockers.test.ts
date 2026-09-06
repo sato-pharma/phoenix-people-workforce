@@ -22,6 +22,7 @@ const complete = {
   requestTypeId: "2",
   requiresDescription: false,
   roiDurationMonths: "3",
+  selectedPharmacyCount: 1,
   unverifiedCodesMissingReason: 0,
 };
 
