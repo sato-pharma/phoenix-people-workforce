@@ -208,6 +208,18 @@ is UX only.
 Screens: `app/employee-portals/market-awareness/**` and `app/(admin)/admin/market-awareness/**`,
 one page with two tabs — Request and Tracking.
 
+🔴 **The portal builds its OWN sidebar — an entry in `system-navigation.ts` does not put a link
+there.** This was found by opening the page rather than by reading the code: the route rendered
+perfectly and no link to it existed anywhere, which is the "ships green, deploys cleanly, reachable
+by nobody" shape, and zero usage looks exactly like no adoption. The portal link needs all three of:
+
+1. `showMarketAwarenessTab` on `EmployeePortalNavVisibility`, set in `resolveEmployeePortalNavVisibility`
+   (`src/lib/employee-portal/navigation.ts`),
+2. the entry in `src/components/employee-portal/employee-portal-layout.tsx`, and
+3. the entry in `src/components/employee-portal/employee-portal-nav-registry.ts`.
+
+The admin shell is the one that `system-navigation.ts` actually drives.
+
 Golden rules that bind the UI: no horizontal scroll at desktop **or** 375px (measured, not
 eyeballed), square corners everywhere, no text truncated with an ellipsis, human-readable names
 never raw codes, every time in Africa/Cairo.
