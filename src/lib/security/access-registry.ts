@@ -697,6 +697,10 @@ export const accessRegistry = [
   // connect/disconnect — an audit-log row per ping would just be noise.
   sessionApi({ methods: ["POST"], pattern: "/api/notifications/push/register", permission: { resource: "employee_profile", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/notifications/push/test", permission: { resource: "employee_profile", action: "read" } }),
+  // Dismisses the push opt-in nudge card, permanently, for the caller — same permission as
+  // PATCH /api/notifications/settings, which this is: a notification preference write through
+  // its own tiny endpoint. See dismissPushOptInNudge in src/lib/notifications/settings.ts.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/notifications/push/nudge", permission: { resource: "employee_profile", action: "update" } }),
   // Declared `admin:read` until 2026-09-03; the handler asserts `admin:update`. Draining the
   // outbox is a write, and reading it as a read-gated route understated who may trigger one.
   sessionApi({ methods: allMethods, pattern: "/api/notifications/process", permission: { resource: "admin", action: "update" } }),

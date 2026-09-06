@@ -67,6 +67,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { HrCommandCharts } from "@/components/hr/hr-command-charts";
 import { HrMyRecord } from "@/components/hr/hr-my-record";
 import { HrTodayPanel } from "@/components/hr/hr-today-panel";
+import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
 import { PhoenixIdentityStrip } from "@/components/phoenix-signature-card/PhoenixIdentityStrip";
 import { type HrFunctionKey } from "@/lib/auth/hr-functions";
 import type { HrCommandCenterData, HrCommandGroup, HrCommandTile } from "@/lib/hr/command-center";
@@ -355,6 +356,8 @@ export function HrCommandCenter({
         photoSrc={identity.photoUrl}
         title={identity.roleLabel}
       />
+
+      <PushOptInNudge />
 
       {/* ── Your day. The page's opening answer to "what do I do today", as a list of real
           tasks that open into the actual named rows behind them. This replaced a ring reading

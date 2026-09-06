@@ -19,6 +19,7 @@ import { AdminHeroFrame } from "@/components/admin/admin-design-system";
 import { AreaSparkline, SectionShell } from "@/components/admin/ceo-command-center";
 import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
 import { APPROVALS_SLA_THRESHOLDS, slaTone } from "@/components/approvals-hub/sla-thresholds";
+import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
 import type {
   FinanceCommandCenterData,
   FinanceCommandCenterView,
@@ -794,6 +795,8 @@ export function FinanceCommandCenter({
           />
         </div>
       </AdminHeroFrame>
+
+      <PushOptInNudge />
 
       <UnavailableNotice sources={view.unavailable} />
 
