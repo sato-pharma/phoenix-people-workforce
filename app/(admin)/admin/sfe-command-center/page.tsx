@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { CeoCommandCenter } from "@/components/admin/ceo-command-center";
+import { RetentionRiskBandSection, RetentionRiskBandSkeleton } from "@/components/admin/retention-risk-band";
 import { CeoPhaseBWidgets, CeoPhaseBSkeleton } from "@/components/admin/ceo-phase-b";
 import { Card } from "@/components/ui/card";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
@@ -80,7 +81,20 @@ async function SfeCommandContent({ access }: { access: Awaited<ReturnType<typeof
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
-      <CeoCommandCenter data={result.data} welcome={welcome} access={access} variant="sfe" />
+      <CeoCommandCenter
+        data={result.data}
+        welcome={welcome}
+        access={access}
+        variant="sfe"
+        // Owner instruction 2026-09-06: this board and the System Administrator Overview, and no
+        // other. Suspended on its own because the band scans the CRM visits mirror — the tiles
+        // above must not wait on it.
+        topBands={
+          <Suspense fallback={<RetentionRiskBandSkeleton />}>
+            <RetentionRiskBandSection />
+          </Suspense>
+        }
+      />
       <Suspense fallback={<CeoPhaseBSkeleton variant="sfe" />}>
         <CeoPhaseBWidgets access={access} sosPrefetched={result.data.sos} adminSignalsPrefetched={result.data.adminSignals} variant="sfe" />
       </Suspense>

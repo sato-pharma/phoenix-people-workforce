@@ -1441,6 +1441,9 @@ import { runWorktreeNodeModulesJunctionTests } from "./worktree-node-modules-jun
 import { runChannelsByRepPharmacyOverrideTests } from "./channels-by-rep-pharmacy-override.test.ts";
 import { runSalesUploadAnalyzeMatchesCommitTests } from "./sales-upload-analyze-matches-commit.test.ts";
 import { runSalesUploadReceiptConfidentialityTests } from "./sales-upload-receipt-confidentiality.test.ts";
+import { runRetentionRiskDetectorTests } from "./retention-risk-detector.test.ts";
+import { runRetentionRiskNotifyTests } from "./retention-risk-notify.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4594,6 +4597,14 @@ await runTest(
 await runTest(
   "sales upload receipt confidentiality (the Total value no longer states what the tables hide)",
   runSalesUploadReceiptConfidentialityTests,
+);
+await runTest(
+  "retention risk detector (a weekly off bridges a run, leave bridges it too, managers are never measured)",
+  runRetentionRiskDetectorTests,
+);
+await runTest(
+  "retention risk alerts (in-app and Telegram, never email or push; the message reports and never accuses)",
+  runRetentionRiskNotifyTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

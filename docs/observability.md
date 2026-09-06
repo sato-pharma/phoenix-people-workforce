@@ -256,6 +256,8 @@ policy):
    | `phoenix-marketing-field-capture-nudge` | `50 6 * * *` | 1h | cron-job.org job `8348773` |
    | `phoenix-marketing-invoice-overdue-nudge` | `5 7 * * *` | 1h | cron-job.org job `8350529` |
    | `phoenix-distributor-upload-overdue-nudge` | `20 7 * * *` | 1h | cron-job.org job `8375333` |
+   | `phoenix-retention-risk-sweep` | `40 7 * * *` | 1h | **no cron-job.org job yet** — needs the owner's go-ahead |
+   | `phoenix-retention-risk-pre-payroll` | `45 7 25 * *` | 2h | **no cron-job.org job yet** — needs the owner's go-ahead |
    | `phoenix-mailbox-offboarding-sweep` | `15 8 * * *` | 1h | cron-job.org job `8350624` |
    | `phoenix-process-notifications` | `*/5 * * * *` | 10m | cron-job.org job `8200914` |
    | `phoenix-background-jobs` | `0 3 * * 5` | 2h | cron-job.org job `8200915` |
