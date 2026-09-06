@@ -237,7 +237,11 @@ export function runWorktreeNodeModulesJunctionTests() {
     try {
       fs.unlinkSync(link);
     } catch (err) {
-      if (err && (err.code === "EPERM" || err.code === "EISDIR")) {
+      // `err` is `unknown` in TypeScript, so it must be narrowed before reading `.code`.
+      // The .mjs module can write `err.code` directly because JavaScript is not typechecked
+      // that way — which is why this pattern compiled there and not here.
+      const code = (err as { code?: string }).code;
+      if (code === "EPERM" || code === "EISDIR") {
         fs.rmdirSync(link);
       } else {
         throw err;
