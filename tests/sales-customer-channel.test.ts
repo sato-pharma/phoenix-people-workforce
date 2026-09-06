@@ -106,17 +106,31 @@ export function runSalesCustomerChannelTests() {
     "hospital",
     "a name carrying BOTH a hospital and a store word is a hospital — hospital wins the overlap",
   );
+  // …AND IT MUST NOT SPLIT — REVERSED 2026-09-06, by the owner, and this assertion is the record.
+  //
+  // Until that date this asserted `true`: a hospital carrying a store word still split across its
+  // city, on the reasoning that isStoreCustomer must stay keyword-based so a UI change could never
+  // quietly move money between areas. That reasoning was sound and the ANSWER was still wrong.
+  // Reviewing 167 customers one row at a time, the owner used "Hospital — do NOT split" and
+  // "Government depot — do NOT split" as distinct answers from "Pharmacy", and marked all 17
+  // government depots do-not-split. A hospital does not supply a city's pharmacies, which is the
+  // one assumption the city split rests on. مستشف is now a NEVER_STORE word.
+  //
+  // The old direction is not restorable as a tidy-up: it would start splitting this hospital, the
+  // unified-procurement store below, and مستشفى الجمعية الشرعية across their cities again. Ask him.
   assert.equal(
     isStoreCustomer(overlap),
-    true,
-    "…but it must STILL be a store customer for the Monthly Closing's city split. isStoreCustomer is "
-      + "keyword-based on purpose: routing it through the classifier would silently stop splitting "
-      + "this customer's sales across its city, moving money between areas in the closing.",
+    false,
+    "a hospital never splits across its city, whatever else its name carries (owner, 2026-09-06)",
   );
-  // A second real one, carrying مخزن rather than الشركه.
+  // A second real one, carrying مخزن rather than الشركه — a government hospital store.
   const overlapStore = "هيئه الشراء الموحد - مستشفى المنزله العام-مخزن نفقه الدوله";
   assert.equal(classifyCustomerChannel(overlapStore), "hospital");
-  assert.equal(isStoreCustomer(overlapStore), true, "a مخزن that is also a hospital still splits");
+  assert.equal(
+    isStoreCustomer(overlapStore),
+    false,
+    "a مخزن that is also a hospital is an institution's own store, not a wholesaler — it never splits",
+  );
 
   // matchedChannelKeywords explains the channel the customer actually landed in.
   assert.deepEqual(matchedChannelKeywords(overlap), ["مستشفى / مستشفي"]);

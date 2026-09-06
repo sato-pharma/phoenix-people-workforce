@@ -77,7 +77,11 @@ const loadClosingStoreSplitUncached = async (line: string, period: string): Prom
     includeConfidential: false,
     unpaged: true,
   });
-  const { exemptStoreValueByBrick, movements } = splitStoreSalesAcrossCityAreas(details.rows);
+  // The period decides which warehouse rule answers "is this a store" — the owner's 2026-09-06
+  // rulings from September on, the six words alone before that. Passed explicitly here because this
+  // loader is the ONE place both the screen and the export read, so neither can use a different
+  // rule from the other, and neither can restate a month the owner froze.
+  const { exemptStoreValueByBrick, movements } = splitStoreSalesAcrossCityAreas(details.rows, period);
   return {
     exempt: Array.from(exemptStoreValueByBrick.entries()),
     movements,

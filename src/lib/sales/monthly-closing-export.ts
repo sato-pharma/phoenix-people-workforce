@@ -3322,7 +3322,7 @@ export async function buildMonthlyClosingWorkbook(
       workbook,
       matrix.line,
       matrix.period,
-      summariseStoreSplitByArea(options?.storeSplitRows ?? details.rows),
+      summariseStoreSplitByArea(options?.storeSplitRows ?? details.rows, matrix.period),
       options?.storeSplitScopeAreaCodes ?? [],
     );
     // Straight after it: which shop caused each moved number, on which product — the detail the
@@ -3331,8 +3331,8 @@ export async function buildMonthlyClosingWorkbook(
       workbook,
       matrix.line,
       matrix.period,
-      summariseStoreSplitByCustomer(splitSourceRows),
-      detailStoreSplitByCustomer(splitSourceRows),
+      summariseStoreSplitByCustomer(splitSourceRows, matrix.period),
+      detailStoreSplitByCustomer(splitSourceRows, matrix.period),
     );
   }
   writeComparisonSheet(workbook, comparison, ref);
