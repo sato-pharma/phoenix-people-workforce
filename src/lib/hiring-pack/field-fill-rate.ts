@@ -42,6 +42,7 @@ import {
   ACTIVE_EMPLOYMENT_STATUSES_IN_LIST,
   DEPARTED_EMPLOYMENT_STATUSES_IN_LIST,
 } from "@/lib/auth/session-lifecycle";
+import { loadCompanyDetails } from "@/lib/hiring-pack/company-details-store";
 import { paperFieldBinding, paperFieldCurrentValue } from "@/lib/hiring-pack/paper-fields";
 import type { PaperFieldSource } from "@/lib/hiring-pack/paper-fields";
 import {
@@ -194,6 +195,13 @@ async function loadRosterRecords(): Promise<RosterRecords> {
     offboarding.set(row.hr_id, row);
   }
 
+  // ONE READ, SHARED BY EVERY RECORD. The company is the same for all of them by construction, so a
+  // company-backed key on a form reports "fills for everyone" or "fills for nobody" and never
+  // something in between — which is the honest answer, and the reason it is read here rather than
+  // defaulted: a count taken against the COMPILED company while the papers print an EDITED one
+  // would report a filled field as blank on the very screen that exists to find blank fields.
+  const company = await loadCompanyDetails();
+
   return rows.map((row) => {
     const profileRow = profiles.get(row.hr_id);
     const offboardingRow = offboarding.get(row.hr_id);
@@ -207,6 +215,7 @@ async function loadRosterRecords(): Promise<RosterRecords> {
       offboarding: offboardingRow
         ? mapOffboardingProfile(offboardingRow)
         : emptyOffboardingProfile(row.hr_id),
+      company,
     };
   });
 }

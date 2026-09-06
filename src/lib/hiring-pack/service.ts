@@ -1,5 +1,10 @@
-import { systemContractDefaults, systemLegalEntity } from "@/config/system-settings";
+import { systemContractDefaults } from "@/config/system-settings";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import {
+  COMPANY_DETAILS_DEFAULT,
+  type CompanyDetails,
+} from "@/lib/hiring-pack/company-details";
+import { loadCompanyDetails } from "@/lib/hiring-pack/company-details-store";
 import {
   ACTIVE_EMPLOYMENT_STATUSES_IN_LIST,
   DEPARTED_EMPLOYMENT_STATUSES_IN_LIST,
@@ -605,6 +610,10 @@ export function collectHiringPackGaps(
   profile: HiringPackProfile,
   offboarding: OffboardingProfile = emptyOffboardingProfile(employee.hrId),
   exit: ExitFacts | null = null,
+  // The company as it will PRINT, so a registration number somebody typed on the paper stops being
+  // reported as a gap the moment it is stored. Defaulted to the compiled record because most callers
+  // — every test, and the fill-rate count — are asking about one person and not about the company.
+  company: CompanyDetails = COMPANY_DETAILS_DEFAULT,
 ): HiringPackGap[] {
   const gaps: HiringPackGap[] = [];
   const add = (
@@ -705,7 +714,7 @@ export function collectHiringPackGaps(
   // The form prints this employee's office, falling back to the company default — so it is only
   // missing when BOTH are empty. Reporting it while a default exists sends HR chasing a value the
   // printer is about to supply on its own.
-  if (!profile.insuranceOffice && !systemLegalEntity.registration.defaultInsuranceOffice) {
+  if (!profile.insuranceOffice && !company.registration.defaultInsuranceOffice) {
     add("insuranceOffice", "Insurance office", "مكتب التأمينات", INSURANCE, false, "hiring-profile");
   }
   // The address block Form 1 captured at hiring is the one Form 6 reprints at exit — one address,
@@ -724,7 +733,7 @@ export function collectHiringPackGaps(
   // used to block from this list while its only placement sat on page 2 — which Phoenix does not
   // write on — so HR would have been told the form was incomplete because of a value the form never
   // shows. `testEveryCompanySettingsGapReachesThePage` now pins that both ways.
-  const registration = systemLegalEntity.registration;
+  const registration = company.registration;
   for (const entry of COMPANY_REGISTRATION_GAPS) {
     if (!registration[entry.field]) {
       add(entry.field, entry.labelEn, entry.labelAr, entry.documents, true, "company-settings");
@@ -1082,6 +1091,10 @@ export function resolveContractTerms(
   profile: HiringPackProfile,
   offboarding: OffboardingProfile = emptyOffboardingProfile(employee.hrId),
   exit: ExitFacts | null = null,
+  // Who signs for the company when the offboarding record names nobody. Defaulted for the same
+  // reason as `collectHiringPackGaps`: a caller resolving one person's dates is not asking the
+  // database who the responsible manager is today.
+  company: CompanyDetails = COMPANY_DETAILS_DEFAULT,
 ): HiringPackData["terms"] {
   const durationMonths = profile.contractDurationMonths ?? systemContractDefaults.durationMonths;
   // A contract that does not say when it starts is not a contract. Falling back to the hire date is
@@ -1115,8 +1128,8 @@ export function resolveContractTerms(
       offboarding.lastWorkingDate ?? exit?.lastWorkingDate ?? employee.lastWorkingDate ?? null,
     // Who signs for the company on the mutual-termination agreement. Defaults to the manager who
     // signs the employment contract as الطرف الأول — the same authority, at the other end.
-    employerRepNameAr: offboarding.employerRepNameAr ?? systemLegalEntity.responsibleManagerAr,
-    employerRepTitleAr: offboarding.employerRepTitleAr ?? systemLegalEntity.responsibleManagerTitleAr,
+    employerRepNameAr: offboarding.employerRepNameAr ?? company.responsibleManagerAr,
+    employerRepTitleAr: offboarding.employerRepTitleAr ?? company.responsibleManagerTitleAr,
   };
 }
 
@@ -1135,12 +1148,15 @@ function requireHrId(value: string | null | undefined): string {
 
 export async function getHiringPack(hrIdInput: string): Promise<HiringPackData> {
   const hrId = requireHrId(hrIdInput);
-  const [employee, profile, offboarding, exit, renewal] = await Promise.all([
+  // The company is read alongside the person, not after: it is on the critical path of every print,
+  // and a missing table answers `{}` rather than throwing, so this adds a query and no failure mode.
+  const [employee, profile, offboarding, exit, renewal, company] = await Promise.all([
     loadEmployeeFacts(hrId),
     loadProfile(hrId),
     loadOffboardingProfile(hrId),
     loadExitFacts(hrId),
     loadRenewalFacts(hrId),
+    loadCompanyDetails(),
   ]);
   const suggestedJobTitleAr = await loadSuggestedJobTitleAr(employee.jobTitle);
 
@@ -1148,11 +1164,14 @@ export async function getHiringPack(hrIdInput: string): Promise<HiringPackData> 
     employee,
     profile,
     offboarding,
+    company,
     exit,
     renewal,
     suggestedJobTitleAr,
-    gaps: collectHiringPackGaps(employee, profile, offboarding, exit),
-    terms: resolveContractTerms(employee, profile, offboarding, exit),
+    // Both take the RESOLVED company, so a registration number typed onto a form stops being
+    // reported as a blocking gap, and the exit agreement is signed by whoever the record now names.
+    gaps: collectHiringPackGaps(employee, profile, offboarding, exit, company),
+    terms: resolveContractTerms(employee, profile, offboarding, exit, company),
   };
 }
 

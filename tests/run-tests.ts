@@ -814,6 +814,7 @@ import { runHiringDocumentsAuditTests } from "./hiring-documents-audit.test.ts";
 import { runHiringDocumentsDeadlineTests } from "./hiring-documents-deadline.test.ts";
 import { runHiringDocumentsStatusNotesTests } from "./hiring-documents-status-notes.test.ts";
 import { runHiringPackInsuranceWageTests } from "./hiring-pack-insurance-wage.test.ts";
+import { runHiringPackCompanyDetailsTests } from "./hiring-pack-company-details.test.ts";
 import { runHiringPackPaperEditorTests } from "./hiring-pack-paper-editor.test.ts";
 import { runHiringPackCustomTemplateRenderTests } from "./hiring-pack-custom-template-render.test.ts";
 import { runHiringPackCustomTemplateTests } from "./hiring-pack-custom-templates.test.ts";
@@ -2777,6 +2778,10 @@ await runTest(
 await runTest(
   "hiring pack paper editor (whole-record payload, binding allow-list, renderers stamp their keys)",
   runHiringPackPaperEditorTests,
+);
+await runTest(
+  "HR Forms company details (the edited head office reaches the printed contract, Form 1 and the labour form; saved company-wide, to the company endpoint)",
+  runHiringPackCompanyDetailsTests,
 );
 await runTest(
   "HR Forms exit documents (Form 6 measured and double-sided x3, nothing typed on a signature line, one exit form never both, one last working day for both authorities, a long value compressed inside its own rule)",

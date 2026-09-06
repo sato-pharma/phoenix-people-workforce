@@ -1,4 +1,4 @@
-import { systemLegalEntity } from "@/config/system-settings";
+import type { CompanyDetails } from "@/lib/hiring-pack/company-details";
 import {
   houseLetterhead,
   HOUSE_COLORS,
@@ -84,10 +84,10 @@ function birthDatePlace(iso: string | null, place: string | null): string {
  */
 export function buildWorkerFormValues(data: HiringPackData): Partial<Record<WorkerFormToken, string>> {
   const { employee, profile } = data;
-  const recital = systemLegalEntity.contractRecital;
+  const recital = data.company.contractRecital;
 
   return {
-    COMPANY_NAME: systemLegalEntity.legalNameAr,
+    COMPANY_NAME: data.company.legalNameAr,
     COMPANY_LEGAL_FORM: recital.legalFormAr,
     COMMERCIAL_REGISTER: pinLtr(recital.commercialRegisterNumber),
     COMMERCIAL_REGISTER_OFFICE: recital.commercialRegisterOfficeAr,
@@ -204,8 +204,15 @@ function signatureHtml(
 function renderCopy(
   template: WorkerFormTemplate,
   values: Partial<Record<WorkerFormToken, string>>,
+  // The letterhead names the company in both languages, and only one of those is a document
+  // TOKEN — so the resolved record is passed rather than read from the module, which is what
+  // makes the masthead follow an edited company name instead of the compiled one.
+  company: CompanyDetails,
 ): string {
-  const company = template.companyLinesAr
+  // The form's own three-line company block, which is TEMPLATE PROSE with tokens in it — not the
+  // company record. Named apart from `company` above because the two are genuinely different things,
+  // and reading one as the other is how a letterhead ends up printing an HTML fragment.
+  const companyBlock = template.companyLinesAr
     .map((text) => `<p class="wf-company__line">${fillLine(text, values)}</p>`)
     .join("");
   const sections = template.sections.map((section) => sectionHtml(section, values)).join("");
@@ -216,12 +223,12 @@ function renderCopy(
         ${houseLetterhead({
           titleAr: template.titleAr,
           subtitleAr: template.subtitleAr,
-          legalNameAr: systemLegalEntity.legalNameAr,
-          legalNameEn: systemLegalEntity.legalNameEn,
+          legalNameAr: company.legalNameAr,
+          legalNameEn: company.legalNameEn,
         })}
 
         <p class="wf-note">${escapeHtml(template.noteAr)}</p>
-        <div class="wf-company">${company}</div>
+        <div class="wf-company">${companyBlock}</div>
 
         ${sections}
 
@@ -251,7 +258,9 @@ export function renderWorkerFormHtml(
   const template = WORKER_FORM_TEMPLATE_V1;
   const values = buildWorkerFormValues(data);
   const total = Math.max(1, copies);
-  const body = Array.from({ length: total }, () => renderCopy(template, values)).join("\n");
+  const body = Array.from({ length: total }, () =>
+    renderCopy(template, values, data.company),
+  ).join("\n");
   const employeeName = data.employee.nameAr ?? data.employee.fullName;
 
   // Blocking gaps are named on the screen banner and never on paper — the person pressing Print is

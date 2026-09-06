@@ -1,4 +1,4 @@
-import { systemLegalEntity } from "@/config/system-settings";
+import type { CompanyDetails } from "@/lib/hiring-pack/company-details";
 import {
   houseLetterhead,
   HOUSE_COLORS,
@@ -44,7 +44,7 @@ import type { HiringPackData } from "@/lib/hiring-pack/types";
 /** Every blank these forms can fill. The settlement amount is not among them — see the template. */
 export function buildClearanceValues(data: HiringPackData): Partial<Record<ClearanceToken, string>> {
   const { employee, profile, offboarding, exit } = data;
-  const recital = systemLegalEntity.contractRecital;
+  const recital = data.company.contractRecital;
 
   // THE THREE SOURCES OF A LAST WORKING DAY, in the order the rest of this module reads them: the
   // human's override first, then the resignation record, then the employee row. They are not
@@ -55,7 +55,7 @@ export function buildClearanceValues(data: HiringPackData): Partial<Record<Clear
     offboarding.lastWorkingDate ?? exit?.lastWorkingDate ?? employee.lastWorkingDate;
 
   return {
-    COMPANY_NAME: systemLegalEntity.legalNameAr,
+    COMPANY_NAME: data.company.legalNameAr,
     COMPANY_LEGAL_FORM: recital.legalFormAr,
     COMMERCIAL_REGISTER: pinLtr(recital.commercialRegisterNumber),
     COMMERCIAL_REGISTER_OFFICE: recital.commercialRegisterOfficeAr,
@@ -196,6 +196,10 @@ function signatureBlock(template: ClearanceTemplate): string {
 function renderCopy(
   template: ClearanceTemplate,
   values: Partial<Record<ClearanceToken, string>>,
+  // The letterhead names the company in both languages, and only one of those is a document
+  // TOKEN — so the resolved record is passed rather than read from the module, which is what
+  // makes the masthead follow an edited company name instead of the compiled one.
+  company: CompanyDetails,
 ): string {
   const registry = `${values.COMPANY_NAME ?? ""} — ${values.COMPANY_LEGAL_FORM ?? ""}`.trim();
   const registryLine = `السجل التجاري رقم ${values.COMMERCIAL_REGISTER ?? ""} (${
@@ -207,8 +211,8 @@ function renderCopy(
       titleAr: template.titleAr,
       subtitleAr: template.subtitleAr,
       purposeAr: template.keeperAr,
-      legalNameAr: systemLegalEntity.legalNameAr,
-      legalNameEn: systemLegalEntity.legalNameEn,
+      legalNameAr: company.legalNameAr,
+      legalNameEn: company.legalNameEn,
     })}
 
     <section class="recital">
@@ -243,7 +247,9 @@ function renderClearance(
   const template = requested && requested.variant === fallback.variant ? requested : fallback;
   const values = buildClearanceValues(data);
   const total = Math.max(1, copies);
-  const body = Array.from({ length: total }, () => renderCopy(template, values)).join("\n");
+  const body = Array.from({ length: total }, () =>
+    renderCopy(template, values, data.company),
+  ).join("\n");
   const employeeName = data.employee.nameAr ?? data.employee.fullName;
   const keptBy = template.variant === "employeeKeeps" ? "the employee keeps it" : "the company files it";
 

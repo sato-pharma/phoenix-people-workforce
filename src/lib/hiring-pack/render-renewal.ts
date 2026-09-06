@@ -1,4 +1,4 @@
-import { systemLegalEntity } from "@/config/system-settings";
+import type { CompanyDetails } from "@/lib/hiring-pack/company-details";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import { HOUSE_COLORS, HOUSE_MARK_SRC } from "@/lib/hiring-pack/house-identity";
 import { insuranceWageFromBase } from "@/lib/hiring-pack/insurance-wage";
@@ -124,7 +124,7 @@ export function buildRenewalValues(
   template: RenewalTemplate,
 ): Partial<Record<RenewalToken, string>> {
   const { employee, profile, terms, renewal } = data;
-  const recital = systemLegalEntity.contractRecital;
+  const recital = data.company.contractRecital;
 
   // The expiring contract's own dates — the ones printed on the paper being amended.
   const contractStart = terms.contractStartDate ?? employee.hireDate;
@@ -154,10 +154,10 @@ export function buildRenewalValues(
     ANNEX_DAY_NAME: arabicDayName(annexDate),
     ANNEX_DATE: pinLtr(formatDayMonthYear(annexDate)),
 
-    COMPANY_NAME: systemLegalEntity.legalNameAr,
+    COMPANY_NAME: data.company.legalNameAr,
     COMPANY_LEGAL_FORM: recital.legalFormAr,
     COMPANY_HEAD_OFFICE_FULL: recital.headOfficeAr,
-    COMPANY_CITY: systemLegalEntity.contractCityAr,
+    COMPANY_CITY: data.company.contractCityAr,
     COMMERCIAL_REGISTER: pinLtr(recital.commercialRegisterNumber),
     COMMERCIAL_REGISTER_OFFICE: recital.commercialRegisterOfficeAr,
     UNIFIED_REGISTER: pinLtr(recital.unifiedRegisterNumber),
@@ -376,6 +376,10 @@ function witnessBlock(template: RenewalTemplate): string {
 function renderCopy(
   template: RenewalTemplate,
   values: Partial<Record<RenewalToken, string>>,
+  // The letterhead names the company in both languages, and only one of those is a document
+  // TOKEN — so the resolved record is passed rather than read from the module, which is what
+  // makes the masthead follow an edited company name instead of the compiled one.
+  company: CompanyDetails,
 ): string {
   const heading = (text: string | null) =>
     text ? `<h2 class="doc-head">${escapeHtml(text)}</h2>` : "";
@@ -435,8 +439,8 @@ function renderCopy(
       <thead><tr><td class="doc-mastcell">
         <header class="doc-mast">
           <span class="doc-mast__side doc-mast__id">
-            <strong>${escapeHtml(systemLegalEntity.legalNameAr)}</strong>
-            <span dir="ltr">${escapeHtml(systemLegalEntity.legalNameEn)}</span>
+            <strong>${escapeHtml(company.legalNameAr)}</strong>
+            <span dir="ltr">${escapeHtml(company.legalNameEn)}</span>
           </span>
           <span class="doc-mast__title">
             <strong>${escapeHtml(template.titleAr)}</strong>
@@ -492,7 +496,9 @@ function renderRenewal(
   const template = requested && requested.variant === fallback.variant ? requested : fallback;
   const values = buildRenewalValues(data, template);
   const total = Math.max(1, copies);
-  const body = Array.from({ length: total }, () => renderCopy(template, values)).join("\n");
+  const body = Array.from({ length: total }, () =>
+    renderCopy(template, values, data.company),
+  ).join("\n");
   const employeeName = data.employee.nameAr ?? data.employee.fullName;
 
   const banner =

@@ -1,4 +1,4 @@
-import { systemLegalEntity } from "@/config/system-settings";
+import type { CompanyDetails } from "@/lib/hiring-pack/company-details";
 import { HOUSE_COLORS, HOUSE_MARK_SRC } from "@/lib/hiring-pack/house-identity";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import { spellEgyptianAmount } from "@/lib/hiring-pack/arabic-amount";
@@ -78,7 +78,7 @@ import { resolveNationality } from "@/lib/hiring-pack/nationality";
  */
 export function buildContractValues(data: HiringPackData): Partial<Record<ContractToken, string>> {
   const { employee, profile, terms } = data;
-  const recital = systemLegalEntity.contractRecital;
+  const recital = data.company.contractRecital;
 
   // The date the instrument bears. Deliberately NOT "today": a contract dated by whatever day the
   // print button happened to be pressed is a wrong date on a legal document, and a visible run of
@@ -89,11 +89,11 @@ export function buildContractValues(data: HiringPackData): Partial<Record<Contra
     DAY_NAME: arabicDayName(contractDate),
     CONTRACT_DATE: pinLtr(formatDayMonthYear(contractDate)),
 
-    COMPANY_NAME: systemLegalEntity.legalNameAr,
-    COMPANY_HEAD_OFFICE: systemLegalEntity.headOfficeAr,
-    COMPANY_CITY: systemLegalEntity.contractCityAr,
-    RESPONSIBLE_MANAGER: systemLegalEntity.responsibleManagerAr,
-    RESPONSIBLE_MANAGER_TITLE: systemLegalEntity.responsibleManagerTitleAr,
+    COMPANY_NAME: data.company.legalNameAr,
+    COMPANY_HEAD_OFFICE: data.company.headOfficeAr,
+    COMPANY_CITY: data.company.contractCityAr,
+    RESPONSIBLE_MANAGER: data.company.responsibleManagerAr,
+    RESPONSIBLE_MANAGER_TITLE: data.company.responsibleManagerTitleAr,
 
     COMPANY_LEGAL_FORM: recital.legalFormAr,
     COMPANY_HEAD_OFFICE_FULL: recital.headOfficeAr,
@@ -630,6 +630,10 @@ function documentArticleRow(number: string, titleAr: string | null, bodyHtml: st
 function renderDocumentCopy(
   template: ContractTemplate,
   values: Partial<Record<ContractToken, string>>,
+  // The masthead names the company in both languages, and only one of those is a contract TOKEN —
+  // so the resolved record is passed rather than read from the module, which is what makes the
+  // letterhead follow an edited company name instead of the compiled one.
+  company: CompanyDetails,
 ): string {
   const heading = (text: string | null) =>
     text ? `<h2 class="doc-head">${escapeHtml(text)}</h2>` : "";
@@ -691,8 +695,8 @@ function renderDocumentCopy(
       <thead><tr><td class="doc-mastcell">
         <header class="doc-mast">
           <span class="doc-mast__side doc-mast__id">
-            <strong>${escapeHtml(systemLegalEntity.legalNameAr)}</strong>
-            <span dir="ltr">${escapeHtml(systemLegalEntity.legalNameEn)}</span>
+            <strong>${escapeHtml(company.legalNameAr)}</strong>
+            <span dir="ltr">${escapeHtml(company.legalNameEn)}</span>
           </span>
           <span class="doc-mast__title">
             <strong>${escapeHtml(template.titleAr)}</strong>
@@ -731,7 +735,11 @@ function renderDocumentCopy(
  */
 const CONTRACT_RENDERERS: Record<
   ContractTemplate["layout"],
-  (template: ContractTemplate, values: Partial<Record<ContractToken, string>>) => string
+  (
+    template: ContractTemplate,
+    values: Partial<Record<ContractToken, string>>,
+    company: CompanyDetails,
+  ) => string
 > = {
   prose: renderProseCopy,
   banded: renderBandedCopy,
@@ -770,7 +778,9 @@ export function renderContractHtml(
     );
   }
 
-  const body = Array.from({ length: total }, () => renderCopy(template, values)).join("\n");
+  const body = Array.from({ length: total }, () =>
+    renderCopy(template, values, data.company),
+  ).join("\n");
   const employeeName = data.employee.nameAr ?? data.employee.fullName;
 
   // Blocking gaps are named on screen and never on paper — the person pressing Print is the last

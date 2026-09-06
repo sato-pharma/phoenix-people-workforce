@@ -1,4 +1,3 @@
-import { systemLegalEntity } from "@/config/system-settings";
 import { splitPoundsAndPiastres } from "@/lib/hiring-pack/arabic-amount";
 import { layeredPages, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
@@ -45,7 +44,7 @@ import { resolveNationality } from "@/lib/hiring-pack/nationality";
 /** The values every placement key resolves against. Missing keys simply print nothing. */
 export function buildForm1Values(data: HiringPackData): Record<string, string> {
   const { employee, profile, terms } = data;
-  const registration = systemLegalEntity.registration;
+  const registration = data.company.registration;
 
   const start = splitIsoDate(terms.contractStartDate ?? employee.hireDate);
   const today = splitIsoDate(todayInCairo());
@@ -62,14 +61,14 @@ export function buildForm1Values(data: HiringPackData): Record<string, string> {
 
     establishmentNumber: registration.insuranceEstablishmentNumber,
     sectorCode: registration.insuranceSectorCode,
-    companyName: systemLegalEntity.legalNameAr,
+    companyName: data.company.legalNameAr,
     taxRegPart1,
     taxRegPart2,
     taxRegPart3,
     // The back page's إقرار asks for the company's address as well. Its insurance number and name
     // need nothing extra here: `establishmentNumber` and `companyName` above are the same two facts,
     // and page 2 places those very keys rather than restating them — see FORM1_PAGE_2_PLACEMENTS.
-    companyAddress: systemLegalEntity.headOfficeAr,
+    companyAddress: data.company.headOfficeAr,
 
     insuranceNumber: employee.socialInsuranceNumber ?? "",
     nationalId: employee.nationalId ?? "",
