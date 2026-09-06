@@ -39,7 +39,15 @@ export type ReconciliationReceipt = {
 // exactly that sum — so it can never catch a "row scanned but never bucketed" bug. The real
 // no-silent-loss guard is the independent physical counter (summary.scannedDataRows) checked in
 // validateNormalizedUpload (rows_read_mismatch), which always runs before persist. Keep both.
-export function buildReconciliation(result: NormalizeResult): ReconciliationReceipt {
+export function buildReconciliation(
+  result: NormalizeResult,
+  /**
+   * Confidential product codes this viewer may not see. Affects the MONEY only — see below.
+   * Empty for a CEO / Super Admin, and empty by default so a caller that forgets gets the old,
+   * complete receipt rather than a silently under-stated one.
+   */
+  excludeProductCodes: readonly string[] = [],
+): ReconciliationReceipt {
   const s = result.summary;
   const rowsBlocked = result.exceptions.length;
   const rowsRead = s.totalRows;
@@ -51,8 +59,25 @@ export function buildReconciliation(result: NormalizeResult): ReconciliationRece
       500,
     );
   }
-  const totalQty = result.coded.reduce((sum, r) => sum + (Number.isFinite(r.qty) ? r.qty : 0), 0);
-  const totalValue = result.coded.reduce((sum, r) => sum + (Number.isFinite(r.value) ? r.value : 0), 0);
+  // The ROW COUNTS above stay whole on purpose. They answer "did we account for every row we read",
+  // which is a file-integrity question, not a question about who may see which product — and the
+  // assert above depends on them summing to totalRows.
+  //
+  // The MONEY is the opposite case. The tables rendered under this receipt already strip the
+  // confidential products (buildPreviewBreakdowns takes the same list), but these totals did not —
+  // so the receipt showed a Total value the tables could not account for, and the difference IS the
+  // hidden figure. Those three products are 81.5% of all sales value, and SFE Manager is the only
+  // role holding sales:import while not being CEO/Super Admin, so the one person who uses this
+  // screen daily is exactly the one it was hiding them from.
+  const hidden = new Set(
+    excludeProductCodes.map((code) => String(code ?? "").trim().toUpperCase()).filter(Boolean),
+  );
+  const countable =
+    hidden.size === 0
+      ? result.coded
+      : result.coded.filter((r) => !hidden.has(String(r.productCode ?? "").trim().toUpperCase()));
+  const totalQty = countable.reduce((sum, r) => sum + (Number.isFinite(r.qty) ? r.qty : 0), 0);
+  const totalValue = countable.reduce((sum, r) => sum + (Number.isFinite(r.value) ? r.value : 0), 0);
   return {
     rowsRead,
     rowsCoded: s.fullyCoded,
@@ -269,7 +294,9 @@ export async function analyzeMonthlyUpload(distributorCode: string, file: File, 
     return { status: "header_error", distributorName: rec.distributorName, missingGroups: rec.missingGroups, fingerprintWarning: rec.fingerprintWarning, aiExplanation };
   }
   const preview = summarizePreview(distributorCode, rec.distributorName, rec.result, rec.products, excludeProductCodes);
-  const reconciliation = buildReconciliation(rec.result);
+  // Same exclusion list as the preview and the breakdowns below, or the receipt total states what
+  // the tables under it are hiding.
+  const reconciliation = buildReconciliation(rec.result, excludeProductCodes);
   // Per-product/region/brick/line breakdown for the Validate step. Confidential products are
   // excluded for non-CEO/Super-Admin viewers (excludeProductCodes) so the tables never leak them.
   const breakdowns = buildPreviewBreakdowns(rec.result.coded, excludeProductCodes);
@@ -323,7 +350,9 @@ export async function commitMonthlyUpload(input: {
     throw new SalesWorkflowError("header_validation_error", headerErrorMessage(rec.distributorName, rec.missingGroups), 422);
   }
   const result = rec.result;
-  const reconciliation = buildReconciliation(result);
+  // The commit receipt goes back to the same viewer as the analyze one, so it carries the same
+  // exclusion. What was PERSISTED is unaffected — this is the receipt, not the import.
+  const reconciliation = buildReconciliation(result, excludeProductCodes);
 
   // Product-only exceptions are auto-excluded (those rows are already absent from result.coded).
   // Only brick/customer/both/blank_customer exceptions block — the operator must fix those mappings.
