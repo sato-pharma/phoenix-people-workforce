@@ -944,6 +944,15 @@ function testEveryHouseColourSurvivesABrowserPrint(): void {
     ["first absence warning", renderHrPaperHtml(pack, 1, HR_PAPER_ABSENCE_WARNING_V1)],
   ];
 
+  // Pages proven to paint no house colour at all, and therefore exempt from the invariant checked
+  // below. Keep this empty unless a page is shown — by this very test failing on it below — to
+  // carry no background colour at all; naming it here (with a one-line reason) is how a genuine
+  // non-user opts out without silently doing the same for a page that broke by accident.
+  const exemptFromHouseColourCheck: ReadonlySet<string> = new Set();
+
+  const pagesThatDidNotMatch: string[] = [];
+  let pagesCheckedForPrintColorAdjust = 0;
+
   for (const [name, html] of pages) {
     // Does this page paint a house colour as a background at all? Written against the colours
     // rather than the word "background" so a page that only uses type and rules is not required to
@@ -953,7 +962,11 @@ function testEveryHouseColourSurvivesABrowserPrint(): void {
         new RegExp(`background[^;}]*${colour.replace("#", "#?")}`, "i").test(html) ||
         /background:\s*var\(--phx-doc-(blue|tint|deep)\)/i.test(html),
     );
-    if (!paintsAHouseColour) continue;
+    if (!paintsAHouseColour) {
+      pagesThatDidNotMatch.push(name);
+      continue;
+    }
+    pagesCheckedForPrintColorAdjust++;
 
     // THE LEADING BOUNDARY IS LOAD-BEARING. Written without it, this pattern also matches
     // "-webkit-print-color-adjust", so a page carrying only the vendor spelling satisfied the
@@ -970,6 +983,30 @@ function testEveryHouseColourSurvivesABrowserPrint(): void {
       `${name} needs the -webkit- spelling too; Chrome is what the field prints from`,
     );
   }
+
+  // THE LOOP ABOVE CAN GO SILENTLY VACUOUS, which is the same shape PR #3370 fixed one layer up:
+  // `paintsAHouseColour` is a regex built off the current `HOUSE_COLORS` values and the
+  // `--phx-doc-*` variable names, so renaming a CSS custom property, writing a colour as `rgb()`,
+  // or splitting `background-color` onto its own declaration line makes every page stop matching.
+  // Every iteration then hits `continue`, neither assertion above runs even once, and this test
+  // stays green while the guard it names protects nothing. Compared against `pages.length` rather
+  // than a literal count, so a paper added later does not need this line touched to stay covered.
+  const expectedPagesChecked = pages.length - exemptFromHouseColourCheck.size;
+  const unexplainedSkips =
+    pagesThatDidNotMatch.filter((name) => !exemptFromHouseColourCheck.has(name)).join(", ") ||
+    "(none by name — check exemptFromHouseColourCheck itself for a stale entry)";
+  assert.equal(
+    pagesCheckedForPrintColorAdjust,
+    expectedPagesChecked,
+    `expected ${expectedPagesChecked} of ${pages.length} pages to paint a house colour and reach ` +
+      `the print-color-adjust assertions, but only ${pagesCheckedForPrintColorAdjust} did. ` +
+      `Page(s) that stopped matching paintsAHouseColour: ${unexplainedSkips}. Either the regex no ` +
+      "longer recognises a real background declaration on that page (a renamed --phx-doc- " +
+      "variable, a colour rewritten as rgb(), background-color split onto its own line) and the " +
+      "print-color-adjust invariant is no longer covering it, or the page has genuinely stopped " +
+      "painting a house colour and belongs in exemptFromHouseColourCheck with a one-line reason " +
+      "— never widen this assertion to make a silent skip pass.",
+  );
 }
 
 export function runHrFormsHousePapersTests(): void {
