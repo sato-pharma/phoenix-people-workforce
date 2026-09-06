@@ -189,12 +189,25 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(await canAccess(hrOperations, "weekly_plans", "create"), false, "reading the plan calendar is not submitting a plan");
   assert.equal(await canAccess(hrOperations, "weekly_plans", "update"), false, "approving or editing a plan belongs to the sales ladder, never to HR");
 
-  // ── Salary redaction, inherited by both seats ───────────────────────────────────────────────
+  // ── Salary redaction — HR ADVISORY ONLY since 2026-09-06 ────────────────────────────────────
   // Owner-requested 2026-07-25 on the retired seat: even with full employee-directory read
   // access, an HR seat must not see real salary figures for a named set of senior employees (her
-  // own manager chain plus a handful of other seniors). The list is HR_SEAT_SALARY_REDACTED_HR_IDS
-  // in permissions.ts — a property of the SEAT, not of the retired title, so it carries to both.
-  assert.equal(isSalaryRedactedForViewer(hrOperations, "B-10"), true, "the redaction covers both HR bundles, not just the recruiting one");
+  // own manager chain plus a handful of other seniors). The list is
+  // HR_ADVISORY_SALARY_REDACTED_HR_IDS in permissions.ts.
+  //
+  // HR OPERATIONS CAME OFF IT ON 2026-09-06, on the owner's instruction — "yasmeen is the one
+  // responsible for completing and adding all employees records" — after he was asked directly
+  // whether that includes his own pay and the CEO's, and said it does.
+  //
+  // DO NOT "restore" the true on the line below to make the pair symmetrical again. The two seats
+  // are deliberately different now, and the asymmetry is the point: HR Advisory advises on the
+  // workforce, HR Operations maintains its records. Re-adding HR Operations does not merely hide
+  // figures from her — filterEmployeeDirectoryForAccess also runs over the employee master EXPORT,
+  // so her downloaded sheet comes back with these seven salary cells EMPTY, the importer reads a
+  // blank cell as "leave it alone", and her upload silently stops updating them while reporting
+  // success. That is the live incident this change fixed, on 2026-09-06.
+  assert.equal(isSalaryRedactedForViewer(hrOperations, "B-10"), false, "owner 2026-09-06 — HR Operations owns the employee master, salary columns included");
+  assert.equal(isSalaryRedactedForViewer(hrOperations, "AA"), false, "…the CEO's row included, asked and answered");
   assert.equal(isSalaryRedactedForViewer(hrAdvisory, "B-10"), true, "her direct manager (HR Manager) is redacted");
   assert.equal(isSalaryRedactedForViewer(hrAdvisory, "AA"), true, "the CEO is redacted");
   assert.equal(isSalaryRedactedForViewer(hrAdvisory, "A-12"), true, "a named NSM is redacted");
@@ -235,6 +248,18 @@ export async function runPhase22RoleMatrixSecurityTests() {
     10000,
     "Super Admin still sees B-10's real salary — redaction does not mutate the underlying data",
   );
+
+  // HR Operations reads the same rows unredacted (owner 2026-09-06). Asserted through the FILTER
+  // rather than through isSalaryRedactedForViewer alone, because this is the function
+  // app/api/employees/template/route.ts runs over the employee master EXPORT: if a null ever comes
+  // back here, her downloaded sheet loses these cells, and an upload of that sheet quietly stops
+  // updating the seven seniors' pay while still reporting success.
+  const filteredForHrOperations = filterEmployeeDirectoryForAccess(directory, hrOperations);
+  const hrOpsManagerRow = filteredForHrOperations.employees.find((row) => row.hrId === "B-10")!;
+  assert.equal(hrOpsManagerRow.baseSalary, 10000, "HR Operations sees B-10's real base salary — she maintains it");
+  assert.equal(hrOpsManagerRow.grossSalary, 10300, "…and the gross, so the export she edits carries it");
+  assert.equal(hrOpsManagerRow.socialInsuranceWage, 8000, "…and the insurance wage, which alone drives the statutory filing");
+  assert.notEqual(hrOpsManagerRow.salaryDetails, null, "…and the flexible salary details");
 
   // Read-side redaction alone is dangerous: HR Advisory's edit form for a
   // redacted employee necessarily carries blanked salary values, so saving ANY

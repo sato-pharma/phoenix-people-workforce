@@ -1963,16 +1963,32 @@ export function filterEmployeesForAccess<T extends Pick<EmployeeDirectoryRow, "h
   return rows.filter((row) => canSeeEmployee(context, row, { byCanonicalHrId }));
 }
 
-// Owner-requested (2026-07-25, carried to both HR bundles): an HR seat browses the whole employee
-// directory (see hardBoundaryAllowedActions above), but must not see the real
-// salary figures for this specific set of senior employees — her own manager
-// chain (B-10 HR Manager, AA CEO) plus a handful of other named seniors. Row
-// visibility is unaffected; only the compensation fields below are blanked.
+// Owner-requested (2026-07-25): an HR seat browses the whole employee directory (see
+// hardBoundaryAllowedActions above), but must not see the real salary figures for this specific
+// set of senior employees — her own manager chain (B-10 HR Manager, AA CEO) plus a handful of
+// other named seniors. Row visibility is unaffected; only the compensation fields below are
+// blanked.
+//
+// HR OPERATIONS WAS REMOVED FROM THIS RULE ON 2026-09-06, at the owner's explicit instruction:
+// "yasmeen is the one responsible for completing and adding all employees records". He was asked
+// directly whether that includes his own pay and the CEO's, and answered that it does. This is now
+// HR ADVISORY'S rule alone — hence the name.
+//
+// Why it had to change rather than stay as a read-only nicety. The same filter that blanks these
+// figures on screen also runs over the employee master EXPORT
+// (app/api/employees/template/route.ts), so the sheet HR Operations downloaded came out with these
+// seven people's salary cells EMPTY. The importer skips a blank cell, so her upload could never
+// move them — she confirmed an import, it reported success, and those rows never changed. From a
+// Super Admin account the identical file worked, because nothing was blanked on the way out. A
+// redaction that silently edits the round trip is not a redaction, it is a data-entry trap.
+//
 // See the isSalaryRedactedForViewer check in app/api/employees/route.ts's POST
 // handler for the matching write-side guard — without it, a blanked read
 // becomes a real, destructive write the moment this viewer edits an unrelated
-// field and saves.
-const HR_SEAT_SALARY_REDACTED_HR_IDS = new Set(
+// field and saves. That guard now protects HR Advisory only, which is sound because HR Advisory
+// holds employees:["read","export"] and cannot reach the import at all — so no role that can
+// import has anything redacted from it.
+const HR_ADVISORY_SALARY_REDACTED_HR_IDS = new Set(
   ["B-10", "AA", "A-12", "AB", "OF-0002", "B-185", "A-9"].map((id) => normalizeHrId(id)),
 );
 
@@ -2020,21 +2036,35 @@ export function matchesHrAdvisoryCompensationAudience(
   return selfKey.length > 0 && compensationMatchKey(row.hrId) === selfKey;
 }
 
-/** True when `context` must not see (or write) the real salary figures for `hrId`. */
+/**
+ * True when `context` must not see (or write) the real salary figures for `hrId`.
+ *
+ * HR Advisory only, since 2026-09-06 — see HR_ADVISORY_SALARY_REDACTED_HR_IDS. HR Operations owns
+ * the employee master end to end, including the salary columns of the seven seniors this list
+ * names, so redacting her both hid figures she is accountable for and silently emptied them out of
+ * the export she maintains the records with.
+ */
 export function isSalaryRedactedForViewer(
   context: Pick<AccessContext, "role">,
   hrId: string | null | undefined,
 ): boolean {
-  if (context.role !== "HR Advisory" && context.role !== "HR Operations") return false;
-  return HR_SEAT_SALARY_REDACTED_HR_IDS.has(normalizeHrId(hrId ?? ""));
+  if (context.role !== "HR Advisory") return false;
+  return HR_ADVISORY_SALARY_REDACTED_HR_IDS.has(normalizeHrId(hrId ?? ""));
 }
 
 function redactSalaryFields(row: EmployeeDirectoryRow, context: AccessContext): EmployeeDirectoryRow {
-  // Two rules, either of which blanks the money. The named-seniors rule above covers both HR seats
-  // and predates this; the second is the HR Business Partner's compensation audience, added
-  // 2026-09-01 when the Employee Directory was opened to her — see
-  // HR_ADVISORY_COMPENSATION_JOB_TITLES. She keeps every other column on every row: this hides pay,
-  // never people, so the directory she was given is the whole directory.
+  // Two rules, either of which blanks the money, and BOTH now apply to HR Advisory alone. The
+  // named-seniors rule above predates this and covered both HR seats until 2026-09-06, when the
+  // owner took HR Operations off it (she owns the employee master, salary columns included); the
+  // second is the HR Business Partner's compensation audience, added 2026-09-01 when the Employee
+  // Directory was opened to her — see HR_ADVISORY_COMPENSATION_JOB_TITLES. She keeps every other
+  // column on every row: this hides pay, never people, so the directory she was given is the whole
+  // directory.
+  //
+  // Nothing here reaches HR Operations any more, so the export she downloads carries every figure
+  // she is expected to maintain. That matters more than it reads: this function also runs over the
+  // employee master export, and a blanked cell there is indistinguishable from one the user cleared
+  // on purpose by the time the importer sees it.
   const outsideHerCompensationAudience =
     context.role === "HR Advisory" &&
     !matchesHrAdvisoryCompensationAudience({ hrId: row.hrId, jobTitle: row.jobTitle }, context.hrId);
