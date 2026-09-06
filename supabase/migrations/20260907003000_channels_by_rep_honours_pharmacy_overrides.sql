@@ -140,6 +140,9 @@ as $function$
   order by 10 desc;
 $function$;
 
--- Dropping the function dropped its grants with it. It is SECURITY DEFINER and reached only through
--- the service role, exactly as before: postgres=X/postgres, service_role=X/postgres.
+-- Dropping the function dropped its explicit grants with it, but CREATE FUNCTION grants EXECUTE to
+-- PUBLIC by default — and anon/authenticated inherit EXECUTE through PUBLIC membership, so revoking
+-- only those two is a no-op. Revoke PUBLIC first, which also strips service_role, then re-grant it
+-- explicitly. Restores the pre-migration state: postgres=X/postgres, service_role=X/postgres.
+revoke execute on function public.phx_sales_channels_by_rep(text[], text[], text[], text, text[], text[]) from public, anon, authenticated;
 grant execute on function public.phx_sales_channels_by_rep(text[], text[], text[], text, text[], text[]) to service_role;
