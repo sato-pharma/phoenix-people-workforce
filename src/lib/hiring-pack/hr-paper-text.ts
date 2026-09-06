@@ -1,5 +1,9 @@
 /**
- * SATO'S SIX OWN HR PAPERS, as the owner supplied them on 2026-09-05 and as they now print.
+ * SATO'S OWN HR PAPERS — the six the owner supplied on 2026-09-05, and what has joined them since.
+ *
+ * THE CERTIFICATE OF EXPERIENCE (2026-09-06) is the first paper in this file the owner did not hand
+ * over as a Word document; it was drawn from scratch on the house identity, and the notes above it
+ * record every judgement that went into it rather than a diff against a draft.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────
  * WHAT CAME IN, AND WHAT CHANGED. Six Word files, four `.docx` and two `.doc`. His legal substance
@@ -459,7 +463,105 @@ export const HR_PAPER_SOCIAL_STATUS_V1: HrPaperTemplate = {
 };
 
 /**
- * All six, in the order a career runs through them.
+ * 7 — شهادة خبرة.
+ *
+ * The paper an employee asks for on his way out, and takes to his next employer, an embassy or a
+ * bank. It is the only document in this module written for a reader OUTSIDE the company, and every
+ * decision below follows from that.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * WHAT IT DOES NOT SAY, and each omission is deliberate rather than pending.
+ *
+ * 🔴 NO SALARY. A certificate of experience states service, not pay. A salary certificate — شهادة
+ *    راتب — is a different paper for a different reader (a bank deciding a loan), and the two are
+ *    asked for separately in Egypt precisely because a person applying for a job does not want his
+ *    last salary in the hands of the employer negotiating his next one. Printing it here would
+ *    disclose it to every reader of every certificate, permanently and with no way to take it back.
+ *
+ * 🔴 NO REASON FOR LEAVING. Whether somebody resigned, was terminated or reached the end of a term
+ *    is between him and the company; a certificate that names it turns a routine document into an
+ *    obstacle he cannot answer, and the company gains nothing by volunteering it to a stranger.
+ *    The exit route is recorded on the resignation or mutual-termination form, which is where a
+ *    reader entitled to know it looks.
+ *
+ * 🔴 NO STATEMENT OF CONDUCT OR PERFORMANCE. The Egyptian house style «وكان حسن السير والسلوك» is
+ *    a testimonial, and this paper prints from a button for anybody in the system — including
+ *    somebody dismissed for cause. A testimonial the company has not actually made, printed
+ *    automatically, is worth less than none and is the kind of sentence that gets quoted back in a
+ *    dispute. Somebody who has earned a recommendation gets one written and signed by a person.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * WHAT IT SAYS TWO WAYS. A certificate is issued to a leaver AND to somebody still at his desk who
+ * needs one for a visa, and getting that wrong is the one error on this page that matters: a paper
+ * asserting a serving employee's service ENDED is wrong in a way that costs him the job he is
+ * applying for. So the period, the status sentence and the span are resolved from the employee's own
+ * departure flag in `buildHrPaperValues` — never from whether a last-working date happens to be on
+ * file, because an absent date means "nobody recorded it", not "he is still here".
+ *
+ * The subtitle carries NO article number. Every other paper in this file cites the article it acts
+ * under because the owner's drafts did; nothing here rests on a specific article, and inventing a
+ * citation to match the house pattern is how a wrong one reaches a document read by a lawyer.
+ */
+export const HR_PAPER_EXPERIENCE_CERTIFICATE_V1: HrPaperTemplate = {
+  id: "experience-certificate-v1",
+  kind: "certificate",
+  version: 1,
+  titleAr: "شهادة خبرة",
+  subtitleAr: LAW_SUBTITLE,
+  purposeAr:
+    "تُحرَّر من نسختين — نسخة تُسلَّم لصاحب الشأن بناءً على طلبه، ونسخة تُحفظ بملف الخدمة.",
+  bindingLineAr: null,
+
+  firstPartyHeadingAr: "الصادرة عن — الشركة",
+  firstPartyLinesAr: FIRST_PARTY_LINES_AR,
+
+  secondPartyHeadingAr: "بيانات صاحب الشأن",
+  secondPartyFields: [
+    { labelAr: "الاسم رباعيًا", token: "EMPLOYEE_NAME", wide: true },
+    { labelAr: "الرقم القومي", token: "NATIONAL_ID", ltr: true },
+    { labelAr: "كود الموظف", token: "HR_ID", ltr: true },
+    { labelAr: "الوظيفة", token: "JOB_TITLE" },
+    { labelAr: "الإدارة / القطاع", token: "DEPARTMENT" },
+    { labelAr: "تاريخ الالتحاق بالعمل", token: "HIRE_DATE", ltr: true },
+    { labelAr: "تاريخ إصدار الشهادة", token: "ISSUE_DATE", ltr: true },
+  ],
+  sections: [],
+
+  bodyParagraphsAr: [
+    "إلى من يهمه الأمر،",
+    "تشهد {{COMPANY_NAME}} بأن السيد / السيدة المبيّنة بياناته عاليه قد التحق بالعمل لديها اعتبارًا من {{HIRE_DATE}} وحتى {{SERVICE_END}}، وشغل خلال هذه المدة وظيفة {{JOB_TITLE}} بـ{{DEPARTMENT}}، وبلغت مدة خدمته {{SERVICE_DURATION}}.",
+    "{{SERVICE_STATUS}}",
+    "وقد أُعطيت له هذه الشهادة بناءً على طلبه للتقدم بها إلى من يهمه الأمر، دون أدنى مسؤولية على الشركة قِبَل الغير.",
+  ],
+  operativeHeadingAr: null,
+  operativeParagraphsAr: [],
+  checklist: null,
+  openTable: null,
+  declarationAr: null,
+
+  signaturesHeadingAr: "التوقيع والاعتماد",
+  // ONE COLUMN, AND NO EMPLOYEE SIGNATURE. He is the subject of this paper, not a party to it —
+  // a signature line under his name would invite a reader to treat the certificate as something he
+  // attested to rather than something the company certified about him.
+  //
+  // NO TOKEN IN THE HEADING. `signatureTable` escapes what it is given and does not substitute, so
+  // a `{{COMPANY_NAME}}` here would print those braces onto the signature row. The masthead names
+  // the company on every copy anyway.
+  signatureColumns: [
+    {
+      headingAr: "عن الشركة — إدارة الموارد البشرية",
+      fieldsAr: ["الاسم والصفة:", "التوقيع:", "خاتم الشركة:"],
+    },
+  ],
+  signatoryNoteLinesAr: [],
+  receiptAcknowledgmentAr: null,
+  serviceNoteAr: null,
+  serviceFields: [],
+  footerAr: "شهادة خبرة · صادرة عن إدارة الموارد البشرية",
+};
+
+/**
+ * All of them, in the order a career runs through them.
  *
  * NOTHING IS EVER REMOVED FROM THIS LIST once a version has been printed, for the reason the
  * contract archive sets out: these are papers people sign, and a superseded version has to stay
@@ -472,6 +574,7 @@ export const HR_PAPERS: readonly HrPaperTemplate[] = [
   HR_PAPER_ABSENCE_WARNING_V1,
   HR_PAPER_DEEMED_RESIGNATION_V1,
   HR_PAPER_DOCUMENTS_RETURN_V1,
+  HR_PAPER_EXPERIENCE_CERTIFICATE_V1,
 ];
 
 /** One paper by id, or null when the id is not one of ours. */

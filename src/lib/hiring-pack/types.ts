@@ -28,6 +28,7 @@ export type HiringPackDocument =
   | "absenceWarning"
   | "deemedResignation"
   | "appointmentDocsReturn"
+  | "experienceCertificate"
   | "contractRenewal"
   | "contractNonRenewal"
   | "form6"
@@ -83,8 +84,8 @@ export const ASSET_DOCUMENTS = ["custodyLaptop", "custodyMobile"] as const;
 export const RENEWAL_DOCUMENTS = ["contractRenewal", "contractNonRenewal"] as const;
 
 /**
- * Sato's own HR papers — the six the owner supplied on 2026-09-05, split by WHEN they are used
- * rather than by what they look like.
+ * Sato's own HR papers — the six the owner supplied on 2026-09-05 and the certificate of experience
+ * added on 2026-09-06, split by WHEN they are used rather than by what they look like.
  *
  * `HOUSE_JOINING_DOCUMENTS` are signed or completed on the day somebody arrives: the confidentiality
  * undertaking, the appointment-documents receipt, and the Article 92 service-file sheet.
@@ -95,10 +96,17 @@ export const RENEWAL_DOCUMENTS = ["contractRenewal", "contractNonRenewal"] as co
  * Article 166 requires a warning before a worker can be deemed resigned. Printing the second without
  * having served the first is the defect this grouping exists to make visible.
  *
- * `HOUSE_LEAVING_DOCUMENTS` is the exit half of the appointment-documents pair — the employee's
- * receipt for his own certificates coming back. Its sibling is in the joining list; they were
- * supplied as two files with almost the same name, and reading them as alternatives rather than as
- * two ends of one loop would file the wrong one at the wrong end of a career.
+ * `HOUSE_LEAVING_DOCUMENTS` holds two. The first is the exit half of the appointment-documents pair
+ * — the employee's receipt for his own certificates coming back. Its sibling is in the joining list;
+ * they were supplied as two files with almost the same name, and reading them as alternatives rather
+ * than as two ends of one loop would file the wrong one at the wrong end of a career.
+ *
+ * The second is the CERTIFICATE OF EXPERIENCE, and it is filed here because that is when HR reaches
+ * for it, not because it is only issued then: a serving employee can ask for one for a visa or a
+ * bank, and the paper prints correctly for him — it says in terms that he is still employed. Filing
+ * it under "other" beside the custody receipts would be defensible on that ground and was rejected,
+ * because "other" is not a tab: the manager shows a joining package and a leaver package, and a
+ * document nobody can find is worse than one filed under the commoner of its two occasions.
  */
 export const HOUSE_JOINING_DOCUMENTS = [
   "nda",
@@ -108,9 +116,9 @@ export const HOUSE_JOINING_DOCUMENTS = [
 
 export const HOUSE_ATTENDANCE_DOCUMENTS = ["absenceWarning", "deemedResignation"] as const;
 
-export const HOUSE_LEAVING_DOCUMENTS = ["appointmentDocsReturn"] as const;
+export const HOUSE_LEAVING_DOCUMENTS = ["appointmentDocsReturn", "experienceCertificate"] as const;
 
-/** All six of Sato's own papers, in the order a career runs through them. */
+/** All of Sato's own papers, in the order a career runs through them. */
 export const HOUSE_PAPER_DOCUMENTS = [
   ...HOUSE_JOINING_DOCUMENTS,
   ...HOUSE_ATTENDANCE_DOCUMENTS,

@@ -218,6 +218,7 @@ const HOUSE_NUMBERED_DOCUMENTS: ReadonlySet<string> = new Set([
   "absenceWarning",
   "deemedResignation",
   "appointmentDocsReturn",
+  "experienceCertificate",
   "clearanceEmployee",
   "clearanceCompany",
 ]);

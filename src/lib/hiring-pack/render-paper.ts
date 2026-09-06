@@ -48,6 +48,7 @@ import {
   HR_PAPER_DEEMED_RESIGNATION_V1,
   HR_PAPER_DOCUMENTS_RECEIPT_V1,
   HR_PAPER_DOCUMENTS_RETURN_V1,
+  HR_PAPER_EXPERIENCE_CERTIFICATE_V1,
   HR_PAPER_NDA_V1,
   HR_PAPER_SOCIAL_STATUS_V1,
 } from "@/lib/hiring-pack/hr-paper-text";
@@ -144,6 +145,10 @@ const RENDERERS: Record<
   appointmentDocsReturn: {
     render: housePaper(HR_PAPER_DOCUMENTS_RETURN_V1),
     copies: systemContractDefaults.appointmentDocsReturnCopies,
+  },
+  experienceCertificate: {
+    render: housePaper(HR_PAPER_EXPERIENCE_CERTIFICATE_V1),
+    copies: systemContractDefaults.experienceCertificateCopies,
   },
   contractRenewal: {
     render: renderContractRenewalHtml,

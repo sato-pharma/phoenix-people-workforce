@@ -125,6 +125,12 @@ const DOCUMENT_BINDINGS: Record<
   absenceWarning: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   deemedResignation: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   appointmentDocsReturn: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  // The certificate of experience is null for a reason of its own, and a stronger one than the
+  // others': there is no signature to record because nobody signs it back, and it is issued as
+  // often as it is asked for — a man can want one for a visa in March and for a job in November.
+  // A single date on the employee row could hold only the newest, which is the trap the custody
+  // receipts and the renewal papers are kept out of this table for.
+  experienceCertificate: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   contractRenewal: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   contractNonRenewal: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   form6: {

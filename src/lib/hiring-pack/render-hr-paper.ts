@@ -4,6 +4,7 @@ import { HOUSE_COLORS, HOUSE_MARK_SRC } from "@/lib/hiring-pack/house-identity";
 import {
   HR_PAPER_BLANK_RULE,
   HR_PAPER_BLANK_RULE_WIDE,
+  hrPaperTemplateTokens,
   type HrPaperField,
   type HrPaperSignatureColumn,
   type HrPaperTemplate,
@@ -14,6 +15,7 @@ import { resolveNationality } from "@/lib/hiring-pack/nationality";
 import {
   ARABIC_FONT_STACK,
   arabicDayName,
+  describeServiceDuration,
   escapeHtml,
   formatDayMonthYear,
   pinLtr,
@@ -25,7 +27,7 @@ import {
 import type { HiringPackData } from "@/lib/hiring-pack/types";
 
 // Sato's own HR papers — the confidentiality undertaking, the two appointment-documents forms, the
-// two absence notices and the service-file sheet.
+// two absence notices, the service-file sheet and the certificate of experience.
 //
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // THE CONTRACT'S `document` LAYOUT AGAIN, and for the third time deliberately. These papers live in
@@ -47,13 +49,32 @@ import type { HiringPackData } from "@/lib/hiring-pack/types";
 //     notice that ends somebody's service is the one error on these pages that cannot be walked back.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Every blank any of the six can fill, resolved once. */
+/** Every blank any of these papers can fill, resolved once. */
 export function buildHrPaperValues(
   data: HiringPackData,
 ): Partial<Record<HrPaperToken, string>> {
   const { employee, profile, terms } = data;
   const recital = systemLegalEntity.contractRecital;
   const today = todayInCairo();
+
+  /**
+   * THE CERTIFICATE'S PERIOD OF SERVICE — resolved from whether he HAS LEFT, never from whether a
+   * last-working date happens to be on file.
+   *
+   * The distinction is the whole safety property of that paper. An absent date means "nobody
+   * recorded one", which is a gap; it does not mean "he is still here". Reading it the other way
+   * would print a certificate for a serving employee closing his service on a dotted rule, or —
+   * worse, once somebody filled that rule in — one asserting that a man at his desk had left.
+   *
+   * `departed` is the module's own flag for this and is what the facts screen already locks pay and
+   * department on, so the certificate agrees with the rest of the pack by construction.
+   */
+  const serviceEndsOn = employee.departed ? terms.lastWorkingDate : today;
+  const serviceEnd = employee.departed
+    ? pinLtr(formatDayMonthYear(terms.lastWorkingDate))
+    : // Not a date, on purpose: a certificate for somebody still serving closes the period with the
+      // day it was issued, and the sentence below says in words that he has not left.
+      "تاريخه";
 
   return {
     ISSUE_DATE: pinLtr(formatDayMonthYear(today)),
@@ -101,6 +122,17 @@ export function buildHrPaperValues(
     HIRE_DATE: pinLtr(formatDayMonthYear(employee.hireDate)),
     CONTRACT_DATE: pinLtr(formatDayMonthYear(terms.contractStartDate ?? employee.hireDate)),
     LAST_WORKING_DATE: pinLtr(formatDayMonthYear(terms.lastWorkingDate)),
+
+    // The certificate of experience. See `serviceEndsOn` above for why these read the departure
+    // flag rather than the presence of a date.
+    SERVICE_END: serviceEnd,
+    SERVICE_STATUS: employee.departed
+      ? "وقد انتهت خدمته لدى الشركة بنهاية المدة المبيّنة عاليه."
+      : "ولا يزال على رأس العمل لدى الشركة حتى تاريخ صدور هذه الشهادة.",
+    // Blank — and so a dotted rule on the page — when either end is missing, which for a leaver
+    // means no last-working date was ever recorded. A span the company cannot count is one a human
+    // writes in, not one this file guesses.
+    SERVICE_DURATION: describeServiceDuration(employee.hireDate, serviceEndsOn),
 
     // ABSENCE_FROM / ABSENCE_TO / FIRST_WARNING_* are absent on purpose — see the header note.
     // COMPLETION_DEADLINE likewise: it is a date the desk sets when it hands the checklist over.
@@ -437,9 +469,22 @@ export function renderHrPaperHtml(
       "The dependants table prints blank: the insurance file is a different set of people for a different purpose. The employee completes it and signs that it is true.",
     );
   }
-  if (template.kind === "letter") {
+  // KEYED ON THE TOKENS, NOT ON THE KIND. It read `kind === "letter"` while both letters happened to
+  // be absence notices; the next letter that is not one would have carried a warning about dates it
+  // does not print, and a warning that does not apply is one a reader learns to skip past.
+  if (hrPaperTemplateTokens(template).includes("ABSENCE_FROM")) {
     banner.push(
       "The absence dates print blank. Attendance is not resolved here, and a wrong date on a notice that ends somebody's service is the one error on this page that cannot be walked back.",
+    );
+  }
+  if (template.kind === "certificate") {
+    banner.push(
+      data.employee.departed
+        ? "It states that his service ENDED. Check the last working day above before it leaves the desk — this paper goes to his next employer."
+        : "It states that he is STILL EMPLOYED here, and closes the period at today's date. That is read from his employee record, not from the exit form.",
+    );
+    banner.push(
+      "No salary, no reason for leaving, and no statement of conduct — each left out on purpose, not pending. A recommendation is written and signed by a person, never printed from a button.",
     );
   }
 

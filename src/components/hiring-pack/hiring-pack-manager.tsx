@@ -609,6 +609,7 @@ function signDatesShape(value: (document: HiringPackDocument) => string): Record
     absenceWarning: value("absenceWarning"),
     deemedResignation: value("deemedResignation"),
     appointmentDocsReturn: value("appointmentDocsReturn"),
+    experienceCertificate: value("experienceCertificate"),
     form6: value("form6"),
     resignation: value("resignation"),
     mutualTermination: value("mutualTermination"),
@@ -646,6 +647,9 @@ function signedDatesFromPack(pack: HiringPackData | null): Record<HiringPackDocu
     absenceWarning: "",
     deemedResignation: "",
     appointmentDocsReturn: "",
+    // Nobody signs a certificate of experience back — the company certifies it and hands it over —
+    // and it is reissued whenever it is asked for, so one date here could hold only the newest.
+    experienceCertificate: "",
     form6: pack?.offboarding.form6SignedDate ?? "",
     resignation: pack?.offboarding.resignationSignedDate ?? "",
     mutualTermination: pack?.offboarding.mutualTerminationSignedDate ?? "",
@@ -2085,6 +2089,37 @@ export function HiringPackManager({
                     signable={false}
                     subtitle="إقرار استلام مسوغات التعيين — عند انتهاء الخدمة"
                     title="Appointment documents returned"
+                  />
+                  {/*
+                    THE CERTIFICATE OF EXPERIENCE. It sits in the leaver package because that is
+                    when HR reaches for it, NOT because it is only issued then — somebody still at
+                    his desk can ask for one for a visa or a bank, and the paper prints correctly
+                    for him, saying in terms that he is still employed. The footnote below says
+                    which of the two this employee will get, because the two readings are what a
+                    certificate can be wrong about in a way that costs him the job.
+                  */}
+                  <DocumentCard
+                    busy={false}
+                    canManage={canManage}
+                    copies={copies.experienceCertificate}
+                    gaps={gapsFor(pack.gaps, "experienceCertificate")}
+                    onCopiesChange={(value) => setCopiesFor("experienceCertificate", value)}
+                    footnote={
+                      pack.employee.departed
+                        ? "Issued on request, to be read by his next employer. It will state that his service ENDED — check the last working day above. No salary, no reason for leaving and no statement of conduct: each is left out on purpose."
+                        : "Issued on request — for a visa, a bank or an application. This employee has not left, so it will state that he is STILL EMPLOYED and close the period at today's date. No salary, no statement of conduct: each is left out on purpose."
+                    }
+                    onPreview={() => openPreview("experienceCertificate")}
+                    onPrint={() => openPrint("experienceCertificate")}
+                    onSign={() => undefined}
+                    onSignDateChange={() => undefined}
+                    printedAt={null}
+                    printingNote="Two copies. Nobody signs it back — one is handed over, one is the company's record of what it certified about him."
+                    signDate=""
+                    signedDate={null}
+                    signable={false}
+                    subtitle="شهادة خبرة — تُصرف بناءً على طلب صاحب الشأن"
+                    title="Certificate of experience"
                   />
                 </div>
 

@@ -149,6 +149,74 @@ export function describeDurationMonths(months: number | null | undefined): strin
   return `${months} شهرًا`;
 }
 
+/** Arabic counts in three bands — one, two, and then either side of ten. One rule, three units. */
+function countedNoun(
+  count: number,
+  one: string,
+  two: string,
+  few: string,
+  many: string,
+): string {
+  if (count === 1) return one;
+  if (count === 2) return two;
+  if (count >= 3 && count <= 10) return `${count} ${few}`;
+  return `${count} ${many}`;
+}
+
+function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/**
+ * How long somebody served, in years, months and days — the span a certificate of experience states.
+ *
+ * THE LAST WORKING DAY IS A DAY WORKED, which is the whole reason this is not a plain subtraction.
+ * Somebody who started on 1 March and left on 31 August served six months, not five months and
+ * thirty days, and a certificate that says the latter reads as though the company is shaving the
+ * end of his service. So the end is advanced by one day and the calendar difference taken to that
+ * exclusive bound, which lands whole periods on whole numbers and a single day on «يوم واحد».
+ *
+ * A zero component is omitted rather than printed: «3 سنوات» is what a reader expects, and
+ * «3 سنوات و0 أشهر و0 يومًا» reads like a machine filled it in. An empty string comes back when
+ * either end is missing or the order is reversed — a certificate rules that line for a human rather
+ * than printing a negative span, the same answer every other blank on these papers gives.
+ */
+export function describeServiceDuration(
+  fromIso: string | null | undefined,
+  toIso: string | null | undefined,
+): string {
+  const from = splitIsoDate(fromIso);
+  const to = splitIsoDate(toIso);
+  if (!from || !to) return "";
+
+  const start = Date.UTC(Number(from.year), Number(from.month) - 1, Number(from.day));
+  // The exclusive bound: the day AFTER the last day worked. See the note above.
+  const end = Date.UTC(Number(to.year), Number(to.month) - 1, Number(to.day) + 1);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return "";
+
+  const endDate = new Date(end);
+  let years = endDate.getUTCFullYear() - Number(from.year);
+  let months = endDate.getUTCMonth() + 1 - Number(from.month);
+  let days = endDate.getUTCDate() - Number(from.day);
+
+  if (days < 0) {
+    months -= 1;
+    // The month that ran out — the one BEFORE the exclusive end, whose length is what those days
+    // were borrowed from. `getUTCMonth()` is already zero-based, so this is that month's number.
+    days += daysInMonth(endDate.getUTCFullYear(), endDate.getUTCMonth());
+  }
+  if (months < 0) {
+    years -= 1;
+    months += 12;
+  }
+
+  const parts: string[] = [];
+  if (years > 0) parts.push(countedNoun(years, "سنة واحدة", "سنتان", "سنوات", "سنة"));
+  if (months > 0) parts.push(countedNoun(months, "شهر واحد", "شهران", "أشهر", "شهرًا"));
+  if (days > 0) parts.push(countedNoun(days, "يوم واحد", "يومان", "أيام", "يومًا"));
+  return parts.join(" و");
+}
+
 /**
  * The Arabic face stack used by both documents.
  *

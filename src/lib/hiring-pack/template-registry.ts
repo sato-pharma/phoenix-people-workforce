@@ -242,6 +242,18 @@ export const DOCUMENT_TEMPLATE_VERSIONS: readonly DocumentTemplateVersion[] = [
     note: "The exit half of the pair. It now names the LAST WORKING DAY, which the owner's draft did not: a waiver with no date attached says nothing about when the certificates came back, and fixing that moment is the document's whole value. A sentence was added making clear the waiver covers the PAPERS only and is not a release of any statutory or financial entitlement — his wording was broad enough to be read as one.",
   },
   {
+    id: "experience-certificate-v1",
+    document: "experienceCertificate",
+    version: 1,
+    status: "current",
+    labelEn: "Certificate of experience",
+    labelAr: "شهادة خبرة",
+    effectiveFrom: "2026-09-06",
+    supersededOn: null,
+    supersededBy: null,
+    note: "The first paper in this module drawn from scratch rather than typeset from a Word file the owner supplied, and the only one written for a reader OUTSIDE the company — a future employer, an embassy, a bank. Three things it deliberately does not say, each an omission rather than an unfinished half: NO SALARY, because a certificate of experience is not a salary certificate and printing pay here would disclose it to every reader of every copy; NO REASON FOR LEAVING, which is recorded on the resignation or mutual-termination form where a reader entitled to it looks; and NO STATEMENT OF CONDUCT, because «حسن السير والسلوك» is a testimonial and this paper prints from a button for anybody in the system, including somebody dismissed for cause. It states service two ways — ended, or still serving — resolved from the employee's own departure flag rather than from whether a last-working date happens to be on file, since an absent date means nobody recorded one and not that he is still here. The subtitle carries no article number: nothing on the page rests on a specific article, and a citation invented to match the house pattern is how a wrong one reaches a document a lawyer reads.",
+  },
+  {
     id: "contract-renewal-v1",
     document: "contractRenewal",
     version: 1,

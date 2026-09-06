@@ -75,6 +75,7 @@ export const DOCUMENT_SURFACES: Readonly<Record<HiringPackDocument, DocumentSurf
   absenceWarning: "flow",
   deemedResignation: "flow",
   appointmentDocsReturn: "flow",
+  experienceCertificate: "flow",
   contractRenewal: "flow",
   contractNonRenewal: "flow",
   form6: "page",
