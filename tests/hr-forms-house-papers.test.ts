@@ -811,8 +811,12 @@ function testTheEnglishCertificateAgreesWithItself(): void {
   assert.ok(female.includes("she held the position"), "and the pronoun follows it");
   // A WORD BOUNDARY, because "she held" CONTAINS "he held" — a plain substring check here fails on
   // the correct output and would have been "fixed" by deleting the assertion.
+  // WRITTEN WITH AN EXPLICIT CHARACTER CLASS, never a backslash escape. This line was first
+  // authored through a heredoc, which ate the backslash and left the BACKSPACE byte it stood for:
+  // the regex then matched nothing, the negated assertion passed for every input, and it pinned
+  // nothing at all. tests/heredoc-backslash-damage.test.ts caught it in the required validate job.
   assert.ok(
-    !/he held the position/.test(female),
+    !/(^|[^s])he held the position/.test(female),
     "never the other pronoun on the same page as Ms.",
   );
 
