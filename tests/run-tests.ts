@@ -1433,6 +1433,7 @@ import { runDirectOrderDecidedAtStampTests } from "./direct-order-decided-at-sta
 import { runImportCoverageColumnMeaningTests } from "./import-coverage-column-meaning.test.ts";
 import { runSosDashboardIncompleteReadIsVisibleTests } from "./sos-dashboard-incomplete-read-is-visible.test.ts";
 import { runEmployeeRlsPolicyLockTests } from "./employee-rls-policy-lock.test.ts";
+import { runMarketAwarenessTests } from "./market-awareness.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4554,6 +4555,10 @@ await runTest(
 await runTest(
   "employee RLS policy lock (the 10 policies the users drop could have stripped silently)",
   runEmployeeRlsPolicyLockTests,
+);
+await runTest(
+  "market awareness (manager step by identity, approved is locked, Head Office never targetable)",
+  runMarketAwarenessTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

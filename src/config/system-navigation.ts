@@ -1570,6 +1570,34 @@ const employeePortalNavigationSectionSeeds = [
     label: "Coaching",
   },
   {
+    id: "employee-market-awareness",
+    items: [
+      {
+        href: "/employee-portals/market-awareness",
+        icon: Sparkles,
+        label: "Market Awareness",
+        // The whole audience: the Group Product Manager, both Product Managers and the Marketing
+        // Manager raise activities; the informed roles (NSM, SFE, DM, Finance) and the CEO read
+        // them. This list is UX only — every route calls assertPermission(market_awareness) and
+        // then narrows by identity, because the matrix has no per-row layer and a Product Manager
+        // sees only his own.
+        permissions: [{ resource: "market_awareness", action: "read" }],
+        roles: [
+          "Product Manager",
+          "Group Product Manager",
+          "Marketing Manager",
+          "National Sales Manager",
+          "SFE Manager",
+          "District Manager",
+          "Finance Manager",
+          "CEO",
+          "Super Admin",
+        ],
+      },
+    ],
+    label: "Market Awareness",
+  },
+  {
     id: "employee-marketing-requests",
     items: [
       {
@@ -3129,6 +3157,14 @@ export const marketingRoiPageItems: readonly AdminToolsPageItem[] = [
     description: "Product-manager product master — which products each PM owns, the basis for ROI attribution.",
     permissions: [{ resource: "employee_profile", action: "read" }],
     roles: ["Super Admin", "CEO", "SFE Manager"],
+  },
+  {
+    href: "/admin/market-awareness",
+    icon: Sparkles,
+    label: "Market Awareness",
+    description: "Conferences, round tables and speaker programmes raised by the product managers, with the brick and area sales that follow them.",
+    permissions: [{ resource: "market_awareness", action: "read" }],
+    roles: ["Super Admin", "CEO", "Marketing Manager", "Group Product Manager", "Finance Manager"],
   },
   {
     href: "/admin/marketing-requests/roi-tracking",
