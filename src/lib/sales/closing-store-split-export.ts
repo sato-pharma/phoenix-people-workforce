@@ -91,6 +91,9 @@ export function prepareClosingStoreSplit(
 }
 
 function deriveSplit(monthRows: ClosingDetailsResult): ClosingStoreSplit {
-  const { exemptStoreValueByBrick, movements } = splitStoreSalesAcrossCityAreas(monthRows.rows);
+  const { exemptStoreValueByBrick, movements } = splitStoreSalesAcrossCityAreas(
+    monthRows.rows,
+    monthRows.period,
+  );
   return { exemptStoreValueByBrick, movements, net: netStoreSplitByAreaProduct(movements) };
 }
