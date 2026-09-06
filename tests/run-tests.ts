@@ -1431,6 +1431,7 @@ import { runPlansAwaitingApprovalAvailabilityTests } from "./plans-awaiting-appr
 import { runHiringPackDepartmentNameTests } from "./hiring-pack-department-name.test.ts";
 import { runDirectOrderDecidedAtStampTests } from "./direct-order-decided-at-stamp.test.ts";
 import { runImportCoverageColumnMeaningTests } from "./import-coverage-column-meaning.test.ts";
+import { runEmployeeRlsPolicyLockTests } from "./employee-rls-policy-lock.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4544,6 +4545,10 @@ await runTest(
 await runTest(
   "import-coverage column meaning (a writer that never measured money reports null, never 0 EGP)",
   runImportCoverageColumnMeaningTests,
+);
+await runTest(
+  "employee RLS policy lock (the 10 policies the users drop could have stripped silently)",
+  runEmployeeRlsPolicyLockTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
