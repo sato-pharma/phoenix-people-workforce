@@ -86,30 +86,31 @@ function build(input: {
 export function runTwoKpiReportsVocabularyTests() {
   // COVERAGE is "visited at least once". FREQUENCY is "met the graded norm". A rep who saw every
   // A-grade doctor exactly once has covered 100% of his panel and met 0% of the frequency norm,
-  // because an A needs two visits. Collapsing the two — which the existing coverage board does when
-  // it scores `visitsThisMonth >= target` and calls the result coverage — reports this rep as
-  // having covered nothing, which is the opposite of what happened.
+  // because an A needs three visits (owner, 2026-09-06 — raised from two). Collapsing the two —
+  // which the existing coverage board does when it scores `visitsThisMonth >= target` and calls the
+  // result coverage — reports this rep as having covered nothing, which is the opposite of what
+  // happened.
   const panel = [contact({ contactCrmId: 1 }), contact({ contactCrmId: 2 })];
   const onceEach = [...visits(1, 1), ...visits(2, 1)];
   const report = build({ panel, visits: onceEach });
 
   assert.equal(report.ampm.pm.coverage.visited, 2);
   assert.equal(report.ampm.pm.coverage.pct, 100, "every doctor on the panel was seen — coverage is 100%");
-  assert.equal(report.ampm.pm.frequency.met, 0, "an A grade needs two visits; one does not meet the norm");
+  assert.equal(report.ampm.pm.frequency.met, 0, "an A grade needs three visits; one does not meet the norm");
   assert.equal(report.ampm.pm.frequency.pct, 0, "frequency is 0% for the same rep in the same month");
 
-  // And the inverse: two visits each meets the A norm, so both numbers reach 100 — proving the two
-  // are genuinely independent rather than one being a rescaling of the other.
-  const twiceEach = [...visits(1, 2), ...visits(2, 2)];
-  const met = build({ panel, visits: twiceEach });
+  // And the inverse: three visits each meets the A norm, so both numbers reach 100 — proving the
+  // two are genuinely independent rather than one being a rescaling of the other.
+  const thriceEach = [...visits(1, 3), ...visits(2, 3)];
+  const met = build({ panel, visits: thriceEach });
   assert.equal(met.ampm.pm.coverage.pct, 100);
   assert.equal(met.ampm.pm.frequency.pct, 100);
 
   // CALL RATE is neither: it is visits over working days and does not consult the panel at all.
-  // Four visits across 23 working days is 0.17/day even though coverage and frequency are both 100%.
-  assert.equal(met.ampm.pm.callRate.visits, 4);
+  // Six visits across 23 working days is 0.26/day even though coverage and frequency are both 100%.
+  assert.equal(met.ampm.pm.callRate.visits, 6);
   assert.ok(
-    Math.abs((met.ampm.pm.callRate.perWorkingDay ?? 0) - 4 / 23) < 1e-9,
+    Math.abs((met.ampm.pm.callRate.perWorkingDay ?? 0) - 6 / 23) < 1e-9,
     "call rate divides by the CALENDAR working days, not by the days the rep happened to work",
   );
 }
@@ -228,6 +229,15 @@ export function runTwoKpiReportsApplicabilityTests() {
   assert.equal(DEFAULT_REP_KPI_STANDARDS.Pharmacy.coverageFloorPct, 50, "owner answer: pharmacy coverage floor is 50%");
   assert.equal(DEFAULT_REP_KPI_STANDARDS.AM.frequencyNorms.A, 1, "owner answer: a grade A AM account is visited once a month");
   assert.equal(DEFAULT_REP_KPI_STANDARDS.AM.frequencyNorms.B, null, "he left grade B blank = keep as today");
+
+  // ANSWERED by the owner 2026-09-06, confirmed directly in chat the same day: PM's frequency
+  // norms rise from {A:2,B:1,C:1} to {A:3,B:2,C:1}. `doctor_coverage_config.norms.sp` was updated
+  // live in production the same day so the OLD board's own Frequency tab agrees with this number —
+  // two boards disagreeing on one figure is exactly the shape #3341 retracted the visits/day band
+  // over, and this assertion is what would catch that recurring here.
+  assert.equal(DEFAULT_REP_KPI_STANDARDS.PM.frequencyNorms.A, 3, "owner answer: a grade A PM doctor is visited 3 times a month");
+  assert.equal(DEFAULT_REP_KPI_STANDARDS.PM.frequencyNorms.B, 2, "owner answer: a grade B PM doctor is visited twice a month");
+  assert.equal(DEFAULT_REP_KPI_STANDARDS.PM.frequencyNorms.C, 1, "grade C stays at 1 — unchanged");
 }
 
 // ── A zero norm is "not scored", never green ─────────────────────────────────────────────────
@@ -359,7 +369,7 @@ export function runTwoKpiReportsConfigurableTests() {
   assert.deepEqual(resolveRepKpiStandards(undefined), DEFAULT_REP_KPI_STANDARDS);
 
   // Answering ONE parked question must not disturb the other three, or any list it does not name.
-  // A partial edit that silently reset PM's live {A:2,B:1,C:1} norms would move every doctor
+  // A partial edit that silently reset PM's live {A:3,B:2,C:1} norms would move every doctor
   // number on the board with nothing on screen to say why.
   const answered = resolveRepKpiStandards({ Pharmacy: { callRatePerDay: 4 } });
   assert.equal(answered.Pharmacy.callRatePerDay, 4, "the owner's answer is taken");
