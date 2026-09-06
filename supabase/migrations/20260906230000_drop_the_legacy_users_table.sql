@@ -86,9 +86,19 @@
 -- Fail closed. A DROP takes no WHERE clause, so this block is the precondition. It refuses if the
 -- table has acquired a row; if any child FK column has acquired a non-null value, because dropping
 -- the constraint would then silently orphan a real reference; and if anything OTHER than the eight
--- policies rewritten below has come to depend on public.users. pg_depend is used deliberately --
--- it sees every dependency surface at once, including the policy expressions a per-surface sweep
--- misses.
+-- policies rewritten below has come to depend on public.users.
+--
+-- HOW THAT LAST CHECK WORKS, stated precisely, because the method is the whole lesson here. The
+-- ANALYSIS behind this migration used pg_depend, which sees every dependency surface at once and
+-- is what found the eight policies. The GUARD below does not: it scans pg_policy expression text
+-- (pg_get_expr over polqual / polwithcheck) for a reference to `users`. That is narrower on
+-- purpose, so the error can name the offending policies -- and it is not the last line of
+-- defence. The bare `drop table` at the end, WITHOUT cascade, is: anything this scan cannot see
+-- still makes the DROP fail loudly rather than disappear quietly.
+--
+-- One consequence worth knowing: the scan also matches the `users` inside `auth.users`, so a
+-- future policy referencing auth.users would trip it. That fails CLOSED -- a false refusal,
+-- never a false pass.
 do $$
 declare
   v_rows bigint;
