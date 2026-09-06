@@ -321,8 +321,6 @@ function Notice({ tone, children }: { tone: "info" | "warn" | "good"; children: 
 
 const INPUT =
   "h-10 w-full border border-phx-line bg-phx-paper px-3 text-phx-sm font-bold text-phx-ink outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-phx-accent-soft disabled:cursor-not-allowed disabled:bg-phx-paper-2 disabled:text-phx-ink-faint";
-const MULTI =
-  "min-h-28 w-full border border-phx-line bg-phx-paper px-3 py-2 text-phx-sm font-bold text-phx-ink outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-phx-accent-soft disabled:cursor-not-allowed disabled:bg-phx-paper-2";
 const BTN_PRIMARY =
   "inline-flex items-center justify-center gap-2 border border-phx-accent bg-phx-accent px-4 py-2.5 text-phx-xs font-black uppercase tracking-[0.10em] text-phx-accent-ink transition hover:bg-phx-accent-hover disabled:cursor-not-allowed disabled:opacity-60";
 const BTN_QUIET =
@@ -1180,11 +1178,126 @@ function FormSection({
   );
 }
 
+/**
+ * A real multi-select: a scrollable list of square checkboxes.
+ *
+ * NOT a native `<select multiple>`. That control needs ctrl-click to pick a second item, silently
+ * clears the whole selection on a plain click, and is close to unusable on a phone — for a picker
+ * where choosing several products is the NORMAL case, it is the wrong control. Checkboxes say what
+ * they are, survive a mis-click, and work with a thumb.
+ *
+ * Scrolls VERTICALLY only. The golden rule forbids horizontal scroll; a tall list inside a fixed
+ * height is the ordinary way to show many options and costs no width.
+ */
+function MultiSelectList<T>({
+  disabled,
+  emptyText,
+  items,
+  keyOf,
+  labelOf,
+  onChange,
+  selected,
+  subLabelOf,
+}: {
+  disabled?: boolean;
+  emptyText: string;
+  items: T[];
+  keyOf: (item: T) => string;
+  labelOf: (item: T) => string;
+  onChange: (next: string[]) => void;
+  selected: string[];
+  subLabelOf?: (item: T) => string | null;
+}) {
+  const chosen = new Set(selected);
+
+  const toggle = (key: string) => {
+    const next = new Set(chosen);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    onChange([...next]);
+  };
+
+  if (disabled) {
+    return (
+      <p className="border border-phx-line bg-phx-paper-2 px-3 py-3 text-phx-xs font-bold text-phx-ink-faint">
+        {emptyText}
+      </p>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <p className="border border-phx-line bg-phx-paper-2 px-3 py-3 text-phx-xs font-bold text-phx-ink-faint">
+        {emptyText}
+      </p>
+    );
+  }
+
+  return (
+    <div className="min-w-0 border border-phx-line bg-phx-paper">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-phx-paper-2 px-3 py-2">
+        <span className="text-phx-3xs font-bold uppercase tracking-[0.10em] text-phx-ink-faint">
+          {selected.length === 0
+            ? `${items.length} available`
+            : `${selected.length} of ${items.length} chosen`}
+        </span>
+        <span className="flex flex-wrap gap-2">
+          <button
+            className="text-phx-3xs font-black uppercase tracking-[0.10em] text-phx-accent transition hover:text-phx-accent-press"
+            onClick={() => onChange(items.map(keyOf))}
+            type="button"
+          >
+            Select all
+          </button>
+          <button
+            className="text-phx-3xs font-black uppercase tracking-[0.10em] text-phx-ink-faint transition hover:text-phx-ink"
+            onClick={() => onChange([])}
+            type="button"
+          >
+            Clear
+          </button>
+        </span>
+      </div>
+      {/* Vertical scroll only — never horizontal. */}
+      <ul className="max-h-56 min-w-0 overflow-y-auto">
+        {items.map((item) => {
+          const key = keyOf(item);
+          const isOn = chosen.has(key);
+          const sub = subLabelOf?.(item) ?? null;
+          return (
+            <li className="min-w-0 border-b border-phx-line last:border-b-0" key={key}>
+              <label className="flex min-w-0 cursor-pointer items-start gap-2.5 px-3 py-2 transition hover:bg-phx-accent-soft">
+                <input
+                  checked={isOn}
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-phx-accent"
+                  onChange={() => toggle(key)}
+                  type="checkbox"
+                />
+                <span className="min-w-0">
+                  <span
+                    className={`block break-words text-phx-xs ${isOn ? "font-black text-phx-ink" : "font-bold text-phx-ink-soft"}`}
+                  >
+                    {labelOf(item)}
+                  </span>
+                  {sub ? (
+                    <span className="mt-0.5 block break-words text-phx-3xs font-medium text-phx-ink-faint">
+                      {sub}
+                    </span>
+                  ) : null}
+                </span>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: () => void }) {
   const [types, setTypes] = useState<ActivityType[]>([]);
   const [lines, setLines] = useState<Line[]>([]);
   const [regions, setRegions] = useState<RegionOption[]>([]);
-  const [products, setProducts] = useState<ProductOption[]>([]);
   const [bricks, setBricks] = useState<BrickOption[]>([]);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -1199,7 +1312,6 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
   const [speakers, setSpeakers] = useState("");
   const [primaryLineId, setPrimaryLineId] = useState<number | null>(null);
   const [extraLineIds, setExtraLineIds] = useState<number[]>([]);
-  const [productCodes, setProductCodes] = useState<string[]>([]);
   const [regionCode, setRegionCode] = useState("");
   const [areaCode, setAreaCode] = useState("");
   const [primaryBrickId, setPrimaryBrickId] = useState("");
@@ -1209,13 +1321,39 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
   const [baselineMonths, setBaselineMonths] = useState("3");
   const [expectedUpliftPct, setExpectedUpliftPct] = useState("");
 
+  /**
+   * Products are held PER LINE, not in one flat list.
+   *
+   * A product belongs to exactly one line, and the tracking reports each line apart — so a flat
+   * list could not say which line a chosen product belonged to, and the earlier version simply
+   * stamped every product with the primary line. That made a second line's products unpickable and
+   * would have mis-attributed any that were.
+   */
+  const [productsByLine, setProductsByLine] = useState<Record<number, ProductOption[]>>({});
+  const [chosenByLine, setChosenByLine] = useState<Record<number, string[]>>({});
+
   useEffect(() => {
+    // A FAILED OPTIONS CALL MUST SAY SO. Silently keeping the empty arrays renders as "the dropdowns
+    // are empty" with nothing explaining why — a confident zero, worse than an error.
     void (async () => {
-      const response = await fetch("/api/market-awareness/options", { cache: "no-store" });
-      const payload = await response.json();
-      if (payload.success) {
+      try {
+        const response = await fetch("/api/market-awareness/options", { cache: "no-store" });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.success) {
+          throw new Error(
+            payload?.message ??
+              `Could not load the form options (HTTP ${response.status}). The lists below stay empty until this succeeds.`,
+          );
+        }
         setTypes(payload.activityTypes ?? []);
         setLines(payload.lines ?? []);
+        if ((payload.activityTypes ?? []).length === 0 || (payload.lines ?? []).length === 0) {
+          setFormError(
+            "The form loaded but the activity types or lines came back empty. That is a data problem, not a permission one — tell whoever maintains the module.",
+          );
+        }
+      } catch (caught) {
+        setFormError(caught instanceof Error ? caught.message : "Could not load the form options.");
       }
     })();
   }, []);
@@ -1225,27 +1363,66 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
     [lines, primaryLineId],
   );
 
-  // The cascade is driven by the PRIMARY line: the region map is per line, so an area sits in a
-  // different region depending on which line you ask. Resets live in the pickers' onChange, so this
-  // effect sets nothing synchronously.
+  /** Primary first, then the extras — the order the pickers render in. */
+  const targetedLines = useMemo(() => {
+    const ids = [primaryLineId, ...extraLineIds].filter((id): id is number => id !== null);
+    const seen = new Set<number>();
+    const out: Line[] = [];
+    for (const id of ids) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const line = lines.find((entry) => entry.id === id);
+      if (line) out.push(line);
+    }
+    return out;
+  }, [extraLineIds, lines, primaryLineId]);
+
+  // The region cascade is driven by the PRIMARY line alone: the region map is per line, so an area
+  // sits in a different region depending on which line you ask.
   useEffect(() => {
     void (async () => {
       if (!primaryLine) {
         setRegions([]);
-        setProducts([]);
         return;
       }
       const response = await fetch(
         `/api/market-awareness/options?lineCode=${encodeURIComponent(primaryLine.lineCode)}`,
         { cache: "no-store" },
       );
-      const payload = await response.json();
-      if (payload.success) {
-        setRegions(payload.regions ?? []);
-        setProducts(payload.products ?? []);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.success) {
+        setFormError(
+          payload?.message ??
+            `Could not load the regions for that line (HTTP ${response.status}).`,
+        );
+        return;
       }
+      setRegions(payload.regions ?? []);
+      setFormError(null);
     })();
   }, [primaryLine]);
+
+  // One products fetch per targeted line, primary included. Already-loaded lines are not re-fetched.
+  useEffect(() => {
+    void (async () => {
+      for (const line of targetedLines) {
+        if (productsByLine[line.id]) continue;
+        const response = await fetch(
+          `/api/market-awareness/options?lineCode=${encodeURIComponent(line.lineCode)}`,
+          { cache: "no-store" },
+        );
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.success) {
+          setFormError(
+            payload?.message ??
+              `Could not load the products for ${line.name} (HTTP ${response.status}).`,
+          );
+          continue;
+        }
+        setProductsByLine((current) => ({ ...current, [line.id]: payload.products ?? [] }));
+      }
+    })();
+  }, [productsByLine, targetedLines]);
 
   useEffect(() => {
     void (async () => {
@@ -1257,8 +1434,14 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
         `/api/market-awareness/options?areaCode=${encodeURIComponent(areaCode)}`,
         { cache: "no-store" },
       );
-      const payload = await response.json();
-      if (payload.success) setBricks(payload.bricks ?? []);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.success) {
+        setFormError(
+          payload?.message ?? `Could not load the bricks for that area (HTTP ${response.status}).`,
+        );
+        return;
+      }
+      setBricks(payload.bricks ?? []);
     })();
   }, [areaCode]);
 
@@ -1271,13 +1454,19 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
     [areaCode, areas],
   );
 
+  const totalProducts = useMemo(
+    () =>
+      targetedLines.reduce((sum, line) => sum + (chosenByLine[line.id]?.length ?? 0), 0),
+    [chosenByLine, targetedLines],
+  );
+
   const ready =
     activityTypeId !== null &&
     primaryLineId !== null &&
     regionCode !== "" &&
     areaCode !== "" &&
     primaryBrickId !== "" &&
-    productCodes.length > 0 &&
+    totalProducts > 0 &&
     startDate !== "" &&
     Number(estimatedCost) > 0;
 
@@ -1285,9 +1474,17 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
     setSaving(true);
     setFormError(null);
     try {
-      const lineIds = [
-        ...new Set([primaryLineId, ...extraLineIds].filter((id): id is number => id !== null)),
-      ];
+      // Each product carries ITS OWN line, so a second line's products are attributed to that line
+      // rather than stamped with the primary.
+      const productCodes = targetedLines.flatMap((line) =>
+        (chosenByLine[line.id] ?? []).map((code) => ({
+          lineId: line.id,
+          productCode: code,
+          productName:
+            (productsByLine[line.id] ?? []).find((p) => p.productCode === code)?.productName ?? null,
+        })),
+      );
+
       const response = await fetch("/api/market-awareness", {
         body: JSON.stringify({
           activityTypeId,
@@ -1300,14 +1497,10 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
           estimatedCost: Number(estimatedCost),
           expectedAttendees: expectedAttendees ? Number(expectedAttendees) : null,
           expectedUpliftPct: expectedUpliftPct ? Number(expectedUpliftPct) : null,
-          lineIds,
+          lineIds: targetedLines.map((line) => line.id),
           primaryBrickId,
           primaryLineId,
-          productCodes: productCodes.map((code) => ({
-            lineId: primaryLineId,
-            productCode: code,
-            productName: products.find((p) => p.productCode === code)?.productName ?? null,
-          })),
+          productCodes,
           regionCode,
           speakers: speakers.trim() || null,
           startDate,
@@ -1317,9 +1510,9 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
-      const payload = await response.json();
-      if (!response.ok || payload.success === false) {
-        throw new Error(payload.message ?? "Could not create the activity.");
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.message ?? `Could not create the activity (HTTP ${response.status}).`);
       }
       onCreated();
     } catch (caught) {
@@ -1379,22 +1572,23 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
           </Field>
         </FormSection>
 
-        <FormSection step="2" title="What it is for">
+        <FormSection step="2" title="Which lines, and which products">
           <Field
-            hint="Drives the region list and the tracking. Several lines can be targeted, but only one orders the geography."
+            hint="Drives the region list and orders the geography. Several lines can be targeted, but only one can order it."
             label="Primary line"
             required
           >
             <select
               className={INPUT}
               onChange={(event) => {
-                setPrimaryLineId(Number(event.target.value) || null);
+                const next = Number(event.target.value) || null;
+                setPrimaryLineId(next);
                 // Changing the line invalidates everything under it: the region map is per line.
                 setRegionCode("");
                 setAreaCode("");
                 setPrimaryBrickId("");
                 setExtraBrickIds([]);
-                setProductCodes([]);
+                setExtraLineIds((current) => current.filter((id) => id !== next));
               }}
               value={primaryLineId ?? ""}
             >
@@ -1406,51 +1600,83 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
               ))}
             </select>
           </Field>
+
           <Field
-            hint="Optional. Reported apart from the primary line, never added to it."
-            label="Other lines"
+            hint="Each line you add gets its own product list below. Lines are reported apart, never added together."
+            label="Other lines targeted"
           >
-            <select
-              className={MULTI}
-              multiple
-              onChange={(event) =>
-                setExtraLineIds(
-                  Array.from(event.target.selectedOptions, (option) => Number(option.value)),
-                )
-              }
-              value={extraLineIds.map(String)}
-            >
-              {lines
-                .filter((line) => line.id !== primaryLineId)
-                .map((line) => (
-                  <option key={line.id} value={line.id}>
-                    {line.name}
-                  </option>
-                ))}
-            </select>
+            <MultiSelectList
+              disabled={!primaryLine}
+              emptyText={primaryLine ? "No other lines available." : "Pick the primary line first."}
+              items={lines.filter((line) => line.id !== primaryLineId)}
+              keyOf={(line) => String(line.id)}
+              labelOf={(line) => line.name}
+              onChange={(next) => {
+                const ids = next.map(Number);
+                setExtraLineIds(ids);
+                // Drop the products of a line that has just been removed, so a deselected line
+                // cannot leave its products attached to the activity.
+                setChosenByLine((current) => {
+                  const keep: Record<number, string[]> = {};
+                  for (const id of [primaryLineId, ...ids]) {
+                    if (id !== null && current[id]) keep[id] = current[id];
+                  }
+                  return keep;
+                });
+              }}
+              selected={extraLineIds.map(String)}
+            />
           </Field>
-          <div className="min-w-0 md:col-span-2">
-            <Field
-              hint="Head Office products are never offered — they are absent from monthly closing tracking, so they could only ever show a permanent zero."
-              label={`Targeted products${productCodes.length > 0 ? ` · ${productCodes.length} chosen` : ""}`}
-              required
-            >
-              <select
-                className={`${MULTI} min-h-36`}
-                disabled={!primaryLine}
-                multiple
-                onChange={(event) =>
-                  setProductCodes(Array.from(event.target.selectedOptions, (o) => o.value))
-                }
-                value={productCodes}
-              >
-                {products.map((product) => (
-                  <option key={product.productCode} value={product.productCode}>
-                    {product.productName}
-                  </option>
-                ))}
-              </select>
-            </Field>
+
+          {/* One products picker per targeted line — the owner's ask: choose another line and
+              another list appears, each one multi-select. */}
+          <div className="flex min-w-0 flex-col gap-4 md:col-span-2">
+            {targetedLines.length === 0 ? (
+              <Field label="Targeted products" required>
+                <MultiSelectList
+                  disabled
+                  emptyText="Pick the primary line first — the product list follows the line."
+                  items={[]}
+                  keyOf={() => ""}
+                  labelOf={() => ""}
+                  onChange={() => undefined}
+                  selected={[]}
+                />
+              </Field>
+            ) : (
+              targetedLines.map((line) => {
+                const available = productsByLine[line.id];
+                const chosen = chosenByLine[line.id] ?? [];
+                return (
+                  <Field
+                    hint={
+                      line.id === primaryLineId
+                        ? "The primary line. Head Office products are never offered — they carry no closing figure, so they could only show a permanent zero."
+                        : "Reported apart from the primary line, never added to it."
+                    }
+                    key={line.id}
+                    label={`${line.name} products${chosen.length > 0 ? ` · ${chosen.length} chosen` : ""}`}
+                    required={line.id === primaryLineId}
+                  >
+                    <MultiSelectList
+                      emptyText={
+                        available === undefined
+                          ? `Loading ${line.name} products.`
+                          : `No trackable products on ${line.name}.`
+                      }
+                      items={available ?? []}
+                      keyOf={(product) => product.productCode}
+                      labelOf={(product) => product.productName}
+                      onChange={(next) =>
+                        setChosenByLine((current) => ({ ...current, [line.id]: next }))
+                      }
+                      selected={chosen}
+                      subLabelOf={(product) => product.productCode}
+                    />
+                  </Field>
+                );
+              })
+            )}
           </div>
         </FormSection>
 
@@ -1528,24 +1754,20 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
               ))}
             </select>
           </Field>
-          <Field hint="Optional. Others the activity is expected to reach." label="Other bricks">
-            <select
-              className={MULTI}
+          <Field
+            hint="Optional. Others the activity is expected to reach."
+            label={`Other bricks${extraBrickIds.length > 0 ? ` · ${extraBrickIds.length} chosen` : ""}`}
+          >
+            <MultiSelectList
               disabled={!areaCode}
-              multiple
-              onChange={(event) =>
-                setExtraBrickIds(Array.from(event.target.selectedOptions, (o) => o.value))
-              }
-              value={extraBrickIds}
-            >
-              {bricks
-                .filter((brick) => brick.brickId !== primaryBrickId)
-                .map((brick) => (
-                  <option key={brick.brickId} value={brick.brickId}>
-                    {brick.brickName}
-                  </option>
-                ))}
-            </select>
+              emptyText={areaCode ? "No other bricks in this area." : "Pick an area first."}
+              items={bricks.filter((brick) => brick.brickId !== primaryBrickId)}
+              keyOf={(brick) => brick.brickId}
+              labelOf={(brick) => brick.brickName}
+              onChange={setExtraBrickIds}
+              selected={extraBrickIds}
+              subLabelOf={(brick) => brick.brickId}
+            />
           </Field>
           <Field hint="Optional." label="Venue">
             <input className={INPUT} onChange={(e) => setVenue(e.target.value)} value={venue} />
@@ -1622,9 +1844,15 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
           </button>
           {!ready ? (
             <span className="break-words text-phx-3xs font-bold uppercase tracking-[0.10em] text-phx-ink-faint">
-              Fill the required fields to save
+              {totalProducts === 0
+                ? "Choose at least one product to save"
+                : "Fill the required fields to save"}
             </span>
-          ) : null}
+          ) : (
+            <span className="break-words text-phx-3xs font-bold uppercase tracking-[0.10em] text-phx-ink-faint">
+              {`${totalProducts} product${totalProducts === 1 ? "" : "s"} across ${targetedLines.length} line${targetedLines.length === 1 ? "" : "s"}`}
+            </span>
+          )}
         </div>
       </div>
     </Panel>
