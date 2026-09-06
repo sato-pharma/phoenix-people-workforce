@@ -7,6 +7,7 @@ import {
   adminNavigationSectionSeeds,
   adminNavigationSections,
   salesAnalyticsPageItems,
+  type NavigationSection,
 } from "../src/config/system-navigation.ts";
 import {
   buildPermissionLookup,
@@ -101,6 +102,30 @@ export function runNavHubPromotionTests() {
     adminNavigationSections.flatMap((section) => section.items.map((item) => item.href)),
   );
 
+  // ── The module anchors ──────────────────────────────────────────────────────
+  //
+  // A promotion anchor that is NOT a page of modules. Written out here by hand, one line per
+  // exception, and cross-checked against the config below — because this list is the thing the
+  // owner's rule is suspended for, and a flag read straight out of the config would let a real
+  // door be exempted by a one-word edit that no assertion questions.
+  //
+  // /admin/direct-orders is the Direct Orders WORKSPACE: tabs, the needs-action queue, every
+  // order. The hub page it was once paired with, /sales/direct-orders-tools, no longer exists.
+  // It reads as a hub to `hubRoutesOnDisk` above only because the workspace imports
+  // `directOrdersPageItems` to draw a shortcut list INSIDE itself — which is why the scan, this
+  // file, and every assertion below agreed for a day that the module's own row was a door and
+  // was correctly gone. It was not: Super Admin, CEO, Finance Manager and the SFE Manager lost
+  // their only rail row to the module, and the Finance Manager lost the unbooked-sales-month
+  // badge with it.
+  const MODULE_ANCHORS = new Set<string>(["/admin/direct-orders"]);
+  assert.deepEqual(
+    adminHubPromotions.filter((hub) => hub.anchorIsAModule === true).map((hub) => hub.hubHref).sort(),
+    [...MODULE_ANCHORS].sort(),
+    "`anchorIsAModule` in src/config/system-navigation.ts and MODULE_ANCHORS here have drifted. " +
+      "Every exception to the owner's no-door rule is named in both places on purpose: the flag " +
+      "alone would let a real page of modules back onto the rail with nothing to argue about it.",
+  );
+
   assert.ok(
     adminHubPromotions.length >= 15,
     `only ${adminHubPromotions.length} hub promotions are configured — 18 when this was written. ` +
@@ -146,7 +171,9 @@ export function runNavHubPromotionTests() {
   );
 
   // ── 2. THE HEADLINE: no hub door survives on the rail ───────────────────────
-  const doorsLeft = [...hubHrefs].filter((href) => railHrefs.has(href)).sort();
+  const doorsLeft = [...hubHrefs]
+    .filter((href) => railHrefs.has(href) && !MODULE_ANCHORS.has(href))
+    .sort();
   assert.deepEqual(
     doorsLeft,
     [],
@@ -155,12 +182,61 @@ export function runNavHubPromotionTests() {
       "grid of them",
   );
 
+  // ── 2b. …and every module anchor DOES survive ───────────────────────────────
+  //
+  // The mirror of the assertion above, and the one that was missing. Section 2 is one-directional
+  // by construction — it can only complain about a row that is still there — so the day
+  // /admin/direct-orders was swept up with the doors, this file went green on it.
+  const anchorsLost = [...MODULE_ANCHORS].filter((href) => !railHrefs.has(href)).sort();
+  assert.deepEqual(
+    anchorsLost,
+    [],
+    `these are modules, not doors, and they are no longer rail rows: ${anchorsLost.join(", ")}. ` +
+      "Press one and you land on the module itself, so it must survive the promotion like any " +
+      "other row.",
+  );
+
+  // ── 2c. …carrying the SEED row, not the hub's card for the same href ────────
+  //
+  // `hubRowsFor` re-inserts the seed row rather than the card, and the difference is not cosmetic.
+  // A card cannot carry `navBadge`, and the Direct Orders badge counts approved orders with no
+  // sales month — the Finance Manager's one exclusive duty and the only queue in the product with
+  // no chaser of any kind behind it. Rebuilding the row from the card would put the link back and
+  // leave the badge gone, which is the same defect wearing a fix.
+  //
+  // `widenedSeeds`, because the seeds are declared `as const`: `flatMap` over them yields a union
+  // of 37 literal TUPLES, and reading `.navBadge` off that union is a type error on every member
+  // that happens not to carry one. Same reason `new Set<string>` is spelled out above.
+  const widenedSeeds: readonly NavigationSection[] = adminNavigationSectionSeeds;
+  for (const href of MODULE_ANCHORS) {
+    const seedRow = widenedSeeds
+      .flatMap((section) => section.items)
+      .find((item) => item.href === href);
+    const railRow = adminNavigationSections
+      .flatMap((section) => section.items)
+      .find((item) => item.href === href);
+    assert.ok(seedRow, `${href} is flagged as a module anchor but is not a row in the admin seeds`);
+    assert.equal(
+      railRow?.label,
+      seedRow?.label,
+      `${href} reaches the rail under a different label than the seed row gives it`,
+    );
+    assert.equal(
+      railRow?.navBadge,
+      seedRow?.navBadge,
+      `${href} lost its navBadge on the way to the rail. The row is only half the fix: the badge ` +
+        "is what chases the queue behind it.",
+    );
+  }
+
   // ── 3. nothing was lost in the swap, before any role is considered ──────────
   //
   // Ungated, so this catches the structural half: `promoteHubRows` emits a section only when it
   // still has rows (`kept.length > 0`), and a bug there takes a hub row's SIBLINGS with it.
   const lost = [...seedHrefs].filter((href) => !railHrefs.has(href)).sort();
-  const expectedLost = [...seedHrefs].filter((href) => hubHrefs.has(href)).sort();
+  const expectedLost = [...seedHrefs]
+    .filter((href) => hubHrefs.has(href) && !MODULE_ANCHORS.has(href))
+    .sort();
   assert.deepEqual(
     lost,
     expectedLost,
@@ -223,7 +299,13 @@ export function runNavHubPromotionTests() {
       }
     }
 
-    const narrowed = [...before].filter((href) => !after.has(href) && !hubHrefs.has(href)).sort();
+    // `!hubHrefs.has(href)` is what lets a DOOR disappear — that is the promotion working. A
+    // module anchor is exempted from the exemption: it is in `hubHrefs` but it is a module, so
+    // losing it for even one seat is a narrowing like any other. This clause is the per-role half
+    // of 2b, and without it the whole /admin/direct-orders regression is invisible here too.
+    const narrowed = [...before]
+      .filter((href) => !after.has(href) && (!hubHrefs.has(href) || MODULE_ANCHORS.has(href)))
+      .sort();
     assert.deepEqual(
       narrowed,
       [],
@@ -276,8 +358,13 @@ export function runNavHubPromotionTests() {
 
     // The hub's own card is dropped by `hubRowsFor` — keeping it would rebuild in one row the
     // "press it and land on a page of modules" the promotion exists to remove — so compare against
-    // the rows the hub actually becomes, never against `hub.items`.
-    const rows: string[] = hub.items.filter((card) => card.href !== hub.hubHref).map((card) => card.href);
+    // the rows the hub actually becomes, never against `hub.items`. A MODULE ANCHOR is the one
+    // case where the anchor href does come back as a row (the seed row itself, not the card), so
+    // the split must name it like any other.
+    const rows: string[] = hub.items
+      .filter((card) => card.href !== hub.hubHref)
+      .map((card) => card.href);
+    if (MODULE_ANCHORS.has(hub.hubHref)) rows.unshift(hub.hubHref);
     const named = hub.split.flatMap((band) => band.hrefs);
 
     assert.deepEqual(

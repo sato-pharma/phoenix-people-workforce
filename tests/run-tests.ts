@@ -29,6 +29,7 @@ import { runNavigationRuling11AnalyticsTests } from "./navigation-ruling-11-anal
 import { runHrUrlNamespaceTests } from "./hr-url-namespace.test.ts";
 import { runModuleTabTitlesTests } from "./module-tab-titles.test.ts";
 import { runAccountJobTitlesTests } from "./account-job-titles.test.ts";
+import { runAdminLandingIdentityStripTests } from "./admin-landing-identity-strip.test.ts";
 import { runIdentityStripEmblemTests } from "./identity-strip-emblem.test.ts";
 import { runNavBadgeRestyleTests } from "./nav-badge-restyle.test.ts";
 import { runNotificationLinksResolveTests } from "./notification-links-resolve.test.ts";
@@ -1442,6 +1443,10 @@ await runTest(
 await runTest(
   "the identity banner's phoenix stays sized and columned on the SATO logo below it",
   runIdentityStripEmblemTests,
+);
+await runTest(
+  "every admin landing surface carries the identity strip, and no shared command centre does",
+  runAdminLandingIdentityStripTests,
 );
 await runTest("sidebar pending badge (restyled fill, motion kept, rail told)", runNavBadgeRestyleTests);
 await runTest("display scale (content-only zoom, desktop-gated, print-excluded, both shells wired)", runDisplayScaleTests);

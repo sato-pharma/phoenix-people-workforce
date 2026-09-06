@@ -453,8 +453,22 @@ export function CeoCommandCenter({
           center and, via `AdminPageHero`, on the other 131 admin pages the same day.
 
           Nothing was lost. The name and role label are in the topbar chip on every page of the
-          shell, from `resolveViewerIdentityFromPage`. Do not restore it and do not "restore
-          parity" with another command center — none of them carry one any more. */}
+          shell, from `resolveViewerIdentityFromPage`. Do not restore the BAND here.
+
+          WHAT THAT LAST SENTENCE USED TO SAY, and why it changed. It read "do not restore parity
+          with another command center — none of them carry one any more", and that is no longer
+          true of ANY of them: /admin, the HR overview and — since 2026-09-06 — the SFE, CEO and
+          Finance boards all mount a `PhoenixIdentityStrip`. That is the thin 92px identity the
+          owner asked for later on 2026-09-03, and it is a different thing from the black band this
+          note is about. His 2026-09-03 exclusion ("you will keep the CEO and the SFE and the
+          finance as they are today") was retired by him on 2026-09-06, in two steps: the SFE
+          Manager first, then "yes recover the ceo and finance banners too".
+
+          NONE OF THOSE FIVE MOUNTS IS IN THIS FILE, and that is not a leftover of the exclusion —
+          it is the rule. This component serves three variants (CEO, SFE, and the Super Admin's
+          /admin), so one strip here would draw an identity three times over, and stack a second
+          one on any page whose own layout already carries it. The strip belongs to the PAGE.
+          Nothing identity-shaped goes in THIS file. */}
 
       <DataUnavailableNotice
         owner={variant === "sfe" ? "SFE" : variant === "admin" ? "system" : "CEO"}

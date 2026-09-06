@@ -200,7 +200,10 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
     desc: "Direct orders, the pharmacies behind them, and the CRM boards.",
     icon: ClipboardList,
     groups: [
-      { heading: "Direct Orders", sectionIds: ["sales-direct-orders"] },
+      // "Order Desk", not "Direct Orders". This band leads with the workspace row, which IS called
+      // "Direct Orders", and a heading repeating one of its own rows is blanked by
+      // `groupAdminSections`. The row keeps the module's name; the heading gives way.
+      { heading: "Order Desk", sectionIds: ["sales-direct-orders"] },
       { heading: "Direct Order Pharmacies", sectionIds: ["sales-direct-orders-pharmacies"] },
       { heading: "Direct Order Setup", sectionIds: ["sales-direct-orders-setup"] },
       { heading: "CRM Boards", sectionIds: ["crm"] },

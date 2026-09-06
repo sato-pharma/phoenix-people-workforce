@@ -4,6 +4,7 @@ import { Suspense } from "react";
 
 import { CeoCommandCenter } from "@/components/admin/ceo-command-center";
 import { CeoPhaseBWidgets, CeoPhaseBSkeleton } from "@/components/admin/ceo-phase-b";
+import { PhoenixIdentityStrip } from "@/components/phoenix-signature-card/PhoenixIdentityStrip";
 import { Card } from "@/components/ui/card";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import {
@@ -11,8 +12,9 @@ import {
   resolveNavigationMode,
   type AccessContext,
 } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { getCeoCommandCenterData } from "@/lib/ceo/command-center";
+import { formatHrIdForDisplay } from "@/lib/hr-id";
 
 export const dynamic = "force-dynamic";
 
@@ -43,12 +45,19 @@ export default async function CeoCommandPage() {
 }
 
 async function CeoCommandContent({ access }: { access: AccessContext }) {
-  const result = await getCeoCommandCenterData(access)
-    .then((data) => ({ data, error: null as string | null }))
-    .catch((error) => {
-      console.error("Failed to load CEO Command Center:", error);
-      return { data: null, error: error instanceof Error ? error.message : "Unknown error occurred" };
-    });
+  // Both in parallel: neither needs the other, and the identity is a Storage lookup for the
+  // uploaded photo on top of one row read, so serialising them would put that latency in front of
+  // the page's own data for nothing. `resolveViewerIdentityFromPage` is `cache()`d per request, so
+  // the topbar's own call in the shell costs nothing extra. Same shape as /admin.
+  const [result, viewer] = await Promise.all([
+    getCeoCommandCenterData(access)
+      .then((data) => ({ data, error: null as string | null }))
+      .catch((error) => {
+        console.error("Failed to load CEO Command Center:", error);
+        return { data: null, error: error instanceof Error ? error.message : "Unknown error occurred" };
+      }),
+    resolveViewerIdentityFromPage(access),
+  ]);
 
   if (!result.data) {
     return (
@@ -70,18 +79,45 @@ async function CeoCommandContent({ access }: { access: AccessContext }) {
     );
   }
 
-  // `welcome` IS GONE. The identity banner it fed was removed 2026-09-03 at the owner's
-  // instruction — "remove from all pages this dump block" — so nothing on this page reads a viewer
-  // name, role label or portrait any more. Dropping the prop rather than leaving it unread also
-  // drops the `resolveViewerIdentityFromPage` round trip and, on /admin, a Storage lookup for an
-  // uploaded photo. The name and role are in the shell's topbar chip, resolved once for every page.
+  // THE IDENTITY IS BACK ON THIS PAGE, AS THE 92px STRIP — owner, 2026-09-06: "yes recover the ceo
+  // and finance banners too."
   //
-  // The CEO's own portrait went with it: /people/ceo-anwar-gaweesh-transparent.png was referenced
-  // from here and nowhere else. The FILE is left in public/people — it is his official portrait,
-  // not a build artefact.
+  // Three instructions in sequence, and a session holding only one of them will undo another:
+  //
+  //   1. 2026-09-03 — the full-bleed black band (`AdminHeroFrame` + `CeoHeroIdentity`, a photo, a
+  //      greeting, a clock) went from here and from 131 other admin pages: "remove from all pages
+  //      this dump block". `welcome` and its prop chain were deleted with it.
+  //   2. Later the same day he asked for the identity back in the employee portal's idiom, thin —
+  //      "I don't want it to be too thick... I want it to be narrow" — and set the height himself,
+  //      under 96px. That is `PhoenixIdentityStrip`: 88px on a phone, 92px from `sm`, both fixed.
+  //      It shipped on the HR overview (#3037) and then on /admin (#3070), and in the same breath
+  //      he said the other three boards were to be left alone: "you will keep the CEO and the SFE
+  //      and the finance as they are today."
+  //   3. 2026-09-06 — he asked for the SFE Manager's back, then for these two. That retires the
+  //      2026-09-03 exclusion COMPLETELY: all five admin landing surfaces now carry the strip, and
+  //      there is no longer a board that deliberately has none.
+  //
+  // WHAT IS STILL FORBIDDEN, because it is a different thing: the BLACK BAND. The note in
+  // ceo-command-center.tsx is about that, and it stands. A thin strip is not the band.
+  //
+  // MOUNTED IN THE PAGE, NOT IN `CeoCommandCenter`. That component serves three variants — CEO,
+  // SFE and the Super Admin's /admin — so a strip inside it would render three times for one of
+  // them and would put a second, stacked identity on any page that later reuses the component.
+  // All five surfaces mount their own for exactly that reason.
+  //
+  // The CEO's portrait comes from `resolveViewerIdentityFromPage`, the same source as the topbar
+  // chip, so the two cannot disagree — including on the JOB TITLE, which that resolver maps rather
+  // than printing the permission key. /people/ceo-anwar-gaweesh-transparent.png is NOT read here;
+  // it stays in public/people as his official portrait.
 
   return (
     <>
+      <PhoenixIdentityStrip
+        employeeCode={formatHrIdForDisplay(access.hrId)}
+        name={viewer.displayName}
+        photoSrc={viewer.imageUrl ?? null}
+        title={viewer.roleLabel}
+      />
       <CeoCommandCenter data={result.data} access={access} />
       <Suspense fallback={<CeoPhaseBSkeleton />}>
         <CeoPhaseBWidgets
