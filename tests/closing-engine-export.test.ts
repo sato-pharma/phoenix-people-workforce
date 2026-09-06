@@ -1225,6 +1225,7 @@ export async function runClosingEngineExportTests() {
     const opened = await JSZip.loadAsync(reviewBook);
     const workbook = await opened.file("xl/workbook.xml")!.async("string");
     const wbRels = await opened.file("xl/_rels/workbook.xml.rels")!.async("string");
+    const stylesXml = await opened.file("xl/styles.xml")!.async("string");
     const target = Object.fromEntries(
       [...wbRels.matchAll(/Id="(rId\d+)"[^>]*Target="([^"]+)"/g)].map((m) => [m[1], m[2]]),
     );
@@ -1681,6 +1682,34 @@ export async function runClosingEngineExportTests() {
         frozenPx < 375,
         `${label}: ${sheetName} pins ${frozenPx}px of frozen columns on a 375px phone — the data behind them is unreachable`,
       );
+
+      // ── A ROW LABEL MUST WRAP, BECAUSE THE REAL NAMES DO NOT FIT ────────────────────────────
+      //
+      // Production carries "Dokki - Mohandseen - Bolak" (26 characters) and "Imbaba - Imbaba
+      // Centers" (23). The area column is followed by a NUMBER, and a text cell only overflows into
+      // an EMPTY neighbour — so at any width under 26 those names are silently CUT OFF. Widening to
+      // fit takes the frozen block past the width of the screen, which is the defect above. So they
+      // wrap, and the format that does it is asserted on the emitted package rather than assumed.
+      const labelStyles = new Set(
+        [...(rowsByNumber.get(firstDataRow) ?? "").matchAll(/<c r="[AB]\d+" s="(\d+)"[^>]*t="inlineStr"/g)].map((one) => one[1]!),
+      );
+      assert.ok(labelStyles.size > 0, `${label}: ${sheetName} has no row labels on its first data row`);
+      const cellXfs = stylesXml.slice(stylesXml.indexOf(">", stylesXml.indexOf("<cellXfs")) + 1, stylesXml.indexOf("</cellXfs>"));
+      const xfs = [...cellXfs.matchAll(/<xf\b[^>]*?\/>|<xf\b[^>]*?>[\s\S]*?<\/xf>/g)].map((one) => one[0]);
+      for (const index of labelStyles) {
+        assert.match(
+          xfs[Number(index)] ?? "",
+          /wrapText="1"/,
+          `${label}: ${sheetName} row labels use format ${index}, which does not wrap — a long area name is cut off`,
+        );
+      }
+
+      // NO ASSERTION HERE ON <cellXfs count>. One was written and then removed deliberately: the
+      // count is only ever produced by `appendCellXf`, which recomputes it from the <xf> elements
+      // actually present, so a disagreement cannot arise while that stays the single writer. Two
+      // attempts to break it both came back green — the second because a LATER appendCellXf call,
+      // in addIndexSheet, repaired the corruption downstream before the workbook was written.
+      // An assertion that cannot fail is false confidence rather than coverage.
     }
 
     // ── The numbers, against the rest of the workbook ─────────────────────────────────────────

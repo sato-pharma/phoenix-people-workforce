@@ -1103,8 +1103,49 @@ const MATRIX_WIDTH = {
   // "Tebofortin Retard 480mg" is 23 characters and real names run longer; a clipped product name
   // is the ellipsis the owner has banned.
   product: 30,
-  region: 16,
+  // Holds "<Region> Total" as well as the region itself, and the longest of those in production is
+  // "Upper Egypt Total" at 17 characters — measured, not guessed.
+  region: 18,
 } as const;
+
+/**
+ * A copy of the engine's body-row format with wrapping turned on, added to `styles.xml` once.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY WRAP RATHER THAN WIDEN. Real area names are longer than they look: production carries
+ * "Dokki - Mohandseen - Bolak" (26 characters) and "Imbaba - Imbaba Centers" (23). The area column is
+ * followed by a NUMBER, and a text cell only overflows into an EMPTY neighbour — so at any width
+ * under 26 those names are silently CUT OFF, which is lost text on the page the owner reads.
+ *
+ * Widening to fit is the obvious answer and it is the wrong one: 26 characters takes the frozen block
+ * from 262px to 325px against a 375px phone, leaving 50px for data and undoing the reason the columns
+ * were re-cut at all. Wrapping keeps the block at 276px AND shows the whole name — which is also the
+ * house rule for fitting: wrap, never shrink and never truncate.
+ *
+ * The rows carry no `ht`, so Excel auto-fits the wrapped line. Idempotent: the xf is appended only
+ * when an identical one is not already present, so a re-run cannot grow `styles.xml` unboundedly.
+ */
+async function ensureWrappedLabelStyle(zip: JSZip): Promise<string | null> {
+  const file = zip.file("xl/styles.xml");
+  if (!file) return null;
+  const xml = await file.async("string");
+
+  // Built from the engine's own body row (xf 9) rather than authored: same font, same vertical
+  // centring, wrapping added. A style is a font AND an alignment AND a border, and inventing one
+  // here would give these three pages a look the owner's template does not own.
+  const wrapped =
+    '<xf numFmtId="0" fontId="11" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">'
+    + '<alignment vertical="center" wrapText="1"/></xf>';
+
+  const body = xml.slice(xml.indexOf(">", xml.indexOf("<cellXfs")) + 1, xml.indexOf("</cellXfs>"));
+  const existing = [...body.matchAll(/<xf\b[^>]*?\/>|<xf\b[^>]*?>[\s\S]*?<\/xf>/g)].map((one) => one[0]);
+  const already = existing.indexOf(wrapped);
+  if (already >= 0) return String(already);
+
+  const added = appendCellXf(xml, wrapped);
+  zip.file("xl/styles.xml", added.xml);
+  return String(added.index);
+}
 
 /**
  * Re-cut every column on the three matrix pages to what it actually holds.
@@ -2909,6 +2950,10 @@ const GRID_STYLE: Record<GridCellKind, string | null> = {
  * it, so they are read here rather than assumed there.
  */
 async function writePivotGrids(zip: JSZip, fill: ClosingEngineFill): Promise<void> {
+  // Once for the whole workbook, before the loop: three sheets share it, and appending it three
+  // times would put three identical formats into styles.xml.
+  const wrapStyle = await ensureWrappedLabelStyle(zip);
+
   for (const [sheetName, spec] of Object.entries(MANIFEST.sheets)) {
     if (spec.kind !== "pivot") continue;
     const gridSpec = PIVOT_GRID_SPECS[sheetName];
@@ -2938,7 +2983,9 @@ async function writePivotGrids(zip: JSZip, fill: ClosingEngineFill): Promise<voi
       const rowNumber = firstRow + offset;
       const cells = line
         .map((cell, column) => {
-          const style = GRID_STYLE[cell.kind];
+          // A row LABEL wraps; nothing else does. A wrapped number column would grow every row's
+          // height for no gain, and the headers are short by construction.
+          const style = cell.kind === "label" ? wrapStyle ?? GRID_STYLE[cell.kind] : GRID_STYLE[cell.kind];
           if (style === null || cell.value === null || cell.value === "") return "";
           const ref = `${columnLetters(firstColumn + column)}${rowNumber}`;
           if (typeof cell.value === "number") {
