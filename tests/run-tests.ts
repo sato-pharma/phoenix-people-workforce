@@ -1420,6 +1420,7 @@ import { runPayrollHoldConfirmStepReasonTests } from "./payroll-hold-confirm-ste
 import { runReact418HydrationSafeTextTests } from "./react-418-hydration-safe-text.test.ts";
 import { runPayrollHoldReviewTests } from "./payroll-hold-review.test.ts";
 import { runPmCallRateBandTests } from "./pm-call-rate-band.test.ts";
+import { runDmPlanHasNoCeoStageTests } from "./dm-plan-has-no-ceo-stage.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4492,6 +4493,10 @@ await runTest(
 await runTest(
   "PM call-rate band is PM alone (7 PM + 2 AM = 9 a day is BELOW band, because only the 7 counts)",
   runPmCallRateBandTests,
+);
+await runTest(
+  "a DM plan has no CEO stage — a stamped header is never attributed to the CEO, and non-DM plans keep theirs",
+  runDmPlanHasNoCeoStageTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

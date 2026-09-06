@@ -154,6 +154,33 @@ export function isDistrictManagerPlanTitle(jobTitle: string | null): boolean {
   return resolveJobFunctionRole(jobTitle) === "District Manager";
 }
 
+/**
+ * The CEO decision a read path may DISPLAY for a plan — `null` whenever that plan kind has no
+ * CEO stage at all.
+ *
+ * A District Manager plan is submit → NSM (or RSM if applicable) → HR acknowledge, with no CEO
+ * stage (AGENTS.md §4, owner 2026-09-05). `employee_plan_headers` nevertheless carries a
+ * denormalised `ceo_decision_*` copy of what was written to `employee_plan_decisions`, and the
+ * two can disagree: every DM `ceo_approve` decision row was deleted on the owner's instruction
+ * (42 machine-written rows on 2026-09-05, then the 8 genuine human ones on 2026-09-06) while
+ * that header copy stayed behind, so for eight DM plans the audit trail said the CEO approval
+ * never happened and the decision-history screens still attributed it to the CEO. Those stamps
+ * were cleared in production on 2026-09-06 — but no read path may DEPEND on that having been
+ * done, which is the whole point of routing through here.
+ *
+ * Ask this helper; never read `row.ceo_decision_at` directly to attribute a decision.
+ */
+export function resolvePlanCeoDecision(
+  employeeJobTitle: unknown,
+  ceoDecisionAt: unknown,
+  ceoDecisionByHrId: unknown,
+): { decidedAt: string; byHrId: string } | null {
+  if (isDistrictManagerPlanTitle(String(employeeJobTitle ?? ""))) return null;
+  const decidedAt = ceoDecisionAt ? String(ceoDecisionAt) : "";
+  if (!decidedAt) return null;
+  return { decidedAt, byHrId: ceoDecisionByHrId ? String(ceoDecisionByHrId) : "" };
+}
+
 const editableStatuses = new Set<EmployeePlanStatus>(["draft", "manager_returned", "ceo_returned"]);
 const closedStatuses = new Set<EmployeePlanStatus>([
   "manager_rejected",
