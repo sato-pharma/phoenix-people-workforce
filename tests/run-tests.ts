@@ -1437,6 +1437,7 @@ import { runEmployeeRlsPolicyLockTests } from "./employee-rls-policy-lock.test.t
 import { runImportDiagnosticsVerdictTests } from "./import-diagnostics-verdict.test.ts";
 import { runMarketAwarenessTests } from "./market-awareness.test.ts";
 import { runMonthlySalesRunReconcileTests } from "./monthly-sales-run-reconcile.test.ts";
+import { runChannelsByRepPharmacyOverrideTests } from "./channels-by-rep-pharmacy-override.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4570,6 +4571,10 @@ await runTest(
 await runTest(
   "monthly sales run reconcile (a failed batch read must not un-confirm the whole month)",
   runMonthlySalesRunReconcileTests,
+);
+await runTest(
+  "channels by rep honours the owner pharmacy overrides (578,248.77 EGP read as stores on one tab)",
+  runChannelsByRepPharmacyOverrideTests,
 );
 await runTest(
   "market awareness (manager step by identity, approved is locked, Head Office never targetable)",
