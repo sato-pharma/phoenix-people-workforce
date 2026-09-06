@@ -7,6 +7,21 @@ disconnecting WhatsApp on the phone).
 
 Written 2026-08-24, after the coexistence flow was built, shipped and then refused by Meta.
 
+> ## 🟢 OUTCOME — APPROVED 2026-09-06, ~13:02 Cairo
+>
+> **This pack did its job and is now history.** Meta approved the submission: all three requests —
+> `whatsapp_business_messaging`, `whatsapp_business_management`, `public_profile` — read
+> **Approved**, and both WhatsApp permissions moved from *Pending App Review* to **Ready to publish**
+> on *Permissions and features*. The row's Actions menu now offers **"Reduce access"** where it used
+> to offer *"+ Add to App Review"* — that wording, not the status label, is what shows the app holds
+> advanced access. **Never click it.** The app is Published and Required actions is empty.
+>
+> Read the rest of this file as the record of how it was assembled. **The checklist below is frozen
+> at its 2026-08-24 state except where a row says otherwise** — do not act on a ⏳ in it.
+>
+> **The handset is still not linked.** Approval removed the gate; nobody has run the flow. What
+> remains is § *After approval* at the bottom of this file.
+
 ## Why this is needed (read this before anything else)
 
 `/whatsapp-connect` is **live and working** — it loads Meta's SDK and opens Meta's dialog. Meta itself
@@ -39,18 +54,18 @@ WhatsApp out of the phone).
 | 3 | App icon, category, privacy URL | ✅ Done |
 | 4 | **Terms of Service URL** — was the `facebook.com` placeholder | ✅ `/terms` live and set in the dashboard |
 | 5 | WABA + connected number — "Sato Pharma HR Team", `+20 10 98500699` | ✅ Live, webhook receiving |
-| 6 | Screencast 1 — sending/receiving a message via the API | ⏳ **Owner records — hard gate, see below** |
-| 7 | Screencast 2 — creating a message template | ⏳ **Owner records — hard gate, see below** |
+| 6 | Screencast 1 — sending/receiving a message via the API | ✅ Recorded, uploaded, **approved 2026-09-06** |
+| 7 | Screencast 2 — creating a message template | ✅ Recorded, uploaded, **approved 2026-09-06** |
 | 8 | Written justifications | ✅ **Pasted into the live submission**, all three permissions |
-| 9 | **Payment method on the WABA** | ❌ **Not added** — dashboard *Next steps* reads `Payment · Not added` |
-| 10 | An **approved template we created** | ❌ `Approved message template · Not created`. `hello_world` is Active but is Meta's seeded sample, and the dashboard does not count it |
-| 11 | **Access verification (Tech Provider)** | ⏳ **Submitted 2026-08-24, in review** — Meta replies ≤5 days; may be refused (end-business fit), see below |
+| 9 | **Payment method on the WABA** | ❌ **Still not added** (re-read 2026-09-06). Does **not** block CV receipt — inbound is free and the auto-reply is off — so it is not a coexistence blocker |
+| 10 | An **approved template we created** | ✅ *Next steps* now reads `Approved message template · Created` (re-read 2026-09-06) — `application_received` was approved. `hello_world` never counted; it is Meta's seeded sample |
+| 11 | **Access verification (Tech Provider)** | ✅ **Verified 2026-08-24** — alert *"Your business has been verified as a Tech Provider"*. The end-business-fit risk below did not materialise |
 
 Items 9 and 10 were read live from **Use cases → Customize → Basic setup → Next steps** on 2026-08-24.
 Item 10 is why screencast 2 is not busy-work: creating the template *is* the missing prerequisite,
 and recording it costs nothing extra.
 
-**Items 6 and 7 are the only things left blocking the submission, and they are not optional.** The
+**Items 6 and 7 were the last blockers, and they are now done** (submitted 2026-08-28, approved 2026-09-06). The
 wizard treats the screencast as a required row, not a nice-to-have — proof in the next section. Every
 other field in all five steps is green.
 

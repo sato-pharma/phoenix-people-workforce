@@ -197,6 +197,8 @@ async function loadRosterRecords(): Promise<RosterRecords> {
   return rows.map((row) => {
     const profileRow = profiles.get(row.hr_id);
     const offboardingRow = offboarding.get(row.hr_id);
+    // The RAW `departments.name`: `mapEmployeeFacts` does the Arabic lookup itself, so this
+    // reader and the one that prints the paper cannot drift apart on what the field holds.
     const departmentName =
       row.department_id === null ? null : (departmentNames.get(row.department_id) ?? null);
     return {
