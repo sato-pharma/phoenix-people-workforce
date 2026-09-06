@@ -23,6 +23,7 @@ import {
   GlanceStrip,
   KeycardGrid,
   PendingActions,
+  PendingCountsUnavailable,
   PortalContextBar,
   PortalIdentityBand,
   RankingPanel,
@@ -222,27 +223,34 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
     shell,
     pendingVacationCount,
     pendingExcuseCount,
+    pendingCountsAvailable,
     leaveEntitlementDays,
     plansAwaitingManagerApproval,
+    plansCountAvailable,
     rmRegional,
     dvFocus,
     earlyBirdStars,
   } = snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount + plansCount;
+  // Both legs must have loaded for the sum to mean anything — a failed plans lookup defaults to 0
+  // and would otherwise silently understate totalPending rather than reading as unknown.
+  const pendingAvailable = pendingCountsAvailable && plansCountAvailable;
 
   return (
     <div className="mx-auto w-full space-y-3" dir="auto">
       <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} />
       <PortalContextBar role="Regional Manager" context={shell.employee.territory || "—"} />
 
-      {totalPending > 0 && (
+      {!pendingAvailable ? (
+        <PendingCountsUnavailable />
+      ) : totalPending > 0 ? (
         <PendingActions
           pendingVacationCount={pendingVacationCount}
           pendingExcuseCount={pendingExcuseCount}
           plansAwaitingApproval={plansCount}
         />
-      )}
+      ) : null}
 
       <RegionKeycards rmRegional={rmRegional} />
 
@@ -310,15 +318,18 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
         items={[
           {
             icon: ClipboardCheck,
-            value: String(plansCount),
-            label: plansCount === 1 ? "plan awaiting approval" : "plans awaiting approval",
+            value: plansCountAvailable ? String(plansCount) : "—",
+            label: plansCountAvailable && plansCount === 1 ? "plan awaiting approval" : "plans awaiting approval",
             href: "/employee-portals/approvals-hub",
-            urgent: plansCount > 0,
+            urgent: plansCountAvailable && plansCount > 0,
           },
           {
             icon: CalendarX2,
-            value: String(pendingVacationCount + pendingExcuseCount),
-            label: pendingVacationCount + pendingExcuseCount === 1 ? "my pending request" : "my pending requests",
+            value: pendingCountsAvailable ? String(pendingVacationCount + pendingExcuseCount) : "—",
+            label:
+              pendingCountsAvailable && pendingVacationCount + pendingExcuseCount === 1
+                ? "my pending request"
+                : "my pending requests",
             href: "/employee-portals/approvals-hub",
           },
           {

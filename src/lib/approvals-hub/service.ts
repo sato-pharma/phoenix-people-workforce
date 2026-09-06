@@ -1329,33 +1329,46 @@ export async function isPlanAwaitingOverdue(access: AccessContext): Promise<bool
   }
 }
 
-export async function countPlanAwaiting(access: AccessContext): Promise<number> {
+/**
+ * `available: false` on a genuine failure — a thrown/rejected getPlanApprovalsForResponder, not a
+ * Promise rejection of this function itself, since this still never rejects (portal-home-plan-
+ * count-canonical.test.ts pins that home-snapshot.ts can keep calling it exactly that way). A bare
+ * `Promise<number>` could not express "the query failed" separately from "nothing is awaiting" —
+ * every caller collapsed both into the same 0, which read on the portal home card and the sidebar
+ * badge as a confident "0 plans awaiting your approval" even when the lookup never ran. `count` on
+ * a failure is a placeholder value only; callers must gate on `available` before trusting it.
+ */
+export async function countPlanAwaiting(access: AccessContext): Promise<{ count: number; available: boolean }> {
   try {
     const { awaiting } = await getPlanApprovalsForResponder(access);
-    return awaiting.length;
+    return { count: awaiting.length, available: true };
   } catch (error) {
     logLoadFailure("Approvals hub count plan awaiting failed", {
       labels: { event: "approvals_hub_count_plan_awaiting_failed", hrId: access.hrId, role: access.role, scope: access.scope },
       error,
     });
-    return 0;
+    return { count: 0, available: false };
   }
 }
 
-/** Count + overdue flag from ONE responder fetch (see getVacationAwaitingBadge). */
-export async function getPlanAwaitingBadge(access: AccessContext): Promise<{ count: number; overdue: boolean }> {
+/**
+ * Count + overdue flag from ONE responder fetch (see getVacationAwaitingBadge). `available` carries
+ * the same "did the lookup actually run" signal as countPlanAwaiting's — see its doc comment.
+ */
+export async function getPlanAwaitingBadge(access: AccessContext): Promise<{ count: number; overdue: boolean; available: boolean }> {
   try {
     const { awaiting } = await getPlanApprovalsForResponder(access);
     return {
       count: awaiting.length,
       overdue: awaiting.some((item) => slaTone(item.ageDays, APPROVALS_SLA_THRESHOLDS.plan) === "overdue"),
+      available: true,
     };
   } catch (error) {
     logLoadFailure("Approvals hub plan awaiting badge computation failed", {
       labels: { event: "approvals_hub_plan_awaiting_badge_failed", hrId: access.hrId, role: access.role, scope: access.scope },
       error,
     });
-    return { count: 0, overdue: false };
+    return { count: 0, overdue: false, available: false };
   }
 }
 
