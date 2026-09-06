@@ -1,5 +1,7 @@
 import { strict as assert } from "node:assert";
 
+import { HOUSE_COLORS } from "../src/lib/hiring-pack/house-identity.ts";
+
 import { systemContractDefaults } from "../src/config/system-settings.ts";
 import { currentContractTemplate } from "../src/lib/hiring-pack/contract-text.ts";
 import {
@@ -29,6 +31,20 @@ import {
   PRINT_BANNER_CSS,
   todayInCairo,
 } from "../src/lib/hiring-pack/render-shared.ts";
+import {
+  renderClearanceCompanyHtml,
+  renderClearanceEmployeeHtml,
+} from "../src/lib/hiring-pack/render-clearance.ts";
+import {
+  renderCustodyLaptopHtml,
+  renderCustodyMobileHtml,
+} from "../src/lib/hiring-pack/render-custody.ts";
+import { renderWorkerFormHtml } from "../src/lib/hiring-pack/render-worker-form.ts";
+import {
+  renderContractNonRenewalHtml,
+  renderContractRenewalHtml,
+} from "../src/lib/hiring-pack/render-renewal.ts";
+import { renderContractHtml } from "../src/lib/hiring-pack/render-contract.ts";
 import {
   buildExperienceCertificateEnValues,
   renderExperienceCertificateEnHtml,
@@ -891,6 +907,71 @@ function testTheEnglishCertificateStaysImportable(): void {
   );
 }
 
+
+/**
+ * EVERY HOUSE COLOUR SURVIVES A BROWSER PRINT.
+ *
+ * The owner printed a clearance on 2026-09-06 and got a black-and-white page while the preview
+ * beside it was blue. Chrome's print dialog ships with "Background graphics" UNTICKED, and every
+ * coloured area on these papers is a CSS background — the 6% zebra bands and the .lh__rule that
+ * house-identity.ts calls the one element on every document. So the browser dropped all of them.
+ *
+ * IT WAS INVISIBLE FROM BOTH OF THE PLACES ANYBODY LOOKS. The screen was right, and the saved PDF
+ * was right too, because paper-pdf.ts passes printBackground: true. Only the printer disagreed,
+ * which is why it lasted: the two paths a developer checks both looked correct.
+ *
+ * Stated as an INVARIANT rather than a list, so a document added later is covered without anybody
+ * remembering this: if a page paints a house colour as a background, it must also tell the browser
+ * to keep it. Measured on the emitted PDF at the time of the fix — rendering the clearance with
+ * printBackground false lost the tint before, and loses nothing after.
+ */
+function testEveryHouseColourSurvivesABrowserPrint(): void {
+  const pack = packFixture({ departed: true, lastWorkingDate: "2026-08-31" });
+
+  const pages: ReadonlyArray<readonly [string, string]> = [
+    ["employee clearance", renderClearanceEmployeeHtml(pack, 1)],
+    ["company clearance", renderClearanceCompanyHtml(pack, 1)],
+    ["laptop custody receipt", renderCustodyLaptopHtml(pack, 1)],
+    ["phone custody receipt", renderCustodyMobileHtml(pack, 1)],
+    ["worker data form", renderWorkerFormHtml(pack, 1)],
+    ["contract renewal annex", renderContractRenewalHtml(pack, 1)],
+    ["non-renewal notice", renderContractNonRenewalHtml(pack, 1)],
+    ["employment contract", renderContractHtml(pack, 1)],
+    ["certificate of experience (Arabic)", renderHrPaperHtml(pack, 1, HR_PAPER_EXPERIENCE_CERTIFICATE_V1)],
+    ["certificate of experience (English)", renderExperienceCertificateEnHtml(pack, 1)],
+    ["confidentiality undertaking", renderHrPaperHtml(pack, 1, HR_PAPER_NDA_V1)],
+    ["social status sheet", renderHrPaperHtml(pack, 1, HR_PAPER_SOCIAL_STATUS_V1)],
+    ["first absence warning", renderHrPaperHtml(pack, 1, HR_PAPER_ABSENCE_WARNING_V1)],
+  ];
+
+  for (const [name, html] of pages) {
+    // Does this page paint a house colour as a background at all? Written against the colours
+    // rather than the word "background" so a page that only uses type and rules is not required to
+    // carry a declaration it has no use for.
+    const paintsAHouseColour = [HOUSE_COLORS.tint, HOUSE_COLORS.blue, HOUSE_COLORS.deep].some(
+      (colour) =>
+        new RegExp(`background[^;}]*${colour.replace("#", "#?")}`, "i").test(html) ||
+        /background:\s*var\(--phx-doc-(blue|tint|deep)\)/i.test(html),
+    );
+    if (!paintsAHouseColour) continue;
+
+    // THE LEADING BOUNDARY IS LOAD-BEARING. Written without it, this pattern also matches
+    // "-webkit-print-color-adjust", so a page carrying only the vendor spelling satisfied the
+    // standard-spelling check and this assertion could never fail on its own. Caught by mutating
+    // the fix out and watching the WRONG assertion report it.
+    assert.ok(
+      /(^|[^-])print-color-adjust:\s*exact/i.test(html),
+      `${name} paints a house colour as a background but never declares print-color-adjust: exact, ` +
+        "so a browser drops it when the operator prints — the screen and the saved PDF both stay " +
+        "correct, which is what makes this invisible",
+    );
+    assert.ok(
+      /-webkit-print-color-adjust:\s*exact/i.test(html),
+      `${name} needs the -webkit- spelling too; Chrome is what the field prints from`,
+    );
+  }
+}
+
 export function runHrFormsHousePapersTests(): void {
   testTheAbsenceThresholdIsMoreThanTenDays();
   testTheSecondNoticeDeclaresRatherThanAcceptsAResignation();
@@ -914,4 +995,5 @@ export function runHrFormsHousePapersTests(): void {
   testTheEnglishCertificateAgreesWithItself();
   testTheEnglishSpanCountsTheLastDay();
   testTheEnglishCertificateStaysImportable();
+  testEveryHouseColourSurvivesABrowserPrint();
 }
