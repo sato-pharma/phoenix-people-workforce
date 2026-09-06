@@ -19,6 +19,7 @@ import { cairoDateTime, plainDate } from "@/lib/marketing-requests/request-repor
 import type { MarketingRequestStatus } from "@/lib/marketing-requests/types";
 import { MarketingCaseFileGoDeeper } from "@/components/marketing-requests/marketing-case-file-go-deeper";
 import { MarketingFinanceHoldControl } from "@/components/marketing-requests/marketing-finance-hold-control";
+import { MarketingReopenControl } from "@/components/marketing-requests/marketing-reopen-control";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -634,6 +635,25 @@ export function MarketingRequestCaseFileView({ caseFile }: { caseFile: Marketing
   // money path — which is precisely what the shared obligation module was created to end.
   const canPlaceHold = viewer.can.placeFinanceHold;
 
+  /**
+   * The rung that ended the chain, and therefore the one a reopen puts back.
+   *
+   * Highest sequence first, mirroring `phx_reopen_rejected_marketing_request`'s own
+   * `order by sequence desc limit 1`: a request refused, reopened and refused again further up
+   * must name the LATEST refusal, never the first. CC rows are excluded — they are never gates.
+   */
+  //
+  // `chain` is a CaseFileBlock, so it may be withheld ("unavailable") for this viewer. That is not
+  // a reason to hide the control: the RPC finds the refused rung itself, so a reopen still works
+  // with no chain to read. Only the panel's naming of WHO refused it degrades, which the copy below
+  // already handles.
+  const refusedRung =
+    viewer.can.reopen && chain.state === "ok"
+      ? [...chain.value.rungs]
+          .filter((rung) => !rung.isCc && rung.status === "rejected")
+          .sort((left, right) => right.sequence - left.sequence)[0] ?? null
+      : null;
+
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-8">
       <div className="border border-slate-200 bg-white">
@@ -665,6 +685,26 @@ export function MarketingRequestCaseFileView({ caseFile }: { caseFile: Marketing
               records why, but pays nobody and reverses nothing.
             </p>
             <MarketingFinanceHoldControl held={false} requestId={header.requestId} />
+          </div>
+        ) : null}
+
+        {viewer.can.reopen ? (
+          <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
+            <p className="text-phx-xs font-semibold uppercase tracking-[0.16em] text-slate-600">
+              Reopen
+            </p>
+            <p className="mt-1 text-phx-md leading-5 text-slate-700">
+              This request was refused
+              {refusedRung ? ` by ${refusedRung.approverName} at ${refusedRung.stepName}` : ""}.
+              Reopening puts it back on that same rung and tells them again — the approvals already
+              given below it are not asked for a second time.
+            </p>
+            {refusedRung?.decisionNote ? (
+              <p className="mt-2 border-l-2 border-rose-300 pl-3 text-phx-sm leading-5 text-slate-600">
+                Reason given: {refusedRung.decisionNote}
+              </p>
+            ) : null}
+            <MarketingReopenControl requestId={header.requestId} stepName={refusedRung?.stepName ?? null} />
           </div>
         ) : null}
 

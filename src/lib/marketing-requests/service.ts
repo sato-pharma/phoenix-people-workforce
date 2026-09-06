@@ -126,6 +126,8 @@ import { parsePharmacyLicenseDataUrl } from "@/lib/venues/pharmacy-license";
 import { getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveMarketingPharmacyCodes } from "@/lib/marketing-requests/master-resolution";
+import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
+import { viewerMayReopenMarketingRequests } from "@/lib/marketing-requests/reopen-rule";
 import { pingMarketingRequestSheet } from "@/lib/marketing-requests/sheet-webhook";
 import { applyMasterTerritoryToVenues } from "@/lib/marketing-requests/venue-territory";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -7756,6 +7758,141 @@ export async function resubmitReturnedMarketingRequest(
   };
   pingMarketingRequestSheet("request_resubmitted");
   return resubmitted;
+}
+
+/**
+ * Reopen a REFUSED request onto the rung that refused it. Super Admin only.
+ *
+ * ── WHY THIS EXISTS ──────────────────────────────────────────────────────────
+ * `rejected` was terminal and no control anywhere reversed it:
+ * `resubmitReturnedMarketingRequest` guards on `status !== "returned"`, which is the neighbouring
+ * case, not this one. On 2026-09-06 the owner asked for two requests the CEO had refused three days
+ * earlier to go back to him, and the only way to do it was hand-written SQL against production.
+ *
+ * ── THE PART THAT IS EASY TO GET WRONG ───────────────────────────────────────
+ * Putting the rung back is not enough. `notifyMarketingWorkflow` keys `request_assigned` on the
+ * STEP ID and `notification_deliveries.idempotency_key` is UNIQUE — and the refusing rung has by
+ * definition already notified its approver, which is how they knew to refuse it. So a reopen that
+ * merely writes the rows leaves the request sitting silently on that person's desk, with the sweep
+ * reporting `already_notified`, which reads as "they were told".
+ *
+ * `dispatchMarketingAssignmentEmail` is what makes it land, and it needs nothing passed to it: the
+ * `marketing_request_steps_capture_event` trigger writes a second `step_opened` row for the rung
+ * inside the RPC's own transaction, and `marketingReopenEpoch` re-keys the notice off that. The
+ * dispatch is called AFTER the RPC has committed, so the second opening is visible to it.
+ *
+ * The refusal itself is not erased — `marketing_request_events` keeps the `step_decided` row and
+ * its note, append-only, and the reason for the reopen is written beside it.
+ */
+export async function reopenRejectedMarketingRequest(
+  access: AccessContext,
+  input: { reason?: string | null; requestId: string },
+): Promise<{
+  notified: boolean;
+  reopenedStepName: string;
+  requestCode: string;
+  restoredRungs: number;
+}> {
+  const requestId = cleanText(input.requestId);
+  if (!requestId) throw validationError("Marketing request ID is required.");
+
+  // The role gate, from the one module buildViewer reads too, so the button and the write can
+  // never disagree about who may press it.
+  if (!viewerMayReopenMarketingRequests(access.role)) {
+    throw forbiddenError(`Forbidden: ${access.role} cannot reopen a rejected marketing request.`);
+  }
+
+  const reason = cleanText(input.reason);
+  if (!reason) {
+    throw validationError(
+      "A reason is required to reopen a rejected marketing request.",
+      "marketing_reopen_reason_required",
+    );
+  }
+
+  const identity = resolveEmployeeIdentityId(access);
+  if (!identity) {
+    throw forbiddenError("Forbidden: a linked Phoenix HR identity is required to reopen a marketing request.");
+  }
+  /**
+   * `updated_by_hr_id` carries a foreign key to `employees(hr_id)`, which is MIXED CASE, and one
+   * of this database's two Super Admins is the shared `admin-HR` login whose `hr_id` is NULL —
+   * so a normalized id matches nobody and the write is refused outright. This is the same trap
+   * that made the finance hold reachable by nobody until it was fixed there; the canonical
+   * resolver is the repo's single answer to it and maps a login token to the real employee.
+   */
+  const actorHrId = await resolveCanonicalActorHrId(String(access.hrId ?? access.loginId ?? identity));
+
+  const supabase = getSupabaseAdmin();
+  const reopenedAt = new Date().toISOString();
+
+  // One transaction. A half-applied reopen would leave `pending_approval` with no `current` rung,
+  // which the SLA scan flags as actively misleading, and a timed-out client request still commits.
+  const { data, error } = await supabase.rpc("phx_reopen_rejected_marketing_request", {
+    p_reason: reason,
+    p_reopened_at: reopenedAt,
+    p_reopened_by: actorHrId,
+    p_request_id: requestId,
+  });
+  if (error) {
+    if (error.message?.includes("marketing_request_not_rejected")) {
+      throw conflictError(
+        "This marketing request is not rejected, so there is nothing to reopen. Refresh Phoenix and try again.",
+      );
+    }
+    if (error.message?.includes("marketing_reopen_no_rejected_step")) {
+      throw conflictError("This marketing request carries no refused approval step to reopen.");
+    }
+    if (error.message?.includes("marketing_reopen_reason_required")) {
+      throw validationError(
+        "A reason is required to reopen a rejected marketing request.",
+        "marketing_reopen_reason_required",
+      );
+    }
+    if (error.message?.includes("marketing_request_not_found")) {
+      throw notFoundError("Marketing request was not found.", "marketing_request_not_found");
+    }
+    throw error;
+  }
+
+  const result = data as {
+    request: MarketingRequestDbRow;
+    restored: number;
+    step: MarketingRequestApprovalStepDbRow;
+  };
+  const request = mapRequest(result.request);
+  const step = mapApprovalStep(result.step);
+  const restoredRungs = Number(result.restored ?? 0);
+
+  await writeAuditLog({
+    actorLoginId: actorHrId,
+    entityId: request.id,
+    entityType: "marketing_request",
+    newValues: {
+      reason,
+      requestCode: request.requestCode,
+      restoredRungs,
+      source: "marketing_request_reopen",
+      stepCode: step.stepCode,
+      stepId: step.id,
+    },
+    summary:
+      `Marketing request ${request.requestCode} reopened onto ${step.stepName}.`
+      + (restoredRungs > 0 ? ` ${restoredRungs} later approval step${restoredRungs === 1 ? "" : "s"} restored.` : ""),
+  });
+
+  // Tell the approver it is back. See the docblock: without the epoch this is a silent no-op, and
+  // the epoch exists because the RPC's step update fired the step_opened trigger a second time.
+  const dispatch = await dispatchMarketingAssignmentEmail(requestId);
+
+  pingMarketingRequestSheet("request_reopened");
+
+  return {
+    notified: dispatch.dispatched,
+    reopenedStepName: step.stepName,
+    requestCode: request.requestCode,
+    restoredRungs,
+  };
 }
 
 /** Approver inbox: marketing requests awaiting the current user's decision. */
