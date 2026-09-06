@@ -19,6 +19,7 @@ import {
   type ApproverPendingPlan,
   type EmployeePlan,
 } from "@/lib/weekly-planning/service";
+import { resolvePlanCeoDecision } from "@/lib/weekly-planning/plan-v1";
 import { getMyResignations, getResignationsDashboardData } from "@/lib/resignations/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { listMyDirectOrders } from "@/lib/direct-orders/service";
@@ -604,7 +605,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
         .limit(200),
       db
         .from("employee_plan_headers")
-        .select("id,employee_name,employee_hr_id,period_key,plan_kind,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
+        .select("id,employee_name,employee_hr_id,employee_job_title,period_key,plan_kind,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
         .or(decidedByAnyOfMine("manager_decision_by_hr_id", "ceo_decision_by_hr_id"))
         .not("manager_decision_at", "is", null)
         .order("manager_decision_at", { ascending: false })
@@ -736,16 +737,19 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
 
   if (plans.status === "fulfilled" && !plans.value.error) {
     for (const row of plans.value.data ?? []) {
+      // A District Manager plan has no CEO stage, so a header CEO stamp on one is never this
+      // viewer's decision — it must not put the row in his history, nor date it.
+      const ceo = resolvePlanCeoDecision(row.employee_job_title, row.ceo_decision_at, row.ceo_decision_by_hr_id);
       const isMgrDecider = decidedByMe(row.manager_decision_by_hr_id);
-      const isCeoDecider = decidedByMe(row.ceo_decision_by_hr_id);
+      const isCeoDecider = Boolean(ceo) && decidedByMe(row.ceo_decision_by_hr_id);
       if (!isMgrDecider && !isCeoDecider) continue;
       const s = String(row.status ?? "").toLowerCase();
       // Derive decision from status — employee_plan_headers has no text decision columns
       let decision: "approved" | "rejected" | "returned" | null = null;
       let decidedAt: string | null = null;
-      if (isCeoDecider && row.ceo_decision_at) {
+      if (isCeoDecider && ceo) {
         decision = ["final_approved", "hr_acknowledged"].includes(s) ? "approved" : s === "ceo_returned" ? "returned" : null;
-        decidedAt = row.ceo_decision_at;
+        decidedAt = ceo.decidedAt;
       } else if (isMgrDecider && row.manager_decision_at) {
         decision = s === "manager_returned" ? "returned" : row.manager_decision_at ? "approved" : null;
         decidedAt = row.manager_decision_at;

@@ -28,7 +28,7 @@ import { resolveApproverPlanStage } from "@/lib/weekly-planning/service";
 import type { PlanAdherenceHistory, PlanAdherenceScore } from "@/lib/weekly-planning/plan-adherence";
 import { loadPlanAdherence, loadPlanAdherenceHistory } from "@/lib/weekly-planning/plan-adherence-data";
 import type { EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
-import { isDistrictManagerPlanTitle } from "@/lib/weekly-planning/plan-v1";
+import { isDistrictManagerPlanTitle, resolvePlanCeoDecision } from "@/lib/weekly-planning/plan-v1";
 import type {
   VacationActionAvailability,
   VacationActionCenterRow,
@@ -1887,7 +1887,7 @@ export async function getAllPlanDecisionsCompanyWide(access: AccessContext): Pro
   const [{ data: plans }, directory] = await Promise.all([
     db
       .from("employee_plan_headers")
-      .select("id,employee_name,employee_hr_id,plan_kind,period_key,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
+      .select("id,employee_name,employee_hr_id,employee_job_title,plan_kind,period_key,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
       .or("manager_decision_at.not.is.null,ceo_decision_at.not.is.null")
       .order("manager_decision_at", { ascending: false })
       .limit(500),
@@ -1897,14 +1897,18 @@ export async function getAllPlanDecisionsCompanyWide(access: AccessContext): Pro
   const items: CompanyWideDecisionItem[] = [];
   for (const row of (plans as Array<Record<string, unknown>> | null) ?? []) {
     const status = String(row.status ?? "").toLowerCase();
-    const hasCeo = Boolean(row.ceo_decision_at);
-    const deciderHrId = hasCeo ? String(row.ceo_decision_by_hr_id ?? "") : String(row.manager_decision_by_hr_id ?? "");
-    const decidedAt = hasCeo ? row.ceo_decision_at : row.manager_decision_at;
+    // A District Manager plan has no CEO stage, so its header CEO stamp is never a decision to
+    // attribute — resolvePlanCeoDecision, not row.ceo_decision_at, decides whose decision this is.
+    const ceo = resolvePlanCeoDecision(row.employee_job_title, row.ceo_decision_at, row.ceo_decision_by_hr_id);
+    const deciderHrId = ceo ? ceo.byHrId : String(row.manager_decision_by_hr_id ?? "");
+    const decidedAt = ceo ? ceo.decidedAt : String(row.manager_decision_at ?? "");
     let decision: "approved" | "rejected" | "returned" | null = null;
     if (status.endsWith("_returned")) decision = "returned";
     else if (status.endsWith("_rejected")) decision = "rejected";
     else if (["manager_approved", "ceo_approved", "final_approved", "hr_acknowledged"].includes(status)) decision = "approved";
     if (!decision) continue;
+    // Dropping the CEO stamp can leave a row with nothing to date the decision by.
+    if (!decidedAt) continue;
     const id = String(row.id ?? "");
     const kindLabel = String(row.plan_kind ?? "weekly") === "monthly" ? "Monthly" : "Weekly";
     items.push({
