@@ -29,6 +29,7 @@ import {
   Send,
   Settings2,
   ShieldCheck,
+  Sparkles,
   Target,
   Trophy,
   User,
@@ -143,6 +144,8 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "TM coach", fullLabel: "Coaching Dashboard", href: "/employee-portals/training-manager/coaching", icon: ChartColumnBig, flags: ["showTrainingManagerDashboardTab"], permission: { resource: "coaching", action: "read" } },
   { label: "New report", fullLabel: "Create Coaching Report", href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, flags: ["showTrainingManagerCreateCoachingTab"], permission: { resource: "coaching", action: "create" } },
   { label: "Field", fullLabel: "Field Coaching", href: "/employee-portals/training-manager/field-coaching", icon: ClipboardCheck, flags: ["showTrainingManagerFieldCoachingTab"], permission: { resource: "coaching", action: "read" } },
+  // Market Awareness
+  { label: "Awareness", fullLabel: "Market Awareness", href: "/employee-portals/market-awareness", icon: Sparkles, flags: ["showMarketAwarenessTab"], permission: { resource: "market_awareness", action: "read" } },
   // Marketing Requests
   { label: "Validation", fullLabel: "Customer Validation", href: "/employee-portals/marketing-requests/validation", icon: ShieldCheck, flags: ["showMarketingRequestsTab"] },
   { label: "Marketing", fullLabel: "Marketing Requests", href: "/employee-portals/marketing-requests", icon: Send, flags: ["showMarketingRequestsTab"] },

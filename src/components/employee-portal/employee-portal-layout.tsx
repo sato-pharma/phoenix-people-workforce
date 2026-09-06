@@ -12,6 +12,7 @@ import {
   Menu,
   Search,
   CalendarClock,
+  Sparkles,
   Zap,
   LogOut,
   Activity,
@@ -196,6 +197,7 @@ function buildEmployeePortalSections({
   showExpenseDashboardTab = false,
   showFingerprintReportTab = false,
   showIncentiveTab = true,
+  showMarketAwarenessTab = false,
   showMarketingRequestsTab = false,
   showMarketingInboxTab = false,
   showMarketingAllRequestsTab = false,
@@ -381,6 +383,7 @@ function buildEmployeePortalSections({
     {
       title: "Marketing & ROI",
       items: [
+        ...(showMarketAwarenessTab ? [{ href: "/employee-portals/market-awareness", label: "Market Awareness", icon: Sparkles }] : []),
         ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests/validation", label: "Customer Validation", icon: ShieldCheck }] : []),
         ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests", label: "Marketing Requests", icon: Send }] : []),
         ...(showMarketingControlTab ? [{ href: "/employee-portals/marketing-requests/control", label: "Marketing Control", icon: Settings2 }] : []),

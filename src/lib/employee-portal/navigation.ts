@@ -16,6 +16,10 @@ export type EmployeePortalNavVisibility = {
   showDeductionsTab?: boolean;
   showIncentiveTab?: boolean;
   showMarketingRequestsTab?: boolean;
+  // Market Awareness — conferences, round tables and speaker programmes raised by the product
+  // managers. The PORTAL BUILDS ITS OWN SIDEBAR: an entry in system-navigation.ts does not put a
+  // link here, which is how a shipped, reachable page can be reachable by nobody.
+  showMarketAwarenessTab?: boolean;
   showMarketingInboxTab?: boolean;
   showMarketingAllRequestsTab?: boolean;
   showMarketingCustomerDatabaseTab?: boolean;
@@ -210,6 +214,25 @@ const hideMyPerformanceTabRoles = new Set<PhoenixRole>([
   "Training Manager",
 ]);
 
+/**
+ * Who sees Market Awareness in the portal sidebar. The creators plus the roles that are INFORMED
+ * when an activity is approved — being told about one is useless without a way to open it.
+ *
+ * This is UX only. Every route calls assertPermission(market_awareness) and then narrows by
+ * identity, because the matrix has no per-row layer and a Product Manager sees only his own.
+ */
+export const MARKET_AWARENESS_PORTAL_ROLES: readonly PhoenixRole[] = [
+  "Product Manager",
+  "Group Product Manager",
+  "Marketing Manager",
+  "National Sales Manager",
+  "SFE Manager",
+  "District Manager",
+  "Finance Manager",
+  "CEO",
+  "Super Admin",
+] as const;
+
 export function canUseEmployeePortalMarketingRequests(
   roleLabel: string | null | undefined,
   accessRole?: string | null | undefined,
@@ -396,6 +419,7 @@ export function resolveEmployeePortalNavVisibility(
   // never extends to an unauthorized role. Contact HR Support is available to every
   // employee-portal user — everyone must be able to reach their HR team.
   const showMarketingRequestsTab = canUseEmployeePortalMarketingRequests(resolvedRole);
+  const showMarketAwarenessTab = MARKET_AWARENESS_PORTAL_ROLES.includes(resolvedRole);
   const showMarketingInboxTab = canUseEmployeePortalMarketingRequests(resolvedRole);
   const showMarketingAllRequestsTab = canUseEmployeePortalMarketingAllRequests(resolvedRole);
   const showMarketingCustomerDatabaseTab = canUseEmployeePortalMarketingCustomerDatabase(resolvedRole);
@@ -458,6 +482,7 @@ export function resolveEmployeePortalNavVisibility(
     showMarketingCustomerDatabaseTab,
     showMarketingControlTab,
     showMarketingInboxTab,
+    showMarketAwarenessTab,
     showMarketingRequestsTab,
     showMarketingRoiTrackingTab,
     showMarketingCoverageReportTab,

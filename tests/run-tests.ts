@@ -1435,6 +1435,7 @@ import { runImportCoverageColumnMeaningTests } from "./import-coverage-column-me
 import { runSosDashboardIncompleteReadIsVisibleTests } from "./sos-dashboard-incomplete-read-is-visible.test.ts";
 import { runEmployeeRlsPolicyLockTests } from "./employee-rls-policy-lock.test.ts";
 import { runImportDiagnosticsVerdictTests } from "./import-diagnostics-verdict.test.ts";
+import { runMarketAwarenessTests } from "./market-awareness.test.ts";
 import { runMonthlySalesRunReconcileTests } from "./monthly-sales-run-reconcile.test.ts";
 import { runWorktreeNodeModulesJunctionTests } from "./worktree-node-modules-junction.test.ts";
 import { runChannelsByRepPharmacyOverrideTests } from "./channels-by-rep-pharmacy-override.test.ts";
@@ -4581,6 +4582,10 @@ await runTest(
 await runTest(
   "channels by rep honours the owner pharmacy overrides (578,248.77 EGP read as stores on one tab)",
   runChannelsByRepPharmacyOverrideTests,
+);
+await runTest(
+  "market awareness (manager step by identity, approved is locked, Head Office never targetable)",
+  runMarketAwarenessTests,
 );
 await runTest(
   "sales upload analyze matches the commit gate (a file commit refuses can no longer report Validation passed)",

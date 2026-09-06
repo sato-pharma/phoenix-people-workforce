@@ -82,6 +82,10 @@ const TRAINING_MANAGER: readonly PhoenixRole[] = ["Training Manager"];
 
 const TWIN_RULES: readonly TwinRule[] = [
   // ── Approvals ──────────────────────────────────────────────────────────────
+  // Market Awareness ships in BOTH shells (owner answer 5), so a portal-mode viewer who follows
+  // an admin link belongs on the portal half rather than at the portal root. `activity` is
+  // carried so a deep link to one activity survives the hop.
+  { from: "/admin/market-awareness", to: "/employee-portals/market-awareness", carryQuery: ["activity"] },
   { from: "/admin/approvals-hub", to: "/employee-portals/approvals-hub", carryQuery: ["module", "id", "tab"] },
   // An admin-only view of the same queue; the portal has no `stuck` page, so the page's
   // own source sends the viewer to the hub instead.

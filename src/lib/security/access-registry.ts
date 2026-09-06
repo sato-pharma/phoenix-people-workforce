@@ -646,6 +646,28 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/coverage-report", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfExemptReason: "Read-only filtered Coverage Report; uses POST only to carry a complex filter body, persists nothing." }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/marketing-requests/coverage-report/presets", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/decision", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+
+  // Market Awareness — conferences, round tables and speaker programmes raised by the product
+  // managers. Gated on its OWN `market_awareness` resource rather than borrowing `expenses`, which
+  // already gates the whole /api/marketing-requests/** namespace: widening that key would hand this
+  // module to everyone who holds it. The permission decides whether the ROLE may touch the module;
+  // the service then narrows by identity, because the matrix has no per-row layer and a Product
+  // Manager may see only his own activities.
+  sessionApi({ methods: ["GET"], pattern: "/api/market-awareness", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness", permission: { resource: "market_awareness", action: "create" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/market-awareness/options", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ methods: ["GET"], pattern: "/api/market-awareness/:activityId", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/market-awareness/:activityId", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/market-awareness/:activityId/tracking", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness/:activityId/submit", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // The approval steps. `approve` is held by the CEO, the Group Product Manager, the Marketing
+  // Manager and Super Admin — and canDecideStep then checks IDENTITY for the manager step, so a
+  // GPM cannot approve an activity routed to somebody else.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness/:activityId/decision", permission: { resource: "market_awareness", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness/:activityId/withdraw", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness/:activityId/close", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // Finance's paid / not-paid mark — `update`, which only Finance Manager and Super Admin hold.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness/:activityId/finance", permission: { resource: "market_awareness", action: "update" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/comment", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/resubmit", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Super-Admin-only direct-sales tracking toggle (Phase D). GET reads the flag; POST is
