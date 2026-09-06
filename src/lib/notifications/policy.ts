@@ -192,6 +192,20 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // the bare default applies, and that default carries email and omits Telegram: the exact inverse
   // of the rule, arrived at silently.
   "sales.distributor_upload_overdue": { channels: ["in_app", "telegram", "push"], priority: "high", recipientStrategy: ["role_based"], telegramAllowed: true },
+  // Owner's choice 2026-09-06, asked directly: in-app, email and Telegram. PUSH IS ABSENT ON
+  // PURPOSE — it is the only one of the four that renders a named employee and the words "no CRM
+  // activity" on a phone's lock screen, readable by anyone holding the handset, and he did not ask
+  // for it. Both rows exist because the bare default carries email but omits Telegram, so falling
+  // through would drop the channel that actually reaches an HR seat in the field. Same two-layer
+  // shape as sales.distributor_upload_overdue above: the call site in retention-risk/notify.ts
+  // passes these same three explicitly and an explicit `channels` wins, so these rows are the
+  // INDEPENDENT layer that still holds if that argument is ever dropped.
+  //
+  // No `permissionResource`: recipients are resolved from the admin-editable role policy and from
+  // the subject's own reporting line, and a District Manager — the whole point of naming the line
+  // manager — holds no company-wide HR resource to be gated on.
+  "retention_risk.retention_risk_flagged": { channels: ["in_app", "email", "telegram"], priority: "high", recipientStrategy: ["role_based"], telegramAllowed: true },
+  "retention_risk.retention_risk_pre_payroll": { channels: ["in_app", "email", "telegram"], priority: "high", recipientStrategy: ["role_based"], telegramAllowed: true },
   "system.announcement": { channels: ["in_app", "email", "push"], recipientStrategy: ["employee"] },
   // Live sender (telegram-operations.ts) passes explicit channels and doesn't consult this
   // entry today, but kept push-inclusive here too in case a future caller relies on policy

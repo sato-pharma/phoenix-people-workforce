@@ -1435,6 +1435,9 @@ import { runSosDashboardIncompleteReadIsVisibleTests } from "./sos-dashboard-inc
 import { runEmployeeRlsPolicyLockTests } from "./employee-rls-policy-lock.test.ts";
 import { runImportDiagnosticsVerdictTests } from "./import-diagnostics-verdict.test.ts";
 import { runMonthlySalesRunReconcileTests } from "./monthly-sales-run-reconcile.test.ts";
+import { runRetentionRiskDetectorTests } from "./retention-risk-detector.test.ts";
+import { runRetentionRiskNotifyTests } from "./retention-risk-notify.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4564,6 +4567,14 @@ await runTest(
 await runTest(
   "monthly sales run reconcile (a failed batch read must not un-confirm the whole month)",
   runMonthlySalesRunReconcileTests,
+);
+await runTest(
+  "retention risk detector (a weekly off bridges a run, leave bridges it too, managers are never measured)",
+  runRetentionRiskDetectorTests,
+);
+await runTest(
+  "retention risk alerts (in-app/email/Telegram never push, the message reports and never accuses)",
+  runRetentionRiskNotifyTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

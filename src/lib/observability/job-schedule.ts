@@ -52,6 +52,11 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   { slug: "phoenix-marketing-field-capture-nudge", kind: "cron", schedule: "50 6 * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-marketing-invoice-overdue-nudge", kind: "cron", schedule: "5 7 * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-distributor-upload-overdue-nudge", kind: "cron", schedule: "20 7 * * *", graceSeconds: 1 * HOUR },
+  { slug: "phoenix-retention-risk-sweep", kind: "cron", schedule: "40 7 * * *", graceSeconds: 1 * HOUR },
+  // Day 25 only. The pre-payroll half of the same feature: Part 1 pays at the start of the month,
+  // so the 25th leaves several working days to check on someone before any money moves. The other
+  // half fires from the payroll wizard itself when Part 1 is confirmed (see confirmPart1).
+  { slug: "phoenix-retention-risk-pre-payroll", kind: "cron", schedule: "45 7 25 * *", graceSeconds: 2 * HOUR },
   { slug: "phoenix-mailbox-offboarding-sweep", kind: "cron", schedule: "15 8 * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-process-notifications", kind: "cron", schedule: "*/5 * * * *", graceSeconds: 10 * MINUTE },
   { slug: "phoenix-background-jobs", kind: "cron", schedule: "0 3 * * 5", graceSeconds: 2 * HOUR },
