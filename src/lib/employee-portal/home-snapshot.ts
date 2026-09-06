@@ -805,17 +805,21 @@ const wrapPromise = <T,>(thenable: PromiseLike<T>): Promise<T> =>
  * Turns the settled result of the plans-awaiting-approval lookup into the pair the snapshot and
  * every consuming dashboard need, distinguishing a real zero from a data source that failed.
  *
- * countPlanAwaiting() (src/lib/approvals-hub/service.ts) already catches its own failures and
- * resolves to 0 rather than rejecting — pinned by tests/portal-home-plan-count-canonical.test.ts,
- * which requires this file keep calling it exactly that way, so that path can never surface here
- * as "rejected" today. This function is the second, outer net: if that inner contract ever
- * changes (or something between the `.then()` and Promise.allSettled itself throws), a rejection
- * must still read as unavailable rather than silently collapsing to the same 0 a genuine "nothing
- * awaiting approval" produces — a manager cannot tell those apart from a bare number, and "0 plans
- * awaiting your approval" is a positive claim, not a neutral one.
+ * countPlanAwaiting() (src/lib/approvals-hub/service.ts) never rejects — pinned by
+ * tests/portal-home-plan-count-canonical.test.ts, which requires this file keep calling it exactly
+ * that way — but it now carries its own `available` flag rather than swallowing a genuine failure
+ * into a bare 0: `{ count, available: false }` on a failed lookup, `{ count, available: true }` on
+ * a real (possibly zero) count. That inner flag is the primary signal this function reads.
+ *
+ * The `result.status === "rejected"` branch below is the OUTER safety net, not the main path: it
+ * covers anything between the `.then()` and Promise.allSettled itself throwing, or a future change
+ * to countPlanAwaiting's never-rejects contract. Either way, a rejection must still read as
+ * unavailable rather than silently collapsing to the same 0 a genuine "nothing awaiting approval"
+ * produces — a manager cannot tell those apart from a bare number, and "0 plans awaiting your
+ * approval" is a positive claim, not a neutral one.
  */
 export function resolvePlansAwaitingApproval(
-  result: PromiseSettledResult<{ count: number } | null>,
+  result: PromiseSettledResult<{ count: number; available: boolean } | null>,
   context: { hrId: string; role: string },
 ): { plansAwaitingManagerApproval: number | null; plansCountAvailable: boolean } {
   if (result.status === "rejected") {
@@ -826,8 +830,22 @@ export function resolvePlansAwaitingApproval(
     return { plansAwaitingManagerApproval: null, plansCountAvailable: false };
   }
   const data = result.value;
-  const plansAwaitingManagerApproval = data && "count" in data && data.count !== null ? data.count : null;
-  return { plansAwaitingManagerApproval, plansCountAvailable: true };
+  if (data === null) {
+    // getPortalHomeSnapshot resolves the underlying promise to null for anyone the plans card does
+    // not apply to (medical reps, or a caller with no hrId) — a real "not applicable", not a
+    // failure, so it stays available with no count to show.
+    return { plansAwaitingManagerApproval: null, plansCountAvailable: true };
+  }
+  if (!data.available) {
+    // countPlanAwaiting() reached its own catch — the underlying query genuinely failed — but
+    // resolved rather than rejected, so the failure surfaces HERE instead of at the rejected branch
+    // above. Still unavailable: never let this read as a real zero.
+    logError("Plans-awaiting-manager-approval lookup failed at the source; portal home reports it as unavailable rather than 0", {
+      labels: { event: "portal_home_plans_awaiting_approval_source_failed", hrId: context.hrId, role: context.role },
+    });
+    return { plansAwaitingManagerApproval: null, plansCountAvailable: false };
+  }
+  return { plansAwaitingManagerApproval: data.count, plansCountAvailable: true };
 }
 
 export async function getPortalHomeSnapshot(access: AccessContext): Promise<PortalHomeSnapshot> {
@@ -899,10 +917,13 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
   //
   // countPlanAwaiting() is the same function behind the sidebar badge
   // (/api/approvals/plan/pending-count), so the home card and the badge can no longer disagree —
-  // it resolves the responder chain (manager vs CEO step) rather than matching one column.
+  // it resolves the responder chain (manager vs CEO step) rather than matching one column. It
+  // already resolves to the exact { count, available } shape resolvePlansAwaitingApproval expects,
+  // so no reshaping here — wrapping it in an extra `.then((count) => ({ count }))` would nest the
+  // whole object under a `count` key instead of passing it through.
   const managerPlanCountPromise =
     !isMr && hrId
-      ? wrapPromise(countPlanAwaiting(access).then((count) => ({ count })))
+      ? wrapPromise(countPlanAwaiting(access))
       : Promise.resolve(null);
 
   // All three fire in parallel (sequential in dev to protect Turbopack workers).
