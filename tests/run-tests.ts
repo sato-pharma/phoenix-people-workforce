@@ -4573,7 +4573,7 @@ await runTest(
   runMonthlySalesRunReconcileTests,
 );
 await runTest(
-  "worktree node_modules junction (links a fresh worktree, never clobbers an existing one, refuses a missing primary, dry-runs clean)",
+  "worktree node_modules junction (links a fresh worktree, never clobbers an existing one, heals a dangling junction instead of misreading EEXIST, refuses a missing primary, dry-runs clean, never removes a link's target)",
   runWorktreeNodeModulesJunctionTests,
 );
 await runTest(
