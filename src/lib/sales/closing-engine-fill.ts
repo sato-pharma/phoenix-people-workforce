@@ -6,6 +6,7 @@ import {
   closingEngineTemplateBytes,
 } from "./closing-engine-template-generated";
 import { ACHIEVEMENT_ARROW_AT } from "./closing-engine-data";
+import { MOBILE_MATRIX_SHEET, MOBILE_MATRIX_WHAT } from "./closing-mobile-matrix";
 
 /**
  * Pours one month of a closing into the owner's own `.xlsm` engine.
@@ -60,6 +61,14 @@ export type ClosingEngineFill = {
   data: EngineDataSheet;
   /** The Rep Card's product block, plus the count its rank caption reads. */
   repCard?: { products: string[]; targetedAreaCount: number };
+  /**
+   * The three matrix pages as plain rows, for readers whose app cannot build a pivot table.
+   *
+   * Appended by the same path the Performance Review sheets take, but listed on the contents page
+   * beside the matrices it stands in for rather than under the review's own band. Null when the
+   * month has no rows; see `closing-mobile-matrix.ts`.
+   */
+  mobileSheet?: ReviewSheet | null;
 };
 
 type SheetSpec = {
@@ -296,9 +305,17 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   await dropStaleLabelFormats(zip);
   await clearTitleEmblem(zip, fill);
   await hideEmblemFromPrint(zip);
-  const reviewAdded = options.reviewSheets ? await addReviewSheets(zip, options.reviewSheets) : [];
-  await addIndexSheet(zip, fill, reviewAdded);
+  // The mobile sheet goes FIRST in the appended block, so it lands beside the matrix pages it
+  // stands in for rather than after the review. It is taken from the fill rather than from the
+  // options on purpose: it is the answer to a defect (three tabs that render empty on a phone),
+  // and a caller that forgot to pass it would reintroduce that defect silently.
+  const appended = [...(fill.mobileSheet ? [fill.mobileSheet] : []), ...(options.reviewSheets ?? [])];
+  const added = appended.length > 0 ? await addReviewSheets(zip, appended) : [];
+  // The contents page lists the mobile sheet from INDEX_SECTIONS, in the "By area" band. Passing it
+  // here as well would print it twice — once there and once under "Performance review".
+  await addIndexSheet(zip, fill, added.filter((sheet) => sheet.name !== MOBILE_MATRIX_SHEET));
   await openOnFirstSheet(zip);
+  await recalculateOnOpen(zip);
   await restorePivotCacheSharedItems(zip, fill);
   await dropDeadSharedStrings(zip);
   // Before both of the below, and for the same reason: the owner's buttons are still here, and the
@@ -2151,6 +2168,38 @@ async function openOnFirstSheet(zip: JSZip): Promise<void> {
 }
 
 /**
+ * Ask every reader to calculate the formulas on open.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * EVERY FORMULA IN THIS WORKBOOK SHIPS WITHOUT A CACHED VALUE. The Rep Card is 35 of them, the
+ * contents page 12 more, and the template carries no `xl/calcChain.xml` — measured on the emitted
+ * file, `<f>…</f>` with no `<v>` beside it, every one. Desktop Excel builds a chain and calculates
+ * regardless, which is why this went unnoticed; a reader that does not will show those cells blank.
+ *
+ * One attribute fixes it for all of them, and it costs nothing on desktop: the pivot cache is
+ * already `refreshOnLoad="1"`, so the workbook was always going to be marked dirty on open — this
+ * adds no save prompt that was not there.
+ *
+ * Written LAST, after every other rewrite of `xl/workbook.xml`, because each of those reads the
+ * part and writes it back whole; run earlier, the next one would drop the attribute again.
+ */
+async function recalculateOnOpen(zip: JSZip): Promise<void> {
+  const workbookFile = zip.file("xl/workbook.xml");
+  if (!workbookFile) return;
+  const workbook = await workbookFile.async("string");
+  if (/<calcPr\b[^>]*fullCalcOnLoad="1"/.test(workbook)) return;
+
+  // A template with no <calcPr> at all is not this one, but a bare replace would then silently do
+  // nothing — so the element is added rather than assumed. It belongs after <sheets>, which is
+  // where Excel writes it and where the schema's sequence puts it.
+  const next = /<calcPr\b/.test(workbook)
+    ? workbook.replace(/<calcPr\b/, '<calcPr fullCalcOnLoad="1"')
+    : workbook.replace("</workbook>", '<calcPr fullCalcOnLoad="1"/></workbook>');
+  zip.file("xl/workbook.xml", next);
+}
+
+
+/**
  * The Rep Card's Export PDF, as a FORMULA rather than a shape.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -2243,6 +2292,7 @@ const INDEX_SECTIONS: ReadonlyArray<{ band: string; entries: ReadonlyArray<{ she
       { sheet: "Closing Matrix", what: "Sales value against target, per area, with each region foldable and the Region slicer above it." },
       { sheet: "Units Matrix", what: "Units against target — never summed across products, because each has its own target." },
       { sheet: "Area x Product", what: "Value against target, opened one region at a time." },
+      { sheet: MOBILE_MATRIX_SHEET, what: MOBILE_MATRIX_WHAT },
     ],
   },
   {
@@ -2266,11 +2316,20 @@ const INDEX_SECTIONS: ReadonlyArray<{ band: string; entries: ReadonlyArray<{ she
  * The closing line, set under the table.
  *
  * It answers the one question the page otherwise invites: three of the tabs listed above hold no
- * rows in the file at all, so a reader who opens `Closing Matrix` on a machine that has not
- * recalculated sees an empty grid and concludes the export is broken. Saying so here costs one line.
+ * rows in the file at all — measured on the emitted workbook, 2, 2 and 6 cells, which is their
+ * title and nothing more. Excel materialises the grid from the pivot cache when the file opens, so
+ * a reader who gets there first sees an empty page and concludes the export is broken.
+ *
+ * IT USED TO SAY THIS WAS A MATTER OF RECALCULATION, which reads as a state that passes. On a phone
+ * it never passes: Excel for iOS/Android and WPS Office open a PivotTable read-only from the
+ * records it already carries, and this cache ships empty by design. So the line now names the
+ * limitation and points at the sheet that answers it.
+ *
+ * It is merged across A:B — 122 character widths — so it CLIPS rather than overflowing. Keep it
+ * short enough to read whole; `runClosingEngineExportTests` pins the length.
  */
 const INDEX_FOOTNOTE =
-  "The three matrix pages are pivot tables — Excel builds them from the hidden Data sheet when the workbook opens.";
+  "The three matrix pages are pivot tables — Excel builds them on open. A phone cannot: read Matrix (Mobile) instead.";
 
 /**
  * The next free `xl/worksheets/sheetN.xml`, read from the package.
