@@ -2,6 +2,7 @@ import { canViewRestrictedProducts, RESTRICTED_PRODUCT_CODES } from "@/lib/sales
 import {
   HOSPITAL_NAME_KEYWORDS,
   normalizeCustomerName,
+  PHARMACY_OVERRIDE_CLIENT_CODES,
   STORE_OVERRIDE_CUSTOMER_KEYS,
   STORE_NAME_KEYWORDS,
 } from "@/lib/sales/customer-channel";
@@ -178,6 +179,11 @@ export async function loadChannelsByRep(options: {
   const { data, error } = await supabase.rpc("phx_sales_channels_by_rep", {
     p_excluded_product_codes: excluded,
     p_hospital_stems: stems.hospital,
+    // BOTH override lists, or this tab silently disagrees with every sibling. The pharmacy rulings
+    // used to be omitted — the RPC had no parameter for them — so 578,248.77 EGP of the owner's
+    // explicitly-ruled pharmacies read as STORES here while the Customer Directory and the
+    // monthly-closing channel comparison read them as pharmacies. Same customers, two answers.
+    p_pharmacy_override_codes: [...PHARMACY_OVERRIDE_CLIENT_CODES],
     p_period: period,
     p_store_override_keys: [...STORE_OVERRIDE_CUSTOMER_KEYS],
     p_store_stems: stems.store,
