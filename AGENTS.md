@@ -178,7 +178,7 @@ it for the hook's wording. Which memory backs which hook:
 **Validation**
 
 - **A repo-wide pattern sweep must grep the TESTS for the old string too — a pinning test can pin the ANTI-pattern.** `runTest` rethrows, so a loop over N routes reports only the FIRST. Run `git grep -l '<the exact old line>' -- tests` first.
-- **A test name appended beside an existing one in `tests/run-tests.ts` becomes an ARGUMENT, not a registration.** One `await runTest(name, fn)` per test; check by AST.
+- **A test name appended beside an existing one in `tests/run-tests.ts` becomes an ARGUMENT, not a registration — and a MERGE CONFLICT is the commonest route to it.** Every new-test PR appends at the SAME anchor, so git puts the conflict INSIDE one `await runTest(` call: keeping both sides yields ONE call taking four arguments, which compiles, goes green, and silently retires the OTHER PR’s test. One `await runTest(name, fn)` per test; check by AST.
 - **`node --test <file>` on this repo's suites passes VACUOUSLY** — each is an exported function registered in `tests/run-tests.ts`, so a file with no `test()` call reports `pass 1` for merely IMPORTING. It reported pass on a check deliberately broken. Call the exported function, and prove RED before quoting a local green.
 - **RAM-saturated? WAIT — do not skip validation for it.**
 - **Source-pinning tests slice a fixed BYTE window and false-FAIL** when the file shifts.
