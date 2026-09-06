@@ -183,6 +183,7 @@ it for the hook's wording. Which memory backs which hook:
 - **Source-pinning tests slice a fixed BYTE window and false-FAIL** when the file shifts.
 - **A heredoc eats backslashes** and yields a test that only ever passes.
 - **`parseDiagnostics` is SYNTAX-ONLY — it cannot see a typecheck error.**
+- **A local typecheck printing ZERO errors can mean it never TYPE-checked at all.** A truncated `.next/dev/types/routes.d.ts` — what an interrupted dev server leaves — stops `tsc` after the SYNTAX pass, so the run emits only that file's parse errors and filtering `^\.next/` out of the output reads as a clean 0. Measured 2026-09-06: local green, CI red on four real errors. The tell is `TS1005`/`TS1160`/`TS1161` under `.next/`. **Delete `.next` and re-run — never filter it away**, and treat a syntax error ANYWHERE as "the semantic pass did not happen". Same symptom as the warm-cache trap in §2, different cause — both are in `typecheck-incremental-false-green`.
 - **`setState` inside `useEffect` is a lint ERROR here.**
 - **A green TEST run carries NO type signal** — `pnpm run test` strips types. Only the PR's `typecheck` job answers.
 - **The SUITE runs with PRODUCTION credentials while a test sets `APP_ENV=production`**, so any module writing on `isProductionRuntime()` writes to PROD from `pnpm run test`. Gate such a write on `PHOENIX_TEST_SUITE`. `the-test-suite-runs-with-production-credentials-and-app-env-production`
