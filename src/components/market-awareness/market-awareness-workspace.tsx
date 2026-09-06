@@ -186,12 +186,14 @@ export function MarketAwarenessWorkspace({ canCreate }: { canCreate: boolean }) 
   );
 
   useEffect(() => {
-    if (tab !== "tracking" || !selectedId) {
-      setTracking(null);
-      return;
-    }
     let cancelled = false;
+    // Everything runs inside the async body: a setState called synchronously in an effect is a lint
+    // ERROR in this repo, and it is the cascading-render shape the rule exists to stop.
     void (async () => {
+      if (tab !== "tracking" || !selectedId) {
+        if (!cancelled) setTracking(null);
+        return;
+      }
       try {
         const response = await fetch(`/api/market-awareness/${selectedId}/tracking`, { cache: "no-store" });
         const payload = await response.json();
@@ -685,12 +687,12 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
   // The cascade is driven by the PRIMARY line: the region map is per line, so an area sits in a
   // different region depending on which line you ask.
   useEffect(() => {
-    if (!primaryLine) {
-      setRegions([]);
-      setProducts([]);
-      return;
-    }
     void (async () => {
+      if (!primaryLine) {
+        setRegions([]);
+        setProducts([]);
+        return;
+      }
       const response = await fetch(
         `/api/market-awareness/options?lineCode=${encodeURIComponent(primaryLine.lineCode)}`,
         { cache: "no-store" },
@@ -701,16 +703,17 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
         setProducts(payload.products ?? []);
       }
     })();
-    setRegionCode("");
-    setAreaCode("");
+    // The region and area resets live in the line picker's onChange, not here. Changing the line is
+    // what invalidates them, and doing it in the handler keeps this effect free of a synchronous
+    // setState.
   }, [primaryLine]);
 
   useEffect(() => {
-    if (!areaCode) {
-      setBricks([]);
-      return;
-    }
     void (async () => {
+      if (!areaCode) {
+        setBricks([]);
+        return;
+      }
       const response = await fetch(
         `/api/market-awareness/options?areaCode=${encodeURIComponent(areaCode)}`,
         { cache: "no-store" },
@@ -718,8 +721,7 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
       const payload = await response.json();
       if (payload.success) setBricks(payload.bricks ?? []);
     })();
-    setPrimaryBrickId("");
-    setExtraBrickIds([]);
+    // Brick resets live in the area picker's onChange, for the same reason as above.
   }, [areaCode]);
 
   const areas = useMemo(
@@ -815,7 +817,14 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
           >
             <select
               className={INPUT_CLASS}
-              onChange={(event) => setPrimaryLineId(Number(event.target.value) || null)}
+              onChange={(event) => {
+                setPrimaryLineId(Number(event.target.value) || null);
+                // Changing the line invalidates the geography below it: the region map is per line.
+                setRegionCode("");
+                setAreaCode("");
+                setPrimaryBrickId("");
+                setExtraBrickIds([]);
+              }}
               value={primaryLineId ?? ""}
             >
               <option value="">Pick the primary line</option>
@@ -878,7 +887,11 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
             <select
               className={INPUT_CLASS}
               disabled={!regionCode}
-              onChange={(event) => setAreaCode(event.target.value)}
+              onChange={(event) => {
+                setAreaCode(event.target.value);
+                setPrimaryBrickId("");
+                setExtraBrickIds([]);
+              }}
               value={areaCode}
             >
               <option value="">{regionCode ? "Pick an area" : "Pick a region first"}</option>

@@ -91,7 +91,8 @@ async function loadEmployees(hrIds: Array<string | null | undefined>) {
     for (const row of (data as EmployeeRow[] | null) ?? []) {
       // HR ids are mixed case on this database, so the map is keyed canonically. A plain equality
       // lookup silently under-returns — one such join hid 28% of reps' own orders.
-      byKey.set(canonicalHrIdKey(row.hr_id), row);
+      const key = canonicalHrIdKey(row.hr_id);
+      if (key) byKey.set(key, row);
     }
   }
   return byKey;
@@ -101,7 +102,8 @@ async function loadEmployees(hrIds: Array<string | null | undefined>) {
 async function isCeo(hrId: string | null): Promise<boolean> {
   if (!hrId) return false;
   const map = await loadEmployees([hrId]);
-  const row = map.get(canonicalHrIdKey(hrId));
+  const key = canonicalHrIdKey(hrId);
+  const row = key ? map.get(key) : undefined;
   if (!row) return false;
   return !row.manager_hr_id?.trim();
 }
@@ -170,8 +172,10 @@ async function hydrate(
     for (const decision of list) peopleWanted.push(decision.actor_hr_id as string | null);
   }
   const people = await loadEmployees(peopleWanted);
-  const nameOf = (hrId: unknown) =>
-    hrId ? people.get(canonicalHrIdKey(String(hrId)))?.full_name ?? null : null;
+  const nameOf = (hrId: unknown) => {
+    const key = hrId ? canonicalHrIdKey(String(hrId)) : null;
+    return key ? people.get(key)?.full_name ?? null : null;
+  };
 
   const activities: MarketAwarenessActivity[] = [];
 
@@ -411,7 +415,7 @@ async function writeChildren(activityId: string, input: ActivityInput) {
     supabase.from("market_awareness_cost_items").delete().eq("activity_id", activityId),
   ]);
 
-  const inserts: Array<Promise<unknown>> = [
+  const inserts: Array<PromiseLike<unknown>> = [
     supabase.from("market_awareness_activity_lines").insert(
       input.lineIds.map((lineId) => ({ activity_id: activityId, line_id: lineId })),
     ),
@@ -555,9 +559,10 @@ export async function submitActivity(
     throw new MarketAwarenessError("Only the requester can submit this activity.", 403);
   }
 
-  const requester = (await loadEmployees([existing.requesterHrId])).get(
-    canonicalHrIdKey(existing.requesterHrId),
-  );
+  const requesterKey = canonicalHrIdKey(existing.requesterHrId);
+  const requester = requesterKey
+    ? (await loadEmployees([existing.requesterHrId])).get(requesterKey)
+    : undefined;
   const managerHrId = requester?.manager_hr_id ?? null;
   const resolution = resolveManagerStep({
     requesterHrId: existing.requesterHrId,
