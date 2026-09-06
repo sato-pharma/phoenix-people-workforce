@@ -801,30 +801,40 @@ async function loadEmployeeFacts(hrId: string): Promise<HiringPackEmployeeFacts>
   // The department is `employees.department_id` against the `departments` table — the same nine
   // names the rest of the HR module uses. `department_name` on the row is NULL for every employee
   // (measured: 0 of 180), exactly as `line_name` was, so it has to be joined by id either way.
-  let departmentAr: string | null = null;
+  let departmentName: string | null = null;
   if (data.department_id !== null) {
     const { data: department } = await supabase
       .from("departments")
       .select("id, name")
       .eq("id", data.department_id)
       .maybeSingle<{ id: number; name: string | null }>();
-    departmentAr = arabicDepartmentName(cleanText(department?.name ?? null));
+    departmentName = department?.name ?? null;
   }
 
-  return mapEmployeeFacts(data, departmentAr);
+  return mapEmployeeFacts(data, departmentName);
 }
 
 /**
  * One employee row, as the papers read it.
  *
- * `departmentAr` is passed in rather than joined here because the caller decides how to get it: the
- * single-employee load joins one department by id, the roster-wide count reads the whole department
- * table once. Both then produce the identical shape, which is what lets the fill-rate count answer
- * "how many people would this field print for" with the same reader that prints it.
+ * `departmentName` is the RAW `departments.name`, passed in rather than joined here because the
+ * caller decides how to GET it: the single-employee load joins one department by id, the roster-wide
+ * fill-rate count reads the whole department table once. Both then produce the identical shape,
+ * which is what lets the fill-rate count answer "how many people would this field print for" with
+ * the same reader that prints it.
+ *
+ * THE ARABIC LOOKUP HAPPENS HERE, NOT AT THE CALLERS, and that is the whole point of taking the raw
+ * name. It used to sit at the call sites: the print path translated, the roster path did not, so the
+ * same field held "Sales" when the fill-rate count loaded it and "المبيعات" when the contract did.
+ * Nothing caught it, because `DEPARTMENT` is an unbound key so the count never read the field, and
+ * the fallback returns the English name rather than null so the two agreed on emptiness. One feature
+ * reading `departmentAr` off this path would have printed an English إدارة on a signed instrument —
+ * the defect the owner corrected on 2026-08-31 ("the department is not the line"), by another road.
+ * Pinned by `tests/hiring-pack-department-name.test.ts`.
  */
 export function mapEmployeeFacts(
   row: EmployeeDbRow,
-  departmentAr: string | null,
+  departmentName: string | null,
 ): HiringPackEmployeeFacts {
   return {
     hrId: row.hr_id,
@@ -839,7 +849,7 @@ export function mapEmployeeFacts(
     birthDate: row.birth_date,
     hireDate: row.hire_date,
     jobTitle: cleanText(row.job_title),
-    departmentAr,
+    departmentAr: arabicDepartmentName(cleanText(departmentName)),
     departmentId: row.department_id,
     lineId: row.line_id,
     residenceAddress: cleanText(row.residence_address),
