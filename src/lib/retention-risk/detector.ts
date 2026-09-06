@@ -206,12 +206,6 @@ export function buildRetentionRiskSignals(input: RetentionRiskDetectionInput): R
     const leave = input.leaveByHrId.get(key) ?? new Set<string>();
     const title = subject.jobTitle ?? subject.positionTitle ?? null;
 
-    let lastCrmActivityDate: string | null = null;
-    for (const dateIso of activity) {
-      if (dateIso <= input.windowEnd && (lastCrmActivityDate === null || dateIso > lastCrmActivityDate)) {
-        lastCrmActivityDate = dateIso;
-      }
-    }
 
     const triggers: RetentionRiskTrigger[] = subject.watchCrmSilence
       ? ["crm_silence", "extended_leave"]
@@ -239,6 +233,20 @@ export function buildRetentionRiskSignals(input: RetentionRiskDetectionInput): R
       });
 
       for (const run of runs) {
+        // "didn't return to work yet or seen" — a run the person ended by being seen again is not a
+        // resignation risk, it is somebody who came back.
+        if (input.openRunsOnly && run.closedByBreak) continue;
+        // The last entry BEFORE this run began — never the newest entry overall. Computed per run
+        // because a subject can have several: on the first live board a rep whose gap ran 3 to 17
+        // August was shown "Last CRM entry 6 September", which is the max across the window and
+        // reads as though nothing was ever wrong.
+        let lastCrmActivityDate: string | null = null;
+        for (const dateIso of activity) {
+          if (dateIso < run.startDate && (lastCrmActivityDate === null || dateIso > lastCrmActivityDate)) {
+            lastCrmActivityDate = dateIso;
+          }
+        }
+
         signals.push({
           areaName: subject.areaName,
           bridgedDates: run.bridgedDates,

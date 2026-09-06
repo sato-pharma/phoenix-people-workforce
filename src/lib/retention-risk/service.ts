@@ -14,7 +14,7 @@ import { unstable_cache } from "next/cache";
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getEmployeeDirectoryRows, isActiveDirectoryEmployee } from "@/lib/employees/employee-directory";
-import { logsOwnCrmVisitsTitle } from "@/lib/field-workforce-compliance/eligibility";
+import { isRetentionRiskSubjectTitle } from "@/lib/retention-risk/eligibility";
 import { getNationalHolidayDateSet } from "@/lib/vacation/national-holidays";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { queryVisits } from "@/lib/crm/reads";
@@ -195,9 +195,10 @@ async function loadCrmActivity(
 /**
  * Turn the directory into detector subjects.
  *
- * `watchCrmSilence` is `logsOwnCrmVisitsTitle` and nothing else — see RetentionRiskSubject for the
- * measurements behind that. Everyone active is still a subject, because the LEAVE rule applies to
- * the whole company.
+ * Every subject reaching here is already a Medical Rep — the caller filters on
+ * `logsOwnCrmVisitsTitle` for BOTH rules (owner, 2026-09-07). `watchCrmSilence` is therefore true
+ * for all of them today; it stays a per-subject flag rather than a constant so the detector keeps
+ * saying out loud which rule it is applying to whom.
  */
 function buildSubjects(
   employees: readonly Awaited<ReturnType<typeof getEmployeeDirectoryRows>>[number][],
@@ -228,7 +229,7 @@ function buildSubjects(
       managerHrId: employee.managerHrId,
       managerName: employee.managerName,
       positionTitle: employee.positionTitle,
-      watchCrmSilence: logsOwnCrmVisitsTitle(employee.jobTitle, employee.positionTitle),
+      watchCrmSilence: isRetentionRiskSubjectTitle(employee.jobTitle, employee.positionTitle),
     });
   }
   return subjects;
@@ -251,10 +252,21 @@ async function computeRetentionRisk(nowIso: string): Promise<RetentionRiskView> 
   const window = resolveRetentionRiskWindow(now);
   const scanStart = addDays(window.start, -FIRST_ACTIVITY_LEAD_IN_DAYS);
 
-  const employees = (await getEmployeeDirectoryRows()).filter(isActiveDirectoryEmployee);
-  const repHrIds = employees
-    .filter((employee) => logsOwnCrmVisitsTitle(employee.jobTitle, employee.positionTitle))
-    .map((employee) => employee.hrId);
+  // MEDICAL REPS ONLY — the WHOLE board, both rules. Owner, 2026-09-07: "medical reps only i said".
+  //
+  // The silence rule was scoped this way from the start; the LEAVE rule was not, because his first
+  // instruction was "every single employee who take five consecutive day vacations". Seeing it live
+  // he corrected it: the board showed the Finance & Admin Manager, the National Sales Manager and
+  // the Marketing Manager, each on five days of ordinary approved leave. Head-office leave is not a
+  // retention signal — it is a holiday, already visible on the vacation report — and three such rows
+  // out of seven is how a board stops being read.
+  //
+  // `logsOwnCrmVisitsTitle` is the same predicate the silence rule uses, so there is exactly one
+  // definition of who this board is about.
+  const employees = (await getEmployeeDirectoryRows())
+    .filter(isActiveDirectoryEmployee)
+    .filter((employee) => isRetentionRiskSubjectTitle(employee.jobTitle, employee.positionTitle));
+  const repHrIds = employees.map((employee) => employee.hrId);
 
   const [leaveByHrId, crm, publicHolidays] = await Promise.all([
     loadLeaveDates(scanStart, window.end),
@@ -285,6 +297,11 @@ async function computeRetentionRisk(nowIso: string): Promise<RetentionRiskView> 
       crmActivityByHrId: crmUsable && crm ? crm.activity : new Map(),
       leaveByHrId,
       measurableThrough: window.measurableThrough,
+      // "didnt return 2 work yet or seen" — owner, 2026-09-07. A closed run is a person who came
+      // back; only an open one answers "who might resign this month". The scan window stays 45 days
+      // so a run that began late last month is measured at its TRUE length rather than clipped to
+      // the 1st, but nothing that has ended reaches the board.
+      openRunsOnly: true,
       publicHolidays,
       subjects: usableSubjects,
       thresholdWorkingDays: RETENTION_RISK_THRESHOLD_WORKING_DAYS,
