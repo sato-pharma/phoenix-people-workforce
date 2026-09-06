@@ -56,13 +56,25 @@ export async function runSalesPharmacyOverrideTests() {
     "pharmacy",
     "الطرشوبى is a pharmacy despite matching مخزن",
   );
-  // Without the code the keyword still wins — this is the silent-failure mode worth pinning, because
-  // a caller that forgets to pass the code gets the OLD answer with no error.
+  // THE SILENT-FAILURE MODE THIS USED TO PIN IS GONE, and that is the change — owner, 2026-09-06.
+  //
+  // Until then this asserted "store": a caller that forgot the customer code got the KEYWORD answer
+  // with no error, so the ruling silently did not apply. That was worth pinning while the ruling was
+  // attached to one code. Asked whether a pharmacy ruling should cover the whole chain or one code,
+  // he answered "by chain" — so الطرشوبى, عابدين فارما and الصيرفي فارما are now matched on the NAME
+  // (PHARMACY_OVERRIDE_CHAINS), and the code is no longer load-bearing for them.
+  //
+  // What decided it: عابدين فارما trades under ~15 customer codes with ONE overridden, and الطرشوبى
+  // had 313,000 EGP still splitting across two un-overridden accounts — one of them its largest —
+  // despite a standing ruling that الطرشوبى is a pharmacy.
   assert.equal(
     classifyCustomerChannel(TARSHOUBY.name),
-    "store",
-    "omitting the code falls back to the keyword answer — callers MUST pass it",
+    "pharmacy",
+    "a chain is recognised by name, so forgetting the code no longer silently reverses the ruling",
   );
+  // The code path still works and still matters — it is the ONLY thing covering a customer whose
+  // name carries no chain word at all, and it stays the more specific of the two.
+  assert.equal(classifyCustomerChannel(TARSHOUBY.name, TARSHOUBY.code), "pharmacy");
   // A genuine warehouse is untouched by any of this.
   assert.equal(classifyCustomerChannel("مخزن القادسية", "0001539521"), "store");
 
@@ -88,7 +100,13 @@ export async function runSalesPharmacyOverrideTests() {
 
   // isStoreCustomer is what the split asks, so it must agree with the classifier here.
   assert.equal(isStoreCustomer(TARSHOUBY.name, TARSHOUBY.code), false);
-  assert.equal(isStoreCustomer(TARSHOUBY.name), true, "again: no code, no override");
+  // Same reversal as above: since the owner's "by chain" decision (2026-09-06) the NAME is enough
+  // for الطرشوبى, so dropping the code no longer flips the answer back to store.
+  assert.equal(
+    isStoreCustomer(TARSHOUBY.name),
+    false,
+    "the chain is recognised by name — the code is no longer the only thing holding the ruling up",
+  );
   assert.equal(isStoreCustomer("مخزن القادسية", "0001539521"), true);
 
   assert.equal(PHARMACY_OVERRIDE_CLIENT_CODES.size, 2, "exactly the two the owner ruled on");
