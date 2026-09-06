@@ -93,6 +93,54 @@ export function applyPeriodConsolidation(result: NormalizeResult, decision: Peri
   return { ...result, coded: result.coded.map((r) => ({ ...r, invoiceDate: decision.period })) };
 }
 
+/**
+ * Fold the period decision into an ANALYZE report so it says what COMMIT will do.
+ *
+ * Commit refuses a sheet with no resolvable period outright — it throws `missing_period` or
+ * `multi_period` BEFORE validating anything. Analyze ran validation regardless, passing
+ * `resolvedPeriod: null`, which also disables every period-dependent check (prior-period totals, the
+ * one-batch-per-period duplicate test). So a date-less or multi-month sheet could be reported
+ * "Validation passed" and then hard-rejected on import — while `analyzeMonthlyUpload`'s own comment
+ * promised "the analyze report matches the commit gate exactly".
+ *
+ * Pure, so the two paths can be proven to agree without uploading a file.
+ */
+export function withPeriodGateFinding(report: ValidationReport, decision: PeriodDecision): ValidationReport {
+  if (decision.kind === "ok") return report;
+  const finding: ValidationFinding =
+    decision.kind === "missing"
+      ? {
+          code: "period_missing",
+          severity: "error",
+          title: "No period — this file cannot be imported yet",
+          detail:
+            "This sheet has no date column, so there is no month to file it under. Importing now is refused, not merely unvalidated.",
+          count: 1,
+          sampleRows: [],
+          fixHint: "Pick the period above, then analyze again.",
+        }
+      : {
+          code: "period_multi",
+          severity: "error",
+          title: `This sheet spans ${decision.periods.length} months`,
+          detail:
+            `The rows carry ${decision.periods.length} different months (${decision.periods.join(", ")}). ` +
+            "Importing now is refused: the import files one month at a time.",
+          count: decision.periods.length,
+          sampleRows: [],
+          fixHint: "Pick a period above to import them all under one month, or upload one month per file.",
+        };
+  // Prepend: this is the reason the import will be refused, so it belongs above findings about rows
+  // that will never be imported anyway.
+  return {
+    ok: false,
+    errorCount: report.errorCount + 1,
+    warningCount: report.warningCount,
+    infoCount: report.infoCount,
+    findings: [finding, ...report.findings],
+  };
+}
+
 export type AnalyzeResult =
   | { status: "ok"; preview: NormalizePreview; reconciliation: ReconciliationReceipt; breakdowns: PreviewBreakdowns; period: string | null; needsPeriod: boolean; engineVersion: string; validation: ValidationReport; isRegionOnly?: boolean }
   | { status: "header_error"; distributorName: string; missingGroups: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string }; aiExplanation?: HeaderMismatchExplanation }
@@ -230,7 +278,14 @@ export async function analyzeMonthlyUpload(distributorCode: string, file: File, 
   // Validate the rows AS THEY WILL BE PERSISTED (consolidated when a period was picked) so analyze
   // matches the commit gate exactly — including duplicates that only appear after consolidation.
   const crossCheck = await buildDistributorCrossCheck(distributorCode, rec.distributorName, file);
-  const validation = await runStrictValidation(distributorCode, rec, applyPeriodConsolidation(rec.result, decision), resolvedPeriod, crossCheck);
+  // ...and fold in the period gate, because commit REFUSES a missing or multi-month period before it
+  // validates anything. Without this, those two cases were validated with resolvedPeriod = null —
+  // which also disables the period-dependent checks — and could report "Validation passed" for a file
+  // the very next click rejects.
+  const validation = withPeriodGateFinding(
+    await runStrictValidation(distributorCode, rec, applyPeriodConsolidation(rec.result, decision), resolvedPeriod, crossCheck),
+    decision,
+  );
   return { status: "ok", preview, reconciliation, breakdowns, period: rec.period, needsPeriod: !rec.period, engineVersion: RECOGNITION_ENGINE_VERSION, validation };
 }
 

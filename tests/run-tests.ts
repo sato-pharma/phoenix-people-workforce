@@ -1438,6 +1438,7 @@ import { runImportDiagnosticsVerdictTests } from "./import-diagnostics-verdict.t
 import { runMonthlySalesRunReconcileTests } from "./monthly-sales-run-reconcile.test.ts";
 import { runWorktreeNodeModulesJunctionTests } from "./worktree-node-modules-junction.test.ts";
 import { runChannelsByRepPharmacyOverrideTests } from "./channels-by-rep-pharmacy-override.test.ts";
+import { runSalesUploadAnalyzeMatchesCommitTests } from "./sales-upload-analyze-matches-commit.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4579,6 +4580,10 @@ await runTest(
 await runTest(
   "channels by rep honours the owner pharmacy overrides (578,248.77 EGP read as stores on one tab)",
   runChannelsByRepPharmacyOverrideTests,
+);
+await runTest(
+  "sales upload analyze matches the commit gate (a file commit refuses can no longer report Validation passed)",
+  runSalesUploadAnalyzeMatchesCommitTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
