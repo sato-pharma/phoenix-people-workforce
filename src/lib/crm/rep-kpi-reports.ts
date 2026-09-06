@@ -477,6 +477,32 @@ function normOf(standard: KpiListStandard, grade: DoctorCoverageGradeTier): numb
   return raw != null && raw > 0 ? raw : null;
 }
 
+/**
+ * THE SMALLEST LIST WORTH SCORING, per list type.
+ *
+ * Owner rule, 2026-09-06: "exclude reps with less than 5 pharmacies from scoring".
+ *
+ * WHY A FLOOR EXISTS AT ALL. Coverage is a percentage, so a tiny panel cannot express one. A rep
+ * carrying ONE pharmacy scores 0% or 100% and nothing in between: he misses it once and reads as a
+ * total failure beside a colleague who missed 20 of 50. Measured on production for August 2026,
+ * FIVE of the 44 reps with a pharmacy list carried fewer than five, 10 pharmacies between them —
+ * and four of those five read as zero coverage purely because of the denominator.
+ *
+ * WHAT IT COSTS. Almost nothing: the 39 reps still scored carry 1,862 of the 1,872 pharmacies,
+ * 99.5% of the population. The excluded rep is NOT hidden — his real figures still render, exactly
+ * as they do for the 25 reps who carry no pharmacy list at all. Only the verdict is withheld.
+ *
+ * AM AND PM ARE DELIBERATELY 1, NOT 5. That half is universal — every rep is expected to carry an
+ * AM/PM list, so a rep with none IS worth flagging and must keep reading as `applicable: false`
+ * for the reason it already does. Raising this floor for AM or PM would silently stop flagging a
+ * rep whose list was never set up, which is the opposite of what it is for.
+ */
+export const MIN_SCORED_PANEL: Readonly<Record<CrmListType, number>> = {
+  AM: 1,
+  PM: 1,
+  Pharmacy: 5,
+};
+
 function emptyBlock(listType: CrmListType, workingDays: number): ListKpiBlock {
   return {
     listType,
@@ -501,7 +527,7 @@ function buildBlock(
   workingDays: number,
   standard: KpiListStandard,
 ): ListKpiBlock {
-  if (panel.length === 0) return emptyBlock(listType, workingDays);
+  if (panel.length < MIN_SCORED_PANEL[listType]) return emptyBlock(listType, workingDays);
 
   // CALL RATE — every regular Sat-Wed visit this rep made to a contact on this list, over the
   // calendar count of working days. Not the days he happened to work: twenty visits done across
