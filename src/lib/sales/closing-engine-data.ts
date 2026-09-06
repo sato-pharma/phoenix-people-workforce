@@ -36,6 +36,7 @@
 
 import { closingAreaOf } from "./closing-row-area";
 import { countsInClosingHeadline } from "./closing-headline";
+import { MOBILE_MATRIX_SHEET, buildMobileMatrixSheet } from "./closing-mobile-matrix";
 import { PERFORMANCE_REVIEW_FIRST_PERIOD } from "./closing-performance-review";
 import type { ClosingEngineFill, EngineValue } from "./closing-engine-fill";
 import type { ClosingPerformanceReview } from "./closing-performance-review";
@@ -937,6 +938,15 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
       pickList: areaBook.map((row) => String(row[0] ?? "")),
       salesData,
     },
+    // The phone-readable copy of the three pivot pages. It is built HERE, beside the captions it
+    // shares, rather than in the filler, because what the sheet holds is a question about the
+    // closing and not about OOXML — the same division of labour `closing-review-sheets.ts` keeps.
+    // Null when the month has no rows at all, which suppresses the tab rather than shipping an
+    // empty one. See `closing-mobile-matrix.ts` for why a pivot cannot answer this on a phone.
+    mobileSheet: buildMobileMatrixSheet({
+      salesData,
+      title: title(MOBILE_MATRIX_SHEET, "every area and product as plain rows, because a pivot table cannot build on a phone"),
+    }),
     repCard: { products: matrix.columns.map((column) => column.productName), targetedAreaCount: targeted.length },
     sheets: {
       "Area x Product": { cells: { A1: title("Area x Product", "value against target, opened one region at a time") } },
