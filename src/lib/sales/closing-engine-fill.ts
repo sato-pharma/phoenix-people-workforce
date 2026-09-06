@@ -6,7 +6,7 @@ import {
   closingEngineTemplateBytes,
 } from "./closing-engine-template-generated";
 import { ACHIEVEMENT_ARROW_AT } from "./closing-engine-data";
-import { MOBILE_MATRIX_SHEET, MOBILE_MATRIX_WHAT } from "./closing-mobile-matrix";
+import { PIVOT_GRID_SPECS, buildPivotGrid, type GridCellKind } from "./closing-pivot-grid";
 
 /**
  * Pours one month of a closing into the owner's own `.xlsm` engine.
@@ -61,14 +61,6 @@ export type ClosingEngineFill = {
   data: EngineDataSheet;
   /** The Rep Card's product block, plus the count its rank caption reads. */
   repCard?: { products: string[]; targetedAreaCount: number };
-  /**
-   * The three matrix pages as plain rows, for readers whose app cannot build a pivot table.
-   *
-   * Appended by the same path the Performance Review sheets take, but listed on the contents page
-   * beside the matrices it stands in for rather than under the review's own band. Null when the
-   * month has no rows; see `closing-mobile-matrix.ts`.
-   */
-  mobileSheet?: ReviewSheet | null;
 };
 
 type SheetSpec = {
@@ -303,17 +295,14 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   await sizePivotAchievementFormats(zip, fill);
   await orderPivotItems(zip, fill);
   await dropStaleLabelFormats(zip);
+  // AFTER every other pass over these three sheets, and before the emblem work, which touches only
+  // drawings. This one owns everything from the pivot's own first row down, so anything that writes
+  // into that range has to have run already.
+  await writePivotGrids(zip, fill);
   await clearTitleEmblem(zip, fill);
   await hideEmblemFromPrint(zip);
-  // The mobile sheet goes FIRST in the appended block, so it lands beside the matrix pages it
-  // stands in for rather than after the review. It is taken from the fill rather than from the
-  // options on purpose: it is the answer to a defect (three tabs that render empty on a phone),
-  // and a caller that forgot to pass it would reintroduce that defect silently.
-  const appended = [...(fill.mobileSheet ? [fill.mobileSheet] : []), ...(options.reviewSheets ?? [])];
-  const added = appended.length > 0 ? await addReviewSheets(zip, appended) : [];
-  // The contents page lists the mobile sheet from INDEX_SECTIONS, in the "By area" band. Passing it
-  // here as well would print it twice — once there and once under "Performance review".
-  await addIndexSheet(zip, fill, added.filter((sheet) => sheet.name !== MOBILE_MATRIX_SHEET));
+  const reviewAdded = options.reviewSheets ? await addReviewSheets(zip, options.reviewSheets) : [];
+  await addIndexSheet(zip, fill, reviewAdded);
   await openOnFirstSheet(zip);
   await recalculateOnOpen(zip);
   await restorePivotCacheSharedItems(zip, fill);
@@ -2292,7 +2281,6 @@ const INDEX_SECTIONS: ReadonlyArray<{ band: string; entries: ReadonlyArray<{ she
       { sheet: "Closing Matrix", what: "Sales value against target, per area, with each region foldable and the Region slicer above it." },
       { sheet: "Units Matrix", what: "Units against target — never summed across products, because each has its own target." },
       { sheet: "Area x Product", what: "Value against target, opened one region at a time." },
-      { sheet: MOBILE_MATRIX_SHEET, what: MOBILE_MATRIX_WHAT },
     ],
   },
   {
@@ -2321,15 +2309,16 @@ const INDEX_SECTIONS: ReadonlyArray<{ band: string; entries: ReadonlyArray<{ she
  * a reader who gets there first sees an empty page and concludes the export is broken.
  *
  * IT USED TO SAY THIS WAS A MATTER OF RECALCULATION, which reads as a state that passes. On a phone
- * it never passes: Excel for iOS/Android and WPS Office open a PivotTable read-only from the
- * records it already carries, and this cache ships empty by design. So the line now names the
- * limitation and points at the sheet that answers it.
+ * it never passes: Excel for iOS/Android and WPS Office open a PivotTable read-only from the records
+ * it already carries, and this cache ships empty by design. `writePivotGrids` now writes the grid
+ * into the cells so the pages are readable there — but the Region slicer and the fold are live pivot
+ * controls and cannot follow, so the line says what a phone reader does and does not get.
  *
  * It is merged across A:B — 122 character widths — so it CLIPS rather than overflowing. Keep it
  * short enough to read whole; `runClosingEngineExportTests` pins the length.
  */
 const INDEX_FOOTNOTE =
-  "The three matrix pages are pivot tables — Excel builds them on open. A phone cannot: read Matrix (Mobile) instead.";
+  "The three matrix pages are pivot tables: on a phone they open flat, without the Region slicer or the fold.";
 
 /**
  * The next free `xl/worksheets/sheetN.xml`, read from the package.
@@ -2800,4 +2789,119 @@ async function ensureIndexStyles(zip: JSZip): Promise<Record<string, string> | n
 
   zip.file("xl/styles.xml", xml);
   return styles;
+}
+
+/**
+ * Number formats for the pivot grids, taken from the engine's own catalogue rather than invented.
+ *
+ * s43 is `#,##0;-#,##0;"—"`, so a zero prints as an em dash instead of reading as "sold nothing";
+ * s44 is `0.0%`; s8 is the blue table header the sheets beside these use; s9 the body row. Using the
+ * engine's own indices is what keeps these pages looking like their siblings through any restyle of
+ * the owner's template.
+ */
+const GRID_STYLE: Record<GridCellKind, string | null> = {
+  blank: null,
+  corner: "8",
+  header: "8",
+  label: "9",
+  money: "43",
+  percent: "44",
+  text: "9",
+};
+
+/**
+ * Write each pivot page's grid into its own cells.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * THE WHOLE POINT: a pivot table stores no cells, so on a reader that cannot refresh one — Excel for
+ * iOS/Android, WPS on a phone — those three pages are blank. Desktop Excel is untouched by this:
+ * `refreshOnLoad="1"` is still set, so it rebuilds the pivot over these cells on open exactly as it
+ * does today, slicers and fold-by-region intact. These cells are what a phone shows instead.
+ *
+ * NOTHING HERE TOUCHES A PIVOT, A CACHE OR A SLICER, with one exception: `location`'s extent is
+ * re-declared to match what is written. That matters and is not cosmetic — the stored extent is the
+ * range Excel redraws into, and a grid larger than it would leave our rows stranded on the desktop
+ * BELOW a working pivot, which is a worse defect than the one being fixed and one the owner would
+ * see first. The extent is computed from the same rows the refresh will read, so the two agree.
+ *
+ * `firstHeaderRow`, `firstDataRow` and `firstDataCol` are left exactly as the owner's template has
+ * them, and `buildPivotGrid` emits the header block those numbers describe — three rows on the two
+ * matrices, one on Area x Product. They are the contract between this grid and the pivot drawn over
+ * it, so they are read here rather than assumed there.
+ */
+async function writePivotGrids(zip: JSZip, fill: ClosingEngineFill): Promise<void> {
+  for (const [sheetName, spec] of Object.entries(MANIFEST.sheets)) {
+    if (spec.kind !== "pivot") continue;
+    const gridSpec = PIVOT_GRID_SPECS[sheetName];
+    const sheetFile = zip.file(spec.file);
+    if (!gridSpec || !sheetFile) continue;
+
+    const grid = buildPivotGrid(fill.data.salesData, gridSpec);
+    if (!grid) continue;
+
+    // Where the pivot sits, read from the pivot's own part rather than hard-coded: the template is
+    // the owner's and he re-saves it.
+    const relsFile = zip.file(spec.file.replace("worksheets/", "worksheets/_rels/") + ".rels");
+    const relsXml = relsFile ? await relsFile.async("string") : "";
+    const pivotPart = /Target="\.\.\/(pivotTables\/pivotTable\d+\.xml)"/.exec(relsXml)?.[1];
+    const pivotFile = pivotPart ? zip.file(`xl/${pivotPart}`) : null;
+    if (!pivotFile) continue;
+
+    const pivotXml = await pivotFile.async("string");
+    const location = /<location\b[^>]*\bref="([A-Z]+)(\d+):([A-Z]+)(\d+)"/.exec(pivotXml);
+    if (!location) continue;
+    const firstColumn = columnNumber(location[1]!);
+    const firstRow = Number(location[2]!);
+
+    // ── The cells ─────────────────────────────────────────────────────────────────────────────
+    const rows: string[] = [];
+    grid.cells.forEach((line, offset) => {
+      const rowNumber = firstRow + offset;
+      const cells = line
+        .map((cell, column) => {
+          const style = GRID_STYLE[cell.kind];
+          if (style === null || cell.value === null || cell.value === "") return "";
+          const ref = `${columnLetters(firstColumn + column)}${rowNumber}`;
+          if (typeof cell.value === "number") {
+            return Number.isFinite(cell.value) ? `<c r="${ref}" s="${style}"><v>${cell.value}</v></c>` : "";
+          }
+          return `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(xmlSafe(String(cell.value)))}</t></is></c>`;
+        })
+        .join("");
+      if (cells) rows.push(`<row r="${rowNumber}">${cells}</row>`);
+    });
+    if (rows.length === 0) continue;
+
+    const lastRow = firstRow + grid.cells.length - 1;
+    const lastColumn = columnLetters(firstColumn + grid.width - 1);
+
+    let xml = await sheetFile.async("string");
+
+    // Rows must ASCEND inside <sheetData> or Excel repairs the sheet. The header rows the template
+    // keeps (the title, the coverage note) all sit above the pivot, so appending is enough — but any
+    // row at or below the pivot's own first row is dropped first, so a re-run cannot double them.
+    xml = xml.replace(/<sheetData>([\s\S]*?)<\/sheetData>/, (_match, body: string) => {
+      const kept = [...String(body).matchAll(/<row\b[^>]*?\/>|<row\b[^>]*?>[\s\S]*?<\/row>/g)]
+        .map((one) => one[0])
+        .filter((one) => Number(/\br="(\d+)"/.exec(one)?.[1] ?? 0) < firstRow);
+      return `<sheetData>${kept.join("")}${rows.join("")}</sheetData>`;
+    });
+
+    // The declared extent has to cover what is now on the sheet, or Excel trims the view to it.
+    xml = xml.replace(/<dimension ref="([A-Z]+)(\d+):[A-Z]+\d+"/, (_match, col: string, row: string) =>
+      `<dimension ref="${col}${row}:${lastColumn}${lastRow}"`);
+
+    zip.file(spec.file, xml);
+    zip.file(
+      `xl/${pivotPart}`,
+      pivotXml.replace(/(<location\b[^>]*\bref=")[A-Z]+\d+:[A-Z]+\d+(")/, `$1${location[1]}${firstRow}:${lastColumn}${lastRow}$2`),
+    );
+  }
+}
+
+/** "AX" -> 50. The inverse of `columnLetters`, needed to start writing at the pivot's own corner. */
+function columnNumber(letters: string): number {
+  let total = 0;
+  for (const character of letters) total = total * 26 + (character.charCodeAt(0) - 64);
+  return total;
 }

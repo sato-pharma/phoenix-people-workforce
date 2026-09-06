@@ -15,7 +15,11 @@ import {
   isClosingPdfSheet,
   readSheetChrome,
 } from "../src/lib/sales/closing-report-pdf.ts";
-import { CLOSING_ENGINE_TEMPLATE_MANIFEST } from "../src/lib/sales/closing-engine-template-generated.ts";
+import {
+  CLOSING_ENGINE_TEMPLATE_MANIFEST,
+  closingEngineTemplateBytes,
+} from "../src/lib/sales/closing-engine-template-generated.ts";
+import { PIVOT_GRID_SPECS } from "../src/lib/sales/closing-pivot-grid.ts";
 import type { MonthlySourceCoverage, SourceCoverageEntry } from "../src/lib/sales/source-coverage.ts";
 import type { ClosingDetailRow } from "../src/lib/sales/monthly-closing-details.ts";
 import type {
@@ -745,11 +749,7 @@ export async function runClosingEngineExportTests() {
     "Watch List",
     "Top Customers",
     "Details",
-    // APPENDED, never inserted — which is the whole reason it is safe. A sheet added at the FRONT
-    // renumbers every localSheetId after it (see the contents page above); one added at the END
-    // leaves all of them where they were, so the loop below still passes unchanged.
-    "Matrix (Mobile)",
-  ], "the workbook's sheet list changed: a sheet added at the FRONT renumbers every localSheetId, and a sheet MISSING is a page nobody can reach");
+  ], "the workbook's sheet list changed: a sheet added at the FRONT renumbers every localSheetId, and every page here is one a reader is promised");
   for (const match of workbook.matchAll(/<definedName name="([^"]*)" localSheetId="(\d+)"[^>]*>([^<]*)<\/definedName>/g)) {
     const named = /^'?([^'!]+)'?!/.exec(match[3]!);
     if (!named) continue;
@@ -1509,24 +1509,80 @@ export async function runClosingEngineExportTests() {
     assert.match(target, /^#'[^']+'!A1$/, `a jump target must be #'Sheet'!A1, not ${target}`);
   }
 
-  // ── The three matrix pages render NOTHING on a phone, so a page that does ships beside them ──
+
+  // ── The three matrix pages have to be READABLE WHERE A PIVOT IS NOT ─────────────────────────
   //
-  // `Closing Matrix`, `Units Matrix` and `Area x Product` are pivot tables, and a pivot table holds
-  // no cells of its own in the file: Excel materialises the grid from the pivot cache on open. The
-  // template ships that cache EMPTY (its contents were one line's real areas and reps) and sets
+  // `Closing Matrix`, `Units Matrix` and `Area x Product` are pivot tables, and a pivot table stores
+  // no cells of its own: Excel materialises the grid from the pivot cache on open. The template
+  // ships that cache empty (its contents were one line's real areas and rep names) and sets
   // `refreshOnLoad="1"` to have Excel rebuild it. Desktop Excel does. **Excel for iOS/Android and
-  // WPS Office do not refresh a pivot cache at all** — they open a PivotTable read-only from the
-  // records it already has — so on the two apps the owner reads this workbook on, those three tabs
-  // were permanently blank, and the numbers behind them unreachable: the `Data` sheet that feeds
-  // them is `veryHidden`, which a phone cannot unhide.
+  // WPS Office cannot refresh a pivot table at all**, so all three pages were permanently blank on a
+  // phone — 2, 2 and 6 cells, their title row and nothing else — with the numbers behind them
+  // unreachable, because the `Data` sheet that feeds them is `veryHidden`.
   //
-  // The first assertion is the PREMISE, not the fix. If someone ever makes the pivots carry their
-  // own grid, this block's reason for existing has changed and the reader should be sent back here
-  // rather than left with a duplicate page nobody can account for.
+  // So the grid is written into the cells too. Desktop is unaffected: the refresh redraws over it.
+  //
+  // EVERYTHING HERE IS ASSERTED ON THE EMITTED PACKAGE, and it has to be, because this is the one
+  // change in this file whose mistakes CANNOT be seen in Excel: the desktop refresh overwrites the
+  // range on open, so a wrong layout, a wrong number or a stray row shows up only on a phone.
+  // ── The grid specs must still describe the owner's actual pivots ────────────────────────────
+  //
+  // `PIVOT_GRID_SPECS` is a written-down copy of what `xl/pivotTables/*.xml` declare. The template
+  // is the owner's file and he re-saves it, and if he ever changes a pivot's shape the desktop would
+  // simply refresh to the new one while the phone kept showing the old layout — a divergence with no
+  // error anywhere. So the copy is checked against the template itself.
+  {
+    const template = await JSZip.loadAsync(closingEngineTemplateBytes());
+    const sheetOfPivot: Record<string, string> = {
+      "pivotTable1.xml": "Closing Matrix",
+      "pivotTable2.xml": "Units Matrix",
+      "pivotTable3.xml": "Area x Product",
+    };
+    for (const [file, sheetName] of Object.entries(sheetOfPivot)) {
+      const xml = await template.file(`xl/pivotTables/${file}`)!.async("string");
+      const definition = /<pivotTableDefinition\b([^>]*)>/.exec(xml)![1]!;
+      const spec = PIVOT_GRID_SPECS[sheetName]!;
+
+      const axis = (tag: string): number[] => {
+        const block = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`).exec(xml)?.[1] ?? "";
+        return [...block.matchAll(/<field x="(-?\d+)"\s*\/>/g)].map((m) => Number(m[1]));
+      };
+      assert.deepEqual(
+        axis("rowFields"),
+        spec.rowFields,
+        `${sheetName}: the pivot groups its rows by different fields than the grid does`,
+      );
+      assert.deepEqual(
+        axis("colFields").filter((one) => one >= 0),
+        spec.columnField === null ? [] : [spec.columnField],
+        `${sheetName}: the pivot spreads a different field across its columns than the grid does`,
+      );
+      // Names are trimmed on both sides: pivotTable3 calls its calculated field "Ach " with a
+      // trailing space, which is invisible in every viewer and would fail an exact comparison.
+      assert.deepEqual(
+        [...(/<dataFields[^>]*>([\s\S]*?)<\/dataFields>/.exec(xml)?.[1] ?? "").matchAll(/<dataField\b([^>]*)\/>/g)]
+          .map((m) => (/name="([^"]*)"/.exec(m[1]!)?.[1] ?? "").trim()),
+        spec.measures.map((one) => one.label.trim()),
+        `${sheetName}: the pivot measures something the grid does not`,
+      );
+      // The two flags that carry owner rules: no grand-total ROW on Area x Product, and no
+      // total COLUMN on the Units Matrix, which is what stops units being added across products.
+      assert.equal(
+        !/rowGrandTotals="0"/.test(definition),
+        spec.rowTotals,
+        `${sheetName}: rowGrandTotals disagrees between the pivot and the grid`,
+      );
+      assert.equal(
+        !/colGrandTotals="0"/.test(definition),
+        spec.columnTotals,
+        `${sheetName}: colGrandTotals disagrees between the pivot and the grid — on the Units Matrix this is the units rule`,
+      );
+    }
+  }
+
   for (const [label, book] of [["xlsm", macroBook], ["xlsx", plainBook]] as const) {
     const opened = await JSZip.loadAsync(book);
     const workbook = await opened.file("xl/workbook.xml")!.async("string");
-    const wbTypes = await opened.file("[Content_Types].xml")!.async("string");
     const wbRels = await opened.file("xl/_rels/workbook.xml.rels")!.async("string");
     const target = Object.fromEntries(
       [...wbRels.matchAll(/Id="(rId\d+)"[^>]*Target="([^"]+)"/g)].map((m) => [m[1], m[2]]),
@@ -1537,149 +1593,160 @@ export async function runClosingEngineExportTests() {
       return m && target[m[1]] ? `xl/${target[m[1]]}` : null;
     };
 
-    for (const pivotSheet of ["Closing Matrix", "Units Matrix", "Area x Product"]) {
-      const part = partOf(pivotSheet);
-      assert.ok(part, `${label}: ${pivotSheet} must still be in the package`);
-      const xml = await opened.file(part!)!.async("string");
-      const cells = (xml.match(/<c[ >]/g) ?? []).length;
+    // The owner asked for no extra tab: the existing pages carry the numbers themselves.
+    assert.equal(partOf("Matrix (Mobile)"), null, `${label}: no extra tab — the three matrix pages answer for themselves`);
+
+    for (const sheetName of ["Closing Matrix", "Units Matrix", "Area x Product"]) {
+      const part = partOf(sheetName);
+      assert.ok(part, `${label}: ${sheetName} must be in the package`);
+      const sheet = await opened.file(part!)!.async("string");
+
+      // A ROW MUST BE READ WITH THE SELF-CLOSING FORM FIRST. An empty row is `<row r="2" .../>`, and
+      // a pattern that only knows the paired form matches its opening tag then runs on to the NEXT
+      // row's `</row>` — reporting a later row's content under an earlier row's number. That is
+      // exactly what made the first reading of this grid claim the header had landed on row 2.
+      const rowsByNumber = new Map<number, string>();
+      for (const match of sheet.matchAll(/<row\b[^>]*?\/>|<row\b[^>]*?>[\s\S]*?<\/row>/g)) {
+        const number = Number(/<row\b[^>]*?\br="(\d+)"/.exec(match[0])?.[1] ?? 0);
+        if (number) rowsByNumber.set(number, match[0]);
+      }
+      const cellsOf = (rowNumber: number): Record<string, string> => {
+        const out: Record<string, string> = {};
+        const row = rowsByNumber.get(rowNumber) ?? "";
+        for (const c of row.matchAll(/<c r="([A-Z]+)\d+"[^>]*?\/>|<c r="([A-Z]+)\d+"[^>]*?>([\s\S]*?)<\/c>/g)) {
+          const column = c[1] ?? c[2]!;
+          const body = c[3] ?? "";
+          out[column] =
+            [...body.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((t) => t[1]).join("")
+            || (/<v>([\s\S]*?)<\/v>/.exec(body)?.[1] ?? "");
+        }
+        return out;
+      };
+
+      // The pivot's OWN geometry decides where the grid starts and how many header rows precede the
+      // data. It is read from the pivot part rather than assumed here, because the template is the
+      // owner's and he re-saves it — and a shifted header is invisible on a desktop.
+      const sheetRels = await opened.file(part!.replace("worksheets/", "worksheets/_rels/") + ".rels")!.async("string");
+      const pivotPart = /Target="\.\.\/(pivotTables\/pivotTable\d+\.xml)"/.exec(sheetRels)![1];
+      const pivotXml = await opened.file(`xl/${pivotPart}`)!.async("string");
+      const location = /<location\b[^>]*\bref="([A-Z]+)(\d+):([A-Z]+)(\d+)"[^>]*firstDataRow="(\d+)"/.exec(pivotXml);
+      assert.ok(location, `${label}: ${sheetName} lost its pivot location`);
+      const firstRow = Number(location![2]);
+      const firstDataRow = firstRow + Number(location![5]);
+
       assert.ok(
-        cells <= 8,
-        `${label}: ${pivotSheet} carries ${cells} cells — it is supposed to be an empty pivot host.`
-          + " If it now ships its own grid, re-read why Matrix (Mobile) exists before keeping both.",
+        (sheet.match(/<c[ >]/g) ?? []).length > 30,
+        `${label}: ${sheetName} still carries almost no cells — this is the blank-on-a-phone defect`,
       );
+
+      // THE ANTI-STRAY GUARANTEE, and the reason this assertion matters more than it looks. The
+      // stored `location` is the range the desktop refresh redraws into. A grid written LARGER than
+      // it would leave our rows stranded on the desktop below a working pivot — a worse defect than
+      // the one being fixed, and the one the owner would see first. So the declared extent has to be
+      // exactly what was written.
+      const lastWrittenRow = Math.max(...[...rowsByNumber.keys()]);
+      assert.equal(
+        Number(location![4]),
+        lastWrittenRow,
+        `${label}: ${sheetName} declares its pivot ending at row ${location![4]} but the grid runs to ${lastWrittenRow}`,
+      );
+
+      // The grid must start exactly at the pivot's own first row, never above it: rows 1 and 2 are
+      // the title and the completeness note, and overwriting those loses the month and the caveat.
+      assert.ok(rowsByNumber.has(firstRow), `${label}: ${sheetName} has no row at the pivot's own first row`);
+      assert.match(cellsOf(1).A ?? "", /^\S/, `${label}: ${sheetName} must keep its title on row 1`);
     }
+
+    // ── The numbers, against the rest of the workbook ─────────────────────────────────────────
+    //
+    // The grand-total row is checked against the OVERVIEW rather than against the fixture, which is
+    // the stronger test: the two are computed by different code down different paths, so agreement
+    // means the grid is a true second view of the month rather than a plausible one.
+    const matrix = await opened.file(partOf("Closing Matrix")!)!.async("string");
+    const overview = await opened.file(partOf("Overview")!)!.async("string");
+    const overviewCells = /<row r="5"[^>]*>([\s\S]*?)<\/row>/.exec(overview)?.[1] ?? "";
+    const overviewSales = Number(/<c r="B5"[^>]*><v>([\d.]+)<\/v>/.exec(overviewCells)?.[1] ?? -1);
+    const overviewTarget = Number(/<c r="D5"[^>]*><v>([\d.]+)<\/v>/.exec(overviewCells)?.[1] ?? -1);
+    assert.ok(overviewSales > 0, "the Overview must carry the month's sales value for this to compare against");
+
+    const grand = /<row\b[^>]*?>(?:(?!<\/row>)[\s\S])*?Grand Total[\s\S]*?<\/row>/.exec(matrix)?.[0] ?? "";
+    assert.ok(grand, `${label}: the Closing Matrix needs its Grand Total row — rowGrandTotals is on`);
+    const grandNumbers = [...grand.matchAll(/<v>([\d.]+)<\/v>/g)].map((m) => Number(m[1]));
+    assert.ok(
+      grandNumbers.includes(overviewSales),
+      `${label}: the matrix grand total does not carry the Overview's sales value (${overviewSales})`,
+    );
+    assert.ok(
+      grandNumbers.includes(overviewTarget),
+      `${label}: the matrix grand total does not carry the Overview's target value (${overviewTarget})`,
+    );
+
+    // NO TARGET IS WORDS, NEVER A ZERO — the owner's rule, and the live pivot says it a way that a
+    // phone cannot: its `Ach` field returns -1 and conditional formatting hides it. Cairo 2 sells
+    // with no target at all, so its target and achievement cells must say so.
+    assert.ok(
+      /Cairo 2/.test(matrix) && /no target/.test(matrix),
+      `${label}: an area with no target must read "no target", never be scored 0`,
+    );
+    assert.ok(
+      !/<c r="[A-Z]+11"[^>]*>-1</.test(matrix),
+      `${label}: -1 is the live pivot's hidden sentinel for "no target" and must never be printed as a number`,
+    );
+
+    // ── UNITS OF DIFFERENT PRODUCTS ARE NEVER ADDED ───────────────────────────────────────────
+    //
+    // The Units Matrix is where that rule is easiest to break, and it is safe here structurally
+    // rather than by memory: every unit column belongs to ONE product, so a column total sums one
+    // product code across areas. What must never appear is a total column ACROSS products — and the
+    // pivot itself says so by carrying `colGrandTotals="0"`, which is why the spec reads that flag
+    // instead of setting it by hand.
+    const units = await opened.file(partOf("Units Matrix")!)!.async("string");
+    assert.ok(
+      !/Total Units/.test(units),
+      `${label}: a "Total Units" column would add different products together — colGrandTotals is off for exactly this reason`,
+    );
+    // Cairo 1's three products hold 1,000 + 200 + 50 units. That sum must appear nowhere.
+    assert.ok(
+      ![...units.matchAll(/<v>([\d.]+)<\/v>/g)].map((m) => Number(m[1])).includes(1250),
+      `${label}: 1,250 is Cairo 1's units summed across three products`,
+    );
+    // But summing ONE product across areas is legitimate and must still happen: Tebofortin 40mg is
+    // 1,000 in Cairo 1 and 80 in Cairo 2, so the Cairo subtotal is 1,080.
+    assert.ok(
+      [...units.matchAll(/<v>([\d.]+)<\/v>/g)].map((m) => Number(m[1])).includes(1080),
+      `${label}: one product summed across areas is legitimate and the region subtotal must show it`,
+    );
+
+    // ── The engine is untouched ───────────────────────────────────────────────────────────────
+    //
+    // The entire point of writing cells rather than rebuilding these sheets: the pivots, the
+    // slicers and the macro bar all survive, so the desktop keeps its Region slicer and its fold.
+    const parts = Object.keys(opened.files);
+    assert.equal(parts.filter((name) => /^xl\/pivotTables\/pivotTable\d+\.xml$/.test(name)).length, 3, `${label}: three pivot tables`);
+    assert.equal(parts.filter((name) => /^xl\/slicers\/slicer\d+\.xml$/.test(name)).length, 2, `${label}: both Region slicers`);
     const cacheRecords = await opened.file("xl/pivotCache/pivotCacheRecords1.xml")!.async("string");
     assert.equal(
       (cacheRecords.match(/<r>/g) ?? []).length,
       0,
-      `${label}: the cache ships empty and is rebuilt on open — which is exactly what a phone cannot do`,
+      `${label}: the cache still ships empty and is still rebuilt on open — the desktop path is unchanged`,
     );
-
-    // ── The page that answers it ──────────────────────────────────────────────────────────────
-    const mobilePart = partOf("Matrix (Mobile)");
-    assert.ok(mobilePart, `${label}: Matrix (Mobile) must be registered — a phone has nothing else to read`);
-    const mobile = await opened.file(mobilePart!)!.async("string");
-
-    assert.ok(
-      wbTypes.includes(`PartName="/${mobilePart!}"`),
-      `${label}: a worksheet part with no content-type override is a workbook Excel offers to repair`,
-    );
-
-    assert.deepEqual(
-      [...(/<row r="4"[^>]*>([\s\S]*?)<\/row>/.exec(mobile)?.[1] ?? "").matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((t) => t[1]),
-      [
-        "Region",
-        "Area",
-        "Product",
-        "Units",
-        "Target units",
-        "Achievement (units)",
-        "Sales value",
-        "Target value",
-        "Achievement (value)",
-      ],
-      `${label}: Matrix (Mobile) is showing another sheet's headings`,
-    );
-
-    // One row per SalesData row, and nothing else. The count is also the guard against a totals row
-    // being added here later — see the units rule below.
-    const dataRows = rowNumbers(mobile).filter((row) => row >= 5);
-    assert.equal(
-      dataRows.length,
-      fill.data.salesData.length,
-      `${label}: every SalesData row must reach the page — a phone has no other way to these numbers`,
-    );
-
-    // The figures themselves, against the fixture. Cairo 1 sells 1,000 units of Tebofortin 40mg for
-    // 500,000 against a 450,000 target: four numbers that are nothing like each other, so a column
-    // read one place to the left cannot pass by coincidence.
-    const first = readRow(mobile, 5);
-    assert.deepEqual(
-      [first.A, first.B, first.C, first.D, first.E, first.G, first.H],
-      ["Cairo", "Cairo 1", "Tebofortin 40mg", "1000", "900", "500000", "450000"],
-      `${label}: the first row must be Cairo 1's Tebofortin 40mg, in SalesData's own order`,
-    );
-    assert.equal(Number(first.F).toFixed(4), (1000 / 900).toFixed(4), `${label}: units achievement is units over target units`);
-    assert.equal(Number(first.I).toFixed(4), (500000 / 450000).toFixed(4), `${label}: value achievement is sales over target value`);
-
-    // NO TARGET IS WORDS, NEVER A ZERO. Cairo 2 sells and was given no target; printing 0% would
-    // accuse an area of failing at something nobody asked of it. That is the owner's own rule and
-    // what every other presentation sheet in this engine already does.
-    const untargeted = readRow(mobile, 8);
-    assert.equal(untargeted.B, "Cairo 2", `${label}: row 8 should be the untargeted area`);
-    for (const column of ["E", "F", "H", "I"] as const) {
-      assert.equal(
-        untargeted[column],
-        "no target",
-        `${label}: an area with no target must say so in ${column}, never be scored 0`,
-      );
-    }
-
-    // UNITS OF DIFFERENT PRODUCTS ARE NEVER ADDED, and the layout is what guarantees it: one row is
-    // one product code. The danger is a totals row being added later — Cairo 1's three products sum
-    // to 1,250 units and 820,000 EGP, so neither figure may appear anywhere on this page.
-    const numbers = [...mobile.matchAll(/<v>([\d.]+)<\/v>/g)].map((m) => Number(m[1]));
-    assert.ok(!numbers.includes(1250), `${label}: 1,250 is Cairo 1's units summed across three products — units are never added`);
-    assert.ok(!numbers.includes(820000), `${label}: a totals row has appeared; the month's totals belong on Overview`);
-
-    // Both achievement columns must carry the engine's percentage format. `reviewColumnStyle` picks
-    // the format from the HEADING, and only one beginning "achievement" gets it — "Units
-    // achievement" would have printed 1.111 beside a sibling sheet reading 111.1%, which is
-    // unreadable rather than wrong and therefore the harder kind of defect to notice.
-    const row5 = /<row r="5"[^>]*>([\s\S]*?)<\/row>/.exec(mobile)?.[1] ?? "";
-    for (const column of ["F", "I"] as const) {
-      assert.ok(
-        row5.includes(`<c r="${column}5" s="44"`),
-        `${label}: ${column} is an achievement and must take the engine's 0.0% format, not the money one`,
-      );
-    }
-
-    // ── The contents page has to send a phone reader there ────────────────────────────────────
-    const contentsPart = partOf("Contents");
-    assert.ok(contentsPart, `${label}: the contents page must be registered`);
-    const contents = await opened.file(contentsPart!)!.async("string");
+    const cacheDefinition = await opened.file("xl/pivotCache/pivotCacheDefinition1.xml")!.async("string");
     assert.match(
-      contents,
-      /HYPERLINK\("#'Matrix \(Mobile\)'!A1"/,
-      `${label}: Matrix (Mobile) must be reachable from the contents page`,
-    );
-    // Listed BESIDE the matrices it stands in for, not under the review's band at the bottom — a
-    // reader looking for the matrix reads that band and stops there.
-    const byArea = contents.toLowerCase().indexOf(">by area</t>");
-    const byFamily = contents.toLowerCase().indexOf(">by product family</t>");
-    const mobileAt = contents.indexOf("Matrix (Mobile)");
-    assert.ok(byArea >= 0 && byFamily > byArea, `${label}: the contents bands are missing or out of order`);
-    assert.ok(
-      mobileAt > byArea && mobileAt < byFamily,
-      `${label}: Matrix (Mobile) must be listed in the "By area" band, with the pages it stands in for`,
-    );
-    assert.match(
-      contents,
-      /A phone cannot: read Matrix \(Mobile\) instead/,
-      `${label}: the footnote has to name the limitation and the page that answers it`,
-    );
-    // And it has to be READABLE. The footnote row is merged across A:B — 26 + 96 character widths —
-    // and a merged cell CLIPS rather than overflowing into the column beside it, so a longer line
-    // loses its end silently. Measured on the emitted text, not on the constant.
-    const footnote = [...contents.matchAll(/<t xml:space="preserve">([^<]*)<\/t>/g)]
-      .map((m) => m[1]!)
-      .find((text) => text.startsWith("The three matrix pages"));
-    assert.ok(footnote, `${label}: the contents page lost its footnote`);
-    assert.ok(
-      footnote!.length <= 122,
-      `${label}: the footnote is ${footnote!.length} characters and the merged cell holds 122 — the end would be clipped`,
+      cacheDefinition,
+      /refreshOnLoad="1"/,
+      `${label}: without this the desktop would show OUR grid frozen, instead of a live pivot`,
     );
 
-    // ── Every formula in this workbook ships with no cached value ─────────────────────────────
+    // ── Every formula ships with no cached value ──────────────────────────────────────────────
     //
     // The Rep Card is 35 of them and the contents page 12 more, and there is no `xl/calcChain.xml`.
     // Desktop Excel builds a chain and calculates regardless, which is why this went unnoticed; a
-    // reader that does not shows those cells blank. `fullCalcOnLoad` asks every reader to.
+    // reader that does not shows those cells blank.
     //
-    // The COUNT is asserted as well as the attribute, and that is not belt-and-braces: the first
-    // version of this matched `<calcPr` with a mangled escape, found nothing, and fell to its own
-    // fallback branch — appending a SECOND <calcPr> after </extLst>, which is a schema violation and
-    // exactly the repair prompt this export has already been through once.
+    // The COUNT is asserted as well as the attribute: the first version of this matched `<calcPr`
+    // with a mangled escape, found nothing, and fell to its own fallback branch — appending a SECOND
+    // <calcPr> after </extLst>, a schema violation and exactly the repair prompt this export has
+    // already been through once.
     assert.equal(
       (workbook.match(/<calcPr/g) ?? []).length,
       1,
@@ -1689,32 +1756,6 @@ export async function runClosingEngineExportTests() {
       workbook,
       /<calcPr[^>]*fullCalcOnLoad="1"/,
       `${label}: without this the Rep Card and the contents links are blank wherever the reader does not calculate`,
-    );
-  }
-
-  // The mobile sheet is appended by the same path the review's sheets take, so the one thing that
-  // can go wrong is it being listed TWICE — once where it belongs and once under "Performance
-  // review". Only the review build can show that.
-  {
-    const opened = await JSZip.loadAsync(reviewBook);
-    const workbook = await opened.file("xl/workbook.xml")!.async("string");
-    const rels = await opened.file("xl/_rels/workbook.xml.rels")!.async("string");
-    const rid = /<sheet name="Contents"[^>]*?r:id="(rId\d+)"/.exec(workbook)![1];
-    const contentsTarget = new RegExp(`Id="${rid}"[^>]*?Target="([^"]+)"`).exec(rels)![1];
-    const contents = await opened.file(`xl/${contentsTarget}`)!.async("string");
-    assert.equal(
-      (contents.match(/HYPERLINK\("#'Matrix \(Mobile\)'!A1"/g) ?? []).length,
-      1,
-      "Matrix (Mobile) is listed once, in the By area band — not a second time under the review's own",
-    );
-    const band = contents.toLowerCase().indexOf(">performance review</t>");
-    assert.ok(band >= 0, "the review build must still carry the review band");
-    // The LINK, not the name. The footnote at the foot of the page names Matrix (Mobile) too, and it
-    // sits below every band — so a plain "does the tail mention it" check reads that footnote as a
-    // second listing and fails on a page that is completely correct. It did, first run.
-    assert.ok(
-      contents.indexOf(`HYPERLINK("#'Matrix (Mobile)'!A1"`) < band,
-      "Matrix (Mobile) is not one of the review's pages and must be linked above that band, not under it",
     );
   }
 
