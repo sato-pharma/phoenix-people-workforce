@@ -453,8 +453,19 @@ export function CeoCommandCenter({
           center and, via `AdminPageHero`, on the other 131 admin pages the same day.
 
           Nothing was lost. The name and role label are in the topbar chip on every page of the
-          shell, from `resolveViewerIdentityFromPage`. Do not restore it and do not "restore
-          parity" with another command center — none of them carry one any more. */}
+          shell, from `resolveViewerIdentityFromPage`. Do not restore the BAND here.
+
+          WHAT THAT LAST SENTENCE USED TO SAY, and why it changed. It read "do not restore parity
+          with another command center — none of them carry one any more", and that is no longer
+          true: /admin, the HR overview and, since 2026-09-06, the SFE overview each mount a
+          `PhoenixIdentityStrip` — the thin 92px identity the owner asked for later on 2026-09-03,
+          which is a different thing from the black band this note is about. Each of those mounts
+          lives in the PAGE, never in this component, precisely so that the CEO and Finance boards
+          cannot inherit one: "you will keep the CEO and the SFE and the finance as they are today"
+          (2026-09-03) still stands for the CEO and Finance, and only the SFE half was reversed, by
+          name, on 2026-09-06. So: nothing identity-shaped goes in THIS file. If the owner ever
+          asks for the CEO board's identity back, it mounts in
+          app/(admin)/admin/ceo-command-center/page.tsx, the way the other three do. */}
 
       <DataUnavailableNotice
         owner={variant === "sfe" ? "SFE" : variant === "admin" ? "system" : "CEO"}

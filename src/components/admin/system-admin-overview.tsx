@@ -74,12 +74,18 @@ export function SystemAdminOverview({
           92px from `sm` up, both fixed. Anything added here later is measured against that.
 
           WHY IT IS MOUNTED HERE AND NOT IN `CeoCommandCenter`. That component hosts three
-          variants, and the CEO, SFE and Finance boards are explicitly excluded — the owner, on
-          2026-09-03: "you will keep the CEO and the SFE and the finance as they are today.
-          Exactly, you will not touch them." This file is imported by `/admin` alone, so mounting
-          the strip in it cannot reach those three no matter how the variant flags are later
-          rearranged. The "do not restore it" note in ceo-command-center.tsx still stands and is
-          not contradicted here: what it forbids is the black hero band, on those pages. */}
+          variants, and the other boards were explicitly excluded — the owner, on 2026-09-03: "you
+          will keep the CEO and the SFE and the finance as they are today. Exactly, you will not
+          touch them." This file is imported by `/admin` alone, so mounting the strip in it cannot
+          reach them no matter how the variant flags are later rearranged. The "do not restore it"
+          note in ceo-command-center.tsx still stands and is not contradicted here: what it forbids
+          is the black hero band, on those pages.
+
+          THE SFE HALF OF THAT EXCLUSION WAS REVERSED on 2026-09-06 — "in the SFE manager account
+          recover his identity banner" — and the strip is mounted the same way, in
+          app/(admin)/admin/sfe-command-center/page.tsx rather than in the shared component. The
+          CEO and Finance boards are STILL excluded; do not read the SFE reversal as covering
+          them. */}
       <PhoenixIdentityStrip
         employeeCode={identity.employeeCode}
         name={identity.displayName}
