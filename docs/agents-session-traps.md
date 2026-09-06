@@ -1469,3 +1469,58 @@ This is a stronger sibling of AGENTS.md §2's *"a local typecheck must not trust
 cache"*. That one costs a STALE answer; this one costs NO answer wearing a clean one.
 
 Related: [[typecheck-incremental-false-green]] · [[parse-diagnostics-cannot-see-a-typecheck-error]]
+
+## A dependency sweep that misses RLS policies, and the CASCADE that would have hidden it — 2026-09-06
+
+A session was asked to drop two empty legacy tables, `public.users` and `public.user_roles`. It swept
+for dependents the obvious way — views, functions, triggers, foreign keys — and every query came back
+clean. It wrote the migration and ran it on staging, where it failed:
+
+```
+ERROR:  2BP01: cannot drop table users because other objects depend on it
+DETAIL:  policy emp_docs_delete_own on table employee_documents depends on table users
+         policy emp_docs_insert_own on table employee_documents depends on table users
+         ... eight policies in total
+HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+```
+
+**Eight RLS policies on two LIVE tables referenced `public.users`** — four on `employee_documents`,
+four on `employee_history`. Not one of the per-surface queries had found them, because a policy's
+expression is a dependency surface of its own: `pg_policy.polqual` and `pg_policy.polwithcheck`. A
+sweep of `pg_class`, `pg_proc`, `pg_trigger` and `pg_constraint` cannot see them, and there is no
+error to say so — the sweep simply reports nothing and reads as *nothing depends on this*.
+
+**The dangerous part is the HINT.** Postgres itself suggests `DROP ... CASCADE`, and cascade would
+have succeeded — silently deleting all eight policies and stripping row-level security from
+`employee_documents`, a live feature with 29 code files behind it. The failure was only a failure
+because the migration had been written without `cascade` on purpose, so that an unknown dependency
+would raise rather than resolve itself. **Never reach for `cascade` to get past this error.** The
+error is the control working.
+
+**The fix is to ask `pg_depend`,** which sees every surface at once:
+
+```sql
+select d.classid::regclass::text, d.objid, d.deptype
+from pg_depend d
+where d.refobjid = 'public.<table>'::regclass
+  and d.deptype not in ('i','a')
+  and not (d.classid = 'pg_class'::regclass and d.objid = 'public.<table>'::regclass);
+```
+
+**And carry a POSITIVE CONTROL, because the answer you want is an empty result.** Run the same query
+against a table you know has dependents; if it does not return them, the query is broken and its
+clean zero means nothing. Measured that day: `public.user_roles` returned **0** while `public.users`
+returned **29** (6 constraints plus 23 policy rows, a policy appearing once per expression it
+matches). That contrast is what made the zero trustworthy — the same discipline as the grep positive
+control in *Two ways a search reported zero and meant "I did not look"*.
+
+Outcome: `user_roles` was dropped (PR #3364, applied to production 2026-09-06). `public.users` was
+left in place, because removing it also means rewriting those eight policies — a security-boundary
+change on two live tables, and a separate decision.
+
+Note for whoever picks that up: the eight are already inert twice over. Their `users` half reads
+`employee_hr_id = (select u.hr_id from users u where u.id = auth.uid())`, and against an empty table
+that subquery is NULL, so the disjunct never grants; and `authenticated` holds no privilege at all on
+either table, so the policies are unreachable regardless. Both facts were measured, not inferred.
+
+Related: [[a-missing-table-answers-pgrst205-not-42p01]]
