@@ -1430,6 +1430,7 @@ import { runPushOptInNudgeTests } from "./push-opt-in-nudge.test.ts";
 import { runPlansAwaitingApprovalAvailabilityTests } from "./plans-awaiting-approval-availability.test.ts";
 import { runHiringPackDepartmentNameTests } from "./hiring-pack-department-name.test.ts";
 import { runDirectOrderDecidedAtStampTests } from "./direct-order-decided-at-stamp.test.ts";
+import { runImportCoverageColumnMeaningTests } from "./import-coverage-column-meaning.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4539,6 +4540,10 @@ await runTest(
 await runTest(
   "a decided direct order always carries decided_at (venue-rejected, expired and cancelled paths all stamp it)",
   runDirectOrderDecidedAtStampTests,
+);
+await runTest(
+  "import-coverage column meaning (a writer that never measured money reports null, never 0 EGP)",
+  runImportCoverageColumnMeaningTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
