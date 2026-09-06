@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Copies the gitignored local env files (.env.local, .env.*.rls.local,
 // .env.analytics, etc.) from the primary worktree into the CURRENT worktree,
-// and links this worktree's Claude Code memory + local settings back to the
-// primary's.
+// junctions this worktree's node_modules to the primary's, and links this
+// worktree's Claude Code memory + local settings back to the primary's.
 //
 // `git worktree add` never copies gitignored files — every new worktree starts
 // with none of them, so dev-auth (PHOENIX_AUTH_SECRET), Supabase, and other
@@ -32,6 +32,8 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+
+import { linkNodeModules } from "./lib/link-node-modules.mjs";
 
 function git(args, opts = {}) {
   return execFileSync("git", args, { encoding: "utf8", ...opts }).trim();
@@ -118,6 +120,19 @@ if (candidates.length === 0) {
     copied++;
   }
 }
+
+// ------------------------------------------------------- node_modules junction
+//
+// The other half of what `git worktree add` never gives a new worktree.
+// `.claude/worktrees/<name>` worktrees (Claude Code's native feature) are
+// created without new-session.mjs's junction step, so a nested worktree starts
+// with no node_modules and every local `tsc`/`eslint`/`next dev`/`node scripts/…`
+// there fails MODULE_NOT_FOUND. This hook runs at every SessionStart, so linking
+// what is missing here self-heals such a worktree the moment a session opens in
+// it. Shared with new-session.mjs so both create the junction identically; it
+// never touches an existing node_modules, junction or real.
+const modulesStatus = linkNodeModules(currentRoot, primaryRoot, { dryRun });
+console.log(`  node_modules ${modulesStatus}`);
 
 // ---------------------------------------------------------- Claude Code link
 //
