@@ -357,7 +357,7 @@ his own words at length — is in **[docs/agents-owner-rules.md](docs/agents-own
 - Show **human-readable names**, never raw codes or IDs, in both UI and chat.
 - **Never truncate text with an ellipsis.** The old "never let text wrap" companion rule is **superseded** by the no-horizontal-scroll golden rule below — where they collide, wrapping wins.
 - When asked for N recommendations, give only the ones grounded in a real confirmed need. **Never pad a list to hit a number.**
-- End every reply with a single recommended next step.
+- **Open every reply with a single recommended next step — it goes FIRST, not last.** Amended by the owner 2026-09-07 (*"okkay but put ur recommendation first"*); it previously read "end every reply with" it, which is the wording a session drifts back to at the bottom of a long reply. Still exactly ONE, still never padded to a number — only its position moved. Findings are support for the recommendation, so they sit underneath it: he reads on a phone, at night, and he is the only person who can act on it. **Do not also repeat it at the end.** A reply that genuinely asks nothing of him needs none at all. `recommendation-goes-first-not-last`
 
 **How to take work**
 
