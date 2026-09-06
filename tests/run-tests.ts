@@ -333,6 +333,7 @@ import {
   runTwoKpiReportsApplicabilityTests,
   runTwoKpiReportsConfigurableTests,
   runTwoKpiReportsGradeAndBandTests,
+  runTwoKpiReportsMinPanelTests,
   runTwoKpiReportsNeverAveragedTests,
   runTwoKpiReportsSampleRepTests,
   runTwoKpiReportsSplitTests,
@@ -2079,6 +2080,7 @@ await runTest("two KPI reports (coverage is visited-at-least-once; frequency is 
 await runTest("two KPI reports (the split is list_type, never speciality, and every list type lands in a report)", runTwoKpiReportsSplitTests);
 await runTest("two KPI reports (AM and PM are never averaged, and the pair never prints with a slash)", runTwoKpiReportsNeverAveragedTests);
 await runTest("two KPI reports (no pharmacy list is Not applicable; no owner standard is Not scored — never a zero)", runTwoKpiReportsApplicabilityTests);
+await runTest("two KPI reports (a pharmacy list under five is too small to carry a percentage — owner floor)", runTwoKpiReportsMinPanelTests);
 await runTest("two KPI reports (a zero norm is nobody set a standard, never zero visits expected)", runTwoKpiReportsZeroNormTests);
 await runTest("two KPI reports (every number is configurable — one answer never disturbs the other three)", runTwoKpiReportsConfigurableTests);
 await runTest("two KPI reports (Sat-Wed only, the catch-all contact excluded, off-list visits surfaced not merged)", runTwoKpiReportsVisitGateTests);

@@ -15,6 +15,7 @@ import {
   type KpiPanelContact,
   type KpiVisitInput,
   type RepKpiStandards,
+  MIN_SCORED_PANEL,
 } from "../src/lib/crm/rep-kpi-reports.ts";
 
 /**
@@ -52,6 +53,15 @@ function visits(contactCrmId: number, n: number): KpiVisitInput[] {
     contactCrmId,
     visitDateIso: workingDates[index % workingDates.length]!,
   }));
+}
+
+// A pharmacy panel big enough to BE scored. MIN_SCORED_PANEL.Pharmacy is 5 (owner rule
+// 2026-09-06), so a fixture that means "this rep has a pharmacy list" must carry at least five —
+// a smaller one silently exercises the floor instead of whatever the test is actually about.
+function pharmacyPanel(count: number, startId = 9): KpiPanelContact[] {
+  return Array.from({ length: count }, (_, i) =>
+    contact({ contactCrmId: startId + i, listType: "Pharmacy", grade: "A" }),
+  );
 }
 
 function build(input: {
@@ -115,14 +125,14 @@ export function runTwoKpiReportsSplitTests() {
     panel: [
       contact({ contactCrmId: 1, listType: "PM", grade: "A" }),
       contact({ contactCrmId: 2, listType: "AM", grade: "A" }),
-      contact({ contactCrmId: 3, listType: "Pharmacy", grade: "A" }),
+      ...pharmacyPanel(5, 3),
     ],
     visits: [...visits(1, 1), ...visits(2, 1), ...visits(3, 1)],
   });
 
   assert.equal(report.ampm.pm.coverage.panel, 1, "the PM panel holds only PM-list contacts");
   assert.equal(report.ampm.am.coverage.panel, 1, "the AM panel holds only AM-list contacts");
-  assert.equal(report.pharmacies.pharmacies.coverage.panel, 1, "pharmacies are their own panel");
+  assert.equal(report.pharmacies.pharmacies.coverage.panel, 5, "pharmacies are their own panel");
 
   // A PHARMACY IS NOT A CONTACT. The AM/PM report's panels must not include it anywhere — this is
   // the check that fails if somebody "helpfully" merges the pharmacy list back into the doctor
@@ -188,7 +198,7 @@ export function runTwoKpiReportsApplicabilityTests() {
 
   // A REP WITH NO AM/PM LIST *IS* WORTH FLAGGING — that half is universal, and the two cases must
   // not collapse into one indistinguishable "n/a".
-  const pharmaciesOnly = build({ panel: [contact({ contactCrmId: 9, listType: "Pharmacy" })] });
+  const pharmaciesOnly = build({ panel: pharmacyPanel(5) });
   assert.equal(pharmaciesOnly.ampm.applicable, false, "no AM and no PM list is the case worth flagging");
   assert.equal(pharmaciesOnly.pharmacies.applicable, true);
 
@@ -196,7 +206,7 @@ export function runTwoKpiReportsApplicabilityTests() {
   // has not supplied the standard yet. The measured number must still be shown — only the verdict
   // is missing. Rendering it as 0, or as "not applicable", would each be a different lie.
   const pharmacyReport = build({
-    panel: [contact({ contactCrmId: 9, listType: "Pharmacy", grade: "A" })],
+    panel: pharmacyPanel(5),
     visits: visits(9, 3),
   });
   const rate = pharmacyReport.pharmacies.pharmacies.callRate;
@@ -377,14 +387,14 @@ export function runTwoKpiReportsConfigurableTests() {
   // And an answered standard actually SCORES — the whole point of making it configurable is that
   // "Not scored" turns into a verdict the moment the owner supplies a number, with no code change.
   const before = build({
-    panel: [contact({ contactCrmId: 9, listType: "Pharmacy" })],
+    panel: pharmacyPanel(5),
     visits: visits(9, 46),
     workingDays: 23,
   });
   assert.ok(!before.pharmacies.pharmacies.callRate.score.scored, "unpriced today");
 
   const after = build({
-    panel: [contact({ contactCrmId: 9, listType: "Pharmacy" })],
+    panel: pharmacyPanel(5),
     visits: visits(9, 46),
     workingDays: 23,
     standards: resolveRepKpiStandards({ Pharmacy: { callRatePerDay: 2 } }),
@@ -503,4 +513,39 @@ export function runTwoKpiReportsSampleRepTests() {
     visits: [],
   });
   assert.equal(blank.repKey, null, "and whitespace is not an identity either");
+}
+
+// ── A list too small to carry a percentage ────────────────────────────────────────────────────
+
+export function runTwoKpiReportsMinPanelTests() {
+  // Owner rule, 2026-09-06: "exclude reps with less than 5 pharmacies from scoring".
+  //
+  // Coverage is a PERCENTAGE, and a one-pharmacy list can only ever read 0% or 100%. Measured on
+  // production for August 2026: five of the 44 reps carrying a pharmacy list held fewer than five,
+  // 10 pharmacies between them, and FOUR of those five read as zero coverage purely because of the
+  // denominator — beside colleagues who had genuinely skipped 40-odd pharmacies each.
+  assert.equal(MIN_SCORED_PANEL.Pharmacy, 5, "the owner's floor");
+
+  // AM and PM are deliberately 1, NOT 5. That half is universal, so a rep with no AM/PM list IS
+  // worth flagging; raising these would silently stop flagging a list that was never set up, which
+  // is the opposite of what the floor is for.
+  assert.equal(MIN_SCORED_PANEL.AM, 1, "AM stays universal");
+  assert.equal(MIN_SCORED_PANEL.PM, 1, "PM stays universal");
+
+  // FOUR is below the floor: the whole pharmacy block reads "Not applicable", exactly as it already
+  // does for the 25 reps who carry no pharmacy list at all — never a zero, never a red cell.
+  const four = build({ panel: pharmacyPanel(4), visits: visits(9, 20), workingDays: 23 });
+  assert.equal(four.pharmacies.applicable, false, "a list of four is too small to score");
+  assert.equal(four.pharmacies.pharmacies.coverage.score.scored, false);
+  assert.equal(four.pharmacies.pharmacies.callRate.score.scored, false);
+
+  // FIVE is the boundary and IS scored. An off-by-one here would exclude a rep the owner meant to
+  // keep: 39 of the 44 reps sit at or above five and carry 1,862 of the 1,872 pharmacies (99.5%).
+  const five = build({ panel: pharmacyPanel(5), visits: visits(9, 20), workingDays: 23 });
+  assert.equal(five.pharmacies.applicable, true, "five is inside the standard");
+  assert.equal(five.pharmacies.pharmacies.coverage.panel, 5, "and its real panel is measured");
+
+  // The floor is PER LIST TYPE, not a blanket 5 — one AM account is still scored.
+  const oneAm = build({ panel: [contact({ contactCrmId: 1, listType: "AM", grade: "A" })] });
+  assert.equal(oneAm.ampm.applicable, true, "one AM account is still scored");
 }
