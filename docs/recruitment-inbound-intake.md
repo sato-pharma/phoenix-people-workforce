@@ -229,10 +229,33 @@ because several areas are districts of one governorate (Cairo East 1/2 are both 
 areas can share one (Sharkia 1 + Sharkia 2 are both الشرقية, and their values must be added before
 ranking).
 
-### Coexistence — what changes when the handset is linked (2026-08-23)
+### Coexistence — what will change when the handset is linked (NOT LINKED YET)
 
-The owner completed the Meta **Coexistence** QR scan for `01159888247`, which puts the advertised
-handset on the Cloud API **without** taking WhatsApp Business off the phone. From that point:
+> 🔴 **`01159888247` is not linked, and never has been.** The 2026-08-23 version of this section
+> opened by saying the owner had completed the Meta Coexistence QR scan and that applicant messages
+> were from then on delivered to this webhook. **That was wrong on the day it was written**, it was
+> disproven the same evening from our own delivery data, and it stood uncorrected here for two
+> weeks. Anything built on it — an alert, a report, a decision about where to advertise — was built
+> on a link that does not exist.
+>
+> Measured on production, all time, re-run **2026-09-06**: `ats_cv_intake_events` holds **1,362**
+> WhatsApp rows, **every one** delivered to `201098500699` (the Cloud API line) and **zero** to
+> `201159888247`; 8 older rows predate the `deliveredToDisplayNumber` field. In WhatsApp Manager
+> the handset still reads **Unverified** inside WABA "Sato Pharma HR Team", beside the **Connected**
+> Cloud line. Its only role in this pipeline is the opposite one — **110 events arrived FROM**
+> `+201159888247`, HR forwarding CVs off that phone by hand, most recently 2026-09-05 17:32 Cairo.
+> **Manual forwarding never ended.**
+>
+> Why it never bound: the onboarding run on 2026-08-24 was refused inside Meta's own dialog
+> (*"Phoenix HR Workforce can't onboard customers at the moment"*) because coexistence requires
+> Solution Partner or Tech Provider status — Advanced Access on `whatsapp_business_management` and
+> `whatsapp_business_messaging`. **App Review approved both on 2026-09-06**, so that gate is gone
+> and the linking is now possible; it has still not been done. The remaining steps are in
+> [whatsapp-app-review-submission.md](whatsapp-app-review-submission.md) § *After approval*.
+
+Everything below describes what happens **once** the handset is linked. The code is written,
+deployed and waiting; none of it is exercised today. Coexistence puts the advertised handset on the
+Cloud API **without** taking WhatsApp Business off the phone. From that point:
 
 - **New** applicant messages to the handset are delivered to this webhook on the `messages` field,
   exactly like the existing line. **No code or config change is needed for those** — the webhook has
@@ -241,7 +264,7 @@ handset on the Cloud API **without** taking WhatsApp Business off the phone. Fro
   `history`, in a *different* envelope: `entry[].changes[].value.history[].threads[].messages[]`,
   two levels deeper than a live message and containing **both directions** of every conversation.
 
-Two things follow, and both are now handled:
+Two things follow, and both are already handled in code (built 2026-08-23, never yet exercised):
 
 1. **The parser reads both envelopes.** Until this change it read `value.messages` only, so a
    backfill would have been answered `200 OK` and discarded — an entire CV backlog lost with no
@@ -255,9 +278,10 @@ Two things follow, and both are now handled:
 
 **`history` is not subscribed yet.** Read live 2026-08-23, the app's `whatsapp_business_account`
 subscription carries 10 fields — `messages` among them — but **not** `history`,
-`smb_message_echoes` or `smb_app_state_sync`. So new CVs flow the moment the scan takes effect; the
-backlog does not, until `history` is added in the Meta app dashboard. Adding it is what triggers the
-replay this code now understands.
+`smb_message_echoes` or `smb_app_state_sync`. **Not re-read since**, so treat it as unknown rather
+than settled. So new CVs will flow the moment a scan actually takes effect; the backlog will not,
+until `history` is added in the Meta app dashboard. Adding it is what triggers the replay this code
+understands.
 
 > **The exclusion filter has a NULL trap, measured, not guessed.** `historyImport` is *absent* on a
 > live row, and PostgREST `raw_metadata->>historyImport=neq.true` evaluates to NULL — not true — for
