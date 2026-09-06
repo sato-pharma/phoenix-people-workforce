@@ -17,7 +17,6 @@ env.yaml
 cloud-run-env.yaml
 cloud-run-env-all.yaml
 generate-env.js
-generate-cron-secret.js
 
 # Build/test/scratch dirs that never belong in the runtime image
 .github
