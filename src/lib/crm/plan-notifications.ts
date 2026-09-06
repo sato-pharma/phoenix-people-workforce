@@ -161,7 +161,14 @@ export async function announceNewPlansToManagers(plans: readonly NewPlanAnnounce
         email: {
           ctaHref: actionUrl,
           ctaLabel: "Open the plan",
-          employeeHrId: rep.manager_hr_id,
+          // NO employeeHrId here: that field is the SUBJECT slot of the email — it drives the
+          // employee contact lookup, the detail tokens and the manager-chain CC — and it is not
+          // the recipient. The manager already receives this mail via recipientHrId and the
+          // explicit recipients list below. Naming him here as well put TWO different people in
+          // the subject slot (the rep from subjectHrId, his manager from here), and
+          // resolvedEmailIdentity() refuses a conflicting identity rather than guess which one
+          // the mail is about, so every one of these was skipped: 60 rows between 2026-08-29
+          // and 2026-09-04, zero sent. The REP is the subject — the plan being verified is his.
           notificationType: "general",
           ...(manager?.work_email ? { recipients: [manager.work_email] } : {}),
           subject: `${repName}'s ${plan.kind} plan is waiting for you`,

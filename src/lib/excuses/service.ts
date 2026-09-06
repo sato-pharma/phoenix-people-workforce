@@ -1117,7 +1117,7 @@ export async function runExcuseSlaDaily(): Promise<{ processed: number; errors: 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("v2_excuse_requests")
-    .select("id, employee_name, excuse_date, excuse_type, created_at, manager_hr_id")
+    .select("id, employee_hr_id, employee_name, excuse_date, excuse_type, created_at, manager_hr_id")
     .eq("status", "pending_manager")
     .not("manager_hr_id", "is", null);
   if (error) return { processed: 0, errors: 1 };
@@ -1137,6 +1137,11 @@ export async function runExcuseSlaDaily(): Promise<{ processed: number; errors: 
         module: "excuse",
         priority: "normal",
         recipientHrId: String(row.manager_hr_id),
+        // The excuse belongs to the EMPLOYEE, not to the manager who has to approve it. Module
+        // "excuse" is an employee-subject workflow module, so without a subject the email half
+        // is refused outright — 27 rows between 2026-08-08 and 2026-09-06, zero sent — while the
+        // in-app copy still reached the manager, which is what kept the gap invisible.
+        subjectHrId: String(row.employee_hr_id),
         title: "Excuse approval overdue",
         actionUrl: `/admin/approvals/excuse/${encodeURIComponent(String(row.id))}`,
         email: {

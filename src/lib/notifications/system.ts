@@ -156,7 +156,14 @@ const employeeSubjectWorkflowModules = new Set([
 // Aggregate digests (many employees rolled into one email) live in a
 // per-employee workflow module but have no single subject by design — exempt
 // them by event type so the module-level identity guard doesn't fail them.
-const aggregateDigestEventTypes = new Set(["high_risk_digest"]);
+// drift_alert is one of these. BOTH emitters — the weekly-plans drift check and the excuse
+// approver-gap check — roll every affected employee into ONE operational message addressed to
+// admin role recipients, so there is no single data subject to name and inventing one would put
+// an arbitrary employee at the head of a report that is not about them. The weekly-plans half
+// lost 25 emails this way between 2026-08-16 and 2026-09-06, zero sent. Exempting the event type
+// is the deliberate choice here over supplying a fake subject: the guard stays fully armed for
+// every per-employee mail these two modules send.
+const aggregateDigestEventTypes = new Set(["drift_alert", "high_risk_digest"]);
 
 /**
  * Retry budget for a `notification_deliveries` row, and the value the retry drains filter on in
