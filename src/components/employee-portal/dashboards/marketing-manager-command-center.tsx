@@ -54,10 +54,22 @@ const INTEL_TILES: Array<{ href: string; icon: typeof Activity; label: string; d
 ];
 
 export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, pendingCountsAvailable, leaveEntitlementDays, mmOverview, plansAwaitingManagerApproval, earlyBirdStars } =
-    snapshot;
+  const {
+    shell,
+    pendingVacationCount,
+    pendingExcuseCount,
+    pendingCountsAvailable,
+    leaveEntitlementDays,
+    mmOverview,
+    plansAwaitingManagerApproval,
+    plansCountAvailable,
+    earlyBirdStars,
+  } = snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount;
+  // Both legs must have loaded for either "needs your decision" or "all clear" to be trustworthy —
+  // a failed plans lookup defaults to 0 and would otherwise silently hide a real plan approval.
+  const pendingAvailable = pendingCountsAvailable && plansCountAvailable;
 
   // `asOf` is server-stamped in the snapshot so we never call Date.now() during render.
   const now = mmOverview?.asOf ?? 0;
@@ -110,7 +122,7 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
         ]}
       />
 
-      {!pendingCountsAvailable ? (
+      {!pendingAvailable ? (
         <PendingCountsUnavailable />
       ) : (totalPending > 0 || plansCount > 0) ? (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />

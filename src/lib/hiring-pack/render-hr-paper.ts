@@ -12,6 +12,7 @@ import {
 } from "@/lib/hiring-pack/hr-paper-template";
 import { hrPaperById } from "@/lib/hiring-pack/hr-paper-text";
 import { resolveNationality } from "@/lib/hiring-pack/nationality";
+import { resolveServicePeriod } from "@/lib/hiring-pack/service-period";
 import {
   ARABIC_FONT_STACK,
   arabicDayName,
@@ -57,21 +58,13 @@ export function buildHrPaperValues(
   const recital = systemLegalEntity.contractRecital;
   const today = todayInCairo();
 
-  /**
-   * THE CERTIFICATE'S PERIOD OF SERVICE — resolved from whether he HAS LEFT, never from whether a
-   * last-working date happens to be on file.
-   *
-   * The distinction is the whole safety property of that paper. An absent date means "nobody
-   * recorded one", which is a gap; it does not mean "he is still here". Reading it the other way
-   * would print a certificate for a serving employee closing his service on a dotted rule, or —
-   * worse, once somebody filled that rule in — one asserting that a man at his desk had left.
-   *
-   * `departed` is the module's own flag for this and is what the facts screen already locks pay and
-   * department on, so the certificate agrees with the rest of the pack by construction.
-   */
-  const serviceEndsOn = employee.departed ? terms.lastWorkingDate : today;
-  const serviceEnd = employee.departed
-    ? pinLtr(formatDayMonthYear(terms.lastWorkingDate))
+  // THE CERTIFICATE'S PERIOD OF SERVICE. Resolved in `service-period.ts` rather than here, because
+  // the ENGLISH certificate states the same period and the two must never be able to disagree about
+  // one employment — see that module for why it reads the departure flag and not the presence of a
+  // date, which is the whole safety property of both papers.
+  const service = resolveServicePeriod(data, today);
+  const serviceEnd = service.departed
+    ? pinLtr(formatDayMonthYear(service.endsOn))
     : // Not a date, on purpose: a certificate for somebody still serving closes the period with the
       // day it was issued, and the sentence below says in words that he has not left.
       "تاريخه";
@@ -123,16 +116,16 @@ export function buildHrPaperValues(
     CONTRACT_DATE: pinLtr(formatDayMonthYear(terms.contractStartDate ?? employee.hireDate)),
     LAST_WORKING_DATE: pinLtr(formatDayMonthYear(terms.lastWorkingDate)),
 
-    // The certificate of experience. See `serviceEndsOn` above for why these read the departure
-    // flag rather than the presence of a date.
+    // The certificate of experience. See `service-period.ts` for why these read the departure flag
+    // rather than the presence of a date.
     SERVICE_END: serviceEnd,
-    SERVICE_STATUS: employee.departed
+    SERVICE_STATUS: service.departed
       ? "وقد انتهت خدمته لدى الشركة بنهاية المدة المبيّنة عاليه."
       : "ولا يزال على رأس العمل لدى الشركة حتى تاريخ صدور هذه الشهادة.",
     // Blank — and so a dotted rule on the page — when either end is missing, which for a leaver
     // means no last-working date was ever recorded. A span the company cannot count is one a human
     // writes in, not one this file guesses.
-    SERVICE_DURATION: describeServiceDuration(employee.hireDate, serviceEndsOn),
+    SERVICE_DURATION: describeServiceDuration(service.startsOn, service.endsOn),
 
     // ABSENCE_FROM / ABSENCE_TO / FIRST_WARNING_* are absent on purpose — see the header note.
     // COMPLETION_DEADLINE likewise: it is a date the desk sets when it hands the checklist over.
@@ -498,6 +491,15 @@ export function renderHrPaperHtml(
   @page { size: A4; margin: 10.7mm 10.2mm 12.7mm; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #e2e8f0; }
+  /* 🔴 KEEP THE ZEBRA BANDS WHEN A BROWSER PRINTS. Chrome's print dialog ships with "Background
+     graphics" UNTICKED, and every tint on these papers is a CSS background — so Print produced a
+     black-and-white page while the preview beside it was blue. The saved PDF was never affected
+     (paper-pdf.ts passes printBackground: true), which is why the two paths agreed on screen and
+     disagreed on paper. These papers keep their own stylesheet rather than importing
+     HOUSE_IDENTITY_CSS, so the line has to be here as well as there.
+
+     NO BACKTICKS IN THIS COMMENT — it is inside a template literal and one would close the string. */
+  html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body {
     font-family: ${ARABIC_FONT_STACK};
     color: #111;

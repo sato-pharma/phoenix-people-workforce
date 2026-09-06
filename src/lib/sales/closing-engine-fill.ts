@@ -6,7 +6,7 @@ import {
   closingEngineTemplateBytes,
 } from "./closing-engine-template-generated";
 import { ACHIEVEMENT_ARROW_AT } from "./closing-engine-data";
-import { MOBILE_MATRIX_SHEET, MOBILE_MATRIX_WHAT } from "./closing-mobile-matrix";
+import { PIVOT_GRID_SPECS, buildPivotGrid, type GridCellKind } from "./closing-pivot-grid";
 
 /**
  * Pours one month of a closing into the owner's own `.xlsm` engine.
@@ -61,14 +61,6 @@ export type ClosingEngineFill = {
   data: EngineDataSheet;
   /** The Rep Card's product block, plus the count its rank caption reads. */
   repCard?: { products: string[]; targetedAreaCount: number };
-  /**
-   * The three matrix pages as plain rows, for readers whose app cannot build a pivot table.
-   *
-   * Appended by the same path the Performance Review sheets take, but listed on the contents page
-   * beside the matrices it stands in for rather than under the review's own band. Null when the
-   * month has no rows; see `closing-mobile-matrix.ts`.
-   */
-  mobileSheet?: ReviewSheet | null;
 };
 
 type SheetSpec = {
@@ -303,17 +295,14 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   await sizePivotAchievementFormats(zip, fill);
   await orderPivotItems(zip, fill);
   await dropStaleLabelFormats(zip);
+  // AFTER every other pass over these three sheets, and before the emblem work, which touches only
+  // drawings. This one owns everything from the pivot's own first row down, so anything that writes
+  // into that range has to have run already.
+  await writePivotGrids(zip, fill);
   await clearTitleEmblem(zip, fill);
   await hideEmblemFromPrint(zip);
-  // The mobile sheet goes FIRST in the appended block, so it lands beside the matrix pages it
-  // stands in for rather than after the review. It is taken from the fill rather than from the
-  // options on purpose: it is the answer to a defect (three tabs that render empty on a phone),
-  // and a caller that forgot to pass it would reintroduce that defect silently.
-  const appended = [...(fill.mobileSheet ? [fill.mobileSheet] : []), ...(options.reviewSheets ?? [])];
-  const added = appended.length > 0 ? await addReviewSheets(zip, appended) : [];
-  // The contents page lists the mobile sheet from INDEX_SECTIONS, in the "By area" band. Passing it
-  // here as well would print it twice — once there and once under "Performance review".
-  await addIndexSheet(zip, fill, added.filter((sheet) => sheet.name !== MOBILE_MATRIX_SHEET));
+  const reviewAdded = options.reviewSheets ? await addReviewSheets(zip, options.reviewSheets) : [];
+  await addIndexSheet(zip, fill, reviewAdded);
   await openOnFirstSheet(zip);
   await recalculateOnOpen(zip);
   await restorePivotCacheSharedItems(zip, fill);
@@ -1079,54 +1068,133 @@ function columnLetters(column: number): string {
 }
 
 /**
- * Widen the two matrices' grand-total columns to fit their own headings.
+ * Column widths for the three matrix pages, in Excel's character units.
  *
- * Both matrices repeat three columns per product — Sales Value, Target Value, Ach — and the
- * template sizes every one of them at 12.71 characters, which is right. What it also sizes at
- * 12.71 is the block after them: the grand total, whose headings are those same names with the
- * word "Total" in front. "Total Sales Value" does not fit in the width "Sales Value" fits in, so
- * the two most-read columns on the page shipped saying "Total Sales Val" and "Total Target V".
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * A NUMBER TOO NARROW FOR ITS COLUMN RENDERS AS `#####`, which is the same complaint this whole
+ * change exists to answer — data that is present and not readable. So every width here is set from
+ * the longest thing the column actually holds, never from how much room is wanted:
  *
- * The block exists only where the pivot asks for it — the Units Matrix sets `colGrandTotals="0"`
- * and has none — so the width lands on whatever sits past the last product group, and on nothing
- * at all when there is nothing there.
+ *   region  16   holds "<Region> Total" as well as the region — "Delta (1) Total" is 15 characters,
+ *                and column A CLIPS rather than overflowing, because column B beside it is filled.
+ *   area    20   area names, and "<Area> Total" on Area x Product.
+ *   product 24   the longest product name on any line, with room for a concentration suffix.
+ *   money   11   "-12,345,678" is 11. The em dash a zero prints as is one.
+ *   percent  8   "1234.5%" is 7.
+ *
+ * `grandMoney` is deliberately LEFT WIDE at the template's own 17.71. Its heading is "Total Sales
+ * Value", which does not fit in the width "Sales Value" fits in — the two most-read columns on the
+ * page once shipped saying "Total Sales Val" and "Total Target V", and narrowing this would put
+ * that back.
+ */
+const MATRIX_WIDTH = {
+  area: 20,
+  // Area x Product is only six columns, so its total width is set almost entirely by its three
+  // label columns — and A SHEET CANNOT BE NARROWER THAN ITS OWN CAPTION. A1 runs right until it
+  // meets the emblem and `clearTitleEmblem` slides the emblem clear of it; cut these to the
+  // matrices widths and the caption slides the logo 61px PAST THE LAST COLUMN, where it floats
+  // over nothing. Measured, and caught by the emblem check in the export tests.
+  areaProductArea: 24,
+  areaProductRegion: 18,
+  grandMoney: 17.7109375,
+  grandPercent: 10,
+  money: 11,
+  percent: 8,
+  // "Tebofortin Retard 480mg" is 23 characters and real names run longer; a clipped product name
+  // is the ellipsis the owner has banned.
+  product: 30,
+  region: 16,
+} as const;
+
+/**
+ * Re-cut every column on the three matrix pages to what it actually holds.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * THE FROZEN PANE WAS WIDER THAN A PHONE. The template gives column B — the AREA name, "Cairo 1" —
+ * a width of 86.71 characters, about 610px, and both matrices freeze at `xSplit="2"`, so columns A
+ * and B are pinned on screen. That is 734px of frozen label on a 375px phone: the pinned block alone
+ * is twice the screen, so scrolling right never reaches a number. Re-cut to 16 and 20 it is 262px,
+ * which leaves room for the data to arrive beside it.
+ *
+ * The rest is arithmetic and it is worth stating plainly, because it bounds what this can achieve: a
+ * line with 24 products spends 24 x 3 columns on the products alone. At the widths above that is
+ * about 5,400px, and no honest re-sizing brings a matrix of that shape onto a 375px screen. What it
+ * does is make the page usable — labels pinned and visible, numbers reachable by scrolling — rather
+ * than fit it. `Area x Product` is the page that genuinely fits, and it holds the same figures.
+ *
+ * The grand-total block exists only where the pivot asks for it: the Units Matrix sets
+ * `colGrandTotals="0"` and has none, which is also the flag that stops units being totalled across
+ * products. It is read from the pivot rather than assumed here.
  */
 async function sizeMatrixColumns(zip: JSZip, fill: ClosingEngineFill): Promise<void> {
   const products = distinctColumn(fill.data.salesData, 5).length;
   if (!products) return;
 
-  for (const sheetName of SLICER_SHEETS) {
+  for (const sheetName of [...SLICER_SHEETS, AREA_PRODUCT_SHEET]) {
     const spec = MANIFEST.sheets[sheetName];
     const file = spec ? zip.file(spec.file) : null;
     if (!spec || !file) continue;
     const xml = await file.async("string");
     const cols = /<cols>[\s\S]*?<\/cols>/.exec(xml)?.[0];
-    // The run the template gives the value columns is the one carrying their style and width, so it
-    // is re-cut rather than replaced: same attributes, new bounds.
-    const run = cols ? /<col\b[^>]*\bmin="3"[^>]*\/>/.exec(cols)?.[0] : null;
-    if (!cols || !run) continue;
+    if (!cols) continue;
 
-    // Two row-field columns, then three value columns per product. Anything past that is the grand
-    // total, which the pivot writes only when it is asked for.
-    const lastProductColumn = 2 + products * 3;
-    const totals = /\bcolGrandTotals="0"/.test((await pivotPartFor(zip, spec))?.xml ?? "") ? 0 : 3;
-    const runMax = Number(/\bmax="(\d+)"/.exec(run)?.[1] ?? 0);
-    const values = run.replace(/\bmax="\d+"/, `max="${lastProductColumn}"`);
-    const grand = totals
-      ? run
-          .replace(/\bmin="3"/, `min="${lastProductColumn + 1}"`)
-          .replace(/\bmax="\d+"/, `max="${lastProductColumn + totals}"`)
-          .replace(/\bwidth="[\d.]+"/, `width="17.7109375"`)
-      : "";
-    // The template's run reaches well past the widest month it was cut for, and a shorter month
-    // must not lose the columns beyond its own totals: they are still inside the run being
-    // re-cut, so a two-piece rewrite silently drops them back to the default width with no style,
-    // leaving a bare band beside the grand total on every sheet narrower than the template. Re-cut
-    // in three pieces, the tail keeping exactly what the template gave it.
-    const tail = runMax > lastProductColumn + totals
-      ? run.replace(/\bmin="3"/, `min="${lastProductColumn + totals + 1}"`)
-      : "";
-    zip.file(spec.file, xml.replace(cols, cols.replace(run, `${values}${grand}${tail}`)));
+    // The template's own run for the value columns carries the style these pages are drawn in, so
+    // it is re-cut rather than replaced — a hand-written <col> would lose `style="2"` and leave a
+    // band of default-formatted columns across the sheet.
+    const stamp = /<col\b[^>]*\bmin="3"[^>]*\/>/.exec(cols)?.[0];
+    if (!stamp) continue;
+    const style = /\bstyle="(\d+)"/.exec(stamp)?.[1];
+    const column = (index: number, width: number): string =>
+      `<col min="${index}" max="${index}" width="${width}"${style ? ` style="${style}"` : ""} customWidth="1"/>`;
+
+    const widths: number[] = [];
+    if (sheetName === AREA_PRODUCT_SHEET) {
+      // Three row-label columns — Region, Area, Product — then one column per measure.
+      widths.push(MATRIX_WIDTH.areaProductRegion, MATRIX_WIDTH.areaProductArea, MATRIX_WIDTH.product);
+      widths.push(MATRIX_WIDTH.money, MATRIX_WIDTH.money, MATRIX_WIDTH.percent);
+    } else {
+      widths.push(MATRIX_WIDTH.region, MATRIX_WIDTH.area);
+      for (let index = 0; index < products; index += 1) {
+        widths.push(MATRIX_WIDTH.money, MATRIX_WIDTH.money, MATRIX_WIDTH.percent);
+      }
+      const hasTotals = !/\bcolGrandTotals="0"/.test((await pivotPartFor(zip, spec))?.xml ?? "");
+      if (hasTotals) widths.push(MATRIX_WIDTH.grandMoney, MATRIX_WIDTH.grandMoney, MATRIX_WIDTH.grandPercent);
+    }
+
+    // Adjacent columns of the same width are emitted as one run, which is what Excel writes and
+    // what keeps a 24-product line from carrying 75 separate <col> elements.
+    const runs: string[] = [];
+    let start = 1;
+    for (let index = 0; index < widths.length; index += 1) {
+      const next = widths[index + 1];
+      if (next === widths[index]) continue;
+      const width = widths[index]!;
+      runs.push(
+        start === index + 1
+          ? column(start, width)
+          : `<col min="${start}" max="${index + 1}" width="${width}"${style ? ` style="${style}"` : ""} customWidth="1"/>`,
+      );
+      start = index + 2;
+    }
+
+    // EVERYTHING PAST THE LAST USED COLUMN KEEPS WHAT THE TEMPLATE GAVE IT. The template's runs
+    // reach well beyond the widest month it was cut for, and dropping them would leave a bare
+    // default-width, style-less band across every sheet narrower than the template — which is a
+    // visible defect on the page rather than a tidy-up.
+    // A run that STRADDLES the boundary is re-cut, never dropped: the template's value run is
+    // `min="3" max="50"`, so a month using 14 columns would otherwise leave 15..50 with no run at
+    // all. Filtering on `min` alone is the mistake that produces the bare band.
+    const tail = [...cols.matchAll(/<col\b[^>]*?\/>/g)]
+      .map((one) => one[0])
+      .map((one) => {
+        const min = Number(/\bmin="(\d+)"/.exec(one)?.[1] ?? 0);
+        const max = Number(/\bmax="(\d+)"/.exec(one)?.[1] ?? 0);
+        if (max <= widths.length) return "";
+        return min > widths.length ? one : one.replace(/\bmin="\d+"/, `min="${widths.length + 1}"`);
+      })
+      .join("");
+
+    zip.file(spec.file, xml.replace(cols, `<cols>${runs.join("")}${tail}</cols>`));
   }
 }
 
@@ -2292,7 +2360,6 @@ const INDEX_SECTIONS: ReadonlyArray<{ band: string; entries: ReadonlyArray<{ she
       { sheet: "Closing Matrix", what: "Sales value against target, per area, with each region foldable and the Region slicer above it." },
       { sheet: "Units Matrix", what: "Units against target — never summed across products, because each has its own target." },
       { sheet: "Area x Product", what: "Value against target, opened one region at a time." },
-      { sheet: MOBILE_MATRIX_SHEET, what: MOBILE_MATRIX_WHAT },
     ],
   },
   {
@@ -2321,15 +2388,16 @@ const INDEX_SECTIONS: ReadonlyArray<{ band: string; entries: ReadonlyArray<{ she
  * a reader who gets there first sees an empty page and concludes the export is broken.
  *
  * IT USED TO SAY THIS WAS A MATTER OF RECALCULATION, which reads as a state that passes. On a phone
- * it never passes: Excel for iOS/Android and WPS Office open a PivotTable read-only from the
- * records it already carries, and this cache ships empty by design. So the line now names the
- * limitation and points at the sheet that answers it.
+ * it never passes: Excel for iOS/Android and WPS Office open a PivotTable read-only from the records
+ * it already carries, and this cache ships empty by design. `writePivotGrids` now writes the grid
+ * into the cells so the pages are readable there — but the Region slicer and the fold are live pivot
+ * controls and cannot follow, so the line says what a phone reader does and does not get.
  *
  * It is merged across A:B — 122 character widths — so it CLIPS rather than overflowing. Keep it
  * short enough to read whole; `runClosingEngineExportTests` pins the length.
  */
 const INDEX_FOOTNOTE =
-  "The three matrix pages are pivot tables — Excel builds them on open. A phone cannot: read Matrix (Mobile) instead.";
+  "The three matrix pages are pivot tables: on a phone they open flat, without the Region slicer or the fold.";
 
 /**
  * The next free `xl/worksheets/sheetN.xml`, read from the package.
@@ -2800,4 +2868,119 @@ async function ensureIndexStyles(zip: JSZip): Promise<Record<string, string> | n
 
   zip.file("xl/styles.xml", xml);
   return styles;
+}
+
+/**
+ * Number formats for the pivot grids, taken from the engine's own catalogue rather than invented.
+ *
+ * s43 is `#,##0;-#,##0;"—"`, so a zero prints as an em dash instead of reading as "sold nothing";
+ * s44 is `0.0%`; s8 is the blue table header the sheets beside these use; s9 the body row. Using the
+ * engine's own indices is what keeps these pages looking like their siblings through any restyle of
+ * the owner's template.
+ */
+const GRID_STYLE: Record<GridCellKind, string | null> = {
+  blank: null,
+  corner: "8",
+  header: "8",
+  label: "9",
+  money: "43",
+  percent: "44",
+  text: "9",
+};
+
+/**
+ * Write each pivot page's grid into its own cells.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * THE WHOLE POINT: a pivot table stores no cells, so on a reader that cannot refresh one — Excel for
+ * iOS/Android, WPS on a phone — those three pages are blank. Desktop Excel is untouched by this:
+ * `refreshOnLoad="1"` is still set, so it rebuilds the pivot over these cells on open exactly as it
+ * does today, slicers and fold-by-region intact. These cells are what a phone shows instead.
+ *
+ * NOTHING HERE TOUCHES A PIVOT, A CACHE OR A SLICER, with one exception: `location`'s extent is
+ * re-declared to match what is written. That matters and is not cosmetic — the stored extent is the
+ * range Excel redraws into, and a grid larger than it would leave our rows stranded on the desktop
+ * BELOW a working pivot, which is a worse defect than the one being fixed and one the owner would
+ * see first. The extent is computed from the same rows the refresh will read, so the two agree.
+ *
+ * `firstHeaderRow`, `firstDataRow` and `firstDataCol` are left exactly as the owner's template has
+ * them, and `buildPivotGrid` emits the header block those numbers describe — three rows on the two
+ * matrices, one on Area x Product. They are the contract between this grid and the pivot drawn over
+ * it, so they are read here rather than assumed there.
+ */
+async function writePivotGrids(zip: JSZip, fill: ClosingEngineFill): Promise<void> {
+  for (const [sheetName, spec] of Object.entries(MANIFEST.sheets)) {
+    if (spec.kind !== "pivot") continue;
+    const gridSpec = PIVOT_GRID_SPECS[sheetName];
+    const sheetFile = zip.file(spec.file);
+    if (!gridSpec || !sheetFile) continue;
+
+    const grid = buildPivotGrid(fill.data.salesData, gridSpec);
+    if (!grid) continue;
+
+    // Where the pivot sits, read from the pivot's own part rather than hard-coded: the template is
+    // the owner's and he re-saves it.
+    const relsFile = zip.file(spec.file.replace("worksheets/", "worksheets/_rels/") + ".rels");
+    const relsXml = relsFile ? await relsFile.async("string") : "";
+    const pivotPart = /Target="\.\.\/(pivotTables\/pivotTable\d+\.xml)"/.exec(relsXml)?.[1];
+    const pivotFile = pivotPart ? zip.file(`xl/${pivotPart}`) : null;
+    if (!pivotFile) continue;
+
+    const pivotXml = await pivotFile.async("string");
+    const location = /<location\b[^>]*\bref="([A-Z]+)(\d+):([A-Z]+)(\d+)"/.exec(pivotXml);
+    if (!location) continue;
+    const firstColumn = columnNumber(location[1]!);
+    const firstRow = Number(location[2]!);
+
+    // ── The cells ─────────────────────────────────────────────────────────────────────────────
+    const rows: string[] = [];
+    grid.cells.forEach((line, offset) => {
+      const rowNumber = firstRow + offset;
+      const cells = line
+        .map((cell, column) => {
+          const style = GRID_STYLE[cell.kind];
+          if (style === null || cell.value === null || cell.value === "") return "";
+          const ref = `${columnLetters(firstColumn + column)}${rowNumber}`;
+          if (typeof cell.value === "number") {
+            return Number.isFinite(cell.value) ? `<c r="${ref}" s="${style}"><v>${cell.value}</v></c>` : "";
+          }
+          return `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(xmlSafe(String(cell.value)))}</t></is></c>`;
+        })
+        .join("");
+      if (cells) rows.push(`<row r="${rowNumber}">${cells}</row>`);
+    });
+    if (rows.length === 0) continue;
+
+    const lastRow = firstRow + grid.cells.length - 1;
+    const lastColumn = columnLetters(firstColumn + grid.width - 1);
+
+    let xml = await sheetFile.async("string");
+
+    // Rows must ASCEND inside <sheetData> or Excel repairs the sheet. The header rows the template
+    // keeps (the title, the coverage note) all sit above the pivot, so appending is enough — but any
+    // row at or below the pivot's own first row is dropped first, so a re-run cannot double them.
+    xml = xml.replace(/<sheetData>([\s\S]*?)<\/sheetData>/, (_match, body: string) => {
+      const kept = [...String(body).matchAll(/<row\b[^>]*?\/>|<row\b[^>]*?>[\s\S]*?<\/row>/g)]
+        .map((one) => one[0])
+        .filter((one) => Number(/\br="(\d+)"/.exec(one)?.[1] ?? 0) < firstRow);
+      return `<sheetData>${kept.join("")}${rows.join("")}</sheetData>`;
+    });
+
+    // The declared extent has to cover what is now on the sheet, or Excel trims the view to it.
+    xml = xml.replace(/<dimension ref="([A-Z]+)(\d+):[A-Z]+\d+"/, (_match, col: string, row: string) =>
+      `<dimension ref="${col}${row}:${lastColumn}${lastRow}"`);
+
+    zip.file(spec.file, xml);
+    zip.file(
+      `xl/${pivotPart}`,
+      pivotXml.replace(/(<location\b[^>]*\bref=")[A-Z]+\d+:[A-Z]+\d+(")/, `$1${location[1]}${firstRow}:${lastColumn}${lastRow}$2`),
+    );
+  }
+}
+
+/** "AX" -> 50. The inverse of `columnLetters`, needed to start writing at the pivot's own corner. */
+function columnNumber(letters: string): number {
+  let total = 0;
+  for (const character of letters) total = total * 26 + (character.charCodeAt(0) - 64);
+  return total;
 }

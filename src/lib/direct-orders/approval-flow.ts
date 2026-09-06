@@ -325,3 +325,36 @@ export function directOrderChainMissingManagementLine(input: {
   if (input.steps.length === 0) return false; // draft/held — no chain built yet, nothing to judge
   return !input.steps.some((step) => step.kind === "person");
 }
+
+/**
+ * The statuses a request reaches by BEING DECIDED. Arriving at one of these is the decision, so
+ * the row must carry `decided_at`: the "Decided" column, the approval fields, the approved-order
+ * email and the report export all read it, and the history query orders by it.
+ *
+ * `reversed` is deliberately NOT here. A reversal follows an approval, and that approval already
+ * stamped `decided_at`; re-stamping would overwrite the date the order was actually approved.
+ * (Nothing writes `reversed` directly in any case — it is a two-phase transition.)
+ *
+ * Why a helper rather than the literal patch at each call site: most requests are decided through
+ * the approval chain, but four write paths set a deciding status DIRECTLY — a venue ruled false,
+ * an expired hold, a withdrawn hold, and duplicate cleanup. Only the last remembered the stamp,
+ * which left 8 production rows terminal-but-undated, rendering a blank "Decided". Building the
+ * patch in one place is what stops a fifth such path forgetting.
+ */
+export const DIRECT_ORDER_DECIDING_STATUSES = ["approved", "rejected", "cancelled", "expired"] as const;
+
+export type DirectOrderDecidingStatus = (typeof DIRECT_ORDER_DECIDING_STATUSES)[number];
+
+// Fails to COMPILE if one of the above stops being a real DirectOrderStatus — same discipline as
+// DIRECT_ORDER_STATUS_VALUES in types.ts, so this list cannot drift into a second source of truth.
+type UnknownDecidingStatus = Exclude<DirectOrderDecidingStatus, DirectOrderStatus>;
+const _decidingStatusesAreRealStatuses: [UnknownDecidingStatus] extends [never] ? true : never = true;
+void _decidingStatusesAreRealStatuses;
+
+/** The column patch for a request reaching a deciding status — always stamps `decided_at`. */
+export function decidedStatusPatch(
+  status: DirectOrderDecidingStatus,
+  decidedAt: Date = new Date(),
+): { status: DirectOrderDecidingStatus; decided_at: string } {
+  return { status, decided_at: decidedAt.toISOString() };
+}

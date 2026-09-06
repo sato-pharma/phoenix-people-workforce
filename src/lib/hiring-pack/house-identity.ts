@@ -129,6 +129,35 @@ export const HOUSE_TYPE = {
  * LOGICAL PROPERTIES THROUGHOUT (`border-inline-start`, not `border-left`). These documents are
  * Arabic and lay out right-to-left; a physical `left` puts every callout rule and every heading tick
  * on the wrong side of the page, which reads as a broken template rather than a mirrored one.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * 🔴 `print-color-adjust: exact` IS WHY THE COLOUR REACHES PAPER, and without it the identity is
+ * lost on the printer and ONLY on the printer.
+ *
+ * Chrome's print dialog ships with "Background graphics" unticked, and every coloured area on these
+ * documents is a CSS background — the 6% zebra bands, and `.lh__rule`, which this file calls the one
+ * element on every document. So the owner pressed Print on 2026-09-06 and got a page in black and
+ * white while the preview beside it was blue.
+ *
+ * IT HID BEHIND BOTH OF THE PLACES ANYBODY LOOKS. The screen was right, and the saved PDF was right
+ * too, because `paper-pdf.ts` passes `printBackground: true`. The two paths a developer checks both
+ * looked correct and only the printer disagreed. `render-contract.ts` and `render-worker-form.ts`
+ * already carried their own copy of the declaration; the papers that did not are exactly the ones
+ * that lost their colour.
+ *
+ * The property INHERITS, so declaring it on the root reaches everything, and it belongs here rather
+ * than in each document because this module owns the colours in the first place.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * 🔴 TWO REASONS THE PROSE LIVES HERE AND NOT INSIDE THE TEMPLATE LITERAL BELOW, both learned the
+ * hard way while writing that fix:
+ *
+ *   · A BACKTICK IN A CSS COMMENT CLOSES THE STRING and takes the rest of the stylesheet with it.
+ *     Up here, `code quotes` are free.
+ *   · A COMMENT INSIDE THE CSS IS SHIPPED TO THE BROWSER and is scanned as CSS. The sentence "is a
+ *     CSS background: the 6% zebra bands" turned `tests/payslip-document.test.ts` red, because its
+ *     ink-rule sweep matches `background:` up to the next semicolon and read the prose as a third
+ *     painted colour. Explanation belongs in TypeScript; the stylesheet carries a pointer to it.
  */
 export const HOUSE_IDENTITY_CSS = `
   :root {
@@ -140,6 +169,12 @@ export const HOUSE_IDENTITY_CSS = `
     --phx-doc-hair:  ${HOUSE_COLORS.hair};
     --phx-doc-muted: ${HOUSE_COLORS.muted};
     --phx-doc-body:  ${HOUSE_COLORS.body};
+  }
+
+  /* Keep the house colour when a BROWSER prints — see the note above the constant. */
+  :root, html, body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   /* ---------- the letterhead — no filled areas, anywhere ---------- */
@@ -219,6 +254,7 @@ const HOUSE_NUMBERED_DOCUMENTS: ReadonlySet<string> = new Set([
   "deemedResignation",
   "appointmentDocsReturn",
   "experienceCertificate",
+  "experienceCertificateEn",
   "clearanceEmployee",
   "clearanceCompany",
 ]);

@@ -1,5 +1,7 @@
 import { strict as assert } from "node:assert";
 
+import { HOUSE_COLORS } from "../src/lib/hiring-pack/house-identity.ts";
+
 import { systemContractDefaults } from "../src/config/system-settings.ts";
 import { currentContractTemplate } from "../src/lib/hiring-pack/contract-text.ts";
 import {
@@ -25,8 +27,28 @@ import {
 } from "../src/lib/hiring-pack/render-hr-paper.ts";
 import {
   describeServiceDuration,
+  describeServiceDurationEn,
   PRINT_BANNER_CSS,
+  todayInCairo,
 } from "../src/lib/hiring-pack/render-shared.ts";
+import {
+  renderClearanceCompanyHtml,
+  renderClearanceEmployeeHtml,
+} from "../src/lib/hiring-pack/render-clearance.ts";
+import {
+  renderCustodyLaptopHtml,
+  renderCustodyMobileHtml,
+} from "../src/lib/hiring-pack/render-custody.ts";
+import { renderWorkerFormHtml } from "../src/lib/hiring-pack/render-worker-form.ts";
+import {
+  renderContractNonRenewalHtml,
+  renderContractRenewalHtml,
+} from "../src/lib/hiring-pack/render-renewal.ts";
+import { renderContractHtml } from "../src/lib/hiring-pack/render-contract.ts";
+import {
+  buildExperienceCertificateEnValues,
+  renderExperienceCertificateEnHtml,
+} from "../src/lib/hiring-pack/experience-certificate-en.ts";
 import {
   collectHiringPackGaps,
   emptyOffboardingProfile,
@@ -159,6 +181,20 @@ function packFixture(
 
 function copyCount(html: string): number {
   return html.split('<article class="copy').length - 1;
+}
+
+/**
+ * The printed certificate, with the on-screen banner and the stylesheet cut away.
+ *
+ * The banner is `.no-print` guidance for whoever is printing and it NAMES the three things the
+ * certificate leaves out, so a sweep of the whole page for "salary" finds the warning about salary
+ * and reports the document as breaching its own rule. What a reader receives is the article.
+ */
+function certificateOnly(html: string): string {
+  const start = html.indexOf('<article class="cert">');
+  const end = html.lastIndexOf("</article>");
+  assert.ok(start >= 0 && end > start, "the certificate page must contain a certificate");
+  return html.slice(start, end);
 }
 
 /** Everything a paper prints, as one string — prose, grids and all. */
@@ -642,6 +678,337 @@ function testTheServiceSpanCountsInArabic(): void {
   );
 }
 
+// ---------------------------------------------------------------------------------------------
+// 🔴 The certificate of experience — ENGLISH
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * THE TWO CERTIFICATES MUST NEVER DISAGREE ABOUT ONE EMPLOYMENT.
+ *
+ * They are printed minutes apart for the same person, who carries both to the same embassy. A pair
+ * that states two different lengths of service is worse than either being wrong alone, because the
+ * reader can see that the company does not know. `service-period.ts` is the single resolver behind
+ * both, and this is what stops somebody re-deriving the period in one of them.
+ */
+function testBothCertificatesStateTheSamePeriod(): void {
+  const today = todayInCairo();
+
+  // A LEAVER. Both close the period on the same day and state the same length, each in its own
+  // language and its own date format.
+  const leaver = packFixture({
+    hireDate: "2023-03-01",
+    departed: true,
+    lastWorkingDate: "2026-08-31",
+  });
+  const leaverAr = buildHrPaperValues(leaver);
+  const leaverEn = buildExperienceCertificateEnValues(leaver);
+  assert.ok(leaverAr.SERVICE_END?.includes("31 / 08 / 2026"));
+  assert.equal(leaverEn.serviceEnd, "31 August 2026", "the same day, spelled out for a foreign reader");
+  assert.equal(leaverAr.SERVICE_DURATION, "3 سنوات و6 أشهر");
+  assert.equal(leaverEn.serviceDuration, "3 years and 6 months", "and the same length of service");
+
+  // STILL SERVING. Both close at the issue date — in words, never on a rule — and both count to it,
+  // so the two spans are the same span even though neither is a fixed string.
+  const serving = packFixture({ hireDate: "2023-03-01", departed: false, lastWorkingDate: null });
+  const servingAr = buildHrPaperValues(serving);
+  const servingEn = buildExperienceCertificateEnValues(serving);
+  assert.equal(servingAr.SERVICE_END, "تاريخه");
+  assert.equal(servingEn.serviceEnd, "the date of this certificate");
+  assert.equal(
+    servingAr.SERVICE_DURATION,
+    describeServiceDuration("2023-03-01", today),
+    "the Arabic span is counted to today, not to an absent last working day",
+  );
+  assert.equal(
+    servingEn.serviceDuration,
+    describeServiceDurationEn("2023-03-01", today),
+    "and the English span is counted to the same day",
+  );
+  assert.ok(servingEn.serviceDuration.length > 0, "a serving employee's span is stated, not ruled");
+
+  // 🔴 A LEAVER NOBODY DATED. Both must still read as departed, and BOTH must decline to state a
+  // span rather than one of them quietly counting to today — which is the divergence that would let
+  // an employee carry two certificates giving two different lengths of service.
+  const undated = packFixture({ hireDate: "2023-03-01", departed: true, lastWorkingDate: null });
+  const undatedAr = buildHrPaperValues(undated);
+  const undatedEn = buildExperienceCertificateEnValues(undated);
+  assert.ok(undatedAr.SERVICE_STATUS?.includes("انتهت خدمته"));
+  assert.equal(undatedEn.departed, true);
+  assert.equal(undatedAr.SERVICE_DURATION, "", "the Arabic certificate rules the span");
+  assert.equal(undatedEn.countable, false, "and the English one declines to state one too");
+  assert.equal(undatedEn.serviceDuration, "");
+
+}
+
+/**
+ * The English page: what it says, how it says it, and the three things it does not.
+ *
+ * Asserted on the emitted HTML rather than the values, for the reason every paper in this module is:
+ * the artifact is what a stranger in another country reads.
+ */
+function testTheEnglishCertificateReadsCorrectly(): void {
+  const leaver = packFixture({
+    hireDate: "2023-03-01",
+    departed: true,
+    lastWorkingDate: "2026-08-31",
+  });
+  const page = renderExperienceCertificateEnHtml(leaver, 1);
+  // THE BANNER IS NOT THE DOCUMENT. It is `.no-print` guidance for whoever is printing, and it names
+  // the three omissions precisely in order to warn about them — so sweeping the whole page for the
+  // word "salary" finds the warning and reports the certificate as breaching its own rule. Every
+  // content assertion below reads the certificate only.
+  const html = certificateOnly(page);
+
+  assert.ok(page.includes('<html lang="en" dir="ltr">'), "the English certificate lays out LTR");
+  assert.ok(!/\{\{[A-Z_]+\}\}/.test(html), "no unsubstituted token reaches the page");
+  assert.ok(html.includes("To whom it may concern"), "it opens as a letter to a third party");
+  assert.ok(html.includes("Certificate of Experience"), "and carries its English title");
+  assert.ok(html.includes("شهادة خبرة"), "with the Arabic name under it, per the house identity");
+
+  // THE MONTH IS SPELLED OUT. "08 / 09 / 2026" is two different days either side of the Atlantic,
+  // and this is the copy read by somebody who does not know which convention we use.
+  assert.ok(html.includes("01 March 2023"), "the start date names its month");
+  assert.ok(html.includes("31 August 2026"), "and so does the last working day");
+  assert.ok(!html.includes("31 / 08 / 2026"), "the Arabic paper's numeric format does not leak in");
+
+  assert.ok(html.includes("3 years and 6 months"), "the span is stated in English");
+  assert.ok(
+    html.includes("no longer in the employment of the company"),
+    "a leaver is stated to have left",
+  );
+
+  // The same three omissions as the Arabic paper, and they matter more here rather than less.
+  for (const forbidden of ["11,000", "11000", "14,300", "Salary", "salary", "Basic"]) {
+    assert.ok(!html.includes(forbidden), `the English certificate states no pay — found "${forbidden}"`);
+  }
+  for (const forbidden of ["resigned", "resignation", "dismissed", "terminated", "reason for"]) {
+    assert.ok(
+      !html.includes(forbidden),
+      `the English certificate states no reason for leaving — found "${forbidden}"`,
+    );
+  }
+  for (const forbidden of ["conduct", "satisfactor", "recommend", "diligent", "good standing"]) {
+    assert.ok(
+      !html.includes(forbidden),
+      `this paper prints from a button for anybody, so it makes no testimonial — found "${forbidden}"`,
+    );
+  }
+
+  // Nobody signs it back: it is addressed to a reader outside the company.
+  assert.ok(html.includes("Human Resources"), "the company signs it");
+  assert.ok(html.includes("Company stamp"), "and stamps it");
+  assert.ok(!html.includes("Employee signature"), "the employee is the subject, not a party");
+
+  const serving = certificateOnly(
+    renderExperienceCertificateEnHtml(
+      packFixture({ hireDate: "2023-03-01", departed: false, lastWorkingDate: null }),
+      1,
+    ),
+  );
+  assert.ok(
+    serving.includes("remains in the employment of the company"),
+    "a serving employee is stated to be still employed",
+  );
+  assert.ok(
+    serving.includes("the date of this certificate"),
+    "and his period closes at the issue date in words, never on a rule",
+  );
+}
+
+/**
+ * The honorific and the pronoun come from ONE value, so they cannot contradict each other.
+ *
+ * "Ms. Nour Adel … he held the position" is the kind of error a reader notices before they read
+ * anything else on the page, and it is exactly what two independent lookups produce.
+ */
+function testTheEnglishCertificateAgreesWithItself(): void {
+  const female = certificateOnly(renderExperienceCertificateEnHtml(packFixture({ gender: "female" }), 1));
+  assert.ok(female.includes("Ms."), "a recorded gender is used");
+  assert.ok(female.includes("she held the position"), "and the pronoun follows it");
+  // A WORD BOUNDARY, because "she held" CONTAINS "he held" — a plain substring check here fails on
+  // the correct output and would have been "fixed" by deleting the assertion.
+  // WRITTEN WITH AN EXPLICIT CHARACTER CLASS, never a backslash escape. This line was first
+  // authored through a heredoc, which ate the backslash and left the BACKSPACE byte it stood for:
+  // the regex then matched nothing, the negated assertion passed for every input, and it pinned
+  // nothing at all. tests/heredoc-backslash-damage.test.ts caught it in the required validate job.
+  assert.ok(
+    !/(^|[^s])he held the position/.test(female),
+    "never the other pronoun on the same page as Ms.",
+  );
+
+  const male = certificateOnly(renderExperienceCertificateEnHtml(packFixture({ gender: "male" }), 1));
+  assert.ok(male.includes("Mr.") && male.includes("he held the position"));
+
+  // Nobody recorded one. "Mr./Ms." and "they" is a form, not a guess about a real person.
+  const unknown = certificateOnly(renderExperienceCertificateEnHtml(packFixture({ gender: null }), 1));
+  assert.ok(unknown.includes("Mr./Ms."), "an unrecorded gender is not guessed");
+  assert.ok(unknown.includes("they held the position"), "and the pronoun does not guess either");
+}
+
+/** The English span, which counts the last working day as a day worked, exactly as the Arabic does. */
+function testTheEnglishSpanCountsTheLastDay(): void {
+  const cases: ReadonlyArray<readonly [string, string, string]> = [
+    ["2023-03-01", "2026-08-31", "3 years and 6 months"],
+    ["2025-01-01", "2025-12-31", "1 year"],
+    ["2024-01-01", "2025-12-31", "2 years"],
+    ["2026-02-01", "2026-02-28", "1 month"],
+    ["2026-01-10", "2026-01-10", "1 day"],
+    ["2026-01-10", "2026-01-14", "5 days"],
+    ["2023-03-15", "2026-08-31", "3 years, 5 months and 17 days"],
+  ];
+  for (const [from, to, expected] of cases) {
+    assert.equal(describeServiceDurationEn(from, to), expected, `${from} → ${to}`);
+  }
+  assert.equal(describeServiceDurationEn("2023-03-01", null), "", "a missing end rules");
+  assert.equal(describeServiceDurationEn("2026-03-01", "2023-03-01"), "", "so does a reversed one");
+}
+
+/**
+ * 🔴 THE CANVA CONSTRAINTS, pinned so a later session cannot tidy them away.
+ *
+ * The owner asked (2026-09-06) for a PDF that stays editable when imported into a design tool. Three
+ * properties of THIS page are what make that work, and every one of them looks like a style choice
+ * somebody could "improve":
+ *
+ *   · NO TABLE in the certificate. Every cell border becomes its own vector rectangle on import and
+ *     every cell its own text box, so the Arabic paper's seven-row identity grid would arrive as
+ *     roughly forty elements. The facts belong in the sentence here, which is how an English
+ *     certificate of experience is written anyway.
+ *   · ONE ARTICLE PER COPY, so one copy is one page and one page is one artboard.
+ *   · REAL TEXT — no `<img>` carrying content, and nothing that would rasterise. The mark is the one
+ *     image on the page and it is identity, not content.
+ *
+ * Verified beyond this on the real PDF, which needs Chromium and so is not run here: single A4 page,
+ * three embedded fonts, and 818 characters of English recovered by `pdfjs` — the same extraction an
+ * importer performs. The two ARABIC lines (the company's Arabic name and the Arabic title) come back
+ * as reversed presentation forms, which is PDF text extraction and not something CSS can fix; they
+ * are two identity elements a Canva user deletes, and the English body is unaffected.
+ */
+function testTheEnglishCertificateStaysImportable(): void {
+  const html = certificateOnly(
+    renderExperienceCertificateEnHtml(packFixture({ departed: true, lastWorkingDate: "2026-08-31" }), 1),
+  );
+
+  assert.ok(
+    !/<table/i.test(html),
+    "the English certificate must not use a table — every cell border becomes its own element when " +
+      "the PDF is imported into a design tool, which is what this page is shaped to survive",
+  );
+  assert.ok(!/<img/i.test(html.split("</header>")[1] ?? ""), "no image below the letterhead carries content");
+
+  const page = renderExperienceCertificateEnHtml(
+    packFixture({ departed: true, lastWorkingDate: "2026-08-31" }),
+    3,
+  );
+  assert.equal(
+    page.split('<article class="cert">').length - 1,
+    3,
+    "one article per copy, so one copy is one page and one page is one artboard",
+  );
+}
+
+
+/**
+ * EVERY HOUSE COLOUR SURVIVES A BROWSER PRINT.
+ *
+ * The owner printed a clearance on 2026-09-06 and got a black-and-white page while the preview
+ * beside it was blue. Chrome's print dialog ships with "Background graphics" UNTICKED, and every
+ * coloured area on these papers is a CSS background — the 6% zebra bands and the .lh__rule that
+ * house-identity.ts calls the one element on every document. So the browser dropped all of them.
+ *
+ * IT WAS INVISIBLE FROM BOTH OF THE PLACES ANYBODY LOOKS. The screen was right, and the saved PDF
+ * was right too, because paper-pdf.ts passes printBackground: true. Only the printer disagreed,
+ * which is why it lasted: the two paths a developer checks both looked correct.
+ *
+ * Stated as an INVARIANT rather than a list, so a document added later is covered without anybody
+ * remembering this: if a page paints a house colour as a background, it must also tell the browser
+ * to keep it. Measured on the emitted PDF at the time of the fix — rendering the clearance with
+ * printBackground false lost the tint before, and loses nothing after.
+ */
+function testEveryHouseColourSurvivesABrowserPrint(): void {
+  const pack = packFixture({ departed: true, lastWorkingDate: "2026-08-31" });
+
+  const pages: ReadonlyArray<readonly [string, string]> = [
+    ["employee clearance", renderClearanceEmployeeHtml(pack, 1)],
+    ["company clearance", renderClearanceCompanyHtml(pack, 1)],
+    ["laptop custody receipt", renderCustodyLaptopHtml(pack, 1)],
+    ["phone custody receipt", renderCustodyMobileHtml(pack, 1)],
+    ["worker data form", renderWorkerFormHtml(pack, 1)],
+    ["contract renewal annex", renderContractRenewalHtml(pack, 1)],
+    ["non-renewal notice", renderContractNonRenewalHtml(pack, 1)],
+    ["employment contract", renderContractHtml(pack, 1)],
+    ["certificate of experience (Arabic)", renderHrPaperHtml(pack, 1, HR_PAPER_EXPERIENCE_CERTIFICATE_V1)],
+    ["certificate of experience (English)", renderExperienceCertificateEnHtml(pack, 1)],
+    ["confidentiality undertaking", renderHrPaperHtml(pack, 1, HR_PAPER_NDA_V1)],
+    ["social status sheet", renderHrPaperHtml(pack, 1, HR_PAPER_SOCIAL_STATUS_V1)],
+    ["first absence warning", renderHrPaperHtml(pack, 1, HR_PAPER_ABSENCE_WARNING_V1)],
+  ];
+
+  // Pages proven to paint no house colour at all, and therefore exempt from the invariant checked
+  // below. Keep this empty unless a page is shown — by this very test failing on it below — to
+  // carry no background colour at all; naming it here (with a one-line reason) is how a genuine
+  // non-user opts out without silently doing the same for a page that broke by accident.
+  const exemptFromHouseColourCheck: ReadonlySet<string> = new Set();
+
+  const pagesThatDidNotMatch: string[] = [];
+  let pagesCheckedForPrintColorAdjust = 0;
+
+  for (const [name, html] of pages) {
+    // Does this page paint a house colour as a background at all? Written against the colours
+    // rather than the word "background" so a page that only uses type and rules is not required to
+    // carry a declaration it has no use for.
+    const paintsAHouseColour = [HOUSE_COLORS.tint, HOUSE_COLORS.blue, HOUSE_COLORS.deep].some(
+      (colour) =>
+        new RegExp(`background[^;}]*${colour.replace("#", "#?")}`, "i").test(html) ||
+        /background:\s*var\(--phx-doc-(blue|tint|deep)\)/i.test(html),
+    );
+    if (!paintsAHouseColour) {
+      pagesThatDidNotMatch.push(name);
+      continue;
+    }
+    pagesCheckedForPrintColorAdjust++;
+
+    // THE LEADING BOUNDARY IS LOAD-BEARING. Written without it, this pattern also matches
+    // "-webkit-print-color-adjust", so a page carrying only the vendor spelling satisfied the
+    // standard-spelling check and this assertion could never fail on its own. Caught by mutating
+    // the fix out and watching the WRONG assertion report it.
+    assert.ok(
+      /(^|[^-])print-color-adjust:\s*exact/i.test(html),
+      `${name} paints a house colour as a background but never declares print-color-adjust: exact, ` +
+        "so a browser drops it when the operator prints — the screen and the saved PDF both stay " +
+        "correct, which is what makes this invisible",
+    );
+    assert.ok(
+      /-webkit-print-color-adjust:\s*exact/i.test(html),
+      `${name} needs the -webkit- spelling too; Chrome is what the field prints from`,
+    );
+  }
+
+  // THE LOOP ABOVE CAN GO SILENTLY VACUOUS, which is the same shape PR #3370 fixed one layer up:
+  // `paintsAHouseColour` is a regex built off the current `HOUSE_COLORS` values and the
+  // `--phx-doc-*` variable names, so renaming a CSS custom property, writing a colour as `rgb()`,
+  // or splitting `background-color` onto its own declaration line makes every page stop matching.
+  // Every iteration then hits `continue`, neither assertion above runs even once, and this test
+  // stays green while the guard it names protects nothing. Compared against `pages.length` rather
+  // than a literal count, so a paper added later does not need this line touched to stay covered.
+  const expectedPagesChecked = pages.length - exemptFromHouseColourCheck.size;
+  const unexplainedSkips =
+    pagesThatDidNotMatch.filter((name) => !exemptFromHouseColourCheck.has(name)).join(", ") ||
+    "(none by name — check exemptFromHouseColourCheck itself for a stale entry)";
+  assert.equal(
+    pagesCheckedForPrintColorAdjust,
+    expectedPagesChecked,
+    `expected ${expectedPagesChecked} of ${pages.length} pages to paint a house colour and reach ` +
+      `the print-color-adjust assertions, but only ${pagesCheckedForPrintColorAdjust} did. ` +
+      `Page(s) that stopped matching paintsAHouseColour: ${unexplainedSkips}. Either the regex no ` +
+      "longer recognises a real background declaration on that page (a renamed --phx-doc- " +
+      "variable, a colour rewritten as rgb(), background-color split onto its own line) and the " +
+      "print-color-adjust invariant is no longer covering it, or the page has genuinely stopped " +
+      "painting a house colour and belongs in exemptFromHouseColourCheck with a one-line reason " +
+      "— never widen this assertion to make a silent skip pass.",
+  );
+}
+
 export function runHrFormsHousePapersTests(): void {
   testTheAbsenceThresholdIsMoreThanTenDays();
   testTheSecondNoticeDeclaresRatherThanAcceptsAResignation();
@@ -660,4 +1027,10 @@ export function runHrFormsHousePapersTests(): void {
   testTheCertificateStatesServiceBothWays();
   testTheCertificateOmitsPaySeparationAndConduct();
   testTheServiceSpanCountsInArabic();
+  testBothCertificatesStateTheSamePeriod();
+  testTheEnglishCertificateReadsCorrectly();
+  testTheEnglishCertificateAgreesWithItself();
+  testTheEnglishSpanCountsTheLastDay();
+  testTheEnglishCertificateStaysImportable();
+  testEveryHouseColourSurvivesABrowserPrint();
 }

@@ -1426,6 +1426,9 @@ import { runEmailIdentityGuardCallersTests } from "./email-identity-guard-caller
 import { runMarketingRequestVenueRequiredTests } from "./marketing-request-venue-required.test.ts";
 import { runMarketingCustomerMergeTombstoneTests } from "./marketing-customer-merge-tombstone.test.ts";
 import { runPushOptInNudgeTests } from "./push-opt-in-nudge.test.ts";
+import { runPlansAwaitingApprovalAvailabilityTests } from "./plans-awaiting-approval-availability.test.ts";
+import { runHiringPackDepartmentNameTests } from "./hiring-pack-department-name.test.ts";
+import { runDirectOrderDecidedAtStampTests } from "./direct-order-decided-at-stamp.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4519,6 +4522,18 @@ await runTest(
 await runTest(
   "push opt-in nudge (never shown with an active subscription, dismissal is permanent and additive)",
   runPushOptInNudgeTests,
+);
+await runTest(
+  "a failed plans-awaiting-approval lookup reports itself as unavailable, never as a bare 0",
+  runPlansAwaitingApprovalAvailabilityTests,
+);
+await runTest(
+  "hiring pack department name (the roster reader and the print reader produce the SAME Arabic إدارة from the raw departments.name)",
+  runHiringPackDepartmentNameTests,
+);
+await runTest(
+  "a decided direct order always carries decided_at (venue-rejected, expired and cancelled paths all stamp it)",
+  runDirectOrderDecidedAtStampTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
