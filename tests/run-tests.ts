@@ -1446,7 +1446,7 @@ await runTest(
   runIdentityStripEmblemTests,
 );
 await runTest(
-  "every admin landing surface carries the identity strip, and no shared command centre does",
+  "each admin landing surface wears its own identity (band: CEO/SFE/Finance, strip: /admin+HR)",
   runAdminLandingIdentityStripTests,
 );
 await runTest("sidebar pending badge (restyled fill, motion kept, rail told)", runNavBadgeRestyleTests);

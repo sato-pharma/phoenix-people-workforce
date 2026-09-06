@@ -452,21 +452,32 @@ export function runCeoCommandCenterTests() {
   // this pinned exactly that gate: first `personal={!isSfe}` (wrong the moment a third variant
   // arrived), then `personal={variant === "ceo"}` by name.
   //
-  // THE WHOLE IDENTITY BAND WENT on 2026-09-03, at the owner's instruction to remove the heavy
-  // banner from every page (96e12a53b). `CeoHeroIdentity` — and the greeting inside it — is no
-  // longer rendered by `CeoCommandCenter` for ANY variant, so the leak this used to guard against
-  // (the Super Admin seeing "Dr. Anwar") is now structurally impossible: nobody gets the greeting.
-  // `CeoHeroIdentity` itself is left in the tree unmounted — flagged in that commit as its own
-  // retirement task, not done here.
+  // THE BAND WENT on 2026-09-03 (96e12a53b) and CAME BACK on 2026-09-06, at the owner's
+  // instruction both times: "remove from all pages this dump block", then "I WANT THE SFE AND THE
+  // FINANCE AND CEO TO HAVE THEIR PREVIOUS IDENTITY BANNER, THE NEW ONE IS ONLY FOR HRs".
   //
-  // Pin the ABSENCE the way the presence used to be pinned: by name, not by inference from a
-  // missing import, so a future re-mount of the greeting has to walk past this comment.
-  assert.doesNotMatch(
+  // While it was gone this pinned the ABSENCE, and the message it carried named the condition for
+  // letting it back: gated on the CEO variant BY NAME. That is now the assertion, because the
+  // absence stopped being the thing worth guarding the moment the band returned — a test pinning
+  // "not mounted" against a mounted component is a test that has to be deleted to ship, which is
+  // how a real guard gets thrown away with the stale one.
+  //
+  // The leak being prevented: `getCeoGreeting()` returns "Good morning, Dr. Anwar" and pairs with
+  // CeoHiddenNote — a greeting and a note written for one named person. `personal={!isSfe}` handed
+  // both to the Super Admin the moment the admin variant existed. `variant === "ceo"` cannot,
+  // whatever fourth variant arrives later.
+  assert.match(
     ceoComponentSource,
     /<CeoHeroIdentity/,
-    "the CEO's personal greeting must stay unmounted here — if it comes back, it must be gated on "
-      + "the CEO variant by name (personal={variant === 'ceo'}), never on !isSfe, or the Super "
-      + "Admin inherits 'Good morning, Dr. Anwar' again",
+    "the identity band is mounted here again (owner, 2026-09-06) — if it is being removed, the "
+      + "owner asked for it, and this assertion and the surrounding note must say so",
+  );
+  assert.match(
+    ceoComponentSource,
+    /personal=\{variant === "ceo"\}/,
+    "the CEO's personal greeting must be gated on the CEO variant BY NAME — never on !isSfe, or "
+      + "the Super Admin inherits 'Good morning, Dr. Anwar' and a note addressed to the Chief "
+      + "Executive",
   );
   assert.match(
     ceoComponentSource,

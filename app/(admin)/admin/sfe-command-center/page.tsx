@@ -4,12 +4,10 @@ import { Suspense } from "react";
 
 import { CeoCommandCenter } from "@/components/admin/ceo-command-center";
 import { CeoPhaseBWidgets, CeoPhaseBSkeleton } from "@/components/admin/ceo-phase-b";
-import { PhoenixIdentityStrip } from "@/components/phoenix-signature-card/PhoenixIdentityStrip";
 import { Card } from "@/components/ui/card";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { getCeoCommandCenterData } from "@/lib/ceo/command-center";
-import { formatHrIdForDisplay } from "@/lib/hr-id";
 
 export const dynamic = "force-dynamic";
 
@@ -48,45 +46,41 @@ async function SfeCommandContent({ access }: { access: Awaited<ReturnType<typeof
     );
   }
 
-  // THE IDENTITY IS BACK ON THIS PAGE, AS THE 92px STRIP — owner, 2026-09-06: "in the SFE manager
-  // account recover his identity banner, I don't know why it disappeared."
+  // THE ORIGINAL IDENTITY BANNER, restored 2026-09-06: "I WANT THE SFE AND THE FINANCE AND CEO TO
+  // HAVE THEIR PREVIOUS IDENTITY BANNER, THE NEW ONE IS ONLY FOR HRs."
   //
-  // Three instructions in sequence, and a session holding only one of them will undo another:
+  // Four instructions sit on this block and a session holding any three will undo the fourth:
   //
-  //   1. 2026-09-03 — the full-bleed black band (`AdminHeroFrame` + `CeoHeroIdentity`, a photo, a
-  //      greeting, a clock) went from here and from 131 other admin pages: "remove from all pages
-  //      this dump block". `welcome` and its prop chain were deleted with it.
-  //   2. Later the same day he asked for the identity back in the employee portal's idiom, thin —
-  //      "I don't want it to be too thick... I want it to be narrow" — and set the height himself,
-  //      under 96px. That is `PhoenixIdentityStrip`: 88px on a phone, 92px from `sm`, both fixed.
-  //      It shipped on the HR overview (#3037) and then on /admin (#3070), and in the same breath
-  //      he said the other three boards were to be left alone: "you will keep the CEO and the SFE
-  //      and the finance as they are today." So this page was excluded on purpose, and stayed the
-  //      only landing surface in the app with no identity on it at all.
-  //   3. 2026-09-06 — he asked for it back HERE, by name, and then for the other two: "yes recover
-  //      the ceo and finance banners too". So the 2026-09-03 exclusion is retired in full and all
-  //      five admin landing surfaces carry the strip. What is STILL forbidden is the black BAND —
-  //      the note in ceo-command-center.tsx is about that, and a thin strip is not the band.
+  //   1. 2026-09-03 — the full-bleed band (`AdminHeroFrame` + `CeoHeroIdentity`) went from here
+  //      and from 131 other admin pages: "remove from all pages this dump block". `welcome` and
+  //      its prop chain were deleted with it, which is why this rebuilds the object rather than
+  //      un-commenting one.
+  //   2. Later the same day — the identity back, THIN, under 96px. That is
+  //      `PhoenixIdentityStrip`, and it went to the HR overview and /admin.
+  //   3. 2026-09-06 — he reported this page had no identity at all ("I don't know why it
+  //      disappeared"): it had been excluded on 2026-09-03 and was the only landing surface in
+  //      the app greeting nobody. It was given the STRIP, which was the wrong one.
+  //   4. Same day, immediately: the strip is HR's, this board wears its own band again.
   //
-  // MOUNTED IN THE PAGE, NOT IN `CeoCommandCenter`. That component serves three variants — CEO,
-  // SFE and the Super Admin's /admin — so one strip inside it would draw the identity three times
-  // over, and stack a second on any page whose layout already carries one. All five surfaces mount
-  // their own for that reason. This file is the SFE route and nothing else.
+  // So the split is: CEO / SFE / Finance wear the band; the HR overview and /admin wear the strip.
+  // Do not "unify" them — that has now been got wrong in both directions inside four days, and
+  // tests/admin-landing-identity-strip.test.ts pins each surface to its own.
   //
-  // /people/sfe-khaled-bedair.png is not read here: the portrait comes from
-  // `resolveViewerIdentityFromPage`, the same source as the topbar chip, so the two cannot
-  // disagree — including on the JOB TITLE, which that resolver maps rather than printing the
-  // permission key.
+  // The portrait is the bundled file, not the Storage lookup. `CeoHeroIdentity` hides it on a load
+  // error, so the page renders whether or not it is present, and `viewer.initials` is the medallion
+  // behind it. This photo carries its own dark studio background — it is NOT a "-transparent"
+  // asset like the CEO's — which is why the hero masks its left and bottom edges.
+  const welcome = {
+    fullName: viewer.displayName,
+    roleLabel: "SFE Manager",
+    hrId: access.hrId,
+    imageUrl: "/people/sfe-khaled-bedair.png",
+    initials: viewer.initials,
+  };
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
-      <PhoenixIdentityStrip
-        employeeCode={formatHrIdForDisplay(access.hrId)}
-        name={viewer.displayName}
-        photoSrc={viewer.imageUrl ?? null}
-        title={viewer.roleLabel}
-      />
-      <CeoCommandCenter data={result.data} access={access} variant="sfe" />
+      <CeoCommandCenter data={result.data} welcome={welcome} access={access} variant="sfe" />
       <Suspense fallback={<CeoPhaseBSkeleton variant="sfe" />}>
         <CeoPhaseBWidgets access={access} sosPrefetched={result.data.sos} adminSignalsPrefetched={result.data.adminSignals} variant="sfe" />
       </Suspense>
