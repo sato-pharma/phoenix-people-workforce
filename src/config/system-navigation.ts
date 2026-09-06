@@ -3943,6 +3943,18 @@ type AdminHubPromotion = {
   heading: string;
   /** The hub row being replaced, matched on its href in the seeds. */
   hubHref: `/${string}`;
+  /**
+   * This promotion's anchor href opens a REAL MODULE, not a grid of modules — so the row survives
+   * the promotion instead of being dropped with the doors.
+   *
+   * Exactly one promotion sets it, and it is a correction rather than a feature: `/admin/direct-
+   * orders` is the Direct Orders workspace, and treating it as a door removed the module from
+   * every admin-shell rail on 2026-09-05. The full account is on `hubRowsFor`. Setting this on a
+   * hub that IS a page of modules puts that door back on the rail and breaks the owner's rule —
+   * which is why tests/nav-hub-promotion.test.ts exempts a flagged href from the "no door survives"
+   * assertion by NAME, one line per exception, rather than by reading the flag.
+   */
+  anchorIsAModule?: true;
   items: readonly AdminToolsPageItem[];
   /**
    * Split this hub's rows across SEVERAL bands instead of one.
@@ -4205,13 +4217,20 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
   {
     heading: "Direct Orders",
     hubHref: "/admin/direct-orders",
+    // The anchor is the workspace itself, so it stays a row. See `anchorIsAModule` and hubRowsFor.
+    anchorIsAModule: true,
     items: directOrdersPageItems,
     sectionId: "sales-direct-orders",
     split: [
       {
-        heading: "Direct Orders",
+        // "Order Desk", not "Direct Orders": the band now holds a ROW called Direct Orders (the
+        // workspace), and `groupAdminSections` blanks a heading that repeats one of its own rows —
+        // which tests/sidebar-domains.test.ts fails on. The row keeps the name the owner uses for
+        // the module; the heading is the half that gives way.
+        heading: "Order Desk",
         sectionId: "sales-direct-orders",
         hrefs: [
+          "/admin/direct-orders",
           "/admin/direct-orders/report",
           "/admin/direct-orders/held",
           "/admin/direct-orders/approval-exceptions",
@@ -4398,15 +4417,35 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
  * A hub's cards as rail rows.
  *
  * Two things happen here and nowhere else. A card pointing back at its OWN hub page is dropped —
- * Direct Orders is the only one, and keeping it would rebuild in a single row exactly the "press
- * it and land on a page of modules" this promotion exists to remove. And the eight over-budget
- * labels are swapped for their short forms.
+ * keeping it would rebuild in a single row exactly the "press it and land on a page of modules"
+ * this promotion exists to remove. And the eight over-budget labels are swapped for their short
+ * forms.
+ *
+ * THE ONE EXCEPTION, and the reason `anchorIsAModule` exists (2026-09-06). Direct Orders is the
+ * only promotion whose anchor href is not a grid of modules at all: `/admin/direct-orders` is the
+ * Direct Orders WORKSPACE — tabs, the needs-action queue, every order — and the hub page it was
+ * once paired with (`/sales/direct-orders-tools`) no longer exists on disk. Dropping it as though
+ * it were a door took the module's only rail row away from every admin-shell seat that had it:
+ * Super Admin, CEO, Finance Manager and the SFE Manager, measured, from 2026-09-05 until this. It
+ * read as a hub to `hubRoutesOnDisk()` too, because that scan identifies a hub by the page
+ * importing a `*PageItems` array and this page imports `directOrdersPageItems` for a shortcut list
+ * INSIDE the workspace — so nothing caught it either.
+ *
+ * `anchorRow` is the SEED row itself rather than the hub's own card for that href. That is
+ * deliberate on two counts: the seed row is gated `direct_orders:read`, which is the gate the page
+ * actually enforces (`assertDirectOrdersPageAccess`), while the card claims `create` because it
+ * described submitting an order; and the seed row carries `navBadge`, which a card cannot — the
+ * unbooked-sales-month badge is the Finance Manager's only chaser for that queue and it went with
+ * the row.
  *
  * `description` is deliberately not carried over: it is the hub page's card copy, and the rail
  * has nowhere to render it.
  */
-function hubRowsFor(hub: AdminHubPromotion): readonly NavigationSectionItem[] {
-  return hub.items
+function hubRowsFor(
+  hub: AdminHubPromotion,
+  anchorRow?: NavigationSectionItem,
+): readonly NavigationSectionItem[] {
+  const cards = hub.items
     .filter((card) => card.href !== hub.hubHref)
     .map((card) => ({
       excludedRoles: card.excludedRoles,
@@ -4416,6 +4455,7 @@ function hubRowsFor(hub: AdminHubPromotion): readonly NavigationSectionItem[] {
       permissions: card.permissions,
       roles: card.roles,
     }));
+  return hub.anchorIsAModule === true && anchorRow !== undefined ? [anchorRow, ...cards] : cards;
 }
 
 type HubBand = { heading: string; items: NavigationSectionItem[]; sectionId: string };
@@ -4437,8 +4477,8 @@ type HubBand = { heading: string; items: NavigationSectionItem[]; sectionId: str
  * section" assertion in tests/sidebar-domains.test.ts fails — so a split that stops matching the
  * hub's hrefs is caught rather than rendering a heading over nothing.
  */
-function hubBandsFor(hub: AdminHubPromotion): readonly HubBand[] {
-  const rows = hubRowsFor(hub);
+function hubBandsFor(hub: AdminHubPromotion, anchorRow?: NavigationSectionItem): readonly HubBand[] {
+  const rows = hubRowsFor(hub, anchorRow);
   if (hub.split === undefined) {
     return [{ heading: hub.heading, items: [...rows], sectionId: hub.sectionId }];
   }
@@ -4514,7 +4554,10 @@ function promoteHubRows(seeds: readonly NavigationSection[]): readonly Navigatio
           ...(section.gate ?? []),
           { excludedRoles: item.excludedRoles, permissions: item.permissions, roles: item.roles },
         ];
-        for (const band of hubBandsFor(hub)) {
+        // `item` — the seed row being replaced — is handed through only for a promotion whose
+        // anchor is a real module (see hubRowsFor). For every other hub it is the door, and the
+        // whole point is that it does not come back.
+        for (const band of hubBandsFor(hub, item)) {
           promoted.push({ gate, id: band.sectionId, items: band.items, label: band.heading });
         }
       }
