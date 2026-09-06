@@ -247,6 +247,19 @@ export const PHARMACY_OVERRIDE_CHAINS: readonly ChannelNameKeyword[] = [
  */
 export const STORE_OVERRIDE_NAMES: readonly ChannelNameKeyword[] = [
   { label: "الفرسان انترناشيونال جروب", stem: "الفرسان انترناشيونال" },
+  // THE SAME COMPANY, SPELLED THE WAY EL QEMA WRITES IT — «انترناشول», no ي. Owner confirmed
+  // 2026-09-07 that الفرسان بنها is a «مخزن جملة». Phoenix's own files spell it «انترناشيونال» and
+  // carry zero rows of this spelling, so the stem above matched everything until El Qema's export
+  // arrived — a latent gap that went live the moment a new distributor was registered. Two stems
+  // rather than one broadened to «الفرسان», because plain «الفرسان» and «الفرسان - الزاوية» are
+  // separate customers the owner has never ruled on, and widening the stem would silently make them
+  // warehouses too.
+  { label: "الفرسان انترناشول جروب (El Qema spelling)", stem: "الفرسان انترناشول" },
+  // «الفرسان بنها جملة» — «جملة» means WHOLESALE and is not one of the six keywords. Deliberately
+  // NOT added as a general keyword: the owner ruled «شركه أيه ام جروب» a PHARMACY on 2026-09-06, and
+  // El Qema sells to «ايه ام جروب الجمله» — the same business carrying جملة. A blanket جملة keyword
+  // would reverse a ruling he had just made.
+  { label: "الفرسان بنها جملة", stem: "الفرسان بنها" },
   { label: "طيبة جروب", stem: "طيبه جروب" },
   { label: "ابو عميرة", stem: "ابو عميره" },
   { label: "ابوعميرة", stem: "ابوعميره" },
@@ -262,6 +275,34 @@ export const PHARMACY_OVERRIDE_NAMES: readonly ChannelNameKeyword[] = [
   { label: "الفاتح لتجارة وتوزيع الادوية", stem: "الفاتح لتجاره وتوزيع" },
   { label: "الهاشم لتجارة و توزيع الادوية", stem: "الهاشم لتجاره" },
 ];
+
+/**
+ * Distributors whose ENTIRE customer base is wholesalers — every customer is a store, whatever its
+ * name says.
+ *
+ * Owner, 2026-09-07, on reviewing El Qema's whole August book: **"all here are wholeslars to be
+ * splitted"**. El Qema is an exclusive distributor selling ON to other wholesalers rather than to
+ * pharmacies, so the name test — which exists to guess at a customer nobody has classified — has
+ * nothing to add and several ways to be wrong. Of their 30 customers the six keywords caught 10;
+ * this rule catches all 30, which is what he ruled.
+ *
+ * THIS IS A STATEMENT ABOUT THE DISTRIBUTOR, NOT A SHORTCUT. Do not add a distributor here to avoid
+ * classifying its customers: it is only correct when the distributor genuinely sells wholesale-only,
+ * and it silently converts every future customer they add. It is the owner's call each time.
+ *
+ * DELIBERATELY BELOW THE "NEVER A STORE" WORDS in isStoreCustomer's order of precedence. If El Qema
+ * ever invoices a hospital or a government depot, that customer still does not split — a government
+ * store supplies its own institutions wherever it bought from, and 17 of the owner's own 2026-09-06
+ * rulings say so. No customer in their August book is affected either way; the ordering is there for
+ * the month when one is.
+ */
+export const WHOLESALE_ONLY_DISTRIBUTORS: ReadonlySet<string> = new Set(["QM"]);
+
+/** True when every one of this distributor's customers is a wholesaler by owner ruling. */
+export function isWholesaleOnlyDistributor(distributorCode: string | null | undefined): boolean {
+  const code = String(distributorCode ?? "").trim().toUpperCase();
+  return code !== "" && WHOLESALE_ONLY_DISTRIBUTORS.has(code);
+}
 
 /**
  * The business half of the trade phrase: what the company says it DOES.
@@ -409,7 +450,8 @@ export function isStoreCustomer(
   //   2. a ruling about one COMPANY      (name)
   //   3. a ruling about a CHAIN          (name)
   //   4. "never a store" words           (pharmacy / hospital / paperwork / government)
-  //   5. the owner's six store words, or the trade phrase his 167 answers describe
+  //   5. a WHOLESALE-ONLY DISTRIBUTOR     (every customer of El Qema is a wholesaler)
+  //   6. the owner's six store words, or the trade phrase his 167 answers describe
   //
   // The overrides DO apply here, unlike the hospital rule in classifyCustomerChannel: an override
   // says "this either is or is not a warehouse, full stop". Splitting an overridden pharmacy's
@@ -421,6 +463,7 @@ export function isStoreCustomer(
   if (matchesAnyName(name, PHARMACY_OVERRIDE_NAMES)) return false;
   if (matchesAnyName(name, PHARMACY_OVERRIDE_CHAINS)) return false;
   if (matchedNeverStoreKeywords(name).length > 0) return false;
+  if (isWholesaleOnlyDistributor(distributorCode)) return true;
   return matchedStoreKeywords(name).length > 0 || matchesTradePhrase(name);
 }
 

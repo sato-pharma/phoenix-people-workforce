@@ -152,6 +152,77 @@ function normalizeArea(value: string | null | undefined): string {
   return String(value ?? "").trim().toUpperCase();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ONE-WAY, DISTRIBUTOR-SPECIFIC TARGETS — owner, 2026-09-07.
+//
+// "سوف يتم تقسيم بيع القليوبية على مندوب القليوبية بالإضافة إلى كل مندوبين القاهرة بالتساوى"
+// — El Qema's Qalubeya sales spread across Qalubeya AND all six Cairo areas, evenly.
+//
+// Asked whether it runs both ways and whether it applies to every distributor, he answered
+// "one way only, only for el qema". Both halves of that answer are load-bearing:
+//
+//   ONE WAY. A warehouse IN Qalubeya reaches Cairo. A warehouse in Cairo does NOT reach Qalubeya —
+//   there is no `QM|CA*` key, so a Cairo row falls through to the ordinary six-area Cairo city. This
+//   is why the rule cannot live in AREA_CITY: city membership is symmetric by construction, and
+//   moving D11 into "Cairo" would silently start paying Qalubeya a share of every Cairo wholesaler.
+//
+//   EL QEMA ONLY. Keyed by distributor, so Overseas or Ibn Sina selling to the same Qalubeya
+//   warehouse still splits it the ordinary way — which for a one-area governorate means not at all.
+//
+// The ORIGIN AREA IS IN ITS OWN TARGET LIST. Qalubeya keeps a seventh, it does not give everything
+// away; every other split in this file behaves the same way, and leaving it out would quietly move
+// 100% of the money out of the area that made the sale.
+//
+// WHY A CODE CONSTANT AND NOT A TABLE. This is geography, and geography lives here beside AREA_CITY
+// — the same "SINGLE edit point" rule applies. A per-customer registry was considered and rejected
+// by the owner the same day: the city rule always wins, except EZ and Office.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+type DistributorSplitTarget = {
+  /** Shown as the "city" on the Store Split sheet, so the movement says which rule moved it. */
+  readonly group: string;
+  readonly areas: readonly string[];
+};
+
+/** Key is `DISTRIBUTOR|ORIGIN AREA`, both uppercase. */
+export const DISTRIBUTOR_SPLIT_TARGETS: ReadonlyMap<string, DistributorSplitTarget> = new Map([
+  ["QM|D11", {
+    group: "Qalubeya + Cairo (El Qema)",
+    areas: ["CA1", "CA2", "CA3", "CA4", "CA5", "CA6", "D11"],
+  }],
+]);
+
+function normalizeDistributor(value: string | null | undefined): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+/**
+ * The areas this row's money divides across, and the label for the movement.
+ *
+ * A distributor override wins; everything else falls through to the row's own city. Returns null
+ * when there is nothing to divide across — an area outside AREA_CITY, or a city that does not exist
+ * — which every caller treats as "leave this row exactly where it is".
+ *
+ * Deliberately ONE function rather than the three copies that grew here: `isSplitEligible`, the
+ * split itself and the detail sheet each derived the area set independently, so an override added to
+ * one of them would have produced a workbook whose Matrix and Detail sheet disagreed about the same
+ * customer.
+ */
+export function splitTargetsFor(row: StoreSplitRow): DistributorSplitTarget | null {
+  const origin = closingAreaOf(row);
+  if (!origin) return null;
+  const distributor = normalizeDistributor(row.distributorCode);
+  if (distributor) {
+    const override = DISTRIBUTOR_SPLIT_TARGETS.get(`${distributor}|${origin}`);
+    if (override) return override;
+  }
+  const city = cityOfArea(origin);
+  if (!city) return null;
+  const areas = CITY_AREAS.get(city);
+  if (!areas || areas.length === 0) return null;
+  return { group: city, areas };
+}
+
 export function cityOfArea(areaCode: string | null | undefined): string | null {
   return AREA_CITY.get(normalizeArea(areaCode)) ?? null;
 }
@@ -280,10 +351,10 @@ export function isSplitEligible(row: StoreSplitRow, period?: string | null): boo
   // and the Matrix books by the fact area. Taking a re-booked row's city from its brick would
   // subtract the money from an area that never carried it — the phantom the 441164 case produced.
   // Identical to `areaCode` on every row in production except a hand-apportioned one.
-  const city = cityOfArea(closingAreaOf(row));
-  if (!city) return false;
-  // A city of one area splits to itself — nothing moves, so skip the work entirely.
-  return (CITY_AREAS.get(city)?.length ?? 0) > 1;
+  const targets = splitTargetsFor(row);
+  if (!targets) return false;
+  // One target splits to itself — nothing moves, so skip the work entirely.
+  return targets.areas.length > 1;
 }
 
 // Kept per PRODUCT as well as per area and line: the Closing Matrix is an area x product grid, so
@@ -413,13 +484,14 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
     // The area the CLOSING books this row in — see isSplitEligible, which picked the city the same
     // way. Money must leave the area that actually holds it.
     const origin = closingAreaOf(row);
-    const city = cityOfArea(origin);
-    // isSplitEligible already proved both of these; the guard keeps the types honest.
-    const areas = city ? CITY_AREAS.get(city) : undefined;
-    if (!city || !areas || areas.length === 0) {
+    const targets = splitTargetsFor(row);
+    // isSplitEligible already proved this; the guard keeps the types honest.
+    if (!targets) {
       out.push(row);
       continue;
     }
+    const city = targets.group;
+    const areas = targets.areas;
 
     splitRowCount += 1;
     const line = String(row.officialLine ?? "").trim();
@@ -664,9 +736,10 @@ export function detailStoreSplitByCustomer<
     if (!isSplitEligible(row, period) || detailExempt.has(String(row.clientCode ?? "").trim())) continue;
     // The same origin the split itself uses, or this sheet would name a different area as the giver.
     const origin = closingAreaOf(row);
-    const city = cityOfArea(origin);
-    const areas = city ? CITY_AREAS.get(city) : undefined;
-    if (!city || !areas || areas.length === 0) continue;
+    const targets = splitTargetsFor(row);
+    if (!targets) continue;
+    const city = targets.group;
+    const areas = targets.areas;
 
     const productCode = String(row.productCode ?? "").trim().toUpperCase();
     const clientCode = String(row.clientCode ?? "").trim();

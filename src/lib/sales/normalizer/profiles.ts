@@ -217,6 +217,48 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     fingerprintColumns: ["ك.صنف", "صافى كمية", "تاريخ"],
   },
   {
+    // El Qema (QM) — registered by the owner 2026-09-07. An Arabic-headed invoice-LINE export: one
+    // row per invoice line, carrying the customer, the product, the quantity and the discount.
+    //
+    // NO TERRITORY COLUMN EXISTS. All 28 columns of the owner's August 2026 file were read and not
+    // one carries a brick, an area or a governorate. `territoryColumns` is therefore deliberately
+    // absent, and every row resolves through the stored customer -> brick map on ACCOUNT_ID alone —
+    // the fallback the other profiles only reach when their territory text is blank. That map must
+    // hold El Qema's customers before an import can place a single unit; until it does the rows land
+    // UNMAPPED rather than in the wrong area, which is the safe direction.
+    //
+    // `الصنف E` IS NOT THE ENGLISH NAME OF `الصنف` — it names a DIFFERENT PRODUCT, on every row.
+    // Measured 2026-09-07: code 5754 is Lacto 1 Advance in `الصنف` and «ريسبينزو اقراص» in `الصنف E`
+    // (40 rows); code 743 is Lacto 2 Advance against «اوتوكورت نقط» (24 rows). Mapping on `الصنف E`
+    // would file Lacto as Respinzo and Otocort. `الصنف` agrees with `رقم الصنف` on all 64 rows and is
+    // the only trustworthy product identity in this export.
+    //
+    // `المندوب` IS NOT A REP: 22 rows say «تشغيله», 18 «تشغيله واحده», 20 are blank and only 4 carry
+    // a person's name. It is an operations note, so nothing reads it.
+    //
+    // ACCOUNT_ID is a clean customer key — 30 names to 30 ids on the August file, a perfect 1:1 with
+    // no name holding two ids and no id holding two names. `س مستهلك` and `BARCODE_U` are entirely
+    // empty and are ignored.
+    //
+    // valueSource "recompute" is measured, not assumed: the sheet's own arithmetic is
+    // `اجمالى جمهور = qty x 330` then `الاجمالى = جمهور x (1 - خصم 1)`, exact on all 64 rows.
+    distributorCode: "QM",
+    distributorName: "El Qema",
+    productCodeColumns: ["رقم الصنف"],
+    productNameColumns: ["الصنف"],
+    productColumns: ["رقم الصنف", "الصنف"],
+    qtyColumns: ["الكمية"],
+    valueColumns: ["الاجمالى"],
+    valueSource: "recompute",
+    dateColumns: ["التاريخ"],
+    dateFormat: "day-first",
+    customerCodeColumns: ["ACCOUNT_ID"],
+    customerNameColumns: ["الاسم"],
+    discountColumns: ["خصم 1"],
+    bonusColumns: ["بونص"],
+    fingerprintColumns: ["رقم الفاتورة", "اجمالى جمهور", "ACCOUNT_ID"],
+  },
+  {
     // ChemiPharm pivot: brick keyed by the AREA NAME ("Area name A"), product NAME = "Attribute",
     // units = "Value". No customer code and no date column (period comes from the upload picker).
     distributorCode: "CP",
