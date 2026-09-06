@@ -126,6 +126,45 @@ schema rather than this one table:
 add a statement-level `BEFORE TRUNCATE` guard to anything described as append-only. Then decide
 whether the audit table is wanted at all — nothing writes it, so it currently protects nothing.
 
+### Resolved 2026-09-06 — and one correction to the paragraph above
+
+**"Nothing writes it" was imprecise, and the imprecision points at the wrong fix.** A live write
+path does exist. It is not a trigger — Postgres has no `SELECT` trigger, so this control could never
+have been built as one, and any plan that starts "add a trigger on sensitive-table reads" is
+describing something impossible. The writer is wired into a **view**:
+`public.v_employee_locations_masked` calls `private.log_sensitive_data_access_event()` in its
+`WHERE` clause, once per row returned. Selecting that view *is* the audit.
+
+**Nothing selects that view.** Zero application references — the only mentions in the repository are
+two test files that assert on the SQL *source text*, never on behaviour. Nine application files read
+the base table `public.employee_locations` directly through the service-role client instead, so the
+masked view is bypassed and the audit is bypassed with it. `v_employee_locations_masked` is the only
+view in the whole database that calls the writer, so this is a one-of-one control, not a
+half-finished rollout.
+
+**The control works — it is untravelled, not broken.** Verified on staging, deliberately never on
+production, because writing a row there would have destroyed the evidence: calling the writer
+returned `true` and wrote a correct row, which was then removed and the sequence reset. Two further
+findings from that test — the audit call sits *behind* the access check in an `AND`, so it
+short-circuits and could only ever have logged **successful** reads, never denied attempts; and the
+view writes on `SELECT`, so reading it inside a read-only transaction errors.
+
+Stronger proof of the emptiness than the row count: the identity sequence has `is_called = false`,
+so `nextval` has never been drawn. That rules out "rows were written and later deleted", and it
+survives a stats reset, which `n_tup_ins` does not.
+
+**Decision (owner, 2026-09-06):** *label*, not wire and not drop — migration
+`20260906181500_sensitive_data_access_audit_is_inert_say_so.sql`, which comments the table, the view
+and both writer functions, and revokes `update, delete, truncate` from `authenticated` and
+`service_role` while keeping `INSERT` so the control stays wireable.
+
+**What that deliberately leaves open:** `audit_logs` records actions and writes, **not reads**, so
+nobody can currently answer "who read employee residence data." The comment makes that gap visible
+rather than disguising it as a clean audit trail. The `BEFORE TRUNCATE` guard recommended above was
+also **not** added — a revoke narrows reachable privilege but never binds the table owner, so what
+shipped is a narrowing, not an append-only guarantee. Both remain available follow-ups, not
+oversights.
+
 ---
 
 ## 4 · Adverse-drug-reaction reporting has received zero reports
