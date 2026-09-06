@@ -1,5 +1,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { logError } from "@/lib/observability/log";
+import { runRetentionRiskPrePayrollNotice } from "@/lib/retention-risk/notify";
 import { roundCurrency } from "@/lib/payroll/money";
 import {
   createSalaryBatch,
@@ -666,6 +667,20 @@ export async function confirmPart1(
   });
   await notifyPart1Ready(updated);
   await notifyPart1SubmittedForReview(updated);
+  // The "take care, HR" notice, at the last moment before money moves. Owner instruction
+  // 2026-09-06: he was offered a scheduled notice on the 25th OR one at this point, and chose
+  // BOTH — the 25th leaves time to investigate, this one is the final check. `reason` is part of
+  // the idempotency key, so the two never suppress each other.
+  //
+  // CAUGHT, NEVER AWAITED INTO THE RESULT. Part 1 confirmation has already frozen real money and
+  // written its audit row by this line; a notification outage must not throw back through a
+  // completed financial transition and present it to HR as having failed.
+  await runRetentionRiskPrePayrollNotice("part1_confirmed", monthLabel(run.month, run.year)).catch((error) => {
+    logError("Pre-payroll retention-risk notice failed after Part 1 confirmation", {
+      labels: { event: "retention_risk_pre_payroll_failed", runId },
+      error,
+    });
+  });
   return updated;
 }
 

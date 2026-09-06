@@ -420,6 +420,7 @@ export function QuickLinkCard({
 export function CeoCommandCenter({
   data,
   extraBands,
+  topBands,
   welcome,
   access: _access,
   variant = "ceo",
@@ -427,6 +428,16 @@ export function CeoCommandCenter({
   data: CeoCommandCenterData;
   /** Rendered as the last band before the footer. The admin overview passes its Finance bands here. */
   extraBands?: ReactNode;
+  /**
+   * Rendered FIRST, directly under the hero and above every metric tile.
+   *
+   * A ReactNode rather than data on `CeoCommandCenterData`, and that is the point: the caller
+   * wraps it in its own `<Suspense>`, so a band that has to scan the CRM mirror streams in on its
+   * own without holding up the tiles. It also means a band reaches only the surfaces that pass it
+   * — the retention-risk board goes to the Super Admin and the SFE Manager, and the CEO variant
+   * simply never supplies one, so nothing here has to ask which variant is rendering.
+   */
+  topBands?: ReactNode;
   /**
    * The identity band's subject, or `null` for a surface that draws its own identity another way.
    * /admin passes null — it carries `PhoenixIdentityStrip` one level up in
@@ -539,6 +550,10 @@ export function CeoCommandCenter({
         owner={variant === "sfe" ? "SFE" : variant === "admin" ? "system" : "CEO"}
         sources={visibleDataUnavailable}
       />
+
+      {/* Above the tiles deliberately. What this slot carries is the work somebody has to do
+          TODAY, and a band placed under four screens of metrics is a band nobody reads. */}
+      {topBands}
 
       <SectionShell
         title={isSfe ? "SFE Department" : "Sato Pharma"}

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -223,10 +223,30 @@ export function runDistributorUploadNudgeTests() {
     join(ROOT, "supabase/migrations/20260903170001_notification_role_policies_distributor_upload_overdue_key.sql"),
     "utf8",
   );
+
+  // EVERY KEY MUST BE LISTED — but by the NEWEST rebuild, not by this one.
+  //
+  // Each of these migrations DROPS the notification_key CHECK and rebuilds it from a literal list,
+  // so a key missing from the newest rebuild is a key the database will refuse. That is what this
+  // loop protects, and it used to read the distributor migration above — correct only for as long
+  // as the distributor migration was the newest.
+  //
+  // It stopped being the newest on 2026-09-07, when retention_risk_alert arrived with a rebuild of
+  // its own. Pinned to the fixed filename, the loop then demanded that an ALREADY-APPLIED migration
+  // name a key that did not exist when it ran. Editing it to comply would rewrite history: the
+  // constraint it really applied to production listed eighteen keys, and the file is the record of
+  // that. Resolving the newest by sort keeps the guard's actual intent and needs no upkeep as the
+  // next audience is added.
+  const constraintRebuilds = readdirSync(join(ROOT, "supabase/migrations"))
+    .filter((name) => /^\d+_notification_role_policies_.*_key\.sql$/.test(name))
+    .sort();
+  const newestRebuild = constraintRebuilds[constraintRebuilds.length - 1];
+  assert.ok(newestRebuild, "at least one migration must rebuild the notification_key CHECK constraint");
+  const newestRebuildSql = readFileSync(join(ROOT, "supabase/migrations", newestRebuild), "utf8");
   for (const key of notificationRoleKeys) {
     assert.ok(
-      migration.includes(`'${key}'`),
-      `the rebuilt CHECK constraint drops every key it does not list, and ADD CONSTRAINT validates existing rows — omitting ${key} would fail the migration outright`,
+      newestRebuildSql.includes(`'${key}'`),
+      `the rebuilt CHECK constraint drops every key it does not list, and ADD CONSTRAINT validates existing rows — ${newestRebuild} omits ${key}, so applying it would fail outright`,
     );
   }
   assert.ok(

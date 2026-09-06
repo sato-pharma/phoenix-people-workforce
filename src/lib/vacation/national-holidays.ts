@@ -525,3 +525,63 @@ export async function getConfirmedNationalHolidays(input: {
     holidays: [...withoutOverriddenOfficialDates, ...injected].sort((left, right) => left.startDate.localeCompare(right.startDate)),
   };
 }
+
+/**
+ * Every confirmed national-holiday DATE between two ISO dates, as a set.
+ *
+ * Exists because a consumer that walks a calendar day by day needs "is this date a holiday", not
+ * a month's worth of holiday records. `getConfirmedNationalHolidays` answers one month at a time
+ * and returns SPANS (`startDate`..`endDate`, and `endDate` is null for a single day), so every
+ * such consumer was expanding the spans and looping the months itself. This is that loop, once,
+ * in the module that owns the data.
+ *
+ * BEST EFFORT, and the direction of the failure matters. A month whose lookup throws is skipped
+ * rather than fatal, so an outage UNDER-excludes holidays. Downstream that reads as an ordinary
+ * working day, which for an absence detector means a false alarm rather than a missed one — the
+ * safer direction, but not a free one: read the `verified` flag on EgyptianNationalHolidayResult
+ * before using this anywhere a missing holiday would move money.
+ *
+ * NOTE: company-vacation-report.ts keeps its own copy of this loop deliberately. That version is
+ * wrapped in the report's own `unstable_cache` under the report's cache tag so it can be busted
+ * when a leave row is approved; this one has no cache of its own and is cached by its callers.
+ */
+export async function getNationalHolidayDateSet(startDate: string, endDate: string): Promise<Set<string>> {
+  const dates = new Set<string>();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) || startDate > endDate) {
+    return dates;
+  }
+
+  const months: Array<{ month: number; year: number }> = [];
+  let year = Number(startDate.slice(0, 4));
+  let month = Number(startDate.slice(5, 7));
+  const endYear = Number(endDate.slice(0, 4));
+  const endMonth = Number(endDate.slice(5, 7));
+  while (year < endYear || (year === endYear && month <= endMonth)) {
+    months.push({ month, year });
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+  }
+
+  const nextDay = (dateIso: string) => {
+    const next = new Date(`${dateIso}T00:00:00Z`);
+    next.setUTCDate(next.getUTCDate() + 1);
+    return next.toISOString().slice(0, 10);
+  };
+
+  const results = await Promise.all(
+    months.map(({ month: m, year: y }) => getConfirmedNationalHolidays({ month: m, year: y }).catch(() => null)),
+  );
+  for (const result of results) {
+    if (!result) continue;
+    for (const holiday of result.holidays) {
+      const spanEnd = holiday.endDate ?? holiday.startDate;
+      for (let date = holiday.startDate; date <= spanEnd; date = nextDay(date)) {
+        if (date >= startDate && date <= endDate) dates.add(date);
+      }
+    }
+  }
+  return dates;
+}

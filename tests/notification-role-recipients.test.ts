@@ -69,14 +69,26 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   // roles hold sales:import, which is what the /sales/upload link in the message requires, so every
   // recipient can perform the upload rather than land on a redirect.
   distributor_upload_overdue_alert: { roles: ["Super Admin", "SFE Manager"], enabled: true },
+  // 19th key, added 2026-09-07. Payroll pays Part 1 at the start of the month and Part 2 the day
+  // after, and people collect both and resign — 23 of 59 recorded resignations land in the first
+  // ten days of a month, five medical reps resigned on 9 August 2026 alone, and four of those five
+  // had stopped logging CRM entries five or more days earlier with nothing raised anywhere. Owner,
+  // asked directly on 2026-09-06, picked all four of these roles. The subject's own line manager is
+  // a fifth recipient added per alert by the sweep from that employee's reporting line — NOT a role
+  // here, deliberately: it is one named manager per subject, and making it a role would mean every
+  // District Manager in the company receiving every alert about everybody.
+  retention_risk_alert: {
+    roles: ["HR Operations", "HR Advisory", "Super Admin", "SFE Manager"],
+    enabled: true,
+  },
 };
 
 export function runNotificationRoleRecipientsTests() {
-  assert.equal(notificationRoleKeys.length, 18, "expected exactly the 18 confirmed notification-role keys");
+  assert.equal(notificationRoleKeys.length, 19, "expected exactly the 19 confirmed notification-role keys");
   assert.deepEqual(
     [...notificationRoleKeys].sort(),
     Object.keys(EXPECTED).sort(),
-    "notificationRoleKeys set does not match the confirmed 18 keys",
+    "notificationRoleKeys set does not match the confirmed 19 keys",
   );
 
   for (const key of notificationRoleKeys) {

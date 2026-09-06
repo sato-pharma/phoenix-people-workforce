@@ -85,6 +85,7 @@ const ROLE_RECIPIENTS_MODULE: Record<NotificationRoleKey, string> = {
   payroll_workflow_alert: "Payroll",
   marketing_invoice_overdue_alert: "Marketing Requests",
   distributor_upload_overdue_alert: "Source of Sales",
+  retention_risk_alert: "Retention Risk",
 };
 
 const EMAIL_NOTIFICATIONS_MODULE: Record<EmailNotificationType, string> = {
