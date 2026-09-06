@@ -158,8 +158,9 @@ const NO_NORMS: Readonly<Record<DoctorCoverageGradeTier, number | null>> = { A: 
  * The standard as it actually stands today — nothing invented.
  *
  * AM = 2 and PM = 8-12 around 10 are the owner's own words ("8-12 pm only and 2 am accounts").
- * The 95% coverage floor is the stated AM/PM standard. PM's frequency norms are the LIVE production
- * `doctor_coverage_config.norms.sp` values ({A:2,B:1,C:1}), which is what scores PM doctors today.
+ * The 95% coverage floor is the stated AM/PM standard. PM's frequency norms mirror the LIVE
+ * production `doctor_coverage_config.norms.sp` values, which is what scores PM doctors today —
+ * kept in step by hand, since that table has no code dependency on this file or vice versa.
  *
  * ANSWERED BY THE OWNER 2026-09-06 (xlsx/kpi-standards-decisions-2026-09-06.xlsx):
  *   - AM frequency norm A = 1      → a grade A account is visited once a month. 787 of the
@@ -167,10 +168,17 @@ const NO_NORMS: Readonly<Record<DoctorCoverageGradeTier, number | null>> = { A: 
  *   - Pharmacy coverage floor = 50 → deliberately NOT the AM/PM 95%. Pharmacy coverage ran
  *     at 40.6% in August (760 of 1,872), so a 95% floor would put every rep in the red on
  *     day one. Do NOT 'align' it with the AM/PM number.
+ *   - PM frequency norms A:3 B:2 C:1 (up from 2:1:1) → left as a note on rows 9-10 rather than
+ *     the dropdown ("frequency measured in pm list onoly and a should be 3 and b 2 and c 1"),
+ *     confirmed directly in chat 2026-09-06 as a change to the existing PM/sp norms, not a new
+ *     AM answer. `doctor_coverage_config.norms.sp` was updated live in production the same day
+ *     (audit_logs entity_type=doctor_coverage_config, 2026-09-06 20:41:56 UTC) so the OLD board's
+ *     own Frequency tab and this report agree — the two disagreeing on one number is exactly the
+ *     shape #3341 retracted the visits/day band over.
  *
  * Still null on purpose, still questions waiting on the owner:
  *   - pharmacy call rate per day and pharmacy frequency norms → parked questions 1, 2 and 3
- *   - every grade B norm → he left those blank, which means 'keep it as it is today'
+ *   - AM grade B and C norms → he left those blank, which means 'keep it as it is today'
  */
 export const DEFAULT_REP_KPI_STANDARDS: RepKpiStandards = {
   AM: { callRatePerDay: 2, callRateBand: null, coverageFloorPct: 95, frequencyNorms: { A: 1, B: null, C: null } },
@@ -201,7 +209,8 @@ export const DEFAULT_REP_KPI_STANDARDS: RepKpiStandards = {
     // Pinned by tests/pm-call-rate-band.test.ts, whose separating case is 7 PM + 2 AM.
     callRateBand: { min: 8, max: 12 },
     coverageFloorPct: 95,
-    frequencyNorms: { A: 2, B: 1, C: 1 },
+    // Raised from {A:2,B:1,C:1} — owner, 2026-09-06 — see the header note above.
+    frequencyNorms: { A: 3, B: 2, C: 1 },
   },
   Pharmacy: { callRatePerDay: null, callRateBand: null, coverageFloorPct: 50, frequencyNorms: NO_NORMS },
 };

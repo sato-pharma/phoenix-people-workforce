@@ -1123,6 +1123,7 @@ import { runAchievementCountsUnmappedTests } from "./achievement-counts-unmapped
 import { runAchievementHashableJoinKeyTests } from "./achievement-hashable-join-key.test.ts";
 import { runDirectOrdersRegistryChainGrantsTests } from "./direct-orders-registry-chain-grants.test.ts";
 import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
+import { runSosWarehouseOwnerRulingsTests } from "./sos-warehouse-owner-rulings.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
 import { runClosingStoreSplitHonoursEvenSplitRegistryTests } from "./closing-store-split-honours-even-split-registry.test.ts";
 import { runClosingStoreSplitHonoursManualSplitTests } from "./closing-store-split-honours-manual-split.test.ts";
@@ -3263,6 +3264,10 @@ await runTest("direct orders registry grants every chain rung (SFE can return/re
 await runTest(
   "SoS customer channel (six words ⇒ store, مستشف ⇒ hospital and it wins the overlap without stopping the closing's city split; ة/ه fold; channel totals cover the whole side)",
   runSalesCustomerChannelTests,
+);
+await runTest(
+  "SoS warehouse rulings (all 167 the owner decided one by one on 2026-09-06 — 73 warehouse, 78 pharmacy, 16 government — pinned so a stem or a fold cannot silently re-decide one)",
+  runSosWarehouseOwnerRulingsTests,
 );
 await runTest(
   "CEO marketing approval inbox (the final rung reaches page, sidebar link and decision page in the admin shell; the opt-in widens nothing else)",

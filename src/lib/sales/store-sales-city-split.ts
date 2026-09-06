@@ -20,7 +20,7 @@
 // are passed through untouched too.
 
 import { closingAreaOf, isRebookedRow } from "@/lib/sales/closing-row-area";
-import { isStoreCustomer } from "@/lib/sales/customer-channel";
+import { isStoreCustomerForPeriod } from "@/lib/sales/customer-channel";
 
 /**
  * OWNER RULING 2026-09-04: the wholesaler city split is ON, on EVERY city. His words, in Arabic:
@@ -40,8 +40,15 @@ import { isStoreCustomer } from "@/lib/sales/customer-channel";
  * included. It is the same shape as a factory-price edit — see
  * a-price-fix-silently-restates-every-published-closing. Nothing detects it either: the
  * publication drift check compares UNITS only, and the split preserves units per line while moving
- * them between areas, so a restated month reports no drift. If a past month must be frozen, that
- * needs a period gate here — it does not exist today.
+ * them between areas, so a restated month reports no drift.
+ *
+ * THERE ARE NOW TWO PERIOD GATES, and they are separate on purpose. STORE_CITY_SPLIT_FROM_PERIOD
+ * below decides WHETHER a month splits at all (August 2026 onward). WAREHOUSE_RULE_FROM_PERIOD in
+ * customer-channel.ts decides WHICH rule says who is a warehouse (September 2026 onward), because
+ * the owner's 167 rulings landed after August Anti Infective was already published. A month can
+ * therefore split under the old classification — August does — and that combination is correct,
+ * not a half-finished migration. Both gates exist for the same reason: this whole layer is
+ * recomputed live, so any change to it is retroactive unless a date stops it.
  *
  * PREVIOUS STATE, kept because it explains the shape of the code. It was OFF from 2026-08-10,
  * re-applied 2026-08-12 after the first disable (cc6edee4) was LOST in the #2015 squash merge.
@@ -273,14 +280,25 @@ export function customersAlreadySplitAcrossAreas(rows: readonly StoreSplitRow[])
   return exempt;
 }
 
-/** A row is only moved when it is a store, on a split line, has a city, and feeds the closing. */
-export function isSplitEligible(row: StoreSplitRow): boolean {
+/**
+ * A row is only moved when it is a store, on a split line, has a city, and feeds the closing.
+ *
+ * `period` decides WHICH warehouse rule answers "is it a store" — the owner's 2026-09-06 rulings
+ * from September on, the six words alone before that (customer-channel.ts,
+ * WAREHOUSE_RULE_FROM_PERIOD). It is optional so the pure-arithmetic tests can keep calling this
+ * with a row alone, and OMITTING IT MEANS THE OLD RULE: the safe direction, since a month that
+ * fails to adopt the new classification keeps the numbers it was published with, while one that
+ * adopts it early restates a closing already sent to managers.
+ */
+export function isSplitEligible(row: StoreSplitRow, period?: string | null): boolean {
   if (row.isDirect) return false;
   if (!row.includedInClosing) return false;
   if (!isSplitEligibleLine(row.officialLine)) return false;
   // The client code is passed so an owner override can be honoured. Without it the override is
   // inert here and an overridden pharmacy's sales would still be scattered across its city.
-  if (!isStoreCustomer(row.clientName, row.clientCode, row.distributorCode)) return false;
+  if (!isStoreCustomerForPeriod(row.clientName, row.clientCode, row.distributorCode, period)) {
+    return false;
+  }
   // The CLOSING area, not the resolved one: the split moves money the Closing Matrix actually holds,
   // and the Matrix books by the fact area. Taking a re-booked row's city from its brick would
   // subtract the money from an area that never carried it — the phantom the 441164 case produced.
@@ -359,9 +377,13 @@ export function evenShares(total: number, parts: number): number[] {
  *
  * Generic over the row type so the caller keeps its own richer row shape (ClosingDetailRow) rather
  * than being narrowed to StoreSplitRow.
+ *
+ * `period` selects which warehouse rule decides who is a store — see isSplitEligible. Omitting it
+ * means the pre-2026-09 rule.
  */
 export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
   rows: readonly T[],
+  period?: string | null,
 ): StoreSplitResult<T> {
   const out: T[] = [];
 
@@ -391,7 +413,7 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
   };
 
   for (const row of rows) {
-    const eligible = isSplitEligible(row);
+    const eligible = isSplitEligible(row, period);
     if (!eligible || exemptCustomers.has(String(row.clientCode ?? "").trim())) {
       // An exempt row that WOULD otherwise have split is store money sitting on a brick that the
       // matrix never moved. The brick grid has to know, or it debits the brick anyway. Keyed by
@@ -525,8 +547,9 @@ export type StoreSplitAreaSummary = {
  */
 export function summariseStoreSplitByArea<T extends StoreSplitRow & { areaName?: string }>(
   rows: readonly T[],
+  period?: string | null,
 ): StoreSplitAreaSummary[] {
-  const { movements } = splitStoreSalesAcrossCityAreas(rows);
+  const { movements } = splitStoreSalesAcrossCityAreas(rows, period);
   if (movements.length === 0) return [];
 
   // The area's current closing position, from the untouched rows.
@@ -646,7 +669,7 @@ function round2(value: number): number {
  */
 export function detailStoreSplitByCustomer<
   T extends StoreSplitRow & { areaName?: string; clientCode?: string; productName?: string },
->(rows: readonly T[]): StoreSplitDetailRow[] {
+>(rows: readonly T[], period?: string | null): StoreSplitDetailRow[] {
   const areaNames = new Map<string, string>();
   for (const row of rows) {
     const area = normalizeArea(row.areaCode);
@@ -660,7 +683,7 @@ export function detailStoreSplitByCustomer<
 
   const byKey = new Map<string, StoreSplitDetailRow>();
   for (const row of rows) {
-    if (!isSplitEligible(row) || detailExempt.has(String(row.clientCode ?? "").trim())) continue;
+    if (!isSplitEligible(row, period) || detailExempt.has(String(row.clientCode ?? "").trim())) continue;
     // The same origin the split itself uses, or this sheet would name a different area as the giver.
     const origin = closingAreaOf(row);
     const city = cityOfArea(origin);
@@ -723,9 +746,9 @@ export function detailStoreSplitByCustomer<
 /** The same movement folded to one row per store — which stores are split, and by how much. */
 export function summariseStoreSplitByCustomer<
   T extends StoreSplitRow & { areaName?: string; clientCode?: string; productName?: string },
->(rows: readonly T[]): StoreSplitCustomerSummary[] {
+>(rows: readonly T[], period?: string | null): StoreSplitCustomerSummary[] {
   const byStore = new Map<string, StoreSplitCustomerSummary & { productCodes: Set<string> }>();
-  for (const detail of detailStoreSplitByCustomer(rows)) {
+  for (const detail of detailStoreSplitByCustomer(rows, period)) {
     const key = `${detail.clientCode}|${detail.clientName}|${detail.originAreaCode}|${detail.line}`;
     const existing = byStore.get(key);
     if (existing) {
