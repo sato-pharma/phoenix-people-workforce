@@ -4347,6 +4347,11 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/marketing-requests",
           "/admin/marketing-requests/all",
           "/admin/marketing-requests/bulk-upload",
+          // Market Awareness is a REQUEST module — a product manager raises a conference or round
+          // table and it goes for approval — so it belongs beside the other request rows rather
+          // than under ROI, which is where a reporting-shaped name would have put it. Naming it
+          // here is what stops it being appended silently to the FIRST band.
+          "/admin/market-awareness",
         ],
       },
       {
