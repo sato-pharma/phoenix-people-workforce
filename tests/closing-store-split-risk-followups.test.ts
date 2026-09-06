@@ -15,7 +15,7 @@ import {
   planChannelBreakdownStoreSplit,
 } from "../src/lib/sales/store-split-channel-breakdown.ts";
 import {
-  customersAlreadySplitAcrossAreas,
+  customersExemptFromCitySplit,
   splitStoreSalesAcrossCityAreas,
   type StoreSplitRow,
 } from "../src/lib/sales/store-sales-city-split.ts";
@@ -244,7 +244,7 @@ export async function runClosingStoreSplitRiskFollowupsTests() {
     }),
   ];
   assert.equal(
-    customersAlreadySplitAcrossAreas(twoDepotRows).has(TWO_DEPOT_CODE),
+    customersExemptFromCitySplit(twoDepotRows).has(TWO_DEPOT_CODE),
     false,
     "RISK 2: two genuine depots in two areas is not a hand-split — the exemption must not fire",
   );
@@ -258,11 +258,19 @@ export async function runClosingStoreSplitRiskFollowupsTests() {
     "RISK 2: value is preserved across the split",
   );
 
-  // And 441164 alongside it in the SAME run must still be exempt — the two customers do not
-  // interfere with each other's classification.
-  const mixedExempt = customersAlreadySplitAcrossAreas([...REUNION_ROWS, ...twoDepotRows]);
-  assert.ok(mixedExempt.has(REUNION_CODE), "RISK 2: 441164 stays exempt alongside a real wholesaler");
+  // AND 441164 IS NO LONGER EXEMPT EITHER — owner, 2026-09-07: "city rule should always win, except
+  // for ez and office in cns". The hand-apportionment route was removed that day, so a customer whose
+  // rows were split by hand is now an ordinary wholesaler and splits across its city like any other.
+  // Before that date this asserted the opposite. Nothing here reads the even-split registry, so the
+  // one surviving exemption cannot fire for either of these two customers.
+  const mixedExempt = customersExemptFromCitySplit([...REUNION_ROWS, ...twoDepotRows]);
+  assert.equal(
+    mixedExempt.has(REUNION_CODE),
+    false,
+    "RISK 2: a hand-apportioned customer is no longer exempt — the city rule wins (owner 2026-09-07)",
+  );
   assert.equal(mixedExempt.has(TWO_DEPOT_CODE), false, "RISK 2: the real wholesaler stays eligible");
+  assert.equal(mixedExempt.size, 0, "RISK 2: with no registry flag in play, nothing is exempt at all");
 
   // ── RISK 3: the Channel Breakdown brick grid does not debit an exempt customer's brick ──
   //
@@ -274,7 +282,14 @@ export async function runClosingStoreSplitRiskFollowupsTests() {
     brickId: "BR-OTHER-D22", clientCode: "W-OTHER", clientName: "مخزن أخرى", factArea: "D22",
     id: 812, productCode: "RO001", qty: 90, resolvedArea: "D22", salesValue: 27_000,
   });
-  const gridRows = [...REUNION_ROWS, OTHER_STORE_D22];
+  // The rows carry `evenSplitApplied` because that is now the ONLY route into the exemption — owner,
+  // 2026-09-07, "city rule should always win, except for ez and office in cns". The brick-grid path
+  // under test here is unchanged and still live for EZ; only the way a customer reaches it changed,
+  // so the fixture reaches it the surviving way rather than the retired one.
+  const gridRows = [
+    ...REUNION_ROWS.map((row) => ({ ...row, evenSplitApplied: true })),
+    OTHER_STORE_D22,
+  ];
   const { movements, exemptStoreValueByBrick } = splitStoreSalesAcrossCityAreas(
     gridRows as unknown as (StoreSplitRow & { brickId: string })[],
   );
@@ -380,15 +395,20 @@ export async function runClosingStoreSplitRiskFollowupsTests() {
   // brick+area with an unrelated eligible seller.
   const EXEMPT_POS_CODE = "EX-POS-9001";
   const EXEMPT_POS_NAME = "الشركة المتحدة للأدوية";
+  // `evenSplitApplied` is what makes this customer exempt. Until 2026-09-07 the re-booked areas
+  // below were enough on their own; the owner retired that route ("city rule should always win,
+  // except for ez and office in cns"), so the fixture now reaches the exemption the one way that
+  // survives. The re-booked areas are KEPT deliberately — they are what makes the two legs land in
+  // two different areas on ONE brick, which is the shape this block exists to test.
   const exemptPosRows: ClosingDetailRow[] = [
-    detailRow({
+    { ...detailRow({
       brickId: "B-SHARED", clientCode: EXEMPT_POS_CODE, clientName: EXEMPT_POS_NAME, factArea: "D22",
       id: 820, productCode: "RO001", qty: 200, resolvedArea: "D21", salesValue: 20_000,
-    }),
-    detailRow({
+    }), evenSplitApplied: true },
+    { ...detailRow({
       brickId: "B-SHARED", clientCode: EXEMPT_POS_CODE, clientName: EXEMPT_POS_NAME, factArea: "D23",
       id: 821, productCode: "RO001", qty: 150, resolvedArea: "D21", salesValue: 15_000,
-    }),
+    }), evenSplitApplied: true },
   ];
   // A completely unrelated wholesaler sharing the SAME physical brick in D22 — this is the pairing
   // the grid's brick_area figure pools together, and the one the fix must tell apart.
@@ -398,8 +418,8 @@ export async function runClosingStoreSplitRiskFollowupsTests() {
   });
 
   assert.ok(
-    customersAlreadySplitAcrossAreas([...exemptPosRows, ELIGIBLE_SHARER]).has(EXEMPT_POS_CODE),
-    "RISK 3b: two re-booked legs in two areas — this customer is exempt",
+    customersExemptFromCitySplit([...exemptPosRows, ELIGIBLE_SHARER]).has(EXEMPT_POS_CODE),
+    "RISK 3b: a registry-exempt customer with two eligible legs in two areas of one brick",
   );
 
   const { movements: posMovements, exemptStoreValueByBrick: posExempt } = splitStoreSalesAcrossCityAreas(

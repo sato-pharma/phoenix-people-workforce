@@ -19,21 +19,32 @@ import {
   type MonthlyClosingMatrix,
 } from "../src/lib/sales/monthly-distributor-import.ts";
 import {
-  customersAlreadySplitAcrossAreas,
+  customersExemptFromCitySplit,
   detailStoreSplitByCustomer,
   splitStoreSalesAcrossCityAreas,
 } from "../src/lib/sales/store-sales-city-split.ts";
 import { applyStoreSplitToMatrix } from "../src/lib/sales/store-split-matrix.ts";
 
-// A customer a human already apportioned by hand must survive the EXPORT, not just the detector.
+// An EXEMPT customer must survive the EXPORT, not just the detector.
 //
-// THE OWNER'S RULE (2026-08-06). Client 441164 ريونيون للتجارةوالاستثمار returned its whole June
+// 🔒 READ THIS FIRST — OWNER RULE, 2026-09-07: "city rule should always win, except for ez and office
+// in cns". There is now exactly ONE way to be exempt from the city split: the even-split registry
+// flag (`evenSplitApplied`), which marks a customer the DATABASE has already distributed. The
+// hand-apportionment route this file was originally written for is GONE, and the history below is
+// kept because it explains the fixture, not because the behaviour is coming back.
+//
+// WHY THE FILE STILL EARNS ITS PLACE. The exemption MACHINERY is unchanged and still live for EZ:
+// an exempt customer must pass through the matrix, the detail sheet and the produced workbook
+// untouched while a genuine wholesaler beside it splits normally. Every assertion here tests that
+// machinery. Only the door into it changed, so the fixture now carries the flag.
+//
+// THE ORIGINAL CASE, kept for the fixture's shape (2026-08-06). Client 441164 ريونيون للتجارةوالاستثمار returned its whole June
 // purchase in July — -400 units / -34,380.00 across RO001 and SA001 — and the owner ruled that
 // return splits evenly between Dakahlia 2 (D22) and Port Said - Damietta (D26). The even city share
 // is an ESTIMATE for a wholesaler nobody has apportioned; once a human has said where the sales go,
 // that answer wins.
 //
-// THE BUG THIS PINS, and it is NOT the one the first fix aimed at. `customersAlreadySplitAcrossAreas`
+// THE BUG THIS PINS, and it is NOT the one the first fix aimed at. `customersExemptFromCitySplit`
 // shipped reading `row.areaCode`. That field is the RESOLVED area: loadMonthlyClosingDetails sets it
 // from the row's BRICK's master area and only falls back to the sheet's own area when the brick is
 // unmapped. The hand-split was applied to the FACT rows, not to the brick — all four of 441164's
@@ -150,16 +161,24 @@ const REUNION_ROWS: ClosingDetailRow[] = [
   { factArea: "D22", productCode: "RO001", salesValue: -6_075 },
   { factArea: "D26", productCode: "RO001", salesValue: -6_075 },
   { factArea: "D26", productCode: "SA001", salesValue: -11_115 },
-].map((spec, index) => detailRow({
-  clientCode: REUNION_CODE,
-  clientName: REUNION_NAME,
-  factArea: spec.factArea,
-  id: 900 + index,
-  productCode: spec.productCode,
-  qty: -100,
-  // The brick's master area, NOT the fact area — this is the line the defect lived on.
-  resolvedArea: "D21",
-  salesValue: spec.salesValue,
+].map((spec, index) => ({
+  ...detailRow({
+    clientCode: REUNION_CODE,
+    clientName: REUNION_NAME,
+    factArea: spec.factArea,
+    id: 900 + index,
+    productCode: spec.productCode,
+    qty: -100,
+    // The brick's master area, NOT the fact area — this is the line the defect lived on.
+    resolvedArea: "D21",
+    salesValue: spec.salesValue,
+  }),
+  // The exemption flag. Until 2026-09-07 these rows were exempt on their SHAPE alone — two closing
+  // areas plus a row booked away from its brick. The owner retired that route ("city rule should
+  // always win, except for ez and office in cns"), leaving the even-split registry as the only door
+  // in, so the fixture carries the flag. The re-booked shape is KEPT: everything below it about the
+  // fact area versus the resolved area is unchanged and is still the thing under test.
+  evenSplitApplied: true,
 }));
 
 // A genuine wholesaler in the same city, nobody has apportioned: it MUST still split three ways.
@@ -403,10 +422,10 @@ export async function runClosingStoreSplitHonoursManualSplitTests() {
     ["D22", "D26"],
     "and the hand-split lives on the fact rows, which is the only place it was ever written",
   );
-  const exempt = customersAlreadySplitAcrossAreas(MONTH_ROWS);
+  const exempt = customersExemptFromCitySplit(MONTH_ROWS);
   assert.ok(
     exempt.has(REUNION_CODE),
-    "441164 was apportioned across two areas by hand, so the city rule must not touch it",
+    "an exempt customer is not touched by the city rule — the flag is now the only way to be exempt",
   );
   assert.equal(exempt.has("W900"), false, "a wholesaler nobody apportioned is still fair game");
 
@@ -573,23 +592,41 @@ export async function runClosingStoreSplitHonoursManualSplitTests() {
     );
   }
 
-  // ── A caller with no fact area behaves exactly as before ──
+  // ── The exemption reads the FLAG and nothing else ──
   //
-  // summariseStoreSplitByArea and the store-split unit tests hand over rows that carry no
-  // sheetAreaCode at all. Those must fall back to the resolved area rather than silently detecting
-  // nothing, or the exemption would evaporate for every caller outside the closing export.
+  // This section used to assert the opposite of every line below it: the exemption was inferred from
+  // the row SHAPE, so stripping the fact area made a customer stop being exempt, and spreading it
+  // across areas made one start. Both are now irrelevant — owner, 2026-09-07, "city rule should
+  // always win, except for ez and office in cns".
+  //
+  // The property is worth pinning in its new form because it is what makes the exemption
+  // caller-independent: summariseStoreSplitByArea and the unit tests hand over rows with no
+  // sheetAreaCode at all, and EZ must be exempt for them exactly as it is for the export.
   const withoutFactArea = MONTH_ROWS.map(({ sheetAreaCode: _sheetAreaCode, ...row }) => row);
-  assert.equal(
-    customersAlreadySplitAcrossAreas(withoutFactArea).has(REUNION_CODE),
-    false,
-    "with no fact area there is nothing to detect, and the resolved view honestly shows one area",
+  assert.ok(
+    customersExemptFromCitySplit(withoutFactArea).has(REUNION_CODE),
+    "no fact area, still exempt — the flag does not depend on which areas the rows carry",
   );
   const spreadOnResolved = MONTH_ROWS.map((row, index) => (
     row.clientCode === REUNION_CODE ? { ...row, areaCode: index % 2 === 0 ? "D21" : "D22" } : row
   ));
   assert.ok(
-    customersAlreadySplitAcrossAreas(spreadOnResolved).has(REUNION_CODE),
-    "a customer spread across areas by BRICK resolution stays exempt — the union keeps every "
-      + "exemption the resolved-area check already granted",
+    customersExemptFromCitySplit(spreadOnResolved).has(REUNION_CODE),
+    "spread across areas by BRICK resolution, still exempt — same reason",
+  );
+
+  // AND THE LOAD-BEARING ONE: strip the flag and the exemption is GONE, even though these rows have
+  // exactly the shape that used to earn it — two closing areas, every row booked away from its own
+  // brick. If a future change reintroduces shape-based detection, this is the assertion that fails.
+  const flagStripped = MONTH_ROWS.map(({ evenSplitApplied: _flag, ...row }) => row);
+  assert.equal(
+    customersExemptFromCitySplit(flagStripped).has(REUNION_CODE),
+    false,
+    "without the registry flag a hand-apportioned customer is NOT exempt — the city rule wins",
+  );
+  assert.equal(
+    customersExemptFromCitySplit(flagStripped).size,
+    0,
+    "and nothing else in the month is exempt either — there is one door, and it is closed",
   );
 }
