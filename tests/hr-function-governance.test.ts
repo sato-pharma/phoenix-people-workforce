@@ -219,6 +219,25 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/recruitment/account-activation.ts",
   "src/lib/reports/organogram.ts",
   "src/lib/resignations/service.ts",
+  // Names both seats in `roleHrefsForSubject`, added 2026-09-07 with the retention-risk alert.
+  // Reviewed verdict: ROUTING ONLY, and it can only ever REMOVE a wrong destination — it grants
+  // nothing and it cannot widen what either seat may open.
+  //
+  // The two strings are keys in a role -> URL map consumed by `notificationHrefForViewerRole`, so
+  // the alert's action link points at the address each recipient's own shell serves. Employee 360
+  // exists at three addresses, one per shell, and `portal-twins.ts` carries no forwarding rule for
+  // it, so without this map an HR seat would be sent to an address that is not theirs. Nothing
+  // branches on the value beyond picking a string.
+  //
+  // What the link opens is gated where it always was, and that gate is NARROWER than the alert's
+  // audience: `/employee-360/[hrId]` requires `employee_profile:read` AND passes
+  // `canViewEmployee360Subject`, which limits both HR seats to Medical Reps and themselves. Every
+  // subject of a CRM-silence alert is a Medical Rep by construction (`logsOwnCrmVisitsTitle`), so
+  // the link resolves to a report they may already open; an extended-leave subject who is not
+  // field force lands on that page's own out-of-scope state, which is the same answer they would
+  // get by typing the address. Removing the two keys would not close anything — it would only send
+  // them to a shell that bounces them.
+  "src/lib/retention-risk/messages.ts",
   "src/lib/support-requests/service.ts",
   "src/lib/workflow-control/definitions.ts",
 ];
