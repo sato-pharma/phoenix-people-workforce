@@ -1421,6 +1421,7 @@ import { runReact418HydrationSafeTextTests } from "./react-418-hydration-safe-te
 import { runPayrollHoldReviewTests } from "./payroll-hold-review.test.ts";
 import { runPmCallRateBandTests } from "./pm-call-rate-band.test.ts";
 import { runMarketingRequestVenueRequiredTests } from "./marketing-request-venue-required.test.ts";
+import { runMarketingCustomerMergeTombstoneTests } from "./marketing-customer-merge-tombstone.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4497,6 +4498,10 @@ await runTest(
 await runTest(
   "a marketing request must name at least one target venue (blocker list + create + resubmit)",
   runMarketingRequestVenueRequiredTests,
+);
+await runTest(
+  "a retired marketing customer names its successor in a column, and the migration backfills nothing",
+  runMarketingCustomerMergeTombstoneTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
