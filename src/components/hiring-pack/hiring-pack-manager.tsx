@@ -610,6 +610,7 @@ function signDatesShape(value: (document: HiringPackDocument) => string): Record
     deemedResignation: value("deemedResignation"),
     appointmentDocsReturn: value("appointmentDocsReturn"),
     experienceCertificate: value("experienceCertificate"),
+    experienceCertificateEn: value("experienceCertificateEn"),
     form6: value("form6"),
     resignation: value("resignation"),
     mutualTermination: value("mutualTermination"),
@@ -650,6 +651,7 @@ function signedDatesFromPack(pack: HiringPackData | null): Record<HiringPackDocu
     // Nobody signs a certificate of experience back — the company certifies it and hands it over —
     // and it is reissued whenever it is asked for, so one date here could hold only the newest.
     experienceCertificate: "",
+    experienceCertificateEn: "",
     form6: pack?.offboarding.form6SignedDate ?? "",
     resignation: pack?.offboarding.resignationSignedDate ?? "",
     mutualTermination: pack?.offboarding.mutualTerminationSignedDate ?? "",
@@ -2119,7 +2121,36 @@ export function HiringPackManager({
                     signedDate={null}
                     signable={false}
                     subtitle="شهادة خبرة — تُصرف بناءً على طلب صاحب الشأن"
-                    title="Certificate of experience"
+                    title="Certificate of experience — Arabic"
+                  />
+                  {/*
+                    THE ENGLISH COUNTERPART. Both are current at once and HR prints whichever is
+                    being asked for — the Arabic one for an Egyptian reader, this one for an embassy,
+                    a Gulf employer or a bank. They state the same period from the same resolver, so
+                    somebody handed both cannot be given two different lengths of service.
+                  */}
+                  <DocumentCard
+                    busy={false}
+                    canManage={canManage}
+                    copies={copies.experienceCertificateEn}
+                    gaps={gapsFor(pack.gaps, "experienceCertificateEn")}
+                    onCopiesChange={(value) => setCopiesFor("experienceCertificateEn", value)}
+                    footnote={
+                      pack.employee.departed
+                        ? "For an embassy, a foreign employer or a bank. It will state that this employee's service ENDED. Same three omissions as the Arabic copy — no salary, no reason for leaving, no statement of conduct."
+                        : "For an embassy, a foreign employer or a bank. This employee has not left, so it will state that he is STILL EMPLOYED and close the period at today's date."
+                    }
+                    onPreview={() => openPreview("experienceCertificateEn")}
+                    onPrint={() => openPrint("experienceCertificateEn")}
+                    onSign={() => undefined}
+                    onSignDateChange={() => undefined}
+                    printedAt={null}
+                    printingNote="Two copies. Use Download PDF on the print view — that file keeps its text editable if it is later opened in a design tool. Do not flatten it to an image."
+                    signDate=""
+                    signedDate={null}
+                    signable={false}
+                    subtitle="Certificate of Experience — English, for use abroad"
+                    title="Certificate of experience — English"
                   />
                 </div>
 

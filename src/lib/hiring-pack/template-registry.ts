@@ -254,6 +254,18 @@ export const DOCUMENT_TEMPLATE_VERSIONS: readonly DocumentTemplateVersion[] = [
     note: "The first paper in this module drawn from scratch rather than typeset from a Word file the owner supplied, and the only one written for a reader OUTSIDE the company — a future employer, an embassy, a bank. Three things it deliberately does not say, each an omission rather than an unfinished half: NO SALARY, because a certificate of experience is not a salary certificate and printing pay here would disclose it to every reader of every copy; NO REASON FOR LEAVING, which is recorded on the resignation or mutual-termination form where a reader entitled to it looks; and NO STATEMENT OF CONDUCT, because «حسن السير والسلوك» is a testimonial and this paper prints from a button for anybody in the system, including somebody dismissed for cause. It states service two ways — ended, or still serving — resolved from the employee's own departure flag rather than from whether a last-working date happens to be on file, since an absent date means nobody recorded one and not that he is still here. The subtitle carries no article number: nothing on the page rests on a specific article, and a citation invented to match the house pattern is how a wrong one reaches a document a lawyer reads.",
   },
   {
+    id: "experience-certificate-en-v1",
+    document: "experienceCertificateEn",
+    version: 1,
+    status: "current",
+    labelEn: "Certificate of experience — English",
+    labelAr: "شهادة خبرة — باللغة الإنجليزية",
+    effectiveFrom: "2026-09-06",
+    supersededOn: null,
+    supersededBy: null,
+    note: "The English counterpart of `experience-certificate-v1`, for a reader outside Egypt — an embassy, a Gulf employer, a bank. BOTH ARE CURRENT AT ONCE and HR prints whichever is asked for; they are two documents rather than two versions of one for the reason the custody pair are, since the archive’s rule is exactly one current version per document and filing the English one as a version of the Arabic would tell HR the Arabic had been withdrawn. It states the same three omissions and the same period, and the period is resolved in `service-period.ts` which BOTH read — the two are routinely printed minutes apart for one person, and a pair that disagrees about how long he worked here is worse than either being wrong alone. Two differences from the Arabic paper, both deliberate: it names the position and NOT the department, because the pack holds the department only in Arabic and an Arabic department name inside an English sentence read at a visa window is worse than none; and it is written as prose rather than around a bordered identity grid, because the owner asked for a PDF that stays editable when imported into Canva and every cell border in such a grid arrives there as its own vector rectangle. Its date format spells the month out — `08 / 09 / 2026` is two different days either side of the Atlantic, and this is the copy read by a stranger.",
+  },
+  {
     id: "contract-renewal-v1",
     document: "contractRenewal",
     version: 1,
