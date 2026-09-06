@@ -1112,13 +1112,13 @@ const MATRIX_WIDTH = {
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * THE FROZEN PANE WAS WIDER THAN A PHONE. The template gives column B — the AREA name, "Cairo 1" —
  * a width of 86.71 characters, about 610px, and both matrices freeze at `xSplit="2"`, so columns A
- * and B are pinned on screen. That is 724px of frozen label on a 375px phone: the pinned block alone
- * is twice the screen, so scrolling right never reaches a number. Re-cut to 16 and 20 it is 252px,
+ * and B are pinned on screen. That is 734px of frozen label on a 375px phone: the pinned block alone
+ * is twice the screen, so scrolling right never reaches a number. Re-cut to 16 and 20 it is 262px,
  * which leaves room for the data to arrive beside it.
  *
  * The rest is arithmetic and it is worth stating plainly, because it bounds what this can achieve: a
  * line with 24 products spends 24 x 3 columns on the products alone. At the widths above that is
- * about 5,600px, and no honest re-sizing brings a matrix of that shape onto a 375px screen. What it
+ * about 5,400px, and no honest re-sizing brings a matrix of that shape onto a 375px screen. What it
  * does is make the page usable — labels pinned and visible, numbers reachable by scrolling — rather
  * than fit it. `Area x Product` is the page that genuinely fits, and it holds the same figures.
  *
