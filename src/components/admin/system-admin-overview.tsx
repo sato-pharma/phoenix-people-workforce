@@ -74,18 +74,16 @@ export function SystemAdminOverview({
           92px from `sm` up, both fixed. Anything added here later is measured against that.
 
           WHY IT IS MOUNTED HERE AND NOT IN `CeoCommandCenter`. That component hosts three
-          variants, and the other boards were explicitly excluded — the owner, on 2026-09-03: "you
-          will keep the CEO and the SFE and the finance as they are today. Exactly, you will not
-          touch them." This file is imported by `/admin` alone, so mounting the strip in it cannot
-          reach them no matter how the variant flags are later rearranged. The "do not restore it"
-          note in ceo-command-center.tsx still stands and is not contradicted here: what it forbids
-          is the black hero band, on those pages.
+          variants (CEO, SFE and this one), so a strip inside it would draw the identity three
+          times over. This file is imported by `/admin` alone. The "do not restore it" note in
+          ceo-command-center.tsx still stands and is not contradicted here: what it forbids is the
+          black hero band.
 
-          THE SFE HALF OF THAT EXCLUSION WAS REVERSED on 2026-09-06 — "in the SFE manager account
-          recover his identity banner" — and the strip is mounted the same way, in
-          app/(admin)/admin/sfe-command-center/page.tsx rather than in the shared component. The
-          CEO and Finance boards are STILL excluded; do not read the SFE reversal as covering
-          them. */}
+          THE 2026-09-03 EXCLUSION IS RETIRED. It read "you will keep the CEO and the SFE and the
+          finance as they are today. Exactly, you will not touch them", and the owner lifted it
+          himself on 2026-09-06 — the SFE Manager first, then "yes recover the ceo and finance
+          banners too". All five admin landing surfaces now carry the strip, each mounted in its
+          own page for the reason above. */}
       <PhoenixIdentityStrip
         employeeCode={identity.employeeCode}
         name={identity.displayName}

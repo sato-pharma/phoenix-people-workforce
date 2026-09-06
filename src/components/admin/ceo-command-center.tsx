@@ -457,15 +457,18 @@ export function CeoCommandCenter({
 
           WHAT THAT LAST SENTENCE USED TO SAY, and why it changed. It read "do not restore parity
           with another command center — none of them carry one any more", and that is no longer
-          true: /admin, the HR overview and, since 2026-09-06, the SFE overview each mount a
-          `PhoenixIdentityStrip` — the thin 92px identity the owner asked for later on 2026-09-03,
-          which is a different thing from the black band this note is about. Each of those mounts
-          lives in the PAGE, never in this component, precisely so that the CEO and Finance boards
-          cannot inherit one: "you will keep the CEO and the SFE and the finance as they are today"
-          (2026-09-03) still stands for the CEO and Finance, and only the SFE half was reversed, by
-          name, on 2026-09-06. So: nothing identity-shaped goes in THIS file. If the owner ever
-          asks for the CEO board's identity back, it mounts in
-          app/(admin)/admin/ceo-command-center/page.tsx, the way the other three do. */}
+          true of ANY of them: /admin, the HR overview and — since 2026-09-06 — the SFE, CEO and
+          Finance boards all mount a `PhoenixIdentityStrip`. That is the thin 92px identity the
+          owner asked for later on 2026-09-03, and it is a different thing from the black band this
+          note is about. His 2026-09-03 exclusion ("you will keep the CEO and the SFE and the
+          finance as they are today") was retired by him on 2026-09-06, in two steps: the SFE
+          Manager first, then "yes recover the ceo and finance banners too".
+
+          NONE OF THOSE FIVE MOUNTS IS IN THIS FILE, and that is not a leftover of the exclusion —
+          it is the rule. This component serves three variants (CEO, SFE, and the Super Admin's
+          /admin), so one strip here would draw an identity three times over, and stack a second
+          one on any page whose own layout already carries it. The strip belongs to the PAGE.
+          Nothing identity-shaped goes in THIS file. */}
 
       <DataUnavailableNotice
         owner={variant === "sfe" ? "SFE" : variant === "admin" ? "system" : "CEO"}

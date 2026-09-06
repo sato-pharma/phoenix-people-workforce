@@ -754,9 +754,16 @@ export function FinanceCommandCenter({
           the first fold before any real content. The same removal was made on the HR command
           center and, via `AdminPageHero`, on the other 131 admin pages the same day.
 
-          Nothing was lost. The name and role label are in the topbar chip on every page of the
-          shell, from `resolveViewerIdentityFromPage`. Do not restore it and do not "restore
-          parity" with another command center — none of them carry one any more. */}
+          Do not restore the BAND here.
+
+          THE THIN STRIP IS A DIFFERENT THING AND IT IS BACK. Later on 2026-09-03 the owner asked
+          for the identity in the employee portal's idiom, narrow, under 96px — that is
+          `PhoenixIdentityStrip`, and on 2026-09-06 he put it on this page too ("yes recover the ceo
+          and finance banners too"). It is mounted in
+          app/(admin)/admin/finance-command-center/page.tsx, NOT here: this component's bands are
+          reused by the Super Admin overview through `FinanceAdminBands`, which already carries a
+          strip one level up, so a strip in this file would stack two identities on his page. All
+          five admin landing surfaces mount their own for that reason. */}
 
       <UnavailableNotice sources={view.unavailable} />
 

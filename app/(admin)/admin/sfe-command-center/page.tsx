@@ -63,14 +63,15 @@ async function SfeCommandContent({ access }: { access: Awaited<ReturnType<typeof
   //      he said the other three boards were to be left alone: "you will keep the CEO and the SFE
   //      and the finance as they are today." So this page was excluded on purpose, and stayed the
   //      only landing surface in the app with no identity on it at all.
-  //   3. 2026-09-06 — he asked for it back HERE, by name. That reverses (2) for THIS page only.
-  //      THE CEO AND FINANCE BOARDS ARE NOT COVERED and must not be "brought into parity": their
-  //      exclusion is still the standing instruction until he says otherwise.
+  //   3. 2026-09-06 — he asked for it back HERE, by name, and then for the other two: "yes recover
+  //      the ceo and finance banners too". So the 2026-09-03 exclusion is retired in full and all
+  //      five admin landing surfaces carry the strip. What is STILL forbidden is the black BAND —
+  //      the note in ceo-command-center.tsx is about that, and a thin strip is not the band.
   //
   // MOUNTED IN THE PAGE, NOT IN `CeoCommandCenter`. That component serves three variants — CEO,
-  // SFE and the Super Admin's /admin — so a strip inside it would reach the CEO board the moment
-  // the variant flags were rearranged. /admin solves it the same way, for the same reason. This
-  // file is the SFE route and nothing else.
+  // SFE and the Super Admin's /admin — so one strip inside it would draw the identity three times
+  // over, and stack a second on any page whose layout already carries one. All five surfaces mount
+  // their own for that reason. This file is the SFE route and nothing else.
   //
   // /people/sfe-khaled-bedair.png is not read here: the portrait comes from
   // `resolveViewerIdentityFromPage`, the same source as the topbar chip, so the two cannot
