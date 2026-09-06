@@ -29,7 +29,7 @@ type Row = {
  *
  * They used to share a single literal "TEST-CODE". That is not a neutral placeholder: a customer
  * whose rows sit in more than one area counts as already apportioned by hand and is exempt from the
- * city split (customersAlreadySplitAcrossAreas). One code across Menoufia, Alexandria and Cairo
+ * city split (customersExemptFromCitySplit). One code across Menoufia, Alexandria and Cairo
  * therefore exempted the ENTIRE fixture, and every split assertion below read zero — splitRowCount
  * came back 0 instead of 3. A test can still pass its own explicit code to model one chain trading
  * in two places.

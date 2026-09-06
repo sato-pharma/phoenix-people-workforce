@@ -1123,6 +1123,7 @@ import { runAchievementCountsUnmappedTests } from "./achievement-counts-unmapped
 import { runAchievementHashableJoinKeyTests } from "./achievement-hashable-join-key.test.ts";
 import { runDirectOrdersRegistryChainGrantsTests } from "./direct-orders-registry-chain-grants.test.ts";
 import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
+import { runSosWarehouseOwnerRulingsTests } from "./sos-warehouse-owner-rulings.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
 import { runClosingStoreSplitHonoursEvenSplitRegistryTests } from "./closing-store-split-honours-even-split-registry.test.ts";
 import { runClosingStoreSplitHonoursManualSplitTests } from "./closing-store-split-honours-manual-split.test.ts";
@@ -1435,6 +1436,7 @@ import { runSosDashboardIncompleteReadIsVisibleTests } from "./sos-dashboard-inc
 import { runEmployeeRlsPolicyLockTests } from "./employee-rls-policy-lock.test.ts";
 import { runImportDiagnosticsVerdictTests } from "./import-diagnostics-verdict.test.ts";
 import { runMonthlySalesRunReconcileTests } from "./monthly-sales-run-reconcile.test.ts";
+import { runChannelsByRepPharmacyOverrideTests } from "./channels-by-rep-pharmacy-override.test.ts";
 import { runRetentionRiskDetectorTests } from "./retention-risk-detector.test.ts";
 import { runRetentionRiskNotifyTests } from "./retention-risk-notify.test.ts";
 
@@ -3267,6 +3269,10 @@ await runTest(
   runSalesCustomerChannelTests,
 );
 await runTest(
+  "SoS warehouse rulings (all 167 the owner decided one by one on 2026-09-06 — 73 warehouse, 78 pharmacy, 16 government — pinned so a stem or a fold cannot silently re-decide one)",
+  runSosWarehouseOwnerRulingsTests,
+);
+await runTest(
   "CEO marketing approval inbox (the final rung reaches page, sidebar link and decision page in the admin shell; the opt-in widens nothing else)",
   runCeoMarketingApprovalInboxTests,
 );
@@ -4569,11 +4575,15 @@ await runTest(
   runMonthlySalesRunReconcileTests,
 );
 await runTest(
+  "channels by rep honours the owner pharmacy overrides (578,248.77 EGP read as stores on one tab)",
+  runChannelsByRepPharmacyOverrideTests,
+);
+await runTest(
   "retention risk detector (a weekly off bridges a run, leave bridges it too, managers are never measured)",
   runRetentionRiskDetectorTests,
 );
 await runTest(
-  "retention risk alerts (in-app/email/Telegram never push, the message reports and never accuses)",
+  "retention risk alerts (in-app and Telegram, never email or push; the message reports and never accuses)",
   runRetentionRiskNotifyTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
