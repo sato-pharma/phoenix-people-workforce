@@ -1388,6 +1388,9 @@ export async function getSosDashboard(
     whiteSpaceAreas,
     insights: buildInsights({
       coverage,
+      // Same array that fills `incompleteReason` above. It is surfaced here because that field is
+      // read by no component, so a failed aggregate had no way to reach the screen.
+      incompleteReason: failedRpcs,
       byDistributor,
       byRegion,
       byArea,
@@ -1432,7 +1435,11 @@ async function loadSosCoverageReport(): Promise<SosCoverageReport> {
   );
 }
 
-function buildInsights(input: {
+/**
+ * Pure: the Insights strip. Exported for tests — the incomplete-read warning must be provable
+ * without a database, and it must come FIRST so a partial read is never read as a fall in sales.
+ */
+export function buildInsights(input: {
   byDistributor: SosDistributorRow[];
   byRegion: SosGroupRow[];
   byArea: SosGroupRow[];
@@ -1445,10 +1452,23 @@ function buildInsights(input: {
   mom?: SosMomComparison | null;
   /** Batch coverage; null when the lookup failed. */
   coverage?: SosCoverageReport | null;
+  /** Aggregates that failed to load. Empty on a healthy read. */
+  incompleteReason: string[];
 }): SosDashboardData["insights"] {
   const out: SosDashboardData["insights"] = [];
   const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
-  // FIRST, before any movement commentary: if a month or a distributor never landed, every "up
+  // FIRST OF ALL, ahead of even the coverage gap: if an aggregate did not load, the numbers below
+  // are not a smaller month, they are a partial read. `incompleteReason` was computed on every load
+  // and consumed by NOTHING — no component read it — so a timed-out RPC rendered as clean zeros and
+  // a reader had no way to tell "no sales" from "did not load".
+  if (input.incompleteReason.length > 0) {
+    const failed = input.incompleteReason.join(", ");
+    out.push({
+      tone: "danger",
+      text: `This view is INCOMPLETE — ${input.incompleteReason.length} data source(s) failed to load (${failed}). Every figure below is partial: read it as missing data, never as a fall in sales.`,
+    });
+  }
+  // Then, before any movement commentary: if a month or a distributor never landed, every "up
   // 12% vs last month" below it is partly measuring which files were uploaded.
   const coverageWarning = input.coverage ? describeSosCoverageGaps(input.coverage) : null;
   if (coverageWarning) out.push({ tone: "danger", text: coverageWarning });
