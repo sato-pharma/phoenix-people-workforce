@@ -1123,6 +1123,7 @@ import { runAchievementCountsUnmappedTests } from "./achievement-counts-unmapped
 import { runAchievementHashableJoinKeyTests } from "./achievement-hashable-join-key.test.ts";
 import { runDirectOrdersRegistryChainGrantsTests } from "./direct-orders-registry-chain-grants.test.ts";
 import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
+import { runSosWarehouseOwnerRulingsTests } from "./sos-warehouse-owner-rulings.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
 import { runClosingStoreSplitHonoursEvenSplitRegistryTests } from "./closing-store-split-honours-even-split-registry.test.ts";
 import { runClosingStoreSplitHonoursManualSplitTests } from "./closing-store-split-honours-manual-split.test.ts";
@@ -1433,7 +1434,9 @@ import { runDirectOrderDecidedAtStampTests } from "./direct-order-decided-at-sta
 import { runImportCoverageColumnMeaningTests } from "./import-coverage-column-meaning.test.ts";
 import { runSosDashboardIncompleteReadIsVisibleTests } from "./sos-dashboard-incomplete-read-is-visible.test.ts";
 import { runEmployeeRlsPolicyLockTests } from "./employee-rls-policy-lock.test.ts";
+import { runImportDiagnosticsVerdictTests } from "./import-diagnostics-verdict.test.ts";
 import { runMarketAwarenessTests } from "./market-awareness.test.ts";
+import { runMonthlySalesRunReconcileTests } from "./monthly-sales-run-reconcile.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -3263,6 +3266,10 @@ await runTest(
   runSalesCustomerChannelTests,
 );
 await runTest(
+  "SoS warehouse rulings (all 167 the owner decided one by one on 2026-09-06 — 73 warehouse, 78 pharmacy, 16 government — pinned so a stem or a fold cannot silently re-decide one)",
+  runSosWarehouseOwnerRulingsTests,
+);
+await runTest(
   "CEO marketing approval inbox (the final rung reaches page, sidebar link and decision page in the admin shell; the opt-in widens nothing else)",
   runCeoMarketingApprovalInboxTests,
 );
@@ -4555,6 +4562,14 @@ await runTest(
 await runTest(
   "employee RLS policy lock (the 10 policies the users drop could have stripped silently)",
   runEmployeeRlsPolicyLockTests,
+);
+await runTest(
+  "sales diagnostics verdict (strict-check errors can never sit behind a green would-import-cleanly banner)",
+  runImportDiagnosticsVerdictTests,
+);
+await runTest(
+  "monthly sales run reconcile (a failed batch read must not un-confirm the whole month)",
+  runMonthlySalesRunReconcileTests,
 );
 await runTest(
   "market awareness (manager step by identity, approved is locked, Head Office never targetable)",

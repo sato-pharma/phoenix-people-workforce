@@ -4,7 +4,13 @@
 // The owner's rule (2026-08-04): a customer whose NAME contains any of six Arabic words is a
 // store; everything else is a pharmacy. Hospitals were added as a third channel on 2026-08-05 on
 // the same principle — a name carrying مستشف (which covers both مستشفى and مستشفي) or the latin
-// "hosp" is a hospital. This is deliberately computed at READ time from the customer's name rather
+// "hosp" is a hospital.
+//
+// EXTENDED 2026-09-06, after he ruled on 167 customers one by one (see THE TRADE PHRASE below):
+// the six words are joined by a PHRASE — a business word (تجارة / توزيع / توريد) together with a
+// goods word (أدوية / دواء) — plus four override lists and a set of words that mean "never a
+// store". `isStoreCustomer` holds the single order of precedence; read that function to see the
+// whole rule in one place. This is deliberately computed at READ time from the customer's name rather
 // than stored on the row, so it applies identically to the sales already uploaded and to every
 // future historical upload — a new sheet needs no backfill, no migration and no re-classification
 // step. Add a word to either list below and the whole history re-classifies on the next render.
@@ -55,6 +61,16 @@ const LETTER_FOLD: ReadonlyMap<string, string> = new Map([
   ["ى", "ي"], // ى -> ي
   ["ی", "ي"], // ی (farsi yeh) -> ي
   ["ک", "ك"], // ک (keheh) -> ك
+  // Lam-alef PRESENTATION FORMS. Several distributors export these single codepoints instead of
+  // the two-letter sequence, so اﻻدوية and الادوية are the same word stored two different ways and
+  // a substring match finds neither inside the other. Measured on production 2026-09-06: the
+  // ligature form appears in customer names the owner ruled are warehouses (الاهرام
+  // لتجارةاﻻدويةومستلزمات الطبية, الزهراء لتجارةوتوزيع اﻻدويةومستلزمات), so without this fold the
+  // trade phrase below misses them and their sales stay on one area.
+  ["ﻵ", "لا"], ["ﻶ", "لا"],
+  ["ﻷ", "لا"], ["ﻸ", "لا"],
+  ["ﻹ", "لا"], ["ﻺ", "لا"],
+  ["ﻻ", "لا"], ["ﻼ", "لا"],
 ]);
 
 /**
@@ -143,6 +159,177 @@ export const STORE_OVERRIDE_CUSTOMER_KEYS: ReadonlySet<string> = new Set([
   "IS-S|446299",
 ]);
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// THE TRADE PHRASE, AND WHAT OVERRULES IT — owner decisions, 2026-09-06.
+//
+// The six STORE_NAME_KEYWORDS above are single words, and three of them were written too narrowly
+// to match how companies actually spell themselves: مخزن never matched its own plural مخازن,
+// للتجارة needs two lams where most write لتجارة, and الشركة needs the definite article where most
+// write plain شركة. Scanning all 42,716 customers on the split-eligible lines surfaced 167 the six
+// words miss; the owner ruled on every one of them, one row at a time, in
+// `xlsx/sos-warehouse-keyword-decisions-2026-09-06.xlsx`.
+//
+// HIS ANSWERS DESCRIBE A CONCEPT, NOT A LONGER WORD LIST: a warehouse is a company whose name says
+// its BUSINESS is trading or distributing MEDICINES — unless the name says it is a pharmacy, a
+// hospital, or a government store. Encoded below as a phrase (business + goods) plus exclusions,
+// it agrees with 92% of his 167 answers and finds 68 of the 73 he called warehouses. The five it
+// cannot find say nothing about medicines at all and are named individually.
+//
+// WHY A PHRASE AND NOT THE WORD تجارة ON ITS OWN. تجارة alone is right 47% of the time — a coin
+// flip — and the reason is one specific artefact: 52 of the 131 names carrying it are ordinary
+// pharmacies where the distributor typed a PAPERWORK REMINDER into the customer NAME field
+// ("مطلوب سجل تجارى" — a commercial register is required). The owner marked all 52 pharmacies,
+// without exception. Excluding that phrase alone lifts تجارة from 47% to 77%; pairing the business
+// word with the goods word is what takes it the rest of the way.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Words that mean "never a store", whatever else the name carries. Checked BEFORE the keywords and
+ * the trade phrase, so they overrule both.
+ *
+ * ⚠ `مستشف` here REVERSES a deliberate earlier decision, and the reversal is the owner's. Until
+ * 2026-09-06 `isStoreCustomer` ignored the hospital rule on purpose, so a store whose name also
+ * mentioned a hospital still split. His decision sheet offered "Hospital — do NOT split" as its own
+ * answer and he used it; the four hospital-named customers splitting in production on that date
+ * (مستشفى الجمعية الشرعية, صيدليةمستشفى الجمعيةالطبيةالاسلامية, مستشفى السعودى الالمانى, and a
+ * unified-procurement hospital store) are all institutions, not wholesalers. Do not restore the
+ * old behaviour without asking him again.
+ *
+ * The government stems (مخازن, مستودع, هيئه, ت.ص, قوى عاملة, سكك حديد) scored ZERO: the owner
+ * marked all 17 customers they catch as government depots, none as warehouses. A government depot
+ * supplies its own institutions rather than a city's pharmacies, which is what the split assumes.
+ */
+export const NEVER_STORE_KEYWORDS: readonly ChannelNameKeyword[] = [
+  { label: "صيدلية", stem: "صيدلي" },
+  { label: "مستشفى", stem: "مستشف" },
+  // A paperwork note typed into the name field, not a business. 52 of 52 ruled pharmacy.
+  { label: "سجل تجارى", stem: "سجل تجار" },
+  // Government and institutional depots — 17 of 17 ruled "government depot, do NOT split".
+  { label: "مخازن", stem: "مخازن" },
+  { label: "مستودع", stem: "مستودع" },
+  { label: "هيئة", stem: "هيئه" },
+  { label: "ت.ص (تأمين صحى)", stem: "ت.ص" },
+  { label: "قوى عاملة", stem: "قوي عامله" },
+  { label: "سكك حديد", stem: "سكك حديد" },
+  { label: "كهرباء", stem: "كهرباء" },
+];
+
+/**
+ * Pharmacy CHAINS, matched on the name rather than on one customer code — owner decision
+ * 2026-09-06, asked and answered "by chain".
+ *
+ * WHY THE CODE FORM WAS NOT ENOUGH. A client code is unique only inside one distributor, and a
+ * chain opens an account at each one, so `PHARMACY_OVERRIDE_CLIENT_CODES` protected a single
+ * account while the same chain traded on under a dozen other numbers. Measured on production the
+ * day this shipped: عابدين فارما held ~15 accounts with ONE protected, الصيرفي فارما 5 with none,
+ * and الطرشوبى 313,000 EGP still splitting across two accounts — one of them the largest in the
+ * whole group — despite his standing ruling that الطرشوبى is a pharmacy.
+ *
+ * OVER-MATCHING HERE IS SAFE, AND THAT IS WHY A NAME IS USABLE WHERE IT USUALLY IS NOT. عابدين is
+ * both a district of Cairo (الثورة - عابدين) and half of the common personal name زين العابدين, so
+ * this stem touches ~101 customers where only ~15 are the chain. Every one of the other 86 is an
+ * ordinary pharmacy, which is what this list makes them anyway — the default. A name-keyed rule is
+ * dangerous when it can CREATE a store; it cannot here, because it only ever refuses one.
+ */
+export const PHARMACY_OVERRIDE_CHAINS: readonly ChannelNameKeyword[] = [
+  { label: "عابدين فارما", stem: "عابدين" },
+  { label: "الصيرفي فارما", stem: "الصيرف" },
+  { label: "الطرشوبى", stem: "طرشوب" },
+];
+
+/**
+ * The five the concept cannot reach — their names say nothing about medicines, so no phrase can
+ * find them. The owner marked each a warehouse in the decision sheet.
+ *
+ * Matched on the name and not on a customer code because each trades under several codes across
+ * distributors (الفرسان انترناشيونال جروب alone appears three times), and keying on codes would
+ * reopen exactly the gap PHARMACY_OVERRIDE_CHAINS exists to close.
+ */
+export const STORE_OVERRIDE_NAMES: readonly ChannelNameKeyword[] = [
+  { label: "الفرسان انترناشيونال جروب", stem: "الفرسان انترناشيونال" },
+  { label: "طيبة جروب", stem: "طيبه جروب" },
+  { label: "ابو عميرة", stem: "ابو عميره" },
+  { label: "ابوعميرة", stem: "ابوعميره" },
+];
+
+/**
+ * Companies whose name carries the trade phrase but which the owner ruled are pharmacies. He knows
+ * the business; the name does not say it. Kept separate from the chains above because these are
+ * single companies, not families of accounts.
+ */
+export const PHARMACY_OVERRIDE_NAMES: readonly ChannelNameKeyword[] = [
+  { label: "اى بى يو", stem: "اي بي يو" },
+  { label: "الفاتح لتجارة وتوزيع الادوية", stem: "الفاتح لتجاره وتوزيع" },
+  { label: "الهاشم لتجارة و توزيع الادوية", stem: "الهاشم لتجاره" },
+];
+
+/**
+ * The business half of the trade phrase: what the company says it DOES.
+ * توريد (supply) sits beside تجارة and توزيع because the owner ruled
+ * "شركة الهضبه لتوريد الادويه" and "شركة ابوعميره لتوريد وتوزيع الادوية" are warehouses.
+ */
+const TRADE_BUSINESS_STEMS = ["تجار", "توزيع", "توريد"] as const;
+
+/**
+ * The goods half: WHAT it trades. `الادي` is not a typo — it catches the real production spelling
+ * "الفتح لتجارة وتوزيع الادية", a name the owner confirmed is a warehouse and whose goods word the
+ * distributor typed without its و.
+ */
+const TRADE_GOODS_STEMS = ["ادوي", "دواء", "دوائ", "الادي"] as const;
+
+/**
+ * The name with ALL whitespace removed, not merely collapsed.
+ *
+ * Distributors split words mid-token — "الصفا ميديكال لتجارة وتوزيع الا دوية" carries a space
+ * inside الأدوية — so a phrase test on the space-collapsed form misses a name that reads correctly
+ * to a human. Squashing is safe for these stems because every one of them is a single Arabic word.
+ */
+function squashCustomerName(value: string | null | undefined): string {
+  return normalizeCustomerName(value).replace(/\s+/g, "");
+}
+
+/**
+ * True when the name states a medicines trading or distribution business.
+ *
+ * TWO WAYS IN, and the second exists for truncation. A name carrying BOTH تجارة and توزيع is a
+ * trading house whether or not the goods word survived the distributor's field width — production
+ * holds "شركة المحمدية لتجارة وتوزيع ال" and "الجمهورية لتجارة وتوزيع ن م", both cut off mid-word,
+ * and the owner ruled both warehouses.
+ */
+export function matchesTradePhrase(name: string | null | undefined): boolean {
+  const squashed = squashCustomerName(name);
+  if (!squashed) return false;
+  const business = TRADE_BUSINESS_STEMS.filter((stem) => squashed.includes(stem));
+  if (business.length === 0) return false;
+  if (squashed.includes("تجار") && squashed.includes("توزيع")) return true;
+  return TRADE_GOODS_STEMS.some((stem) => squashed.includes(stem));
+}
+
+/** True when a "never a store" word appears — checked on both the spaced and squashed forms. */
+export function matchedNeverStoreKeywords(name: string | null | undefined): string[] {
+  const spaced = normalizeCustomerName(name);
+  const squashed = squashCustomerName(name);
+  if (!spaced) return [];
+  return NEVER_STORE_KEYWORDS.filter((keyword) => {
+    const stem = normalizeCustomerName(keyword.stem);
+    return spaced.includes(stem) || squashed.includes(stem.replace(/\s+/g, ""));
+  }).map((keyword) => keyword.label);
+}
+
+function matchesAnyName(
+  name: string | null | undefined,
+  entries: readonly ChannelNameKeyword[],
+): string | null {
+  const spaced = normalizeCustomerName(name);
+  const squashed = squashCustomerName(name);
+  if (!spaced) return null;
+  for (const entry of entries) {
+    const stem = normalizeCustomerName(entry.stem);
+    if (spaced.includes(stem) || squashed.includes(stem.replace(/\s+/g, ""))) return entry.label;
+  }
+  return null;
+}
+
 /** Codes arrive with distributor-specific zero padding, so compare on the digits alone. */
 function normalizeClientCode(value: string | null | undefined): string {
   const trimmed = String(value ?? "").trim();
@@ -194,10 +381,10 @@ export function classifyCustomerChannel(
   distributorCode?: string | null,
 ): CustomerChannel {
   if (matchedHospitalKeywords(name).length > 0) return "hospital";
-  if (isPharmacyOverride(clientCode)) return "pharmacy";
-  if (isStoreOverride(clientCode, distributorCode)) return "store";
-  if (matchedStoreKeywords(name).length > 0) return "store";
-  return "pharmacy";
+  // Delegated so the screen and the closing can never disagree about who is a warehouse. Before
+  // 2026-09-06 this repeated the override checks inline, which was already a second copy of the
+  // rule; with the trade phrase and four override lists it would have been a fifth.
+  return isStoreCustomer(name, clientCode, distributorCode) ? "store" : "pharmacy";
 }
 
 /**
@@ -214,14 +401,91 @@ export function isStoreCustomer(
   clientCode?: string | null,
   distributorCode?: string | null,
 ): boolean {
-  // The owner's overrides DO apply here, unlike the hospital rule above. The reason they differ:
-  // the hospital carve-out is a classification nuance, while an override says "this either is or
-  // is not a warehouse, full stop". Splitting an overridden pharmacy's sales across its city would
-  // move its money onto other reps; NOT splitting an overridden store's sales does the same thing
-  // in reverse — both are the exact error the two override lists exist to stop.
+  // ONE order of precedence, most specific first. Every step is an owner decision, and a step can
+  // only ever be reversed by a MORE specific one above it — which is what stops the broad
+  // name-matched rules at the bottom from quietly undoing a ruling made about one account.
+  //
+  //   1. a ruling about one ACCOUNT      (code, or distributor + code)
+  //   2. a ruling about one COMPANY      (name)
+  //   3. a ruling about a CHAIN          (name)
+  //   4. "never a store" words           (pharmacy / hospital / paperwork / government)
+  //   5. the owner's six store words, or the trade phrase his 167 answers describe
+  //
+  // The overrides DO apply here, unlike the hospital rule in classifyCustomerChannel: an override
+  // says "this either is or is not a warehouse, full stop". Splitting an overridden pharmacy's
+  // sales across its city moves its money onto other reps; NOT splitting an overridden store's
+  // does the same thing in reverse — both are the exact error the override lists exist to stop.
+  if (isPharmacyOverride(clientCode)) return false;
+  if (isStoreOverride(clientCode, distributorCode)) return true;
+  if (matchesAnyName(name, STORE_OVERRIDE_NAMES)) return true;
+  if (matchesAnyName(name, PHARMACY_OVERRIDE_NAMES)) return false;
+  if (matchesAnyName(name, PHARMACY_OVERRIDE_CHAINS)) return false;
+  if (matchedNeverStoreKeywords(name).length > 0) return false;
+  return matchedStoreKeywords(name).length > 0 || matchesTradePhrase(name);
+}
+
+/**
+ * The FIRST period the 2026-09-06 rulings apply to. Owner decision, the day they were made, after
+ * he was shown what merging them would move.
+ *
+ * WHY IT EXISTS AT ALL. Nothing about this classification is stored — it is recomputed from the
+ * customer's name on every render, so changing it restates EVERY period at once, published months
+ * included. August 2026 Anti Infective had been published that same afternoon, and the change would
+ * have moved 14,150 EGP of store value between areas inside it. Nothing detects that either: the
+ * publication drift check compares UNITS, and the city split preserves each line's unit total while
+ * moving units between areas, so a restated month reports no drift. Same shape as
+ * STORE_CITY_SPLIT_FROM_PERIOD, which exists for exactly the same reason one month earlier.
+ *
+ * A plain string compare is correct and deliberate: periods are `YYYY-MM`, which sorts
+ * lexicographically in calendar order. Anything malformed or absent falls to NOT active, which
+ * keeps the OLD classification — the safe direction, because leaving a number where it already was
+ * cannot restate a closing somebody has already sent to their managers.
+ */
+export const WAREHOUSE_RULE_FROM_PERIOD = "2026-09";
+
+/** Do the owner's 2026-09-06 rulings apply to this period? Both this and the split's own gate. */
+export function isWarehouseRuleActive(period: string | null | undefined): boolean {
+  const trimmed = String(period ?? "").trim();
+  if (!/^\d{4}-\d{2}$/.test(trimmed)) return false;
+  return trimmed >= WAREHOUSE_RULE_FROM_PERIOD;
+}
+
+/**
+ * The rule EXACTLY as it stood before 2026-09-06: the owner's six words, plus the two code-keyed
+ * override lists. Nothing else.
+ *
+ * Kept as real code rather than reconstructed from git when needed, because August 2026 is a
+ * published month and the numbers in it have to stay reproducible from this repository for as long
+ * as anybody can ask why an area's figure is what it is. Do not "simplify" it into the new rule —
+ * that silently restates every month before the cutover.
+ */
+export function legacyIsStoreCustomer(
+  name: string | null | undefined,
+  clientCode?: string | null,
+  distributorCode?: string | null,
+): boolean {
   if (isPharmacyOverride(clientCode)) return false;
   if (isStoreOverride(clientCode, distributorCode)) return true;
   return matchedStoreKeywords(name).length > 0;
+}
+
+/**
+ * Is this customer a warehouse **for the purposes of the month being computed**?
+ *
+ * This is the one the Monthly Closing's city split must ask, and `isStoreCustomer` is the one every
+ * other surface asks. They differ ONLY for periods before the cutover, and the difference is the
+ * point: a closing is a record of a month, so it answers with the rule that was in force; a screen
+ * showing who a customer is today answers with the rule in force today.
+ */
+export function isStoreCustomerForPeriod(
+  name: string | null | undefined,
+  clientCode: string | null | undefined,
+  distributorCode: string | null | undefined,
+  period: string | null | undefined,
+): boolean {
+  return isWarehouseRuleActive(period)
+    ? isStoreCustomer(name, clientCode, distributorCode)
+    : legacyIsStoreCustomer(name, clientCode, distributorCode);
 }
 
 /**

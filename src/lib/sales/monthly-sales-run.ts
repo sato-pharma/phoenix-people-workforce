@@ -1,4 +1,5 @@
 import { writeAuditLog } from "@/lib/admin/audit";
+import { logError } from "@/lib/observability/log";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import {
   listMonthlyClosingPeriods,
@@ -112,19 +113,38 @@ async function computeDistributorWeights(period: string, orderedCodes: string[])
   return weights;
 }
 
-async function loadValidatedBatchesByCode(period: string): Promise<Map<string, { id: string }>> {
+/**
+ * The validated batches for a period, keyed by distributor code.
+ *
+ * `ok: false` when the query FAILED, which is not the same thing as "this period has no validated
+ * batches" — and the difference is destructive. The reconcile loop resets a confirmed step whenever
+ * its distributor has no batch, so an empty map on error told the loop that every batch in the month
+ * had vanished: one transient error un-confirmed the operator entire month and nulled every batch
+ * link, silently, on the next wizard open.
+ */
+type ValidatedBatches =
+  | { ok: true; byCode: Map<string, { id: string }> }
+  | { ok: false };
+
+async function loadValidatedBatchesByCode(period: string): Promise<ValidatedBatches> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("source_of_sales_import_batches")
     .select("id,distributor_code")
     .eq("period", period)
     .eq("status", "validated");
-  const map = new Map<string, { id: string }>();
-  if (error) return map;
-  for (const row of data ?? []) {
-    map.set(normalizeCodeKey(String(row.distributor_code ?? "")), { id: String(row.id) });
+  if (error) {
+    logError("Monthly Sales run could not read the period validated batches", {
+      labels: { event: "monthly_sales_run_batch_read_failed", period },
+      error,
+    });
+    return { ok: false };
   }
-  return map;
+  const byCode = new Map<string, { id: string }>();
+  for (const row of data ?? []) {
+    byCode.set(normalizeCodeKey(String(row.distributor_code ?? "")), { id: String(row.id) });
+  }
+  return { ok: true, byCode };
 }
 
 export async function startOrGetRun(period: string, actorId: string): Promise<MonthlySalesRun> {
@@ -152,7 +172,7 @@ export async function startOrGetRun(period: string, actorId: string): Promise<Mo
     ]);
 
     const stepRows = ordered.map((d, index) => {
-      const batch = validatedBatches.get(normalizeCodeKey(d.code));
+      const batch = validatedBatches.ok ? validatedBatches.byCode.get(normalizeCodeKey(d.code)) : undefined;
       return {
         run_id: runId,
         distributor_code: d.code,
@@ -180,7 +200,7 @@ export async function startOrGetRun(period: string, actorId: string): Promise<Mo
       const weights = await computeDistributorWeights(period, ordered.map((d) => d.code));
       const startIndex = steps.length;
       const newRows = missing.map((d, i) => {
-        const batch = validatedBatches.get(normalizeCodeKey(d.code));
+        const batch = validatedBatches.ok ? validatedBatches.byCode.get(normalizeCodeKey(d.code)) : undefined;
         return {
           run_id: runId,
           distributor_code: d.code,
@@ -193,22 +213,32 @@ export async function startOrGetRun(period: string, actorId: string): Promise<Mo
       await supabase.from("monthly_sales_run_step").insert(newRows);
     }
 
-    for (const step of steps) {
-      const code = normalizeCodeKey(String(step.distributor_code ?? ""));
-      const batch = validatedBatches.get(code);
-      const status = String(step.step_status ?? "pending");
-      if (batch && status !== "skipped" && String(step.batch_id ?? "") !== batch.id) {
-        await supabase
-          .from("monthly_sales_run_step")
-          .update({ step_status: "confirmed", batch_id: batch.id, updated_at: new Date().toISOString() })
-          .eq("run_id", runId)
-          .eq("distributor_code", String(step.distributor_code));
-      } else if (!batch && step.batch_id && status === "confirmed") {
-        await supabase
-          .from("monthly_sales_run_step")
-          .update({ step_status: "pending", batch_id: null, updated_at: new Date().toISOString() })
-          .eq("run_id", runId)
-          .eq("distributor_code", String(step.distributor_code));
+    // Reconcile ONLY against a batch list we actually read. When the query failed we know nothing
+    // about this period batches, and "nothing" must not be read as "every batch was deleted" — that
+    // is what used to un-confirm the whole month on one transient error.
+    if (validatedBatches.ok) {
+      for (const step of steps) {
+        const code = normalizeCodeKey(String(step.distributor_code ?? ""));
+        const batch = validatedBatches.byCode.get(code);
+        const status = String(step.step_status ?? "pending");
+        if (batch && status !== "skipped" && String(step.batch_id ?? "") !== batch.id) {
+          await supabase
+            .from("monthly_sales_run_step")
+            .update({ step_status: "confirmed", batch_id: batch.id, updated_at: new Date().toISOString() })
+            .eq("run_id", runId)
+            .eq("distributor_code", String(step.distributor_code));
+        } else if (!batch && status === "confirmed") {
+          // NOT gated on `step.batch_id` any more. The FK is ON DELETE SET NULL, so deleting a batch
+          // has ALREADY nulled this column — requiring it to be truthy made this branch unreachable
+          // for the one case it exists to handle, leaving the step "confirmed" against a batch that
+          // no longer exists. The only time it fired was the failed-query path above, where it was
+          // actively wrong.
+          await supabase
+            .from("monthly_sales_run_step")
+            .update({ step_status: "pending", batch_id: null, updated_at: new Date().toISOString() })
+            .eq("run_id", runId)
+            .eq("distributor_code", String(step.distributor_code));
+        }
       }
     }
   }
@@ -303,12 +333,33 @@ async function updateStep(period: string, distributorCode: string, patch: Record
   if (!runResult.data) throw new SalesWorkflowError("not_found", `No Monthly Sales run exists for ${period}.`, 404);
   const runId = String(runResult.data.id);
 
-  const { error } = await supabase
+  // Resolve the step code as STORED. `.eq("distributor_code", …)` is case-sensitive while every
+  // other comparison in this module goes through normalizeCodeKey — so a caller passing a
+  // differently-cased code matched no row, updated nothing, and still returned the run with HTTP
+  // 200. The operator saw their confirm or skip simply not take, with no error to explain it.
+  const existingSteps = await supabase
     .from("monthly_sales_run_step")
-    .update({ ...patch, updated_at: new Date().toISOString() })
+    .select("distributor_code")
+    .eq("run_id", runId);
+  if (existingSteps.error) throw existingSteps.error;
+  const wanted = normalizeCodeKey(distributorCode);
+  const storedCode = (existingSteps.data ?? [])
+    .map((row) => String(row.distributor_code ?? ""))
+    .find((code) => normalizeCodeKey(code) === wanted);
+  if (!storedCode) {
+    throw new SalesWorkflowError("not_found", `${distributorCode} is not a step in the ${period} Monthly Sales run.`, 404);
+  }
+
+  const { error, count } = await supabase
+    .from("monthly_sales_run_step")
+    .update({ ...patch, updated_at: new Date().toISOString() }, { count: "exact" })
     .eq("run_id", runId)
-    .eq("distributor_code", distributorCode);
+    .eq("distributor_code", storedCode);
   if (error) throw error;
+  // A zero-row update is a silent no-op wearing a success. Never report one as done.
+  if (count === 0) {
+    throw new SalesWorkflowError("not_found", `${distributorCode} could not be updated in the ${period} Monthly Sales run.`, 404);
+  }
   return loadRun(period);
 }
 
