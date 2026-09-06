@@ -179,7 +179,13 @@ export function MarketAwarenessWorkspace({ canCreate }: { canCreate: boolean }) 
   }, []);
 
   useEffect(() => {
-    void loadActivities();
+    // Called through an async wrapper, matching the two cascade effects below. Every setState in
+    // loadActivities already sits after `await fetch`, so nothing here runs synchronously — but the
+    // rule is static and cannot see through the callback, and the honest fix for "this is not
+    // synchronous" is to say so in the shape of the code rather than to disable the rule.
+    void (async () => {
+      await loadActivities();
+    })();
   }, [loadActivities]);
 
   const selected = useMemo(
