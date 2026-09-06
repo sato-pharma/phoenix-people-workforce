@@ -1425,6 +1425,7 @@ import { runDmPlanHasNoCeoStageTests } from "./dm-plan-has-no-ceo-stage.test.ts"
 import { runEmailIdentityGuardCallersTests } from "./email-identity-guard-callers.test.ts";
 import { runMarketingRequestVenueRequiredTests } from "./marketing-request-venue-required.test.ts";
 import { runMarketingCustomerMergeTombstoneTests } from "./marketing-customer-merge-tombstone.test.ts";
+import { runPlansAwaitingApprovalAvailabilityTests } from "./plans-awaiting-approval-availability.test.ts";
 import { runHiringPackDepartmentNameTests } from "./hiring-pack-department-name.test.ts";
 import { runDirectOrderDecidedAtStampTests } from "./direct-order-decided-at-stamp.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -4516,6 +4517,10 @@ await runTest(
 await runTest(
   "a retired marketing customer names its successor in a column, and the migration backfills nothing",
   runMarketingCustomerMergeTombstoneTests,
+);
+await runTest(
+  "a failed plans-awaiting-approval lookup reports itself as unavailable, never as a bare 0",
+  runPlansAwaitingApprovalAvailabilityTests,
 );
 await runTest(
   "hiring pack department name (the roster reader and the print reader produce the SAME Arabic إدارة from the raw departments.name)",

@@ -14,8 +14,11 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "weekly_plans", "read");
-    const [count, overdue] = await Promise.all([countPlanAwaiting(access), isPlanAwaitingOverdue(access)]);
-    return NextResponse.json({ count, overdue }, { headers: { "Cache-Control": "no-store" } });
+    // countPlanAwaiting() now resolves to { count, available } rather than a bare number (see its
+    // doc comment in approvals-hub/service.ts) — unwrap .count so this route's JSON shape is
+    // unchanged for NavBadge, which still expects a plain number here.
+    const [plan, overdue] = await Promise.all([countPlanAwaiting(access), isPlanAwaitingOverdue(access)]);
+    return NextResponse.json({ count: plan.count, overdue }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ count: 0, overdue: false });
   }

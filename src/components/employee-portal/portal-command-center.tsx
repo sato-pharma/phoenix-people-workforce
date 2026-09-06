@@ -735,9 +735,22 @@ const PM_GPM_ACTIONS: readonly ActionStripItem[] = [
 ];
 
 function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, leaveEntitlementDays, pmMarketing, plansAwaitingManagerApproval, dvFocus } = snapshot;
+  const {
+    shell,
+    pendingVacationCount,
+    pendingExcuseCount,
+    pendingCountsAvailable,
+    leaveEntitlementDays,
+    pmMarketing,
+    plansAwaitingManagerApproval,
+    plansCountAvailable,
+    dvFocus,
+  } = snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount + plansCount;
+  // Both legs must have loaded for the sum to mean anything — a failed plans lookup defaults to 0
+  // and would otherwise silently understate totalPending rather than reading as unknown.
+  const pendingAvailable = pendingCountsAvailable && plansCountAvailable;
 
   const cards: Keycard[] = [
     {
@@ -751,10 +764,10 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
     {
       icon: CalendarX2,
       label: "Pending Requests",
-      value: String(totalPending),
+      value: pendingAvailable ? String(totalPending) : "—",
       sub: "awaiting decision",
-      accent: totalPending > 0 ? "bg-orange-500" : "bg-slate-900",
-      valueClass: totalPending > 0 ? "text-orange-600" : "text-slate-900",
+      accent: pendingAvailable && totalPending > 0 ? "bg-orange-500" : "bg-slate-900",
+      valueClass: pendingAvailable && totalPending > 0 ? "text-orange-600" : "text-slate-900",
     },
     {
       icon: CalendarDays,
@@ -772,9 +785,11 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
     <div className="mx-auto w-full space-y-3" dir="auto">
       <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} />
 
-      {totalPending > 0 && (
+      {!pendingAvailable ? (
+        <PendingCountsUnavailable />
+      ) : totalPending > 0 ? (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
-      )}
+      ) : null}
 
       <div className="overflow-hidden border border-slate-200 bg-white">
         <SectionHead title="My Workspace" />
@@ -1292,10 +1307,22 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
 // --- Standard / MR layout ---
 
 function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, leaveEntitlementDays, mrSalesAchievement, role, plansAwaitingManagerApproval } =
-    snapshot;
+  const {
+    shell,
+    pendingVacationCount,
+    pendingExcuseCount,
+    pendingCountsAvailable,
+    leaveEntitlementDays,
+    mrSalesAchievement,
+    role,
+    plansAwaitingManagerApproval,
+    plansCountAvailable,
+  } = snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount + plansCount;
+  // Both legs must have loaded for the sum to mean anything — a failed plans lookup defaults to 0
+  // and would otherwise silently understate totalPending rather than reading as unknown.
+  const pendingAvailable = pendingCountsAvailable && plansCountAvailable;
 
   const ach = mrSalesAchievement;
   const pct = ach ? Math.max(0, Math.min(100, Math.round(ach.achievementPercent))) : null;
@@ -1336,10 +1363,10 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
             : [
                 {
                   icon: CalendarX2,
-                  value: String(totalPending),
-                  label: totalPending === 1 ? "pending request" : "pending requests",
+                  value: pendingAvailable ? String(totalPending) : "—",
+                  label: pendingAvailable && totalPending === 1 ? "pending request" : "pending requests",
                   href: "/employee-portals/approvals-hub",
-                  urgent: totalPending > 0,
+                  urgent: pendingAvailable && totalPending > 0,
                 },
               ]),
           {
@@ -1361,9 +1388,11 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
           { href: "/employee-portals/report-it", icon: Activity, label: "Report It" },
         ]}
       />
-      {!isPortalHrOfficeStaff && totalPending > 0 && (
+      {!isPortalHrOfficeStaff && !pendingAvailable ? (
+        <PendingCountsUnavailable />
+      ) : !isPortalHrOfficeStaff && totalPending > 0 ? (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
-      )}
+      ) : null}
 
       {ach && pct !== null && (
         <div className="overflow-hidden border border-slate-200">
@@ -1413,7 +1442,9 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
         </div>
       </div>
 
-      {!isPortalHrOfficeStaff && totalPending > 0 ? (
+      {!isPortalHrOfficeStaff && !pendingAvailable ? (
+        <PendingCountsUnavailable />
+      ) : !isPortalHrOfficeStaff && totalPending > 0 ? (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       ) : (
         <div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 px-4 py-3 sm:px-5 sm:py-4">
