@@ -185,14 +185,66 @@ export function describeServiceDuration(
   fromIso: string | null | undefined,
   toIso: string | null | undefined,
 ): string {
+  const span = serviceSpan(fromIso, toIso);
+  if (!span) return "";
+
+  const parts: string[] = [];
+  if (span.years > 0) parts.push(countedNoun(span.years, "سنة واحدة", "سنتان", "سنوات", "سنة"));
+  if (span.months > 0) parts.push(countedNoun(span.months, "شهر واحد", "شهران", "أشهر", "شهرًا"));
+  if (span.days > 0) parts.push(countedNoun(span.days, "يوم واحد", "يومان", "أيام", "يومًا"));
+  return parts.join(" و");
+}
+
+/**
+ * The same span, for the English certificate.
+ *
+ * ONE ARITHMETIC, TWO WORDINGS — `serviceSpan` below is shared, so the two certificates cannot state
+ * different lengths for the same employment. Two papers a man carries to the same embassy that
+ * disagree about how long he worked here is worse than either being wrong on its own.
+ */
+export function describeServiceDurationEn(
+  fromIso: string | null | undefined,
+  toIso: string | null | undefined,
+): string {
+  const span = serviceSpan(fromIso, toIso);
+  if (!span) return "";
+
+  const parts: string[] = [];
+  const unit = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+  if (span.years > 0) parts.push(unit(span.years, "year"));
+  if (span.months > 0) parts.push(unit(span.months, "month"));
+  if (span.days > 0) parts.push(unit(span.days, "day"));
+  // "3 years, 6 months and 12 days" — the serial comma is deliberately absent, which is the house
+  // register for a British-English document read by an Egyptian ministry or a Gulf employer.
+  if (parts.length <= 1) return parts.join("");
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+/**
+ * The calendar difference, as whole years, months and days. Null when it cannot be stated.
+ *
+ * THE LAST WORKING DAY IS A DAY WORKED, which is the whole reason this is not a plain subtraction.
+ * Somebody who started on 1 March and left on 31 August served six months, not five months and
+ * thirty days, and a certificate that says the latter reads as though the company is shaving the end
+ * of his service. So the end is advanced by one day and the difference taken to that exclusive
+ * bound, which lands whole periods on whole numbers and a single day on one day.
+ *
+ * Null — rather than a zero span — when either end is missing or the order is reversed. A
+ * certificate rules that line for a human rather than printing a period it cannot stand behind, the
+ * same answer every other blank on these papers gives.
+ */
+function serviceSpan(
+  fromIso: string | null | undefined,
+  toIso: string | null | undefined,
+): { years: number; months: number; days: number } | null {
   const from = splitIsoDate(fromIso);
   const to = splitIsoDate(toIso);
-  if (!from || !to) return "";
+  if (!from || !to) return null;
 
   const start = Date.UTC(Number(from.year), Number(from.month) - 1, Number(from.day));
   // The exclusive bound: the day AFTER the last day worked. See the note above.
   const end = Date.UTC(Number(to.year), Number(to.month) - 1, Number(to.day) + 1);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return "";
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
 
   const endDate = new Date(end);
   let years = endDate.getUTCFullYear() - Number(from.year);
@@ -210,11 +262,33 @@ export function describeServiceDuration(
     months += 12;
   }
 
-  const parts: string[] = [];
-  if (years > 0) parts.push(countedNoun(years, "سنة واحدة", "سنتان", "سنوات", "سنة"));
-  if (months > 0) parts.push(countedNoun(months, "شهر واحد", "شهران", "أشهر", "شهرًا"));
-  if (days > 0) parts.push(countedNoun(days, "يوم واحد", "يومان", "أيام", "يومًا"));
-  return parts.join(" و");
+  return { years, months, days };
+}
+
+/**
+ * A date as an English document writes it: "31 August 2026".
+ *
+ * THE MONTH IS SPELLED OUT, and on this document that is a correctness decision rather than a
+ * style one. The Arabic certificate prints `31 / 08 / 2026`, which an Egyptian reader parses
+ * day-first without thinking; the English one is read at an embassy or by a Gulf employer, where
+ * `08 / 09 / 2026` is September the eighth to half the world and the ninth of August to the other
+ * half. A named month cannot be misread, and this paper exists to be believed by a stranger.
+ *
+ * `en-GB` with an explicit UTC zone, for the reason every date helper in this module pins one: the
+ * value is a plain `YYYY-MM-DD` with no time in it, so letting the runtime localise it would move
+ * the day backwards on a machine west of Greenwich.
+ */
+export function formatLongDateEn(iso: string | null | undefined): string {
+  const parts = splitIsoDate(iso);
+  if (!parts) return "";
+  const date = new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day)));
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "long",
+    timeZone: "UTC",
+    year: "numeric",
+  }).format(date);
 }
 
 /**

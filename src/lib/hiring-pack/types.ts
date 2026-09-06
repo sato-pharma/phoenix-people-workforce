@@ -29,6 +29,7 @@ export type HiringPackDocument =
   | "deemedResignation"
   | "appointmentDocsReturn"
   | "experienceCertificate"
+  | "experienceCertificateEn"
   | "contractRenewal"
   | "contractNonRenewal"
   | "form6"
@@ -116,7 +117,11 @@ export const HOUSE_JOINING_DOCUMENTS = [
 
 export const HOUSE_ATTENDANCE_DOCUMENTS = ["absenceWarning", "deemedResignation"] as const;
 
-export const HOUSE_LEAVING_DOCUMENTS = ["appointmentDocsReturn", "experienceCertificate"] as const;
+export const HOUSE_LEAVING_DOCUMENTS = [
+  "appointmentDocsReturn",
+  "experienceCertificate",
+  "experienceCertificateEn",
+] as const;
 
 /** All of Sato's own papers, in the order a career runs through them. */
 export const HOUSE_PAPER_DOCUMENTS = [
