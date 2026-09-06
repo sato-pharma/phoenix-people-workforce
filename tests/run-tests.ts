@@ -1436,7 +1436,9 @@ import { runSosDashboardIncompleteReadIsVisibleTests } from "./sos-dashboard-inc
 import { runEmployeeRlsPolicyLockTests } from "./employee-rls-policy-lock.test.ts";
 import { runImportDiagnosticsVerdictTests } from "./import-diagnostics-verdict.test.ts";
 import { runMonthlySalesRunReconcileTests } from "./monthly-sales-run-reconcile.test.ts";
+import { runWorktreeNodeModulesJunctionTests } from "./worktree-node-modules-junction.test.ts";
 import { runChannelsByRepPharmacyOverrideTests } from "./channels-by-rep-pharmacy-override.test.ts";
+import { runSalesUploadAnalyzeMatchesCommitTests } from "./sales-upload-analyze-matches-commit.test.ts";
 import { runRetentionRiskDetectorTests } from "./retention-risk-detector.test.ts";
 import { runRetentionRiskNotifyTests } from "./retention-risk-notify.test.ts";
 
@@ -4575,8 +4577,16 @@ await runTest(
   runMonthlySalesRunReconcileTests,
 );
 await runTest(
+  "worktree node_modules junction (links a fresh worktree, never clobbers an existing one, refuses a missing primary, dry-runs clean)",
+  runWorktreeNodeModulesJunctionTests,
+);
+await runTest(
   "channels by rep honours the owner pharmacy overrides (578,248.77 EGP read as stores on one tab)",
   runChannelsByRepPharmacyOverrideTests,
+);
+await runTest(
+  "sales upload analyze matches the commit gate (a file commit refuses can no longer report Validation passed)",
+  runSalesUploadAnalyzeMatchesCommitTests,
 );
 await runTest(
   "retention risk detector (a weekly off bridges a run, leave bridges it too, managers are never measured)",
