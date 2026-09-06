@@ -4671,6 +4671,56 @@ async function fetchPharmacyCodes(supabase: SupabaseClient, distributorCodeIds: 
 }
 
 /**
+ * Every marketing request draft must point at a customer that still holds a validated venue link,
+ * and must itself name at least one target venue. Shared by the create and the resubmit paths
+ * because they are the same decision: a resubmit deletes and re-inserts the products and the
+ * targets, so it writes a draft just as much as a create does, and until 2026-09-06 it ran neither
+ * of these two checks.
+ *
+ * The pair is deliberately not one function. They fail for different reasons and a requester can
+ * only fix one of them: an unvalidated customer is fixed in the Customer Database, an empty target
+ * list is fixed by ticking a box on the form in front of them.
+ */
+async function assertMarketingCustomerHasValidatedVenue(
+  supabase: SupabaseClient,
+  // `string | null`, because `normalizeMarketingRequestDraftInput` runs the id through `cleanText`.
+  // Null is passed straight to `.eq` rather than guarded, which is exactly what the inline version
+  // did: it matches no row and falls into the same refusal below. Both callers have already thrown
+  // `customer_not_found` on a null id anyway, so this branch is unreachable in practice — narrowing
+  // the parameter instead would only move the failure to a cast at each call site.
+  customerId: string | null,
+): Promise<void> {
+  const validatedCustomerLinkResult = await supabase
+    .from("marketing_customer_pharmacies")
+    .select("id")
+    .eq("customer_id", customerId)
+    .eq("active", true)
+    .in("validation_status", ["system_validated", "sfe_validated"])
+    .limit(1);
+  if (validatedCustomerLinkResult.error) throw validatedCustomerLinkResult.error;
+  if ((validatedCustomerLinkResult.data ?? []).length === 0) {
+    throw validationError("Only validated customers can be used in marketing request drafts.", "customer_not_validated");
+  }
+}
+
+/**
+ * A request naming no venue can never be credited a sale — attribution matches a sale to a request
+ * through its target venue's distributor code, so an empty target list is not a lighter request,
+ * it is an unmeasurable one. It also has no identity to validate, which is what AGENTS.md 4.1's
+ * "GPS + a live picture ALWAYS" rule is written against.
+ *
+ * Enforced here rather than only in the form because the form's guard is a hint: the portal posts
+ * a raw body, and the amber "No pharmacies selected" line it used to show did not stop Save.
+ */
+function assertMarketingRequestNamesAVenue(pharmacyRowCount: number): void {
+  if (pharmacyRowCount > 0) return;
+  throw validationError(
+    "Select at least one target pharmacy — a request with no target can never be credited a sale.",
+    "marketing_request_has_no_venue",
+  );
+}
+
+/**
  * The codeless venues a draft is targeting, for the half of the picker that has no distributor code
  * to look up. Returns the venue itself rather than a code row, because that is all a nursery has.
  */
@@ -7467,17 +7517,7 @@ export async function createMarketingRequestDraft(
     throw validationError("Customer contact does not belong to the selected customer.");
   }
 
-  const validatedCustomerLinkResult = await supabase
-    .from("marketing_customer_pharmacies")
-    .select("id")
-    .eq("customer_id", normalized.customerId)
-    .eq("active", true)
-    .in("validation_status", ["system_validated", "sfe_validated"])
-    .limit(1);
-  if (validatedCustomerLinkResult.error) throw validatedCustomerLinkResult.error;
-  if ((validatedCustomerLinkResult.data ?? []).length === 0) {
-    throw validationError("Only validated customers can be used in marketing request drafts.", "customer_not_validated");
-  }
+  await assertMarketingCustomerHasValidatedVenue(supabase, normalized.customerId);
 
   const prepared = prepareMarketingRequestDraft({
     customer: customerResult.data as MarketingCustomerDbRow,
@@ -7490,6 +7530,7 @@ export async function createMarketingRequestDraft(
     unrestrictedProductLines: canUseAnyMarketingProductLine(access),
     allowedProductCodes,
   });
+  assertMarketingRequestNamesAVenue(prepared.pharmacyRows.length);
 
   const requestInsert = await supabase
     .from("marketing_requests")
@@ -7650,6 +7691,11 @@ export async function resubmitReturnedMarketingRequest(
     throw validationError("Customer contact does not belong to the selected customer.");
   }
 
+  // A returned request can sit for weeks, and its customer can be retired or merged away while it
+  // waits — which is exactly what happened to customer MKT-HCP-20260812-A26BF1C7 on 2026-08-21.
+  // Create has refused an unvalidated customer since the module shipped; resubmit never did.
+  await assertMarketingCustomerHasValidatedVenue(supabase, normalized.customerId);
+
   const prepared = prepareMarketingRequestDraft({
     customer: customerResult.data as MarketingCustomerDbRow,
     input,
@@ -7662,6 +7708,9 @@ export async function resubmitReturnedMarketingRequest(
     unrestrictedProductLines: canUseAnyMarketingProductLine(access),
     allowedProductCodes,
   });
+  // Before the delete below, not after: the resubmit replaces the target list wholesale, so an
+  // empty edited set would otherwise strip the targets off a request that already had them.
+  assertMarketingRequestNamesAVenue(prepared.pharmacyRows.length);
 
   const steps = await loadMarketingRequestApprovalSteps(supabase, requestId);
   const resumeStep = steps

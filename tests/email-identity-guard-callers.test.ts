@@ -131,6 +131,33 @@ export function runEmailIdentityGuardCallersTests() {
     "the departure-photo reminder must keep its subject HR ID — this is the one guard skip that reached nobody",
   );
 
+  // Its sibling had the SAME missing-subject fault, but latent: outstation_sla_reminder has never
+  // produced a single delivery row in production, so nothing had ever exercised it. Left alone it
+  // would have refused its email the first time the job fired, as a brand-new silent skip.
+  assert.match(
+    outstationSource,
+    /subjectHrId: String\(row\.employee_hr_id\),/,
+    "the outstation SLA reminder must name the requesting employee as its subject — the recipients are " +
+      "the approvers, and module outstation is guarded, so without it the first-ever fire is refused",
+  );
+
+  // ── Both outstation reminders must offer the in-app channel (owner decision 2026-09-06) ────
+  // Email was refused by the guard and push is separately unreliable here ("OneSignal is not
+  // configured", "No active push subscription"), which is how three departure-photo reminders
+  // reached nobody on any channel. in_app is the channel that cannot fail for want of external
+  // configuration, and the module's two other notifications already carry it.
+  assert.equal(
+    (outstationSource.match(/channels: \["in_app", "email", "push"\],/g) ?? []).length,
+    2,
+    "both outstation reminders (departure photo, SLA) must include in_app alongside email and push",
+  );
+  assert.doesNotMatch(
+    outstationSource,
+    /channels: \["email", "push"\]/,
+    "no outstation notification may ship with email+push only — that combination is what let three " +
+      "departure-photo reminders reach nobody at all",
+  );
+
   // ── THE GUARD ITSELF MUST NOT HAVE BEEN WEAKENED ───────────────────────────────────────
   // Every assertion above is satisfiable by gutting resolvedEmailIdentity() instead of fixing the
   // callers. These pin that nobody did.

@@ -4273,7 +4273,12 @@ export async function sendOutstationDeparturePhotoReminder(
   await createSystemNotificationForRecipients(
     {
       actionUrl: "/employee-portals/expense-submissions",
-      channels: ["email", "push"],
+      // in_app added 2026-09-06 on the owner decision. It is the only channel that cannot fail
+      // for want of external configuration: three of these reminders reached NOBODY because the
+      // email was refused by the identity guard and the employee had no push subscription, and
+      // push is separately unreliable here ("OneSignal is not configured"). A departure photo is
+      // expense evidence — a reminder nobody receives becomes a claim with nothing to back it.
+      channels: ["in_app", "email", "push"],
       email: {
         ctaHref: "/employee-portals/expense-submissions",
         ctaLabel: "Take the photo",
@@ -4375,12 +4380,19 @@ export async function runOutstationSlaDaily(): Promise<{ processed: number; erro
     try {
       await createSystemNotificationForRecipients(
         {
-          channels: ["email", "push"],
+          // in_app added 2026-09-06 on the owner decision, alongside the departure-photo reminder.
+          channels: ["in_app", "email", "push"],
           eventType: "outstation_sla_reminder",
           message: `${String(row.employee_name)}'s outstation request (trip: ${String(row.trip_start_date)}) has been pending ${ageDays} day${ageDays === 1 ? "" : "s"}.`,
           metadata: { idempotencyKey: `outstation:${String(row.id)}:sla:${today}` },
           module: "outstation",
           priority: "normal",
+          // The request belongs to the EMPLOYEE; the recipients are the approvers. Module
+          // "outstation" is an employee-subject workflow module, so without this the email half
+          // would be refused by the identity guard the first time this job ever fires. It has
+          // produced ZERO deliveries to date, so unlike its three siblings the fault here was
+          // latent rather than measured — it would have shipped as a brand-new silent skip.
+          subjectHrId: String(row.employee_hr_id),
           title: "Outstation approval overdue",
           actionUrl: `/admin/approvals-hub?module=outstation&id=${String(row.id)}`,
           email: {

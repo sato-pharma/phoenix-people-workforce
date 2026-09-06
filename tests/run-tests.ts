@@ -1423,6 +1423,8 @@ import { runPayrollHoldReviewTests } from "./payroll-hold-review.test.ts";
 import { runPmCallRateBandTests } from "./pm-call-rate-band.test.ts";
 import { runDmPlanHasNoCeoStageTests } from "./dm-plan-has-no-ceo-stage.test.ts";
 import { runEmailIdentityGuardCallersTests } from "./email-identity-guard-callers.test.ts";
+import { runMarketingRequestVenueRequiredTests } from "./marketing-request-venue-required.test.ts";
+import { runMarketingCustomerMergeTombstoneTests } from "./marketing-customer-merge-tombstone.test.ts";
 import { runPlansAwaitingApprovalAvailabilityTests } from "./plans-awaiting-approval-availability.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4505,6 +4507,14 @@ await runTest(
 await runTest(
   "every official workflow email supplies exactly one subject HR ID (never zero, never two; digests exempt by event type)",
   runEmailIdentityGuardCallersTests,
+);
+await runTest(
+  "a marketing request must name at least one target venue (blocker list + create + resubmit)",
+  runMarketingRequestVenueRequiredTests,
+);
+await runTest(
+  "a retired marketing customer names its successor in a column, and the migration backfills nothing",
+  runMarketingCustomerMergeTombstoneTests,
 );
 await runTest(
   "a failed plans-awaiting-approval lookup reports itself as unavailable, never as a bare 0",
