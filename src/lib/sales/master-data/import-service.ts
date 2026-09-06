@@ -466,17 +466,19 @@ export async function importMasterWorkbook(input: {
     systemEnsured = await ensureSystemDistributors(supabase);
   }
 
-  // Product Master is the source of truth for factory price. When prices change, resync the STORED
-  // weekly sales values so raw/stored reads (e.g. the batch export route that bypasses the dashboard
-  // service) match the live read-time recompute in loadWeeklyDashboard. Best-effort: never fail the
-  // import if the resync function isn't present yet (migration pending) or errors.
-  if (def.master === "products" && updated > 0) {
-    try {
-      await supabase.rpc("phx_recompute_weekly_sales_value" as never);
-    } catch {
-      // resync is best-effort; dashboards/exports already recompute value from current price at read time.
-    }
-  }
+  // NO stored-value resync happens here, and none is needed. `phx_recompute_weekly_sales_value` has
+  // never existed in production (checked 2026-09-06: zero matching rows in pg_proc, and no
+  // `%recompute%` or `%weekly%sales%` function at all), so the call that used to sit here did
+  // nothing on every single run. It could not even report that: `supabase.rpc()` RESOLVES with
+  // `{ data, error }` rather than throwing, so the `try/catch` wrapped around it caught nothing and
+  // the error object was discarded — a resync that was impossible, invisible, and documented as
+  // done.
+  //
+  // Removing it changes no number. Product Master factory_price is read-time authoritative:
+  // `loadWeeklyDashboard` recomputes every non-Direct row's value from the CURRENT master price
+  // (see the "Live price sync" block in weekly/service.ts), so a price edit already reflects
+  // everywhere without a stored-value pass. If a stored resync is ever genuinely wanted, it needs
+  // the function to exist first, and its failure must be logged rather than swallowed.
 
   await writeAuditLog({
     actorLoginId: input.actorLoginId,
@@ -673,15 +675,9 @@ export async function updateSingleMasterRow(input: {
   const { error } = await supabase.from(def.table).update(updatePayload).eq(def.keyColumn, key);
   if (error) return { success: false, error: error.message };
 
-  // Product Master factory_price drives the stored weekly-sales value — resync it, same as bulk
-  // import does. Best-effort: dashboards/exports recompute from the live price at read time anyway.
-  if (def.master === "products" && Object.prototype.hasOwnProperty.call(updatePayload, "factory_price")) {
-    try {
-      await supabase.rpc("phx_recompute_weekly_sales_value" as never);
-    } catch {
-      // best-effort resync only
-    }
-  }
+  // No stored-value resync on a factory_price edit either, for the same reason as the bulk path
+  // above: `phx_recompute_weekly_sales_value` does not exist, `supabase.rpc()` would not have
+  // thrown if it failed, and the weekly surfaces recompute from the live master price at read time.
 
   const oldValues: Record<string, unknown> = { active: existing.active };
   for (const columnKey of Object.keys(updatePayload)) {
