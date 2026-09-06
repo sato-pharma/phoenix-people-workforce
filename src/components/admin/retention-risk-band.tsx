@@ -215,7 +215,7 @@ export function RetentionRiskBand({ view }: { view: RetentionRiskView }) {
 
   return (
     <SectionShell
-      description="Five or more consecutive working days of recorded leave, or of no CRM entry at all. An early warning to check on someone — never a conclusion about them."
+      description="Medical Reps who have not come back: five or more consecutive working days of recorded leave, or of no CRM entry at all, and still not seen. An early warning to check on someone — never a conclusion about them."
       title="Retention risk"
     >
       <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
@@ -246,8 +246,8 @@ export function RetentionRiskBand({ view }: { view: RetentionRiskView }) {
 
       {view.signals.length === 0 ? (
         <p className="px-5 py-6 break-words text-sm text-slate-600">
-          Every Medical Rep has recorded CRM activity within the last four working days, and no
-          employee is on five or more consecutive working days of leave.
+          No Medical Rep is currently away. Nobody has five or more consecutive working days of
+          leave or of missing CRM activity still running.
         </p>
       ) : (
         <>
@@ -257,10 +257,11 @@ export function RetentionRiskBand({ view }: { view: RetentionRiskView }) {
       )}
 
       <p className="border-t border-slate-200 px-5 py-3 break-words text-phx-3xs text-slate-500">
-        CRM activity is read up to {formatRetentionRiskDate(view.measurableThrough)} — never today,
-        because reps enter visits through and after the working day. Managers are excluded from the
-        CRM half: a rep logs the visit and tags the manager, so a manager&rsquo;s silence measures
-        the rep&rsquo;s data entry rather than the manager&rsquo;s work.
+        Medical Reps only, on both rules (owner, 2026-09-07). A manager has no contact list of his
+        own — a rep logs the visit and tags him — so his CRM silence measures the rep&rsquo;s data
+        entry, and his approved leave is a holiday rather than a retention signal. CRM activity is
+        read up to {formatRetentionRiskDate(view.measurableThrough)}, never today, because reps
+        enter visits through and after the working day.
       </p>
     </SectionShell>
   );
