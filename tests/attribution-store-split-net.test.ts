@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import {
   ATTRIBUTION_SPLIT_LINES,
@@ -240,5 +242,63 @@ export function runAttributionStoreSplitNetTests() {
       assert.match(String(error), /boom/, "and the database's own message survives");
     }
     assert.ok(threw, "a failed write throws rather than reporting success");
+
+    // ── EVERY REFRESH SITE WRITES THE NET FIRST ─────────────────────────────────────────────────
+    // au.f_monthly_attribution READS au.monthly_store_split_net, so a site that refreshes before
+    // writing bakes the PREVIOUS split into the rollup and leaves it there until the next import —
+    // a wrong number on every achievement surface, with nothing reporting it.
+    //
+    // Derived from the source rather than a fixed list, so a NEW refresh path added later is caught
+    // too. This is the same shape as tests/sos-import-summaries-refresh.test.ts, and for the same
+    // reason: an exception list is what lets these drift apart.
+    const ROOT = resolve(import.meta.dirname, "..");
+    const walk = (dir: string): string[] => {
+      const out: string[] = [];
+      for (const entry of readdirSync(dir)) {
+        if (entry === "node_modules" || entry.startsWith(".")) continue;
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) out.push(...walk(full));
+        else if (/\.tsx?$/.test(full)) out.push(full);
+      }
+      return out;
+    };
+
+    const REFRESH_CALL = 'rpc("phx_refresh_monthly_attribution"';
+    // The trailing "(" is load-bearing: without it this matches the IMPORT statement at the top of
+    // the file, which always precedes every rpc call, and the ordering assertion below becomes
+    // vacuously true. Caught by deliberately reversing a call site and watching this pass.
+    const NET_WRITER = "writeStoreSplitNetForBatch(";
+    const sites = [...walk(join(ROOT, "src")), ...walk(join(ROOT, "app"))]
+      .map((file) => ({ file, body: readFileSync(file, "utf8") }))
+      .filter((entry) => entry.body.includes(REFRESH_CALL));
+
+    assert.ok(
+      sites.length >= 4,
+      `expected at least the 4 known attribution-refresh sites, found ${sites.length} — `
+      + "if one was removed, confirm that was intended",
+    );
+
+    for (const { file, body } of sites) {
+      const relative = file.slice(ROOT.length + 1).replace(/\\/g, "/");
+      const writeAt = body.indexOf(NET_WRITER);
+      const refreshAt = body.indexOf(REFRESH_CALL);
+      const writeCalls = body.split(NET_WRITER).length - 1;
+      const refreshCalls = body.split(REFRESH_CALL).length - 1;
+      assert.ok(
+        writeAt >= 0,
+        `${relative} refreshes the attribution rollup but never calls ${NET_WRITER}. `
+        + "The rollup would be built from a stale split net.",
+      );
+      assert.ok(
+        writeCalls >= refreshCalls,
+        `${relative} refreshes the attribution rollup ${refreshCalls}x but writes the split net `
+        + `only ${writeCalls}x — one of those refreshes reads a stale net.`,
+      );
+      assert.ok(
+        writeAt < refreshAt,
+        `${relative} calls ${NET_WRITER} AFTER phx_refresh_monthly_attribution. `
+        + "The net must be written first — the rollup reads it.",
+      );
+    }
   })();
 }

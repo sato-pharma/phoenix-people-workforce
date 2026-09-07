@@ -16,7 +16,7 @@ import type { CodedRow, NormalizeResult } from "@/lib/sales/normalizer/types";
 import { RECOGNITION_ENGINE_VERSION, dominantPeriod, normalizeUploadedFile, summarizePreview, type NormalizeFileResult, type NormalizePreview } from "@/lib/sales/recognize";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { refreshAttributionWithStoreSplit } from "@/lib/sales/attribution-store-split-refresh";
+import { writeStoreSplitNetForBatch } from "@/lib/sales/attribution-store-split-refresh";
 
 // Recognition lives in `@/lib/sales/recognize` (the single Sales recognition spine). Re-exported
 // here so existing import sites (`@/lib/sales/normalizer/service`) keep working unchanged.
@@ -532,10 +532,11 @@ export async function persistNormalizedBatch(input: {
     // Distributor×product rollup — after the fact rollup it reads, same fallback site.
     const distProductRollupRefresh = await supabase.rpc("phx_refresh_sos_distributor_product_rollup", { p_batch_id: batchId });
     if (distProductRollupRefresh.error) throw distProductRollupRefresh.error;
-    // Sales-vs-target attribution rollup — after the channel rollup, same fallback site. Goes
-    // through refreshAttributionWithStoreSplit so the wholesaler city split net is rebuilt FIRST —
-    // au.f_monthly_attribution reads it. See attribution-store-split-refresh.ts.
-    await refreshAttributionWithStoreSplit(supabase, batchId);
+    // The wholesaler city split net FIRST — au.f_monthly_attribution reads it.
+    await writeStoreSplitNetForBatch(supabase, batchId);
+    // Sales-vs-target attribution rollup — after the channel rollup, same fallback site.
+    const attributionRollupRefresh = await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
+    if (attributionRollupRefresh.error) throw attributionRollupRefresh.error;
     // Import summaries — the Source of Sales dashboard's own aggregate. A no-op on this path (the
     // summaries were just built from the same rows), called anyway so the rule holds everywhere
     // without exceptions. See tests/sos-import-summaries-refresh.test.ts.

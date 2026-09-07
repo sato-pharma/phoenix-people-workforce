@@ -1,11 +1,19 @@
-// The one entry point every import path uses to rebuild attribution.
+// Rebuild the wholesaler city split net for every period a batch touched.
 //
 // ORDER IS THE WHOLE POINT. au.f_monthly_attribution reads au.monthly_store_split_net, so the net
-// has to be current BEFORE phx_refresh_monthly_attribution materialises the period. Calling them the
-// other way round would bake the previous split into the rollup and leave it there until the next
-// import — a wrong achievement number with nothing reporting it. Wrapping both in one function is
-// what stops a future call site from getting that order wrong: there is no longer a bare
-// phx_refresh_monthly_attribution to copy.
+// has to be current BEFORE phx_refresh_monthly_attribution materialises the period. Refreshing first
+// would bake the previous split into the rollup and leave it there until the next import — a wrong
+// achievement number with nothing reporting it. Every call site therefore calls this immediately
+// before its attribution refresh, and tests/attribution-store-split-net.test.ts pins that ordering
+// file by file.
+//
+// 🔴 WHY THIS IS NOT A WRAPPER AROUND THE REFRESH RPC, which is the obvious shape and was written
+// first. tests/sos-import-summaries-refresh.test.ts uses the literal string
+// `phx_refresh_monthly_attribution` as its MARKER for "this file is a rollup-refresh site", and then
+// insists every such file also refreshes the import summaries. Folding the RPC into a helper removed
+// that marker from all four sites at once: the guard went from four sites to one and went red — it
+// caught exactly the erosion it exists to catch. The marker stays where the guard can see it, and
+// this module does the one thing the guard knows nothing about.
 //
 // EVERY PERIOD THE BATCH TOUCHED, not just one. A multi-period import writes fact rows for several
 // months and phx_refresh_monthly_attribution rebuilds all of them, so the net has to cover the same
@@ -33,8 +41,8 @@ type SupabaseLike = {
  *
  * `includeConfidential: false` matches loadClosingStoreSplitUncached, and it also matches
  * au.f_monthly_attribution: the restricted set is exactly LA003 / LA004 / SS001, which the SQL
- * excludes by name. So the two populations are the same three codes apart from everything, and the
- * net can neither miss a product attribution counts nor carry one it does not.
+ * excludes by name. The two populations are therefore identical, so the net can neither miss a
+ * product attribution counts nor carry one it does not.
  */
 async function loadRowsForLine(line: string, period: string): Promise<readonly AttributionSplitRow[]> {
   const details = await loadMonthlyClosingDetails({
@@ -65,23 +73,20 @@ async function periodsOfBatch(supabase: SupabaseLike, batchId: string): Promise<
 }
 
 /**
- * Recompute the wholesaler split net for every period this batch touched, then rebuild the
- * attribution rollup. Throws on any failure — a half-refreshed attribution is a wrong number on
- * Sales vs Target, so it must not be swallowed.
+ * Recompute and store the split net for every period this batch touched.
+ *
+ * Call it IMMEDIATELY BEFORE phx_refresh_monthly_attribution, never after. Throws on failure — a net
+ * that silently failed to write leaves attribution applying yesterday's split, which is a wrong
+ * number on everyone's Sales vs Target with no error anywhere.
  */
-export async function refreshAttributionWithStoreSplit(
+export async function writeStoreSplitNetForBatch(
   supabase: SupabaseLike,
   batchId: string,
 ): Promise<{ periods: string[]; splits: AttributionStoreSplitWriteResult[] }> {
   const periods = await periodsOfBatch(supabase, batchId);
   const splits: AttributionStoreSplitWriteResult[] = [];
-
   for (const period of periods) {
     splits.push(await writeAttributionStoreSplitNet({ period, supabase, loadRowsForLine }));
   }
-
-  const refresh = await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
-  if (refresh.error) throw refresh.error;
-
   return { periods, splits };
 }
