@@ -189,6 +189,72 @@ async function testColumnsAreMatchedByHeaderNotByPosition(): Promise<void> {
   assert.equal(rows[0].serialNumber, null, "with nothing bleeding into the serial");
 }
 
+/**
+ * Columns the template does not know are IGNORED, wherever they sit.
+ *
+ * WHY THIS IS PINNED. The fleet is entered by one person walking round with a tablet in one hand,
+ * and they need to record two different things about it: the device (asset tag, IMEI) and whether
+ * it has been SET UP (wiped, company account added, Find My Device confirmed). The second set is
+ * not the register's business and never will be — but if the importer refused an unknown column,
+ * those two records would have to live in two files, which means two passes of the fleet, which
+ * means the setup ticks and the IMEIs drift apart the first time somebody is interrupted.
+ *
+ * So the owner was told he can add his own columns to the sheet and upload it unchanged. That is
+ * now load-bearing advice with nothing holding it up, which is what this test is for: a later
+ * tightening of the parser — rejecting unknown headers, say, as a "safety" improvement — would
+ * break his workflow silently, on a file that looks exactly like the one that worked last week.
+ *
+ * THE MID-SHEET CASE IS THE ONE THAT MATTERS. An extra column appended at the END is harmless under
+ * almost any implementation. One INSERTED between two real columns is what breaks a parser that
+ * reads by position, and it breaks it by shifting every value one place — which is not an error,
+ * it is a serial silently filed as an IMEI.
+ */
+async function testUnknownColumnsAreIgnoredWhereverTheySit(): Promise<void> {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Devices");
+
+  const headers = [...COLUMNS.map((column) => column.header)];
+  headers.splice(2, 0, "Wiped?"); // INSERTED mid-sheet, the case that breaks positional reading
+  headers.push("Find My Device on?", "Location on?", "Done by");
+
+  const headerRow = sheet.getRow(DEVICE_IMPORT_HEADER_ROW);
+  headers.forEach((header, index) => {
+    headerRow.getCell(index + 1).value = header;
+  });
+
+  const at = (header: string) => headers.indexOf(header) + 1;
+  const row = sheet.getRow(DEVICE_IMPORT_FIRST_DATA_ROW);
+  row.getCell(at("Asset tag *")).value = "PHX-TAB-0001";
+  row.getCell(at("Category *")).value = "tablet";
+  row.getCell(at("IMEI")).value = "356938035643809";
+  row.getCell(at("Held by")).value = "Nour Adel (B-155)";
+  row.getCell(at("Estimated value (EGP)")).value = 9000;
+  row.getCell(at("Wiped?")).value = "yes";
+  row.getCell(at("Find My Device on?")).value = "yes";
+  row.getCell(at("Location on?")).value = "yes";
+  row.getCell(at("Done by")).value = "Omar";
+
+  const rows = await parseDeviceImportFile(
+    (await workbook.xlsx.writeBuffer()) as unknown as ArrayBuffer,
+  );
+
+  assert.equal(rows.length, 1, "a sheet carrying extra columns still yields its device row");
+  assert.equal(rows[0].assetTag, "PHX-TAB-0001", "the asset tag survives an inserted column");
+  assert.equal(rows[0].category, "tablet", "and so does the category");
+  assert.equal(rows[0].imei, "356938035643809", "and the IMEI");
+  assert.equal(rows[0].heldBy, "Nour Adel (B-155)", "and the holder");
+  assert.equal(rows[0].estimatedValueEgp, 9000, "and the value");
+
+  // The one that would catch a positional read: "Wiped?" sits immediately beside the serial column.
+  assert.equal(
+    rows[0].serialNumber,
+    null,
+    'the serial must stay empty - "Wiped?" sits next to it, and a positional reader would file ' +
+      '"yes" as this device\'s serial number',
+  );
+  assert.equal(rows[0].note, null, "and nothing from the appended columns leaks into the note");
+}
+
 /** A file that is not the template fails loudly, rather than reading whatever is in column 1. */
 async function testAForeignFileIsRefusedWithAnExplanation(): Promise<void> {
   const workbook = new ExcelJS.Workbook();
@@ -554,6 +620,7 @@ function testTheTemplateHasNoSampleDataRow(): void {
 export async function runDeviceBulkImportTests(): Promise<void> {
   await testEveryValueLandsInItsOwnField();
   await testColumnsAreMatchedByHeaderNotByPosition();
+  await testUnknownColumnsAreIgnoredWhereverTheySit();
   await testAForeignFileIsRefusedWithAnExplanation();
   await testEmptyRowsAreSkippedSilently();
   await testARowWithOnlyAPersonOnItIsIgnored();
