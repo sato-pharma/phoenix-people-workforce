@@ -255,10 +255,12 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["ACCOUNT_ID"],
     customerNameColumns: ["الاسم"],
     // NO discountColumns, and that is a decision — owner, 2026-09-07: "you only consider the qty and
-    // the city". `خصم 1` holds a real 17-22% and mapping it looked obviously right, but `discount`
-    // feeds `effective_units = qty x (1 - discount)`, so reading it CREDITS THE REP FEWER UNITS THAN
-    // THE CUSTOMER BOUGHT. Measured on their August file: 8,768 packs sold, 6,995.92 credited — 1,772
-    // packs, about 478,000 EGP at factory price, reaching nobody.
+    // the city". `خصم 1` holds a real 17-22% and mapping it looked obviously right. At the time it
+    // would have CREDITED THE REP FEWER UNITS THAN THE CUSTOMER BOUGHT, because `discount` then fed
+    // `effective_units = qty x (1 - discount)`. Measured on their August file: 8,768 packs sold,
+    // 6,995.92 credited — 1,772 packs, about 478,000 EGP at factory price, reaching nobody. The owner
+    // struck that factor out of the entire system later the same day, so the column can no longer cost
+    // anyone units — but it is still not mapped, because he asked for qty and the city and nothing else.
     //
     // El Qema is the ONLY distributor whose file carries a discount at all: Overseas, Ibn Sina-Sato,
     // EPDA and Direct all store zero on every August row. So reading it would have penalised the one

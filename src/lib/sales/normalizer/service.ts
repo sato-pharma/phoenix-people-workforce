@@ -191,8 +191,9 @@ export function listNormalizerDistributors(): NormalizerDistributorOption[] {
 
 // ── Coded XLSX (the format the user produces by hand today; Phoenix-branded) ──
 
-// "Discount%" carries the exact discount fraction the engine applied, so the Source-of-Sales importer's
-// recompute (Qty x factory_price x (1 - discount)) reproduces this sheet's Value exactly. It maps to the
+// "Discount%" carries the discount fraction the engine read off the raw sheet. It is CARRIED, not
+// applied: since 2026-09-07 both the engine and the Source-of-Sales importer value a row at
+// Qty x factory_price, so the two agree without either multiplying by it. It maps to the
 // NORMALIZER_TEMPLATE.discountField in monthly-distributor-import.ts.
 export const CODED_HEADERS = [
   "Distrub ID", "Region ID", "Area ID", "Brick ID", "Product ID", "Product Name",

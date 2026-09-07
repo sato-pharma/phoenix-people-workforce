@@ -4,8 +4,8 @@
 // dashboard pivots to distributor / channel / region / area / brick / customer / product analytics
 // with value + units over time.
 //
-// Value semantics (encapsulated by the RPCs): distributor rows = qty*(1-discount)*factory_price;
-// Direct rows = the stored sheet value; bonus qty is always excluded. Confidential products
+// Value semantics (encapsulated by the RPCs): distributor rows = qty*factory_price;
+// Direct rows = the stored sheet value; bonus qty and the discount column are both excluded. Confidential products
 // (LA003/LA004/SS001) are stripped at leaf level for everyone except CEO / Super Admin.
 
 import { unstable_cache } from "next/cache.js";

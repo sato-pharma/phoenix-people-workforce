@@ -520,6 +520,7 @@ import { runSalesPharmacyOverrideTests } from "./sales-pharmacy-override.test.ts
 import { runSalesChannelsByRepTests } from "./sales-channels-by-rep.test.ts";
 import { runSosNormalizerPersistShapeTests } from "./sos-normalizer-persist-shape.test.ts";
 import { runSosImportTemplateTests } from "./sos-import-template.test.ts";
+import { runUnitsAreUnitsNoDiscountFactorTests } from "./units-are-units-no-discount-factor.test.ts";
 import { runImportPreviewTests } from "./import-preview.test.ts";
 import { runEmployeeImportTeamResurrectionGuardTests } from "./employee-import-team-resurrection-guard.test.ts";
 import { runOrgTitleCaseAcronymTests } from "./org-title-case-acronyms.test.ts";
@@ -2372,6 +2373,7 @@ await runTest("sales linkage gate (one engine)", runSalesLinkageTests);
 await runTest("sales channels by rep (stems derived, restricted fail-closed, unattributed kept)", runSalesChannelsByRepTests);
 await runTest("sos normalizer persist shape", runSosNormalizerPersistShapeTests);
 await runTest("sos import template", runSosImportTemplateTests);
+await runTest("units are units — no discount factor", runUnitsAreUnitsNoDiscountFactorTests);
 await runTest("import preview diff", runImportPreviewTests);
 await runTest("employee import never resurrects a deactivated team (insert-only org entities)", runEmployeeImportTeamResurrectionGuardTests);
 await runTest("org title casing keeps acronyms (HR/QPPV/CEO/SFE/R&D), lower-cases minor words mid-name, and round-trips to the same code", runOrgTitleCaseAcronymTests);

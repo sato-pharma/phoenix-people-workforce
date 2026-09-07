@@ -340,8 +340,8 @@ type DistributorSalesTemplate = {
   // Optional per-customer columns (each a list of header fallbacks). Used to capture the
   // client identity for the Customer Directory; never affects validation.
   customerFields?: { address: string[]; code: string[]; name: string[] };
-  // Optional per-row discount column. Blank/0 means no discount; otherwise the
-  // row value is reduced by the discount (value = Qty x factory_price x (1 - discount)).
+  // Optional per-row discount column. Captured and stored on the row for display only — since
+  // 2026-09-07 it does NOT reduce anything (value = Qty x factory_price, full stop).
   discountField?: string;
   distributorCodes: string[];
   // areaCode / brickId are optional so a region-only channel (Direct) can omit them; the
@@ -467,7 +467,7 @@ const IBN_SINA_SATO_ISS_TEMPLATE: DistributorSalesTemplateDef = {
 // EGD Branch (code EG-BR) — a separate branch of EGD (parent code EG). Fully-coded EGD monthly sheet:
 // EGD's raw export with the Phoenix coded columns (Product ID / Brick ID / Area ID / Region ID /
 // Distrub ID, where Distrub ID = "EG-BR") appended. Date is "Invoice Date", qty the net "Qty",
-// customer CUSTOMER_CODE/NAME/ADDRESS. Value RECOMPUTED from Qty x factory_price x (1 - Discount%).
+// customer CUSTOMER_CODE/NAME/ADDRESS. Value RECOMPUTED from Qty x factory_price.
 const EGD_PH_TEMPLATE: DistributorSalesTemplateDef = {
   customerFields: { address: ["CUSTOMER_ADDRESS"], code: ["CUSTOMER_CODE"], name: ["CUSTOMER_NAME"] },
   discountField: "Discount%",
@@ -517,7 +517,7 @@ const MEC_MC_TEMPLATE: DistributorSalesTemplateDef = {
 // from those coded columns like every other distributor. Sofico keeps its raw header names: the date
 // is "BILLINGDATE" (added to INVOICE_DATE_HEADER_ALIASES), the quantity is the net "qty" (returns
 // already signed), and there is no free-unit column. Value is RECOMPUTED from
-// Qty x factory_price x (1 - Discount%) (no valueField). Captures Sofico's customer code/name so
+// Qty x factory_price (no valueField). Captures Sofico's customer code/name so
 // client_code is populated like the other distributors.
 const SOFICO_SF_TEMPLATE: DistributorSalesTemplateDef = {
   customerFields: {
@@ -548,7 +548,7 @@ const SOFICO_SF_TEMPLATE: DistributorSalesTemplateDef = {
 // those coded columns. Ramco keeps ARABIC raw headers, so the qty is the net "صافى كمية" (returns
 // already signed) and the date is "تاريخ" (a real Excel date cell — unambiguous, no day-first issue);
 // both are listed first, then the shared English aliases as a defensive fallback. Discount is
-// "خصم%". Value is RECOMPUTED from Qty x factory_price x (1 - discount) (no valueField —
+// "خصم%". Value is RECOMPUTED from Qty x factory_price (no valueField —
 // the sheet's "صافى البيع" includes tax and is ignored). Captures the Ramco customer code/name/address.
 const RAMCO_RM_TEMPLATE: DistributorSalesTemplateDef = {
   customerFields: { address: ["عنوان"], code: ["كود"], name: ["عميل"] },
@@ -596,8 +596,8 @@ const DIRECT_TEMPLATE: DistributorSalesTemplateDef = {
 // Unified Normalizer coded sheet. The Source Normalizer emits ONE coded format (CODED_HEADERS in
 // src/lib/sales/normalizer/service.ts) for every distributor, so its output can flow through the same
 // Source-of-Sales validation + import as everything else. Value is RECOMPUTED from
-// Qty x factory_price x (1 - Discount%); the Normalizer writes the exact discount it applied (the coded
-// sheet's "Discount%" column) so the recompute reproduces the engine's value. Offered as a FINAL fallback
+// Qty x factory_price; the Normalizer still writes the discount it read into the coded sheet's
+// "Discount%" column, but neither side multiplies by it any more. Offered as a FINAL fallback
 // in templateForDistributor — tried AFTER the distributor's own template — so a coded sheet validates
 // under any distributor while raw/hand-coded sheets still match their dedicated template first.
 export const NORMALIZER_TEMPLATE: DistributorSalesTemplateDef = {
@@ -1550,14 +1550,14 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     const areaReference = areaCode ? maps.areaByCode.get(areaCode) : undefined;
     const blockReference = brickReference ? maps.blockByCode.get(normalizeCode(brickReference.blockCode)) : undefined;
 
-    // Value is computed from Qty only (bonus/free units neglected) times the
-    // product factory price, reduced by the per-row discount. The distributor
-    // sheet's own Value/Net column is intentionally ignored — EXCEPT for the Direct
-    // channel, which is the only sheet whose own Value column is the source of truth.
+    // Value is Qty times the product factory price. Nothing else touches it: bonus/free units are
+    // neglected, the distributor sheet's own Value/Net column is ignored, and since 2026-09-07 the
+    // per-row discount is ignored too — the owner struck that factor out of the whole system. The
+    // Direct channel remains the one exception, the only sheet whose own Value column is truth.
     const value = isDirect
       ? parseNumber(rawSheetValue, { emptyAsZero: true })
       : Number.isFinite(qty)
-        ? qty * (productReference?.factoryPrice ?? 0) * (1 - discountRate)
+        ? qty * (productReference?.factoryPrice ?? 0)
         : Number.NaN;
 
     // When geography is taken from the brick, the master Region/Area NAMES win too, so a stored

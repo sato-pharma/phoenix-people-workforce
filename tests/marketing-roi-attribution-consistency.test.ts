@@ -42,10 +42,19 @@ const EXACT_CUSTOMER_JOIN_RE =
   /lower\(btrim\(regexp_replace\(coalesce\(r\.client_code,\s*''\),\s*'\\s\+',\s*' ',\s*'g'\)\)\)\s*=\s*tp\.customer_code/i;
 const SHARED_ATTRIBUTION_RES = [
   EXACT_CUSTOMER_JOIN_RE,
-  /r\.qty\s*\*\s*\(1\s*-\s*coalesce\(r\.discount,\s*0\)\)\s*\*\s*coalesce\(sp\.factory_price,\s*0\)/i,
+  // UNITS ARE UNITS (2026-09-07): this pinned `r.qty * (1 - coalesce(r.discount, 0)) *
+  // coalesce(sp.factory_price, 0)` until the owner struck the discount factor out of the whole
+  // system. A row is now worth qty x factory price, and NO_DISCOUNT_FACTOR_RE below pins the
+  // other direction so the factor cannot come back in a body this file already guards.
+  /r\.qty\s*\*\s*coalesce\(sp\.factory_price,\s*0\)/i,
   /b\.status\s*=\s*'validated'/i,
   /r\.validation_state\s*=\s*'valid'/i,
 ];
+// The factor that was deleted on 2026-09-07. Pinning its ABSENCE matters as much as pinning the
+// new formula: the value expression could be rewritten a dozen ways that still satisfy the regex
+// above while multiplying the discount back in somewhere else in the body.
+const NO_DISCOUNT_FACTOR_RE = /1\s*-\s*coalesce\(\s*r\.discount/i;  // units-are-units:allow
+
 // A caller that merely PROJECTS the shared function must not join the raw sales table itself —
 // that would mean it had grown a second, independent attribution path again.
 const READS_RAW_SALES_RE = /join\s+public\.source_of_sales_import_rows/i;
@@ -146,6 +155,7 @@ function testSharedSalesLinesCarriesTheOneMatchingRule() {
   for (const shared of SHARED_ATTRIBUTION_RES) {
     assert.match(body, shared, `shared sales-lines function carries: ${shared}`);
   }
+  assert.doesNotMatch(body, NO_DISCOUNT_FACTOR_RE, "the discount factor must not come back — units are units");
   assert.match(
     body,
     /upper\(btrim\(sp\.product_code\)\)\s*<>\s*all\(excl\.codes\)/i,
@@ -203,6 +213,8 @@ function testCurrentRoiActualsV2MatchesV1ExceptMasking() {
     assert.match(v1.body, predicate, `v1 shares: ${predicate}`);
     assert.match(shared.body, predicate, `shared rule shares: ${predicate}`);
   }
+  assert.doesNotMatch(v1.body, NO_DISCOUNT_FACTOR_RE, "v1 must not multiply by the discount either");
+  assert.doesNotMatch(shared.body, NO_DISCOUNT_FACTOR_RE, "the shared rule must not multiply by the discount either");
 }
 
 function testCurrentViewSalesIsExactOnlyAndReconciles() {

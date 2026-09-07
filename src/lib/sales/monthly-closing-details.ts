@@ -119,7 +119,7 @@ export type ClosingDetailRow = {
   qty: number;
   bonusQty: number;
   discount: number;
-  /** qty x (1 - discount) — the base the matrix values (mirrors fact_rollup.effective_units). */
+  /** qty — the base the matrix values (mirrors fact_rollup.effective_units). Units are units. */
   effectiveUnits: number;
   /**
    * The row's contribution to the closing's sales value. Normally effectiveUnits x factoryPrice —
@@ -281,7 +281,7 @@ export function resolveClosingDetailSalesValue(input: {
   isDirect: boolean;
   /** The row's own invoice period, `YYYY-MM`. Retained for callers; no longer branched on. */
   invoicePeriod: string;
-  /** qty x (1 - discount). */
+  /** qty. The discount factor was struck out of the whole system on 2026-09-07. */
   effectiveUnits: number;
   factoryPrice: number;
   /** The value column exactly as the sheet stored it. */
@@ -619,7 +619,13 @@ export async function loadMonthlyClosingDetails(
 
     const qty = num(raw.qty);
     const discount = num(raw.discount);
-    const effectiveUnits = qty * (1 - discount);
+    // UNITS ARE UNITS. This was `qty * (1 - discount)` until 2026-09-07, when the owner struck the
+    // discount factor out of the whole system: "we neglect the bonus and the value in any
+    // distributor sheet, we take the units and multiply by factory". The sheet's discount column is
+    // still imported and still displayed beside the row — it is simply no longer allowed to reduce
+    // the units a rep is credited with. The ten database functions that carried the same factor are
+    // replaced in the migration of the same date.
+    const effectiveUnits = qty;
     const isDirect = raw.is_direct === true;
     const clientCode = text(raw.client_code);
     const isConfidential = isRestrictedProductCode(productCode);

@@ -120,9 +120,9 @@ function detailRow(overrides: Partial<ClosingDetailRow> = {}): ClosingDetailRow 
   // Derive the value the way loadMonthlyClosingDetails does, so the fixture cannot drift from it.
   return {
     ...base,
-    effectiveUnits: base.qty * (1 - base.discount),
+    effectiveUnits: base.qty,
     salesValue: Number(resolveClosingDetailSalesValue({
-      effectiveUnits: base.qty * (1 - base.discount),
+      effectiveUnits: base.qty,
       factoryPrice: base.factoryPrice,
       invoicePeriod: base.invoicePeriod,
       isDirect: base.isDirect,
