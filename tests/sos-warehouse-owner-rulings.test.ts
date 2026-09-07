@@ -17,6 +17,13 @@ import {
  * 16 government depot. Four he had answered two different ways were put back to him and settled
  * the same day (دار الفتح, ايةام جروب, الزهراء, اسلام حسن — all warehouses).
  *
+ * A FIFTH was settled on 2026-09-07, and the counts below are the settled ones, not the 2026-09-06
+ * ones: «شركة اورينت جروب - بهتيم» (164162) was ruled a pharmacy in that sheet and a wholesaler on
+ * the EPDA Pedia sheet the next day. Asked which answer stood, he said the wholesaler one — so its
+ * TWO accounts move, and the totals here read 75 warehouse and 76 pharmacy. The 2026-09-06 sheet is
+ * untouched and still says pharmacy; this file carries what is true now, which is the only thing an
+ * assertion can usefully carry.
+ *
  * WHY THE WHOLE LIST IS PINNED AND NOT A SAMPLE. This is a NAME rule: it reads text a distributor
  * typed. Widening a stem by one letter, adding a word, or changing the Arabic folding silently
  * re-decides customers nobody was looking at, and the only symptom is money moving between areas in
@@ -71,7 +78,7 @@ const OWNER_RULINGS: ReadonlyArray<
   ["ت.ص.مخازن جرجا","3000195","PS-T","government"],
   ["الهيئة العربية للتصنيع المخازن الرئيسية","1204","RM-T","government"],
   ["ايةام جروب للاستثمار وتجارةالادوية","428612","IS-S","warehouse"],
-  ["شركة اورينت جروب - بهتيم","164162","EP-BK","pharmacy"],
+  ["شركة اورينت جروب - بهتيم","164162","EP-BK","warehouse"],
   ["شركة ابوعميره لتوريد وتوزيع الادوية","449087","IS","warehouse"],
   ["غرناطة لتجارة وتوزيع الادوية","406681","IS","warehouse"],
   ["الزهراء لتجارةوتوزيع اﻻدويةومستلزمات","434650","IS","warehouse"],
@@ -158,7 +165,7 @@ const OWNER_RULINGS: ReadonlyArray<
   ["شريف شحاتة - المنصورة //مطلوب سجل تجارى ساري","76838","EG","pharmacy"],
   ["شريف كمال  - السويس//مطلوب سجل تجارى سارى","8192","EG","pharmacy"],
   ["احمد صبرى عبدالفتاح - محرم بك (سجل تجاري حديث","114168","EG","pharmacy"],
-  ["شركة اورينت جروب - بهتيم","164162","EP-PHS","pharmacy"],
+  ["شركة اورينت جروب - بهتيم","164162","EP-PHS","warehouse"],
   ["الاسعاف - الجسر//مطلوب سجل تجارى سارى","42603","EG","pharmacy"],
   ["احمد على - نقدى شباك  بدون سموم - بهجورة( مطلوب بطاقه شخصيه وسجل تجارى","10682","EG","pharmacy"],
   ["بسمة صلاح - السويس//مطلوب سجل تجارى سارى","21402","EG","pharmacy"],
@@ -210,8 +217,8 @@ export function runSosWarehouseOwnerRulingsTests() {
   assert.equal(OWNER_RULINGS.length, 167, "every customer he ruled on is pinned here");
   assert.equal(
     OWNER_RULINGS.filter((row) => row[3] === "warehouse").length,
-    73,
-    "the count he marked warehouse, unchanged since 2026-09-06",
+    75,
+    "73 on 2026-09-06, plus the two accounts of شركة اورينت جروب - بهتيم he settled on 2026-09-07",
   );
 
   const wrong: string[] = [];
