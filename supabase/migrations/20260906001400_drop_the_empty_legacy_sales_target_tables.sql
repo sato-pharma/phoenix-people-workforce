@@ -88,6 +88,11 @@ begin
   end if;
 end $$;
 
+-- SAFE: both tables hold ZERO rows on production, verified before this was written. Nothing
+-- references them -- no view, no materialized view, no trigger, no function, and no foreign key
+-- from any other table -- and the do-block above REFUSES the entire migration if either has
+-- acquired a row since. The full justification, the deploy-window analysis and the restore DDL
+-- for both tables are in the header comment at the top of this file.
 -- Child first: sales_targets.batch_id references sales_target_batches.
 drop table if exists public.sales_targets;
 drop table if exists public.sales_target_batches;
