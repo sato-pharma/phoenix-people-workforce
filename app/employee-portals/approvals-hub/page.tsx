@@ -6,6 +6,11 @@ import type { ActionHubData, ActionHubModule } from "@/components/action-center/
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getActionCenterDeepLinkItem, getAwaitingMyActionItems, getMyRequestItems, getMyApprovalHistory } from "@/lib/action-center/service";
+import {
+  DECIDED_FOR_ME_WINDOW_DAYS,
+  getDecisionsMadeForMe,
+  type DecidedForMeItem,
+} from "@/lib/action-center/decided-for-me";
 import type { ActionHubItem, HistoricalApprovalItem, MyRequestItem } from "@/components/action-center/types";
 
 export const dynamic = "force-dynamic";
@@ -58,10 +63,17 @@ export default async function PortalApprovalsHubPage({
   // Portal audience: after the migrated-module redirect above, the live inbox only carries the
   // access-scoped residual modules (contract renewal). Unscoped HR/admin sources (resignation,
   // outstation) never reach a portal manager — see getAwaitingMyActionItems.
-  const [items, rawMyRequests, rawHistoricalItems]: [ActionHubItem[], MyRequestItem[], HistoricalApprovalItem[]] = await Promise.all([
+  const [items, rawMyRequests, rawHistoricalItems, decidedForMe]: [
+    ActionHubItem[],
+    MyRequestItem[],
+    HistoricalApprovalItem[],
+    DecidedForMeItem[],
+  ] = await Promise.all([
     getAwaitingMyActionItems(access, "portal"),
     getMyRequestItems(access).catch((): MyRequestItem[] => []),
     getMyApprovalHistory(access).catch((): HistoricalApprovalItem[] => []),
+    // Never fatal to the page — see the admin hub for why this one swallows.
+    getDecisionsMadeForMe(access).catch((): DecidedForMeItem[] => []),
   ]);
   // Every migrated module (leave/excuse/weekly_plan) has its own "My Requests"/"History" tabs on
   // its dedicated hub (approvals-hub/service.ts filters these same shared functions down to one
@@ -107,6 +119,8 @@ export default async function PortalApprovalsHubPage({
         initialId={initialId}
         callerRole={access.role}
         initialTab={initialTab}
+        decidedForMe={decidedForMe}
+        decidedForMeWindowDays={DECIDED_FOR_ME_WINDOW_DAYS}
         embedded
       />
     </EmployeePortalPageShell>

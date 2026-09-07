@@ -514,6 +514,7 @@ import { runSalesAiExplainTests } from "./sales-ai-explain.test.ts";
 import { runSalesLinkageTests } from "./sales-linkage.test.ts";
 import { runSosCustomerKeyTests } from "./sos-customer-key.test.ts";
 import { runSosDirectChannelTests } from "./sos-direct-channel.test.ts";
+import { runDecidedForMeTests } from "./decided-for-me.test.ts";
 import { runSosCodeCanonicalTests } from "./sos-code-canonical.test.ts";
 import { runSalesPharmacyOverrideTests } from "./sales-pharmacy-override.test.ts";
 import { runSalesChannelsByRepTests } from "./sales-channels-by-rep.test.ts";
@@ -4630,6 +4631,10 @@ await runTest(
 await runTest(
   "SoS Direct channel folds both vintages (uploaded DIRECT + module DirectReq) into one channel, so a module-sourced direct sale is never reported as a distributor",
   runSosDirectChannelTests,
+);
+await runTest(
+  "decided for you (a cover's decisions surface to the manager they were taken for, outcomes never soften to Approved, and the viewer never sees his own decisions back)",
+  runDecidedForMeTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
