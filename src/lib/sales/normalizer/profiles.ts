@@ -254,7 +254,17 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     dateFormat: "day-first",
     customerCodeColumns: ["ACCOUNT_ID"],
     customerNameColumns: ["الاسم"],
-    discountColumns: ["خصم 1"],
+    // NO discountColumns, and that is a decision — owner, 2026-09-07: "you only consider the qty and
+    // the city". `خصم 1` holds a real 17-22% and mapping it looked obviously right, but `discount`
+    // feeds `effective_units = qty x (1 - discount)`, so reading it CREDITS THE REP FEWER UNITS THAN
+    // THE CUSTOMER BOUGHT. Measured on their August file: 8,768 packs sold, 6,995.92 credited — 1,772
+    // packs, about 478,000 EGP at factory price, reaching nobody.
+    //
+    // El Qema is the ONLY distributor whose file carries a discount at all: Overseas, Ibn Sina-Sato,
+    // EPDA and Direct all store zero on every August row. So reading it would have penalised the one
+    // distributor transparent enough to report it, and left the closing comparing unlike with unlike.
+    // The 64 rows already imported were corrected in production the same day (pre-image in
+    // `qema_discount_backup_20260907`).
     bonusColumns: ["بونص"],
     fingerprintColumns: ["رقم الفاتورة", "اجمالى جمهور", "ACCOUNT_ID"],
   },
