@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarRange,
   CheckCircle2,
+  Eye,
+  History,
+  Inbox,
   MapPin,
   MessageSquare,
   RefreshCcw,
@@ -126,36 +129,67 @@ const INPUT =
 const TEXTAREA =
   "min-h-20 w-full border border-phx-line bg-phx-paper px-3 py-2 text-phx-sm font-bold text-phx-ink outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-phx-accent-soft";
 
+type InboxScope = "open" | "history";
+
+type InboxRow = { activity: Activity; canDecide: boolean };
+
+const INBOX_TABS: ReadonlyArray<{ description: string; icon: typeof Inbox; key: InboxScope; label: string }> = [
+  { description: "Still moving through the chain", icon: Inbox, key: "open", label: "In approval" },
+  { description: "Approved, rejected or withdrawn", icon: History, key: "history", label: "History" },
+];
+
+/**
+ * The approvals inbox — the same two tabs as the Marketing inbox, on the owner's instruction
+ * (2026-09-07: "exactly the same tabs of any other approval inbox, and be able to see historical").
+ *
+ * WHAT "IN APPROVAL" MEANS HERE IS WIDER THAN "MINE TO DECIDE", and that is the point. The Group
+ * Product Manager asked to track a Product Manager's request while it sits with that PM's own
+ * manager — he is not in its chain, so it was visible to nobody but that manager. Every row the
+ * caller may SEE is listed now, and the server marks each with `canDecide`; a row that is not
+ * theirs renders its state and no buttons. The header count stays the number of decisions actually
+ * OWED, never the number of rows, because "3 waiting on you" must not come to mean "3 things exist".
+ *
+ * The tab strip copies the Marketing inbox's structure — roles, descriptions, both panels kept
+ * mounted — but NOT its `rounded-sm`: the square-edge golden rule outranks matching a sibling's
+ * radius, and inheriting a rounded corner by copying is exactly how that rule gets lost.
+ */
 export function MarketAwarenessInbox({ isCeoStepHolder }: { isCeoStepHolder: boolean }) {
-  const [activities, setActivities] = useState<Activity[] | null>(null);
+  const [scope, setScope] = useState<InboxScope>("open");
+  const [rowsByScope, setRowsByScope] = useState<Partial<Record<InboxScope, InboxRow[]>>>({});
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const loading = activities === null;
-  const rows = useMemo(() => activities ?? [], [activities]);
+  const current = rowsByScope[scope];
+  const loading = current === undefined;
+  const rows = useMemo(() => current ?? [], [current]);
+  const openRows = rowsByScope.open;
+  const owed = useMemo(
+    () => (openRows ?? []).filter((row) => row.canDecide).length,
+    [openRows],
+  );
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (which: InboxScope) => {
     try {
-      const response = await fetch("/api/market-awareness/inbox", { cache: "no-store" });
+      const response = await fetch(`/api/market-awareness/inbox?scope=${which}`, { cache: "no-store" });
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload?.success) {
         throw new Error(
           payload?.message ?? `Could not load the approvals inbox (HTTP ${response.status}).`,
         );
       }
-      setActivities(payload.activities ?? []);
+      setRowsByScope((previous) => ({ ...previous, [which]: payload.rows ?? [] }));
       setError(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load the approvals inbox.");
-      setActivities([]);
+      setRowsByScope((previous) => ({ ...previous, [which]: [] }));
     }
   }, []);
 
   useEffect(() => {
     void (async () => {
-      await load();
+      await load(scope);
     })();
-  }, [load]);
+  }, [load, scope]);
 
   const decide = async (
     activityId: string,
@@ -177,13 +211,28 @@ export function MarketAwarenessInbox({ isCeoStepHolder }: { isCeoStepHolder: boo
           payload?.message ?? `Could not record that decision (HTTP ${response.status}).`,
         );
       }
-      await load();
+      // A decision moves the row from one tab to the other, so every tab already loaded is now
+      // stale — refresh them all rather than only the one being looked at.
+      const loaded = Object.keys(rowsByScope) as InboxScope[];
+      await Promise.all(loaded.map((which) => load(which)));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not record that decision.");
     } finally {
       setBusyId(null);
     }
   };
+
+  const headline = loading
+    ? "Loading"
+    : scope === "history"
+      ? rows.length === 0
+        ? "Nothing answered yet"
+        : `${rows.length} answered`
+      : owed === 0
+        ? rows.length === 0
+          ? "Nothing waiting"
+          : `${rows.length} moving, none waiting on you`
+        : `${owed} waiting on you`;
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-5">
@@ -194,15 +243,42 @@ export function MarketAwarenessInbox({ isCeoStepHolder }: { isCeoStepHolder: boo
         </div>
       ) : null}
 
+      <div className="flex w-full min-w-0 border border-phx-line bg-phx-paper p-1" role="tablist">
+        {INBOX_TABS.map((definition) => {
+          const Icon = definition.icon;
+          const isActive = definition.key === scope;
+          return (
+            <button
+              aria-selected={isActive}
+              className={`inline-flex min-w-0 flex-1 flex-wrap items-center justify-center gap-x-2 gap-y-0.5 px-3 py-2 text-phx-xs font-black uppercase tracking-[0.08em] transition ${
+                isActive
+                  ? "bg-phx-ink text-phx-paper"
+                  : "text-phx-ink-soft hover:bg-phx-paper-2 hover:text-phx-ink"
+              }`}
+              key={definition.key}
+              onClick={() => setScope(definition.key)}
+              role="tab"
+              type="button"
+            >
+              <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+              <span className="break-words">{definition.label}</span>
+              <span
+                className={`hidden break-words text-phx-3xs font-medium normal-case tracking-normal sm:inline ${
+                  isActive ? "text-phx-paper-2" : "text-phx-ink-faint"
+                }`}
+              >
+                {definition.description}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-phx-line pb-3">
         <p className="min-w-0 break-words text-phx-sm font-black uppercase tracking-[0.08em] text-phx-ink">
-          {loading
-            ? "Loading"
-            : rows.length === 0
-              ? "Nothing waiting on you"
-              : `${rows.length} waiting on you`}
+          {headline}
         </p>
-        <button className={BTN_QUIET} onClick={() => void load()} type="button">
+        <button className={BTN_QUIET} onClick={() => void load(scope)} type="button">
           <RefreshCcw aria-hidden="true" className="h-3 w-3 shrink-0" />
           <span>Refresh</span>
         </button>
@@ -217,22 +293,26 @@ export function MarketAwarenessInbox({ isCeoStepHolder }: { isCeoStepHolder: boo
       ) : rows.length === 0 ? (
         <div className="flex min-w-0 flex-col items-center gap-2 border border-dashed border-phx-line bg-phx-paper-2 px-4 py-12 text-center">
           <CheckCircle2 aria-hidden="true" className="h-6 w-6 shrink-0 text-phx-ok" />
-          <p className="break-words text-phx-sm font-black text-phx-ink">Your queue is clear</p>
+          <p className="break-words text-phx-sm font-black text-phx-ink">
+            {scope === "history" ? "Nothing has been answered yet" : "Your queue is clear"}
+          </p>
           <p className="max-w-md break-words text-phx-xs font-medium text-phx-ink-soft">
-            An awareness activity appears here the moment the product manager submits it — and only
-            for the person whose decision it actually is.
+            {scope === "history"
+              ? "Approved, rejected and withdrawn activities collect here once a decision has been made."
+              : "An awareness activity appears here the moment a product manager submits it. Everything you can see is listed; the decision buttons show only where the decision is actually yours."}
           </p>
         </div>
       ) : (
         <ul className="flex min-w-0 flex-col gap-4">
-          {rows.map((activity) => (
-            <li className="min-w-0" key={activity.id}>
+          {rows.map((row) => (
+            <li className="min-w-0" key={row.activity.id}>
               <InboxCard
-                activity={activity}
-                busy={busyId === activity.id}
-                canAmend={isCeoStepHolder && activity.status === "pending_ceo"}
+                activity={row.activity}
+                busy={busyId === row.activity.id}
+                canAmend={isCeoStepHolder && row.activity.status === "pending_ceo"}
+                canDecide={row.canDecide}
                 onDecide={(action, comment, amended) =>
-                  void decide(activity.id, action, comment, amended)
+                  void decide(row.activity.id, action, comment, amended)
                 }
               />
             </li>
@@ -243,15 +323,44 @@ export function MarketAwarenessInbox({ isCeoStepHolder }: { isCeoStepHolder: boo
   );
 }
 
+/**
+ * Who a row is currently waiting on, for someone who is watching rather than deciding.
+ *
+ * Named, never a status code — the owner's standing rule is human-readable names. A pending manager
+ * step always has a manager (the submit path routes past the step when there is none), so a missing
+ * name here means the seat was emptied after submission, and saying so is better than printing an
+ * id or an empty space.
+ */
+function waitingOn(activity: Activity): string {
+  if (activity.status === "pending_manager") {
+    return activity.managerName
+      ? `Waiting on ${activity.managerName}`
+      : "Waiting on the requester's manager";
+  }
+  if (activity.status === "pending_ceo") return "Waiting on the CEO";
+  if (activity.status === "returned") {
+    return `Sent back to ${activity.requesterName ?? "the requester"} for changes`;
+  }
+  return "No decision is outstanding";
+}
+
 function InboxCard({
   activity,
   busy,
   canAmend,
+  canDecide,
   onDecide,
 }: {
   activity: Activity;
   busy: boolean;
   canAmend: boolean;
+  /**
+   * Whether the decision route would accept a decision from this viewer, resolved server-side.
+   * False for a row somebody is only TRACKING — the Group Product Manager watching a request that
+   * sits with a Product Manager's own manager. Those rows show their state and no buttons: offering
+   * a control the server refuses is worse than not offering it.
+   */
+  canDecide: boolean;
   onDecide: (
     action: "approve" | "reject" | "return",
     comment: string,
@@ -362,107 +471,116 @@ function InboxCard({
           <Conversation activityId={activity.id} />
         </div>
 
-        {/* The decision. */}
-        <div className="mt-4 flex min-w-0 flex-col gap-3 border-t border-phx-line pt-4">
-          <label className="block min-w-0">
-            <span className="mb-1.5 flex flex-wrap items-center gap-2">
-              <MicroLabel>Comment</MicroLabel>
-              <span className="inline-flex items-center gap-1 text-phx-3xs font-bold uppercase tracking-[0.10em] text-phx-ink-faint">
-                <MessageSquare aria-hidden="true" className="h-3 w-3 shrink-0" />
-                Required to return it
+        {/* The decision — rendered only where it is actually this viewer's to make. */}
+        {canDecide ? (
+          <div className="mt-4 flex min-w-0 flex-col gap-3 border-t border-phx-line pt-4">
+            <label className="block min-w-0">
+              <span className="mb-1.5 flex flex-wrap items-center gap-2">
+                <MicroLabel>Comment</MicroLabel>
+                <span className="inline-flex items-center gap-1 text-phx-3xs font-bold uppercase tracking-[0.10em] text-phx-ink-faint">
+                  <MessageSquare aria-hidden="true" className="h-3 w-3 shrink-0" />
+                  Required to return it
+                </span>
               </span>
-            </span>
-            <textarea
-              className={TEXTAREA}
-              onChange={(event) => setComment(event.target.value)}
-              placeholder="Say what needs changing, or leave a note with your approval."
-              value={comment}
-            />
-          </label>
-
-          {/* The CEO may approve at a different figure — the common real case, "yes but 50,000".
-              Only his step offers it, because an amended amount is HIS decision and nobody else's. */}
-          {canAmend ? (
-            <label className="block min-w-0 sm:max-w-xs">
-              <span className="mb-1.5 block">
-                <MicroLabel>Approve at a different amount (EGP)</MicroLabel>
-              </span>
-              <input
-                className={INPUT}
-                inputMode="decimal"
-                onChange={(event) => setAmend(event.target.value)}
-                placeholder={String(Math.round(asked))}
-                value={amend}
+              <textarea
+                className={TEXTAREA}
+                onChange={(event) => setComment(event.target.value)}
+                placeholder="Say what needs changing, or leave a note with your approval."
+                value={comment}
               />
-              <span className="mt-1.5 block break-words text-phx-3xs font-medium text-phx-ink-faint">
-                {amendInvalid
-                  ? "An amended amount has to be greater than zero."
-                  : amendedValue === null
-                    ? `Leave blank to approve the ${money(asked, activity.currency)} asked for.`
-                    : `Approves at ${money(amendedValue, activity.currency)} instead of ${money(asked, activity.currency)}.`}
-              </span>
             </label>
-          ) : null}
 
-          <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-            <button
-              className={BTN_APPROVE}
-              disabled={busy || amendInvalid}
-              onClick={() => onDecide("approve", comment, canAmend ? amendedValue : null)}
-              type="button"
-            >
-              <CheckCircle2 aria-hidden="true" className="h-4 w-4 shrink-0" />
-              <span>{busy ? "Saving" : "Approve"}</span>
-            </button>
+            {/* The CEO may approve at a different figure — the common real case, "yes but 50,000".
+                Only his step offers it, because an amended amount is HIS decision and nobody else's. */}
+            {canAmend ? (
+              <label className="block min-w-0 sm:max-w-xs">
+                <span className="mb-1.5 block">
+                  <MicroLabel>Approve at a different amount (EGP)</MicroLabel>
+                </span>
+                <input
+                  className={INPUT}
+                  inputMode="decimal"
+                  onChange={(event) => setAmend(event.target.value)}
+                  placeholder={String(Math.round(asked))}
+                  value={amend}
+                />
+                <span className="mt-1.5 block break-words text-phx-3xs font-medium text-phx-ink-faint">
+                  {amendInvalid
+                    ? "An amended amount has to be greater than zero."
+                    : amendedValue === null
+                      ? `Leave blank to approve the ${money(asked, activity.currency)} asked for.`
+                      : `Approves at ${money(amendedValue, activity.currency)} instead of ${money(asked, activity.currency)}.`}
+                </span>
+              </label>
+            ) : null}
 
-            <button
-              className={BTN_RETURN}
-              disabled={busy || comment.trim() === ""}
-              onClick={() => onDecide("return", comment, null)}
-              type="button"
-            >
-              <RotateCcw aria-hidden="true" className="h-4 w-4 shrink-0" />
-              <span>Return for changes</span>
-            </button>
+            <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+              <button
+                className={BTN_APPROVE}
+                disabled={busy || amendInvalid}
+                onClick={() => onDecide("approve", comment, canAmend ? amendedValue : null)}
+                type="button"
+              >
+                <CheckCircle2 aria-hidden="true" className="h-4 w-4 shrink-0" />
+                <span>{busy ? "Saving" : "Approve"}</span>
+              </button>
 
-            {/* A rejection is the one action with no way back, so it asks twice. */}
-            {confirming === "reject" ? (
-              <span className="flex min-w-0 flex-wrap items-center gap-2">
+              <button
+                className={BTN_RETURN}
+                disabled={busy || comment.trim() === ""}
+                onClick={() => onDecide("return", comment, null)}
+                type="button"
+              >
+                <RotateCcw aria-hidden="true" className="h-4 w-4 shrink-0" />
+                <span>Return for changes</span>
+              </button>
+
+              {/* A rejection is the one action with no way back, so it asks twice. */}
+              {confirming === "reject" ? (
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                  <button
+                    className={BTN_REJECT}
+                    disabled={busy}
+                    onClick={() => {
+                      setConfirming(null);
+                      onDecide("reject", comment, null);
+                    }}
+                    type="button"
+                  >
+                    <XCircle aria-hidden="true" className="h-4 w-4 shrink-0" />
+                    <span>Confirm reject</span>
+                  </button>
+                  <button className={BTN_QUIET} onClick={() => setConfirming(null)} type="button">
+                    Cancel
+                  </button>
+                </span>
+              ) : (
                 <button
                   className={BTN_REJECT}
                   disabled={busy}
-                  onClick={() => {
-                    setConfirming(null);
-                    onDecide("reject", comment, null);
-                  }}
+                  onClick={() => setConfirming("reject")}
                   type="button"
                 >
                   <XCircle aria-hidden="true" className="h-4 w-4 shrink-0" />
-                  <span>Confirm reject</span>
+                  <span>Reject</span>
                 </button>
-                <button className={BTN_QUIET} onClick={() => setConfirming(null)} type="button">
-                  Cancel
-                </button>
-              </span>
-            ) : (
-              <button
-                className={BTN_REJECT}
-                disabled={busy}
-                onClick={() => setConfirming("reject")}
-                type="button"
-              >
-                <XCircle aria-hidden="true" className="h-4 w-4 shrink-0" />
-                <span>Reject</span>
-              </button>
-            )}
-          </div>
+              )}
+            </div>
 
-          <p className="break-words text-phx-3xs font-medium text-phx-ink-faint">
-            {activity.status === "pending_ceo"
-              ? "Approving releases it: every district manager in the region for this line, the national sales manager, the SFE manager, the area's rep and Finance are told."
-              : "Approving sends it to the CEO. Returning it sends it back to the requester to edit and resubmit."}
-          </p>
-        </div>
+            <p className="break-words text-phx-3xs font-medium text-phx-ink-faint">
+              {activity.status === "pending_ceo"
+                ? "Approving releases it: every district manager in the region for this line, the national sales manager, the SFE manager, the area's rep and Finance are told."
+                : "Approving sends it to the CEO. Returning it sends it back to the requester to edit and resubmit."}
+            </p>
+          </div>
+        ) : (
+          <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2 border-t border-phx-line pt-4">
+            <Eye aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-phx-ink-faint" />
+            <span className="min-w-0 break-words text-phx-2xs font-bold text-phx-ink-soft">
+              {waitingOn(activity)}
+            </span>
+          </div>
+        )}
       </div>
     </article>
   );
