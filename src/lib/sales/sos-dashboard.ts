@@ -22,6 +22,14 @@ import {
   resolveSalesGeographyBound,
 } from "@/lib/sales/access-scope";
 import { listMonthlyClosingPeriods, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import {
+  DIRECT_CHANNEL_CODE,
+  DIRECT_CHANNEL_LABEL,
+  canonicalDistributorKey,
+  expandDirectChannelFilter,
+  foldDirectDistributorCode,
+  isDirectChannelCode,
+} from "@/lib/sales/direct-channel";
 import { loadOperationalRegionResolver } from "@/lib/sales/closing-organogram-regions";
 import {
   expandAreaCodesForLine,
@@ -266,7 +274,10 @@ type BrickRow = { distributorCode: string; regionCode: string; areaCode: string;
 export type CustomerRow = { clientCode: string; clientName: string; distributorCode: string; regionCode: string; areaCode: string; units: number; value: number };
 
 const norm = (value: string | null | undefined) => String(value ?? "").trim();
-const isDirect = (distributorCode: string) => norm(distributorCode).toLowerCase() === "direct";
+/** Both vintages of the Direct channel — DIRECT (uploaded, ≤2026-07) and DirectReq (the module,
+ *  2026-08 on). Matching the literal "direct" alone reported every module-sourced direct sale as a
+ *  distributor. See src/lib/sales/direct-channel.ts. */
+const isDirect = isDirectChannelCode;
 
 /** A client_code is only unique WITHIN a distributor — two distributors reuse the same code for two
  *  different pharmacies, so the identity of a customer is always the composite pair. */
@@ -709,8 +720,15 @@ export async function getSosDashboard(
     if (a.areaCode) geographicRegionByArea.set(a.areaCode.toUpperCase(), (a.regionCode ?? "").toUpperCase());
   });
 
+  // Keyed on the canonical code so both Direct vintages resolve to one name. The Direct entry is
+  // named here rather than read from the distributors master: the retired DIRECT row is active=false
+  // so loadSalesReferenceData never returns it, which rendered every pre-2026-08 direct row as the
+  // raw code "DIRECT" beside DirectReq's "Direct Order Requests" — one channel under two names.
   const distributorLabel = new Map<string, string>();
-  references.distributors.forEach((d) => distributorLabel.set(d.code, d.name || d.code));
+  references.distributors.forEach((d) => distributorLabel.set(canonicalDistributorKey(d.code), d.name || d.code));
+  distributorLabel.set(DIRECT_CHANNEL_CODE, DIRECT_CHANNEL_LABEL);
+  const labelForDistributor = (code: string): string =>
+    distributorLabel.get(canonicalDistributorKey(code)) ?? norm(code);
   const brickLabel = new Map<string, string>();
   (references.bricks ?? []).forEach((b) => brickLabel.set(b.brickId, b.brickName || b.brickId));
   const productLabel = new Map<string, string>();
@@ -771,7 +789,16 @@ export async function getSosDashboard(
       .filter((line) => line.toUpperCase() !== "IGNORE")
       .filter((line) => canSeeHeadOffice || !isHeadOfficeLine(line))
       .sort(),
-    distributors: references.distributors.map((d) => ({ code: d.code, label: d.name || d.code })),
+    // One Direct option standing for both vintages. The master carries DirectReq active and the
+    // retired DIRECT inactive, so an unfolded list offered "Direct Order Requests" (2026-08 on) and
+    // no way at all to pick the uploaded months; the selection is widened back to both codes by
+    // expandDirectChannelFilter before it reaches the RPCs.
+    distributors: [
+      ...references.distributors
+        .filter((d) => !isDirectChannelCode(d.code))
+        .map((d) => ({ code: d.code, label: d.name || d.code })),
+      { code: DIRECT_CHANNEL_CODE, label: DIRECT_CHANNEL_LABEL },
+    ],
     // Regions the viewer can PICK are the ones the board can SHOW, so this list is the organogram's
     // as well as geography's. Without the union, Anti Infective's UE-1 / UE-2 subtotals would be
     // rendered on the board with no way to filter to either of them, and picking "Upper Egypt"
@@ -896,7 +923,9 @@ export async function getSosDashboard(
       filterAreas: [
         ...(foldLineCode && trendAreaCodes ? expandAreaCodesForLine(foldLineCode, trendAreaCodes) : trendAreaCodes ?? []),
       ].sort(),
-      filterDistributors: [...(filters.distributors ?? [])].sort(),
+      // Picking the Direct channel must reach both codes: the RPCs match the stored code, so an
+      // unexpanded selection silently drops one side of the 2026-07/08 cutover.
+      filterDistributors: expandDirectChannelFilter(filters.distributors).sort(),
       excludeCodes: [...excludeCodes].sort(),
       trendExcludeCodes: [...trendExcludeCodes].sort(),
       trendForcedEmpty,
@@ -904,7 +933,7 @@ export async function getSosDashboard(
     });
 
   // Shared leaf-row filter (line / distributor / region / area / product + restricted stripping).
-  const distSet = toFilterSet(filters.distributors);
+  const distSet = toFilterSet(expandDirectChannelFilter(filters.distributors));
   const regionSet = toFilterSet(filters.regions);
   // On a folded single-Pedia view the picker emits only GZ6; expand it back to {GZ6, UE9} so a
   // filter on the merged area keeps Beni Suef's rows through keepExec (they authorize on the real
@@ -1081,9 +1110,13 @@ export async function getSosDashboard(
   );
 
   // Distributors carry reach counts (distinct regions / real areas / products).
+  // Keyed on the canonical code so the two Direct vintages are ONE row: a window covering the
+  // 2026-07/08 cutover otherwise reports DIRECT and DirectReq side by side, which reads as one
+  // source that died and another that appeared — and makes the same split in distributorCount and
+  // in every MoM/YoY mover table below.
   const distAccum = new Map<string, { value: number; units: number; regions: Set<string>; areas: Set<string>; products: Set<string> }>();
   for (const row of detail) {
-    const code = row.distributorCode;
+    const code = foldDirectDistributorCode(row.distributorCode);
     if (!code) continue;
     const current = distAccum.get(code) ?? { value: 0, units: 0, regions: new Set(), areas: new Set(), products: new Set() };
     current.value += row.value;
@@ -1098,7 +1131,7 @@ export async function getSosDashboard(
   const byDistributor: SosDistributorRow[] = [...distAccum.entries()]
     .map(([code, v]) => ({
       code,
-      label: distributorLabel.get(code) ?? code,
+      label: labelForDistributor(code),
       line: null,
       value: v.value,
       units: v.units,
@@ -1164,7 +1197,7 @@ export async function getSosDashboard(
   const topCustomers: SosCustomerRow[] = sortedCustomers.slice(0, 15).map((row) => ({
     code: row.clientCode,
     name: row.clientName || row.clientCode,
-    distributor: distributorLabel.get(row.distributorCode) ?? row.distributorCode,
+    distributor: labelForDistributor(row.distributorCode),
     region: regionLabel.get(row.regionCode) ?? row.regionCode,
     area: row.areaCode === "DIRECT" ? "Direct" : areaLabel.get(foldAreaForDisplay(row.areaCode)) ?? row.areaCode,
     value: row.value,
@@ -1221,8 +1254,8 @@ export async function getSosDashboard(
       const priorByArea = groupByArea(priorDetail, priorTotalValue);
       const priorByDistributor = group(
         priorDetail,
-        (row) => row.distributorCode,
-        (code) => distributorLabel.get(code) ?? code,
+        (row) => foldDirectDistributorCode(row.distributorCode),
+        (code) => labelForDistributor(code),
         () => null,
         priorTotalValue,
       );
@@ -1232,7 +1265,9 @@ export async function getSosDashboard(
       const priorAreasReached = new Set(
         priorDetail.map((row) => row.areaCode).filter((code) => code && code !== "DIRECT"),
       ).size;
-      const priorDistributorCount = new Set(priorDetail.map((row) => row.distributorCode).filter(Boolean)).size;
+      const priorDistributorCount = new Set(
+        priorDetail.map((row) => foldDirectDistributorCode(row.distributorCode)).filter(Boolean),
+      ).size;
       const priorProductCount = new Set(priorDetail.map((row) => row.productCode).filter(Boolean)).size;
       const isRealArea = (row: { code: string }) => row.code !== "DIRECT";
       const newLostProducts = computeNewAndLost(byProduct, priorByProduct);
@@ -1289,8 +1324,8 @@ export async function getSosDashboard(
       const yoyByArea = groupByArea(yoyDetail, yoyTotalValue);
       const yoyByDistributor = group(
         yoyDetail,
-        (row) => row.distributorCode,
-        (code) => distributorLabel.get(code) ?? code,
+        (row) => foldDirectDistributorCode(row.distributorCode),
+        (code) => labelForDistributor(code),
         () => null,
         yoyTotalValue,
       );
@@ -1300,7 +1335,9 @@ export async function getSosDashboard(
       const yoyAreasReached = new Set(
         yoyDetail.map((row) => row.areaCode).filter((code) => code && code !== "DIRECT"),
       ).size;
-      const yoyDistributorCount = new Set(yoyDetail.map((row) => row.distributorCode).filter(Boolean)).size;
+      const yoyDistributorCount = new Set(
+        yoyDetail.map((row) => foldDirectDistributorCode(row.distributorCode)).filter(Boolean),
+      ).size;
       const yoyProductCount = new Set(yoyDetail.map((row) => row.productCode).filter(Boolean)).size;
       const isRealArea = (row: { code: string }) => row.code !== "DIRECT";
       const newLostProductsYoy = computeNewAndLost(byProduct, yoyByProduct);
@@ -1348,7 +1385,7 @@ export async function getSosDashboard(
     ? detail.map((row) => ({
         period: row.period,
         distributorCode: row.distributorCode,
-        distributorName: distributorLabel.get(row.distributorCode) ?? row.distributorCode,
+        distributorName: labelForDistributor(row.distributorCode),
         officialLine: row.officialLine,
         // The BI workbook's region tree is built off these two, so they carry the SAME organogram
         // rule the board and the Monthly Closing use. Publishing used to mail the CEO a geographic

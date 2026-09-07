@@ -513,6 +513,7 @@ import { runSalesUploadVerificationTests } from "./sales-upload-verification.tes
 import { runSalesAiExplainTests } from "./sales-ai-explain.test.ts";
 import { runSalesLinkageTests } from "./sales-linkage.test.ts";
 import { runSosCustomerKeyTests } from "./sos-customer-key.test.ts";
+import { runSosDirectChannelTests } from "./sos-direct-channel.test.ts";
 import { runSosCodeCanonicalTests } from "./sos-code-canonical.test.ts";
 import { runSalesPharmacyOverrideTests } from "./sales-pharmacy-override.test.ts";
 import { runSalesChannelsByRepTests } from "./sales-channels-by-rep.test.ts";
@@ -4610,6 +4611,10 @@ await runTest(
 await runTest(
   "retention risk alerts (in-app and Telegram, never email or push; the message reports and never accuses)",
   runRetentionRiskNotifyTests,
+);
+await runTest(
+  "SoS Direct channel folds both vintages (uploaded DIRECT + module DirectReq) into one channel, so a module-sourced direct sale is never reported as a distributor",
+  runSosDirectChannelTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
