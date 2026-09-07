@@ -117,13 +117,15 @@ export async function addDeductionsComment(input: {
     summary: "Employee comment added to published deduction (unified module).",
   });
 
+  const row = data as CommentRow;
   await notifyDeductionsComment({
     authorHrId: input.access.hrId ?? null,
     body,
     candidateId: input.candidateId,
+    messageKey: row.id,
   });
 
-  return mapCommentRow(data as CommentRow);
+  return mapCommentRow(row);
 }
 
 /**
@@ -141,6 +143,10 @@ async function notifyDeductionsComment(input: {
   authorHrId: string | null;
   body: string;
   candidateId: string;
+  /** The comment's own id — see `messageKey` on `ConversationNotificationInput`. Without it a
+   *  second comment on the same published deduction collapses onto the first one's notification
+   *  and HR is never told, because the thread's title and action url never change between messages. */
+  messageKey: string;
 }): Promise<void> {
   try {
     // The employee's NAME, never their HR id: the owner's standing rule is that a human-readable
@@ -174,6 +180,7 @@ async function notifyDeductionsComment(input: {
       authorName,
       body: input.body,
       eventType: "deductions_comment",
+      messageKey: input.messageKey,
       metadata: { candidateId: input.candidateId },
       module: "deductions",
       recordId: input.candidateId,

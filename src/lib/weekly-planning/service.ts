@@ -80,6 +80,7 @@ import {
 } from "@/lib/auth/permissions";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
+import { conversationMessageIdempotencyKey } from "@/lib/conversations/notify";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
@@ -1254,6 +1255,15 @@ async function notifyRecipients(input: {
   emailMode?: "none" | "primary_to_cc";
   eventType: string;
   message: string;
+  /**
+   * Identifier of THIS message — the comment row's id, threaded through to
+   * `conversationMessageIdempotencyKey` in conversations/notify.ts. `createSystemNotification` keys
+   * an event on { actionUrl, eventType, module, recipient, title }, and a growing thread's title and
+   * action url never change between its messages, so without this the second comment onwards
+   * collapses onto the first one's event and is silently dropped. Omit for a one-off event (a plan
+   * submitted, a decision recorded) that only ever fires once per recipient for a given plan.
+   */
+  messageKey?: string | number | null;
   plan: PlanHeaderRow;
   recipients: Array<{ email?: string | null; hrId: string | null; userId?: string | null }>;
   title: string;
@@ -1285,41 +1295,48 @@ async function notifyRecipients(input: {
       .filter((email): email is string => Boolean(email)),
   ));
   await Promise.all(recipients
-    .map((recipient) => createSystemNotification({
-      actionUrl: input.actionUrl,
-      category: "general",
-      channels: emailMode !== "none" && (normalizeHrId(recipient.hrId) || recipient.userId || "") === primaryKey ? ["in_app", "email", "telegram", "push"] : ["in_app", "telegram", "push"],
-      ...(emailMode !== "none" && (normalizeHrId(recipient.hrId) || recipient.userId || "") === primaryKey
-        ? {
-            email: {
-              cc: ccEmails,
-              metrics: [
-                { label: "Employee", value: `${input.plan.employee_name} (${input.plan.employee_hr_id})` },
-                { label: "Plan", value: `${input.plan.plan_kind} - ${input.plan.period_key}` },
-                { label: "Period", value: `${input.plan.period_start_date} to ${input.plan.period_end_date}` },
-              ],
-              planTableHtml: planTable.html,
-              planTableText: planTable.text,
-              recipients: primaryEmail ? [primaryEmail] : undefined,
-            },
-          }
-        : {}),
-      eventType: input.eventType,
-      message: input.message,
-      metadata: {
-        planId: input.plan.id,
-        planKind: input.plan.plan_kind,
-        periodKey: input.plan.period_key,
-        ...input.additionalMetadata,
-      },
-      module: "weekly_plans",
-      priority: "high",
-      recordId: input.plan.id,
-      recipientHrId: recipient.hrId,
-      recipientUserId: recipient.userId,
-      subjectHrId: input.plan.employee_hr_id,
-      title: input.title,
-    })));
+    .map((recipient) => {
+      const idempotencyKey = conversationMessageIdempotencyKey(
+        { eventType: input.eventType, messageKey: input.messageKey, module: "weekly_plans", recordId: input.plan.id },
+        normalizeHrId(recipient.hrId) || recipient.userId || "",
+      );
+      return createSystemNotification({
+        actionUrl: input.actionUrl,
+        category: "general",
+        channels: emailMode !== "none" && (normalizeHrId(recipient.hrId) || recipient.userId || "") === primaryKey ? ["in_app", "email", "telegram", "push"] : ["in_app", "telegram", "push"],
+        ...(emailMode !== "none" && (normalizeHrId(recipient.hrId) || recipient.userId || "") === primaryKey
+          ? {
+              email: {
+                cc: ccEmails,
+                metrics: [
+                  { label: "Employee", value: `${input.plan.employee_name} (${input.plan.employee_hr_id})` },
+                  { label: "Plan", value: `${input.plan.plan_kind} - ${input.plan.period_key}` },
+                  { label: "Period", value: `${input.plan.period_start_date} to ${input.plan.period_end_date}` },
+                ],
+                planTableHtml: planTable.html,
+                planTableText: planTable.text,
+                recipients: primaryEmail ? [primaryEmail] : undefined,
+              },
+            }
+          : {}),
+        eventType: input.eventType,
+        message: input.message,
+        metadata: {
+          planId: input.plan.id,
+          planKind: input.plan.plan_kind,
+          periodKey: input.plan.period_key,
+          ...(idempotencyKey ? { idempotencyKey } : {}),
+          ...input.additionalMetadata,
+        },
+        module: "weekly_plans",
+        priority: "high",
+        recordId: input.plan.id,
+        recipientHrId: recipient.hrId,
+        recipientUserId: recipient.userId,
+        subjectHrId: input.plan.employee_hr_id,
+        title: input.title,
+      });
+    }));
 }
 
 async function resolveSuperAdminRecipients() {
@@ -2192,6 +2209,10 @@ async function notifyPlanComment(plan: PlanHeaderRow, comment: EmployeePlanComme
       // never truncated with an ellipsis, and a half-sentence is exactly what forces the reader
       // back into the app to find out what was actually said.
       message: `${comment.authorName ?? comment.authorHrId} commented on the ${plan.plan_kind} plan: "${comment.body}"`,
+      // The comment's own id — without it a second comment on the same plan collapses onto the
+      // first one's notification event, because the title and actionUrl above never change between
+      // messages on the same thread.
+      messageKey: comment.id,
       plan,
       recipients: notifyKeys.map((hrId) => ({ hrId })),
       title: `New comment on ${plan.plan_kind} plan`,
