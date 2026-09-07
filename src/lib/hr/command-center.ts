@@ -62,6 +62,7 @@ import type { ApplicationStage } from "@/lib/recruitment/types";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { getRetentionDashboardData } from "@/lib/retention/service";
 import { listAllSupportRequests } from "@/lib/support-requests/service";
+import { availableBalanceAfterPending } from "@/lib/vacation/calculations";
 import { getVacationRequestPageData } from "@/lib/vacation/service";
 import { resolvePersonalWorkspaceTabs } from "@/lib/workspace/personal-workspace-nav";
 import {
@@ -1108,8 +1109,13 @@ async function loadPersonalRecord(access: AccessContext): Promise<HrPersonalReco
 
   const [excuses, leave, attendance] = await Promise.all([
     getExcuseWorkspace(access).catch(() => null),
+    // Same number the Vacation Request screen shows: the approved-only balance less the days
+    // already requested and awaiting a decision. balanceAfterDays === balanceBeforeDays here (this
+    // call passes durationDays 0), and both call sites below only display it.
     getVacationRequestPageData(access)
-      .then((data) => data.balance)
+      .then((data) => (data.balance
+        ? { ...data.balance, balanceAfterDays: availableBalanceAfterPending(data.balance.balanceBeforeDays, data.pendingPaidDaysByType?.annual ?? 0) }
+        : null))
       .catch(() => null),
     access.hrId
       ? getEmployeeAttendanceData(access.hrId, monthStart, currentCairoDateOnlyIso()).catch(

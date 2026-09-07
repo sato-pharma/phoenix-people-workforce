@@ -411,6 +411,20 @@ export function calculateVacationPayment(input: {
   });
 }
 
+/**
+ * The balance a HUMAN is shown on the request screen: the approved-only balance, less the days
+ * already held by requests that are submitted and awaiting a decision.
+ *
+ * Display only. The approved-only figure remains what prices a request and what payroll reads —
+ * see pendingPaidDaysInPeriod in src/lib/vacation/service.ts for why the two must stay apart.
+ * Never negative: this module does not create negative balance (the Insufficient balance policy
+ * splits the excess into unpaid days instead of into debt), so the floor here matches that rule.
+ */
+export function availableBalanceAfterPending(balanceBeforeDays: number, pendingPaidDays: number) {
+  const held = Math.max(0, pendingPaidDays);
+  return roundDays(Math.max(0, balanceBeforeDays - held));
+}
+
 export function vacationUnpaidReasonLabel(reason: VacationUnpaidReason | null | undefined) {
   if (reason === "first_six_months") return "First 6 months";
   if (reason === "insufficient_balance") return "Unpaid - insufficient balance";

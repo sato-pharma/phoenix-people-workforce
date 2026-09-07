@@ -27,6 +27,7 @@ import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary
 import { PageContainer } from "@/components/layout/page-container";
 import { addDaysToDateOnly, parseDateOnly, toDateOnlyString } from "@/lib/date-only";
 import {
+  availableBalanceAfterPending,
   calculateVacationDurationDays,
   getAnnualVacationMinimumStartDate,
   getVacationPolicyWarnings,
@@ -58,6 +59,7 @@ type VacationRequestFormProps = {
     employee: VacationEmployeeSummary;
     manager: VacationEmployeeSummary | null;
     managerOfManager: VacationEmployeeSummary | null;
+    pendingPaidDaysByType?: Partial<Record<VacationType, number>>;
     vacationTypeOptions: ReadonlyArray<{ label: string; value: VacationType }>;
     weeklyOffPolicy: VacationWeeklyOffPolicyRecord | null;
   } | null;
@@ -373,11 +375,20 @@ function HolidayTableSkeleton() {
 /* ─── Balance Usage Bar ────────────────────────────────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-function BalanceUsageBar({ balance }: { balance: VacationBalanceSnapshot | null | undefined }) {
+function BalanceUsageBar({
+  balance,
+  pendingPaidDays,
+}: {
+  balance: VacationBalanceSnapshot | null | undefined;
+  pendingPaidDays: number;
+}) {
   if (!balance || !balance.entitlementDays) return null;
 
   const usedPct = Math.min((balance.usedPaidDays / balance.entitlementDays) * 100, 100);
-  const remainPct = 100 - usedPct;
+  // Held days stack on top of the used days and share the same 100% ceiling, so the bar cannot
+  // overflow its track when someone has requested more than is left.
+  const pendingPct = Math.min((pendingPaidDays / balance.entitlementDays) * 100, 100 - usedPct);
+  const remainPct = 100 - usedPct - pendingPct;
 
   const barColor =
     remainPct >= 60
@@ -388,14 +399,21 @@ function BalanceUsageBar({ balance }: { balance: VacationBalanceSnapshot | null 
 
   return (
     <div className="mt-3 space-y-1">
-      <div className="flex items-center justify-between text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-400">
-        <span>Used {formatDays(balance.usedPaidDays)}</span>
+      <div className="flex flex-wrap items-center justify-between gap-x-2 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-400">
+        <span>
+          Used {formatDays(balance.usedPaidDays)}
+          {pendingPaidDays > 0 ? <> + {formatDays(pendingPaidDays)} awaiting approval</> : null}
+        </span>
         <span>of {formatDays(balance.entitlementDays)}</span>
       </div>
-      <div className="h-2 w-full overflow-hidden rounded-sm bg-slate-100">
+      <div className="flex h-2 w-full overflow-hidden rounded-sm bg-slate-100">
         <div
           className={cn("h-full bg-gradient-to-r transition-all duration-500", barColor)}
           style={{ width: `${usedPct}%` }}
+        />
+        <div
+          className="h-full bg-amber-300 transition-all duration-500"
+          style={{ width: `${pendingPct}%` }}
         />
       </div>
     </div>
@@ -408,19 +426,27 @@ function BalanceUsageBar({ balance }: { balance: VacationBalanceSnapshot | null 
 
 function VacationBalanceCard({
   balance,
+  pendingPaidDays,
 }: {
   balance: VacationBalanceSnapshot | null | undefined;
+  pendingPaidDays: number;
 }) {
   const isFirstSixMonthsLock = balance?.unpaidReason === "first_six_months";
   const headlineLabel = isFirstSixMonthsLock ? "Accrued balance" : "Available balance";
+  // The headline counts leave the employee has already taken but nobody has decided yet. Without
+  // this, someone who books a week and is still waiting on an approver sees an untouched balance
+  // and books it again — the number only moved on approval, which can be weeks later.
+  const availableDays = balance ? availableBalanceAfterPending(balance.balanceBeforeDays, pendingPaidDays) : 0;
   const headlineValue = balance
-    ? formatDays(isFirstSixMonthsLock ? balance.entitlementDays : balance.balanceBeforeDays)
+    ? formatDays(isFirstSixMonthsLock ? balance.entitlementDays : availableDays)
     : "-";
   const description = isFirstSixMonthsLock
     ? "Accrued balance is tracked from the hire date but becomes available after completing 6 months."
     : balance?.unpaidReason
       ? vacationUnpaidReasonLabel(balance.unpaidReason)
-      : "Available based on current approved paid vacations.";
+      : pendingPaidDays > 0
+        ? "Approved paid vacations, less the days already requested and awaiting approval."
+        : "Available based on current approved paid vacations.";
 
   return (
     <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
@@ -440,11 +466,18 @@ function VacationBalanceCard({
 
       <p className="mt-2 text-phx-sm font-medium leading-5 text-slate-500">{description}</p>
 
-      <BalanceUsageBar balance={balance} />
+      <BalanceUsageBar balance={balance} pendingPaidDays={pendingPaidDays} />
+
+      {pendingPaidDays > 0 ? (
+        <p className="mt-2 text-phx-sm font-semibold leading-5 text-amber-700">
+          {formatDays(pendingPaidDays)} already requested and waiting for a decision. Held from this
+          balance now; it is charged for real when the request is approved.
+        </p>
+      ) : null}
 
       {isFirstSixMonthsLock && balance ? (
         <p className="mt-2 text-phx-sm font-semibold leading-5 text-amber-700">
-          Available now: {formatDays(balance.balanceBeforeDays)}. Not available for use yet.
+          Available now: {formatDays(availableDays)}. Not available for use yet.
         </p>
       ) : null}
     </div>
@@ -1368,6 +1401,9 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
   }
 
   const balance = initialData?.balances?.[vacationType] ?? initialData?.balance;
+  // Days held by this employee’s own submitted-but-undecided requests, in the same pool as the
+  // selected type (annual and emergency share one; the rest stand alone).
+  const pendingPaidDays = initialData?.pendingPaidDaysByType?.[vacationType] ?? 0;
   const isSick = vacationType === "sick";
   const isOther = vacationType === "other";
   const isCompensatory = vacationType === "compensatory";
@@ -1513,7 +1549,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
           <div className="space-y-3">
             {/* ── Balance + Summary strip ─────────────────────────── */}
             <div className="grid gap-2 xl:grid-cols-[280px_1fr]">
-              <VacationBalanceCard balance={balance} />
+              <VacationBalanceCard balance={balance} pendingPaidDays={pendingPaidDays} />
 
               <div className="rounded-sm border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
                 <div className="grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto] md:items-center">

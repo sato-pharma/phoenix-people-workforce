@@ -2370,6 +2370,63 @@ async function balanceSettledDaysInPeriod(input: {
   }
 }
 
+/**
+ * The statuses a request passes through after the employee has submitted it and before anyone has
+ * decided it. The leave has been taken (or is booked) but no approver has clicked yet. `returned`
+ * is deliberately absent: the ball is back with the employee and the request is not live.
+ */
+const IN_FLIGHT_VACATION_STATUSES = ["needs_assignment", "pending_manager", "pending_hr"] as const;
+
+/**
+ * Paid days already committed by in-flight requests, for the balance a HUMAN is shown.
+ *
+ * DISPLAY ONLY, and deliberately a separate function from approvedPaidDaysInPeriod rather than a
+ * widened status filter inside it. That one feeds calculatePaymentForRequest, which decides paid vs
+ * unpaid, writes paid_duration_days onto the row, and is read again by automated payroll, the
+ * deduction connector and the Payroll Copilot settlement tab. Reserving inside it would change what
+ * people are PAID, not just what they see — and would make two requests pending at once starve each
+ * other at approval time. Pricing stays approved-only; only the number on screen counts leave that
+ * has been taken but not yet clicked through.
+ */
+async function pendingPaidDaysInPeriod(input: {
+  employeeHrId: string;
+  periodEnd: string | null;
+  periodStart: string | null;
+  vacationType: VacationType;
+}) {
+  if (!input.periodStart || !input.periodEnd) return 0;
+
+  let query = getSupabaseAdmin()
+    .from(vacationRequestsTable)
+    .select("id,duration_days,paid_duration_days,payment_status")
+    .eq("employee_hr_id", input.employeeHrId.toUpperCase())
+    .in("status", IN_FLIGHT_VACATION_STATUSES as unknown as string[])
+    .gte("start_date", input.periodStart)
+    .lt("start_date", input.periodEnd);
+
+  // Same pooling as the approved sum: annual and emergency draw on one balance, everything else
+  // stands alone, so a reserved day is subtracted from exactly the pool it will land in.
+  if (input.vacationType === "annual" || input.vacationType === "emergency") {
+    query = query.in("vacation_type", ["annual", "emergency"]);
+  } else {
+    query = query.eq("vacation_type", input.vacationType);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    // A balance that cannot read its reservations must not blank the page — fall back to showing
+    // the approved-only figure, which is what this screen showed before reservations existed.
+    logError("Pending vacation days lookup failed", { labels: { event: "vacation_pending_days_lookup_failed", employeeHrId: input.employeeHrId }, error });
+    return 0;
+  }
+
+  return (data ?? []).reduce((sum, row) => {
+    const record = row as Record<string, unknown>;
+    if (record.paid_duration_days != null) return sum + numberValue(record.paid_duration_days);
+    return record.payment_status === "paid" ? sum + numberValue(record.duration_days) : sum;
+  }, 0);
+}
+
 async function approvedPaidDaysInPeriod(input: {
   employeeHrId: string;
   excludeRequestId?: string;
@@ -2694,16 +2751,27 @@ export async function getVacationRequestPageData(access: AccessContext) {
     sick: today,
   };
   const balances: Partial<Record<VacationType, VacationBalanceSnapshot | null>> = {};
+  // Days held by requests the employee has already submitted but nobody has decided yet. Kept
+  // BESIDE the snapshot rather than folded into it: the snapshot is what gets written to
+  // v2_vacation_requests and read by payroll, so it must keep meaning "approved only".
+  const pendingPaidDaysByType: Partial<Record<VacationType, number>> = {};
   let balance: VacationBalanceSnapshot | null = null;
   let balanceError: string | null = null;
   try {
     await Promise.all(
       VACATION_TYPES.map(async (option) => {
-        balances[option.value] = await calculatePaymentForRequest({
+        const snapshot = await calculatePaymentForRequest({
           durationDays: 0,
           employeeHrId: employee.hrId,
           hireDate: employee.hireDate,
           startDate: balanceReferenceDates[option.value],
+          vacationType: option.value,
+        });
+        balances[option.value] = snapshot;
+        pendingPaidDaysByType[option.value] = await pendingPaidDaysInPeriod({
+          employeeHrId: employee.hrId,
+          periodEnd: snapshot.periodEnd,
+          periodStart: snapshot.periodStart,
           vacationType: option.value,
         });
       }),
@@ -2720,6 +2788,7 @@ export async function getVacationRequestPageData(access: AccessContext) {
     balances,
     balanceError,
     dayPartOptions: VACATION_DAY_PARTS,
+    pendingPaidDaysByType,
     employee: summarizeEmployee(employee),
     manager: manager ? summarizeEmployee(manager) : null,
     // Same gate as the chain that will actually be created on submit, so the preview can never
