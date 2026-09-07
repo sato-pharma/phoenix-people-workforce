@@ -180,8 +180,14 @@ export function runCanonicalDashboardRowsTests() {
   );
   assert.deepEqual(
     expandAreaCodeForLine("cns", "GZ6"),
+    ["GZ6", "UE9"],
+    "CNS folds from August, so a query scoped to the surviving GZ6 must pull Beni Suef's rows in " +
+      "too — expanding is what stops the folded half being silently dropped",
+  );
+  assert.deepEqual(
+    expandAreaCodeForLine("cns", "GZ6", "2026-07"),
     ["GZ6"],
-    "CNS no longer merges, so GZ6 stands only for itself there",
+    "July CNS is published as two areas, so GZ6 stands only for itself there",
   );
   assert.deepEqual(
     expandAreaCodeForLine("anti_infective", "GZ6"),

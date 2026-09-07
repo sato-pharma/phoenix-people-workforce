@@ -11,9 +11,12 @@ import type {
 //
 //   Anti Infective  kept SEPARATE — Beni Suef sits in UE-1 with Minia 1/2, Fayoum stays in GZ.
 //   Pedia           ONE area — one rep/territory covers both, so every surface shows ONE row.
-//   CNS             kept SEPARATE — owner split the CNS "Others" bucket back into two on 2026-08-30
-//                   (it carried ~174K of real July value across the two codes; he chose to see them
-//                   as Fayoum and Beni Suef separately, same as Anti Infective).
+//   CNS             ONE area FROM 2026-08. Owner, 2026-09-07: "in pedia and cns fayoum and bani
+//                   suef are one area", then "yes merge cns from august, keep july as published".
+//                   This REVERSES his 2026-08-30 ruling, which had split the CNS "Others" bucket
+//                   back into two — asked and answered, so do not restore it without asking again.
+//                   July 2026 CNS is published and locked (105,152 units, 2026-08-31), so the merge
+//                   starts at August and July still renders as the two rows he sent out.
 //
 // `au.line_area_map` reflects the staffing (on Pedia both area_code rows share one seat), but the
 // Closing Matrix groups by `source_of_sales_areas`, a geography table with no concept of "one
@@ -37,20 +40,75 @@ export type ClosingAreaMergeRule = {
   mergeAreaCode: string;
   /** Display name for the surviving row once merged. */
   mergedAreaName: string;
+  /**
+   * First period the merge applies to, inclusive, as `YYYY-MM`. Absent means every period.
+   *
+   * A merge is presentational, but a published month is not: folding two rows into one changes a
+   * closing somebody has already been sent. So a rule added after a line has been published carries
+   * the date it starts, and everything before it renders exactly as it was published.
+   */
+  fromPeriod?: string;
 };
 
 /**
- * The ONLY lines whose area rows are folded into one. Pedia folds Fayoum (GZ6) + Beni Suef (UE9).
- * ADDING A LINE HERE MERGES THAT LINE'S AREA ROWS — ask the owner first, every time. CNS was
- * removed on 2026-08-30 at the owner's instruction (it now shows the two areas separately).
+ * The ONLY lines whose area rows are folded into one. Pedia folds Fayoum (GZ6) + Beni Suef (UE9) in
+ * every period; CNS folds the same pair from 2026-08.
+ *
+ * ADDING A LINE HERE MERGES THAT LINE'S AREA ROWS — ask the owner first, every time. CNS has been
+ * both ways: merged, removed on 2026-08-30 at his instruction, then merged again from August on
+ * 2026-09-07. Give a rule added after a line has been published a `fromPeriod`, or it silently
+ * rewrites months that have already been sent out.
  */
 const CLOSING_AREA_MERGES: Record<string, ClosingAreaMergeRule[]> = {
   pedia: [{ keepAreaCode: "GZ6", mergeAreaCode: "UE9", mergedAreaName: "Fayoum - Beni Suef" }],
+  cns: [
+    { keepAreaCode: "GZ6", mergeAreaCode: "UE9", mergedAreaName: "Fayoum - Beni Suef", fromPeriod: "2026-08" },
+  ],
 };
 
+/**
+ * The month a surface with no period of its own is showing: today's, in Cairo.
+ *
+ * A picker, an organogram or a territory tree is not "as of" anything — it is the state now — so
+ * `null` means now rather than "unknown". Read live rather than captured at import time, or a
+ * long-lived server process would keep answering with the month it booted in.
+ */
+function currentClosingPeriod(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+    month: "2-digit",
+  })
+    .format(new Date())
+    .slice(0, 7);
+}
+
+/**
+ * The rules in force for this line in this period. `null`/absent period means now.
+ *
+ * A malformed period falls to NOT merging a dated rule — the safe direction, because failing to
+ * merge shows two rows that were always real, while merging early rewrites a published month.
+ */
+function rulesFor(
+  lineCode: string | null | undefined,
+  period: string | null | undefined,
+): ClosingAreaMergeRule[] {
+  const rules = CLOSING_AREA_MERGES[String(lineCode ?? "").trim().toLowerCase()] ?? [];
+  if (rules.length === 0) return rules;
+  const asOf = String(period ?? "").trim() === "" ? currentClosingPeriod() : String(period).trim();
+  return rules.filter((rule) => {
+    if (!rule.fromPeriod) return true;
+    if (!/^\d{4}-\d{2}$/.test(asOf)) return false;
+    return asOf >= rule.fromPeriod;
+  });
+}
+
 /** Does this line's closing merge any areas? Line code as `resolveTargetLineCode` returns. */
-export function hasClosingAreaMerges(lineCode: string | null | undefined): boolean {
-  return (CLOSING_AREA_MERGES[String(lineCode ?? "").trim().toLowerCase()] ?? []).length > 0;
+export function hasClosingAreaMerges(
+  lineCode: string | null | undefined,
+  period?: string | null,
+): boolean {
+  return rulesFor(lineCode, period).length > 0;
 }
 
 function mergeCells<T extends { areaCode: string; productCode: string }>(
@@ -86,11 +144,13 @@ function mergeCells<T extends { areaCode: string; productCode: string }>(
  * warning before using it: the folded result must not then be fed back into a roll-up.
  */
 export function applyAchievementAreaMerges<
-  T extends { lineCode: string | null; areaCode: string | null }
+  T extends { lineCode: string | null; areaCode: string | null; period?: string | null }
 >(rows: T[]): T[] {
   return rows.map((row) => {
     if (!row.lineCode || !row.areaCode) return row;
-    const rules = CLOSING_AREA_MERGES[row.lineCode.trim().toLowerCase()] ?? [];
+    // PER ROW, not per call: these lists routinely span several months, and CNS folds from August
+    // while July stays as published. A single period for the whole list would restate one of them.
+    const rules = rulesFor(row.lineCode, row.period);
     if (rules.length === 0) return row;
 
     const keepCodeByMergeCode = new Map<string, string>();
@@ -110,9 +170,13 @@ export function applyAchievementAreaMerges<
 }
 
 /** Get the merged area name for a code if the active line defines one. */
-export function getMergedAreaName(lineCode: string | null | undefined, areaCode: string): string | null {
+export function getMergedAreaName(
+  lineCode: string | null | undefined,
+  areaCode: string,
+  period?: string | null,
+): string | null {
   if (!lineCode) return null;
-  const rules = CLOSING_AREA_MERGES[lineCode.trim().toLowerCase()] ?? [];
+  const rules = rulesFor(lineCode, period);
   const match = rules.find((r) => up(r.keepAreaCode) === up(areaCode));
   return match ? match.mergedAreaName : null;
 }
@@ -129,8 +193,9 @@ export function getMergedAreaName(lineCode: string | null | undefined, areaCode:
 export function expandAreaCodeForLine(
   lineCode: string | null | undefined,
   areaCode: string,
+  period?: string | null,
 ): string[] {
-  const rules = CLOSING_AREA_MERGES[String(lineCode ?? "").trim().toLowerCase()] ?? [];
+  const rules = rulesFor(lineCode, period);
   const code = up(areaCode);
   const extras = rules
     .filter((rule) => up(rule.keepAreaCode) === code)
@@ -142,10 +207,11 @@ export function expandAreaCodeForLine(
 export function expandAreaCodesForLine(
   lineCode: string | null | undefined,
   areaCodes: Iterable<string>,
+  period?: string | null,
 ): string[] {
   const out = new Set<string>();
   for (const code of areaCodes) {
-    for (const expanded of expandAreaCodeForLine(lineCode, code)) out.add(expanded);
+    for (const expanded of expandAreaCodeForLine(lineCode, code, period)) out.add(expanded);
   }
   return [...out];
 }
@@ -159,8 +225,9 @@ export function expandAreaCodesForLine(
 export function foldAreaCodeForLine(
   lineCode: string | null | undefined,
   areaCode: string,
+  period?: string | null,
 ): string {
-  const rules = CLOSING_AREA_MERGES[String(lineCode ?? "").trim().toLowerCase()] ?? [];
+  const rules = rulesFor(lineCode, period);
   const code = up(areaCode);
   const rule = rules.find((r) => up(r.mergeAreaCode) === code);
   return rule ? up(rule.keepAreaCode) : code;
@@ -189,8 +256,9 @@ export function foldAreaCodeForLine(
 export function foldAreaOptionsForLine<T extends { areaCode: string; areaName?: string | null }>(
   lineCode: string | null | undefined,
   areas: readonly T[],
+  period?: string | null,
 ): T[] {
-  const rules = CLOSING_AREA_MERGES[String(lineCode ?? "").trim().toLowerCase()] ?? [];
+  const rules = rulesFor(lineCode, period);
   if (rules.length === 0) return [...areas];
 
   // Both the survivor and each folded-away code map to the SAME surviving keep-code, so the merged
@@ -262,8 +330,9 @@ export function applyClosingAreaMerges(
   areas: readonly SalesAreaReference[],
   cells: readonly MonthlyClosingAggregateCell[],
   targets: readonly MonthlyClosingTargetCell[],
+  period: string | null,
 ): { areas: SalesAreaReference[]; cells: MonthlyClosingAggregateCell[]; targets: MonthlyClosingTargetCell[] } {
-  const rules = CLOSING_AREA_MERGES[String(lineCode ?? "").trim().toLowerCase()] ?? [];
+  const rules = rulesFor(lineCode, period);
   if (rules.length === 0) {
     return { areas: [...areas], cells: [...cells], targets: [...targets] };
   }
@@ -332,8 +401,9 @@ export function applyClosingAreaMerges(
 export function markMergedAreaRowsStatic(
   matrix: MonthlyClosingMatrix,
   lineCode: string | null | undefined,
+  period: string | null,
 ): MonthlyClosingMatrix {
-  const rules = CLOSING_AREA_MERGES[String(lineCode ?? "").trim().toLowerCase()] ?? [];
+  const rules = rulesFor(lineCode, period);
   if (rules.length === 0) return matrix;
 
   const keepCodes = new Set(rules.map((rule) => up(rule.keepAreaCode)));
@@ -354,8 +424,8 @@ export function markMergedAreaRowsStatic(
  */
 export function applyClosingAreaMergesToDetails<
   T extends { areaCode: string; areaName: string; sheetAreaCode?: string; sheetAreaName?: string }
->(lineCode: string | null | undefined, rows: T[]): T[] {
-  const rules = CLOSING_AREA_MERGES[String(lineCode ?? "").trim().toLowerCase()] ?? [];
+>(lineCode: string | null | undefined, rows: T[], period: string | null): T[] {
+  const rules = rulesFor(lineCode, period);
   if (rules.length === 0) return rows;
 
   const keepCodeByMergeCode = new Map<string, string>();

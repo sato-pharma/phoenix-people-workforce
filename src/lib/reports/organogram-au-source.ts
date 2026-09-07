@@ -250,9 +250,11 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
     rows.push({
       ...workFieldsFor(s.occupant_hr_id),
       areaId: null,
-      // Pedia folds Fayoum (GZ6) + Beni Suef (UE9) into ONE area "Fayoum - Beni Suef" (owner rule
-      // 2026-08-30). Pedia has a single GZ6 seat and no UE9 seat, so this only renames that node.
-      // Anti Infective and CNS keep both areas separate — getMergedAreaName returns null for them.
+      // Pedia folds Fayoum (GZ6) + Beni Suef (UE9) into ONE area "Fayoum - Beni Suef", and CNS does
+      // the same from 2026-08 (owner, 2026-09-07). Pedia has a single GZ6 seat and no UE9 seat, so
+      // this only renames that node. Anti Infective keeps both areas separate — getMergedAreaName
+      // returns null for it. No period is passed here on purpose: the organogram shows the org as
+      // it stands NOW, not as of any month.
       areaName: getMergedAreaName(s.line_code, s.area_code ?? "") ?? s.area_name,
       departmentId: null,
       // Stays null, as it always has. The employee master's department reaches the

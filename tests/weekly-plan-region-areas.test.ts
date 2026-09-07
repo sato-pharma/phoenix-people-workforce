@@ -418,10 +418,10 @@ export function runWeeklyPlanRegionAreasTests() {
     "the Giza Area picker must not still offer the two Pedia halves separately",
   );
 
-  // Pedia ONLY. The same two codes on Anti Infective and CNS must stay two separate areas — those
-  // lines carry no merge rule (Beni Suef is a genuinely different UE-1 DM on Anti Infective, and the
-  // owner split CNS back into two on 2026-08-30), so the loader returns their seats unchanged.
-  for (const line of ["anti_infective", "cns"] as const) {
+  // Anti Infective ONLY, now. Beni Suef is a genuinely different UE-1 DM there, so that line keeps
+  // the two codes as separate planning areas and the loader returns its seats unchanged. CNS left
+  // this group on 2026-09-07 — the owner merged CNS from 2026-08 (2026-09-07: «in pedia and cns fayoum and bani suef are one area»), reversing his 2026-08-30 split — and folds like Pedia.
+  for (const line of ["anti_infective"] as const) {
     const foldedOtherLine = foldAreaOptionsForLine(line, PEDIA_GZ_SEATS_RAW);
     assert.ok(
       foldedOtherLine.some((seat) => seat.areaName === "Fayoum") &&
