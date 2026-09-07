@@ -128,8 +128,45 @@ function testScopeAndSafetyRails() {
   );
 }
 
+// Owner request 2026-09-07: "show what she wrote". Knowing a plan was Returned is not the same
+// as reading the returner's actual words, and without them a returning manager still has to go
+// and ask what was said — the very errand this feature exists to remove. Every module must
+// therefore carry its decision comment through to the row, and the SELECT must ask for the
+// column: a populate that reads row.manager_decision_comment from a select that never requested
+// it yields undefined, renders nothing, and looks exactly like "they left no note".
+function testEveryModuleCarriesTheDecidersWords() {
+  const text = source();
+
+  const populated = text.split("decidedNote: decisionNote(").length - 1;
+  assert.equal(
+    populated,
+    4,
+    `all four modules must carry the decider's note (leave, excuse, weekly plan, marketing); found ${populated}`,
+  );
+
+  // Each team-module SELECT must request the comment column it then reads.
+  const teamSelectsWithComment = text.split("manager_decision_by_hr_id,manager_decision_comment").length - 1;
+  assert.equal(
+    teamSelectsWithComment,
+    3,
+    `each team-module select must request manager_decision_comment; found ${teamSelectsWithComment}`,
+  );
+  assert.ok(
+    text.includes("decision_by_hr_id,decision_note"),
+    "the marketing step select must request decision_note",
+  );
+
+  // Blank collapses to null, never "", so the UI can branch on absence rather than render an
+  // empty quote block under a decision that carried no comment.
+  assert.ok(
+    text.includes("return text ? text : null;"),
+    "an empty note must normalise to null, not to an empty string",
+  );
+}
+
 export function runDecidedForMeTests() {
   testOutcomeVocabulary();
   testEveryModuleFiltersOutTheViewersOwnDecisions();
   testScopeAndSafetyRails();
+  testEveryModuleCarriesTheDecidersWords();
 }

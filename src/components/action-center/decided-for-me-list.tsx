@@ -102,6 +102,14 @@ export function DecidedForMeList({ items, windowDays }: Props) {
               <p className="text-xs font-semibold text-slate-600">
                 Decided by {item.decidedByName || item.decidedByHrId}
               </p>
+              {item.decidedNote ? (
+                // Their words, in full. Never truncated and never ellipsised (house rule), and
+                // `whitespace-pre-line` because these notes are typed with real line breaks —
+                // collapsing them turns a greeting and an instruction into one run-on sentence.
+                <p className="mt-1 border-l-2 border-slate-300 bg-slate-50 px-2.5 py-1.5 text-xs leading-5 text-slate-700 whitespace-pre-line break-words">
+                  {item.decidedNote}
+                </p>
+              ) : null}
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-3">
               <span className="text-xs text-slate-400">{formatDecidedAt(item.decidedAt)}</span>

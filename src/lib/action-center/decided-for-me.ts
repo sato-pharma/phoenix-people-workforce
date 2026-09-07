@@ -30,6 +30,11 @@ export type DecidedForMeItem = HistoricalApprovalItem & {
   decidedByHrId: string;
   decidedByName: string;
   basis: DecidedForMeBasis;
+  // What the decider actually WROTE, verbatim, or null when they left no note. Owner request
+  // 2026-09-07: knowing a plan was "Returned" is not the same as reading "please modify the plan
+  // to have at least two DV this week to Cairo and Giza" — without the words, a returning manager
+  // still has to go and ask what was said, which is the errand this feature exists to remove.
+  decidedNote: string | null;
 };
 
 /** How far back to look. A returning manager cares about the trip, not his whole tenure. */
@@ -51,6 +56,12 @@ function chunk<T>(items: T[], size = IN_CHUNK): T[][] {
 
 function cleanText(value: unknown): string {
   return String(value ?? "").trim();
+}
+
+/** The decider's own words, or null. Never an empty string — the UI branches on null. */
+function decisionNote(value: unknown): string | null {
+  const text = cleanText(value);
+  return text ? text : null;
 }
 
 /**
@@ -147,7 +158,7 @@ export async function getDecisionsMadeForMe(
     const [leaves, excuses, plans] = await Promise.all([
       db
         .from("v2_vacation_requests")
-        .select("id,employee_name,employee_hr_id,start_date,manager_decision,manager_decision_at,manager_decision_by_hr_id")
+        .select("id,employee_name,employee_hr_id,start_date,manager_decision,manager_decision_at,manager_decision_by_hr_id,manager_decision_comment")
         .in("employee_hr_id", batch)
         .not("manager_decision_at", "is", null)
         .gte("manager_decision_at", since)
@@ -155,7 +166,7 @@ export async function getDecisionsMadeForMe(
         .limit(PER_MODULE_LIMIT),
       db
         .from("v2_excuse_requests")
-        .select("id,employee_name,employee_hr_id,excuse_date,excuse_type,manager_decision,manager_decision_at,manager_decision_by_hr_id")
+        .select("id,employee_name,employee_hr_id,excuse_date,excuse_type,manager_decision,manager_decision_at,manager_decision_by_hr_id,manager_decision_comment")
         .in("employee_hr_id", batch)
         .not("manager_decision_at", "is", null)
         .gte("manager_decision_at", since)
@@ -163,7 +174,7 @@ export async function getDecisionsMadeForMe(
         .limit(PER_MODULE_LIMIT),
       db
         .from("employee_plan_headers")
-        .select("id,employee_name,employee_hr_id,period_key,plan_kind,status,manager_decision_at,manager_decision_by_hr_id")
+        .select("id,employee_name,employee_hr_id,period_key,plan_kind,status,manager_decision_at,manager_decision_by_hr_id,manager_decision_comment")
         .in("employee_hr_id", batch)
         .not("manager_decision_at", "is", null)
         .gte("manager_decision_at", since)
@@ -183,6 +194,7 @@ export async function getDecisionsMadeForMe(
         decidedAt: cleanText(row.manager_decision_at),
         href: href("vacation", row.id),
         decidedByHrId: cleanText(row.manager_decision_by_hr_id),
+        decidedNote: decisionNote(row.manager_decision_comment),
       });
     }
 
@@ -199,6 +211,7 @@ export async function getDecisionsMadeForMe(
         decidedAt: cleanText(row.manager_decision_at),
         href: href("excuse", row.id),
         decidedByHrId: cleanText(row.manager_decision_by_hr_id),
+        decidedNote: decisionNote(row.manager_decision_comment),
       });
     }
 
@@ -215,6 +228,7 @@ export async function getDecisionsMadeForMe(
         decidedAt: cleanText(row.manager_decision_at),
         href: href("plan", row.id),
         decidedByHrId: cleanText(row.manager_decision_by_hr_id),
+        decidedNote: decisionNote(row.manager_decision_comment),
       });
     }
   }
@@ -237,7 +251,7 @@ export async function getDecisionsMadeForMe(
     for (const batch of chunk(Array.from(requests.keys()))) {
       const { data: stepRows } = await db
         .from("marketing_request_approval_steps")
-        .select("id,request_id,step_code,status,decision_at,decision_by_hr_id")
+        .select("id,request_id,step_code,status,decision_at,decision_by_hr_id,decision_note")
         .eq("step_code", "marketing_review")
         .in("request_id", batch)
         .not("decision_at", "is", null)
@@ -262,6 +276,7 @@ export async function getDecisionsMadeForMe(
           href: isPortal ? null : "/admin/marketing-requests/inbox",
           decidedByHrId: cleanText(row.decision_by_hr_id),
           decidedByName: deciderName(row.decision_by_hr_id),
+          decidedNote: decisionNote(row.decision_note),
           basis: "line",
         });
       }
