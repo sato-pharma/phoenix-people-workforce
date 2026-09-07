@@ -858,7 +858,24 @@ export function CeoCommandCenter({
               Both variants get the column now. The SFE Manager's row was single-column only because
               he was the one who did NOT get that empty card; he is one of the four people this alert
               is addressed to, so he gets it too. */}
-          {salesColumnSlot}
+          {/* THE CEO KEEPS HIS WEEKLY SALES LINK. tests/ceo-account-contract.test.ts requires the
+              command centre to link directly to /sales/weekly/dashboard, and that contract is his,
+              not the Super Admin's. He is also the one variant that never receives a slot — the
+              resignation-risk column is addressed to the Super Admin and the SFE Manager — so the
+              fallback and the contract are the same condition, expressed once.
+
+              The SFE Manager never reaches the fallback either, because his page passes a slot; the
+              recorded decision that he gets the real week-over-week series instead of a
+              click-through therefore still holds. */}
+          {salesColumnSlot ?? (
+            <QuickLinkCard
+              title="Weekly Sales"
+              icon={<Activity className="h-3.5 w-3.5" />}
+              headline="7-week trend + region breakdown"
+              sub="Click to open Weekly Sales"
+              href="/sales/weekly/dashboard"
+            />
+          )}
 
         </div>
 

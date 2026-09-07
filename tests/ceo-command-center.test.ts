@@ -584,21 +584,28 @@ export function runCeoCommandCenterTests() {
     !PHASE_B_SKELETON_TITLES_SFE_SOURCE_CHECK.test(ceoPhaseBSource),
     "the SFE skeleton must NOT announce a Doctor coverage section — it is retired, and a skeleton row with no section behind it reads as a stuck load",
   );
-  // THE DECISION: the SFE Manager gets the real week-over-week series (asserted just above via
-  // `includeWeeklyTrend: isSfe`), never the click-through shortcut.
+  // THE DECISION, and it now has two halves that pull in opposite directions.
   //
-  // This used to pin the literal shape `{!isSfe ? <QuickLinkCard title="Weekly Sales"`. That card is
-  // GONE (2026-09-07): it was one link stretched to the height of the Source of Sales tables beside
-  // it, the largest blank area on the page, and a duplicate of "Weekly Sales · Company" in the row
-  // below. The owner asked for the resignation-risk reps in that space instead.
+  // The SFE Manager gets the real week-over-week series (asserted just above via
+  // `includeWeeklyTrend: isSfe`), never the click-through shortcut. The CEO, by contract in
+  // tests/ceo-account-contract.test.ts, must keep a direct link to /sales/weekly/dashboard.
   //
-  // The decision now holds MORE strongly than the old assertion required — nobody has the shortcut,
-  // not just the SFE — so pinning the vanished shape would block the removal while protecting
-  // nothing. Pin the outcome: this component links to that route for no one.
-  assert.doesNotMatch(
+  // Both used to be satisfied by `{!isSfe ? <QuickLinkCard title="Weekly Sales"`. On 2026-09-07 the
+  // owner asked for the resignation-risk reps in that column — "put the resignation risk reps in
+  // the place of weekly sales" — which is his board and the SFE's, never the CEO's. So the card is
+  // now the FALLBACK for the one variant that is passed no column, which is the CEO, and the two
+  // halves become one condition.
+  assert.match(
     ceoComponentSource,
-    /href="\/sales\/weekly\/dashboard"/,
-    "the CEO's click-through Weekly Sales shortcut must not come back to this component — the SFE's own weekly trend is asserted above",
+    /\{salesColumnSlot \?\?\s*\(\s*<QuickLinkCard\s+title="Weekly Sales"/,
+    "the CEO must still reach the weekly sales dashboard from his own board — he is the variant that receives no column",
+  );
+  // The SFE never falls through to it, because his page passes a column.
+  const sfePageSource = readFileSync("app/(admin)/admin/sfe-command-center/page.tsx", "utf8");
+  assert.match(
+    sfePageSource,
+    /salesColumnSlot=/,
+    "the SFE overview must pass the resignation-risk column, which is what keeps him off the click-through fallback",
   );
   const crmFieldSource = readFileSync("src/lib/crm/sfe-field-analytics.ts", "utf8");
   assert.match(
