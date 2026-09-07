@@ -1133,6 +1133,7 @@ import { runSosWarehouseOwnerRulingsTests } from "./sos-warehouse-owner-rulings.
 import { runImportSplitPreviewTests } from "./import-split-preview.test.ts";
 import { runCityListNewAreaGuardTests } from "./city-list-new-area-guard.test.ts";
 import { runQemaQalubeyaSplitTests } from "./qema-qalubeya-split.test.ts";
+import { runAttributionStoreSplitNetTests } from "./attribution-store-split-net.test.ts";
 import { runStoreNamePrefixesTests } from "./store-name-prefixes.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
 import { runClosingStoreSplitHonoursEvenSplitRegistryTests } from "./closing-store-split-honours-even-split-registry.test.ts";
@@ -3282,6 +3283,10 @@ await runTest(
 await runTest(
   "the Monthly Closing, the Targets pages and Sales vs Target print ONE number (owner 2026-09-05: MUST BE 100% IDENTICAL -- asserted as equal OUTPUTS over six shapes rather than by matching formulas, which is what failed twice; a guard proves the fixtures actually carry untargeted money, without which every rule agrees and the sweep is vacuous)",
   runClosingAndTargetsAgreeTests,
+);
+await runTest(
+  "attribution applies the wholesaler city split (the net sums to ZERO in both measures so a month's total cannot move; the per-line gate holds -- Pedia splits in August, Anti Infective does not until September because August is published; units move on total_qty and money on effective_units, proven with a discounted row where they differ; the line name reaches SQL verbatim because au.sos_official_line_map is not the identity; and a quiet period still writes, to clear a stale net)",
+  runAttributionStoreSplitNetTests,
 );
 await runTest(
   "achievement counts the unmapped channel (no channel filter survives, the line_code rejoins are NULL-safe so a line-less sale is not zeroed, and service_role keeps execute)",

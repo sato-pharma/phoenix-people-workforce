@@ -12,6 +12,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { excelCellText, loadExcelWorkbook } from "@/lib/uploads/exceljs-rows";
 import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { refreshAttributionWithStoreSplit } from "@/lib/sales/attribution-store-split-refresh";
 
 // The customer -> brick crosswalk (code / name / address -> brick), for the read-only "Database
 // Validation" tab. Optionally filtered to one distributor. Fully paginated past PostgREST's 1000-row
@@ -729,11 +730,18 @@ export async function applyHistoricalReconciliation(input: {
       );
     }
     // The sales-vs-target attribution rollup rides the same trio — after the fact rollup it reads.
-    const attribution = await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
-    if (attribution.error) {
+    // Through refreshAttributionWithStoreSplit, which rebuilds the wholesaler city split net first:
+    // au.f_monthly_attribution reads that net, and a reconcile that moved rows between areas is
+    // exactly when it goes stale. See attribution-store-split-refresh.ts.
+    try {
+      await refreshAttributionWithStoreSplit(supabase, batchId);
+    } catch (attributionError) {
+      const message = attributionError instanceof Error
+        ? attributionError.message
+        : String(attributionError);
       throw new SalesWorkflowError(
         "reconcile_rollup_refresh_failed",
-        `${updatedRows} historical row(s) were corrected, but attribution rollup refresh failed for batch ${batchId}: ${attribution.error.message}. Re-run the reconcile to retry the refresh.`,
+        `${updatedRows} historical row(s) were corrected, but attribution rollup refresh failed for batch ${batchId}: ${message}. Re-run the reconcile to retry the refresh.`,
         500,
       );
     }

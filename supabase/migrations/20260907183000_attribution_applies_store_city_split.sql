@@ -89,6 +89,7 @@ as $function$
 declare
   v_written  integer := 0;
   v_bad      text;
+  v_unmapped text;
 begin
   if p_period is null or p_period !~ '^\d{4}-\d{2}$' then
     raise exception 'phx_write_monthly_store_split_net: period must be YYYY-MM, got %', p_period;
@@ -100,24 +101,44 @@ begin
   -- Read straight from the jsonb rather than staging it in a temp table: a temp table with
   -- `on commit drop` would fail the SECOND call inside one transaction, which is exactly what a
   -- backfill looping over periods does.
-  --
-  -- line_code is normalised to lower case because that is the shape au.sos_official_line_map emits
-  -- and therefore the shape au.f_monthly_attribution groups by. Normalised here rather than trusted
-  -- from the caller so a casing slip cannot quietly produce a net that joins to nothing.
-  --
+
+  -- 🔴 THE LINE CODE IS RESOLVED HERE, through au.sos_official_line_map — never by string munging in
+  -- the caller. THE MAP IS NOT THE IDENTITY: "Anti Infective" resolves to `anti_infective`, so a
+  -- caller that merely lower-cased the line name would produce `anti infective`, which joins to
+  -- NOTHING in au.f_monthly_attribution. The split would then silently not apply to that line — no
+  -- error, no missing row, just a month where one line's wholesalers never moved. Resolving through
+  -- the same map attribution groups by is the only way the two cannot drift.
+  select string_agg(distinct r->>'official_line', ', ')
+    into v_unmapped
+  from jsonb_array_elements(p_rows) r
+  left join au.sos_official_line_map lm
+    on lower(btrim(lm.official_line)) = lower(btrim(r->>'official_line'))
+  where lm.line_code is null;
+
+  if v_unmapped is not null then
+    raise exception
+      'phx_write_monthly_store_split_net: no line_code for % - refusing to write a net that would join to nothing',
+      v_unmapped;
+  end if;
+
   -- 🔴 THE INVARIANT. A split moves units between the areas of one (line, product); it never changes
   -- how many there are. Refusing here rather than in the application means no future caller — a
   -- script, a backfill, a hand-run repair — can bypass it. Rounding: the shares are exact decimals
   -- and the last share absorbs the remainder, so the sum is exact, but a 1e-9 tolerance is allowed
   -- for float round-tripping through JSON.
+  --
+  -- Grouped by the RESOLVED line_code, not the incoming name: "Anti Inf" and "Anti Infective" are one
+  -- line, and a net that balances only when they are counted separately does not balance at all.
   select string_agg(format('%s/%s: qty %s, units %s', line_code, product_code, sq, se), '; ')
     into v_bad
   from (
-    select lower(btrim(r->>'line_code'))    as line_code,
+    select lm.line_code,
            upper(btrim(r->>'product_code')) as product_code,
            sum((r->>'net_qty')::numeric)             as sq,
            sum((r->>'net_effective_units')::numeric) as se
     from jsonb_array_elements(p_rows) r
+    join au.sos_official_line_map lm
+      on lower(btrim(lm.official_line)) = lower(btrim(r->>'official_line'))
     group by 1, 2
     having abs(sum((r->>'net_qty')::numeric)) > 1e-9
         or abs(sum((r->>'net_effective_units')::numeric)) > 1e-9
@@ -125,7 +146,7 @@ begin
 
   if v_bad is not null then
     raise exception
-      'phx_write_monthly_store_split_net: net does not balance to zero for % — refusing to write (%)',
+      'phx_write_monthly_store_split_net: net does not balance to zero for % - refusing to write (%)',
       p_period, v_bad;
   end if;
 
@@ -134,13 +155,15 @@ begin
   insert into au.monthly_store_split_net
     (period, line_code, area_code, product_code, net_qty, net_effective_units, computed_at)
   select p_period,
-         lower(btrim(r->>'line_code')),
+         lm.line_code,
          upper(btrim(r->>'area_code')),
          upper(btrim(r->>'product_code')),
          sum((r->>'net_qty')::numeric),
          sum((r->>'net_effective_units')::numeric),
          now()
   from jsonb_array_elements(p_rows) r
+  join au.sos_official_line_map lm
+    on lower(btrim(lm.official_line)) = lower(btrim(r->>'official_line'))
   group by 1, 2, 3, 4
   -- A cell whose in and out cancel exactly carries no information and would only add a join row.
   having abs(sum((r->>'net_qty')::numeric)) > 1e-9
