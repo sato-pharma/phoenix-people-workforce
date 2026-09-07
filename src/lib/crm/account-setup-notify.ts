@@ -17,11 +17,16 @@
  */
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
-import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { logError } from "@/lib/observability/log";
 import { resolveNotificationPersonRecipients } from "@/lib/notifications/role-recipients";
 import { createSystemNotificationForRecipients, logNotificationSendFailure } from "@/lib/notifications/system";
-import { subjectFromEmployee } from "@/lib/crm/account-setup";
+import {
+  needsCrmAccount,
+  openCrmAccountSetupTasks,
+  subjectFromEmployee,
+  type CrmAccountSetupSource,
+} from "@/lib/crm/account-setup";
 import {
   CRM_ACCOUNT_SETUP_AUDIENCE,
   CRM_ACCOUNT_SETUP_CHANNELS,
@@ -41,35 +46,46 @@ export type CrmAccountSetupNotifyResult = {
   /** How many employees produced at least one delivery attempt. */
   announced: number;
   notified: number;
+  /** Employees a task was opened for — the field-force half of what was passed in. */
+  opened: number;
   recipients: number;
   skipped: number;
+  /** New employees deliberately passed over because they hold no field role. */
+  skippedNotFieldForce: number;
   warnings: string[];
 };
 
+function emptyResult(warnings: string[]): CrmAccountSetupNotifyResult {
+  return { announced: 0, notified: 0, opened: 0, recipients: 0, skipped: 0, skippedNotFieldForce: 0, warnings };
+}
+
 /**
- * Announce each newly created employee once per recipient.
+ * Open a CRM setup task for each newly created FIELD employee and announce them.
+ *
+ * ONE entry point for both create paths — the manual add and the confirmed import — rather than
+ * each route calling "open" and then "notify" itself. Two call sites doing the same two steps is
+ * how they drift, and the drift that matters here is invisible: a route that opens a task without
+ * announcing it leaves somebody waiting on a queue nobody was told to look at. It also reads the
+ * employee directory ONCE for both halves instead of twice.
  *
  * The idempotency key is the employee and the recipient, with no date in it, so a later edit to
  * the same person's record can never re-announce them. A new hire is announced exactly once.
  */
-export async function notifyNewEmployeesNeedCrmAccount(input: {
+export async function openAndAnnounceCrmAccountSetup(input: {
   actorId?: string | null;
   hrIds: Array<string | null | undefined>;
+  source: CrmAccountSetupSource;
 }): Promise<CrmAccountSetupNotifyResult> {
   const warnings: string[] = [];
   const wanted = new Set(
     input.hrIds.map((hrId) => canonicalHrIdKey(hrId)).filter((key): key is string => Boolean(key)),
   );
-  if (wanted.size === 0) {
-    return { announced: 0, notified: 0, recipients: 0, skipped: 0, warnings };
-  }
+  if (wanted.size === 0) return emptyResult(warnings);
 
-  let subjects: CrmAccountSetupSubject[] = [];
+  let created: EmployeeDirectoryRow[] = [];
   try {
     const rows = await getEmployeeDirectoryRows({ includeInactive: true });
-    subjects = rows
-      .filter((row) => wanted.has(canonicalHrIdKey(row.hrId) ?? ""))
-      .map((row) => subjectFromEmployee(row));
+    created = rows.filter((row) => wanted.has(canonicalHrIdKey(row.hrId) ?? ""));
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     warnings.push(`The new hires could not be read back for the CRM notice: ${detail}`.slice(0, 200));
@@ -77,18 +93,29 @@ export async function notifyNewEmployeesNeedCrmAccount(input: {
       labels: { event: "crm_account_setup_subject_read_failed" },
       error: error instanceof Error ? error : new Error(detail),
     });
-    return { announced: 0, notified: 0, recipients: 0, skipped: 0, warnings };
+    return emptyResult(warnings);
   }
 
-  const missing = wanted.size - subjects.length;
+  const missing = wanted.size - created.length;
   if (missing > 0) {
     // The employee was written moments ago, so this is a directory-cache miss rather than a real
     // absence. Say so instead of silently announcing fewer people than were hired.
     warnings.push(`${missing} newly created employee record(s) could not be read back, so no CRM notice was sent for them.`);
   }
-  if (subjects.length === 0) {
-    return { announced: 0, notified: 0, recipients: 0, skipped: 0, warnings };
-  }
+
+  // Owner's decision, 2026-09-08: field roles only. Everything head office — HR, finance, admin,
+  // regulatory, R&D, the CEO — is passed over silently rather than clearing a task per hire.
+  const inScope = created.filter((row) => needsCrmAccount(row));
+  const skippedNotFieldForce = created.length - inScope.length;
+  if (inScope.length === 0) return { ...emptyResult(warnings), skippedNotFieldForce };
+
+  const opened = await openCrmAccountSetupTasks({
+    hrIds: inScope.map((row) => row.hrId),
+    source: input.source,
+  });
+  warnings.push(...opened.warnings);
+
+  const subjects: CrmAccountSetupSubject[] = inScope.map((row) => subjectFromEmployee(row));
 
   const audience = await resolveNotificationPersonRecipients(
     CRM_ACCOUNT_SETUP_AUDIENCE,
@@ -108,7 +135,7 @@ export async function notifyNewEmployeesNeedCrmAccount(input: {
         `${subjects.length} new employees had no CRM-setup recipient. Warnings: ${warnings.join("; ") || "none"}`,
       ),
     });
-    return { announced: 0, notified: 0, recipients: 0, skipped: 0, warnings };
+    return { ...emptyResult(warnings), opened: opened.opened.length, skippedNotFieldForce };
   }
 
   let announced = 0;
@@ -165,9 +192,17 @@ export async function notifyNewEmployeesNeedCrmAccount(input: {
       notified += audience.recipients.length;
     } catch (error) {
       skipped += 1;
-      logNotificationSendFailure("crmAccountSetup.notifyNewEmployeesNeedCrmAccount", error);
+      logNotificationSendFailure("crmAccountSetup.openAndAnnounceCrmAccountSetup", error);
     }
   }
 
-  return { announced, notified, recipients: audience.recipients.length, skipped, warnings };
+  return {
+    announced,
+    notified,
+    opened: opened.opened.length,
+    recipients: audience.recipients.length,
+    skipped,
+    skippedNotFieldForce,
+    warnings,
+  };
 }

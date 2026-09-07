@@ -16,7 +16,7 @@ import {
   formatHireDate,
   type CrmAccountSetupSubject,
 } from "../src/lib/crm/account-setup-messages.ts";
-import { isCrmAccountSetupSchemaMissing } from "../src/lib/crm/account-setup.ts";
+import { isCrmAccountSetupSchemaMissing, needsCrmAccount } from "../src/lib/crm/account-setup.ts";
 import {
   DEFAULT_NOTIFICATION_ROLE_POLICIES,
   notificationRoleKeys,
@@ -176,23 +176,109 @@ export function runCrmAccountSetupTests() {
   );
   assert.match(
     employeesRoute,
-    /if \(isNewEmployee\) \{[\s\S]*?openCrmAccountSetupTasks\([\s\S]*?notifyNewEmployeesNeedCrmAccount\(/,
-    "both the task and the notice must sit inside the isNewEmployee branch",
+    /if \(isNewEmployee\) \{[\s\S]{0,400}?openAndAnnounceCrmAccountSetup\(/,
+    "opening the task and sending the notice must sit inside the isNewEmployee branch",
   );
 
   const importRoute = readFileSync(join(ROOT, "app/api/imports/employees/confirm/route.ts"), "utf8");
   assert.match(
     importRoute,
-    /dryRunResult\.rowsToInsert\.map\(\(record\) => record\.hrId\)[\s\S]*?openCrmAccountSetupTasks/,
+    /openAndAnnounceCrmAccountSetup\(\{[\s\S]{0,300}?dryRunResult\.rowsToInsert\.map\(\(record\) => record\.hrId\)/,
     "the import must announce the rows it INSERTED, never the rows it updated",
   );
   assert.ok(
-    !/rowsToUpdate[\s\S]{0,200}notifyNewEmployeesNeedCrmAccount/.test(importRoute),
+    !/rowsToUpdate[\s\S]{0,200}openAndAnnounceCrmAccountSetup/.test(importRoute),
     "an employee the import merely updated is not a new hire and must never be announced",
   );
 
-  // ── the queue survives its own deploy window ─────────────────────────────────────────────
+  // ── ONE entry point, so the two create paths cannot drift ────────────────────────────────
+  // Opening a task and sending the notice are two steps that must always happen together: a route
+  // that did the first without the second would leave somebody waiting on a queue nobody was told
+  // to look at, and nothing about the code would look wrong.
+  for (const [label, source] of [["employees", employeesRoute], ["employee import", importRoute]] as const) {
+    assert.ok(
+      !/openCrmAccountSetupTasks\(/.test(source),
+      `the ${label} route must go through openAndAnnounceCrmAccountSetup, never open a task on its own`,
+    );
+  }
+
+  // ── FIELD ROLES ONLY (owner, 2026-09-08) ─────────────────────────────────────────────────
+  // Every title below is a real one from the production roster on 2026-09-08, with the headcount
+  // it carried. Inventing titles here would prove nothing: the whole risk in a title-based rule is
+  // the titles people actually type, and "Regulatory Affairs Supervisior" is in this list spelled
+  // exactly as production spells it.
+  const liveRoster: Array<{ inScope: boolean; people: number; title: string }> = [
+    { inScope: true, people: 77, title: "Medical Representative" },
+    { inScope: true, people: 19, title: "District Sales Manager" },
+    { inScope: true, people: 4, title: "National Sales Manager" },
+    { inScope: true, people: 2, title: "Product Manager" },
+    { inScope: true, people: 1, title: "Group Product Manager" },
+    { inScope: true, people: 1, title: "Regional Sales Manager" },
+    { inScope: true, people: 1, title: "Marketing Manager" },
+    { inScope: true, people: 1, title: "Training Manager" },
+    { inScope: true, people: 1, title: "SFE Manager" },
+    { inScope: false, people: 2, title: "Admin Assistant" },
+    { inScope: false, people: 1, title: "Admin Assist" },
+    { inScope: false, people: 1, title: "Buffet" },
+    { inScope: false, people: 1, title: "CEO" },
+    { inScope: false, people: 1, title: "Finance and Admin Manager" },
+    { inScope: false, people: 1, title: "Financial Advisor" },
+    { inScope: false, people: 1, title: "HR Business Partner" },
+    { inScope: false, people: 1, title: "HR Generalist" },
+    { inScope: false, people: 1, title: "HR Section Head" },
+    { inScope: false, people: 1, title: "QPPV" },
+    { inScope: false, people: 1, title: "R&D Manager" },
+    { inScope: false, people: 1, title: "Regulatory Affairs Supervisior" },
+  ];
+
+  let inScopeHeadcount = 0;
+  let skippedHeadcount = 0;
+  for (const row of liveRoster) {
+    assert.equal(
+      needsCrmAccount({ jobTitle: row.title, positionTitle: null }),
+      row.inScope,
+      `"${row.title}" (${row.people} on the live roster) is on the wrong side of the field-role rule`,
+    );
+    if (row.inScope) inScopeHeadcount += row.people;
+    else skippedHeadcount += row.people;
+  }
+  assert.equal(inScopeHeadcount, 107, "the field half of the roster changed — re-measure before moving this number");
+  assert.equal(skippedHeadcount, 13, "the head-office half of the roster changed — re-measure before moving this number");
+
+  // A BLANK title is IN, not out: it means "nobody has said yet", and a missed rep is invisible
+  // field work while a wrongly-included person is one click.
+  assert.equal(needsCrmAccount({ jobTitle: null, positionTitle: null }), true, "an unknown title must not be silently skipped");
+  assert.equal(needsCrmAccount({ jobTitle: "   ", positionTitle: null }), true, "a whitespace-only title is still unknown");
+  // The POSITION title is a second chance at the same question — a blank job title with a real
+  // position must be judged on the position rather than waved through as unknown.
+  assert.equal(needsCrmAccount({ jobTitle: null, positionTitle: "Medical Representative" }), true);
+  assert.equal(needsCrmAccount({ jobTitle: null, positionTitle: "HR Generalist" }), false);
+
+  // It DELEGATES rather than restating the titles — a second copy of "who is field workforce"
+  // drifts from the first within a year.
   const service = readFileSync(join(ROOT, "src/lib/crm/account-setup.ts"), "utf8");
+  assert.match(
+    service,
+    /isFieldWorkforceComplianceEligibleTitle\(/,
+    "needsCrmAccount must delegate to the existing field-workforce predicate, never hold its own title list",
+  );
+  // Comments are stripped first. The rule's own doc-comment explains at length WHY area is not the
+  // test, and a bare substring check would fail on the explanation rather than on the code — the
+  // same shape as pinning `truncate` in the panel below.
+  const serviceCode = service.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.ok(
+    !serviceCode.includes("areaId") && !serviceCode.includes("area_id"),
+    "area must NOT gate this queue: every head-office employee carries an area_id, because Head office IS an area",
+  );
+  // POSITIVE CONTROL on the two lines above. Stripping comments is what makes that check mean
+  // anything, and a strip that quietly removed too much would let it pass against any file at all —
+  // an empty result and a clean result are indistinguishable without this.
+  assert.ok(
+    serviceCode.includes("isFieldWorkforceComplianceEligibleTitle"),
+    "the comment strip removed real code, so the area check above proves nothing",
+  );
+
+  // ── the queue survives its own deploy window ─────────────────────────────────────────────
   assert.match(
     service,
     /export async function openCrmAccountSetupTasks[\s\S]*?catch \(error\)/,

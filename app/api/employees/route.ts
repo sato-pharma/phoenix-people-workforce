@@ -8,8 +8,7 @@ import {
 } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
-import { openCrmAccountSetupTasks } from "@/lib/crm/account-setup";
-import { notifyNewEmployeesNeedCrmAccount } from "@/lib/crm/account-setup-notify";
+import { openAndAnnounceCrmAccountSetup } from "@/lib/crm/account-setup-notify";
 import { hrIdsMatch } from "@/lib/hr-id";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
@@ -169,16 +168,16 @@ export async function POST(request: Request) {
       })
       : null;
 
-    // A new hire is invisible in the CRM until somebody creates his iReports360 account, and
-    // nothing used to say so. Open the setup task and tell the SFE Manager (owner instruction
-    // 2026-09-07). Both calls swallow their own failures: the employee is already saved by this
-    // point, and a notification that could 500 the save would mean an unreachable recipient stops
-    // HR hiring anybody.
+    // A new hire in a FIELD role is invisible in the CRM until somebody creates his iReports360
+    // account, and nothing used to say so. Open the setup task and tell the SFE Manager (owner
+    // instruction 2026-09-07, narrowed to field roles 2026-09-08). It swallows its own failures:
+    // the employee is already saved by this point, and a notification that could 500 the save
+    // would mean an unreachable recipient stops HR hiring anybody.
     if (isNewEmployee) {
-      await openCrmAccountSetupTasks({ hrIds: [newEmployeeHrId], source: "manual_add" });
-      await notifyNewEmployeesNeedCrmAccount({
+      await openAndAnnounceCrmAccountSetup({
         actorId: access.loginId ?? access.hrId ?? access.role,
         hrIds: [newEmployeeHrId],
+        source: "manual_add",
       });
     }
 

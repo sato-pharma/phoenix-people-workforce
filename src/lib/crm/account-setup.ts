@@ -24,6 +24,7 @@ import {
   setEmployeeCrmIdentity,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
+import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-compliance/eligibility";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { CrmAccountSetupSubject } from "@/lib/crm/account-setup-messages";
@@ -87,6 +88,39 @@ function statusOf(value: string | null | undefined): CrmAccountSetupStatus {
 
 function sourceOf(value: string | null | undefined): CrmAccountSetupSource {
   return value === "employee_import" ? "employee_import" : "manual_add";
+}
+
+/**
+ * Does this new hire need an iReports360 (CRM) account?
+ *
+ * Owner's decision, 2026-09-08, narrowing the original rule: FIELD ROLES ONLY. Head office — HR,
+ * finance, admin, regulatory, R&D, the CEO — no longer opens a task, because a queue that asks a
+ * question with the same answer every time stops being read.
+ *
+ * DELEGATES to isFieldWorkforceComplianceEligibleTitle rather than restating the titles, on the
+ * same reasoning as retention-risk/eligibility.ts: "who is the field commercial workforce" is
+ * already decided in one place, and a second copy here would drift from it within a year. That
+ * helper is explicitly a non-security business rule, which is exactly what this is — it decides
+ * who appears in a work queue, never what anybody may do. It also falls back to
+ * `resolveJobFunctionRole`, so a title typed as something other than the canonical string still
+ * resolves; a misspelt title hiding a District Manager is the failure this whole feature exists
+ * to prevent.
+ *
+ * A BLANK title counts as IN, deliberately. It means "nobody has said yet", not "head office", and
+ * the two cost wildly different things: a wrongly-included person is one click on "No CRM account
+ * needed", while a missed rep is field work that lands under an unmapped agent id with no error
+ * anywhere. Measured on production 2026-09-08 before choosing this: 2 of 122 active employees have
+ * a blank job title, so the noise this admits is two rows, ever.
+ *
+ * NOT decided on `area_id`. Measured the same day: EVERY head-office employee carries one, because
+ * "Head office" is itself an area — so an area test would re-admit all of them and quietly undo
+ * the owner's narrowing while looking like a widening safeguard.
+ */
+export function needsCrmAccount(employee: Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">): boolean {
+  const jobTitle = String(employee.jobTitle ?? "").trim();
+  const positionTitle = String(employee.positionTitle ?? "").trim();
+  if (!jobTitle && !positionTitle) return true;
+  return isFieldWorkforceComplianceEligibleTitle(jobTitle, positionTitle);
 }
 
 /** The subject shape the notice and the board both render, built from the employee's own row. */
