@@ -1362,12 +1362,15 @@ async function authUsersByRole(role: PhoenixRole) {
 }
 
 async function authRoleForHrId(hrId: string | null | undefined): Promise<PhoenixRole | null> {
-  const normalized = normalizeHrId(hrId);
-  if (!normalized) return null;
+  // app_auth_users.hr_id is stored in canonical display form (e.g. "B-10"), never the
+  // separator-stripped comparison key normalizeHrId produces ("b10") - querying by the
+  // stripped form silently matched nothing for every hyphenated id.
+  const lookupHrId = hrIdForStorage(hrId);
+  if (!lookupHrId) return null;
   const { data, error } = await getSupabaseAdmin()
     .from("app_auth_users")
     .select("role")
-    .eq("hr_id", normalized)
+    .eq("hr_id", lookupHrId)
     .maybeSingle();
   if (error || !data) return null;
   const role = (data as { role?: string | null }).role;
@@ -2165,23 +2168,40 @@ export async function listPlanComments(
 // their own shell. Best-effort: a notification failure never blocks the comment itself.
 async function notifyPlanComment(plan: PlanHeaderRow, comment: EmployeePlanComment) {
   try {
+    // participantKeys is a Set of normalizeHrId() comparison keys (hyphens/case stripped) so
+    // duplicates collapse correctly - but that stripped form must never reach the database: it
+    // silently failed the FK to employees.hr_id (stored as "B-10") for every hyphenated id, so
+    // no plan-comment notification has ever reached anyone but the CEO ("AA", no hyphen).
+    // canonicalHrIds keeps the first properly-cased form seen for each key, for actual storage.
     const participantKeys = new Set<string>();
-    if (plan.employee_hr_id) participantKeys.add(normalizeHrId(plan.employee_hr_id));
-    if (plan.manager_hr_id) participantKeys.add(normalizeHrId(plan.manager_hr_id));
+    const canonicalHrIds = new Map<string, string>();
+    const addParticipant = (rawHrId: string | null | undefined) => {
+      const key = normalizeHrId(rawHrId);
+      if (!key) return;
+      participantKeys.add(key);
+      if (!canonicalHrIds.has(key)) {
+        const canonical = hrIdForStorage(rawHrId);
+        if (canonical) canonicalHrIds.set(key, canonical);
+      }
+    };
+
+    addParticipant(plan.employee_hr_id);
+    addParticipant(plan.manager_hr_id);
     for (const decision of plan.employee_plan_decisions ?? []) {
-      if (decision.actor_hr_id) participantKeys.add(normalizeHrId(decision.actor_hr_id));
+      addParticipant(decision.actor_hr_id);
     }
     const { data: priorAuthors } = await getSupabaseAdmin()
       .from("employee_plan_comments")
       .select("author_hr_id")
       .eq("plan_id", plan.id);
     for (const row of (priorAuthors ?? []) as Array<{ author_hr_id: string }>) {
-      if (row.author_hr_id) participantKeys.add(normalizeHrId(row.author_hr_id));
+      addParticipant(row.author_hr_id);
     }
-    participantKeys.delete("");
+    addParticipant(comment.authorHrId);
 
     const submitterKey = normalizeHrId(plan.employee_hr_id);
     const authorKey = normalizeHrId(comment.authorHrId);
+    const toCanonicalHrId = (key: string) => canonicalHrIds.get(key) ?? null;
 
     // In-app / Telegram / push audience: the submitter first (they are the email's To, and
     // notifyRecipients attaches the email to whichever recipient matches the primary), then every
@@ -2200,10 +2220,10 @@ async function notifyPlanComment(plan: PlanHeaderRow, comment: EmployeePlanComme
 
     const actionUrl = submitterKey
       ? `/employee-portals/plans?plan=${plan.id}`
-      : await planReviewActionUrl(notifyKeys[0] ?? "", plan.id);
+      : await planReviewActionUrl(toCanonicalHrId(notifyKeys[0] ?? "") ?? "", plan.id);
     await notifyRecipients({
       actionUrl,
-      emailCcRecipients: Array.from(ccKeys).map((hrId) => ({ hrId })),
+      emailCcRecipients: Array.from(ccKeys).map((key) => ({ hrId: toCanonicalHrId(key) })),
       eventType: "plan_comment",
       // The full comment, never trimmed to a preview: the owner's standing rule is that text is
       // never truncated with an ellipsis, and a half-sentence is exactly what forces the reader
@@ -2214,7 +2234,7 @@ async function notifyPlanComment(plan: PlanHeaderRow, comment: EmployeePlanComme
       // messages on the same thread.
       messageKey: comment.id,
       plan,
-      recipients: notifyKeys.map((hrId) => ({ hrId })),
+      recipients: notifyKeys.map((key) => ({ hrId: toCanonicalHrId(key) })),
       title: `New comment on ${plan.plan_kind} plan`,
     });
   } catch (error) {
