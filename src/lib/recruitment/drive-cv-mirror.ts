@@ -26,7 +26,7 @@ import {
   type CandidateFolderSuggestion,
 } from "@/lib/recruitment/candidate-folder-suggestion";
 import { inferCandidatePlacement } from "@/lib/recruitment/candidate-folder-inference";
-import { shouldMirrorCopy } from "@/lib/recruitment/cv-duplicate-copies";
+import { copyLabelsFor, shouldMirrorCopy, withCopyLabel } from "@/lib/recruitment/cv-duplicate-copies";
 import { CABINET_ROOT_NAME, cabinetPathFor } from "@/lib/recruitment/drive-cabinet-folders";
 import {
   driveFileNameFor,
@@ -238,7 +238,11 @@ export async function mirrorCvToDrive(fileId: string): Promise<MirrorOutcome> {
     if (!shouldMirrorCopy(fileId, siblings)) return "skipped";
 
     const areaRegions = await loadAreaRegionMap();
-    const { fileName } = placementFor(candidateRow as MirrorCandidateRow, areaRegions, row.mime_type);
+    const { fileName: baseFileName } = placementFor(candidateRow as MirrorCandidateRow, areaRegions, row.mime_type);
+    // A candidate who sent TWO DIFFERENT CVs gets both, and until now both wore the same name in the
+    // same folder. The label separates them; a candidate with one CV gets an empty label and the
+    // plain name. Owner's request, 2026-09-07: "add the date to the duplicate names".
+    const fileName = withCopyLabel(baseFileName, copyLabelsFor(siblings).get(fileId) ?? "");
     // THE CABINET, NOT THE OLD TREE. `Phoenix CVs` is frozen at the owner's instruction ("don't fix.
     // Create a new folder and reroute"), and `ensureRootFolder` resolves the cabinet, so this path
     // is created beneath it. `placementFor` is still the source of the FILE NAME, which the two
@@ -259,15 +263,27 @@ export async function mirrorCvToDrive(fileId: string): Promise<MirrorOutcome> {
     const pathKey = [CABINET_ROOT_NAME, ...path].join("/");
     const recordedInCabinet = String(row.drive_mirror_path ?? "").startsWith(`${CABINET_ROOT_NAME}/`);
 
-    // Already in the cabinet: this is a MOVE, and only when the folder actually changed. The common
-    // case by far is "unchanged" — the retry sweep re-reads rows it has already handled.
+    // Already in the cabinet: reconcile it. The folder may have changed, and so may the NAME.
+    //
+    // THE NAME IS WHY THIS NO LONGER SHORT-CIRCUITS ON A MATCHING PATH. A candidate's first CV is
+    // named plainly; the moment a SECOND, different CV arrives, both need an arrival-date label to
+    // tell them apart (`copyLabelsFor`). `mirrorCandidateCvsToDrive` re-walks every one of that
+    // candidate's rows, so the first file IS revisited — but returning early on an unchanged folder
+    // meant it kept its plain name while its sibling got a dated one. One dated and one not is worse
+    // than neither, because it reads as though the undated file is the only real one.
+    //
+    // `moveDriveFile` already reads the file's current parents and name in one request and patches
+    // only what actually differs, so letting it run costs one GET on an otherwise unchanged row and
+    // nothing else. That is a handful of requests per intake, against a name that is wrong until
+    // something else happens to move the file.
     if (row.drive_mirror_file_id && recordedInCabinet) {
-      if (row.drive_mirror_path === pathKey) return "unchanged";
+      const folderUnchanged = row.drive_mirror_path === pathKey;
       const moved = await moveDriveFile({
         driveFileId: row.drive_mirror_file_id,
         newName: fileName,
         path,
       });
+      if (moved && folderUnchanged) return "unchanged";
       if (!moved) {
         // The owner deleted or moved it himself. Clear our record so the next sweep re-uploads it
         // rather than repeatedly patching a file that is not there.
