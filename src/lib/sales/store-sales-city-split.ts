@@ -136,6 +136,45 @@ export const AREA_CITY: ReadonlyMap<string, string> = new Map([
   ["OT4", "New Valley"], ["OT5", "Red Sea"], ["OT8", "Red Sea"], ["OT6", "Luxor"], ["OT9", "Ismailia"],
 ]);
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// AREAS THAT EXIST BUT ARE DELIBERATELY OUTSIDE THE CITY LIST.
+//
+// AREA_CITY above is hand-maintained, and "missing" is its safe direction: an unlisted area never
+// splits and its sales stay exactly where the file put them. That safety has a cost — a NEW area
+// is silently unlisted from the day it is created, so the split simply does not happen and nothing
+// says why.
+//
+// 🔴 THE FAILURE THIS GUARDS, in the owner's own words (2026-09-07): "in pedia fayoum and bani suef
+// is one area so no splitting here, but in future if fayoum and bani suef hired in them more than 1
+// area, split." Beni Suef (UE9) and Fayoum (GZ6) hold exactly ONE area each today, so neither
+// splits — correct. The day a second one is hired, TWO things break at once and both are silent:
+// the new area is not in AREA_CITY so its own wholesalers do not split, AND the existing area still
+// reads as a one-area city so it does not start splitting either. One line added to AREA_CITY fixes
+// both; the whole problem is that nobody is told to add it.
+//
+// So this map is what lets a guard tell "a new area nobody has classified yet" from "an area we
+// deliberately never split". Without it the warning fires every single month on Main Store and
+// becomes wallpaper — which is exactly how a guard that fires at the normal working level dies.
+//
+// Both entries are real and verified live on 2026-09-07: they are the ONLY two of the 51 live areas
+// absent from AREA_CITY.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+export const AREAS_DELIBERATELY_NOT_SPLIT: ReadonlyMap<string, string> = new Map([
+  ["OT3", "Aswan (Legacy) — retired from the organogram; OT7 Aswan replaced it"],
+  ["OTMS", "Main Store — real sales, but no rep, no DM and no target, so it is not a territory to spread across"],
+]);
+
+/**
+ * True when this area carries sales but the city list has never heard of it — neither grouped into
+ * a city nor deliberately excluded above. In practice that means someone created an area and the
+ * city list has not caught up, which is the one case a human needs to be told about.
+ */
+export function isUnlistedArea(areaCode: string | null | undefined): boolean {
+  const area = normalizeArea(areaCode);
+  if (!area) return false;
+  return !AREA_CITY.has(area) && !AREAS_DELIBERATELY_NOT_SPLIT.has(area);
+}
+
 /** Every area of a city, in a stable order. Built once from AREA_CITY so the two cannot drift. */
 export const CITY_AREAS: ReadonlyMap<string, readonly string[]> = (() => {
   const byCity = new Map<string, string[]>();

@@ -1126,6 +1126,7 @@ import { runDirectOrdersRegistryChainGrantsTests } from "./direct-orders-registr
 import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
 import { runSosWarehouseOwnerRulingsTests } from "./sos-warehouse-owner-rulings.test.ts";
 import { runImportSplitPreviewTests } from "./import-split-preview.test.ts";
+import { runCityListNewAreaGuardTests } from "./city-list-new-area-guard.test.ts";
 import { runQemaQalubeyaSplitTests } from "./qema-qalubeya-split.test.ts";
 import { runStoreNamePrefixesTests } from "./store-name-prefixes.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
@@ -3288,6 +3289,10 @@ await runTest(
 await runTest(
   "import split preview (validation shows the city and how the units will be distributed; a customer that stays whole says WHY, and one customer in two areas is two placements)",
   runImportSplitPreviewTests,
+);
+await runTest(
+  "city list new-area guard (a newly hired area is NAMED at import instead of silently not splitting — and the two deliberate exclusions, Aswan Legacy and Main Store, stay quiet so the warning never becomes wallpaper)",
+  runCityListNewAreaGuardTests,
 );
 await runTest(
   "El Qema Qalubeya split (one way, El Qema only — Qalubeya reaches Cairo, Cairo never reaches Qalubeya, and the same warehouse through any other distributor does not split at all)",
