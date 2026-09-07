@@ -30,6 +30,13 @@ export default async function MonthlyClosingPage({
   // publish action itself.
   const isSystemAdministratorViewer = access.role === "Super Admin" || access.scope === "system";
   if (!isSystemAdministratorViewer && access.role !== "SFE Manager") {
+    // The CEO lands on the closing module he CAN open, not on his overview. He holds sales:read but
+    // never sales:import, so this workspace can only ever bounce him — and bouncing him to his
+    // landing page made a bookmark, an old link, or a colleague sharing this address read as "the
+    // Monthly Closing module is gone", which is exactly how it was reported on 2026-09-07.
+    // /admin/analytics/monthly-closing is the read-only module: the same published closing, all four
+    // tabs, Export XLSX included, and nothing on it that could publish.
+    if (access.role === "CEO") redirect("/admin/analytics/monthly-closing");
     redirect(resolveLandingPathForRole(access.role));
   }
 

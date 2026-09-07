@@ -1282,6 +1282,24 @@ export const adminNavigationSectionSeeds = [
       // so the only effect is that this section starts expanded once for anyone who had collapsed
       // it; no saved sidebar ARRANGEMENT is affected, that layout is stored by href.
       { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ resource: "sales", action: "read" }], roles: ["Super Admin"] },
+      // Owner, 2026-09-07: the CEO reported Monthly Closing missing from his sidebar and
+      // unreachable. Both halves were true and NEITHER was a permission fault — he holds
+      // sales:["read","export"], scopeForRole gives him company scope and he passes
+      // canViewAdminCoreAnalytics, so every page in the closing analytics module has always opened
+      // for him by direct URL. What he did not have was a DOOR. The only rail row anywhere reading
+      // "Monthly Closing" was the Super Admin one above, which points at a page that redirects him
+      // on entry; the Source of Sales hub card for it is gated on sales:import, which he must never
+      // hold; and ruling 11 removed the analytics rail that used to carry the module. His one
+      // surviving link was a card on his own command center labelled "Source of Sales" — the right
+      // page under a name nobody looking for the closing would search for.
+      //
+      // This row is the same shape as the Finance Manager's below and is legal for the same reason:
+      // ruling 11 delisted the analytics HUB (/admin/analytics) from navigation, not the modules
+      // under it — navigation-ruling-11-analytics.test.ts asserts the hub href specifically, and
+      // names the finance row as correctly kept. The module ROOT rather than one tab, because it
+      // renders CLOSING_TABS: Overview, By Line, By Employee and Details (which carries Export
+      // XLSX) all open from this single row.
+      { href: "/admin/analytics/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ resource: "sales", action: "read" }], roles: ["CEO"] },
       // Owner, 2026-08-11: a Monthly Closing tab of his own, able to export the full workbook for
       // CNS, Pedia or Anti Infective.
       //
