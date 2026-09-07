@@ -88,6 +88,45 @@ export function cairoDateTime(iso: string | null | undefined): string {
   return `${formatCairoDatePart(value)} · ${hour}:${minute}`;
 }
 
+const UTC_PARTS = new Intl.DateTimeFormat("en-GB", {
+  day: "2-digit",
+  month: "2-digit",
+  timeZone: "UTC",
+  year: "numeric",
+});
+
+/**
+ * e.g. `15 Sept 2026`, pinned to UTC — the DATE-ONLY sibling of `cairoDate`.
+ *
+ * A UTC formatter in a file named cairo-datetime looks out of place, and it is here on purpose.
+ * Two kinds of value must NOT be dragged to Cairo: a DATE-ONLY column (`activity_date`, a period
+ * key), which `new Date` parses as UTC midnight so UTC is what stops the calendar day shifting;
+ * and a vendor wall-clock that is already Cairo but tagged UTC (iReports360 sends zone-less local
+ * times). Both were already correct on that axis — their bug was the LOCALE.
+ *
+ * `en-GB` + `month: "short"` is engine-dependent: CLDR 42 (ICU 72) renamed the abbreviation for
+ * September from "Sep" to "Sept", so Railway's Node 24 (ICU 78) and an older mobile browser
+ * produce different bytes for the same value. In a `"use client"` component that text is built
+ * twice — once by Node for the HTML, once by the browser on hydrate — and React discards the
+ * server HTML over the one-character difference: hydration error #418.
+ *
+ * So this shares `CAIRO_MONTHS` rather than carrying its own copy. A second month table is exactly
+ * how validated-customer-register grew an unsafe private `cairoDateTime`, and the point of putting
+ * the names in code is lost the moment there are two lists to keep in step.
+ *
+ * Output is byte-identical to what `en-GB` renders on current ICU, so nothing on screen changes for
+ * a reader on an up-to-date browser; an old engine simply converges on the string the server sent.
+ */
+export function utcDate(iso: string | null | undefined): string {
+  const value = parseIsoInstant(iso);
+  if (!value) return "—";
+  const parts: Record<string, string> = {};
+  for (const part of UTC_PARTS.formatToParts(value)) {
+    if (part.type !== "literal") parts[part.type] = part.value;
+  }
+  return `${parts.day} ${CAIRO_MONTHS[Number(parts.month) - 1]} ${parts.year}`;
+}
+
 /**
  * The same Cairo instant as `2026-08-30 14:05` — for spreadsheets, not screens.
  *
