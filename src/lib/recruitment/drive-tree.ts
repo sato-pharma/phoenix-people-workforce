@@ -12,16 +12,23 @@
 // invisible under this scope, and asking for it 404s in a way that reads like a wrong id.
 
 import { logError } from "@/lib/observability/log";
-import { driveMultipartUpload, getDriveAccessToken, isDriveConfigured, rootFolderId } from "@/lib/recruitment/drive-storage";
+import { driveMultipartUpload, getDriveAccessToken, isDriveConfigured } from "@/lib/recruitment/drive-storage";
+import { CABINET_ROOT_NAME } from "@/lib/recruitment/drive-cabinet-folders";
 import { sanitizeDriveSegment } from "@/lib/recruitment/drive-cv-folders";
 
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 /**
- * The name of the root folder when one is not pinned by env.
+ * The name of the OLD, FROZEN tree — "Phoenix CVs".
  *
- * Configurable so a second environment (staging) can file into its own tree rather than mixing test
- * CVs into the real cabinet — the same reason every other integration here is environment-aware.
+ * NOTHING IN THE MIRROR READS THIS ANY MORE. It named the root every CV was filed under until
+ * 2026-09-07, when the owner froze that tree and asked for a new one; `ensureRootFolder` below now
+ * resolves `CABINET_ROOT_NAME` instead. Kept, and kept accurate, because the variable it reads is
+ * still set in production and still pins the old tree for `googleDriveFileStorage.uploadFile` —
+ * deleting it would make that variable look unused and invite someone to clear it.
+ *
+ * Still configurable so a second environment (staging) files into its own tree rather than mixing
+ * test CVs into the real one.
  */
 export function driveRootFolderName(): string {
   return (process.env.GOOGLE_DRIVE_RECRUITMENT_ROOT_NAME ?? "Phoenix CVs").trim() || "Phoenix CVs";
@@ -97,17 +104,31 @@ async function findOrCreateFolder(name: string, parentId: string): Promise<strin
 }
 
 /**
- * The root folder's id — pinned by env, else found or created by name at the Drive root.
+ * The CABINET's root folder id — every CV the mirror files goes beneath this.
  *
- * The env pin is checked first and trusted without a lookup: an id the owner has set by hand is a
- * statement of intent, and verifying it on every call would spend a round trip to learn something
- * that changes roughly never.
+ * IT IS DELIBERATELY NOT `GOOGLE_DRIVE_RECRUITMENT_FOLDER_ID`. That variable pins the OLD tree
+ * ("Phoenix CVs"), which the owner froze on 2026-09-07 — "don't fix. Create a new folder and
+ * reroute" — and it still pins it, because `googleDriveFileStorage.uploadFile` in drive-storage.ts
+ * uses it for non-CV recruitment attachments. Reading it here would send every new CV straight back
+ * into the tree we were told to stop writing to.
+ *
+ * RESOLVING BY NAME IS WHAT MAKES THE CUTOVER ATOMIC, and that is the whole reason it works this
+ * way rather than through a second pinned id. The alternative was flipping a Railway variable, and
+ * either order of (deploy, flip) leaves a window: flip first and the OLD code writes old-shape
+ * folders into the new cabinet; deploy first and the NEW code writes cabinet-shape folders into the
+ * frozen tree AND moves its files out. Resolving by name means the instant this code is live it is
+ * writing to the cabinet, with no variable to change and no window at all. The lookup finds the
+ * folder the fill script already created, because `drive.file` can see anything this app created.
+ *
+ * `GOOGLE_DRIVE_CABINET_FOLDER_ID` stays supported for pinning that id once it exists — trusted
+ * without a lookup, since an id set by hand is a statement of intent and verifying it every call
+ * would spend a round trip to learn something that changes roughly never.
  */
 export async function ensureRootFolder(): Promise<string> {
-  const pinned = rootFolderId();
+  const pinned = (process.env.GOOGLE_DRIVE_CABINET_FOLDER_ID ?? "").trim();
   if (pinned) return pinned;
 
-  const name = driveRootFolderName();
+  const name = CABINET_ROOT_NAME;
   const cached = folderIdCache.get(`/root:${name}`);
   if (cached) return cached;
 

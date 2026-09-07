@@ -151,3 +151,7 @@ next-env.d.ts
 # deleting it later does not remove it. The scripts write here by default and take
 # CV_REREAD_OUT_DIR to write elsewhere.
 .cv-reread/
+
+# The CV cabinet fill script's resume ledger — machine-local, never shared.
+.cv-cabinet-ledger.json
+cabinet-build.log
