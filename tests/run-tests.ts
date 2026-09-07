@@ -224,6 +224,7 @@ import { runCandidatePoolFiledSearchTests } from "./candidate-pool-filed-search.
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
 import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
 import { runDriveCabinetFolderTests, runDriveTrashedFileTests } from "./drive-cabinet-folders.test.ts";
+import { runCandidateStatusRegressionGuardTests } from "./candidate-status-regression-guard.test.ts";
 import { runCvLifecycleFeedTests } from "./cv-lifecycle-feed.test.ts";
 import { runCvLifecycleShareLinksScreenTests } from "./cv-lifecycle-share-links-screen.test.ts";
 import { runCvLifecycleSheetTokenRotationTests } from "./cv-lifecycle-sheet-token-rotation.test.ts";
@@ -1916,6 +1917,11 @@ await runTest(
   "Drive trashed-file detection (the bin is not a 404 — a binned CV must never be re-filed, and a "
     + "missing one still must be)",
   runDriveTrashedFileTests,
+);
+await runTest(
+  "candidate status regression guard (a CV sent to a manager cannot be walked back to shortlisted — "
+    + "the adjacent button that did it fifty times, two seconds after each send)",
+  runCandidateStatusRegressionGuardTests,
 );
 await runTest(
   "CV lifecycle sheet (the day bucket is Cairo's, a backfilled mirror still counts on its arrival day, and no column claims the candidate's send time)",
