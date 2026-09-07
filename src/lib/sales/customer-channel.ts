@@ -353,14 +353,21 @@ export function isWholesaleOnlyDistributor(distributorCode: string | null | unde
  * توريد (supply) sits beside تجارة and توزيع because the owner ruled
  * "شركة الهضبه لتوريد الادويه" and "شركة ابوعميره لتوريد وتوزيع الادوية" are warehouses.
  */
-const TRADE_BUSINESS_STEMS = ["تجار", "توزيع", "توريد"] as const;
+export const TRADE_BUSINESS_STEMS = ["تجار", "توزيع", "توريد"] as const;
 
 /**
  * The goods half: WHAT it trades. `الادي` is not a typo — it catches the real production spelling
  * "الفتح لتجارة وتوزيع الادية", a name the owner confirmed is a warehouse and whose goods word the
  * distributor typed without its و.
  */
-const TRADE_GOODS_STEMS = ["ادوي", "دواء", "دوائ", "الادي"] as const;
+export const TRADE_GOODS_STEMS = ["ادوي", "دواء", "دوائ", "الادي"] as const;
+
+/**
+ * The two business words that mean a warehouse together, without naming the goods —
+ * "لتجارة وتوزيع" says the business plainly enough on its own. Named rather than inlined so
+ * `customerChannelSqlRule()` can hand the same pair to SQL instead of a second copy of it.
+ */
+export const TRADE_BUSINESS_PAIR_STEMS = ["تجار", "توزيع"] as const;
 
 /**
  * The name with ALL whitespace removed, not merely collapsed.
@@ -386,7 +393,7 @@ export function matchesTradePhrase(name: string | null | undefined): boolean {
   if (!squashed) return false;
   const business = TRADE_BUSINESS_STEMS.filter((stem) => squashed.includes(stem));
   if (business.length === 0) return false;
-  if (squashed.includes("تجار") && squashed.includes("توزيع")) return true;
+  if (TRADE_BUSINESS_PAIR_STEMS.every((stem) => squashed.includes(stem))) return true;
   return TRADE_GOODS_STEMS.some((stem) => squashed.includes(stem));
 }
 
