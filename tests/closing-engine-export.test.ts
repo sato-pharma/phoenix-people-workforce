@@ -1615,7 +1615,23 @@ export async function runClosingEngineExportTests() {
     // this one carries the cover, and at their size it read as an afterthought dropped into a lot of
     // empty colour. Compared against a SIBLING'S OWN ext rather than a number typed in here, so the
     // claim stays true if the owner ever replaces the artwork.
-    const coverWidth = Number(/<xdr:ext cx="(\d+)"/.exec(drawingXml)?.[1] ?? 0);
+    // ANCHORED TO THE CELLS. A twoCellAnchor is defined by two corners, so the mark belongs to the
+    // banner's cells: it moves and resizes with them and cannot be dragged loose. `editAs="twoCell"`
+    // is the part that makes it SIZE with them.
+    assert.match(
+      drawingXml,
+      /<xdr:twoCellAnchor editAs="twoCell">/,
+      `${label}: the emblem is not bound to its cells — it floats over them and can drift`,
+    );
+    assert.match(drawingXml, /<xdr:to>/, `${label}: a twoCellAnchor needs its second corner`);
+    // A twoCellAnchor takes its size from the corners; an <xdr:ext> left over from the one-cell form
+    // is a schema violation, and Excel answers those by repairing the workbook.
+    assert.ok(
+      !/<xdr:ext\b/.test(drawingXml),
+      `${label}: a stale <xdr:ext> is left on a twoCellAnchor — Excel will offer to repair the file`,
+    );
+
+    const coverWidth = Number(/<a:ext\b[^>]*cx="(\d+)"/.exec(drawingXml)?.[1] ?? 0);
     let cornerWidth = 0;
     for (const name of Object.keys(opened.files).filter((one) => /^xl\/drawings\/drawing\d+\.xml$/.test(one))) {
       if (name === drawingPart) continue;

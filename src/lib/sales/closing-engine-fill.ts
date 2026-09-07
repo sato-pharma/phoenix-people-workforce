@@ -2972,31 +2972,59 @@ async function addIndexEmblem(
   // The vertical centre of the WHOLE band, resolved back to the row it lands in. A rowOff is an
   // offset INTO its own row, so one offset measured from the top of the band would overflow the
   // first row and Excel would place the mark somewhere of its own choosing.
+  //
+  /** An absolute y, as the (row, rowOff) pair an anchor wants. */
+  const locateRow = (y: number) => {
+    let left = Math.max(0, y);
+    let row = 0;
+    for (const pt of masthead.rowHeightsPt) {
+      const rowEmu = pt * 12_700;
+      if (left < rowEmu) break;
+      left -= rowEmu;
+      row += 1;
+    }
+    return { row, rowOff: Math.round(left) };
+  };
+
   const bandEmu = masthead.rowHeightsPt.reduce((total, pt) => total + pt * 12_700, 0);
-  let remaining = Math.max(0, Math.round((bandEmu - height) / 2));
-  let anchorRow = 0;
-  for (const pt of masthead.rowHeightsPt) {
-    const rowEmu = pt * 12_700;
-    if (remaining < rowEmu) break;
-    remaining -= rowEmu;
-    anchorRow += 1;
-  }
-  const drop = remaining;
+  const top = Math.max(0, Math.round((bandEmu - height) / 2));
+  const from = locateRow(top);
+  const to = locateRow(top + height);
+  const anchorRow = from.row;
+  const drop = from.rowOff;
 
   const part = `xl/drawings/drawing${
     Math.max(0, ...drawingNames.map((name) => Number(/drawing(\d+)\.xml$/.exec(name)?.[1] ?? 0))) + 1
   }.xml`;
 
+  // ANCHORED TO THE CELLS, not floating over them.
+  //
+  // A `twoCellAnchor` is defined by two CORNERS rather than by a corner and a size, so the mark
+  // belongs to the block of cells it sits in: it moves when rows or columns move, resizes when they
+  // resize, and cannot be dragged loose from the banner. `editAs="twoCell"` is what makes it size
+  // with them — `oneCell` would move it and keep its size, `absolute` would pin it to the page and
+  // let the banner slide out from under it.
+  //
+  // A oneCellAnchor carries an <xdr:ext>; a twoCellAnchor must NOT — its size comes from the
+  // corners, and leaving a stale ext there is a schema violation Excel answers by repairing the
+  // file. The picture's own <a:ext> inside spPr is restated instead, so the shape and the anchor
+  // agree on how big it is.
+  const sized = picture
+    .replace(/<xdr:cNvPr\b[^>]*?(\/>|>[\s\S]*?<\/xdr:cNvPr>)/, '<xdr:cNvPr id="2" name="Emblem"/>')
+    .replace(/r:embed="rId\d+"/, 'r:embed="rId1"')
+    .replace(/<a:off\b[^>]*\/>/, '<a:off x="0" y="0"/>')
+    .replace(/<a:ext\b[^>]*\/>/, `<a:ext cx="${width}" cy="${height}"/>`);
+
   const anchor =
-    "<xdr:oneCellAnchor>"
+    '<xdr:twoCellAnchor editAs="twoCell">'
     + `<xdr:from><xdr:col>${at.col}</xdr:col><xdr:colOff>${at.colOff}</xdr:colOff>`
     + `<xdr:row>${anchorRow}</xdr:row><xdr:rowOff>${drop}</xdr:rowOff></xdr:from>`
-    + `<xdr:ext cx="${width}" cy="${height}"/>`
-    + picture.replace(/<xdr:cNvPr\b[^>]*?(\/>|>[\s\S]*?<\/xdr:cNvPr>)/, '<xdr:cNvPr id="2" name="Emblem"/>')
-      .replace(/r:embed="rId\d+"/, 'r:embed="rId1"')
+    + `<xdr:to><xdr:col>${at.col}</xdr:col><xdr:colOff>${at.colOff + width}</xdr:colOff>`
+    + `<xdr:row>${to.row}</xdr:row><xdr:rowOff>${to.rowOff}</xdr:rowOff></xdr:to>`
+    + sized
     // Not printed, matching the emblem on every other sheet.
     + '<xdr:clientData fPrintsWithSheet="0"/>'
-    + "</xdr:oneCellAnchor>";
+    + "</xdr:twoCellAnchor>";
 
   zip.file(
     part,
