@@ -3,8 +3,9 @@ import { strict as assert } from "node:assert";
 import { COMPANY_DETAILS_DEFAULT } from "../src/lib/hiring-pack/company-details.ts";
 import {
   CUSTODY_BLANK_RULE,
+  custodyDeviceTokens,
+  custodyHolderTokens,
   custodyTemplateStrings,
-  custodyTemplateTokens,
 } from "../src/lib/hiring-pack/custody-template.ts";
 import {
   CUSTODY_LAPTOP_V1,
@@ -153,6 +154,7 @@ function offboardingFixture(): OffboardingProfile {
 function packFixture(
   employeeOverrides: Partial<HiringPackEmployeeFacts> = {},
   profileOverrides: Partial<HiringPackProfile> = {},
+  custodyDevice: HiringPackData["custodyDevice"] = null,
 ): HiringPackData {
   const employee = employeeFixture(employeeOverrides);
   const profile = profileFixture(profileOverrides);
@@ -162,11 +164,38 @@ function packFixture(
     profile,
     offboarding,
     exit: null,
+    // NULL BY DEFAULT, and every existing test keeps that default deliberately: a custody receipt
+    // is usually printed before the machine is in anybody's hand, so "no device chosen" is the
+    // normal case and the one the blank-rules behaviour has to keep holding for.
+    custodyDevice,
     renewal: null,
     company: COMPANY_DETAILS_DEFAULT,
     suggestedJobTitleAr: null,
     gaps: collectHiringPackGaps(employee, profile, offboarding, null),
     terms: resolveContractTerms(employee, profile, offboarding, null),
+  };
+}
+
+/** A device as the register holds it, for the tests that print one. */
+function deviceFixture(
+  overrides: Partial<NonNullable<HiringPackData["custodyDevice"]>> = {},
+): NonNullable<HiringPackData["custodyDevice"]> {
+  return {
+    assetTag: "PHX-LAP-0007",
+    category: "laptop",
+    manufacturer: "Dell",
+    model: "Latitude 5440",
+    serialNumber: "7XKQ2V3",
+    imei: null,
+    deviceName: "SATO-LAP-0007",
+    processor: "Intel Core i5-1345U",
+    installedRam: "16.0 GB",
+    systemType: "64-bit operating system",
+    windowsDeviceId: "A1B2C3D4-1111-2222-3333-444455556666",
+    windowsProductId: "00330-80000-00000-AA123",
+    simNumber: null,
+    lineNumber: null,
+    ...overrides,
   };
 }
 
@@ -301,12 +330,24 @@ function testThePersonsHalfIsFilledFromTheRecord(): void {
 }
 
 /**
- * The device half prints blank ON PURPOSE, and this test exists to stop that being "fixed".
+ * WITH NO DEVICE CHOSEN the device half still prints blank, and that is the case this test now
+ * guards — because it is the common one.
  *
- * Phoenix has no asset register. A serial number, an IMEI or a Windows product ID is read off the
- * machine at the desk — inventing one, or carrying one over from an older receipt, produces a signed
- * acknowledgement of a device nobody checked. If a custody register is ever built, this test is
- * where the decision to change gets made deliberately.
+ * THE DECISION THIS TEST INVITED HAS BEEN TAKEN. It used to read "Phoenix has no asset register…
+ * if a custody register is ever built, this test is where the decision to change gets made
+ * deliberately." The register was built (migration 20260907220000, `src/lib/devices/`), and the
+ * decision taken was NOT "the device half is filled now". It was narrower, and the narrowness is
+ * the whole of it:
+ *
+ *   - No device chosen  → ruled blanks, exactly as before. A pack is very often printed the evening
+ *     before a joiner arrives, with no machine allocated yet; the form must still print, and a
+ *     printed guess would be worse than a rule.
+ *   - A device chosen   → its real serial, from the register row that is about to be issued to this
+ *     person. Not invented, and not carried over from an older receipt.
+ *
+ * The original objection — "a signed acknowledgement of a device nobody checked" — is answered by
+ * the print banner, which switches to telling the desk to CHECK what is printed against the machine
+ * before signing. `testTheBannerTellsTheDeskWhichCaseItIsIn` pins that.
  */
 function testTheDeviceHalfPrintsAsRuledBlanks(): void {
   const html = renderCustodyLaptopHtml(packFixture(), 1);
@@ -316,8 +357,99 @@ function testTheDeviceHalfPrintsAsRuledBlanks(): void {
       "'does not apply', a rule reads as 'somebody still has to write here'",
   );
   for (const label of ["الرقم المسلسل", "تاريخ التسليم", "مكان التسليم"]) {
-    assert.ok(html.includes(label), `${label} must be asked for, even though Phoenix cannot answer it`);
+    assert.ok(html.includes(label), `${label} must be asked for`);
   }
+  // The serial must not appear from ANYWHERE when no device was chosen. This file now carries a
+  // device fixture, so "still blank" has to be asserted against a real value that could have leaked
+  // in — not merely against a rule existing somewhere on a long page.
+  assert.ok(
+    !html.includes("7XKQ2V3"),
+    "with no device chosen nothing may print a serial — there is no device to be right about",
+  );
+}
+
+/**
+ * WITH A DEVICE CHOSEN, the register's own numbers reach the paper.
+ *
+ * This is the half the register was built for. The number somebody signs for and the number the
+ * company can hand to the police are then the same number by construction, instead of by somebody
+ * copying seven characters off the underside of a laptop into a box.
+ */
+function testTheDeviceHalfFillsFromTheRegisterWhenADeviceIsChosen(): void {
+  const html = renderCustodyLaptopHtml(packFixture({}, {}, deviceFixture()), 1);
+  for (const value of [
+    "Dell",
+    "7XKQ2V3",
+    "SATO-LAP-0007",
+    "Intel Core i5-1345U",
+    "16.0 GB",
+    "64-bit operating system",
+    "A1B2C3D4-1111-2222-3333-444455556666",
+    "00330-80000-00000-AA123",
+  ]) {
+    assert.ok(html.includes(value), `${value} must print from the register`);
+  }
+
+  // نموذج رقم 2 asks different questions of a different device, and fills from the same row.
+  const mobile = renderCustodyMobileHtml(
+    packFixture(
+      {},
+      {},
+      deviceFixture({
+        assetTag: "PHX-TAB-0042",
+        category: "tablet",
+        manufacturer: "Samsung",
+        model: "Galaxy Tab A9",
+        serialNumber: null,
+        imei: "356938035643809",
+        simNumber: "8920011234567890123",
+        lineNumber: "01001234567",
+      }),
+    ),
+    1,
+  );
+  for (const value of [
+    "356938035643809",
+    "8920011234567890123",
+    "01001234567",
+    "Samsung Galaxy Tab A9",
+  ]) {
+    assert.ok(mobile.includes(value), `${value} must print on نموذج رقم 2 from the register`);
+  }
+
+  // THE VALUES AND THE HANDOVER DATE STAY RULED even here. They are counted and agreed at the desk
+  // with the boxes open, and البند (1) has the holder accepting the goods as described on the form
+  // — a pre-printed condition is a condition nobody inspected.
+  assert.ok(
+    mobile.includes(CUSTODY_BLANK_RULE),
+    "the item values and the handover date print ruled whether or not the device is known",
+  );
+}
+
+/**
+ * The print banner has to describe the page it is stapled to.
+ *
+ * It said "the device details print blank by design" unconditionally, and that was true for as long
+ * as they did. Left alone it would now tell the person at the desk to write into a box that already
+ * carries the right serial — which is exactly how a correct number gets crossed out and replaced by
+ * a hand-copied one.
+ */
+function testTheBannerTellsTheDeskWhichCaseItIsIn(): void {
+  const blank = renderCustodyLaptopHtml(packFixture(), 1);
+  assert.ok(
+    blank.includes("The device details, values and handover date print blank by design."),
+    "with no device chosen the banner still says the details print blank",
+  );
+
+  const filled = renderCustodyLaptopHtml(packFixture({}, {}, deviceFixture()), 1);
+  assert.ok(
+    filled.includes("CHECK them against the machine before signing"),
+    "with a device chosen the banner must tell the desk to verify what is printed, not to write it",
+  );
+  assert.ok(
+    !filled.includes("The device details, values and handover date print blank by design."),
+    "the two banner lines are alternatives — printing both would contradict the page",
+  );
 }
 
 /** Nothing may reach paper as an unresolved token. */
@@ -562,12 +694,36 @@ function testTheUndertakingsAreWhatTheOwnerSupplied(): void {
   }
 }
 
-/** Both forms fill the same person-shaped tokens — the difference between them is the DEVICE. */
+/**
+ * Both forms fill the same person-shaped tokens — the difference between them is the DEVICE.
+ *
+ * COMPARED PER HALF since the device register landed. This asserted equality over ALL tokens, which
+ * was only true while the device half was empty on both forms — so it would have passed just as
+ * happily if somebody had deleted a holder field from one of them, and it could only keep passing
+ * by the device blocks staying blank. Split, it says what was meant: the same questions about the
+ * PERSON, deliberately different ones about the DEVICE. Both halves are now load-bearing.
+ */
 function testBothFormsAskThePersonTheSameQuestions(): void {
   assert.deepEqual(
-    custodyTemplateTokens(CUSTODY_LAPTOP_V1),
-    custodyTemplateTokens(CUSTODY_MOBILE_V1),
+    custodyHolderTokens(CUSTODY_LAPTOP_V1),
+    custodyHolderTokens(CUSTODY_MOBILE_V1),
     "the two forms differ in their device blocks, never in what they ask about the person",
+  );
+
+  const laptop = custodyDeviceTokens(CUSTODY_LAPTOP_V1);
+  const mobile = custodyDeviceTokens(CUSTODY_MOBILE_V1);
+  assert.notDeepEqual(
+    laptop,
+    mobile,
+    "the device blocks are the whole reason there are two numbered forms",
+  );
+  assert.ok(
+    laptop.includes("DEVICE_SERIAL") && !laptop.includes("DEVICE_IMEI"),
+    "نموذج رقم 1 asks for a serial number and never an IMEI",
+  );
+  assert.ok(
+    mobile.includes("DEVICE_IMEI") && !mobile.includes("DEVICE_SERIAL"),
+    "نموذج رقم 2 asks for an IMEI and never a serial number",
   );
 }
 
@@ -578,6 +734,8 @@ export function runHrFormsCustodyTests(): void {
   testACrossFormVersionIdIsRefusedNotObeyed();
   testThePersonsHalfIsFilledFromTheRecord();
   testTheDeviceHalfPrintsAsRuledBlanks();
+  testTheDeviceHalfFillsFromTheRegisterWhenADeviceIsChosen();
+  testTheBannerTellsTheDeskWhichCaseItIsIn();
   testNoTemplateTokenSurvivesToThePage();
   testAnEmptyRecordStillPrints();
   testEveryLatinValueIsPinnedLeftToRight();

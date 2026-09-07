@@ -32,6 +32,7 @@ import {
   IdCard,
   Inbox,
   Landmark,
+  Laptop,
   ListChecks,
   Lock,
   Package,
@@ -1888,6 +1889,11 @@ const hrNavigationSectionSeeds = [
       // sidebar does not enforce that - the route handler does - but the split is the reason a
       // reader of this file should not "helpfully" grant both to both.
       { href: "/hr/mailbox-offboarding", icon: MailX, label: "Mailbox Revocation", permissions: [{ resource: "mailbox_offboarding" }] },
+      // Device Custody sits with the other two because it closes the same way they do — the
+      // custody receipt's البند (7) has the device returned "قبل استلام مستحقاتي النهائية", before
+      // final dues. It is not offboarding-only: the same register issues the machine on a joiner's
+      // first morning, which is why the label names the OBLIGATION rather than either end of it.
+      { href: "/hr/devices", icon: Laptop, label: "Device Custody", permissions: [{ resource: "company_devices" }] },
       { href: "/hr/retention", icon: HeartPulse, label: "Retention Register", permissions: [{ resource: "retention" }] },
       { href: "/hr/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
       { href: "/hr/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }] },
@@ -3452,6 +3458,13 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "mailbox_offboarding" }],
   },
   {
+    href: "/devices",
+    icon: Laptop,
+    label: "Device Custody",
+    description: "Every laptop, tablet and phone the company owns, and who signed for it.",
+    permissions: [{ resource: "company_devices" }],
+  },
+  {
     href: "/retention",
     icon: HeartPulse,
     label: "Retention Register",
@@ -4132,6 +4145,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/resignations",
           "/retention",
           "/mailbox-offboarding",
+          "/devices",
         ],
       },
       {

@@ -10,6 +10,7 @@ import { createSystemNotification } from "@/lib/notifications/system";
 import { resolveNotificationPersonRecipients, resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
 import { isEmploymentAccessRevoked } from "@/lib/auth/session-lifecycle";
+import { getOutstandingDevicesByEmployee } from "@/lib/devices/service";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { openMailboxOffboardingTask } from "@/lib/mailbox-offboarding/service";
 import { logError } from "@/lib/observability/log";
@@ -265,6 +266,7 @@ function mapResignation(row: ResignationRow): ResignationRecord {
     createdByName: null,
     hireDate: null,
     settlement: null,
+    outstandingDevices: [],
     reviewedAt: asIso(row.reviewed_at),
     reviewedBy: row.reviewed_by ?? null,
     approvedAt: asIso(row.approved_at),
@@ -326,6 +328,7 @@ function mapLegacyResignationEmployee(row: HistoricalResignedEmployeeRow): Resig
     createdByName: null,
     hireDate: null,
     settlement: null,
+    outstandingDevices: [],
     effectiveDate,
     employeeHrId: row.hr_id,
     employeeName: resolveEmployeeDisplayName(row.full_name, row.nickname),
@@ -704,8 +707,23 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
     }
   }
 
-  const allWorkflowRecords = (resignationsResult.data ?? []).map((row) => {
-    const record = mapResignation(row as ResignationRow);
+  const mappedResignations = (resignationsResult.data ?? []).map((row) =>
+    mapResignation(row as ResignationRow),
+  );
+
+  /**
+   * What each leaver still holds, in ONE query for the whole page.
+   *
+   * Read here rather than inside the map because the map is synchronous and because a per-row
+   * lookup would be one round trip per resignation. It never throws — see
+   * `getOutstandingDevicesByEmployee`: this page is how somebody finds out a person left at all,
+   * and it must render whether or not the device register answers.
+   */
+  const outstandingDevicesByHrId = await getOutstandingDevicesByEmployee(
+    mappedResignations.map((record) => record.employeeHrId),
+  );
+
+  const allWorkflowRecords = mappedResignations.map((record) => {
     return {
       ...record,
       createdByName: record.createdBy
@@ -716,6 +734,9 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
         salaryByHrId.get(normalizeHrId(record.employeeHrId) ?? "") ?? null,
         record.effectiveDate,
       ),
+      // Beside the settlement, because the custody receipt says final dues follow the return.
+      outstandingDevices:
+        outstandingDevicesByHrId.get(String(record.employeeHrId ?? "").trim().toLowerCase()) ?? [],
       employeeStatus: employeesByHrId.get(normalizeHrId(record.employeeHrId))?.employmentStatus ?? record.employeeStatus ?? null,
     };
   });

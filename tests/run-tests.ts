@@ -702,6 +702,8 @@ import { runHrRetentionRegisterTests } from "./hr-retention-register.test.ts";
 import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
 import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
+import { runDeviceRegisterTests } from "./device-register.test.ts";
+import { runDeviceRegisterFitsTheScreenTests } from "./device-register-fits-the-screen.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
 import { runHrTodayTasksTests } from "./hr-today-tasks.test.ts";
 import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
@@ -2639,6 +2641,19 @@ await runTest(
   + "measured 1840px inside a 909px content box, and the page-level overflow check read clean the "
   + "whole time; four table-fixed columns, merged not shrunk, and long values wrap)",
   runMailboxOffboardingTableFitsTheScreenTests,
+);
+await runTest(
+  "company device register (a device signed out to somebody who has LEFT is the flag the register "
+  + "exists to raise, and an unknown holder counts as one; the settlement cap of البند (10), the "
+  + "frozen agreed value of البند (9), and a lost device NOT releasing its holder all live in the "
+  + "plpgsql where a page cannot bypass them)",
+  runDeviceRegisterTests,
+);
+await runTest(
+  "device register fits the screen (four table-fixed columns totalling 100%, the action column "
+  + "widest because it holds the employee <select>, long values wrap with break-words, and no "
+  + "rounded corner anywhere - pinned at birth, not after the defect the sibling register shipped)",
+  runDeviceRegisterFitsTheScreenTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);

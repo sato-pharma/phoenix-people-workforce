@@ -136,7 +136,15 @@ export type PermissionResource =
   // payload is bricks, areas, coordinates, coverage counts and a "where should a rep hired here
   // live" recommendation — so it earns its own key rather than dragging the commercial surface
   // along with it.
-  | "territory";
+  | "territory"
+  // Company device register — the laptops, tablets and phones an employee signs for on the custody
+  // receipt (إقرار استلام عهدة). SEPARATE from `employees` on purpose, exactly like `crm_plans` and
+  // `territory` above. `employees` is a Super-Admin-only hard boundary holding salaries and
+  // national IDs; this payload is asset tags, serials, IMEIs and who is carrying them. The people
+  // who run it are HR Operations, at a joiner's desk and again at an exit, and handing somebody a
+  // laptop must not require the personnel file — riding on `employees` would have meant either
+  // opening that file to do it, or the register being unusable by the only seat that needs it.
+  | "company_devices";
 
 /**
  * The runtime twin of the `PermissionResource` union above. Both lists must hold exactly the same
@@ -222,6 +230,11 @@ export const permissionResources: PermissionResource[] = [
   // `permissionAllowed` treats a key the lookup has never seen as PERMITTED. Mechanism at the head
   // of this array.
   "territory",
+  // Company device register. Omitting this would offer it to every role, since `permissionAllowed`
+  // treats a key the lookup has never seen as PERMITTED — and the payload names, per employee, the
+  // serial and IMEI of the machine he is carrying and what the company values it at. That is a
+  // shopping list, and it would be readable by the whole company.
+  "company_devices",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -568,6 +581,24 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
       if (role === "HR Advisory") return ["read", "create", "update", "export"];
       if (role === "CEO") return ["read", "export"];
       return [];
+    case "company_devices":
+      // The custody receipt is signed by three parties — the holder, IT (مُسلِّم العهدة) and
+      // Finance (اعتماد الإدارة المالية) — but only one of them has a seat in Phoenix that runs the
+      // paperwork: HR Operations already prints the receipt out of the hiring pack at a joiner's
+      // desk and closes it at an exit, so the register goes where that work already happens.
+      //
+      // No delete for anyone but Super Admin, the same rule mailbox_offboarding follows above. A
+      // custody row is the record that a named person signed for a named machine; البند (10) of the
+      // receipt makes it the basis of a wage deduction, so destroying one destroys both the
+      // company's claim and the employee's defence against it.
+      //
+      // Finance Manager is deliberately NOT here yet. He signs the paper and البند (10) is his
+      // clause, so a read grant is arguable — but it is the owner's call, not a default, and a
+      // resource is easier to widen later than to narrow after people have used it.
+      if (role === "Super Admin") return allActions;
+      if (role === "HR Operations") return ["read", "create", "update", "export"];
+      if (role === "CEO") return ["read", "export"];
+      return [];
     case "mailbox_monitor":
       // Reading employees' company mailboxes for compliance — the most sensitive surface in the
       // app. Super Admin (the owner) only; no other role, ever.
@@ -787,6 +818,7 @@ const defaultPermissionMatrix: PermissionMap = {
     mailbox_monitor: allActions,
     mailbox_offboarding: allActions,
     retention: allActions,
+    company_devices: allActions,
     workflow_registry: allActions,
     sales: allActions,
     territory: allActions,
@@ -891,6 +923,9 @@ const defaultPermissionMatrix: PermissionMap = {
     // not record that a leaver's mailbox was actually closed.
     mailbox_offboarding: ["read", "export"],
     retention: ["read", "export"],
+    // Same SoD line. The CEO reads what the company owns and what has walked out of the door with
+    // a leaver — that is his question — and does not record a handover or price a settlement.
+    company_devices: ["read", "export"],
   },
   // ── The two HR seats, composed from functions ─────────────────────────────────────────────
   // These entries are NOT hand-maintained. Each is the union of the grants carried by the
