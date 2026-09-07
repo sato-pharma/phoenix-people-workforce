@@ -174,7 +174,41 @@ export function runDeviceRegisterFitsTheScreenTests() {
     `${WORKSPACE}: the desktop table is no longer hidden below md.`,
   );
 
-  // 11. The ellipsis ban, which wrapping does not weaken (AGENTS.md §4).
+  // 11. THE RESIGNATIONS BANNER is this feature's second surface, on somebody else's page.
+  //
+  //     It prints the longest string either page produces — a name, then every held device as
+  //     "<asset tag> (<serial>)", joined. Those are unbreakable tokens, and unlike the table this
+  //     block sits in the document flow, so its overflow reaches the PAGE's own scrollWidth rather
+  //     than a scrolling wrapper. That is the shape that pushed a 375px viewport to 672px on the
+  //     mailbox register.
+  //
+  //     Checked here rather than in a resignations test because the block, the risk and the reason
+  //     are all this feature's.
+  const resignations = readFileSync("src/components/resignations/resignations-workspace.tsx", "utf8");
+  const leaverRow = resignations.match(
+    /<li\s*\n\s*className="([^"]*)"\s*\n\s*key=\{record\.employeeHrId\}/,
+  );
+  assert.ok(
+    leaverRow,
+    "src/components/resignations/resignations-workspace.tsx: could not find the outstanding-devices row.",
+  );
+  assert.ok(
+    !leaverRow[1].split(/\s+/).includes("whitespace-nowrap"),
+    `the resignations device row is "${leaverRow[1]}" — nowrap there pushes the PAGE sideways.`,
+  );
+  for (const needed of ["break-words", "min-w-0"]) {
+    assert.ok(
+      leaverRow[1].split(/\s+/).includes(needed),
+      `the resignations device row is "${leaverRow[1]}" — it needs "${needed}". It prints asset ` +
+        `tags and serials, which are single unbreakable tokens.`,
+    );
+  }
+  assert.ok(
+    !/\btruncate\b|\btext-ellipsis\b/.test(leaverRow[1]),
+    "the ellipsis ban reaches this block too — nothing on it is cut.",
+  );
+
+  // 12. The ellipsis ban, which wrapping does not weaken (AGENTS.md §4).
   for (const banned of ["truncate", "text-ellipsis"]) {
     assert.ok(
       !classTokens.has(banned),
