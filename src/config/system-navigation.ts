@@ -1269,25 +1269,33 @@ export const adminNavigationSectionSeeds = [
       // below; for everyone else it was a card inside the Source of Sales hub, i.e. one of the five
       // blocks folded into another of the five.
       //
-      // Super Admin ONLY, and that is a gate rather than a preference. /sales/monthly-closing
-      // admits Super Admin, system scope and the SFE Manager and redirects everyone else, so a CEO
-      // row here would bounce on entry — which is the same reason the Finance Manager's row below
-      // deliberately points at a different page. The SFE Manager is left out for the opposite
-      // reason: he keeps the flat sidebar WITH hub buttons and reaches this page as a Source of
-      // Sales card, which is the 2026-08-08 rule pinned by
-      // tests/sidebar-role-scoped-headings.test.ts.
+      // Super Admin and the CEO. It was Super Admin ONLY until 2026-09-07, on the reasoning that
+      // /sales/monthly-closing admits Super Admin, system scope and the SFE Manager and redirects
+      // everyone else, so a CEO row here would bounce on entry. That reasoning was correct, and the
+      // owner’s answer was to change the PAGE rather than the row: he reported the module missing to
+      // the CEO, was offered the analytics mount instead, and refused it — he wants this address.
+      //
+      // The page now admits the CEO read-only: same workspace, same matrix, canPublish false, so no
+      // publish, unpublish or lock control renders and their two status feeds are never called at all
+      // (the workspace gates both on canPublish). He is NOT granted sales:import and never will be —
+      // the page and its matrix reload feed assert sales:read for him specifically, and publish/lock
+      // keep their own independent Super-Admin-only guard, pinned by tests/sfe-manager-nav-dead-links.
+      //
+      // The SFE Manager is left out of THIS row for an unrelated reason: he keeps the flat sidebar
+      // WITH hub buttons and reaches this page as a Source of Sales card, which is the 2026-08-08
+      // rule pinned by tests/sidebar-role-scoped-headings.test.ts.
       //
       // The section id changed from "finance-monthly-closing" with this row, because the section is
       // no longer one role's. Section ids are the localStorage key for the per-user collapsed set,
       // so the only effect is that this section starts expanded once for anyone who had collapsed
       // it; no saved sidebar ARRANGEMENT is affected, that layout is stored by href.
-      { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ resource: "sales", action: "read" }], roles: ["Super Admin"] },
+      { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ resource: "sales", action: "read" }], roles: ["Super Admin", "CEO"] },
       // Owner, 2026-08-11: a Monthly Closing tab of his own, able to export the full workbook for
       // CNS, Pedia or Anti Infective.
       //
       // He asked for /sales/monthly-closing. This row deliberately points somewhere else, because
       // that page cannot give him what he asked for and would be a dead link twice over:
-      //   1. its guard admits only Super Admin, system scope and SFE Manager — he is redirected;
+      //   1. its guard admits only Super Admin, system scope, SFE Manager and the CEO — he is redirected;
       //   2. even past that, it loads its matrix behind assertPermission(sales, "import"), and
       //      `sales:import` is the one action he must never hold — it is the gate on the whole
       //      upload/publish workspace and ten other pages. Granting it to reach an export would
