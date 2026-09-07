@@ -37,9 +37,28 @@ export function DirectOrderSalesMonthControl({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ salesMonth: next }),
       });
-      const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        message?: string;
+        requestedMonth?: string | null;
+        salesMonth?: string | null;
+        shifted?: boolean;
+        success?: boolean;
+      };
       if (!res.ok || !data.success) throw new Error(data.message || "Could not set the sales month.");
-      setOk(next ? `Booked into ${next}.` : "Sales month cleared — this order counts in no month.");
+
+      // Report the month the SERVER saved, never the one this form sent. A booking aimed at a
+      // published closing is carried forward to the first open month, so those two differ exactly
+      // when it matters most — and "Booked into 2026-08" over an order that actually landed in
+      // September is the confident-and-wrong message this whole rule exists to prevent.
+      const saved = data.salesMonth ?? null;
+      setValue(saved ?? "");
+      setOk(
+        data.shifted
+          ? `${data.requestedMonth} is a published closing and cannot change, so this order was booked into ${saved} instead.`
+          : saved
+            ? `Booked into ${saved}.`
+            : "Sales month cleared — this order counts in no month.",
+      );
       router.refresh();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Something went wrong.");

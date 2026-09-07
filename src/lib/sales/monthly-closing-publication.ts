@@ -86,6 +86,7 @@ export async function isClosingPublished(
       .select("id")
       .eq("normalized_line", normalizedLine)
       .eq("period", trimmedPeriod)
+      .is("unpublished_at", null)
       .maybeSingle();
     if (error) return false;
     return Boolean(data);
@@ -107,6 +108,7 @@ export async function listPublishedPeriodsForLine(
       .from("monthly_closing_publications")
       .select("period")
       .eq("normalized_line", normalizedLine)
+      .is("unpublished_at", null)
       .order("period", { ascending: false });
     if (error) return [];
     return [
@@ -128,6 +130,7 @@ export async function listAllPublishedClosings(): Promise<PublishedClosing[]> {
     const { data, error } = await supabase
       .from("monthly_closing_publications")
       .select("line, normalized_line, period, published_at")
+      .is("unpublished_at", null)
       .order("published_at", { ascending: false });
     if (error) return [];
     return (data ?? []).map((row) => {
@@ -166,6 +169,7 @@ export async function latestPublishedClosingPeriod(): Promise<string | null> {
     const { data, error } = await supabase
       .from("monthly_closing_publications")
       .select("period")
+      .is("unpublished_at", null)
       .order("period", { ascending: false })
       .limit(1);
     if (error) return null;
@@ -215,7 +219,19 @@ export async function publishClosing(input: {
   const { data, error } = await supabase
     .from("monthly_closing_publications")
     .upsert(
-      { line, normalized_line: normalizedLine, period, published_by: input.actorHrId },
+      {
+        line,
+        normalized_line: normalizedLine,
+        period,
+        published_by: input.actorHrId,
+        // Re-publishing REVIVES a withdrawn row rather than leaving it dead. The row is never
+        // deleted any more (see 20260907140000), so without clearing these two a month that had
+        // been unpublished would upsert back into the table still marked withdrawn — invisible to
+        // every reader, and it would not re-freeze, because the freeze trigger ignores a row that
+        // arrives already-withdrawn. Nulling them here is what makes publish mean publish.
+        unpublished_at: null,
+        unpublished_by: null,
+      },
       { onConflict: "normalized_line,period" },
     )
     .select("published_at")
@@ -239,8 +255,25 @@ export async function publishClosing(input: {
   }
 }
 
-/** Unpublish a (line, period) — hides it from the portal again. */
+/**
+ * Unpublish a (line, period) — hides it from the portal again.
+ *
+ * IT DOES NOT UNFREEZE THE MONTH, and it no longer deletes the row.
+ *
+ * Owner rule, 2026-09-07: once a closing is published, its numbers never move again. The freeze is
+ * therefore anchored to having BEEN published, not to being published right now — so withdrawing a
+ * month from the portal leaves `monthly_closing_locks` exactly as it was. Releasing a month is one
+ * deliberate, audited act (`unlockClosing`, Super Admin, with a reason), never a side effect of a
+ * visibility toggle.
+ *
+ * The row is stamped rather than removed, because a publication is a fact about the past. August
+ * 2026 was published, announced, and later unpublished; the DELETE took the only evidence with it,
+ * and the investigation on 2026-09-07 had to reconstruct from the audit log that August had ever
+ * been published at all. `trg_publication_no_delete` now refuses the DELETE outright, so this is
+ * the only path — for ad-hoc SQL and migrations too.
+ */
 export async function unpublishClosing(input: {
+  actorHrId?: string | null;
   line: string;
   period: string;
 }): Promise<void> {
@@ -253,9 +286,10 @@ export async function unpublishClosing(input: {
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
     .from("monthly_closing_publications")
-    .delete()
+    .update({ unpublished_at: new Date().toISOString(), unpublished_by: input.actorHrId ?? null })
     .eq("normalized_line", normalizedLine)
-    .eq("period", period);
+    .eq("period", period)
+    .is("unpublished_at", null);
   if (error) throw new Error(error.message);
   invalidateClosingStoreSplitCache(`closing unpublished — ${input.line}/${period}`);
 }

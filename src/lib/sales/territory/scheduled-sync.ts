@@ -65,6 +65,10 @@ export type ScheduledTerritorySyncResult = {
  */
 export async function listPublishedClosingPeriods(): Promise<string[]> {
   const supabase = getSupabaseAdmin();
+  // EVER published, deliberately — no `unpublished_at is null` filter here, unlike every
+  // visibility reader. A month that was published and later withdrawn was still SENT, and its
+  // numbers are still in someone's inbox; re-stamping its territories afterwards would rewrite a
+  // closing people already have. Withholding too much is a stale open period a human can fix.
   const { data, error } = await supabase.from("monthly_closing_publications").select("period");
   if (error) {
     // Fail CLOSED. If we cannot prove which periods are published we must not re-stamp anything —

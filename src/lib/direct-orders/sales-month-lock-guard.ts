@@ -1,31 +1,62 @@
 import { conflictError } from "@/lib/http/api-errors";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Booking a direct order into a sales month — the LOCKED-period guard.
+// Booking a direct order into a sales month — the FROZEN-CLOSING rule.
 //
-// OWNER GOLDEN RULE, 2026-09-05: "whenever the finance manager choose a month for a direct order,
-// this direct order must be calculated to this brick or area in the same month he added". The month
-// and the sales are one decision, and nothing may separate them.
+// OWNER RULE, 2026-09-07: "since the monthly closing is published then no ever change in it ever
+// never even if finance chose a direct order sales month of a published month it doesnt accept and
+// shift to the next month."
 //
-// `setDirectOrderSalesMonth` moves them in TWO steps that are not one transaction: it writes
-// `direct_order_requests.sales_month`, then calls `phx_rebuild_direct_order_sos_batch` for every
-// period the move touched. Every sales rollup carries `trg_lock_guard_ins/upd/del` ->
-// `phx_reject_write_to_locked_closing`, which refuses ANY row belonging to a (line, period) that
-// holds an open row in `monthly_closing_locks`. So booking into — or out of — a frozen month used
-// to leave the month COMMITTED and the injection rejected: the order was in the month for Finance,
-// and absent from the closing, from the export and from the rep's achievement, with no retry and no
-// cron to notice. This module is what refuses that booking up front instead.
+// So the two directions are NOT symmetric, and that asymmetry is the whole design:
 //
-// BOTH periods are checked, not just the destination. Moving a booking OUT of a frozen month means
-// deleting its rows from that month, which the same trigger refuses.
+//   * INTO a frozen month — the booking is ACCEPTED but MOVED. The order lands in the first month
+//     after it that is still open. Finance's decision that this order is real is honoured; only the
+//     month is overruled, because the month it asked for is closed and announced.
+//   * OUT OF a frozen month — REFUSED outright. Moving an order out means deleting its sales from a
+//     published closing, which is the very thing the freeze exists to prevent. There is no "shift"
+//     that can express it, so this one stops.
 //
-// Pure on purpose: the caller reads the locks, this decides. That keeps the rule testable without a
-// database, and keeps it in one place rather than in whichever screen remembers to ask.
+// WHY SHIFTING RATHER THAN REFUSING. The earlier rule refused both directions. That was safe for
+// the closing and bad for the money: a refused booking leaves an approved order with NO sales month
+// at all, sitting in Finance's queue, counted in no month — and the previous owner rule
+// (2026-09-05, "the month Finance books is the month it counts") means an unbooked order is
+// invisible everywhere. Shifting keeps the order in the business and puts it in the only month that
+// can still legitimately take it.
+//
+// WHAT COUNTS AS FROZEN. An active row in `monthly_closing_locks` for that (line, period). Since
+// 20260907140000 publishing a closing CREATES that row, so "published" and "frozen" are now the
+// same question — and unpublishing does not release it. The caller supplies the predicate; this
+// module holds only the rule, so it stays testable without a database and lives in one place
+// rather than in whichever screen remembers to ask.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type SalesMonthLockOutcome =
-  | { ok: true }
+/** How many months forward a booking may be carried before we give up and refuse. */
+const MAX_LOOKAHEAD_MONTHS = 24;
+
+const PERIOD_PATTERN = /^\d{4}-\d{2}$/;
+
+export type SalesMonthBooking =
+  | {
+      ok: true;
+      /** The month the order will actually be written to — may differ from what was asked for. */
+      bookedMonth: string | null;
+      /** What Finance asked for. */
+      requestedMonth: string | null;
+      /** The frozen months that were stepped over, in order. Empty when nothing was shifted. */
+      shiftedOver: string[];
+    }
   | { ok: false; lockedPeriods: string[]; message: string };
+
+/** The month after `period`. `2026-12` -> `2027-01`. */
+export function nextPeriod(period: string): string {
+  const trimmed = String(period ?? "").trim();
+  if (!PERIOD_PATTERN.test(trimmed)) {
+    throw new Error(`Not a period: ${trimmed || "(blank)"}`);
+  }
+  const year = Number(trimmed.slice(0, 4));
+  const month = Number(trimmed.slice(5, 7));
+  return month >= 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, "0")}`;
+}
 
 /**
  * The periods a sales-month change touches: the one it leaves and the one it enters.
@@ -44,48 +75,93 @@ export function periodsTouchedBySalesMonthChange(
 }
 
 /**
- * Refuse a booking that a locked closing would only half-apply.
+ * Decide which month a direct order is actually booked into.
  *
- * `lockedPeriods` is what the caller found frozen for THIS ORDER'S LINE — a lock is per (line,
- * period), so another line's frozen August is none of this order's business.
+ * `isPeriodFrozen` is asked about THIS ORDER'S LINE — a lock is per (line, period), so another
+ * line's frozen August is none of this order's business.
  */
-export function deriveSalesMonthLockRefusal(input: {
+export function resolveSalesMonthBooking(input: {
+  isPeriodFrozen: (period: string) => boolean;
   line?: string | null;
-  lockedPeriods: readonly string[];
-  nextMonth: string | null;
+  maxLookahead?: number;
   previousMonth: string | null;
-}): SalesMonthLockOutcome {
-  const touched = periodsTouchedBySalesMonthChange(input.previousMonth, input.nextMonth);
-  const frozen = new Set(
-    input.lockedPeriods.map((period) => String(period ?? "").trim()).filter((period) => period !== ""),
-  );
-  const hits = touched.filter((period) => frozen.has(period));
-  if (hits.length === 0) return { ok: true };
-
+  requestedMonth: string | null;
+}): SalesMonthBooking {
   const line = String(input.line ?? "").trim();
-  const subject = hits.length === 1 ? `The ${line ? `${line} ` : ""}Monthly Closing for ${hits[0]} is locked`
-    : `The ${line ? `${line} ` : ""}Monthly Closings for ${hits.join(" and ")} are locked`;
-  const leaving = input.previousMonth && hits.includes(String(input.previousMonth).trim());
-  const detail = leaving
-    ? "Moving this order would have to remove its sales from a frozen month."
-    : "Booking this order would have to add its sales to a frozen month.";
+  const previousMonth = String(input.previousMonth ?? "").trim() || null;
+  const requestedMonth = String(input.requestedMonth ?? "").trim() || null;
+
+  // ── leaving a frozen month is refused, in every case ──────────────────────────────────────
+  // Including when the order is merely being cleared: removing its sales from a published closing
+  // is the same edit whether or not another month receives them.
+  if (previousMonth && input.isPeriodFrozen(previousMonth)) {
+    return {
+      ok: false,
+      lockedPeriods: [previousMonth],
+      message:
+        `The ${line ? `${line} ` : ""}Monthly Closing for ${previousMonth} is published and frozen. `
+        + `This order is already counted in it, so it cannot be moved out — that would change a `
+        + `month that has already been announced. Unlock ${previousMonth} on the Monthly Closing `
+        + `screen first if the closing genuinely has to be reopened.`,
+    };
+  }
+
+  // ── clearing the month, or a month that is open: nothing to do ────────────────────────────
+  if (!requestedMonth) {
+    return { ok: true, bookedMonth: null, requestedMonth: null, shiftedOver: [] };
+  }
+  if (!PERIOD_PATTERN.test(requestedMonth)) {
+    return {
+      ok: false,
+      lockedPeriods: [],
+      message: `"${requestedMonth}" is not a sales month. Use YYYY-MM.`,
+    };
+  }
+  if (!input.isPeriodFrozen(requestedMonth)) {
+    return { ok: true, bookedMonth: requestedMonth, requestedMonth, shiftedOver: [] };
+  }
+
+  // ── booking into a frozen month: carry it forward to the first open one ────────────────────
+  const limit = input.maxLookahead ?? MAX_LOOKAHEAD_MONTHS;
+  const shiftedOver: string[] = [];
+  let candidate = requestedMonth;
+  for (let step = 0; step < limit; step += 1) {
+    shiftedOver.push(candidate);
+    candidate = nextPeriod(candidate);
+    if (!input.isPeriodFrozen(candidate)) {
+      return { ok: true, bookedMonth: candidate, requestedMonth, shiftedOver };
+    }
+  }
+
   return {
     ok: false,
-    lockedPeriods: hits,
+    lockedPeriods: shiftedOver,
     message:
-      `${subject}. ${detail} The month was not saved, because saving it without its sales would ` +
-      `leave the order booked for Finance and missing from the closing, the export and the rep's ` +
-      `achievement. Unlock ${hits.join(" and ")} on the Monthly Closing screen, set the month, then lock it again.`,
+      `Every month from ${requestedMonth} onwards is a published, frozen closing, so this order has `
+      + `nowhere to go. That should not be possible — tell the owner before doing anything else.`,
   };
 }
 
-/** The same refusal as a thrown 409 — the shape the API route already renders. */
-export function assertSalesMonthClosingsOpen(input: {
-  line?: string | null;
-  lockedPeriods: readonly string[];
-  nextMonth: string | null;
-  previousMonth: string | null;
-}): void {
-  const outcome = deriveSalesMonthLockRefusal(input);
-  if (!outcome.ok) throw conflictError(outcome.message, "closing_locked");
+/**
+ * A one-line explanation of a shift, for Finance and for the audit row. Null when nothing moved.
+ *
+ * Said plainly on purpose: the screen must never silently save a different month from the one that
+ * was picked, or the next person to open the order reads it as Finance's own choice.
+ */
+export function describeSalesMonthShift(booking: SalesMonthBooking): string | null {
+  if (!booking.ok || booking.shiftedOver.length === 0) return null;
+  const skipped = booking.shiftedOver;
+  const subject =
+    skipped.length === 1
+      ? `${skipped[0]} is a published closing and is frozen`
+      : `${skipped.join(", ")} are published closings and are frozen`;
+  return (
+    `${subject}, so this order was booked into ${booking.bookedMonth} instead. A published month `
+    + `never changes, and the sales still have to count somewhere.`
+  );
+}
+
+/** The refusal as a thrown 409 — the shape the API route already renders. */
+export function assertSalesMonthBookingAllowed(booking: SalesMonthBooking): void {
+  if (!booking.ok) throw conflictError(booking.message, "closing_locked");
 }
