@@ -239,6 +239,57 @@ function normalizeDistributor(value: string | null | undefined): string {
   return String(value ?? "").trim().toUpperCase();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// AREAS THAT NEVER RECEIVE A SHARE — owner, 2026-09-07: "no split to downtown ... originally it
+// belongs to pedia but it keeps in others".
+//
+// WHAT IT FIXES. Down town (CA5) is Cairo geographically and its own Pedia sales are real, so it
+// belongs in AREA_CITY and its rows must keep their money. But on PEDIA the organogram parks it in
+// Others: au.line_area_map has `area_state = other_line_specific`, `staffed_in_line_code = 'cns'`,
+// NO rep seat and `carries_target = false`. Every other Cairo area on Pedia is region CA with a real
+// (if vacant) seat — which is why the "divide by AREAS even when the seat is VACANT" ruling does not
+// reach this one: a vacant seat is a seat, and Down town on Pedia is not a seat at all.
+//
+// Measured on Pedia 2026-08 before this rule: Down town sold 15 units (3,570.75 EGP) and was credited
+// 1,027.4 units (272,713.74) — 1,012.4 units and 269,142.99 EGP handed to an area with nobody in it,
+// of which 268,636.73 came from the El Qema Qalubeya list and the rest from the ordinary Cairo city.
+//
+// WHY IT IS PERIOD-GATED. Nothing here is stored; the split is recomputed live on every read, so an
+// ungated change restates EVERY month at once — including published ones. Pedia 2026-07 is published
+// and locked, so this starts at 2026-08, the month that is still open. Same shape and same reason as
+// STORE_CITY_SPLIT_FROM_PERIOD above and WAREHOUSE_RULE_FROM_PERIOD in customer-channel.ts.
+//
+// WHY PEDIA ONLY. The owner ruled on Pedia. The same shape exists elsewhere and is deliberately NOT
+// listed: Anti Infective has Down town, October-Zayed and Kafr El-Sheikh 2 in Others, and CNS has
+// Imbaba, Fayoum, Qena 2, Beni Suef and Kafr El-Sheikh 2 — but August Anti Infective is PUBLISHED and
+// LOCKED, and adding a line here would silently restate it. Ask him before adding one.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+export const SPLIT_NON_RECEIVING_AREAS: ReadonlyMap<
+  string,
+  { readonly fromPeriod: string; readonly areas: ReadonlySet<string> }
+> = new Map([
+  ["pedia", { fromPeriod: "2026-08", areas: new Set(["CA5"]) }],
+]);
+
+const NO_EXCLUSIONS: ReadonlySet<string> = new Set();
+
+/**
+ * Which areas may not receive a share, for this line in this month.
+ *
+ * An unparseable or absent period returns NOTHING excluded — the safe direction everywhere in this
+ * file, because leaving a number where it already was cannot restate a closing somebody has sent.
+ */
+export function nonReceivingAreas(
+  officialLine: string | null | undefined,
+  period: string | null | undefined,
+): ReadonlySet<string> {
+  const entry = SPLIT_NON_RECEIVING_AREAS.get(lineKey(officialLine));
+  if (!entry) return NO_EXCLUSIONS;
+  const trimmed = String(period ?? "").trim();
+  if (!/^\d{4}-\d{2}$/.test(trimmed)) return NO_EXCLUSIONS;
+  return trimmed >= entry.fromPeriod ? entry.areas : NO_EXCLUSIONS;
+}
+
 /**
  * The areas this row's money divides across, and the label for the movement.
  *
@@ -249,21 +300,36 @@ function normalizeDistributor(value: string | null | undefined): string {
  * Deliberately ONE function rather than the three copies that grew here: `isSplitEligible`, the
  * split itself and the detail sheet each derived the area set independently, so an override added to
  * one of them would have produced a workbook whose Matrix and Detail sheet disagreed about the same
- * customer.
+ * customer. `period` is optional for the same reason it is threaded through every caller rather than
+ * defaulted: a caller that forgot it would get the UNFILTERED list while isSplitEligible got the
+ * filtered one, and the Matrix and the Detail sheet would disagree about the same customer again.
  */
-export function splitTargetsFor(row: StoreSplitRow): DistributorSplitTarget | null {
+export function splitTargetsFor(
+  row: StoreSplitRow,
+  period?: string | null,
+): DistributorSplitTarget | null {
   const origin = closingAreaOf(row);
   if (!origin) return null;
+  const excluded = nonReceivingAreas(row.officialLine, period);
+  // A row that ORIGINATES in an excluded area does not split at all: its money is real and stays
+  // where it was sold. Only being credited someone ELSE's money is what the ruling forbids.
+  if (excluded.has(origin)) return null;
   const distributor = normalizeDistributor(row.distributorCode);
-  if (distributor) {
-    const override = DISTRIBUTOR_SPLIT_TARGETS.get(`${distributor}|${origin}`);
-    if (override) return override;
+  const override = distributor
+    ? DISTRIBUTOR_SPLIT_TARGETS.get(`${distributor}|${origin}`)
+    : undefined;
+  let base: DistributorSplitTarget | null = override ?? null;
+  if (!base) {
+    const city = cityOfArea(origin);
+    if (!city) return null;
+    const areas = CITY_AREAS.get(city);
+    if (!areas || areas.length === 0) return null;
+    base = { group: city, areas };
   }
-  const city = cityOfArea(origin);
-  if (!city) return null;
-  const areas = CITY_AREAS.get(city);
-  if (!areas || areas.length === 0) return null;
-  return { group: city, areas };
+  if (excluded.size === 0) return base;
+  // Filtered AFTER the override is chosen, so the exclusion reaches the El Qema list and the ordinary
+  // city rule alike. The origin always survives — it was checked above — so this never empties.
+  return { group: base.group, areas: base.areas.filter((area) => !excluded.has(area)) };
 }
 
 export function cityOfArea(areaCode: string | null | undefined): string | null {
@@ -401,7 +467,7 @@ export function isSplitEligible(row: StoreSplitRow, period?: string | null): boo
   // and the Matrix books by the fact area. Taking a re-booked row's city from its brick would
   // subtract the money from an area that never carried it — the phantom the 441164 case produced.
   // Identical to `areaCode` on every row in production except a hand-apportioned one.
-  const targets = splitTargetsFor(row);
+  const targets = splitTargetsFor(row, period);
   if (!targets) return false;
   // One target splits to itself — nothing moves, so skip the work entirely.
   return targets.areas.length > 1;
@@ -534,7 +600,7 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
     // The area the CLOSING books this row in — see isSplitEligible, which picked the city the same
     // way. Money must leave the area that actually holds it.
     const origin = closingAreaOf(row);
-    const targets = splitTargetsFor(row);
+    const targets = splitTargetsFor(row, period);
     // isSplitEligible already proved this; the guard keeps the types honest.
     if (!targets) {
       out.push(row);
@@ -786,7 +852,7 @@ export function detailStoreSplitByCustomer<
     if (!isSplitEligible(row, period) || detailExempt.has(String(row.clientCode ?? "").trim())) continue;
     // The same origin the split itself uses, or this sheet would name a different area as the giver.
     const origin = closingAreaOf(row);
-    const targets = splitTargetsFor(row);
+    const targets = splitTargetsFor(row, period);
     if (!targets) continue;
     const city = targets.group;
     const areas = targets.areas;

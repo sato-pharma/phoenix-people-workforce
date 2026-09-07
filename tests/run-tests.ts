@@ -1133,6 +1133,7 @@ import { runSosWarehouseOwnerRulingsTests } from "./sos-warehouse-owner-rulings.
 import { runImportSplitPreviewTests } from "./import-split-preview.test.ts";
 import { runCityListNewAreaGuardTests } from "./city-list-new-area-guard.test.ts";
 import { runQemaQalubeyaSplitTests } from "./qema-qalubeya-split.test.ts";
+import { runDowntownReceivesNoSplitShareTests } from "./downtown-receives-no-split-share.test.ts";
 import { runStoreNamePrefixesTests } from "./store-name-prefixes.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
 import { runClosingStoreSplitHonoursEvenSplitRegistryTests } from "./closing-store-split-honours-even-split-registry.test.ts";
@@ -3314,6 +3315,10 @@ await runTest(
 await runTest(
   "El Qema Qalubeya split (one way, El Qema only — Qalubeya reaches Cairo, Cairo never reaches Qalubeya, and the same warehouse through any other distributor does not split at all)",
   runQemaQalubeyaSplitTests,
+);
+await runTest(
+  "Down town receives no split share on Pedia (it has no Pedia seat, so it was being credited 269,142.99 EGP it did not sell — its OWN sales stay, both split rules honour it, and published Pedia July and August Anti Infective are untouched)",
+  runDowntownReceivesNoSplitShareTests,
 );
 await runTest(
   "EPDA «م - » warehouse prefix (anchored at the START only — it matches 40 customers, while the same three characters appear MID-NAME in 590, and turning it into a keyword would move 550 pharmacies)",

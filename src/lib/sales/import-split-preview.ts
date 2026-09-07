@@ -102,7 +102,7 @@ function reasonNotSplit(row: StoreSplitRow, period: string): string {
     // The cutover is per line, so the honest reason names the line as well as the month.
     return `classified as a pharmacy, not a wholesaler (on ${text(row.officialLine) || "this line"} for ${period})`;
   }
-  const targets = splitTargetsFor(row);
+  const targets = splitTargetsFor(row, period);
   if (!targets) return `area ${text(row.areaCode) || "(blank)"} is not on the city list — sales stay where they are`;
   if (targets.areas.length <= 1) {
     return `${targets.group} holds one area only — nothing to divide across`;
@@ -172,7 +172,7 @@ export function buildImportSplitPlan(input: {
   for (const { row, units } of byKey.values()) {
     if (isUnlistedArea(row.areaCode)) unlisted.add(row.areaCode);
     const eligible = splitActive && isSplitEligible(row, period);
-    const targets = eligible ? splitTargetsFor(row) : null;
+    const targets = eligible ? splitTargetsFor(row, period) : null;
     const areas = targets ? [...targets.areas] : [];
     const willSplit = eligible && areas.length > 1;
 
@@ -188,7 +188,7 @@ export function buildImportSplitPlan(input: {
     customers.push({
       clientCode: row.clientCode,
       clientName: row.clientName,
-      group: targets?.group ?? splitTargetsFor(row)?.group ?? null,
+      group: targets?.group ?? splitTargetsFor(row, period)?.group ?? null,
       originArea: row.areaCode,
       reason: willSplit
         ? null
