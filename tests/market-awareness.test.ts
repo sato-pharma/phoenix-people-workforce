@@ -527,4 +527,62 @@ export function runMarketAwarenessTests() {
       `status "${status}" is in neither inbox tab, so an activity in it is visible to nobody`,
     );
   }
+
+  // -------------------------------------------------------------------------
+  // A decision and its audit row are ONE write.
+  // -------------------------------------------------------------------------
+  //
+  // Every decision path used to do two: move the status, then insert the row saying who moved it.
+  // Anything failing between them left a request that had MOVED with no record of who moved it —
+  // on a spending approval, the whole audit trail. Reproduced on staging 2026-09-07: status
+  // `approved`, approved_at set, one decision row where there should have been two.
+  //
+  // These are source pins, and they are the honest instrument here: the property lives in a plpgsql
+  // function, so a unit test cannot exercise it. What a test CAN do is stop the two-write shape
+  // coming back, which is how it arrived in the first place.
+  const atomicService = readFileSync(new URL("../src/lib/market-awareness/service.ts", import.meta.url), "utf8");
+
+  assert.ok(
+    !atomicService.includes('from("market_awareness_decisions").insert'),
+    "no path may insert an audit row on its own — every one goes through the atomic function, or a "
+      + "failure between the two writes leaves a decision nobody made",
+  );
+
+  const atomicBody = (name: string): string => {
+    const start = atomicService.indexOf(`export async function ${name}`);
+    assert.notEqual(start, -1, `${name} must exist for its atomicity pin to mean anything`);
+    const next = atomicService.indexOf("\nexport ", start + 1);
+    return atomicService.slice(start, next === -1 ? atomicService.length : next);
+  };
+
+  // Sliced per function, never matched across the file: an unbounded scan here would find the call
+  // in a neighbouring function and pass with this one's deleted.
+  for (const name of ["decideActivity", "withdrawActivity", "closeActivity"]) {
+    assert.ok(
+      atomicBody(name).includes("applyDecisionAtomically("),
+      `${name} must apply its state change and its audit row as one statement`,
+    );
+  }
+
+  // The caller has to pass the status it believed it was acting on, or the function cannot refuse a
+  // stale write and two people can decide the same step at once.
+  assert.ok(
+    /expectedStatus: existing\.status/.test(atomicService),
+    "a decision must declare the status it expected, or a concurrent decision is written twice",
+  );
+
+  // The function is SECURITY DEFINER, so a browser-side key reaching it would be able to approve
+  // spending. The migration must revoke it from anon and authenticated, not merely omit a grant.
+  const atomicMigration = readFileSync(
+    new URL("../supabase/migrations/20260907120000_market_awareness_atomic_decision.sql", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    /revoke execute on function[\s\S]*?from public, anon, authenticated;/.test(atomicMigration),
+    "the decision function must be revoked from anon and authenticated explicitly",
+  );
+  assert.ok(
+    /grant execute on function[\s\S]*?to service_role;/.test(atomicMigration),
+    "the decision function must be granted to service_role, which the revoke above strips",
+  );
 }
