@@ -1412,11 +1412,31 @@ export async function runClosingEngineExportTests() {
         + `${xfs.length} (0..${xfs.length - 1}) — a style index into a list nobody controls`,
     );
 
-    // 2) The masthead names the company. That is what the Sato Pharma identity is on this page:
-    //    type in the brand blue, not a picture that would need anchoring around a growing table.
+    // 2) THE LOOK IS CLONED FROM A SIBLING, not invented for this page.
+    //
+    // The masthead and the column band must be the very same formats the Overview uses, so the
+    // front page cannot drift into a look of its own — which is what it had, and what the owner
+    // rejected. Asserted as "this index is also used over there", because that is the only claim
+    // that stays true when the ids move, and they DO move: Rep Ranking's masthead was s30 in one
+    // build of this workbook and s58 in the next.
+    const overviewPart = (() => {
+      const tag = [...workbook.matchAll(/<sheet [^>]*\/>/g)].map((m) => m[0])
+        .find((one) => /name="Overview"/.test(one));
+      const rel = tag ? /r:id="(rId\d+)"/.exec(tag)?.[1] : undefined;
+      const target = rel ? new RegExp(`Id="${rel}"[^>]*Target="([^"]+)"`).exec(wbRels)?.[1] : undefined;
+      return target ? `xl/${target.replace(/^\//, "")}` : null;
+    })();
+    assert.ok(overviewPart && opened.file(overviewPart), `${label}: the Overview sheet must be resolvable`);
+    const overviewXml = await opened.file(overviewPart!)!.async("string");
+    const overviewStyles = new Set(
+      [...overviewXml.matchAll(/<c r="[A-Z]+\d+"[^>]*?\bs="(\d+)"/g)].map((m) => m[1]),
+    );
+
+    const titleStyle = /<row r="1"[^>]*>(?:(?!<\/row>)[\s\S])*?<c r="A1" s="(\d+)"/.exec(sheet)?.[1];
+    assert.ok(titleStyle, `${label}: the contents page must carry a masthead on row 1`);
     assert.ok(
-      /<t[^>]*>SATO PHARMA<\/t>/.test(sheet),
-      `${label}: the contents page lost its Sato Pharma masthead`,
+      overviewStyles.has(titleStyle!),
+      `${label}: the masthead uses style ${titleStyle}, which the Overview does not — it was invented, not cloned`,
     );
 
     // 3) The table header is filled, and its type is white — a coloured header, as asked for.
@@ -1425,6 +1445,12 @@ export async function runClosingEngineExportTests() {
     const headerBody = new RegExp(`<row r="${headerRowRef![1]}"[^>]*>([\\s\\S]*?)</row>`).exec(sheet)?.[1] ?? "";
     const headerCells = [...headerBody.matchAll(/<c r="([A-Z]+)\d+" s="(\d+)"/g)];
     assert.equal(headerCells.length, 2, `${label}: the header must fill BOTH columns, not one`);
+    // And it must be the SIBLINGS' band, not a colour chosen for this page alone.
+    assert.ok(
+      overviewStyles.has(headerCells[0][2]),
+      `${label}: the column band uses style ${headerCells[0][2]}, which the Overview does not — `
+        + "the header must be the same blue band every other sheet carries",
+    );
     for (const [, column, style] of headerCells) {
       assert.notEqual(
         fillOf(style),

@@ -2517,10 +2517,12 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
     .filter((section) => section.entries.length > 0);
   if (sections.length === 0) return;
 
-  // Every format this page uses comes back in one map. Nothing here indexes styles.xml by hand —
-  // see ensureIndexStyles for why that was wrong even when it looked right.
-  const own = await ensureIndexStyles(zip);
-  const s = own ?? INDEX_FALLBACK_STYLE;
+  // The look is cloned off the Overview, never named by index. See resolveIndexStyles.
+  const own = await resolveIndexStyles(zip);
+  const s: IndexPalette = own ?? {
+    band: "0", body: "0", bodyZebra: "0", foot: "0", header: "0",
+    link: "0", linkZebra: "0", title: "0", titleTail: "0",
+  };
 
   const line = String(fill.sheets.Overview?.cells?.A1 ?? "").trim();
   const rows: string[] = [];
@@ -2532,94 +2534,39 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   const inline = (ref: string, style: string, value: string) =>
     `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(xmlSafe(value))}</t></is></c>`;
 
-  /** One full-width row across both columns, merged and styled. */
-  const wide = (style: string, value: string, height: string) => {
-    merges.push(`A${rowNumber}:B${rowNumber}`);
-    rows.push(
-      `<row r="${rowNumber}" ht="${height}" customHeight="1">`
-        + inline(`A${rowNumber}`, style, value)
-        + `<c r="B${rowNumber}" s="${style}"/>`
-        + "</row>",
-    );
-    rowNumber += 1;
-  };
-
-  // ── the masthead ────────────────────────────────────────────────────────────────────────────
+  // ── THE SKELETON IS THE SIBLINGS' ─────────────────────────────────────────────────────────────
   //
-  // The company first, then the month, then the brand rule. The kicker is spelled out rather than
-  // drawn from the mark: the logo is a picture, and a picture on the contents page would have to be
-  // anchored, scaled and kept out of the way of a table that grows with the number of sheets. Type
-  // in the brand blue carries the identity here and costs the workbook nothing.
-  wide(s.kicker, "SATO PHARMA", "18");
-  wide(s.title, line || "Monthly Closing", "33.95");
-  wide(s.subtitle, "Every page in this workbook. Press a name to go there.", "20");
-  rowNumber += 1; // one blank row, as the other sheets space their header off the title
-
-  // ── The month in four figures, before the list of pages ─────────────────────────────────────
-  //
-  // Taken from the Overview's OWN header cells rather than recomputed, so the front page cannot
-  // disagree with the page it summarises. A figure the fill did not write is skipped rather than
-  // shown as a zero.
-  const kpi = fill.sheets.Overview?.cells ?? {};
-  const kpiCells: Array<{ label: string; note: string; percent: boolean; value: number }> = [];
-  const kpiSpec: Array<{ label: string; note: string; percent: boolean; ref: string; noteRef: string }> = [
-    { label: "Sales value", note: "", percent: false, ref: "B5", noteRef: "B6" },
-    { label: "Target value", note: "", percent: false, ref: "D5", noteRef: "D6" },
-    { label: "Achievement", note: "", percent: true, ref: "F5", noteRef: "F6" },
-    { label: String(kpi.I4 ?? "Against last month"), note: "", percent: true, ref: "I5", noteRef: "I6" },
-  ];
-  for (const spec of kpiSpec) {
-    const value = kpi[spec.ref];
-    if (typeof value !== "number" || !Number.isFinite(value)) continue;
-    kpiCells.push({ label: spec.label, note: String(kpi[spec.noteRef] ?? ""), percent: spec.percent, value });
-  }
-
-  if (kpiCells.length > 0) {
-    for (const cell of kpiCells) {
-      // THE NOTE BELONGS TO THE LABEL, not to a second column. It used to sit in B, which begins 26
-      // characters to the right of a figure that is seven characters long — so "EGP, August 2026"
-      // floated away from the 477,499 it qualifies and read as an unrelated remark. Folded into the
-      // label above the figure, the three parts are one block, and column B is left to the
-      // descriptions it exists for.
-      const heading = cell.note ? `${cell.label}  ·  ${cell.note}` : cell.label;
-      rows.push(
-        `<row r="${rowNumber}" ht="14" customHeight="1">`
-          + inline(`A${rowNumber}`, s.kpiLabel, heading.toUpperCase())
-          + "</row>",
-      );
-      rows.push(
-        `<row r="${rowNumber + 1}" ht="26" customHeight="1">`
-          + `<c r="A${rowNumber + 1}" s="${cell.percent ? s.kpiPercent : s.kpiMoney}"><v>${cell.value}</v></c>`
-          + "</row>",
-      );
-      rowNumber += 2;
-    }
-    rowNumber += 1;
-  }
-
-  // The table header — white on the owner's deep blue, spanning both columns so the band reads as
-  // one bar rather than two cells that happen to share a colour.
+  // Rep Ranking, Watch List and the Overview are all built the same way, and this page is now built
+  // that way too rather than to a look of its own: the masthead on row 1 at 33.95 with the rule
+  // carried across it, the blue column band on row 2 at the same height, two spacer rows, and the
+  // table from row 5 at 16.5 — the height every data row in this workbook uses. The pane freezes at
+  // row 4 exactly as theirs do, so the band stays put while the list scrolls.
+  merges.push(`A${rowNumber}:B${rowNumber}`);
   rows.push(
-    `<row r="${rowNumber}" ht="24" customHeight="1">`
-      + inline(`A${rowNumber}`, s.header, "Page")
-      + inline(`B${rowNumber}`, s.header, "What it holds")
+    `<row r="${rowNumber}" ht="33.95" customHeight="1">`
+      + inline(`A${rowNumber}`, s.title, line || "Monthly Closing")
+      + `<c r="B${rowNumber}" s="${s.titleTail}"/>`
       + "</row>",
   );
   rowNumber += 1;
 
+  rows.push(
+    `<row r="${rowNumber}" ht="33.95" customHeight="1">`
+      + inline(`A${rowNumber}`, s.header, "Page")
+      + inline(`B${rowNumber}`, s.header, "What it holds")
+      + "</row>",
+  );
+  rowNumber += 3; // rows 3 and 4 stay empty, as they do on every sibling; the freeze sits under them
+
   // THE ZEBRA RUNS CONTINUOUSLY, across bands rather than restarting inside each one. Restarting
   // makes the first row of every band the same shade, which reads as a second kind of heading and
-  // fights the band label directly above it. One unbroken alternation down the table is what makes
-  // the stripe do its only job, which is to keep the eye on one row across 96 characters of
-  // description.
+  // fights the band label directly above it.
   let striped = false;
 
   for (const section of sections) {
-    // The band label spans both columns and sits over a hairline — a line, never a second filled
-    // bar, so the deep header above it stays the only strong mark on the page.
     merges.push(`A${rowNumber}:B${rowNumber}`);
     rows.push(
-      `<row r="${rowNumber}" ht="26" customHeight="1">`
+      `<row r="${rowNumber}" ht="22" customHeight="1">`
         + inline(`A${rowNumber}`, s.band, section.band.toUpperCase())
         + `<c r="B${rowNumber}" s="${s.band}"/>`
         + "</row>",
@@ -2632,12 +2579,10 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
       const jump = xmlEscape(`HYPERLINK("#'${entry.sheet.replace(/'/g, "''")}'!A1","${entry.sheet}")`);
       // BOTH cells take the tint, never just one: a stripe under the name and white beside it is
       // read as a highlight on that name rather than as a row.
-      const nameStyle = striped ? s.linkZebra : s.link;
-      const whatStyle = striped ? s.bodyZebra : s.body;
       rows.push(
-        `<row r="${rowNumber}" ht="22.5" customHeight="1">`
-          + `<c r="${`A${rowNumber}`}" s="${nameStyle}"><f>${jump}</f></c>`
-          + inline(`B${rowNumber}`, whatStyle, entry.what)
+        `<row r="${rowNumber}" ht="16.5" customHeight="1">`
+          + `<c r="A${rowNumber}" s="${striped ? s.linkZebra : s.link}"><f>${jump}</f></c>`
+          + inline(`B${rowNumber}`, striped ? s.bodyZebra : s.body, entry.what)
           + "</row>",
       );
       rowNumber += 1;
@@ -2648,11 +2593,11 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   // The footnote, one blank row below the last band.
   rowNumber += 1;
   merges.push(`A${rowNumber}:B${rowNumber}`);
-  rows.push(`<row r="${rowNumber}" ht="30" customHeight="1">${inline(`A${rowNumber}`, s.foot, INDEX_FOOTNOTE)}</row>`);
+  rows.push(`<row r="${rowNumber}" ht="16.5" customHeight="1">${inline(`A${rowNumber}`, s.foot, INDEX_FOOTNOTE)}</row>`);
 
   const lastRow = rowNumber;
   const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:B${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><selection activeCell="A1" sqref="A1"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="26" customWidth="1"/><col min="2" max="2" width="96" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait"/></worksheet>`;
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:B${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A5" sqref="A5"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="34" customWidth="1"/><col min="2" max="2" width="96" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait"/></worksheet>`;
 
   zip.file(indexPart, sheetXml);
 
@@ -2694,36 +2639,6 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   );
 }
 
-/**
- * The last resort, for a package with no `xl/styles.xml` at all.
- *
- * `ensureIndexStyles` authors every format the contents page uses and is the only thing that should
- * ever supply them; this exists so that a workbook missing the part still gets a readable page
- * instead of cells pointing at style 0. Every index here is one the OWNER'S TEMPLATE ships — it
- * carries 77 cellXfs, so 0..76 are the only values that are safe without appending anything: s8 is
- * white on the brand blue, s9 the body row, s3 the bold heading, s2 the 13pt title.
- *
- * THIS IS WHY IT REPLACED THE OLD LITERAL. The previous constant named s77, s79 and s81 — all three
- * PAST the end of the template's list. They resolved only because ensureIndexStyles had already
- * appended six entries at 77..82, so the "title" style was really the appended link format. Any
- * future code appending a cellXf before this one runs would have shifted all three onto something
- * else again, with no error and no visible cause.
- */
-const INDEX_FALLBACK_STYLE = {
-  band: "3",
-  body: "9",
-  bodyZebra: "9",
-  foot: "9",
-  header: "8",
-  kicker: "3",
-  kpiLabel: "9",
-  kpiMoney: "9",
-  kpiPercent: "9",
-  link: "3",
-  linkZebra: "3",
-  subtitle: "9",
-  title: "2",
-} as const;
 
 /** Sheet names reach `workbook.xml` XML-escaped; the comparisons here do not. */
 function unescapeSheetName(value: string): string {
@@ -2909,40 +2824,148 @@ function appendCellXf(stylesXml: string, xf: string): { index: number; xml: stri
 }
 
 /**
- * The contents page's own formats, built from the template's OWN fonts, fills and borders.
+ * The contents page's formats, CLONED from the sheets it sits in front of.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * EVERY STYLE THIS PAGE USES IS AUTHORED HERE, and the page reaches them only through the map this
- * returns. That is a correctness fix as much as a design one. The page used to mix these with a
- * literal `INDEX_STYLE = { title: "77", subtitle: "79", link: "81", ... }`, and the template ships
- * exactly 77 cellXfs — valid indices 0..76. Those three only resolved to anything because THIS
- * function had already appended six entries at 77..82, so "title" was in fact the appended link
- * format and "subtitle" the KPI label. It rendered acceptably by luck, and any code appending a
- * cellXf before this ran would have silently re-pointed all three at something else again. Indices
- * into a list nobody controls are not a style system.
+ * NOTHING HERE NAMES A STYLE INDEX, and that is the whole point. `addRepCardStyles` already spells
+ * out why, and this page is the proof: it used to carry `INDEX_STYLE = { title: "77", subtitle:
+ * "79", link: "81", ... }` while the template ships 77 cellXfs — valid indices 0..76. Those three
+ * resolved to anything at all only because the style writer had appended six entries first, so
+ * "title" was in fact the appended link format. It rendered by luck. An id is whatever position the
+ * owner's source workbook happened to put it in, and it moves whenever the engine is rebuilt from a
+ * fresh one; a wrong id is not an error, it is a differently coloured cell nobody notices.
  *
- * WHAT IS BORROWED. The fontIds, fillIds and borderIds below are the OWNER'S, read out of his own
- * template: font 7 is bold 18pt in the brand blue `#0868A8`, font 6 bold 18pt near-black, font 9
- * bold 10pt white, font 14 bold 10.5pt blue, font 11 the 9.5pt body, font 13 the 9.5pt grey, font 12
- * the 8pt grey. Fill 4 is his deep `#085080`, fill 3 the pale `#F5F9FC`. Border 4 is the medium blue
- * rule, border 3 the hairline grey.
+ * So the look is READ OFF THE OVERVIEW SHEET — the one page that is always present — and the page
+ * is painted with the very formats its siblings use:
  *
- * WHY THE TEMPLATE'S PALETTE AND NOT `HOUSE_COLORS`. They are the same family within two or three
- * points per channel — deep `#085080` against `#0A527D`, blue `#0868A8` against `#0A6BA6`, tint
- * `#F5F9FC` against `#F2F6FA` — and every OTHER sheet in this workbook is painted from the
- * template's set. Importing the document-identity constants here would give the front page a second
- * palette that disagrees with the twelve pages behind it by an amount just large enough to see side
- * by side. Matching the siblings IS the identity here.
+ *   title      the Overview's own A1 masthead, and B1's blank that carries the rule across
+ *   header     the first bold-white-on-solid style the Overview uses: its blue column band
+ *   body       the first plain unfilled style below that band: its data row
  *
- * THE FILLED HEADER AND THE ZEBRA ARE BOTH DELIBERATE, and both are what the owner asked for. The
- * house standard names deep as the colour for a table header and the 6% tint as "the zebra row, and
- * nothing else" — the two places colour is allowed to sit on an area rather than on a line.
- * Everything else on this page is still type and rules.
+ * Everything else is one of those with a single attribute swapped, exactly as addRepCardStyles
+ * does it. The zebra takes the palest solid fill the workbook already owns rather than inventing a
+ * colour; the link and the band take the brand-blue and the muted greys the template already
+ * defines, found by their COLOUR rather than by their position.
  */
-async function ensureIndexStyles(zip: JSZip): Promise<Record<string, string> | null> {
-  const file = zip.file("xl/styles.xml");
-  if (!file) return null;
-  let xml = await file.async("string");
+type IndexPalette = Record<
+  "band" | "body" | "bodyZebra" | "foot" | "header" | "link" | "linkZebra" | "title" | "titleTail",
+  string
+>;
+
+/** Top-level `<child>` elements of `<tag>`, by scan: one regex cannot match `<xf/>` and `<xf>…</xf>`. */
+function styleList(xml: string, tag: string, child: string): string[] {
+  const open = xml.indexOf(`<${tag}`);
+  if (open < 0) return [];
+  const body = xml.slice(xml.indexOf(">", open) + 1, xml.indexOf(`</${tag}>`));
+  const out: string[] = [];
+  let cursor = 0;
+  for (;;) {
+    const at = body.indexOf(`<${child}`, cursor);
+    if (at < 0) break;
+    const gt = body.indexOf(">", at);
+    if (body[gt - 1] === "/") { out.push(body.slice(at, gt + 1)); cursor = gt + 1; continue; }
+    const close = body.indexOf(`</${child}>`, gt);
+    out.push(body.slice(at, close + child.length + 3));
+    cursor = close + 1;
+  }
+  return out;
+}
+
+async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
+  const stylesFile = zip.file("xl/styles.xml");
+  const overviewPart = MANIFEST.sheets.Overview?.file;
+  const overviewFile = overviewPart ? zip.file(overviewPart) : null;
+  if (!stylesFile || !overviewFile) return null;
+
+  let xml = await stylesFile.async("string");
+  const overview = await overviewFile.async("string");
+
+  const xfs = styleList(xml, "cellXfs", "xf");
+  const fills = styleList(xml, "fills", "fill");
+  const fonts = styleList(xml, "fonts", "font");
+  if (xfs.length === 0) return null;
+
+  // `\\b` and `\\d`, not `\b` and `\d`: inside a template literal a lone `\b` is a BACKSPACE
+  // character and `\d` is just the letter d, so the pattern silently becomes one that can never
+  // match. It fails as a clean "not found" rather than as an error — every style resolved to 0 and
+  // the page came out unstyled with nothing to see anywhere.
+  const idIn = (xf: string | undefined, name: string) =>
+    Number(new RegExp(`\\b${name}="(\\d+)"`).exec(xf ?? "")?.[1] ?? 0);
+  const fontOf = (xf: string | undefined) => fonts[idIn(xf, "fontId")] ?? "";
+  const fillOf = (xf: string | undefined) => fills[idIn(xf, "fillId")] ?? "";
+  const styleAt = (ref: string) =>
+    new RegExp(`<c r="${ref}"[^>]*?\\bs="(\\d+)"`).exec(overview)?.[1];
+
+  // Document order, so "the first one below the band" means what it says.
+  const usedOnOverview = [...overview.matchAll(/<c r="[A-Z]+\d+"[^>]*?\bs="(\d+)"/g)].map((m) => Number(m[1]));
+
+  const isBanner = (index: number) => {
+    const xf = xfs[index];
+    if (!xf) return false;
+    return /patternType="solid"/.test(fillOf(xf)) && fontOf(xf).includes("<b/>") && /FFFFFF/i.test(fontOf(xf));
+  };
+  const isPlainRow = (index: number) => {
+    const xf = xfs[index];
+    if (!xf) return false;
+    return !/patternType="solid"/.test(fillOf(xf)) && !fontOf(xf).includes("<b/>");
+  };
+
+  const bannerAt = usedOnOverview.findIndex(isBanner);
+  const header = bannerAt >= 0 ? usedOnOverview[bannerAt] : undefined;
+  const body = usedOnOverview.slice(bannerAt >= 0 ? bannerAt + 1 : 0).find(isPlainRow);
+  const title = Number(styleAt("A1") ?? NaN);
+  const titleTail = Number(styleAt("B1") ?? NaN);
+  if (header === undefined || body === undefined || !Number.isFinite(title)) return null;
+
+  // The palest solid fill the workbook already owns, white excepted — the zebra, without inventing
+  // a colour that would then disagree with every panel on every other sheet.
+  let zebraFill = -1;
+  let palest = -1;
+  fills.forEach((fill, index) => {
+    const rgb = /fgColor rgb="FF([0-9A-Fa-f]{6})"/.exec(fill)?.[1];
+    if (!rgb || rgb.toUpperCase() === "FFFFFF") return;
+    const value = parseInt(rgb, 16);
+    const luma = ((value >> 16) & 255) * 0.299 + ((value >> 8) & 255) * 0.587 + (value & 255) * 0.114;
+    if (luma > palest) { palest = luma; zebraFill = index; }
+  });
+
+  const sizeOf = (font: string) => Number(/sz val="([0-9.]+)"/.exec(font)?.[1] ?? NaN);
+  const bodySize = sizeOf(fontOf(xfs[body]));
+
+  /**
+   * A font already in the workbook in colour `rgb`, NEAREST THE BODY'S SIZE — never the first match.
+   *
+   * The size matters as much as the colour. Taking the first bold `#0868A8` font finds the
+   * Overview's 18pt headline face, and a page name set at 18pt in a 16.5-high row is the difference
+   * between a contents list and a mess. The point of cloning is to land in the same type scale as
+   * the rows beside it, not merely in the same hue.
+   */
+  const fontColoured = (rgb: string, bold: boolean) => {
+    const matcher = new RegExp(`color rgb="FF${rgb}"`, "i");
+    let best: number | null = null;
+    let bestGap = Number.POSITIVE_INFINITY;
+    fonts.forEach((font, index) => {
+      if (!matcher.test(font) || font.includes("<b/>") !== bold) return;
+      const gap = Number.isFinite(bodySize) ? Math.abs(sizeOf(font) - bodySize) : 0;
+      if (gap < bestGap) { bestGap = gap; best = index; }
+    });
+    return best;
+  };
+  const brandFont = fontColoured("0868A8", true) ?? fontColoured("0868A8", false);
+  const mutedFont = fontColoured("7A93A3", false);
+
+  const swap = (xf: string, patch: { fillId?: number; fontId?: number }) => {
+    let out = xf;
+    if (patch.fontId !== undefined) {
+      out = out.replace(/\bfontId="\d+"/, `fontId="${patch.fontId}"`);
+      if (!/\bapplyFont="1"/.test(out)) out = out.replace(/\bxfId="(\d+)"/, `xfId="$1" applyFont="1"`);
+    }
+    if (patch.fillId !== undefined) {
+      out = out.replace(/\bfillId="\d+"/, `fillId="${patch.fillId}"`);
+      if (!/\bapplyFill="1"/.test(out)) out = out.replace(/\bxfId="(\d+)"/, `xfId="$1" applyFill="1"`);
+    }
+    return out;
+  };
 
   const add = (definition: string): string => {
     const result = appendCellXf(xml, definition);
@@ -2950,70 +2973,24 @@ async function ensureIndexStyles(zip: JSZip): Promise<Record<string, string> | n
     return String(result.index);
   };
 
-  const left = (indent = 1) => `<alignment horizontal="left" vertical="center" indent="${indent}"/>`;
-
-  const styles = {
-    // ── the masthead ────────────────────────────────────────────────────────────────────────
-    // A kicker over the title, in the brand blue, so the page opens with the company rather than
-    // with a bare month.
-    kicker: add(
-      `<xf numFmtId="0" fontId="14" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">${left()}</xf>`,
-    ),
-    title: add(
-      `<xf numFmtId="0" fontId="7" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">${left()}</xf>`,
-    ),
-    // The subtitle carries the medium blue rule beneath it — the brand line under the masthead.
-    subtitle: add(
-      '<xf numFmtId="0" fontId="13" fillId="0" borderId="4" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">'
-      + '<alignment horizontal="left" vertical="top" indent="1"/></xf>',
-    ),
-
-    // ── the month in figures ────────────────────────────────────────────────────────────────
-    kpiLabel: add(
-      '<xf numFmtId="0" fontId="12" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">'
-      + '<alignment horizontal="left" vertical="bottom" indent="1"/></xf>',
-    ),
-    kpiMoney: add(
-      `<xf numFmtId="165" fontId="6" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyAlignment="1">${left()}</xf>`,
-    ),
-    kpiPercent: add(
-      `<xf numFmtId="164" fontId="6" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyAlignment="1">${left()}</xf>`,
-    ),
-
-    // ── the table ───────────────────────────────────────────────────────────────────────────
-    // The header: white on the owner's deep blue, one of the two places area colour is allowed.
-    header: add(
-      `<xf numFmtId="0" fontId="9" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">${left()}</xf>`,
-    ),
-    // A band label spans both columns: blue type over the hairline, so a section reads as a section
-    // without a second filled bar competing with the header above it.
-    band: add(
-      '<xf numFmtId="0" fontId="14" fillId="0" borderId="3" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">'
-      + '<alignment horizontal="left" vertical="bottom" indent="1"/></xf>',
-    ),
-    // The page name and the line beside it — plain, then the same pair on the zebra tint.
-    link: add(
-      `<xf numFmtId="0" fontId="14" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">${left()}</xf>`,
-    ),
-    linkZebra: add(
-      `<xf numFmtId="0" fontId="14" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">${left()}</xf>`,
-    ),
-    body: add(
-      `<xf numFmtId="0" fontId="11" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">${left()}</xf>`,
-    ),
-    bodyZebra: add(
-      `<xf numFmtId="0" fontId="11" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">${left()}</xf>`,
-    ),
-
-    // ── the footnote ────────────────────────────────────────────────────────────────────────
-    foot: add(
-      '<xf numFmtId="0" fontId="12" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">'
-      + '<alignment horizontal="left" vertical="top" indent="1" wrapText="1"/></xf>',
-    ),
+  const bodyXf = xfs[body]!;
+  const palette: IndexPalette = {
+    title: String(title),
+    titleTail: Number.isFinite(titleTail) ? String(titleTail) : String(title),
+    header: String(header),
+    body: String(body),
+    bodyZebra: zebraFill >= 0 ? add(swap(bodyXf, { fillId: zebraFill })) : String(body),
+    link: brandFont === null ? String(body) : add(swap(bodyXf, { fontId: brandFont })),
+    linkZebra:
+      brandFont === null || zebraFill < 0
+        ? String(body)
+        : add(swap(bodyXf, { fillId: zebraFill, fontId: brandFont })),
+    band: brandFont === null ? String(body) : add(swap(bodyXf, { fontId: brandFont })),
+    foot: mutedFont === null ? String(body) : add(swap(bodyXf, { fontId: mutedFont })),
   };
 
   zip.file("xl/styles.xml", xml);
-  return styles;
+  return palette;
 }
 
 /**
