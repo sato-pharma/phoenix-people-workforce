@@ -73,10 +73,12 @@ import {
   deriveDirectOrderSalesMonthChange,
 } from "@/lib/direct-orders/finance-authority";
 import {
-  assertSalesMonthClosingsOpen,
+  assertSalesMonthBookingAllowed,
+  describeSalesMonthShift,
   periodsTouchedBySalesMonthChange,
+  resolveSalesMonthBooking,
 } from "@/lib/direct-orders/sales-month-lock-guard";
-import { isClosingLocked } from "@/lib/sales/monthly-closing-lock";
+import { listLockedPeriodsForLine } from "@/lib/sales/monthly-closing-lock";
 import { describeDirectOrderStatus } from "@/lib/direct-orders/status-labels";
 import type { DirectOrderQueueRow } from "@/lib/direct-orders/needs-action";
 import {
@@ -6780,20 +6782,31 @@ export async function setDirectOrderSalesMonth(
   const nextMonth = monthChange.nextMonth;
   if (previousMonth === nextMonth) return before;
 
-  // LOCKED-CLOSING GUARD. The month and the sales move in two steps that are not one transaction,
-  // so a frozen period used to leave the month saved and the sales rejected — see
-  // sales-month-lock-guard.ts for the owner rule this protects. Refuse here, before anything is
-  // written, so Finance gets a sentence instead of a half-applied booking.
-  const touchedPeriods = periodsTouchedBySalesMonthChange(previousMonth, nextMonth);
-  const lockedPeriods: string[] = [];
-  for (const period of touchedPeriods) {
-    if (await isClosingLocked(before.line, period)) lockedPeriods.push(period);
-  }
-  assertSalesMonthClosingsOpen({ line: before.line, lockedPeriods, nextMonth, previousMonth });
+  // FROZEN-CLOSING RULE. A published closing never changes again (owner, 2026-09-07), so booking
+  // into one is CARRIED FORWARD to the first open month rather than refused, and moving an order
+  // OUT of one is refused outright. Decided here, before anything is written, so Finance gets a
+  // sentence instead of a half-applied booking — the month and the sales move in two steps that are
+  // not one transaction. See sales-month-lock-guard.ts for the rule and why it is asymmetric.
+  const lockedPeriods = await listLockedPeriodsForLine(before.line);
+  const booking = resolveSalesMonthBooking({
+    isPeriodFrozen: (period) => lockedPeriods.has(period),
+    line: before.line,
+    previousMonth,
+    requestedMonth: nextMonth,
+  });
+  assertSalesMonthBookingAllowed(booking);
+
+  // What Finance asked for is `nextMonth`; what the order is actually written to is `bookedMonth`,
+  // and from here ONLY the latter may be used. Every remaining step — the update, the rebuild, the
+  // rollback and the audit row — has to agree on the month, or the sales and the booking part ways
+  // again, which is the whole failure this guard exists to prevent.
+  const bookedMonth = booking.ok ? booking.bookedMonth : nextMonth;
+  const shiftNote = booking.ok ? describeSalesMonthShift(booking) : null;
+  if (previousMonth === bookedMonth) return before;
 
   const { data: updated, error: updateError } = await supabase
     .from("direct_order_requests")
-    .update({ sales_month: nextMonth, updated_at: new Date().toISOString() })
+    .update({ sales_month: bookedMonth, updated_at: new Date().toISOString() })
     .eq("id", input.requestId)
     .select("*")
     .single();
@@ -6808,7 +6821,7 @@ export async function setDirectOrderSalesMonth(
   // invariant hold rather than merely be likely. Only the periods that actually rebuilt are
   // replayed: a period the trigger refused was never changed, and the RPC rebuilds from truth, so
   // replaying it after the month is restored reproduces exactly the state before this call.
-  const periods = periodsTouchedBySalesMonthChange(previousMonth, nextMonth);
+  const periods = periodsTouchedBySalesMonthChange(previousMonth, bookedMonth);
   const rebuilt: string[] = [];
   for (const period of periods) {
     const { error: rpcError } = await supabase.rpc("phx_rebuild_direct_order_sos_batch", {
@@ -6855,15 +6868,31 @@ export async function setDirectOrderSalesMonth(
     entityType: "direct_order_request",
     entityId: after.id,
     oldValues: { salesMonth: previousMonth },
-    newValues: { salesMonth: nextMonth, rebuiltPeriods: periods },
-    summary: `Direct order sales month set to ${nextMonth ?? "none"} by ${access.hrId ?? "unknown"}.`,
+    newValues: {
+      salesMonth: bookedMonth,
+      rebuiltPeriods: periods,
+      ...(shiftNote ? { requestedMonth: nextMonth, shiftedOverFrozenClosings: true } : {}),
+    },
+    summary:
+      `Direct order sales month set to ${bookedMonth ?? "none"} by ${access.hrId ?? "unknown"}.`
+      + (shiftNote ? ` ${shiftNote}` : ""),
   });
   await insertEvent({
     requestId: after.id,
     actorHrId: access.hrId,
     eventType: "sales_month_set",
-    message: `Sales month ${previousMonth ? `changed from ${previousMonth} ` : "set "}to ${nextMonth ?? "none"}.`,
-    metadata: { previousMonth, nextMonth, rebuiltPeriods: periods },
+    // The timeline says the month that was SAVED, and says so when it is not the month that was
+    // picked. Printing the request instead would leave the order's own history disagreeing with
+    // the closing it lands in.
+    message:
+      `Sales month ${previousMonth ? `changed from ${previousMonth} ` : "set "}to ${bookedMonth ?? "none"}.`
+      + (shiftNote ? ` ${shiftNote}` : ""),
+    metadata: {
+      previousMonth,
+      nextMonth: bookedMonth,
+      rebuiltPeriods: periods,
+      ...(shiftNote ? { requestedMonth: nextMonth } : {}),
+    },
   });
 
   pingDirectOrderSheet("sales_month_set");
