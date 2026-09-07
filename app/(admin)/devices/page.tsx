@@ -31,6 +31,9 @@ export default async function DeviceRegisterPage() {
   // UX, the route is the security boundary.
   const canRecord = await canAccess(access, "company_devices", "update");
   const canRegister = await canAccess(access, "company_devices", "create");
+  // Separate from `create` on purpose: the bulk door is its own action, so it can be withdrawn
+  // without taking single-device registration with it. The three import routes assert the same.
+  const canImport = await canAccess(access, "company_devices", "import");
 
   let initialData: DeviceRegisterData | null = null;
   let initialError: string | null = null;
@@ -43,6 +46,7 @@ export default async function DeviceRegisterPage() {
 
   return (
     <DeviceRegisterWorkspace
+      canImport={canImport}
       canRecord={canRecord}
       canRegister={canRegister}
       initialData={initialData}
