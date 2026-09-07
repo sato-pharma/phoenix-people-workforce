@@ -29,7 +29,17 @@ export default async function MonthlyClosingPage({
   // forbidNonAdmin check -- this check only controls page access and canPublish below, never the
   // publish action itself.
   const isSystemAdministratorViewer = access.role === "Super Admin" || access.scope === "system";
-  if (!isSystemAdministratorViewer && access.role !== "SFE Manager") {
+  // The CEO added 2026-09-07, on his own report that Monthly Closing did not appear for him and he
+  // could not reach it. Both were true: no rail row carried this href for him and this guard sent
+  // him away. He was offered the read-only analytics mount instead and refused it — he wants THIS
+  // page. Read-only exactly like the SFE Manager carve-out above: canPublish below stays false for
+  // him, so no publish, unpublish or lock control renders, and the workspace never calls their two
+  // status feeds at all (it gates both fetches on canPublish). Publishing keeps its own
+  // independent Super-Admin-only guard in the publish route, untouched.
+  //
+  // The SFE Manager term stays spelled exactly as it was and the CEO term is APPENDED:
+  // tests/sfe-manager-nav-dead-links.test.ts pins this expression as a literal source substring.
+  if (!isSystemAdministratorViewer && access.role !== "SFE Manager" && access.role !== "CEO") {
     redirect(resolveLandingPathForRole(access.role));
   }
 
@@ -47,7 +57,11 @@ export default async function MonthlyClosingPage({
   let initialError: string | null = null;
 
   try {
-    await assertPermission(access, "sales", "import");
+    // sales:import for everyone this page admits EXCEPT the CEO, who consumes this closing and must
+    // never hold the upload/publish key (it gates /sales/upload, the mapping database and ten other
+    // pages). The role gate above is the security boundary for this load; asserting import here
+    // would 403 the very screen the carve-out exists to give him.
+    await assertPermission(access, "sales", access.role === "CEO" ? "read" : "import");
     const parts = await loadMonthlyClosingPartsWithStoreSplit({ line: requestedLine, period: requestedPeriod });
     initialMatrix = parts.combined;
     initialOffice = parts.office;
