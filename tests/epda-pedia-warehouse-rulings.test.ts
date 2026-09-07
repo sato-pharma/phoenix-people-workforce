@@ -25,7 +25,6 @@ import {
 const RULED_WAREHOUSES: ReadonlyArray<readonly [string, string, string]> = [
   ["الفرسان - الزاوية", "162956", "EP-PHS"],
   ["الصفا ميديكال م.نصر", "164266", "EP-PHS"],
-  ["شركة اورينت جروب - بهتيم", "164162", "EP-PHS"],
   ["النهضة للادوية-شبين الكوم", "164016", "EP-PHS"],
   ["مالتى ستورز - الهرم", "164345", "EP-PHS"],
   ["فيوتشر - الزقازيق", "163044", "EP-PHS"],
@@ -42,6 +41,10 @@ const MUST_STAY_PHARMACY: ReadonlyArray<readonly [string, string, string]> = [
   // 22,599.00 EGP. Bare «الفرسان» — the name he has still not ruled on, and the reason both
   // الفرسان stems are written long. A stem of «الفرسان» would adopt it silently.
   ["الفرسان", "0001533141", "PS"],
+  // Ruled a wholesaler on the EPDA sheet on 2026-09-07 and a PHARMACY in the 167-customer sheet on
+  // 2026-09-06. Until he says which answer stands it keeps the earlier one, because that is the one
+  // already pinned — and because a contradiction resolved quietly is a number nobody can explain.
+  ["شركة اورينت جروب - بهتيم", "164162", "EP-PHS"],
   // A pharmacy by DEFAULT, not by any ruling — it carries «شركه» without the definite article, so
   // it misses the «الشركة» keyword. Kept as a negative because it carries «جروب»: proof that neither
   // «الفرسان جروب» nor «اورينت جروب» reaches every customer with that word in its name.
