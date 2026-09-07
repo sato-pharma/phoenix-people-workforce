@@ -661,6 +661,10 @@ export const accessRegistry = [
   // The approvals queue. Gated on `read`, not `approve`: it is scoped inside the service to the
   // decisions that are actually the caller's, so a reader sees an empty queue rather than a refusal.
   sessionApi({ methods: ["GET"], pattern: "/api/market-awareness/inbox", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
+  // The queue's nav badge. Registered ABOVE the /:activityId entries on purpose — it is a literal
+  // segment, and a pattern list that reached `:activityId` first would gate a count behind the
+  // wrong entry. Same `read` gate as the inbox it counts, and the service narrows it identically.
+  sessionApi({ methods: ["GET"], pattern: "/api/market-awareness/pending-count", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
   // The conversation. Read is gated with the activity itself (getActivity carries the per-row
   // narrowing), and posting is `read` too: commenting is not a decision, and the people who must be
   // able to answer a returned activity are exactly the people who can see it.

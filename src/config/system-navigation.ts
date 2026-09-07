@@ -125,7 +125,7 @@ export type NavigationSectionItem = {
    */
   exact?: boolean;
   activeTab?: string;
-  navBadge?: "direct-orders-needs-action" | "direct-orders-approvals-pending" | "direct-orders-unbooked" | "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending" | "marketing-approvals-pending";
+  navBadge?: "direct-orders-needs-action" | "direct-orders-approvals-pending" | "direct-orders-unbooked" | "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending" | "marketing-approvals-pending" | "market-awareness-approvals-pending";
 };
 
 export type NavigationSection = {
@@ -1606,6 +1606,10 @@ const employeePortalNavigationSectionSeeds = [
         href: "/employee-portals/market-awareness/inbox",
         icon: Inbox,
         label: "Awareness Approvals",
+        // Its own badge kind. Market Awareness is deliberately outside the consolidated approvals
+        // hub (the owner asked for a separate queue), so "approvals-hub-pending" counts everything
+        // EXCEPT this inbox — the link would sit silent while a decision waited behind it.
+        navBadge: "market-awareness-approvals-pending",
         // The DECISION surface, not the module — so a much shorter list than the tab above: the two
         // seats a requester's manager step can resolve to, plus the CEO. Like every list here it is
         // UX only. listDecisionInbox calls assertPermission(market_awareness, read) and then filters
