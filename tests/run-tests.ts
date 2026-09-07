@@ -1452,6 +1452,7 @@ import { runMarketAwarenessTests } from "./market-awareness.test.ts";
 import { runMonthlySalesRunReconcileTests } from "./monthly-sales-run-reconcile.test.ts";
 import { runWorktreeNodeModulesJunctionTests } from "./worktree-node-modules-junction.test.ts";
 import { runChannelsByRepPharmacyOverrideTests } from "./channels-by-rep-pharmacy-override.test.ts";
+import { runCustomerChannelSqlRuleTests } from "./customer-channel-sql-rule.test.ts";
 import { runSalesUploadAnalyzeMatchesCommitTests } from "./sales-upload-analyze-matches-commit.test.ts";
 import { runSalesUploadReceiptConfidentialityTests } from "./sales-upload-receipt-confidentiality.test.ts";
 import { runRetentionRiskDetectorTests } from "./retention-risk-detector.test.ts";
@@ -4639,6 +4640,10 @@ await runTest(
 await runTest(
   "channels by rep honours the owner pharmacy overrides (578,248.77 EGP read as stores on one tab)",
   runChannelsByRepPharmacyOverrideTests,
+);
+await runTest(
+  "the channel rule reaches SQL whole (prefix anchored, cutover per line, every payload key read)",
+  runCustomerChannelSqlRuleTests,
 );
 await runTest(
   "market awareness (manager step by identity, approved is locked, Head Office never targetable)",

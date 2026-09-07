@@ -6,6 +6,7 @@ import {
   STORE_OVERRIDE_CUSTOMER_KEYS,
   STORE_NAME_KEYWORDS,
 } from "@/lib/sales/customer-channel";
+import { customerChannelSqlRule } from "@/lib/sales/customer-channel-sql-rule";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 
@@ -185,6 +186,12 @@ export async function loadChannelsByRep(options: {
     // monthly-closing channel comparison read them as pharmacies. Same customers, two answers.
     p_pharmacy_override_codes: [...PHARMACY_OVERRIDE_CLIENT_CODES],
     p_period: period,
+    // The WHOLE rule, not just the six words. Everything the owner has ruled since — the «م - »
+    // prefix, his company and chain rulings, the never-store words, El Qema's wholesale-only book
+    // and the trade phrase — reaches SQL only through this payload. `p_store_stems` and the two
+    // code lists above stay because a migration lands before the deploy that uses it, and the
+    // function falls back to them for that window.
+    p_rule: customerChannelSqlRule(),
     p_store_override_keys: [...STORE_OVERRIDE_CUSTOMER_KEYS],
     p_store_stems: stems.store,
   });
