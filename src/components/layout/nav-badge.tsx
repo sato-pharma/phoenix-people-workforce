@@ -140,6 +140,10 @@ export function ApprovalNavBadge({
       return <NavBadge compact={compact} dark={dark} src="/api/direct-orders/unbooked-count" />;
     case "marketing-approvals-pending":
       return <NavBadge compact={compact} dark={dark} src="/api/marketing-requests/pending-count" />;
+    // Market Awareness keeps its own inbox for the same reason marketing does — the owner asked for
+    // a separate queue — so the hub's count can never cover it.
+    case "market-awareness-approvals-pending":
+      return <NavBadge compact={compact} dark={dark} src="/api/market-awareness/pending-count" />;
     default:
       return null;
   }

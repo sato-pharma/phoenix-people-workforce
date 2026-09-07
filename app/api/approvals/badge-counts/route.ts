@@ -5,6 +5,7 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { getAwaitingMyActionItems } from "@/lib/action-center/service";
 import { countDirectOrderAwaitingFast, getDirectOrderUnbookedBadge } from "@/lib/direct-orders/service";
 import { countDirectOrderPendingValidations } from "@/lib/direct-orders/pharmacy-validation";
+import { getMarketAwarenessDecisionBadge } from "@/lib/market-awareness/service";
 import { getMarketingApproverBadge } from "@/lib/marketing-requests/service";
 import {
   getExcuseAwaitingBadge,
@@ -17,17 +18,17 @@ export const dynamic = "force-dynamic";
 
 // Batched sidebar badge counts — ONE poll replaces the separate 30s polls of
 // /api/approvals/plan/pending-count, /api/approvals/vacation/pending-count,
-// /api/approvals/excuse/pending-count, /api/approvals-hub/pending-count and
-// /api/marketing-requests/pending-count (which stay in place untouched for any other
-// consumer). Each domain runs under EXACTLY the same permission guard as its dedicated
-// endpoint, its dataset is fetched ONCE (the per-domain endpoints fetch the
+// /api/approvals/excuse/pending-count, /api/approvals-hub/pending-count,
+// /api/marketing-requests/pending-count and /api/market-awareness/pending-count (which stay in
+// place untouched for any other consumer). Each domain runs under EXACTLY the same permission
+// guard as its dedicated endpoint, its dataset is fetched ONCE (the per-domain endpoints fetch the
 // vacation/excuse/plan responder dataset twice per poll — once for the count, once for
 // the overdue flag), and a failing domain falls back to the same {count: 0} shape its
 // dedicated endpoint returns — one broken domain never blanks the other badges.
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    const [plan, vacation, excuse, hub, directOrders, directOrdersUnbooked, directOrderValidations, marketing] = await Promise.allSettled([
+    const [plan, vacation, excuse, hub, directOrders, directOrdersUnbooked, directOrderValidations, marketing, marketAwareness] = await Promise.allSettled([
       (async () => {
         await assertPermission(access, "weekly_plans", "read");
         return getPlanAwaitingBadge(access);
@@ -68,6 +69,10 @@ export async function GET(request: Request) {
       // as /api/marketing-requests/inbox), so it can only ever count the caller's own rung. A role
       // with no marketing step assigned to it simply gets 0.
       getMarketingApproverBadge(access),
+      // Awareness Approvals. It asserts market_awareness:read itself and then narrows to the
+      // decisions that are actually the caller's, so every role that is not in an awareness chain
+      // — which is most of them — settles at 0 without a refusal reaching this response.
+      getMarketAwarenessDecisionBadge(access),
     ]);
     return NextResponse.json(
       {
@@ -90,6 +95,8 @@ export async function GET(request: Request) {
           overdue: directOrdersUnbooked.status === "fulfilled" ? directOrdersUnbooked.value.overdue : false,
         },
         marketing: marketing.status === "fulfilled" ? marketing.value : { count: 0, overdue: false },
+        marketAwareness:
+          marketAwareness.status === "fulfilled" ? marketAwareness.value : { count: 0, overdue: false },
       },
       { headers: { "Cache-Control": "no-store" } },
     );
@@ -103,6 +110,7 @@ export async function GET(request: Request) {
       directOrdersUnbooked: { count: 0, overdue: false },
       directOrdersNeedsAction: { count: 0, overdue: false },
       marketing: { count: 0, overdue: false },
+      marketAwareness: { count: 0, overdue: false },
     });
   }
 }

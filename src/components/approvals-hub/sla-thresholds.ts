@@ -13,7 +13,13 @@
 // drifts past a month end, because the month it belongs to may already be closed by the time anyone
 // notices. Five days keeps a weekend plus a few working days inside "normal", and turns amber
 // ("due") on day 4 — early enough to act before a month-end in every case.
-export const APPROVALS_SLA_THRESHOLDS = { leave: 3, excuse: 2, plan: 2, directOrderMonth: 5 } as const;
+// `marketAwareness` is the awareness-activity approval chain (requester -> his manager -> CEO).
+// 3 days, the same as leave: two of the three steps are held by one person each (the requester's own
+// manager, then the CEO), so there is no pool to absorb a slow day, and an activity is a conference
+// or round table with a fixed date — a decision that arrives late is a decision that arrives after
+// the venue was needed. It is measured from `updated_at`, the moment the CURRENT step opened, so the
+// CEO does not inherit a clock the manager already half spent.
+export const APPROVALS_SLA_THRESHOLDS = { leave: 3, excuse: 2, plan: 2, directOrderMonth: 5, marketAwareness: 3 } as const;
 
 export type ApprovalsSlaModule = keyof typeof APPROVALS_SLA_THRESHOLDS;
 
