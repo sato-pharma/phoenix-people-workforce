@@ -2551,22 +2551,23 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   rowNumber += 1;
 
   rows.push(
-    `<row r="${rowNumber}" ht="33.95" customHeight="1">`
+    `<row r="${rowNumber}" ht="21" customHeight="1">`
       + inline(`A${rowNumber}`, s.header, "Page")
       + inline(`B${rowNumber}`, s.header, "What it holds")
       + "</row>",
   );
-  rowNumber += 3; // rows 3 and 4 stay empty, as they do on every sibling; the freeze sits under them
+  rowNumber += 1;
 
-  // THE ZEBRA RUNS CONTINUOUSLY, across bands rather than restarting inside each one. Restarting
-  // makes the first row of every band the same shade, which reads as a second kind of heading and
-  // fights the band label directly above it.
+  // THE ZEBRA RESTARTS UNDER EACH BAND, so the first page in a section is always the plain shade.
+  // The band itself is tinted now; running the stripe straight through would put a tinted row
+  // immediately under a tinted heading and the two would merge into one block.
   let striped = false;
 
   for (const section of sections) {
+    striped = false;
     merges.push(`A${rowNumber}:B${rowNumber}`);
     rows.push(
-      `<row r="${rowNumber}" ht="22" customHeight="1">`
+      `<row r="${rowNumber}" ht="20" customHeight="1">`
         + inline(`A${rowNumber}`, s.band, section.band.toUpperCase())
         + `<c r="B${rowNumber}" s="${s.band}"/>`
         + "</row>",
@@ -2597,7 +2598,7 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
 
   const lastRow = rowNumber;
   const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:B${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A5" sqref="A5"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="34" customWidth="1"/><col min="2" max="2" width="96" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait"/></worksheet>`;
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:B${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="2" topLeftCell="A3" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A3" sqref="A3"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="34" customWidth="1"/><col min="2" max="2" width="96" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait"/></worksheet>`;
 
   // The emblem, top right, exactly as every sibling carries it. Done before the part is written so
   // the sheet lands with its <drawing> already in place.
@@ -2763,7 +2764,7 @@ async function addReviewSheets(zip: JSZip, sheets: ReviewSheet[]): Promise<Revie
     zip.file(
       part,
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${columnLetters(columns)}${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A5" sqref="A5"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>${cols}</cols><sheetData>${rows.join("")}</sheetData><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`,
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${columnLetters(columns)}${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="2" topLeftCell="A3" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A3" sqref="A3"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>${cols}</cols><sheetData>${rows.join("")}</sheetData><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`,
     );
 
     types = types.replace(
@@ -3094,6 +3095,9 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
     });
   const hairline = borderWith("bottom", ["thin", "hair"], "7A93A3");
   const heavyRule = borderWith("bottom", ["medium", "thick"], "0868A8");
+  // A section OPENS with its rule, so the line belongs to the heading above the pages it covers.
+  // With the rule underneath, the band floated free and its line read as the first entry's.
+  const openingRule = borderWith("top", ["medium", "thick"], "0868A8");
 
   const swap = (xf: string, patch: { borderId?: number; fillId?: number; fontId?: number }) => {
     let out = xf;
@@ -3139,12 +3143,18 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
       brandFont === null || zebraFill < 0
         ? ruled(zebraFill >= 0 ? { fillId: zebraFill } : {})
         : ruled({ fillId: zebraFill, fontId: brandFont }),
-    // A band closes with the heavier blue rule the sheets use under a heading, so a section reads
-    // as a section without a second filled bar competing with the blue band above it.
+    // A section bar: tinted, in the brand blue, opening with the heavier rule ABOVE it. Small blue
+    // caps floating over white had no weight at all — the sections were invisible and the page read
+    // as one undifferentiated list.
     band: add(
       swap(bodyXf, {
         ...(brandFont === null ? {} : { fontId: brandFont }),
-        ...(heavyRule >= 0 ? { borderId: heavyRule } : hairline >= 0 ? { borderId: hairline } : {}),
+        ...(zebraFill >= 0 ? { fillId: zebraFill } : {}),
+        ...(openingRule >= 0
+          ? { borderId: openingRule }
+          : heavyRule >= 0
+            ? { borderId: heavyRule }
+            : {}),
       }),
     ),
     foot: mutedFont === null ? String(body) : add(swap(bodyXf, { fontId: mutedFont })),

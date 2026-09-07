@@ -1494,12 +1494,40 @@ export async function runClosingEngineExportTests() {
       2,
       `${label}: a zebra needs exactly two shades, found ${[...new Set(shades)].join(", ")}`,
     );
-    for (let index = 1; index < shades.length; index += 1) {
-      assert.notEqual(
-        shades[index],
-        shades[index - 1],
-        `${label}: the zebra breaks at entry ${index + 1} — it must alternate continuously, across bands too`,
-      );
+
+    // The stripe RESTARTS under each band, so the first page of a section is always the plain
+    // shade. The band is tinted itself, and a stripe running straight through would put a tinted
+    // row directly under a tinted heading, merging the two into one block. So the invariant is
+    // "alternates within a section", not "alternates everywhere" — walked in document order,
+    // because that is the only way to see where a section begins.
+    const plain = shades.find((shade) => shade === "none") ?? shades[0];
+    let previous: string | null = null;
+    let entryNumber = 0;
+    for (const [, body] of sheet.matchAll(/<row r="\d+"[^>]*>((?:(?!<\/row>)[\s\S])*?)<\/row>/g)) {
+      const cells = [...body.matchAll(/<c r="([A-Z]+)\d+" s="(\d+)"/g)];
+      if (!/<f>HYPERLINK/.test(body)) {
+        // A band: two cells sharing one style. Anything else (the masthead, the column header,
+        // the footnote) simply does not reset the stripe.
+        if (cells.length === 2 && cells[0][2] === cells[1][2]) previous = null;
+        continue;
+      }
+      entryNumber += 1;
+      const shade = fillOf(cells[0][2]);
+      if (previous === null) {
+        assert.equal(
+          shade,
+          plain,
+          `${label}: entry ${entryNumber} opens a section on the tinted shade — the first page under `
+            + "a band must be plain, or it merges into the heading above it",
+        );
+      } else {
+        assert.notEqual(
+          shade,
+          previous,
+          `${label}: the zebra breaks at entry ${entryNumber} — it must alternate within its section`,
+        );
+      }
+      previous = shade;
     }
 
     // 5) Every row is ruled. The zebra separates rows by shade; the rule is what ties a page name
