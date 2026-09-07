@@ -158,6 +158,38 @@ const JOBS = {
     // cuts at 30 regardless (see header).
     requestTimeout: 300,
   },
+  "retention-risk-sweep": {
+    title: "Phoenix — retention risk sweep",
+    path: "/api/cron/retention-risk-sweep",
+    // 07:40 Cairo, matching docs/observability.md and JOB_SCHEDULES. It has to sit AFTER the
+    // morning CRM sync, because it reads the absence of visit rows and a stale mirror reads as a
+    // rep who has vanished. Offset from its neighbours in the morning block: 06:36 is the daily
+    // notification bundle, 06:50 the marketing field-capture nudge, 07:05 marketing
+    // invoice-overdue, 07:20 the distributor upload nudge, 08:15 the mailbox offboarding sweep.
+    // Nothing else runs at :40 in this hour, so a red execution here is unambiguous.
+    schedule: { hours: [7], minutes: [40], mdays: [-1], months: [-1], wdays: [-1] },
+    // Scans ~66 days of the visits mirror for the medical reps only, plus one leave read and the
+    // holiday lookup, then at most one notification per flagged rep per recipient. The page that
+    // renders the same computation measured 8.6s warm and ~40s on a cold compile, so this one CAN
+    // cross the 30s platform cut on a cold container and log a false red while succeeding — read
+    // the response body's `announced`/`notified`, not the execution colour. 300 matches the rest
+    // of the account; the platform still cuts at 30 regardless (see header).
+    requestTimeout: 300,
+  },
+  "retention-risk-pre-payroll": {
+    title: "Phoenix — retention risk pre-payroll notice",
+    path: "/api/cron/retention-risk-pre-payroll",
+    // 07:45 Cairo on the 25th ONLY — `mdays: [25]`. Part 1 pays at the start of the month, so the
+    // 25th leaves several working days to check on somebody before any money moves. The other half
+    // of this warning fires from the payroll wizard itself when Part 1 is confirmed; the two carry
+    // different `reason` values in their idempotency keys and neither suppresses the other.
+    // Five minutes behind the daily sweep so the two never share a minute.
+    schedule: { hours: [7], minutes: [45], mdays: [25], months: [-1], wdays: [-1] },
+    // Same computation as the sweep, then ONE digest per recipient rather than one per rep. It
+    // sends even when nobody is flagged — a notice that only appears with bad news cannot be told
+    // apart from one that has silently stopped working. Same cold-start caveat as the sweep above.
+    requestTimeout: 300,
+  },
 };
 
 // ── credentials ───────────────────────────────────────────────────────────────────────────────
