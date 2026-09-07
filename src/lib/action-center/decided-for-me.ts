@@ -98,8 +98,14 @@ export async function getDecisionsMadeForMe(
     const key = canonicalHrIdKey(employee.hrId);
     if (key) nameByHrId.set(key, employee.displayName || employee.fullName);
   }
-  const deciderName = (hrId: unknown) =>
-    nameByHrId.get(canonicalHrIdKey(cleanText(hrId))) ?? cleanText(hrId);
+  // canonicalHrIdKey returns null for a blank id, so the lookup is guarded rather than passed
+  // straight into Map.get — and an unresolvable id falls back to the raw value rather than an
+  // empty cell, because "Decided by (blank)" is worse than "Decided by A-9".
+  const nameFor = (hrId: unknown): string => {
+    const key = canonicalHrIdKey(cleanText(hrId));
+    return (key ? nameByHrId.get(key) : null) ?? cleanText(hrId);
+  };
+  const deciderName = nameFor;
 
   // ── who is "my team" ────────────────────────────────────────────────────────
   // HR ids are mixed case in storage (AGENTS.md 2.1, Database), so compare canonical keys on
@@ -246,7 +252,7 @@ export async function getDecisionsMadeForMe(
         items.push({
           id: `decided-for-me:marketing_request:${String(row.id)}`,
           module: "marketing_request",
-          employeeName: nameByHrId.get(canonicalHrIdKey(request.requester)) ?? request.requester,
+          employeeName: nameFor(request.requester),
           employeeHrId: request.requester,
           title: `Marketing review · ${request.code}`,
           decision: normalizeDecidedForMeOutcome(row.status),
