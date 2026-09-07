@@ -19,6 +19,7 @@ import {
   DEFAULT_NOTIFICATION_ROLE_POLICIES,
   notificationRoleKeys,
 } from "../src/lib/notifications/role-recipients.ts";
+import { RETENTION_RISK_THRESHOLD_WORKING_DAYS } from "../src/lib/retention-risk/detector.ts";
 import { isRetentionRiskSubjectTitle } from "../src/lib/retention-risk/eligibility.ts";
 import { resolveNotificationPolicy } from "../src/lib/notifications/policy.ts";
 import { JOB_SCHEDULES } from "../src/lib/observability/job-schedule.ts";
@@ -119,6 +120,19 @@ export function runRetentionRiskNotifyTests() {
     );
   }
   assert.equal(isRetentionRiskSubjectTitle(null, null), false, "a blank title is not a rep");
+
+  // ── THREE working days, not five ───────────────────────────────────────────────────────────
+  //
+  // Owner, 2026-09-07: "if an employee not submitting any crm records for 3 days until the current
+  // day or 3 vacation days until the current". Five was measured too slow to be worth anything —
+  // the two reps the board caught that morning had stopped on 31 August, the fifth working day was
+  // the 6th, and HR recorded both resignations at 03:37 on the 7th, four hours before the sweep
+  // could speak. At three the board would have named them on the 5th.
+  assert.equal(
+    RETENTION_RISK_THRESHOLD_WORKING_DAYS,
+    3,
+    "three consecutive WORKING days — a Friday neither counts nor resets, which is what keeps three usable rather than noisy",
+  );
 
   // ── The audience is registered and editable without a deploy ───────────────────────────────
   assert.ok(
@@ -225,7 +239,7 @@ export function runRetentionRiskNotifyTests() {
   // silently stopped working — which is exactly how the outbox drain ran clean and delivered
   // nothing for thirteen days.
   const quiet = retentionRiskPrePayrollMessage([], "scheduled");
-  assert.ok(quiet.includes("No employee is currently flagged"), "silence has to be stated, not implied");
+  assert.ok(quiet.includes("No Medical Rep is currently flagged"), "silence has to be stated, not implied");
   assert.ok(quiet.includes("Payroll for this month is close."));
 
   const afterPart1 = retentionRiskPrePayrollMessage([signal()], "part1_confirmed");
@@ -242,7 +256,7 @@ export function runRetentionRiskNotifyTests() {
     "scheduled",
   );
   assert.ok(both.includes("2 employees are currently flagged"));
-  assert.ok(both.includes("1 on five or more consecutive leave days"));
+  assert.ok(both.includes("1 on three or more consecutive leave days"));
 
   assert.equal(
     prePayrollPeriodLabel(new Date("2026-09-25T09:00:00Z")),

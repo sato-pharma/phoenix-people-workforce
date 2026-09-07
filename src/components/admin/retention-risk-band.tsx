@@ -210,12 +210,12 @@ export function RetentionRiskBand({ view }: { view: RetentionRiskView }) {
   const leave = view.signals.length - silence;
   const summary =
     view.signals.length === 0
-      ? "Nobody has reached five consecutive working days of leave or of missing CRM activity."
+      ? "Nobody has reached three consecutive working days of leave or of missing CRM activity."
       : `${silence} with no CRM activity, ${leave} on extended leave. Reviewed ${formatRetentionRiskDate(view.windowStart)} to ${formatRetentionRiskDate(view.measurableThrough)}.`;
 
   return (
     <SectionShell
-      description="Medical Reps who have not come back: five or more consecutive working days of recorded leave, or of no CRM entry at all, and still not seen. An early warning to check on someone — never a conclusion about them."
+      description="Medical Reps with no CRM record, or on leave, for three working days running and still not seen. Thursday and Friday are not counted. An early warning to check on someone — never a conclusion about them."
       title="Retention risk"
     >
       <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
@@ -246,7 +246,7 @@ export function RetentionRiskBand({ view }: { view: RetentionRiskView }) {
 
       {view.signals.length === 0 ? (
         <p className="px-5 py-6 break-words text-sm text-slate-600">
-          No Medical Rep is currently away. Nobody has five or more consecutive working days of
+          No Medical Rep is currently away. Nobody has three or more consecutive working days of
           leave or of missing CRM activity still running.
         </p>
       ) : (
@@ -308,7 +308,7 @@ export function RetentionRiskColumn({ view }: { view: RetentionRiskView }) {
 
       {view.signals.length === 0 ? (
         <p className="flex-1 break-words px-4 py-5 text-phx-xs text-slate-500">
-          Nobody is away. Every Medical Rep has logged CRM activity, and none is on five or more
+          Nobody is away. Every Medical Rep has logged CRM activity, and none is on three or more
           consecutive working days of leave.
         </p>
       ) : (
@@ -341,8 +341,9 @@ export function RetentionRiskColumn({ view }: { view: RetentionRiskView }) {
       )}
 
       <p className="border-t border-slate-200 px-4 py-3 break-words text-phx-3xs text-slate-500">
-        Medical Reps who have not come back: five or more consecutive working days of no CRM entry,
-        or of recorded leave. An early warning to check on someone, never a conclusion about them.
+        Three working days running with no CRM record, or on leave, and not seen since. Thursday and
+        Friday are never counted, so on a Monday the three days behind it are the Wednesday, Saturday
+        and Sunday. An early warning to check on someone, never a conclusion about them.
       </p>
     </div>
   );

@@ -18,11 +18,13 @@ import { isRetentionRiskSubjectTitle } from "@/lib/retention-risk/eligibility";
 import { getNationalHolidayDateSet } from "@/lib/vacation/national-holidays";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { queryVisits } from "@/lib/crm/reads";
-import { addDays, buildRetentionRiskSignals } from "@/lib/retention-risk/detector";
+import {
+  RETENTION_RISK_THRESHOLD_WORKING_DAYS,
+  addDays,
+  buildRetentionRiskSignals,
+} from "@/lib/retention-risk/detector";
 import type { RetentionRiskSignal, RetentionRiskSubject } from "@/lib/retention-risk/types";
 
-/** The owner's rule, 2026-09-06: five consecutive days. Working days, never calendar days. */
-export const RETENTION_RISK_THRESHOLD_WORKING_DAYS = 5;
 
 /**
  * How far back the board looks. Long enough to cover a full payroll cycle and the one before it,
