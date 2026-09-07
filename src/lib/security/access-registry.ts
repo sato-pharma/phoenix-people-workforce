@@ -307,6 +307,13 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/crm/resolve-customer", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/crm/customer-mapping/template", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/crm/customer-mapping/import", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // New Hire CRM Setup: records a newly created employee's CRM username and code, or that they
+  // need no CRM account. Same posture as the CRM resolvers above — the fine gate is
+  // canUseAdminCrmWorkspace (Super Admin + SFE Manager), not the permission matrix, because this
+  // writes two columns on an employee and the SFE Manager deliberately does NOT hold
+  // employees:update. Audited as a mutation: it is a write to the employee master, reached from a
+  // screen whose whole purpose is that somebody acted on a notification.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/crm/account-setup", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/admin/field-workforce-compliance/**", permission: { resource: "hr_calendar", action: "read" } }),
   // Unified Deductions module — the sole deductions pipeline as of the C6 cutover (2026-08-30); the
   // legacy deductions-governance routes it replaced were removed in the same change. Every route

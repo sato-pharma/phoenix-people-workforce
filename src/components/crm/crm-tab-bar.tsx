@@ -9,15 +9,24 @@ import { Database, Loader2 } from "lucide-react";
 // client" component's bundle.
 import { CRM_MASTER_DATASETS, type CrmMasterDataset } from "@/lib/crm/master-datasets";
 
-export type CrmActiveTab = CrmMasterDataset | "unmapped" | "recovered" | "region_mapping" | "customer_mapping";
+export type CrmActiveTab = CrmMasterDataset | "unmapped" | "recovered" | "region_mapping" | "customer_mapping" | "account_setup";
 
-export type CrmExtraTab = { id: "unmapped" | "recovered" | "region_mapping" | "customer_mapping"; label: string };
+export type CrmExtraTab = { id: "unmapped" | "recovered" | "region_mapping" | "customer_mapping" | "account_setup"; label: string };
 
 /** Aggregated/derived views that sit alongside the raw per-dataset tabs — not a CrmMasterDataset,
  * since they don't come from a paginated slice of one table (see CrmUnmappedIdentitiesPanel /
  * CrmRecoveredChainsPanel / CrmRegionMappingPanel / CrmCustomerMappingPanel). These four are
  * UNSCOPED Super-Admin governance panels, so the portal CRM passes extraTabs={[]} to omit them. */
 const DEFAULT_EXTRA_TABS: ReadonlyArray<CrmExtraTab> = [
+  // First, deliberately, and the position is doing real work. It is the only tab here with a
+  // per-person deadline behind it — a new rep whose CRM account is not created keeps working, and
+  // every day of it lands under an unmapped agent id, which is what the tab beside it then has to
+  // clean up. It is also the only route to the queue other than the "an employee was added" notice
+  // itself: a card on the /admin/crm-tools hub was written and then withdrawn, because hub cards are
+  // PROMOTED INTO RAIL ROWS and that would add a sidebar row, against the owner's 2026-09-05
+  // navigation ruling that collapsed CRM to one hub button. A tab is the right shape anyway — this
+  // is a view of the CRM workspace, not a module of its own.
+  { id: "account_setup", label: "New Hire CRM Setup" },
   { id: "unmapped", label: "Unmapped Agents" },
   { id: "region_mapping", label: "Region Mapping" },
   { id: "customer_mapping", label: "Customer Mapping" },
@@ -44,8 +53,11 @@ export function CrmTabBar({ active, extraTabs = DEFAULT_EXTRA_TABS }: { active: 
     for (const key of ["page", "search", "ampm", "visitType", "mappingStatus", "minDuration", "halfDaysOnly"]) {
       params.delete(key);
     }
-    if (tab === "unmapped" || tab === "recovered" || tab === "region_mapping" || tab === "customer_mapping") {
+    if (tab === "unmapped" || tab === "recovered" || tab === "region_mapping" || tab === "customer_mapping" || tab === "account_setup") {
       params.delete("dataset");
+      // The deep link from the "an employee was added" notice carries the person it is about.
+      // Leaving it on while switching AWAY would spotlight somebody on an unrelated tab.
+      if (tab !== "account_setup") params.delete("hrId");
       params.set("view", tab);
     } else {
       params.delete("view");

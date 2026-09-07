@@ -35,6 +35,7 @@ export const notificationRoleKeys = [
   "marketing_invoice_overdue_alert",
   "distributor_upload_overdue_alert",
   "retention_risk_alert",
+  "crm_account_setup_alert",
 ] as const;
 
 export type NotificationRoleKey = (typeof notificationRoleKeys)[number];
@@ -195,6 +196,14 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     description:
       "Who is told when a MEDICAL REP reaches three consecutive working days of recorded leave, or three consecutive working days with no CRM entry of any kind, and has not been seen since (owner, 2026-09-07: medical reps only, three days, still away). Defaults to HR Operations, HR Advisory, Super Admin and SFE Manager — the owner picked all four on 2026-09-06. The person's own line manager is added per alert by the sweep itself and is deliberately NOT a role here: it is one named manager per subject, not everyone holding a manager role.",
     roles: ["HR Operations", "HR Advisory", "Super Admin", "SFE Manager"],
+    enabled: true,
+  },
+  crm_account_setup_alert: {
+    key: "crm_account_setup_alert",
+    label: "New hire CRM account setup",
+    description:
+      "Who is told when an employee is added to the employee master, so that person can be given an iReports360 (CRM) account. The notice carries the new hire's line, hiring date, region, area, manager, work email and mobile, and links to the New Hire CRM Setup tab where the CRM username and CRM code are entered. Defaults to the SFE Manager alone — the owner's instruction, 2026-09-07. Super Admin is deliberately not seeded alongside him: this is one person's standing job, and an audience of two on a per-hire notice is how both recipients learn to assume the other one did it.",
+    roles: ["SFE Manager"],
     enabled: true,
   },
   marketing_sla_reminder: {

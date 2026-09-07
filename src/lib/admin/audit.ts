@@ -43,6 +43,13 @@ export type AuditEntityType =
   | "deduction_candidate"
   | "deduction_comment"
   | "deduction_decision"
+  // Recording a new hire's CRM username and code from the New Hire CRM Setup tab, or ruling that
+  // they need no CRM account. It is a write to the EMPLOYEE MASTER made by a role that does not
+  // hold employees:update (Super Admin + SFE Manager, through canUseAdminCrmWorkspace), so who
+  // changed a CRM identity is worth recording on its own. Written best-effort: the durable record
+  // of who acted is crm_account_setup_tasks.resolved_by_hr_id, which the table's own CHECK refuses
+  // to leave empty, so a failed audit row must not fail a save that already landed.
+  | "crm_account_setup"
   | "crm_master_export"
   // Pulling the mobile numbers behind the organogram export. The only route in the module
   // that hands back personal contact details in bulk, so who took the list is recorded.

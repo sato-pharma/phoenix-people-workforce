@@ -81,14 +81,22 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
     roles: ["HR Operations", "HR Advisory", "Super Admin", "SFE Manager"],
     enabled: true,
   },
+  // 20th key, added 2026-09-07. `employees.crm_username` and `employees.crm_id` are how every CRM
+  // read resolves a visit back to a person, both are optional on the employee form, and nothing
+  // used to say so — a new rep saved without them files every day of field work under an unmapped
+  // agent id, with no error anywhere and no empty state. Owner instruction: tell the SFE Manager
+  // by email and in-app when an employee is added, and link him to the screen that asks for the
+  // two values. He named ONE recipient, and one is the point: an audience of two on a per-hire
+  // notice is how both learn to assume the other one did it.
+  crm_account_setup_alert: { roles: ["SFE Manager"], enabled: true },
 };
 
 export function runNotificationRoleRecipientsTests() {
-  assert.equal(notificationRoleKeys.length, 19, "expected exactly the 19 confirmed notification-role keys");
+  assert.equal(notificationRoleKeys.length, 20, "expected exactly the 20 confirmed notification-role keys");
   assert.deepEqual(
     [...notificationRoleKeys].sort(),
     Object.keys(EXPECTED).sort(),
-    "notificationRoleKeys set does not match the confirmed 19 keys",
+    "notificationRoleKeys set does not match the confirmed 20 keys",
   );
 
   for (const key of notificationRoleKeys) {

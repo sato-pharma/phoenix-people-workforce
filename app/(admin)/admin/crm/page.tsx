@@ -7,6 +7,7 @@ import { CrmMasterTable } from "@/components/crm/crm-master-table";
 import { CrmSyncStatusPanel } from "@/components/crm/crm-sync-status-panel";
 import { CrmTabBar, type CrmActiveTab } from "@/components/crm/crm-tab-bar";
 import { CrmUnmappedIdentitiesPanel } from "@/components/crm/crm-unmapped-identities-panel";
+import { CrmAccountSetupPanel } from "@/components/crm/crm-account-setup-panel";
 import { CrmRecoveredChainsPanel } from "@/components/crm/crm-recovered-chains-panel";
 import { CrmRegionMappingPanel } from "@/components/crm/crm-region-mapping-panel";
 import { CrmCustomerMappingPanel } from "@/components/crm/crm-customer-mapping-panel";
@@ -14,6 +15,7 @@ import { getCrmMasterData, type CrmMasterAmpm, type CrmMasterDataset, type CrmMa
 import { CRM_SCOPE_ALL } from "@/lib/crm/viewer-scope";
 import { getLatestVisitsSyncRuns, getUnmappedCrmIdentities } from "@/lib/crm/admin";
 import { getUnmappedCrmRegions } from "@/lib/crm/region-brick";
+import { getCrmAccountSetupQueue } from "@/lib/crm/account-setup";
 import { getUnmappedCrmCustomers } from "@/lib/crm/customer-brick";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
@@ -43,8 +45,10 @@ function stringParam(value: string | string[] | undefined) {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-function viewParam(value: string | string[] | undefined): "unmapped" | "recovered" | "region_mapping" | "customer_mapping" | null {
-  return value === "unmapped" || value === "recovered" || value === "region_mapping" || value === "customer_mapping" ? value : null;
+function viewParam(value: string | string[] | undefined): "unmapped" | "recovered" | "region_mapping" | "customer_mapping" | "account_setup" | null {
+  return value === "unmapped" || value === "recovered" || value === "region_mapping" || value === "customer_mapping" || value === "account_setup"
+    ? value
+    : null;
 }
 
 // Deeper, same-data tools over the CRM mirror — one click from the master table. Unmapped-identity
@@ -78,7 +82,22 @@ export default async function CrmHubPage({
   let masterTable: ReactNode = null;
   let derivedView: ReactNode = null;
 
-  if (view === "unmapped") {
+  if (view === "account_setup") {
+    // Where the "an employee was added" notice lands (src/lib/crm/account-setup-notify.ts). The
+    // hrId it carries only spotlights a card — it never filters the queue, so arriving from an
+    // old notice still shows everyone else who is waiting.
+    activeTab = "account_setup";
+    const [queue, latestSyncRuns] = await Promise.all([getCrmAccountSetupQueue(), getLatestVisitsSyncRuns()]);
+    syncPanel = { configured: isIReports360Configured(), latestSyncRuns };
+    derivedView = (
+      <CrmAccountSetupPanel
+        pending={queue.pending}
+        recentlyResolved={queue.recentlyResolved}
+        schemaMissing={queue.schemaMissing}
+        spotlightHrId={stringParam(params.hrId)}
+      />
+    );
+  } else if (view === "unmapped") {
     activeTab = "unmapped";
     const [identities, latestSyncRuns] = await Promise.all([getUnmappedCrmIdentities(), getLatestVisitsSyncRuns()]);
     syncPanel = { configured: isIReports360Configured(), latestSyncRuns };
