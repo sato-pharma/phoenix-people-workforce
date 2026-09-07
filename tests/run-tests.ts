@@ -654,6 +654,7 @@ import { runOutstationPayrollExpenseMappingTests } from "./outstation-payroll-ex
 import { runOutstationWorkflowResyncPreservesHrDecisionTests } from "./outstation-workflow-resync-preserves-hr-decision.test.ts";
 import { runExpenseReadsAreNotCappedAt1000Tests } from "./expense-reads-are-not-capped-at-1000.test.ts";
 import { runExpenseApprovalDecisionsSurviveTheSaveTests } from "./expense-approval-decisions-survive-the-save.test.ts";
+import { runExpenseApprovalsOneListTests } from "./expense-approvals-one-list.test.ts";
 import { runOutstationImportIsAdditiveTests } from "./outstation-import-is-additive.test.ts";
 import { runSalaryRecordsUniqueBatchHrTests } from "./salary-records-unique-batch-hr.test.ts";
 import { runOutstationPolicyClassificationTests } from "./outstation-policy-classification.test.ts";
@@ -2566,6 +2567,10 @@ await runTest(
 await runTest(
   "expense approval decisions survive the save (undone rejection, request approve, unsaved draft)",
   runExpenseApprovalDecisionsSurviveTheSaveTests,
+);
+await runTest(
+  "expense approvals are one ordered list, not three tabs",
+  runExpenseApprovalsOneListTests,
 );
 await runTest("outstation import is additive and hr_id-scoped", runOutstationImportIsAdditiveTests);
 await runTest("salary_records unique per employee per batch", runSalaryRecordsUniqueBatchHrTests);

@@ -47,6 +47,22 @@ export function expenseApprovalState(input: {
 }
 
 /**
+ * Where a trip sits in the single approvals queue: undecided first, then approved, then rejected.
+ *
+ * The screen showed three tabs until 2026-09-08, when the owner asked for one list instead. The
+ * work still has to surface first — a reviewer opening a 400-trip queue is there for the 60 nobody
+ * has decided — so the ordering carries what the tabs used to, without hiding the other two states
+ * behind a click.
+ *
+ * Rank the STORED decision, never the live one. Ranking what is on screen would move a row the
+ * instant it is decided, so every approval would shuffle the list out from under the reviewer
+ * working down it. The list settles on the next load, which is after Save.
+ */
+export function expenseApprovalQueueRank(state: ExpenseApprovalState): number {
+  return state === "pending" ? 0 : state === "approved" ? 1 : 2;
+}
+
+/**
  * Whether HR moved the payable figure off the employee's claim.
  *
  * Half a pound of tolerance: the figure round-trips through a number input and currency rounding,

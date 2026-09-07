@@ -40,6 +40,7 @@ import { formatCurrencyValue, formatDateValue, formatNumberValue } from "@/lib/i
 import {
   APPROVED_STATUS,
   REJECTED_STATUS,
+  expenseApprovalQueueRank,
   expenseApprovalState,
   expenseDecisionChanged,
   isAdjustedAmount,
@@ -246,7 +247,6 @@ export function ExpenseApprovalsWorkspace({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
-  const [tab, setTab] = useState<"pending" | "approved" | "rejected">("pending");
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<ExpenseApprovalFilters>({ employee: "", month: "" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -439,7 +439,31 @@ export function ExpenseApprovalsWorkspace({
     };
   }, [records, search, filters, decisionFor]);
 
-  const activeList = tab === "pending" ? pending : tab === "approved" ? approved : rejected;
+  /**
+   * ONE LIST, not three tabs — owner, 2026-09-08: "i want them in one list not tabs".
+   *
+   * Ordered by the STORED state, deliberately not the live one. A row therefore does NOT jump out
+   * from under the cursor the moment it is decided: it stays exactly where it is and changes its
+   * own chip, and the list re-orders on the next load — which is after Save, which is the only
+   * point a reviewer expects things to move. Sorting on the live decision would make every single
+   * approval shuffle the list the reviewer is working down.
+   *
+   * `pending` / `approved` / `rejected` above are still computed, from the LIVE decision, because
+   * the header chips, the stat cards and the bulk bar all count what is on screen right now. So
+   * nothing the tabs carried is lost: the split moved to the stat cards, and an individual trip's
+   * state was always on its own row — the coloured spine and the Approved / Rejected chip.
+   */
+  const activeList = useMemo(() => {
+    const rank = (record: LoadedRecord) =>
+      expenseApprovalQueueRank(expenseApprovalState(savedDecision(record)));
+    return records
+      .filter(
+        (record) =>
+          matchesExpenseApprovalFilters(record, filters) &&
+          matchesExpenseApprovalSearchText(record, search),
+      )
+      .sort((left, right) => rank(left) - rank(right) || right.total - left.total);
+  }, [records, filters, search]);
   // Derive (don't store) the effective selection so it stays valid as tabs/filters change,
   // without a setState-in-effect. An explicit click still wins via `selectedId`.
   const effectiveSelectedId =
@@ -471,7 +495,7 @@ export function ExpenseApprovalsWorkspace({
   }, [pending, approved, decisionFor]);
 
   // Built from the CURRENT decisions (the three filtered queues), not from what is stored, so a
-  // trip approved a moment ago and not yet saved counts here exactly as it does in the tab counts.
+  // trip approved a moment ago and not yet saved counts here exactly as it does in the stat cards.
   const employeeSummaries = useMemo(
     () =>
       buildExpenseApprovalEmployeeSummary(
@@ -605,7 +629,11 @@ export function ExpenseApprovalsWorkspace({
     [selectedVisible, decisionFor],
   );
 
-  const allVisibleSelected = activeList.length > 0 && selectedVisible.length === activeList.length;
+  // Both of these track the PENDING rows, not the whole list. Only an undecided trip can be
+  // bulk-approved, so a "select all" that ticked decided rows would report a header checkbox as
+  // unchecked for ever — every decided row is one it can never tick.
+  const allVisibleSelected =
+    pending.length > 0 && pending.every((record) => selectedTripIds.has(record.tripId));
 
   const toggleTrip = useCallback((tripId: string) => {
     setBulkMessage(null);
@@ -621,14 +649,14 @@ export function ExpenseApprovalsWorkspace({
     setBulkMessage(null);
     setSelectedTripIds((current) => {
       const next = new Set(current);
-      const everySelected = activeList.length > 0 && activeList.every((record) => next.has(record.tripId));
-      for (const record of activeList) {
+      const everySelected = pending.length > 0 && pending.every((record) => next.has(record.tripId));
+      for (const record of pending) {
         if (everySelected) next.delete(record.tripId);
         else next.add(record.tripId);
       }
       return next;
     });
-  }, [activeList]);
+  }, [pending]);
 
   // Bulk approve writes the same local decision the single-trip button writes — it does NOT save.
   // The reviewer still presses Save, so a mis-click stays reversible right up to that point.
@@ -896,54 +924,9 @@ export function ExpenseApprovalsWorkspace({
         </div>
       </div>
 
-      {/* Segmented control — the same identity the module's other tab bar uses. The three tabs are
-          `whitespace-nowrap` and total ~455px, so at 375px they were dragging the whole PAGE
-          sideways (pre-existing, measured at 80px); keeping them in their own scroll box means
-          nothing truncates, nothing wraps, and the page itself no longer moves. */}
-      <div className={cn("-mx-1 overflow-x-auto px-1", view !== "queue" && "hidden")}>
-        <div className="inline-flex min-w-max border border-slate-200 bg-white p-1 shadow-sm" role="tablist">
-          {([
-            { key: "pending", label: "Pending", count: pending.length, icon: Inbox },
-            { key: "approved", label: "Approved", count: approved.length, icon: CheckCircle2 },
-            { key: "rejected", label: "Rejected", count: rejected.length, icon: XCircle },
-          ] as const).map(({ key, label, count, icon: Icon }) => (
-            <button
-              aria-selected={tab === key}
-              className={cn(
-                "inline-flex shrink-0 items-center gap-2 whitespace-nowrap px-4 py-2 text-sm font-bold transition-colors",
-                tab === key
-                  ? "bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.18)]"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
-              )}
-              key={key}
-              onClick={() => {
-                setTab(key);
-                // Selection never survives a tab change — a tick made in Pending must not still be
-                // armed when the reviewer is looking at a different queue.
-                setSelectedTripIds(new Set());
-                setBulkMessage(null);
-              }}
-              role="tab"
-              type="button"
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-              <span
-                className={cn(
-                  "inline-flex min-w-[1.5rem] items-center justify-center px-1.5 py-0.5 text-phx-2xs font-black leading-none",
-                  tab === key ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-500",
-                )}
-              >
-                {formatNumberValue(count)}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* One panel narrows the whole queue — free text, trip month, employee. It sits above the
           grid rather than inside the list column so a long employee name has room to render in
-          full, and because the tab counts above are computed from this same filtered set: a count
+          full, and because the stat cards above are computed from this same filtered set: a count
           is therefore never larger than the list underneath it. */}
       <div className={cn(PANEL_CLASS, "p-4")}>
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
@@ -1044,7 +1027,7 @@ export function ExpenseApprovalsWorkspace({
       {/* Bulk bar. It states the exact count, the money behind it, and anything the selection
           contains that CANNOT be approved — so the reviewer reads the consequence before pressing,
           not after. Approving here only writes local decisions; Save still commits them. */}
-      {view === "queue" && tab === "pending" && selectedVisible.length > 0 ? (
+      {view === "queue" && selectedVisible.length > 0 ? (
         <div className="flex flex-wrap items-center justify-between gap-3 border border-orange-300 bg-orange-50 px-4 py-3">
           <div className="min-w-0">
             <p className="text-sm font-black text-slate-900">
@@ -1135,17 +1118,15 @@ export function ExpenseApprovalsWorkspace({
               {/* An empty list because of a filter is a different fact from an empty queue —
                   saying "nothing waiting for approval" while a month is selected reads as
                   "this month is done" when the work is simply filtered out of view. */}
-              {narrowed
-                ? "No trips match these filters."
-                : tab === "pending"
-                  ? "Nothing waiting for approval."
-                  : tab === "approved"
-                    ? "No approved trips yet."
-                    : "No rejected trips."}
+              {narrowed ? "No trips match these filters." : "No trips in the queue yet."}
             </p>
           ) : (
             <>
-              {tab === "pending" ? (
+              {/* Scoped to the PENDING rows, not to everything on screen. With one list, "select
+                  all" over 400 trips would tick hundreds already decided; planBulkApproval refuses
+                  those and reports "N were already decided" — a wall of noise standing in for a
+                  button that did nothing. */}
+              {pending.length > 0 ? (
                 <label className="flex cursor-pointer items-center gap-2.5 border border-slate-200 bg-white px-4 py-2.5 text-xs font-black uppercase tracking-wide text-slate-600 transition-colors hover:bg-slate-50">
                   <input
                     checked={allVisibleSelected}
@@ -1153,7 +1134,7 @@ export function ExpenseApprovalsWorkspace({
                     onChange={toggleAllVisible}
                     type="checkbox"
                   />
-                  Select all {formatNumberValue(activeList.length)} shown
+                  Select all {formatNumberValue(pending.length)} awaiting decision
                 </label>
               ) : null}
               <div className="max-h-[70vh] space-y-2 overflow-y-auto pr-1">
@@ -1194,7 +1175,10 @@ export function ExpenseApprovalsWorkspace({
                                 : "bg-slate-200 group-hover:bg-orange-400",
                         )}
                       />
-                      {tab === "pending" ? (
+                      {/* Only an undecided trip carries a tick box — the bulk action can approve
+                          nothing else, and offering one on a decided row invites a click that
+                          silently does nothing. Reversing a decision brings the box back. */}
+                      {state === "pending" ? (
                         <label className="flex shrink-0 cursor-pointer items-center pl-3">
                           <input
                             aria-label={`Select ${record.specialist || "Unassigned"} ${record.tripId}`}
