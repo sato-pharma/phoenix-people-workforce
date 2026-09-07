@@ -38,6 +38,32 @@ export const STORE_NAME_KEYWORDS: readonly ChannelNameKeyword[] = [
   { label: "للتجارة", stem: "للتجارة" },
 ];
 
+/**
+ * Name PREFIXES that mean "warehouse". Matched at the START of the name only — never as a substring.
+ *
+ * «م - » is EPDA's own notation for مخزن. Owner, 2026-09-07, on a list of 19 EPDA customers: "all
+ * those warhouse and should be splitted". Measured on production the same day, over
+ * source_of_sales_import_rows: 29 distinct customer names (30 client codes) START with it, worth
+ * 5,995,985 EGP across EP / EP-BK / EP-PHS, and every one is unmistakably a warehouse — م - دار
+ * الادوية, م - جراند فارم, م - سمارت, م - ايه ام جروب, م - المنوفية لتجارة الادوية.
+ *
+ * 🔴 IT CANNOT BE A KEYWORD, AND THAT IS THE WHOLE REASON THIS LIST EXISTS. STORE_NAME_KEYWORDS
+ * matches a SUBSTRING anywhere in the name, and «م - » appears somewhere inside 623 names while
+ * starting only 29 of them. The other 594 (592 client codes, 5,103,941 EGP) are ordinary pharmacies
+ * whose preceding word simply ends in م: «السلام - المنيا», «همام - المطار», «هدي الاسلام - بنى
+ * سويف», «فرندز فارم - شبين الكوم». Adding it to the keyword list would have reclassified all 594 as
+ * warehouses and scattered their sales across their cities — and nothing downstream would have
+ * reported it, because the split preserves each line's unit total while moving units between areas,
+ * so the publication drift check, which compares UNITS, sees nothing at all.
+ *
+ * Before adding a prefix here, count it BOTH ways on live data. The gap between 623 and 29 is the
+ * entire difference between a correct rule and a silent disaster.
+ */
+export const STORE_NAME_PREFIXES: readonly ChannelNameKeyword[] = [
+  { label: "م - (مخزن, EPDA notation)", stem: "م - " },
+  { label: "م- (مخزن, unspaced)", stem: "م- " },
+];
+
 // THE single edit point for the hospital rule. مستشف is the shared prefix of مستشفى and مستشفي,
 // so one stem covers both spellings and every suffix distributors put after them.
 export const HOSPITAL_NAME_KEYWORDS: readonly ChannelNameKeyword[] = [
@@ -104,6 +130,18 @@ function matchKeywords(
  */
 export function matchedStoreKeywords(name: string | null | undefined): string[] {
   return matchKeywords(name, STORE_NAME_KEYWORDS);
+}
+
+/**
+ * Which store PREFIXES this name starts with. Anchored with startsWith, never includes — see the
+ * doc on STORE_NAME_PREFIXES for the 590-vs-40 measurement that makes the distinction load-bearing.
+ */
+export function matchedStorePrefixes(name: string | null | undefined): string[] {
+  const normalized = normalizeCustomerName(name);
+  if (!normalized) return [];
+  return STORE_NAME_PREFIXES
+    .filter((entry) => normalized.startsWith(normalizeCustomerName(entry.stem)))
+    .map((entry) => entry.label);
 }
 
 /** Which hospital words appear in this customer's name. Same purpose as the store version. */
@@ -260,6 +298,12 @@ export const STORE_OVERRIDE_NAMES: readonly ChannelNameKeyword[] = [
   // El Qema sells to «ايه ام جروب الجمله» — the same business carrying جملة. A blanket جملة keyword
   // would reverse a ruling he had just made.
   { label: "الفرسان بنها جملة", stem: "الفرسان بنها" },
+  // Three of the 19 EPDA customers the owner ruled warehouses on 2026-09-07 that no pattern reaches.
+  // «التعاون» is deliberately NOT a keyword: it would newly catch 20 customers he has not seen, on
+  // top of the 28 already classified through الجمعيه, so the one he named is named.
+  { label: "التعاون المصرى الخليجى", stem: "التعاون المصري الخليجي" },
+  { label: "الرواد للادوية", stem: "الرواد للادويه" },
+  { label: "فاروق 14", stem: "فاروق 14" },
   { label: "طيبة جروب", stem: "طيبه جروب" },
   { label: "ابو عميرة", stem: "ابو عميره" },
   { label: "ابوعميرة", stem: "ابوعميره" },
@@ -464,7 +508,9 @@ export function isStoreCustomer(
   if (matchesAnyName(name, PHARMACY_OVERRIDE_CHAINS)) return false;
   if (matchedNeverStoreKeywords(name).length > 0) return false;
   if (isWholesaleOnlyDistributor(distributorCode)) return true;
-  return matchedStoreKeywords(name).length > 0 || matchesTradePhrase(name);
+  return matchedStoreKeywords(name).length > 0
+    || matchedStorePrefixes(name).length > 0
+    || matchesTradePhrase(name);
 }
 
 /**
