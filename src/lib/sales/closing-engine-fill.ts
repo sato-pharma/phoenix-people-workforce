@@ -2458,6 +2458,16 @@ function nextWorksheetPart(zip: JSZip): string {
 
 const INDEX_SHEET = "Contents";
 
+/**
+ * How much larger the cover's mark is than the one the working sheets carry.
+ *
+ * Theirs sits in the corner of a table and only has to be present. This one is the mark ON the
+ * cover, beside a 22pt title in a 66pt band, and at the siblings' size it read as an afterthought
+ * dropped into a lot of empty colour. The band's height is set from this, so the two cannot drift
+ * apart: change the scale and the band grows with it.
+ */
+const INDEX_MARK_SCALE = 1.7;
+
 
 /**
  * Add the contents page, and put it first.
@@ -2522,7 +2532,7 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   // The look is cloned off the Overview, never named by index. See resolveIndexStyles.
   const own = await resolveIndexStyles(zip);
   const s: IndexPalette = own ?? {
-    band: "0", bannerBlank: "0", bannerSub: "0", bannerTitle: "0", body: "0", foot: "0",
+    band: "0", bannerBlank: "0", bannerFoot: "0", bannerSub: "0", bannerTitle: "0", body: "0", foot: "0",
     header: "0", link: "0", title: "0", titlePt: "13", titleTail: "0",
   };
 
@@ -2565,9 +2575,12 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   // THE BANNER: four rows, so the type has air above and below it inside the band rather than
   // sitting hard against its edges. Column A stays WHITE across all four — that panel is what the
   // mark stands on; see resolveIndexStyles for why it cannot sit on the band itself.
-  const bannerRowsPt = [6, 26, 18, 6];
+  // Sized around the mark rather than guessed: the emblem is INDEX_MARK_SCALE times the siblings'
+  // ~26pt, so the band has to clear that with air above and below or the logo touches its edges.
+  const bannerRowsPt = [10, 32, 22, 10];
   const bannerText = [null, { style: s.bannerTitle, value: bannerHead },
     { style: s.bannerSub, value: bannerSub }, null];
+  const lastBannerRow = bannerRowsPt.length - 1;
   bannerRowsPt.forEach((heightPt, index) => {
     const cell = bannerText[index];
     rows.push(
@@ -2576,10 +2589,10 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
         // COLUMN — that read as a pale rectangle floating beside a blue one rather than as one
         // masthead. It sits on a white CHIP drawn inside the band, which is what addIndexEmblem
         // puts there.
-        + `<c r="A${rowNumber}" s="${s.bannerBlank}"/>`
+        + `<c r="A${rowNumber}" s="${index === lastBannerRow ? s.bannerFoot : s.bannerBlank}"/>`
         + (cell && cell.value
           ? inline(`B${rowNumber}`, cell.style, cell.value)
-          : `<c r="B${rowNumber}" s="${s.bannerBlank}"/>`)
+          : `<c r="B${rowNumber}" s="${index === lastBannerRow ? s.bannerFoot : s.bannerBlank}"/>`)
         + "</row>",
     );
     rowNumber += 1;
@@ -2629,7 +2642,7 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
 
   const lastRow = rowNumber;
   const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:B${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="2" topLeftCell="A3" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A3" sqref="A3"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="34" customWidth="1"/><col min="2" max="2" width="96" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait"/></worksheet>`;
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:B${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="2" topLeftCell="A3" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A3" sqref="A3"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="28" customWidth="1"/><col min="2" max="2" width="96" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="1"/></worksheet>`;
 
   // The emblem, beside the title. Done before the part is written so the sheet lands with its
   // <drawing> already in place.
@@ -2933,8 +2946,12 @@ async function addIndexEmblem(
 
   const size = /<a:ext\b[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(picture);
   if (!size) return sheetXml;
-  const width = Number(size[1]);
-  const height = Number(size[2]);
+
+  // BIGGER THAN THE SIBLINGS'. Their emblem sits in the corner of a working sheet and only has to
+  // be present; this one is the mark ON the cover and has to carry it. Scaled from the template's
+  // own dimensions rather than typed in, so the aspect ratio is the owner's and cannot drift.
+  const width = Math.round(Number(size[1]) * INDEX_MARK_SCALE);
+  const height = Math.round(Number(size[2]) * INDEX_MARK_SCALE);
 
   // BESIDE THE TITLE — the mark FIRST, then the words, the way a letterhead reads.
   //
@@ -3043,7 +3060,7 @@ async function addIndexEmblem(
  * defines, found by their COLOUR rather than by their position.
  */
 type IndexPalette = Record<
-  "band" | "bannerBlank" | "bannerSub" | "bannerTitle" | "body" | "foot" | "header"
+  "band" | "bannerBlank" | "bannerFoot" | "bannerSub" | "bannerTitle" | "body" | "foot" | "header"
   | "link" | "title" | "titlePt" | "titleTail",
   string
 >;
@@ -3275,8 +3292,46 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
     });
     return best;
   };
-  const bannerTitleFont = whiteFont(true);
-  const bannerSubFont = whiteFont(false) ?? bannerTitleFont;
+  /** Add a font the workbook does not have, and return its index. */
+  const addFont = (definition: string): number => {
+    const open = xml.indexOf("<fonts");
+    const close = xml.indexOf("</fonts>");
+    if (open < 0 || close < 0) return -1;
+    const index = fonts.length;
+    xml = xml.slice(0, open)
+      + xml.slice(open, close).replace(/count="\d+"/, `count="${index + 1}"`)
+      + definition
+      + xml.slice(close);
+    fonts.push(definition);
+    return index;
+  };
+
+  // A COVER-SIZED TITLE. The largest white bold face the template owns is 17pt, which is a heading
+  // on a working sheet and looks tentative reversed out of a 74pt band. 22pt is added once, in the
+  // template's own Segoe UI so it sits in the same type family as everything around it.
+  const existingWhiteBold = whiteFont(true);
+  const bannerTitleFont = (() => {
+    const wanted = 22;
+    const current = existingWhiteBold === null ? 0 : sizeOf(fonts[existingWhiteBold] ?? "");
+    if (Number.isFinite(current) && current >= wanted) return existingWhiteBold;
+    const added = addFont(
+      `<font><b/><sz val="${wanted}"/><color rgb="FFFFFFFF"/><name val="Segoe UI"/><family val="2"/></font>`,
+    );
+    return added < 0 ? existingWhiteBold : added;
+  })();
+  // The line under the headline at 9.5pt read as a caption rather than as the month. 12pt is added
+  // once, in the same face, so the two lines of the banner are a pair instead of a title with a
+  // footnote stuck to it.
+  const bannerSubFont = (() => {
+    const wanted = 12;
+    const existing = whiteFont(false);
+    const current = existing === null ? 0 : sizeOf(fonts[existing] ?? "");
+    if (Number.isFinite(current) && current >= wanted) return existing;
+    const added = addFont(
+      `<font><sz val="${wanted}"/><color rgb="FFFFFFFF"/><name val="Segoe UI"/><family val="2"/></font>`,
+    );
+    return added < 0 ? (existing ?? bannerTitleFont) : added;
+  })();
 
   // THE TITLE, ONE SIZE UP. The masthead the siblings use is 13pt, which is right on a sheet whose
   // job is a dense table; the contents page is the cover and reads as timid at that size. It takes
@@ -3313,6 +3368,14 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
     bannerTitle: banner(bannerTitleFont),
     bannerSub: banner(bannerSubFont),
     bannerBlank: banner(null),
+    // The band closes on the brand rule, so its bottom edge is a deliberate line rather than the
+    // place a colour happens to stop. It is the same rule the sheets already draw under a heading.
+    bannerFoot: add(
+      swap(bodyXf, {
+        borderId: heavyRule >= 0 ? heavyRule : 0,
+        ...(bannerFill >= 0 ? { fillId: bannerFill } : {}),
+      }),
+    ),
     title: add(
       swap(titleXf, {
         ...(bigTitleFont < 0 ? {} : { fontId: bigTitleFont }),

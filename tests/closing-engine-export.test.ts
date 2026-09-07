@@ -1611,6 +1611,27 @@ export async function runClosingEngineExportTests() {
         + "sit under it, and a white tile there is the old on-light workaround coming back",
     );
 
+    // AND IT IS THE COVER'S MARK, not the corner one. The siblings' emblem only has to be present;
+    // this one carries the cover, and at their size it read as an afterthought dropped into a lot of
+    // empty colour. Compared against a SIBLING'S OWN ext rather than a number typed in here, so the
+    // claim stays true if the owner ever replaces the artwork.
+    const coverWidth = Number(/<xdr:ext cx="(\d+)"/.exec(drawingXml)?.[1] ?? 0);
+    let cornerWidth = 0;
+    for (const name of Object.keys(opened.files).filter((one) => /^xl\/drawings\/drawing\d+\.xml$/.test(one))) {
+      if (name === drawingPart) continue;
+      const xml = await opened.file(name)!.async("string");
+      const anchor = (xml.match(/<xdr:(twoCellAnchor|oneCellAnchor)\b[\s\S]*?<\/xdr:\1>/g) ?? [])
+        .find((one) => one.includes("<xdr:pic"));
+      const ext = anchor ? /<a:ext\b[^>]*cx="(\d+)"/.exec(anchor)?.[1] : null;
+      if (ext) { cornerWidth = Number(ext); break; }
+    }
+    assert.ok(cornerWidth > 0, `${label}: no sibling emblem to compare the cover's mark against`);
+    assert.ok(
+      coverWidth > cornerWidth * 1.3,
+      `${label}: the cover's mark is ${coverWidth} against the siblings' ${cornerWidth} — on the `
+        + "banner it has to carry the page, not sit in it",
+    );
+
     // Same class of defect: a dimension that stops short of the rows actually written.
     const declaredLastRow = Number(/<dimension ref="A1:B(\d+)"/.exec(sheet)![1]);
     const writtenLastRow = Math.max(...[...sheet.matchAll(/<row r="(\d+)"/g)].map((m) => Number(m[1])));
