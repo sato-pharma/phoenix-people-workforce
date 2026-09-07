@@ -32,6 +32,7 @@ import { isOfficeDistributorCode } from "@/lib/sales/office-distributor";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
+import { writeStoreSplitNetForBatch } from "@/lib/sales/attribution-store-split-refresh";
 
 export type SalesDistributorOption = {
   code: string;
@@ -3218,6 +3219,10 @@ export async function persistDistributorSalesUpload(
     // Distributor×product rollup — after the fact rollup it reads, same fallback site.
     const distProductRollupRefresh = await supabase.rpc("phx_refresh_sos_distributor_product_rollup", { p_batch_id: batchId });
     if (distProductRollupRefresh.error) throw distProductRollupRefresh.error;
+    // The wholesaler city split net FIRST — au.f_monthly_attribution reads it, so refreshing
+    // before it is written bakes the previous split into the rollup and leaves it there until the
+    // next import. See attribution-store-split-refresh.ts.
+    await writeStoreSplitNetForBatch(supabase, batchId);
     // Sales-vs-target attribution rollup — after the channel rollup, same fallback site.
     const attributionRollupRefresh = await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
     if (attributionRollupRefresh.error) throw attributionRollupRefresh.error;

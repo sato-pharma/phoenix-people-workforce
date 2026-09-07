@@ -16,6 +16,7 @@ import type { CodedRow, NormalizeResult } from "@/lib/sales/normalizer/types";
 import { RECOGNITION_ENGINE_VERSION, dominantPeriod, normalizeUploadedFile, summarizePreview, type NormalizeFileResult, type NormalizePreview } from "@/lib/sales/recognize";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { writeStoreSplitNetForBatch } from "@/lib/sales/attribution-store-split-refresh";
 
 // Recognition lives in `@/lib/sales/recognize` (the single Sales recognition spine). Re-exported
 // here so existing import sites (`@/lib/sales/normalizer/service`) keep working unchanged.
@@ -531,6 +532,8 @@ export async function persistNormalizedBatch(input: {
     // Distributor×product rollup — after the fact rollup it reads, same fallback site.
     const distProductRollupRefresh = await supabase.rpc("phx_refresh_sos_distributor_product_rollup", { p_batch_id: batchId });
     if (distProductRollupRefresh.error) throw distProductRollupRefresh.error;
+    // The wholesaler city split net FIRST — au.f_monthly_attribution reads it.
+    await writeStoreSplitNetForBatch(supabase, batchId);
     // Sales-vs-target attribution rollup — after the channel rollup, same fallback site.
     const attributionRollupRefresh = await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
     if (attributionRollupRefresh.error) throw attributionRollupRefresh.error;

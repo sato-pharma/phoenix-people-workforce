@@ -8,6 +8,7 @@ import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeAliasKey, normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { IGNORE_PRODUCT_CODE, type NormalizeException } from "@/lib/sales/normalizer/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { writeStoreSplitNetForBatch } from "@/lib/sales/attribution-store-split-refresh";
 
 // Distributor code -> readable name, so a learned alias records WHICH distributor it came from
 // (product aliases store it in source_labels[]; territory aliases store it in notes).
@@ -203,6 +204,8 @@ export async function backfillCustomerRows(
       await supabase.rpc("phx_refresh_sos_channel_rollup", { p_batch_id: batchId });
       // Distributor×product rollup — after the fact rollup it reads.
       await supabase.rpc("phx_refresh_sos_distributor_product_rollup", { p_batch_id: batchId });
+      // The wholesaler city split net FIRST — au.f_monthly_attribution reads it.
+      await writeStoreSplitNetForBatch(supabase, batchId);
       // Sales-vs-target attribution rollup — same site, after the fact rollup it reads.
       await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
       // Import summaries — what the Source of Sales dashboard reads. Frozen at insert until
