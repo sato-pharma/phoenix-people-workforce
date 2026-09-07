@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 import { conversationMessageIdempotencyKey } from "../src/lib/conversations/notify.ts";
 import { isTrackableProductLine } from "../src/lib/market-awareness/lines.ts";
+import { MARKET_AWARENESS_STATUSES } from "../src/lib/market-awareness/types.ts";
 import { resolvePendingDecisionRecipients } from "../src/lib/market-awareness/notifications.ts";
 import {
   canCreateActivity,
@@ -454,4 +455,76 @@ export function runMarketAwarenessTests() {
     /transition\.to === "returned" \|\| transition\.to === "rejected"[\s\S]{0,600}notifyActivityReturned\(/.test(decideBody),
     "a returned or rejected activity must tell the person who raised it",
   );
+
+  // -------------------------------------------------------------------------
+  // Tracking is not deciding.
+  // -------------------------------------------------------------------------
+  //
+  // The owner asked for two things on 2026-09-07: the Group Product Manager must be able to track a
+  // Product Manager's request while it sits with that PM's own manager, and the inbox must carry the
+  // same two tabs as every other approval inbox. Widening what the inbox SHOWS is the whole point —
+  // and it is also the moment the queue could start offering buttons the decision route refuses.
+  //
+  // So the two questions stay separate: `canViewActivity` decides what is listed, `canDecideStep`
+  // decides what is actionable, and a row carries both answers rather than inferring one from the
+  // other. These pin that a viewer can be true for the first and false for the second.
+  const ahmedsActivity = { requesterHrId: "B-155" };
+  const gpm = { hrId: "A-4", role: "Group Product Manager" as const };
+  const rashaViewer = { hrId: "A-8", role: "Marketing Manager" as const };
+
+  assert.equal(
+    canViewActivity(gpm, ahmedsActivity),
+    true,
+    "the Group Product Manager must be able to track a Product Manager's request",
+  );
+  assert.equal(
+    canDecideStep({ access: gpm, managerHrId: "A-8", step: "manager" }),
+    false,
+    "tracking a request must never make the tracker its approver",
+  );
+  assert.equal(
+    canDecideStep({ access: rashaViewer, managerHrId: "A-8", step: "manager" }),
+    true,
+    "the manager it was actually routed to still decides it",
+  );
+
+  // The requester can see their own row in the same widened list, and still cannot approve it.
+  const ahmedViewer = { hrId: "B-155", role: "Product Manager" as const };
+  assert.equal(
+    canViewActivity(ahmedViewer, ahmedsActivity),
+    true,
+    "a product manager keeps sight of their own request",
+  );
+  assert.equal(
+    canDecideStep({ access: ahmedViewer, managerHrId: "A-8", step: "manager" }),
+    false,
+    "nobody approves their own request, however wide the list gets",
+  );
+
+  // And the widening must not reach a Product Manager's view of SOMEBODY ELSE'S request. The inbox
+  // scopes on resolveActivityVisibility, which is `own` for that role — if this ever returns true
+  // the new list has quietly handed every PM every other PM's spending.
+  assert.equal(
+    canViewActivity(ahmedViewer, { requesterHrId: "B-200" }),
+    false,
+    "a product manager must not see another product manager's request",
+  );
+
+  // The inbox's two scopes must between them cover every status a submitted activity can hold, or a
+  // request becomes invisible the moment it reaches the missing one — which is the failure the
+  // History tab was added to end. `draft` is deliberately in neither: nobody has been told about it.
+  const inboxService = readFileSync(new URL("../src/lib/market-awareness/service.ts", import.meta.url), "utf8");
+  const scopeList = (name: string): string[] => {
+    const match = new RegExp(`const ${name}: MarketAwarenessStatus\\[\\] = \\[([^\\]]*)\\]`).exec(inboxService);
+    assert.ok(match, `${name} must exist for the inbox scopes to be checkable`);
+    return (match?.[1] ?? "").split(",").map((entry) => entry.trim().replace(/"/g, "")).filter(Boolean);
+  };
+  const covered = new Set([...scopeList("OPEN_STATUSES"), ...scopeList("HISTORY_STATUSES")]);
+  for (const status of MARKET_AWARENESS_STATUSES) {
+    if (status === "draft") continue;
+    assert.ok(
+      covered.has(status),
+      `status "${status}" is in neither inbox tab, so an activity in it is visible to nobody`,
+    );
+  }
 }

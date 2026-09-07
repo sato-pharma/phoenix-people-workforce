@@ -366,28 +366,96 @@ export async function listActivities(
  * identity-based, and expressing both in one PostgREST filter would mean restating the rule.
  * Pending activities are a handful by construction — this module has four possible requesters.
  */
-export async function listDecisionInbox(
+export type MarketAwarenessInboxScope = "open" | "history";
+
+/** An inbox row plus whether THIS caller may act on it. */
+export type MarketAwarenessInboxRow = {
+  activity: MarketAwarenessActivity;
+  /** True only when the decision route would accept a decision from this caller right now. */
+  canDecide: boolean;
+};
+
+/** Still moving through the chain. */
+const OPEN_STATUSES: MarketAwarenessStatus[] = ["pending_manager", "pending_ceo", "returned"];
+
+/** Answered, one way or another. `draft` is in neither: nobody has been told about it. */
+const HISTORY_STATUSES: MarketAwarenessStatus[] = [
+  "approved",
+  "rejected",
+  "withdrawn",
+  "executed",
+  "closed",
+];
+
+/**
+ * The approvals inbox: two views of the same queue, the same two the Marketing inbox has.
+ *
+ * TWO AUDIENCES, ONE LIST, AND THE DIFFERENCE IS A FLAG — never a second query. `open` returns
+ * everything still moving that the caller may SEE, not only what they may DECIDE, because the Group
+ * Product Manager asked to track a Product Manager's request while it sits with that PM's own
+ * manager (owner, 2026-09-07). He is not in its chain and must never be offered its buttons, so
+ * every row carries `canDecide`, computed from the same `canDecideStep` the decision route enforces.
+ * A list built from its own predicate is how an inbox comes to show a button the server refuses.
+ *
+ * Visibility is `resolveActivityVisibility` and nothing else: a Product Manager sees only their own
+ * rows here exactly as they do in the workspace, so this view widens nobody's reach — it only stops
+ * hiding what they could already read.
+ */
+export async function listInbox(
   access: AccessContext,
-): Promise<MarketAwarenessActivity[]> {
+  scope: MarketAwarenessInboxScope = "open",
+): Promise<MarketAwarenessInboxRow[]> {
   await assertPermission(access, "market_awareness", "read");
 
+  const visibility = resolveActivityVisibility(access);
+  if (visibility.kind === "none") return [];
+
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
+  let query = supabase
     .from("market_awareness_activities")
     .select("*")
-    .in("status", ["pending_manager", "pending_ceo"])
-    .order("submitted_at", { ascending: true })
+    .in("status", scope === "history" ? HISTORY_STATUSES : OPEN_STATUSES)
+    // Newest first in history — what was answered most recently is what someone is looking for.
+    // Oldest first while open, because the longest wait is the one that needs a decision.
+    .order(scope === "history" ? "updated_at" : "submitted_at", { ascending: scope !== "history" })
+    // Explicit bound: an unbounded select stops at 1000 with no marker.
     .limit(500);
+
+  if (visibility.kind === "own") {
+    // Both casings, because HR ids are stored mixed-case and a single `.eq` under-returns.
+    query = query.or(
+      `requester_hr_id.eq.${visibility.hrId},requester_hr_id.eq.${visibility.hrId.toUpperCase()},requester_hr_id.eq.${visibility.hrId.toLowerCase()}`,
+    );
+  }
+
+  const { data, error } = await query;
   if (error) throw toQueryError(error);
 
   const lines = await loadMarketAwarenessLines();
-  const pending = await hydrate((data as ActivityRow[] | null) ?? [], lines);
+  const activities = await hydrate((data as ActivityRow[] | null) ?? [], lines);
 
-  return pending.filter((activity) => {
+  return activities.map((activity) => {
     const step = currentStep(activity.status);
-    if (!step) return false;
-    return canDecideStep({ access, managerHrId: activity.managerHrId, step });
+    return {
+      activity,
+      canDecide: step
+        ? canDecideStep({ access, managerHrId: activity.managerHrId, step })
+        : false,
+    };
   });
+}
+
+/**
+ * What is waiting for THIS person to decide — the actionable subset of the open view.
+ *
+ * Kept as its own function because it is the honest answer to "how many decisions do I owe",
+ * which is a different question from "what can I see moving".
+ */
+export async function listDecisionInbox(
+  access: AccessContext,
+): Promise<MarketAwarenessActivity[]> {
+  const rows = await listInbox(access, "open");
+  return rows.filter((row) => row.canDecide).map((row) => row.activity);
 }
 
 export async function listActivityComments(
@@ -811,6 +879,25 @@ export async function decideActivity(
   }
   if (input.action === "return" && !input.comment?.trim()) {
     throw new MarketAwarenessError("A return has to say why.");
+  }
+
+  // BEFORE ANY MUTATION, because the two writes below are not one transaction.
+  //
+  // `canDecideStep` clears the CEO step on ROLE alone, so an account holding CEO or Super Admin with
+  // no hr_id passes it — the `admin-HR` canary is deliberately hr_id NULL, and Super Admin clears
+  // every step unconditionally. The status update then succeeds (updated_by_hr_id accepts null)
+  // and the decision insert fails on actor_hr_id NOT NULL, leaving an APPROVED spending request
+  // with no record of who approved it. Reproduced on staging 2026-09-07: status `approved`,
+  // approved_at set, one decision row where there should have been two, and a 500 the approver
+  // reads as "it did not go through".
+  //
+  // Refusing here is the cheap half of the fix. The expensive half — making the status change and
+  // its audit row one statement — is a real transaction and is not attempted in this change.
+  if (!access.hrId?.trim()) {
+    throw new MarketAwarenessError(
+      "Your account has no HR id, so a decision could not be attributed to you.",
+      403,
+    );
   }
 
   const transition = findTransition(existing.status, input.action);
