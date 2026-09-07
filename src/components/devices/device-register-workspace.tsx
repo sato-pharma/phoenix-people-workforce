@@ -610,7 +610,17 @@ export function DeviceRegisterWorkspace({
               href="/api/devices/import/template"
             >
               <Download aria-hidden="true" className="h-3 w-3" />
-              Download the template
+              Blank template
+            </a>
+            {/* The one you want the first time. One row per current employee with the holder
+                already filled, so walking the fleet is adding a tag and a serial per row instead of
+                typing 180 names. A row left with only a person on it is ignored by the parser. */}
+            <a
+              className="inline-flex items-center gap-2 border border-slate-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-100"
+              href="/api/devices/import/template?prefill=roster"
+            >
+              <Download aria-hidden="true" className="h-3 w-3" />
+              Walk the fleet (everyone pre-filled)
             </a>
             <input
               accept=".xlsx"
