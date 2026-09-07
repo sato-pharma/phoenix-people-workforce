@@ -38,6 +38,16 @@ export type ConversationNotificationInput = {
   metadata?: Record<string, unknown>;
   /** Notification module key, e.g. "recruitment" / "marketing_requests". */
   module: string;
+  /**
+   * Identifier of THIS message — the comment row's id. Optional, and the reason it exists:
+   * `createSystemNotification` keys an event on { actionUrl, eventType, module, recipient, title },
+   * and a thread's title and action url are identical for every message in it. So without a
+   * per-message key the SECOND comment onwards collapses onto the first event and is deduplicated
+   * into silence — measured 2026-09-06 on staging: three comments, one email. Supplying this makes
+   * each message its own event. A caller that omits it keeps the old behaviour.
+   */
+  messageKey?: string | number | null;
+
   /** Everyone engaged with the thread so far, in any order. Duplicates and blanks are fine. */
   participantHrIds: Array<string | null | undefined>;
   recordId: string;
@@ -199,6 +209,31 @@ export function resolveConversationAudience(input: {
 }
 
 /**
+ * The event key for ONE message to ONE recipient, or null when the caller supplied no `messageKey`.
+ *
+ * Split out so it can be asserted directly in a test, the same reason `resolveConversationAudience`
+ * is. Both halves matter and each was measured failing: without the message the second comment in a
+ * thread is deduplicated onto the first (three comments produced one email on staging, 2026-09-06),
+ * and without the recipient every recipient of one message collapses onto a single event.
+ *
+ * A retry of the SAME message to the SAME person is still deduplicated — that is the property an
+ * idempotency key is for, and it is why the key is built from ids rather than from a timestamp.
+ */
+export function conversationMessageIdempotencyKey(
+  input: Pick<ConversationNotificationInput, "eventType" | "messageKey" | "module" | "recordId">,
+  recipientHrId: string,
+): string | null {
+  if (input.messageKey === null || input.messageKey === undefined) return null;
+  return [
+    input.module,
+    input.eventType,
+    input.recordId,
+    String(input.messageKey),
+    canonicalHrIdKey(recipientHrId) ?? recipientHrId,
+  ].join(":");
+}
+
+/**
  * Deliver one conversation message to everyone who should see it.
  *
  * One email, addressed To the submitter and CC'ing the sender and the rest of the thread — rather
@@ -256,6 +291,10 @@ export async function notifyConversationMessage(input: ConversationNotificationI
         authorHrId: input.authorHrId,
         ccHrIds: ccKeys,
         threadLabel: input.threadLabel,
+        ...(() => {
+          const idempotencyKey = conversationMessageIdempotencyKey(input, hrId);
+          return idempotencyKey ? { idempotencyKey } : {};
+        })(),
         ...(input.metadata ?? {}),
       },
       module: input.module,

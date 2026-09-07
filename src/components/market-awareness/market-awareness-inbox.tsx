@@ -13,6 +13,8 @@ import {
   XCircle,
 } from "lucide-react";
 
+import { Conversation } from "@/components/market-awareness/market-awareness-conversation";
+
 /**
  * Market Awareness — the approvals inbox.
  *
@@ -355,6 +357,10 @@ function InboxCard({
             </ol>
           </div>
         ) : null}
+
+        <div className="mt-3 min-w-0">
+          <Conversation activityId={activity.id} />
+        </div>
 
         {/* The decision. */}
         <div className="mt-4 flex min-w-0 flex-col gap-3 border-t border-phx-line pt-4">
