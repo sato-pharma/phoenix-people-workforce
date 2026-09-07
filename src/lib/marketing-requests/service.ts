@@ -8836,6 +8836,22 @@ export async function postMarketingAdvisoryComment(
  * audience rather than resetting to two people each time.
  *
  * Best-effort: the comment is already stored, and a mail failure must not undo it.
+ *
+ * DELIBERATELY NO `messageKey`. Every other conversation in the system inserts a new row per
+ * message, so the row's own id makes a stable per-message key (see `conversationMessageIdempotencyKey`
+ * in conversations/notify.ts). This thread does not: `postMarketingAdvisoryComment` UPDATES the same
+ * `marketing_request_approval_steps` row's `decision_note`/`decision_at` every time the same CC
+ * reviewer comments on the same step — there is no append-only history and `ccStep.id` never
+ * changes between two advisory comments on that step. So a SECOND advisory comment on one step still
+ * collapses onto the first one's notification event and HR/the requester are not re-emailed — the
+ * same bug as the other three threads, left unfixed here on purpose rather than "fixed" with a key
+ * that cannot be trusted. `decision_at` (freshly generated per call) looked like a candidate but was
+ * rejected: it varies on every call INCLUDING a retry of the identical submission, which would
+ * re-email on a network retry instead of deduplicating it - the exact failure mode this module's own
+ * messageKey doc warns against. The real fix is a schema change - an append-only
+ * marketing_request_advisory_comments table mirroring ats_candidate_comments / deductions_comments /
+ * employee_plan_comments - which is a product decision (today's design is "one evolving note per
+ * reviewer", not a growing thread) and needs the owner's sign-off, not a notification-layer patch.
  */
 async function notifyAdvisoryComment(input: {
   actorHrId: string;

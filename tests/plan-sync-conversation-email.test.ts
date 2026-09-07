@@ -1,7 +1,11 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
-import { HR_SEAT_ROLES, resolveConversationAudience } from "../src/lib/conversations/notify.ts";
+import {
+  conversationMessageIdempotencyKey,
+  HR_SEAT_ROLES,
+  resolveConversationAudience,
+} from "../src/lib/conversations/notify.ts";
 import { isDeductionsReadActor } from "../src/lib/deductions/permissions.ts";
 import { enforceCandidateAssignedEmailBlock } from "../src/lib/notifications/recruitment-candidate-assigned-channel-guard.ts";
 import { enforceRecruitmentCvEmailBlock } from "../src/lib/notifications/recruitment-cv-channel-guard.ts";
@@ -24,6 +28,8 @@ const service = readFileSync(servicePath, "utf8");
 const deductionsComments = readFileSync(new URL("../src/lib/deductions/comments.ts", import.meta.url), "utf8");
 const conversationNotify = readFileSync(new URL("../src/lib/conversations/notify.ts", import.meta.url), "utf8");
 const deductionsPage = readFileSync(new URL("../app/(admin)/admin/deductions/page.tsx", import.meta.url), "utf8");
+const candidateComments = readFileSync(new URL("../src/lib/recruitment/candidate-comments.ts", import.meta.url), "utf8");
+const marketingRequestsService = readFileSync(new URL("../src/lib/marketing-requests/service.ts", import.meta.url), "utf8");
 
 export function runPlanSyncConversationEmailTests() {
   // -------------------------------------------------------------------------
@@ -351,5 +357,117 @@ export function runPlanSyncConversationEmailTests() {
   assert.ok(
     !enforceCandidateAssignedEmailBlock(commentChannels, "recruitment", "candidate_assigned").includes("email"),
     "the candidate-push email block must still block the push it exists for",
+  );
+
+  // -------------------------------------------------------------------------
+  // Every conversation thread emails EVERY message, not just the first one.
+  // -------------------------------------------------------------------------
+  //
+  // Measured on staging 2026-09-06: three comments on one candidate produced ONE email.
+  // `createSystemNotification` keys an event on { actionUrl, eventType, module, recipient, title },
+  // and a thread's title and action url never change between its messages - so every message after
+  // the first collapsed onto the first one's event and was deduplicated into silence. Nothing threw
+  // and nothing was logged: the thread simply stopped emailing anybody past the opening message.
+  const firstMessage = conversationMessageIdempotencyKey(
+    { eventType: "candidate_comment", messageKey: "comment-1", module: "recruitment", recordId: "cand-1" },
+    "B-155",
+  );
+  const secondMessage = conversationMessageIdempotencyKey(
+    { eventType: "candidate_comment", messageKey: "comment-2", module: "recruitment", recordId: "cand-1" },
+    "B-155",
+  );
+  assert.ok(firstMessage, "a comment carrying a message key must produce an idempotency key");
+  assert.notEqual(
+    firstMessage,
+    secondMessage,
+    "two comments on one thread must be two events, or only the first one is ever emailed",
+  );
+
+  // Per recipient too: one key shared across a message's recipients is the same silence one step
+  // further out, with everyone after the first collapsing onto one event.
+  assert.notEqual(
+    conversationMessageIdempotencyKey(
+      { eventType: "candidate_comment", messageKey: "comment-1", module: "recruitment", recordId: "cand-1" },
+      "A-8",
+    ),
+    firstMessage,
+    "one message to two people must be two events",
+  );
+
+  // Mixed case is one person - the id is canonicalized, so a retry spelled differently is still a
+  // retry and does not email anybody twice.
+  assert.equal(
+    conversationMessageIdempotencyKey(
+      { eventType: "candidate_comment", messageKey: "comment-1", module: "recruitment", recordId: "cand-1" },
+      "b-155",
+    ),
+    firstMessage,
+    "the same message to the same person is one event however the hr id is spelled",
+  );
+
+  // A caller with no message key keeps the OLD behaviour rather than being given a key built from
+  // something that varies per call, which would defeat the deduplication entirely.
+  assert.equal(
+    conversationMessageIdempotencyKey(
+      { eventType: "deductions_comment", messageKey: null, module: "deductions", recordId: "cand-1" },
+      "A-8",
+    ),
+    null,
+    "a caller with no message key must not be given one",
+  );
+
+  // The helper being correct changes nothing if a thread's own comment path never hands it the row's
+  // id - which is exactly how the defect existed in the first place. Pin each of the three threads
+  // that gained a real per-message id, so a future refactor cannot quietly drop the wiring.
+
+  // Recruitment: candidate comments.
+  assert.ok(
+    /messageKey: comment\.id,/.test(candidateComments),
+    "addCandidateComment must pass the new comment's own id to the notifier as messageKey",
+  );
+  assert.ok(
+    /notifyConversationMessage\(\{[\s\S]{0,600}messageKey: input\.messageKey,/.test(candidateComments),
+    "notifyCandidateComment must forward messageKey into the shared conversation notifier",
+  );
+
+  // Deductions: an employee's comment on their own published deduction.
+  assert.ok(
+    /messageKey: row\.id,/.test(deductionsComments),
+    "addDeductionsComment must pass the new comment's own id to the notifier as messageKey",
+  );
+  assert.ok(
+    /notifyHrConversationMessage\(\{[\s\S]{0,1500}messageKey: input\.messageKey,/.test(deductionsComments),
+    "notifyDeductionsComment must forward messageKey into the shared HR conversation notifier",
+  );
+
+  // Weekly / monthly plan comments. This thread predates conversations/notify.ts and has its own
+  // notifyRecipients wrapper rather than calling notifyConversationMessage directly, so the pin is
+  // that notifyRecipients itself now builds an idempotency key the same way, and that the plan
+  // comment path actually supplies one.
+  assert.ok(
+    /messageKey\?: string \| number \| null;/.test(service),
+    "notifyRecipients must accept a messageKey, the same shape ConversationNotificationInput uses",
+  );
+  assert.ok(
+    /conversationMessageIdempotencyKey\(\s*\{ eventType: input\.eventType, messageKey: input\.messageKey, module: "weekly_plans", recordId: input\.plan\.id \}/.test(service),
+    "notifyRecipients must build a per-recipient idempotency key from the caller's messageKey",
+  );
+  assert.ok(
+    /async function notifyPlanComment[\s\S]*?messageKey: comment\.id,/.test(service),
+    "a plan comment must pass its own id as messageKey, or the second comment on a plan goes unheard",
+  );
+
+  // Marketing: the advisory comment is the one thread left unfixed, on purpose. It UPDATES the same
+  // approval-step row's decision_note every time the same CC reviewer comments, so there is no
+  // per-message id to key on - ccStep.id never changes between two advisory comments on that step,
+  // and a freshly generated timestamp would re-email on a network retry instead of deduplicating it.
+  // Pinned so a future session does not "fix" this by wiring in exactly that timestamp.
+  assert.ok(
+    /DELIBERATELY NO `messageKey`/.test(marketingRequestsService),
+    "the advisory-comment gap must stay documented, not silently reappear as a mystery",
+  );
+  assert.ok(
+    !/async function notifyAdvisoryComment[\s\S]{0,1800}messageKey:/.test(marketingRequestsService),
+    "the advisory comment must not be given a messageKey until the schema actually has a per-message id",
   );
 }

@@ -175,6 +175,7 @@ export async function addCandidateComment(input: {
     authorName: input.authorName,
     body,
     candidateId: input.candidateId,
+    messageKey: comment.id,
   });
   return comment;
 }
@@ -197,6 +198,10 @@ async function notifyCandidateComment(input: {
   authorName: string | null;
   body: string;
   candidateId: string;
+  /** The comment's own id — see `messageKey` on `ConversationNotificationInput`. Without it the
+   *  second comment on a candidate collapses onto the first one's notification and is silently
+   *  dropped, because the thread's title and action url never change between messages. */
+  messageKey: string;
 }): Promise<void> {
   try {
     const { data: candidateRow } = await recruitmentDb()
@@ -228,6 +233,7 @@ async function notifyCandidateComment(input: {
       authorName: input.authorName,
       body: input.body,
       eventType: "candidate_comment",
+      messageKey: input.messageKey,
       metadata: { candidateId: input.candidateId },
       module: "recruitment",
       participantHrIds,
