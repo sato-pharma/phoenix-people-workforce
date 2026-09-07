@@ -2599,11 +2599,13 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:B${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A5" sqref="A5"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="34" customWidth="1"/><col min="2" max="2" width="96" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait"/></worksheet>`;
 
-  zip.file(indexPart, sheetXml);
+  // The emblem, top right, exactly as every sibling carries it. Done before the part is written so
+  // the sheet lands with its <drawing> already in place.
+  zip.file(indexPart, await addIndexEmblem(zip, indexPart, sheetXml));
 
   zip.file(
     "[Content_Types].xml",
-    (await typesFile.async("string")).replace(
+    (await zip.file("[Content_Types].xml")!.async("string")).replace(
       "</Types>",
       `<Override PartName="/${indexPart}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`,
     ),
@@ -2824,6 +2826,128 @@ function appendCellXf(stylesXml: string, xf: string): { index: number; xml: stri
 }
 
 /**
+ * Put the workbook's OWN emblem on the contents page, top right, as every sibling carries it.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * THE PICTURE IS NOT SHIPPED, IT IS REUSED. `xl/media/image1.png` is already in the package — the
+ * logo every other sheet anchors in its masthead row — so this adds a drawing that points at that
+ * same part rather than embedding a second copy of the mark. One image in the zip, one mark in the
+ * workbook, and nothing to keep in step when the owner replaces it.
+ *
+ * The `<xdr:pic>` is cloned from whichever sheet already carries one, so the fill, the aspect lock
+ * and the print behaviour come from his own drawing rather than from a block written here. Only
+ * three things are replaced: the shape id and name, which must be unique inside their own drawing,
+ * and the relationship id, which is local to the new part.
+ *
+ * WHERE IT SITS. Right-aligned against the end of the last column, on row 1, with the same 50800
+ * EMU drop the siblings use — the top-right corner of the sheet, which is where every one of them
+ * puts it. The x is computed from THIS page's own column widths rather than copied, because the
+ * contents page is two wide columns and the sheets it was cloned from are ten narrow ones; copying
+ * the anchor would land the mark somewhere out past the edge of the page.
+ *
+ * A worksheet's `<drawing>` is the LAST child in `CT_Worksheet`'s sequence, after `pageSetup` — put
+ * anywhere else it is a schema violation, and Excel answers a schema violation by repairing the
+ * workbook and dropping what it could not read.
+ *
+ * Every step is optional by construction: no media, no source picture, no room for it, and the page
+ * is returned exactly as it came in. A contents page with no logo is a small loss; a contents page
+ * Excel refuses to open is not.
+ */
+async function addIndexEmblem(zip: JSZip, indexPart: string, sheetXml: string): Promise<string> {
+  const drawingNames = Object.keys(zip.files)
+    .filter((name) => /^xl\/drawings\/drawing\d+\.xml$/.test(name))
+    .sort();
+
+  let picture: string | null = null;
+  let image: string | null = null;
+  for (const name of drawingNames) {
+    const xml = await zip.file(name)!.async("string");
+    const block = (xml.match(ANY_ANCHOR) ?? []).find((one) => one.includes("<xdr:pic"));
+    const pic = block ? /<xdr:pic\b[\s\S]*?<\/xdr:pic>/.exec(block)?.[0] : null;
+    if (!pic) continue;
+    const embed = /r:embed="(rId\d+)"/.exec(pic)?.[1];
+    const relsXml = await zip.file(`xl/drawings/_rels/${name.split("/").pop()}.rels`)?.async("string");
+    const target = embed && relsXml
+      ? new RegExp(`Id="${embed}"[^>]*Target="([^"]+)"`).exec(relsXml)?.[1]
+      : null;
+    if (!target) continue;
+    const resolved = `xl/${target.replace(/^\.\.\//, "")}`;
+    if (!zip.file(resolved)) continue;
+    picture = pic;
+    image = target;
+    break;
+  }
+  if (!picture || !image) return sheetXml;
+
+  const size = /<a:ext\b[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(picture);
+  if (!size) return sheetXml;
+  const width = Number(size[1]);
+  const height = Number(size[2]);
+
+  // Right-aligned against the end of the sheet's own columns, with a margin the width of the drop.
+  const margin = 50800;
+  const widthOf = columnWidthReader(sheetXml);
+  const columns = [...sheetXml.matchAll(/<col\b[^>]*?\bmax="(\d+)"/g)].map((m) => Number(m[1]));
+  const lastColumn = columns.length > 0 ? Math.max(...columns) : 2;
+  let total = 0;
+  for (let index = 0; index < lastColumn; index += 1) total += widthOf(index);
+  const x = total - width - margin;
+  if (x <= 0) return sheetXml;
+  const at = locateColumn(widthOf, x);
+
+  const part = `xl/drawings/drawing${
+    Math.max(0, ...drawingNames.map((name) => Number(/drawing(\d+)\.xml$/.exec(name)?.[1] ?? 0))) + 1
+  }.xml`;
+
+  const anchor =
+    "<xdr:oneCellAnchor>"
+    + `<xdr:from><xdr:col>${at.col}</xdr:col><xdr:colOff>${at.colOff}</xdr:colOff>`
+    + `<xdr:row>0</xdr:row><xdr:rowOff>${margin}</xdr:rowOff></xdr:from>`
+    + `<xdr:ext cx="${width}" cy="${height}"/>`
+    + picture.replace(/<xdr:cNvPr\b[^>]*?(\/>|>[\s\S]*?<\/xdr:cNvPr>)/, '<xdr:cNvPr id="2" name="Emblem"/>')
+      .replace(/r:embed="rId\d+"/, 'r:embed="rId1"')
+    // Not printed, matching the emblem on every other sheet.
+    + '<xdr:clientData fPrintsWithSheet="0"/>'
+    + "</xdr:oneCellAnchor>";
+
+  zip.file(
+    part,
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"'
+      + ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+      + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+      + `${anchor}</xdr:wsDr>`,
+  );
+  zip.file(
+    `xl/drawings/_rels/${part.split("/").pop()}.rels`,
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${image}"/>`
+      + "</Relationships>",
+  );
+  zip.file(
+    `xl/worksheets/_rels/${indexPart.split("/").pop()}.rels`,
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/${part.split("/").pop()}"/>`
+      + "</Relationships>",
+  );
+
+  const typesXml = await zip.file("[Content_Types].xml")!.async("string");
+  if (!typesXml.includes(`PartName="/${part}"`)) {
+    zip.file(
+      "[Content_Types].xml",
+      typesXml.replace(
+        "</Types>",
+        `<Override PartName="/${part}" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>`,
+      ),
+    );
+  }
+
+  return sheetXml.replace("</worksheet>", '<drawing r:id="rId1"/></worksheet>');
+}
+
+/**
  * The contents page's formats, CLONED from the sheets it sits in front of.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -2883,6 +3007,7 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
   const xfs = styleList(xml, "cellXfs", "xf");
   const fills = styleList(xml, "fills", "fill");
   const fonts = styleList(xml, "fonts", "font");
+  const borders = styleList(xml, "borders", "border");
   if (xfs.length === 0) return null;
 
   // `\\b` and `\\d`, not `\b` and `\d`: inside a template literal a lone `\b` is a BACKSPACE
@@ -2954,7 +3079,23 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
   const brandFont = fontColoured("0868A8", true) ?? fontColoured("0868A8", false);
   const mutedFont = fontColoured("7A93A3", false);
 
-  const swap = (xf: string, patch: { fillId?: number; fontId?: number }) => {
+  /**
+   * A border the workbook already draws, found by SHAPE: `edge` is its only edge and it is drawn in
+   * `weights`. The engine's own catalogue has a hairline grey under a row and a medium blue under a
+   * heading, and those are the two rules every sheet here is ruled with — so the table gets the
+   * workbook's rules rather than a line invented for this page.
+   */
+  const borderWith = (edge: "bottom" | "top", weights: string[], rgb?: string) =>
+    borders.findIndex((border) => {
+      const edges = [...border.matchAll(/<(left|right|top|bottom|diagonal)[^>]*style="([a-z]+)"/g)];
+      if (edges.length !== 1 || edges[0][1] !== edge) return false;
+      if (!weights.includes(edges[0][2])) return false;
+      return rgb === undefined || new RegExp(`color rgb="FF${rgb}"`, "i").test(border);
+    });
+  const hairline = borderWith("bottom", ["thin", "hair"], "7A93A3");
+  const heavyRule = borderWith("bottom", ["medium", "thick"], "0868A8");
+
+  const swap = (xf: string, patch: { borderId?: number; fillId?: number; fontId?: number }) => {
     let out = xf;
     if (patch.fontId !== undefined) {
       out = out.replace(/\bfontId="\d+"/, `fontId="${patch.fontId}"`);
@@ -2963,6 +3104,12 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
     if (patch.fillId !== undefined) {
       out = out.replace(/\bfillId="\d+"/, `fillId="${patch.fillId}"`);
       if (!/\bapplyFill="1"/.test(out)) out = out.replace(/\bxfId="(\d+)"/, `xfId="$1" applyFill="1"`);
+    }
+    if (patch.borderId !== undefined) {
+      out = out.replace(/\bborderId="\d+"/, `borderId="${patch.borderId}"`);
+      // Without applyBorder a cellXf's borderId may be ignored in favour of the style it derives
+      // from, so the rule would simply not be drawn and there would be nothing to see anywhere.
+      if (!/\bapplyBorder="1"/.test(out)) out = out.replace(/\bxfId="(\d+)"/, `xfId="$1" applyBorder="1"`);
     }
     return out;
   };
@@ -2974,18 +3121,32 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
   };
 
   const bodyXf = xfs[body]!;
+  // Every row is ruled. A zebra alone separates rows by shade; the hairline is what makes the two
+  // columns read as ONE row across 96 characters of description, which is the whole job of this
+  // page. Where the workbook has no such border, the variants collapse back to the plain style
+  // rather than inventing one.
+  const ruled = (patch: { fillId?: number; fontId?: number }) =>
+    add(swap(bodyXf, { ...patch, ...(hairline >= 0 ? { borderId: hairline } : {}) }));
+
   const palette: IndexPalette = {
     title: String(title),
     titleTail: Number.isFinite(titleTail) ? String(titleTail) : String(title),
     header: String(header),
-    body: String(body),
-    bodyZebra: zebraFill >= 0 ? add(swap(bodyXf, { fillId: zebraFill })) : String(body),
-    link: brandFont === null ? String(body) : add(swap(bodyXf, { fontId: brandFont })),
+    body: ruled({}),
+    bodyZebra: ruled(zebraFill >= 0 ? { fillId: zebraFill } : {}),
+    link: brandFont === null ? ruled({}) : ruled({ fontId: brandFont }),
     linkZebra:
       brandFont === null || zebraFill < 0
-        ? String(body)
-        : add(swap(bodyXf, { fillId: zebraFill, fontId: brandFont })),
-    band: brandFont === null ? String(body) : add(swap(bodyXf, { fontId: brandFont })),
+        ? ruled(zebraFill >= 0 ? { fillId: zebraFill } : {})
+        : ruled({ fillId: zebraFill, fontId: brandFont }),
+    // A band closes with the heavier blue rule the sheets use under a heading, so a section reads
+    // as a section without a second filled bar competing with the blue band above it.
+    band: add(
+      swap(bodyXf, {
+        ...(brandFont === null ? {} : { fontId: brandFont }),
+        ...(heavyRule >= 0 ? { borderId: heavyRule } : hairline >= 0 ? { borderId: hairline } : {}),
+      }),
+    ),
     foot: mutedFont === null ? String(body) : add(swap(bodyXf, { fontId: mutedFont })),
   };
 

@@ -379,8 +379,13 @@ export async function runClosingEngineExportTests() {
     }
   }
   // A loop that matched nothing would pass every assertion above it. These are the counts measured
-  // on the owner's August Anti-Infective export: 12 emblems and 2 slicers, in each of the two builds.
-  assert.equal(emblemsChecked, 24, "both builds must have been walked — 12 emblem anchors in each");
+  // on the owner's August Anti-Infective export: 13 emblems and 2 slicers, in each of the two builds.
+  //
+  // Twelve of the thirteen are the owner's own, one per sheet that carries a masthead. The
+  // thirteenth is the contents page's, added 2026-09-07 — it reuses the same `xl/media/image1.png`
+  // rather than embedding a second copy, so the count of PICTURES rose while the count of IMAGES in
+  // the package did not.
+  assert.equal(emblemsChecked, 26, "both builds must have been walked — 13 emblem anchors in each");
   assert.equal(slicersChecked, 4, "both builds must have been walked — 2 slicer anchors in each");
 
   const cacheDefinition = await zip.file("xl/pivotCache/pivotCacheDefinition1.xml")!.async("string");
@@ -1394,6 +1399,7 @@ export async function runClosingEngineExportTests() {
     const xfs = listOf("cellXfs", "xf");
     const fillList = listOf("fills", "fill");
     const fontList = listOf("fonts", "font");
+    const borderList = listOf("borders", "border");
     const idOf = (xf: string, name: string) => Number((new RegExp(`${name}="(\\d+)"`).exec(xf) ?? [, "0"])[1]);
     const fillOf = (style: string) => {
       const fill = fillList[idOf(xfs[Number(style)] ?? "", "fillId")] ?? "";
@@ -1495,6 +1501,63 @@ export async function runClosingEngineExportTests() {
         `${label}: the zebra breaks at entry ${index + 1} — it must alternate continuously, across bands too`,
       );
     }
+
+    // 5) Every row is ruled. The zebra separates rows by shade; the rule is what ties a page name
+    //    to its description across 96 characters of column B.
+    for (const row of entryRows) {
+      for (const cell of row.matchAll(/<c r="([A-Z]+)\d+" s="(\d+)"/g)) {
+        const border = borderList[idOf(xfs[Number(cell[2])] ?? "", "borderId")] ?? "";
+        assert.match(
+          border,
+          /<bottom[^>]*style="[a-z]+"/,
+          `${label}: entry column ${cell[1]} carries no rule under it`,
+        );
+      }
+    }
+
+    // 6) The emblem. It must be ON the page, wired the way Excel needs it, and it must REUSE the
+    //    picture already in the package rather than adding a second copy of the same mark.
+    assert.match(
+      sheet,
+      /<drawing r:id="[^"]+"\/><\/worksheet>\s*$/,
+      `${label}: the contents page needs its <drawing>, and it is the LAST child of a worksheet — `
+        + "anywhere else is a schema violation, and Excel answers those by repairing the workbook",
+    );
+    const sheetRelsPart = `xl/worksheets/_rels/${part.split("/").pop()}.rels`;
+    assert.ok(opened.file(sheetRelsPart), `${label}: the contents sheet has a drawing but no ${sheetRelsPart}`);
+    const sheetRels = await opened.file(sheetRelsPart)!.async("string");
+    const drawingTarget = /Type="[^"]*\/drawing"[^>]*Target="([^"]+)"/.exec(sheetRels)?.[1]
+      ?? /Target="([^"]+)"[^>]*Type="[^"]*\/drawing"/.exec(sheetRels)?.[1];
+    assert.ok(drawingTarget, `${label}: the sheet relationship must point at a drawing`);
+    const drawingPart = `xl/${drawingTarget!.replace(/^\.\.\//, "")}`;
+    assert.ok(opened.file(drawingPart), `${label}: ${drawingPart} is referenced but not in the zip`);
+    assert.ok(
+      types.includes(`PartName="/${drawingPart}"`),
+      `${label}: a drawing part with no content-type override is a repair prompt`,
+    );
+
+    const drawingXml = await opened.file(drawingPart)!.async("string");
+    assert.match(drawingXml, /<xdr:pic\b/, `${label}: the contents drawing carries no picture`);
+    assert.match(
+      drawingXml,
+      /fPrintsWithSheet="0"/,
+      `${label}: the contents emblem must stay off the paper, like the emblem on every other sheet`,
+    );
+    const drawingRels = await opened
+      .file(`xl/drawings/_rels/${drawingPart.split("/").pop()}.rels`)!
+      .async("string");
+    const imageTarget = /Target="([^"]+)"/.exec(drawingRels)?.[1];
+    assert.ok(
+      imageTarget && opened.file(`xl/${imageTarget.replace(/^\.\.\//, "")}`),
+      `${label}: the emblem points at ${imageTarget}, which is not in the package`,
+    );
+    const media = Object.keys(opened.files).filter((name) => /^xl\/media\/[^/]+$/.test(name));
+    assert.equal(
+      media.length,
+      1,
+      `${label}: the contents emblem must REUSE the workbook's one image, not add another — found `
+        + media.join(", "),
+    );
 
     // Same class of defect: a dimension that stops short of the rows actually written.
     const declaredLastRow = Number(/<dimension ref="A1:B(\d+)"/.exec(sheet)![1]);
