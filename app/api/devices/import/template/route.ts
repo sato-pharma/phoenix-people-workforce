@@ -22,11 +22,15 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "company_devices", "import");
 
-    const workbook = await generateDeviceImportTemplate();
+    // `?prefill=roster` puts one row per current employee in, holder already filled. The blank
+    // template stays the default: pre-filling is right exactly once, when the fleet already out has
+    // to be walked and written down, and wrong every time after that.
+    const prefillRoster = new URL(request.url).searchParams.get("prefill") === "roster";
+    const workbook = await generateDeviceImportTemplate({ prefillRoster });
 
     return new NextResponse(workbook as ArrayBuffer, {
       headers: {
-        "Content-Disposition": `attachment; filename="device-custody-import-${currentCairoDateOnlyIso()}.xlsx"`,
+        "Content-Disposition": `attachment; filename="device-custody-${prefillRoster ? "walk-the-fleet" : "import"}-${currentCairoDateOnlyIso()}.xlsx"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },
     });

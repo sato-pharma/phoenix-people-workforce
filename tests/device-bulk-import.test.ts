@@ -210,6 +210,60 @@ async function testAForeignFileIsRefusedWithAnExplanation(): Promise<void> {
   );
 }
 
+/**
+ * A row carrying ONLY a person is ignored — the property that makes the pre-filled sheet usable.
+ *
+ * The "walk the fleet" template puts one row per current employee in so the fleet can be entered
+ * without typing 180 names. On the rows where somebody turns out to hold nothing, the holder is all
+ * that is left behind. If those counted, a correctly-filled file would come back with a hundred
+ * "an asset tag is required" errors and bury the handful that are real.
+ */
+async function testARowWithOnlyAPersonOnItIsIgnored(): Promise<void> {
+  const buffer = await workbookWith([
+    { assetTag: "PHX-LAP-0001", category: "laptop", serialNumber: "AAA111", heldBy: "Nour Adel (B-155)" },
+    { heldBy: "Somebody Who Holds Nothing (B-200)" },
+    { heldBy: "Also Holds Nothing (B-201)", category: "laptop" },
+    { assetTag: "PHX-LAP-0002", category: "laptop", serialNumber: "BBB222", heldBy: "Third Person (B-202)" },
+  ]);
+
+  const rows = await parseDeviceImportFile(buffer);
+  assert.equal(rows.length, 2, "only the two rows carrying an actual device count");
+  assert.deepEqual(
+    rows.map((row) => row.assetTag),
+    ["PHX-LAP-0001", "PHX-LAP-0002"],
+    "and a category with no device on the row does not resurrect it either",
+  );
+}
+
+/**
+ * ...but a HALF-filled row still counts, and is still refused.
+ *
+ * This is the other half of the rule above, and the one that would make it dangerous if lost: the
+ * skip must apply only to a row with no device on it at all. A row naming a device but missing its
+ * identity is a mistake somebody needs told about, not a blank to step over.
+ */
+async function testAHalfFilledRowStillCountsAndIsStillRefused(): Promise<void> {
+  const buffer = await workbookWith([
+    { assetTag: "PHX-LAP-0009", category: "laptop", heldBy: "Nour Adel (B-155)" },
+    { serialNumber: "ORPHAN999", category: "laptop" },
+  ]);
+
+  const rows = await parseDeviceImportFile(buffer);
+  assert.equal(rows.length, 2, "an asset tag alone, and a serial alone, are both device rows");
+
+  const preview = buildDeviceImportPreviewFrom(rows, directoryOf([]), EMPTY_KEYS);
+  assert.equal(
+    preview.rows[0].canImport,
+    false,
+    "an asset tag with no serial and no IMEI must still be refused, not skipped",
+  );
+  assert.ok(
+    preview.rows[0].errors.some((m) => /serial number or an IMEI is required/i.test(m)),
+    "and refused for the identity rule specifically",
+  );
+  assert.equal(preview.rows[1].canImport, false, "a serial with no asset tag must still be refused");
+}
+
 /** Styled-but-empty template rows are skipped silently, not reported as 12 problems. */
 async function testEmptyRowsAreSkippedSilently(): Promise<void> {
   const buffer = await workbookWith([
@@ -444,7 +498,7 @@ function testTheSummaryAddsUp(): void {
 // ---------------------------------------------------------------------------------------------
 
 function testTheHolderLabelIsReadableAndParsesBack(): void {
-  const label = personPickerLabel({ hrId: "B-155", name: "Nour Adel" });
+  const label = personPickerLabel({ hrId: "B-155", name: "Nour Adel", jobTitle: "Medical Representative", hasLeft: false });
   assert.equal(label, "Nour Adel (B-155)", "human-readable name first — the owner's standing rule");
   assert.equal(extractHrId(label), "B-155", "and it must parse back to the id");
   assert.equal(extractHrId("B-155"), "B-155", "a bare id typed by hand is accepted too");
@@ -478,10 +532,18 @@ function testTheTemplateHasNoSampleDataRow(): void {
   );
   assert.ok(generator.length > 0, "could not find the template generator");
 
-  // The note row carries the examples. Nothing may write a value into a DATA row.
+  // The note row carries the examples. The ONLY value a data row may receive is the pre-filled
+  // HOLDER, which is a person rather than a device and is ignored by the parser on its own.
+  const dataRowWrites = [...generator.matchAll(/row\.getCell\((\w+)\)\.value\s*=/g)].map((m) => m[1]);
+  assert.deepEqual(
+    dataRowWrites,
+    ["holderColumn"],
+    `the generator writes ${JSON.stringify(dataRowWrites)} into data rows. Only the pre-filled ` +
+      `holder may be written — anything else is a fictional device waiting to be imported.`,
+  );
   assert.ok(
-    !/getRow\(DEVICE_IMPORT_FIRST_DATA_ROW[^)]*\)[\s\S]{0,200}\.value\s*=/.test(generator),
-    "the generator writes a value into a data row — that example will be imported as a real device",
+    !/category.*=.*rosterRank|getCell\(categoryColumn\)/.test(generator),
+    "the category must NOT be pre-guessed: it is wrong for anyone holding both a laptop and a tablet",
   );
   assert.ok(
     /houseBodyStyle\(row\.getCell/.test(generator),
@@ -494,6 +556,8 @@ export async function runDeviceBulkImportTests(): Promise<void> {
   await testColumnsAreMatchedByHeaderNotByPosition();
   await testAForeignFileIsRefusedWithAnExplanation();
   await testEmptyRowsAreSkippedSilently();
+  await testARowWithOnlyAPersonOnItIsIgnored();
+  await testAHalfFilledRowStillCountsAndIsStillRefused();
   testARowWithNoSerialAndNoImeiIsRefused();
   testAnUnknownCategoryIsRefused();
   testDuplicatesWithinTheFileAreCaughtOnBothRows();

@@ -57,6 +57,9 @@ export const DEVICE_IMPORT_FIRST_DATA_ROW = DEVICE_IMPORT_HEADER_ROW + 1;
 /** Refused above this. A fleet is a few hundred devices; more is a wrong file, not a request. */
 export const DEVICE_IMPORT_MAX_ROWS = 500;
 
+/** The employment statuses that make somebody a leaver, shared by the picker and the directory. */
+const LEAVER_STATUSES = new Set(["resigned", "terminated"]);
+
 const SHEET_NAME = "Devices";
 const LOOKUP_SHEET_NAME = "People";
 
@@ -247,7 +250,7 @@ function validationsOf(sheet: ExcelJS.Worksheet): DataValidationHost["dataValida
   return (sheet as unknown as DataValidationHost).dataValidations;
 }
 
-type AssignablePerson = { hrId: string; name: string };
+type AssignablePerson = { hrId: string; name: string; jobTitle: string | null; hasLeft: boolean };
 
 /** `Name (HR-ID)` — human-readable per the owner's rule, and still unambiguous to parse back. */
 export function personPickerLabel(person: AssignablePerson): string {
@@ -258,7 +261,7 @@ async function loadPeopleForPicker(): Promise<AssignablePerson[]> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("employees")
-    .select("hr_id,full_name,nickname,employment_status")
+    .select("hr_id,full_name,nickname,job_title,employment_status")
     .order("full_name", { ascending: true })
     .limit(1000);
   if (error) throw new Error(deviceErrorMessage(error));
@@ -267,13 +270,35 @@ async function loadPeopleForPicker(): Promise<AssignablePerson[]> {
     hr_id: string;
     full_name: string | null;
     nickname: string | null;
+    job_title: string | null;
     employment_status: string | null;
   }>)
     .map((row) => ({
       hrId: String(row.hr_id),
       name: String(row.nickname || row.full_name || row.hr_id).trim(),
+      jobTitle: row.job_title,
+      hasLeft: LEAVER_STATUSES.has(String(row.employment_status ?? "").trim().toLowerCase()),
     }))
     .filter((person) => person.hrId.length > 0);
+}
+
+/**
+ * The order the roster pre-fill walks people in.
+ *
+ * Field force first, because that is the half of the fleet nobody can see: a rep's tablet lives in
+ * a car in another governorate, while an office laptop is in the building and can be looked at. The
+ * ranking is by JOB TITLE TEXT rather than by a seat lookup on purpose — this is a stationery
+ * ordering for a spreadsheet, not an org-structure claim, and reading the organogram for it would
+ * couple a template to the seat model for no gain.
+ */
+function rosterRank(jobTitle: string | null): number {
+  const title = String(jobTitle ?? "").toLowerCase();
+  if (title.includes("medical rep")) return 0;
+  if (title.includes("district")) return 1;
+  if (title.includes("regional")) return 2;
+  if (title.includes("national")) return 3;
+  if (title.includes("manager") || title.includes("head")) return 4;
+  return 5;
 }
 
 /**
@@ -284,7 +309,25 @@ async function loadPeopleForPicker(): Promise<AssignablePerson[]> {
  * truncate to the first few employees and quietly make everybody else un-pickable. The lookup sheet
  * holds all of them and the validation points at its range.
  */
-export async function generateDeviceImportTemplate(): Promise<ArrayBuffer> {
+export type DeviceImportTemplateOptions = {
+  /**
+   * Put one row per CURRENT employee in, with the holder already filled.
+   *
+   * The blank template is the right thing when devices are being added a few at a time. This is the
+   * right thing exactly once: when the fleet that is already out has to be entered, and the work is
+   * "walk the building and the cars, and write down what each person is holding". Typing 180 names
+   * to do that is the reason it would not get done.
+   *
+   * Leavers are NOT given rows — there are more of them than there are current staff, and a leaver
+   * holding a device is a discovery rather than a starting assumption. They stay in the dropdown, so
+   * one can be picked by hand the moment a device turns out to be with somebody who has gone.
+   */
+  prefillRoster?: boolean;
+};
+
+export async function generateDeviceImportTemplate(
+  options: DeviceImportTemplateOptions = {},
+): Promise<ArrayBuffer> {
   const people = await loadPeopleForPicker();
 
   const workbook = new ExcelJS.Workbook();
@@ -298,9 +341,10 @@ export async function generateDeviceImportTemplate(): Promise<ArrayBuffer> {
   writeHouseMasthead(workbook, sheet, {
     columns: COLUMNS.length,
     provenance: [`Prepared ${currentCairoDateOnlyIso()}`, `${people.length} people to choose from`],
-    subtitle:
-      "One row per device. A serial number OR an IMEI is required on every row — it is what a police report, an operator and an insurer all ask for.",
-    title: "Device Custody — Bulk Import",
+    subtitle: options.prefillRoster
+      ? "One row per person, holder already filled. Add the asset tag and the serial or IMEI for whatever each one is holding, and leave the rest of the row alone — a row with nobody's device on it is ignored."
+      : "One row per device. A serial number OR an IMEI is required on every row — it is what a police report, an operator and an insurer all ask for.",
+    title: options.prefillRoster ? "Device Custody — Walk The Fleet" : "Device Custody — Bulk Import",
   });
 
   // The note row. This is where the examples live, INSTEAD of a filled sample row — see the header
@@ -380,12 +424,37 @@ export async function generateDeviceImportTemplate(): Promise<ArrayBuffer> {
     }
   });
 
-  // A few empty styled rows so the sheet does not look broken when it opens.
-  for (let offset = 0; offset < 12; offset += 1) {
+  /**
+   * The rows.
+   *
+   * WITHOUT `prefillRoster` these are a dozen empty styled rows, so the sheet does not look broken
+   * when it opens. Nothing carries a VALUE — an example row under the headers is a fictional device
+   * waiting to be imported into a register whose worth is that its contents are evidence.
+   *
+   * WITH it, one row per current employee, and the ONLY cell written is the holder. The category is
+   * deliberately left blank even though it could be guessed from a job title: the guess would be
+   * wrong for anyone holding both a laptop and a tablet, and a wrong pre-filled category is harder
+   * to notice than an empty one. The dropdown is right there.
+   */
+  const holderColumn = COLUMNS.findIndex((column) => column.key === "heldBy") + 1;
+  const rosterRows = options.prefillRoster
+    ? people
+        .filter((person) => !person.hasLeft)
+        .slice()
+        .sort((left, right) => {
+          const byRole = rosterRank(left.jobTitle) - rosterRank(right.jobTitle);
+          return byRole !== 0 ? byRole : left.name.localeCompare(right.name);
+        })
+    : [];
+
+  const rowCount = options.prefillRoster ? rosterRows.length : 12;
+  for (let offset = 0; offset < rowCount; offset += 1) {
     const row = sheet.getRow(DEVICE_IMPORT_FIRST_DATA_ROW + offset);
     COLUMNS.forEach((_column, index) => {
       houseBodyStyle(row.getCell(index + 1), { size: 10, zebra: offset % 2 === 1 });
     });
+    const person = rosterRows[offset];
+    if (person) row.getCell(holderColumn).value = personPickerLabel(person);
   }
 
   return workbook.xlsx.writeBuffer() as unknown as Promise<ArrayBuffer>;
@@ -502,13 +571,34 @@ export async function parseDeviceImportFile(buffer: ArrayBuffer): Promise<Device
       note: cellText(read(row, "note")),
     };
 
-    // A row is empty when it carries no identifying content at all. Skipped silently — a template
-    // has styled blank rows in it by construction, and reporting 12 "empty row" errors on a file
-    // somebody filled correctly would bury the findings that matter.
-    const hasContent = Boolean(
-      parsed.assetTag || parsed.serialNumber || parsed.imei || parsed.category || parsed.heldBy,
+    /**
+     * A row counts only when it carries at least one DEVICE field.
+     *
+     * THE HOLDER AND THE CATEGORY ARE NOT DEVICE FIELDS, and that distinction is what makes the
+     * pre-filled roster template usable. That sheet puts a person on every row so the fleet can be
+     * walked without typing 180 names; on the rows where the person turns out to hold nothing, the
+     * holder is all that is left behind. Counting those would report a hundred "an asset tag is
+     * required" errors against a file that was filled in correctly — which is worse than useless,
+     * because it buries the handful of findings that are real.
+     *
+     * IT DOES NOT WEAKEN THE HALF-FILLED GUARD. A row carrying an asset tag but no serial and no
+     * IMEI still counts, and is still refused by the identity rule; so is one carrying a serial but
+     * no tag. What is skipped is only a row with no device on it at all.
+     */
+    const hasDeviceField = Boolean(
+      parsed.assetTag ||
+        parsed.serialNumber ||
+        parsed.imei ||
+        parsed.manufacturer ||
+        parsed.model ||
+        parsed.deviceName ||
+        parsed.simNumber ||
+        parsed.lineNumber ||
+        parsed.estimatedValueEgp !== null ||
+        parsed.purchasedOn ||
+        parsed.note,
     );
-    if (!hasContent) continue;
+    if (!hasDeviceField) continue;
 
     rows.push(parsed);
   }
@@ -529,8 +619,6 @@ export function extractHrId(heldBy: string | null): string | null {
 }
 
 export type DirectoryEntry = { hrId: string; name: string; hasLeft: boolean };
-
-const LEAVER_STATUSES = new Set(["resigned", "terminated"]);
 
 async function loadDirectory(): Promise<Map<string, DirectoryEntry>> {
   const supabase = getSupabaseAdmin();
