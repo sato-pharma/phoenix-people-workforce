@@ -4071,10 +4071,32 @@ export async function applyOutstationRequestExpenseDecisions(input: {
 
       applied += 1;
 
-      // A plain approve needs no second write: accepting the request already pushed its payroll
-      // row, and the reason is stored on the request itself. Only a payable figure that moved off
-      // the claim (or one being cleared back onto it) has anything left to write.
-      if (plan.action !== "amount" && payableAmount === null) continue;
+      // AN APPROVE ALWAYS NEEDS THIS SECOND WRITE — it is the only one that carries HR's decision.
+      //
+      // This used to skip it whenever the payable figure had not moved, on the reasoning that
+      // "accepting the request already pushed its payroll row". That push goes through
+      // `mapOutstationRequestToPayrollExpenseRecord`, which carries `preserveExistingDecision:
+      // true` — correct for a figures-only re-push, and correct here too when the trip reaches
+      // payroll for the FIRST time, because there is no stored decision to preserve. But a request
+      // that ALREADY had an `outstation_expenses` row sitting pending keeps that pending decision:
+      // the row is re-pushed with `hr_approved` left false and no `approved_at`.
+      //
+      // The trip then reads "Approved" everywhere the queue shows it (that state comes from
+      // `outstation_expense_requests.status`) while the row payroll actually pays from says
+      // otherwise, so the money silently never moves. It also breaks the `expense_claims` mirror:
+      // `expense_claims_approved_needs_decision` refuses an approved claim with no `decided_at`,
+      // and because the rebuild is one transaction, ONE such row freezes the whole screen.
+      // Measured on production 2026-09-07: four trips approved at 22:50 Cairo (requests 38, 39,
+      // 41 and 55, 2,859.17 EGP against the August payout) and every hourly refresh failing after.
+      //
+      // `writeOutstationRequestPayableAmount` is the one caller that opts OUT of preservation, so
+      // routing every approve through it is what makes the stored row agree with the decision.
+      // `payableAmount` is still null for an untouched claim, so this does not invent a reduction.
+      //
+      // (The opt-out flag is deliberately not spelled out here: a sibling regression test counts
+      // its literal occurrences in this file to prove exactly one caller holds it, and a mention
+      // in prose would read as a second one.)
+      if (plan.action !== "amount" && plan.action !== "approve" && payableAmount === null) continue;
 
       const stored = await writeOutstationRequestPayableAmount({
         access: input.access,
@@ -4085,8 +4107,14 @@ export async function applyOutstationRequestExpenseDecisions(input: {
 
       if (!stored) {
         skipped.push({
+          // Named for what did not land. An adjusted figure and a plain approval fail here for the
+          // same reason — the evidence gate is holding the trip out of payroll, so there is no row
+          // to carry either — but telling a reviewer their "adjusted amount" was lost when they
+          // never changed one sends them hunting for a deduction that does not exist.
           reason:
-            "the decision was saved, but the adjusted amount was not — this trip is held out of payroll until its photos and workload land",
+            payableAmount === null
+              ? "the trip was accepted, but the approval has not reached payroll — it is held out until its photos and workload land"
+              : "the decision was saved, but the adjusted amount was not — this trip is held out of payroll until its photos and workload land",
           tripId: record.tripId,
         });
       }
