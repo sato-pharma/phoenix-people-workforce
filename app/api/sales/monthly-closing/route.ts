@@ -22,13 +22,19 @@ export async function GET(request: Request) {
     // excludes the Head Office line for every viewer and the closing RPCs exclude the restricted
     // codes in SQL. Server-side enforcement — the sidebar link is UX only, never the boundary.
     // Publishing and locking stay Super-Admin-only in their own routes (publish|lock/route.ts).
-    if (access.role !== "Super Admin" && access.scope !== "system" && access.role !== "SFE Manager") {
+    // The CEO appended 2026-09-07 alongside the page carve-out, and for the same reason the SFE
+    // Manager was appended in 2026-08-10: the page server-renders this exact matrix for him, so
+    // leaving this feed closed would 403 his Refresh and every Line / Month change on screen.
+    // Publishing and locking stay Super-Admin-only in their own routes.
+    if (access.role !== "Super Admin" && access.scope !== "system" && access.role !== "SFE Manager" && access.role !== "CEO") {
       return NextResponse.json(
         { success: false, error: "Forbidden: Monthly Closing is restricted to the admin account." },
         { status: 403 },
       );
     }
-    await assertPermission(access, "sales", "import");
+    // sales:read for the CEO, sales:import for everyone else this route admits — mirroring the page
+    // exactly. He must never hold the upload/publish key, and the role gate above is the boundary.
+    await assertPermission(access, "sales", access.role === "CEO" ? "read" : "import");
 
     const { searchParams } = new URL(request.url);
     const line = searchParams.get("line");
