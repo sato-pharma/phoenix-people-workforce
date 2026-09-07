@@ -27,6 +27,7 @@ type DesiredCheck = {
   tz?: string;
   timeout?: number;
   grace: number;
+  externalSync: boolean;
 };
 
 export async function runHealthchecksScheduleSyncTests() {
@@ -48,6 +49,7 @@ export async function runHealthchecksScheduleSyncTests() {
     schedule: "17 2 * * *",
     tz: "Africa/Cairo",
     grace: 7200,
+    externalSync: true,
   });
   assert.deepEqual(bySlug.get("phoenix-direct-orders-probation"), {
     slug: "phoenix-direct-orders-probation",
@@ -55,7 +57,31 @@ export async function runHealthchecksScheduleSyncTests() {
     schedule: "27 2 * * *",
     tz: "Africa/Cairo",
     grace: 7200,
+    externalSync: true,
   });
+
+  // IN-HOUSE ONLY. The Healthchecks project is at its check limit and the plan is not being raised,
+  // so these two are watched by the heartbeat register and never pushed. The marker must withhold
+  // the PUSH without hiding the ROW: job-heartbeat-register.test.ts asserts this table and
+  // JOB_SCHEDULES declare exactly the same slugs, so a parser that dropped them would turn that
+  // check red — and a sync that pushed them would report CREATE ... FAILED (HTTP 403) forever.
+  for (const slug of ["phoenix-retention-risk-sweep", "phoenix-retention-risk-pre-payroll"]) {
+    const check = bySlug.get(slug);
+    assert.ok(check, `${slug} must still be PARSED out of ${DOC}, not dropped`);
+    assert.equal(check.externalSync, false, `${slug} must be marked in-house only in ${DOC}`);
+  }
+
+  // The negative control. Without it, a marker regex that matched every row would pass the two
+  // assertions above while silently switching the whole project off.
+  assert.equal(
+    bySlug.get("phoenix-notify-daily")?.externalSync,
+    true,
+    "a row carrying no marker must still be pushed to Healthchecks",
+  );
+  assert.ok(
+    checks.filter((c) => !c.externalSync).length < checks.length,
+    "the in-house-only marker must not match every row",
+  );
 
   // No cron check may be left on UTC, and every one needs a real 5-field expression.
   for (const c of checks) {

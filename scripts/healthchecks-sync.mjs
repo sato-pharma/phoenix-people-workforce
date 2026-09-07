@@ -34,6 +34,23 @@
  * gone red on the dashboard forever with no alert reaching anyone. If the project ever has zero
  * channels configured, channel enforcement is skipped entirely rather than writing an empty list -
  * see readChannels below.
+ *
+ * IN-HOUSE ONLY. A row whose last column carries `in-house only` is declared for the in-house
+ * register (src/lib/observability/job-schedule.ts + public.job_heartbeats) and is deliberately NOT
+ * pushed here. The Healthchecks project is at its check limit: creating one more answers HTTP 403
+ * with an empty body, and the owner has ruled out raising the plan (2026-09-08). Without this
+ * marker every future run of this script reports two permanent CREATE ... FAILED lines for jobs
+ * that are working exactly as intended - which is the same "always red, so ignored" failure the WHY
+ * THIS EXISTS note above describes, reintroduced by the tool meant to prevent it.
+ *
+ * The marker withholds the PUSH, never the WATCH. Both jobs stay declared in JOB_SCHEDULES, so the
+ * heartbeat sweep still alerts in-app + Telegram + push when one stops reporting, and the sweep
+ * itself is externally watched by `phoenix-job-heartbeat-sweep`. What is given up is only the
+ * outside observer for that one job - already covered for "is Phoenix alive?" by the three
+ * minute-level checks, which is why the two daily/monthly jobs are the right ones to leave off.
+ *
+ * TO GIVE ONE ITS SLOT BACK: free a check in the Healthchecks project (or raise the plan), drop the
+ * marker from its row, and re-run with --apply.
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -44,6 +61,12 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DOC = join(REPO_ROOT, "docs", "observability.md");
 const API = "https://healthchecks.io/api/v3";
 const TZ = "Africa/Cairo";
+
+/**
+ * The last column's opt-out: a row carrying `in-house only` is declared for the IN-HOUSE register
+ * and never pushed to Healthchecks. See IN-HOUSE ONLY in this file's header.
+ */
+const IN_HOUSE_ONLY_MARKER = /\bin-house only\b/i;
 
 const APPLY = process.argv.includes("--apply");
 
@@ -67,26 +90,31 @@ export function parseDesiredChecks(markdown) {
   const out = [];
   const seen = new Set();
   for (const line of markdown.split(/\r?\n/)) {
-    const row = /^\s*\|\s*`([a-z0-9][a-z0-9-]*)`\s*\|\s*(.+?)\s*\|\s*(\d+[mh])\s*\|/.exec(line);
+    const row = /^\s*\|\s*`([a-z0-9][a-z0-9-]*)`\s*\|\s*(.+?)\s*\|\s*(\d+[mh])\s*\|(.*)$/.exec(line);
     if (!row) continue;
-    const [, slug, scheduleCell, graceCell] = row;
+    const [, slug, scheduleCell, graceCell, pingedByCell] = row;
     const grace = parseDuration(graceCell);
     if (grace === null) continue;
     // A slug listed twice would silently make one row win. Say so instead.
     if (seen.has(slug)) throw new Error(`${slug} appears twice in the ${DOC} table - remove one row`);
 
-    const simple = /\*\*Simple\*\*,\s*period\s*`(\d+[mh])`/.exec(scheduleCell);
+    // Parsed for EVERY row, including the ones this script will not push. The register test asserts
+    // this table and JOB_SCHEDULES declare exactly the same slugs, so an in-house-only job must
+    // still be RETURNED here - it is main() that declines to push it, not the parser that hides it.
+    const externalSync = !IN_HOUSE_ONLY_MARKER.test(pingedByCell);
+
+    const simple =/\*\*Simple\*\*,\s*period\s*`(\d+[mh])`/.exec(scheduleCell);
     if (simple) {
       const timeout = parseDuration(simple[1]);
       if (timeout === null) continue;
       seen.add(slug);
-      out.push({ slug, kind: "simple", timeout, grace });
+      out.push({ slug, kind: "simple", timeout, grace, externalSync });
       continue;
     }
     const cron = /^`([^`]+)`$/.exec(scheduleCell);
     if (!cron) continue;
     seen.add(slug);
-    out.push({ slug, kind: "cron", schedule: cron[1], tz: TZ, grace });
+    out.push({ slug, kind: "cron", schedule: cron[1], tz: TZ, grace, externalSync });
   }
   return out;
 }
@@ -194,13 +222,23 @@ async function main() {
     console.error(`No check rows parsed out of ${DOC}. Has the table format changed?`);
     process.exit(1);
   }
+  // Declared-and-pushed vs declared-and-watched-in-house. Both halves are printed: a skipped row
+  // that vanished from the output silently would be worse than the FAILED line this replaces.
+  const syncable = desired.filter((d) => d.externalSync);
+  const inHouseOnly = desired.filter((d) => !d.externalSync);
+
   console.log(`healthchecks-sync — ${desired.length} checks declared in docs/observability.md`);
   console.log(`mode: ${APPLY ? "APPLY" : "dry run (pass --apply to push)"}\n`);
+  if (inHouseOnly.length) {
+    console.log(`${inHouseOnly.length} declared in-house only — watched by the heartbeat register, not pushed here:`);
+    for (const d of inHouseOnly) console.log(`  skip     ${d.slug}`);
+    console.log("");
+  }
 
   const key = readApiKey();
   if (!key) {
     console.log("Planned state (no HEALTHCHECKS_API_KEY, so nothing was read or written):\n");
-    for (const d of desired) {
+    for (const d of syncable) {
       const sched = d.kind === "cron" ? `${d.schedule}  ${d.tz}` : `simple, period ${d.timeout}s`;
       console.log(`  ${d.slug.padEnd(46)} ${sched.padEnd(28)} grace ${d.grace}s`);
     }
@@ -225,7 +263,7 @@ async function main() {
   let ok = 0;
   let failed = 0;
 
-  for (const d of desired) {
+  for (const d of syncable) {
     const actual = bySlug.get(d.slug);
     const { action, changes } = diffCheck(d, actual, desiredChannels);
     if (action === "ok") {
@@ -249,7 +287,7 @@ async function main() {
 
   console.log("");
   if (!APPLY) {
-    const pending = desired.length - ok;
+    const pending = syncable.length - ok;
     console.log(pending === 0 ? "Everything already matches." : `${pending} check(s) would change. Re-run with --apply.`);
     return;
   }
@@ -261,7 +299,7 @@ async function main() {
   const after = await api("/checks/", key);
   const afterBySlug = new Map((after.checks || []).map((c) => [c.slug, c]));
   let drift = 0;
-  for (const d of desired) {
+  for (const d of syncable) {
     const { action } = diffCheck(d, afterBySlug.get(d.slug), desiredChannels);
     if (action !== "ok") {
       drift += 1;
