@@ -134,6 +134,17 @@ create trigger trg_publication_no_delete
   for each row
   execute function public.phx_refuse_publication_delete();
 
+-- ── both functions are SECURITY DEFINER, so EXECUTE comes off PUBLIC ─────────────────────────
+-- Neither is meant to be CALLED by anyone: they run as triggers, which fire regardless of who may
+-- execute them. anon/authenticated inherit EXECUTE through PUBLIC membership, so revoking only
+-- those two would be a no-op — and revoking PUBLIC on a default ACL also strips service_role,
+-- which is why the re-grant below is not optional.
+revoke execute on function public.phx_freeze_published_closing() from public, anon, authenticated;
+grant execute on function public.phx_freeze_published_closing() to service_role;
+
+revoke execute on function public.phx_refuse_publication_delete() from public, anon, authenticated;
+grant execute on function public.phx_refuse_publication_delete() to service_role;
+
 -- ── 4. backfill: every month already published gets its lock ─────────────────────────────────
 -- July 2026 is already locked on all three lines, so this is expected to be a no-op there. It
 -- exists so the rule holds for every published month, not only for ones published from now on.
