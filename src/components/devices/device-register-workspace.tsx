@@ -36,12 +36,14 @@
  */
 
 import {
+  Download,
   Laptop,
   Loader2,
   PackageCheck,
   Plus,
   Smartphone,
   TriangleAlert,
+  Upload,
   UserMinus,
   X,
 } from "lucide-react";
@@ -49,6 +51,10 @@ import { useCallback, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import { PremiumHero } from "@/components/ui/premium-hero";
+import type {
+  DeviceImportPreview,
+  DeviceImportResult,
+} from "@/lib/devices/bulk-import";
 import type {
   CompanyDevice,
   DeviceCategory,
@@ -257,11 +263,13 @@ const EMPTY_NEW_DEVICE = {
 };
 
 export function DeviceRegisterWorkspace({
+  canImport,
   canRecord,
   canRegister,
   initialData,
   initialError,
 }: {
+  canImport: boolean;
   canRecord: boolean;
   canRegister: boolean;
   initialData: DeviceRegisterData | null;
@@ -274,6 +282,10 @@ export function DeviceRegisterWorkspace({
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [newDevice, setNewDevice] = useState(EMPTY_NEW_DEVICE);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<DeviceImportPreview | null>(null);
+  const [importResult, setImportResult] = useState<DeviceImportResult | null>(null);
 
   const post = useCallback(async (payload: Record<string, unknown>) => {
     setBusy(true);
@@ -370,6 +382,55 @@ export function DeviceRegisterWorkspace({
       }
     },
     [closeDraft, draft, post],
+  );
+
+  /**
+   * Sends the file to one of the two import routes.
+   *
+   * THE FILE IS SENT AGAIN AT COMMIT, not a preview object. The server re-parses and re-validates
+   * from scratch, because the register can move between the dry run and the commit — somebody else
+   * registering the same asset tag in the intervening minute has to become a reported skip rather
+   * than a duplicate or a crash.
+   */
+  const sendImport = useCallback(
+    async (step: "dry-run" | "confirm") => {
+      if (!importFile) {
+        setError("Choose the filled-in template first.");
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      try {
+        const body = new FormData();
+        body.append("file", importFile);
+        const response = await fetch(`/api/devices/import/${step}`, { body, method: "POST" });
+        const payload = (await response.json()) as Partial<DeviceRegisterData> &
+          DeviceImportPreview & { message?: string; importResult?: DeviceImportResult };
+
+        if (!response.ok) {
+          setError(payload.message ?? "The import could not be read.");
+          return;
+        }
+
+        if (step === "dry-run") {
+          setImportPreview(payload);
+          setImportResult(null);
+          return;
+        }
+
+        // The commit answers with the refreshed register AND the per-row report, so the counts and
+        // the outcomes update together rather than the page briefly showing the old numbers.
+        if (payload.devices) setData(payload as DeviceRegisterData);
+        setImportResult(payload.importResult ?? null);
+        setImportPreview(null);
+        setImportFile(null);
+      } catch (requestError) {
+        setError(requestError instanceof Error ? requestError.message : "The upload failed.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [importFile],
   );
 
   const submitNewDevice = useCallback(async () => {
@@ -501,8 +562,8 @@ export function DeviceRegisterWorkspace({
         </div>
       ) : null}
 
-      {canRegister ? (
-        <div className="mt-5">
+      <div className="mt-5 flex flex-wrap gap-1.5">
+        {canRegister ? (
           <button
             className="inline-flex items-center gap-2 border border-slate-900 bg-slate-900 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-white hover:bg-slate-800"
             onClick={() => setRegisterOpen((open) => !open)}
@@ -515,6 +576,144 @@ export function DeviceRegisterWorkspace({
             )}
             {registerOpen ? "Cancel" : "Register a device"}
           </button>
+        ) : null}
+        {canImport ? (
+          <button
+            className="inline-flex items-center gap-2 border border-slate-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-100"
+            onClick={() => setImportOpen((open) => !open)}
+            type="button"
+          >
+            <Upload aria-hidden="true" className="h-3 w-3" />
+            {importOpen ? "Close the import" : "Import a spreadsheet"}
+          </button>
+        ) : null}
+      </div>
+
+      {/* THE BULK IMPORT. The register is useless until the fleet already out with people is in it,
+          and nobody is going to type ~85 devices into a form one at a time. Download, fill, check,
+          commit — with the check as its OWN step, because an asset register is evidence and the
+          cheapest moment to catch a serial in the IMEI column is before 85 rows are written. */}
+      {importOpen && canImport ? (
+        <div className="mt-3 border border-slate-300 bg-white px-4 py-4">
+          <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-600">
+            Import from a spreadsheet
+          </p>
+          <p className="mt-1.5 text-[11px] font-semibold leading-relaxed text-slate-500">
+            The template carries a dropdown of every employee, so you can record who is already
+            holding each device as you enter it. A serial number or an IMEI is required on every
+            row. Nothing is written until you press Import.
+          </p>
+
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <a
+              className="inline-flex items-center gap-2 border border-slate-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-100"
+              href="/api/devices/import/template"
+            >
+              <Download aria-hidden="true" className="h-3 w-3" />
+              Download the template
+            </a>
+            <input
+              accept=".xlsx"
+              className="min-w-0 border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
+              onChange={(event) => {
+                setImportFile(event.target.files?.[0] ?? null);
+                setImportPreview(null);
+                setImportResult(null);
+              }}
+              type="file"
+            />
+            <button
+              className="border border-slate-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+              disabled={busy || !importFile}
+              onClick={() => void sendImport("dry-run")}
+              type="button"
+            >
+              Check the file
+            </button>
+            {importPreview && importPreview.summary.canImport > 0 ? (
+              <button
+                className="border border-slate-900 bg-slate-900 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-white hover:bg-slate-800 disabled:opacity-50"
+                disabled={busy}
+                onClick={() => void sendImport("confirm")}
+                type="button"
+              >
+                Import {importPreview.summary.canImport.toLocaleString("en-US")} device
+                {importPreview.summary.canImport === 1 ? "" : "s"}
+              </button>
+            ) : null}
+          </div>
+
+          {importPreview ? (
+            <div className="mt-3 border border-slate-200 px-3 py-2">
+              <p className="break-words text-[11px] font-bold text-slate-700">
+                {importPreview.summary.total} row
+                {importPreview.summary.total === 1 ? "" : "s"} read, {importPreview.summary.canImport}{" "}
+                ready, {importPreview.summary.withErrors} with problems.{" "}
+                {importPreview.summary.willBeIssued} will be recorded as handed over
+                {importPreview.summary.heldByLeavers > 0
+                  ? `, ${importPreview.summary.heldByLeavers} of them to somebody who has already left`
+                  : ""}
+                .
+              </p>
+              {importPreview.summary.withoutValue > 0 ? (
+                <p className="mt-1 break-words text-[11px] font-semibold text-amber-800">
+                  {importPreview.summary.withoutValue} carry no estimated value, so nothing could be
+                  recovered against them.
+                </p>
+              ) : null}
+
+              {/* EVERY finding, never a "+N more". The employee import learned that the expensive
+                  way: a summary showing the first ten problems of three hundred is not a summary,
+                  it is a wall. */}
+              <ul className="mt-2 space-y-1">
+                {importPreview.rows
+                  .filter((row) => row.errors.length > 0 || row.warnings.length > 0)
+                  .map((row) => (
+                    <li
+                      className="min-w-0 break-words border border-slate-200 px-2 py-1.5 text-[11px] font-semibold text-slate-700"
+                      key={row.rowNumber}
+                    >
+                      <span className="font-black text-slate-900">
+                        Row {row.rowNumber}
+                        {row.assetTag ? ` — ${row.assetTag}` : ""}
+                      </span>
+                      {row.errors.map((message) => (
+                        <span className="mt-0.5 block break-words text-rose-800" key={message}>
+                          {message}
+                        </span>
+                      ))}
+                      {row.warnings.map((message) => (
+                        <span className="mt-0.5 block break-words text-amber-800" key={message}>
+                          {message}
+                        </span>
+                      ))}
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {importResult ? (
+            <div className="mt-3 border border-slate-200 px-3 py-2">
+              <p className="break-words text-[11px] font-black uppercase tracking-[0.1em] text-slate-700">
+                {importResult.imported} imported, {importResult.issued} handed over,{" "}
+                {importResult.skipped} skipped, {importResult.failed} failed
+              </p>
+              <ul className="mt-2 space-y-1">
+                {importResult.outcomes
+                  .filter((outcome) => outcome.result !== "imported" || outcome.error)
+                  .map((outcome) => (
+                    <li
+                      className="min-w-0 break-words text-[11px] font-semibold text-slate-700"
+                      key={outcome.rowNumber}
+                    >
+                      Row {outcome.rowNumber}, {outcome.assetTag}, {outcome.result}
+                      {outcome.error ? `: ${outcome.error}` : ""}
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

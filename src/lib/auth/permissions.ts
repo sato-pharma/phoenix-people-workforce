@@ -595,8 +595,14 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
       // Finance Manager is deliberately NOT here yet. He signs the paper and البند (10) is his
       // clause, so a read grant is arguable — but it is the owner's call, not a default, and a
       // resource is easier to widen later than to narrow after people have used it.
+      //
+      // `import` is the ACTION rather than a resource of its own, because that is how every other
+      // import in this codebase is gated (`employees:import`). Without it HR Operations — the seat
+      // that actually walks the fleet and enters it — could register devices one at a time but not
+      // in bulk, which for ~85 of them is the same as not at all. It opens no door that `create`
+      // did not already open; it only names the bulk one so it can be withdrawn on its own.
       if (role === "Super Admin") return allActions;
-      if (role === "HR Operations") return ["read", "create", "update", "export"];
+      if (role === "HR Operations") return ["read", "create", "update", "export", "import"];
       if (role === "CEO") return ["read", "export"];
       return [];
     case "mailbox_monitor":
