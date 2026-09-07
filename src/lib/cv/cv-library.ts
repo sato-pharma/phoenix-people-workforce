@@ -13,6 +13,11 @@
 // Pure: no DB and no React, so the mapping is testable on its own and the page stays a thin loader.
 
 import { formatDurationMonths, monthsBetween, type CvExperienceStatus } from "@/lib/cv/cv-database";
+import {
+  judgeBackground,
+  type BackgroundOutcome,
+  type BackgroundSource,
+} from "@/lib/recruitment/candidate-background";
 import { candidateScreeningFacts } from "@/lib/recruitment/candidate-screening-facts";
 import { cairoDayKey } from "@/lib/recruitment/candidate-stats";
 import type { Candidate } from "@/lib/recruitment/types";
@@ -78,7 +83,122 @@ export type CvLibraryRow = {
    * adds a question and someone answers it. Ordered the same way the admin builder orders them.
    */
   screeningAnswers: { label: string; answer: string }[];
+  /**
+   * Whether their academic background admits them to the FIELD FORCE — the owner's standing rule
+   * that a paramedical degree is refused for a rep or a district manager and is perfectly normal
+   * for an office coordinator.
+   *
+   * NOT decided here. `judgeBackground` has answered this for every candidate since the background
+   * review shipped; what it never had was a way to ask. Measured on production 2026-09-07: 328
+   * eligible, 295 paramedical, 252 unknown — so a THIRD of every list a recruiter scrolls is people
+   * who cannot take the job being screened for, with no way to set them aside. Reusing the engine
+   * rather than re-reading `faculty` here is the whole point: a second opinion about somebody's
+   * degree is how two screens start disagreeing about the same person.
+   */
+  backgroundOutcome: BackgroundOutcome;
+  /**
+   * How the verdict was reached — "declared" when the applicant gave their own background, "cv" when
+   * the extractor read it off the document, null when neither.
+   *
+   * Beside the outcome because they are different strengths of one claim: 252 of the verdicts come
+   * from the applicant's own answer and 371 from a machine reading a PDF. Showing only the outcome
+   * invites a recruiter to treat those as equal.
+   */
+  backgroundSource: BackgroundSource | null;
+  /**
+   * The graduation year as a NUMBER, for the range filter — `education` already carries it inside a
+   * display string and a filter cannot read it back out of one.
+   *
+   * Null for the 172 candidates with no year on file, and the filter must keep them reachable: a
+   * range that silently hides a fifth of the pool is worse than no range at all.
+   */
+  graduationYear: number | null;
+  /**
+   * Total experience as a NUMBER of years. `totalExperience` above is the same fact formatted for
+   * reading ("2 years 3 months") and cannot be compared.
+   *
+   * Null for 426 of 875 — nearly half — which makes this the field most likely to be misused. See
+   * the filter's own note: a naive minimum silently drops every one of them.
+   */
+  yearsExperienceValue: number | null;
 };
+
+/**
+ * The graduation-year buckets the CV screen offers, and the experience bands beside them.
+ *
+ * BUCKETS RATHER THAN TWO NUMBER INPUTS, for one reason that is not taste: a native `<select>` is
+ * the one control the fits-the-screen rule cannot shrink, and the filter bar already carries four.
+ * A pair of number inputs per range would put eight controls on a 375px screen. A bucket also asks
+ * the question a recruiter actually has — "fresh graduate or experienced" — instead of making them
+ * invent a year.
+ *
+ * `"none"` IS THE LOAD-BEARING OPTION IN BOTH. 172 of 875 candidates have no graduation year and
+ * 426 have no years-of-experience figure — nearly half. A range filter without an explicit way to
+ * ask for them makes those people unreachable the moment anyone narrows, and unreachable reads
+ * exactly like "we have nobody", which is the failure this whole screen exists to prevent. Empty
+ * string means "any" and is the only value that returns everyone.
+ */
+export type GraduationBucket = "" | "recent" | "mid" | "older" | "none";
+
+export type ExperienceBand = "" | "under2" | "2to5" | "5to10" | "over10" | "none";
+
+/**
+ * The order the options are OFFERED in, which is not the order a Record happens to iterate.
+ *
+ * Both run newest-first and put the "not on file" bucket last. Reading them out of the label object
+ * would order them however the keys were typed — "2015–2021, not on file, before 2015, 2022 or
+ * later" — which is not a sequence anybody scans.
+ */
+export const graduationBuckets: readonly Exclude<GraduationBucket, "">[] = ["recent", "mid", "older", "none"];
+
+export const experienceBands: readonly Exclude<ExperienceBand, "">[] = ["under2", "2to5", "5to10", "over10", "none"];
+
+/** The labels, kept beside the logic so a new bucket cannot ship without one. */
+export const graduationBucketLabels: Record<Exclude<GraduationBucket, "">, string> = {
+  mid: "Graduated 2015–2021",
+  none: "Graduation year not on file",
+  older: "Graduated before 2015",
+  recent: "Graduated 2022 or later",
+};
+
+export const experienceBandLabels: Record<Exclude<ExperienceBand, "">, string> = {
+  "2to5": "2–5 years",
+  "5to10": "5–10 years",
+  none: "Experience not on file",
+  over10: "Over 10 years",
+  under2: "Under 2 years",
+};
+
+/**
+ * 2022 is the boundary because it is where this pool actually splits: 326 of the 703 candidates
+ * with a year on file graduated in 2022 or later. A rounder number would have put a lopsided
+ * majority on one side and told a recruiter nothing.
+ */
+export function matchesGraduationBucket(row: Pick<CvLibraryRow, "graduationYear">, bucket: GraduationBucket): boolean {
+  if (!bucket) return true;
+  const year = row.graduationYear;
+  if (bucket === "none") return year === null;
+  if (year === null) return false;
+  if (bucket === "recent") return year >= 2022;
+  if (bucket === "mid") return year >= 2015 && year <= 2021;
+  return year < 2015;
+}
+
+/**
+ * Bands are half-open upwards — "2–5 years" is 2 up to but not including 5 — so a candidate with
+ * exactly five years appears in "5–10" and in exactly one band. Overlapping edges are how the same
+ * person shows up twice and the counts stop adding up.
+ */
+export function matchesExperienceBand(row: Pick<CvLibraryRow, "yearsExperienceValue">, band: ExperienceBand): boolean {
+  if (!band) return true;
+  const years = row.yearsExperienceValue;
+  if (band === "none") return years === null;
+  if (years === null) return false;
+  if (band === "under2") return years < 2;
+  if (band === "2to5") return years >= 2 && years < 5;
+  if (band === "5to10") return years >= 5 && years < 10;
+  return years >= 10;
+}
 
 export type CvLibrarySummary = {
   averageExperienceMonths: number;
@@ -174,7 +294,15 @@ export function cvLibraryRowFromCandidate(
   const screeningAnswers = Array.from(questionLabels.entries())
     .map(([key, label]) => ({ answer: text(candidate.screeningExtraAnswers[key]), label }))
     .filter((entry) => entry.answer.length > 0);
+  // The background review's own verdict, not a re-reading of `faculty` — same reason the region
+  // above comes from `candidateScreeningFacts` rather than being re-derived from the governorate.
+  const background = judgeBackground({
+    declaredBackground: candidate.declaredBackground,
+    faculty: candidate.faculty,
+  });
   return {
+    backgroundOutcome: background.outcome,
+    backgroundSource: background.source ?? null,
     cvFileName: text(candidate.cvReferenceName),
     currentEmployer: text(candidate.currentEmployer),
     currentJobTitle: text(candidate.currentJobTitle),
@@ -183,6 +311,7 @@ export function cvLibraryRowFromCandidate(
     educationFaculty: text(candidate.faculty),
     educationInstitution: educationInstitution(candidate),
     governorate: text(candidate.governorate),
+    graduationYear: typeof candidate.graduationYear === "number" ? candidate.graduationYear : null,
     id: candidate.id,
     preferredArea: text(facts.area?.value),
     regionCode: facts.region?.value.code ?? null,
@@ -197,6 +326,7 @@ export function cvLibraryRowFromCandidate(
     screeningAnswers,
     totalExperience:
       years === null || years === undefined ? "" : formatDurationMonths(Math.round(Number(years) * 12)),
+    yearsExperienceValue: years === null || years === undefined ? null : Number(years),
   };
 }
 

@@ -1321,7 +1321,7 @@ import { runCvContentFingerprintTests } from "./cv-content-fingerprint.test.ts";
 import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
 import { runCandidateNameFromCvTests } from "./candidate-name-from-cv.test.ts";
 import { runLegacyDocCvTests } from "./recruitment-legacy-doc-cv.test.ts";
-import { runCvLibraryTests } from "./cv-library.test.ts";
+import { runCvLibraryScreeningFilterTests, runCvLibraryTests } from "./cv-library.test.ts";
 import { runHiringEmployeeScopeTests } from "./hiring-employee-scope.test.ts";
 import { runMarketingAdminOverrideNoteTests } from "./marketing-admin-override-note.test.ts";
 import { runRecruitmentPoolFilterTests } from "./recruitment-pool-filters.test.ts";
@@ -4282,6 +4282,11 @@ await runTest(
   "CV library rows (the CV Database reads the candidate pool itself; Cairo received date, three "
     + "medical-sales answers, and no null leaking onto a screen)",
   runCvLibraryTests,
+);
+await runTest(
+  "CV screening filters (eligibility is borrowed from judgeBackground not re-decided, and 'not on "
+    + "file' stays reachable in both ranges — 172 have no graduation year and 426 no experience figure)",
+  runCvLibraryScreeningFilterTests,
 );
 
 await runTest(

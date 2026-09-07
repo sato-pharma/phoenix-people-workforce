@@ -4,6 +4,12 @@ import { readFileSync } from "node:fs";
 import {
   cvLibraryRowFromCandidate,
   cvLibraryRowsFromCandidates,
+  experienceBandLabels,
+  experienceBands,
+  graduationBucketLabels,
+  graduationBuckets,
+  matchesExperienceBand,
+  matchesGraduationBucket,
   summarizeCvLibrary,
   type CvLibraryRow,
 } from "../src/lib/cv/cv-library.ts";
@@ -112,9 +118,15 @@ export function runCvLibraryTests() {
   // able to ASK for that group, and "" is a code the filter would then have to special-case; and
   // `regionDeclared` is the boolean the screen reads to say whether the applicant chose it. Neither
   // is ever rendered — `regionLabel` is what reaches the cell — so neither can leak a "null".
+  // The three screening fields added 2026-09-08 join `regionCode` in that exemption, for exactly
+  // its reason: each is null when nobody knows, because the filter beside it has to be able to ASK
+  // for that group. A "" or a 0 would be a value the filter then has to special-case — and 0 years
+  // of experience is a real answer meaning "fresh", not an absent one. None of the three is ever
+  // rendered raw: the table shows `totalExperience` and `education`, which are strings.
   const blank = cvLibraryRowFromCandidate(candidate({}));
   for (const [key, value] of Object.entries(blank)) {
     if (key === "regionCode" || key === "regionDeclared" || key === "screeningAnswers") continue;
+    if (key === "backgroundSource" || key === "graduationYear" || key === "yearsExperienceValue") continue;
     assert.ok(typeof value === "string", `${key} must be a string`);
     assert.ok(!/^(null|undefined|NaN)$/.test(value), `${key} rendered as "${value}"`);
   }
@@ -602,5 +614,120 @@ export function runCvLibraryTests() {
   assert.ok(
     /<ScreeningAnswersCell row=\{row\} \/>/.test(managerCode),
     "the desktop table stopped rendering the admin-defined screening answers",
+  );
+}
+
+/**
+ * The three screening filters added 2026-09-08, and the one property that makes them safe.
+ *
+ * ELIGIBILITY IS BORROWED, NOT DECIDED. `judgeBackground` has answered "does this academic
+ * background admit them to the field force" for every candidate since the background review
+ * shipped, and nothing ever asked it: measured on production 2026-09-07, 328 eligible, 295
+ * paramedical, 252 unknown. A third of every list a recruiter scrolled was people who cannot take
+ * the field job being screened for. The row reads that verdict rather than re-reading `faculty`,
+ * so this screen and the background review cannot disagree about one person's degree.
+ *
+ * AND "NOT ON FILE" IS REACHABLE IN BOTH RANGES. 172 candidates have no graduation year and 426 no
+ * experience figure — nearly half the pool. A range filter with no way to ask for them makes those
+ * people invisible the moment anyone narrows, and invisible reads exactly like "we have nobody".
+ */
+export function runCvLibraryScreeningFilterTests() {
+  // ── The eligibility verdict is carried, not re-derived ──────────────────────────────────────
+  const paramedic = cvLibraryRowFromCandidate(candidate({ faculty: "Faculty of Physical Therapy" }));
+  const scientist = cvLibraryRowFromCandidate(candidate({ faculty: "Faculty of Pharmacy" }));
+  const silent = cvLibraryRowFromCandidate(candidate({}));
+
+  assert.equal(paramedic.backgroundOutcome, "paramedical", "physical therapy is a field-force exclusion");
+  assert.equal(scientist.backgroundOutcome, "eligible", "pharmacy admits to the field force");
+  assert.equal(silent.backgroundOutcome, "unknown", "no declared answer and no faculty is unknown, not a refusal");
+
+  // The applicant's own answer outranks the extractor's reading — a machine must not overrule a
+  // person about their own degree. Same precedence the background review itself applies.
+  const declaredOverCv = cvLibraryRowFromCandidate(
+    candidate({ declaredBackground: "Pharmacy", faculty: "Faculty of Physical Therapy" }),
+  );
+  assert.equal(declaredOverCv.backgroundOutcome, "eligible", "the declared answer wins over the CV reading");
+  assert.equal(declaredOverCv.backgroundSource, "declared", "and the row says which evidence decided it");
+  assert.equal(scientist.backgroundSource, "cv", "a faculty read off the CV is marked as such");
+  assert.equal(silent.backgroundSource, null, "no evidence is null, never a fabricated source");
+
+  // ── The numbers arrive as numbers ────────────────────────────────────────────────────────────
+  // `totalExperience` is the SAME fact formatted for reading, and a filter cannot compare
+  // "2 years 3 months". Both forms exist on purpose.
+  const numbers = cvLibraryRowFromCandidate(candidate({ graduationYear: 2023, yearsExperience: 4.5 }));
+  assert.equal(numbers.graduationYear, 2023);
+  assert.equal(numbers.yearsExperienceValue, 4.5);
+  assert.equal(numbers.totalExperience, "4 years 6 months", "the readable form is unchanged");
+  assert.equal(silent.graduationYear, null, "an absent year is null, never 0 — 0 would sort as a real year");
+  assert.equal(silent.yearsExperienceValue, null, "an absent figure is null, never 0 — 0 means 'fresh', not 'unknown'");
+
+  // ── Graduation buckets ───────────────────────────────────────────────────────────────────────
+  const grad = (year: number | null) => ({ graduationYear: year });
+  assert.equal(matchesGraduationBucket(grad(2023), "recent"), true);
+  assert.equal(matchesGraduationBucket(grad(2022), "recent"), true, "2022 is inside 'recent' — the boundary is inclusive");
+  assert.equal(matchesGraduationBucket(grad(2021), "recent"), false);
+  assert.equal(matchesGraduationBucket(grad(2021), "mid"), true);
+  assert.equal(matchesGraduationBucket(grad(2015), "mid"), true);
+  assert.equal(matchesGraduationBucket(grad(2014), "older"), true);
+  assert.equal(matchesGraduationBucket(grad(null), "none"), true);
+
+  // THE PROPERTY THAT MATTERS: an empty filter returns everyone, and a real bucket never returns a
+  // null year by accident. Both directions, because either failure hides people.
+  assert.equal(matchesGraduationBucket(grad(null), ""), true, "'any' must include the year-less");
+  assert.equal(matchesGraduationBucket(grad(2023), ""), true);
+  for (const bucket of graduationBuckets.filter((b) => b !== "none")) {
+    assert.equal(matchesGraduationBucket(grad(null), bucket), false, `${bucket} must not sweep in a null year`);
+  }
+  // Every bucket is reachable and every one is labelled — a bucket with no label is a blank option.
+  for (const bucket of graduationBuckets) {
+    assert.ok(graduationBucketLabels[bucket], `${bucket} needs a label`);
+  }
+
+  // ── Experience bands ─────────────────────────────────────────────────────────────────────────
+  const exp = (years: number | null) => ({ yearsExperienceValue: years });
+  assert.equal(matchesExperienceBand(exp(1.5), "under2"), true);
+  assert.equal(matchesExperienceBand(exp(2), "under2"), false, "bands are half-open — 2 belongs to the band above");
+  assert.equal(matchesExperienceBand(exp(2), "2to5"), true);
+  assert.equal(matchesExperienceBand(exp(5), "2to5"), false);
+  assert.equal(matchesExperienceBand(exp(5), "5to10"), true);
+  assert.equal(matchesExperienceBand(exp(10), "5to10"), false);
+  assert.equal(matchesExperienceBand(exp(10), "over10"), true);
+  assert.equal(matchesExperienceBand(exp(null), "none"), true);
+  assert.equal(matchesExperienceBand(exp(null), ""), true, "'any' must include those with no figure");
+  for (const band of experienceBands.filter((b) => b !== "none")) {
+    assert.equal(matchesExperienceBand(exp(null), band), false, `${band} must not sweep in a null figure`);
+  }
+  for (const band of experienceBands) {
+    assert.ok(experienceBandLabels[band], `${band} needs a label`);
+  }
+
+  // EXACTLY ONE BAND PER PERSON. Overlapping edges are how the same candidate appears twice and the
+  // counts stop adding up to the pool.
+  for (const years of [0, 0.5, 1.9, 2, 4.9, 5, 9.9, 10, 25]) {
+    const hits = experienceBands.filter((band) => matchesExperienceBand(exp(years), band));
+    assert.equal(hits.length, 1, `${years} years must land in exactly one band, got ${hits.join(", ")}`);
+  }
+  const nullHits = experienceBands.filter((band) => matchesExperienceBand(exp(null), band));
+  assert.deepEqual(nullHits, ["none"], "a null figure lands only in 'not on file'");
+
+  // ── The manager actually wires them ──────────────────────────────────────────────────────────
+  const managerSource = readFileSync("src/components/cv/cv-database-manager.tsx", "utf8");
+  for (const marker of [
+    "matchesGraduationBucket(row, graduationFilter)",
+    "matchesExperienceBand(row, experienceBand)",
+    "row.backgroundOutcome !== backgroundFilter",
+  ]) {
+    assert.ok(managerSource.includes(marker), `the manager must apply ${marker}`);
+  }
+  // Clearing must clear all three, or "Clear filters" leaves the list narrowed and the button
+  // disabled — the state that reads as "the database is empty".
+  for (const reset of ['setBackgroundFilter("")', 'setGraduationFilter("")', 'setExperienceBand("")']) {
+    assert.ok(managerSource.includes(reset), `clearFilters must reset via ${reset}`);
+  }
+  // The paramedical option must never say "not eligible" flatly: it is a refusal for a rep or a
+  // district manager and perfectly normal for an office coordinator.
+  assert.ok(
+    managerSource.includes("Paramedical — not for the field"),
+    "the paramedical option must name the FIELD FORCE, not the person",
   );
 }
