@@ -114,6 +114,40 @@ export function planBulkApproval(candidates: ReadonlyArray<BulkApprovalCandidate
   return { approvableTripIds, needsReasonTripIds, notPendingTripIds };
 }
 
+/** One reviewer decision as the Expense Approvals screen holds it. */
+export type ExpenseApprovalDecision = {
+  approvedAmount: number;
+  hrApproved: boolean;
+  hrComment: string;
+  status: string;
+};
+
+/**
+ * Whether a decision on screen differs from the one stored on the row — the ONE answer to that,
+ * shared by the Save button's unsaved count and by the payload Save actually sends.
+ *
+ * It lives here because those two were written separately and drifted: the count included the
+ * rejected/not-rejected term and the payload builder did not, so "Undo rejection" raised the Save
+ * bar, sent nothing, and reported "Approvals saved." while the row came back rejected. A reviewer
+ * has no way to tell that apart from a save that worked.
+ *
+ * All four terms matter, and none is derivable from another: approval lives in `hrApproved`,
+ * rejection in `status`, the payable figure in `approvedAmount` and the reason in `hrComment`.
+ * The half-pound tolerance on the amount is the same one `isAdjustedAmount` uses — the figure
+ * round-trips through a number input, so an exact compare marks untouched rows as changed.
+ */
+export function expenseDecisionChanged(
+  local: ExpenseApprovalDecision,
+  stored: ExpenseApprovalDecision,
+): boolean {
+  return (
+    local.hrApproved !== stored.hrApproved ||
+    Math.abs(local.approvedAmount - stored.approvedAmount) > 0.5 ||
+    local.hrComment.trim() !== stored.hrComment.trim() ||
+    isRejectedStatus(local.status) !== isRejectedStatus(stored.status)
+  );
+}
+
 /**
  * The HR decision as it stands on an `outstation_expenses` row right now.
  *

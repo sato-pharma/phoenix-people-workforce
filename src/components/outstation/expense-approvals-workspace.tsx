@@ -41,6 +41,7 @@ import {
   APPROVED_STATUS,
   REJECTED_STATUS,
   expenseApprovalState,
+  expenseDecisionChanged,
   isAdjustedAmount,
   isRejectedStatus,
   planBulkApproval,
@@ -92,6 +93,74 @@ function savedDecision(record: LoadedRecord): Decision {
     hrComment: record.hrComment ?? "",
     status: record.status ?? "",
   };
+}
+
+/**
+ * Where an unsaved decision set survives leaving the page.
+ *
+ * Every decision on this screen is held in React state until Save is pressed, and a reviewer works
+ * a ~400-row queue one trip at a time. Any exit discarded the lot with no message: a sidebar click,
+ * the browser back button, a reload, the hard navigation Next.js performs after a deploy. On
+ * 2026-09-07 that cost a full evening's review — the database recorded ONE save, and everything
+ * decided around it was gone.
+ *
+ * `localStorage`, not `sessionStorage`: closing the tab and coming back is exactly the case that
+ * lost the work. Per browser and per viewer, which is what it should be — a draft is one person's
+ * unsaved thinking, not shared state.
+ */
+const DECISION_DRAFT_KEY = "phoenix.outstation.expense-approvals.draft.v1";
+
+/** A draft older than this belongs to a different sitting — drop it rather than silently re-open
+ * decisions taken against a queue that has moved on. */
+const DECISION_DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Never let a storage failure reach the queue. Private mode, a full quota and a browser with site
+ * data blocked all throw here, and none of them is a reason to stop reviewing expenses. */
+function readExpenseDecisionDraft(): Record<string, Decision> | null {
+  try {
+    const raw = window.localStorage.getItem(DECISION_DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { decisions?: unknown; savedAt?: unknown };
+    const savedAt = Number(parsed?.savedAt);
+    if (!Number.isFinite(savedAt) || Date.now() - savedAt > DECISION_DRAFT_MAX_AGE_MS) return null;
+    const entries = parsed?.decisions;
+    if (!entries || typeof entries !== "object") return null;
+
+    // Validated field by field rather than cast: this is the one input to the page that is not
+    // the API, and a half-shaped entry would flow straight into a Save payload.
+    const draft: Record<string, Decision> = {};
+    for (const [tripId, value] of Object.entries(entries as Record<string, unknown>)) {
+      const entry = value as Partial<Decision> | null;
+      if (!entry || typeof entry !== "object") continue;
+      if (typeof entry.approvedAmount !== "number" || !Number.isFinite(entry.approvedAmount)) continue;
+      if (typeof entry.hrApproved !== "boolean") continue;
+      if (typeof entry.hrComment !== "string" || typeof entry.status !== "string") continue;
+      draft[tripId] = {
+        approvedAmount: entry.approvedAmount,
+        hrApproved: entry.hrApproved,
+        hrComment: entry.hrComment,
+        status: entry.status,
+      };
+    }
+    return Object.keys(draft).length > 0 ? draft : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeExpenseDecisionDraft(decisions: Record<string, Decision>) {
+  try {
+    if (Object.keys(decisions).length === 0) {
+      window.localStorage.removeItem(DECISION_DRAFT_KEY);
+      return;
+    }
+    window.localStorage.setItem(
+      DECISION_DRAFT_KEY,
+      JSON.stringify({ decisions, savedAt: Date.now() }),
+    );
+  } catch {
+    // A draft that cannot be written is the behaviour this page had before — never a save failure.
+  }
 }
 
 function egp(value: number) {
@@ -189,7 +258,11 @@ export function ExpenseApprovalsWorkspace({
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
   const [view, setView] = useState<"queue" | "employees">("queue");
   const [expandedEmployees, setExpandedEmployees] = useState<Set<string>>(() => new Set());
+  const [restoredDraftCount, setRestoredDraftCount] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
+  // Guards BOTH draft effects below: nothing may be persisted before the stored draft has been
+  // read, or the empty initial state would erase the very work being recovered.
+  const draftRestoredRef = useRef(false);
 
   // No setState before the first `await`, so this stays safe to call straight from an effect
   // (loading starts true on mount; the retry handler re-arms it).
@@ -225,6 +298,55 @@ export function ExpenseApprovalsWorkspace({
     };
   }, [load]);
 
+  // Bring back whatever was left unsaved last time. Runs once, and only once the queue itself is
+  // on screen, because a draft entry is only meaningful against a record: a trip that has since
+  // left the queue, or one somebody else has already decided the same way, must not be re-opened.
+  //
+  // Shaped around the `await Promise.resolve()` for the same reason the loader above is: a
+  // synchronous setState in an effect body is a lint ERROR here (react-hooks/set-state-in-effect),
+  // and this genuinely is the case that rule allows — reconciling with a store outside React that
+  // cannot be read during render.
+  useEffect(() => {
+    if (draftRestoredRef.current || records.length === 0) return;
+    draftRestoredRef.current = true;
+
+    let cancelled = false;
+    async function restoreDraft() {
+      await Promise.resolve();
+      if (cancelled) return;
+
+      const draft = readExpenseDecisionDraft();
+      if (!draft) return;
+
+      const restored: Record<string, Decision> = {};
+      for (const record of records) {
+        const entry = draft[record.tripId];
+        // Dropped rather than restored when it now MATCHES the stored row — that draft entry is
+        // already committed, and carrying it would show a permanent phantom "1 decision not saved".
+        if (entry && expenseDecisionChanged(entry, savedDecision(record))) {
+          restored[record.tripId] = entry;
+        }
+      }
+
+      const count = Object.keys(restored).length;
+      if (count === 0) return;
+      // `...current` last: anything decided in the moment before this landed outranks the draft.
+      setDecisions((current) => ({ ...restored, ...current }));
+      setRestoredDraftCount(count);
+    }
+
+    void restoreDraft();
+    return () => {
+      cancelled = true;
+    };
+  }, [records]);
+
+  // Persist on every change, so the draft is never more than one decision behind the screen.
+  useEffect(() => {
+    if (!draftRestoredRef.current) return;
+    writeExpenseDecisionDraft(decisions);
+  }, [decisions]);
+
   const decisionFor = useCallback(
     (record: LoadedRecord): Decision => decisions[record.tripId] ?? savedDecision(record),
     [decisions],
@@ -238,21 +360,38 @@ export function ExpenseApprovalsWorkspace({
     });
   }, []);
 
+  // `expenseDecisionChanged` rather than an inline compare, and the SAME call `save()` makes below
+  // — the two were written separately once and disagreed about a rejection being undone, so this
+  // bar counted a decision the payload then left out (see approval-state.ts).
   const dirtyCount = useMemo(() => {
-    return records.reduce((count, record) => {
-      const local = decisions[record.tripId];
-      if (!local) return count;
-      const saved = savedDecision(record);
-      const changed =
-        local.hrApproved !== saved.hrApproved ||
-        Math.abs(local.approvedAmount - saved.approvedAmount) > 0.5 ||
-        local.hrComment.trim() !== saved.hrComment.trim() ||
-        // A rejection changes ONLY the status, so without this the Save button stays
-        // disabled and the decision is silently discarded.
-        isRejectedStatus(local.status) !== isRejectedStatus(saved.status);
-      return changed ? count + 1 : count;
-    }, 0);
+    return records.reduce(
+      (count, record) => {
+        const local = decisions[record.tripId];
+        if (!local) return count;
+        return expenseDecisionChanged(local, savedDecision(record)) ? count + 1 : count;
+      },
+      0,
+    );
   }, [records, decisions]);
+
+  // A full page unload — reload, tab close, the hard navigation Next.js forces after a deploy — is
+  // the one exit the draft above cannot narrate on the way out, so say so before it happens.
+  // Registered ONLY while something is unsaved: a permanently attached `beforeunload` makes the
+  // page ineligible for the back/forward cache (the same reason report-client-error.ts avoids it),
+  // and this page is otherwise perfectly safe to leave.
+  //
+  // It does NOT catch an in-app link — Next.js client navigation never fires it — which is exactly
+  // why the draft is the load-bearing half of this fix and the warning only the polite half.
+  useEffect(() => {
+    if (dirtyCount === 0) return;
+    function onBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      // Browsers show their own wording and ignore ours; the assignment is what arms the dialog.
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirtyCount]);
 
   // Month/employee choices come from the loaded queue itself, so every option has at least one
   // trip behind it — a fixed calendar or the full directory would offer dead ends.
@@ -552,12 +691,13 @@ export function ExpenseApprovalsWorkspace({
       for (const record of records) {
         const local = decisions[record.tripId];
         if (!local) continue;
-        const saved = savedDecision(record);
-        const changed =
-          local.hrApproved !== saved.hrApproved ||
-          Math.abs(local.approvedAmount - saved.approvedAmount) > 0.5 ||
-          local.hrComment.trim() !== saved.hrComment.trim();
-        if (changed) changedReportIds.add(record.reportId ?? null);
+        // The SAME predicate the unsaved count uses. When this was a narrower copy of it, a report
+        // whose only change was an undone rejection never entered this set — so nothing was posted
+        // for it, `setDecisions({})` below threw the decision away, and the reviewer was told
+        // "Approvals saved."
+        if (expenseDecisionChanged(local, savedDecision(record))) {
+          changedReportIds.add(record.reportId ?? null);
+        }
       }
 
       // Save one report at a time with its FULL record set so the report's row/approval totals
@@ -599,6 +739,9 @@ export function ExpenseApprovalsWorkspace({
       }
 
       setDecisions({});
+      // The banner speaks for work that is still only on screen. Once it is written the notice has
+      // to go, or a reviewer who saved is still being told they have something outstanding.
+      setRestoredDraftCount(0);
       await load();
       // A partial save must say so. App-submitted requests go down a different write path (the
       // outstation workflow), and it can refuse a row the queue was willing to show — a trip
@@ -685,6 +828,21 @@ export function ExpenseApprovalsWorkspace({
           value={formatNumberValue(rejected.length)}
         />
       </div>
+
+      {/* Says plainly that work was recovered, and that it is still NOT saved — the whole failure
+          this replaces is a reviewer believing decisions were committed when they were not. Tied to
+          `dirtyCount` so it disappears the moment nothing is outstanding, whether that came from a
+          Save or from undoing the restored decisions by hand. */}
+      {restoredDraftCount > 0 && dirtyCount > 0 ? (
+        <AdminCallout tone="warning">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Brought back {formatNumberValue(restoredDraftCount)} decision
+            {restoredDraftCount === 1 ? "" : "s"} you had not saved. They are on screen again and
+            still unsaved — press Save to commit them.
+          </span>
+        </AdminCallout>
+      ) : null}
 
       {saveMessage ? (
         // A partial save is neither a success nor a failure, and must not wear a green tick: some
