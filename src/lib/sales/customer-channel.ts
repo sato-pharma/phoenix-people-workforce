@@ -307,6 +307,35 @@ export const STORE_OVERRIDE_NAMES: readonly ChannelNameKeyword[] = [
   { label: "طيبة جروب", stem: "طيبه جروب" },
   { label: "ابو عميرة", stem: "ابو عميره" },
   { label: "ابوعميرة", stem: "ابوعميره" },
+  // Seven more from the same conversation, 2026-09-07: the owner read the EPDA Pedia August list
+  // and ruled these seven wholesalers. None carries a store word, a prefix or the trade phrase.
+  //
+  // EVERY STEM WAS COUNTED BOTH WAYS ON PRODUCTION FIRST, because this list is the one that can
+  // CREATE a warehouse — unlike PHARMACY_OVERRIDE_CHAINS, where over-matching only ever refuses one.
+  // Together they move 8,201.25 EGP, all of it August 2026 Pedia; every other customer they touch is
+  // already a warehouse by another route, so nothing else changes hands.
+  //
+  // «الفرسان» ALONE WOULD HAVE BEEN A DISASTER: bare, it matches 9 customers worth 15,615,203.94 EGP
+  // across five different businesses, so the one he named is named in full. Its neighbour «الفرسان
+  // جروب - بنها» (163700, EPDA, 3,637,392.75) is NOT covered by any stem here and stays a pharmacy —
+  // he has not ruled on it, and this list is not the place to guess.
+  { label: "الفرسان - الزاوية", stem: "الفرسان - الزاويه" },
+  // Matches its own bigger sibling «الصفا ميديكال لتجارة وتوزيع الا دوية» (IS) too, which the trade
+  // phrase already calls a warehouse — so the stem adds this account and nothing else.
+  { label: "الصفا ميديكال", stem: "الصفا ميديكال" },
+  // One company, two distributor accounts on the same code (EP-BK and EP-PHS).
+  { label: "اورينت جروب", stem: "اورينت جروب" },
+  // Also matches «مخزن النهضة للادوية» (PS, 10,447,616.25) — already a warehouse on مخزن. The 151.88
+  // account is the only thing this changes, and the 10.4M is not at risk from it.
+  { label: "النهضة للادوية", stem: "النهضه للادويه" },
+  // Also matches «مالتي ستورز فارما ن.م» (PS), already a warehouse on فارم.
+  { label: "مالتى ستورز", stem: "مالتي ستورز" },
+  // Named in full: bare «فيوتشر» matches only this one customer today, but a stem that narrow costs
+  // nothing and cannot adopt a future pharmacy of the same name.
+  { label: "فيوتشر - الزقازيق", stem: "فيوتشر - الزقازيق" },
+  // Spelled «هاحر» in the source data, with two spaces before the dash. Folding collapses the
+  // spaces; the misspelling is theirs and is kept exactly, because it is what the files carry.
+  { label: "هاحر والشروق", stem: "هاحر والشروق" },
 ];
 
 /**
