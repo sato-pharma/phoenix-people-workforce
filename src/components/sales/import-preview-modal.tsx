@@ -9,11 +9,13 @@ import { Button } from "@/components/ui/button";
 import { customerKey, savedCustomerKeys } from "@/lib/sales/customer-key";
 import type { BrickSuggestionView, UnmappedCustomer } from "@/lib/sales/brick-suggestions";
 import type { ImportPreviewDiff } from "@/lib/sales/import-preview";
+import type { ImportSplitPlan } from "@/lib/sales/import-split-preview";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
 import type { DistributorSalesValidationResult } from "@/lib/sales/monthly-distributor-import";
 
 export type PreviewResult = DistributorSalesValidationResult & {
   previewDiff?: ImportPreviewDiff;
+  splitPlan?: ImportSplitPlan;
   suggestions?: BrickSuggestionView[];
   unmappedCustomers?: UnmappedCustomer[];
 };
@@ -189,6 +191,105 @@ function SuggestionsSection({ suggestions }: { suggestions: BrickSuggestionView[
   );
 }
 
+/**
+ * WHERE THIS FILE'S SALES WILL LAND — owner, 2026-09-07: "must in validation show the city and show
+ * how it will be distributed."
+ *
+ * Everything above this in the modal answers "will the import work". This answers "what will it do",
+ * which for a wholesaler file is the question that actually matters: one customer in Qalubeya reaches
+ * seven areas, another in Sohag reaches two, a third reaches only itself.
+ *
+ * A customer that does NOT split shows the reason, because "stays whole" is usually correct — a
+ * one-area governorate has nothing to divide across — and only the reason separates that from a
+ * misclassification.
+ *
+ * `table-fixed` with a colgroup, never a min-width: the fits-the-screen golden rule forbids a
+ * horizontal scroll, and long customer names wrap instead.
+ */
+function SplitPlanSection({ plan }: { plan: ImportSplitPlan | undefined }) {
+  if (!plan) return null;
+
+  if (!plan.splitActive) {
+    return (
+      <div className="space-y-1.5">
+        <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">How it will be distributed</p>
+        <p className="rounded-lg border border-phx-line bg-phx-paper px-4 py-3 text-sm text-phx-ink-soft">
+          The city split does not apply to {plan.period || "this period"} — every customer&rsquo;s sales stay in
+          the area the file gives them.
+        </p>
+      </div>
+    );
+  }
+
+  const splitting = plan.customers.filter((c) => c.willSplit);
+  const whole = plan.customers.filter((c) => !c.willSplit);
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">How it will be distributed</p>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatCard label="Customers that spread" value={formatNumber(plan.splittingCustomers)} />
+        <StatCard label="Units that spread" value={formatNumber(Math.round(plan.splittingUnits))} />
+        <StatCard label="Widest reach" value={plan.widestFanOut > 0 ? `${plan.widestFanOut} areas` : "—"} />
+      </div>
+
+      {splitting.length > 0 ? (
+        <div className="overflow-hidden rounded-lg border border-phx-line">
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col style={{ width: "30%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "34%" }} />
+              <col style={{ width: "16%" }} />
+            </colgroup>
+            <thead>
+              <tr className="bg-phx-paper text-left text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+                <th className="px-3 py-2">Customer</th>
+                <th className="px-3 py-2">City</th>
+                <th className="px-3 py-2">Spreads across</th>
+                <th className="px-3 py-2 text-right">Units each</th>
+              </tr>
+            </thead>
+            <tbody>
+              {splitting.slice(0, 25).map((c) => (
+                <tr className="border-t border-phx-line align-top" key={`${c.clientCode}-${c.originArea}`}>
+                  <td className="break-words px-3 py-2">
+                    <span className="block">{c.clientName || c.clientCode}</span>
+                    <span className="text-phx-xs text-phx-ink-soft">{c.originArea}</span>
+                  </td>
+                  <td className="break-words px-3 py-2">{c.group ?? "—"}</td>
+                  <td className="break-words px-3 py-2 text-phx-ink-soft">{c.targetAreas.join(", ")}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {formatNumber(Math.round(c.unitsPerArea * 100) / 100)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      {whole.length > 0 ? (
+        <details className="rounded-lg border border-phx-line px-4 py-2 text-sm">
+          <summary className="cursor-pointer text-phx-ink-soft">
+            {formatNumber(plan.wholeCustomers)} customer{plan.wholeCustomers === 1 ? "" : "s"} stay whole
+            ({formatNumber(Math.round(plan.wholeUnits))} units) — and why
+          </summary>
+          <ul className="mt-2 space-y-1">
+            {whole.slice(0, 25).map((c) => (
+              <li className="text-phx-ink-soft" key={`${c.clientCode}-${c.originArea}-w`}>
+                <span className="text-slate-900">{c.clientName || c.clientCode}</span>
+                {" — "}
+                {c.reason}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
 export function ImportPreviewModal({ committing, onCancel, onConfirm, result }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -274,6 +375,8 @@ export function ImportPreviewModal({ committing, onCancel, onConfirm, result }: 
             <StatCard label="Unmapped products" tone={diff && diff.unmappedProductsCount > 0 ? "warn" : "neutral"} value={formatNumber(diff?.unmappedProductsCount ?? 0)} />
             <StatCard label="Brick drift" tone={diff && diff.brickDriftCount > 0 ? "bad" : "neutral"} value={formatNumber(diff?.brickDriftCount ?? 0)} />
           </div>
+
+          <SplitPlanSection plan={result.splitPlan} />
 
           {diff && diff.newCustomers > 0 ? (
             <div className="space-y-1.5">

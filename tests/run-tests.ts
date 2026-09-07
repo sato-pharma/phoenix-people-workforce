@@ -1125,6 +1125,7 @@ import { runAchievementHashableJoinKeyTests } from "./achievement-hashable-join-
 import { runDirectOrdersRegistryChainGrantsTests } from "./direct-orders-registry-chain-grants.test.ts";
 import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
 import { runSosWarehouseOwnerRulingsTests } from "./sos-warehouse-owner-rulings.test.ts";
+import { runImportSplitPreviewTests } from "./import-split-preview.test.ts";
 import { runQemaQalubeyaSplitTests } from "./qema-qalubeya-split.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
 import { runClosingStoreSplitHonoursEvenSplitRegistryTests } from "./closing-store-split-honours-even-split-registry.test.ts";
@@ -3283,6 +3284,10 @@ await runTest(
   runCeoMarketingApprovalInboxTests,
 );
 
+await runTest(
+  "import split preview (validation shows the city and how the units will be distributed; a customer that stays whole says WHY, and one customer in two areas is two placements)",
+  runImportSplitPreviewTests,
+);
 await runTest(
   "El Qema Qalubeya split (one way, El Qema only — Qalubeya reaches Cairo, Cairo never reaches Qalubeya, and the same warehouse through any other distributor does not split at all)",
   runQemaQalubeyaSplitTests,

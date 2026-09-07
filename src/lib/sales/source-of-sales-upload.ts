@@ -24,6 +24,7 @@ import {
   type DistributorSalesValidationResult,
   type ParsedDistributorRow,
 } from "@/lib/sales/monthly-distributor-import";
+import { buildImportSplitPlan } from "@/lib/sales/import-split-preview";
 import { listCustomerMap } from "@/lib/sales/normalizer/customer-map";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { buildCodedBuffer } from "@/lib/sales/normalizer/service";
@@ -53,6 +54,29 @@ async function buildPreviewDiff(
     issues: result.issues.map((i) => ({ field: i.field, value: i.value })),
     rows,
     totalRows: result.rowCount,
+  });
+}
+
+/**
+ * What the city split will do to this file — owner, 2026-09-07: "must in validation show the city
+ * and show how it will be distributed".
+ *
+ * Built from the SAME parsed rows the preview diff reads, and from the SAME period the batch will
+ * carry, so the plan shown at validation is the plan the closing will execute. It calls the split's
+ * own functions rather than restating the rule; there is nothing here to drift.
+ */
+function buildSplitPlan(parsedRows: readonly ParsedDistributorRow[], period: string | null | undefined) {
+  return buildImportSplitPlan({
+    period,
+    rows: parsedRows.map((r) => ({
+      areaCode: r.areaCode,
+      clientCode: r.clientCode,
+      clientName: r.clientName,
+      distributorCode: r.distributorCode,
+      isDirect: r.isDirect,
+      officialLine: r.officialLine,
+      qty: r.qty,
+    })),
   });
 }
 
@@ -211,9 +235,10 @@ export async function importSourceOfSalesFile(input: {
     };
     const rows: ImportPreviewRow[] = parsedRows.map((r) => ({ brickId: r.brickId, clientCode: r.clientCode, value: r.value }));
     const previewDiff = await buildPreviewDiff(input.distributorCode, rows, result);
+    const splitPlan = buildSplitPlan(parsedRows, result.period ?? input.periodOverride);
     const unmappedCustomers = unmappedFromRows(parsedRows);
     const suggestions = await buildSuggestions(input.distributorCode, unmappedCustomers);
-    return { ...result, previewDiff, suggestions, unmappedCustomers: unmappedCustomers.slice(0, MAX_UNMAPPED_DETAILS) };
+    return { ...result, previewDiff, splitPlan, suggestions, unmappedCustomers: unmappedCustomers.slice(0, MAX_UNMAPPED_DETAILS) };
   } catch (error) {
     if (!(error instanceof SalesWorkflowError) || error.code !== "unsupported_distributor_template") {
       throw error;
@@ -297,10 +322,11 @@ export async function importSourceOfSalesFile(input: {
       };
       const rows: ImportPreviewRow[] = parsedRows.map((r) => ({ brickId: r.brickId, clientCode: r.clientCode, value: r.value }));
       const previewDiff = await buildPreviewDiff(input.distributorCode, rows, result);
+      const splitPlan = buildSplitPlan(parsedRows, result.period ?? input.periodOverride);
       const advisory = ignoredRowsAdvisory(normalizeResult);
       return advisory
-        ? { ...result, advisories: [...(result.advisories ?? []), advisory], previewDiff }
-        : { ...result, previewDiff };
+        ? { ...result, advisories: [...(result.advisories ?? []), advisory], previewDiff, splitPlan }
+        : { ...result, previewDiff, splitPlan };
     }
 
     const persistResult = await createSourceOfSalesUploadFromBuffer({
