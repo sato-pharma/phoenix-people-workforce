@@ -7,7 +7,11 @@ import { findLineById, loadMarketAwarenessLines } from "@/lib/market-awareness/l
 import type { MarketAwarenessLine } from "@/lib/market-awareness/lines";
 import { findArea, loadRegionManagers } from "@/lib/market-awareness/geography";
 import { notifyConversationMessage } from "@/lib/conversations/notify";
-import { notifyActivityApproved } from "@/lib/market-awareness/notifications";
+import {
+  notifyActivityApproved,
+  notifyActivityReturned,
+  notifyDecisionPending,
+} from "@/lib/market-awareness/notifications";
 import {
   canCloseActivity,
   canCreateActivity,
@@ -768,7 +772,23 @@ export async function submitActivity(
     .eq("id", activityId);
   if (error) throw toQueryError(error);
 
-  return getActivity(access, activityId);
+  const submitted = await getActivity(access, activityId);
+
+  // Tell whoever now has to act. Without this the activity lands in an approvals inbox nobody has
+  // been sent to — measured on production 2026-09-07, two real submissions sat untouched because
+  // nothing announced them. Best-effort: the submission is committed, so a delivery failure is
+  // logged inside the notifier and never thrown back here.
+  const pendingStep = currentStep(submitted.status);
+  if (pendingStep) {
+    await notifyDecisionPending({
+      activity: submitted,
+      actionUrl: "/employee-portals/market-awareness/inbox",
+      ceoHrIds: pendingStep === "ceo" ? await loadRoleHolderHrIds(["CEO"]) : [],
+      step: pendingStep,
+    });
+  }
+
+  return submitted;
 }
 
 export async function decideActivity(
@@ -849,6 +869,33 @@ export async function decideActivity(
   // line, the NSM, the SFE Manager, the area's medical rep and Finance. Best-effort by contract —
   // notifyActivityApproved swallows and logs, because an undelivered notification must never undo
   // a decision the CEO actually made.
+  // Moving on to the CEO is a hand-off like any other: somebody new has to act, so somebody new has
+  // to be told. This is the step the CEO was never notified of.
+  if (transition.to === "pending_ceo") {
+    await notifyDecisionPending({
+      activity: decided,
+      actionUrl: "/employee-portals/market-awareness/inbox",
+      ceoHrIds: await loadRoleHolderHrIds(["CEO"]),
+      step: "ceo",
+    });
+  }
+
+  // Sent back or refused: the requester is the only person who can act next, and until now nothing
+  // told them their request had stopped moving.
+  if (transition.to === "returned" || transition.to === "rejected") {
+    const actorKey = canonicalHrIdKey(access.hrId);
+    const deciderName = actorKey
+      ? (await loadEmployees([access.hrId])).get(actorKey)?.full_name ?? null
+      : null;
+    await notifyActivityReturned({
+      activity: decided,
+      actionUrl: `/employee-portals/market-awareness?activity=${decided.id}`,
+      comment: input.comment?.trim() || null,
+      deciderName,
+      rejected: transition.to === "rejected",
+    });
+  }
+
   if (transition.to === "approved") {
     await notifyActivityApproved({
       activity: decided,
