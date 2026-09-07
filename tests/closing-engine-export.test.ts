@@ -1441,33 +1441,44 @@ export async function runClosingEngineExportTests() {
     const titleStyle = /<row r="1"[^>]*>(?:(?!<\/row>)[\s\S])*?<c r="A1" s="(\d+)"/.exec(sheet)?.[1];
     assert.ok(titleStyle, `${label}: the contents page must carry a masthead on row 1`);
 
-    // DERIVED from the Overview's masthead, not identical to it. The contents page is the cover, so
-    // its title is deliberately a size up and indented to leave a lane for the emblem — but the
-    // GROUND it sits on must still be the owner's: the same fill and the same rule underneath. Those
-    // two are what make it read as the same masthead; the size is the only thing allowed to differ.
-    const overviewTitle = /<c r="A1" s="(\d+)"/.exec(overviewXml)?.[1];
-    assert.ok(overviewTitle, `${label}: the Overview must carry a masthead to derive from`);
-    const sizeIn = (style: string) =>
-      Number(/sz val="([0-9.]+)"/.exec(fontOf(style)) ?.[1] ?? NaN);
-    assert.equal(
-      fillOf(titleStyle!),
-      fillOf(overviewTitle!),
-      `${label}: the masthead sits on a different ground from the Overview's — it was invented, not derived`,
-    );
-    assert.equal(
-      idOf(xfs[Number(titleStyle)] ?? "", "borderId"),
-      idOf(xfs[Number(overviewTitle)] ?? "", "borderId"),
-      `${label}: the masthead lost the rule the Overview's carries`,
-    );
+    // THE COVER BANNER. The contents page is the cover, so unlike its siblings it opens with a band
+    // rather than a line of type: a deep fill running edge to edge with the month reversed out of
+    // it. Owner's choice, 2026-09-07.
+    const bannerFill = fillOf(titleStyle!);
+    assert.notEqual(bannerFill, "none", `${label}: the cover must open with a filled banner`);
+
+    // Edge to edge: both columns of the band carry the same fill. A band covering only the second
+    // column reads as a rectangle floating beside the page, not as a masthead — that was the first
+    // attempt at this and it was rejected on sight.
+    const bannerRows: string[] = [];
+    for (const [, index, body] of sheet.matchAll(/<row r="(\d+)"[^>]*>((?:(?!<\/row>)[\s\S])*?)<\/row>/g)) {
+      const cells = [...body.matchAll(/<c r="([A-Z]+)\d+" s="(\d+)"/g)];
+      if (cells.length === 0 || fillOf(cells[0][2]) !== bannerFill) break;
+      assert.ok(
+        cells.length >= 2 && cells.every((cell) => fillOf(cell[2]) === bannerFill),
+        `${label}: banner row ${index} does not carry the band across both columns`,
+      );
+      bannerRows.push(index);
+    }
     assert.ok(
-      fontOf(titleStyle!).includes("<b/>"),
-      `${label}: the masthead must stay bold`,
+      bannerRows.length >= 3,
+      `${label}: the banner is ${bannerRows.length} row(s) — a band needs room above and below its `
+        + "type, or the words sit hard against its edges",
     );
-    assert.ok(
-      sizeIn(titleStyle!) >= sizeIn(overviewTitle!),
-      `${label}: the cover's title is ${sizeIn(titleStyle!)}pt against the Overview's `
-        + `${sizeIn(overviewTitle!)}pt — it must never end up SMALLER than a working sheet's`,
-    );
+
+    // The month is reversed OUT of the band: white type on that fill, or it is unreadable.
+    const bannerType = [...sheet.matchAll(/<row r="\d+"[^>]*>((?:(?!<\/row>)[\s\S])*?)<\/row>/g)]
+      .slice(0, bannerRows.length)
+      .flatMap(([, body]) => [...body.matchAll(/<c r="[A-Z]+\d+" s="(\d+)"[^>]*t="inlineStr"/g)])
+      .map((m) => m[1]);
+    assert.ok(bannerType.length >= 1, `${label}: the banner carries no type at all`);
+    for (const style of bannerType) {
+      assert.match(
+        fontOf(style),
+        /FFFFFF/i,
+        `${label}: banner type is not reversed out — it must be white on the band`,
+      );
+    }
 
     // 3) The table header is filled, and its type is white — a coloured header, as asked for.
     const headerRowRef = /<row r="(\d+)"[^>]*>(?:(?!<\/row>)[\s\S])*?<t[^>]*>Page<\/t>/.exec(sheet);
@@ -1620,16 +1631,30 @@ export async function runClosingEngineExportTests() {
       /<xdr:col>0<\/xdr:col>/,
       `${label}: the emblem must sit in the first column, beside the title — not out in a far corner`,
     );
-    assert.match(
-      drawingXml,
-      /<xdr:row>0<\/xdr:row>/,
-      `${label}: the emblem belongs on the masthead row`,
-    );
-    const titleIndent = Number(/\bindent="(\d+)"/.exec(xfs[Number(titleStyle)] ?? "")?.[1] ?? 0);
+    // INSIDE THE BANNER, on a row of it. The mark is centred on the band, so it lands on whichever
+    // row that centre falls in — pinning row 0 would pin the arithmetic, not the requirement.
+    const emblemRow = Number(/<xdr:row>(\d+)<\/xdr:row>/.exec(drawingXml)?.[1] ?? NaN);
     assert.ok(
-      titleIndent >= 4,
-      `${label}: the title indents ${titleIndent} — too little to clear the emblem's lane, so the `
-        + "mark would print over the first word",
+      Number.isFinite(emblemRow) && emblemRow < bannerRows.length,
+      `${label}: the emblem is anchored to row ${emblemRow}, outside the ${bannerRows.length}-row `
+        + "banner — it belongs on the band",
+    );
+
+    // THE WHITE CHIP UNDER IT. The mark's own "SATO" is set in black, so on the dark band that half
+    // of the wordmark disappears; the chip is the ground that keeps it readable. It must be drawn
+    // BEFORE the picture, because z-order in a drawing is document order — emitted after, it would
+    // cover the very mark it exists to carry and the banner would show a blank white tile.
+    const chipAt = drawingXml.indexOf("<xdr:sp");
+    const picAt = drawingXml.indexOf("<xdr:pic");
+    assert.ok(chipAt >= 0, `${label}: the emblem has no white chip, so "SATO" vanishes into the band`);
+    assert.ok(
+      chipAt < picAt,
+      `${label}: the chip is drawn OVER the emblem — the banner would show a blank white tile`,
+    );
+    assert.match(
+      drawingXml.slice(chipAt, picAt),
+      /<a:srgbClr val="FFFFFF"\/>/,
+      `${label}: the chip must be white — it is what the black half of the wordmark stands on`,
     );
 
     // Same class of defect: a dimension that stops short of the rows actually written.

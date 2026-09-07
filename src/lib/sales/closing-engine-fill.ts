@@ -2457,19 +2457,6 @@ function nextWorksheetPart(zip: JSZip): string {
 
 const INDEX_SHEET = "Contents";
 
-/**
- * The lane the emblem sits in, at the left of the masthead, and the indent that keeps the title
- * clear of it.
- *
- * ONE NUMBER, READ FROM BOTH ENDS. The style indents the title past the lane and the drawing places
- * the mark inside it; if the two disagreed the logo would land on top of the first word, and that
- * is a defect only a render would ever show. Excel's indent unit is three characters of the
- * standard font, so at roughly 66,675 EMU per character one indent is about 200,000 EMU — five of
- * them clear the ~840,000 EMU mark with air to spare.
- */
-const INDEX_MARK_LANE_EMU = 1_000_000;
-const INDEX_MARK_MARGIN_EMU = 76_200;
-const INDEX_MARK_INDENT = 5;
 
 /**
  * Add the contents page, and put it first.
@@ -2534,8 +2521,9 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   // The look is cloned off the Overview, never named by index. See resolveIndexStyles.
   const own = await resolveIndexStyles(zip);
   const s: IndexPalette = own ?? {
-    band: "0", body: "0", bodyZebra: "0", foot: "0", header: "0",
-    link: "0", linkZebra: "0", title: "0", titlePt: "13", titleTail: "0",
+    band: "0", bannerBlank: "0", bannerSub: "0", bannerTitle: "0", body: "0", bodyZebra: "0",
+    chip: "0", foot: "0", header: "0", link: "0", linkZebra: "0", title: "0", titlePt: "13",
+    titleTail: "0",
   };
 
   const line = String(fill.sheets.Overview?.cells?.A1 ?? "").trim();
@@ -2566,14 +2554,38 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   const stamp = separator > 0 ? line.slice(separator + 1).trim() : "";
   const headline = (separator > 0 ? line.slice(0, separator) : line).trim();
 
-  const mastheadPt = 42;
-  merges.push(`A${rowNumber}:B${rowNumber}`);
-  rows.push(
-    `<row r="${rowNumber}" ht="${mastheadPt}" customHeight="1">`
-      + inline(`A${rowNumber}`, s.title, headline || "Monthly Closing")
-      + `<c r="B${rowNumber}" s="${s.titleTail}"/>`
-      + "</row>",
-  );
+  // The sheets write their caption as one run separated by wide gaps —
+  // "Monthly Closing   August 2026   Anti Infective". The banner sets the first part as the
+  // headline and the rest as the line under it, which is the only split that survives a line whose
+  // parts change from month to month.
+  const captionParts = headline.split(/\s{2,}/).map((part) => part.trim()).filter(Boolean);
+  const bannerHead = (captionParts[0] ?? "Monthly Closing").toUpperCase();
+  const bannerSub = captionParts.slice(1).join("   ·   ");
+
+  // THE BANNER: four rows, so the type has air above and below it inside the band rather than
+  // sitting hard against its edges. Column A stays WHITE across all four — that panel is what the
+  // mark stands on; see resolveIndexStyles for why it cannot sit on the band itself.
+  const bannerRowsPt = [6, 26, 18, 6];
+  const bannerText = [null, { style: s.bannerTitle, value: bannerHead },
+    { style: s.bannerSub, value: bannerSub }, null];
+  bannerRowsPt.forEach((heightPt, index) => {
+    const cell = bannerText[index];
+    rows.push(
+      `<row r="${rowNumber}" ht="${heightPt}" customHeight="1">`
+        // BOTH columns take the band, so it runs edge to edge. The mark does not sit on a white
+        // COLUMN — that read as a pale rectangle floating beside a blue one rather than as one
+        // masthead. It sits on a white CHIP drawn inside the band, which is what addIndexEmblem
+        // puts there.
+        + `<c r="A${rowNumber}" s="${s.bannerBlank}"/>`
+        + (cell && cell.value
+          ? inline(`B${rowNumber}`, cell.style, cell.value)
+          : `<c r="B${rowNumber}" s="${s.bannerBlank}"/>`)
+        + "</row>",
+    );
+    rowNumber += 1;
+  });
+
+  // A thin breath between the band and the table, so the two are not welded together.
   rowNumber += 1;
 
   rows.push(
@@ -2634,7 +2646,7 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   // <drawing> already in place.
   zip.file(
     indexPart,
-    await addIndexEmblem(zip, indexPart, sheetXml, { rowPt: mastheadPt }),
+    await addIndexEmblem(zip, indexPart, sheetXml, { columnIndex: 0, rowHeightsPt: bannerRowsPt }),
   );
 
   zip.file(
@@ -2891,7 +2903,7 @@ async function addIndexEmblem(
   zip: JSZip,
   indexPart: string,
   sheetXml: string,
-  masthead: { rowPt: number },
+  masthead: { columnIndex: number; rowHeightsPt: number[] },
 ): Promise<string> {
   const drawingNames = Object.keys(zip.files)
     .filter((name) => /^xl\/drawings\/drawing\d+\.xml$/.test(name))
@@ -2931,26 +2943,66 @@ async function addIndexEmblem(
   // to sit and was dropped entirely — the page came out with no logo at all. Putting it first makes
   // the placement independent of how long a given month's title happens to be.
   //
-  // The title style indents past `INDEX_MARK_LANE_EMU`, so the lane is reserved from both ends: the
-  // style leaves the room, and this fills it. A mark too wide for that lane is skipped rather than
-  // printed over the first word.
+  // It is CENTRED ON THE WHITE PANEL at the left of the banner — the only ground this mark is
+  // legible on, and a panel that exists for the mark alone, so an off-centre placement in it would
+  // read as a mistake in a way an off-centre mark in a wide masthead does not.
   const widthOf = columnWidthReader(sheetXml);
-  const x = INDEX_MARK_MARGIN_EMU;
-  if (width > INDEX_MARK_LANE_EMU - INDEX_MARK_MARGIN_EMU) return sheetXml;
-  const at = locateColumn(widthOf, x);
+  const panelWidth = widthOf(masthead.columnIndex);
+  if (width >= panelWidth) return sheetXml;
+  const at = { col: masthead.columnIndex, colOff: Math.round((panelWidth - width) / 2) };
 
-  // Centred in the masthead row rather than dropped a fixed distance: the row is taller than the
-  // siblings' to carry the bigger type, so their 50800 would sit the mark high against the text.
-  const drop = Math.max(0, Math.round((masthead.rowPt * 12_700 - height) / 2));
+  // The vertical centre of the WHOLE band, resolved back to the row it lands in. A rowOff is an
+  // offset INTO its own row, so one offset measured from the top of the band would overflow the
+  // first row and Excel would place the mark somewhere of its own choosing.
+  const bandEmu = masthead.rowHeightsPt.reduce((total, pt) => total + pt * 12_700, 0);
+  let remaining = Math.max(0, Math.round((bandEmu - height) / 2));
+  let anchorRow = 0;
+  for (const pt of masthead.rowHeightsPt) {
+    const rowEmu = pt * 12_700;
+    if (remaining < rowEmu) break;
+    remaining -= rowEmu;
+    anchorRow += 1;
+  }
+  const drop = remaining;
 
   const part = `xl/drawings/drawing${
     Math.max(0, ...drawingNames.map((name) => Number(/drawing(\d+)\.xml$/.exec(name)?.[1] ?? 0))) + 1
   }.xml`;
 
+  // THE WHITE CHIP, drawn UNDER the mark and INSIDE the band.
+  //
+  // This is what lets the band run edge to edge. The alternative — leaving the whole first column
+  // white — made the masthead read as a pale rectangle sitting beside a blue one rather than as a
+  // single banner. A shape can be any size, so the chip is exactly the mark plus its clear space
+  // and the band stays unbroken behind it.
+  //
+  // Z-ORDER IS DOCUMENT ORDER in a drawing, so the chip is emitted FIRST. Emitted second it would
+  // cover the very mark it exists to carry, and the banner would show a blank white tile.
+  const padX = 114_300;
+  const padY = 76_200;
+  const chipWidth = width + padX * 2;
+  const chipHeight = height + padY * 2;
+  const chipOff = at.colOff - padX;
+  const chip =
+    chipOff < 0 || chipWidth > panelWidth
+      ? "" // a chip hanging past the column edge would sit half on the band and half off it
+      : "<xdr:oneCellAnchor>"
+        + `<xdr:from><xdr:col>${at.col}</xdr:col><xdr:colOff>${chipOff}</xdr:colOff>`
+        + `<xdr:row>${anchorRow}</xdr:row><xdr:rowOff>${Math.max(0, drop - padY)}</xdr:rowOff></xdr:from>`
+        + `<xdr:ext cx="${chipWidth}" cy="${chipHeight}"/>`
+        + '<xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="3" name="EmblemPanel"/>'
+        + "<xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr>"
+        + `<a:xfrm><a:off x="0" y="0"/><a:ext cx="${chipWidth}" cy="${chipHeight}"/></a:xfrm>`
+        + '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+        + '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:ln><a:noFill/></a:ln>'
+        + '</xdr:spPr><xdr:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-US"/></a:p></xdr:txBody>'
+        + '</xdr:sp><xdr:clientData fPrintsWithSheet="0"/></xdr:oneCellAnchor>';
+
   const anchor =
-    "<xdr:oneCellAnchor>"
+    chip
+    + "<xdr:oneCellAnchor>"
     + `<xdr:from><xdr:col>${at.col}</xdr:col><xdr:colOff>${at.colOff}</xdr:colOff>`
-    + `<xdr:row>0</xdr:row><xdr:rowOff>${drop}</xdr:rowOff></xdr:from>`
+    + `<xdr:row>${anchorRow}</xdr:row><xdr:rowOff>${drop}</xdr:rowOff></xdr:from>`
     + `<xdr:ext cx="${width}" cy="${height}"/>`
     + picture.replace(/<xdr:cNvPr\b[^>]*?(\/>|>[\s\S]*?<\/xdr:cNvPr>)/, '<xdr:cNvPr id="2" name="Emblem"/>')
       .replace(/r:embed="rId\d+"/, 'r:embed="rId1"')
@@ -3020,8 +3072,8 @@ async function addIndexEmblem(
  * defines, found by their COLOUR rather than by their position.
  */
 type IndexPalette = Record<
-  "band" | "body" | "bodyZebra" | "foot" | "header" | "link" | "linkZebra" | "title" | "titlePt"
-  | "titleTail",
+  "band" | "bannerBlank" | "bannerSub" | "bannerTitle" | "body" | "bodyZebra" | "chip" | "foot"
+  | "header" | "link" | "linkZebra" | "title" | "titlePt" | "titleTail",
   string
 >;
 
@@ -3185,6 +3237,46 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
     return String(result.index);
   };
 
+  // ── THE COVER BANNER ────────────────────────────────────────────────────────────────────────
+  //
+  // A deep band across the masthead with the month reversed out of it, and the mark on a WHITE
+  // PANEL at its left.
+  //
+  // THE WHITE PANEL IS NOT DECORATION — it is the only way the logo survives. The mark in this
+  // workbook is the on-light file: "SATO" is set in BLACK, so on a dark band that half of the
+  // wordmark disappears and the banner reads "PHARMA". The stock on-dark file has the opposite
+  // problem here: its "SATO" is white and would show, but its "PHARMA" is the brand blue `#0868A8`
+  // sitting on a `#085080` band — about 1.5:1, which is not a contrast at all. Neither file works
+  // directly on the band, so the band gives it a white ground to stand on, which is also what the
+  // house standard asks for: the on-light mark, on white.
+  const darkFill = fills.reduce(
+    (best, fill, index) => {
+      const rgb = /fgColor rgb="FF([0-9A-Fa-f]{6})"/.exec(fill)?.[1];
+      if (!rgb) return best;
+      const value = parseInt(rgb, 16);
+      const luma = ((value >> 16) & 255) * 0.299 + ((value >> 8) & 255) * 0.587 + (value & 255) * 0.114;
+      return best.luma <= luma ? best : { index, luma };
+    },
+    { index: -1, luma: Number.POSITIVE_INFINITY },
+  ).index;
+  const whiteFill = fills.findIndex((fill) => /fgColor rgb="FFFFFFFF"/i.test(fill));
+
+  /** The largest white face the workbook owns, bold or not — the type that reverses out of the band. */
+  const whiteFont = (bold: boolean) => {
+    let best: number | null = null;
+    let bestSize = -1;
+    fonts.forEach((font, index) => {
+      if (!/color rgb="FFFFFFFF"/i.test(font) || font.includes("<b/>") !== bold) return;
+      const size = sizeOf(font);
+      if (!Number.isFinite(size) || size <= bestSize) return;
+      bestSize = size;
+      best = index;
+    });
+    return best;
+  };
+  const bannerTitleFont = whiteFont(true);
+  const bannerSubFont = whiteFont(false) ?? bannerTitleFont;
+
   // THE TITLE, ONE SIZE UP. The masthead the siblings use is 13pt, which is right on a sheet whose
   // job is a dense table; the contents page is the cover and reads as timid at that size. It takes
   // the LARGEST bold face the workbook ALREADY OWNS in the title's own colour, so the page grows
@@ -3212,11 +3304,19 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
   const ruled = (patch: { fillId?: number; fontId?: number }) =>
     add(swap(bodyXf, { ...patch, ...(hairline >= 0 ? { borderId: hairline } : {}) }));
 
+  /** A banner cell: on the dark band, no rule, optionally carrying reversed-out type. */
+  const banner = (fontId: number | null) =>
+    add(swap(bodyXf, { borderId: 0, ...(darkFill >= 0 ? { fillId: darkFill } : {}), ...(fontId === null ? {} : { fontId }) }));
+
   const palette: IndexPalette = {
+    bannerTitle: banner(bannerTitleFont),
+    bannerSub: banner(bannerSubFont),
+    bannerBlank: banner(null),
+    // The white panel the mark stands on, at the left of the band.
+    chip: add(swap(bodyXf, { borderId: 0, ...(whiteFill >= 0 ? { fillId: whiteFill } : {}) })),
     title: add(
       swap(titleXf, {
         ...(bigTitleFont < 0 ? {} : { fontId: bigTitleFont }),
-        indent: INDEX_MARK_INDENT,
       }),
     ),
     titlePt: String(titlePt),
