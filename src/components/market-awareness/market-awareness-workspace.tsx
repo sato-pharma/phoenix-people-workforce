@@ -20,6 +20,8 @@ import {
   X,
 } from "lucide-react";
 
+import { Conversation } from "@/components/market-awareness/market-awareness-conversation";
+
 /**
  * Market Awareness — one page, two tabs, exactly as the owner described it.
  *
@@ -1211,6 +1213,16 @@ function ActivitySummary({ activity }: { activity: Activity }) {
             </ol>
           </div>
         ) : null}
+
+        {/*
+          The thread lives here as well as in the approvals inbox, and this is the copy that matters
+          most: when a manager asks a question the server emails whoever raised the activity, and the
+          link in that email lands HERE. A conversation that only existed on the decider's screen
+          would email someone a question with nowhere to answer it.
+
+          A draft has no thread — nobody has been told about it yet, so there is nobody to talk to.
+        */}
+        {activity.status === "draft" ? null : <Conversation activityId={activity.id} />}
       </div>
     </Panel>
   );

@@ -201,3 +201,18 @@ export type MarketAwarenessTracking = {
   /** Set when the window has not finished, so a comparison would be against a partial period. */
   windowIncompleteReason: string | null;
 };
+
+/**
+ * One message in an activity's conversation.
+ *
+ * `authorName` is resolved at read time and is nullable on purpose: an author whose employee row is
+ * gone still has a comment worth showing, and the owner's rule is human names — so the id is carried
+ * beside the name for attribution, never printed in its place.
+ */
+export type MarketAwarenessComment = {
+  id: number;
+  authorHrId: string;
+  authorName: string | null;
+  body: string;
+  createdAt: string;
+};

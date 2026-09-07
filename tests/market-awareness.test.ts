@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 
+import { readFileSync } from "node:fs";
+
+import { conversationMessageIdempotencyKey } from "../src/lib/conversations/notify.ts";
 import { isTrackableProductLine } from "../src/lib/market-awareness/lines.ts";
 import {
   canCreateActivity,
@@ -302,5 +305,75 @@ export function runMarketAwarenessTests() {
   assert.ok(
     describeWindowCompleteness(["2026-09"], null)?.includes("No closing has been published"),
     "no closing at all is reported as such, never as zero sales",
+  );
+
+  // -------------------------------------------------------------------------
+  // The conversation emails EVERY message, not just the first one.
+  // -------------------------------------------------------------------------
+  //
+  // Measured on staging 2026-09-06, before the fix: three comments on one activity produced ONE
+  // email. `createSystemNotification` keys an event on { actionUrl, eventType, module, recipient,
+  // title }, and a thread's title and action url never change between its messages — so every
+  // comment after the first collapsed onto the first one's event and was deduplicated into silence.
+  // Nothing failed and nothing was logged: the thread simply stopped emailing, which is the exact
+  // shape of "a feature that ships green and reaches nobody".
+  const first = conversationMessageIdempotencyKey(
+    { eventType: "market_awareness_comment", messageKey: 41, module: "market_awareness", recordId: "act-1" },
+    "B-155",
+  );
+  const second = conversationMessageIdempotencyKey(
+    { eventType: "market_awareness_comment", messageKey: 42, module: "market_awareness", recordId: "act-1" },
+    "B-155",
+  );
+  assert.ok(first, "a comment carrying a message key must produce an idempotency key");
+  assert.notEqual(
+    first,
+    second,
+    "two comments on one activity must be two events, or only the first one is ever emailed",
+  );
+
+  // Per recipient too: one key shared across the recipients of a single message is the same silence
+  // one step further out, with everyone after the first collapsing onto one event.
+  assert.notEqual(
+    conversationMessageIdempotencyKey(
+      { eventType: "market_awareness_comment", messageKey: 41, module: "market_awareness", recordId: "act-1" },
+      "A-8",
+    ),
+    first,
+    "one message to two people must be two events",
+  );
+
+  // Mixed case is one person — the id is canonicalized, so a retry spelled differently is still a
+  // retry and does not email anybody twice.
+  assert.equal(
+    conversationMessageIdempotencyKey(
+      { eventType: "market_awareness_comment", messageKey: 41, module: "market_awareness", recordId: "act-1" },
+      "b-155",
+    ),
+    first,
+    "the same message to the same person is one event however the hr id is spelled",
+  );
+
+  // A caller that supplies no message key keeps the old behaviour rather than getting a key built
+  // from something that varies per call, which would defeat the deduplication entirely.
+  assert.equal(
+    conversationMessageIdempotencyKey(
+      { eventType: "candidate_comment", messageKey: null, module: "recruitment", recordId: "cand-1" },
+      "A-8",
+    ),
+    null,
+    "a caller with no message key must not be given one",
+  );
+
+  // And the service must actually pass it. The helper being correct changes nothing if the comment
+  // path never hands it the id — which is how this defect existed in the first place.
+  const service = readFileSync(new URL("../src/lib/market-awareness/service.ts", import.meta.url), "utf8");
+  assert.ok(
+    /messageKey,/.test(service),
+    "addActivityComment must pass the comment id to the notifier as messageKey",
+  );
+  assert.ok(
+    service.includes('.select("id")'),
+    "the comment insert must return its id, or there is no message key to pass",
   );
 }

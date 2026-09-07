@@ -6,6 +6,7 @@ import { canonicalHrIdKey, hrIdForStorage } from "@/lib/hr-id";
 import { findLineById, loadMarketAwarenessLines } from "@/lib/market-awareness/lines";
 import type { MarketAwarenessLine } from "@/lib/market-awareness/lines";
 import { findArea, loadRegionManagers } from "@/lib/market-awareness/geography";
+import { notifyConversationMessage } from "@/lib/conversations/notify";
 import { notifyActivityApproved } from "@/lib/market-awareness/notifications";
 import {
   canCloseActivity,
@@ -19,6 +20,7 @@ import {
 import { buildTracking } from "@/lib/market-awareness/tracking";
 import type {
   MarketAwarenessActivity,
+  MarketAwarenessComment,
   MarketAwarenessDecisionAction,
   MarketAwarenessSeatHolder,
   MarketAwarenessStatus,
@@ -31,6 +33,7 @@ import {
   resolveManagerStep,
   statusAfterResubmit,
 } from "@/lib/market-awareness/workflow";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
 
 /**
@@ -381,6 +384,127 @@ export async function listDecisionInbox(
     if (!step) return false;
     return canDecideStep({ access, managerHrId: activity.managerHrId, step });
   });
+}
+
+export async function listActivityComments(
+  access: AccessContext,
+  activityId: string,
+): Promise<MarketAwarenessComment[]> {
+  // getActivity carries the read gate AND the per-row narrowing, so a Product Manager cannot read
+  // the thread on somebody else's activity by asking for it directly.
+  await getActivity(access, activityId);
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("market_awareness_comments")
+    .select("*")
+    .eq("activity_id", activityId)
+    .order("created_at", { ascending: true })
+    .limit(500);
+  if (error) throw toQueryError(error);
+
+  const rows = (data as Array<Record<string, unknown>> | null) ?? [];
+  const people = await loadEmployees(rows.map((row) => row.author_hr_id as string | null));
+
+  return rows.map((row) => {
+    const key = canonicalHrIdKey(String(row.author_hr_id ?? ""));
+    return {
+      id: Number(row.id),
+      authorHrId: String(row.author_hr_id),
+      authorName: key ? people.get(key)?.full_name ?? null : null,
+      body: String(row.body),
+      createdAt: String(row.created_at),
+    };
+  });
+}
+
+/**
+ * Add a comment, then tell the people the OWNER'S RULE says to tell.
+ *
+ * The addressing is NOT decided here. `notifyConversationMessage` is his rule from 2026-09-03 —
+ * email the submitter, CC the sender and every participant, in-app and Telegram to everyone except
+ * the author — and it lives in one module precisely so it does not become four different rules in
+ * four modules. This function's only job is to say who the participants ARE.
+ *
+ * Participants = the requester, the manager the activity was routed to, everyone who has already
+ * decided on it, and everyone who has already commented. The CEO is included once the activity has
+ * reached his step, so a conversation opened at the manager stage does not page him early.
+ */
+export async function addActivityComment(
+  access: AccessContext,
+  activityId: string,
+  body: string,
+): Promise<MarketAwarenessComment[]> {
+  const activity = await getActivity(access, activityId);
+
+  const text = body.trim();
+  if (!text) throw new MarketAwarenessError("A comment cannot be empty.");
+  if (!access.hrId) {
+    throw new MarketAwarenessError("Your account has no HR id, so a comment cannot be attributed.", 403);
+  }
+
+  const supabase = getSupabaseAdmin();
+  // The id comes back because the notifier needs it: without a per-message key every comment after
+  // the first is deduplicated onto the first one's event and nobody is emailed (see `messageKey`).
+  const { data: inserted, error } = await supabase
+    .from("market_awareness_comments")
+    .insert({
+      activity_id: activityId,
+      author_hr_id: hrIdForStorage(access.hrId),
+      body: text,
+    })
+    .select("id")
+    .single();
+  if (error) throw toQueryError(error);
+  const messageKey = (inserted as { id?: number } | null)?.id ?? null;
+
+  const comments = await listActivityComments(access, activityId);
+
+  // Best-effort by contract: the comment row is committed, so a delivery failure is logged and
+  // swallowed rather than thrown back into the write path, where it would lose the comment.
+  try {
+    const authorKey = canonicalHrIdKey(access.hrId);
+    const authorName = authorKey
+      ? (await loadEmployees([access.hrId])).get(authorKey)?.full_name ?? null
+      : null;
+
+    const ceoHrIds =
+      activity.status === "pending_ceo" || activity.approvedAt
+        ? await loadRoleHolderHrIds(["CEO"])
+        : [];
+
+    await notifyConversationMessage({
+      actionUrl: `/employee-portals/market-awareness?activity=${activity.id}`,
+      authorHrId: hrIdForStorage(access.hrId),
+      authorName,
+      body: text,
+      eventType: "market_awareness_comment",
+      messageKey,
+      metadata: { activityCode: activity.activityCode, status: activity.status },
+      module: "market_awareness",
+      participantHrIds: [
+        activity.managerHrId,
+        ...activity.decisions.map((decision) => decision.actorHrId),
+        ...comments.map((comment) => comment.authorHrId),
+        ...ceoHrIds,
+      ],
+      recordId: activity.id,
+      // The thread belongs to the person who raised it — the email's To.
+      submitterHrId: activity.requesterHrId,
+      subjectLabel: activity.title?.trim() || activity.activityCode,
+      threadLabel: "awareness activity",
+    });
+  } catch (caught) {
+    logError("Market Awareness comment notification failed", {
+      labels: {
+        event: "market_awareness_comment_notify_failed",
+        activity_id: activity.id,
+      },
+      error: caught,
+    });
+  }
+
+  return comments;
 }
 
 export async function getActivity(
