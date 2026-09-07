@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 import { conversationMessageIdempotencyKey } from "../src/lib/conversations/notify.ts";
 import { isTrackableProductLine } from "../src/lib/market-awareness/lines.ts";
+import { resolvePendingDecisionRecipients } from "../src/lib/market-awareness/notifications.ts";
 import {
   canCreateActivity,
   canEditActivity,
@@ -375,5 +376,82 @@ export function runMarketAwarenessTests() {
   assert.ok(
     service.includes('.select("id")'),
     "the comment insert must return its id, or there is no message key to pass",
+  );
+
+  // -------------------------------------------------------------------------
+  // Somebody is actually TOLD there is a decision waiting.
+  // -------------------------------------------------------------------------
+  //
+  // The module shipped with an approvals inbox and nothing that sent anyone to it. Two real
+  // requests sat untouched on production 2026-09-07 — submitted 09:52 and 09:56 Cairo, zero
+  // notification_events rows for the whole module — because the only notification wired was the one
+  // that fires AFTER the CEO approves. A queue nobody is sent to is a queue nobody reads, and the
+  // symptom is indistinguishable from "nobody wanted to approve it yet".
+
+  // The manager step is identity-based, matching canDecideStep.
+  assert.deepEqual(
+    resolvePendingDecisionRecipients({ ceoHrIds: ["A-1"], managerHrId: "A-8", step: "manager" }),
+    ["A-8"],
+    "the manager step must tell the manager the activity was actually routed to",
+  );
+
+  // The CEO step is role-based and must IGNORE the manager entirely. A Group Product Manager has
+  // nobody above them, so their activity reaches the CEO with managerHrId null — the real shape of
+  // MAW-20260907-390A2720. Keying this step off the manager tells nobody at all.
+  assert.deepEqual(
+    resolvePendingDecisionRecipients({ ceoHrIds: ["A-1"], managerHrId: null, step: "ceo" }),
+    ["A-1"],
+    "a GPM's activity has no manager and must still reach the CEO",
+  );
+  assert.deepEqual(
+    resolvePendingDecisionRecipients({ ceoHrIds: ["A-1"], managerHrId: "A-8", step: "ceo" }),
+    ["A-1"],
+    "the CEO step must not notify the manager who already approved it",
+  );
+
+  // Mixed-case ids are one person — hr_id is stored upper-case and compared lower, so a duplicate
+  // spelling must not send the CEO two copies of the same request.
+  assert.deepEqual(
+    resolvePendingDecisionRecipients({ ceoHrIds: ["A-1", "a-1"], managerHrId: null, step: "ceo" }),
+    ["A-1"],
+    "one person spelled two ways is one recipient",
+  );
+
+  // No holder is an empty list, never a crash and never a silent fallback to somebody else.
+  assert.deepEqual(
+    resolvePendingDecisionRecipients({ ceoHrIds: [], managerHrId: null, step: "manager" }),
+    [],
+    "a step with no holder notifies nobody rather than guessing a recipient",
+  );
+
+  // And the workflow must actually CALL it. The resolver being right changes nothing if the submit
+  // path never announces the hand-off — which is precisely the defect this pins.
+  //
+  // SLICED TO ONE FUNCTION, never matched across the whole file. The first version of this pin used
+  // /submitActivity[\s\S]*?notifyDecisionPending\(/ and passed with the call deleted, because the
+  // unbounded scan ran past the end of submitActivity and found the call inside decideActivity. A
+  // pin that cannot fail is worse than no pin: it reports the thing it was written to protect.
+  const maService = readFileSync(new URL("../src/lib/market-awareness/service.ts", import.meta.url), "utf8");
+  const functionBody = (name: string): string => {
+    const start = maService.indexOf(`export async function ${name}`);
+    assert.notEqual(start, -1, `${name} must exist for its notification pin to mean anything`);
+    const next = maService.indexOf("\nexport ", start + 1);
+    return maService.slice(start, next === -1 ? maService.length : next);
+  };
+
+  const submitBody = functionBody("submitActivity");
+  assert.ok(
+    submitBody.includes("notifyDecisionPending("),
+    "submitActivity must announce the hand-off, or the approvals inbox is never opened",
+  );
+
+  const decideBody = functionBody("decideActivity");
+  assert.ok(
+    /transition\.to === "pending_ceo"[\s\S]{0,400}notifyDecisionPending\(/.test(decideBody),
+    "advancing to the CEO must tell the CEO",
+  );
+  assert.ok(
+    /transition\.to === "returned" \|\| transition\.to === "rejected"[\s\S]{0,600}notifyActivityReturned\(/.test(decideBody),
+    "a returned or rejected activity must tell the person who raised it",
   );
 }
