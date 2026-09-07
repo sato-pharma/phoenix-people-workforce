@@ -35,8 +35,16 @@ export type RetentionRiskTrigger =
  * for the same reason: charging a manager for a row somebody else forgot to write cost 131,741
  * EGP in July 2026.
  *
- * The leave trigger has no such restriction and applies to everyone — an approved leave record is
- * HR's own writing, not a by-product of somebody else's data entry.
+ * THE LEAVE RULE IS SCOPED THE SAME WAY, and that is a correction rather than the original design.
+ * It began company-wide, because the owner's first instruction was "every single employee who take
+ * five consecutive day vacations". Seeing the live board on 2026-09-07 he answered "medical reps
+ * only i said": three of its seven rows were the Finance & Admin Manager, the National Sales
+ * Manager and the Marketing Manager, each on five days of ordinary approved leave. Head-office
+ * leave is a holiday, already visible on the vacation report, and it is not what this board is for.
+ *
+ * The filtering happens in ./service.ts, on the same `logsOwnCrmVisitsTitle` predicate, so there is
+ * one definition of who this board is about. The detector itself stays general: hand it a non-rep
+ * subject and it will still apply the leave rule, which is what makes that rule unit-testable.
  */
 export type RetentionRiskSubject = {
   areaName: string | null;
@@ -108,6 +116,19 @@ export type RetentionRiskDetectionInput = {
   measurableThrough: string;
   publicHolidays: ReadonlySet<string>;
   subjects: readonly RetentionRiskSubject[];
+  /**
+   * Keep ONLY runs that have not ended — the person has not been seen since.
+   *
+   * Owner, 2026-09-07: "I want to see employees at risk to resign this month so i only see reps
+   * with no enteries for 5 consecutive days or vacation for 5 consecutive days in current month and
+   * didnt return 2 work yet or seen."
+   *
+   * That last clause is the whole board. A gap that CLOSED is a person who came back, and they are
+   * not a resignation risk — the first live board showed a rep silent 3 to 17 August who had been
+   * logging visits again ever since, which is history, not a warning. Only an open run answers the
+   * question being asked.
+   */
+  openRunsOnly?: boolean;
   /** Consecutive working days needed to raise a signal. The owner's rule is 5. */
   thresholdWorkingDays: number;
   /** Inclusive last date of the scan. Leave may legitimately run past `measurableThrough`. */

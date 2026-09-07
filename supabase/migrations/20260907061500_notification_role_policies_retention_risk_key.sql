@@ -77,7 +77,7 @@ alter table public.notification_role_policies
 -- clobber a real admin edit made between deploy and any future re-application.
 insert into public.notification_role_policies (notification_key, label, description, roles, enabled) values
   ('retention_risk_alert', 'Retention risk alert',
-    'Who is told when an employee reaches five consecutive working days of recorded leave, or a Medical Rep reaches five consecutive working days with no CRM entry of any kind. Defaults to HR Operations, HR Advisory, Super Admin and SFE Manager — the owner picked all four on 2026-09-06. The person''s own line manager is added per alert by the sweep itself and is deliberately NOT a role here: it is one named manager per subject, not everyone holding a manager role.',
+    'Who is told when a MEDICAL REP reaches five consecutive working days of recorded leave, or five consecutive working days with no CRM entry of any kind (owner, 2026-09-07: medical reps only, on both rules). Defaults to HR Operations, HR Advisory, Super Admin and SFE Manager — the owner picked all four on 2026-09-06. The person''s own line manager is added per alert by the sweep itself and is deliberately NOT a role here: it is one named manager per subject, not everyone holding a manager role.',
     array['HR Operations', 'HR Advisory', 'Super Admin', 'SFE Manager'], true)
 on conflict (notification_key) do nothing;
 

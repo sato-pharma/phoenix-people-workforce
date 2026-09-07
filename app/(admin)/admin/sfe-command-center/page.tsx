@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { CeoCommandCenter } from "@/components/admin/ceo-command-center";
-import { RetentionRiskBandSection, RetentionRiskBandSkeleton } from "@/components/admin/retention-risk-band";
+import { RetentionRiskColumnSection, RetentionRiskColumnSkeleton } from "@/components/admin/retention-risk-band";
 import { CeoPhaseBWidgets, CeoPhaseBSkeleton } from "@/components/admin/ceo-phase-b";
 import { Card } from "@/components/ui/card";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
@@ -86,12 +86,12 @@ async function SfeCommandContent({ access }: { access: Awaited<ReturnType<typeof
         welcome={welcome}
         access={access}
         variant="sfe"
-        // Owner instruction 2026-09-06: this board and the System Administrator Overview, and no
-        // other. Suspended on its own because the band scans the CRM visits mirror — the tiles
-        // above must not wait on it.
-        topBands={
-          <Suspense fallback={<RetentionRiskBandSkeleton />}>
-            <RetentionRiskBandSection />
+        // Owner instruction 2026-09-07: the resignation-risk reps go in the Sales & marketing
+        // row, in the column the empty Weekly Sales card used to occupy. Suspended on its own
+        // because it scans the CRM visits mirror — the sales tables must not wait on it.
+        salesColumnSlot={
+          <Suspense fallback={<RetentionRiskColumnSkeleton />}>
+            <RetentionRiskColumnSection />
           </Suspense>
         }
       />

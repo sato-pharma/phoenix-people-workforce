@@ -19,6 +19,7 @@ import {
   DEFAULT_NOTIFICATION_ROLE_POLICIES,
   notificationRoleKeys,
 } from "../src/lib/notifications/role-recipients.ts";
+import { isRetentionRiskSubjectTitle } from "../src/lib/retention-risk/eligibility.ts";
 import { resolveNotificationPolicy } from "../src/lib/notifications/policy.ts";
 import { JOB_SCHEDULES } from "../src/lib/observability/job-schedule.ts";
 import type { RetentionRiskSignal } from "../src/lib/retention-risk/types.ts";
@@ -84,6 +85,40 @@ export function runRetentionRiskNotifyTests() {
       `${eventType} must not gain push from the policy table — see the lock-screen note above`,
     );
   }
+
+  // ── MEDICAL REPS ONLY, on BOTH rules ───────────────────────────────────────────────────────
+  //
+  // Owner, 2026-09-07, looking at the live board: "medical reps only i said". The silence rule was
+  // always scoped this way; the LEAVE rule was not, because his first instruction said "every single
+  // employee". Three of the board's seven rows were then the Finance & Admin Manager, the National
+  // Sales Manager and the Marketing Manager, each on five days of ordinary approved leave — a
+  // holiday, already on the vacation report, and not a retention signal.
+  //
+  // Behavioural, by the real titles that appeared on that board. An earlier version of this check
+  // read the service SOURCE for the filter and was worthless: the regex matched the pre-fix shape
+  // just as happily, so it passed while the bug was present. Proven by breaking it, which is the
+  // only reason it is trusted now.
+  assert.equal(isRetentionRiskSubjectTitle("Medical Representative"), true, "the board is about reps");
+  assert.equal(isRetentionRiskSubjectTitle("Medical Rep"), true, "the short title is the same person");
+  for (const title of [
+    "Finance and Admin Manager",
+    "National Sales Manager",
+    "Marketing Manager",
+    "District Sales Manager",
+    "Regional Sales Manager",
+    "Group Product Manager",
+    "Product Manager",
+    "Training Manager",
+    "SFE Manager",
+    "Admin Assistant",
+  ]) {
+    assert.equal(
+      isRetentionRiskSubjectTitle(title),
+      false,
+      `${title} must never reach this board — on the silence rule their CRM row is written by somebody else, and on the leave rule five days off is a holiday`,
+    );
+  }
+  assert.equal(isRetentionRiskSubjectTitle(null, null), false, "a blank title is not a rep");
 
   // ── The audience is registered and editable without a deploy ───────────────────────────────
   assert.ok(
