@@ -652,6 +652,7 @@ import { runOutstationExpenseExportTests } from "./outstation-expense-export.tes
 import { runOutstationLocalDraftTests } from "./outstation-local-draft.test.ts";
 import { runOutstationPayrollExpenseMappingTests } from "./outstation-payroll-expense-mapping.test.ts";
 import { runOutstationWorkflowResyncPreservesHrDecisionTests } from "./outstation-workflow-resync-preserves-hr-decision.test.ts";
+import { runExpenseReadsAreNotCappedAt1000Tests } from "./expense-reads-are-not-capped-at-1000.test.ts";
 import { runExpenseApprovalDecisionsSurviveTheSaveTests } from "./expense-approval-decisions-survive-the-save.test.ts";
 import { runOutstationImportIsAdditiveTests } from "./outstation-import-is-additive.test.ts";
 import { runSalaryRecordsUniqueBatchHrTests } from "./salary-records-unique-batch-hr.test.ts";
@@ -2552,6 +2553,10 @@ await runTest("outstation payroll expense mapping", runOutstationPayrollExpenseM
 await runTest(
   "outstation workflow resync preserves the HR decision",
   runOutstationWorkflowResyncPreservesHrDecisionTests,
+);
+await runTest(
+  "expense reads are not capped at PostgREST's 1000 rows",
+  runExpenseReadsAreNotCappedAt1000Tests,
 );
 await runTest(
   "expense approval decisions survive the save (undone rejection, request approve, unsaved draft)",
