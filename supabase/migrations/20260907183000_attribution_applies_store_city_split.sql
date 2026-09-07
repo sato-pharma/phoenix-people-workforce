@@ -174,7 +174,12 @@ begin
 end;
 $function$;
 
-revoke all on function public.phx_write_monthly_store_split_net(text, jsonb) from public;
+-- anon and authenticated inherit EXECUTE through PUBLIC membership, so revoking only those two is a
+-- no-op — the grant has to come off PUBLIC itself. And revoking PUBLIC on a default ACL also strips
+-- service_role, which is the one role that must keep it, so it is re-granted explicitly. This is a
+-- SECURITY DEFINER function that writes a table feeding every achievement number: a browser role
+-- must never reach it.
+revoke execute on function public.phx_write_monthly_store_split_net(text, jsonb) from public, anon, authenticated;
 grant execute on function public.phx_write_monthly_store_split_net(text, jsonb) to service_role;
 
 -- =====================================================================================================
