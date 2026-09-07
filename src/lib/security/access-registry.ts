@@ -937,6 +937,21 @@ export const accessRegistry = [
   // an attestation that a named person physically handed over, received back, or stopped pursuing a
   // company asset, and two of them can end in money leaving somebody's wages.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices", permission: [{ resource: "company_devices", action: "create" }, { resource: "company_devices", action: "update" }], csrfRequired: true }),
+  // Bulk import. All three gate on `company_devices:import` — the ACTION, matching how every other
+  // import here is gated (`employees:import`) — so the bulk door can be withdrawn on its own
+  // without taking single-device registration with it.
+  //
+  // The TEMPLATE is gated the same as the write, not as a read: it is not a report, it carries a
+  // dropdown of every employee's name, and it is useful only to somebody about to import.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/devices/import/template", permission: { resource: "company_devices", action: "import" } }),
+  // The DRY RUN writes nothing, and is still a POST (it carries a file) and still CSRF-guarded: it
+  // reads the whole employee directory to resolve holders, which is not a payload a cross-origin
+  // page should be able to make a logged-in browser fetch. Audited as a read, not a mutation.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/devices/import/dry-run", permission: { resource: "company_devices", action: "import" }, csrfRequired: true }),
+  // The COMMIT. Required audit, like every other device mutation — each imported row also writes
+  // its own per-device audit row, because it goes through createDevice/issueDevice rather than
+  // around them.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/import/confirm", permission: { resource: "company_devices", action: "import" }, csrfRequired: true }),
   // Retention register (Phase 6). The GET returns stay and exit conversations, which hold what an
   // employee said in confidence about their manager and their pay — the permission is the whole
   // protection, since RLS is disabled-by-default here like every other table in this app.

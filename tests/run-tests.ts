@@ -705,6 +705,7 @@ import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
 import { runDeviceRegisterTests } from "./device-register.test.ts";
 import { runDeviceRegisterFitsTheScreenTests } from "./device-register-fits-the-screen.test.ts";
+import { runDeviceBulkImportTests } from "./device-bulk-import.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
 import { runHrTodayTasksTests } from "./hr-today-tasks.test.ts";
 import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
@@ -2661,6 +2662,12 @@ await runTest(
   + "widest because it holds the employee <select>, long values wrap with break-words, and no "
   + "rounded corner anywhere - pinned at birth, not after the defect the sibling register shipped)",
   runDeviceRegisterFitsTheScreenTests,
+);
+await runTest(
+  "device bulk import (one column definition drives the template writer AND the parser, matched by "
+  + "header text so a moved column cannot put a serial in the IMEI field; a leaver MAY hold a "
+  + "device because that is the exposure the register exists to surface; no sample data row)",
+  runDeviceBulkImportTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
