@@ -74,6 +74,42 @@ export async function isClosingLocked(
 }
 
 /**
+ * Every frozen period for one line, in one read.
+ *
+ * The direct-order booking rule walks FORWARD from a frozen month to the first open one, so it
+ * cannot know in advance which periods it will need to ask about. Asking per candidate would be a
+ * round trip per month; a line has a handful of locks in total, so fetching the set once is both
+ * cheaper and what lets the rule itself stay a pure, synchronous function.
+ *
+ * Fails SAFE the same way the rest of this module does — an unreadable lock table yields an EMPTY
+ * set, so a failed read can never present an open month as frozen and silently shift someone's
+ * booking into the wrong month. The database triggers remain the thing that actually says no.
+ */
+export async function listLockedPeriodsForLine(
+  line: string | null | undefined,
+): Promise<Set<string>> {
+  const normalizedLine = normalizeClosingLine(line);
+  if (!normalizedLine) return new Set();
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("monthly_closing_locks")
+      .select("period")
+      .eq("normalized_line", normalizedLine)
+      .is("unlocked_at", null);
+    if (error || !data) return new Set();
+    return new Set(
+      data
+        .map((row) => String((row as { period?: unknown }).period ?? "").trim())
+        .filter((period) => period !== ""),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+/**
  * Freeze (line, period). The RPC records the month's units and per-area breakdown in the same
  * statement that writes the lock, so the snapshot is provably the state that got frozen rather than
  * whatever the tables held by the time someone next looked.

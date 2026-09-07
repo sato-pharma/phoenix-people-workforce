@@ -96,7 +96,7 @@ export async function DELETE(request: Request) {
       line = String(body.line ?? "");
       period = String(body.period ?? "");
     }
-    await unpublishClosing({ line, period });
+    await unpublishClosing({ actorHrId: access.hrId ?? null, line, period });
     return NextResponse.json({ success: true, published: false });
   } catch (error) {
     return mapError(error);

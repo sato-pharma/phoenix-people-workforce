@@ -575,7 +575,11 @@ export async function loadPublishedPeriodKeys(from: string, to: string): Promise
     .from("monthly_closing_publications")
     .select("line,period")
     .gte("period", from)
-    .lte("period", to);
+    .lte("period", to)
+    // Currently published only. This is a VISIBILITY gate, so a month withdrawn from the portal
+    // must go dark here too — the row now survives an unpublish (20260907140000), and without
+    // this filter a withdrawn month would keep lighting the dashboard.
+    .is("unpublished_at", null);
   if (error) throw error;
   return publishedPeriodKeysOf((data ?? []) as Record<string, unknown>[]);
 }
