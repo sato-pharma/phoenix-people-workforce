@@ -2,7 +2,7 @@ import { Database, Network, ShieldCheck, Users, Wrench } from "lucide-react";
 import { Suspense } from "react";
 
 import { CeoCommandCenter, QuickLinkCard, SectionShell } from "@/components/admin/ceo-command-center";
-import { RetentionRiskBandSection, RetentionRiskBandSkeleton } from "@/components/admin/retention-risk-band";
+import { RetentionRiskColumnSection, RetentionRiskColumnSkeleton } from "@/components/admin/retention-risk-band";
 import { FinanceAdminBands } from "@/components/admin/finance-command-center";
 import { PhoenixIdentityStrip } from "@/components/phoenix-signature-card/PhoenixIdentityStrip";
 import type { SystemAdminOverviewData } from "@/lib/admin/system-overview";
@@ -106,12 +106,12 @@ export function SystemAdminOverview({
         // back to the band, "the new one is only for HRs", and /admin KEEPS the strip he asked for
         // on 2026-09-03 ("and /admin").
         welcome={null}
-        // Owner instruction 2026-09-06: the Super Administrator and SFE Manager boards carry the
-        // retention-risk band. The CEO variant of this component is never given one, which is how
-        // the band stays off his board without this component knowing anything about it.
-        topBands={
-          <Suspense fallback={<RetentionRiskBandSkeleton />}>
-            <RetentionRiskBandSection />
+        // Owner instruction 2026-09-07: the resignation-risk reps sit in the Sales & marketing
+        // row, in the column the empty Weekly Sales card used to occupy. The CEO variant is never
+        // passed one, which is how it stays off his board without this component knowing anything.
+        salesColumnSlot={
+          <Suspense fallback={<RetentionRiskColumnSkeleton />}>
+            <RetentionRiskColumnSection />
           </Suspense>
         }
         extraBands={

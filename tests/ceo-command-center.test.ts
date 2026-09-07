@@ -584,10 +584,28 @@ export function runCeoCommandCenterTests() {
     !PHASE_B_SKELETON_TITLES_SFE_SOURCE_CHECK.test(ceoPhaseBSource),
     "the SFE skeleton must NOT announce a Doctor coverage section — it is retired, and a skeleton row with no section behind it reads as a stuck load",
   );
+  // THE DECISION, and it now has two halves that pull in opposite directions.
+  //
+  // The SFE Manager gets the real week-over-week series (asserted just above via
+  // `includeWeeklyTrend: isSfe`), never the click-through shortcut. The CEO, by contract in
+  // tests/ceo-account-contract.test.ts, must keep a direct link to /sales/weekly/dashboard.
+  //
+  // Both used to be satisfied by `{!isSfe ? <QuickLinkCard title="Weekly Sales"`. On 2026-09-07 the
+  // owner asked for the resignation-risk reps in that column — "put the resignation risk reps in
+  // the place of weekly sales" — which is his board and the SFE's, never the CEO's. So the card is
+  // now the FALLBACK for the one variant that is passed no column, which is the CEO, and the two
+  // halves become one condition.
   assert.match(
     ceoComponentSource,
-    /\{!isSfe \? <QuickLinkCard\s+title="Weekly Sales"/,
-    "the SFE overview must show the weekly trend, not the CEO's click-through Weekly Sales shortcut",
+    /\{salesColumnSlot \?\?\s*\(\s*<QuickLinkCard\s+title="Weekly Sales"/,
+    "the CEO must still reach the weekly sales dashboard from his own board — he is the variant that receives no column",
+  );
+  // The SFE never falls through to it, because his page passes a column.
+  const sfePageSource = readFileSync("app/(admin)/admin/sfe-command-center/page.tsx", "utf8");
+  assert.match(
+    sfePageSource,
+    /salesColumnSlot=/,
+    "the SFE overview must pass the resignation-risk column, which is what keeps him off the click-through fallback",
   );
   const crmFieldSource = readFileSync("src/lib/crm/sfe-field-analytics.ts", "utf8");
   assert.match(

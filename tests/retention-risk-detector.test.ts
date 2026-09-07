@@ -217,10 +217,14 @@ export function runRetentionRiskDetectorTests() {
       0,
       "a manager with no CRM row at all in the whole window still raises no silence signal",
     );
+    // The DETECTOR stays general — hand it a non-rep and the leave rule still applies, which is
+    // what makes that rule testable here at all. Who actually reaches it is decided one layer up:
+    // service.ts filters the roster to Medical Reps for BOTH rules (owner, 2026-09-07, "medical
+    // reps only i said"), and tests/retention-risk-notify.test.ts pins that filter.
     assert.equal(
       signals.filter((one) => one.trigger === "extended_leave").length,
       1,
-      "the LEAVE rule still applies to them — it reads an HR record, not somebody else's data entry",
+      "the detector applies the leave rule to whatever subject it is given; the rep-only scoping lives in service.ts",
     );
   }
 
@@ -315,6 +319,50 @@ export function runRetentionRiskDetectorTests() {
       }),
     ).filter((one) => one.trigger === "crm_silence");
     assert.equal(signals.length, 0, "a leaver's empty days after their exit are not a retention signal");
+  }
+
+  // ── openRunsOnly: a person who came back is not a resignation risk ─────────────────────────
+  //
+  // Owner, 2026-09-07, after seeing the first live board: "i only see reps with no enteries for 5
+  // consecutive days or vacation for 5 consecutive days in current month and didnt return 2 work
+  // yet or seen." The board was showing a rep silent 3-17 August who had been logging visits every
+  // day since — history, not a warning.
+  {
+    const both = input({ crmActivityByHrId: activity(["2026-08-31", "2026-09-08"]) });
+    const withClosed = buildRetentionRiskSignals(both).filter((one) => one.trigger === "crm_silence");
+    assert.equal(withClosed.length, 1, "the run 1-7 September is real and closed by the entry on the 8th");
+    assert.equal(withClosed[0].ongoing, false);
+
+    const openOnly = buildRetentionRiskSignals({ ...both, openRunsOnly: true })
+      .filter((one) => one.trigger === "crm_silence");
+    assert.equal(openOnly.length, 0, "he came back on 8 September, so he must not be on the board");
+  }
+
+  // The still-open one survives that same filter — otherwise the rule would empty the board.
+  {
+    const open = buildRetentionRiskSignals(
+      input({ crmActivityByHrId: activity(["2026-08-31"]), openRunsOnly: true }),
+    ).filter((one) => one.trigger === "crm_silence");
+    assert.equal(open.length, 1, "still silent, still on the board");
+    assert.equal(open[0].ongoing, true);
+  }
+
+  // ── The last CRM entry is the one BEFORE the gap, never the newest overall ─────────────────
+  //
+  // On the first live board a rep whose gap ran 3-17 August was shown "Last CRM entry 6 September":
+  // the maximum across the whole window, which reads as though nothing had ever been wrong.
+  {
+    const signals = buildRetentionRiskSignals(
+      input({ crmActivityByHrId: activity(["2026-08-30", "2026-09-08", "2026-09-12"]) }),
+    ).filter((one) => one.trigger === "crm_silence");
+    assert.equal(signals.length, 1);
+    // Sun 30 Aug carries the entry, so the silence opens on Mon 31 Aug — not 1 September.
+    assert.equal(signals[0].startDate, "2026-08-31");
+    assert.equal(
+      signals[0].lastCrmActivityDate,
+      "2026-08-30",
+      "the entry that preceded the silence — not 12 September, which is after the run and makes the gap look imaginary",
+    );
   }
 
   // ── Ordering: what someone should look at first ────────────────────────────────────────────
