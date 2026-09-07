@@ -20,6 +20,30 @@ const BTN_QUIET =
 const TEXTAREA =
   "min-h-20 w-full border border-phx-line bg-phx-paper px-3 py-2 text-phx-sm font-bold text-phx-ink outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-phx-accent-soft";
 
+/**
+ * When a message was sent, in Cairo.
+ *
+ * Cairo and not UTC because `created_at` is an instant WE stamped (`now()` on a timestamptz), which
+ * is the one of the three cases that belongs in local time — a date-only column would render as UTC
+ * on purpose, to stop the calendar day shifting.
+ *
+ * With the TIME, unlike the date helpers the two host screens carry: several messages land on one
+ * day and a thread that stamps them all "07 Sep 2026" cannot be read in order.
+ */
+function cairoStamp(value: string | null | undefined): string {
+  if (!value) return "Not set";
+  const parsed = new Date(String(value));
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "short",
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+  }).format(parsed);
+}
+
 // A three-line label, duplicated rather than imported from the inbox: importing it back would make
 // the two files circular, since the inbox imports this component.
 function MicroLabel({ children }: { children: React.ReactNode }) {
@@ -145,7 +169,7 @@ export function Conversation({ activityId }: { activityId: string }) {
                   {comment.authorName ?? comment.authorHrId}
                 </span>
                 <span className="text-phx-3xs font-medium text-phx-ink-faint">
-                  {cairoDate(comment.createdAt)}
+                  {cairoStamp(comment.createdAt)}
                 </span>
               </span>
               <p className="mt-0.5 whitespace-pre-wrap break-words text-phx-2xs font-medium text-phx-ink-soft">
