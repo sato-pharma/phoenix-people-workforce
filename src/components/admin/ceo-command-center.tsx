@@ -420,6 +420,7 @@ export function QuickLinkCard({
 export function CeoCommandCenter({
   data,
   extraBands,
+  salesColumnSlot,
   topBands,
   welcome,
   access: _access,
@@ -428,6 +429,13 @@ export function CeoCommandCenter({
   data: CeoCommandCenterData;
   /** Rendered as the last band before the footer. The admin overview passes its Finance bands here. */
   extraBands?: ReactNode;
+  /**
+   * The third column of the Sales & marketing row — where the empty "Weekly Sales" card used to be.
+   *
+   * Owner, 2026-09-07: "put the resignation risk reps in the place of weekly sales". A ReactNode so
+   * the caller can wrap it in its own <Suspense> and the sales tables do not wait on a CRM scan.
+   */
+  salesColumnSlot?: ReactNode;
   /**
    * Rendered FIRST, directly under the hero and above every metric tile.
    *
@@ -793,14 +801,14 @@ export function CeoCommandCenter({
             Read this as the rule for every grid on this page: the column count must match the
             number of cards that actually render for THAT variant. A card removed by a ruling and a
             column count left behind is exactly how these gaps appear. */}
-        <div className={cn("grid divide-x divide-slate-200", isSfe ? "lg:grid-cols-1" : "lg:grid-cols-3")}>
+        <div className="grid divide-x divide-slate-200 lg:grid-cols-3">
           {/* SoS — immediate. The month in progress rides on this card's own header line, next to
               the units: the one place a reader looking at a deliberately-last-month figure is
               already looking. `whitespace-nowrap` on that badge because an owner rule forbids this
               text wrapping, and it uses a plain className rather than cn(), which silently drops
               text-phx-* named sizes. */}
           <PerfCard
-            className={cn(!isSfe && "lg:col-span-2")}
+            className="lg:col-span-2"
             title="Source of Sales"
             icon={<BarChart3 className="h-3.5 w-3.5" />}
             headline={sos ? egp(sos.totalValue) : "—"}
@@ -839,16 +847,18 @@ export function CeoCommandCenter({
             </div>
           </PerfCard>
 
-          {/* Weekly Sales — a shortcut for the CEO. The SFE Manager gets the real week-over-week
-              series instead (the "Weekly sales trend" section in Phase B), because weekly sales
-              is his job rather than something he occasionally clicks through to. */}
-          {!isSfe ? <QuickLinkCard
-            title="Weekly Sales"
-            icon={<Activity className="h-3.5 w-3.5" />}
-            headline="7-week trend + region breakdown"
-            sub="Click to open Weekly Sales"
-            href="/sales/weekly/dashboard"
-          /> : null}
+          {/* THE RESIGNATION-RISK REPS LIVE HERE. Owner, 2026-09-07, with a screenshot: "put the
+              resignation risk reps in the place of weekly sales".
+
+              What was here was a lone "Weekly Sales" QuickLinkCard whose entire content was the
+              words "Open →". Beside the Source of Sales tables it stretched to match and was the
+              largest blank area on the page — and it was a duplicate, since "Weekly Sales · Company"
+              in the row below opens the same module. Nothing is lost by replacing it.
+
+              Both variants get the column now. The SFE Manager's row was single-column only because
+              he was the one who did NOT get that empty card; he is one of the four people this alert
+              is addressed to, so he gets it too. */}
+          {salesColumnSlot}
 
         </div>
 

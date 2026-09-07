@@ -267,6 +267,110 @@ export function RetentionRiskBand({ view }: { view: RetentionRiskView }) {
   );
 }
 
+/**
+ * The same board, as the third column of the Sales & marketing row.
+ *
+ * Owner, 2026-09-07: "put the resignation risk reps in the place of weekly sales". That column held
+ * a single link whose entire content was the words "Open →", stretched to the height of the Source
+ * of Sales tables beside it — the largest blank area on the page. This is what belongs in it: the
+ * people who may not be here next month, on the same screen as the sales they carry.
+ *
+ * A COLUMN, not a shrunken band. One rep per block rather than a five-column table, because 260px
+ * of width cannot hold a table without either scrolling sideways or shrinking the type, and both
+ * are forbidden. Square, and every line wraps rather than truncating.
+ */
+export function RetentionRiskColumn({ view }: { view: RetentionRiskView }) {
+  return (
+    <div className="flex min-w-0 flex-col border border-slate-200 bg-white">
+      <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-900 px-4 py-3">
+        <span className="text-orange-400">
+          <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5" />
+        </span>
+        <span className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-300">
+          Resignation risk
+        </span>
+      </div>
+
+      <div className="border-b border-slate-100 px-4 py-3">
+        <p className="break-words text-[28px] font-black leading-none tracking-tight text-slate-900">
+          {view.signals.length}
+        </p>
+        <p className="mt-2 break-words text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">
+          {view.signals.length === 1 ? "Medical Rep still away" : "Medical Reps still away"}
+        </p>
+      </div>
+
+      {view.crmUnavailable ? (
+        <p className="border-b border-amber-200 bg-amber-50 px-4 py-3 break-words text-phx-xs text-amber-900">
+          The CRM mirror could not be read, so only recorded leave was measured on this run.
+        </p>
+      ) : null}
+
+      {view.signals.length === 0 ? (
+        <p className="flex-1 break-words px-4 py-5 text-phx-xs text-slate-500">
+          Nobody is away. Every Medical Rep has logged CRM activity, and none is on five or more
+          consecutive working days of leave.
+        </p>
+      ) : (
+        <ul className="flex flex-1 flex-col divide-y divide-slate-100">
+          {view.signals.map((signal) => (
+            <li className="min-w-0 px-4 py-3" key={signalKey(signal)}>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <TriggerChip trigger={signal.trigger} />
+                <span className="inline-flex items-center border border-rose-300 bg-rose-600 px-2 py-1 text-phx-3xs font-bold uppercase tracking-[0.1em] text-white">
+                  {signal.workingDays} working {signal.workingDays === 1 ? "day" : "days"}
+                </span>
+              </div>
+              <p className="mt-2 break-words text-sm">
+                <PersonLink signal={signal} />
+              </p>
+              <p className="break-words text-phx-xs text-slate-500">
+                {personCode(signal)}
+                {contextLine(signal) ? ` · ${contextLine(signal)}` : ""}
+              </p>
+              <p className="mt-1 break-words text-phx-xs text-slate-500">
+                {signal.trigger === "crm_silence"
+                  ? signal.lastCrmActivityDate
+                    ? `Last seen in the CRM on ${formatRetentionRiskDate(signal.lastCrmActivityDate)}`
+                    : "No CRM entry in the period reviewed"
+                  : `On leave since ${formatRetentionRiskDate(signal.startDate)}`}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <p className="border-t border-slate-200 px-4 py-3 break-words text-phx-3xs text-slate-500">
+        Medical Reps who have not come back: five or more consecutive working days of no CRM entry,
+        or of recorded leave. An early warning to check on someone, never a conclusion about them.
+      </p>
+    </div>
+  );
+}
+
+/** Server component for that column. Suspended by the page, like the band was. */
+export async function RetentionRiskColumnSection() {
+  const view = await getRetentionRiskView();
+  return <RetentionRiskColumn view={view} />;
+}
+
+export function RetentionRiskColumnSkeleton() {
+  return (
+    <div className="flex min-w-0 flex-col border border-slate-200 bg-white">
+      <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-900 px-4 py-3">
+        <span className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-300">
+          Resignation risk
+        </span>
+      </div>
+      <div className="space-y-2 px-4 py-5">
+        <div className="h-4 w-1/3 bg-slate-100" />
+        <div className="h-4 w-2/3 bg-slate-100" />
+        <div className="h-4 w-1/2 bg-slate-100" />
+      </div>
+    </div>
+  );
+}
+
 /** Server component: loads the cached view and renders the band. Suspended by both landing pages. */
 export async function RetentionRiskBandSection() {
   const view = await getRetentionRiskView();
