@@ -175,6 +175,15 @@ type EmployeeNotice = React.ReactNode;
 
 type EmployeeDirectoryTab = "all" | "missing";
 
+// The directory header freezes to the top of the table now that PortalDesktopTable is capped.
+// Both halves of its look had to move onto the CELLS to survive that: a `<tr>` background does
+// not travel with a sticky `<th>` — the row stays where it was while the cell slides over it, so
+// the header would have been transparent with employee rows running through it — and Tailwind's
+// preflight collapses table borders, so a `border-b` belongs to the row boundary and stays behind
+// for the same reason. Painted as an inset shadow, the divider travels with the cell.
+const frozenHeaderCellClassName = "sticky top-0 z-10 bg-phx-paper px-6 py-4";
+const frozenHeaderCellStyle: React.CSSProperties = { boxShadow: "inset 0 -1px 0 var(--phx-line)" };
+
 const emptyForm: EmployeeFormState = {
   areaId: "",
   bankAccount: "",
@@ -2101,16 +2110,20 @@ export function EmployeeManagement({
             </div>
 
             {/* Desktop Table View */}
-            <PortalDesktopTable minWidth="1200px">
+            {/* These seven cells have said `sticky top-0` since they were written and have never
+                frozen anything: sticky resolves against the nearest scrollport, and the wrapper
+                had no height cap, so the PAGE did the vertical scrolling and the header went with
+                it. The cap is what makes the existing intent real. */}
+            <PortalDesktopTable maxHeight="70vh" minWidth="1200px">
               <thead>
-                <tr className="border-b border-phx-line bg-phx-paper text-phx-xs font-bold uppercase tracking-wider text-phx-ink-soft">
-                  <th className="sticky top-0 z-10 px-6 py-4">Employee Information</th>
-                  <th className="sticky top-0 z-10 px-6 py-4 whitespace-nowrap">Hiring Date</th>
-                  <th className="sticky top-0 z-10 px-6 py-4">Organization</th>
-                  <th className="sticky top-0 z-10 px-6 py-4">Direct Manager</th>
-                  <th className="sticky top-0 z-10 px-6 py-4 text-center">Payout</th>
-                  <th className="sticky top-0 z-10 px-6 py-4">Contact Details</th>
-                  <th className="sticky top-0 z-10 px-6 py-4 text-right">Actions</th>
+                <tr className="text-phx-xs font-bold uppercase tracking-wider text-phx-ink-soft">
+                  <th className={frozenHeaderCellClassName} style={frozenHeaderCellStyle}>Employee Information</th>
+                  <th className={`${frozenHeaderCellClassName} whitespace-nowrap`} style={frozenHeaderCellStyle}>Hiring Date</th>
+                  <th className={frozenHeaderCellClassName} style={frozenHeaderCellStyle}>Organization</th>
+                  <th className={frozenHeaderCellClassName} style={frozenHeaderCellStyle}>Direct Manager</th>
+                  <th className={`${frozenHeaderCellClassName} text-center`} style={frozenHeaderCellStyle}>Payout</th>
+                  <th className={frozenHeaderCellClassName} style={frozenHeaderCellStyle}>Contact Details</th>
+                  <th className={`${frozenHeaderCellClassName} text-right`} style={frozenHeaderCellStyle}>Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-phx-paper-2">
