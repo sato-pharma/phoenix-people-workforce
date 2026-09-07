@@ -1358,6 +1358,118 @@ export async function runClosingEngineExportTests() {
       `${label}: mergeCells declares ${declaredMerges} but the sheet carries ${actualMerges} — Excel repairs that`,
     );
 
+    // ── The polish: a coloured header and a zebra that holds ──────────────────────────────────
+    //
+    // Owner, 2026-09-07: the contents page in the house look — a coloured header and a zebra table.
+    //
+    // ASSERTED BY RESOLVING EVERY INDEX, never by matching one. An index is precisely what was
+    // wrong before: the page named cellXfs 77, 79 and 81 while the template ships 77 of them
+    // (0..76), and those three resolved only because the style writer had already appended six
+    // entries. It rendered by luck, and any code appending a cellXf earlier would have re-pointed
+    // all three at something else with no error. The first assertion below is the one that would
+    // have caught it.
+    const stylesXml = await opened.file("xl/styles.xml")!.async("string");
+    /**
+     * Top-level <child> elements of <tag>, by scan — one greedy regex cannot match both
+     * `<xf .../>` and `<xf ...>…</xf>`, and getting that wrong silently swallows the rest and
+     * reports perfectly valid indices as out of range.
+     */
+    const listOf = (tag: string, child: string): string[] => {
+      const open = stylesXml.indexOf(`<${tag}`);
+      if (open < 0) return [];
+      const body = stylesXml.slice(stylesXml.indexOf(">", open) + 1, stylesXml.indexOf(`</${tag}>`));
+      const out: string[] = [];
+      let cursor = 0;
+      for (;;) {
+        const at = body.indexOf(`<${child}`, cursor);
+        if (at < 0) break;
+        const gt = body.indexOf(">", at);
+        if (body[gt - 1] === "/") { out.push(body.slice(at, gt + 1)); cursor = gt + 1; continue; }
+        const close = body.indexOf(`</${child}>`, gt);
+        out.push(body.slice(at, close + child.length + 3));
+        cursor = close + 1;
+      }
+      return out;
+    };
+    const xfs = listOf("cellXfs", "xf");
+    const fillList = listOf("fills", "fill");
+    const fontList = listOf("fonts", "font");
+    const idOf = (xf: string, name: string) => Number((new RegExp(`${name}="(\\d+)"`).exec(xf) ?? [, "0"])[1]);
+    const fillOf = (style: string) => {
+      const fill = fillList[idOf(xfs[Number(style)] ?? "", "fillId")] ?? "";
+      return (/fgColor rgb="([0-9A-Fa-f]+)"/.exec(fill) ?? [, "none"])[1];
+    };
+    const fontOf = (style: string) => fontList[idOf(xfs[Number(style)] ?? "", "fontId")] ?? "";
+
+    // 1) Nothing on this page may point past the end of the style table.
+    const usedStyles = [...sheet.matchAll(/<c r="[A-Z]+\d+" s="(\d+)"/g)].map((m) => Number(m[1]));
+    assert.ok(usedStyles.length > 0, `${label}: the contents page carries no styled cells at all`);
+    const outOfRange = [...new Set(usedStyles)].filter((index) => index >= xfs.length);
+    assert.deepEqual(
+      outOfRange,
+      [],
+      `${label}: the contents page names cellXf ${outOfRange.join(", ")} but the workbook has `
+        + `${xfs.length} (0..${xfs.length - 1}) — a style index into a list nobody controls`,
+    );
+
+    // 2) The masthead names the company. That is what the Sato Pharma identity is on this page:
+    //    type in the brand blue, not a picture that would need anchoring around a growing table.
+    assert.ok(
+      /<t[^>]*>SATO PHARMA<\/t>/.test(sheet),
+      `${label}: the contents page lost its Sato Pharma masthead`,
+    );
+
+    // 3) The table header is filled, and its type is white — a coloured header, as asked for.
+    const headerRowRef = /<row r="(\d+)"[^>]*>(?:(?!<\/row>)[\s\S])*?<t[^>]*>Page<\/t>/.exec(sheet);
+    assert.ok(headerRowRef, `${label}: the contents table lost its "Page" header row`);
+    const headerBody = new RegExp(`<row r="${headerRowRef![1]}"[^>]*>([\\s\\S]*?)</row>`).exec(sheet)?.[1] ?? "";
+    const headerCells = [...headerBody.matchAll(/<c r="([A-Z]+)\d+" s="(\d+)"/g)];
+    assert.equal(headerCells.length, 2, `${label}: the header must fill BOTH columns, not one`);
+    for (const [, column, style] of headerCells) {
+      assert.notEqual(
+        fillOf(style),
+        "none",
+        `${label}: header column ${column} is not filled — the header must be coloured`,
+      );
+      const font = fontOf(style);
+      assert.ok(
+        /FFFFFF/i.test(font) && font.includes("<b/>"),
+        `${label}: header column ${column} must be bold white on that fill, or the heading is unreadable`,
+      );
+    }
+    assert.equal(
+      fillOf(headerCells[0][2]),
+      fillOf(headerCells[1][2]),
+      `${label}: the two header cells must share one fill, or the bar reads as two blocks`,
+    );
+
+    // 4) The zebra: strictly alternating, and BOTH cells of a row take the same shade. A stripe
+    //    under the page name with white beside it reads as a highlight on the name, not as a row.
+    const entryRows = [...sheet.matchAll(
+      /<row r="\d+"[^>]*>((?:(?!<\/row>)[\s\S])*?<f>HYPERLINK(?:(?!<\/row>)[\s\S])*?)<\/row>/g,
+    )].map((m) => m[1]);
+    assert.ok(entryRows.length >= 10, `${label}: expected a row per page, got ${entryRows.length}`);
+    const shades: string[] = [];
+    for (const row of entryRows) {
+      const cells = [...row.matchAll(/<c r="([A-Z]+)\d+" s="(\d+)"/g)];
+      assert.equal(cells.length, 2, `${label}: an entry row must carry both its name and its description`);
+      const [nameFill, whatFill] = cells.map((cell) => fillOf(cell[2]));
+      assert.equal(nameFill, whatFill, `${label}: half-striped row — the name and its description disagree`);
+      shades.push(nameFill);
+    }
+    assert.equal(
+      new Set(shades).size,
+      2,
+      `${label}: a zebra needs exactly two shades, found ${[...new Set(shades)].join(", ")}`,
+    );
+    for (let index = 1; index < shades.length; index += 1) {
+      assert.notEqual(
+        shades[index],
+        shades[index - 1],
+        `${label}: the zebra breaks at entry ${index + 1} — it must alternate continuously, across bands too`,
+      );
+    }
+
     // Same class of defect: a dimension that stops short of the rows actually written.
     const declaredLastRow = Number(/<dimension ref="A1:B(\d+)"/.exec(sheet)![1]);
     const writtenLastRow = Math.max(...[...sheet.matchAll(/<row r="(\d+)"/g)].map((m) => Number(m[1])));

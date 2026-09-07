@@ -2517,27 +2517,43 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
     .filter((section) => section.entries.length > 0);
   if (sections.length === 0) return;
 
-  // Formats written for this page, not borrowed whole. See ensureIndexStyles: s81 was picked for its
-  // font and brought a right alignment and a bottom rule with it, which is what made the page read
-  // as a broken table.
+  // Every format this page uses comes back in one map. Nothing here indexes styles.xml by hand —
+  // see ensureIndexStyles for why that was wrong even when it looked right.
   const own = await ensureIndexStyles(zip);
-  const linkStyle = own?.link ?? INDEX_STYLE.link;
-  const bandStyle = own?.band ?? INDEX_STYLE.subtitle;
+  const s = own ?? INDEX_FALLBACK_STYLE;
 
   const line = String(fill.sheets.Overview?.cells?.A1 ?? "").trim();
   const rows: string[] = [];
   // Collected as the rows are written rather than counted afterwards: every band adds one, so a
   // hard-coded `count` is a repair prompt waiting for the next section.
-  const merges: string[] = ["A1:B1", "A2:B2"];
+  const merges: string[] = [];
   let rowNumber = 1;
 
   const inline = (ref: string, style: string, value: string) =>
     `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(xmlSafe(value))}</t></is></c>`;
 
-  rows.push(`<row r="${rowNumber}" ht="33.95" customHeight="1">${inline(`A${rowNumber}`, INDEX_STYLE.title, line || "Monthly Closing")}</row>`);
-  rowNumber += 1;
-  rows.push(`<row r="${rowNumber}" ht="18" customHeight="1">${inline(`A${rowNumber}`, INDEX_STYLE.subtitle, "Every page in this workbook. Press a name to go there.")}</row>`);
-  rowNumber += 2; // one blank row, as the other sheets space their header off the title
+  /** One full-width row across both columns, merged and styled. */
+  const wide = (style: string, value: string, height: string) => {
+    merges.push(`A${rowNumber}:B${rowNumber}`);
+    rows.push(
+      `<row r="${rowNumber}" ht="${height}" customHeight="1">`
+        + inline(`A${rowNumber}`, style, value)
+        + `<c r="B${rowNumber}" s="${style}"/>`
+        + "</row>",
+    );
+    rowNumber += 1;
+  };
+
+  // ── the masthead ────────────────────────────────────────────────────────────────────────────
+  //
+  // The company first, then the month, then the brand rule. The kicker is spelled out rather than
+  // drawn from the mark: the logo is a picture, and a picture on the contents page would have to be
+  // anchored, scaled and kept out of the way of a table that grows with the number of sheets. Type
+  // in the brand blue carries the identity here and costs the workbook nothing.
+  wide(s.kicker, "SATO PHARMA", "18");
+  wide(s.title, line || "Monthly Closing", "33.95");
+  wide(s.subtitle, "Every page in this workbook. Press a name to go there.", "20");
+  rowNumber += 1; // one blank row, as the other sheets space their header off the title
 
   // ── The month in four figures, before the list of pages ─────────────────────────────────────
   //
@@ -2558,7 +2574,7 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
     kpiCells.push({ label: spec.label, note: String(kpi[spec.noteRef] ?? ""), percent: spec.percent, value });
   }
 
-  if (own && kpiCells.length > 0) {
+  if (kpiCells.length > 0) {
     for (const cell of kpiCells) {
       // THE NOTE BELONGS TO THE LABEL, not to a second column. It used to sit in B, which begins 26
       // characters to the right of a figure that is seven characters long — so "EGP, August 2026"
@@ -2567,13 +2583,13 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
       // descriptions it exists for.
       const heading = cell.note ? `${cell.label}  ·  ${cell.note}` : cell.label;
       rows.push(
-        `<row r="${rowNumber}" ht="15" customHeight="1">`
-          + inline(`A${rowNumber}`, own.kpiLabel, heading)
+        `<row r="${rowNumber}" ht="14" customHeight="1">`
+          + inline(`A${rowNumber}`, s.kpiLabel, heading.toUpperCase())
           + "</row>",
       );
       rows.push(
-        `<row r="${rowNumber + 1}" ht="21" customHeight="1">`
-          + `<c r="A${rowNumber + 1}" s="${cell.percent ? own.kpiPercent : own.kpiMoney}"><v>${cell.value}</v></c>`
+        `<row r="${rowNumber + 1}" ht="26" customHeight="1">`
+          + `<c r="A${rowNumber + 1}" s="${cell.percent ? s.kpiPercent : s.kpiMoney}"><v>${cell.value}</v></c>`
           + "</row>",
       );
       rowNumber += 2;
@@ -2581,24 +2597,31 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
     rowNumber += 1;
   }
 
-  const headerRow = rowNumber;
+  // The table header — white on the owner's deep blue, spanning both columns so the band reads as
+  // one bar rather than two cells that happen to share a colour.
   rows.push(
-    `<row r="${headerRow}" ht="21.95" customHeight="1">`
-      + inline(`A${headerRow}`, INDEX_STYLE.header, "Page")
-      + inline(`B${headerRow}`, INDEX_STYLE.header, "What it holds")
+    `<row r="${rowNumber}" ht="24" customHeight="1">`
+      + inline(`A${rowNumber}`, s.header, "Page")
+      + inline(`B${rowNumber}`, s.header, "What it holds")
       + "</row>",
   );
   rowNumber += 1;
 
+  // THE ZEBRA RUNS CONTINUOUSLY, across bands rather than restarting inside each one. Restarting
+  // makes the first row of every band the same shade, which reads as a second kind of heading and
+  // fights the band label directly above it. One unbroken alternation down the table is what makes
+  // the stripe do its only job, which is to keep the eye on one row across 96 characters of
+  // description.
+  let striped = false;
+
   for (const section of sections) {
-    // The band label spans both columns and carries the subtitle style, whose hairline blue rule
-    // draws the divider — a line, never a filled bar, which is the house rule for how colour is
-    // allowed to mark a document.
+    // The band label spans both columns and sits over a hairline — a line, never a second filled
+    // bar, so the deep header above it stays the only strong mark on the page.
     merges.push(`A${rowNumber}:B${rowNumber}`);
     rows.push(
       `<row r="${rowNumber}" ht="26" customHeight="1">`
-        + inline(`A${rowNumber}`, bandStyle, section.band.toUpperCase())
-        + `<c r="B${rowNumber}" s="${bandStyle}"/>`
+        + inline(`A${rowNumber}`, s.band, section.band.toUpperCase())
+        + `<c r="B${rowNumber}" s="${s.band}"/>`
         + "</row>",
     );
     rowNumber += 1;
@@ -2607,20 +2630,25 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
       // The jump is the same form Excel writes for a shape's in-document link, spelled as a formula
       // so the cell itself is the control. `#` and the quoted sheet name are both required.
       const jump = xmlEscape(`HYPERLINK("#'${entry.sheet.replace(/'/g, "''")}'!A1","${entry.sheet}")`);
+      // BOTH cells take the tint, never just one: a stripe under the name and white beside it is
+      // read as a highlight on that name rather than as a row.
+      const nameStyle = striped ? s.linkZebra : s.link;
+      const whatStyle = striped ? s.bodyZebra : s.body;
       rows.push(
         `<row r="${rowNumber}" ht="22.5" customHeight="1">`
-          + `<c r="A${rowNumber}" s="${linkStyle}"><f>${jump}</f></c>`
-          + inline(`B${rowNumber}`, INDEX_STYLE.body, entry.what)
+          + `<c r="${`A${rowNumber}`}" s="${nameStyle}"><f>${jump}</f></c>`
+          + inline(`B${rowNumber}`, whatStyle, entry.what)
           + "</row>",
       );
       rowNumber += 1;
+      striped = !striped;
     }
   }
 
   // The footnote, one blank row below the last band.
   rowNumber += 1;
   merges.push(`A${rowNumber}:B${rowNumber}`);
-  rows.push(`<row r="${rowNumber}" ht="18" customHeight="1">${inline(`A${rowNumber}`, INDEX_STYLE.subtitle, INDEX_FOOTNOTE)}</row>`);
+  rows.push(`<row r="${rowNumber}" ht="30" customHeight="1">${inline(`A${rowNumber}`, s.foot, INDEX_FOOTNOTE)}</row>`);
 
   const lastRow = rowNumber;
   const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -2667,14 +2695,35 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
 }
 
 /**
- * Style indices borrowed from the template — the look the other sheets already use.
+ * The last resort, for a package with no `xl/styles.xml` at all.
  *
- * CHOSEN BY READING THE CATALOGUE, not by guessing an index: s81 is bold 12pt in the brand blue
- * `#0868A8`, s8 is white on that same blue, s77 the 13pt title, s79 the grey subtitle, s9 the body.
- * The first version used s9 for the link too, which is 9.5pt plain dark — the page rendered as a
- * wall of identical text with nothing to press.
+ * `ensureIndexStyles` authors every format the contents page uses and is the only thing that should
+ * ever supply them; this exists so that a workbook missing the part still gets a readable page
+ * instead of cells pointing at style 0. Every index here is one the OWNER'S TEMPLATE ships — it
+ * carries 77 cellXfs, so 0..76 are the only values that are safe without appending anything: s8 is
+ * white on the brand blue, s9 the body row, s3 the bold heading, s2 the 13pt title.
+ *
+ * THIS IS WHY IT REPLACED THE OLD LITERAL. The previous constant named s77, s79 and s81 — all three
+ * PAST the end of the template's list. They resolved only because ensureIndexStyles had already
+ * appended six entries at 77..82, so the "title" style was really the appended link format. Any
+ * future code appending a cellXf before this one runs would have shifted all three onto something
+ * else again, with no error and no visible cause.
  */
-const INDEX_STYLE = { title: "77", subtitle: "79", header: "8", link: "81", body: "9" } as const;
+const INDEX_FALLBACK_STYLE = {
+  band: "3",
+  body: "9",
+  bodyZebra: "9",
+  foot: "9",
+  header: "8",
+  kicker: "3",
+  kpiLabel: "9",
+  kpiMoney: "9",
+  kpiPercent: "9",
+  link: "3",
+  linkZebra: "3",
+  subtitle: "9",
+  title: "2",
+} as const;
 
 /** Sheet names reach `workbook.xml` XML-escaped; the comparisons here do not. */
 function unescapeSheetName(value: string): string {
@@ -2860,12 +2909,35 @@ function appendCellXf(stylesXml: string, xf: string): { index: number; xml: stri
 }
 
 /**
- * The contents page's own formats, built from the template's fonts and borders.
+ * The contents page's own formats, built from the template's OWN fonts, fills and borders.
  *
- * fontId 22 is the bold brand blue the owner uses for a figure that matters; fontId 2 the 13pt title
- * face; fontId 20 the grey subtitle; fontId 11 the body. borderId 4 is his medium blue rule, which
- * is what gives a band its divider without a filled bar — the house rule is colour on lines and type,
- * never on area.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * EVERY STYLE THIS PAGE USES IS AUTHORED HERE, and the page reaches them only through the map this
+ * returns. That is a correctness fix as much as a design one. The page used to mix these with a
+ * literal `INDEX_STYLE = { title: "77", subtitle: "79", link: "81", ... }`, and the template ships
+ * exactly 77 cellXfs — valid indices 0..76. Those three only resolved to anything because THIS
+ * function had already appended six entries at 77..82, so "title" was in fact the appended link
+ * format and "subtitle" the KPI label. It rendered acceptably by luck, and any code appending a
+ * cellXf before this ran would have silently re-pointed all three at something else again. Indices
+ * into a list nobody controls are not a style system.
+ *
+ * WHAT IS BORROWED. The fontIds, fillIds and borderIds below are the OWNER'S, read out of his own
+ * template: font 7 is bold 18pt in the brand blue `#0868A8`, font 6 bold 18pt near-black, font 9
+ * bold 10pt white, font 14 bold 10.5pt blue, font 11 the 9.5pt body, font 13 the 9.5pt grey, font 12
+ * the 8pt grey. Fill 4 is his deep `#085080`, fill 3 the pale `#F5F9FC`. Border 4 is the medium blue
+ * rule, border 3 the hairline grey.
+ *
+ * WHY THE TEMPLATE'S PALETTE AND NOT `HOUSE_COLORS`. They are the same family within two or three
+ * points per channel — deep `#085080` against `#0A527D`, blue `#0868A8` against `#0A6BA6`, tint
+ * `#F5F9FC` against `#F2F6FA` — and every OTHER sheet in this workbook is painted from the
+ * template's set. Importing the document-identity constants here would give the front page a second
+ * palette that disagrees with the twelve pages behind it by an amount just large enough to see side
+ * by side. Matching the siblings IS the identity here.
+ *
+ * THE FILLED HEADER AND THE ZEBRA ARE BOTH DELIBERATE, and both are what the owner asked for. The
+ * house standard names deep as the colour for a table header and the 6% tint as "the zebra row, and
+ * nothing else" — the two places colour is allowed to sit on an area rather than on a line.
+ * Everything else on this page is still type and rules.
  */
 async function ensureIndexStyles(zip: JSZip): Promise<Record<string, string> | null> {
   const file = zip.file("xl/styles.xml");
@@ -2878,32 +2950,65 @@ async function ensureIndexStyles(zip: JSZip): Promise<Record<string, string> | n
     return String(result.index);
   };
 
+  const left = (indent = 1) => `<alignment horizontal="left" vertical="center" indent="${indent}"/>`;
+
   const styles = {
-    // The page name: his bold blue, LEFT where a reader starts, and no border at all.
-    link: add(
-      '<xf numFmtId="0" fontId="22" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">'
-      + '<alignment horizontal="left" vertical="center" indent="1"/></xf>',
+    // ── the masthead ────────────────────────────────────────────────────────────────────────
+    // A kicker over the title, in the brand blue, so the page opens with the company rather than
+    // with a bare month.
+    kicker: add(
+      `<xf numFmtId="0" fontId="14" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">${left()}</xf>`,
     ),
-    // A band label: same blue, smaller, with the medium rule under it so the section is a section.
-    band: add(
-      '<xf numFmtId="0" fontId="10" fillId="0" borderId="4" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">'
-      + '<alignment horizontal="left" vertical="bottom" indent="1"/></xf>',
+    title: add(
+      `<xf numFmtId="0" fontId="7" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">${left()}</xf>`,
     ),
+    // The subtitle carries the medium blue rule beneath it — the brand line under the masthead.
+    subtitle: add(
+      '<xf numFmtId="0" fontId="13" fillId="0" borderId="4" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">'
+      + '<alignment horizontal="left" vertical="top" indent="1"/></xf>',
+    ),
+
+    // ── the month in figures ────────────────────────────────────────────────────────────────
     kpiLabel: add(
-      '<xf numFmtId="0" fontId="20" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">'
+      '<xf numFmtId="0" fontId="12" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">'
       + '<alignment horizontal="left" vertical="bottom" indent="1"/></xf>',
     ),
     kpiMoney: add(
-      '<xf numFmtId="165" fontId="2" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyAlignment="1">'
-      + '<alignment horizontal="left" vertical="center" indent="1"/></xf>',
+      `<xf numFmtId="165" fontId="6" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyAlignment="1">${left()}</xf>`,
     ),
     kpiPercent: add(
-      '<xf numFmtId="164" fontId="2" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyAlignment="1">'
-      + '<alignment horizontal="left" vertical="center" indent="1"/></xf>',
+      `<xf numFmtId="164" fontId="6" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyAlignment="1">${left()}</xf>`,
     ),
-    kpiNote: add(
-      '<xf numFmtId="0" fontId="11" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">'
-      + '<alignment horizontal="left" vertical="top" indent="1"/></xf>',
+
+    // ── the table ───────────────────────────────────────────────────────────────────────────
+    // The header: white on the owner's deep blue, one of the two places area colour is allowed.
+    header: add(
+      `<xf numFmtId="0" fontId="9" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">${left()}</xf>`,
+    ),
+    // A band label spans both columns: blue type over the hairline, so a section reads as a section
+    // without a second filled bar competing with the header above it.
+    band: add(
+      '<xf numFmtId="0" fontId="14" fillId="0" borderId="3" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">'
+      + '<alignment horizontal="left" vertical="bottom" indent="1"/></xf>',
+    ),
+    // The page name and the line beside it — plain, then the same pair on the zebra tint.
+    link: add(
+      `<xf numFmtId="0" fontId="14" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">${left()}</xf>`,
+    ),
+    linkZebra: add(
+      `<xf numFmtId="0" fontId="14" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">${left()}</xf>`,
+    ),
+    body: add(
+      `<xf numFmtId="0" fontId="11" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">${left()}</xf>`,
+    ),
+    bodyZebra: add(
+      `<xf numFmtId="0" fontId="11" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">${left()}</xf>`,
+    ),
+
+    // ── the footnote ────────────────────────────────────────────────────────────────────────
+    foot: add(
+      '<xf numFmtId="0" fontId="12" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">'
+      + '<alignment horizontal="left" vertical="top" indent="1" wrapText="1"/></xf>',
     ),
   };
 
