@@ -581,6 +581,56 @@ function testEveryEmployeesColumnThisModuleReadsExists(): void {
   }
 }
 
+/**
+ * The custody receipt printed from a row carries THAT device, and the right one of the two forms.
+ *
+ * This is where the register pays for itself, and it is a link that is easy to leave half-built:
+ * `getHiringPack` grew a `custodyDeviceId` parameter and `renderHiringPaper` forwards it, but until
+ * something actually PASSES one the whole path is unreachable and the form keeps printing blanks
+ * while every unit test stays green. So the assertion is on the caller, not on the plumbing.
+ *
+ * `custodyLaptop` is نموذج رقم 1 with the Windows block; everything portable takes `custodyMobile`,
+ * نموذج رقم 2 with IMEI and SIM. The register already knows which, so nobody has to choose — and
+ * choosing wrong would print a page asking for an IMEI about a laptop.
+ */
+function testThePrintLinkCarriesTheDeviceAndPicksTheRightForm(): void {
+  const source = readFileSync("src/components/devices/device-register-workspace.tsx", "utf8");
+
+  const href = source.match(/href=\{`(\/api\/hiring-pack\/[^`]*)`\}/);
+  assert.ok(href, "the device row must offer a link to print this device's custody receipt");
+
+  assert.ok(
+    href[1].includes("deviceId=${encodeURIComponent(device.id)}"),
+    `the print link is "${href[1]}" — without deviceId the receipt prints ruled blanks and the ` +
+      `register may as well not exist`,
+  );
+  assert.ok(
+    /device\.category === "laptop" \? "custodyLaptop" : "custodyMobile"/.test(source),
+    "a laptop must take نموذج رقم 1 and anything portable نموذج رقم 2",
+  );
+  assert.ok(
+    /device\.holderHrId\)/.test(href[1]),
+    "the receipt is printed for the HOLDER — a custody receipt naming nobody is not a receipt",
+  );
+  assert.ok(
+    /\{device\.assignmentId && device\.holderHrId \?/.test(source),
+    "and it is only offered while the device is signed out to somebody",
+  );
+
+  // The route must actually read the parameter the link sends. Two files, one contract — the
+  // commonest way this breaks is renaming one end.
+  const route = readFileSync("app/api/hiring-pack/[hrId]/print/route.ts", "utf8");
+  assert.ok(
+    /custodyDeviceId: url\.searchParams\.get\("deviceId"\)/.test(route),
+    "the print route must forward deviceId= to the renderer, or the link is inert",
+  );
+  const renderer = readFileSync("src/lib/hiring-pack/render-paper.ts", "utf8");
+  assert.ok(
+    /getHiringPack\(hrId, input\.custodyDeviceId \?\? null\)/.test(renderer),
+    "and renderHiringPaper must pass it on to getHiringPack",
+  );
+}
+
 /** The API declares both gates in the access registry, and the mutation is CSRF-guarded. */
 function testTheApiIsDeclaredInTheAccessRegistry(): void {
   const registry = readFileSync("src/lib/security/access-registry.ts", "utf8");
@@ -617,6 +667,7 @@ export function runDeviceRegisterTests(): void {
   testBothTablesEnableRowLevelSecurity();
   testTheRegisterIsNotBackfilled();
   testEveryEmployeesColumnThisModuleReadsExists();
+  testThePrintLinkCarriesTheDeviceAndPicksTheRightForm();
   testTheResourceIsDeclaredAndScoped();
   testTheApiIsDeclaredInTheAccessRegistry();
 }

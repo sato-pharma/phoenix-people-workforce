@@ -946,6 +946,29 @@ function DeviceActions({
         <button className={buttonClass} disabled={busy} onClick={() => onOpen(device.id, "mark")} type="button">
           Change state
         </button>
+        {/*
+          The receipt for THIS device and THIS holder — the point where the register pays for
+          itself. `deviceId` carries the register row into the print, so the serial and IMEI on the
+          paper are the ones the company can hand to the police rather than eight characters
+          somebody copied off the underside of a laptop.
+
+          Offered only when the device is signed out, because the receipt is about a HOLDER: with
+          nobody holding it there is no name to print in «بيانات مستلم العهدة», and a receipt naming
+          nobody is not a receipt. The form for a laptop is نموذج رقم 1 and for anything portable
+          نموذج رقم 2 — the register already knows which, so nobody has to choose.
+        */}
+        {device.assignmentId && device.holderHrId ? (
+          <a
+            className={buttonClass}
+            href={`/api/hiring-pack/${encodeURIComponent(device.holderHrId)}/print?document=${
+              device.category === "laptop" ? "custodyLaptop" : "custodyMobile"
+            }&deviceId=${encodeURIComponent(device.id)}`}
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            Print receipt
+          </a>
+        ) : null}
       </div>
     );
   }
