@@ -19,6 +19,21 @@ export type AuditEntityType =
   // it any more: the module stopped being a fixed S1 report when it grew a period filter.
   | "business_review_s1_export"
   | "calendar_event"
+  // The device register. `company_device` is the asset — registered, sent for repair, marked lost,
+  // stolen or retired. `device_assignment` is one custody event against it — issued, returned, or
+  // written off.
+  //
+  // TWO ENTITY TYPES RATHER THAN ONE, because they answer different questions and neither answer
+  // contains the other: "what has happened to this laptop over its life" is the device, and "what
+  // did this person sign for and what became of it" is the assignment. Folding them together would
+  // make the second unanswerable without reading every row of the first.
+  //
+  // Every write against both is REQUIRED audit, not best-effort. Each one attests that a named
+  // person physically handed over, received back, or stopped pursuing a company asset — and two of
+  // them (a damaged return, a write-off) can end in money coming out of somebody's wages under
+  // البند (10) of the custody receipt.
+  | "company_device"
+  | "device_assignment"
   // Minting or revoking a bearer link to the live CV-lifecycle Google Sheet. The link outlives the
   // session that created it and copies candidate names and phone numbers out of Phoenix, so who
   // made one — and who killed it — is recorded. The token itself is never written here: an audit

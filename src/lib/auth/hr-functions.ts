@@ -306,6 +306,17 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // settlement" is a named boundary in this same job description and stays enforced by the
       // payroll entries in HR_ROLE_BOUNDARIES.
       mailbox_offboarding: MAINTAIN,
+      // The other half of ops 6, and of ops 1 at the other end of the arc. HR Operations already
+      // prints the custody receipt (إقرار استلام عهدة) out of the hiring pack when somebody joins
+      // and collects the device back when they leave — this is the register behind that paper, so
+      // the grant follows the work rather than creating a new one.
+      //
+      // MAINTAIN, and it does NOT reach payroll, which matters more here than it does above:
+      // البند (10) of the receipt lets an unreturned device be recovered by deduction from wages,
+      // and "may not approve final settlement" is a named boundary in this same job description.
+      // Recording that a device did not come back is hers; deciding what leaves somebody's pay
+      // packet is not, and the payroll entries in HR_ROLE_BOUNDARIES keep it that way.
+      company_devices: MAINTAIN,
       // NO `delete` anywhere in this function. Removing an employee, a contract or a resignation
       // destroys a personnel record, and both job descriptions require records that "can support
       // internal review, external inspection or audit". Deletion stays Super Admin.
@@ -492,6 +503,7 @@ export const HR_ROLE_BOUNDARIES: readonly {
   { resource: "contracts", action: "delete", why: "may not destroy a contract record (ops)" },
   { resource: "resignations", action: "delete", why: "may not destroy an exit record (ops)" },
   { resource: "mailbox_offboarding", action: "delete", why: "may not destroy the attestation that a leaver's mailbox was closed (ops)" },
+  { resource: "company_devices", action: "delete", why: "may not destroy a custody record - البند (10) makes it the basis of a wage deduction, so it is both the company's claim and the employee's defence (ops)" },
   { resource: "retention", action: "delete", why: "may not destroy an exit interview - it is the evidence behind a turnover theme (hrbp)" },
   { resource: "organogram", action: "update", why: "may not make organizational changes (hrbp + ops)" },
   { resource: "user_admin", action: "read", why: "role, scope and permission admin stays Super Admin" },

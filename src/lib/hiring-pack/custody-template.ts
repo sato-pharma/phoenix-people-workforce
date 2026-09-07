@@ -25,10 +25,23 @@ export type CustodyVariant = "laptop" | "mobileTablet";
 /**
  * The values Phoenix fills in. Everything else on the page is standing text or a blank for the pen.
  *
- * Deliberately small. A custody receipt is mostly about a DEVICE, and Phoenix holds no asset
- * register — so the device half of the page prints as ruled blanks, exactly as the owner's own
- * blank templates do, and only the half that is about the PERSON is filled. That is the half worth
- * filling: it is copied from an ID card by hand today, which is where the transcription errors are.
+ * THE PERSON HALF was always filled. It is the half worth filling: copied from an ID card by hand
+ * otherwise, which is where the transcription errors are.
+ *
+ * THE DEVICE HALF WAS NOT, until the device register was built (migration 20260907220000). This
+ * comment used to read "Phoenix holds no asset register — so the device half of the page prints as
+ * ruled blanks", and while that was true it was also the right call: an invented serial on a signed
+ * instrument is worse than a blank one. Phoenix now holds one, so the device tokens below fill from
+ * `company_devices` — but ONLY when a device has actually been chosen for this handover.
+ *
+ * THAT CONDITION IS THE DESIGN, and it is why this did not simply become "the device half is filled
+ * now". A custody receipt is very often printed BEFORE the machine is in anybody's hand — the pack
+ * is run the evening before a joiner arrives — so a form with no device selected must still print,
+ * and must still print ruled blanks for somebody to complete at the desk. What changed is only
+ * this: when the register knows which machine is being handed over, the serial and the IMEI on the
+ * paper come from the row that will carry them afterwards, so the number somebody signs for and the
+ * number the company can give the police are the same number by construction rather than by
+ * transcription.
  */
 export type CustodyToken =
   | "COMPANY_NAME"
@@ -45,7 +58,22 @@ export type CustodyToken =
   | "DEPARTMENT"
   | "HR_ID"
   | "PHONE"
-  | "ADDRESS";
+  | "ADDRESS"
+  // نموذج رقم 1 — the Windows "About" block, each token named for the field on the screen it is
+  // read off, so whoever checks the paper against the machine is comparing like with like.
+  | "DEVICE_MANUFACTURER"
+  | "DEVICE_SERIAL"
+  | "DEVICE_NAME"
+  | "DEVICE_PROCESSOR"
+  | "DEVICE_RAM"
+  | "DEVICE_SYSTEM_TYPE"
+  | "DEVICE_ID"
+  | "DEVICE_PRODUCT_ID"
+  // نموذج رقم 2 — the phone and tablet block.
+  | "DEVICE_TYPE"
+  | "DEVICE_IMEI"
+  | "DEVICE_SIM"
+  | "DEVICE_LINE";
 
 /**
  * One labelled box on the form.
@@ -198,6 +226,33 @@ export function custodyTemplateStrings(template: CustodyTemplate): string[] {
 export function custodyTemplateTokens(template: CustodyTemplate): CustodyToken[] {
   const used = new Set<CustodyToken>();
   for (const field of [...template.holderFields, ...template.technicalFields]) {
+    if (field.token) used.add(field.token);
+  }
+  return [...used].sort();
+}
+
+/**
+ * Only the tokens about the PERSON, sorted.
+ *
+ * Split out from `custodyTemplateTokens` when the device register landed, and the split is the
+ * point rather than a convenience. The two forms are required to ask the same things about the
+ * holder and required to differ about the device — that was the whole reason for two forms — so a
+ * single "the two forms use the same tokens" assertion could only stay true by keeping the device
+ * half empty. Comparing the halves separately says what was actually meant, and keeps saying it now
+ * that the device half is filled.
+ */
+export function custodyHolderTokens(template: CustodyTemplate): CustodyToken[] {
+  const used = new Set<CustodyToken>();
+  for (const field of template.holderFields) {
+    if (field.token) used.add(field.token);
+  }
+  return [...used].sort();
+}
+
+/** Only the tokens about the DEVICE, sorted. The half that differs between the two forms. */
+export function custodyDeviceTokens(template: CustodyTemplate): CustodyToken[] {
+  const used = new Set<CustodyToken>();
+  for (const field of template.technicalFields) {
     if (field.token) used.add(field.token);
   }
   return [...used].sort();

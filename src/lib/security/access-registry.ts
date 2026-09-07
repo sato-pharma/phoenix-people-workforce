@@ -926,6 +926,17 @@ export const accessRegistry = [
   // re-attesting an existing one asserts `update`. Declared as `update` alone until 2026-09-03, so
   // the entry named only half of what the route enforces.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/mailbox-offboarding", permission: [{ resource: "mailbox_offboarding", action: "create" }, { resource: "mailbox_offboarding", action: "update" }], csrfRequired: true }),
+  // Company device register. The GET returns, per employee, the serial or IMEI of the machine he
+  // carries and what the company values it at — a shopping list if it were readable company-wide,
+  // which is why `company_devices` is its own resource rather than a corner of `sales` or `team`.
+  sessionApi({ methods: readOnly, pattern: "/api/devices", permission: { resource: "company_devices", action: "read" } }),
+  // The POST branches five ways and the handler asserts each: registering a device is `create`;
+  // issuing, returning, marking and writing off are all `update`. A write-off is `update` and NOT
+  // `delete` deliberately — it ends a debt البند (10) of the custody receipt created, and leaves
+  // every record of that debt in place. Every mutation writes a REQUIRED audit row, because each is
+  // an attestation that a named person physically handed over, received back, or stopped pursuing a
+  // company asset, and two of them can end in money leaving somebody's wages.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices", permission: [{ resource: "company_devices", action: "create" }, { resource: "company_devices", action: "update" }], csrfRequired: true }),
   // Retention register (Phase 6). The GET returns stay and exit conversations, which hold what an
   // employee said in confidence about their manager and their pay — the permission is the whole
   // protection, since RLS is disabled-by-default here like every other table in this app.

@@ -1,4 +1,5 @@
 import { systemContractDefaults } from "@/config/system-settings";
+import { getCustodyDeviceFacts } from "@/lib/devices/service";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import {
   COMPANY_DETAILS_DEFAULT,
@@ -1146,17 +1147,32 @@ function requireHrId(value: string | null | undefined): string {
   return hrId;
 }
 
-export async function getHiringPack(hrIdInput: string): Promise<HiringPackData> {
+/**
+ * `custodyDeviceId` names the device a custody receipt is being printed FOR.
+ *
+ * OPTIONAL, AND ABSENT IS THE NORMAL CASE. Every other document in the pack ignores it, and a
+ * custody receipt printed without it prints exactly what it always printed — ruled blanks through
+ * the technical block, completed at the desk. It exists so that when the machine IS known, the
+ * serial and IMEI on the paper come from the register row that will carry them afterwards.
+ */
+export async function getHiringPack(
+  hrIdInput: string,
+  custodyDeviceId?: string | null,
+): Promise<HiringPackData> {
   const hrId = requireHrId(hrIdInput);
   // The company is read alongside the person, not after: it is on the critical path of every print,
   // and a missing table answers `{}` rather than throwing, so this adds a query and no failure mode.
-  const [employee, profile, offboarding, exit, renewal, company] = await Promise.all([
+  const [employee, profile, offboarding, exit, renewal, company, custodyDevice] = await Promise.all([
     loadEmployeeFacts(hrId),
     loadProfile(hrId),
     loadOffboardingProfile(hrId),
     loadExitFacts(hrId),
     loadRenewalFacts(hrId),
     loadCompanyDetails(),
+    // Returns null for an absent id AND for one that names nothing — see `getCustodyDeviceFacts`.
+    // A custody receipt must always print; refusing to render a signed instrument because a lookup
+    // missed would be a worse failure than the blanks it falls back to.
+    getCustodyDeviceFacts(custodyDeviceId),
   ]);
   const suggestedJobTitleAr = await loadSuggestedJobTitleAr(employee.jobTitle);
 
@@ -1166,6 +1182,7 @@ export async function getHiringPack(hrIdInput: string): Promise<HiringPackData> 
     offboarding,
     company,
     exit,
+    custodyDevice,
     renewal,
     suggestedJobTitleAr,
     // Both take the RESOLVED company, so a registration number typed onto a form stops being

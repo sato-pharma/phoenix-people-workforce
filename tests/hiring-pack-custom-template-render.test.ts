@@ -132,6 +132,9 @@ function packFixture(
     profile,
     offboarding,
     exit: null,
+    // Null: no device chosen. A custody receipt printed without one carries ruled blanks
+    // through its technical block, which is what these fixtures are about.
+    custodyDevice: null,
     renewal: null,
     company: COMPANY_DETAILS_DEFAULT,
     suggestedJobTitleAr: null,
