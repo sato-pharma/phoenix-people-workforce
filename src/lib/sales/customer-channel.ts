@@ -336,6 +336,16 @@ export const STORE_OVERRIDE_NAMES: readonly ChannelNameKeyword[] = [
   // Spelled «هاحر» in the source data, with two spaces before the dash. Folding collapses the
   // spaces; the misspelling is theirs and is kept exactly, because it is what the files carry.
   { label: "هاحر والشروق", stem: "هاحر والشروق" },
+  // The neighbour this list deliberately left out until he ruled on it — owner, 2026-09-07, asked
+  // directly and answered "wholesaler". Its siblings «الفرسان بنها جملة» and «الفرسان انترناشول
+  // جروب بنها» were already warehouses through El Qema, so it was the odd one out.
+  //
+  // «الفرسان جروب» measured on production matches exactly this ONE business, on its two accounts
+  // (EP-PHS and EP-BK, both code 163700) — the other seven «الفرسان» customers put a word between
+  // «الفرسان» and «جروب», so none is swept in. Changes NO number today: all 3,667,524.75 EGP of it is
+  // Head Office, which is untracked and never splits. It decides how the account is treated the
+  // first time it sells on a rep line.
+  { label: "الفرسان جروب - بنها", stem: "الفرسان جروب" },
 ];
 
 /**

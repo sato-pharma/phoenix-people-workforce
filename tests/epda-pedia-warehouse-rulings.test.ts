@@ -8,16 +8,18 @@ import {
 
 /**
  * The owner read the EPDA Pedia August 2026 list on 2026-09-07 and ruled seven more customers
- * warehouses. None carries a store word, the «م - » prefix or the trade phrase, so each is named.
+ * warehouses, then an eighth — «الفرسان جروب - بنها» — when the measurement below surfaced it. None
+ * carries a store word, the «م - » prefix or the trade phrase, so each is named.
  *
- * The reason this file exists is the neighbours, not the seven. `STORE_OVERRIDE_NAMES` is the one
+ * The reason this file exists is the neighbours, not the eight. `STORE_OVERRIDE_NAMES` is the one
  * list that can CREATE a warehouse from a name — `PHARMACY_OVERRIDE_CHAINS` can only ever refuse
  * one — so an over-wide stem here does not merely mislabel a customer, it deals its sales out across
  * a city and moves money between reps, with no error and nothing downstream reporting it (the split
  * preserves each line's unit total, and the publication drift check compares units).
  *
  * Measured on production before the stems were written: bare «الفرسان» matches NINE customers worth
- * 15,615,203.94 EGP across five businesses. The owner ruled exactly one of them.
+ * 15,615,203.94 EGP across five businesses. The owner has ruled on two of them, and both stems are
+ * written long enough to reach only those two.
  */
 
 const RULED_WAREHOUSES: ReadonlyArray<readonly [string, string, string]> = [
@@ -28,15 +30,22 @@ const RULED_WAREHOUSES: ReadonlyArray<readonly [string, string, string]> = [
   ["مالتى ستورز - الهرم", "164345", "EP-PHS"],
   ["فيوتشر - الزقازيق", "163044", "EP-PHS"],
   ["هاحر والشروق  - طنطا", "163906", "EP-PHS"],
+  // Ruled the same day, after the measurement below surfaced it: its siblings were already
+  // warehouses through El Qema and this account was the odd one out. All Head Office value, so it
+  // moves nothing today — it decides the first rep-line sale it ever makes.
+  ["الفرسان جروب - بنها", "163700", "EP-PHS"],
+  ["الفرسان جروب - بنها", "163700", "EP-BK"],
 ];
 
-/** Real production customers the seven stems must NOT reach. He has ruled on none of them. */
+/** Real production customers these stems must NOT reach. He has ruled on none of them. */
 const MUST_STAY_PHARMACY: ReadonlyArray<readonly [string, string, string]> = [
-  // 22,599.00 EGP. Bare «الفرسان» — the name he did NOT rule on.
+  // 22,599.00 EGP. Bare «الفرسان» — the name he has still not ruled on, and the reason both
+  // الفرسان stems are written long. A stem of «الفرسان» would adopt it silently.
   ["الفرسان", "0001533141", "PS"],
-  // 3,637,392.75 EGP, and the loudest reason the Zawya stem is written in full: it is 600 times the
-  // account he ruled, at the same distributor, and a stem of «الفرسان» would have swept it in.
-  ["الفرسان جروب - بنها", "163700", "EP-PHS"],
+  // A pharmacy by DEFAULT, not by any ruling — it carries «شركه» without the definite article, so
+  // it misses the «الشركة» keyword. Kept as a negative because it carries «جروب»: proof that neither
+  // «الفرسان جروب» nor «اورينت جروب» reaches every customer with that word in its name.
+  ["شركه ايه ام جروب", "999100", "PS"],
 ];
 
 export function runEpdaPediaWarehouseRulingsTests() {
