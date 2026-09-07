@@ -75,6 +75,7 @@ import {
   CANDIDATE_STATUS_NOTE_MAX_LENGTH,
   bulkDecisionRefusal,
   normalizeCandidateStatus,
+  statusChangeRefusal,
   type CandidateStatus,
 } from "@/lib/recruitment/candidate-status";
 import { summarizeScorecard, type ScorecardSummary } from "@/lib/recruitment/scorecards";
@@ -786,6 +787,16 @@ export async function updateCandidateStatus(
 
   const existing = await getCandidate(id);
   if (!existing) throw new Error("Candidate not found.");
+
+  // THE GUARD LIVES HERE, NOT ONLY ON THE BUTTON. A disabled control is UX; this is the boundary,
+  // and it is the only place that can see the CURRENT status, which is what the rule is about. The
+  // fifty records this repairs were written through a live button, but the same request arrives
+  // just as easily from a stale tab, a double submit, or any other caller of this route.
+  //
+  // Asked AFTER `getCandidate` because the refusal needs the stored status, and before the write
+  // for the obvious reason.
+  const refusal = statusChangeRefusal(existing.status, next);
+  if (refusal) throw new Error(refusal);
 
   // hrIdForStorage, never the raw session value. `access.hrId` is the LOWERCASE comparison key
   // and 178 of 179 employee rows are mixed case, so persisting it verbatim is what left

@@ -117,6 +117,7 @@ import {
   candidateStatusLabel,
   candidateStatusLabels,
   normalizeCandidateStatus,
+  statusChangeRefusal,
   type CandidateStatus,
 } from "@/lib/recruitment/candidate-status";
 import {
@@ -2237,6 +2238,21 @@ function CandidateDecisionButtons({
       return `${candidateDisplayName(candidate.fullName)} marked ${candidateStatusLabels[status].toLowerCase()}.`;
     });
 
+  // WHY THE DISABLED TEST IS NO LONGER `current === "shortlisted"`.
+  //
+  // It used to be, and that is precisely how fifty CVs lost their send. Shortlist sits beside Send
+  // to manager in this row; after a send the status is `sent_to_manager`, so the old test left the
+  // button live and labelled plainly "Shortlist". Pressing it wrote `shortlisted` with no note and
+  // discarded the send — measured on production, fifty times, each about two seconds after the send
+  // it undid.
+  //
+  // The rule is ASKED OF THE DOMAIN rather than restated here, so this button, the profile panel's
+  // copy of it and the server all refuse on one sentence. The server refuses too: this is the
+  // courtesy, not the boundary.
+  const shortlistRefusal =
+    statusChangeRefusal(current, "shortlisted") ?? (current === "shortlisted" ? "Already shortlisted" : null);
+  const shortlistLabel = current === "sent_to_manager" ? "Already sent to a manager" : "Already shortlisted";
+
   const shortlist = () => decide("shortlisted", null);
   const reject = () => {
     const entered = window.prompt(`Why is ${candidate.fullName} not proceeding?`);
@@ -2248,7 +2264,7 @@ function CandidateDecisionButtons({
   if (variant === "label") {
     return (
       <>
-        <Button variant="secondary" disabled={pending || current === "shortlisted"} onClick={shortlist}>
+        <Button variant="secondary" disabled={pending || Boolean(shortlistRefusal)} title={shortlistRefusal ?? undefined} onClick={shortlist}>
           Shortlist
         </Button>
         <Button variant="destructive" disabled={pending || current === "rejected"} onClick={reject}>
@@ -2261,8 +2277,8 @@ function CandidateDecisionButtons({
   return (
     <>
       <PoolIconButton
-        disabled={pending || current === "shortlisted"}
-        label={current === "shortlisted" ? "Already shortlisted" : "Shortlist"}
+        disabled={pending || Boolean(shortlistRefusal)}
+        label={shortlistRefusal ? shortlistLabel : "Shortlist"}
         tone="positive"
         onClick={shortlist}
       >
