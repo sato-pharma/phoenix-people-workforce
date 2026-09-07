@@ -379,8 +379,13 @@ export async function runClosingEngineExportTests() {
     }
   }
   // A loop that matched nothing would pass every assertion above it. These are the counts measured
-  // on the owner's August Anti-Infective export: 12 emblems and 2 slicers, in each of the two builds.
-  assert.equal(emblemsChecked, 24, "both builds must have been walked — 12 emblem anchors in each");
+  // on the owner's August Anti-Infective export: 13 emblems and 2 slicers, in each of the two builds.
+  //
+  // Twelve of the thirteen are the owner's own, one per sheet that carries a masthead. The
+  // thirteenth is the contents page's, added 2026-09-07 — it reuses the same `xl/media/image1.png`
+  // rather than embedding a second copy, so the count of PICTURES rose while the count of IMAGES in
+  // the package did not.
+  assert.equal(emblemsChecked, 26, "both builds must have been walked — 13 emblem anchors in each");
   assert.equal(slicersChecked, 4, "both builds must have been walked — 2 slicer anchors in each");
 
   const cacheDefinition = await zip.file("xl/pivotCache/pivotCacheDefinition1.xml")!.async("string");
@@ -1356,6 +1361,291 @@ export async function runClosingEngineExportTests() {
       declaredMerges,
       actualMerges,
       `${label}: mergeCells declares ${declaredMerges} but the sheet carries ${actualMerges} — Excel repairs that`,
+    );
+
+    // ── The polish: a coloured header and a zebra that holds ──────────────────────────────────
+    //
+    // Owner, 2026-09-07: the contents page in the house look — a coloured header and a zebra table.
+    //
+    // ASSERTED BY RESOLVING EVERY INDEX, never by matching one. An index is precisely what was
+    // wrong before: the page named cellXfs 77, 79 and 81 while the template ships 77 of them
+    // (0..76), and those three resolved only because the style writer had already appended six
+    // entries. It rendered by luck, and any code appending a cellXf earlier would have re-pointed
+    // all three at something else with no error. The first assertion below is the one that would
+    // have caught it.
+    const stylesXml = await opened.file("xl/styles.xml")!.async("string");
+    /**
+     * Top-level <child> elements of <tag>, by scan — one greedy regex cannot match both
+     * `<xf .../>` and `<xf ...>…</xf>`, and getting that wrong silently swallows the rest and
+     * reports perfectly valid indices as out of range.
+     */
+    const listOf = (tag: string, child: string): string[] => {
+      const open = stylesXml.indexOf(`<${tag}`);
+      if (open < 0) return [];
+      const body = stylesXml.slice(stylesXml.indexOf(">", open) + 1, stylesXml.indexOf(`</${tag}>`));
+      const out: string[] = [];
+      let cursor = 0;
+      for (;;) {
+        const at = body.indexOf(`<${child}`, cursor);
+        if (at < 0) break;
+        const gt = body.indexOf(">", at);
+        if (body[gt - 1] === "/") { out.push(body.slice(at, gt + 1)); cursor = gt + 1; continue; }
+        const close = body.indexOf(`</${child}>`, gt);
+        out.push(body.slice(at, close + child.length + 3));
+        cursor = close + 1;
+      }
+      return out;
+    };
+    const xfs = listOf("cellXfs", "xf");
+    const fillList = listOf("fills", "fill");
+    const fontList = listOf("fonts", "font");
+    const borderList = listOf("borders", "border");
+    const idOf = (xf: string, name: string) => Number((new RegExp(`${name}="(\\d+)"`).exec(xf) ?? [, "0"])[1]);
+    const fillOf = (style: string) => {
+      const fill = fillList[idOf(xfs[Number(style)] ?? "", "fillId")] ?? "";
+      return (/fgColor rgb="([0-9A-Fa-f]+)"/.exec(fill) ?? [, "none"])[1];
+    };
+    const fontOf = (style: string) => fontList[idOf(xfs[Number(style)] ?? "", "fontId")] ?? "";
+
+    // 1) Nothing on this page may point past the end of the style table.
+    const usedStyles = [...sheet.matchAll(/<c r="[A-Z]+\d+" s="(\d+)"/g)].map((m) => Number(m[1]));
+    assert.ok(usedStyles.length > 0, `${label}: the contents page carries no styled cells at all`);
+    const outOfRange = [...new Set(usedStyles)].filter((index) => index >= xfs.length);
+    assert.deepEqual(
+      outOfRange,
+      [],
+      `${label}: the contents page names cellXf ${outOfRange.join(", ")} but the workbook has `
+        + `${xfs.length} (0..${xfs.length - 1}) — a style index into a list nobody controls`,
+    );
+
+    // 2) THE LOOK IS CLONED FROM A SIBLING, not invented for this page.
+    //
+    // The masthead and the column band must be the very same formats the Overview uses, so the
+    // front page cannot drift into a look of its own — which is what it had, and what the owner
+    // rejected. Asserted as "this index is also used over there", because that is the only claim
+    // that stays true when the ids move, and they DO move: Rep Ranking's masthead was s30 in one
+    // build of this workbook and s58 in the next.
+    const overviewPart = (() => {
+      const tag = [...workbook.matchAll(/<sheet [^>]*\/>/g)].map((m) => m[0])
+        .find((one) => /name="Overview"/.test(one));
+      const rel = tag ? /r:id="(rId\d+)"/.exec(tag)?.[1] : undefined;
+      const target = rel ? new RegExp(`Id="${rel}"[^>]*Target="([^"]+)"`).exec(wbRels)?.[1] : undefined;
+      return target ? `xl/${target.replace(/^\//, "")}` : null;
+    })();
+    assert.ok(overviewPart && opened.file(overviewPart), `${label}: the Overview sheet must be resolvable`);
+    const overviewXml = await opened.file(overviewPart!)!.async("string");
+    const overviewStyles = new Set(
+      [...overviewXml.matchAll(/<c r="[A-Z]+\d+"[^>]*?\bs="(\d+)"/g)].map((m) => m[1]),
+    );
+
+    const titleStyle = /<row r="1"[^>]*>(?:(?!<\/row>)[\s\S])*?<c r="A1" s="(\d+)"/.exec(sheet)?.[1];
+    assert.ok(titleStyle, `${label}: the contents page must carry a masthead on row 1`);
+
+    // THE COVER BANNER. The contents page is the cover, so unlike its siblings it opens with a band
+    // rather than a line of type: a deep fill running edge to edge with the month reversed out of
+    // it. Owner's choice, 2026-09-07.
+    const bannerFill = fillOf(titleStyle!);
+    assert.notEqual(bannerFill, "none", `${label}: the cover must open with a filled banner`);
+
+    // Edge to edge: both columns of the band carry the same fill. A band covering only the second
+    // column reads as a rectangle floating beside the page, not as a masthead — that was the first
+    // attempt at this and it was rejected on sight.
+    const bannerRows: string[] = [];
+    for (const [, index, body] of sheet.matchAll(/<row r="(\d+)"[^>]*>((?:(?!<\/row>)[\s\S])*?)<\/row>/g)) {
+      const cells = [...body.matchAll(/<c r="([A-Z]+)\d+" s="(\d+)"/g)];
+      if (cells.length === 0 || fillOf(cells[0][2]) !== bannerFill) break;
+      assert.ok(
+        cells.length >= 2 && cells.every((cell) => fillOf(cell[2]) === bannerFill),
+        `${label}: banner row ${index} does not carry the band across both columns`,
+      );
+      bannerRows.push(index);
+    }
+    assert.ok(
+      bannerRows.length >= 3,
+      `${label}: the banner is ${bannerRows.length} row(s) — a band needs room above and below its `
+        + "type, or the words sit hard against its edges",
+    );
+
+    // The month is reversed OUT of the band: white type on that fill, or it is unreadable.
+    const bannerType = [...sheet.matchAll(/<row r="\d+"[^>]*>((?:(?!<\/row>)[\s\S])*?)<\/row>/g)]
+      .slice(0, bannerRows.length)
+      .flatMap(([, body]) => [...body.matchAll(/<c r="[A-Z]+\d+" s="(\d+)"[^>]*t="inlineStr"/g)])
+      .map((m) => m[1]);
+    assert.ok(bannerType.length >= 1, `${label}: the banner carries no type at all`);
+    for (const style of bannerType) {
+      assert.match(
+        fontOf(style),
+        /FFFFFF/i,
+        `${label}: banner type is not reversed out — it must be white on the band`,
+      );
+    }
+
+    // 3) NO SECOND BAR. The banner IS the header. A "Page / What it holds" bar under it put two blue
+    //    blocks a few points apart, which read as one confused double-header and was the main thing
+    //    making the page look like a spreadsheet rather than a cover.
+    assert.ok(
+      !/<t[^>]*>What it holds<\/t>/.test(sheet),
+      `${label}: there is a second header bar under the banner — one blue block on this page, not two`,
+    );
+
+    // 4) AIR. Every row below the banner is at least 20pt. The first version used the data sheets'
+    //    16.5, which is right for a dense table and cramped for a page whose whole job is to be read
+    //    once and navigated from.
+    // `\bht=` and NOT `[^>]*ht=`: the latter is greedy, runs on to the `ht="1"` inside
+    // `customHeight="1"`, and reports every row in the sheet as one point high.
+    const bodyHeights = [...sheet.matchAll(/<row r="(\d+)"[^>]*?\bht="([0-9.]+)"/g)]
+      .filter((row) => Number(row[1]) > bannerRows.length)
+      .map((row) => Number(row[2]));
+    assert.ok(bodyHeights.length > 0, `${label}: no rows below the banner`);
+    const cramped = bodyHeights.filter((height) => height < 20);
+    assert.equal(
+      cramped.length,
+      0,
+      `${label}: ${cramped.length} row(s) under 20pt — the page reads as a list, not a contents page`,
+    );
+
+    // 5) NO ZEBRA, and every row ruled. The stripe was #F5F9FC on white: invisible at reading size,
+    //    so it put a style in the file and nothing on the page. The rule does the separating.
+    const entryRows = [...sheet.matchAll(
+      /<row r="\d+"[^>]*>((?:(?!<\/row>)[\s\S])*?<f>HYPERLINK(?:(?!<\/row>)[\s\S])*?)<\/row>/g,
+    )].map((m) => m[1]);
+    assert.ok(entryRows.length >= 10, `${label}: expected a row per page, got ${entryRows.length}`);
+    for (const row of entryRows) {
+      for (const cell of row.matchAll(/<c r="([A-Z]+)\d+" s="(\d+)"/g)) {
+        assert.equal(
+          fillOf(cell[2]),
+          "none",
+          `${label}: entry column ${cell[1]} is filled — the zebra came out for being invisible`,
+        );
+        const border = borderList[idOf(xfs[Number(cell[2])] ?? "", "borderId")] ?? "";
+        assert.match(
+          border,
+          /<bottom[^>]*style="[a-z]+"/,
+          `${label}: entry column ${cell[1]} carries no rule under it`,
+        );
+      }
+    }
+
+    // 6) The emblem. It must be ON the page, wired the way Excel needs it, and it must REUSE the
+    //    picture already in the package rather than adding a second copy of the same mark.
+    assert.match(
+      sheet,
+      /<drawing r:id="[^"]+"\/><\/worksheet>\s*$/,
+      `${label}: the contents page needs its <drawing>, and it is the LAST child of a worksheet — `
+        + "anywhere else is a schema violation, and Excel answers those by repairing the workbook",
+    );
+    const sheetRelsPart = `xl/worksheets/_rels/${part.split("/").pop()}.rels`;
+    assert.ok(opened.file(sheetRelsPart), `${label}: the contents sheet has a drawing but no ${sheetRelsPart}`);
+    const sheetRels = await opened.file(sheetRelsPart)!.async("string");
+    const drawingTarget = /Type="[^"]*\/drawing"[^>]*Target="([^"]+)"/.exec(sheetRels)?.[1]
+      ?? /Target="([^"]+)"[^>]*Type="[^"]*\/drawing"/.exec(sheetRels)?.[1];
+    assert.ok(drawingTarget, `${label}: the sheet relationship must point at a drawing`);
+    const drawingPart = `xl/${drawingTarget!.replace(/^\.\.\//, "")}`;
+    assert.ok(opened.file(drawingPart), `${label}: ${drawingPart} is referenced but not in the zip`);
+    assert.ok(
+      types.includes(`PartName="/${drawingPart}"`),
+      `${label}: a drawing part with no content-type override is a repair prompt`,
+    );
+
+    const drawingXml = await opened.file(drawingPart)!.async("string");
+    assert.match(drawingXml, /<xdr:pic\b/, `${label}: the contents drawing carries no picture`);
+    assert.match(
+      drawingXml,
+      /fPrintsWithSheet="0"/,
+      `${label}: the contents emblem must stay off the paper, like the emblem on every other sheet`,
+    );
+    const drawingRels = await opened
+      .file(`xl/drawings/_rels/${drawingPart.split("/").pop()}.rels`)!
+      .async("string");
+    const imageTarget = /Target="([^"]+)"/.exec(drawingRels)?.[1];
+    assert.ok(
+      imageTarget && opened.file(`xl/${imageTarget.replace(/^\.\.\//, "")}`),
+      `${label}: the emblem points at ${imageTarget}, which is not in the package`,
+    );
+    const media = Object.keys(opened.files).filter((name) => /^xl\/media\/[^/]+$/.test(name));
+    // TWO images, and no more: the template's on-light mark that every other sheet uses, plus the
+    // on-dark lockup this banner needs. They differ in ONE path fill — "SATO" in black against
+    // white — and that one fill is the whole reason for the second file: the black wordmark
+    // disappears on the band and the masthead reads "PHARMA".
+    assert.equal(
+      media.length,
+      2,
+      `${label}: expected the on-light mark and the on-dark one, found ${media.length}: `
+        + media.join(", "),
+    );
+    assert.match(
+      imageTarget!,
+      /phx-emblem-on-dark\.png$/,
+      `${label}: the banner points at ${imageTarget} — on the dark band it must use the WHITE-SATO `
+        + "lockup, or half the wordmark vanishes",
+    );
+
+    // 7) BESIDE THE TITLE. The mark goes in the first column, on the masthead row, and the title
+    //    indents past it. Both halves are asserted because they are one arrangement held from two
+    //    ends: drop the indent and the logo lands on the first word — a defect nothing but a render
+    //    would ever show, which is exactly how this page went wrong three times.
+    assert.match(
+      drawingXml,
+      /<xdr:col>0<\/xdr:col>/,
+      `${label}: the emblem must sit in the first column, beside the title — not out in a far corner`,
+    );
+    // INSIDE THE BANNER, on a row of it. The mark is centred on the band, so it lands on whichever
+    // row that centre falls in — pinning row 0 would pin the arithmetic, not the requirement.
+    const emblemRow = Number(/<xdr:row>(\d+)<\/xdr:row>/.exec(drawingXml)?.[1] ?? NaN);
+    assert.ok(
+      Number.isFinite(emblemRow) && emblemRow < bannerRows.length,
+      `${label}: the emblem is anchored to row ${emblemRow}, outside the ${bannerRows.length}-row `
+        + "banner — it belongs on the band",
+    );
+
+    // AND NO WHITE TILE BEHIND IT. An earlier version put the on-LIGHT mark on the band and had to
+    // draw a white rectangle under it so the black "SATO" would show. That rectangle read as a
+    // sticker pasted on the banner, and getting its z-order wrong showed a blank white tile instead
+    // of a logo. The on-dark lockup removes the need for it entirely — so if a shape ever comes
+    // back, the wrong mark is being used again.
+    // `<xdr:sp[\s>]` and not `<xdr:sp`: the shorter form also matches `<xdr:spPr>`, which EVERY
+    // picture carries, so it would fail on a drawing that has no shape in it at all.
+    assert.ok(
+      !/<xdr:sp[\s>]/.test(drawingXml),
+      `${label}: the banner has a shape behind the mark — with the on-dark lockup nothing needs to `
+        + "sit under it, and a white tile there is the old on-light workaround coming back",
+    );
+
+    // AND IT IS THE COVER'S MARK, not the corner one. The siblings' emblem only has to be present;
+    // this one carries the cover, and at their size it read as an afterthought dropped into a lot of
+    // empty colour. Compared against a SIBLING'S OWN ext rather than a number typed in here, so the
+    // claim stays true if the owner ever replaces the artwork.
+    // ANCHORED TO THE CELLS. A twoCellAnchor is defined by two corners, so the mark belongs to the
+    // banner's cells: it moves and resizes with them and cannot be dragged loose. `editAs="twoCell"`
+    // is the part that makes it SIZE with them.
+    assert.match(
+      drawingXml,
+      /<xdr:twoCellAnchor editAs="twoCell">/,
+      `${label}: the emblem is not bound to its cells — it floats over them and can drift`,
+    );
+    assert.match(drawingXml, /<xdr:to>/, `${label}: a twoCellAnchor needs its second corner`);
+    // A twoCellAnchor takes its size from the corners; an <xdr:ext> left over from the one-cell form
+    // is a schema violation, and Excel answers those by repairing the workbook.
+    assert.ok(
+      !/<xdr:ext\b/.test(drawingXml),
+      `${label}: a stale <xdr:ext> is left on a twoCellAnchor — Excel will offer to repair the file`,
+    );
+
+    const coverWidth = Number(/<a:ext\b[^>]*cx="(\d+)"/.exec(drawingXml)?.[1] ?? 0);
+    let cornerWidth = 0;
+    for (const name of Object.keys(opened.files).filter((one) => /^xl\/drawings\/drawing\d+\.xml$/.test(one))) {
+      if (name === drawingPart) continue;
+      const xml = await opened.file(name)!.async("string");
+      const anchor = (xml.match(/<xdr:(twoCellAnchor|oneCellAnchor)\b[\s\S]*?<\/xdr:\1>/g) ?? [])
+        .find((one) => one.includes("<xdr:pic"));
+      const ext = anchor ? /<a:ext\b[^>]*cx="(\d+)"/.exec(anchor)?.[1] : null;
+      if (ext) { cornerWidth = Number(ext); break; }
+    }
+    assert.ok(cornerWidth > 0, `${label}: no sibling emblem to compare the cover's mark against`);
+    assert.ok(
+      coverWidth > cornerWidth * 1.3,
+      `${label}: the cover's mark is ${coverWidth} against the siblings' ${cornerWidth} — on the `
+        + "banner it has to carry the page, not sit in it",
     );
 
     // Same class of defect: a dimension that stops short of the rows actually written.
