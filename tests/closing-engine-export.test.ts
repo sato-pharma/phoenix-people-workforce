@@ -1480,95 +1480,43 @@ export async function runClosingEngineExportTests() {
       );
     }
 
-    // 3) The table header is filled, and its type is white — a coloured header, as asked for.
-    const headerRowRef = /<row r="(\d+)"[^>]*>(?:(?!<\/row>)[\s\S])*?<t[^>]*>Page<\/t>/.exec(sheet);
-    assert.ok(headerRowRef, `${label}: the contents table lost its "Page" header row`);
-    const headerBody = new RegExp(`<row r="${headerRowRef![1]}"[^>]*>([\\s\\S]*?)</row>`).exec(sheet)?.[1] ?? "";
-    const headerCells = [...headerBody.matchAll(/<c r="([A-Z]+)\d+" s="(\d+)"/g)];
-    assert.equal(headerCells.length, 2, `${label}: the header must fill BOTH columns, not one`);
-    // And it must be the SIBLINGS' band, not a colour chosen for this page alone.
+    // 3) NO SECOND BAR. The banner IS the header. A "Page / What it holds" bar under it put two blue
+    //    blocks a few points apart, which read as one confused double-header and was the main thing
+    //    making the page look like a spreadsheet rather than a cover.
     assert.ok(
-      overviewStyles.has(headerCells[0][2]),
-      `${label}: the column band uses style ${headerCells[0][2]}, which the Overview does not — `
-        + "the header must be the same blue band every other sheet carries",
-    );
-    for (const [, column, style] of headerCells) {
-      assert.notEqual(
-        fillOf(style),
-        "none",
-        `${label}: header column ${column} is not filled — the header must be coloured`,
-      );
-      const font = fontOf(style);
-      assert.ok(
-        /FFFFFF/i.test(font) && font.includes("<b/>"),
-        `${label}: header column ${column} must be bold white on that fill, or the heading is unreadable`,
-      );
-    }
-    assert.equal(
-      fillOf(headerCells[0][2]),
-      fillOf(headerCells[1][2]),
-      `${label}: the two header cells must share one fill, or the bar reads as two blocks`,
+      !/<t[^>]*>What it holds<\/t>/.test(sheet),
+      `${label}: there is a second header bar under the banner — one blue block on this page, not two`,
     );
 
-    // 4) The zebra: strictly alternating, and BOTH cells of a row take the same shade. A stripe
-    //    under the page name with white beside it reads as a highlight on the name, not as a row.
+    // 4) AIR. Every row below the banner is at least 20pt. The first version used the data sheets'
+    //    16.5, which is right for a dense table and cramped for a page whose whole job is to be read
+    //    once and navigated from.
+    // `\bht=` and NOT `[^>]*ht=`: the latter is greedy, runs on to the `ht="1"` inside
+    // `customHeight="1"`, and reports every row in the sheet as one point high.
+    const bodyHeights = [...sheet.matchAll(/<row r="(\d+)"[^>]*?\bht="([0-9.]+)"/g)]
+      .filter((row) => Number(row[1]) > bannerRows.length)
+      .map((row) => Number(row[2]));
+    assert.ok(bodyHeights.length > 0, `${label}: no rows below the banner`);
+    const cramped = bodyHeights.filter((height) => height < 20);
+    assert.equal(
+      cramped.length,
+      0,
+      `${label}: ${cramped.length} row(s) under 20pt — the page reads as a list, not a contents page`,
+    );
+
+    // 5) NO ZEBRA, and every row ruled. The stripe was #F5F9FC on white: invisible at reading size,
+    //    so it put a style in the file and nothing on the page. The rule does the separating.
     const entryRows = [...sheet.matchAll(
       /<row r="\d+"[^>]*>((?:(?!<\/row>)[\s\S])*?<f>HYPERLINK(?:(?!<\/row>)[\s\S])*?)<\/row>/g,
     )].map((m) => m[1]);
     assert.ok(entryRows.length >= 10, `${label}: expected a row per page, got ${entryRows.length}`);
-    const shades: string[] = [];
-    for (const row of entryRows) {
-      const cells = [...row.matchAll(/<c r="([A-Z]+)\d+" s="(\d+)"/g)];
-      assert.equal(cells.length, 2, `${label}: an entry row must carry both its name and its description`);
-      const [nameFill, whatFill] = cells.map((cell) => fillOf(cell[2]));
-      assert.equal(nameFill, whatFill, `${label}: half-striped row — the name and its description disagree`);
-      shades.push(nameFill);
-    }
-    assert.equal(
-      new Set(shades).size,
-      2,
-      `${label}: a zebra needs exactly two shades, found ${[...new Set(shades)].join(", ")}`,
-    );
-
-    // The stripe RESTARTS under each band, so the first page of a section is always the plain
-    // shade. The band is tinted itself, and a stripe running straight through would put a tinted
-    // row directly under a tinted heading, merging the two into one block. So the invariant is
-    // "alternates within a section", not "alternates everywhere" — walked in document order,
-    // because that is the only way to see where a section begins.
-    const plain = shades.find((shade) => shade === "none") ?? shades[0];
-    let previous: string | null = null;
-    let entryNumber = 0;
-    for (const [, body] of sheet.matchAll(/<row r="\d+"[^>]*>((?:(?!<\/row>)[\s\S])*?)<\/row>/g)) {
-      const cells = [...body.matchAll(/<c r="([A-Z]+)\d+" s="(\d+)"/g)];
-      if (!/<f>HYPERLINK/.test(body)) {
-        // A band: two cells sharing one style. Anything else (the masthead, the column header,
-        // the footnote) simply does not reset the stripe.
-        if (cells.length === 2 && cells[0][2] === cells[1][2]) previous = null;
-        continue;
-      }
-      entryNumber += 1;
-      const shade = fillOf(cells[0][2]);
-      if (previous === null) {
-        assert.equal(
-          shade,
-          plain,
-          `${label}: entry ${entryNumber} opens a section on the tinted shade — the first page under `
-            + "a band must be plain, or it merges into the heading above it",
-        );
-      } else {
-        assert.notEqual(
-          shade,
-          previous,
-          `${label}: the zebra breaks at entry ${entryNumber} — it must alternate within its section`,
-        );
-      }
-      previous = shade;
-    }
-
-    // 5) Every row is ruled. The zebra separates rows by shade; the rule is what ties a page name
-    //    to its description across 96 characters of column B.
     for (const row of entryRows) {
       for (const cell of row.matchAll(/<c r="([A-Z]+)\d+" s="(\d+)"/g)) {
+        assert.equal(
+          fillOf(cell[2]),
+          "none",
+          `${label}: entry column ${cell[1]} is filled — the zebra came out for being invisible`,
+        );
         const border = borderList[idOf(xfs[Number(cell[2])] ?? "", "borderId")] ?? "";
         assert.match(
           border,
@@ -1615,11 +1563,21 @@ export async function runClosingEngineExportTests() {
       `${label}: the emblem points at ${imageTarget}, which is not in the package`,
     );
     const media = Object.keys(opened.files).filter((name) => /^xl\/media\/[^/]+$/.test(name));
+    // TWO images, and no more: the template's on-light mark that every other sheet uses, plus the
+    // on-dark lockup this banner needs. They differ in ONE path fill — "SATO" in black against
+    // white — and that one fill is the whole reason for the second file: the black wordmark
+    // disappears on the band and the masthead reads "PHARMA".
     assert.equal(
       media.length,
-      1,
-      `${label}: the contents emblem must REUSE the workbook's one image, not add another — found `
+      2,
+      `${label}: expected the on-light mark and the on-dark one, found ${media.length}: `
         + media.join(", "),
+    );
+    assert.match(
+      imageTarget!,
+      /phx-emblem-on-dark\.png$/,
+      `${label}: the banner points at ${imageTarget} — on the dark band it must use the WHITE-SATO `
+        + "lockup, or half the wordmark vanishes",
     );
 
     // 7) BESIDE THE TITLE. The mark goes in the first column, on the masthead row, and the title
@@ -1640,21 +1598,17 @@ export async function runClosingEngineExportTests() {
         + "banner — it belongs on the band",
     );
 
-    // THE WHITE CHIP UNDER IT. The mark's own "SATO" is set in black, so on the dark band that half
-    // of the wordmark disappears; the chip is the ground that keeps it readable. It must be drawn
-    // BEFORE the picture, because z-order in a drawing is document order — emitted after, it would
-    // cover the very mark it exists to carry and the banner would show a blank white tile.
-    const chipAt = drawingXml.indexOf("<xdr:sp");
-    const picAt = drawingXml.indexOf("<xdr:pic");
-    assert.ok(chipAt >= 0, `${label}: the emblem has no white chip, so "SATO" vanishes into the band`);
+    // AND NO WHITE TILE BEHIND IT. An earlier version put the on-LIGHT mark on the band and had to
+    // draw a white rectangle under it so the black "SATO" would show. That rectangle read as a
+    // sticker pasted on the banner, and getting its z-order wrong showed a blank white tile instead
+    // of a logo. The on-dark lockup removes the need for it entirely — so if a shape ever comes
+    // back, the wrong mark is being used again.
+    // `<xdr:sp[\s>]` and not `<xdr:sp`: the shorter form also matches `<xdr:spPr>`, which EVERY
+    // picture carries, so it would fail on a drawing that has no shape in it at all.
     assert.ok(
-      chipAt < picAt,
-      `${label}: the chip is drawn OVER the emblem — the banner would show a blank white tile`,
-    );
-    assert.match(
-      drawingXml.slice(chipAt, picAt),
-      /<a:srgbClr val="FFFFFF"\/>/,
-      `${label}: the chip must be white — it is what the black half of the wordmark stands on`,
+      !/<xdr:sp[\s>]/.test(drawingXml),
+      `${label}: the banner has a shape behind the mark — with the on-dark lockup nothing needs to `
+        + "sit under it, and a white tile there is the old on-light workaround coming back",
     );
 
     // Same class of defect: a dimension that stops short of the rows actually written.

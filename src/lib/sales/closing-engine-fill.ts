@@ -6,6 +6,7 @@ import {
   closingEngineTemplateBytes,
 } from "./closing-engine-template-generated";
 import { ACHIEVEMENT_ARROW_AT } from "./closing-engine-data";
+import { CLOSING_ENGINE_EMBLEM_ON_DARK_PNG_BASE64 } from "./closing-engine-emblem-on-dark";
 import { PIVOT_GRID_SPECS, buildPivotGrid, type GridCellKind } from "./closing-pivot-grid";
 
 /**
@@ -2521,9 +2522,8 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   // The look is cloned off the Overview, never named by index. See resolveIndexStyles.
   const own = await resolveIndexStyles(zip);
   const s: IndexPalette = own ?? {
-    band: "0", bannerBlank: "0", bannerSub: "0", bannerTitle: "0", body: "0", bodyZebra: "0",
-    chip: "0", foot: "0", header: "0", link: "0", linkZebra: "0", title: "0", titlePt: "13",
-    titleTail: "0",
+    band: "0", bannerBlank: "0", bannerSub: "0", bannerTitle: "0", body: "0", foot: "0",
+    header: "0", link: "0", title: "0", titlePt: "13", titleTail: "0",
   };
 
   const line = String(fill.sheets.Overview?.cells?.A1 ?? "").trim();
@@ -2588,24 +2588,16 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   // A thin breath between the band and the table, so the two are not welded together.
   rowNumber += 1;
 
-  rows.push(
-    `<row r="${rowNumber}" ht="21" customHeight="1">`
-      + inline(`A${rowNumber}`, s.header, "Page")
-      + inline(`B${rowNumber}`, s.header, "What it holds")
-      + "</row>",
-  );
-  rowNumber += 1;
 
-  // THE ZEBRA RESTARTS UNDER EACH BAND, so the first page in a section is always the plain shade.
-  // The band itself is tinted now; running the stripe straight through would put a tinted row
-  // immediately under a tinted heading and the two would merge into one block.
-  let striped = false;
-
-  for (const section of sections) {
-    striped = false;
+  // NO ZEBRA. It was #F5F9FC on white — at reading size it is invisible, so it was adding a style
+  // to the file and nothing to the page. The rules under each row do the separating.
+  for (const [sectionIndex, section] of sections.entries()) {
+    // A blank row above every section but the first. Air is what turns a list into a contents page,
+    // and it is the one thing the cramped version was missing most.
+    if (sectionIndex > 0) rowNumber += 1;
     merges.push(`A${rowNumber}:B${rowNumber}`);
     rows.push(
-      `<row r="${rowNumber}" ht="20" customHeight="1">`
+      `<row r="${rowNumber}" ht="30" customHeight="1">`
         + inline(`A${rowNumber}`, s.band, section.band.toUpperCase())
         + `<c r="B${rowNumber}" s="${s.band}"/>`
         + "</row>",
@@ -2616,16 +2608,13 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
       // The jump is the same form Excel writes for a shape's in-document link, spelled as a formula
       // so the cell itself is the control. `#` and the quoted sheet name are both required.
       const jump = xmlEscape(`HYPERLINK("#'${entry.sheet.replace(/'/g, "''")}'!A1","${entry.sheet}")`);
-      // BOTH cells take the tint, never just one: a stripe under the name and white beside it is
-      // read as a highlight on that name rather than as a row.
       rows.push(
-        `<row r="${rowNumber}" ht="16.5" customHeight="1">`
-          + `<c r="A${rowNumber}" s="${striped ? s.linkZebra : s.link}"><f>${jump}</f></c>`
-          + inline(`B${rowNumber}`, striped ? s.bodyZebra : s.body, entry.what)
+        `<row r="${rowNumber}" ht="24" customHeight="1">`
+          + `<c r="A${rowNumber}" s="${s.link}"><f>${jump}</f></c>`
+          + inline(`B${rowNumber}`, s.body, entry.what)
           + "</row>",
       );
       rowNumber += 1;
-      striped = !striped;
     }
   }
 
@@ -2633,7 +2622,7 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   rowNumber += 1;
   merges.push(`A${rowNumber}:B${rowNumber}`);
   rows.push(
-    `<row r="${rowNumber}" ht="16.5" customHeight="1">`
+    `<row r="${rowNumber}" ht="20" customHeight="1">`
       + inline(`A${rowNumber}`, s.foot, stamp ? `${INDEX_FOOTNOTE}   ·   ${stamp}` : INDEX_FOOTNOTE)
       + "</row>",
   );
@@ -2909,8 +2898,9 @@ async function addIndexEmblem(
     .filter((name) => /^xl\/drawings\/drawing\d+\.xml$/.test(name))
     .sort();
 
+  // Only the <xdr:pic> STRUCTURE is borrowed from a sheet that already carries one — its fill, its
+  // aspect lock, its print behaviour. The image it points at is replaced below.
   let picture: string | null = null;
-  let image: string | null = null;
   for (const name of drawingNames) {
     const xml = await zip.file(name)!.async("string");
     const block = (xml.match(ANY_ANCHOR) ?? []).find((one) => one.includes("<xdr:pic"));
@@ -2925,10 +2915,21 @@ async function addIndexEmblem(
     const resolved = `xl/${target.replace(/^\.\.\//, "")}`;
     if (!zip.file(resolved)) continue;
     picture = pic;
-    image = target;
     break;
   }
-  if (!picture || !image) return sheetXml;
+  if (!picture) return sheetXml;
+
+  // THE ON-DARK MARK, not the one already in the zip.
+  //
+  // The template's own emblem is the on-LIGHT lockup: its "SATO" is set in BLACK, which is right on
+  // the white mastheads its siblings use and disappears completely on this page's banner, leaving
+  // the word "PHARMA" alone. The two files are identical but for that one fill, so the banner gets
+  // its own copy of the white-SATO lockup and the mark needs no white tile behind it.
+  const emblemPart = "xl/media/phx-emblem-on-dark.png";
+  if (!zip.file(emblemPart)) {
+    zip.file(emblemPart, Buffer.from(CLOSING_ENGINE_EMBLEM_ON_DARK_PNG_BASE64, "base64"));
+  }
+  const image = "../media/phx-emblem-on-dark.png";
 
   const size = /<a:ext\b[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(picture);
   if (!size) return sheetXml;
@@ -2969,38 +2970,8 @@ async function addIndexEmblem(
     Math.max(0, ...drawingNames.map((name) => Number(/drawing(\d+)\.xml$/.exec(name)?.[1] ?? 0))) + 1
   }.xml`;
 
-  // THE WHITE CHIP, drawn UNDER the mark and INSIDE the band.
-  //
-  // This is what lets the band run edge to edge. The alternative — leaving the whole first column
-  // white — made the masthead read as a pale rectangle sitting beside a blue one rather than as a
-  // single banner. A shape can be any size, so the chip is exactly the mark plus its clear space
-  // and the band stays unbroken behind it.
-  //
-  // Z-ORDER IS DOCUMENT ORDER in a drawing, so the chip is emitted FIRST. Emitted second it would
-  // cover the very mark it exists to carry, and the banner would show a blank white tile.
-  const padX = 114_300;
-  const padY = 76_200;
-  const chipWidth = width + padX * 2;
-  const chipHeight = height + padY * 2;
-  const chipOff = at.colOff - padX;
-  const chip =
-    chipOff < 0 || chipWidth > panelWidth
-      ? "" // a chip hanging past the column edge would sit half on the band and half off it
-      : "<xdr:oneCellAnchor>"
-        + `<xdr:from><xdr:col>${at.col}</xdr:col><xdr:colOff>${chipOff}</xdr:colOff>`
-        + `<xdr:row>${anchorRow}</xdr:row><xdr:rowOff>${Math.max(0, drop - padY)}</xdr:rowOff></xdr:from>`
-        + `<xdr:ext cx="${chipWidth}" cy="${chipHeight}"/>`
-        + '<xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="3" name="EmblemPanel"/>'
-        + "<xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr>"
-        + `<a:xfrm><a:off x="0" y="0"/><a:ext cx="${chipWidth}" cy="${chipHeight}"/></a:xfrm>`
-        + '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
-        + '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:ln><a:noFill/></a:ln>'
-        + '</xdr:spPr><xdr:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-US"/></a:p></xdr:txBody>'
-        + '</xdr:sp><xdr:clientData fPrintsWithSheet="0"/></xdr:oneCellAnchor>';
-
   const anchor =
-    chip
-    + "<xdr:oneCellAnchor>"
+    "<xdr:oneCellAnchor>"
     + `<xdr:from><xdr:col>${at.col}</xdr:col><xdr:colOff>${at.colOff}</xdr:colOff>`
     + `<xdr:row>${anchorRow}</xdr:row><xdr:rowOff>${drop}</xdr:rowOff></xdr:from>`
     + `<xdr:ext cx="${width}" cy="${height}"/>`
@@ -3072,8 +3043,8 @@ async function addIndexEmblem(
  * defines, found by their COLOUR rather than by their position.
  */
 type IndexPalette = Record<
-  "band" | "bannerBlank" | "bannerSub" | "bannerTitle" | "body" | "bodyZebra" | "chip" | "foot"
-  | "header" | "link" | "linkZebra" | "title" | "titlePt" | "titleTail",
+  "band" | "bannerBlank" | "bannerSub" | "bannerTitle" | "body" | "foot" | "header"
+  | "link" | "title" | "titlePt" | "titleTail",
   string
 >;
 
@@ -3143,16 +3114,16 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
   const titleTail = Number(styleAt("B1") ?? NaN);
   if (header === undefined || body === undefined || !Number.isFinite(title)) return null;
 
-  // The palest solid fill the workbook already owns, white excepted — the zebra, without inventing
-  // a colour that would then disagree with every panel on every other sheet.
-  let zebraFill = -1;
+  // The palest solid fill the workbook already owns, white excepted — the section bands stand on
+  // it, without inventing a colour that would disagree with every panel on every other sheet.
+  let tintFill = -1;
   let palest = -1;
   fills.forEach((fill, index) => {
     const rgb = /fgColor rgb="FF([0-9A-Fa-f]{6})"/.exec(fill)?.[1];
     if (!rgb || rgb.toUpperCase() === "FFFFFF") return;
     const value = parseInt(rgb, 16);
     const luma = ((value >> 16) & 255) * 0.299 + ((value >> 8) & 255) * 0.587 + (value & 255) * 0.114;
-    if (luma > palest) { palest = luma; zebraFill = index; }
+    if (luma > palest) { palest = luma; tintFill = index; }
   });
 
   const sizeOf = (font: string) => Number(/sz val="([0-9.]+)"/.exec(font)?.[1] ?? NaN);
@@ -3259,9 +3230,39 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
     },
     { index: -1, luma: Number.POSITIVE_INFINITY },
   ).index;
-  const whiteFill = fills.findIndex((fill) => /fgColor rgb="FFFFFFFF"/i.test(fill));
 
   /** The largest white face the workbook owns, bold or not — the type that reverses out of the band. */
+  // A DEEPER SHADE OF THE OWNER'S OWN BLUE, appended once, for the band to stand on.
+  //
+  // Not a new colour so much as a darker step of the darkest one the workbook already has. It is
+  // needed because the mark's "PHARMA" is set in `#0A6BA6`; on the template's darkest fill,
+  // `#085080`, that is roughly 1.5:1 and the word sinks into the band — measured on a real render,
+  // where "SATO" read white and "PHARMA" had all but vanished. Taking the same hue down to ~55%
+  // luminance puts it near 3:1, which is what a mark this size needs.
+  const bannerFill = (() => {
+    const rgb = darkFill >= 0 ? /fgColor rgb="FF([0-9A-Fa-f]{6})"/.exec(fills[darkFill] ?? "")?.[1] : null;
+    if (!rgb) return darkFill;
+    const value = parseInt(rgb, 16);
+    const deepen = (channel: number) => Math.max(0, Math.round(channel * 0.55));
+    const deeper = [
+      deepen((value >> 16) & 255),
+      deepen((value >> 8) & 255),
+      deepen(value & 255),
+    ].map((channel) => channel.toString(16).padStart(2, "0").toUpperCase()).join("");
+    const existing = fills.findIndex((fill) => new RegExp(`fgColor rgb="FF${deeper}"`, "i").test(fill));
+    if (existing >= 0) return existing;
+    const open = xml.indexOf("<fills");
+    const close = xml.indexOf("</fills>");
+    if (open < 0 || close < 0) return darkFill;
+    const count = fills.length;
+    xml = xml.slice(0, open)
+      + xml.slice(open, close).replace(/count="\d+"/, `count="${count + 1}"`)
+      + `<fill><patternFill patternType="solid"><fgColor rgb="FF${deeper}"/><bgColor indexed="64"/></patternFill></fill>`
+      + xml.slice(close);
+    fills.push(`<fill><patternFill patternType="solid"><fgColor rgb="FF${deeper}"/></patternFill></fill>`);
+    return count;
+  })();
+
   const whiteFont = (bold: boolean) => {
     let best: number | null = null;
     let bestSize = -1;
@@ -3306,14 +3307,12 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
 
   /** A banner cell: on the dark band, no rule, optionally carrying reversed-out type. */
   const banner = (fontId: number | null) =>
-    add(swap(bodyXf, { borderId: 0, ...(darkFill >= 0 ? { fillId: darkFill } : {}), ...(fontId === null ? {} : { fontId }) }));
+    add(swap(bodyXf, { borderId: 0, ...(bannerFill >= 0 ? { fillId: bannerFill } : {}), ...(fontId === null ? {} : { fontId }) }));
 
   const palette: IndexPalette = {
     bannerTitle: banner(bannerTitleFont),
     bannerSub: banner(bannerSubFont),
     bannerBlank: banner(null),
-    // The white panel the mark stands on, at the left of the band.
-    chip: add(swap(bodyXf, { borderId: 0, ...(whiteFill >= 0 ? { fillId: whiteFill } : {}) })),
     title: add(
       swap(titleXf, {
         ...(bigTitleFont < 0 ? {} : { fontId: bigTitleFont }),
@@ -3323,19 +3322,14 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
     titleTail: Number.isFinite(titleTail) ? String(titleTail) : String(title),
     header: String(header),
     body: ruled({}),
-    bodyZebra: ruled(zebraFill >= 0 ? { fillId: zebraFill } : {}),
     link: brandFont === null ? ruled({}) : ruled({ fontId: brandFont }),
-    linkZebra:
-      brandFont === null || zebraFill < 0
-        ? ruled(zebraFill >= 0 ? { fillId: zebraFill } : {})
-        : ruled({ fillId: zebraFill, fontId: brandFont }),
     // A section bar: tinted, in the brand blue, opening with the heavier rule ABOVE it. Small blue
     // caps floating over white had no weight at all — the sections were invisible and the page read
     // as one undifferentiated list.
     band: add(
       swap(bodyXf, {
         ...(brandFont === null ? {} : { fontId: brandFont }),
-        ...(zebraFill >= 0 ? { fillId: zebraFill } : {}),
+        ...(tintFill >= 0 ? { fillId: tintFill } : {}),
         ...(openingRule >= 0
           ? { borderId: openingRule }
           : heavyRule >= 0
