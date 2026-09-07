@@ -1573,6 +1573,21 @@ const employeePortalNavigationSectionSeeds = [
     id: "employee-market-awareness",
     items: [
       {
+        // The approvals queue is its own catalog entry, not a sub-page of the module: it appears in
+        // Approvals Hub beside Marketing Inbox, and a page rendered by the real nav must be in this
+        // catalog or it is unsearchable and untitled.
+        href: "/employee-portals/market-awareness/inbox",
+        icon: Inbox,
+        label: "Awareness Approvals",
+        permissions: [{ resource: "market_awareness", action: "read" }],
+        roles: [
+          "Group Product Manager",
+          "Marketing Manager",
+          "CEO",
+          "Super Admin",
+        ],
+      },
+      {
         href: "/employee-portals/market-awareness",
         icon: Sparkles,
         label: "Market Awareness",
