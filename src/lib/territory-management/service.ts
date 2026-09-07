@@ -228,9 +228,30 @@ type TerritoryReferenceData = Awaited<ReturnType<typeof loadSalesReferenceData>>
  * this instead of re-fetching, which used to double `loadSalesReferenceData`'s 6-query fan-out on
  * every call (and up to 6x it on loadTerritoryScopeOverview, which resolves scope per line).
  */
+/**
+ * Roles that see the whole map without holding a SALES scope at all.
+ *
+ * Everything below this line asks `resolveSalesAccessScope`, and that answers `NONE` for any role
+ * outside the sales ladder — which resolves to EMPTY line/region/area sets, not to "everything".
+ * That fail-closed default is right for a rep and wrong here: the HR Business Partner holds
+ * `territory:read` (owner, 2026-09-07) and has no line, no region and no seat, so without this
+ * branch her map renders blank — a page that looks broken rather than refused, which is the worst
+ * of the three outcomes.
+ *
+ * Company-wide is also the only bound that means anything for her: she sources for vacancies on
+ * every line, and the module's residence recommendation is what she reads it for. Read-only is
+ * enforced elsewhere and separately — `canEditPins` and `canPublishPreview` are Super Admin, and
+ * the pin/preview routes assert `sales:import` / `sales:export`, neither of which she holds.
+ */
+const TERRITORY_COMPANY_WIDE_NON_SALES_ROLES = new Set<PhoenixRole>(["HR Advisory"]);
+
 async function resolveTerritoryScopeWithReferences(
   access: AccessContext,
 ): Promise<{ references: TerritoryReferenceData | null; scope: TerritoryScope }> {
+  if (TERRITORY_COMPANY_WIDE_NON_SALES_ROLES.has(access.role)) {
+    return { references: null, scope: { lineCodes: null, regionCodes: null, areaCodes: null } };
+  }
+
   const salesScope = await resolveSalesAccessScope(access);
   if (salesScope.canViewAllSales) {
     return { references: null, scope: { lineCodes: null, regionCodes: null, areaCodes: null } };

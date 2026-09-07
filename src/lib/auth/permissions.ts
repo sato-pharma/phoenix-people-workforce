@@ -127,7 +127,16 @@ export type PermissionResource =
   | "synthetic_journeys"
   | "mailbox_monitor"
   | "mailbox_offboarding"
-  | "retention";
+  | "retention"
+  // Territory Management — the brick/area MAP. SEPARATE from `sales` on purpose, exactly like
+  // `crm_plans` above. The module gated on `sales:read` until 2026-09-07, when the owner asked for
+  // it on the HR Business Partner's sidebar; `sales:read` is the wrong key for that, because the
+  // Employee role holds it too and it opens Source of Sales, Monthly Closing, Sales vs Target and
+  // every other money page in the sidebar's Sales section. This map carries no money at all — its
+  // payload is bricks, areas, coordinates, coverage counts and a "where should a rep hired here
+  // live" recommendation — so it earns its own key rather than dragging the commercial surface
+  // along with it.
+  | "territory";
 
 /**
  * The runtime twin of the `PermissionResource` union above. Both lists must hold exactly the same
@@ -208,6 +217,11 @@ export const permissionResources: PermissionResource[] = [
   // reader talks himself into "helpfully" widening it.
   "mailbox_offboarding",
   "retention",
+  // Territory Management. Omitting this would offer the brick map — and its residence
+  // recommendations, which name where the company's field force lives — to every role, since
+  // `permissionAllowed` treats a key the lookup has never seen as PERMITTED. Mechanism at the head
+  // of this array.
+  "territory",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -775,6 +789,7 @@ const defaultPermissionMatrix: PermissionMap = {
     retention: allActions,
     workflow_registry: allActions,
     sales: allActions,
+    territory: allActions,
     direct_orders: allActions,
     weekly_sales: allActions,
     team: allActions,
@@ -849,6 +864,9 @@ const defaultPermissionMatrix: PermissionMap = {
     // SoD: read/export only — resignation finalization belongs to Super Admin/HR.
     resignations: ["read", "export"],
     sales: ["read", "export"],
+    // Territory Management, split out of `sales:read` on 2026-09-07. Same reach as before —
+    // this key exists so the map can be granted without the money pages, not to narrow anyone.
+    territory: ["read"],
     weekly_sales: ["read", "export"],
     team: ["read", "export"],
     vacancies: ["read", "export"],
@@ -1069,6 +1087,9 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     probation: ["read", "export"],
     sales: ["read", "export"],
+    // Territory Management (the portal twin at /employee-portals/territory-management). His own
+    // areas only — resolveTerritoryScope still narrows the map to his seat's areas.
+    territory: ["read"],
     weekly_sales: ["read", "export"],
     team: ["read", "export"],
     vacancies: ["read", "export"],
@@ -1111,6 +1132,8 @@ const defaultPermissionMatrix: PermissionMap = {
     // med reps in their own subtree — the same rows the tracker already shows them.
     probation: ["read", "export"],
     sales: ["read", "export"],
+    // Territory Management (portal twin), narrowed to his own region by resolveTerritoryScope.
+    territory: ["read"],
     weekly_sales: ["read", "export"],
     team: ["read", "export"],
     // Same undeclared-access correction as `deductions` above: getEmployeePortalVacancies already
@@ -1141,6 +1164,8 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
+    // Territory Management (portal twin), narrowed to his own line by resolveTerritoryScope.
+    territory: ["read"],
     weekly_sales: ["read", "export"],
     team: ["read", "export"],
     organogram: ["read"],
@@ -1243,6 +1268,9 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "import", "export"],
+    // Territory Management. Carried over verbatim from `sales:read`, which gated the module
+    // until 2026-09-07 — he owns the brick/area geography and loses nothing in the split.
+    territory: ["read"],
     weekly_sales: allActions,
     weekly_plans: ["read", "create", "update"],
     report_it: ["read", "create"],

@@ -1004,10 +1004,15 @@ export const accessRegistry = [
   // rule. Guarded on sales:import, matching the route's own assertPermission.
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/sales/source-of-sales/raw-template", permission: { resource: "sales", action: "import" } }),
   // Territory Management — read-only geographic view of brick allocation per line.
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/filters", permission: { resource: "sales", action: "read" } }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/scope", permission: { resource: "sales", action: "read" } }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/map", permission: { resource: "sales", action: "read" } }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/search", permission: { resource: "sales", action: "read" } }),
+  // The four Territory Management reads moved from `sales:read` to `territory:read` on 2026-09-07,
+  // when the owner asked for the module on the HR Business Partner's sidebar. Not a narrowing of
+  // intent: every role the nav offers the module to holds the new key. It IS a narrowing of the raw
+  // URL surface — `Employee` carries sales:read, so any signed-in person could call these four and
+  // get a fail-closed empty scope back. The writes below still key on sales (import/export).
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/filters", permission: { resource: "territory", action: "read" } }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/scope", permission: { resource: "territory", action: "read" } }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/map", permission: { resource: "territory", action: "read" } }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/search", permission: { resource: "territory", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/territory-management/pin", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated Super-Admin-only JSON write: stores one hand-placed brick coordinate after a server-side role check and an Egypt bounding-box validation." }),
   // Area Consolidation — the Super Admin folds a legacy area's live rows onto a current one, and
   // can put them back. The gate is assertAreaConsolidationAccess INSIDE

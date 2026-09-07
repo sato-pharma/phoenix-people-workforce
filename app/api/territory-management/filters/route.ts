@@ -13,7 +13,7 @@ export async function GET(request: Request) {
     // Territory Management reads sales geography. Nav hides the link for roles without it, but
     // this is the boundary.
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "sales", "read");
+    await assertPermission(access, "territory", "read");
 
     const lineCode = new URL(request.url).searchParams.get("lineCode");
     return NextResponse.json(await loadTerritoryFilters(lineCode, access));

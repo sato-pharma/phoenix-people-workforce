@@ -31,7 +31,9 @@ export default async function TerritoryManagementPortalPage() {
   const access = await resolveAccessContextFromPage();
   if (!access.loginId && !access.hrId) redirect("/login");
   if (!isPortalTerritoryManagementRole(access.role)) redirect(resolveLandingPathForRole(access.role));
-  await assertPermission(access, "sales", "read");
+  // `territory`, not `sales` — see the note on the admin twin. All three portal roles above hold
+  // it, so this gate refuses exactly who it refused before.
+  await assertPermission(access, "territory", "read");
 
   let filters: TerritoryFilters = { areas: [], lines: [], regions: [] };
   let initialError: string | null = null;
