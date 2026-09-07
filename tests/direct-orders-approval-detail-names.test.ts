@@ -633,16 +633,22 @@ export function runDirectOrdersApprovalDetailNamesTests() {
 
     // Changing the month must rebuild BOTH periods, or the sales double or vanish. The inline
     // [previousMonth, nextMonth] literal this used to pin moved into periodsTouchedBySalesMonthChange
-    // on 2026-09-05, so that the locked-closing guard and the rebuild loop ask ONE function which
+    // on 2026-09-05, so that the frozen-closing rule and the rebuild loop ask ONE function which
     // months a move touches and can never disagree. The property is unchanged and still pinned here:
     // the setter must hand that function BOTH months. That the function returns both — deduped, and
     // with a null end dropped — is proved directly in tests/direct-order-sales-month-lock-guard.test.ts.
+    //
+    // The second month is `bookedMonth`, not `nextMonth`, since 2026-09-07: a booking aimed at a
+    // PUBLISHED closing is carried forward to the first open month, and the rebuild has to run for
+    // the month the order actually landed in. Rebuilding the REQUESTED month here would rebuild a
+    // period the order was never written to and leave the one it was written to stale — which is
+    // the same "the month and its sales part ways" failure this assertion has always guarded.
     const setterIdx = serviceSource.indexOf("export async function setDirectOrderSalesMonth(");
     const setterBody = topLevelBlock(serviceSource, setterIdx);
     assert.match(
       setterBody,
-      /periodsTouchedBySalesMonthChange\(previousMonth, nextMonth\)/,
-      "a month change must rebuild the OLD period as well as the new one",
+      /periodsTouchedBySalesMonthChange\(previousMonth, bookedMonth\)/,
+      "a month change must rebuild the OLD period as well as the one the order was BOOKED into",
     );
     assert.match(setterBody, /phx_rebuild_direct_order_sos_batch/, "the rebuild must actually run");
 
