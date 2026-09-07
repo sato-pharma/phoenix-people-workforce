@@ -20,13 +20,17 @@ import {
   CV_LIBRARY_BLANK,
   experienceBandLabels,
   experienceBands,
+  gradeFilterLabels,
+  gradeFilterOptions,
   graduationBucketLabels,
   graduationBuckets,
   matchesExperienceBand,
+  matchesGradeFilter,
   matchesGraduationBucket,
   summarizeCvLibrary,
   type CvLibraryRow,
   type ExperienceBand,
+  type GradeFilter,
   type GraduationBucket,
 } from "@/lib/cv/cv-library";
 import type { BackgroundOutcome } from "@/lib/recruitment/candidate-background";
@@ -300,6 +304,10 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
   const [backgroundFilter, setBackgroundFilter] = React.useState<BackgroundOutcome | "">("");
   const [graduationFilter, setGraduationFilter] = React.useState<GraduationBucket>("");
   const [experienceBand, setExperienceBand] = React.useState<ExperienceBand>("");
+  // 318 candidates carry a grade in 98 distinct spellings, so the raw column could never be a facet.
+  // `normalizeDegreeGrade` folds them to the four Egyptian names and refuses to guess at the ~50 that
+  // are only a GPA or a letter — those get their own option rather than an invented grade.
+  const [gradeFilter, setGradeFilter] = React.useState<GradeFilter>("");
 
   const summary = React.useMemo(() => summarizeCvLibrary(rows), [rows]);
 
@@ -324,6 +332,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
       if (backgroundFilter && row.backgroundOutcome !== backgroundFilter) return false;
       if (!matchesGraduationBucket(row, graduationFilter)) return false;
       if (!matchesExperienceBand(row, experienceBand)) return false;
+      if (!matchesGradeFilter(row, gradeFilter)) return false;
       if (roleFilter) {
         const family = candidateRoleFamilyOrNull(row.currentJobTitle);
         if (roleFilter === "unknown" ? family !== null : family !== roleFilter) return false;
@@ -368,7 +377,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
 
       return searchable.includes(normalizedQuery);
     });
-  }, [backgroundFilter, experienceBand, experienceFilter, governorate, graduationFilter, query, regionFilter, roleFilter, rows]);
+  }, [backgroundFilter, experienceBand, experienceFilter, governorate, gradeFilter, graduationFilter, query, regionFilter, roleFilter, rows]);
 
   const hasActiveFilters = Boolean(
     query ||
@@ -378,7 +387,8 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
       regionFilter ||
       backgroundFilter ||
       graduationFilter ||
-      experienceBand,
+      experienceBand ||
+      gradeFilter,
   );
 
   function clearFilters() {
@@ -390,6 +400,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
     setBackgroundFilter("");
     setGraduationFilter("");
     setExperienceBand("");
+    setGradeFilter("");
   }
 
   return (
@@ -555,6 +566,28 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
               {graduationBuckets.map((bucket) => (
                 <option key={bucket} value={bucket}>
                   {graduationBucketLabels[bucket]}
+                </option>
+              ))}
+            </select>
+            {/*
+              "A GPA or letter grade" is a real option, not a leftover. Around fifty of the 318
+              graded CVs record only `3.67`, `65%`, `B+ (3.462/4.0)` or `CGPA: 8.60`, and naming
+              those needs an awarding scale we do not have. Folding them into "not on file" would
+              claim their record is empty when it is not.
+            */}
+            <label className="sr-only" htmlFor="cv-database-grade">
+              Degree grade
+            </label>
+            <select
+              className={selectClassName}
+              id="cv-database-grade"
+              onChange={(event) => setGradeFilter(event.target.value as GradeFilter)}
+              value={gradeFilter}
+            >
+              <option value="">Any grade</option>
+              {gradeFilterOptions.map((option) => (
+                <option key={option} value={option}>
+                  {gradeFilterLabels[option]}
                 </option>
               ))}
             </select>

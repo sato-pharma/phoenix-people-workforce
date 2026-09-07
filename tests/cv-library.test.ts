@@ -8,8 +8,11 @@ import {
   experienceBands,
   graduationBucketLabels,
   graduationBuckets,
+  gradeFilterOptions,
   matchesExperienceBand,
+  matchesGradeFilter,
   matchesGraduationBucket,
+  normalizeDegreeGrade,
   summarizeCvLibrary,
   type CvLibraryRow,
 } from "../src/lib/cv/cv-library.ts";
@@ -127,6 +130,7 @@ export function runCvLibraryTests() {
   for (const [key, value] of Object.entries(blank)) {
     if (key === "regionCode" || key === "regionDeclared" || key === "screeningAnswers") continue;
     if (key === "backgroundSource" || key === "graduationYear" || key === "yearsExperienceValue") continue;
+    if (key === "degreeGrade") continue;
     assert.ok(typeof value === "string", `${key} must be a string`);
     assert.ok(!/^(null|undefined|NaN)$/.test(value), `${key} rendered as "${value}"`);
   }
@@ -729,5 +733,155 @@ export function runCvLibraryScreeningFilterTests() {
   assert.ok(
     managerSource.includes("Paramedical — not for the field"),
     "the paramedical option must name the FIELD FORCE, not the person",
+  );
+}
+
+/**
+ * The degree-grade normaliser, against every spelling production actually holds.
+ *
+ * 318 candidates carry a grade in 98 DISTINCT SPELLINGS (measured 2026-09-08), so the raw column
+ * could never have been a facet — it would have rendered ninety-odd buttons, nineteen of which mean
+ * "very good". Every literal below is a real value copied out of `ats_candidates.grade`, not an
+ * invented example: the point of this test is that the normaliser survives contact with what people
+ * actually type, and a fixture I made up would prove nothing about that.
+ */
+export function runCvGradeNormalizerTests() {
+  // ── Excellent, 33 candidates across 12 spellings ─────────────────────────────────────────────
+  for (const raw of [
+    "Excellent",
+    "Excellent with Honors",
+    "Excellent with Honours",
+    "Excellence with grade of honor.",
+    "Excellence with honor",
+    "Excellent (A)",
+    "Excellent | GPA: 3.7",
+    "Excellent degree with honors",
+    "excellent with honors",
+    "GPA: 3.7 (Excellent)",
+    "Ranked top 10% of the class / Excellent Grade",
+    "امتياز",
+  ]) {
+    assert.equal(normalizeDegreeGrade(raw), "excellent", `"${raw}" is an Excellent degree`);
+  }
+
+  // ── Very Good, 120 candidates across 19 spellings ────────────────────────────────────────────
+  // THE ORDERING TRAP. "Very Good" contains "good": a `good` test running first swallows all 120 of
+  // these and the totals still add up, so nothing looks wrong. Same for جيدجدا, which contains جيد.
+  for (const raw of [
+    "Very Good",
+    "Very good",
+    "very good",
+    "very Good",
+    "VERY GOOD",
+    "V.good",
+    "V.Good",
+    "Very Good.",
+    "Very Good with Honors",
+    "Very Good with Honor",
+    "Very good with honors",
+    "Very good honor",
+    "Very Good (( With Class Honor ))",
+    "Very Good with Honors (Ranked 3rd in the department)",
+    "Very Good/GPA (3.5)",
+    "Cumulative Grade : very good with\nHonors.",
+    "3.08/4 very good",
+    "GPA: 3.45 (86.25%) Very Good",
+    "جيدجدا",
+  ]) {
+    assert.equal(normalizeDegreeGrade(raw), "very_good", `"${raw}" is a Very Good degree, not a Good one`);
+  }
+
+  // ── Good, 104 candidates across 12 spellings ─────────────────────────────────────────────────
+  for (const raw of [
+    "Good",
+    "good",
+    "GOOD",
+    "Good (69%)",
+    "Good (76.79%)",
+    "Good +",
+    "good grade",
+    "Good Grade",
+    "good grade (B)",
+    "Good with honor degree (77%)",
+    "Good, High",
+    "جيد",
+  ]) {
+    assert.equal(normalizeDegreeGrade(raw), "good", `"${raw}" is a Good degree`);
+  }
+
+  // ── Pass, 11 candidates across 5 spellings ───────────────────────────────────────────────────
+  for (const raw of ["Pass", "passed", "accepted", "Accepted", "مقبول"]) {
+    assert.equal(normalizeDegreeGrade(raw), "pass", `"${raw}" is a Pass`);
+  }
+
+  // ── The refusals — every one is a real value, and every one must stay unnamed ────────────────
+  // Naming these needs the awarding scale (4.0? 5.0? percentage? the 10-point scale 8.09 implies)
+  // and each university's cut-offs. One invented mapping would print a confident grade on a record
+  // that never carried one.
+  for (const raw of [
+    "3.67",
+    "2.29 Out Of 4",
+    "3.531/4.00",
+    "GPA: 3.00 / 5.00",
+    "CGPA: 8.60",
+    "8.09",
+    "65%",
+    "80.34%",
+    "85/100",
+    "60 ٪",
+    "B+ (3.462/4.0)",
+    "C+",
+    "A",
+    "Grade A",
+    "2nd div",
+    "2nd Division (for Bsc/Intermediate/Matriculation as stated)",
+    "Honors",
+    "IPK 3.03",
+    "GPA: 3.46/4.00 | Honors | Ranked 6th",
+  ]) {
+    assert.equal(normalizeDegreeGrade(raw), null, `"${raw}" names no Egyptian grade and must not be guessed at`);
+  }
+  assert.equal(normalizeDegreeGrade(null), null);
+  assert.equal(normalizeDegreeGrade("   "), null, "whitespace is not a grade");
+
+  // ── "other" and "none" are different questions ───────────────────────────────────────────────
+  const named = cvLibraryRowFromCandidate(candidate({ grade: "Very Good with Honors" }));
+  const numeric = cvLibraryRowFromCandidate(candidate({ grade: "GPA: 3.46/4.00 | Honors | Ranked 6th" }));
+  const absent = cvLibraryRowFromCandidate(candidate({}));
+
+  assert.equal(named.degreeGrade, "very_good");
+  assert.equal(named.degreeGradeRaw, "Very Good with Honors", "the CV's own words are kept verbatim");
+  assert.equal(numeric.degreeGrade, null);
+  assert.equal(numeric.degreeGradeRaw, "GPA: 3.46/4.00 | Honors | Ranked 6th");
+  assert.equal(absent.degreeGrade, null);
+  assert.equal(absent.degreeGradeRaw, "", "no grade is an empty string, which is what separates it from 'other'");
+
+  // The two null-grade rows must NOT answer the same filter. Folding them would hide ~50 people
+  // behind a label claiming their record is empty when it is not.
+  assert.equal(matchesGradeFilter(numeric, "other"), true);
+  assert.equal(matchesGradeFilter(numeric, "none"), false, "a GPA on file is not 'no grade on file'");
+  assert.equal(matchesGradeFilter(absent, "none"), true);
+  assert.equal(matchesGradeFilter(absent, "other"), false, "nothing on file is not 'a grade we do not name'");
+  assert.equal(matchesGradeFilter(named, "very_good"), true);
+  assert.equal(matchesGradeFilter(named, "good"), false, "a Very Good must never answer the Good filter");
+
+  // "Any" returns all three, including both null-grade shapes.
+  for (const row of [named, numeric, absent]) {
+    assert.equal(matchesGradeFilter(row, ""), true, "'any grade' must return everyone");
+  }
+
+  // EXACTLY ONE OPTION PER ROW, so a bucketed count adds back up to the pool.
+  for (const row of [named, numeric, absent]) {
+    const hits = gradeFilterOptions.filter((option) => matchesGradeFilter(row, option));
+    assert.equal(hits.length, 1, `"${row.degreeGradeRaw || "(none)"}" must match one option, got ${hits.join(", ")}`);
+  }
+
+  // ── The manager wires it and clears it ───────────────────────────────────────────────────────
+  const managerSource = readFileSync("src/components/cv/cv-database-manager.tsx", "utf8");
+  assert.ok(managerSource.includes("matchesGradeFilter(row, gradeFilter)"), "the manager must apply the grade filter");
+  assert.ok(managerSource.includes('setGradeFilter("")'), "clearFilters must reset the grade filter");
+  assert.ok(
+    managerSource.includes("A GPA or letter grade"),
+    "the unnamed-grade option must say what it holds, not read as a leftover",
   );
 }
