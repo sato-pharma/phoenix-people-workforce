@@ -8,6 +8,8 @@ import {
 } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
+import { openCrmAccountSetupTasks } from "@/lib/crm/account-setup";
+import { notifyNewEmployeesNeedCrmAccount } from "@/lib/crm/account-setup-notify";
 import { hrIdsMatch } from "@/lib/hr-id";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
@@ -154,13 +156,32 @@ export async function POST(request: Request) {
     }
 
     const savedRows = await upsertEmployee(payload.employee);
-    const accessProvisioning = payload.employee.originalHrId?.trim()
-      ? null
-      : await provisionNewHireAccess({
+    // `originalHrId` is only present when an EXISTING employee is being edited (upsertEmployee
+    // derives its own isUpdate from exactly this field), so a blank one is the create signal —
+    // the same one access provisioning has always keyed on.
+    const isNewEmployee = !payload.employee.originalHrId?.trim();
+    const newEmployeeHrId = savedRows[0]?.hr_id ?? payload.employee.hrId;
+    const accessProvisioning = isNewEmployee
+      ? await provisionNewHireAccess({
         actor: { loginId: access.loginId ?? null, role: access.role },
-        hrIds: [savedRows[0]?.hr_id ?? payload.employee.hrId],
+        hrIds: [newEmployeeHrId],
         source: "manual employee add",
+      })
+      : null;
+
+    // A new hire is invisible in the CRM until somebody creates his iReports360 account, and
+    // nothing used to say so. Open the setup task and tell the SFE Manager (owner instruction
+    // 2026-09-07). Both calls swallow their own failures: the employee is already saved by this
+    // point, and a notification that could 500 the save would mean an unreachable recipient stops
+    // HR hiring anybody.
+    if (isNewEmployee) {
+      await openCrmAccountSetupTasks({ hrIds: [newEmployeeHrId], source: "manual_add" });
+      await notifyNewEmployeesNeedCrmAccount({
+        actorId: access.loginId ?? access.hrId ?? access.role,
+        hrIds: [newEmployeeHrId],
       });
+    }
+
     const directory = await getEmployeeDirectory();
 
     return NextResponse.json(

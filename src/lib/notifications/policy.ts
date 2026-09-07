@@ -106,6 +106,16 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "birthday.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["employee"] },
   "contract_renewal.renewal_reminder": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "high", recipientStrategy: ["direct_manager", "workflow_step_approver"], telegramAllowed: true },
   "contract_renewal.*": { channels: ["in_app", "email", "telegram", "push"], permissionResource: "contracts", priority: "high", recipientStrategy: ["manager_chain", "permission_based"], telegramAllowed: true },
+  // New-hire CRM account setup (owner instruction 2026-09-07). Recipients come from the
+  // admin-editable `crm_account_setup_alert` role policy and are passed EXPLICITLY by
+  // account-setup-notify.ts, so the strategy here is "role_based" — a lookup would resolve the
+  // employee who was just HIRED, which is the one person this notice is not for.
+  //
+  // Email and in-app only, both named by the owner. Telegram and push are deliberately absent:
+  // the notice carries a named new hire's mobile number and work email, and push is the channel
+  // that puts those on a lock screen. The call site passes the same two channels, so this row is
+  // the intent and that argument is what actually binds — they must not be allowed to drift.
+  "crm_account_setup.*": { actionUrlRequired: true, channels: ["in_app", "email"], permissionResource: null, priority: "high", recipientStrategy: ["role_based"] },
   "direct_orders.*": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "high", recipientStrategy: ["workflow_step_approver", "cc"], telegramAllowed: true },
   // Recipients are supplied explicitly (the District Manager, with his NSM and RM copied), so the
   // strategy is "cc" rather than a lookup. Without an entry here it falls back to the bare default

@@ -1463,6 +1463,7 @@ import { runSalesUploadAnalyzeMatchesCommitTests } from "./sales-upload-analyze-
 import { runSalesUploadReceiptConfidentialityTests } from "./sales-upload-receipt-confidentiality.test.ts";
 import { runRetentionRiskDetectorTests } from "./retention-risk-detector.test.ts";
 import { runRetentionRiskNotifyTests } from "./retention-risk-notify.test.ts";
+import { runCrmAccountSetupTests } from "./crm-account-setup.test.ts";
 import { runHrbpTerritoryManagementAccessTests } from "./hrbp-territory-management-access.test.ts";
 
 import { runAgentsLongHooksCiteDocsTests } from "./agents-long-hooks-cite-docs.test.ts";
@@ -4714,6 +4715,10 @@ await runTest(
 await runTest(
   "AGENTS.md long hooks cite their account in docs/ (relocate first, never delete a hook)",
   runAgentsLongHooksCiteDocsTests,
+);
+await runTest(
+  "new hire CRM account setup (the notice carries all seven facts, states a blank instead of dropping it, is email + in-app only, and fires on the CREATE path alone)",
+  runCrmAccountSetupTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

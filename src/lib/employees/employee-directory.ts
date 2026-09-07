@@ -2271,6 +2271,62 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
   return rows;
 }
 
+/**
+ * Write ONLY an employee's CRM identity — the account name and code that every CRM read resolves a
+ * visit, a check-in or a double visit against (src/lib/crm/identity.ts).
+ *
+ * This exists so the New Hire CRM Setup tab does not have to go through upsertEmployee. That path
+ * takes a whole EmployeeMutationInput and rewrites the row from it, so handing it a two-field form
+ * would blank everything the form did not carry — and the person filling this in is the SFE
+ * Manager, who does not hold `employees:update` and has no business editing salary or status. A
+ * PATCH of two columns cannot damage a field it never names.
+ *
+ * Both uniqueness guards still run, unchanged: a CRM id or username already assigned to somebody
+ * else is refused here exactly as it is on the employee form. Reusing a resigned rep's slot is how
+ * an ACTIVE rep gets hidden, so this is the check that matters most on this path.
+ */
+export async function setEmployeeCrmIdentity(input: {
+  crmId: string | null;
+  crmUsername: string | null;
+  hrId: string;
+}) {
+  const hrId = normalizeHrId(input.hrId);
+  if (!hrId) {
+    throw new Error("HR_ID is required.");
+  }
+
+  const existing = await supabaseRest<Array<{ hr_id: string }>>(
+    `employees?hr_id=eq.${encodeURIComponent(hrId)}&select=hr_id`,
+  );
+  if (existing.length === 0) {
+    throw new Error(`Employee ${hrId} was not found.`);
+  }
+
+  const crmId = compact(input.crmId);
+  const crmUsername = compact(input.crmUsername);
+  await ensureCrmIdIsUnique(crmId, hrId);
+  await ensureCrmUsernameIsUnique(crmUsername, hrId);
+
+  const rows = await supabaseRest<EmployeeDbRow[]>(
+    `employees?hr_id=eq.${encodeURIComponent(hrId)}`,
+    {
+      body: JSON.stringify({
+        crm_id: crmId,
+        crm_username: crmUsername,
+        updated_at: new Date().toISOString(),
+      }),
+      headers: {
+        Prefer: "return=representation",
+      },
+      method: "PATCH",
+    },
+  );
+
+  invalidateEmployeeDirectoryCache();
+
+  return rows[0] ?? null;
+}
+
 export async function bulkUpdateEmployees(
   hrIds: string[],
   values: Pick<
