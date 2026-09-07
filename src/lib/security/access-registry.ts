@@ -659,6 +659,11 @@ export const accessRegistry = [
   // The approvals queue. Gated on `read`, not `approve`: it is scoped inside the service to the
   // decisions that are actually the caller's, so a reader sees an empty queue rather than a refusal.
   sessionApi({ methods: ["GET"], pattern: "/api/market-awareness/inbox", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
+  // The conversation. Read is gated with the activity itself (getActivity carries the per-row
+  // narrowing), and posting is `read` too: commenting is not a decision, and the people who must be
+  // able to answer a returned activity are exactly the people who can see it.
+  sessionApi({ methods: ["GET"], pattern: "/api/market-awareness/:activityId/comment", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness/:activityId/comment", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/market-awareness/:activityId", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/market-awareness/:activityId", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/market-awareness/:activityId/tracking", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
