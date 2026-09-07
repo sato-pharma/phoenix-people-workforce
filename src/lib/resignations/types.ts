@@ -64,6 +64,31 @@ export type ResignationRecord = {
    * re-derived in the UI. Null when the employee row carries no salary.
    */
   settlement: ResignationSettlementPreview | null;
+  /**
+   * Company devices this leaver has still not returned.
+   *
+   * IT SITS BESIDE THE SETTLEMENT ON PURPOSE. The custody receipt's return protocol states that
+   * final dues are not paid before it is completed — «ولا يجوز صرف المستحقات النهائية قبل
+   * استيفائه» — and البند (7) has the device returned «قبل استلام مستحقاتي النهائية». So the one
+   * screen where somebody reads a settlement figure is the screen that has to show what is still
+   * outstanding against it.
+   *
+   * IT IS A FLAG, NOT A BLOCK. Nothing here reduces a settlement or stops it being paid: البند (10)
+   * caps any recovery at a value on a signed receipt, and how much to actually recover is a human
+   * decision. Phoenix flags and a person decides — the same rule the expense module follows.
+   *
+   * Empty when the register holds nothing for them, and ALSO empty when the register could not be
+   * read: `getOutstandingDevicesByEmployee` never throws, because this page is how somebody finds
+   * out that a person left at all and must render without it.
+   */
+  outstandingDevices: Array<{
+    assignmentId: string;
+    assetTag: string;
+    category: string;
+    /** Serial or IMEI, whichever the device carries — what a police report asks for. */
+    identifier: string;
+    agreedValueEgp: number | null;
+  }>;
   reviewedAt: string | null;
   reviewedBy: string | null;
   approvedAt: string | null;

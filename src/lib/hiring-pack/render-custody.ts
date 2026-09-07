@@ -43,10 +43,18 @@ import type { HiringPackData } from "@/lib/hiring-pack/types";
 // WHAT IS FILLED AND WHAT IS RULED. Phoenix answers the half of this page that is about the PERSON
 // — name, national ID, job title, department, employee code, phone, address — because it already
 // holds every one of those and because copying them off an ID card by hand is where the errors are.
-// It answers nothing about the DEVICE, because there is no asset register in this system: the item
-// table, the technical block, the values and the handover date print as ruled blanks, exactly as
-// the owner's own blank templates do, and are completed at the desk with the device in hand. That
-// is not a shortcut — a serial number is checked off the back of the machine, not recalled.
+//
+// It answers the DEVICE half too, since the device register landed (migration 20260907220000) —
+// but ONLY when a device has been chosen for this handover. `data.custodyDevice` null is the normal
+// case and prints exactly what this form has always printed: ruled blanks through the technical
+// block, completed at the desk with the machine in hand. A pack run the evening before a joiner
+// arrives has no device allocated yet, and refusing to print — or printing a guess — would both be
+// worse than a rule.
+//
+// THE ITEM TABLE, THE VALUES AND THE HANDOVER DATE STAY RULED IN EVERY CASE, and that is not an
+// omission. They are counted and agreed at the desk with the boxes open, and البند (1) has the
+// holder accepting the goods «بحالتها المدونة بهذا الإقرار» — a pre-printed condition is a
+// condition nobody inspected.
 
 /** Every blank this document can fill, resolved once. */
 export function buildCustodyValues(data: HiringPackData): Partial<Record<CustodyToken, string>> {
@@ -84,6 +92,53 @@ export function buildCustodyValues(data: HiringPackData): Partial<Record<Custody
       residenceAddress: employee.residenceAddress,
       residenceCity: employee.residenceCity,
     }),
+
+    ...buildCustodyDeviceValues(data.custodyDevice),
+  };
+}
+
+/**
+ * The device half, when a device has been chosen — and NOTHING when one has not.
+ *
+ * Returning an empty object rather than a record of empty strings is deliberate. `fieldValue`
+ * prints the ruled rule for anything absent or blank, so either shape renders the same page today;
+ * but an empty string is a VALUE, and the paper editor's field layer offers a value for correction
+ * while it leaves an absent token as the blank it is. Spreading nothing keeps "no device chosen"
+ * and "a device whose serial nobody typed in" distinguishable everywhere downstream.
+ *
+ * `pinLtr` is on every one of these for the reason `custody-template.ts` gives at length: a serial,
+ * an IMEI, a SIM and a line number are all runs of Latin digits inside a right-to-left page, and
+ * the bidirectional algorithm reorders the groups around them — the defect that once printed this
+ * company's own tax card number `477-108-318` as `318-108-477`. The `ltr` flag on the field styles
+ * the box; this pins the characters inside it, and both are needed.
+ */
+function buildCustodyDeviceValues(
+  device: HiringPackData["custodyDevice"],
+): Partial<Record<CustodyToken, string>> {
+  if (!device) return {};
+
+  const pin = (value: string | null): string | undefined => {
+    const text = String(value ?? "").trim();
+    return text.length > 0 ? pinLtr(text) : undefined;
+  };
+
+  return {
+    // نموذج رقم 1
+    DEVICE_MANUFACTURER: pin(device.manufacturer),
+    DEVICE_SERIAL: pin(device.serialNumber),
+    DEVICE_NAME: pin(device.deviceName),
+    DEVICE_PROCESSOR: pin(device.processor),
+    DEVICE_RAM: pin(device.installedRam),
+    DEVICE_SYSTEM_TYPE: pin(device.systemType),
+    DEVICE_ID: pin(device.windowsDeviceId),
+    DEVICE_PRODUCT_ID: pin(device.windowsProductId),
+
+    // نموذج رقم 2. «نوع الجهاز» is the make and model as a human would say it, which is what the
+    // box asks for — not the register's `category`, which is a filing bucket.
+    DEVICE_TYPE: pin([device.manufacturer, device.model].filter(Boolean).join(" ") || null),
+    DEVICE_IMEI: pin(device.imei),
+    DEVICE_SIM: pin(device.simNumber),
+    DEVICE_LINE: pin(device.lineNumber),
   };
 }
 
@@ -457,7 +512,13 @@ ${printBanner([
     total === 1 ? "copy" : "copies"
   }.`,
   "Turn ON “Background graphics” — the title panel, the section bars and the table rules are part of the document.",
-  "The device details, values and handover date print blank by design. Complete them with the device in hand.",
+  // The banner has to match the page it is stapled to. It said "the device details print blank by
+  // design" unconditionally, which was true until the register could fill them — and a banner that
+  // tells the person at the desk to write in a box that already has a serial in it is how a correct
+  // number gets crossed out and replaced by a hand-copied one.
+  data.custodyDevice
+    ? "The device details come from the register — CHECK them against the machine before signing. The values and the handover date print blank by design."
+    : "The device details, values and handover date print blank by design. Complete them with the device in hand.",
 ])}
 ${body}
 ${flowFieldLayer(fields, values)}

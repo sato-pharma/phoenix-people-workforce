@@ -14,6 +14,7 @@
  *   company is clear of him and the company files it. A departure produces both.
  */
 
+import type { CustodyDeviceFacts } from "@/lib/devices/types";
 import type { CompanyDetails } from "@/lib/hiring-pack/company-details";
 import { isUuid } from "@/lib/http/uuid";
 
@@ -658,6 +659,20 @@ export type HiringPackData = {
   company: CompanyDetails;
   /** The departure as the system records it, or null when nobody has recorded one. */
   exit: ExitFacts | null;
+  /**
+   * The device this custody receipt is being printed FOR, or null when none has been chosen.
+   *
+   * NULL IS THE NORMAL CASE and must stay printable. The pack is very often run the evening before
+   * a joiner arrives, with no machine allocated yet — a receipt printed then carries ruled blanks
+   * through the technical block, exactly as it did before the device register existed, and somebody
+   * completes them at the desk with the device in hand.
+   *
+   * When it IS set, the serial and the IMEI on the paper come from the `company_devices` row that
+   * will carry them afterwards, so the number somebody signs for and the number the company can
+   * hand to the police are the same number by construction rather than by transcription.
+   * `render-custody.ts` resolves the tokens; `custody-template.ts` carries the fuller note.
+   */
+  custodyDevice: CustodyDeviceFacts | null;
   /**
    * The newest contract-renewal request for this person, or null when none was ever raised.
    *

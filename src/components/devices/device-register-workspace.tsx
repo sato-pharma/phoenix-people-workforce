@@ -1,0 +1,1114 @@
+"use client";
+
+/**
+ * Company device register — the workspace.
+ *
+ * DESIGN IDENTITY is the HR admin workspaces', deliberately (AGENTS.md §4: match the sibling
+ * pages, never invent a one-off look). Same `PremiumHero`, the same centred metric tile with its
+ * 9px uppercase micro-label and `text-3xl font-black tabular-nums` figure, the same slate borders,
+ * the same square corners, and the same desktop-table / mobile-card split. It is the Mailbox
+ * Revocation register's twin, because it is the same kind of object: a list of open obligations
+ * with a step to record against each one.
+ *
+ * DESKTOP GETS THE TABLE, MOBILE NEVER DOES — the owner's standing rule.
+ *
+ * IT FITS THE SCREEN (AGENTS.md §4). `table-fixed` with a `<colgroup>` totalling 100%, and never a
+ * `min-width` under an `overflow-x-auto` — that pairing IS the bug the golden rule names, not the
+ * fix for it. The width to design against is 669px, not 1280: the shell's sidebar is
+ * `hidden lg:flex` at 292px, so the content box NARROWS as the viewport crosses 1024px. The action
+ * column takes the largest share (34%, so ~227px at 669px) because it is the one holding a native
+ * `<select>` — the employee picker — and a `<select>` is the single control the golden rule says
+ * may not be shrunk. A fifth column would take it below its natural width; merge instead.
+ *
+ * NOTHING TRUNCATES. Long values wrap, and `break-words` is on every free-text line because an
+ * asset tag, a serial and an IMEI are each one unbreakable token that ordinary wrapping cannot
+ * split.
+ *
+ * THE PAGE LEADS WITH WHAT LEAVERS STILL HOLD, and that block sits above the table rather than
+ * inside it. The custody receipt's return protocol states that final dues may not be paid before it
+ * is completed — «ولا يجوز صرف المستحقات النهائية قبل استيفائه» — so the person preparing a
+ * settlement has to be able to see this without filtering for it. It is a FLAG, not a block: this
+ * screen never touches payroll, and the owner's standing rule across the system is that Phoenix
+ * flags and a human decides.
+ *
+ * NO `window.prompt` OR `window.confirm`. Every reason is typed inline, against the row it is
+ * about, so what somebody wrote and what they wrote it against never come apart.
+ */
+
+import {
+  Laptop,
+  Loader2,
+  PackageCheck,
+  Plus,
+  Smartphone,
+  TriangleAlert,
+  UserMinus,
+  X,
+} from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+
+import { PremiumHero } from "@/components/ui/premium-hero";
+import type {
+  CompanyDevice,
+  DeviceCategory,
+  DeviceRegisterData,
+  DeviceStatus,
+  MarkableDeviceStatus,
+  ReturnCondition,
+} from "@/lib/devices/types";
+
+type StatusFilter = "leavers" | "assigned" | "in_stock" | "missing" | "all";
+
+const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+  { key: "leavers", label: "Held by leavers" },
+  { key: "assigned", label: "With staff" },
+  { key: "in_stock", label: "In stock" },
+  { key: "missing", label: "Lost or stolen" },
+  { key: "all", label: "All" },
+];
+
+const CATEGORY_LABEL: Record<DeviceCategory, string> = {
+  laptop: "Laptop",
+  tablet: "Tablet",
+  phone: "Phone",
+  other: "Other",
+};
+
+const STATUS_LABEL: Record<DeviceStatus, string> = {
+  in_stock: "In stock",
+  assigned: "With staff",
+  repair: "In repair",
+  lost: "Lost",
+  stolen: "Stolen",
+  retired: "Retired",
+};
+
+const MARK_OPTIONS: { value: MarkableDeviceStatus; label: string }[] = [
+  { value: "repair", label: "Send to repair" },
+  { value: "lost", label: "Mark lost" },
+  { value: "stolen", label: "Mark stolen" },
+  { value: "retired", label: "Retire" },
+  { value: "in_stock", label: "Back in stock" },
+];
+
+const RETURN_CONDITIONS: { value: ReturnCondition; label: string }[] = [
+  { value: "good", label: "Good" },
+  { value: "damaged", label: "Damaged" },
+  { value: "incomplete", label: "Incomplete" },
+];
+
+// DATE-ONLY columns (issued_on, last_working_date), which `new Date` parses as UTC midnight. UTC
+// here is CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset.
+// Not an instant — do not "fix" this one to Cairo.
+function formatDate(value: string | null) {
+  if (!value) return "—";
+  const parsed = new Date(`${value.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return parsed.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "UTC",
+    year: "numeric",
+  });
+}
+
+/** EGP, whole pounds. The estimated value is a round agreed figure, never a computed fraction. */
+function formatMoney(value: number | null) {
+  if (value === null) return null;
+  return `${value.toLocaleString("en-US", { maximumFractionDigits: 0 })} EGP`;
+}
+
+function MetricTile({
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  tone: "slate" | "amber" | "emerald" | "rose";
+}) {
+  const toneClass = {
+    amber: "text-amber-700",
+    emerald: "text-emerald-700",
+    rose: "text-rose-700",
+    slate: "text-slate-900",
+  }[tone];
+
+  return (
+    <div className="min-h-32 border border-slate-200 bg-white px-4 py-4 text-center">
+      <div className="text-[9px] font-black uppercase leading-tight tracking-[0.14em] text-slate-500">
+        {label}
+      </div>
+      <p className={`mt-4 text-3xl font-black leading-none tabular-nums ${toneClass}`}>{value}</p>
+      <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{sub}</p>
+    </div>
+  );
+}
+
+/**
+ * The state chips. They WRAP — "held by a leaver for 126 days" is wider than its own column at
+ * every desktop width, and `whitespace-nowrap` there overflows the cell rather than the table,
+ * which no wrapper-level overflow measurement can see.
+ */
+function StatusChip({ device }: { device: CompanyDevice }) {
+  const tone: Record<DeviceStatus, string> = {
+    in_stock: "border-slate-300 bg-slate-50 text-slate-700",
+    assigned: "border-sky-300 bg-sky-50 text-sky-800",
+    repair: "border-amber-300 bg-amber-50 text-amber-800",
+    lost: "border-rose-300 bg-rose-50 text-rose-800",
+    stolen: "border-rose-400 bg-rose-100 text-rose-900",
+    retired: "border-slate-300 bg-white text-slate-500",
+  };
+  return (
+    <span
+      className={`inline-block border px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] ${tone[device.status]}`}
+    >
+      {STATUS_LABEL[device.status]}
+    </span>
+  );
+}
+
+function LeaverFlag({ device }: { device: CompanyDevice }) {
+  if (!device.isHeldByLeaver) return null;
+  return (
+    <span className="inline-block border border-rose-400 bg-rose-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-rose-900">
+      {device.holderState === "unknown"
+        ? "Holder not in the directory"
+        : device.daysSinceHolderLeft > 0
+          ? `Left ${device.daysSinceHolderLeft} days ago`
+          : "Holder has left"}
+    </span>
+  );
+}
+
+/** One labelled field in the register-a-device form. */
+function Field({
+  label,
+  children,
+  hint,
+}: {
+  label: string;
+  children: ReactNode;
+  hint?: string;
+}) {
+  return (
+    <label className="block min-w-0">
+      <span className="block text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">
+        {label}
+      </span>
+      {children}
+      {hint ? <span className="mt-1 block text-[10px] font-semibold text-slate-400">{hint}</span> : null}
+    </label>
+  );
+}
+
+const INPUT_CLASS =
+  "mt-1 w-full min-w-0 border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-900";
+
+type DraftKind = "issue" | "return" | "mark" | null;
+
+type Draft = {
+  deviceId: string;
+  kind: DraftKind;
+  employeeHrId: string;
+  declarationNo: string;
+  handoverPlace: string;
+  condition: ReturnCondition;
+  shortfallNote: string;
+  settlementEgp: string;
+  markStatus: MarkableDeviceStatus;
+  reason: string;
+};
+
+const EMPTY_DRAFT: Draft = {
+  deviceId: "",
+  kind: null,
+  employeeHrId: "",
+  declarationNo: "",
+  handoverPlace: "",
+  condition: "good",
+  shortfallNote: "",
+  settlementEgp: "",
+  markStatus: "repair",
+  reason: "",
+};
+
+const EMPTY_NEW_DEVICE = {
+  assetTag: "",
+  category: "laptop" as DeviceCategory,
+  manufacturer: "",
+  model: "",
+  serialNumber: "",
+  imei: "",
+  deviceName: "",
+  processor: "",
+  installedRam: "",
+  systemType: "",
+  windowsDeviceId: "",
+  windowsProductId: "",
+  simNumber: "",
+  lineNumber: "",
+  estimatedValueEgp: "",
+  purchasedOn: "",
+  note: "",
+};
+
+export function DeviceRegisterWorkspace({
+  canRecord,
+  canRegister,
+  initialData,
+  initialError,
+}: {
+  canRecord: boolean;
+  canRegister: boolean;
+  initialData: DeviceRegisterData | null;
+  initialError: string | null;
+}) {
+  const [data, setData] = useState<DeviceRegisterData | null>(initialData);
+  const [error, setError] = useState<string | null>(initialError);
+  const [busy, setBusy] = useState(false);
+  const [filter, setFilter] = useState<StatusFilter>("leavers");
+  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const [newDevice, setNewDevice] = useState(EMPTY_NEW_DEVICE);
+
+  const post = useCallback(async (payload: Record<string, unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/devices", {
+        body: JSON.stringify(payload),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const body = (await response.json()) as DeviceRegisterData & { message?: string };
+      if (!response.ok) {
+        setError(body.message ?? "The device register could not be updated.");
+        return null;
+      }
+      setData(body);
+      return body;
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "The request failed.");
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const stats = data?.stats ?? null;
+
+  const visible = useMemo(() => {
+    if (!data) return [];
+    return data.devices
+      .filter((device) => {
+        if (filter === "all") return true;
+        if (filter === "leavers") return device.isHeldByLeaver;
+        if (filter === "assigned") return device.status === "assigned";
+        if (filter === "in_stock") return device.status === "in_stock";
+        return device.status === "lost" || device.status === "stolen";
+      })
+      .slice()
+      .sort((left, right) => {
+        // What is at risk first: a leaver's device, then the longest-standing one.
+        if (left.isHeldByLeaver !== right.isHeldByLeaver) return left.isHeldByLeaver ? -1 : 1;
+        if (right.daysSinceHolderLeft !== left.daysSinceHolderLeft) {
+          return right.daysSinceHolderLeft - left.daysSinceHolderLeft;
+        }
+        return left.assetTag.localeCompare(right.assetTag);
+      });
+  }, [data, filter]);
+
+  const openDraft = useCallback((deviceId: string, kind: Exclude<DraftKind, null>) => {
+    setDraft({ ...EMPTY_DRAFT, deviceId, kind });
+  }, []);
+
+  const closeDraft = useCallback(() => setDraft(EMPTY_DRAFT), []);
+
+  const submitDraft = useCallback(
+    async (device: CompanyDevice) => {
+      if (draft.kind === "issue") {
+        if (!draft.employeeHrId) {
+          setError("Choose who is signing for this device.");
+          return;
+        }
+        const done = await post({
+          action: "issue",
+          deviceId: device.id,
+          employeeHrId: draft.employeeHrId,
+          declarationNo: draft.declarationNo || null,
+          handoverPlace: draft.handoverPlace || null,
+        });
+        if (done) closeDraft();
+        return;
+      }
+
+      if (draft.kind === "return") {
+        if (!device.assignmentId) return;
+        const done = await post({
+          action: "return",
+          assignmentId: device.assignmentId,
+          condition: draft.condition,
+          shortfallNote: draft.shortfallNote || null,
+          settlementEgp: draft.settlementEgp || null,
+        });
+        if (done) closeDraft();
+        return;
+      }
+
+      if (draft.kind === "mark") {
+        const done = await post({
+          action: "mark",
+          deviceId: device.id,
+          status: draft.markStatus,
+          reason: draft.reason || null,
+        });
+        if (done) closeDraft();
+      }
+    },
+    [closeDraft, draft, post],
+  );
+
+  const submitNewDevice = useCallback(async () => {
+    const done = await post({ action: "register", device: newDevice });
+    if (done) {
+      setNewDevice(EMPTY_NEW_DEVICE);
+      setRegisterOpen(false);
+    }
+  }, [newDevice, post]);
+
+  return (
+    <div className="min-w-0 max-w-full overflow-x-hidden">
+      <PremiumHero
+        kicker="Company assets"
+        subtitle="Every laptop, tablet and phone the company owns, who signed for it, and what it would take to get it back. The custody receipt already says who — this says which machine, by serial and IMEI."
+        title="Device custody"
+      />
+
+      {error ? (
+        <div className="mt-5 flex items-start gap-3 border border-rose-200 bg-rose-50 px-4 py-3" role="alert">
+          <TriangleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+          <p className="text-[11px] font-semibold leading-relaxed text-rose-900">{error}</p>
+        </div>
+      ) : null}
+
+      {stats ? (
+        <div className="mt-5 grid grid-cols-2 gap-px bg-slate-200 sm:grid-cols-3 lg:grid-cols-5">
+          <MetricTile
+            label="Held by leavers"
+            sub="not returned"
+            tone={stats.heldByLeavers > 0 ? "rose" : "emerald"}
+            value={stats.heldByLeavers.toLocaleString("en-US")}
+          />
+          <MetricTile
+            label="Value at risk"
+            sub="agreed on the receipt"
+            tone={stats.valueHeldByLeaversEgp > 0 ? "rose" : "emerald"}
+            value={stats.valueHeldByLeaversEgp.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+          />
+          <MetricTile
+            label="With staff"
+            sub="signed out"
+            tone="slate"
+            value={stats.assigned.toLocaleString("en-US")}
+          />
+          <MetricTile
+            label="Lost or stolen"
+            sub="cannot be seen"
+            tone={stats.missing > 0 ? "amber" : "emerald"}
+            value={stats.missing.toLocaleString("en-US")}
+          />
+          <MetricTile
+            label="In stock"
+            sub="ready to issue"
+            tone="slate"
+            value={stats.inStock.toLocaleString("en-US")}
+          />
+        </div>
+      ) : null}
+
+      {/* The standing notice. One sentence saying what a device with no value on it costs, because
+          it is invisible until somebody counts it and it is the difference between a claim and a
+          shrug. */}
+      {stats && stats.withoutValue > 0 ? (
+        <div className="mt-5 flex items-start gap-3 border border-amber-200 bg-amber-50 px-4 py-3">
+          <Smartphone aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <p className="text-[11px] font-semibold leading-relaxed text-amber-900">
+            {stats.withoutValue} device{stats.withoutValue === 1 ? " carries" : "s carry"} no
+            estimated value. البند (10) of the custody receipt caps any recovery at the figure
+            printed on the form, so a device with no value on it is one the company can recover
+            nothing against — set the value before it is handed over, not after it goes missing.
+          </p>
+        </div>
+      ) : null}
+
+      {/* THE CLEARANCE VIEW. Above the table, and grouped by person rather than by device, because
+          the question at an exit is "what does he still have and what is it worth". The receipt's
+          return protocol says final dues may not be paid before it is completed. */}
+      {data && data.leaversHolding.length > 0 ? (
+        <div className="mt-5 border border-rose-300 bg-white px-4 py-3">
+          <div className="flex items-start gap-2">
+            <UserMinus aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+            <p className="min-w-0 text-[11px] font-black uppercase tracking-[0.12em] text-rose-800">
+              {data.leaversHolding.length} leaver
+              {data.leaversHolding.length === 1 ? "" : "s"} still holding company devices
+            </p>
+          </div>
+          <p className="mt-2 text-[11px] font-semibold leading-relaxed text-slate-700">
+            The custody receipt&apos;s return protocol is the only proof a device came back, and it
+            states that final dues are not paid before it is completed. Record the return against
+            each device below.
+          </p>
+          <ul className="mt-3 space-y-2">
+            {data.leaversHolding.map((leaver) => (
+              <li key={leaver.employeeHrId} className="border border-slate-200 px-3 py-2">
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <span className="min-w-0 break-words text-[12px] font-black text-slate-900">
+                    {leaver.employeeName}
+                  </span>
+                  <span className="min-w-0 break-words text-[11px] font-semibold text-slate-500">
+                    {leaver.jobTitle ?? "Job title not recorded"}
+                  </span>
+                  <span className="min-w-0 break-words text-[11px] font-bold text-rose-700">
+                    Last day {formatDate(leaver.lastWorkingDate)}
+                    {leaver.daysSinceLastDay > 0 ? ` — ${leaver.daysSinceLastDay} days ago` : ""}
+                  </span>
+                </div>
+                <ul className="mt-1.5 space-y-1">
+                  {leaver.devices.map((device) => (
+                    <li
+                      key={device.assignmentId}
+                      className="min-w-0 break-words text-[11px] font-semibold text-slate-700"
+                    >
+                      {device.assetTag} — {CATEGORY_LABEL[device.category]} — {device.identifier}
+                      {device.agreedValueEgp !== null
+                        ? ` — ${formatMoney(device.agreedValueEgp)}`
+                        : " — no agreed value"}
+                    </li>
+                  ))}
+                </ul>
+                {leaver.totalValueEgp > 0 ? (
+                  <p className="mt-1.5 text-[11px] font-black uppercase tracking-[0.1em] text-slate-600">
+                    Total {formatMoney(leaver.totalValueEgp)}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {canRegister ? (
+        <div className="mt-5">
+          <button
+            className="inline-flex items-center gap-2 border border-slate-900 bg-slate-900 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-white hover:bg-slate-800"
+            onClick={() => setRegisterOpen((open) => !open)}
+            type="button"
+          >
+            {registerOpen ? (
+              <X aria-hidden="true" className="h-3 w-3" />
+            ) : (
+              <Plus aria-hidden="true" className="h-3 w-3" />
+            )}
+            {registerOpen ? "Cancel" : "Register a device"}
+          </button>
+        </div>
+      ) : null}
+
+      {registerOpen && canRegister ? (
+        <div className="mt-3 border border-slate-300 bg-white px-4 py-4">
+          <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-600">
+            A new device
+          </p>
+          <p className="mt-1.5 text-[11px] font-semibold leading-relaxed text-slate-500">
+            A serial number or an IMEI is required — it is what a police report, an operator
+            blocklist and an insurer all ask for, and it is the one thing the paper form never
+            captured.
+          </p>
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label="Asset tag">
+              <input
+                className={INPUT_CLASS}
+                onChange={(event) => setNewDevice({ ...newDevice, assetTag: event.target.value })}
+                placeholder="PHX-LAP-0001"
+                value={newDevice.assetTag}
+              />
+            </Field>
+            <Field label="Category">
+              <select
+                className={INPUT_CLASS}
+                onChange={(event) =>
+                  setNewDevice({ ...newDevice, category: event.target.value as DeviceCategory })
+                }
+                value={newDevice.category}
+              >
+                {(Object.keys(CATEGORY_LABEL) as DeviceCategory[]).map((category) => (
+                  <option key={category} value={category}>
+                    {CATEGORY_LABEL[category]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Estimated value (EGP)" hint="The ceiling on any recovery — البند (10).">
+              <input
+                className={INPUT_CLASS}
+                inputMode="numeric"
+                onChange={(event) =>
+                  setNewDevice({ ...newDevice, estimatedValueEgp: event.target.value })
+                }
+                value={newDevice.estimatedValueEgp}
+              />
+            </Field>
+            <Field label="Manufacturer">
+              <input
+                className={INPUT_CLASS}
+                onChange={(event) => setNewDevice({ ...newDevice, manufacturer: event.target.value })}
+                value={newDevice.manufacturer}
+              />
+            </Field>
+            <Field label="Model">
+              <input
+                className={INPUT_CLASS}
+                onChange={(event) => setNewDevice({ ...newDevice, model: event.target.value })}
+                value={newDevice.model}
+              />
+            </Field>
+            <Field label="Purchased on">
+              <input
+                className={INPUT_CLASS}
+                onChange={(event) => setNewDevice({ ...newDevice, purchasedOn: event.target.value })}
+                type="date"
+                value={newDevice.purchasedOn}
+              />
+            </Field>
+            <Field label="Serial number" hint="Laptops — from the case or Windows.">
+              <input
+                className={INPUT_CLASS}
+                dir="ltr"
+                onChange={(event) => setNewDevice({ ...newDevice, serialNumber: event.target.value })}
+                value={newDevice.serialNumber}
+              />
+            </Field>
+            <Field label="IMEI" hint="Tablets and phones — dial *#06#.">
+              <input
+                className={INPUT_CLASS}
+                dir="ltr"
+                onChange={(event) => setNewDevice({ ...newDevice, imei: event.target.value })}
+                value={newDevice.imei}
+              />
+            </Field>
+            <Field label="SIM / line number">
+              <input
+                className={INPUT_CLASS}
+                dir="ltr"
+                onChange={(event) => setNewDevice({ ...newDevice, lineNumber: event.target.value })}
+                value={newDevice.lineNumber}
+              />
+            </Field>
+          </div>
+
+          {/* نموذج رقم 1's technical block, field for field with Windows Settings → System → About,
+              so whoever types it in is copying like for like. Only for a laptop — the other
+              categories have no such screen. */}
+          {newDevice.category === "laptop" ? (
+            <div className="mt-3 grid grid-cols-1 gap-3 border-t border-slate-200 pt-3 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="Device name">
+                <input
+                  className={INPUT_CLASS}
+                  dir="ltr"
+                  onChange={(event) => setNewDevice({ ...newDevice, deviceName: event.target.value })}
+                  value={newDevice.deviceName}
+                />
+              </Field>
+              <Field label="Processor">
+                <input
+                  className={INPUT_CLASS}
+                  dir="ltr"
+                  onChange={(event) => setNewDevice({ ...newDevice, processor: event.target.value })}
+                  value={newDevice.processor}
+                />
+              </Field>
+              <Field label="Installed RAM">
+                <input
+                  className={INPUT_CLASS}
+                  dir="ltr"
+                  onChange={(event) => setNewDevice({ ...newDevice, installedRam: event.target.value })}
+                  value={newDevice.installedRam}
+                />
+              </Field>
+              <Field label="System type">
+                <input
+                  className={INPUT_CLASS}
+                  dir="ltr"
+                  onChange={(event) => setNewDevice({ ...newDevice, systemType: event.target.value })}
+                  value={newDevice.systemType}
+                />
+              </Field>
+              <Field label="Device ID">
+                <input
+                  className={INPUT_CLASS}
+                  dir="ltr"
+                  onChange={(event) =>
+                    setNewDevice({ ...newDevice, windowsDeviceId: event.target.value })
+                  }
+                  value={newDevice.windowsDeviceId}
+                />
+              </Field>
+              <Field label="Product ID">
+                <input
+                  className={INPUT_CLASS}
+                  dir="ltr"
+                  onChange={(event) =>
+                    setNewDevice({ ...newDevice, windowsProductId: event.target.value })
+                  }
+                  value={newDevice.windowsProductId}
+                />
+              </Field>
+            </div>
+          ) : null}
+
+          <button
+            className="mt-3 border border-slate-900 bg-slate-900 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-white hover:bg-slate-800 disabled:opacity-50"
+            disabled={busy}
+            onClick={() => void submitNewDevice()}
+            type="button"
+          >
+            Add to the register
+          </button>
+        </div>
+      ) : null}
+
+      <div className="mt-5 flex flex-wrap gap-px bg-slate-200">
+        {STATUS_FILTERS.map((option) => (
+          <button
+            className={`whitespace-nowrap border px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.1em] ${
+              filter === option.key
+                ? "border-slate-900 bg-slate-900 text-white"
+                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+            key={option.key}
+            onClick={() => setFilter(option.key)}
+            type="button"
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      {busy ? (
+        <p className="mt-3 inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">
+          <Loader2 aria-hidden="true" className="h-3 w-3 animate-spin" /> Saving
+        </p>
+      ) : null}
+
+      {visible.length === 0 ? (
+        <p className="mt-5 border border-slate-200 bg-white px-4 py-6 text-center text-[12px] font-bold text-slate-500">
+          {data && data.devices.length === 0
+            ? "The register is empty. Add the first device — every one you enter is a serial somebody could give the police."
+            : "Nothing here."}
+        </p>
+      ) : null}
+
+      {/* DESKTOP — the table. Four fixed columns; the action column takes the largest share because
+          it holds the employee `<select>`, the one control that may not be shrunk. */}
+      {visible.length > 0 ? (
+        <div className="mt-5 hidden md:block">
+          <table className="w-full table-fixed border-collapse">
+            <colgroup>
+              <col className="w-[30%]" />
+              <col className="w-[22%]" />
+              <col className="w-[14%]" />
+              <col className="w-[34%]" />
+            </colgroup>
+            <thead>
+              <tr className="border-b border-slate-300 bg-slate-50">
+                {["Device", "Holder", "State", "Record"].map((heading) => (
+                  <th
+                    className="px-3 py-2 text-left text-[9px] font-black uppercase tracking-[0.14em] text-slate-500"
+                    key={heading}
+                    scope="col"
+                  >
+                    {heading}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((device) => (
+                <tr className="border-b border-slate-200 align-top" key={device.id}>
+                  <td className="px-3 py-3">
+                    <p className="break-words text-[12px] font-black text-slate-900">
+                      {device.assetTag}
+                    </p>
+                    <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
+                      {CATEGORY_LABEL[device.category]}
+                      {device.manufacturer || device.model
+                        ? ` — ${[device.manufacturer, device.model].filter(Boolean).join(" ")}`
+                        : ""}
+                    </p>
+                    <p className="mt-0.5 break-words text-[11px] font-bold text-slate-700" dir="ltr">
+                      {device.serialNumber
+                        ? `S/N ${device.serialNumber}`
+                        : `IMEI ${device.imei ?? ""}`}
+                    </p>
+                    {device.estimatedValueEgp !== null ? (
+                      <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
+                        {formatMoney(device.estimatedValueEgp)}
+                      </p>
+                    ) : (
+                      <p className="mt-0.5 break-words text-[11px] font-bold text-amber-700">
+                        No estimated value
+                      </p>
+                    )}
+                  </td>
+
+                  <td className="px-3 py-3">
+                    {device.holderName ? (
+                      <>
+                        <p className="break-words text-[12px] font-bold text-slate-900">
+                          {device.holderName}
+                        </p>
+                        <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
+                          {device.holderJobTitle ?? "Job title not recorded"}
+                        </p>
+                        <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
+                          Since {formatDate(device.issuedOn)}
+                        </p>
+                        {device.agreedValueEgp !== null ? (
+                          <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
+                            Signed for {formatMoney(device.agreedValueEgp)}
+                          </p>
+                        ) : null}
+                      </>
+                    ) : (
+                      <p className="break-words text-[11px] font-semibold text-slate-400">
+                        Nobody — held by the company
+                      </p>
+                    )}
+                  </td>
+
+                  <td className="px-3 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      <StatusChip device={device} />
+                      <LeaverFlag device={device} />
+                    </div>
+                    {device.statusReason ? (
+                      <p className="mt-1 break-words text-[11px] font-semibold text-slate-500">
+                        {device.statusReason}
+                      </p>
+                    ) : null}
+                  </td>
+
+                  <td className="px-3 py-3">
+                    {canRecord ? (
+                      <DeviceActions
+                        assignable={data?.assignable ?? []}
+                        busy={busy}
+                        device={device}
+                        draft={draft}
+                        onClose={closeDraft}
+                        onOpen={openDraft}
+                        onSubmit={() => void submitDraft(device)}
+                        setDraft={setDraft}
+                      />
+                    ) : (
+                      <p className="break-words text-[11px] font-semibold text-slate-400">
+                        Read only
+                      </p>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      {/* MOBILE — cards. The owner's standing rule: mobile never gets a table. */}
+      <div className="mt-5 space-y-3 md:hidden">
+        {visible.map((device) => (
+          <div className="border border-slate-200 bg-white px-4 py-3" key={device.id}>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="break-words text-[13px] font-black text-slate-900">{device.assetTag}</p>
+                <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
+                  {CATEGORY_LABEL[device.category]}
+                  {device.manufacturer || device.model
+                    ? ` — ${[device.manufacturer, device.model].filter(Boolean).join(" ")}`
+                    : ""}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                <StatusChip device={device} />
+              </div>
+            </div>
+
+            <p className="mt-1.5 break-words text-[11px] font-bold text-slate-700" dir="ltr">
+              {device.serialNumber ? `S/N ${device.serialNumber}` : `IMEI ${device.imei ?? ""}`}
+            </p>
+
+            <div className="mt-2 border-t border-slate-100 pt-2">
+              {device.holderName ? (
+                <>
+                  <p className="break-words text-[12px] font-bold text-slate-900">
+                    {device.holderName}
+                  </p>
+                  <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
+                    {device.holderJobTitle ?? "Job title not recorded"} — since{" "}
+                    {formatDate(device.issuedOn)}
+                  </p>
+                </>
+              ) : (
+                <p className="break-words text-[11px] font-semibold text-slate-400">
+                  Nobody — held by the company
+                </p>
+              )}
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                <LeaverFlag device={device} />
+              </div>
+            </div>
+
+            {canRecord ? (
+              <div className="mt-2 border-t border-slate-100 pt-2">
+                <DeviceActions
+                  assignable={data?.assignable ?? []}
+                  busy={busy}
+                  device={device}
+                  draft={draft}
+                  onClose={closeDraft}
+                  onOpen={openDraft}
+                  onSubmit={() => void submitDraft(device)}
+                  setDraft={setDraft}
+                />
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The record controls for one device — the same component on desktop and mobile.
+ *
+ * THE ROW IS THE UNIT OF WORK. Every editor opens inside the cell it belongs to, never in a panel
+ * underneath the table: the work here is one pass down a list, and a panel that renders below the
+ * whole table means scrolling down to act and back up to find the next one, once per device.
+ * The Mailbox Revocation register learned that the expensive way.
+ *
+ * WHICH ACTIONS ARE OFFERED MIRRORS WHAT THE DATABASE WILL ACCEPT. `phx_device_issue` refuses
+ * anything not in stock and `phx_device_mark` refuses putting a signed-out device back in stock —
+ * a screen offering a button the database refuses is worse than one that hides it.
+ */
+function DeviceActions({
+  assignable,
+  busy,
+  device,
+  draft,
+  onClose,
+  onOpen,
+  onSubmit,
+  setDraft,
+}: {
+  assignable: DeviceRegisterData["assignable"];
+  busy: boolean;
+  device: CompanyDevice;
+  draft: Draft;
+  onClose: () => void;
+  onOpen: (deviceId: string, kind: Exclude<DraftKind, null>) => void;
+  onSubmit: () => void;
+  setDraft: (draft: Draft) => void;
+}) {
+  const open = draft.deviceId === device.id ? draft.kind : null;
+  const canIssue = device.status === "in_stock";
+  const canReturn = device.assignmentId !== null;
+
+  const buttonClass =
+    "border border-slate-300 bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-100 disabled:opacity-50";
+
+  if (open === null) {
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {canIssue ? (
+          <button className={buttonClass} disabled={busy} onClick={() => onOpen(device.id, "issue")} type="button">
+            Hand over
+          </button>
+        ) : null}
+        {canReturn ? (
+          <button className={buttonClass} disabled={busy} onClick={() => onOpen(device.id, "return")} type="button">
+            Record a return
+          </button>
+        ) : null}
+        <button className={buttonClass} disabled={busy} onClick={() => onOpen(device.id, "mark")} type="button">
+          Change state
+        </button>
+        {/*
+          The receipt for THIS device and THIS holder — the point where the register pays for
+          itself. `deviceId` carries the register row into the print, so the serial and IMEI on the
+          paper are the ones the company can hand to the police rather than eight characters
+          somebody copied off the underside of a laptop.
+
+          Offered only when the device is signed out, because the receipt is about a HOLDER: with
+          nobody holding it there is no name to print in «بيانات مستلم العهدة», and a receipt naming
+          nobody is not a receipt. The form for a laptop is نموذج رقم 1 and for anything portable
+          نموذج رقم 2 — the register already knows which, so nobody has to choose.
+        */}
+        {device.assignmentId && device.holderHrId ? (
+          <a
+            className={buttonClass}
+            href={`/api/hiring-pack/${encodeURIComponent(device.holderHrId)}/print?document=${
+              device.category === "laptop" ? "custodyLaptop" : "custodyMobile"
+            }&deviceId=${encodeURIComponent(device.id)}`}
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            Print receipt
+          </a>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-w-0 border border-slate-300 bg-slate-50 px-2.5 py-2">
+      {open === "issue" ? (
+        <>
+          <Field label="Signed for by">
+            <select
+              className={INPUT_CLASS}
+              onChange={(event) => setDraft({ ...draft, employeeHrId: event.target.value })}
+              value={draft.employeeHrId}
+            >
+              <option value="">Choose a person</option>
+              {assignable.map((person) => (
+                <option key={person.hrId} value={person.hrId}>
+                  {person.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Declaration no.">
+            <input
+              className={INPUT_CLASS}
+              onChange={(event) => setDraft({ ...draft, declarationNo: event.target.value })}
+              value={draft.declarationNo}
+            />
+          </Field>
+          <Field label="Place of handover">
+            <input
+              className={INPUT_CLASS}
+              onChange={(event) => setDraft({ ...draft, handoverPlace: event.target.value })}
+              value={draft.handoverPlace}
+            />
+          </Field>
+        </>
+      ) : null}
+
+      {open === "return" ? (
+        <>
+          <Field label="Condition">
+            <select
+              className={INPUT_CLASS}
+              onChange={(event) =>
+                setDraft({ ...draft, condition: event.target.value as ReturnCondition })
+              }
+              value={draft.condition}
+            >
+              {RETURN_CONDITIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {draft.condition !== "good" ? (
+            <>
+              <Field label="What is missing or broken">
+                <input
+                  className={INPUT_CLASS}
+                  onChange={(event) => setDraft({ ...draft, shortfallNote: event.target.value })}
+                  value={draft.shortfallNote}
+                />
+              </Field>
+              <Field
+                label="Charged (EGP)"
+                hint={
+                  device.agreedValueEgp !== null
+                    ? `Capped at ${formatMoney(device.agreedValueEgp)} — البند (10).`
+                    : "No agreed value on the receipt, so nothing can be recovered."
+                }
+              >
+                <input
+                  className={INPUT_CLASS}
+                  inputMode="numeric"
+                  onChange={(event) => setDraft({ ...draft, settlementEgp: event.target.value })}
+                  value={draft.settlementEgp}
+                />
+              </Field>
+            </>
+          ) : null}
+        </>
+      ) : null}
+
+      {open === "mark" ? (
+        <>
+          <Field label="New state">
+            <select
+              className={INPUT_CLASS}
+              onChange={(event) =>
+                setDraft({ ...draft, markStatus: event.target.value as MarkableDeviceStatus })
+              }
+              value={draft.markStatus}
+            >
+              {MARK_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {draft.markStatus !== "in_stock" ? (
+            <Field label="Reason">
+              <input
+                className={INPUT_CLASS}
+                onChange={(event) => setDraft({ ...draft, reason: event.target.value })}
+                value={draft.reason}
+              />
+            </Field>
+          ) : null}
+          {(draft.markStatus === "lost" || draft.markStatus === "stolen") && device.assignmentId ? (
+            <p className="mt-2 break-words text-[10px] font-bold leading-relaxed text-amber-800">
+              {device.holderName} keeps this on his custody record. البند (10) leaves an unreturned
+              device owed until it comes back or the custody is written off.
+            </p>
+          ) : null}
+        </>
+      ) : null}
+
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <button
+          className="border border-slate-900 bg-slate-900 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-white hover:bg-slate-800 disabled:opacity-50"
+          disabled={busy}
+          onClick={onSubmit}
+          type="button"
+        >
+          <span className="inline-flex items-center gap-1.5">
+            {open === "issue" ? (
+              <Laptop aria-hidden="true" className="h-3 w-3" />
+            ) : (
+              <PackageCheck aria-hidden="true" className="h-3 w-3" />
+            )}
+            Save
+          </span>
+        </button>
+        <button className={buttonClass} disabled={busy} onClick={onClose} type="button">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}

@@ -97,6 +97,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
     const paper = await renderHiringPaper({
       access,
       copies: url.searchParams.get("copies"),
+      // Which DEVICE a custody receipt is for. Only the two custody forms read it; every other
+      // document ignores it, and absent is the normal case — see renderHiringPaper. Not validated
+      // here on purpose: `getCustodyDeviceFacts` answers null for an id that names nothing, and a
+      // custody receipt must always print. Refusing to render a signed instrument because a lookup
+      // missed would be a worse failure than the ruled blanks it falls back to.
+      custodyDeviceId: url.searchParams.get("deviceId"),
       document: requested,
       hrId,
       // No `version` parameter is the normal case, and it does NOT mean "print the current text":

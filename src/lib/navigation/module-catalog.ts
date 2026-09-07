@@ -43,6 +43,7 @@ export const MODULE_LABELS: Record<PermissionResource, string> = {
   candidates: "Candidates",
   coaching: "Coaching",
   communication: "Email & Telegram Communication",
+  company_devices: "Device Custody",
   contracts: "Contracts",
   crm_plans: "Plan Verification",
   crm_visits: "CRM Visits",

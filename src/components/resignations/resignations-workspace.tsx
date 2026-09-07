@@ -118,6 +118,39 @@ export function ResignationsWorkspace({ initialData, initialError, surface = "ad
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [records, line, search],
   );
+  /**
+   * Leavers on this page who still hold company devices.
+   *
+   * SURFACED HERE BECAUSE THIS IS WHERE SETTLEMENTS ARE READ. The custody receipt's return protocol
+   * states that final dues are not paid before it is completed — «ولا يجوز صرف المستحقات النهائية
+   * قبل استيفائه» — and البند (7) has the device returned «قبل استلام مستحقاتي النهائية». So the one
+   * screen showing a "Due this month" figure is the screen that has to show what is outstanding
+   * against it.
+   *
+   * A BANNER RATHER THAN AN EIGHTH COLUMN. The table already carries seven, and the owner's
+   * fits-the-screen golden rule is measured, not guessed — adding a column here without measuring
+   * this table at 669px is how a horizontal scroll gets shipped. The banner also groups by person,
+   * which is the shape the question is actually asked in.
+   *
+   * IT IS A FLAG, NOT A BLOCK. Nothing here changes a settlement figure or stops one being paid.
+   */
+  const leaversHoldingDevices = React.useMemo(
+    () =>
+      records
+        .filter((record) => (record.outstandingDevices?.length ?? 0) > 0)
+        // One row per PERSON: a resignation can be recorded more than once for the same employee
+        // over a career, and the devices are attached to the person, not to the paperwork.
+        .filter(
+          (record, index, all) =>
+            all.findIndex(
+              (other) =>
+                String(other.employeeHrId ?? "").toLowerCase() ===
+                String(record.employeeHrId ?? "").toLowerCase(),
+            ) === index,
+        ),
+    [records],
+  );
+
   const candidateRows = React.useMemo(
     () =>
       filterByLine(candidates, line)
@@ -405,6 +438,33 @@ export function ResignationsWorkspace({ initialData, initialError, surface = "ad
             </RgSelect>
           </div>
         </div>
+
+        {leaversHoldingDevices.length > 0 ? (
+          <div className="border-b border-rose-200 bg-rose-50 px-3 py-3">
+            <p className="text-[11px] font-black uppercase tracking-[0.12em] text-rose-800">
+              {leaversHoldingDevices.length} leaver
+              {leaversHoldingDevices.length === 1 ? "" : "s"} still holding company devices
+            </p>
+            <p className="mt-1.5 text-[11px] font-semibold leading-relaxed text-slate-700">
+              The custody receipt is the only proof a device came back, and it states that final
+              dues are not paid before the return is recorded. Record each return in Device Custody.
+            </p>
+            <ul className="mt-2 space-y-1">
+              {leaversHoldingDevices.map((record) => (
+                <li
+                  className="min-w-0 break-words text-[11px] font-semibold text-slate-700"
+                  key={record.employeeHrId}
+                >
+                  <span className="font-black text-slate-900">{record.employeeName}</span>
+                  {" — "}
+                  {record.outstandingDevices
+                    .map((device) => `${device.assetTag} (${device.identifier})`)
+                    .join(", ")}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         {tab === "candidates" ? (
           candidateRows.length === 0 ? (

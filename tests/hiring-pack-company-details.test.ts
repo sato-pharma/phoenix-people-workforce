@@ -146,6 +146,9 @@ function packWith(company: CompanyDetails): HiringPackData {
     offboarding,
     company,
     exit: null,
+    // Null: no device chosen. A custody receipt printed without one carries ruled blanks
+    // through its technical block, which is what these fixtures are about.
+    custodyDevice: null,
     renewal: null,
     suggestedJobTitleAr: null,
     gaps: collectHiringPackGaps(employee, profile, offboarding, null, company),
@@ -379,6 +382,9 @@ export function runHiringPackCompanyDetailsTests() {
       offboarding,
       company,
       exit: null,
+      // Null: no device chosen. A custody receipt printed without one carries ruled blanks
+      // through its technical block, which is what these fixtures are about.
+      custodyDevice: null,
       renewal: null,
       suggestedJobTitleAr: null,
       gaps: collectHiringPackGaps(employee, profile, offboarding, null, company),

@@ -246,6 +246,15 @@ export function resolveCopies(raw: string | null, fallback: number): number {
 export async function renderHiringPaper(input: {
   access: AccessContext;
   copies?: string | null;
+  /**
+   * The device a CUSTODY receipt is being printed for, from the device register.
+   *
+   * Optional, and absent is the normal case — the receipt is very often printed before the machine
+   * is in anybody's hand, and then it prints ruled blanks exactly as it always has. Every other
+   * document in the pack ignores it. When it IS given, the serial and IMEI on the paper come from
+   * the register row rather than from somebody copying them off the underside of a laptop.
+   */
+  custodyDeviceId?: string | null;
   document: PrintableDocument;
   hrId: string;
   version?: string | null;
@@ -275,7 +284,7 @@ export async function renderHiringPaper(input: {
     }
   }
 
-  const data = await getHiringPack(hrId);
+  const data = await getHiringPack(hrId, input.custodyDeviceId ?? null);
 
   // A COMPANY TEMPLATE IS RESOLVED FROM THE DATABASE, not from a table in this file. Everything
   // after this point is the same for both kinds; the branch is only about WHERE the document and
