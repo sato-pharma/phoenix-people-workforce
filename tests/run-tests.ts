@@ -1147,6 +1147,7 @@ import { runClosingManagerAsOfTests, runClosingPerformanceReviewTests } from "./
 import { runMonthlyClosingPeriodMergeTests } from "./monthly-closing-period-merge.test.ts";
 import { runClosingReviewFilterTests } from "./closing-review-filters.test.ts";
 import { runCeoMarketingApprovalInboxTests } from "./ceo-marketing-approval-inbox.test.ts";
+import { runMarketAwarenessApprovalInboxNavBadgeTests } from "./market-awareness-approval-inbox-nav-badge.test.ts";
 import { runMarketingApprovalInboxNavBadgeTests } from "./marketing-approval-inbox-nav-badge.test.ts";
 
 import { runMarketingApproverChainHistoryTests } from "./marketing-approver-chain-history.test.ts";
@@ -3377,6 +3378,10 @@ await runTest(
 await runTest(
   "marketing approval inbox nav badge (gating rows only — not CC, not upcoming, not a request that already left pending_approval; overdue on the step's own default_sla_days, never on a null one)",
   runMarketingApprovalInboxNavBadgeTests,
+);
+await runTest(
+  "awareness approvals nav badge (identity-checked manager step so a peer GPM counts 0, the CEO step role-checked, a returned activity belongs to nobody's badge, mixed-case HR ids still match, overdue on the current step's own clock and never from a stranger's breach; wired end to end through the one shared badge pump and the batched poll)",
+  runMarketAwarenessApprovalInboxNavBadgeTests,
 );
 await runTest(
   "marketing approval history on the inbox row (ordered, CC excluded, credits the decider, silent approvals named)",

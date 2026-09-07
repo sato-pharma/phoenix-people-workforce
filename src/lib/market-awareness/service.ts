@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission } from "@/lib/auth/permissions";
 import { canonicalHrIdKey, hrIdForStorage } from "@/lib/hr-id";
+import type { MarketAwarenessDecisionBadge } from "@/lib/market-awareness/badge";
+import { summarizeMarketAwarenessDecisionBadge } from "@/lib/market-awareness/badge";
 import { findLineById, loadMarketAwarenessLines } from "@/lib/market-awareness/lines";
 import type { MarketAwarenessLine } from "@/lib/market-awareness/lines";
 import { findArea, loadRegionManagers } from "@/lib/market-awareness/geography";
@@ -12,6 +14,7 @@ import {
   notifyActivityReturned,
   notifyDecisionPending,
 } from "@/lib/market-awareness/notifications";
+import type { ActivityVisibility } from "@/lib/market-awareness/scope";
 import {
   canCloseActivity,
   canCreateActivity,
@@ -389,6 +392,20 @@ const HISTORY_STATUSES: MarketAwarenessStatus[] = [
 ];
 
 /**
+ * The `own`-visibility narrowing, written once.
+ *
+ * Returns the PostgREST `or` filter for a viewer who may see only their own activities, or null when
+ * no narrowing applies. Both casings, because HR ids are stored mixed-case and a single `.eq`
+ * silently under-returns. It is a shared string rather than a shared query builder so that the inbox
+ * and its badge cannot drift: a badge carrying its own copy of "whose rows" is how a count comes to
+ * disagree with the list it sits on.
+ */
+function ownActivityFilter(visibility: ActivityVisibility): string | null {
+  if (visibility.kind !== "own") return null;
+  return `requester_hr_id.eq.${visibility.hrId},requester_hr_id.eq.${visibility.hrId.toUpperCase()},requester_hr_id.eq.${visibility.hrId.toLowerCase()}`;
+}
+
+/**
  * The approvals inbox: two views of the same queue, the same two the Marketing inbox has.
  *
  * TWO AUDIENCES, ONE LIST, AND THE DIFFERENCE IS A FLAG — never a second query. `open` returns
@@ -422,12 +439,8 @@ export async function listInbox(
     // Explicit bound: an unbounded select stops at 1000 with no marker.
     .limit(500);
 
-  if (visibility.kind === "own") {
-    // Both casings, because HR ids are stored mixed-case and a single `.eq` under-returns.
-    query = query.or(
-      `requester_hr_id.eq.${visibility.hrId},requester_hr_id.eq.${visibility.hrId.toUpperCase()},requester_hr_id.eq.${visibility.hrId.toLowerCase()}`,
-    );
-  }
+  const ownFilter = ownActivityFilter(visibility);
+  if (ownFilter) query = query.or(ownFilter);
 
   const { data, error } = await query;
   if (error) throw toQueryError(error);
@@ -457,6 +470,57 @@ export async function listDecisionInbox(
 ): Promise<MarketAwarenessActivity[]> {
   const rows = await listInbox(access, "open");
   return rows.filter((row) => row.canDecide).map((row) => row.activity);
+}
+
+/**
+ * The pending-count badge for the Awareness Approvals nav item.
+ *
+ * The inbox shipped with no sign on its link at all — the only tab in Approvals Hub without one,
+ * beside four siblings that all carry a count — so an approver learned a request was waiting only by
+ * opening the page on the off-chance. A queue nobody is told about is the same failure as a queue
+ * with no door, and this module already had one of those.
+ *
+ * DELIBERATELY NOT `listDecisionInbox`. This is polled every 30 seconds by every open tab, and that
+ * function hydrates every row — six further queries for the types, lines, products, bricks, cost
+ * items and decisions, plus the employee lookups — to produce a number that needs three columns.
+ *
+ * What it DOES share is the rule, not a copy of it: the same `OPEN_STATUSES`, the same
+ * `ownActivityFilter` narrowing, and `summarizeMarketAwarenessDecisionBadge`, which decides who owes
+ * what through the same `canDecideStep` the decision route enforces.
+ */
+export async function getMarketAwarenessDecisionBadge(
+  access: AccessContext,
+): Promise<MarketAwarenessDecisionBadge> {
+  await assertPermission(access, "market_awareness", "read");
+
+  const visibility = resolveActivityVisibility(access);
+  if (visibility.kind === "none") return { count: 0, overdue: false };
+
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("market_awareness_activities")
+    // Three columns: who must decide, at which step, and since when. Nothing here is displayed.
+    .select("status, manager_hr_id, updated_at")
+    .in("status", OPEN_STATUSES)
+    // Explicit bound, same as the list: an unbounded select stops at 1000 with no marker.
+    .limit(500);
+  const ownFilter = ownActivityFilter(visibility);
+  if (ownFilter) query = query.or(ownFilter);
+
+  const { data, error } = await query;
+  if (error) throw toQueryError(error);
+
+  const rows =
+    (data as Array<{ manager_hr_id: string | null; status: string; updated_at: string | null }> | null) ?? [];
+  return summarizeMarketAwarenessDecisionBadge({
+    access,
+    now: new Date().toISOString(),
+    rows: rows.map((row) => ({
+      managerHrId: row.manager_hr_id ?? null,
+      openedAt: row.updated_at ?? null,
+      status: row.status,
+    })),
+  });
 }
 
 export async function listActivityComments(
