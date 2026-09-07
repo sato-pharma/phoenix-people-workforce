@@ -681,6 +681,7 @@ import { runAccessProfileHrIdCasingTests } from "./access-profile-hrid-casing.te
 import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.test.ts";
 import { runSourceEncodingGuardTests } from "./source-encoding-guard.test.ts";
 import { runPortalNavActingDmUsesAppRoleTests } from "./portal-nav-acting-dm-uses-app-role.test.ts";
+import { runEmployeePortalBottomNavBadgesTests } from "./employee-portal-bottom-nav-badges.test.ts";
 import { runEmployeePortalBottomNavTests } from "./employee-portal-bottom-nav.test.ts";
 import { runEmployeePortalNavCatalogSyncTests } from "./employee-portal-nav-catalog-sync.test.ts";
 import { runEmployeePortalNavPermissionMatchesPageTests } from "./employee-portal-nav-permission-matches-page.test.ts";
@@ -2543,6 +2544,10 @@ await runTest("employee portal navigation", runEmployeePortalNavigationTests);
 await runTest("source encoding guard", runSourceEncodingGuardTests);
 await runTest("portal nav acting DM follows app access role, not job title", runPortalNavActingDmUsesAppRoleTests);
 await runTest("employee portal bottom nav", runEmployeePortalBottomNavTests);
+await runTest(
+  "employee portal bottom nav badges (the mirrored navBadge matches its nav row in both directions, Awareness carries one, and the bar renders the COMPACT dot through the shared pump inside the shell that squares it)",
+  runEmployeePortalBottomNavBadgesTests,
+);
 await runTest("employee portal nav catalog sync (M12)", runEmployeePortalNavCatalogSyncTests);
 await runTest("employee portal nav permission matches page gate (B6)", runEmployeePortalNavPermissionMatchesPageTests);
 await runTest("company calendar", runCompanyCalendarTests);
