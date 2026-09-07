@@ -61,11 +61,16 @@ export async function POST(request: Request) {
     if (blocked) return blocked;
     await assertPermission(access, "sales", "import");
 
-    const body = (await request.json()) as { line?: string; period?: string };
+    // `notify` is opt-OUT and must be the literal boolean false: a missing, null, absent or
+    // string-"false" body field publishes loudly, because the caller that forgot to send it is far
+    // more likely than the caller that meant silence. Owner, 2026-09-07, republishing August Anti
+    // Infective after a correction: "publish aug anti infective but with no email this time".
+    const body = (await request.json()) as { line?: string; period?: string; notify?: unknown };
     await publishClosing({
       line: String(body.line ?? ""),
       period: String(body.period ?? ""),
       actorHrId: resolveEmployeeIdentityId(access),
+      notify: body.notify === false ? false : true,
     });
     // The CEO/Super-Admin Source-of-Sales BI report auto-fires once every line's monthly
     // closing for this period is published — not inline here (this route is per-line; firing
