@@ -1127,6 +1127,7 @@ import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
 import { runSosWarehouseOwnerRulingsTests } from "./sos-warehouse-owner-rulings.test.ts";
 import { runImportSplitPreviewTests } from "./import-split-preview.test.ts";
 import { runQemaQalubeyaSplitTests } from "./qema-qalubeya-split.test.ts";
+import { runStoreNamePrefixesTests } from "./store-name-prefixes.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
 import { runClosingStoreSplitHonoursEvenSplitRegistryTests } from "./closing-store-split-honours-even-split-registry.test.ts";
 import { runClosingStoreSplitHonoursManualSplitTests } from "./closing-store-split-honours-manual-split.test.ts";
@@ -3291,6 +3292,10 @@ await runTest(
 await runTest(
   "El Qema Qalubeya split (one way, El Qema only — Qalubeya reaches Cairo, Cairo never reaches Qalubeya, and the same warehouse through any other distributor does not split at all)",
   runQemaQalubeyaSplitTests,
+);
+await runTest(
+  "EPDA «م - » warehouse prefix (anchored at the START only — it matches 40 customers, while the same three characters appear MID-NAME in 590, and turning it into a keyword would move 550 pharmacies)",
+  runStoreNamePrefixesTests,
 );
 await runTest(
   "store sales city split (a store's sales divide evenly across its city's AREAS; total preserved exactly; Head Office and pharmacies untouched)",
