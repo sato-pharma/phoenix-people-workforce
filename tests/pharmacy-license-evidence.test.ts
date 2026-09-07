@@ -255,6 +255,89 @@ export async function runPharmacyLicenseEvidenceTests() {
       "over the ceiling must be refused by SIZE, and say so — a bucket-level rejection reaches the rep as an opaque failure",
     );
 
+    // ── The parser must never be defeated by the size of its own input ────────────────────────
+    //
+    // The assertion above used to fail at random on CI while passing locally. `parse…DataUrl`
+    // matched the whole data URL with one pattern ending `([a-zA-Z0-9+/=\s]+)$`, and a greedy
+    // quantifier spanning megabytes exhausts V8's regexp stack — it threw `RangeError: Maximum
+    // call stack size exceeded` rather than matching. Because the size check ran AFTER that match,
+    // the one file the ceiling exists to refuse was the one file that never reached the ceiling:
+    // the rep saw a crash instead of "attach a file under 5 MB". Stack depth decides it, so it
+    // survived a single test run and died inside the full suite (2026-09-08).
+
+    // The failure mode itself, named: whatever happens to an oversized file, it is a refusal with
+    // a sentence in it — never an engine-level error.
+    assert.throws(
+      () => parsePharmacyLicenseDataUrl(oversize),
+      (error: unknown) =>
+        error instanceof Error &&
+        !(error instanceof RangeError) &&
+        /under 5 MB/.test(error.message),
+      "an oversized licence must be REFUSED, not crash the parser — a RangeError here is the bug",
+    );
+
+    // EXACTLY AT THE CEILING IS ACCEPTED. Size is now decided from the encoded length before
+    // anything is decoded, and that arithmetic has to land on the boundary rather than near it:
+    // four base64 characters carry three bytes, less the padding. Off by one either way and this
+    // either refuses a legitimate 5 MB licence or lets an oversized one through.
+    const exactlyAtCeiling = `data:application/pdf;base64,${Buffer.alloc(PHARMACY_LICENSE_MAX_BYTES, 0x41).toString("base64")}`;
+    assert.equal(
+      parsePharmacyLicenseDataUrl(exactlyAtCeiling).bytes.length,
+      PHARMACY_LICENSE_MAX_BYTES,
+      "a licence of exactly 5 MB is under the ceiling and must be accepted",
+    );
+
+    // A payload that is not base64 must still be refused. Node's decoder SKIPS characters it does
+    // not recognise rather than failing, so without a check this would decode to something and be
+    // stored as a corrupt licence. Deliberately UNDER the ceiling, so it is the charset that
+    // refuses it and not the size — and large enough that a quantifier over the payload would be
+    // back in the territory that caused the original crash.
+    const junkPayload = `data:image/jpeg;base64,${"A".repeat(1_000_000)}!`;
+    assert.throws(
+      () => parsePharmacyLicenseDataUrl(junkPayload),
+      (error: unknown) => error instanceof Error && !(error instanceof RangeError) && /pharmacy licence/i.test(error.message),
+      "a payload that is not base64 must be refused with a sentence, not decoded into a corrupt file",
+    );
+
+    // The HEADER quantifiers are bounded for the same reason the payload is no longer matched at
+    // all: unbounded, `[a-z0-9.+-]+` scans the entire file looking for a `;base64,` that is not
+    // there. A MIME type is never remotely this long.
+    const runawayHeader = `data:image/${"a".repeat(3_000_000)}`;
+    assert.throws(
+      () => parsePharmacyLicenseDataUrl(runawayHeader),
+      (error: unknown) => error instanceof Error && !(error instanceof RangeError) && /pharmacy licence/i.test(error.message),
+      "a data URL with no base64 marker must fail fast, however long it is",
+    );
+
+    // PINNED AGAINST SOURCE, because the runtime symptom is stack-depth dependent and therefore
+    // cannot be reproduced on demand: the assertions above pass on the OLD parser too on a machine
+    // with enough stack — which is exactly how this shipped and then failed on CI months later.
+    // The structural facts are what can actually be asserted every run.
+    const parserSource = readFileSync(
+      new URL("../src/lib/venues/pharmacy-license.ts", import.meta.url),
+      "utf8",
+    );
+    // Comment lines are dropped before the check: the parser's own comment quotes the old pattern
+    // in order to explain it, and that explanation must not read as the pattern coming back.
+    const parserCode = parserSource
+      .split("\n")
+      .filter((line) => {
+        const trimmed = line.trim();
+        return !trimmed.startsWith("//") && !trimmed.startsWith("*") && !trimmed.startsWith("/*");
+      })
+      .join("\n");
+    assert.doesNotMatch(
+      parserCode,
+      /\[a-zA-Z0-9\+\/=/,
+      "no regex may span the base64 payload — that quantifier is what exhausted the regexp stack",
+    );
+    assert.match(
+      parserSource,
+      /const encodedBytes = Math\.floor\(\(payload\.length \* 3\) \/ 4\) - padding;/,
+      "the ceiling must be decided from the ENCODED length, before anything is decoded, so it " +
+        "cannot be skipped by whatever the payload does to the parser on the way past it",
+    );
+
     // The picker's filter and the parser's allow-list are the same list, so a rep can never choose
     // a file the browser offered and watch the server refuse it.
     assert.equal(PHARMACY_LICENSE_ACCEPT_ATTRIBUTE, "image/jpeg,image/png,application/pdf");

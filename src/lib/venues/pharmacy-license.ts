@@ -103,21 +103,60 @@ export function parsePharmacyLicenseDataUrl(dataUrl: unknown): ParsedPharmacyLic
   const raw = typeof dataUrl === "string" ? dataUrl.trim() : "";
   if (!raw) refuse("The pharmacy licence file is empty. Attach it again.");
 
-  const match = /^data:([a-z]+\/[a-z0-9.+-]+);base64,([a-zA-Z0-9+/=\s]+)$/i.exec(raw);
-  if (!match) {
+  // NO REGEX EVER RUNS ACROSS THE PAYLOAD. This used to be one pattern over the whole data URL,
+  // ending `([a-zA-Z0-9+/=\s]+)$`, and a greedy quantifier spanning megabytes exhausts V8's regexp
+  // stack: it threw `RangeError: Maximum call stack size exceeded` instead of matching. That is
+  // worse than it sounds, because the SIZE check below sits after the match — so the one file the
+  // ceiling exists to refuse was the one file that never reached the ceiling, and an oversized
+  // licence reached the rep as an opaque crash rather than "attach a file under 5 MB".
+  //
+  // It is stack-depth dependent, so it survives a single test and dies inside a full suite: it
+  // turned CI red at random on 2026-09-08 while passing locally on the same commit.
+  //
+  // Both quantifiers in the header are bounded for the same reason. A MIME type is never near
+  // these lengths, and without the bounds `[a-z0-9.+-]+` would scan the entire file looking for a
+  // `;base64,` that is not there — the identical failure by another route.
+  const header = /^data:([a-z]{1,40}\/[a-z0-9.+-]{1,60});base64,/i.exec(raw);
+  if (!header) {
     refuse("The pharmacy licence must be a photo or a PDF attached inside the app.");
   }
 
-  const contentType = String(match![1]).toLowerCase();
+  const contentType = String(header![1]).toLowerCase();
   if (!isPharmacyLicenseContentType(contentType)) {
     refuse("The pharmacy licence must be a JPEG, a PNG, or a PDF.");
   }
 
   // Whitespace is stripped because a base64 payload that travelled through a textarea or a JSON
   // pretty-printer arrives line-wrapped, and `Buffer.from` would silently decode the wrapped form
-  // into different bytes rather than failing.
-  const bytes = Buffer.from(String(match![2]).replace(/\s+/g, ""), "base64");
+  // into different bytes rather than failing. `\s+` in a global replace is a flat scan with no
+  // alternation and nothing nested, so it carries none of the risk the old payload match did.
+  const payload = raw.slice(header![0].length).replace(/\s+/g, "");
+  if (!payload) refuse("The pharmacy licence file is empty. Attach it again.");
+
+  // SIZE IS DECIDED BEFORE ANYTHING IS DECODED, from the encoded length alone — four base64
+  // characters carry three bytes, less the padding. Refusing here means a 40MB attachment costs a
+  // subtraction rather than a 40MB Buffer, and it means the ceiling can no longer be skipped by
+  // whatever the payload does to the parser on the way past it.
+  const padding = payload.endsWith("==") ? 2 : payload.endsWith("=") ? 1 : 0;
+  const encodedBytes = Math.floor((payload.length * 3) / 4) - padding;
+  if (encodedBytes > PHARMACY_LICENSE_MAX_BYTES) {
+    refuse("The pharmacy licence file is too large. Attach a file under 5 MB.");
+  }
+
+  const bytes = Buffer.from(payload, "base64");
   if (bytes.length === 0) refuse("The pharmacy licence file is empty. Attach it again.");
+
+  // Node's base64 decoder SKIPS characters it does not recognise rather than failing, so a payload
+  // that is not really base64 still decodes — to different bytes than anyone intended. The old
+  // pattern rejected those by charset; comparing a re-encode restores that check without putting a
+  // quantifier back over the payload. Trailing padding is normalised because a sender may omit it.
+  const withoutPadding = (value: string) => value.replace(/=+$/, "");
+  if (withoutPadding(bytes.toString("base64")) !== withoutPadding(payload)) {
+    refuse("The pharmacy licence must be a photo or a PDF attached inside the app.");
+  }
+
+  // Kept as well as the encoded-length check above: that one bounds what we are willing to decode,
+  // this one is the truth about what we actually decoded, and they must agree.
   if (bytes.length > PHARMACY_LICENSE_MAX_BYTES) {
     refuse("The pharmacy licence file is too large. Attach a file under 5 MB.");
   }
