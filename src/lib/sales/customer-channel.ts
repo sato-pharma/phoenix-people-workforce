@@ -323,11 +323,14 @@ export const STORE_OVERRIDE_NAMES: readonly ChannelNameKeyword[] = [
   // Matches its own bigger sibling «الصفا ميديكال لتجارة وتوزيع الا دوية» (IS) too, which the trade
   // phrase already calls a warehouse — so the stem adds this account and nothing else.
   { label: "الصفا ميديكال", stem: "الصفا ميديكال" },
-  // «اورينت جروب» is DELIBERATELY ABSENT. The owner marked «شركة اورينت جروب - بهتيم» (164162) a
-  // wholesaler on the EPDA Pedia sheet on 2026-09-07, and had ruled the SAME customer a PHARMACY in
-  // the 167-customer sheet on 2026-09-06. Two answers, one day apart, about one account — his to
-  // settle, not this list's. tests/sos-warehouse-owner-rulings.test.ts caught the reversal, which is
-  // exactly what it is for. Do not add it without asking him which answer stands.
+  // «شركة اورينت جروب - بهتيم» (164162) — ruled a pharmacy on 2026-09-06 and a wholesaler on the
+  // EPDA sheet on 2026-09-07. Put back to him, and he settled it: "wholesaler IS THE CORRECT". The
+  // fifth such reversal in this rule and handled like the other four — the later answer stands and
+  // the pinned fixture carries it, so the contradiction is recorded rather than argued again.
+  //
+  // The stem reaches this one business on its two accounts (EP-BK and EP-PHS, both code 164162) and
+  // nothing else; «جروب» alone is common and is deliberately not used.
+  { label: "اورينت جروب", stem: "اورينت جروب" },
   // Also matches «مخزن النهضة للادوية» (PS, 10,447,616.25) — already a warehouse on مخزن. The 151.88
   // account is the only thing this changes, and the 10.4M is not at risk from it.
   { label: "النهضة للادوية", stem: "النهضه للادويه" },
