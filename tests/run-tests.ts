@@ -1322,7 +1322,11 @@ import { runCvContentFingerprintTests } from "./cv-content-fingerprint.test.ts";
 import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
 import { runCandidateNameFromCvTests } from "./candidate-name-from-cv.test.ts";
 import { runLegacyDocCvTests } from "./recruitment-legacy-doc-cv.test.ts";
-import { runCvLibraryScreeningFilterTests, runCvLibraryTests } from "./cv-library.test.ts";
+import {
+  runCvGradeNormalizerTests,
+  runCvLibraryScreeningFilterTests,
+  runCvLibraryTests,
+} from "./cv-library.test.ts";
 import { runHiringEmployeeScopeTests } from "./hiring-employee-scope.test.ts";
 import { runMarketingAdminOverrideNoteTests } from "./marketing-admin-override-note.test.ts";
 import { runRecruitmentPoolFilterTests } from "./recruitment-pool-filters.test.ts";
@@ -4294,6 +4298,11 @@ await runTest(
   "CV screening filters (eligibility is borrowed from judgeBackground not re-decided, and 'not on "
     + "file' stays reachable in both ranges — 172 have no graduation year and 426 no experience figure)",
   runCvLibraryScreeningFilterTests,
+);
+await runTest(
+  "CV degree-grade normaliser (318 graded CVs in 98 spellings fold to four Egyptian grades; "
+    + "'Very Good' must not be swallowed by 'Good', and a bare GPA is never guessed at)",
+  runCvGradeNormalizerTests,
 );
 
 await runTest(

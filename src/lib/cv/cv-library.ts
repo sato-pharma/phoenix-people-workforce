@@ -121,6 +121,23 @@ export type CvLibraryRow = {
    * the filter's own note: a naive minimum silently drops every one of them.
    */
   yearsExperienceValue: number | null;
+  /**
+   * The degree grade reduced to one of the four Egyptian names, or null when the CV recorded
+   * something that is not one of them — a GPA, a percentage, a letter.
+   *
+   * Null therefore has TWO causes, which is why `degreeGradeRaw` sits beside it: nothing on file at
+   * all, and something on file we decline to convert. The filter has to tell those apart.
+   */
+  degreeGrade: DegreeGrade | null;
+  /**
+   * Exactly what the CV said, trimmed — `"GPA: 3.46/4.00 | Honors | Ranked 6th"` and all. Empty
+   * string when the record carries no grade.
+   *
+   * Kept because it is the only thing that distinguishes "we have no grade" from "we have a grade
+   * we do not name", and because a recruiter looking at the `other` bucket needs to see the actual
+   * value to judge it. Never normalised for display: the CV's own words are the fact.
+   */
+  degreeGradeRaw: string;
 };
 
 /**
@@ -152,6 +169,98 @@ export type ExperienceBand = "" | "under2" | "2to5" | "5to10" | "over10" | "none
 export const graduationBuckets: readonly Exclude<GraduationBucket, "">[] = ["recent", "mid", "older", "none"];
 
 export const experienceBands: readonly Exclude<ExperienceBand, "">[] = ["under2", "2to5", "5to10", "over10", "none"];
+
+/**
+ * The four grades an Egyptian degree is actually awarded in, plus the two honest non-answers.
+ *
+ * WHY THIS NEEDED NORMALISING BEFORE IT COULD BE A FILTER. 318 candidates carry a grade and they do
+ * so in 98 DISTINCT SPELLINGS. "Very Good" appears as `Very Good`, `Very good`, `very good`,
+ * `very Good`, `VERY GOOD`, `V.Good`, `V.good`, `Very Good.`, `جيدجدا`, and eleven further forms
+ * that bolt on an honours clause or a GPA — `Very Good with Honors (Ranked 3rd in the department)`,
+ * `GPA: 3.45 (86.25%) Very Good`, `Cumulative Grade : very good with\nHonors.`. Offering the raw
+ * column as a facet would have produced ninety-odd buttons, nineteen of which mean "very good".
+ *
+ * `other` IS NOT A DUMPING GROUND, it is a refusal to guess. Around fifty of the 318 carry only a
+ * number or a letter — `3.67`, `GPA: 3.00 / 5.00`, `65%`, `B+ (3.462/4.0)`, `2nd div`, `CGPA: 8.60`.
+ * Naming those needs the awarding scale (4.0? 5.0? percentage? the 10-point scale `8.09` and
+ * `CGPA: 8.60` imply) and each university's own cut-offs. One invented mapping across all of them
+ * would print a confident grade on a record that never carried one, which is worse than saying the
+ * CV recorded something we do not read. They stay reachable under their own option.
+ */
+export type DegreeGrade = "excellent" | "very_good" | "good" | "pass";
+
+export type GradeFilter = "" | DegreeGrade | "other" | "none";
+
+export const degreeGradeLabels: Record<DegreeGrade, string> = {
+  excellent: "Excellent",
+  good: "Good",
+  pass: "Pass",
+  very_good: "Very Good",
+};
+
+/** Best grade first, then the two non-answers — the order an Egyptian reader expects. */
+export const gradeFilterOptions: readonly Exclude<GradeFilter, "">[] = [
+  "excellent",
+  "very_good",
+  "good",
+  "pass",
+  "other",
+  "none",
+];
+
+export const gradeFilterLabels: Record<Exclude<GradeFilter, "">, string> = {
+  ...degreeGradeLabels,
+  none: "Grade not on file",
+  other: "A GPA or letter grade",
+};
+
+/**
+ * One free-typed grade reduced to the four names, or null when it names none of them.
+ *
+ * ORDER IS THE WHOLE ALGORITHM, and getting it wrong fails silently: "Very Good" CONTAINS "good",
+ * so a `good` test running first swallows all 120 very-good candidates into `good` — and the counts
+ * still add up to 318, so nothing looks broken. Very good is matched before good, and the Arabic
+ * جيد جدا before جيد for the same reason: `جيدجدا`, which one candidate wrote without the space,
+ * contains `جيد`.
+ *
+ * Honours clauses are deliberately NOT a separate outcome. `Excellent with Honours` is an Excellent
+ * degree; splitting it would put one person's grade in two buckets and halve both counts.
+ */
+export function normalizeDegreeGrade(raw: string | null | undefined): DegreeGrade | null {
+  const value = String(raw ?? "").trim().toLowerCase();
+  if (!value) return null;
+
+  // Arabic first — a record carrying only Arabic never reaches the Latin tests below.
+  if (value.includes("امتياز")) return "excellent";
+  if (value.includes("جيد جدا") || value.includes("جيدجدا")) return "very_good";
+  if (value.includes("جيد")) return "good";
+  if (value.includes("مقبول")) return "pass";
+
+  // The STEM, not the word: `Excellence with grade of honor.` and `Excellent degree with honors`
+  // are both an Excellent degree and neither spells the word the same way.
+  if (value.includes("excellen")) return "excellent";
+  // `v.good`, `v. good` and `v good` abbreviate the same grade — the dot and the space are each
+  // optional, which is why this is a pattern rather than a list of literals.
+  if (/very\s*good/.test(value) || /\bv\.?\s*good/.test(value)) return "very_good";
+  if (value.includes("good")) return "good";
+  if (value.includes("pass") || value.includes("accept")) return "pass";
+  return null;
+}
+
+/**
+ * `"other"` and `"none"` answer different questions and must never be merged: one means the CV
+ * recorded something we do not turn into a grade, the other that it recorded nothing at all.
+ * Folding them hides fifty people behind a label claiming their record is empty when it is not.
+ */
+export function matchesGradeFilter(
+  row: Pick<CvLibraryRow, "degreeGrade" | "degreeGradeRaw">,
+  filter: GradeFilter,
+): boolean {
+  if (!filter) return true;
+  if (filter === "none") return row.degreeGradeRaw === "";
+  if (filter === "other") return row.degreeGradeRaw !== "" && row.degreeGrade === null;
+  return row.degreeGrade === filter;
+}
 
 /** The labels, kept beside the logic so a new bucket cannot ship without one. */
 export const graduationBucketLabels: Record<Exclude<GraduationBucket, "">, string> = {
@@ -310,6 +419,8 @@ export function cvLibraryRowFromCandidate(
     educationDegree: text(candidate.degree),
     educationFaculty: text(candidate.faculty),
     educationInstitution: educationInstitution(candidate),
+    degreeGrade: normalizeDegreeGrade(candidate.grade),
+    degreeGradeRaw: text(candidate.grade),
     governorate: text(candidate.governorate),
     graduationYear: typeof candidate.graduationYear === "number" ? candidate.graduationYear : null,
     id: candidate.id,
