@@ -14,6 +14,22 @@ import type {
   RetentionRiskTrigger,
 } from "@/lib/retention-risk/types";
 
+/**
+ * THREE consecutive days. Owner, 2026-09-07: "if an employee not submitting any crm records for 3
+ * days until the current day or 3 vacation days until the current".
+ *
+ * It opened at five, and five turned out to be too slow to be worth anything. The two reps the
+ * board caught on 2026-09-07 had stopped working on 31 August; counting from 1 September with the
+ * Friday bridged, the fifth working day was the 6th, so the earliest the sweep could speak was
+ * 07:40 on the 7th — and HR recorded both resignations at 03:37 that morning. The warning lost to
+ * the paperwork by four hours.
+ *
+ * WORKING days, not calendar days, and that is what makes three usable rather than noisy: a Friday
+ * neither counts nor resets, so three means three days a rep was expected in the field and left no
+ * trace. Measured against production the moment it changed: two reps, at three and four days.
+ */
+export const RETENTION_RISK_THRESHOLD_WORKING_DAYS = 3;
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function isIsoDateOnly(value: string): boolean {
@@ -51,8 +67,8 @@ type DayVerdict = "breaks" | "bridges" | "counts" | "outside";
  *
  * The company week is Saturday to Wednesday full days, Thursday morning, Friday off (and Saturday
  * off for anyone whose title is not field-only) — see weekend-policy.ts. If Friday BROKE a run,
- * a five-working-day streak could only ever be Saturday-to-Wednesday exactly, and a rep who went
- * quiet on Sunday would reset every single week. Nobody would ever reach five days and the whole
+ * every streak would be capped at the Saturday-to-Wednesday block it started in, and a rep who went
+ * quiet on Sunday would reset every single week. The longer thresholds would be unreachable and the
  * feature would report nothing, quietly. So a non-working day is skipped: it adds nothing to the
  * count and it does not reset it.
  *
@@ -105,8 +121,8 @@ function verdictForLeave(dateIso: string, onLeave: boolean, title: string | null
  * the count, three days of leave in the middle of a fortnight away would split one 10-day
  * disappearance into two 4-day runs and neither would reach the threshold — leave would become the
  * way to hide. Bridging keeps the run whole while counting only the days that are genuinely
- * unexplained, and the leave itself is not lost: five or more consecutive leave days raise the
- * `extended_leave` signal on their own.
+ * unexplained, and the leave itself is not lost: a long enough run of leave days raises the
+ * `extended_leave` signal in its own right.
  */
 function verdictForSilence(
   dateIso: string,

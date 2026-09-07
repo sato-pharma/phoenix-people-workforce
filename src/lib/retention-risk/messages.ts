@@ -135,7 +135,7 @@ export function subjectHref(hrId: string): string {
 function triggerHeading(trigger: RetentionRiskTrigger, count: number): string {
   return trigger === "crm_silence"
     ? `${count} with no CRM activity`
-    : `${count} on five or more consecutive leave days`;
+    : `${count} on three or more consecutive leave days`;
 }
 
 /**
@@ -154,7 +154,7 @@ export function retentionRiskPrePayrollMessage(
       ? "Payroll Part 1 has just been confirmed."
       : "Payroll for this month is close.";
   if (signals.length === 0) {
-    return `${opening} No employee is currently flagged for retention risk — nobody has five or more consecutive working days of leave or of missing CRM activity.`;
+    return `${opening} No Medical Rep is currently flagged for retention risk — nobody has three or more consecutive working days of leave or of missing CRM activity.`;
   }
 
   const byTrigger = new Map<RetentionRiskTrigger, RetentionRiskSignal[]>();
