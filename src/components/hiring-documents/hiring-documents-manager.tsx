@@ -49,17 +49,15 @@ type Props = {
 type ActiveTab = "documents" | "capture" | "control";
 
 const allValue = "__all__";
-const tableHeaderTypeClassName =
-  "px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft";
-const tableHeaderClassName = `border-b border-phx-line bg-phx-accent-soft/80 ${tableHeaderTypeClassName}`;
-// The frozen header of the desktop matrix. Two things it must NOT inherit from the class above:
-// the tint has to be opaque, because rows now scroll underneath it rather than past it; and the
-// divider is painted rather than bordered — see matrixHeaderStyle.
-const matrixHeaderClassName = `sticky top-0 bg-phx-accent-soft ${tableHeaderTypeClassName}`;
+// Both desktop tables on this screen freeze their header, so there is one header class. The tint
+// is opaque on purpose — rows scroll underneath it, not past it — and the divider under it is
+// painted rather than bordered, see frozenHeaderStyle.
+const frozenHeaderClassName =
+  "sticky top-0 bg-phx-accent-soft px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft";
 // Tailwind's preflight collapses every table's borders, and a collapsed bottom edge belongs to the
 // row boundary, not to the cell — so a `border-b` stays behind the instant the header cell sticks
 // and the line under the header vanishes while you scroll. An inset shadow travels with the cell.
-const matrixHeaderStyle: React.CSSProperties = { boxShadow: "inset 0 -1px 0 var(--phx-line)" };
+const frozenHeaderStyle: React.CSSProperties = { boxShadow: "inset 0 -1px 0 var(--phx-line)" };
 const tableCellClassName = "border-b border-phx-line px-3 py-4 align-top";
 const inputClassName =
   "h-10 rounded-xl border-phx-line bg-white/95 text-sm shadow-sm focus:border-phx-accent-line focus:ring-phx-accent/15";
@@ -626,14 +624,14 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                     <tr>
                       {/* The corner cell is frozen on both axes, so it outranks every other sticky
                           cell: z-40 header corner > z-30 header row > z-10 body first column. */}
-                      <th className={`${matrixHeaderClassName} left-0 z-40 min-w-[280px]`} style={matrixHeaderStyle}>Employee</th>
-                      <th className={`${matrixHeaderClassName} z-30 min-w-[120px]`} style={matrixHeaderStyle}>Line</th>
-                      <th className={`${matrixHeaderClassName} z-30 min-w-[130px]`} style={matrixHeaderStyle}>Hiring Date</th>
-                      <th className={`${matrixHeaderClassName} z-30 min-w-[190px]`} style={matrixHeaderStyle}>Manager</th>
+                      <th className={`${frozenHeaderClassName} left-0 z-40 min-w-[280px]`} style={frozenHeaderStyle}>Employee</th>
+                      <th className={`${frozenHeaderClassName} z-30 min-w-[120px]`} style={frozenHeaderStyle}>Line</th>
+                      <th className={`${frozenHeaderClassName} z-30 min-w-[130px]`} style={frozenHeaderStyle}>Hiring Date</th>
+                      <th className={`${frozenHeaderClassName} z-30 min-w-[190px]`} style={frozenHeaderStyle}>Manager</th>
                       {documents.map((document) => (
-                        <th className={`${matrixHeaderClassName} z-30 min-w-[210px]`} key={document.id} style={matrixHeaderStyle}>{document.name}</th>
+                        <th className={`${frozenHeaderClassName} z-30 min-w-[210px]`} key={document.id} style={frozenHeaderStyle}>{document.name}</th>
                       ))}
-                      <th className={`${matrixHeaderClassName} z-30 min-w-[260px]`} style={matrixHeaderStyle}>Notes</th>
+                      <th className={`${frozenHeaderClassName} z-30 min-w-[260px]`} style={frozenHeaderStyle}>Notes</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1046,13 +1044,16 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
               </div>
             </div>
 
-            <PortalDesktopTable className="text-sm" minWidth="100%">
+            {/* Capped so the four headings below have a scrollport to stick against. A short
+                document list is shorter than the cap, so it neither scrolls nor freezes — the
+                header only pins itself once the list is long enough to need it. */}
+            <PortalDesktopTable className="text-sm" maxHeight="70vh" minWidth="100%">
                 <thead>
                   <tr>
-                    <th className={tableHeaderClassName}>Document</th>
-                    <th className={tableHeaderClassName}>Description</th>
-                    <th className={tableHeaderClassName}>Order</th>
-                    <th className={tableHeaderClassName}>Action</th>
+                    <th className={`${frozenHeaderClassName} z-30`} style={frozenHeaderStyle}>Document</th>
+                    <th className={`${frozenHeaderClassName} z-30`} style={frozenHeaderStyle}>Description</th>
+                    <th className={`${frozenHeaderClassName} z-30`} style={frozenHeaderStyle}>Order</th>
+                    <th className={`${frozenHeaderClassName} z-30`} style={frozenHeaderStyle}>Action</th>
                   </tr>
                 </thead>
                 <tbody>

@@ -262,14 +262,26 @@ export function PortalRecordFields({
 export function PortalDesktopTable({
   children,
   className,
+  maxHeight,
   minWidth = "980px",
 }: {
   children: ReactNode;
   className?: string;
+  /**
+   * Caps the wrapper and makes it scroll, which is what a `sticky top-0` header cell needs in
+   * order to have anything to stick against: sticky resolves against the nearest scrollport, and
+   * an uncapped wrapper is exactly as tall as its content, so the PAGE does the vertical
+   * scrolling and the header sails away with it. Passing this does not freeze a header on its
+   * own — the `<th>`s still have to say `sticky top-0` themselves.
+   */
+  maxHeight?: string;
   minWidth?: string;
 }) {
   return (
-    <div className="hidden overflow-x-auto md:block">
+    <div
+      className={maxHeight ? "hidden overflow-auto md:block" : "hidden overflow-x-auto md:block"}
+      style={maxHeight ? { maxHeight } : undefined}
+    >
       <table
         className={cn("w-full border-collapse text-left text-sm", className)}
         data-portal-desktop-table
