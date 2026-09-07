@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { parseDesiredChecks, parseDuration, diffCheck, payload } from "../scripts/healthchecks-sync.mjs";
+import {
+  applyExitCode,
+  diffCheck,
+  parseDesiredChecks,
+  parseDuration,
+  payload,
+  verifyAfterApply,
+} from "../scripts/healthchecks-sync.mjs";
 
 /**
  * `scripts/healthchecks-sync.mjs` treats the table in docs/observability.md as the source of truth
@@ -208,4 +215,37 @@ export async function runHealthchecksScheduleSyncTests() {
     /appears twice/,
     "a duplicated slug must fail loudly rather than pick one row",
   );
+
+  // THE READ-BACK. `--apply` used to exit(1) as soon as any write failed, BEFORE re-reading the
+  // project — so the one run that most needed verifying never verified anything. On 2026-09-08 a
+  // real run updated six checks and hit HTTP 403 on two creates; it printed no verification at all
+  // and the six good writes had to be confirmed by re-reading the API by hand.
+  const desiredPair = [
+    { slug: "phoenix-a", kind: "cron", schedule: "17 2 * * *", tz: "Africa/Cairo", grace: 7200 },
+    { slug: "phoenix-b", kind: "cron", schedule: "27 2 * * *", tz: "Africa/Cairo", grace: 7200 },
+  ];
+  const storedPair = {
+    checks: [
+      { slug: "phoenix-a", schedule: "17 2 * * *", tz: "Africa/Cairo", grace: 7200 },
+      // b never landed — still on the auto-provision default.
+      { slug: "phoenix-b", schedule: "", timeout: 86400, tz: "UTC", grace: 3600 },
+    ],
+  };
+  assert.deepEqual(
+    await verifyAfterApply(desiredPair, undefined, async () => storedPair),
+    ["phoenix-b"],
+    "the read-back must name the check that did not stick, and only that one",
+  );
+  assert.deepEqual(
+    await verifyAfterApply(desiredPair, undefined, async () => ({ checks: [] })),
+    ["phoenix-a", "phoenix-b"],
+    "a check absent from the project entirely must count as still wrong, not as fine",
+  );
+
+  // A failed write and a write that silently did not stick are the same outcome — the doc and
+  // Healthchecks disagree — so both must be non-zero. `failed` alone used to decide this.
+  assert.equal(applyExitCode(0, 0), 0, "a clean apply exits 0");
+  assert.equal(applyExitCode(2, 0), 1, "a failed write must still exit non-zero");
+  assert.equal(applyExitCode(0, 1), 1, "drift after a 200 must exit non-zero");
+  assert.equal(applyExitCode(2, 1), 1);
 }
