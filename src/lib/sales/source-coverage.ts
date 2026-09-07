@@ -21,6 +21,7 @@
 // to bricks. This module answers whether the upload happened at all.
 
 import { normalizeLineKey } from "@/lib/sales/access-scope";
+import { DIRECT_CHANNEL_CODE, canonicalDistributorKey } from "@/lib/sales/direct-channel";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -42,20 +43,18 @@ const PAGE = 1000;
  * Direct (Company) … Totals are understated until these arrive", naming a file that will never
  * arrive again, on a closing that is in fact complete. Anti Infective August 2026 was the first:
  * flagged incomplete while holding all four of its sources.
+ *
+ * The alias set itself now lives in `direct-channel.ts`, shared. It had already drifted into three
+ * independent copies of the same two strings, and the SoS dashboard held a fourth that matched the
+ * literal "direct" alone — which reported every DirectReq sale as a distributor.
  */
-const DIRECT_CHANNEL_ALIASES = new Set(["DIRECT", "DIRECTREQ"]);
-/** The surviving code — the module, because that is what feeds every month from here on. */
-const DIRECT_CHANNEL_KEY = "DIRECTREQ";
+const DIRECT_CHANNEL_KEY = DIRECT_CHANNEL_CODE;
 
 /**
  * Coverage key for a distributor code: the import normalization, plus the Direct-channel fold.
  * Exported so the tests pin the fold rather than re-deriving it.
  */
-export function canonicalSourceKey(distributorCode: unknown): string {
-  const key = normalizeCodeKey(distributorCode);
-  if (!key) return "";
-  return DIRECT_CHANNEL_ALIASES.has(key) ? DIRECT_CHANNEL_KEY : key;
-}
+export const canonicalSourceKey = canonicalDistributorKey;
 
 /** True when this month's direct rows come from the module rather than an uploaded sheet. */
 export function isDirectModuleSourced(rows: readonly CoverageFactRow[], period: string): boolean {
