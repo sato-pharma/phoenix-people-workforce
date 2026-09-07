@@ -163,12 +163,12 @@ export function runQemaQalubeyaSplitTests() {
   // a store through QM and a pharmacy through anyone else, which is the whole point of the rule.
   for (const name of ["كيان قنا", "دلة الفيوم", "رويال الاسماعيليه", "هانى براعى المنيا", "الدكتور محمد شعير"]) {
     assert.equal(
-      isStoreCustomerForPeriod(name, null, "QM", "2026-09"),
+      isStoreCustomerForPeriod(name, null, "QM", "2026-09", "Pedia"),
       true,
       `${name} is a wholesaler because El Qema sold it, not because of its name`,
     );
     assert.equal(
-      isStoreCustomerForPeriod(name, null, "PS", "2026-09"),
+      isStoreCustomerForPeriod(name, null, "PS", "2026-09", "Pedia"),
       false,
       `${name} through Overseas is unchanged — the rule is about the DISTRIBUTOR, not the customer`,
     );
@@ -179,7 +179,7 @@ export function runQemaQalubeyaSplitTests() {
   // own institutions wherever it bought from.
   for (const name of ["مستشفى المنزله العام", "ت.ص.مخازن السيوف", "صيدلية النور"]) {
     assert.equal(
-      isStoreCustomerForPeriod(name, null, "QM", "2026-09"),
+      isStoreCustomerForPeriod(name, null, "QM", "2026-09", "Pedia"),
       false,
       `${name} does not become a wholesaler just because El Qema invoiced it`,
     );

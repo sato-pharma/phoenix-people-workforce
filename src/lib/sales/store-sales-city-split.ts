@@ -43,12 +43,16 @@ import { isStoreCustomerForPeriod } from "@/lib/sales/customer-channel";
  * them between areas, so a restated month reports no drift.
  *
  * THERE ARE NOW TWO PERIOD GATES, and they are separate on purpose. STORE_CITY_SPLIT_FROM_PERIOD
- * below decides WHETHER a month splits at all (August 2026 onward). WAREHOUSE_RULE_FROM_PERIOD in
- * customer-channel.ts decides WHICH rule says who is a warehouse (September 2026 onward), because
- * the owner's 167 rulings landed after August Anti Infective was already published. A month can
- * therefore split under the old classification — August does — and that combination is correct,
- * not a half-finished migration. Both gates exist for the same reason: this whole layer is
- * recomputed live, so any change to it is retroactive unless a date stops it.
+ * below decides WHETHER a month splits at all (August 2026 onward, every line). warehouseRuleFromPeriod
+ * in customer-channel.ts decides WHICH rule says who is a warehouse — and that one is PER LINE:
+ * August for Pedia, September for everything else, because August Anti Infective was published and
+ * announced while August Pedia never was.
+ *
+ * So August splits on Anti Infective under the OLD classification and on Pedia under the NEW one,
+ * in the same month, from the same code. That combination looks like a half-finished migration and
+ * is not: it is two published-state facts about two lines. Read warehouseRuleFromPeriod before
+ * "tidying" either gate. Both exist for the same underlying reason — this whole layer is recomputed
+ * live, so any change to it is retroactive unless a date stops it.
  *
  * PREVIOUS STATE, kept because it explains the shape of the code. It was OFF from 2026-08-10,
  * re-applied 2026-08-12 after the first disable (cc6edee4) was LOST in the #2015 squash merge.
@@ -370,12 +374,17 @@ export function customersExemptFromCitySplit(rows: readonly StoreSplitRow[]): Re
 /**
  * A row is only moved when it is a store, on a split line, has a city, and feeds the closing.
  *
- * `period` decides WHICH warehouse rule answers "is it a store" — the owner's 2026-09-06 rulings
- * from September on, the six words alone before that (customer-channel.ts,
- * WAREHOUSE_RULE_FROM_PERIOD). It is optional so the pure-arithmetic tests can keep calling this
- * with a row alone, and OMITTING IT MEANS THE OLD RULE: the safe direction, since a month that
- * fails to adopt the new classification keeps the numbers it was published with, while one that
- * adopts it early restates a closing already sent to managers.
+ * `period` decides WHICH warehouse rule answers "is it a store" — the owner's 2026-09-06 rulings,
+ * or the six words alone before the cutover (customer-channel.ts, warehouseRuleFromPeriod). It is
+ * optional so the pure-arithmetic tests can keep calling this with a row alone, and OMITTING IT
+ * MEANS THE OLD RULE: the safe direction, since a month that fails to adopt the new classification
+ * keeps the numbers it was published with, while one that adopts it early restates a closing already
+ * sent to managers.
+ *
+ * The cutover is PER LINE, and the row's own `officialLine` is what selects it — August Pedia takes
+ * the new rulings while August Anti Infective, published and announced, keeps the old ones. The line
+ * is read from the row rather than passed in, so the two can never disagree about which month this
+ * row belongs to.
  */
 export function isSplitEligible(row: StoreSplitRow, period?: string | null): boolean {
   if (row.isDirect) return false;
@@ -383,7 +392,9 @@ export function isSplitEligible(row: StoreSplitRow, period?: string | null): boo
   if (!isSplitEligibleLine(row.officialLine)) return false;
   // The client code is passed so an owner override can be honoured. Without it the override is
   // inert here and an overridden pharmacy's sales would still be scattered across its city.
-  if (!isStoreCustomerForPeriod(row.clientName, row.clientCode, row.distributorCode, period)) {
+  if (
+    !isStoreCustomerForPeriod(row.clientName, row.clientCode, row.distributorCode, period, row.officialLine)
+  ) {
     return false;
   }
   // The CLOSING area, not the resolved one: the split moves money the Closing Matrix actually holds,
