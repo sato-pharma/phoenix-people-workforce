@@ -22,6 +22,7 @@ import { resolveOutstationCapturedLocation } from "@/lib/outstation/captured-loc
 import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
 import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
 import { payableExpenseAmount } from "@/lib/outstation/payable";
+import { fetchAllRows, POSTGREST_PAGE_SIZE } from "@/lib/outstation/page-all-rows";
 import {
   resolveExpenseDecisionWrite,
   type ExpenseDecisionWrite,
@@ -75,6 +76,9 @@ export type PayrollExpenseDashboardData = {
 // `outstation` key was removed from his matrix and getExpensesScope now returns SELF for the role,
 // so resolveExpenseAccessFilter below yields him no rows even on the residual `expenses:read` he
 // keeps for the marketing-request routes.
+/** One upsert may return at most this many rows — see the write in savePayrollExpenseApprovals. */
+const UPSERT_CHUNK_SIZE = POSTGREST_PAGE_SIZE;
+
 const manualPayrollExpenseApproverRoles = new Set<PhoenixRole>([
   "Super Admin",
 ]);
@@ -392,19 +396,28 @@ async function getVisibleExpenseReportIds(
   supabase: SupabaseClient,
   accessFilter: ExpenseAccessFilter,
 ) {
-  let query = supabase
-    .from("outstation_expenses")
-    .select("report_id")
-    .not("report_id", "is", null);
   const allowedHrIds = Array.from(accessFilter.allowedHrIds);
+  if (!accessFilter.all && allowedHrIds.length === 0) return new Set<string>();
 
-  if (!accessFilter.all) {
-    if (allowedHrIds.length === 0) return new Set<string>();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    query = applyHrIdInFilter(query as any, allowedHrIds);
-  }
+  // Paged for the same reason as the reads above, and it matters more here than the row count
+  // suggests: this set decides which REPORTS a scoped viewer is allowed to see at all, so a
+  // truncated read does not shorten a list — it makes whole reports disappear for that person.
+  const buildQuery = () => {
+    let query = supabase
+      .from("outstation_expenses")
+      .select("report_id")
+      .not("report_id", "is", null)
+      .order("id", { ascending: true });
 
-  const { data, error } = await query;
+    if (!accessFilter.all) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      query = applyHrIdInFilter(query as any, allowedHrIds);
+    }
+
+    return query;
+  };
+
+  const { data, error } = await fetchAllRows((from, to) => buildQuery().range(from, to));
   if (error) {
     if (isPayrollExpensesSchemaMissing(error)) return new Set<string>();
     throw error;
@@ -574,10 +587,14 @@ export async function listPayrollExpenseReports(accessContext: AccessContext) {
   const accessFilter = await resolveExpenseAccessFilter(accessContext);
 
   if (accessFilter.all) {
-    const { data, error } = await supabase
-      .from("outstation_expense_reports")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const { data, error } = await fetchAllRows((from, to) =>
+      supabase
+        .from("outstation_expense_reports")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
 
     if (error) {
       if (isPayrollExpensesSchemaMissing(error)) return [];
@@ -628,26 +645,34 @@ export async function listPayrollExpenses(
 ) {
   const accessFilter = await resolveExpenseAccessFilter(accessContext);
   const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
-  let query = supabase
-    .from("outstation_expenses")
-    .select("*")
-    .order("expense_date", { ascending: false });
-
   const allowedHrIds = Array.from(accessFilter.allowedHrIds);
-  if (!accessFilter.all) {
-    if (allowedHrIds.length === 0) return [];
-    query = applyHrIdInFilter(query, allowedHrIds);
-  }
+  if (!accessFilter.all && allowedHrIds.length === 0) return [];
 
-  if (month && year) {
-    query = query.eq("payout_month", month).eq("payout_year", year);
-  }
+  // Rebuilt per page rather than built once: a PostgREST builder is consumed when it is awaited.
+  const buildQuery = () => {
+    let query = supabase
+      .from("outstation_expenses")
+      .select("*")
+      .order("expense_date", { ascending: false })
+      // Tiebreaker — `expense_date` repeats heavily (a whole team's trips share a day).
+      .order("id", { ascending: true });
 
-  if (reportId) {
-    query = query.eq("report_id", reportId);
-  }
+    if (!accessFilter.all) {
+      query = applyHrIdInFilter(query, allowedHrIds);
+    }
 
-  const { data, error } = await query;
+    if (month && year) {
+      query = query.eq("payout_month", month).eq("payout_year", year);
+    }
+
+    if (reportId) {
+      query = query.eq("report_id", reportId);
+    }
+
+    return query;
+  };
+
+  const { data, error } = await fetchAllRows((from, to) => buildQuery().range(from, to));
 
   if (error) {
     if (isPayrollExpensesSchemaMissing(error)) return [];
@@ -664,18 +689,25 @@ export async function listOutstationRequestExpenses(
 ) {
   const accessFilter = await resolveExpenseAccessFilter(accessContext);
   const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
-  let query = supabase
-    .from("outstation_expense_requests")
-    .select("*")
-    .order("created_at", { ascending: false });
-
   const allowedHrIds = Array.from(accessFilter.allowedHrIds);
-  if (!accessFilter.all) {
-    if (allowedHrIds.length === 0) return [];
-    query = applyEmployeeHrIdInFilter(query, allowedHrIds);
-  }
+  if (!accessFilter.all && allowedHrIds.length === 0) return [];
 
-  const { data, error } = await query;
+  const buildQuery = () => {
+    let query = supabase
+      .from("outstation_expense_requests")
+      .select("*")
+      .order("created_at", { ascending: false })
+      // Tiebreaker — several requests are submitted in the same second by the same sync.
+      .order("id", { ascending: true });
+
+    if (!accessFilter.all) {
+      query = applyEmployeeHrIdInFilter(query, allowedHrIds);
+    }
+
+    return query;
+  };
+
+  const { data, error } = await fetchAllRows((from, to) => buildQuery().range(from, to));
   if (error) {
     if (isOutstationRequestsSchemaMissing(error)) return [];
     throw error;
@@ -854,10 +886,17 @@ async function assertPayrollExpenseReportCanMutate(
   action: "deleted" | "replaced",
   accessContext: AccessContext,
 ) {
-  const { data, error } = await getSupabaseAdmin()
-    .from("outstation_expenses")
-    .select("id,hr_approved,imported_payroll_batch_id,imported_to_payroll_at,status")
-    .eq("report_id", reportId);
+  // Paged because this is a LOCK, and it is read with `.some()`. A truncated read cannot report a
+  // false lock, only a missing one — so past 1,000 rows this would quietly permit deleting or
+  // replacing a report whose later rows are already in a paid payroll batch.
+  const { data, error } = await fetchAllRows((from, to) =>
+    getSupabaseAdmin()
+      .from("outstation_expenses")
+      .select("id,hr_approved,imported_payroll_batch_id,imported_to_payroll_at,status")
+      .eq("report_id", reportId)
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
 
   if (error) {
     if (isPayrollExpenseLockSchemaMissing(error)) {
@@ -934,20 +973,28 @@ export async function getApprovedExpenseTotalsForPayroll(
   // Optimized narrow-query equivalent of getApprovedExpenseTotalsByHrId for payroll template generation.
   const accessFilter = await resolveExpenseAccessFilter(accessContext);
   const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
-  let query = supabase
-    .from("outstation_expenses")
-    .select("hr_id,total,approved_amount,hr_approved,payout_year,trip_id,source_file_name,specialist,description")
-    .eq("payout_month", month)
-    .eq("payout_year", year)
-    .eq("hr_approved", true);
-
   const allowedHrIds = Array.from(accessFilter.allowedHrIds);
-  if (!accessFilter.all) {
-    if (allowedHrIds.length === 0) return new Map<string, number>();
-    query = applyHrIdInFilter(query, allowedHrIds);
-  }
+  if (!accessFilter.all && allowedHrIds.length === 0) return new Map<string, number>();
 
-  const { data, error } = await query;
+  // THIS ONE IS MONEY. It pre-fills what payroll reimburses, so a silent truncation here does not
+  // make a screen look short — it pays people less than they are owed, with nothing to notice.
+  const buildQuery = () => {
+    let query = supabase
+      .from("outstation_expenses")
+      .select("hr_id,total,approved_amount,hr_approved,payout_year,trip_id,source_file_name,specialist,description")
+      .eq("payout_month", month)
+      .eq("payout_year", year)
+      .eq("hr_approved", true)
+      .order("id", { ascending: true });
+
+    if (!accessFilter.all) {
+      query = applyHrIdInFilter(query, allowedHrIds);
+    }
+
+    return query;
+  };
+
+  const { data, error } = await fetchAllRows((from, to) => buildQuery().range(from, to));
 
   if (error) {
     if (isPayrollExpensesSchemaMissing(error)) return new Map<string, number>();
@@ -1187,20 +1234,30 @@ export async function savePayrollExpenseApprovals(input: {
   // this save actually moved. This screen submits a report's full record set on every save, so
   // without the diff one save would clear a hand-typed wizard figure for every employee in the
   // report — including the ones nobody looked at.
-  const { data, error } = await supabase
-    .from("outstation_expenses")
-    .upsert(payload, { onConflict: "trip_id" })
-    .select("*");
+  // Chunked because the WRITE is not capped but the RETURNED representation is. A single upsert of
+  // more than 1,000 rows would write them all and hand back only the first 1,000 — and `data` is
+  // both what the screen re-renders from AND the right-hand side of the resync diff below, so the
+  // rows past the cap would be written to the database and then silently left out of any open
+  // payroll run. Below 1,000 rows this is exactly one request, identical to before; the largest
+  // report in production held 327 on 2026-09-08.
+  const written: Array<Record<string, unknown>> = [];
+  for (let start = 0; start < payload.length; start += UPSERT_CHUNK_SIZE) {
+    const { data, error } = await supabase
+      .from("outstation_expenses")
+      .upsert(payload.slice(start, start + UPSERT_CHUNK_SIZE), { onConflict: "trip_id" })
+      .select("*");
 
-  if (error) throw error;
+    if (error) throw error;
+    written.push(...((data ?? []) as Array<Record<string, unknown>>));
+  }
 
-  const saved = (data ?? []).map((row) => mapExpense(row as Record<string, unknown>));
+  const saved = written.map((row) => mapExpense(row));
 
   // A confirmed payroll Expenses step is a frozen snapshot and will otherwise keep paying the
   // figures it was confirmed with — see expense-resync.ts for the July 2026 run this cost.
   await resyncPayrollExpenseStepForRows(
     before,
-    (data ?? []).map((row) => toExpenseDecisionSnapshot(row as Record<string, unknown>)),
+    written.map((row) => toExpenseDecisionSnapshot(row)),
   );
 
   invalidateExecutiveDashboardCache("expense approvals saved", ["expenses", "payroll"]);
