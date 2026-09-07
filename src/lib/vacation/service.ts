@@ -746,10 +746,21 @@ function approvedPaidDaysFromRows(input: {
   }, 0);
 }
 
-function buildEmployeeEligibilityRows(input: {
+/**
+ * The report's Entitlements table.
+ *
+ * `allScopedRows` MUST be the access-scoped but otherwise UNFILTERED request set. The Used and
+ * Balance columns sum every approved paid day inside each employee's own balance period, so a
+ * report filter that reaches this argument silently removes days from that sum and inflates the
+ * balance — a Status = Pending filter left the whole company reading a full, untouched
+ * entitlement, which is what "the balance never decreases" looked like on screen. The filters
+ * ARE applied here, but to the employee LIST only (employeeEligibilityFilterMatches), which is
+ * what the tab's department/line/manager pickers are for.
+ */
+export function buildEmployeeEligibilityRows(input: {
+  allScopedRows: VacationRequestRecord[];
   employees: EmployeeDirectoryRow[];
   filters: VacationReportFilters;
-  rows: VacationRequestRecord[];
   today: string;
 }): VacationEmployeeEligibilityRow[] {
   return input.employees
@@ -764,7 +775,7 @@ function buildEmployeeEligibilityRows(input: {
         employeeHrId: employee.hrId,
         periodEnd: period?.periodEnd ?? null,
         periodStart: period?.periodStart ?? null,
-        rows: input.rows,
+        rows: input.allScopedRows,
         vacationType: "annual",
       });
       const annualBalance = calculateVacationPayment({
@@ -5402,10 +5413,19 @@ async function loadVacationReportData(access: AccessContext, clean: VacationRepo
     overlapWarnings: warningsByRequest.get(row.id) ?? [],
   }));
   const filteredRows = visibleRowsWithWarnings;
+  // Entitlements tab: the Used/Balance arithmetic reads EVERY approved day, not just the rows the
+  // current filters happen to be showing (see buildEmployeeEligibilityRows). Re-reading with no
+  // filters is cheap — fetchVacationReportRowsFromDatabase serves the cross-request-cached row set
+  // (loadAllVacationRequestRowsCached) and re-applies only the access scope in memory, so this adds
+  // no database round-trip. enrichVacationRows is deliberately NOT applied: it fetches events and
+  // evidence reviews per request id for the timeline UI, and the balance sum reads none of that.
+  const allScopedRows = (await fetchVacationReportRowsFromDatabase({ access, filters: {}, visibleEmployeeHrIds }))
+    .map((row) => mapVacationRow(row))
+    .filter((row) => canSeeVacation(access, row, visibleEmployeeHrIds));
   const employeeEligibility = buildEmployeeEligibilityRows({
+    allScopedRows,
     employees: visibleEmployees,
     filters: clean,
-    rows: visibleRowsWithWarnings,
     // Africa/Cairo calendar day, matching getVacationRequestPageData's employee-facing twin.
     // This is the reference date for the whole Entitlements table — balance period, payment
     // calculation and days-until-eligibility all hang off it. On an employee's hire anniversary
