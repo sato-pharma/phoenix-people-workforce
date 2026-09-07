@@ -358,3 +358,77 @@ export function runDriveCabinetFolderTests() {
     "ensureRootFolder must NOT read GOOGLE_DRIVE_RECRUITMENT_FOLDER_ID — that pins the frozen tree",
   );
 }
+
+/**
+ * Drive's bin is not a 404, and the mirror must not put back what the owner threw away.
+ *
+ * FOUND ON THE CABINET'S FIRST NIGHT, 2026-09-07. The owner opened it, saw `MRs JO.pdf` — a job
+ * posting that had arrived by email and been treated as somebody's CV — and binned it. The database
+ * went on recording it as filed under Medical Representative / Cairo, because a trashed file
+ * answers `files/{id}` with a 200: parents intact, name intact, `trashed: true` in a field nobody
+ * had asked for. The check that catches deletion everywhere else, the 404, never fires.
+ *
+ * The reconciliation caught it only because a separate audit counted the cabinet's live files (892)
+ * against the rows claiming to be in it (893). Nothing in the app would ever have noticed.
+ *
+ * TRASHED AND MISSING WANT OPPOSITE RESPONSES, which is why this is a three-way result and not a
+ * boolean. Missing should be re-filed. Trashed must never be: putting it back would overrule the
+ * owner with a cron job, and he would have to delete it again after every classification event with
+ * no way to make it stop.
+ */
+export function runDriveTrashedFileTests() {
+  const treeSource = fs.readFileSync(path.join(process.cwd(), "src/lib/recruitment/drive-tree.ts"), "utf8");
+  const mirrorSource = fs.readFileSync(path.join(process.cwd(), "src/lib/recruitment/drive-cv-mirror.ts"), "utf8");
+
+  // `trashed` must be ASKED FOR — it is not in Drive's default field set, and that omission is the
+  // entire bug. Without it the response looks identical to a healthy file.
+  assert.match(
+    treeSource,
+    /files\/\$\{id\}\?fields=parents,name,trashed/,
+    "the lookup must request `trashed` — Drive omits it by default, which is exactly how this was missed",
+  );
+  assert.match(treeSource, /if \(current\.trashed\) return "trashed";/, "a trashed file must answer 'trashed'");
+
+  // Asked BEFORE the folder walk: `ensureFolderPath` CREATES folders, so checking afterwards would
+  // rebuild the shelf the owner had just emptied on the way to deciding not to file into it.
+  const trashedAt = treeSource.indexOf('if (current.trashed) return "trashed";');
+  const ensureAt = treeSource.indexOf("const targetId = await ensureFolderPath(input.path);");
+  assert.ok(trashedAt > 0 && ensureAt > 0, "both landmarks must exist");
+  assert.ok(trashedAt < ensureAt, "the trashed check must run BEFORE any folder is created");
+
+  // Three distinct answers, no booleans left. A boolean here is what collapsed the two cases.
+  assert.match(treeSource, /Promise<DriveMoveResult>/, "moveDriveFile must return the three-way result");
+  const moveStart = treeSource.indexOf("export async function moveDriveFile(");
+  const moveBody = treeSource.slice(moveStart);
+  assert.doesNotMatch(
+    moveBody.slice(0, moveBody.indexOf("\n}\n")),
+    /return (true|false);/,
+    "no boolean return may survive in moveDriveFile — that is what merged 'binned' with 'gone'",
+  );
+
+  // THE PROPERTY THAT MATTERS: a trashed file's id is KEPT. Clearing it is what routes a row to the
+  // upload branch, and the upload branch is the resurrection. Keeping it means every later pass
+  // lands on the trashed check again and does nothing — idempotent by construction.
+  const trashedBranch = mirrorSource.slice(
+    mirrorSource.indexOf('if (moved === "trashed")'),
+    mirrorSource.indexOf('if (moved === "ok" && folderUnchanged)'),
+  );
+  assert.ok(trashedBranch.length > 0, "the mirror must handle the trashed answer on its own");
+  assert.doesNotMatch(
+    trashedBranch,
+    /drive_mirror_file_id: null/,
+    "a binned file must KEEP its id — clearing it is what makes the next pass re-upload the file the owner deleted",
+  );
+  assert.match(trashedBranch, /return "removed"/, "a deliberate deletion is its own outcome, not a failure");
+
+  // And the MISSING branch must still clear, because gone is not binned.
+  const missingBranch = mirrorSource.slice(
+    mirrorSource.indexOf('if (moved === "missing")'),
+    mirrorSource.indexOf('return "failed";') + 20,
+  );
+  assert.match(
+    missingBranch,
+    /drive_mirror_file_id: null/,
+    "a genuinely missing file must still clear its id so it can be re-filed",
+  );
+}

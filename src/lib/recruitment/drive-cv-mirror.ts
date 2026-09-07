@@ -180,7 +180,12 @@ async function recordMirror(
   }
 }
 
-export type MirrorOutcome = "uploaded" | "moved" | "unchanged" | "skipped" | "failed";
+/**
+ * What one mirror pass did. `removed` is NOT a failure — it records that the owner binned the file
+ * in Drive and the mirror deliberately left it alone, which is a different fact from every other
+ * member here and the only one that means "working as intended, and doing nothing".
+ */
+export type MirrorOutcome = "uploaded" | "moved" | "unchanged" | "skipped" | "removed" | "failed";
 
 /**
  * Mirror ONE stored CV into Drive, or move it if it is already there and its folder has changed.
@@ -283,10 +288,32 @@ export async function mirrorCvToDrive(fileId: string): Promise<MirrorOutcome> {
         newName: fileName,
         path,
       });
-      if (moved && folderUnchanged) return "unchanged";
-      if (!moved) {
-        // The owner deleted or moved it himself. Clear our record so the next sweep re-uploads it
-        // rather than repeatedly patching a file that is not there.
+      if (moved === "trashed") {
+        // THE OWNER BINNED IT, AND THAT IS AN INSTRUCTION, NOT A FAULT.
+        //
+        // Handled apart from "missing" because the two want opposite responses, and the difference
+        // is the whole point of asking Drive for `trashed`. A file that has vanished should be
+        // re-filed; a file somebody deliberately deleted must never be — putting it back would
+        // overrule the owner with a cron job, and he would have to delete it again after every
+        // classification event, with no way to make it stop.
+        //
+        // So the id is KEPT rather than cleared. Clearing it is what routes a row to the upload
+        // branch below, which is exactly the resurrection this avoids; keeping it means every later
+        // pass lands here again, reads `trashed`, and does nothing. Idempotent by construction.
+        //
+        // Real case, 2026-09-07: `MRs JO.pdf` — a job posting that arrived by email and was treated
+        // as a CV — binned from the cabinet on its first night. The database went on reporting it
+        // filed under Medical Representative / Cairo, because a trashed file answers 200.
+        await recordMirror(fileId, {
+          drive_mirror_error: "Removed from Drive by hand — left alone, not re-filed.",
+        });
+        return "removed";
+      }
+      if (moved === "ok" && folderUnchanged) return "unchanged";
+      if (moved === "missing") {
+        // Gone rather than binned — moved out from under us, or deleted permanently. Clear our
+        // record so the next sweep re-uploads it rather than repeatedly patching a file that is
+        // not there.
         await recordMirror(fileId, { drive_mirror_error: "The mirrored file is no longer in Drive." });
         await supabase.from("ats_files").update({ drive_mirror_file_id: null }).eq("id", fileId);
         return "failed";

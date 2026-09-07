@@ -181,6 +181,15 @@ export async function uploadCvToDrivePath(input: {
 }
 
 /**
+ * What became of a file the mirror tried to reconcile.
+ *
+ * THREE ANSWERS, NOT TWO, and the third is the whole reason this is not a boolean. A file the owner
+ * DELETED and a file that is merely GONE want opposite handling: gone should be re-filed, deleted
+ * must never be. Collapsing them is how a mirror puts back what somebody threw away.
+ */
+export type DriveMoveResult = "ok" | "missing" | "trashed";
+
+/**
  * Move an already-uploaded CV into a different folder, and optionally rename it.
  *
  * This is the second half of the design, not an afterthought: the applicant sends the CV BEFORE
@@ -188,26 +197,38 @@ export async function uploadCvToDrivePath(input: {
  * minutes later when the answers arrive. Drive moves by patching `parents`, which is one request and
  * does not touch the bytes.
  *
- * Returns false rather than throwing when the file is gone — the owner may have moved or deleted it
- * himself, and that is his cabinet to rearrange. A missing file is not an incident.
+ * `missing` rather than throwing when the file is gone — the owner may have moved it himself, and
+ * that is his cabinet to rearrange. A missing file is not an incident.
+ *
+ * `trashed` IS A SEPARATE ANSWER BECAUSE DRIVE'S BIN IS NOT A 404. A trashed file resolves normally:
+ * `files/{id}` returns 200, with its parents and name intact. So the check that catches deletion
+ * everywhere else — the 404 — never fires, and the mirror goes on believing a CV is filed in a
+ * folder the owner emptied. Found on 2026-09-07, the cabinet's first night: the owner opened it,
+ * binned `MRs JO.pdf` (a job posting that had arrived by email and been treated as somebody's CV),
+ * and the database went on recording it as filed under Medical Representative / Cairo. `trashed`
+ * has to be ASKED FOR — it is not in the default field set — which is why nothing noticed.
  */
 export async function moveDriveFile(input: {
   driveFileId: string;
   path: readonly string[];
   newName?: string | null;
-}): Promise<boolean> {
+}): Promise<DriveMoveResult> {
   const id = encodeURIComponent(input.driveFileId);
 
-  const currentRes = await driveRequest(`files/${id}?fields=parents,name`);
-  if (currentRes.status === 404) return false;
+  const currentRes = await driveRequest(`files/${id}?fields=parents,name,trashed`);
+  if (currentRes.status === 404) return "missing";
   if (!currentRes.ok) throw new Error(`Google Drive file lookup failed (${currentRes.status}).`);
-  const current = (await currentRes.json()) as { parents?: string[]; name?: string };
+  const current = (await currentRes.json()) as { parents?: string[]; name?: string; trashed?: boolean };
+  // Answered BEFORE the folder walk, deliberately: `ensureFolderPath` CREATES folders, so asking it
+  // first would rebuild the very shelf the owner had just emptied, on the way to deciding not to
+  // file anything into it.
+  if (current.trashed) return "trashed";
 
   const targetId = await ensureFolderPath(input.path);
   const currentParents = current.parents ?? [];
   const alreadyThere = currentParents.length === 1 && currentParents[0] === targetId;
   const rename = input.newName && input.newName !== current.name ? input.newName : null;
-  if (alreadyThere && !rename) return true;
+  if (alreadyThere && !rename) return "ok";
 
   const params = new URLSearchParams({ fields: "id" });
   if (!alreadyThere) {
@@ -222,9 +243,9 @@ export async function moveDriveFile(input: {
     headers: { "Content-Type": "application/json" },
     method: "PATCH",
   });
-  if (patchRes.status === 404) return false;
+  if (patchRes.status === 404) return "missing";
   if (!patchRes.ok) throw new Error(`Google Drive move failed (${patchRes.status}).`);
-  return true;
+  return "ok";
 }
 
 /**
