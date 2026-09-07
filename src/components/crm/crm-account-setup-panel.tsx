@@ -272,12 +272,12 @@ export function CrmAccountSetupPanel({
       <div className="flex flex-wrap items-center justify-between gap-3 border border-slate-200 bg-white px-4 py-3">
         <p className="min-w-0 text-sm font-medium text-slate-600">
           {rows.length === 0 ? (
-            "Every employee added to the master has been given a CRM account or ruled not to need one."
+            "Every field employee added to the master has been given a CRM account or ruled not to need one."
           ) : (
             <>
               <span className="font-bold text-slate-900">{rows.length}</span>
-              {rows.length === 1 ? " new employee is" : " new employees are"} waiting for an iReports360
-              account. Enter the <span className="font-semibold text-slate-900">CRM username</span> and{" "}
+              {rows.length === 1 ? " new field employee is" : " new field employees are"} waiting for an
+              iReports360 account. Enter the <span className="font-semibold text-slate-900">CRM username</span> and{" "}
               <span className="font-semibold text-slate-900">CRM code</span>, or record that no account is
               needed.
             </>
@@ -319,7 +319,9 @@ export function CrmAccountSetupPanel({
         <div className="flex flex-col items-center gap-2 border border-slate-200 bg-white px-4 py-10 text-center">
           <UserPlus aria-hidden="true" className="h-5 w-5 text-slate-400" />
           <p className="text-sm text-slate-500">
-            {rows.length === 0 ? "Nothing is waiting for a CRM account." : "No new hires match this search."}
+            {rows.length === 0
+              ? "Nothing is waiting for a CRM account. Head-office hires never open one."
+              : "No new hires match this search."}
           </p>
         </div>
       ) : (
@@ -348,7 +350,10 @@ export function CrmAccountSetupPanel({
             {recentlyResolved.map((task) => (
               <li className="px-4 py-3" key={task.subject.hrId}>
                 <p className="break-words text-sm font-bold text-slate-900">{task.subject.displayName}</p>
-                <p className="break-words text-xs text-slate-500">{task.subject.hrId}</p>
+                <p className="break-words text-xs text-slate-500">
+                  {task.subject.hrId}
+                  {task.subject.areaName ? ` · ${task.subject.areaName}` : ""}
+                </p>
                 <p className="mt-1 break-words text-sm text-slate-700">
                   {task.status === "completed" ? "CRM account recorded" : "No CRM account needed"}
                 </p>
@@ -369,20 +374,24 @@ export function CrmAccountSetupPanel({
             ))}
           </ul>
 
-          {/* w-full table-fixed with a colgroup, never a min-width scroller: the four columns fit
-              their container because every cell wraps. AGENTS.md §4, the fits-the-screen golden
-              rule — `hidden md:block` is the module's mobile rule, not a scroll gate. */}
+          {/* w-full table-fixed with a colgroup, never a min-width scroller: the five columns fit
+              their container because every cell wraps. Widths were re-budgeted when Area was added
+              rather than the type being shrunk — AGENTS.md §4, the fits-the-screen golden rule.
+              `hidden md:block` is the module's mobile rule, not a scroll gate, so the floor here is
+              768px and the Area column is carried on the mobile card instead. */}
           <div className="hidden md:block">
             <table className="w-full table-fixed">
               <colgroup>
-                <col className="w-[34%]" />
-                <col className="w-[22%]" />
-                <col className="w-[22%]" />
-                <col className="w-[22%]" />
+                <col className="w-[26%]" />
+                <col className="w-[18%]" />
+                <col className="w-[20%]" />
+                <col className="w-[18%]" />
+                <col className="w-[18%]" />
               </colgroup>
               <thead className="bg-slate-900">
                 <tr>
                   <th className="px-3 py-2.5 text-left text-[11px] font-black uppercase tracking-wider text-slate-300">Employee</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-black uppercase tracking-wider text-slate-300">Area</th>
                   <th className="px-3 py-2.5 text-left text-[11px] font-black uppercase tracking-wider text-slate-300">Outcome</th>
                   <th className="px-3 py-2.5 text-left text-[11px] font-black uppercase tracking-wider text-slate-300">CRM account</th>
                   <th className="px-3 py-2.5 text-left text-[11px] font-black uppercase tracking-wider text-slate-300">Decided by</th>
@@ -394,6 +403,12 @@ export function CrmAccountSetupPanel({
                     <td className="break-words px-3 py-2.5 align-top text-sm font-medium text-slate-900">
                       {task.subject.displayName}
                       <span className="block text-xs font-normal text-slate-500">{task.subject.hrId}</span>
+                    </td>
+                    <td className="break-words px-3 py-2.5 align-top text-sm text-slate-700">
+                      {task.subject.areaName ?? NOT_RECORDED}
+                      {task.subject.lineName ? (
+                        <span className="block text-xs text-slate-500">{task.subject.lineName}</span>
+                      ) : null}
                     </td>
                     <td className="break-words px-3 py-2.5 align-top text-sm text-slate-700">
                       {task.status === "completed" ? "CRM account recorded" : "No CRM account needed"}

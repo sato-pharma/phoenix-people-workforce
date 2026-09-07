@@ -3,8 +3,7 @@
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
-import { openCrmAccountSetupTasks } from "@/lib/crm/account-setup";
-import { notifyNewEmployeesNeedCrmAccount } from "@/lib/crm/account-setup-notify";
+import { openAndAnnounceCrmAccountSetup } from "@/lib/crm/account-setup-notify";
 import { invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
 import { loadEmployeeImportExistingState } from "@/lib/imports/employee-import-existing-state";
 import { createEmployeeImportPlan } from "@/lib/imports/employee-import-plan";
@@ -1260,11 +1259,10 @@ export async function POST(request: Request) {
     // The cache is cleared first, on purpose: the notice reads each new hire's line, area, region
     // and manager back out of the directory, and a stale read would send a notice full of blanks.
     if (dryRunResult.rowsToInsert.length > 0) {
-      const importedHrIds = dryRunResult.rowsToInsert.map((record) => record.hrId);
-      await openCrmAccountSetupTasks({ hrIds: importedHrIds, source: "employee_import" });
-      await notifyNewEmployeesNeedCrmAccount({
+      await openAndAnnounceCrmAccountSetup({
         actorId: access.loginId ?? access.hrId ?? access.role,
-        hrIds: importedHrIds,
+        hrIds: dryRunResult.rowsToInsert.map((record) => record.hrId),
+        source: "employee_import",
       });
     }
 
