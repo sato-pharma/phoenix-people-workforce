@@ -860,6 +860,37 @@ export const adminNavigationSectionSeeds = [
       // sidebar opening a hub whose seven cards are all filtered out for her — the same empty-hub
       // defect already recorded above for SFE Manager and Finance Manager on People Management.
       { href: "/admin/recruitment-hiring", icon: BriefcaseBusiness, label: "Recruitment & Hiring", permissions: [{ resource: "recruitment", action: "read" }], roles: hrAuthorityNavigationRoles },
+      // Screening Queue — the CV screening workstation (app/(admin)/recruitment/screening/page.tsx),
+      // which until now had NO entry in this file at all.
+      //
+      // WHY IT NEEDED ONE. That page's own header records the decision to keep it off the
+      // Recruitment & Hiring hub — a ninth card trips four unrelated CI gates — on the reasoning
+      // that "a route and a link from the pool already do" make it reachable. The reach turned out
+      // not to be there. Measured on production 2026-09-07 by calling the page's own loader: the
+      // workstation renders 400 CVs in "New CVs — first review required", 143 in "Recommended",
+      // 8 unreviewed duplicate pairs and 13 overdue manager sends, against 46 open vacancies. It
+      // works, it is full, and 75% of the pool had never had a decision recorded against it — the
+      // best tool in the module was the only one you could not get to without typing its URL.
+      //
+      // A PLAIN ROW, NOT A HUB CARD, and deliberately so: the same choice Returned CVs and Manager
+      // CV Engagement each made and recorded below, for the same reason. A row costs one measured
+      // label; a card costs the portal twin pairing, the mobile bottom-nav registry and the pinned
+      // hub count as well, and buys no more reach than this.
+      //
+      // The gate is copied from the page rather than chosen here — `isHrAuthorityRole` plus
+      // recruitment:read — so the row and the screen it opens cannot drift
+      // (every-offered-link-opens.test.ts).
+      //
+      // NO `?unseen=1`, though the page documents that as its entry point and it was the obvious
+      // thing to put here. A query string makes the href stop resolving to a page.tsx, and that
+      // test then SKIPS the row entirely rather than failing — it reports the href among the ones it
+      // "was not checked", which is easy to read past. The two outstation hub cards carrying
+      // `?tab=queue` are already sitting in that unchecked list. Trading the gate-drift guard for a
+      // pre-selected filter is a bad deal on the one row whose whole purpose is reaching a screen
+      // that reads every field on every candidate. Landing on the workstation itself is also the
+      // better arrival: the rail shows New CVs beside Duplicate review and overdue manager sends,
+      // and the pile you should open is not always the unread one.
+      { href: "/recruitment/screening", icon: ListChecks, label: "Screening Queue", permissions: [{ resource: "recruitment", action: "read" }], roles: hrAuthorityNavigationRoles },
       // Returned CVs — where a district manager's "return this CV to the administrator" lands, one
       // pile per returning manager and reason (app/(admin)/recruitment/returned-cvs/page.tsx). A
       // plain sidebar row rather than a ninth hub card, which would trip four unrelated CI gates for
