@@ -137,7 +137,7 @@ export function CeoHeroIdentity({
           </h2>
 
           {/* Decorative divider */}
-          <div className="my-3 flex items-center gap-3">
+          <div className="my-1 flex items-center gap-3">
             <div className="h-px w-8 bg-orange-500" />
             <div className="h-px flex-1 bg-white/10" />
           </div>
@@ -150,13 +150,13 @@ export function CeoHeroIdentity({
 
           {/* Sub-greeting — omitted entirely when the caller passes null. */}
           {subGreeting === null ? null : (
-            <p className="mt-1.5 max-w-md text-sm leading-relaxed text-slate-400">
+            <p className="mt-1 max-w-md text-sm leading-relaxed text-slate-400">
               {subGreeting ?? greetSub}
             </p>
           )}
 
           {/* Live Cairo clock */}
-          <div className="mt-4 flex w-fit items-center border border-white/10 bg-white/[0.04] text-xs">
+          <div className="mt-2 flex w-fit items-center border border-white/10 bg-white/[0.04] text-xs">
             <CeoHeroClock />
           </div>
         </div>
