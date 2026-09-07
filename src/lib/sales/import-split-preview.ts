@@ -3,6 +3,7 @@ import {
   isSplitEligible,
   isSplitEligibleLine,
   isStoreCitySplitActive,
+  isUnlistedArea,
   splitTargetsFor,
   type StoreSplitRow,
 } from "@/lib/sales/store-sales-city-split";
@@ -70,6 +71,12 @@ export type ImportSplitPlan = {
   wholeUnits: number;
   /** Widest fan-out in the file, for the headline ("one customer reaches 7 areas"). */
   widestFanOut: number;
+  /**
+   * Areas in this file that the city list has never heard of — neither grouped into a city nor
+   * deliberately excluded. Normally empty. Non-empty means an area was created and the city list has
+   * not caught up, so nothing in that area will ever split until someone adds it.
+   */
+  unlistedAreas: string[];
   customers: SplitPlanCustomer[];
 };
 
@@ -153,8 +160,10 @@ export function buildImportSplitPlan(input: {
   let wholeCustomers = 0;
   let wholeUnits = 0;
   let widestFanOut = 0;
+  const unlisted = new Set<string>();
 
   for (const { row, units } of byKey.values()) {
+    if (isUnlistedArea(row.areaCode)) unlisted.add(row.areaCode);
     const eligible = splitActive && isSplitEligible(row, period);
     const targets = eligible ? splitTargetsFor(row) : null;
     const areas = targets ? [...targets.areas] : [];
@@ -196,6 +205,7 @@ export function buildImportSplitPlan(input: {
     splitActive,
     splittingCustomers,
     splittingUnits,
+    unlistedAreas: [...unlisted].sort(),
     wholeCustomers,
     wholeUnits,
     widestFanOut,

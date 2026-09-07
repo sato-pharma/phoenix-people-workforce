@@ -233,6 +233,21 @@ function SplitPlanSection({ plan }: { plan: ImportSplitPlan | undefined }) {
         <StatCard label="Widest reach" value={plan.widestFanOut > 0 ? `${plan.widestFanOut} areas` : "—"} />
       </div>
 
+      {plan.unlistedAreas.length > 0 ? (
+        <div className="border border-phx-warn-line bg-phx-warn-bg px-4 py-3 text-sm text-phx-ink">
+          <p className="font-black">
+            {plan.unlistedAreas.length === 1 ? "One area in this file is" : `${plan.unlistedAreas.length} areas in this file are`}{" "}
+            not on the city list: {plan.unlistedAreas.join(", ")}
+          </p>
+          <p className="mt-1 text-phx-ink-soft">
+            Nothing in {plan.unlistedAreas.length === 1 ? "it" : "them"} will spread across its governorate, and neither
+            will the areas already in that governorate — they still count as one-area cities. This normally means an area
+            was added to the organogram and the city list has not caught up. Tell whoever maintains the sales rules
+            before you publish the month.
+          </p>
+        </div>
+      ) : null}
+
       {splitting.length > 0 ? (
         <div className="overflow-hidden rounded-lg border border-phx-line">
           <table className="w-full table-fixed text-sm">
