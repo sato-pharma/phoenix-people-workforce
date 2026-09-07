@@ -164,6 +164,62 @@ export function runReact418HydrationSafeTextTests() {
     "the finished string must be handed to the form as expiryLabel",
   );
 
+  // ── 3b. The plan decision timeline, which BOTH earlier fixes missed ─────────────────────────
+  //
+  // /employee-portals/plans kept throwing #418 after #3336 and #3337 both shipped on 2026-09-06.
+  // Confirmed rather than assumed: every event's `release` column was resolved back to a commit and
+  // `git merge-base --is-ancestor` says all six erroring builds already contained both fixes. The
+  // last arrived 2026-09-07 13:06 Cairo.
+  //
+  // What they missed is this call site — the decision timeline rendered
+  // `new Date(d.createdAt).toLocaleDateString("en-GB", { month: "short", … })` straight into a text
+  // node, inside a `"use client"` component. `createdAt` is an INSTANT and the month is the en-GB
+  // abbreviation, the one field CLDR 42 changed, so it is cause (1) at a second site rather than a
+  // new cause.
+  //
+  // Pinned by SOURCE, like the password-setup pair above: the value assertions in section 1 pass on
+  // a reverted implementation too, because CI runs one engine.
+  const plansSource = codeOnly(read("src/components/employee-portal/plans-workspace.tsx"));
+  assert.match(
+    plansSource,
+    /\{cairoDate\(d\.createdAt\)\}/,
+    "the plan decision timeline must render the instant through the shared cairoDate helper",
+  );
+  assert.doesNotMatch(
+    plansSource,
+    /toLocaleDateString\("en-GB"/,
+    'no en-GB toLocaleDateString may survive in plans-workspace — that pairing is what CLDR 42 split, and this file renders during SSR',
+  );
+  // The date-only helpers in the same file are NOT this bug and must survive the fix. They format a
+  // plan row's `activity_date` in locale "en" — where the September abbreviation never changed —
+  // and their UTC zone is what stops the calendar day shifting. A sweep that "finishes the job" by
+  // dragging them to Cairo breaks the grid's day alignment, which is why they are asserted present.
+  assert.match(plansSource, /function formatDate\(/, "the date-only helpers must stay");
+  assert.match(
+    plansSource,
+    /timeZone: "UTC"/,
+    "the date-only helpers keep UTC deliberately — see their own comment; Cairo there shifts the calendar day",
+  );
+
+  // ── 3c. No component may re-implement the shared formatter ──────────────────────────────────
+  //
+  // validated-customer-register.tsx had its own `cairoDateTime` built on
+  // `Intl.DateTimeFormat("en-GB", { month: "short" })` — a second, unsafe copy of the exact thing
+  // the shared helper exists to be. It is a `"use client"` component, so it was a live #418 waiting
+  // for two readers on different ICU versions. It now delegates.
+  const registerSource = codeOnly(read("src/components/marketing-requests/validated-customer-register.tsx"));
+  assert.doesNotMatch(
+    registerSource,
+    /Intl\.DateTimeFormat\("en-GB"/,
+    "validated-customer-register must not rebuild the Cairo formatter — delegate to @/lib/format/cairo-datetime",
+  );
+  assert.match(registerSource, /sharedCairoDateTime/, "validated-customer-register must delegate to the shared helper");
+  assert.match(
+    registerSource,
+    /"Not recorded"/,
+    'the register keeps its own "Not recorded" copy for an absent instant — the shared dash reads wrong in that column',
+  );
+
   // ── 4. The portal shell clock is NOT pinned here — #3336 owns it ─────────────────────
   //
   // The employee-portal header chip was the second cause on these routes: it called `new Date()`
