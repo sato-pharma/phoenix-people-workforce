@@ -2104,7 +2104,7 @@ function writeSummarySheet(workbook: ExcelJS.Workbook, c: MonthlyClosingComparis
 
   writeTable(sheet, row, {
     columns: [{ label: "Category", width: 16 }, { label: "Insight", width: 90 }],
-    note: "Values in EGP · live formulas referencing the hidden Data sheet · recomputed as Qty × (1 − discount) × factory price · single month (month-over-month N/A until more months are uploaded).",
+    note: "Values in EGP · live formulas referencing the hidden Data sheet · recomputed as Qty × factory price · single month (month-over-month N/A until more months are uploaded).",
     rows: c.insights.map((b) => [b.category, b.text]),
     title: "Key Insights",
   });
@@ -2533,7 +2533,7 @@ function writeSourceCoverageSheet(workbook: ExcelJS.Workbook, coverage: MonthlyS
     note:
       `${asOf ? `Last upload for ${coverage.period}: ${asOf}. ` : ""}` +
       "Presence is decided on rows, not value — a source with only credit notes still counts as present. " +
-      "Values follow the closing's own basis (Direct at submitted value, distributor rows at effective units × factory price, confidential products excluded), so these columns tie to the Closing Matrix.",
+      "Values follow the closing's own basis (Direct at submitted value, distributor rows at units × factory price, confidential products excluded), so these columns tie to the Closing Matrix.",
     rows: coverage.sources.map((entry) => [
       entry.name, entry.prevUnits, entry.prevValue, entry.curUnits, entry.curValue, statusLabel(entry),
     ]),

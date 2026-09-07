@@ -463,12 +463,11 @@ function DetailTable({ rows, totals }: { rows: ClosingDetailRow[]; totals: Closi
         <thead>
           <tr className="bg-[#0B0B0B] text-white">
             <th className="w-[7%] px-3 py-2 font-bold">Dist.</th>
-            <th className="w-[10%] px-3 py-2 font-bold">Area</th>
-            <th className="w-[12%] px-3 py-2 font-bold">Brick</th>
-            <th className="w-[20%] px-3 py-2 font-bold">Customer</th>
-            <th className="w-[14%] px-3 py-2 font-bold">Product</th>
-            <th className="w-[8%] px-3 py-2 text-right font-bold">Qty</th>
-            <th className="w-[9%] px-3 py-2 text-right font-bold">Eff. Units</th>
+            <th className="w-[11%] px-3 py-2 font-bold">Area</th>
+            <th className="w-[14%] px-3 py-2 font-bold">Brick</th>
+            <th className="w-[23%] px-3 py-2 font-bold">Customer</th>
+            <th className="w-[16%] px-3 py-2 font-bold">Product</th>
+            <th className="w-[9%] px-3 py-2 text-right font-bold">Units</th>
             <th className="w-[11%] px-3 py-2 text-right font-bold">Value</th>
             <th className="w-[9%] px-3 py-2 font-bold">In Closing</th>
           </tr>
@@ -493,7 +492,6 @@ function DetailTable({ rows, totals }: { rows: ClosingDetailRow[]; totals: Closi
               </td>
               <td className="truncate px-3 py-2 text-slate-600">{row.productName}</td>
               <td className="px-3 py-2 text-right tabular-nums text-slate-700">{fmtUnits(row.qty)}</td>
-              <td className="px-3 py-2 text-right tabular-nums text-slate-600">{fmtValue(row.effectiveUnits)}</td>
               <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-800">{fmtValue(row.salesValue)}</td>
               {/* "In Closing" answers whether this row's money is in the headline. A direct row is
                   in it — it reaches the grid from the Direct Orders module rather than as an
@@ -517,7 +515,6 @@ function DetailTable({ rows, totals }: { rows: ClosingDetailRow[]; totals: Closi
               Page + filter total ({fmtUnits(totals.rows)} rows)
             </td>
             <td className="px-3 py-2 text-right tabular-nums">{fmtUnits(totals.units)}</td>
-            <td className="px-3 py-2 text-right tabular-nums">{fmtValue(totals.effectiveUnits)}</td>
             <td className="px-3 py-2 text-right tabular-nums">{fmtValue(totals.salesValue)}</td>
             <td className="px-3 py-2" />
           </tr>
@@ -544,14 +541,10 @@ function DetailCards({ rows }: { rows: ClosingDetailRow[] }) {
             {row.areaName} · {row.brickName || row.brickId}
           </p>
           <p className="mt-1 text-xs font-semibold text-slate-700">{row.productName}</p>
-          <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
+          <dl className="mt-2 grid grid-cols-2 gap-2 text-xs">
             <div>
-              <dt className="text-phx-2xs font-bold uppercase text-slate-400">Qty</dt>
+              <dt className="text-phx-2xs font-bold uppercase text-slate-400">Units</dt>
               <dd className="font-bold tabular-nums text-slate-800">{fmtUnits(row.qty)}</dd>
-            </div>
-            <div>
-              <dt className="text-phx-2xs font-bold uppercase text-slate-400">Eff.</dt>
-              <dd className="font-bold tabular-nums text-slate-800">{fmtValue(row.effectiveUnits)}</dd>
             </div>
             <div>
               <dt className="text-phx-2xs font-bold uppercase text-slate-400">Value</dt>

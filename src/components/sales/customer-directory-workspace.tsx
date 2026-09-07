@@ -166,7 +166,7 @@ export function CustomerDirectoryWorkspace({ initialError, initialResult, option
                 : `Customers: ${formatNumber(customers.length)}`}
             </AdminInsightChip>
             <AdminInsightChip tone="orange">Each row = one customer per distributor</AdminInsightChip>
-            <AdminInsightChip tone="slate">Value = Qty × factory price × (1 − discount)</AdminInsightChip>
+            <AdminInsightChip tone="slate">Value = Qty × factory price</AdminInsightChip>
           </>
         )}
         description="Customers from the uploaded distributor sales. Filter by region, area, brick (by name), distributor and period; click a customer to drill into their full sales."

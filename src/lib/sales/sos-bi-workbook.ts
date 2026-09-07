@@ -1165,7 +1165,7 @@ function buildReportInfo(ctx: Ctx, generatedBy: string, filterSummary: string, l
     ["Leaf rows (Data sheet)", leafCount],
     ["Bricks (reached / total in scope)", `${ctx.data.summary.bricksReached} / ${ctx.data.summary.totalBricks}`],
     ["Available periods", ctx.data.availablePeriods.join(", ") || "—"],
-    ["Value semantics", "Distributor rows: qty × (1 − discount) × factory price. Direct rows: the stored sheet value. Bonus qty excluded."],
+    ["Value semantics", "Distributor rows: qty × factory price. Direct rows: the stored sheet value. Bonus qty and the sheet's discount column are both excluded."],
     ["Data sheet", "Hidden sheet 'Data' holds the exact scoped leaf rows as the native Excel Table tblSos; every reconstructable figure is a live SUMIFS/SUM formula over it."],
     ["Engine", "ExcelForge — native charts, table, icon-set / cellIs conditional formatting and outline drill-downs."],
   ];

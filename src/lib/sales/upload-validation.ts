@@ -294,17 +294,19 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
     });
   }
 
-  // Negative value NOT explained by a negative qty (a return). For recompute this means discount > 1.
+  // Negative value NOT explained by a negative qty (a return). On a recompute sheet the value is
+  // qty x factory price, so since 2026-09-07 a discount above 100% can no longer produce one — the
+  // remaining causes are a negative master price or, on a sheet-value distributor, a bad value cell.
   const negativeValue = coded.filter((r) => r.value < 0 && r.qty >= 0);
   if (negativeValue.length > 0) {
     add({
       code: "negative_value",
       severity: "warning",
       title: "Negative value on a non-return line",
-      detail: `${negativeValue.length.toLocaleString()} row(s) have a negative value while quantity is not negative — usually a discount above 100% (recompute) or a bad sheet value.`,
+      detail: `${negativeValue.length.toLocaleString()} row(s) have a negative value while quantity is not negative — usually a negative factory price (recompute) or a bad sheet value.`,
       count: negativeValue.length,
       sampleRows: sampleRows(negativeValue),
-      fixHint: "Fix the discount or value cell. A genuine credit should normally carry a negative quantity too.",
+      fixHint: "Check the product's factory price and the sheet's value cell. A genuine credit should normally carry a negative quantity too.",
     });
   }
 
@@ -314,12 +316,12 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
       code: "zero_value_with_qty",
       severity: "warning",
       title: "Sold units with zero value",
-      detail: `${zeroValueWithQty.length.toLocaleString()} row(s) have a positive quantity but a value of zero — usually a missing factory price or a 100% discount.`,
+      detail: `${zeroValueWithQty.length.toLocaleString()} row(s) have a positive quantity but a value of zero — on a recompute sheet that means the product has no factory price.`,
       count: zeroValueWithQty.length,
       sampleRows: sampleRows(zeroValueWithQty),
       fixHint: ctx.valueSource === "sheet"
         ? "Check the value column in the source sheet for these rows."
-        : "Add the product's factory price in Master Data & Profiles, and check the discount column.",
+        : "Add the product's factory price in Master Data & Profiles — the discount column no longer affects the value.",
     });
   }
 
