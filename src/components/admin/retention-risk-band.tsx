@@ -215,7 +215,7 @@ export function RetentionRiskBand({ view }: { view: RetentionRiskView }) {
 
   return (
     <SectionShell
-      description="Medical Reps who have not been seen since: three or more consecutive working days of recorded leave, or of no CRM entry at all. An early warning to check on someone — never a conclusion about them."
+      description="Medical Reps with no CRM record, or on leave, for three working days running and still not seen. Thursday and Friday are not counted. An early warning to check on someone — never a conclusion about them."
       title="Retention risk"
     >
       <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
@@ -341,9 +341,9 @@ export function RetentionRiskColumn({ view }: { view: RetentionRiskView }) {
       )}
 
       <p className="border-t border-slate-200 px-4 py-3 break-words text-phx-3xs text-slate-500">
-        Medical Reps who have not been seen since: three or more consecutive working days of no CRM
-        entry, or of recorded leave. An early warning to check on someone, never a conclusion about
-        them.
+        Three working days running with no CRM record, or on leave, and not seen since. Thursday and
+        Friday are never counted, so on a Monday the three days behind it are the Wednesday, Saturday
+        and Sunday. An early warning to check on someone, never a conclusion about them.
       </p>
     </div>
   );

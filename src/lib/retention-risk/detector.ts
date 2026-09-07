@@ -6,7 +6,10 @@
  */
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
-import { isFieldWorkforceWeeklyOff } from "@/lib/field-workforce-compliance/weekend-policy";
+import {
+  isFieldWorkforceThursday,
+  isFieldWorkforceWeeklyOff,
+} from "@/lib/field-workforce-compliance/weekend-policy";
 import type {
   RetentionRiskDetectionInput,
   RetentionRiskSignal,
@@ -63,19 +66,30 @@ export function eachDate(start: string, end: string): string[] {
 type DayVerdict = "breaks" | "bridges" | "counts" | "outside";
 
 /**
- * WHY WEEKLY OFFS AND HOLIDAYS BRIDGE RATHER THAN BREAK.
+ * WHICH DAYS THIS BOARD COUNTS: Saturday, Sunday, Monday, Tuesday, Wednesday. NOT Thursday, NOT
+ * Friday.
  *
- * The company week is Saturday to Wednesday full days, Thursday morning, Friday off (and Saturday
- * off for anyone whose title is not field-only) — see weekend-policy.ts. If Friday BROKE a run,
- * every streak would be capped at the Saturday-to-Wednesday block it started in, and a rep who went
- * quiet on Sunday would reset every single week. The longer thresholds would be unreachable and the
- * feature would report nothing, quietly. So a non-working day is skipped: it adds nothing to the
- * count and it does not reset it.
+ * Owner, 2026-09-07: "TODAY 7 SEPT THEN I SHOULD SEE IF ANYONE NOT SUBMITTED 3 HISTORICAL DAYS
+ * FRIDAY AND THURSDAY NOT INCLUDED". So on Monday 7 September the three days behind it are the
+ * 2nd, the 5th and the 6th — Thursday the 3rd and Friday the 4th are skipped entirely.
  *
- * The same argument applies to a confirmed public holiday, which is why both are bridged here.
+ * THURSDAY IS EXCLUDED HERE AND ONLY HERE. `weekend-policy.ts` treats Thursday as a HALF working
+ * day, because the field week is Saturday to Wednesday full days plus Thursday morning, and that
+ * half-day weighting is what payroll charges a no-activity deduction against. This board must not
+ * reach into that: `isFieldWorkforceWeeklyOff` and `fieldWorkforceDeductionDayWeight` decide money,
+ * and widening either one to drop Thursday would silently stop charging for a day the company does
+ * expect to be worked. So the exclusion lives in this function, which nothing but this board calls.
+ *
+ * WHY THEY BRIDGE RATHER THAN BREAK. If Thursday and Friday BROKE a run, every streak would be
+ * capped at the Saturday-to-Wednesday block it started in, and a rep who went quiet on Sunday would
+ * reset every single week — nothing would ever reach three and the board would report nothing,
+ * quietly. Skipped means skipped: it adds nothing to the count, and it does not reset it.
+ *
+ * The same argument applies to a confirmed public holiday, which is why that is bridged too.
  */
 function isNonWorkingDay(dateIso: string, title: string | null, publicHolidays: ReadonlySet<string>): boolean {
   if (publicHolidays.has(dateIso)) return true;
+  if (isFieldWorkforceThursday(dateIso)) return true;
   return isFieldWorkforceWeeklyOff({ dateIso, title });
 }
 
