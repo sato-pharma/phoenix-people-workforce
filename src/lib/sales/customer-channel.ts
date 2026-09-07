@@ -514,29 +514,80 @@ export function isStoreCustomer(
 }
 
 /**
- * The FIRST period the 2026-09-06 rulings apply to. Owner decision, the day they were made, after
- * he was shown what merging them would move.
+ * The FIRST period the 2026-09-06 rulings apply to — PER LINE, because the lines were published on
+ * different days and a published month never moves.
  *
- * WHY IT EXISTS AT ALL. Nothing about this classification is stored — it is recomputed from the
+ * WHY A GATE EXISTS AT ALL. Nothing about this classification is stored — it is recomputed from the
  * customer's name on every render, so changing it restates EVERY period at once, published months
- * included. August 2026 Anti Infective had been published that same afternoon, and the change would
- * have moved 14,150 EGP of store value between areas inside it. Nothing detects that either: the
- * publication drift check compares UNITS, and the city split preserves each line's unit total while
- * moving units between areas, so a restated month reports no drift. Same shape as
- * STORE_CITY_SPLIT_FROM_PERIOD, which exists for exactly the same reason one month earlier.
+ * included. Nothing detects that: the publication drift check compares UNITS, and the city split
+ * preserves each line's unit total while moving units between areas, so a restated month reports no
+ * drift at all. Same shape as STORE_CITY_SPLIT_FROM_PERIOD, one month earlier.
+ *
+ * WHY IT BECAME PER-LINE, on 2026-09-07. A single date could not serve both halves of the truth:
+ *
+ *   · August ANTI INFECTIVE was published and announced that afternoon. Its numbers are frozen by
+ *     AGENTS.md §4 — "donot fix any already published an announced month" — so it must keep the
+ *     classification it went out with, however provably better the new one is.
+ *   · August PEDIA was NOT published. It carries the El Qema Qalubeya money the owner ordered split
+ *     across Cairo (الفرسان بنها, 978,912 + 444,787 EGP), and a September start meant that ruling
+ *     did nothing to the very file he had just imported.
+ *
+ * One scalar forced a choice between restating a sent month and ignoring a live instruction. Keyed
+ * by line, both are honoured at once. Owner, 2026-09-07: "make the gate per-line", then "no, in
+ * pedia split start from aug".
+ *
+ * 🔴 THE DEFAULT IS THE LATE DATE, AND IT MUST STAY THAT WAY. A line absent from this map — a new
+ * roster line, a misspelling, a blank — gets the LATEST cutover, which keeps the OLD classification
+ * and therefore cannot restate anything. Defaulting to the early date would silently rewrite history
+ * for any line whose name did not match, and nothing downstream would report it. Note this is the
+ * opposite of the usual "newest wins" instinct: here, later means safer.
+ *
+ * CNS is deliberately NOT listed. August CNS is unpublished too, so it COULD start in August — but
+ * the owner named Pedia and only Pedia, and a line that stays on the old rule loses nothing that
+ * cannot be added later, while a line moved without being asked for cannot be un-moved once its
+ * month is published.
  *
  * A plain string compare is correct and deliberate: periods are `YYYY-MM`, which sorts
  * lexicographically in calendar order. Anything malformed or absent falls to NOT active, which
  * keeps the OLD classification — the safe direction, because leaving a number where it already was
  * cannot restate a closing somebody has already sent to their managers.
  */
-export const WAREHOUSE_RULE_FROM_PERIOD = "2026-09";
+export const WAREHOUSE_RULE_DEFAULT_FROM_PERIOD = "2026-09";
 
-/** Do the owner's 2026-09-06 rulings apply to this period? Both this and the split's own gate. */
-export function isWarehouseRuleActive(period: string | null | undefined): boolean {
+/** Lines whose cutover differs from the default. Keyed by the normalised official_line. */
+export const WAREHOUSE_RULE_FROM_PERIOD_BY_LINE: ReadonlyMap<string, string> = new Map([
+  ["pedia", "2026-08"],
+]);
+
+/**
+ * Normalise an official_line for comparison. The source data carries several spellings of the same
+ * line ("Anti Infective", "anti_infective", "Anti-Infective"), and a spelling this does not fold is
+ * not a silent wrong answer here — it simply falls to the default, which is the late, safe date.
+ */
+function warehouseLineKey(officialLine: string | null | undefined): string {
+  return String(officialLine ?? "").trim().toLowerCase().replace(/[\s_-]+/g, " ");
+}
+
+/** The first period the new rulings apply to for this line. */
+export function warehouseRuleFromPeriod(officialLine: string | null | undefined): string {
+  const key = warehouseLineKey(officialLine);
+  return WAREHOUSE_RULE_FROM_PERIOD_BY_LINE.get(key) ?? WAREHOUSE_RULE_DEFAULT_FROM_PERIOD;
+}
+
+/**
+ * Do the owner's 2026-09-06 rulings apply to this period, on this line?
+ *
+ * `officialLine` is REQUIRED, deliberately. An optional line would default to "not Pedia" and quietly
+ * withhold the August split from the one line that is supposed to have it — a wrong number with no
+ * error anywhere. Making it required turns that mistake into a compile failure instead.
+ */
+export function isWarehouseRuleActive(
+  period: string | null | undefined,
+  officialLine: string | null | undefined,
+): boolean {
   const trimmed = String(period ?? "").trim();
   if (!/^\d{4}-\d{2}$/.test(trimmed)) return false;
-  return trimmed >= WAREHOUSE_RULE_FROM_PERIOD;
+  return trimmed >= warehouseRuleFromPeriod(officialLine);
 }
 
 /**
@@ -571,8 +622,9 @@ export function isStoreCustomerForPeriod(
   clientCode: string | null | undefined,
   distributorCode: string | null | undefined,
   period: string | null | undefined,
+  officialLine: string | null | undefined,
 ): boolean {
-  return isWarehouseRuleActive(period)
+  return isWarehouseRuleActive(period, officialLine)
     ? isStoreCustomer(name, clientCode, distributorCode)
     : legacyIsStoreCustomer(name, clientCode, distributorCode);
 }

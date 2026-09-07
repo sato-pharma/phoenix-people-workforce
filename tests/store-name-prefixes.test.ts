@@ -32,7 +32,10 @@ import {
  * "simplifies" the prefix list into the keyword list, those assertions are what fail.
  */
 
-const asStore = (name: string) => isStoreCustomerForPeriod(name, null, "EP-PHS", "2026-09");
+// Anti Infective deliberately: it carries the LATEST cutover (2026-09), so a rule that is live for
+// it is live for every line. See warehouseRuleFromPeriod in customer-channel.ts.
+const asStore = (name: string) =>
+  isStoreCustomerForPeriod(name, null, "EP-PHS", "2026-09", "Anti Infective");
 
 export function runStoreNamePrefixesTests() {
   assert.ok(STORE_NAME_PREFIXES.length > 0, "the prefix list exists");

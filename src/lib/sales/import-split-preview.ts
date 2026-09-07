@@ -96,8 +96,11 @@ function reasonNotSplit(row: StoreSplitRow, period: string): string {
   if (!isSplitEligibleLine(row.officialLine)) {
     return `${text(row.officialLine) || "this line"} is not a split line (Head Office never splits)`;
   }
-  if (!isStoreCustomerForPeriod(row.clientName, row.clientCode, row.distributorCode, period)) {
-    return "classified as a pharmacy, not a wholesaler";
+  if (
+    !isStoreCustomerForPeriod(row.clientName, row.clientCode, row.distributorCode, period, row.officialLine)
+  ) {
+    // The cutover is per line, so the honest reason names the line as well as the month.
+    return `classified as a pharmacy, not a wholesaler (on ${text(row.officialLine) || "this line"} for ${period})`;
   }
   const targets = splitTargetsFor(row);
   if (!targets) return `area ${text(row.areaCode) || "(blank)"} is not on the city list — sales stay where they are`;
@@ -112,9 +115,13 @@ function reasonNotSplit(row: StoreSplitRow, period: string): string {
  *
  * `period` decides two separate things and both matter: whether the split runs at all
  * (STORE_CITY_SPLIT_FROM_PERIOD, August 2026) and which warehouse rule says who is a wholesaler
- * (WAREHOUSE_RULE_FROM_PERIOD, September 2026). A file for a month before either gate is not
- * broken — it simply does not split, and `splitActive` says so rather than leaving the reader to
- * infer it from an empty list.
+ * (warehouseRuleFromPeriod — PER LINE: August for Pedia, September for everything else). A file for
+ * a month before either gate is not broken — it simply does not split, and `splitActive` says so
+ * rather than leaving the reader to infer it from an empty list.
+ *
+ * Because the second gate is per line, one imported file can legitimately show a customer splitting
+ * on Pedia and not on Anti Infective in the same month. Each row's `reason` names the line for
+ * exactly that case, so it reads as a rule rather than as an inconsistency.
  */
 export function buildImportSplitPlan(input: {
   period: string | null | undefined;

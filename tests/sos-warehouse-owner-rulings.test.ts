@@ -4,7 +4,8 @@ import {
   isStoreCustomer,
   isStoreCustomerForPeriod,
   legacyIsStoreCustomer,
-  WAREHOUSE_RULE_FROM_PERIOD,
+  WAREHOUSE_RULE_DEFAULT_FROM_PERIOD,
+  warehouseRuleFromPeriod,
 } from "../src/lib/sales/customer-channel.ts";
 
 /**
@@ -239,42 +240,86 @@ export function runSosWarehouseOwnerRulingsTests() {
     );
   }
 
-  // ── THE PERIOD GATE ────────────────────────────────────────────────────────────────────────────
-  // The rulings land in SEPTEMBER. August 2026 Anti Infective was published on 2026-09-06, hours
-  // before they were made, so August keeps the classification it was published with — owner's
-  // decision when he was shown that adopting them immediately would move 14,150 EGP of store value
-  // between areas inside a closing his managers already had.
-  assert.equal(WAREHOUSE_RULE_FROM_PERIOD, "2026-09", "the cutover the owner chose");
+  // ── THE PERIOD GATE, WHICH IS PER LINE ────────────────────────────────────────────────────────
+  //
+  // The lines were published on different days, so one date could not serve both halves of the
+  // truth. August ANTI INFECTIVE was published and announced on 2026-09-06 — it keeps the
+  // classification it went out with, because a published and announced month is never corrected.
+  // August PEDIA was never published, and it holds the El Qema Qalubeya money the owner ordered
+  // split across Cairo, so a September start would have made that ruling do nothing to the file he
+  // had just imported. Owner, 2026-09-07: "make the gate per-line", then "no, in pedia split start
+  // from aug".
+  assert.equal(WAREHOUSE_RULE_DEFAULT_FROM_PERIOD, "2026-09", "the default is the LATE, safe date");
+  assert.equal(warehouseRuleFromPeriod("Pedia"), "2026-08", "Pedia was never published for August");
+  assert.equal(warehouseRuleFromPeriod("Anti Infective"), "2026-09", "August Anti Infective WAS announced");
+  assert.equal(warehouseRuleFromPeriod("CNS"), "2026-09", "CNS was not asked for and is not moved");
+
+  // 🔴 AN UNKNOWN LINE TAKES THE LATE DATE. Defaulting to the early one would silently restate
+  // history for any line whose name did not match — a new roster line, a misspelling, a blank.
+  // "PEDIATRICS" is in this list on purpose: it CONTAINS "pedia" but is not it, and a rule matching
+  // by substring rather than by whole normalised name would hand it August by accident.
+  for (const unknown of [null, undefined, "", "Head Office", "Onco", "PEDIATRICS", "Pedia Line"]) {
+    assert.equal(
+      warehouseRuleFromPeriod(unknown),
+      "2026-09",
+      `an unrecognised line must take the LATE cutover, never the early one: ${String(unknown)}`,
+    );
+  }
+  // ...but the real spellings of Pedia all fold to it, or the line it is FOR would miss out.
+  for (const spelling of ["Pedia", "pedia", "  PEDIA  ", "pedia "]) {
+    assert.equal(warehouseRuleFromPeriod(spelling), "2026-08", `Pedia spelled "${spelling}"`);
+  }
 
   // A customer the new rule ADDS: the name states a medicines trading business, but carries none of
-  // the six words. Splits from September; untouched in August and every month before it.
+  // the six words. On ANTI INFECTIVE it waits for September; on PEDIA it starts in August.
   const newlyWarehouse = "الدولية لتجارة الادوية";
-  assert.equal(isStoreCustomerForPeriod(newlyWarehouse, "402301", "IS", "2026-07"), false);
-  assert.equal(isStoreCustomerForPeriod(newlyWarehouse, "402301", "IS", "2026-08"), false);
+  assert.equal(isStoreCustomerForPeriod(newlyWarehouse, "402301", "IS", "2026-07", "Anti Infective"), false);
   assert.equal(
-    isStoreCustomerForPeriod(newlyWarehouse, "402301", "IS", "2026-09"),
+    isStoreCustomerForPeriod(newlyWarehouse, "402301", "IS", "2026-08", "Anti Infective"),
+    false,
+    "August Anti Infective is published and announced — its classification cannot move",
+  );
+  assert.equal(
+    isStoreCustomerForPeriod(newlyWarehouse, "402301", "IS", "2026-09", "Anti Infective"),
     true,
-    "a trading company starts splitting in September, not in the published August",
+    "and it adopts the rulings from September",
+  );
+  assert.equal(
+    isStoreCustomerForPeriod(newlyWarehouse, "402301", "IS", "2026-08", "Pedia"),
+    true,
+    "August PEDIA was never published, so it takes the rulings — this is the El Qema half",
+  );
+  assert.equal(
+    isStoreCustomerForPeriod(newlyWarehouse, "402301", "IS", "2026-07", "Pedia"),
+    false,
+    "but July Pedia IS published and announced, so the cutover stops at August",
   );
 
-  // A customer the new rule REMOVES: صيدلية تكنوفارم ايجيبت matched فارم and was splitting. It stops
-  // in September. It must KEEP splitting in August, or the published month silently changes.
+  // A customer the new rule REMOVES: صيدلية تكنوفارم ايجيبت matched فارم and was splitting. It must
+  // KEEP splitting in August Anti Infective, or that published month silently changes.
   const nowPharmacy = "صيدلية تكنوفارم ايجيبت";
   assert.equal(
-    isStoreCustomerForPeriod(nowPharmacy, "0001502569", "PS", "2026-08"),
+    isStoreCustomerForPeriod(nowPharmacy, "0001502569", "PS", "2026-08", "Anti Infective"),
     true,
-    "August keeps the answer it was published with — a pharmacy matching فارم still split then",
+    "August Anti Infective keeps the answer it was published with",
   );
-  assert.equal(isStoreCustomerForPeriod(nowPharmacy, "0001502569", "PS", "2026-09"), false);
+  assert.equal(isStoreCustomerForPeriod(nowPharmacy, "0001502569", "PS", "2026-09", "Anti Infective"), false);
+  assert.equal(
+    isStoreCustomerForPeriod(nowPharmacy, "0001502569", "PS", "2026-08", "Pedia"),
+    false,
+    "and August Pedia, unpublished, takes the correction in both directions — not just the flattering one",
+  );
 
-  // A malformed or missing period must fall to the OLD rule. Splitting a month early restates a
-  // closing somebody already has; failing to adopt the new rule merely leaves a number alone.
+  // A malformed or missing period must fall to the OLD rule, on every line. Splitting a month early
+  // restates a closing somebody already has; failing to adopt the new rule merely leaves it alone.
   for (const bad of [null, undefined, "", "not-a-period", "2026", "2026-9"]) {
-    assert.equal(
-      isStoreCustomerForPeriod(newlyWarehouse, "402301", "IS", bad),
-      false,
-      `an unreadable period must fall back to the old rule, not the new one: ${String(bad)}`,
-    );
+    for (const line of ["Anti Infective", "Pedia", "CNS"]) {
+      assert.equal(
+        isStoreCustomerForPeriod(newlyWarehouse, "402301", "IS", bad, line),
+        false,
+        `an unreadable period must fall back to the old rule on ${line}: ${String(bad)}`,
+      );
+    }
   }
 
   // And the legacy rule is genuinely the OLD one, not the new one wearing a different name — if it
