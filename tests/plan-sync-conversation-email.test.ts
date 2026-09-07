@@ -457,6 +457,46 @@ export function runPlanSyncConversationEmailTests() {
     "a plan comment must pass its own id as messageKey, or the second comment on a plan goes unheard",
   );
 
+  // -------------------------------------------------------------------------
+  // A plan-comment recipient must be written in its CANONICAL form, never the separator-stripped
+  // comparison key notifyPlanComment uses to dedupe participants.
+  // -------------------------------------------------------------------------
+  //
+  // Measured in production 2026-09-07: exactly 5 plan-comment notification_events rows had EVER
+  // been created, and all 5 were for hr_id "AA" (the CEO - no hyphen). Every other hr_id in this
+  // company contains a hyphen ("B-10", "A-8", ...). notifyPlanComment was passing
+  // notifyKeys.map(hrId => ({ hrId })) straight to notifyRecipients, where each hrId was
+  // normalizeHrId(...) output ("b10") rather than the canonical "B-10" employees.hr_id actually
+  // stores - so the notification_events insert failed its foreign key on every call, silently
+  // (caught, logged, never surfaced to the commenter). Confirmed live against production: two
+  // comments posted through the real addPlanComment on a throwaway plan produced 0
+  // notification_events rows before this fix and 2 distinct rows after it.
+  assert.ok(
+    /const canonicalHrIds = new Map<string, string>\(\);/.test(service),
+    "notifyPlanComment must keep a canonical (properly-cased) hr id alongside its comparison keys",
+  );
+  assert.ok(
+    /recipients: notifyKeys\.map\(\(key\) => \(\{ hrId: toCanonicalHrId\(key\) \}\)\),/.test(service),
+    "a plan comment's recipients must be written in canonical form, not the stripped comparison key",
+  );
+  assert.ok(
+    !/recipients: notifyKeys\.map\(\(hrId\) => \(\{ hrId \}\)\),/.test(service),
+    "the recipient list must not regress to writing the stripped normalizeHrId key straight to the database",
+  );
+
+  // authRoleForHrId has the identical bug independently: it queried app_auth_users by the same
+  // stripped comparison key, so it silently resolved no role for any hyphenated hr_id, and its
+  // one caller (planReviewActionUrl) always fell back to the admin shell - wrong for a
+  // portal-only manager.
+  assert.ok(
+    /async function authRoleForHrId[\s\S]{0,500}hrIdForStorage\(hrId\)/.test(service),
+    "authRoleForHrId must look up app_auth_users by the canonical hr id, not the stripped comparison key",
+  );
+  assert.ok(
+    !/\.from\("app_auth_users"\)\s*\.select\("role"\)\s*\.eq\("hr_id", normalized\)/.test(service),
+    "authRoleForHrId must not regress to querying by the separator-stripped comparison key",
+  );
+
   // Marketing: the advisory comment is the one thread left unfixed, on purpose. It UPDATES the same
   // approval-step row's decision_note every time the same CC reviewer comments, so there is no
   // per-message id to key on - ccStep.id never changes between two advisory comments on that step,
