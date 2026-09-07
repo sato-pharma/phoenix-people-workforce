@@ -12,6 +12,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { excelCellText, loadExcelWorkbook } from "@/lib/uploads/exceljs-rows";
 import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { writeStoreSplitNetForBatch } from "@/lib/sales/attribution-store-split-refresh";
 
 // The customer -> brick crosswalk (code / name / address -> brick), for the read-only "Database
 // Validation" tab. Optionally filtered to one distributor. Fully paginated past PostgREST's 1000-row
@@ -725,6 +726,18 @@ export async function applyHistoricalReconciliation(input: {
       throw new SalesWorkflowError(
         "reconcile_rollup_refresh_failed",
         `${updatedRows} historical row(s) were corrected, but distributor-product rollup refresh failed for batch ${batchId}: ${distProduct.error.message}. Re-run the reconcile to retry the refresh.`,
+        500,
+      );
+    }
+    // The wholesaler city split net FIRST — au.f_monthly_attribution reads it, and a reconcile that
+    // moved rows between areas is exactly when it goes stale.
+    try {
+      await writeStoreSplitNetForBatch(supabase, batchId);
+    } catch (splitError) {
+      const message = splitError instanceof Error ? splitError.message : String(splitError);
+      throw new SalesWorkflowError(
+        "reconcile_rollup_refresh_failed",
+        `${updatedRows} historical row(s) were corrected, but the wholesaler split net failed to rebuild for batch ${batchId}: ${message}. Re-run the reconcile to retry the refresh.`,
         500,
       );
     }
