@@ -28,6 +28,7 @@ import type {
   MarketAwarenessDecisionAction,
   MarketAwarenessSeatHolder,
   MarketAwarenessStatus,
+  MarketAwarenessStepCode,
   MarketAwarenessTracking,
 } from "@/lib/market-awareness/types";
 import {
@@ -859,6 +860,81 @@ export async function submitActivity(
   return submitted;
 }
 
+/**
+ * Apply one decision and its audit row as a single database statement.
+ *
+ * WHY THIS EXISTS. Every decision path used to do two writes — move the status, then insert the row
+ * recording who moved it — with no transaction around them. Anything failing between the two left a
+ * request that had MOVED with no record of who moved it, which on a spending approval is the whole
+ * audit trail. Reproduced on staging 2026-09-07, and a Supabase request that times out at 15s still
+ * commits, so a slow network reaches the same state with nobody at fault.
+ *
+ * `phx_market_awareness_apply_decision` does both inside one function body, so the insert failing
+ * takes the status change with it.
+ *
+ * IT ALSO REFUSES A STALE WRITE. The caller passes the status it believed the activity was in; the
+ * function takes the row lock and re-reads. If somebody decided first, nothing is written and
+ * `applied` comes back false — which is a real answer, not an error, and is why a double-click can
+ * no longer put two decisions on one step.
+ */
+async function applyDecisionAtomically(input: {
+  action: MarketAwarenessDecisionAction;
+  activityId: string;
+  actorHrId: string;
+  amendedCost?: number | null;
+  approvedAt?: string | null;
+  closedAt?: string | null;
+  comment?: string | null;
+  dmHrIdAtApproval?: string | null;
+  executedAt?: string | null;
+  expectedStatus: MarketAwarenessStatus;
+  nextStatus: MarketAwarenessStatus;
+  rejectedAt?: string | null;
+  repHrIdAtApproval?: string | null;
+  returnedAt?: string | null;
+  setActualCost?: boolean;
+  actualCost?: number | null;
+  setOutcomeNote?: boolean;
+  outcomeNote?: string | null;
+  stepCode: MarketAwarenessStepCode;
+  withdrawnAt?: string | null;
+}): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc("phx_market_awareness_apply_decision", {
+    p_activity_id: input.activityId,
+    p_action: input.action,
+    p_actor_hr_id: input.actorHrId,
+    p_actual_cost: input.actualCost ?? null,
+    p_amended_cost: input.amendedCost ?? null,
+    p_approved_at: input.approvedAt ?? null,
+    p_closed_at: input.closedAt ?? null,
+    p_comment: input.comment ?? null,
+    p_dm_hr_id_at_approval: input.dmHrIdAtApproval ?? null,
+    p_executed_at: input.executedAt ?? null,
+    p_expected_status: input.expectedStatus,
+    p_next_status: input.nextStatus,
+    p_outcome_note: input.outcomeNote ?? null,
+    p_rejected_at: input.rejectedAt ?? null,
+    p_rep_hr_id_at_approval: input.repHrIdAtApproval ?? null,
+    p_returned_at: input.returnedAt ?? null,
+    p_set_actual_cost: input.setActualCost ?? false,
+    p_set_outcome_note: input.setOutcomeNote ?? false,
+    p_step_code: input.stepCode,
+    p_withdrawn_at: input.withdrawnAt ?? null,
+  });
+  if (error) throw toQueryError(error);
+
+  const result = (data ?? null) as { applied?: boolean; currentStatus?: string } | null;
+  if (!result?.applied) {
+    // Somebody decided first. Say what happened rather than "something went wrong" — the person is
+    // looking at a screen that still shows the old state and needs to know to refresh it.
+    throw new MarketAwarenessError(
+      `Somebody has already acted on this — it is now ${result?.currentStatus ?? "in another state"}. Refresh to see where it stands.`,
+      409,
+    );
+  }
+}
+
 export async function decideActivity(
   access: AccessContext,
   activityId: string,
@@ -914,41 +990,34 @@ export async function decideActivity(
   }
 
   const now = new Date().toISOString();
-  const patch: Record<string, unknown> = {
-    status: transition.to,
-    updated_by_hr_id: hrIdForStorage(access.hrId),
-  };
-  if (transition.to === "approved") {
-    patch.approved_at = now;
-    if (amendedCost !== null) patch.amended_cost = amendedCost;
-    // Freeze the seat holders as they are at approval. The screen shows today's holder; this is what
-    // lets it say the original was replaced.
-    const area = await findArea(existing.primaryLine.lineCode, existing.areaCode);
-    patch.rep_hr_id_at_approval = area?.repHrId ? hrIdForStorage(area.repHrId) : null;
-    patch.dm_hr_id_at_approval = area?.dmHrId ? hrIdForStorage(area.dmHrId) : null;
-  }
-  if (transition.to === "rejected") patch.rejected_at = now;
-  if (transition.to === "returned") patch.returned_at = now;
 
-  const supabase = getSupabaseAdmin();
-  const { error } = await supabase
-    .from("market_awareness_activities")
-    .update(patch)
-    .eq("id", activityId);
-  if (error) throw toQueryError(error);
+  // Freeze the seat holders as they are at approval. The screen shows today's holder; this is what
+  // lets it say the original was replaced. Resolved BEFORE the write so a lookup failure cannot
+  // land between the status change and its audit row.
+  const area =
+    transition.to === "approved"
+      ? await findArea(existing.primaryLine.lineCode, existing.areaCode)
+      : null;
 
-  // ONE decision row, written under the identity of the person who actually acted. Never a second
-  // row on behalf of a skipped step or a system actor — that is what made three NSMs appear to have
-  // approved as the CEO on the weekly plans, and the transition carries a skip on its own.
-  const { error: decisionError } = await supabase.from("market_awareness_decisions").insert({
-    activity_id: activityId,
-    step_code: step,
-    actor_hr_id: hrIdForStorage(access.hrId),
+  // ONE decision row, written under the identity of the person who actually acted, in the same
+  // statement as the status change. Never a second row on behalf of a skipped step or a system
+  // actor — that is what made three NSMs appear to have approved as the CEO on the weekly plans,
+  // and the transition carries a skip on its own.
+  await applyDecisionAtomically({
     action: input.action,
-    comment: input.comment?.trim() || null,
-    amended_cost: amendedCost,
+    activityId,
+    actorHrId: hrIdForStorage(access.hrId) as string,
+    amendedCost,
+    approvedAt: transition.to === "approved" ? now : null,
+    comment: input.comment ?? null,
+    dmHrIdAtApproval: area?.dmHrId ? hrIdForStorage(area.dmHrId) : null,
+    expectedStatus: existing.status,
+    nextStatus: transition.to,
+    rejectedAt: transition.to === "rejected" ? now : null,
+    repHrIdAtApproval: area?.repHrId ? hrIdForStorage(area.repHrId) : null,
+    returnedAt: transition.to === "returned" ? now : null,
+    stepCode: step,
   });
-  if (decisionError) throw toQueryError(decisionError);
 
   const decided = await getActivity(access, activityId);
 
@@ -1012,23 +1081,22 @@ export async function withdrawActivity(
     );
   }
 
-  const supabase = getSupabaseAdmin();
-  const { error } = await supabase
-    .from("market_awareness_activities")
-    .update({
-      status: "withdrawn",
-      withdrawn_at: new Date().toISOString(),
-      updated_by_hr_id: hrIdForStorage(access.hrId),
-    })
-    .eq("id", activityId);
-  if (error) throw toQueryError(error);
-
-  await supabase.from("market_awareness_decisions").insert({
-    activity_id: activityId,
-    step_code: currentStep(existing.status) ?? "manager",
-    actor_hr_id: hrIdForStorage(access.hrId),
+  // The same atomicity as a decision: withdrawing is a state change with an audit row, and the two
+  // must not be separable. It was the same two-write shape.
+  if (!access.hrId?.trim()) {
+    throw new MarketAwarenessError(
+      "Your account has no HR id, so a withdrawal could not be attributed to you.",
+      403,
+    );
+  }
+  await applyDecisionAtomically({
     action: "withdraw",
-    comment: null,
+    activityId,
+    actorHrId: hrIdForStorage(access.hrId) as string,
+    expectedStatus: existing.status,
+    nextStatus: "withdrawn",
+    stepCode: currentStep(existing.status) ?? "manager",
+    withdrawnAt: new Date().toISOString(),
   });
 
   return getActivity(access, activityId);
@@ -1046,30 +1114,31 @@ export async function closeActivity(
 
   const goingToExecuted = existing.status === "approved";
   const now = new Date().toISOString();
-  const patch: Record<string, unknown> = {
-    status: goingToExecuted ? "executed" : "closed",
-    executed_at: input.executedAt ?? existing.executedAt ?? cairoToday(),
-    updated_by_hr_id: hrIdForStorage(access.hrId),
-  };
-  // Optional fields are written ONLY when supplied. Writing `?? null` unconditionally is a silent
-  // erase of whatever was there.
-  if (input.actualCost !== undefined) patch.actual_cost = input.actualCost;
-  if (input.outcomeNote !== undefined) patch.outcome_note = input.outcomeNote;
-  if (!goingToExecuted) patch.closed_at = now;
 
-  const supabase = getSupabaseAdmin();
-  const { error } = await supabase
-    .from("market_awareness_activities")
-    .update(patch)
-    .eq("id", activityId);
-  if (error) throw toQueryError(error);
-
-  await supabase.from("market_awareness_decisions").insert({
-    activity_id: activityId,
-    step_code: "manager",
-    actor_hr_id: hrIdForStorage(access.hrId),
+  // This path was the worst of the three: its decision insert had NO error check at all, so a failed
+  // audit row was swallowed silently rather than even surfacing as a 500. Both writes are now one
+  // statement, and the optional fields are still written ONLY when supplied — writing `?? null`
+  // unconditionally is a silent erase of whatever was there.
+  if (!access.hrId?.trim()) {
+    throw new MarketAwarenessError(
+      "Your account has no HR id, so this could not be attributed to you.",
+      403,
+    );
+  }
+  await applyDecisionAtomically({
     action: goingToExecuted ? "execute" : "close",
-    comment: input.outcomeNote?.trim() || null,
+    activityId,
+    actorHrId: hrIdForStorage(access.hrId) as string,
+    actualCost: input.actualCost ?? null,
+    closedAt: goingToExecuted ? null : now,
+    comment: input.outcomeNote ?? null,
+    executedAt: input.executedAt ?? existing.executedAt ?? cairoToday(),
+    expectedStatus: existing.status,
+    nextStatus: goingToExecuted ? "executed" : "closed",
+    outcomeNote: input.outcomeNote ?? null,
+    setActualCost: input.actualCost !== undefined,
+    setOutcomeNote: input.outcomeNote !== undefined,
+    stepCode: "manager",
   });
 
   return getActivity(access, activityId);
