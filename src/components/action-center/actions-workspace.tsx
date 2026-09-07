@@ -33,6 +33,10 @@ type Props = {
   // Decisions somebody else took on this viewer's own team and lines — what happened while he
   // was away. The tab is omitted entirely when there are none, exactly like Disputes above: an
   // always-present empty tab is noise for the many managers nobody has ever covered for.
+  //
+  // THREE states, not two. `undefined` = not fetched for this caller. `[]` = fetched, nothing to
+  // report. `null` = the lookup FAILED — and that must not render as an empty list, because
+  // "nothing was decided for you" is exactly the wrong thing to tell someone back from leave.
   decidedForMe?: DecidedForMeItem[] | null;
   decidedForMeWindowDays?: number;
 };
@@ -51,13 +55,14 @@ export function ActionsWorkspace({
   decidedForMeWindowDays = 90,
 }: Props) {
   const [tab, setTab] = useState<ActionsTab>(initialTab);
+  const decidedForMeFailed = decidedForMe === null;
   const decidedForMeItems = decidedForMe ?? [];
 
   const tabs: Array<{ key: ActionsTab; label: string; count: number; icon: typeof Inbox }> = [
     { key: "inbox", label: "Pending approvals", count: inboxData.items.length, icon: Inbox },
     { key: "mine", label: "My requests", count: myRequests.length, icon: ClipboardList },
     { key: "historical", label: "Approval history", count: historicalItems.length, icon: Clock },
-    ...(decidedForMeItems.length > 0
+    ...(decidedForMeItems.length > 0 || decidedForMeFailed
       ? [{ key: "decided_for_me" as const, label: "Decided for you", count: decidedForMeItems.length, icon: UserCheck }]
       : []),
     ...(disputes ? [{ key: "disputes" as const, label: "Disputes Inbox", count: disputes.length, icon: FileSearch }] : []),
@@ -121,7 +126,7 @@ export function ActionsWorkspace({
       ) : tab === "disputes" ? (
         <PrivateCalendarDisputesWorkspace initialDisputes={disputes ?? []} initialError={null} />
       ) : tab === "decided_for_me" ? (
-        <DecidedForMeList items={decidedForMeItems} windowDays={decidedForMeWindowDays} />
+        <DecidedForMeList items={decidedForMeItems} windowDays={decidedForMeWindowDays} failed={decidedForMeFailed} />
       ) : (
         <HistoricalApprovalsList items={historicalItems} />
       )}

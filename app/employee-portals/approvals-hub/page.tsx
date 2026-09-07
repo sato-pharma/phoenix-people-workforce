@@ -67,13 +67,13 @@ export default async function PortalApprovalsHubPage({
     ActionHubItem[],
     MyRequestItem[],
     HistoricalApprovalItem[],
-    DecidedForMeItem[],
+    DecidedForMeItem[] | null,
   ] = await Promise.all([
     getAwaitingMyActionItems(access, "portal"),
     getMyRequestItems(access).catch((): MyRequestItem[] => []),
     getMyApprovalHistory(access).catch((): HistoricalApprovalItem[] => []),
-    // Never fatal to the page — see the admin hub for why this one swallows.
-    getDecisionsMadeForMe(access).catch((): DecidedForMeItem[] => []),
+    // null, not [] — see the admin hub: an empty list would claim nothing happened.
+    getDecisionsMadeForMe(access).catch((): DecidedForMeItem[] | null => null),
   ]);
   // Every migrated module (leave/excuse/weekly_plan) has its own "My Requests"/"History" tabs on
   // its dedicated hub (approvals-hub/service.ts filters these same shared functions down to one

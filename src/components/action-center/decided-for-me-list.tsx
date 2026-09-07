@@ -1,6 +1,6 @@
 "use client";
 
-import { UserCheck } from "lucide-react";
+import { AlertTriangle, UserCheck } from "lucide-react";
 
 import { adminPanelClassName } from "@/components/admin/admin-design-system";
 import { HISTORY_MODULE_LABELS } from "@/components/action-center/types";
@@ -29,6 +29,11 @@ const BASIS_LABEL: Record<DecidedForMeItem["basis"], string> = {
 type Props = {
   items: DecidedForMeItem[];
   windowDays: number;
+  // The lookup failed. Distinct from an empty list on purpose: telling a manager back from leave
+  // that "nobody decided anything for you" when the query never ran is the one wrong answer this
+  // tab must never give. Measured on production 2026-09-07 — a transient directory failure
+  // returned an empty list where the true answer was eight items.
+  failed?: boolean;
 };
 
 /** Africa/Cairo, never the raw UTC instant — house rule for every time shown to a reader. */
@@ -48,7 +53,24 @@ function formatDecidedAt(iso: string): string {
   }
 }
 
-export function DecidedForMeList({ items, windowDays }: Props) {
+export function DecidedForMeList({ items, windowDays, failed }: Props) {
+  if (failed) {
+    return (
+      <div className={`flex min-h-[420px] flex-col items-center justify-center gap-5 p-12 text-center ${adminPanelClassName}`}>
+        <div className="flex h-20 w-20 items-center justify-center bg-amber-50 text-amber-600 ring-1 ring-amber-200">
+          <AlertTriangle className="h-9 w-9" />
+        </div>
+        <div>
+          <p className="text-xl font-black tracking-tight text-slate-900">Could not load this list</p>
+          <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">
+            Something went wrong fetching what was decided for you, so this is <strong>not</strong> a
+            statement that nothing happened. Reload the page, and tell IT if it keeps failing.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (items.length === 0) {
     return (
       <div className={`flex min-h-[420px] flex-col items-center justify-center gap-5 p-12 text-center ${adminPanelClassName}`}>
