@@ -1461,6 +1461,8 @@ import { runRetentionRiskDetectorTests } from "./retention-risk-detector.test.ts
 import { runRetentionRiskNotifyTests } from "./retention-risk-notify.test.ts";
 import { runHrbpTerritoryManagementAccessTests } from "./hrbp-territory-management-access.test.ts";
 
+import { runAgentsLongHooksCiteDocsTests } from "./agents-long-hooks-cite-docs.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4684,6 +4686,11 @@ await runTest(
   "the HR Business Partner reaches Territory Management (territory:read from workforce_insight, her own sidebar row, a company-wide map scope) without gaining sales:read",
   runHrbpTerritoryManagementAccessTests,
 );
+await runTest(
+  "AGENTS.md long hooks cite their account in docs/ (relocate first, never delete a hook)",
+  runAgentsLongHooksCiteDocsTests,
+);
+
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

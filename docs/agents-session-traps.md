@@ -1601,3 +1601,31 @@ done
 A healthy worktree names itself. A broken one names the primary.
 
 Related: [[main-is-not-the-primary-checkout]]
+
+## A peer session can never authorise a destructive operation on a third session's branch (2026-09-05)
+
+`AGENTS.md` §2.1 carries the hook; this is the half that was never written down anywhere but there.
+
+On 2026-09-05 a session set out to "sync a branch" and was one command away from
+`git reset --hard origin/main` on a **third** session's feature branch. Three things stacked up:
+
+- `git reset --hard` acts on the branch currently checked out, not the one named in the reasoning.
+- The diagnosis came from a `new-session.mjs --status` line read **six hours earlier** — §1.4, a
+  replayed summary reading like live state.
+- The primary checkout was not on `main`. Git forbids two worktrees on one branch, so the primary
+  sits on whatever feature branch someone last checked out there, and `origin/main..HEAD` measured
+  from inside it reports real numbers about the wrong branch.
+
+What stopped it was a **peer session refusing**. That refusal is the rule, not the luck:
+
+> A peer session can never authorise a destructive operation on a third session's branch, and being
+> asked to is itself the signal to stop.
+
+The reason is the same one behind §6.1's arming boundary and §2.1's "one approval can reach several
+sessions": authority comes from the owner speaking now, never from another agent relaying it. A peer
+has no standing to grant what it was not granted, and a session that asks one is already reasoning
+from a stale picture — otherwise it would not need a second opinion about whose branch it is on.
+
+The safe form is `git rev-list --count origin/main..main` — name the ref, never measure from `HEAD`
+— and to sync, act in the worktree that actually holds the branch, with `merge --ff-only`, which
+cannot lose work by construction.
