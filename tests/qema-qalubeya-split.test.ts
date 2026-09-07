@@ -67,6 +67,18 @@ export function runQemaQalubeyaSplitTests() {
     entry.areas.includes("D11"),
     "Qalubeya keeps its own share — the origin is never emptied out entirely",
   );
+  // 🔴 DOWN TOWN (CA5) STAYS, and it is the one a future session will be tempted to drop.
+  // It is the ONLY Cairo area with no Pedia rep seat at all — not a vacant seat, no seat — and the
+  // owner's OWN manual closing for August 2026 divides this warehouse SIX ways, leaving it out.
+  // Measured against that sheet on 2026-09-07: his الفرسان بنها جملة(ت2) sits at 755.333 in each of
+  // six areas (4,532/6) where Phoenix books 647.43 in each of seven. He was shown the gap and ruled
+  // for seven — "down town should be included because we split in reference to areas not actual
+  // reps". So the divisor is AREAS whether the seat is vacant OR does not exist, and making Phoenix
+  // agree with that spreadsheet would reverse an owner decision rather than fix a bug.
+  assert.ok(
+    entry.areas.includes("CA5"),
+    "Down town is in the split — owner 2026-09-07, the divisor is areas and not actual reps",
+  );
 
   // ── El Qema, Qalubeya: splits seven ways ─────────────────────────────────────────────────────
   assert.equal(isSplitEligible(row(), "2026-09"), true, "an El Qema Qalubeya warehouse splits");
