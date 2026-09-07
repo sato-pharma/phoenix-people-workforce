@@ -207,6 +207,21 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // note on people_records below, where the same refusal was reasoned out on 2026-08-28.
       contracts: READ_ONLY,
       hr_calendar: READ_ONLY,
+      // Territory Management — the brick/area map. Added 2026-09-07 on the owner's instruction
+      // ("territory management is not appearing in hr business partner account make it appear to
+      // her"). It sits in workforce_insight rather than recruiting because it is read-only
+      // understanding of how the field force is laid out, which is this function's whole remit;
+      // the module's own headline question — "where should a Medical Rep hired for this area
+      // actually live?" — is the one she answers when she sources for a vacancy.
+      //
+      // `territory` is its own resource, NOT `sales:read`. The module was gated on sales:read
+      // until this change, and granting her that key would have opened Source of Sales, Monthly
+      // Closing, Sales vs Target and the rest of the commercial surface as a side effect — money
+      // her job description never mentions. See the note on the resource in permissions.ts.
+      //
+      // READ only, and there is no wider action to want: placing a pin is sales:import and
+      // publishing a public preview link is sales:export, both of which stay Super Admin.
+      territory: READ_ONLY,
     },
   },
   {

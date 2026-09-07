@@ -32,8 +32,11 @@ export default async function TerritoryManagementPage() {
   let initialError: string | null = null;
 
   try {
-    // Server-side gate. The nav hides this link for roles without sales read, but that is UX only.
-    await assertPermission(access, "sales", "read");
+    // Server-side gate. The nav hides this link for roles without territory read, but that is UX
+    // only. `territory` rather than `sales` since 2026-09-07: the module is geography, not money,
+    // and it had to be grantable to the HR Business Partner without the sidebar's Sales section
+    // coming with it. Every role that reached it under `sales:read` holds `territory:read`.
+    await assertPermission(access, "territory", "read");
     filters = await loadTerritoryFilters(null, access);
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Failed to load Territory Management.";

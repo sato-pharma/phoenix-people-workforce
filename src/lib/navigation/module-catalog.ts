@@ -78,6 +78,7 @@ export const MODULE_LABELS: Record<PermissionResource, string> = {
   synthetic_journeys: "Synthetic Journeys",
   system_cleanup: "System Cleanup",
   team: "My Team",
+  territory: "Territory Management",
   user_activity: "User Activity",
   user_admin: "User Administration",
   vacancies: "Vacancies",

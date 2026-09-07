@@ -1514,7 +1514,7 @@ const employeePortalNavigationSectionSeeds = [
       // Portal-shell counterpart of /sales/territory-management — same component, own-scope data.
       // Medical Rep is deliberately excluded: this compares MULTIPLE areas' bricks against each
       // other, which is a District-Manager-and-up decision, not a single rep's own area view.
-      { href: "/employee-portals/territory-management", icon: Waypoints, label: "Territory Management", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager"] },
+      { href: "/employee-portals/territory-management", icon: Waypoints, label: "Territory Management", permissions: [{ resource: "territory" }], roles: ["District Manager", "Regional Manager", "National Sales Manager"] },
       // Read-only Targets (owner decision 2026-07-30). Mirrors PORTAL_TARGETS_ROLES; editing and
       // upload stay on the admin surface with SFE Manager / Super Admin.
       { href: "/employee-portals/targets", icon: Target, label: "Targets", permissions: [{ resource: "sales", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager"] },
@@ -1839,6 +1839,19 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/employees", icon: UsersRound, label: "Employee Directory", permissions: [{ resource: "employees", action: "read" }] },
       { href: "/hr/employee-360", icon: IdCard, label: "Employee 360", permissions: [{ resource: "employee_profile", action: "read" }] },
       { href: "/hr/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
+      // Owner instruction 2026-09-07: "territory management is not appearing in hr business partner
+      // account make it appear to her." It sits next to the Organogram because that is what it is —
+      // the same seat model seen as geography rather than as a chart.
+      //
+      // The address is the `/hr` spelling of the ADMIN page (proxy.ts rewrites /hr/sales/... to
+      // /sales/...), not a third copy of the module. There are already two — the admin page and the
+      // portal twin for the sales ladder — and a third would be the fourth place to forget when the
+      // map changes.
+      //
+      // `roles` pins it to HR Advisory even though the permission would do it alone: HR Operations
+      // holds no `territory` grant today, and if she ever gains one it should be because somebody
+      // decided that, not because this row was written permission-only.
+      { href: "/hr/sales/territory-management", icon: Waypoints, label: "Territory Management", permissions: [{ resource: "territory" }], roles: ["HR Advisory"] },
       // ONBOARDING PAPERWORK — HER COPY of the two rows the Recruitment section carries below.
       // Listed twice with mutually-exclusive gates, the same pattern Organogram already uses:
       // getSections dedupes by href and keeps the FIRST occurrence, so for HR Operations this copy
@@ -2350,15 +2363,25 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     // Gate carried over VERBATIM from the rail row, deliberately. District / Regional / National
     // Sales Managers land in the employee-portal shell (resolveNavigationMode) and their entry point
     // is /employee-portals/territory-management, so naming only the admin-shell roles keeps this
-    // card from being offered to someone who would be redirected straight past it. It is `sales`
-    // read, NOT `sales:import` like the mapping cards around it — this is a narrower gate than its
-    // neighbours, which is correct and must not be "tidied" into line with them.
+    // card from being offered to someone who would be redirected straight past it. Its gate is
+    // `territory` read, NOT `sales:import` like the mapping cards around it — a narrower key than
+    // its neighbours, which is correct and must not be "tidied" into line with them. It read
+    // `sales` until 2026-09-07; the resource was split out then so the map could reach the HR
+    // Business Partner without the money pages, and it grants these three roles exactly what they
+    // had before.
     href: "/sales/territory-management",
     icon: Waypoints,
     label: "Territory Management",
     description: "Bricks, areas and territory coverage.",
-    permissions: [{ resource: "sales" }],
-    roles: ["CEO", "SFE Manager", "Super Admin"],
+    // HR Advisory joined the list on 2026-09-07 and changes nothing on this hub: reaching the card
+    // means reaching /sales/source-of-sales-tools first, which is `sales:read` and which she does
+    // not hold. She is named because the roles list is the answer to "which admin-shell role may
+    // open this page", and hers now may — her own entry point is the /hr row beside the Organogram.
+    // tests/hr-url-namespace.test.ts checks exactly that equivalence: an /hr row may only point at
+    // a page the admin navigation already admits for a seat, so omitting her here would make her
+    // row read as the namespace WIDENING the matrix rather than narrowing it.
+    permissions: [{ resource: "territory" }],
+    roles: ["CEO", "SFE Manager", "Super Admin", "HR Advisory"],
   },
   {
     href: "/sales/distributor-profiles",

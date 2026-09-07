@@ -129,7 +129,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // Footprints rather than the admin shell's Gauge because Gauge is already Sales vs Target here,
   // and in a bar that draws the icon larger than the word a duplicate icon misleads first.
   { label: "Reps Plans", fullLabel: "Reps Plans", href: "/employee-portals/reps-plans", icon: Footprints, flags: ["showRepsPlansTab"], permission: { resource: "crm_visits", action: "read" } },
-  { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"], permission: { resource: "sales", action: "read" } },
+  { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"], permission: { resource: "territory", action: "read" } },
   { label: "Targets", fullLabel: "Targets", href: "/employee-portals/targets", icon: Target, flags: ["showTargetsTab"], permission: { resource: "sales", action: "read" } },
   { label: "ROI Tracker", fullLabel: "Marketing ROI Tracker", href: "/employee-portals/roi-tracker", icon: Target, flags: ["showMarketingRoiTrackingTab"] },
   { label: "Direct Order", fullLabel: "Direct Orders", href: "/employee-portals/direct-orders", icon: ReceiptText, flags: ["showDirectOrdersTab"] },

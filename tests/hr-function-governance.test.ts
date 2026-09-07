@@ -109,6 +109,22 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "app/(admin)/admin/recruitment-hiring/page.tsx",
   "app/(admin)/attendance/page.tsx",
   "app/employee-portals/account-activation/page.tsx",
+  // Names HR Advisory in TERRITORY_COMPANY_WIDE_NON_SALES_ROLES, added 2026-09-07 with the owner's
+  // instruction to put Territory Management on her sidebar. Reviewed verdict: it GRANTS reach, and
+  // it is listed for exactly that reason - it is the string that decides she sees the WHOLE brick
+  // map rather than an empty one.
+  //
+  // It is not a permission. `territory:read` is what admits her, composed onto workforce_insight and
+  // asserted by the page and all four read routes; this set only answers "which areas", after the
+  // gate. It exists because every other reader of that function is on the sales ladder, so the scope
+  // resolver asks resolveSalesAccessScope - which answers NONE for her, and NONE means EMPTY sets,
+  // not "everything". Without this she would pass the gate and read a blank map.
+  //
+  // Company-wide is the right bound and withholds nothing the job description reserves: the map
+  // carries bricks, areas, coordinates, coverage counts and a rep-residence recommendation, and no
+  // money at all. The two privileged acts on the module stay shut - pinning is sales:import,
+  // publishing a public preview link is sales:export, and she holds neither.
+  "src/lib/territory-management/service.ts",
   "src/components/admin/access-control-manager.tsx",
   "src/components/admin/workflow-registry-manager.tsx",
   // Names both seats in the Retention Register's confidentiality notice, added 2026-09-01.

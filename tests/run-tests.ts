@@ -1453,6 +1453,7 @@ import { runSalesUploadAnalyzeMatchesCommitTests } from "./sales-upload-analyze-
 import { runSalesUploadReceiptConfidentialityTests } from "./sales-upload-receipt-confidentiality.test.ts";
 import { runRetentionRiskDetectorTests } from "./retention-risk-detector.test.ts";
 import { runRetentionRiskNotifyTests } from "./retention-risk-notify.test.ts";
+import { runHrbpTerritoryManagementAccessTests } from "./hrbp-territory-management-access.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4651,6 +4652,10 @@ await runTest(
 await runTest(
   "decided for you (a cover's decisions surface to the manager they were taken for, outcomes never soften to Approved, and the viewer never sees his own decisions back)",
   runDecidedForMeTests,
+);
+await runTest(
+  "the HR Business Partner reaches Territory Management (territory:read from workforce_insight, her own sidebar row, a company-wide map scope) without gaining sales:read",
+  runHrbpTerritoryManagementAccessTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
