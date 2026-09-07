@@ -467,9 +467,12 @@ export function normalizeRows(
     const bonusQty = 0;
     const discount = discountFrac(discountRaw);
     const sheetValue = parseNum(valueRaw, true);
+    // Units times the factory price, full stop — the discount factor came out on 2026-09-07 by the
+    // owner's instruction. `discount` is still parsed and still stored on the row; it just no longer
+    // multiplies anything.
     const value = profile.valueSource === "sheet"
       ? sheetValue
-      : (Number.isFinite(qty) ? qty * (product?.factoryPrice ?? 0) * (1 - discount) : 0);
+      : (Number.isFinite(qty) ? qty * (product?.factoryPrice ?? 0) : 0);
 
     // A cell the parser cannot read must NOT become a zero.
     //

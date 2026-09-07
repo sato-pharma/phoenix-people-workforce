@@ -29,7 +29,10 @@ function row(overrides: Partial<ClosingDetailRow> = {}): ClosingDetailRow {
   const qty = overrides.qty ?? 10;
   const discount = overrides.discount ?? 0;
   const factoryPrice = overrides.factoryPrice ?? 100;
-  const effectiveUnits = qty * (1 - discount);
+  // UNITS ARE UNITS since 2026-09-07: the discount factor is gone from the whole system, so a row's
+  // effective units are simply its paid quantity. `discount` is still carried on the row and still
+  // displayed — it just no longer multiplies anything.
+  const effectiveUnits = qty;
   // The sheet area TRACKS whatever areaCode override the caller passed, unless the caller ALSO
   // overrides sheetAreaCode explicitly — that is how a test deliberately models a re-booked row
   // (fact area != brick-resolved area) rather than an ordinary one. Without this, a caller that
@@ -87,8 +90,8 @@ function row(overrides: Partial<ClosingDetailRow> = {}): ClosingDetailRow {
   if (base.isConfidential) exclusions.push("confidential");
   return {
     ...base,
-    effectiveUnits: base.qty * (1 - base.discount),
-    salesValue: base.qty * (1 - base.discount) * base.factoryPrice,
+    effectiveUnits: base.qty,
+    salesValue: base.qty * base.factoryPrice,
     missingClientCode: !base.clientCode,
     exclusions: overrides.exclusions ?? exclusions,
     includedInClosing: overrides.includedInClosing ?? exclusions.length === 0,
@@ -324,10 +327,10 @@ export async function runMonthlyClosingDetailsTests() {
     assert.equal(included.units, 15, "units are raw qty (matches sum(total_qty))");
     assert.equal(
       included.effectiveUnits,
-      12.5,
-      "effective units apply the discount (matches fact_rollup.effective_units)",
+      15,
+      "effective units ignore the discount entirely (matches fact_rollup.effective_units)",
     );
-    assert.equal(included.salesValue, 1250, "value = effective units x factory price");
+    assert.equal(included.salesValue, 1500, "value = units x factory price, discount never applied");
   }
 
   // ── Filter options come from the scoped set ────────────────────────────────

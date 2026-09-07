@@ -16,7 +16,7 @@ export const TERRITORY_SYNC_DEFAULT_MONTHS = 12;
 export const TERRITORY_SYNC_MAX_MONTHS = 24;
 
 // A rollup rebuilt from import_rows must match the raw source exactly; this tolerance only absorbs
-// floating-point noise in the effective-units product (qty * (1 - discount)).
+// floating-point noise in the effective-units product (qty x factory price).
 const RECONCILE_EPSILON = 0.01;
 
 // The whole sync (re-stamp + every affected batch's rollup rebuild) runs server-side in ONE

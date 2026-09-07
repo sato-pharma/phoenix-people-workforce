@@ -22,9 +22,10 @@ export function runSosImportTemplateTests() {
       `NORMALIZER_TEMPLATE field [${aliases.join(", ")}] must include a CODED_HEADERS column`,
     );
   }
-  // bonus is always neglected; discount drives the value recompute (Qty x factory_price x (1 - Discount%)).
+  // Bonus is always neglected. The discount column is CARRIED, never applied — the value recompute is
+  // Qty x factory_price and nothing else — but the coded sheet must still be able to round-trip it.
   assert.equal(NORMALIZER_TEMPLATE.bonusField, undefined, "bonusField must be absent — bonus is always neglected");
-  assert.ok(NORMALIZER_TEMPLATE.discountField && coded.has(norm(NORMALIZER_TEMPLATE.discountField)), "discountField (drives value recompute) must be a coded column");
+  assert.ok(NORMALIZER_TEMPLATE.discountField && coded.has(norm(NORMALIZER_TEMPLATE.discountField)), "discountField (carried, not applied) must be a coded column");
   // optional product-name fallback(s) are present too
   for (const header of NORMALIZER_TEMPLATE.optionalFields?.productName ?? []) {
     assert.ok(coded.has(norm(header)), `optional productName "${header}" must be a coded column`);

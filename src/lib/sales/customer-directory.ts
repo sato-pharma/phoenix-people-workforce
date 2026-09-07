@@ -23,7 +23,8 @@ function excludeCodesFor(role: PhoenixRole): string[] {
 // Customer Directory — customers derived from the uploaded distributor sales rows.
 // One entry per (customer code + distributor): same customer+distributor merges; the same
 // pharmacy across different distributors stays separate. Value is ALWAYS recomputed in the
-// RPC (Qty x (1 - discount) x live factory_price); the stored sheet value is never used.
+// RPC (Qty x live factory_price); the stored sheet value is never used, and since 2026-09-07
+// neither is the discount column.
 
 export type CustomerDirectoryFilters = {
   areaCodes?: string[];

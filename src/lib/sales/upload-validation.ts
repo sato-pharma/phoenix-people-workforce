@@ -366,14 +366,14 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
   if (ctx.valueSource === "sheet" && ctx.priceByProductCode && ctx.priceByProductCode.size > 0) {
     const extreme = coded.filter((r) => {
       if (r.qty <= 0 || r.value <= 0) return false;
-      // A 100%+ discount makes the net divisor ~0 (a known degenerate handled by zero_value/discount
-      // checks) — skip it here so the clamp below never manufactures a fake "extreme" unit price.
-      if (r.discount >= 1) return false;
       const price = ctx.priceByProductCode?.get(r.productCode);
       if (!price || price <= 0) return false;
-      // Clamp the discount to [0, 0.999] purely to avoid divide-by-zero; rows at/above 100% are
-      // already excluded above, and negative discounts are handled by discount_out_of_range.
-      const unit = r.value / (r.qty * (1 - Math.min(Math.max(r.discount, 0), 0.999)));
+      // Implied unit price = value / qty. This divided by `qty x (1 - discount)` until 2026-09-07,
+      // when the owner struck the discount factor out of the whole system — so the divisor here is
+      // the plain quantity like everywhere else, and the clamp that existed only to stop a 100%
+      // discount dividing by zero went with it. The discount column is still parsed, stored and
+      // range-checked (discount_out_of_range above); it simply no longer divides or multiplies.
+      const unit = r.value / r.qty;
       return unit > price * UNIT_PRICE_HIGH_FACTOR || unit < price * UNIT_PRICE_LOW_FACTOR;
     });
     if (extreme.length > 0) {

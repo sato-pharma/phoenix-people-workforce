@@ -153,7 +153,10 @@ async function buildSatoWorkbookBuffer(rows: unknown[][]) {
 
 export async function runSalesDistributorImportTests() {
   // ── parseDiscount: clamp to [0,1] + out-of-range flag ──
-  // Row value = qty x price x (1 - rate); an unclamped rate could drive value negative or inflate it.
+  // The rate no longer multiplies anything — since 2026-09-07 a row is worth qty x factory price and
+  // nothing else. The column is still parsed, still stored and still flagged when a sheet sends
+  // something impossible like "150", because it is shown beside the row and a typo there is worth
+  // knowing about; it simply cannot move a number any more.
   assert.deepEqual(parseDiscount(""), { rate: 0, outOfRange: false }, "blank = no discount");
   assert.deepEqual(parseDiscount("0"), { rate: 0, outOfRange: false }, "zero = no discount");
   assert.deepEqual(parseDiscount("0.25"), { rate: 0.25, outOfRange: false }, "already-a-fraction stays");
@@ -292,8 +295,10 @@ export async function runSalesDistributorImportTests() {
   assert.equal(foreignBrick?.regionCode, "CA"); // "BEHIRA 2" discarded; brick master CA used
   assert.equal(foreignBrick?.areaCode, "A1"); // "ALEX WEST" discarded; brick master A1 used
 
-  // Value must be computed as Qty x factory_price x (1 - discount), ignoring the
-  // sheet Value column and the bonus units entirely.
+  // Value must be computed as Qty x factory_price, ignoring the sheet's Value column, the bonus
+  // units AND the Discount% column. The discount factor came out on 2026-09-07 at the owner's
+  // instruction — "we neglect the bonus and the value in any distributor sheet we take the units
+  // and multiply by factory" — so a discounted row is now worth exactly what an undiscounted one is.
   const discountBuffer = await buildWorkbookBuffer(
     [
       "Invoice Date",
@@ -308,9 +313,12 @@ export async function runSalesDistributorImportTests() {
       "Distrub ID",
     ],
     [
-      // Sheet Value (99999) is bogus and bonus (5) must be ignored: 10 * 10 * 0.75 = 75.
+      // THREE things on this row must be ignored, and the 25% discount is now the third of them:
+      // the sheet Value (99999), the bonus units (5), and the Discount% (0.25).
+      // 10 x 10 = 100 - NOT the 75 this produced before 2026-09-07.
       [new Date("2026-04-01T00:00:00Z"), 10, 5, 99999, 0.25, "P-A", "B-1", "A1", "CA", "PS"],
-      // Blank discount => full value: 4 * 50 = 200.
+      // The control: a row with no discount, 200 before and 200 now. Without it, a change that
+      // broke pricing outright would still satisfy the row above.
       [new Date("2026-04-02T00:00:00Z"), 4, 0, 88888, null, "P-B", "B-2", "A2", "AB", "PS"],
     ],
   );
@@ -325,8 +333,8 @@ export async function runSalesDistributorImportTests() {
   assert.equal(discountResult.status, "validated");
   assert.equal(discountResult.totals.totalQty, 14);
   assert.equal(discountResult.totals.totalBonusQty, 0);
-  assert.equal(discountResult.totals.totalValue, 275);
-  assert.equal(discountResult.byProduct.find((row) => row.productCode === "P-A")?.totalValue, 75);
+  assert.equal(discountResult.totals.totalValue, 300);
+  assert.equal(discountResult.byProduct.find((row) => row.productCode === "P-A")?.totalValue, 100);
   assert.equal(discountResult.byProduct.find((row) => row.productCode === "P-B")?.totalValue, 200);
 
   // Ibn Sina Sato (IS-S) feed: "Quantity" (paid only) is the authoritative qty column.

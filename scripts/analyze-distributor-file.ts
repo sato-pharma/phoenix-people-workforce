@@ -143,7 +143,7 @@ async function main() {
   console.log(`  Product resolved    : ${num(s.productResolved)} rows`);
   console.log(`  Brick resolved      : ${num(s.brickResolved)} rows`);
 
-  console.log(`\nRECOMPUTED TOTALS  (qty x factory_price x (1 - discount))`);
+  console.log(`\nRECOMPUTED TOTALS  (qty x factory_price — bonus and sheet value both ignored)`);
   console.log(`  Coded — all periods   : ${num(sum(result.coded, (r) => r.qty))} units, ${num(sum(result.coded, (r) => r.bonusQty))} bonus, EGP ${num(sum(result.coded, (r) => r.value))}`);
   console.log(`  Coded — ${(period ?? "n/a").padEnd(13)}: ${num(sum(periodRows, (r) => r.qty))} units, ${num(sum(periodRows, (r) => r.bonusQty))} bonus, EGP ${num(sum(periodRows, (r) => r.value))}`);
 
