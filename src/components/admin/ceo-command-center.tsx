@@ -521,12 +521,16 @@ export function CeoCommandCenter({
           level up, so a band here as well would stack two identities on it. */}
       {welcome ? (
         <AdminHeroFrame className="z-10 overflow-visible">
-          <div className="p-5 sm:p-6 lg:p-8">
-            <div className="mb-5 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-phx-3xs font-black uppercase tracking-[0.22em] text-orange-100">
+          <div className="p-4 sm:p-4 lg:p-5">
+            <div className="mb-3 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-phx-3xs font-black uppercase tracking-[0.22em] text-orange-100">
               <HeartPulse aria-hidden="true" className="h-3.5 w-3.5" />
               {surfaceLabel}
             </div>
             <CeoHeroIdentity
+              // The portrait is `h-full` of this band and was hanging 11px BELOW it, so the next
+              // section clipped him mid-figure. Flush-bottom ends the photo exactly on the band edge.
+              // Finance already passes this; the CEO was the one surface still bleeding.
+              flushToEdges
               fullName={welcome.fullName}
               roleLabel={welcome.roleLabel}
               imageUrl={welcome.imageUrl}
