@@ -890,6 +890,7 @@ import { runFactoryPriceRestatementAuditTests } from "./factory-price-restatemen
 import { runSosDirectCleanupSafetyTests } from "./sos-direct-cleanup-safety.test.ts";
 import { runSosOfficeRowAndDuplicateUploadTests } from "./sos-office-row-and-duplicate-upload.test.ts";
 import { runClosingPublicationSnapshotTests } from "./closing-publication-snapshot.test.ts";
+import { runClosingPublishSilentlyTests } from "./closing-publish-silently.test.ts";
 import { runOfficialNumbersExcludeWeeklyTests } from "./official-numbers-exclude-weekly.test.ts";
 import { runLactoLineFamilyGroupingTests } from "./lacto-line-family-grouping.test.ts";
 import { runIdentityCardSignatureLockTests } from "./identity-card-signature-lock.test.ts";
@@ -2988,6 +2989,7 @@ await runTest('A factory-price edit that restates a settled closing records it (
 await runTest('SoS direct cleanup refuses the live vintage and an incomplete backup', runSosDirectCleanupSafetyTests);
 await runTest('Top Customers shows Office as one row; the same workbook cannot load twice', runSosOfficeRowAndDuplicateUploadTests);
 await runTest('Publishing a closing records what was published (insert-only snapshot)', runClosingPublicationSnapshotTests);
+await runTest('A closing can be published silently, and silence is opt-out only', runClosingPublishSilentlyTests);
 await runTest('SALES TRUTH (one area, one number — every surface reconciles to Monthly Closing)', runSalesTruthNoMismatchTests);
 await runTest('RULE #1 Monthly Closing is the only truth (the official-number engine never imports the weekly pipeline)', runOfficialNumbersExcludeWeeklyTests);
 await runTest('Lacto (line, family) key (family_code LA is shared across Pedia + Head Office; never group on it alone)', runLactoLineFamilyGroupingTests);

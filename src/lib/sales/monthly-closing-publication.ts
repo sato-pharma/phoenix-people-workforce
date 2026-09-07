@@ -180,11 +180,26 @@ export async function latestPublishedClosingPeriod(): Promise<string | null> {
   }
 }
 
-/** Publish a (line, period). Idempotent — re-publishing is a no-op. */
+/**
+ * Publish a (line, period). Idempotent — re-publishing is a no-op.
+ *
+ * `notify` defaults to TRUE, and that default is the safe one: publishing a closing is how a line's
+ * managers learn the month is final, so silence has to be asked for explicitly and can never be the
+ * result of a forgotten argument. Owner, 2026-09-07: "publish aug anti infective but with no email
+ * this time" — a month being republished after a correction does not need twelve people told again.
+ *
+ * WHAT `notify: false` DOES NOT DO. It suppresses THIS publish's email only. It does not touch the
+ * publication row, the database snapshot, the drift baseline, or who can see the closing in the
+ * portal — a silently published month is published in every other respect. It also does not reach
+ * the CEO's Source-of-Sales BI report, which is a separate daily cron that fires once every active
+ * line for a period is published; if that must stay quiet too, it is a different switch.
+ */
 export async function publishClosing(input: {
   line: string;
   period: string;
   actorHrId: string | null;
+  /** Send the "closing published" email to the line's managers. Defaults to true. */
+  notify?: boolean;
 }): Promise<void> {
   const line = String(input.line ?? "").trim();
   const period = String(input.period ?? "").trim();
@@ -243,8 +258,13 @@ export async function publishClosing(input: {
   // publishedAt anchors the send's idempotency key — a true re-publish (this row didn't exist a
   // moment ago, e.g. after an unpublish) gets a fresh timestamp and sends again; a same-row no-op
   // publish keeps the same timestamp and does not re-send. See closing-publish-notification.ts.
+  //
+  // `notify === false` is the owner asking for a silent publish. It is checked HERE, at the single
+  // send site, rather than inside notifyClosingPublished — so the suppression is visible beside the
+  // publish it belongs to, and a future caller of the notifier cannot inherit a silence it never
+  // asked for.
   const publishedAt = String((data as { published_at?: string } | null)?.published_at ?? "");
-  if (publishedAt) {
+  if (publishedAt && input.notify !== false) {
     notifyClosingPublished({ line, period, publishedAt }).catch((notifyError) => {
       logError("closing_published_notification_failed", {
         error: notifyError,
