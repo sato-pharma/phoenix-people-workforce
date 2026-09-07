@@ -744,6 +744,7 @@ import { runVacationCairoTodayTests } from "./vacation-cairo-today.test.ts";
 import { runVacationPaidApprovalAtomicTests } from "./vacation-paid-approval-atomic.test.ts";
 import { runVacationOverlapWarningsTests } from "./vacation-overlap-warnings.test.ts";
 import { runVacationReportFilterEquivalenceTests } from "./vacation-report-filter-equivalence.test.ts";
+import { runVacationBalanceReservesPendingTests } from "./vacation-balance-reserves-pending.test.ts";
 import { runVacationEntitlementsBalanceIgnoresFiltersTests } from "./vacation-entitlements-balance-ignores-filters.test.ts";
 import { runCsrfRouteCoverageTests } from "./csrf-route-coverage.test.ts";
 import { runContractRenewalHardeningTests } from "./contract-renewal-hardening.test.ts";
@@ -2707,6 +2708,11 @@ await runTest(
   "vacation entitlements balance ignores the report row filters (Used/Balance sum every approved paid day "
   + "in the period, so a Status/type/payment/date/search filter can never inflate a balance)",
   runVacationEntitlementsBalanceIgnoresFiltersTests,
+);
+await runTest(
+  "vacation balance reserves submitted-but-undecided leave for DISPLAY only (pricing stays "
+  + "approved-only so payroll and deductions are untouched)",
+  runVacationBalanceReservesPendingTests,
 );
 await runTest("csrf route coverage", runCsrfRouteCoverageTests);
 await runTest("contract renewal hardening", runContractRenewalHardeningTests);

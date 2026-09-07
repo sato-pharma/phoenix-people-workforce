@@ -93,6 +93,7 @@ import type { ProbationRow } from "@/lib/probation/types";
 import { getSharedPlanningCalendarWorkspace } from "@/lib/weekly-planning/calendar-service";
 import { canExportPlanningCalendar } from "@/lib/weekly-planning/calendar";
 import { getEmployeePlansWorkspace } from "@/lib/weekly-planning/service";
+import { availableBalanceAfterPending } from "@/lib/vacation/calculations";
 import {
   getVacationReportData,
   getVacationRequestPageData,
@@ -330,8 +331,13 @@ export async function WorkspaceDashboardPage() {
     }),
     // Asserts leave:create, which every adminShellEmployeeRole holds — but a role added to that
     // list without it must degrade to a dash here, not throw the whole page away.
+    // Same number the Vacation Request screen shows: the approved-only balance less the days
+    // already requested and awaiting a decision. balanceAfterDays === balanceBeforeDays here (this
+    // call passes durationDays 0), and both call sites below only display it.
     getVacationRequestPageData(access)
-      .then((data) => data.balance)
+      .then((data) => (data.balance
+        ? { ...data.balance, balanceAfterDays: availableBalanceAfterPending(data.balance.balanceBeforeDays, data.pendingPaidDaysByType?.annual ?? 0) }
+        : null))
       .catch((error) => {
         logPortalFailure({ route: "/workspace", module: "workspace-overview-leave", role: access.role, hrId: access.hrId }, error);
         return null;
