@@ -75,6 +75,91 @@ export function chooseCvCopies<T extends DedupableCvRow>(rows: readonly T[]): { 
 }
 
 /**
+ * Africa/Cairo, as `YYYY-MM-DD`.
+ *
+ * `en-CA` yields exactly that shape, which is the pattern the attendance modules already use for a
+ * Cairo day key. Cairo rather than UTC because `created_at` is an instant WE stamped, and the owner
+ * reads every date in his own working day — a CV that arrived at 01:30 Cairo is his yesterday in
+ * UTC and his today here, and the folder is read by him.
+ */
+function cairoDay(iso: string | null | undefined): string {
+  const at = new Date(String(iso ?? ""));
+  if (Number.isNaN(at.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+  }).format(at);
+}
+
+/**
+ * The label that tells one of a candidate's CVs from another, keyed by row id.
+ *
+ * WHY A LABEL AT ALL. The Drive file name is `<person> - <number>.<ext>` and nothing else, which is
+ * right for the 860 candidates with one CV and ambiguous for the 15 who sent more than one. Those
+ * are not duplicates — `chooseCvCopies` has already removed every byte-identical re-send — they are
+ * genuinely DIFFERENT CVs from one person, usually an updated version. Both belong in the cabinet,
+ * and until now both arrived wearing the same name in the same folder.
+ *
+ * WHY THE DATE IS NOT ENOUGH ON ITS OWN, which is the whole reason this is a function rather than a
+ * one-line concatenation. The owner asked for "the date", and measured on production 2026-09-07 the
+ * date separates only 5 of the 15: the other 10 sent both CVs on ONE day. Acheampong Augustine sent
+ * three on 2026-08-14, and maisaa's two are TWENTY-ONE SECONDS apart — so a date, a date and hour,
+ * even a date and minute all still collide. A counter is appended only where the date actually
+ * repeats, so the common case stays clean ("(2026-08-15)") and the awkward one stays truthful
+ * ("(2026-08-14 #1)") instead of being quietly wrong.
+ *
+ * A candidate with one CV gets an EMPTY label and keeps the plain name — a date on every file in the
+ * cabinet would be 892 longer names to buy nothing.
+ */
+export function copyLabelsFor<T extends DedupableCvRow>(rows: readonly T[]): Map<string, string> {
+  const { keep } = chooseCvCopies(rows);
+  const labels = new Map<string, string>();
+  if (keep.length <= 1) {
+    for (const row of keep) labels.set(row.id, "");
+    return labels;
+  }
+
+  // `chooseCvCopies` already returns oldest-first, so the counter below reads in arrival order.
+  const perDay = new Map<string, T[]>();
+  for (const row of keep) {
+    const day = cairoDay(row.created_at);
+    if (!perDay.has(day)) perDay.set(day, []);
+    perDay.get(day)!.push(row);
+  }
+  for (const [day, sameDay] of perDay) {
+    if (!day) {
+      // No usable timestamp. Numbering alone still separates them, and inventing a date would be
+      // worse than admitting there isn't one.
+      sameDay.forEach((row, index) => labels.set(row.id, `#${index + 1}`));
+      continue;
+    }
+    if (sameDay.length === 1) {
+      labels.set(sameDay[0].id, day);
+      continue;
+    }
+    sameDay.forEach((row, index) => labels.set(row.id, `${day} #${index + 1}`));
+  }
+  return labels;
+}
+
+/**
+ * `Name - number.pdf` plus its label, inserted BEFORE the extension.
+ *
+ * Before the extension rather than after, because a name ending in ".pdf (2026-08-15)" stops looking
+ * like a PDF to a phone — the one place these names are actually read.
+ */
+export function withCopyLabel(fileName: string, label: string): string {
+  const trimmed = String(label ?? "").trim();
+  if (!trimmed) return fileName;
+  const dot = fileName.lastIndexOf(".");
+  // Guard a leading dot: ".pdf" is an extension-only name, not a stem with an extension.
+  if (dot <= 0) return `${fileName} (${trimmed})`;
+  return `${fileName.slice(0, dot)} (${trimmed})${fileName.slice(dot)}`;
+}
+
+/**
  * Whether THIS row is the copy that should reach Drive, given every CV row its candidate has.
  *
  * The convenience shape for the live mirror, which is handed one file id and has to answer a

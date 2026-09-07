@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-import { chooseCvCopies, shouldMirrorCopy } from "../src/lib/recruitment/cv-duplicate-copies.ts";
+import { chooseCvCopies, copyLabelsFor, shouldMirrorCopy, withCopyLabel } from "../src/lib/recruitment/cv-duplicate-copies.ts";
 import {
   CABINET_ROOT_NAME,
   cabinetPathFor,
@@ -231,6 +231,78 @@ export function runDriveCabinetFolderTests() {
   assert.equal(shouldMirrorCopy("first", rows), true);
   assert.equal(shouldMirrorCopy("second", rows), false);
   assert.equal(shouldMirrorCopy("different", rows), true);
+
+  // ── Telling one candidate's two DIFFERENT CVs apart ───────────────────────────────────────────
+  // Owner, 2026-09-07: "add the date to the duplicate names". These are not duplicates in the
+  // dedupe sense — every byte-identical re-send is already gone — they are genuinely different CVs
+  // from one person, and both belong in the cabinet wearing distinguishable names.
+
+  // A candidate with ONE CV keeps the plain name. 860 of 875 candidates, and a date on every file
+  // would be 892 longer names buying nothing.
+  const solo = copyLabelsFor([{ content_md5: "a", created_at: "2026-08-15T09:00:00Z", id: "only" }]);
+  assert.equal(solo.get("only"), "");
+  assert.equal(withCopyLabel("Samy Kassab - 966577581850.pdf", ""), "Samy Kassab - 966577581850.pdf");
+
+  // Two CVs on DIFFERENT days: the date alone separates them, so no counter. This is Samy Kassab,
+  // live in production — 2026-08-15 and 2026-09-06.
+  const twoDays = copyLabelsFor([
+    { content_md5: "a", created_at: "2026-08-15T09:00:00Z", id: "aug" },
+    { content_md5: "b", created_at: "2026-09-06T15:14:00Z", id: "sep" },
+  ]);
+  assert.equal(twoDays.get("aug"), "2026-08-15");
+  assert.equal(twoDays.get("sep"), "2026-09-06");
+
+  // THE CASE THE DATE ALONE CANNOT SOLVE, and the reason this is a function rather than a
+  // concatenation. Measured on production: only 5 of the 15 multi-CV candidates sent on different
+  // days. Acheampong Augustine sent THREE on 2026-08-14, and maisaa's two are twenty-one seconds
+  // apart — a date, a date and hour, even a date and minute all still collide.
+  const sameDay = copyLabelsFor([
+    { content_md5: "a", created_at: "2026-08-14T06:15:04Z", id: "first" },
+    { content_md5: "b", created_at: "2026-08-14T06:15:15Z", id: "second" },
+    { content_md5: "c", created_at: "2026-08-14T06:15:26Z", id: "third" },
+  ]);
+  assert.equal(sameDay.get("first"), "2026-08-14 #1");
+  assert.equal(sameDay.get("second"), "2026-08-14 #2");
+  assert.equal(sameDay.get("third"), "2026-08-14 #3");
+  assert.equal(new Set([...sameDay.values()]).size, 3, "same-day CVs must still get distinct labels");
+
+  // Mixed: the lone day stays clean, only the crowded one is numbered.
+  const mixed = copyLabelsFor([
+    { content_md5: "a", created_at: "2026-08-14T06:00:00Z", id: "x1" },
+    { content_md5: "b", created_at: "2026-08-14T07:00:00Z", id: "x2" },
+    { content_md5: "c", created_at: "2026-09-01T07:00:00Z", id: "y" },
+  ]);
+  assert.equal(mixed.get("x1"), "2026-08-14 #1");
+  assert.equal(mixed.get("x2"), "2026-08-14 #2");
+  assert.equal(mixed.get("y"), "2026-09-01");
+
+  // A suppressed identical re-send never gets a label, because it never reaches Drive at all.
+  const withResend = copyLabelsFor([
+    { content_md5: "a", created_at: "2026-08-15T09:00:00Z", id: "kept" },
+    { content_md5: "a", created_at: "2026-08-16T09:00:00Z", id: "resent" },
+    { content_md5: "b", created_at: "2026-09-06T09:00:00Z", id: "different" },
+  ]);
+  assert.equal(withResend.has("resent"), false);
+  assert.equal(withResend.get("kept"), "2026-08-15");
+  assert.equal(withResend.get("different"), "2026-09-06");
+
+  // The label goes BEFORE the extension — a name ending ".pdf (2026-08-15)" stops looking like a PDF
+  // to the phone this folder is read on.
+  assert.equal(
+    withCopyLabel("Amr Mohamed Rozza - 01004316664.docx", "2026-08-14"),
+    "Amr Mohamed Rozza - 01004316664 (2026-08-14).docx",
+  );
+  assert.equal(withCopyLabel("Acheampong Augustine.jpg", "2026-08-14 #2"), "Acheampong Augustine (2026-08-14 #2).jpg");
+  // A name with no extension still gets its label rather than being mangled.
+  assert.equal(withCopyLabel("Unnamed CV", "2026-08-14"), "Unnamed CV (2026-08-14)");
+
+  // Cairo, not UTC. 22:30 UTC on the 14th is already the 15th in Cairo, and the owner reads these
+  // folders on his own working day.
+  const cairoEdge = copyLabelsFor([
+    { content_md5: "a", created_at: "2026-08-14T22:30:00Z", id: "late" },
+    { content_md5: "b", created_at: "2026-09-01T09:00:00Z", id: "other" },
+  ]);
+  assert.equal(cairoEdge.get("late"), "2026-08-15", "the day key must be Africa/Cairo, not UTC");
 
   // ── The cutover guard, pinned in the mirror's own source ──────────────────────────────────────
   //
