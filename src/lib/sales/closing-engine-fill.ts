@@ -2458,6 +2458,20 @@ function nextWorksheetPart(zip: JSZip): string {
 const INDEX_SHEET = "Contents";
 
 /**
+ * The lane the emblem sits in, at the left of the masthead, and the indent that keeps the title
+ * clear of it.
+ *
+ * ONE NUMBER, READ FROM BOTH ENDS. The style indents the title past the lane and the drawing places
+ * the mark inside it; if the two disagreed the logo would land on top of the first word, and that
+ * is a defect only a render would ever show. Excel's indent unit is three characters of the
+ * standard font, so at roughly 66,675 EMU per character one indent is about 200,000 EMU — five of
+ * them clear the ~840,000 EMU mark with air to spare.
+ */
+const INDEX_MARK_LANE_EMU = 1_000_000;
+const INDEX_MARK_MARGIN_EMU = 76_200;
+const INDEX_MARK_INDENT = 5;
+
+/**
  * Add the contents page, and put it first.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -2521,7 +2535,7 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   const own = await resolveIndexStyles(zip);
   const s: IndexPalette = own ?? {
     band: "0", body: "0", bodyZebra: "0", foot: "0", header: "0",
-    link: "0", linkZebra: "0", title: "0", titleTail: "0",
+    link: "0", linkZebra: "0", title: "0", titlePt: "13", titleTail: "0",
   };
 
   const line = String(fill.sheets.Overview?.cells?.A1 ?? "").trim();
@@ -2541,10 +2555,22 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   // carried across it, the blue column band on row 2 at the same height, two spacer rows, and the
   // table from row 5 at 16.5 — the height every data row in this workbook uses. The pane freezes at
   // row 4 exactly as theirs do, so the band stays put while the list scrolls.
+  // Tall enough for the bigger title AND the emblem beside it: the mark is 330200 EMU (26pt) and
+  // wants clear air above and below, which 33.95 does not give once the type grows.
+  // THE BUILD STAMP COMES OFF THE TITLE. The sibling sheets carry
+  // "… Anti Infective   ·   built 7 September 2026" as one string, which is right on a working
+  // sheet; on the cover at this size it is what pushed the headline onto a second line and left the
+  // emblem beside a wrapped edge. The month keeps the headline, the stamp moves to the footnote —
+  // still on the page, still answerable, no longer competing with the title.
+  const separator = line.lastIndexOf("·");
+  const stamp = separator > 0 ? line.slice(separator + 1).trim() : "";
+  const headline = (separator > 0 ? line.slice(0, separator) : line).trim();
+
+  const mastheadPt = 42;
   merges.push(`A${rowNumber}:B${rowNumber}`);
   rows.push(
-    `<row r="${rowNumber}" ht="33.95" customHeight="1">`
-      + inline(`A${rowNumber}`, s.title, line || "Monthly Closing")
+    `<row r="${rowNumber}" ht="${mastheadPt}" customHeight="1">`
+      + inline(`A${rowNumber}`, s.title, headline || "Monthly Closing")
       + `<c r="B${rowNumber}" s="${s.titleTail}"/>`
       + "</row>",
   );
@@ -2594,15 +2620,22 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   // The footnote, one blank row below the last band.
   rowNumber += 1;
   merges.push(`A${rowNumber}:B${rowNumber}`);
-  rows.push(`<row r="${rowNumber}" ht="16.5" customHeight="1">${inline(`A${rowNumber}`, s.foot, INDEX_FOOTNOTE)}</row>`);
+  rows.push(
+    `<row r="${rowNumber}" ht="16.5" customHeight="1">`
+      + inline(`A${rowNumber}`, s.foot, stamp ? `${INDEX_FOOTNOTE}   ·   ${stamp}` : INDEX_FOOTNOTE)
+      + "</row>",
+  );
 
   const lastRow = rowNumber;
   const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:B${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="2" topLeftCell="A3" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A3" sqref="A3"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="34" customWidth="1"/><col min="2" max="2" width="96" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait"/></worksheet>`;
 
-  // The emblem, top right, exactly as every sibling carries it. Done before the part is written so
-  // the sheet lands with its <drawing> already in place.
-  zip.file(indexPart, await addIndexEmblem(zip, indexPart, sheetXml));
+  // The emblem, beside the title. Done before the part is written so the sheet lands with its
+  // <drawing> already in place.
+  zip.file(
+    indexPart,
+    await addIndexEmblem(zip, indexPart, sheetXml, { rowPt: mastheadPt }),
+  );
 
   zip.file(
     "[Content_Types].xml",
@@ -2854,7 +2887,12 @@ function appendCellXf(stylesXml: string, xf: string): { index: number; xml: stri
  * is returned exactly as it came in. A contents page with no logo is a small loss; a contents page
  * Excel refuses to open is not.
  */
-async function addIndexEmblem(zip: JSZip, indexPart: string, sheetXml: string): Promise<string> {
+async function addIndexEmblem(
+  zip: JSZip,
+  indexPart: string,
+  sheetXml: string,
+  masthead: { rowPt: number },
+): Promise<string> {
   const drawingNames = Object.keys(zip.files)
     .filter((name) => /^xl\/drawings\/drawing\d+\.xml$/.test(name))
     .sort();
@@ -2885,16 +2923,25 @@ async function addIndexEmblem(zip: JSZip, indexPart: string, sheetXml: string): 
   const width = Number(size[1]);
   const height = Number(size[2]);
 
-  // Right-aligned against the end of the sheet's own columns, with a margin the width of the drop.
-  const margin = 50800;
+  // BESIDE THE TITLE — the mark FIRST, then the words, the way a letterhead reads.
+  //
+  // It is deliberately NOT placed after the caption. That was tried: this page's title is the whole
+  // "Monthly Closing   August 2026   Anti Infective   ·   built 7 September 2026", which at the
+  // masthead's size measures wider than this sheet's own two columns, so the mark had nowhere left
+  // to sit and was dropped entirely — the page came out with no logo at all. Putting it first makes
+  // the placement independent of how long a given month's title happens to be.
+  //
+  // The title style indents past `INDEX_MARK_LANE_EMU`, so the lane is reserved from both ends: the
+  // style leaves the room, and this fills it. A mark too wide for that lane is skipped rather than
+  // printed over the first word.
   const widthOf = columnWidthReader(sheetXml);
-  const columns = [...sheetXml.matchAll(/<col\b[^>]*?\bmax="(\d+)"/g)].map((m) => Number(m[1]));
-  const lastColumn = columns.length > 0 ? Math.max(...columns) : 2;
-  let total = 0;
-  for (let index = 0; index < lastColumn; index += 1) total += widthOf(index);
-  const x = total - width - margin;
-  if (x <= 0) return sheetXml;
+  const x = INDEX_MARK_MARGIN_EMU;
+  if (width > INDEX_MARK_LANE_EMU - INDEX_MARK_MARGIN_EMU) return sheetXml;
   const at = locateColumn(widthOf, x);
+
+  // Centred in the masthead row rather than dropped a fixed distance: the row is taller than the
+  // siblings' to carry the bigger type, so their 50800 would sit the mark high against the text.
+  const drop = Math.max(0, Math.round((masthead.rowPt * 12_700 - height) / 2));
 
   const part = `xl/drawings/drawing${
     Math.max(0, ...drawingNames.map((name) => Number(/drawing(\d+)\.xml$/.exec(name)?.[1] ?? 0))) + 1
@@ -2903,7 +2950,7 @@ async function addIndexEmblem(zip: JSZip, indexPart: string, sheetXml: string): 
   const anchor =
     "<xdr:oneCellAnchor>"
     + `<xdr:from><xdr:col>${at.col}</xdr:col><xdr:colOff>${at.colOff}</xdr:colOff>`
-    + `<xdr:row>0</xdr:row><xdr:rowOff>${margin}</xdr:rowOff></xdr:from>`
+    + `<xdr:row>0</xdr:row><xdr:rowOff>${drop}</xdr:rowOff></xdr:from>`
     + `<xdr:ext cx="${width}" cy="${height}"/>`
     + picture.replace(/<xdr:cNvPr\b[^>]*?(\/>|>[\s\S]*?<\/xdr:cNvPr>)/, '<xdr:cNvPr id="2" name="Emblem"/>')
       .replace(/r:embed="rId\d+"/, 'r:embed="rId1"')
@@ -2973,7 +3020,8 @@ async function addIndexEmblem(zip: JSZip, indexPart: string, sheetXml: string): 
  * defines, found by their COLOUR rather than by their position.
  */
 type IndexPalette = Record<
-  "band" | "body" | "bodyZebra" | "foot" | "header" | "link" | "linkZebra" | "title" | "titleTail",
+  "band" | "body" | "bodyZebra" | "foot" | "header" | "link" | "linkZebra" | "title" | "titlePt"
+  | "titleTail",
   string
 >;
 
@@ -3099,7 +3147,7 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
   // With the rule underneath, the band floated free and its line read as the first entry's.
   const openingRule = borderWith("top", ["medium", "thick"], "0868A8");
 
-  const swap = (xf: string, patch: { borderId?: number; fillId?: number; fontId?: number }) => {
+  const swap = (xf: string, patch: { borderId?: number; fillId?: number; fontId?: number; indent?: number }) => {
     let out = xf;
     if (patch.fontId !== undefined) {
       out = out.replace(/\bfontId="\d+"/, `fontId="${patch.fontId}"`);
@@ -3115,6 +3163,19 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
       // from, so the rule would simply not be drawn and there would be nothing to see anywhere.
       if (!/\bapplyBorder="1"/.test(out)) out = out.replace(/\bxfId="(\d+)"/, `xfId="$1" applyBorder="1"`);
     }
+    if (patch.indent !== undefined) {
+      if (/<alignment\b/.test(out)) {
+        out = /\bindent="\d+"/.test(out)
+          ? out.replace(/\bindent="\d+"/, `indent="${patch.indent}"`)
+          : out.replace(/<alignment\b/, `<alignment indent="${patch.indent}"`);
+      } else {
+        // No alignment element at all: give it one, and close the xf properly either way.
+        out = /\/>$/.test(out)
+          ? out.replace(/\/>$/, `><alignment horizontal="left" vertical="center" indent="${patch.indent}"/></xf>`)
+          : out.replace(/>(?=(?:(?!<alignment)[\s\S])*<\/xf>)/, `><alignment horizontal="left" vertical="center" indent="${patch.indent}"/>`);
+      }
+      if (!/\bapplyAlignment="1"/.test(out)) out = out.replace(/\bxfId="(\d+)"/, `xfId="$1" applyAlignment="1"`);
+    }
     return out;
   };
 
@@ -3123,6 +3184,25 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
     xml = result.xml;
     return String(result.index);
   };
+
+  // THE TITLE, ONE SIZE UP. The masthead the siblings use is 13pt, which is right on a sheet whose
+  // job is a dense table; the contents page is the cover and reads as timid at that size. It takes
+  // the LARGEST bold face the workbook ALREADY OWNS in the title's own colour, so the page grows
+  // into type the owner already set rather than into a size invented here — and if his template
+  // has nothing bigger, it simply stays as it was.
+  const titleXf = xfs[title]!;
+  const titleColour = /color rgb="FF([0-9A-Fa-f]{6})"/.exec(fontOf(titleXf))?.[1];
+  const baseTitlePt = sizeOf(fontOf(titleXf));
+  let bigTitleFont = -1;
+  let titlePt = Number.isFinite(baseTitlePt) ? baseTitlePt : 13;
+  fonts.forEach((font, index) => {
+    if (!font.includes("<b/>")) return;
+    if (titleColour && !new RegExp(`color rgb="FF${titleColour}"`, "i").test(font)) return;
+    const size = sizeOf(font);
+    if (!Number.isFinite(size) || size <= titlePt) return;
+    titlePt = size;
+    bigTitleFont = index;
+  });
 
   const bodyXf = xfs[body]!;
   // Every row is ruled. A zebra alone separates rows by shade; the hairline is what makes the two
@@ -3133,7 +3213,13 @@ async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
     add(swap(bodyXf, { ...patch, ...(hairline >= 0 ? { borderId: hairline } : {}) }));
 
   const palette: IndexPalette = {
-    title: String(title),
+    title: add(
+      swap(titleXf, {
+        ...(bigTitleFont < 0 ? {} : { fontId: bigTitleFont }),
+        indent: INDEX_MARK_INDENT,
+      }),
+    ),
+    titlePt: String(titlePt),
     titleTail: Number.isFinite(titleTail) ? String(titleTail) : String(title),
     header: String(header),
     body: ruled({}),

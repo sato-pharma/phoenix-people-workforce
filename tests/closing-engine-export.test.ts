@@ -1440,9 +1440,33 @@ export async function runClosingEngineExportTests() {
 
     const titleStyle = /<row r="1"[^>]*>(?:(?!<\/row>)[\s\S])*?<c r="A1" s="(\d+)"/.exec(sheet)?.[1];
     assert.ok(titleStyle, `${label}: the contents page must carry a masthead on row 1`);
+
+    // DERIVED from the Overview's masthead, not identical to it. The contents page is the cover, so
+    // its title is deliberately a size up and indented to leave a lane for the emblem — but the
+    // GROUND it sits on must still be the owner's: the same fill and the same rule underneath. Those
+    // two are what make it read as the same masthead; the size is the only thing allowed to differ.
+    const overviewTitle = /<c r="A1" s="(\d+)"/.exec(overviewXml)?.[1];
+    assert.ok(overviewTitle, `${label}: the Overview must carry a masthead to derive from`);
+    const sizeIn = (style: string) =>
+      Number(/sz val="([0-9.]+)"/.exec(fontOf(style)) ?.[1] ?? NaN);
+    assert.equal(
+      fillOf(titleStyle!),
+      fillOf(overviewTitle!),
+      `${label}: the masthead sits on a different ground from the Overview's — it was invented, not derived`,
+    );
+    assert.equal(
+      idOf(xfs[Number(titleStyle)] ?? "", "borderId"),
+      idOf(xfs[Number(overviewTitle)] ?? "", "borderId"),
+      `${label}: the masthead lost the rule the Overview's carries`,
+    );
     assert.ok(
-      overviewStyles.has(titleStyle!),
-      `${label}: the masthead uses style ${titleStyle}, which the Overview does not — it was invented, not cloned`,
+      fontOf(titleStyle!).includes("<b/>"),
+      `${label}: the masthead must stay bold`,
+    );
+    assert.ok(
+      sizeIn(titleStyle!) >= sizeIn(overviewTitle!),
+      `${label}: the cover's title is ${sizeIn(titleStyle!)}pt against the Overview's `
+        + `${sizeIn(overviewTitle!)}pt — it must never end up SMALLER than a working sheet's`,
     );
 
     // 3) The table header is filled, and its type is white — a coloured header, as asked for.
@@ -1585,6 +1609,27 @@ export async function runClosingEngineExportTests() {
       1,
       `${label}: the contents emblem must REUSE the workbook's one image, not add another — found `
         + media.join(", "),
+    );
+
+    // 7) BESIDE THE TITLE. The mark goes in the first column, on the masthead row, and the title
+    //    indents past it. Both halves are asserted because they are one arrangement held from two
+    //    ends: drop the indent and the logo lands on the first word — a defect nothing but a render
+    //    would ever show, which is exactly how this page went wrong three times.
+    assert.match(
+      drawingXml,
+      /<xdr:col>0<\/xdr:col>/,
+      `${label}: the emblem must sit in the first column, beside the title — not out in a far corner`,
+    );
+    assert.match(
+      drawingXml,
+      /<xdr:row>0<\/xdr:row>/,
+      `${label}: the emblem belongs on the masthead row`,
+    );
+    const titleIndent = Number(/\bindent="(\d+)"/.exec(xfs[Number(titleStyle)] ?? "")?.[1] ?? 0);
+    assert.ok(
+      titleIndent >= 4,
+      `${label}: the title indents ${titleIndent} — too little to clear the emblem's lane, so the `
+        + "mark would print over the first word",
     );
 
     // Same class of defect: a dimension that stops short of the rows actually written.
