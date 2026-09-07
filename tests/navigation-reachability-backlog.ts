@@ -171,7 +171,18 @@ export const NAVIGATION_REACHABILITY_BACKLOG: readonly ReachabilityGap[] = [
   { route: "/admin/field-sales/weekly-sales", roles: ["CEO", "Finance Manager", "SFE Manager", "Super Admin"], kind: "linked-from-a-component", reason: "Reached from a hand-written link in src/components/admin/ceo-command-center.tsx, not the sidebar rail or a hub card — a recorded decision.", recorded: "2026-08-29" },
   { route: "/coaching/new", roles: ["Group Product Manager", "Product Manager", "Super Admin", "Training Manager"], kind: "linked-from-a-component", reason: "Reached from a hand-written link in app/(admin)/coaching/analytics/page.tsx, not the sidebar rail or a hub card — a recorded decision.", recorded: "2026-08-29" },
   { route: "/employee-portals/direct-orders/new", roles: ["District Manager", "Employee", "Group Product Manager", "Manager", "Marketing Manager", "Medical Rep", "National Sales Manager", "Product Manager", "Regional Manager", "Training Manager"], kind: "linked-from-a-component", reason: "Reached from a hand-written link in app/(admin)/admin/direct-orders/new/page.tsx, not the sidebar rail or a hub card — a recorded decision.", recorded: "2026-08-29" },
-  { route: "/recruitment/screening", roles: ["HR Advisory", "Super Admin"], kind: "linked-from-a-component", reason: "Reached from a hand-written link in app/employee-portals/recruitment/screening/page.tsx, not the sidebar rail or a hub card — a recorded decision.", recorded: "2026-08-29" },
+  // RETIRED 2026-09-07. The row recorded /recruitment/screening as reachable only from a
+  // hand-written link, "not the sidebar rail or a hub card — a recorded decision". It now has a
+  // sidebar row ("Screening Queue", the recruitment-hiring section of system-navigation.ts), so the
+  // reverse guard no longer sees it as an orphan and this entry had to go with it.
+  //
+  // The decision was recorded in good faith and the reasoning was sound — a hub card trips four
+  // unrelated CI gates. What was never measured is whether the hand-written link actually carried
+  // anyone there. Measured 2026-09-07 by calling the page's own loader against production: the
+  // workstation holds 400 CVs needing a first review, 8 unreviewed duplicate pairs and 13 overdue
+  // manager sends, while 658 of 874 candidates had no decision recorded against them at all, some
+  // since 24 July. A plain sidebar row costs one measured label and none of the four gates, so the
+  // trade the original decision was avoiding was never the only one available.
   { route: "/employee/outstation/new", roles: ["District Manager", "Employee", "Group Product Manager", "Manager", "Marketing Manager", "Medical Rep", "National Sales Manager", "Product Manager", "Regional Manager", "Training Manager"], kind: "no-link-anywhere", reason: "No content of its own — it reads the caller's outstation-expense state and forwards to one of three pages, so nothing should link it. The literal-scan findability ratchet surfaces it too.", recorded: "2026-08-29" },
   { route: "/admin/approvals/stuck", roles: ["CEO", "Finance Manager", "Financial Advisor", "HR Advisory", "HR Operations", "SFE Manager", "Super Admin"], kind: "second-gate-unreadable", reason: "Gated on isAllVacationVisibility, a role/scope predicate the gate reader cannot evaluate, so whether it is truly stranded is deferred until the gate is machine-readable (B7).", recorded: "2026-08-29" },
   { route: "/employee-portals/contact-review", roles: ["District Manager", "Employee", "Group Product Manager", "Manager", "Marketing Manager", "Medical Rep", "National Sales Manager", "Product Manager", "Regional Manager", "Training Manager"], kind: "shell-mirror-of-a-linked-route", reason: "Portal-shell twin of /recruitment/contact-review, which navigation already offers; an admin-shell role opening this address is bounced to the twin, so the portal spelling needs no link of its own.", recorded: "2026-08-29" },
