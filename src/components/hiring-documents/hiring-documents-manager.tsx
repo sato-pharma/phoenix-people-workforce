@@ -49,8 +49,17 @@ type Props = {
 type ActiveTab = "documents" | "capture" | "control";
 
 const allValue = "__all__";
-const tableHeaderClassName =
-  "border-b border-phx-line bg-phx-accent-soft/80 px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft";
+const tableHeaderTypeClassName =
+  "px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft";
+const tableHeaderClassName = `border-b border-phx-line bg-phx-accent-soft/80 ${tableHeaderTypeClassName}`;
+// The frozen header of the desktop matrix. Two things it must NOT inherit from the class above:
+// the tint has to be opaque, because rows now scroll underneath it rather than past it; and the
+// divider is painted rather than bordered — see matrixHeaderStyle.
+const matrixHeaderClassName = `sticky top-0 bg-phx-accent-soft ${tableHeaderTypeClassName}`;
+// Tailwind's preflight collapses every table's borders, and a collapsed bottom edge belongs to the
+// row boundary, not to the cell — so a `border-b` stays behind the instant the header cell sticks
+// and the line under the header vanishes while you scroll. An inset shadow travels with the cell.
+const matrixHeaderStyle: React.CSSProperties = { boxShadow: "inset 0 -1px 0 var(--phx-line)" };
 const tableCellClassName = "border-b border-phx-line px-3 py-4 align-top";
 const inputClassName =
   "h-10 rounded-xl border-phx-line bg-white/95 text-sm shadow-sm focus:border-phx-accent-line focus:ring-phx-accent/15";
@@ -609,18 +618,22 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
               >
                 <div aria-hidden className="h-4" style={{ minWidth: tableScrollWidth }} />
               </div>
-              <div ref={tableContainerRef} className="overflow-x-auto">
+              {/* Capped height on purpose: sticky resolves against the nearest scrollport, so the
+                  header only freezes if the vertical scrolling happens HERE and not on the page. */}
+              <div ref={tableContainerRef} className="phoenix-horizontal-scroll max-h-[70vh] overflow-auto">
                 <table className="min-w-[1180px] text-sm">
                   <thead>
                     <tr>
-                      <th className={`${tableHeaderClassName} sticky left-0 z-20 min-w-[280px] bg-phx-accent-soft`}>Employee</th>
-                      <th className={`${tableHeaderClassName} min-w-[120px]`}>Line</th>
-                      <th className={`${tableHeaderClassName} min-w-[130px]`}>Hiring Date</th>
-                      <th className={`${tableHeaderClassName} min-w-[190px]`}>Manager</th>
+                      {/* The corner cell is frozen on both axes, so it outranks every other sticky
+                          cell: z-40 header corner > z-30 header row > z-10 body first column. */}
+                      <th className={`${matrixHeaderClassName} left-0 z-40 min-w-[280px]`} style={matrixHeaderStyle}>Employee</th>
+                      <th className={`${matrixHeaderClassName} z-30 min-w-[120px]`} style={matrixHeaderStyle}>Line</th>
+                      <th className={`${matrixHeaderClassName} z-30 min-w-[130px]`} style={matrixHeaderStyle}>Hiring Date</th>
+                      <th className={`${matrixHeaderClassName} z-30 min-w-[190px]`} style={matrixHeaderStyle}>Manager</th>
                       {documents.map((document) => (
-                        <th className={`${tableHeaderClassName} min-w-[210px]`} key={document.id}>{document.name}</th>
+                        <th className={`${matrixHeaderClassName} z-30 min-w-[210px]`} key={document.id} style={matrixHeaderStyle}>{document.name}</th>
                       ))}
-                      <th className={`${tableHeaderClassName} min-w-[260px]`}>Notes</th>
+                      <th className={`${matrixHeaderClassName} z-30 min-w-[260px]`} style={matrixHeaderStyle}>Notes</th>
                     </tr>
                   </thead>
                   <tbody>
