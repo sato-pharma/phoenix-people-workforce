@@ -998,3 +998,51 @@ an exception to it: **the house document identity does not reach `src/lib/offers
 
 Nothing was changed. `git status` over `src/lib/offers` and `app/api/offers` was empty at the end
 of the session that asked.
+
+## Down town stays in the El Qema Qalubeya split — owner ruling, 2026-09-07
+
+The hook lives in `AGENTS.md` §4 beside the El Qema rule. This is the account, and it exists
+because **the evidence a future session will find points the wrong way**.
+
+### What was measured
+
+His August 2026 Pedia manual closing was reconciled against the Phoenix closing on 2026-09-07.
+Both sides held El Qema at exactly **8,768 units** — his file labels those customers `POS`, but the
+rows carry El Qema's own customer names and split out to 8,768 against 4,312 for true overseas,
+which are Phoenix's two figures to the unit.
+
+The one structural disagreement was the Qalubeya warehouse `الفرسان بنها جملة(ت2)`, 4,532 units:
+
+| | Divisor | Per area | Down town |
+| --- | --- | --- | --- |
+| His manual sheet | **6** | 755.333 | **excluded** |
+| Phoenix | **7** | 647.43 | **included** |
+
+His six were Qalubeya, Heliopolis, Nasr City, Cairo East 1, Cairo East 2 and Cairo West. The effect
+on the closing was large and localised: Down town read **30 units** on his sheet against **1,011** in
+Phoenix, with the other five Cairo areas each about 167 units higher on his side, and Qalubeya 158
+higher. Those six differences sum to exactly what Down town was short — one number moving, not six.
+
+### Why Down town is the tempting one to drop
+
+`CA5` is the only Cairo area with **no Pedia rep seat at all**. The other five hold a seat with no
+occupant. The rule as originally written only said the divisor is areas *"even when the seat is
+VACANT"* (`حتى لو فيها فاكانت`), and a seatless area is not a vacant one — so a session comparing
+Phoenix against the owner's own spreadsheet would read Phoenix as over-spreading and "correct" it to
+six, reversing a decision rather than fixing a defect.
+
+### The ruling
+
+He was shown the gap and the reason, and ruled for seven:
+
+> down town should be included because we split in reference to areas not actual reps
+
+So the divisor is AREAS whether the seat is vacant **or does not exist**. He also confirmed the same
+day, on the decision sheet, "Use the Phoenix answer" for this question and marked all 35 El Qema
+rows "Phoenix is right — I will fix my sheet". The correction is to his file, not to the system.
+
+### What holds it
+
+`tests/qema-qalubeya-split.test.ts` asserts the seven-area target list and, beside it, names `CA5`
+specifically with this ruling attached — so removing Down town fails with an explanation rather than
+just going red. Both run in the required CI `validate` job.
