@@ -12,6 +12,7 @@ import {
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
 import { cn } from "@/lib/utils";
+import { utcDate } from "@/lib/format/cairo-datetime";
 import { ALL, filterLogRows, filterNeverVisitedRows, filterProbationRows } from "@/lib/double-visit-analytics/report-filters";
 import type {
   DoubleVisitFocusProbationEntry,
@@ -39,9 +40,17 @@ function pageCountOf(total: number) {
 // DATE-ONLY (`activity_date`, `hire_date`, `probation_end_date` — all `date` columns), which `new Date`
 // parses as UTC midnight. UTC here is CORRECT and must stay: it is what stops the calendar day being
 // shifted by a zone offset. Not an instant — do not "fix" this one to Cairo.
+//
+// The zone was never the bug here; the LOCALE was. `en-GB` + `month: "short"` is the one field
+// CLDR 42 changed ("Sep" -> "Sept"), so this rendered differently on Railway's Node 24 and on an
+// older mobile browser, and React discarded the server HTML over the one-character difference —
+// hydration error #418, live on /employee-portals/double-visit-report until 2026-09-08. `utcDate`
+// keeps the UTC pin and the exact output, taking the month from a table that ships with the code.
 function formatDate(value: string | null) {
   if (!value) return "—";
-  return new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return utcDate(parsed.toISOString());
 }
 
 // Shared between the desktop table cell and the mobile card's status slot so both surfaces

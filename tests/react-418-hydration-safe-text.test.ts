@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { cairoDate, cairoDateTime, cairoDateTimeSortable } from "../src/lib/format/cairo-datetime.ts";
+import { cairoDate, cairoDateTime, cairoDateTimeSortable, utcDate } from "../src/lib/format/cairo-datetime.ts";
 
 // React error #418 is a hydration mismatch: the server renders a text node one way, the browser
 // renders it another, so React throws away the server HTML and re-renders the whole tree. React
@@ -218,6 +218,74 @@ export function runReact418HydrationSafeTextTests() {
     registerSource,
     /"Not recorded"/,
     'the register keeps its own "Not recorded" copy for an absent instant — the shared dash reads wrong in that column',
+  );
+
+  // ── 3d. The UTC date-only sibling, and the three sites that still used the platform ────────
+  //
+  // `utcDate` exists because the previous three fixes all treated "is the zone deliberate?" as the
+  // question. At these sites it WAS deliberate and correct — a `date` column, or a vendor
+  // wall-clock already in Cairo but tagged UTC — so each one carried a comment defending its UTC
+  // and each was still throwing #418, because the engine-dependent part is the LOCALE, not the
+  // zone. `en-GB` + `month: "short"` is the pairing CLDR 42 split; the UTC pin never touched it.
+  //
+  // Measured on production before the fix: /employee-portals/visits last threw 2026-09-06 23:57
+  // Cairo and /employee-portals/double-visit-report 2026-09-07 00:06, both on builds that already
+  // contained #3336, #3337 and #3340 — confirmed by resolving each event's `release` column back
+  // to a commit and asking `git merge-base --is-ancestor`.
+  const utcMonthSamples: readonly (readonly [string, string])[] = [
+    ["2026-01-15T00:00:00.000Z", "15 Jan 2026"],
+    ["2026-02-15T00:00:00.000Z", "15 Feb 2026"],
+    ["2026-03-15T00:00:00.000Z", "15 Mar 2026"],
+    ["2026-04-15T00:00:00.000Z", "15 Apr 2026"],
+    ["2026-05-15T00:00:00.000Z", "15 May 2026"],
+    ["2026-06-15T00:00:00.000Z", "15 Jun 2026"],
+    ["2026-07-15T00:00:00.000Z", "15 Jul 2026"],
+    ["2026-08-15T00:00:00.000Z", "15 Aug 2026"],
+    ["2026-09-15T00:00:00.000Z", "15 Sept 2026"],
+    ["2026-10-15T00:00:00.000Z", "15 Oct 2026"],
+    ["2026-11-15T00:00:00.000Z", "15 Nov 2026"],
+    ["2026-12-15T00:00:00.000Z", "15 Dec 2026"],
+  ];
+  for (const [iso, expected] of utcMonthSamples) {
+    assert.equal(
+      utcDate(iso),
+      expected,
+      `${iso} must render exactly "${expected}" — same engine-independent month table as cairoDate, so an older ICU cannot render "Sep" where the server rendered "Sept"`,
+    );
+  }
+
+  // The whole point of the UTC pin: a date-only value must NOT shift a calendar day. Cairo is
+  // UTC+2/+3, so if this ever fell back to Cairo these two would read 01 Sept and 01 Jan.
+  assert.equal(utcDate("2026-08-31T22:00:00Z"), "31 Aug 2026", "22:00 UTC must stay the 31st — a Cairo pin here would advance the calendar day");
+  assert.equal(utcDate("2025-12-31T23:30:00Z"), "31 Dec 2025", "a date-only value must not roll into the next year");
+  assert.equal(utcDate(null), "—", "an absent value renders a dash, never today");
+  assert.equal(utcDate("not-a-date"), "—", "an unparseable value renders a dash, never 'Invalid Date' text");
+
+  // Source pins for the three call sites, same reasoning as every other pin in this file: the value
+  // assertions above pass on a reverted implementation too, because CI runs a single engine.
+  for (const [file, what] of [
+    ["src/components/employee-portal/my-visits-workspace.tsx", "the visits list (visit_date and the vendor check-in stamp)"],
+    ["src/components/double-visit-report/double-visit-report-workspace.tsx", "the double-visit report's date column"],
+    ["src/components/weekly-planning/plan-conversation-thread.tsx", "the plan conversation thread"],
+  ] as const) {
+    const source = codeOnly(read(file));
+    assert.doesNotMatch(
+      source,
+      /["']en-GB["']/,
+      `${what} (${file}) must not name the en-GB locale — its month abbreviation is what CLDR 42 changed, and this file renders during SSR`,
+    );
+  }
+
+  const utcSource = codeOnly(read(CAIRO_DATETIME_PATH));
+  assert.match(
+    utcSource,
+    /export function utcDate\(/,
+    "the UTC date-only sibling must live beside cairoDate and share CAIRO_MONTHS — a second month table is how validated-customer-register grew its own unsafe copy",
+  );
+  assert.doesNotMatch(
+    utcSource,
+    /const [A-Z_]*MONTHS[A-Z_]* = \[[\s\S]*?\][\s\S]*?const [A-Z_]*MONTHS[A-Z_]* = \[/,
+    "there must be exactly one month table in this module",
   );
 
   // ── 4. The portal shell clock is NOT pinned here — #3336 owns it ─────────────────────

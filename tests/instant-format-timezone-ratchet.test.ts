@@ -62,7 +62,13 @@ import path from "node:path";
 // Lowered 13 -> 12 fixing admin-profile-form.tsx's React hydration error #418 (2026-09-05): its
 // formattedCreatedAt was a bare, zone-less Intl.DateTimeFormat, now routed through the shared
 // cairoDateTime() helper, so the site is zoned and no longer counts as unzoned.
-const CLIENT_BASELINE = 12;
+// Lowered 12 -> 11 pinning plan-conversation-thread.tsx (2026-09-08): the comment stamp was a bare
+// toLocaleString("en-GB") over comment.createdAt, naming no zone at all, so it rendered in the
+// reader's device zone; now cairoDateTime(). The two sites fixed alongside it in the same commit
+// (my-visits-workspace, double-visit-report-workspace) do NOT move this number and should not be
+// expected to — both already named timeZone: "UTC" deliberately and were counted as zoned. Their
+// bug was the en-GB month abbreviation, which this ratchet does not measure.
+const CLIENT_BASELINE = 11;
 
 /**
  * Not a baseline — a rule. A server-rendered instant with no zone is wrong in

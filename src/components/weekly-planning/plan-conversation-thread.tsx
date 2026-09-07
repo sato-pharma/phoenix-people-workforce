@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { MessageCircle, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import type { EmployeePlanComment } from "@/lib/weekly-planning/service";
 
 type Props = {
@@ -92,12 +93,19 @@ export function PlanConversationThread({ planId }: Props) {
                   ) : null}
                 </p>
                 <p className="shrink-0 whitespace-nowrap text-phx-2xs text-slate-400">
-                  {new Date(comment.createdAt).toLocaleString("en-GB", {
-                    day: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    month: "short",
-                  })}
+                  {/*
+                    Pinned to Cairo through the shared helper. This call previously named NO
+                    timeZone at all, so it rendered in whatever zone the reader's device was set
+                    to — the owner reads every time in Cairo — and used `en-GB` + `month: "short"`,
+                    the abbreviation CLDR 42 changed from "Sep" to "Sept".
+
+                    That pairing is React hydration error #418 wherever the text is server-rendered.
+                    It is not, here: `comments` starts empty and is filled by the effect above, so
+                    the server renders no timestamp and there is nothing for hydration to disagree
+                    with. Fixed anyway — the zone is a real defect on its own, and the day this list
+                    gains a server-rendered initial page the #418 arrives with it.
+                  */}
+                  {cairoDateTime(comment.createdAt)}
                 </p>
               </div>
               <p className="mt-1 whitespace-pre-wrap text-xs font-semibold text-slate-700">{comment.body}</p>
