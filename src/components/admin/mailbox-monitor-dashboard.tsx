@@ -351,12 +351,17 @@ export function MailboxMonitorDashboard({
           <AdminCallout tone="warning">
             <Lock className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
             <div className="space-y-2">
+              {/* The entry name was three underscores until 2026-09-07. Yahoo/Turbify REFUSES a
+                  name made only of underscores, so the old instruction could not be carried out at
+                  all — not by the owner, and not by an employee following it literally, which is
+                  how it was found. `imap` replaces it: still neutral, so a monitored employee
+                  learns nothing from the entry, and still never the word Phoenix (owner rule). */}
               <p className="font-semibold">When you generate the app password, name it exactly:</p>
               <div className="flex items-center gap-3">
-                <code className="rounded-md border border-amber-300 bg-white px-3 py-1.5 text-base font-black tracking-[0.3em] text-slate-900">
-                  ___
+                <code className="rounded-md border border-amber-300 bg-white px-3 py-1.5 text-base font-black tracking-[0.2em] text-slate-900">
+                  imap
                 </code>
-                <span className="text-sm text-amber-900">three underscores — nothing else, no other label.</span>
+                <span className="text-sm text-amber-900">four letters, lower case — nothing else, no other label.</span>
               </div>
               <p className="text-sm text-amber-900/90">
                 Do this in the mailbox&apos;s own security settings under <span className="font-semibold">Manage app passwords</span>.
