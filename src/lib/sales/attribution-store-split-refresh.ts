@@ -27,12 +27,26 @@ import {
   type AttributionStoreSplitWriteResult,
 } from "@/lib/sales/attribution-store-split-net";
 
+/**
+ * `from` returns `unknown` on purpose, and the shape it really has is applied by the cast in
+ * periodsOfBatch below.
+ *
+ * Spelling the query-builder chain out here instead made tsc fail with TS2589 "type instantiation is
+ * excessively deep and possibly infinite" at the call site in monthly-distributor-import.ts — the
+ * real client's `from` is generic over the whole generated Database type, and checking the live
+ * client against a hand-written structural chain forces TypeScript to expand all of it. `unknown`
+ * accepts any `from` without expanding anything. `rpc` is safe to spell out because its return type
+ * is shallow.
+ */
 type SupabaseLike = {
   rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
-  from: (table: string) => {
-    select: (columns: string) => {
-      eq: (column: string, value: unknown) => PromiseLike<{ data: unknown; error: unknown }>;
-    };
+  from: (table: string) => unknown;
+};
+
+/** The slice of the query builder periodsOfBatch actually uses. */
+type PeriodQuery = {
+  select: (columns: string) => {
+    eq: (column: string, value: unknown) => PromiseLike<{ data: unknown; error: unknown }>;
   };
 };
 
@@ -59,8 +73,7 @@ async function loadRowsForLine(line: string, period: string): Promise<readonly A
 
 /** Distinct periods this batch put fact rows into — the exact set attribution will rebuild. */
 async function periodsOfBatch(supabase: SupabaseLike, batchId: string): Promise<string[]> {
-  const { data, error } = await supabase
-    .from("source_of_sales_fact_rollup")
+  const { data, error } = await (supabase.from("source_of_sales_fact_rollup") as PeriodQuery)
     .select("period")
     .eq("batch_id", batchId);
   if (error) throw error;
