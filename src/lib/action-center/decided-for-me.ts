@@ -93,8 +93,12 @@ export async function getDecisionsMadeForMe(
 
   const db = getSupabaseAdmin();
   const since = windowStartIso(options.windowDays ?? DECIDED_FOR_ME_WINDOW_DAYS);
-  const directory = await getEmployeeDirectory().catch(() => null);
-  if (!directory) return [];
+  // Deliberately NOT caught. Swallowing a directory failure into [] renders as "nothing
+  // happened while you were away" — indistinguishable from a real quiet period, and the worst
+  // possible lie for this particular feature. Let it throw; the pages turn it into a visible
+  // "could not load" instead of a confident empty tab. Measured 2026-09-07: one transient
+  // failure returned 0 items where the true answer was 8.
+  const directory = await getEmployeeDirectory();
 
   // Identity, not login: a person holding two logins records decisions under either, so a
   // decision taken under the viewer's other login is still his own and must not surface here
@@ -146,10 +150,32 @@ export async function getDecisionsMadeForMe(
   const href = (segment: string, id: unknown) =>
     `${approvalsBase}/${segment}/${encodeURIComponent(String(id ?? ""))}`;
 
+  // (1) A real, NAMED decider or nothing. A blank decider column renders as "Decided by" with
+  // an empty space after it, and asserting that somebody else decided a request when nobody is
+  // recorded is simply false. Requiring the id to resolve to a real person in the directory
+  // also drops rows stamped by retired service identities.
+  const hasNamedDecider = (hrId: unknown): boolean => {
+    const key = canonicalHrIdKey(cleanText(hrId));
+    return Boolean(key && nameByHrId.has(key));
+  };
+
+  // (2) Records being TIDIED are not decisions taken on your behalf. These two notes are written
+  // by the legacy leave backfill and by admin record corrections; 14 of the 38 rows on the first
+  // production read were one of these, going back to January, burying the 8 that mattered.
+  const isSystemRecord = (note: string | null): boolean => {
+    if (!note) return false;
+    const text = note.toLowerCase();
+    return text.includes("historical import") || text.includes("manual admin record update");
+  };
+
+  const shouldReport = (decidedByHrId: unknown, note: string | null): boolean =>
+    hasNamedDecider(decidedByHrId) && !isSystemRecord(note);
+
   const items: DecidedForMeItem[] = [];
 
   const pushTeamRow = (built: Omit<DecidedForMeItem, "decidedByName" | "basis"> | null) => {
     if (!built) return;
+    if (!shouldReport(built.decidedByHrId, built.decidedNote)) return;
     items.push({ ...built, decidedByName: deciderName(built.decidedByHrId), basis: "team" });
   };
 
@@ -261,6 +287,8 @@ export async function getDecisionsMadeForMe(
 
       for (const row of (stepRows as Array<Record<string, unknown>> | null) ?? []) {
         if (isMe(row.decision_by_hr_id)) continue;
+        const marketingNote = decisionNote(row.decision_note);
+        if (!shouldReport(row.decision_by_hr_id, marketingNote)) continue;
         const request = requests.get(String(row.request_id));
         if (!request) continue;
         items.push({
@@ -276,7 +304,7 @@ export async function getDecisionsMadeForMe(
           href: isPortal ? null : "/admin/marketing-requests/inbox",
           decidedByHrId: cleanText(row.decision_by_hr_id),
           decidedByName: deciderName(row.decision_by_hr_id),
-          decidedNote: decisionNote(row.decision_note),
+          decidedNote: marketingNote,
           basis: "line",
         });
       }
