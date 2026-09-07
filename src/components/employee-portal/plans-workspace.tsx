@@ -47,7 +47,8 @@ import {
   planningAreasForRegion,
   type PlanningOwner,
 } from "@/lib/weekly-planning/regions";
-import { currentCairoDateOnlyIso, PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { cairoDate } from "@/lib/format/cairo-datetime";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { PlanAdherenceBadge } from "@/components/weekly-planning/plan-adherence-report";
 import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
 import type { EmployeePlanKind, EmployeePlanStatus, PlanSlot, PlanWorkweek } from "@/lib/weekly-planning/plan-v1";
@@ -428,12 +429,32 @@ function PlanDecisionTimeline({ decisions }: { decisions: EmployeePlanDecision[]
               <p className="text-phx-2xs text-slate-500">
                 {statusLabels[d.fromStatus]} → {statusLabels[d.toStatus]}
                 {" · "}
-                {new Date(d.createdAt).toLocaleDateString("en-GB", {
-                  day: "2-digit",
-                  month: "short",
-                  year: "numeric",
-                  timeZone: PHOENIX_BUSINESS_TIME_ZONE,
-                })}
+                {/*
+                  THE SHARED HELPER, NOT `toLocaleDateString("en-GB", { month: "short" })`.
+
+                  `d.createdAt` is an INSTANT, and this is a `"use client"` component, so this text
+                  node is built twice — by Node when the HTML renders and by the browser when React
+                  hydrates. `month: "short"` in en-GB is the one field those two can disagree on:
+                  CLDR 42 (ICU 72) renamed abbreviated September from "Sep" to "Sept", so Railway's
+                  Node 24 and an older mobile browser produce different bytes for the same instant
+                  and React discards the server HTML — hydration error #418.
+
+                  This route is where that was still landing. #3336 fixed the header clock and #3337
+                  the remaining routes, both on 2026-09-06, and /employee-portals/plans went on
+                  erroring afterwards — verified by resolving the `release` on each event back to a
+                  commit and confirming all of them already contained both fixes. This call site is
+                  what they missed.
+
+                  `cairoDate` renders the same shape (`02 Sept 2026`), pins Cairo, and takes only the
+                  NUMERIC month from Intl, mapping it through a hand-written month table so every
+                  engine emits the same string.
+
+                  The `formatDate`/`formatMonthYear` helpers further down are NOT this bug and must
+                  not be "fixed" to match: they render DATE-ONLY values in locale "en", where the
+                  September abbreviation never changed, and their UTC zone is what stops a calendar
+                  day shifting. Their own comment says so.
+                */}
+                {cairoDate(d.createdAt)}
               </p>
               {d.comment ? <p className="mt-0.5 text-phx-2xs italic text-slate-500">&quot;{d.comment}&quot;</p> : null}
             </div>

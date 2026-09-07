@@ -17,25 +17,40 @@ import {
   portalInputClassName,
 } from "@/components/employee-portal/portal-primitives";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { cairoDateTime as sharedCairoDateTime } from "@/lib/format/cairo-datetime";
 import type { ValidatedCustomerListRow } from "@/lib/marketing-requests/validated-customer-transfer";
 
 /**
  * Every timestamp on this screen is Africa/Cairo. Formatted here, never handed to the DOM as a
  * raw ISO string: the marketing approval timeline shipped exactly that way and rendered UTC on
  * screen against the standing rule.
+ *
+ * NOW DELEGATES to `@/lib/format/cairo-datetime`, and the delegation is the fix rather than tidying.
+ *
+ * This built the string itself with `Intl.DateTimeFormat("en-GB", { month: "short" })`. That is the
+ * one construct the shared helper exists to avoid, and it says so in its own source: it spells
+ * `CAIRO_MONTHS` out by hand "because the ANSWER IS NOT THE SAME ON EVERY" runtime — CLDR 42
+ * (ICU 72, late 2022) renamed abbreviated September from "Sep" to "Sept" — and takes only the
+ * numeric month from `Intl`, which every ICU version agrees on.
+ *
+ * This is a `"use client"` component, so every timestamp on this screen is formatted TWICE: once by
+ * Node when the HTML is rendered, again by the browser when React hydrates it. Two engines, two
+ * independently-versioned copies of the locale data. When they disagree by one character React
+ * throws the server HTML away and re-renders — hydration error #418.
+ *
+ * Not hypothetical. `app/password-setup/[token]/page.tsx` carries the diagnosis of the same bug from
+ * the same cause ("the Railway server and a reader on Samsung Internet 20 built different strings
+ * for the same instant"), was fixed on 2026-08-12 by formatting once, and has been silent since.
+ * #418 is still arriving from elsewhere — 24 of the last 35 production errors, 7 people, 8 routes.
+ * This screen was a live instance waiting for two readers on different ICU versions.
+ *
+ * The "Not recorded" copy is kept deliberately. The shared helper answers "—" for an absent instant,
+ * which is right for a dense grid and wrong here, where the column reads as a fact about the
+ * customer rather than a gap in a table.
  */
 export function cairoDateTime(value: string | null | undefined): string {
-  if (!value) return "Not recorded";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Not recorded";
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "short",
-    timeZone: "Africa/Cairo",
-    year: "numeric",
-  }).format(parsed);
+  const formatted = sharedCairoDateTime(value);
+  return formatted === "—" ? "Not recorded" : formatted;
 }
 
 type Workspace = {
