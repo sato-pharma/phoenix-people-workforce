@@ -4301,7 +4301,7 @@ await runTest(
 );
 await runTest(
   "CV degree-grade normaliser (318 graded CVs in 98 spellings fold to four Egyptian grades; "
-    + ""Very Good" must not be swallowed by "Good", and a bare GPA is never guessed at)",
+    + "'Very Good' must not be swallowed by 'Good', and a bare GPA is never guessed at)",
   runCvGradeNormalizerTests,
 );
 
