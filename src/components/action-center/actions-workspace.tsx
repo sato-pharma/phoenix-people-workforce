@@ -1,16 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { Clock, ClipboardList, FileSearch, Inbox } from "lucide-react";
+import { Clock, ClipboardList, FileSearch, Inbox, UserCheck } from "lucide-react";
 
 import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
 import { ActionCenterHub } from "@/components/action-center/action-center-hub";
+import { DecidedForMeList } from "@/components/action-center/decided-for-me-list";
 import { HistoricalApprovalsList } from "@/components/action-center/historical-approvals-list";
 import { MyRequestsList } from "@/components/action-center/my-requests-list";
 import type { ActionHubData, ActionHubModule, HistoricalApprovalItem, MyRequestItem } from "@/components/action-center/types";
+import type { DecidedForMeItem } from "@/lib/action-center/decided-for-me";
 import { PrivateCalendarDisputesWorkspace, type AdminPrivateCalendarDispute } from "@/components/admin/private-calendar-disputes-workspace";
 
-type ActionsTab = "inbox" | "mine" | "historical" | "disputes";
+type ActionsTab = "inbox" | "mine" | "historical" | "decided_for_me" | "disputes";
 
 type Props = {
   inboxData: ActionHubData;
@@ -28,6 +30,11 @@ type Props = {
   // disputes are Super-Admin-only end to end (see assertDisputeDecisionActor), so this stays
   // opt-in instead of a generic module in the shared My Requests/History aggregators.
   disputes?: AdminPrivateCalendarDispute[] | null;
+  // Decisions somebody else took on this viewer's own team and lines — what happened while he
+  // was away. The tab is omitted entirely when there are none, exactly like Disputes above: an
+  // always-present empty tab is noise for the many managers nobody has ever covered for.
+  decidedForMe?: DecidedForMeItem[] | null;
+  decidedForMeWindowDays?: number;
 };
 
 export function ActionsWorkspace({
@@ -40,13 +47,19 @@ export function ActionsWorkspace({
   initialTab,
   embedded,
   disputes,
+  decidedForMe,
+  decidedForMeWindowDays = 90,
 }: Props) {
   const [tab, setTab] = useState<ActionsTab>(initialTab);
+  const decidedForMeItems = decidedForMe ?? [];
 
   const tabs: Array<{ key: ActionsTab; label: string; count: number; icon: typeof Inbox }> = [
     { key: "inbox", label: "Pending approvals", count: inboxData.items.length, icon: Inbox },
     { key: "mine", label: "My requests", count: myRequests.length, icon: ClipboardList },
     { key: "historical", label: "Approval history", count: historicalItems.length, icon: Clock },
+    ...(decidedForMeItems.length > 0
+      ? [{ key: "decided_for_me" as const, label: "Decided for you", count: decidedForMeItems.length, icon: UserCheck }]
+      : []),
     ...(disputes ? [{ key: "disputes" as const, label: "Disputes Inbox", count: disputes.length, icon: FileSearch }] : []),
   ];
 
@@ -69,7 +82,9 @@ export function ActionsWorkspace({
         />
       )}
 
-      <div className="flex gap-1 border-b border-[#E5EAF1]">
+      {/* flex-wrap, never a scroller: five tabs do not fit a 375px screen on one line, and the
+          house rule forbids a horizontal scroll anywhere. */}
+      <div className="flex flex-wrap gap-1 border-b border-[#E5EAF1]">
         {tabs.map(({ key, label, count, icon: Icon }) => (
           <button
             key={key}
@@ -105,6 +120,8 @@ export function ActionsWorkspace({
         <MyRequestsList items={myRequests} initialModule={initialModule} initialId={initialId} />
       ) : tab === "disputes" ? (
         <PrivateCalendarDisputesWorkspace initialDisputes={disputes ?? []} initialError={null} />
+      ) : tab === "decided_for_me" ? (
+        <DecidedForMeList items={decidedForMeItems} windowDays={decidedForMeWindowDays} />
       ) : (
         <HistoricalApprovalsList items={historicalItems} />
       )}

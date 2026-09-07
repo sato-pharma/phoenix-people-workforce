@@ -10,6 +10,11 @@ import {
   getMyRequestItems,
   getMyApprovalHistory,
 } from "@/lib/action-center/service";
+import {
+  DECIDED_FOR_ME_WINDOW_DAYS,
+  getDecisionsMadeForMe,
+  type DecidedForMeItem,
+} from "@/lib/action-center/decided-for-me";
 import { listPendingPrivateCalendarDataDisputes } from "@/lib/private-calendar/disputes";
 
 export const dynamic = "force-dynamic";
@@ -58,16 +63,20 @@ export default async function AdminApprovalsHubPage({
   // its own dedicated inbox). "My requests" and history resolve in parallel. Private-calendar
   // data disputes are Super-Admin-only end to end (assertDisputeDecisionActor), so they're
   // fetched only for that role — everyone else simply never gets the Disputes Inbox tab.
-  const [baseItems, rawMyRequests, rawHistoricalItems, disputes]: [
+  const [baseItems, rawMyRequests, rawHistoricalItems, disputes, decidedForMe]: [
     Awaited<ReturnType<typeof getAwaitingMyActionItems>>,
     MyRequestItem[],
     HistoricalApprovalItem[],
     Awaited<ReturnType<typeof listPendingPrivateCalendarDataDisputes>> | null,
+    DecidedForMeItem[],
   ] = await Promise.all([
     getAwaitingMyActionItems(access, "admin"),
     getMyRequestItems(access).catch((): MyRequestItem[] => []),
     getMyApprovalHistory(access).catch((): HistoricalApprovalItem[] => []),
     access.role === "Super Admin" ? listPendingPrivateCalendarDataDisputes(access).catch(() => []) : Promise.resolve(null),
+    // Never fatal to the page: an approvals hub that fails to load because a supplementary
+    // "what did I miss" list threw would be a worse outcome than not showing the tab.
+    getDecisionsMadeForMe(access).catch((): DecidedForMeItem[] => []),
   ]);
   // Every migrated module (leave/excuse/weekly_plan) has its own "My Requests"/"History" tabs on
   // its dedicated hub (approvals-hub/service.ts filters these same shared functions down to one
@@ -105,6 +114,8 @@ export default async function AdminApprovalsHubPage({
       callerRole={access.role}
       initialTab={initialTab}
       disputes={disputes}
+      decidedForMe={decidedForMe}
+      decidedForMeWindowDays={DECIDED_FOR_ME_WINDOW_DAYS}
     />
   );
 }
