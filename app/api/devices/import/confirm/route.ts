@@ -37,7 +37,20 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "company_devices", "import");
 
-    const formData = await request.formData();
+    // `request.formData()` THROWS when the request carries no multipart body at all, before any
+    // check on the field — so a caller who forgot the file got a raw
+    // "Content-Type was not one of multipart/form-data" instead of a sentence they could act on.
+    // Verified against the real handler, not assumed.
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return NextResponse.json(
+        { error: "missing_file", message: "Attach the filled-in device import template." },
+        { status: 400 },
+      );
+    }
+
     const file = formData.get("file");
     if (!(file instanceof File)) {
       return NextResponse.json(
