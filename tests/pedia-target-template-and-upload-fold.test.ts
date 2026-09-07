@@ -95,12 +95,25 @@ export function runPediaTargetTemplateAndUploadFoldTests() {
       + "never display or edit",
   );
 
-  // The other lines have no rule and must pass through untouched, both halves intact.
+  // Anti Infective has no rule and must pass through untouched, both halves intact — folding it
+  // would silently delete a targetable area from the template.
+  assert.deepEqual(
+    foldAreaOptionsForLine("anti_infective", fromMap).map((a) => a.areaCode),
+    ["GZ1", "GZ6", "UE9"],
+    "Anti Infective is deliberately NOT merged — Beni Suef is its own UE-1 territory there",
+  );
+
+  // CNS folds from August. Nothing targetable is lost by it: on CNS both codes carry
+  // `carries_target = false` in au_v_line_area_map, so neither was offered as a target area anyway.
   assert.deepEqual(
     foldAreaOptionsForLine("cns", fromMap).map((a) => a.areaCode),
+    ["GZ1", "GZ6"],
+    "CNS offers the merged pair as one option from August",
+  );
+  assert.deepEqual(
+    foldAreaOptionsForLine("cns", fromMap, "2026-07").map((a) => a.areaCode),
     ["GZ1", "GZ6", "UE9"],
-    "CNS and Anti Infective are deliberately NOT merged — folding them would silently delete a "
-      + "targetable area from the template",
+    "and July, which is published, still offers the two separately",
   );
 
   // …and `loadTargetableAreas` must actually APPLY it. The two assertions above exercise the helper,
@@ -124,9 +137,16 @@ export function runPediaTargetTemplateAndUploadFoldTests() {
       + "renders, so the operator sees no target where he just set one",
   );
 
-  // A line with no merge rule keeps its own code — the fold must not leak across lines.
+  // CNS folds too, from August — so a CNS "Beni Suef" row is stored on the merged cell exactly as
+  // Pedia's is. Anti Infective still keeps its own code, which the option-list assertion above
+  // pins (the upload fixture's line map only knows the two folding lines).
   const cns = validateTargetRows([inputRow({ rowNumber: 2, area: "Beni Suef", line: "cns" })], refs());
-  assert.equal(cns.valid[0]!.area_code, "UE9", "CNS keeps Beni Suef as its own targetable area");
+  assert.equal(
+    cns.valid[0]!.area_code,
+    "GZ6",
+    "CNS stores Beni Suef on the merged cell from August — left on UE9 it would be written to a " +
+      "row the grid never renders",
+  );
 
   // ── 3. THE COLLISION the fold makes reachable ───────────────────────────────────────────────
   const clash = validateTargetRows(

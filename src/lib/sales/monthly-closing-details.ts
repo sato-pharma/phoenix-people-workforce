@@ -705,7 +705,7 @@ export async function loadMonthlyClosingDetails(
     };
   });
 
-  const merged = applyClosingAreaMergesToDetails(resolveTargetLineCode(line), mapped);
+  const merged = applyClosingAreaMergesToDetails(resolveTargetLineCode(line), mapped, period);
 
   const scoped = applyDetailScope(merged, {
     allowedRegionCodes,

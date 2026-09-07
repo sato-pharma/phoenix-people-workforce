@@ -12,9 +12,10 @@ import { foldAreaCodeForLine } from "../src/lib/sales/closing-area-merges.ts";
 // Fayoum's bricks only — the panel that exists to PROVE the area number silently disproved it,
 // with no indication anything was missing.
 //
-// The audit says "the pedia and cns lines". That was true when it was written on 2026-08-09 and is
-// not true now: the owner removed CNS from the merge on 2026-08-30, so CNS shows the two areas
-// separately and its drill-down is already correct. Only Pedia is affected.
+// The audit says "the pedia and cns lines". It was written on 2026-08-09, and the answer has moved
+// twice since: the owner removed CNS from the merge on 2026-08-30, then put it back on 2026-09-07
+// from August onward. So both lines fold again today — and this drill-down passes no period, because
+// it shows what the page shows NOW. July CNS, which is published, still drills down as two areas.
 //
 // The audit also filed this PLAUSIBLE and latent, on the grounds that no Pedia row existed in UE9
 // yet. Re-measured on production 2026-09-05 through the route's own RPC (phx_sales_brick_detail),
@@ -45,11 +46,14 @@ export async function runBrickDrilldownFollowsTheAreaMergeTests(): Promise<void>
   assert.equal(foldAreaCodeForLine("pedia", "UE9"), "GZ6", "Pedia folds Beni Suef into Fayoum");
   assert.equal(
     foldAreaCodeForLine("cns", "UE9"),
+    "GZ6",
+    "CNS folds again from August — the owner merged CNS from 2026-08 (2026-09-07: «in pedia and cns fayoum and bani suef are one area»), reversing his 2026-08-30 split. The drill-down passes no period, so it answers for today.",
+  );
+  assert.equal(
+    foldAreaCodeForLine("cns", "UE9", "2026-07"),
     "UE9",
-    "CNS MUST NOT FOLD. The owner removed CNS from the merge on 2026-08-30 — it shows Fayoum and " +
-      "Beni Suef as separate areas — so folding it here would re-merge a line he deliberately " +
-      "split. The audit's evidence says 'the pedia and cns lines' because it was written on " +
-      "2026-08-09, three weeks before that decision.",
+    "but July CNS is PUBLISHED as two areas, and drilling into it must still find Beni Suef's " +
+      "bricks under Beni Suef — the start date is the whole point of the rule",
   );
   assert.equal(
     foldAreaCodeForLine("anti infective", "UE9"),
@@ -65,18 +69,18 @@ export async function runBrickDrilldownFollowsTheAreaMergeTests(): Promise<void>
   const rows = [
     { areaCode: "GZ6", brickId: "B-FAYOUM-1", lineCode: "pedia" },
     { areaCode: "UE9", brickId: "B-BENI-1", lineCode: "pedia" },
-    { areaCode: "UE9", brickId: "B-BENI-2", lineCode: "cns" }, // separate area since 2026-08-30
+    { areaCode: "UE9", brickId: "B-BENI-2", lineCode: "cns" }, // folded again from 2026-08
     { areaCode: "UE9", brickId: "B-BENI-3", lineCode: "anti infective" },
     { areaCode: "AB4", brickId: "B-OTHER", lineCode: "pedia" },
   ];
 
   assert.deepEqual(
     selectedForArea(rows, "GZ6").map((row) => row.brickId).sort(),
-    ["B-BENI-1", "B-FAYOUM-1"],
-    "asking for GZ6 must return Fayoum's brick AND the PEDIA Beni Suef brick — exactly the rows " +
-      "the folded area row on the page totalled. CNS and Anti Infective keep Beni Suef separate.",
+    ["B-BENI-1", "B-BENI-2", "B-FAYOUM-1"],
+    "asking for GZ6 must return Fayoum's brick AND the Beni Suef bricks of every line that folds " +
+      "today — Pedia and, since August, CNS. Anti Infective still keeps Beni Suef separate.",
   );
-  for (const unmergedLine of ["cns", "anti infective"]) {
+  for (const unmergedLine of ["anti infective"]) {
     assert.ok(
       !selectedForArea(rows, "GZ6").some((row) => row.lineCode === unmergedLine),
       `the ${unmergedLine} Beni Suef brick must NOT appear under Fayoum — that line shows the two ` +
@@ -85,9 +89,9 @@ export async function runBrickDrilldownFollowsTheAreaMergeTests(): Promise<void>
   }
   assert.deepEqual(
     selectedForArea(rows, "UE9").map((row) => row.brickId),
-    ["B-BENI-2", "B-BENI-3"],
-    "asking for UE9 returns the lines that still show UE9 as its own area — CNS and Anti " +
-      "Infective. Only the Pedia brick answers under GZ6, where the page shows it",
+    ["B-BENI-3"],
+    "asking for UE9 returns only the line that still shows UE9 as its own area — Anti Infective. " +
+      "The Pedia and CNS bricks answer under GZ6, where the page shows them",
   );
   assert.deepEqual(
     selectedForArea(rows, "AB4").map((row) => row.brickId),

@@ -4474,7 +4474,7 @@ export async function loadMonthlyClosingParts(input?: {
     // Skeleton groups exactly as the loaded month will — including a merged Fayoum/Beni Suef row
     // on Pedia and CNS — so the area/region filters offer the same choices before and after a
     // month is picked.
-    const skeletonMerged = applyClosingAreaMerges(skeletonLineCode, areas, [], []);
+    const skeletonMerged = applyClosingAreaMerges(skeletonLineCode, areas, [], [], null);
     const skeleton = buildMonthlyClosingMatrix({
       areas: applyOperationalRegions(skeletonMerged.areas, operationalRegions),
       availableLines,
@@ -4568,7 +4568,7 @@ export async function loadMonthlyClosingParts(input?: {
   // Fayoum (GZ6) and Beni Suef (UE9) fold into one row on Pedia and CNS — see
   // closing-area-merges.ts. Applied to a COPY, after the Direct allocation above already read the
   // real (unmerged) areas/cells it needed for region-level attribution.
-  const areaMerged = applyClosingAreaMerges(targetLineCode, areas, cells, targets);
+  const areaMerged = applyClosingAreaMerges(targetLineCode, areas, cells, targets, selectedPeriod);
 
   const matrix = markMergedAreaRowsStatic(
     buildMonthlyClosingMatrix({
@@ -4582,6 +4582,7 @@ export async function loadMonthlyClosingParts(input?: {
       targets: areaMerged.targets,
     }),
     targetLineCode,
+    selectedPeriod,
   );
 
   // The Office grid, built through the SAME pipeline as `matrix` — same area merges, same
@@ -4595,7 +4596,7 @@ export async function loadMonthlyClosingParts(input?: {
   // The city store split is not applied either, and must not be: it moves WHOLESALER customers
   // between the areas of a city, and Office rows carry no customer at all. An area's total moves
   // with the split; its Office component does not.
-  const officeMerged = applyClosingAreaMerges(targetLineCode, areas, officeData, []);
+  const officeMerged = applyClosingAreaMerges(targetLineCode, areas, officeData, [], selectedPeriod);
   const officeMatrix = markMergedAreaRowsStatic(
     buildMonthlyClosingMatrix({
       areas: applyOperationalRegions(officeMerged.areas, operationalRegions),
@@ -4607,6 +4608,7 @@ export async function loadMonthlyClosingParts(input?: {
       products,
     }),
     targetLineCode,
+    selectedPeriod,
   );
 
   return {

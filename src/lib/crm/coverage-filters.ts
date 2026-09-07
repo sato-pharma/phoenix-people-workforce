@@ -391,10 +391,10 @@ export function narrowCoverageOptions(
   };
 
   const lines = optionsFrom(tree.lines, { region: selection.region }, (c) => c.lineCode);
-  // On Pedia, fold Fayoum (GZ6) + Beni Suef (UE9) into ONE "Fayoum - Beni Suef" option (owner rule
-  // 2026-08-30): drop the merged code and rename the survivor. Gated by the picked line — a line
-  // with no merge rule (Anti Infective, CNS, or no line picked yet) is returned unchanged, so the
-  // two areas stay separate everywhere else. `cellMatches` above expands the picked code back to
+  // On Pedia — and on CNS from 2026-08 — fold Fayoum (GZ6) + Beni Suef (UE9) into ONE
+  // "Fayoum - Beni Suef" option: drop the merged code and rename the survivor. Gated by the picked
+  // line — a line with no merge rule (Anti Infective, or no line picked yet) is returned unchanged,
+  // so the two areas stay separate there. No period is passed: this picker shows today's state. `cellMatches` above expands the picked code back to
   // both real codes, so the folded option loses no data.
   const areasRaw = optionsFrom(tree.areas, { line: selection.line, region: selection.region }, (c) => c.areaCode);
   const areas = foldAreaOptionsForLine(
