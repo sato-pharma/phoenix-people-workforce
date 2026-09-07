@@ -1131,6 +1131,7 @@ import { runAchievementHashableJoinKeyTests } from "./achievement-hashable-join-
 import { runDirectOrdersRegistryChainGrantsTests } from "./direct-orders-registry-chain-grants.test.ts";
 import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
 import { runSosWarehouseOwnerRulingsTests } from "./sos-warehouse-owner-rulings.test.ts";
+import { runEpdaPediaWarehouseRulingsTests } from "./epda-pedia-warehouse-rulings.test.ts";
 import { runImportSplitPreviewTests } from "./import-split-preview.test.ts";
 import { runCityListNewAreaGuardTests } from "./city-list-new-area-guard.test.ts";
 import { runQemaQalubeyaSplitTests } from "./qema-qalubeya-split.test.ts";
@@ -3310,6 +3311,10 @@ await runTest(
 await runTest(
   "SoS warehouse rulings (all 167 the owner decided one by one on 2026-09-06 — 73 warehouse, 78 pharmacy, 16 government — pinned so a stem or a fold cannot silently re-decide one)",
   runSosWarehouseOwnerRulingsTests,
+);
+await runTest(
+  "EPDA Pedia warehouse rulings 2026-09-07 (seven named, and the 3.6M neighbour they must not catch)",
+  runEpdaPediaWarehouseRulingsTests,
 );
 await runTest(
   "CEO marketing approval inbox (the final rung reaches page, sidebar link and decision page in the admin shell; the opt-in widens nothing else)",
