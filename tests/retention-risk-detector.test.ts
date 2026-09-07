@@ -13,15 +13,17 @@ import type {
  * The retention-risk detector: five consecutive WORKING days of recorded leave, or of no CRM entry
  * at all, on the owner's instruction of 2026-09-06.
  *
- * THE CALENDAR THESE DATES SIT ON. For a Medical Representative the week is Saturday to Wednesday
- * full days, Thursday a half day and FRIDAY THE ONLY WEEKLY OFF (`isFieldWorkforceFridayOnlyTitle`
- * — Saturday is a working day for that title and a day off for everyone else). In the window used
- * throughout this file:
+ * THE CALENDAR THIS BOARD COUNTS: Saturday, Sunday, Monday, Tuesday, Wednesday. NOT Thursday, NOT
+ * Friday — owner, 2026-09-07: "FRIDAY AND THURSDAY NOT INCLUDED". His own worked example: on Monday
+ * 7 September the three days behind it are the 2nd, the 5th and the 6th.
  *
- *   Sat 29 Aug · Sun 30 · Mon 31 · Tue 1 Sep · Wed 2 · Thu 3 · FRI 4 · Sat 5 · Sun 6 · Mon 7 ·
- *   Tue 8 · Wed 9 · Thu 10 · FRI 11 · Sat 12
+ * In the window used throughout this file (counted days in CAPS):
  *
- * Two Fridays inside a fortnight is exactly why the bridging rule below is the load-bearing one.
+ *   SAT 29 Aug · SUN 30 · MON 31 · TUE 1 Sep · WED 2 · thu 3 · fri 4 · SAT 5 · SUN 6 · MON 7 ·
+ *   TUE 8 · WED 9 · thu 10 · fri 11 · SAT 12
+ *
+ * FOUR skipped days inside a fortnight is exactly why the bridging rule is the load-bearing one:
+ * if any of them BROKE a run, nothing could ever span a week.
  */
 
 const MEASURABLE_THROUGH = "2026-09-12";
@@ -87,14 +89,14 @@ export function runRetentionRiskDetectorTests() {
     assert.equal(silence.length, 1, "one unbroken run, not one per side of the Friday");
     assert.equal(
       silence[0].workingDays,
-      6,
-      "Tue 1, Wed 2, Thu 3, Sat 5, Sun 6, Mon 7 — the Friday is bridged, never counted",
+      5,
+      "Tue 1, Wed 2, Sat 5, Sun 6, Mon 7 — Thursday the 3rd and Friday the 4th are both skipped",
     );
     assert.equal(silence[0].startDate, "2026-09-01");
     assert.equal(silence[0].endDate, "2026-09-07", "the run ends on the last WORKING day, never on a weekend");
     assert.ok(
-      silence[0].bridgedDates.includes("2026-09-04"),
-      "the bridged Friday is reported, so a reader can see the calendar span really covered",
+      silence[0].bridgedDates.includes("2026-09-04") && silence[0].bridgedDates.includes("2026-09-03"),
+      "both skipped days are reported, so a reader can see the calendar span really covered",
     );
     assert.equal(
       silence[0].ongoing,
@@ -105,17 +107,16 @@ export function runRetentionRiskDetectorTests() {
 
   // ── The threshold is measured in working days, and 4 is not 5 ──────────────────────────────
   {
-    // Silent Tue 1 to Sat 5: Tue, Wed, Thu and Sat are four working days (Friday bridged).
-    // The trailing entry on 12 September is not decoration: without it the days AFTER the gap
-    // (Mon 7 to Sat 12) are themselves five working days and the case would pass for the wrong
-    // reason.
+    // Silent Tue 1 to Sun 6, seen again on Mon 7: Tue 1, Wed 2, Sat 5, Sun 6 are four counted days.
+    // The trailing entry on 12 September is not decoration: without it the days AFTER the gap are
+    // themselves enough to reach the threshold and the case would pass for the wrong reason.
     const four = buildRetentionRiskSignals(
-      input({ crmActivityByHrId: activity(["2026-08-31", "2026-09-06", "2026-09-12"]) }),
+      input({ crmActivityByHrId: activity(["2026-08-31", "2026-09-07", "2026-09-12"]) }),
     ).filter((one) => one.trigger === "crm_silence");
-    assert.equal(four.length, 0, "four working days is under the owner's rule and must stay silent");
+    assert.equal(four.length, 0, "four counted days is under this test's threshold and must stay silent");
 
     const five = buildRetentionRiskSignals(
-      input({ crmActivityByHrId: activity(["2026-08-31", "2026-09-07", "2026-09-12"]) }),
+      input({ crmActivityByHrId: activity(["2026-08-31", "2026-09-08", "2026-09-12"]) }),
     ).filter((one) => one.trigger === "crm_silence");
     assert.equal(five.length, 1, "the fifth working day is what raises it");
     assert.equal(five[0].workingDays, 5);
@@ -130,8 +131,8 @@ export function runRetentionRiskDetectorTests() {
   {
     const signals = buildRetentionRiskSignals(
       input({
-        crmActivityByHrId: activity(["2026-08-31", "2026-09-10"]),
-        leaveByHrId: leave(["2026-09-03", "2026-09-05", "2026-09-06"]),
+        crmActivityByHrId: activity(["2026-08-31", "2026-09-12"]),
+        leaveByHrId: leave(["2026-09-05", "2026-09-06"]),
       }),
     );
     const silence = signals.filter((one) => one.trigger === "crm_silence");
@@ -139,7 +140,7 @@ export function runRetentionRiskDetectorTests() {
     assert.equal(
       silence[0].workingDays,
       5,
-      "Tue 1, Wed 2, Mon 7, Tue 8, Wed 9 — the three leave days and the Friday are bridged, so only the five unexplained days count. Had leave BROKEN the run it would be 2 and 3, and neither reaches the rule.",
+      "Tue 1, Wed 2, Mon 7, Tue 8, Wed 9 — the two leave days and the skipped Thu/Fri are bridged, so only the five unexplained days count. Had leave BROKEN the run it would be 2 and 3, and neither reaches the rule.",
     );
   }
 
@@ -147,12 +148,12 @@ export function runRetentionRiskDetectorTests() {
   // signal either — 3 working days is not 5.
   {
     const signals = buildRetentionRiskSignals(
-      input({ leaveByHrId: leave(["2026-09-03", "2026-09-05", "2026-09-06"]) }),
+      input({ leaveByHrId: leave(["2026-09-05", "2026-09-06"]) }),
     );
     assert.equal(
       signals.filter((one) => one.trigger === "extended_leave").length,
       0,
-      "three leave days is under the rule",
+      "two counted leave days is under this test's threshold",
     );
   }
 
@@ -160,7 +161,7 @@ export function runRetentionRiskDetectorTests() {
   {
     const signals = buildRetentionRiskSignals(
       input({
-        // Tue 1 to Mon 7 with the Friday bridged: Tue, Wed, Thu, Sat, Sun, Mon = 6 working days.
+        // Tue 1 to Mon 7 with Thu/Fri skipped: Tue, Wed, Sat, Sun, Mon = 5 counted days.
         leaveByHrId: leave([
           "2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-05", "2026-09-06", "2026-09-07",
         ]),
@@ -168,7 +169,7 @@ export function runRetentionRiskDetectorTests() {
     );
     const extended = signals.filter((one) => one.trigger === "extended_leave");
     assert.equal(extended.length, 1);
-    assert.equal(extended[0].workingDays, 6, "the Friday inside the block is bridged, not counted as leave");
+    assert.equal(extended[0].workingDays, 5, "the Thursday and Friday inside the block are skipped, not counted as leave");
     assert.equal(extended[0].startDate, "2026-09-01");
     assert.equal(extended[0].endDate, "2026-09-07");
   }
@@ -177,7 +178,7 @@ export function runRetentionRiskDetectorTests() {
   {
     const withHoliday = buildRetentionRiskSignals(
       input({
-        crmActivityByHrId: activity(["2026-08-31", "2026-09-08"]),
+        crmActivityByHrId: activity(["2026-08-31", "2026-09-09"]),
         publicHolidays: new Set(["2026-09-02"]),
       }),
     ).filter((one) => one.trigger === "crm_silence");
@@ -185,7 +186,7 @@ export function runRetentionRiskDetectorTests() {
     assert.equal(
       withHoliday[0].workingDays,
       5,
-      "the same six-day run minus the holiday — a public holiday is never a day somebody failed to work",
+      "Tue 1, Sat 5, Sun 6, Mon 7, Tue 8 — the holiday on the 2nd is skipped like a weekend, because a public holiday is never a day somebody failed to work",
     );
   }
 
@@ -206,7 +207,7 @@ export function runRetentionRiskDetectorTests() {
       input({
         crmActivityByHrId: new Map(),
         leaveByHrId: leave(
-          ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-05", "2026-09-06"],
+          ["2026-09-01", "2026-09-02", "2026-09-05", "2026-09-06", "2026-09-07"],
           "b-900",
         ),
         subjects: [manager],
@@ -362,6 +363,48 @@ export function runRetentionRiskDetectorTests() {
       signals[0].lastCrmActivityDate,
       "2026-08-30",
       "the entry that preceded the silence — not 12 September, which is after the run and makes the gap look imaginary",
+    );
+  }
+
+  // ── THE OWNER'S OWN WORKED EXAMPLE, 2026-09-07 ─────────────────────────────────────────────
+  //
+  // "TODAY 7 SEPT THEN I SHOULD SEE IF ANYONE NOT SUBMITTED 3 HISTORICAL DAYS FRIDAY AND THURSDAY
+  // NOT INCLUDED". Today is Monday 7 September, so the three days behind it are Wed 2, Sat 5 and
+  // Sun 6 — Thursday the 3rd and Friday the 4th are skipped entirely.
+  //
+  // This is pinned at the REAL threshold of three, not the five the other cases use, because it is
+  // the rule as he stated it rather than a mechanism test.
+  {
+    // `openRunsOnly` because that is how the board runs: a gap the rep already came back from is
+    // not what he asked to see. Without it the empty days BEFORE the first entry (29-31 August)
+    // count as a second, closed run.
+    const asOf = {
+      ...input(),
+      measurableThrough: "2026-09-06",
+      openRunsOnly: true,
+      thresholdWorkingDays: 3,
+    };
+
+    // Last seen 1 September: the 2nd, 5th and 6th are all empty. Three days. He must appear.
+    const silentSince1st = buildRetentionRiskSignals({
+      ...asOf,
+      crmActivityByHrId: activity(["2026-09-01"]),
+    }).filter((one) => one.trigger === "crm_silence");
+    assert.equal(silentSince1st.length, 1, "no entry on the 2nd, 5th or 6th — three days, he shows");
+    assert.equal(silentSince1st[0].workingDays, 3);
+    assert.equal(silentSince1st[0].startDate, "2026-09-02");
+    assert.equal(silentSince1st[0].endDate, "2026-09-06");
+
+    // Last seen 2 September: only the 5th and the 6th are empty. Two days. He must NOT appear —
+    // and under the old rule, where Thursday the 3rd counted, this same rep DID appear.
+    const silentSince2nd = buildRetentionRiskSignals({
+      ...asOf,
+      crmActivityByHrId: activity(["2026-09-02"]),
+    }).filter((one) => one.trigger === "crm_silence");
+    assert.equal(
+      silentSince2nd.length,
+      0,
+      "worked on the 2nd, so only the 5th and 6th are empty — two days, and Thursday must not make up the third",
     );
   }
 

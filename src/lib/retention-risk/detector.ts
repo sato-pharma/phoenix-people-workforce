@@ -6,13 +6,32 @@
  */
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
-import { isFieldWorkforceWeeklyOff } from "@/lib/field-workforce-compliance/weekend-policy";
+import {
+  isFieldWorkforceThursday,
+  isFieldWorkforceWeeklyOff,
+} from "@/lib/field-workforce-compliance/weekend-policy";
 import type {
   RetentionRiskDetectionInput,
   RetentionRiskSignal,
   RetentionRiskSubject,
   RetentionRiskTrigger,
 } from "@/lib/retention-risk/types";
+
+/**
+ * THREE consecutive days. Owner, 2026-09-07: "if an employee not submitting any crm records for 3
+ * days until the current day or 3 vacation days until the current".
+ *
+ * It opened at five, and five turned out to be too slow to be worth anything. The two reps the
+ * board caught on 2026-09-07 had stopped working on 31 August; counting from 1 September with the
+ * Friday bridged, the fifth working day was the 6th, so the earliest the sweep could speak was
+ * 07:40 on the 7th — and HR recorded both resignations at 03:37 that morning. The warning lost to
+ * the paperwork by four hours.
+ *
+ * WORKING days, not calendar days, and that is what makes three usable rather than noisy: a Friday
+ * neither counts nor resets, so three means three days a rep was expected in the field and left no
+ * trace. Measured against production the moment it changed: two reps, at three and four days.
+ */
+export const RETENTION_RISK_THRESHOLD_WORKING_DAYS = 3;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -47,19 +66,30 @@ export function eachDate(start: string, end: string): string[] {
 type DayVerdict = "breaks" | "bridges" | "counts" | "outside";
 
 /**
- * WHY WEEKLY OFFS AND HOLIDAYS BRIDGE RATHER THAN BREAK.
+ * WHICH DAYS THIS BOARD COUNTS: Saturday, Sunday, Monday, Tuesday, Wednesday. NOT Thursday, NOT
+ * Friday.
  *
- * The company week is Saturday to Wednesday full days, Thursday morning, Friday off (and Saturday
- * off for anyone whose title is not field-only) — see weekend-policy.ts. If Friday BROKE a run,
- * a five-working-day streak could only ever be Saturday-to-Wednesday exactly, and a rep who went
- * quiet on Sunday would reset every single week. Nobody would ever reach five days and the whole
- * feature would report nothing, quietly. So a non-working day is skipped: it adds nothing to the
- * count and it does not reset it.
+ * Owner, 2026-09-07: "TODAY 7 SEPT THEN I SHOULD SEE IF ANYONE NOT SUBMITTED 3 HISTORICAL DAYS
+ * FRIDAY AND THURSDAY NOT INCLUDED". So on Monday 7 September the three days behind it are the
+ * 2nd, the 5th and the 6th — Thursday the 3rd and Friday the 4th are skipped entirely.
  *
- * The same argument applies to a confirmed public holiday, which is why both are bridged here.
+ * THURSDAY IS EXCLUDED HERE AND ONLY HERE. `weekend-policy.ts` treats Thursday as a HALF working
+ * day, because the field week is Saturday to Wednesday full days plus Thursday morning, and that
+ * half-day weighting is what payroll charges a no-activity deduction against. This board must not
+ * reach into that: `isFieldWorkforceWeeklyOff` and `fieldWorkforceDeductionDayWeight` decide money,
+ * and widening either one to drop Thursday would silently stop charging for a day the company does
+ * expect to be worked. So the exclusion lives in this function, which nothing but this board calls.
+ *
+ * WHY THEY BRIDGE RATHER THAN BREAK. If Thursday and Friday BROKE a run, every streak would be
+ * capped at the Saturday-to-Wednesday block it started in, and a rep who went quiet on Sunday would
+ * reset every single week — nothing would ever reach three and the board would report nothing,
+ * quietly. Skipped means skipped: it adds nothing to the count, and it does not reset it.
+ *
+ * The same argument applies to a confirmed public holiday, which is why that is bridged too.
  */
 function isNonWorkingDay(dateIso: string, title: string | null, publicHolidays: ReadonlySet<string>): boolean {
   if (publicHolidays.has(dateIso)) return true;
+  if (isFieldWorkforceThursday(dateIso)) return true;
   return isFieldWorkforceWeeklyOff({ dateIso, title });
 }
 
@@ -105,8 +135,8 @@ function verdictForLeave(dateIso: string, onLeave: boolean, title: string | null
  * the count, three days of leave in the middle of a fortnight away would split one 10-day
  * disappearance into two 4-day runs and neither would reach the threshold — leave would become the
  * way to hide. Bridging keeps the run whole while counting only the days that are genuinely
- * unexplained, and the leave itself is not lost: five or more consecutive leave days raise the
- * `extended_leave` signal on their own.
+ * unexplained, and the leave itself is not lost: a long enough run of leave days raises the
+ * `extended_leave` signal in its own right.
  */
 function verdictForSilence(
   dateIso: string,
