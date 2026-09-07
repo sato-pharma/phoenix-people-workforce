@@ -26,6 +26,8 @@ import {
   type CandidateFolderSuggestion,
 } from "@/lib/recruitment/candidate-folder-suggestion";
 import { inferCandidatePlacement } from "@/lib/recruitment/candidate-folder-inference";
+import { shouldMirrorCopy } from "@/lib/recruitment/cv-duplicate-copies";
+import { CABINET_ROOT_NAME, cabinetPathFor } from "@/lib/recruitment/drive-cabinet-folders";
 import {
   driveFileNameFor,
   driveFolderPathFor,
@@ -89,6 +91,8 @@ type MirrorCandidateRow = {
   whatsapp: string | null;
   status: string | null;
   applied_for_job_title: string | null;
+  current_job_title: string | null;
+  sent_for_job_title: string | null;
   preferred_area_name: string | null;
   preferred_region_code: string | null;
   preferences_declared_at: string | null;
@@ -100,7 +104,7 @@ type MirrorCandidateRow = {
 };
 
 const CANDIDATE_FIELDS =
-  "id, full_name, phone, whatsapp, status, applied_for_job_title, preferred_area_name, preferred_region_code, preferences_declared_at, folder_kind, folder_key, governorate, address, sent_for_region";
+  "id, full_name, phone, whatsapp, status, applied_for_job_title, current_job_title, sent_for_job_title, preferred_area_name, preferred_region_code, preferences_declared_at, folder_kind, folder_key, governorate, address, sent_for_region";
 
 /**
  * The folder path for one candidate, and the name their file should carry.
@@ -218,13 +222,46 @@ export async function mirrorCvToDrive(fileId: string): Promise<MirrorOutcome> {
     if (candidateError) throw candidateError;
     if (!candidateRow) return "skipped";
 
-    const areaRegions = await loadAreaRegionMap();
-    const { fileName, path } = placementFor(candidateRow as MirrorCandidateRow, areaRegions, row.mime_type);
-    const pathKey = path.join("/");
+    // ONE COPY PER DISTINCT FILE. An applicant who sends the same CV again gets a new `ats_files`
+    // row — correctly, it is a real event — and until now that row was mirrored as a second copy in
+    // the owner's cabinet. Measured 2026-09-07: 264 of 1,156 mirrored files were byte-identical
+    // re-sends, one candidate having THIRTEEN copies of one file in one folder. The row stays; the
+    // COPY is suppressed. `content_md5` has existed since 2026-09-05 but nothing read it for this,
+    // so the pile was still growing — 15 groups gained a copy after that column shipped.
+    const { data: siblingRows, error: siblingError } = await supabase
+      .from("ats_files")
+      .select("id, content_md5, created_at")
+      .eq("candidate_id", row.candidate_id)
+      .eq("kind", "cv");
+    if (siblingError) throw siblingError;
+    const siblings = (siblingRows ?? []) as Array<{ content_md5: string | null; created_at: string | null; id: string }>;
+    if (!shouldMirrorCopy(fileId, siblings)) return "skipped";
 
-    // Already mirrored: this is a MOVE, and only when the folder actually changed. The common case
-    // by far is "unchanged" — the retry sweep re-reads rows it has already handled.
-    if (row.drive_mirror_file_id) {
+    const areaRegions = await loadAreaRegionMap();
+    const { fileName } = placementFor(candidateRow as MirrorCandidateRow, areaRegions, row.mime_type);
+    // THE CABINET, NOT THE OLD TREE. `Phoenix CVs` is frozen at the owner's instruction ("don't fix.
+    // Create a new folder and reroute"), and `ensureRootFolder` resolves the cabinet, so this path
+    // is created beneath it. `placementFor` is still the source of the FILE NAME, which the two
+    // trees share — only the folders differ.
+    const path = cabinetPathFor(candidateRow as MirrorCandidateRow, areaRegions);
+
+    // THE STORED PATH IS ROOTED, AND THAT PREFIX IS THE WHOLE CUTOVER SAFETY PROPERTY.
+    //
+    // Every row written before 2026-09-07 records a path in the OLD tree — "From the CV (not
+    // confirmed)/Cairo", "Medical Representative/Cairo". Two of those shapes ("Medical
+    // Representative/<Region>", "District Manager/<Region>") are indistinguishable from a legitimate
+    // CABINET path, so there is no way to tell the trees apart from an unrooted path alone. Without
+    // this prefix the mirror would read a legacy row, see a folder mismatch, and MOVE the file —
+    // emptying the frozen tree one candidate at a time, silently, with no error anywhere.
+    //
+    // Prefixed, a legacy row is unmistakable and is treated as "not mirrored HERE": a fresh copy is
+    // made in the cabinet and the file in the old tree is never touched.
+    const pathKey = [CABINET_ROOT_NAME, ...path].join("/");
+    const recordedInCabinet = String(row.drive_mirror_path ?? "").startsWith(`${CABINET_ROOT_NAME}/`);
+
+    // Already in the cabinet: this is a MOVE, and only when the folder actually changed. The common
+    // case by far is "unchanged" — the retry sweep re-reads rows it has already handled.
+    if (row.drive_mirror_file_id && recordedInCabinet) {
       if (row.drive_mirror_path === pathKey) return "unchanged";
       const moved = await moveDriveFile({
         driveFileId: row.drive_mirror_file_id,
