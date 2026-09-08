@@ -48,6 +48,15 @@
  *                           Managers, correctly applying the owner's answers and silently taking
  *                           the request form away from them at the same time.
  *
+ *                           And it gives every code it INSERTS a customer link, because a code with
+ *                           no link is unreachable: ROI credits a request only through the code its
+ *                           own target carries, and the picker offers only what a link names. All
+ *                           79 codes the 2026-09-06 run added were checked on 2026-09-08 and 0 were
+ *                           reachable — the sheet's entire purpose, making a pharmacy's other
+ *                           distributors count, was silently achieving nothing. The status is
+ *                           INHERITED per customer per venue, never set, so this cannot make an
+ *                           unvalidated venue selectable. See `code-link-reach.ts`.
+ *
  * That table is not incidental: the realized-ROI builder joins THROUGH it to decide which sales a
  * marketing request is credited for, so a wrong link moves money on a report. The header said
  * "nothing here writes to the database" until 2026-09-06, which was true of the default path and
@@ -74,6 +83,10 @@ import {
   type StrandedLink,
   type StrandedTarget,
 } from "../src/lib/marketing-requests/code-unlink-fallout.ts";
+import {
+  BACKFILLED_LINK_NOTE,
+  linkStatusRankSql,
+} from "../src/lib/marketing-requests/code-link-reach.ts";
 
 const HEADER_FILL = "FF0F172A";
 const ACCENT_FILL = "FF0A6BA6";
@@ -614,6 +627,15 @@ type AddPlan = {
 const ADD_NOTE =
   "Added on the owner's answer, marketing-pharmacy-code-decisions sheet: same pharmacy as its existing code.";
 
+/**
+ * Who the rows this script writes are attributed to.
+ *
+ * The owner is the only person who answers this workbook and the only Super Admin, so his HR id is
+ * the truthful author of every row it inserts — the script is a typist, not a decision-maker. It is
+ * a case-sensitive FK to `employees(hr_id)`, so the casing here is the stored casing, not a guess.
+ */
+const SHEET_ACTOR_HR_ID = "B-10";
+
 /* ── What a deactivation costs somebody else ────────────────────────────────────────────────────
  *
  * WHY THIS GUARD EXISTS. Unlinking a code is a decision about a CODE. It lands on a PERSON, and
@@ -822,6 +844,8 @@ async function runApply(sql: postgres.Sql, answerPath: string, dryRun: boolean):
       (like public.marketing_pharmacy_distributor_codes including defaults)`);
     await tx.unsafe(`create table if not exists ${schema}.codes_added
       (id uuid primary key, added_at timestamptz not null default now())`);
+    await tx.unsafe(`create table if not exists ${schema}.links_added
+      (id uuid primary key, added_at timestamptz not null default now())`);
 
     if (unlinks.length > 0) {
       const ids = unlinks.map((row) => row.id);
@@ -861,16 +885,54 @@ async function runApply(sql: postgres.Sql, answerPath: string, dryRun: boolean):
     if (added.length > 0) {
       await tx.unsafe(`insert into ${schema}.codes_added (id) select unnest($1::uuid[]) on conflict (id) do nothing`, [added]);
     }
-    return added;
+
+    // A CODE WITHOUT A LINK IS UNREACHABLE, so adding one is only half the job — see
+    // src/lib/marketing-requests/code-link-reach.ts. Every customer already on this venue gets a
+    // link to the new code, inheriting the status it already holds there so nothing is elevated.
+    const linkRows = added.length === 0 ? [] : (await tx.unsafe(
+      `with existing as (
+         select distinct on (l.customer_id, l.pharmacy_id)
+                l.customer_id, l.pharmacy_id, l.validation_status
+         from public.marketing_customer_pharmacies l
+         where coalesce(l.active, true)
+         order by l.customer_id, l.pharmacy_id, ${linkStatusRankSql("l.validation_status")} desc
+       ),
+       ins as (
+         insert into public.marketing_customer_pharmacies
+           (customer_id, pharmacy_id, distributor_code_id, validation_status, validation_notes,
+            active, created_by_hr_id, updated_by_hr_id)
+         select e.customer_id, e.pharmacy_id, dc.id, e.validation_status, $2::text,
+                true, $3::text, $3::text
+         from public.marketing_pharmacy_distributor_codes dc
+         join existing e on e.pharmacy_id = dc.pharmacy_id
+         where dc.id = any($1::uuid[])
+         on conflict (customer_id, distributor_code_id) do nothing
+         returning id
+       )
+       insert into ${schema}.links_added (id) select id from ins returning id`,
+      [added, BACKFILLED_LINK_NOTE, SHEET_ACTOR_HR_ID],
+    )) as unknown as { id: string }[];
+
+    return { added, linksCreated: linkRows.length };
   });
 
   console.log("\nApplied.");
-  console.log(`  inserted    ${inserted.length} code links (${plan.length - inserted.length} already existed, skipped)`);
+  console.log(`  inserted    ${inserted.added.length} code links (${plan.length - inserted.added.length} already existed, skipped)`);
+  console.log(`  reachable   ${inserted.linksCreated} customer link(s) created so those codes can actually be targeted`);
   console.log(`  deactivated ${unlinks.length} code links`);
-  console.log(`  pre-image:  ${schema}.codes_pre (${unlinks.length} rows) / ${schema}.codes_added (${inserted.length} rows)`);
-  console.log(`  to reverse: delete from public.marketing_pharmacy_distributor_codes where id in (select id from ${schema}.codes_added);`);
+  console.log(`  pre-image:  ${schema}.codes_pre (${unlinks.length} rows) / ${schema}.codes_added (${inserted.added.length} rows)`);
+  console.log(`              ${schema}.links_added (${inserted.linksCreated} rows)`);
+  console.log(`  to reverse: delete from public.marketing_customer_pharmacies where id in (select id from ${schema}.links_added);`);
+  console.log(`              delete from public.marketing_pharmacy_distributor_codes where id in (select id from ${schema}.codes_added);`);
   console.log(`              update public.marketing_pharmacy_distributor_codes c set active = true`);
   console.log(`                from ${schema}.codes_pre p where p.id = c.id;`);
+
+  // A confirmed code that reached nobody is the exact failure this path was changed to stop, so it
+  // is stated rather than left to be inferred from two counts that happen not to match.
+  if (inserted.added.length > 0 && inserted.linksCreated === 0) {
+    console.log("\n  NOTE: none of the new codes reached a customer — every venue behind them has no");
+    console.log("  customer linked yet. Nothing is wrong, but those codes earn no ROI credit until one is.");
+  }
 }
 
 async function main(): Promise<void> {
