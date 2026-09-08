@@ -288,6 +288,67 @@ export function runRecruitmentOfferLetterBridgeTests() {
     "the row's controls must wrap - overflow-x-auto over a min-width floor IS the bug, not the fix",
   );
 
+  // ── RECORDING THE ANSWER, ON BOTH SURFACES ────────────────────────────────────────────────
+  //
+  // The Accepted / Declined pair lived only in the desktop table, so an offer's outcome could be
+  // recorded at a desk and nowhere else - while a phone is how these are read. An offer nobody can
+  // answer sits on "sent" forever, which is the state that made every letter look outstanding and
+  // the reason this pair was added in the first place.
+  //
+  // Counted, not matched: one occurrence passes while the card still carries nothing.
+  {
+    for (const [what, pattern] of [
+      ["the accept action", /recordAnswer\(offer, "accepted"\)/g],
+      ["the decline action", /recordAnswer\(offer, "declined"\)/g],
+      ["both gates together", /canManage && offer\.status === "sent"/g],
+    ] as const) {
+      const found = composer.match(pattern) ?? [];
+      assert.ok(
+        found.length >= 2,
+        `${what} must appear on BOTH the desktop row and the mobile card - it was on the table `
+          + `only, so an answer could be recorded at a desk and nowhere else. Found ${found.length}`,
+      );
+    }
+    // The card's own row must wrap too. Three buttons do not fit one line at 375px, and the
+    // owner's rule makes wrapping the answer - never a sideways scroll, never a shrunk control.
+    assert.match(
+      composer,
+      /className="mt-3 flex flex-wrap gap-2"/,
+      "the card's controls must wrap: with Accepted, Declined and PDF on one line, a fixed row "
+        + "overflows a 375px card, and overflow-x-auto over a min-width floor IS the bug",
+    );
+  }
+
+  // ── THE RECIPIENT ADDRESS, ON BOTH SURFACES ───────────────────────────────────────────────
+  //
+  // The desktop table has carried the email under the candidate's name since the module shipped.
+  // The mobile card did not, so on a phone an offer was a name and nothing else - and a phone is
+  // how these are read.
+  //
+  // Measured 2026-09-08: three offers in this list read as three different people and were one
+  // person testing the feature into a single inbox. An audit acted on that reading and moved a
+  // candidate's hiring status, which had to be reverted. Nothing on the card could have shown it;
+  // the address was one line away on the other surface.
+  //
+  // Counted rather than merely matched: one occurrence would pass while the card still showed
+  // nothing, which is exactly the state this fixes.
+  {
+    const shown = composer.match(/\{offer\.candidateEmail\}/g) ?? [];
+    assert.ok(
+      shown.length >= 2,
+      "offer.candidateEmail must be rendered on BOTH the desktop row and the mobile card - it was "
+        + `on the table only, and a name alone cannot tell two offers apart. Found ${shown.length}`,
+    );
+    // No ellipsis, and a break that actually works on an address: an email has no space to break
+    // at, so `break-words` alone leaves it overflowing its card at 375px.
+    assert.match(
+      composer,
+      /className="mt-0\.5 break-all text-xs text-slate-500">\{offer\.candidateEmail\}/,
+      "the card's address must be break-all and never truncated - a half-shown address defeats the "
+        + "whole point of showing it, which is telling two addresses apart",
+    );
+  }
+
   // And the bridge's own import must stay type-only, so it cannot create a runtime edge either.
   assert.match(
     bridge,

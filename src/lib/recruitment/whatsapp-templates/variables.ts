@@ -22,9 +22,49 @@ export const AUTO_VARIABLE_KEYS = [
   // and the letter carries a date; otherwise it stays empty and the sender types it, which is the
   // same refuse-rather-than-guess rule every other field here follows.
   "start_date",
+  // The joining documents a person brings in themselves, read LIVE from the Hiring Documents
+  // checklist. Renders as a bullet block, so a body says `{{document_list}}` on a line of its own.
+  //
+  // NOT CANDIDATE-DERIVED — it is the same list for everybody, which is why a MANUAL send fills it
+  // too. Empty when the checklist cannot be read or holds nothing, and an empty value is REPORTED
+  // missing: a document request with no documents in it is not a message worth sending.
+  "document_list",
+  // The end of the 90-day probation window, filled only when the target is an EMPLOYEE. Derived
+  // through the owner-locked `probationEndDate` helper (hire + 90 days), never read from
+  // `employees.probation_end_date` — that column is NULL for every employee and always has been.
+  "probation_end_date",
 ] as const;
 
 export type AutoVariableKey = (typeof AUTO_VARIABLE_KEYS)[number];
+
+/**
+ * Auto keys that ONLY the employee path can answer.
+ *
+ * A template using one of these can never be completed from a CV — a candidate has no hire date, so
+ * there is no probation window to speak of — and the send screen would offer it, refuse it, and ask
+ * the recruiter for a date that does not exist. So it is not offered there at all.
+ *
+ * DERIVED FROM THE BODY, NEVER FROM THE CATEGORY. Keying this on `category === "Probation"` would
+ * work this afternoon and break the first time the owner renames the category, which he can do from
+ * the template editor with no warning that anything depends on the old word. It would also miss a
+ * probation-shaped template filed under a different name, and hide a perfectly fillable one that
+ * happens to sit in that category. The placeholders a template uses are what actually decide whether
+ * it can be filled, so they are what decides where it is offered.
+ */
+export const EMPLOYEE_ONLY_VARIABLE_KEYS = ["probation_end_date"] as const;
+
+const EMPLOYEE_ONLY_KEY_SET = new Set<string>(EMPLOYEE_ONLY_VARIABLE_KEYS);
+
+/**
+ * True when this body needs something only an employee record can supply.
+ *
+ * Used to decide which templates a CV screen offers. The employee screen and the template MANAGER
+ * are unaffected: the manager must show every template, because it is where they are written.
+ */
+export function requiresEmployeeTarget(body: string): boolean {
+  return extractVariableKeys(body).some((key) => EMPLOYEE_ONLY_KEY_SET.has(key));
+}
+
 
 const AUTO_KEY_SET = new Set<string>(AUTO_VARIABLE_KEYS);
 
@@ -38,12 +78,14 @@ export const SUGGESTED_VARIABLE_LABELS: Record<string, string> = {
   candidate_first_name: "Candidate first name (auto)",
   candidate_name: "Candidate full name (auto)",
   company_name: "Company name (auto)",
+  document_list: "Joining documents (auto, from the Hiring Documents checklist)",
   dress_code: "Dress code",
   interview_date: "Interview date",
   interview_time: "Interview time",
   interviewer_name: "Interviewer name",
   interviewer_title: "Interviewer job title",
   job_title: "Job title applied for (auto)",
+  probation_end_date: "Probation end date (auto, for an employee)",
   location_link: "Location (Google Maps link)",
   sender_name: "Your name (auto)",
   start_date: "First working day",

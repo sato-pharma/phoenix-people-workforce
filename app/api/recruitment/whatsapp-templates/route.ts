@@ -10,7 +10,10 @@ import {
   str,
 } from "@/app/api/recruitment/_lib/http";
 import { resolveCommentAuthor } from "@/lib/recruitment/candidate-comments";
+import { assertPermission } from "@/lib/auth/permissions";
+import { requiresEmployeeTarget } from "@/lib/recruitment/whatsapp-templates/variables";
 import { loadCandidateSendContext, manualSendAutoValues } from "@/lib/recruitment/whatsapp-templates/candidate-context";
+import { loadEmployeeSendContext } from "@/lib/recruitment/whatsapp-templates/employee-context";
 import { createWhatsAppTemplate, listWhatsAppTemplates } from "@/lib/recruitment/whatsapp-templates/store";
 import { DEFAULT_TEMPLATE_CATEGORY } from "@/lib/recruitment/whatsapp-templates/template";
 
@@ -38,18 +41,40 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const candidateId = str(url.searchParams.get("candidateId"));
     const includeInactive = url.searchParams.get("includeInactive") === "true";
+    const employeeHrId = url.searchParams.get("employeeHrId");
 
     const author = await resolveCommentAuthor(access.hrId).catch(() => ({ jobTitle: null, name: null }));
-    const templates = await listWhatsAppTemplates({ includeInactive });
+    const allTemplates = await listWhatsAppTemplates({ includeInactive });
+
+    // A CV screen is not offered templates it could never fill. `probation_end_date` is answerable
+    // only from an employee record, so a probation template opened from a candidate was refused with
+    // "asks for: Probation end date" — safe, but two rows a recruiter can never use.
+    //
+    // ONLY when a candidate is named. The template MANAGER calls this route with no target at all
+    // (it passes includeInactive=true), and it must keep showing every template, because it is where
+    // they are written — a template hidden from its own editor cannot be edited. The employee screen
+    // is unaffected for the obvious reason.
+    const templates = candidateId
+      ? allTemplates.filter((template) => !requiresEmployeeTarget(template.body))
+      : allTemplates;
 
     const candidate = candidateId ? await loadCandidateSendContext(candidateId, author.name) : null;
 
+    // THE EMPLOYEE TARGET CARRIES ITS OWN GATE. This branch returns a staff member's name, job title
+    // and MOBILE NUMBER, which `recruitment:update` does not cover and must not become a way to
+    // enumerate the directory. `employees:read` is the permission that already governs seeing an
+    // employee record, so it is the one asked for here — a recruiter who cannot open the employee
+    // record cannot pull the same fields out through this endpoint either.
+    if (employeeHrId) await assertPermission(access, "employees", "read");
+    const employee = employeeHrId ? await loadEmployeeSendContext(employeeHrId, author.name) : null;
+
     return NextResponse.json({
       candidate,
+      employee,
       // The manual path gets the same auto values a candidate would, minus anything person-specific.
       // Handed over even when a candidate WAS named, so the dialog can switch to a typed number
       // without another request.
-      manualAutoValues: manualSendAutoValues(author.name),
+      manualAutoValues: await manualSendAutoValues(author.name),
       success: true,
       templates,
     });

@@ -157,6 +157,7 @@ export async function deleteWhatsAppTemplate(id: string): Promise<void> {
 export async function recordTemplateSend(input: {
   templateId: string | null;
   candidateId: string | null;
+  employeeHrId: string | null;
   toNumber: string;
   renderedBody: string;
   variableValues: Record<string, string>;
@@ -166,6 +167,7 @@ export async function recordTemplateSend(input: {
     const supabase = recruitmentDb();
     const { error } = await supabase.from(SENDS_TABLE).insert({
       candidate_id: input.candidateId,
+      employee_hr_id: input.employeeHrId,
       opened_by_hr_id: input.openedByHrId,
       rendered_body: input.renderedBody,
       template_id: input.templateId,

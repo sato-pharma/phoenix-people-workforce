@@ -815,6 +815,15 @@ export function OfferComposer({
                       never cut off with an ellipsis, and a half-shown candidate name on a phone is
                       exactly the failure that rule exists to prevent. A long name wraps instead. */}
                   <p className="break-words text-sm font-black text-slate-900">{offer.candidateName}</p>
+                  {/* The address the letter actually went to. The desktop table has carried this
+                      under the name since it shipped; this card did not, so on a phone — which is
+                      how these are read — an offer was a name and nothing else.
+                      Measured 2026-09-08: three offers sat here reading as three different people,
+                      and were one person testing the feature into a single inbox. Nothing on this
+                      card could have shown that. `break-all` because an email has no space to break
+                      at, and no `truncate` because a half-shown address is worse than a wrapped one:
+                      the whole value of this line is telling two addresses apart. */}
+                  <p className="mt-0.5 break-all text-xs text-slate-500">{offer.candidateEmail}</p>
                   <p className="mt-0.5 text-xs text-slate-500">{offer.title}</p>
                 </div>
                 <Badge className="capitalize" variant={STATUS_VARIANT[offer.status]}>
@@ -823,7 +832,41 @@ export function OfferComposer({
               </div>
               <p className="mt-2 text-sm font-bold tabular-nums text-slate-900">EGP {offerMoney(offer.totalMonthly)}</p>
               <p className="mt-1 text-xs text-slate-500">{offerWhen(offer.sentAt)}</p>
-              <div className="mt-3 flex gap-2">
+              {/* Wraps, like the table's cell: three controls do not fit one line at 375px, and
+                  the fits-the-screen rule makes wrapping the answer rather than a sideways scroll. */}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {/* The same two gates as the desktop row, restated because this is a second
+                    rendering of the same decision rather than a second rule:
+                      - `canManage`: recording an answer is a management action, not something a
+                        read-only viewer may do.
+                      - `status === "sent"`: a draft has not been answered because it has not been
+                        asked, and re-answering a recorded accept or decline would overwrite a fact
+                        with a mis-click.
+                    Until now these buttons existed only in the table, so an answer could be
+                    recorded at a desk and nowhere else — while a phone is how these are read. An
+                    offer whose outcome nobody can record sits on "sent" forever, which is exactly
+                    the state that made every letter look outstanding. */}
+                {canManage && offer.status === "sent" ? (
+                  <>
+                    <Button
+                      disabled={busy !== null}
+                      onClick={() => void recordAnswer(offer, "accepted")}
+                      size="sm"
+                      type="button"
+                    >
+                      Accepted
+                    </Button>
+                    <Button
+                      disabled={busy !== null}
+                      onClick={() => void recordAnswer(offer, "declined")}
+                      size="sm"
+                      type="button"
+                      variant="destructive"
+                    >
+                      Declined
+                    </Button>
+                  </>
+                ) : null}
                 <Button asChild size="sm" type="button" variant="secondary">
                   <a href={`/api/offers/${offer.id}/pdf`} rel="noreferrer" target="_blank">
                     <FileDown className="h-3.5 w-3.5" /> PDF
