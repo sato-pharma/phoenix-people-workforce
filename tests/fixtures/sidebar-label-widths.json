@@ -143,6 +143,7 @@
     "Resignations": 74,
     "Resigned Evaluations": 122,
     "Retention Register": 107,
+    "Returned Ageing": 98,
     "Returned CVs": 78,
     "SFE Manager Overview": 133,
     "Sales Diagnostics": 100,
@@ -245,7 +246,6 @@
     "Vacation Report": 90,
     "Vacation Request": 97,
     "Weekly / Monthly Plans": 135,
-    "Weekly Attendance": 110,
     "Weekly Sales": 73
   },
   "bottom-bar": {

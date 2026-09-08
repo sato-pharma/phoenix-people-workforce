@@ -1490,6 +1490,7 @@ import { runSecretBoxTests } from "./secret-box.test.ts";
 import { runAttendanceWeeklyDigestTests } from "./attendance-weekly-digest.test.ts";
 import { runMarketingCodeUnlinkFalloutTests } from "./marketing-code-unlink-fallout.test.ts";
 import { runMarketingCodeLinkReachTests } from "./marketing-code-link-reach.test.ts";
+import { runReturnedOrdersAgeingTests } from "./returned-orders-ageing.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4822,6 +4823,11 @@ await runTest(
 await runTest(
   "a new code link inherits its validation status and never elevates an unvalidated venue into the picker",
   runMarketingCodeLinkReachTests,
+);
+
+await runTest(
+  "returned-order ageing bands are INVERTED against the held desk (big days = urgent), and the latest return comment wins",
+  runReturnedOrdersAgeingTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
