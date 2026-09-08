@@ -3,6 +3,9 @@
 //
 //   node scripts/cv-triage-questions.mjs                   build the decision workbook
 //   node scripts/cv-triage-questions.mjs --all             every untriaged CV, not just the recommended
+//   node scripts/cv-triage-questions.mjs --rest            untriaged, MINUS the recommended pile
+//   node scripts/cv-triage-questions.mjs --band sales      one fit band only
+//   node scripts/cv-triage-questions.mjs --exclude-from <file>   skip ids already in that workbook
 //   node scripts/cv-triage-questions.mjs --apply <file>    read the answered workbook and decide them
 //   node scripts/cv-triage-questions.mjs --apply <file> --dry-run    show the writes, make none
 //
@@ -22,6 +25,18 @@
 // band, 90 of the untriaged on the day this shipped. Deciding those first is worth more than
 // grinding the pile in arrival order, and it is a short enough list to finish in one sitting.
 //
+// ONE SHEET PER BAND, NOT ONE SHEET FOR EVERYTHING. Measured 2026-09-08: 436 untriaged, of which 97
+// are `recommended` and 339 are not. A single 339-row question is one nobody finishes, and the
+// remainder is not one population — `recommended` turned out to be exactly the `field_force` and
+// `pharma_adjacent` bands, leaving `sales` (29) and `unknown` (22), which want a real look, beside
+// `unrelated` (268) and `no_cv` (20), which mostly want one ruling each. `--band` cuts the pile the
+// way the reader's attention actually divides, so a short sheet can be finished in one sitting and
+// the long one is a deliberate choice rather than the only option on offer.
+//
+// `--exclude-from` exists so a re-run does not re-ask what is already out for answer: arrivals since
+// a sheet was sent become a small top-up rather than a reissue that would discard rows the owner has
+// already filled in.
+//
 // NO IMAGES, NO OUTLINE GROUPS, and ONE sheet-level validation per contiguous block rather than per
 // cell — the three things that make Excel "repair" an ExcelJS workbook on open. Per-cell validation
 // coalesces into overlapping `sqref` ranges, which is its own repair prompt.
@@ -34,6 +49,7 @@ import ExcelJS from "exceljs";
 
 // Imported, never copied: the queue membership, the fit band and the decision vocabulary all come
 // from the modules the app itself reads, so this sheet cannot disagree with the screen.
+import { cairoDayKey } from "@/lib/recruitment/candidate-stats";
 import { statusChangeRefusal } from "@/lib/recruitment/candidate-status";
 import { loadScreeningWorkspace } from "@/lib/recruitment/screening-workspace";
 
@@ -57,9 +73,14 @@ loadEnvFile(path.resolve(".env"));
 
 const args = process.argv.slice(2);
 const ALL = args.includes("--all");
+const REST = args.includes("--rest");
 const DRY_RUN = args.includes("--dry-run");
 const applyAt = args.indexOf("--apply");
 const APPLY_FILE = applyAt >= 0 ? args[applyAt + 1] : null;
+const bandAt = args.indexOf("--band");
+const BAND = bandAt >= 0 ? String(args[bandAt + 1] ?? "").trim() : null;
+const excludeAt = args.indexOf("--exclude-from");
+const EXCLUDE_FROM = excludeAt >= 0 ? args[excludeAt + 1] : null;
 
 const HEADER_ROW = 1;
 const DECISION_COLUMN = "H";
@@ -106,11 +127,58 @@ function fact(value) {
   return text(value);
 }
 
+/**
+ * The ids already out for answer in an existing workbook.
+ *
+ * Keyed on the hidden id column, never on the name: two candidates share a name often enough here
+ * that a name-keyed exclusion would silently drop a second, real person from the question.
+ */
+async function idsAlreadyAsked(file) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(file);
+  const sheet = workbook.getWorksheet("Decide these CVs") ?? workbook.worksheets[0];
+  if (!sheet) throw new Error(`${file} has no sheet to read.`);
+  const ids = new Set();
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber <= HEADER_ROW) return;
+    const id = cellText(row.getCell(ID_COLUMN)).trim();
+    if (id) ids.add(id);
+  });
+  return ids;
+}
+
+function selectionLabel() {
+  if (BAND) return BAND.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+  if (REST) return "rest";
+  if (ALL) return "all";
+  return "recommended";
+}
+
 async function untriagedRows() {
   const workspace = await loadScreeningWorkspace(null, {}, { canSendToManagers: true });
-  const rows = (workspace.rows ?? []).filter((row) => text(row.status) === "new");
-  if (ALL) return rows;
-  return rows.filter((row) => Array.isArray(row.queues) && row.queues.includes("recommended"));
+  const untriaged = (workspace.rows ?? []).filter((row) => text(row.status) === "new");
+  const isRecommended = (row) => Array.isArray(row.queues) && row.queues.includes("recommended");
+
+  let rows;
+  if (BAND) rows = untriaged.filter((row) => text(row.band) === BAND);
+  else if (REST) rows = untriaged.filter((row) => !isRecommended(row));
+  else if (ALL) rows = untriaged;
+  else rows = untriaged.filter(isRecommended);
+
+  // A misspelt band selects nothing, and "nothing waiting" is exactly what a finished pile looks
+  // like — so say which bands exist rather than let a typo read as good news.
+  if (BAND && rows.length === 0 && untriaged.length > 0) {
+    const available = [...new Set(untriaged.map((row) => text(row.band) || "(none)"))].sort();
+    console.log(`No untriaged CV is in band "${BAND}". Bands present: ${available.join(", ")}`);
+  }
+
+  if (EXCLUDE_FROM) {
+    const asked = await idsAlreadyAsked(EXCLUDE_FROM);
+    const before = rows.length;
+    rows = rows.filter((row) => !asked.has(String(row.id)));
+    console.log(`Skipped ${before - rows.length} already out for answer in ${path.basename(EXCLUDE_FROM)}.`);
+  }
+  return rows;
 }
 
 function buildWorkbook(rows) {
@@ -249,17 +317,20 @@ async function main() {
   }
 
   const rows = await untriagedRows();
-  console.log(`${rows.length} CV(s) to decide${ALL ? " (every untriaged one)" : " (the recommended pile)"}.`);
+  const label = selectionLabel();
+  console.log(`${rows.length} CV(s) to decide (${label}).`);
   if (rows.length === 0) {
     console.log("Nothing waiting — no sheet written.");
     return;
   }
 
   const workbook = buildWorkbook(rows);
-  const stamp = new Date().toISOString().slice(0, 10);
+  // Cairo, never the server's own clock: these are built after midnight often enough that a UTC
+  // stamp names the previous day on the file the owner is looking at.
+  const stamp = cairoDayKey(new Date());
   const outDir = path.resolve("xlsx");
   fs.mkdirSync(outDir, { recursive: true });
-  const out = path.join(outDir, `cv-triage-${ALL ? "all" : "recommended"}-${stamp}.xlsx`);
+  const out = path.join(outDir, `cv-triage-${label}-${stamp}.xlsx`);
   await workbook.xlsx.writeFile(out);
 
   console.log(`\nWrote ${out}`);
