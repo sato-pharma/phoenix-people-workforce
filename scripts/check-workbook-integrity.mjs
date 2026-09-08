@@ -10,7 +10,16 @@
 //   2. every part has a content type
 //   3. every relationship points at a part that exists   <- a dangling calcChain rel lives here
 //   4. rows ascend, and cells ascend within their row     <- Excel is strict about this
+//   4b. no two merged ranges share a cell                <- it discards ALL merges on the sheet
 //   5. table refs, defined names and the pivot cache agree with the sheet they describe
+//
+// EVERY rule here was added AFTER a workbook shipped broken, and each one covers exactly the defect
+// that shipped. That is the honest description of this file and the reason the dialog keeps coming
+// back: a CLEAN verdict means "none of the five things we have already been bitten by", never "Excel
+// will open this". When the next one gets through, read Excel's own recovery log — it names the
+// part and the record kind, and it is written to %TEMP%\error<digits>_01.xml the moment the reader
+// clicks Yes — then add the rule here before fixing the cause, so the class cannot come back
+// silently.
 //
 // Usage:  node scripts/check-workbook-integrity.mjs <workbook> [--quiet]
 
@@ -172,6 +181,59 @@ export async function checkWorkbook(bytes, { quiet = false } = {}) {
     }
   }
   say(`  4. row/cell order    ${rowCount} rows`);
+
+  // ── 4b. no two merged ranges touch the same cell ────────────────────────────
+  //
+  // Excel refuses a sheet whose merges overlap. It does not repair the offending record — it
+  // discards EVERY merge on that sheet and says so in its recovery log: "Removed Records: Merge
+  // cells from /xl/worksheets/sheet1.xml part". The reader gets the "We found a problem with some
+  // content" dialog, then a page whose headings and footnotes have all snapped back to one column.
+  //
+  // Nothing above sees it. Repeated merges parse, carry a content type, break no relationship and
+  // leave the rows in order, so a workbook holding three copies of one range passes rules 1–6 and
+  // prints CLEAN — which is exactly what this script said about the premium closing export the
+  // owner could not open on 2026-09-08.
+  //
+  // Equality is not the test. `B21:J21` twice is the shape that shipped, but a partial overlap
+  // (`B21:J21` against `A21:C21`) is refused just the same, so what is asked is whether two
+  // rectangles share a cell at all.
+  let mergeCount = 0;
+  const beforeMerges = problems.length;
+  for (const name of names.filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n))) {
+    const block = (text[name].match(/<mergeCells\b[^>]*>[\s\S]*?<\/mergeCells>/) ?? [])[0];
+    if (!block) continue;
+    const declared = Number((block.match(/<mergeCells\b[^>]*count="(\d+)"/) ?? [])[1] ?? NaN);
+    const refs = [...block.matchAll(/<mergeCell\b[^>]*\sref="([A-Z]+\d+:[A-Z]+\d+)"/g)].map((m) => m[1]);
+    if (Number.isFinite(declared) && declared !== refs.length) {
+      note(`${name}: mergeCells declares ${declared} but holds ${refs.length}`);
+    }
+    mergeCount += refs.length;
+    const boxes = [];
+    for (const ref of refs) {
+      const [, c1, r1, c2, r2] = ref.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/) ?? [];
+      const box = {
+        bottom: Math.max(Number(r1), Number(r2)),
+        left: Math.min(colIndex(c1), colIndex(c2)),
+        ref,
+        right: Math.max(colIndex(c1), colIndex(c2)),
+        top: Math.min(Number(r1), Number(r2)),
+      };
+      const hit = boxes.find(
+        (other) =>
+          box.left <= other.right && other.left <= box.right && box.top <= other.bottom && other.top <= box.bottom,
+      );
+      if (hit) {
+        note(
+          hit.ref === box.ref
+            ? `${name}: merge ${box.ref} appears more than once`
+            : `${name}: merge ${box.ref} overlaps ${hit.ref}`,
+        );
+      }
+      boxes.push(box);
+    }
+  }
+  const mergeFaults = problems.length - beforeMerges;
+  say(`  4b. merged ranges    ${mergeCount} merges${mergeFaults ? `, ${mergeFaults} overlapping` : ", none overlapping"}`);
 
   // ── 5. tables, defined names and the pivot cache agree with their sheets ─────
   const lastRowOf = (sheetFile) => {

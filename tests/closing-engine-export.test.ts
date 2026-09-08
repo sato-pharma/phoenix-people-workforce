@@ -152,6 +152,51 @@ function fixtureMatrix(period: string, scale = 1): MonthlyClosingMatrix {
   };
 }
 
+/**
+ * The same closing with a chosen number of REGIONS — one area each.
+ *
+ * Overview writes one row per region, so this is the only knob that decides where that sheet's
+ * footnotes land, and it is the dimension `fixtureMatrix` above holds fixed at two. A line with
+ * nine regions puts them one row below the template's own, which is the shape that broke the
+ * owner's September Anti Infective export while August's eight left them exactly where they were.
+ */
+function regionsMatrix(period: string, regionCount: number, scale = 1): MonthlyClosingMatrix {
+  const regions = Array.from({ length: regionCount }, (_, index) => {
+    const code = `R${index + 1}`;
+    const only = area(`${code}A`, `Area ${index + 1}`, code, `Region ${index + 1}`, [
+      cell(1000 * scale, 500_000 * scale, 900, 450_000),
+      cell(200 * scale, 300_000 * scale, 250, 375_000),
+      cell(50 * scale, 20_000 * scale, 40, 16_000),
+    ]);
+    return {
+      areas: [only],
+      regionCode: code,
+      regionName: `Region ${index + 1}`,
+      subtotal: {
+        cells: only.cells.map((one) => sum([one])),
+        kind: "regionSubtotal" as const,
+        regionCode: code,
+        regionName: `Region ${index + 1}`,
+        rowTotal: sum([only.rowTotal]),
+      },
+    };
+  });
+  const allAreas = regions.flatMap((group) => group.areas);
+  return {
+    availableLines: ["CNS"],
+    availablePeriods: ["2026-08", "2026-09"],
+    columns: PRODUCTS,
+    grandTotal: {
+      cells: PRODUCTS.map((_, index) => sum(allAreas.map((one) => one.cells[index]!))),
+      kind: "grandTotal",
+      rowTotal: sum(allAreas.map((one) => one.rowTotal)),
+    },
+    line: "CNS",
+    period,
+    regions,
+  };
+}
+
 const SEATS = new Map<string, AreaSeatAssignment>([
   ["cns::CA1", { managerName: "Hala Fouad", repIsVacant: false, repName: "Mostafa Kamel" }],
   ["cns::CA2", { managerName: "Hala Fouad", repIsVacant: true, repName: null }],
@@ -711,6 +756,75 @@ export async function runClosingEngineExportTests() {
   assert.ok(
     !merges.some((row) => row > headerRows && row <= lastData),
     "no merge may be left behind on a data row — that is what a footnote moving without its merge does",
+  );
+
+  // ── …and they do not pile onto each other when the block barely moves ────────────────────────
+  //
+  // Everything above passes at two regions, because two regions move the footnotes six rows UP and
+  // a block moving up can never land on a row it has not already left. The failure is the other
+  // direction, and only just: the footnotes sit at 18/19/20 in the owner's template, so a line with
+  // NINE regions puts them at 19/20/21 — each one's new row is the next one's old row. The mover
+  // used to rewrite the sheet once per row, so every rewrite was still on the page for the next
+  // pattern to match again, and all three merges cascaded onto B21:J21.
+  //
+  // Excel does not repair that record. It discards EVERY merge on the sheet and names the part:
+  // "Removed Records: Merge cells from /xl/worksheets/sheet1.xml part". Measured on the owner's own
+  // September Anti Infective export, 2026-09-08 — nine regions. August had eight, which moves the
+  // block nowhere at all, and Pedia has seven, which moves it up; both opened cleanly, which is why
+  // this looked like a fix that kept coming undone rather than a shape nobody had exported yet.
+  //
+  // The region count is the whole test. Nothing else in this file varies it, and no other input
+  // reaches it: not the month, not the line, not the filter.
+  const trailerShifts: number[] = [];
+  for (const regionCount of [8, 9, 10, 11]) {
+    const wide = regionsMatrix("2026-09", regionCount);
+    const wideBook = await fillClosingEngine(
+      buildClosingEngineFill({
+        matrix: wide,
+        priorMatrix: regionsMatrix("2026-08", regionCount, 0.5),
+        review: buildClosingPerformanceReview({
+          availableLines: ["CNS"],
+          availablePeriods: ["2026-08", "2026-09"],
+          generatedAt: "2026-09-08T12:00:00.000Z",
+          matrix: wide,
+          seatAssignments: new Map(),
+          seriesMatrices: [{ matrix: wide, period: "2026-09" }],
+        }),
+      }),
+      { macroFree: true },
+    );
+    const wideSheet = await (await JSZip.loadAsync(wideBook)).file("xl/worksheets/sheet1.xml")!.async("string");
+    const refs = [...wideSheet.matchAll(/<mergeCell ref="([^"]+)"/g)].map((one) => one[1]!);
+    const label = `${regionCount} regions`;
+
+    assert.equal(
+      new Set(refs).size,
+      refs.length,
+      `${label}: two merges landed on the same range — Excel answers that by dropping every merge on the sheet`,
+    );
+    assert.equal(
+      Number(/<mergeCells count="(\d+)"/.exec(wideSheet)![1]),
+      refs.length,
+      `${label}: the declared merge count is what the sheet actually carries`,
+    );
+
+    const wideRows = rowNumbers(wideSheet);
+    const trailer = wideRows.slice(-3);
+    for (const row of trailer) {
+      assert.ok(
+        wideSheet.includes(`<mergeCell ref="B${row}:J${row}"/>`),
+        `${label}: footnote row ${row} keeps its own strip across the sheet`,
+      );
+    }
+    trailerShifts.push(trailer[0]! - CLOSING_ENGINE_TEMPLATE_MANIFEST.sheets.Overview!.trailerRows![0]!);
+  }
+  // The control. A loop whose every build happened to leave the footnotes where the template put
+  // them would pass all of the above and prove nothing, so the shifts that actually occurred are
+  // asserted: one of them has to be the +1 that broke, and one the +2 that breaks the same way.
+  assert.deepEqual(
+    trailerShifts,
+    [0, 1, 2, 3],
+    "the loop has to walk the footnotes from where the template left them through the shift that collapsed them",
   );
 
   // ── The colouring is cut to the real row count ───────────────────────────────────────────────
