@@ -84,6 +84,7 @@ async function fetchAgentHealth(): Promise<AgentHealth> {
     // (127.0.0.1), so this request never reaches a network — there is no wire to intercept. The
     // Secure Contexts spec classes loopback as a potentially trustworthy origin for exactly that
     // reason, which is why the browser does not flag it either. See the /sync-now call below.
+    // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
     const response = await fetch(`${LOCAL_AGENT_BASE_URL}/health`, { cache: "no-store" });
     const payload = await response.json().catch(() => undefined);
     return { ok: response.ok, reachable: true, payload };
