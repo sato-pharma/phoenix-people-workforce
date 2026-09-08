@@ -79,7 +79,9 @@ const TAKEN = "F:/Phoenix Workforce/phoenix-workforce/.claude/worktrees/zen-tu-c
  * the fixed rule can be shown to disagree with it on the incident, rather than merely to agree with
  * itself.
  */
-function preFixRetirable({ dirty, unpushed, newestPrMerged }) {
+function preFixRetirable(
+  { dirty, unpushed, newestPrMerged }: { dirty: number; unpushed: number; newestPrMerged: boolean },
+): boolean {
   return dirty === 0 && unpushed === 0 && newestPrMerged;
 }
 
@@ -149,6 +151,7 @@ export function runWorktreeLivenessTests() {
   // ── A working sweep that genuinely finds nobody must clear the folder ────────────────
   {
     const empty = parseHolderProbe('{"readable":212,"rows":[]}');
+    assert.ok(empty, "the fixture must parse — a null probe would make every assertion below vacuous");
     assert.equal(
       livenessVerdict({ dir: TAKEN, probe: empty }).live,
       false,
@@ -162,6 +165,7 @@ export function runWorktreeLivenessTests() {
     const probe = parseHolderProbe(
       JSON.stringify({ readable: 200, rows: [{ Pid: 5, Name: "node", Cwd: "F:\\Phoenix Workforce\\_wt-pharmacy-guard\\" }] }),
     );
+    assert.ok(probe, "the fixture must parse — a null probe would make every assertion below vacuous");
     assert.equal(
       holdersInside("F:/Phoenix Workforce/_wt-pharmacy", probe.rows).length,
       0,
@@ -185,6 +189,7 @@ export function runWorktreeLivenessTests() {
     const probe = parseHolderProbe(
       JSON.stringify({ readable: 200, rows: [{ Pid: 9, Name: "node", Cwd: "F:\\Phoenix Workforce\\_wt-a\\src\\lib\\" }] }),
     );
+    assert.ok(probe, "the fixture must parse — a null probe would make every assertion below vacuous");
     assert.equal(
       livenessVerdict({ dir: "F:/Phoenix Workforce/_wt-a", probe }).live,
       true,
@@ -195,6 +200,7 @@ export function runWorktreeLivenessTests() {
   // ── Build-cache churn: a running dev server, seen without any process lookup ─────────
   {
     const empty = parseHolderProbe('{"readable":212,"rows":[]}');
+    assert.ok(empty, "the fixture must parse — a null probe would make every assertion below vacuous");
     assert.equal(
       livenessVerdict({ cacheIdleMin: 2, dir: TAKEN, probe: empty }).live,
       true,
@@ -221,6 +227,7 @@ export function runWorktreeLivenessTests() {
   // cleared as retirable, in the same report.
   {
     const empty = parseHolderProbe('{"readable":212,"rows":[]}');
+    assert.ok(empty, "the fixture must parse — a null probe would make every assertion below vacuous");
     assert.equal(
       livenessVerdict({ dir: TAKEN, probe: empty, sourceIdleMin: 18 }).live,
       true,
@@ -237,6 +244,7 @@ export function runWorktreeLivenessTests() {
   // ── A direct holder outranks an mtime in the REASON, since it is evidence not inference ──
   {
     const probe = parseHolderProbe(INCIDENT_PROBE);
+    assert.ok(probe, "the fixture must parse — a null probe would make every assertion below vacuous");
     const verdict = livenessVerdict({ cacheIdleMin: 1, dir: TAKEN, probe, sourceIdleMin: 1 });
     assert.match(
       verdict.reason ?? "",

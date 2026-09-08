@@ -64,6 +64,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+/**
+ * @typedef {{ pid: number, name: string, cwd: string }} Holder
+ * @typedef {{ readable: number, rows: Holder[] }} HolderProbe
+ */
+
 /** Minutes of build-cache silence below which a worktree is presumed to have a live dev server. */
 export const CACHE_ACTIVITY_WINDOW_MIN = 120;
 
@@ -119,6 +124,11 @@ export function parseHolderProbe(stdout) {
  * The boundary matters: a bare prefix test makes `_wt-pharmacy` match `_wt-pharmacy-guard`, and
  * this repo names worktrees by extending a shared stem constantly, so that is not hypothetical.
  */
+/**
+ * @param {string} dir
+ * @param {readonly Holder[] | null | undefined} rows
+ * @returns {Holder[]}
+ */
 export function holdersInside(dir, rows) {
   const base = normalizeHolderPath(dir);
   if (!base) return [];
@@ -132,6 +142,16 @@ export function holdersInside(dir, rows) {
  * and answer `live`, so a broken probe holds every worktree back rather than clearing them all at
  * once. `readable === 0` earns its own rule: an empty row list is the same JSON whether nobody is
  * in a worktree or the sweep failed outright, and only the process count separates those.
+ */
+/**
+ * @param {{
+ *   dir: string,
+ *   probe: HolderProbe | null,
+ *   cacheIdleMin?: number | null,
+ *   sourceIdleMin?: number | null,
+ *   windowMin?: number,
+ * }} options
+ * @returns {{ live: boolean, reason: string | null }}
  */
 export function livenessVerdict({
   dir,
