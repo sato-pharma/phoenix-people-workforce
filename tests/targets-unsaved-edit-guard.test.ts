@@ -212,4 +212,69 @@ export function runTargetsUnsavedEditGuardTests() {
       "the page must ask for the fill state it is offering",
     );
   }
+
+  // ── 10. Filter by region, area, product and whether it is set yet ───────────
+  {
+    for (const [label, state] of [
+      ["Region", "region"],
+      ["Area", "area"],
+      ["Product", "product"],
+      ["Show", "status"],
+    ] as const) {
+      assert.ok(
+        workspace.includes(`label="${label}"`),
+        `the toolbar must offer a ${label} filter`,
+      );
+      assert.match(
+        workspace,
+        new RegExp(`if \\(${state} !== "all"`),
+        `and the ${label} filter must actually narrow the rows`,
+      );
+    }
+
+    // The Area list follows the Region choice. A picker wider than its own result hands back an
+    // empty board, which reads as broken data rather than as a filter (the same shape as the
+    // company-wide picker offered to one rep).
+    assert.match(
+      workspace,
+      /if \(region !== "all" && row\.regionName !== region\) continue;/,
+      "the Area options must be bounded by the chosen Region",
+    );
+    assert.match(
+      workspace,
+      /setRegion\(value\);\s*setArea\("all"\);/,
+      "changing Region must reset Area, or a stale area silently empties the grid",
+    );
+
+    // "Not set yet" has to read the LIVE value, or a cell you just typed still counts as blank.
+    assert.match(workspace, /const filled = liveValueOf\(row\) != null;/, "the set/blank filter reads the pending edit, not only the stored value");
+  }
+
+  // ── 11. An upload names its months, and the server checks the answer ────────
+  {
+    const upload = code(read("app/api/sales/targets/upload/route.ts"));
+
+    // The sheet carries its own Period column, so the month it writes is whatever is in the FILE.
+    assert.match(upload, /const periodKeys = \[\.\.\.new Set\(periods\.map\(/, "the route must work out which months the file holds");
+    assert.match(upload, /overwrites: overwritesByKey\.get\(/, "and say how many cells it would REPLACE, not only how many it writes");
+
+    const guard = upload.match(/const confirmed = String\(form\.get\("confirmPeriods"\)[\s\S]*?status: 409[\s\S]*?\);/)?.[0];
+    assert.ok(guard, "the commit must refuse unless the caller confirms the months the file holds");
+    assert.match(guard, /confirmed\.length === periodKeys\.length/, "the confirmed set must match the file's set exactly");
+    assert.match(guard, /period_confirmation_required/, "and say so with a code the page can act on");
+
+    // The guard lives on the SERVER. A confirmation only the dialog checks is decoration — the
+    // dialog can be skipped by any other caller of this route.
+    const commitAt = upload.indexOf("upsertMonthlyTargets({");
+    const guardAt = upload.indexOf("period_confirmation_required");
+    assert.ok(guardAt >= 0 && commitAt >= 0 && guardAt < commitAt, "the refusal must come BEFORE the write");
+
+    assert.match(workspace, /form\.append\("confirmPeriods", confirmPeriods\.join\(","\)\)/, "the page must send what it showed");
+    assert.match(
+      workspace,
+      /if \(confirmPeriods\.length === 0\) \{[\s\S]*?return;/,
+      "and must not offer a save before the file has been checked",
+    );
+    assert.match(workspace, /window\.confirm\(\s*`This file writes targets for/, "one confirmation, naming every month the file holds");
+  }
 }

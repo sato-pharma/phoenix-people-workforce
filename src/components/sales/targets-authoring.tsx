@@ -47,7 +47,14 @@ export type TargetGridRow = {
   targetValue: number | null;
 };
 
-type UploadPreview = { totalRows: number; validRows: number; errors: { rowNumber: number; message: string }[] };
+/** What the file turned out to contain — the months are the half that needs confirming. */
+type UploadPeriod = { period: string; lineCode: string; rows: number; overwrites: number };
+type UploadPreview = {
+  totalRows: number;
+  validRows: number;
+  periods: UploadPeriod[];
+  errors: { rowNumber: number; message: string }[];
+};
 
 /** Month | Quarter | Semester — the span one template download covers. */
 export const TEMPLATE_SCOPES = [
@@ -190,7 +197,10 @@ export function TargetsAuthoring(props: {
   const [message, setMessage] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
+  const [region, setRegion] = useState("all");
+  const [area, setArea] = useState("all");
   const [product, setProduct] = useState("all");
+  const [status, setStatus] = useState<"all" | "set" | "blank">("all");
   const [sort, setSort] = useState<Sort>("area");
   const [scope, setScope] = useState<TemplateScope>("month");
   const [openRegions, setOpenRegions] = useState<Record<string, boolean>>({});
@@ -341,13 +351,42 @@ export function TargetsAuthoring(props: {
     ];
   }, [props.rows]);
 
+  const regionOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const row of props.rows) if (row.regionName) seen.add(row.regionName);
+    return [{ value: "all", label: "All regions" }, ...[...seen].sort().map((name) => ({ value: name, label: name }))];
+  }, [props.rows]);
+
+  // The Area list follows the Region choice, so it can never offer an area that the current
+  // region filter would immediately hide — a picker wider than its own result is how an empty
+  // board reads as broken data rather than as a filter.
+  const areaOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const row of props.rows) {
+      if (region !== "all" && row.regionName !== region) continue;
+      seen.set(row.areaCode, row.areaName || row.areaCode);
+    }
+    return [
+      { value: "all", label: "All areas" },
+      ...[...seen.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label })),
+    ];
+  }, [props.rows, region]);
+
   // ── Region → area → products ────────────────────────────────────────────────
   //
   // Built once per render from the filtered rows. Every total is VALUE; `set` counts filled cells.
   const regions = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const matching = props.rows.filter((row) => {
+      if (region !== "all" && row.regionName !== region) return false;
+      if (area !== "all" && row.areaCode !== area) return false;
       if (product !== "all" && row.productCode !== product) return false;
+      if (status !== "all") {
+        // The LIVE value, so a cell you have just typed counts as set before it is saved.
+        const filled = liveValueOf(row) != null;
+        if (status === "set" && !filled) return false;
+        if (status === "blank" && filled) return false;
+      }
       if (!needle) return true;
       return `${row.areaName} ${row.areaCode} ${row.productName} ${row.productCode} ${row.regionName}`
         .toLowerCase()
@@ -411,7 +450,7 @@ export function TargetsAuthoring(props: {
     );
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- edits/unitEdits are read via liveValueOf/liveUnitsOf
-  }, [edits, product, props.rows, search, sort, unitEdits]);
+  }, [area, edits, product, props.rows, region, search, sort, status, unitEdits]);
 
   const totals = useMemo(
     () => ({
@@ -429,15 +468,49 @@ export function TargetsAuthoring(props: {
       setMessage("Choose an .xlsx file first.");
       return;
     }
+
+    // ── The month guard ──────────────────────────────────────────────────────
+    //
+    // The sheet carries its own Period column, so the month it writes is whatever is inside the
+    // FILE, not the month on screen. Last quarter's sheet uploaded by mistake would overwrite
+    // three closed months with no trace, so the save names every month first and asks. The server
+    // checks the same list again (`confirmPeriods`) — a confirmation nothing verifies is
+    // decoration. One question covers however many months the file holds.
+    const confirmPeriods = (preview?.periods ?? []).map((entry) => entry.period);
+    if (commit) {
+      if (confirmPeriods.length === 0) {
+        setMessage("Check the file first — the months it writes have to be confirmed before saving.");
+        return;
+      }
+      const lines = (preview?.periods ?? []).map(
+        (entry) =>
+          `  • ${formatPeriod(entry.period)} — ${entry.rows.toLocaleString("en-US")} row(s)`
+          + (entry.overwrites > 0 ? `, ${entry.overwrites.toLocaleString("en-US")} replacing a target already set` : ""),
+      );
+      const months = [...new Set(confirmPeriods)];
+      if (
+        !window.confirm(
+          `This file writes targets for ${months.length} month${months.length === 1 ? "" : "s"}:\n\n${lines.join("\n")}\n\n`
+            + "A replaced target cannot be recovered — nothing keeps its previous value. Save?",
+        )
+      ) {
+        return;
+      }
+    }
+
     setBusy(commit ? "commit" : "preview");
     setMessage(null);
     try {
       const form = new FormData();
       form.append("file", file);
       form.append("commit", commit ? "true" : "false");
+      if (commit) form.append("confirmPeriods", confirmPeriods.join(","));
       const res = await fetch("/api/sales/targets/upload", { method: "POST", body: form });
       const json = await res.json();
       if (!json.success) {
+        // A 409 means the file's months are not the ones that were confirmed — re-check it rather
+        // than letting a second press through.
+        if (json.code === "period_confirmation_required") setPreview(null);
         setMessage(json.error ?? "Upload failed.");
         return;
       }
@@ -447,7 +520,12 @@ export function TargetsAuthoring(props: {
         setMessage(`Saved ${json.upserted} target row(s).${json.errors?.length ? ` ${json.errors.length} row(s) rejected.` : ""}`);
         router.refresh();
       } else {
-        setPreview({ totalRows: json.totalRows, validRows: json.validRows, errors: json.errors ?? [] });
+        setPreview({
+          totalRows: json.totalRows,
+          validRows: json.validRows,
+          periods: json.periods ?? [],
+          errors: json.errors ?? [],
+        });
       }
     } catch {
       setMessage("Upload failed (network).");
@@ -616,7 +694,11 @@ export function TargetsAuthoring(props: {
             <Button size="sm" variant="outline" disabled={!file || busy !== null} onClick={() => runUpload(false)}>
               {busy === "preview" ? "Checking…" : "Check the file"}
             </Button>
-            <Button size="sm" disabled={!preview || preview.validRows === 0 || busy !== null} onClick={() => runUpload(true)}>
+            <Button
+              size="sm"
+              disabled={!preview || preview.validRows === 0 || preview.periods.length === 0 || busy !== null}
+              onClick={() => runUpload(true)}
+            >
               {busy === "commit" ? "Saving…" : "Save the file"}
             </Button>
           </div>
@@ -625,6 +707,29 @@ export function TargetsAuthoring(props: {
               <p className="font-bold text-foreground">
                 {preview.validRows.toLocaleString("en-US")} of {preview.totalRows.toLocaleString("en-US")} row(s) are valid.
               </p>
+
+              {/* The months the FILE holds — not the month on screen. Shown before the save, and
+                  confirmed again by the server, because an upload aimed at the wrong month
+                  replaces targets that nothing keeps a previous value for. */}
+              {preview.periods.length > 0 ? (
+                <div className="mt-2 border border-amber-300 bg-amber-50 px-3 py-2">
+                  <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-amber-900">
+                    This file writes {preview.periods.length} month{preview.periods.length === 1 ? "" : "s"}
+                  </p>
+                  <ul className="mt-1 space-y-0.5 text-amber-900">
+                    {preview.periods.map((entry) => (
+                      <li key={`${entry.period}|${entry.lineCode}`}>
+                        <span className="font-bold">{formatPeriod(entry.period)}</span>
+                        {" — "}
+                        {entry.rows.toLocaleString("en-US")} row{entry.rows === 1 ? "" : "s"}
+                        {entry.overwrites > 0
+                          ? `, ${entry.overwrites.toLocaleString("en-US")} replacing a target already set`
+                          : ", all new"}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
               {preview.errors.length > 0 ? (
                 <ul className="mt-1.5 space-y-1 text-amber-900">
                   {preview.errors.slice(0, 12).map((issue) => (
@@ -674,7 +779,27 @@ export function TargetsAuthoring(props: {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
+          <Picker
+            label="Region"
+            value={region}
+            options={regionOptions}
+            onChange={(value) => {
+              setRegion(value);
+              setArea("all");
+            }}
+          />
+          <Picker label="Area" value={area} options={areaOptions} onChange={setArea} />
           <Picker label="Product" value={product} options={productOptions} onChange={setProduct} />
+          <Picker
+            label="Show"
+            value={status}
+            options={[
+              { value: "all", label: "Everything" },
+              { value: "blank", label: "Not set yet" },
+              { value: "set", label: "Already set" },
+            ]}
+            onChange={(value) => setStatus(value as "all" | "set" | "blank")}
+          />
           <Picker
             label="Sort"
             value={sort}
