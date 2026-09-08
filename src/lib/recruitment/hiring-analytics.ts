@@ -157,6 +157,33 @@ export type FunnelStep = {
  * pipeline actually stops. The steps must be passed already ordered and already nested; this does
  * not verify that, because the caller's ordering IS the definition of the funnel.
  */
+/**
+ * How many offers have been made — across BOTH tables that hold one.
+ *
+ * There are two, and the funnel only ever counted the empty one. `ats_offers` is the GOVERNED
+ * offer: keyed on `application_id`, carrying the whole approval chain (submitted → approved → sent →
+ * responded). `offers` is the offer LETTER: keyed on a free-text `candidate_name`/`candidate_email`,
+ * carrying the document. Measured on production 2026-09-08, `ats_offers` held **0** rows and had
+ * never held one, while `offers` held **3** — two of them sent that day. So the Offers step of the
+ * hiring funnel read zero while three real letters were out with real people.
+ *
+ * Zero is the worst possible wrong answer here, because it is also what "we have not made any
+ * offers yet" looks like. Nothing alerts on it and nothing contradicts it.
+ *
+ * THEY CANNOT BE DEDUPLICATED, and that is a fact about the schema rather than a shortcut: `offers`
+ * carries no `candidate_id` and no `application_id`, so there is no key to join on — only a name
+ * typed onto a letter. Summing is therefore the only honest arithmetic available, and it is exact
+ * today because the two sets are disjoint (one is empty). If the governed chain is ever switched on
+ * for a person who also receives a letter, this will count them twice — the fix then is to give
+ * `offers` a real link, not to pick one table and hide the other.
+ *
+ * Expect this to exceed the Interviews step. That is not a bug in the arithmetic; it is the process
+ * genuinely running outside the ATS, and the funnel showing it is the point.
+ */
+export function offersMade(governed: number | null | undefined, letters: number | null | undefined): number {
+  return (governed ?? 0) + (letters ?? 0);
+}
+
 export function buildFunnel(steps: readonly { label: string; count: number }[]): FunnelStep[] {
   return steps.map((step, index) => {
     const previous = index === 0 ? null : steps[index - 1].count;
@@ -252,10 +279,14 @@ export async function loadHiringAnalytics(access: AccessContext): Promise<Hiring
 
   const supabase = getSupabaseAdmin();
   // count(*) rather than a select length, for the same reason the reads above are paged.
-  const [applications, interviews, offers] = await Promise.all([
+  //
+  // BOTH offer tables, because an offer can be made through either door and this step used to see
+  // only the door nobody uses. See `offersMade` for why they cannot be deduplicated.
+  const [applications, interviews, governedOffers, letterOffers] = await Promise.all([
     supabase.from("ats_applications").select("id", { count: "exact", head: true }),
     supabase.from("ats_interviews").select("id", { count: "exact", head: true }),
     supabase.from("ats_offers").select("id", { count: "exact", head: true }),
+    supabase.from("offers").select("id", { count: "exact", head: true }),
   ]);
 
   return {
@@ -264,7 +295,7 @@ export async function loadHiringAnalytics(access: AccessContext): Promise<Hiring
       { label: "Candidates", count: candidates.length },
       { label: "Applications", count: applications.count ?? 0 },
       { label: "Interviews", count: interviews.count ?? 0 },
-      { label: "Offers", count: offers.count ?? 0 },
+      { label: "Offers", count: offersMade(governedOffers.count, letterOffers.count) },
     ]),
     generatedAt: new Date().toISOString(),
     totalCandidates: candidates.length,
