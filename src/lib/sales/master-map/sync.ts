@@ -16,6 +16,7 @@ import {
   MASTER_MAP_FLAT_COLUMNS,
   MASTER_MAP_GAP_COLUMNS,
   buildMasterMapTree,
+  flatShopCount,
   renderFlatRows,
   renderMasterRows,
   renderRegionRows,
@@ -254,7 +255,7 @@ export async function syncMasterMap(options: {
   // 4. The two control tabs, in this order and last on purpose: both are formulas over
   // "All customers", so neither can resolve until that tab exists and is full.
   const listsId = await ensureTab(token, options.spreadsheetId, LISTS_TAB, 1, LISTS_COLUMN_COUNT);
-  await paint(token, options.spreadsheetId, LISTS_TAB, renderListsSheet(listsId));
+  await paint(token, options.spreadsheetId, LISTS_TAB, renderListsSheet(listsId, flatShopCount(tree)));
   report(`${LISTS_TAB}: hidden helper`);
 
   // As wide as "All customers": this tab repeats that header, and a values write past the last

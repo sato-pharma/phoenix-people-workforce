@@ -268,6 +268,17 @@ export function shopOwningRegions(tree: MasterMapTree): MasterMapRegion[] {
   return tree.regions.filter((region) => !region.fromOrganogram);
 }
 
+/**
+ * How many rows "All customers" holds, without building them.
+ *
+ * The hidden helper sizes its grid from this, and it is called on a tab that needs none of the
+ * rows themselves — rendering 63,510 of them to read `.length` would be the expensive way to
+ * count. Same population as renderFlatRows by construction: both walk shopOwningRegions.
+ */
+export function flatShopCount(tree: MasterMapTree): number {
+  return shopOwningRegions(tree).reduce((total, region) => total + region.customerCount, 0);
+}
+
 // ---------------------------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------------------------

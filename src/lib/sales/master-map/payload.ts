@@ -20,6 +20,7 @@ import { createHash } from "node:crypto";
 import {
   MASTER_MAP_FLAT_COLUMNS,
   buildMasterMapTree,
+  flatShopCount,
   renderFlatRows,
   renderMasterRows,
   renderRegionRows,
@@ -128,7 +129,7 @@ function renderTab(workbook: CachedWorkbook, title: string, sheetId: number): Re
   // The two control tabs carry no data of their own — they are formulas over "All customers", so
   // they never need the tree and never move when a pharmacy changes.
   if (title === LOOKUP_TAB) return renderLookupSheet(sheetId);
-  if (title === LISTS_TAB) return renderListsSheet(sheetId);
+  if (title === LISTS_TAB) return renderListsSheet(sheetId, flatShopCount(workbook.tree));
 
   if (title === MASTER_TAB) {
     return renderSheet(renderMasterRows(workbook.tree, workbook.distributorName), sheetId, {

@@ -1302,6 +1302,7 @@ import { runMarketingPharmacyCodeCompactTests } from "./marketing-pharmacy-code-
 import { runMasterMapMergeTests } from "./master-map-merge.test.ts";
 import { runMasterMapOrganogramRegionsTests } from "./master-map-organogram-regions.test.ts";
 import { runMasterMapDistrictManagersTests } from "./master-map-district-managers.test.ts";
+import { runMasterMapFinderGridTests } from "./master-map-finder-grid.test.ts";
 import { runZoomablePhotoTests } from "./zoomable-photo.test.ts";
 import { runMarketingCaseFileDecisionBarTests } from "./marketing-case-file-decision-bar.test.ts";
 import { runMarketingDecisionPageReturnGatingTests } from "./marketing-decision-page-return-gating.test.ts";
@@ -4143,6 +4144,10 @@ await runTest(
 await runTest(
   "master map district managers (three per shop, never blank, and appended so the finder's column letters hold)",
   runMasterMapDistrictManagersTests,
+);
+await runTest(
+  "master map finder grid (the hidden helper is sized from the shop count, so the filter never spills into a grid too small to hold it)",
+  runMasterMapFinderGridTests,
 );
 
 await runTest(
