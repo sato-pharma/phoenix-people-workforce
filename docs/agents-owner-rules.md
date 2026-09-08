@@ -1171,6 +1171,12 @@ why the set is loaded from the organogram and handed to the split rather than wr
 `AREA_CITY`. An empty set means "split as before" — a caller whose organogram read failed must never
 silently strip areas out of a distribution.
 
+
+**The Others set is PASSED IN, never derived.** `loadOthersAreas` reads it from the organogram, per
+line and per month, and hands it to `splitTargetsFor`; the split module itself is pure geography and
+must not infer membership from an area code, because a seat being created or filled flips it the same
+day. An EMPTY set is the safe direction and means *split as before* — a caller that could not read
+the organogram must never silently strip areas out of a distribution.
 ### 🔴 This reverses the Down town ruling of 2026-09-07, deliberately
 
 On 09-07 he ruled Down town INTO the Cairo split — *"down town should be included because we split in
