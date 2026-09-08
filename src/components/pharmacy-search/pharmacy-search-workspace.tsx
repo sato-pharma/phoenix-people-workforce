@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Globe, Loader2, Save, Search } from "lucide-react";
+import { BadgeCheck, Globe, Loader2, Save, Search } from "lucide-react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
 import {
@@ -31,6 +31,28 @@ const RADIUS_OPTIONS = [1, 2, 5] as const;
 
 const headerCell = "whitespace-nowrap px-3 py-2 text-left text-xs font-black uppercase tracking-[0.12em] text-slate-500";
 const bodyCell = "whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-700";
+
+/**
+ * A pharmacy registered inside Phoenix rather than loaded from a distributor file.
+ *
+ * Shown for any hit carrying a `DOP-` code, including one that collapsed onto a directory row —
+ * "we already have this, someone registered it" is the fact the reader needs, and it is what
+ * stops the Google lookup being offered for a pharmacy we put in the database ourselves.
+ */
+function PhoenixRegistryBadge({ code }: { code: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-black uppercase tracking-[0.08em] text-emerald-800">
+      <BadgeCheck className="h-3 w-3" />
+      Phoenix {code}
+    </span>
+  );
+}
+
+/** "3 distributors", or the honest answer when no distributor has a code for this venue yet. */
+function distributorSummary(count: number): string {
+  if (count === 0) return "No distributor code";
+  return `${count} distributor${count === 1 ? "" : "s"}`;
+}
 
 async function readJson<T>(response: Response): Promise<T> {
   const payload = (await response.json().catch(() => null)) as (T & { message?: string }) | null;
@@ -112,6 +134,10 @@ export function PharmacySearchWorkspace() {
         const params = new URLSearchParams({ radius: String(radiusKm) });
         if (hit.distributorCode) params.set("distributor", hit.distributorCode);
         if (hit.customerCode) params.set("code", hit.customerCode);
+        // Sent for every hit that has one, not only a Phoenix-origin row: a venue registered in
+        // Phoenix AND carried by a distributor collapses to a `database` hit, and this is what
+        // still lets the profile fall back to the registry if the directory lookup comes up empty.
+        if (hit.phoenixPharmacyCode) params.set("phoenix", hit.phoenixPharmacyCode);
         params.set("name", hit.name);
 
         const response = await fetch(`/api/admin/pharmacy-search/profile?${params.toString()}`);
@@ -294,11 +320,16 @@ export function PharmacySearchWorkspace() {
                   meta={hit.address ?? "No address recorded"}
                   status={
                     <span className="whitespace-nowrap text-xs font-black text-slate-500">
-                      {hit.distributorCount} distributor{hit.distributorCount === 1 ? "" : "s"}
+                      {distributorSummary(hit.distributorCount)}
                     </span>
                   }
                   title={hit.name}
                 >
+                  {hit.phoenixPharmacyCode ? (
+                    <div className="mb-2">
+                      <PhoenixRegistryBadge code={hit.phoenixPharmacyCode} />
+                    </div>
+                  ) : null}
                   <PortalRecordFields
                     fields={[
                       { label: "Brick", value: hit.territory.brickName ?? hit.territory.brickId ?? "—" },
@@ -311,6 +342,9 @@ export function PharmacySearchWorkspace() {
                       // so a phone showed a bare number with no owner.
                       { label: "Distributor", value: hit.distributorName ?? "—" },
                       { label: "Code", value: hit.customerCode ?? "—" },
+                      // A registered venue with no distributor code has "—" for both fields
+                      // above; without this the card would say nothing about where it came from.
+                      { label: "Phoenix", value: hit.phoenixPharmacyCode ?? "—" },
                     ]}
                   />
                 </PortalRecordCard>
@@ -336,7 +370,15 @@ export function PharmacySearchWorkspace() {
                       key={hit.id}
                       onClick={() => void openProfile(hit)}
                     >
-                      <td className={`${bodyCell} font-black text-slate-900`}>{hit.name}</td>
+                      {/* The badge rides under the name rather than in a column of its own: an
+                          eighth column would widen the table, and this board is bound by the
+                          fits-the-screen rule. */}
+                      <td className={`${bodyCell} font-black text-slate-900`}>
+                        <span className="flex flex-col items-start gap-1">
+                          {hit.name}
+                          {hit.phoenixPharmacyCode ? <PhoenixRegistryBadge code={hit.phoenixPharmacyCode} /> : null}
+                        </span>
+                      </td>
                       <td className={bodyCell}>{hit.territory.brickName ?? hit.territory.brickId ?? "—"}</td>
                       <td className={bodyCell}>{hit.territory.areaName ?? "—"}</td>
                       <td className={bodyCell}>{hit.territory.regionName ?? "—"}</td>
