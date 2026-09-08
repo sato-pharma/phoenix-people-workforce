@@ -4259,6 +4259,9 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/attendance/monthly-summary",
           "/attendance/analytics",
           "/attendance/exceptions",
+          // Banded with the reports rather than the calendars: a dispute is read
+          // alongside the day it argues with, and the same evidence answers both.
+          "/attendance/disputes",
         ],
       },
       {
