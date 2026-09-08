@@ -78,6 +78,10 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: systemIdentity.appName,
   },
+  // Chrome reads this meta before it reads the html[translate] attribute, and it is the signal
+  // its translate bar actually honours. Paired with translate="no" on <html> below — see the
+  // comment there for why either exists at all.
+  other: { google: "notranslate" },
 };
 
 // viewport-fit=cover is required for env(safe-area-inset-*) to resolve to real
@@ -92,8 +96,32 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  /*
+    translate="no" asks the browser not to machine-translate this page, and it is here for a
+    hydration bug rather than for a language preference.
+
+    A browser translation rewrites text nodes in the DOM. If it lands before or during React's
+    hydration pass, the text no longer matches what the server sent and React throws away the
+    server HTML — hydration error #418, always the `args[]=text` variant, never `args[]=html`,
+    because translation changes content and not structure.
+
+    Measured on production 2026-09-08, and the reason this is a plausible cause rather than a
+    guess: #418 is concentrated in PEOPLE, not pages. One user (B-10) accounts for 63 events
+    across 23 unrelated routes and three different desktop browsers — no page-level defect has
+    that shape. Two further routes, /employee-portals/vacation-report and
+    /employee-portals/recruitment-candidates, kept throwing after every code cause was found and
+    fixed, and an exhaustive sweep of both import graphs (154 and 155 files) turned up nothing.
+
+    THE TRADE, stated because it is a real one: this stops browsers offering to translate Phoenix
+    for everybody, and the workforce is Arabic-speaking. Owner's decision, 2026-09-08, taken with
+    that cost in front of him. If the two routes go quiet from here, the diagnosis was right; if
+    they keep erroring, this was not the cause and the attribute can come out again.
+
+    NOT a guarantee: a reader can still invoke translation by hand, and some iOS builds ignore
+    both signals. It removes the automatic case, which is the one nobody chooses.
+  */
   return (
-    <html lang="en" className="h-full antialiased" suppressHydrationWarning>
+    <html lang="en" translate="no" className="h-full antialiased" suppressHydrationWarning>
       <body className="min-h-full bg-bg font-sans text-text">
         {/* FIRST, and before anything renders — see DISPLAY_SCALE_BOOT_SCRIPT. Moving this below
             the shell reintroduces the paint-at-100%-then-snap flash it exists to prevent. */}
