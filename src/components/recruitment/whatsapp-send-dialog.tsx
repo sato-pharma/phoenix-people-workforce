@@ -128,8 +128,16 @@ export function WhatsAppSendDialog({
     let cancelled = false;
     (async () => {
       try {
-        const query = candidateId ? `?candidateId=${encodeURIComponent(candidateId)}` : "";
-        const data = await getJson(`/api/recruitment/whatsapp-templates${query}`);
+        // THE ROUTE PATH IS A WHOLE LITERAL IN BOTH BRANCHES, and it has to be. `...templates${query}`
+        // reads fine but leaves an interpolation welded to the last path segment, which no static
+        // scan can tell from another segment — recruitment-api-routes-exist.test.ts reported it as a
+        // route that does not exist, which is the same shape as the 404-button bug that test was
+        // written for. Keeping the `?` inside the literal keeps the path readable to that guard.
+        const data = await getJson(
+          candidateId
+            ? `/api/recruitment/whatsapp-templates?candidateId=${encodeURIComponent(candidateId)}`
+            : "/api/recruitment/whatsapp-templates",
+        );
         if (cancelled) return;
         const list = (data.templates ?? []) as Template[];
         const context = (data.candidate ?? null) as CandidateContext | null;
