@@ -666,6 +666,25 @@ export async function paintExecutiveBands(zip: JSZip, sheetParts: Map<string, st
       }
       xml = xml.replace(pattern, `<row${attrs}>${cells.join("")}</row>`);
       touched = true;
+
+      // THE TITLE'S MERGE HAS TO REACH THE END OF THE BAND.
+      //
+      // A merged cell cannot overflow: its text stops at the merge boundary, full stop. Both matrix
+      // sheets merge A1 across a handful of columns, so their mastheads were cut mid-sentence --
+      // "Closing Matrix   September 2026" and nothing after it -- while every sheet that leaves A1
+      // unmerged printed its whole title by overflowing across the empty cells beside it. That is
+      // why the same defect appeared on some sheets and not others, and why it survived a band that
+      // is otherwise the full width of the page.
+      //
+      // The existing merge is REWRITTEN, never added to. A second merge over the same cells is what
+      // makes Excel discard every merge on the sheet, which is the defect this whole run began
+      // with; widening the one that is already there cannot collide with itself.
+      if (row === 1) {
+        xml = xml.replace(
+          /<mergeCell ref="A1:([A-Z]+)1"\s*\/>/,
+          `<mergeCell ref="A1:${letters(width)}1"/>`,
+        );
+      }
     }
 
     if (touched) {

@@ -1110,61 +1110,27 @@ export async function runClosingEngineExportTests() {
   // straight over it and the warning was unreadable on the owner's own September export. Empty is
   // not free when a drawing floats above it, and no assertion here could see that, because the cell
   // held exactly the text it was supposed to hold.
+  // THE COMPLETENESS NOTE IS GONE FROM EVERY TAB. Owner, 2026-09-09: "REMOVE AND DO NOT SHOW THIS
+  // LINE IN ANY TAB." It used to announce a month missing distributor feeds, on its own row, on
+  // every sheet; the assertions that required it are now assertions that it is absent.
+  //
+  // What that costs is recorded in `closing-engine-data.ts` beside the removal: a month with three
+  // of its four sources missing now reads as a real collapse rather than an incomplete month, and
+  // nothing on the page tells the two apart. He was told and asked for it anyway. Do NOT reinstate
+  // the line on the reasoning that its absence looks like a defect.
   const warnedNote = readRow(warnedOverview, 3).A ?? "";
-
-  assert.match(warnedNote, /INCOMPLETE/, "an incomplete month announces itself on its own row");
-
-  // ...and NO BUTTON MAY REACH THAT ROW. This is the assertion whose absence let the warning ship
-  // unreadable: every check here was about the note's TEXT, and the text was always right. What was
-  // wrong was where it sat relative to a drawing floating over the grid, which no cell-level read
-  // can see. Anchors are 0-based, so the note's row 3 is index 2, and a button spanning from row
-  // index 1 to row index 2 covers it.
-  {
-    const overviewRels = await holed.file("xl/worksheets/_rels/sheet1.xml.rels")!.async("string");
-    const overviewDrawing = /Target="\.\.\/(drawings\/drawing\d+\.xml)"/.exec(overviewRels)?.[1];
-    assert.ok(overviewDrawing, "Overview has a drawing — the buttons and the emblem live in it");
-    const drawingXml = await holed.file(`xl/${overviewDrawing}`)!.async("string");
-    const noteRowIndex = 2;
-    let reaching = 0;
-    for (const anchor of drawingXml.match(/<xdr:twoCellAnchor\b[\s\S]*?<\/xdr:twoCellAnchor>/g) ?? []) {
-      const from = Number(/<xdr:from>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/.exec(anchor)?.[1] ?? Number.NaN);
-      const to = Number(/<xdr:to>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/.exec(anchor)?.[1] ?? Number.NaN);
-      const rowOff = Number(/<xdr:to>[\s\S]*?<xdr:rowOff>(\d+)<\/xdr:rowOff>/.exec(anchor)?.[1] ?? 0);
-      if (!Number.isFinite(from) || !Number.isFinite(to)) continue;
-      // Reaching the row's top edge with a zero offset is touching, not overlapping.
-      if (to > noteRowIndex || (to === noteRowIndex && rowOff > 0)) reaching += 1;
-    }
-    assert.equal(
-      reaching,
-      0,
-      `${reaching} shape(s) on Overview reach into the warning row — the owner's brief forbids a button sitting over the warning`,
-    );
-  }
-  assert.match(warnedNote, /missing 3 sources of the 17/, "it says how many are gone, against how many fed the month before");
-  assert.match(warnedNote, /51,978,605 EGP/, "and the scale of the hole, so 'the number looks low' answers itself");
-  assert.match(warnedNote, /understated/, "and states the consequence rather than leaving the reader to infer it");
-  assert.doesNotMatch(
-    readRow(warnedOverview, 1).A ?? "",
-    /INCOMPLETE/,
-    "row 1 stays the sheet's identity — a note appended there slides the emblem off the sheet",
-  );
-
-  // Months in words. The standing rule is human-readable everywhere, and a note that says
-  // "2026-06" beside a headline that says "July 2026" reads as two different systems talking.
-  assert.match(warnedNote, /June 2026/, "the month compared against is named, not keyed");
-  assert.doesNotMatch(warnedNote, /2026-0\d/, "and never as a raw period key");
-
-
-  // The card takes the short form, and it DISPLACES the tagline rather than joining it — the sheet
-  // is 798px wide and the warning has to survive the trip, not trail off the edge behind a slogan.
   const warnedDeck = readRow(warnedCard, 2).A ?? "";
-  assert.match(warnedDeck, /INCOMPLETE/, "the card says it too — it is the tab most likely to be shared alone");
-  assert.doesNotMatch(warnedDeck, /one person, one month/, "and the warning takes the tagline's place, not room beside it");
-  assert.doesNotMatch(
-    readRow(warnedCard, 1).A ?? "",
-    /INCOMPLETE/,
-    "row 1 stays the card's identity — the note goes on the row that is clear of the emblem",
+
+  assert.doesNotMatch(warnedNote, /INCOMPLETE/, "no sheet announces an incomplete month any more");
+  assert.doesNotMatch(readRow(warnedOverview, 1).A ?? "", /INCOMPLETE/, "and not in the masthead either");
+  assert.doesNotMatch(warnedNote, /understated/, "nor the consequence the note used to state");
+  assert.doesNotMatch(warnedDeck, /INCOMPLETE/, "and the Rep Card's deck is clear of it too");
+  assert.match(
+    warnedDeck,
+    /one person, one month, every product/,
+    "the card keeps its own tagline — the note used to displace it, and with the note gone the tagline comes back",
   );
+
   const deckWidth = warnedDeck.length * 91_500;
   const cardWidth = [0, 1, 2, 3, 4, 5, 6, 7].reduce((sum, index) => sum + columnEmu(index), 0);
   assert.ok(
@@ -1234,12 +1200,15 @@ export async function runClosingEngineExportTests() {
     // 2 — that row is spoken for on that sheet and displacing the tagline is deliberate, asserted a
     // few dozen lines above. Every other sheet moved to row 3 when the note came out from under the
     // navigation buttons.
-    const noteRow = name === "Rep Card" ? 2 : 3;
-    assert.match(
-      `${readRow(sheetXml, noteRow).A ?? ""}`,
-      /INCOMPLETE/,
-      `${name} carries the completeness note on row ${noteRow} — every sheet a reader opens does, or they learn not to look`,
-    );
+    // Clear on EVERY sheet, not just the ones anybody thought to check. The note was written by a
+    // loop over all of them, so its removal is verified the same way.
+    for (const row of [1, 2, 3]) {
+      assert.doesNotMatch(
+        `${readRow(sheetXml, row).A ?? ""}`,
+        /INCOMPLETE/,
+        `${name} still shows the completeness note on row ${row} — the owner removed it from every tab`,
+      );
+    }
   }
 
   // Silence is the other half. A workbook that certifies its own completeness on every tab teaches
