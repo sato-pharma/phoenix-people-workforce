@@ -1,0 +1,162 @@
+import assert from "node:assert/strict";
+
+import { resolveCycleWindow } from "../src/lib/payroll/copilot/cycle-window.ts";
+import {
+  completedSettlementWeek,
+  settlementWeekForDate,
+  tileSettlementWeeks,
+} from "../src/lib/attendance/digest-weeks.ts";
+import {
+  buildWeekDigests,
+  durationTextToMinutes,
+  isDigestibleRow,
+} from "../src/lib/attendance/digest-generator.ts";
+import type { FingerprintReportRow } from "../src/lib/attendance/fingerprint-report.ts";
+
+/** A report row with only the fields the digest reads; the rest are irrelevant here. */
+function row(overrides: Partial<FingerprintReportRow> & { employeeHrId: string; dateIso: string }): FingerprintReportRow {
+  return {
+    employeeHrId: overrides.employeeHrId,
+    employeeName: overrides.employeeName ?? "Someone",
+    dateIso: overrides.dateIso,
+    deductionDays: overrides.deductionDays ?? "0",
+    deductionValue: overrides.deductionValue ?? "0",
+    status: overrides.status ?? "Late",
+    lateMinutes: overrides.lateMinutes ?? "",
+    earlyLeaveMinutes: overrides.earlyLeaveMinutes ?? "",
+    timeLong: overrides.timeLong ?? "",
+    recommendedAction: overrides.recommendedAction ?? "",
+    approvedLeave: overrides.approvedLeave ?? "",
+    approvedExcuse: overrides.approvedExcuse ?? "",
+    crmActivity: overrides.crmActivity ?? "",
+    weeklyPlan: overrides.weeklyPlan ?? "",
+    actualFirstPunch: overrides.actualFirstPunch ?? "",
+    actualLastPunch: overrides.actualLastPunch ?? "",
+    hasException: overrides.hasException,
+    sortKey: `${overrides.dateIso}\u0000${overrides.employeeHrId}`,
+  } as unknown as FingerprintReportRow;
+}
+
+export function runAttendanceWeeklyDigestTests() {
+  // --- Week tiling -----------------------------------------------------------
+  // The cycle window itself is cycle-window.ts's job; this module only cuts it up.
+  const cycle = resolveCycleWindow("2026-09-08", 24);
+  const weeks = tileSettlementWeeks(cycle);
+
+  assert.equal(weeks.length, 4, "a cycle is always tiled into exactly four settlement weeks");
+  assert.equal(weeks[0]!.startIso, cycle.startIso, "week 1 opens on the cycle's own start, not on a Monday");
+  assert.equal(weeks[3]!.endIso, cycle.endIso, "week 4 closes on the cycle end so nothing falls past the cut-off");
+  for (let index = 0; index < 3; index += 1) {
+    assert.equal(weeks[index]!.index, index + 1, "weeks are numbered 1..4 in order");
+  }
+
+  // No gaps and no overlaps — every day of the cycle belongs to exactly one week.
+  for (let index = 1; index < weeks.length; index += 1) {
+    const previousEnd = new Date(`${weeks[index - 1]!.endIso}T00:00:00Z`).getTime();
+    const thisStart = new Date(`${weeks[index]!.startIso}T00:00:00Z`).getTime();
+    assert.equal(
+      thisStart - previousEnd,
+      86_400_000,
+      `week ${index + 1} must start the day after week ${index} ends — a gap silently drops a chargeable day`,
+    );
+  }
+
+  assert.equal(settlementWeekForDate(cycle.startIso, cycle), 1, "the first day of the cycle is in week 1");
+  assert.equal(settlementWeekForDate(cycle.endIso, cycle), 4, "the last day of the cycle is in week 4");
+  assert.equal(
+    settlementWeekForDate("1999-01-01", cycle),
+    null,
+    "a date outside the cycle belongs to no week, rather than defaulting to one",
+  );
+
+  // --- Which week is due -----------------------------------------------------
+  assert.equal(
+    completedSettlementWeek(cycle.startIso, cycle),
+    null,
+    "on the first day of a cycle no week has closed, so no digest is due — the same reason the deductions collector refuses an in-progress month",
+  );
+  const afterWeekOne = new Date(new Date(`${weeks[0]!.endIso}T00:00:00Z`).getTime() + 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  assert.equal(
+    completedSettlementWeek(afterWeekOne, cycle)?.index,
+    1,
+    "the day after week 1 ends, week 1 is the one to send",
+  );
+  assert.equal(
+    completedSettlementWeek(weeks[0]!.endIso, cycle),
+    null,
+    "a week is not due on its own last day — that day has not finished being worked",
+  );
+
+  // --- Duration parsing ------------------------------------------------------
+  assert.equal(durationTextToMinutes("06:03"), 363, "hh:mm parses to minutes");
+  assert.equal(durationTextToMinutes(""), 0, "a blank duration is zero, not NaN");
+  assert.equal(durationTextToMinutes("garbage"), 0, "an unparseable duration is zero, not NaN");
+
+  // --- Which rows become lines ----------------------------------------------
+  assert.equal(
+    isDigestibleRow(row({ employeeHrId: "A-1", dateIso: "2026-09-01", deductionDays: "0" })),
+    false,
+    "a day the report cancelled arrives as 0 days and must never become a digest line — that is how the 2026-09-08 cancel fix reaches this module without a second copy of the rule",
+  );
+  assert.equal(
+    isDigestibleRow(row({ employeeHrId: "A-1", dateIso: "2026-09-01", deductionDays: "0.5", hasException: true })),
+    false,
+    "an approved exception is never chargeable",
+  );
+  assert.equal(
+    isDigestibleRow(row({ employeeHrId: "A-1", dateIso: "2026-09-01", deductionDays: "0.5" })),
+    true,
+    "a genuinely chargeable day becomes a line",
+  );
+  assert.equal(
+    isDigestibleRow(
+      row({ employeeHrId: "A-1", dateIso: "2026-09-01", deductionDays: "0.5", deductionValue: "Base salary missing" }),
+    ),
+    true,
+    "no salary on file does NOT make the day free — it is still chargeable, and pricing it at zero silently is the defect people-with-no-salary-figure warns about",
+  );
+
+  // --- Grouping --------------------------------------------------------------
+  const digests = buildWeekDigests([
+    row({ employeeHrId: "A-1", dateIso: "2026-09-03", deductionDays: "0.5", deductionValue: "177.42", status: "Short day" }),
+    row({ employeeHrId: "A-1", dateIso: "2026-09-01", deductionDays: "0.25", deductionValue: "88.71", status: "Late" }),
+    row({ employeeHrId: "A-2", dateIso: "2026-09-02", deductionDays: "0.5", deductionValue: "483.87" }),
+    row({ employeeHrId: "A-3", dateIso: "2026-09-02", deductionDays: "0" }),
+  ]);
+
+  assert.equal(digests.length, 2, "only employees with at least one chargeable day get a digest");
+  assert.ok(
+    !digests.some((digest) => digest.employeeHrId === "A-3"),
+    "a clean week produces NO digest — the 2026-07 module sent 'nothing to report' notices and they were the first thing switched off",
+  );
+
+  const first = digests[0]!;
+  assert.equal(first.employeeHrId, "A-1");
+  assert.equal(first.lines.length, 2);
+  assert.equal(first.lines[0]!.workDate, "2026-09-01", "lines are ordered by date, not by the order the report returned them");
+  assert.equal(first.totalDeductionDays, 0.75, "day totals add up across the week");
+  assert.equal(first.totalDeductionValue, 266.13, "value totals add up across the week");
+  assert.equal(first.lines[0]!.status, "late", "a Late row maps to the late line status");
+  assert.equal(first.lines[1]!.status, "short_hours", "a Short day row maps to short_hours");
+
+  // --- Evidence travels with the line ---------------------------------------
+  const withEvidence = buildWeekDigests([
+    row({
+      employeeHrId: "B-155",
+      dateIso: "2026-09-04",
+      deductionDays: "0.5",
+      deductionValue: "419.35",
+      crmActivity: "Traveling: back from Minya",
+      weeklyPlan: "Office",
+      actualFirstPunch: "12:57 PM",
+    }),
+  ])[0]!;
+  assert.equal(
+    withEvidence.lines[0]!.evidence.crmActivity,
+    "Traveling: back from Minya",
+    "the contradicting evidence travels onto the line, so a dispute can be judged without re-running the report — its absence is why four wrong deductions were approved on 2026-08-05",
+  );
+  assert.equal(withEvidence.lines[0]!.evidence.firstPunch, "12:57 PM", "the punch times travel too");
+}
