@@ -717,6 +717,7 @@ import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboard
 import { runDeviceRegisterTests } from "./device-register.test.ts";
 import { runDeviceRegisterFitsTheScreenTests } from "./device-register-fits-the-screen.test.ts";
 import { runDeviceBulkImportTests } from "./device-bulk-import.test.ts";
+import { runDeviceImportAttemptLogTests } from "./device-import-attempt-log.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
 import { runHrTodayTasksTests } from "./hr-today-tasks.test.ts";
 import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
@@ -2735,6 +2736,12 @@ await runTest(
   + "header text so a moved column cannot put a serial in the IMEI field; a leaver MAY hold a "
   + "device because that is the exposure the register exists to surface; no sample data row)",
   runDeviceBulkImportTests,
+);
+await runTest(
+  "device import attempt log (every press is recorded whatever becomes of it, and an import that "
+  + "wrote nothing can never read like a success - the ambiguity that made an empty register "
+  + "indistinguishable from an import that never arrived)",
+  runDeviceImportAttemptLogTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
