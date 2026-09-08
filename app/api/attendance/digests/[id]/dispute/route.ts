@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { disputeDigestLine } from "@/lib/attendance/digest-service.ts";
+import { canOpenDigestPortal, disputeDigestLine } from "@/lib/attendance/digest-service.ts";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError, validationError } from "@/lib/http/api-errors";
@@ -16,6 +16,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const access = await resolveAccessContext(request);
     await assertPermission(access, "attendance", "read");
+    // TEMPORARY LOCKDOWN — owner 2026-09-08. Fails closed on a lookup error.
+    if (!(await canOpenDigestPortal(access).catch(() => false))) {
+      return NextResponse.json({ error: "forbidden", message: "Forbidden." }, { status: 403 });
+    }
     if (!access.hrId) throw validationError("No HR ID on session.");
 
     const { id: rawId } = await params;
