@@ -19,6 +19,7 @@ type IconType = typeof Users;
 import { ExpensesTab } from "./tabs/expenses-tab";
 import { HolidayBridgingTab } from "./tabs/holiday-bridging-tab";
 import { UnpaidVacationTab } from "./tabs/unpaid-vacation-tab";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 /**
  * KPI-card accent recipe: gradient bg, glow, icon badge, hover lift.
@@ -858,7 +859,7 @@ export function formatShortDate(value: string | null): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return formatStableEnGb(date, { day: "2-digit", month: "short", year: "numeric" });
 }
 
 type SheetColumn = {

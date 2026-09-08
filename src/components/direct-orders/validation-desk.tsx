@@ -9,12 +9,13 @@ import type { DirectOrderValidationRow } from "@/lib/direct-orders/pharmacy-vali
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 import { venueRequiresDistributorCode, venueTypeLabel } from "@/lib/venues/venue-type";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 type Props = { rows: DirectOrderValidationRow[] };
 
 const cairo = (iso: string | null) =>
   iso
-    ? new Intl.DateTimeFormat("en-GB", {
+    ? stableEnGbFormatter({
         timeZone: "Africa/Cairo",
         day: "2-digit",
         month: "short",

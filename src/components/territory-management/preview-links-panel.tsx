@@ -9,6 +9,7 @@ import {
 } from "@/components/employee-portal/portal-primitives";
 import { Card } from "@/components/ui/card";
 import type { TerritoryPreviewLink } from "@/lib/territory-management/preview-links";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 type Props = { productionUrl: string };
 
@@ -28,7 +29,7 @@ function linkState(
 
 const cairo = (iso: string | null) =>
   iso
-    ? new Intl.DateTimeFormat("en-GB", {
+    ? stableEnGbFormatter({
         timeZone: "Africa/Cairo",
         day: "2-digit",
         month: "short",

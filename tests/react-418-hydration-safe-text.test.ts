@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { cairoDate, cairoDateTime, cairoDateTimeSortable, utcDate } from "../src/lib/format/cairo-datetime.ts";
+import { cairoDate, cairoDateTime, cairoDateTimeSortable, stableEnGbFormatter, utcDate } from "../src/lib/format/cairo-datetime.ts";
 
 // React error #418 is a hydration mismatch: the server renders a text node one way, the browser
 // renders it another, so React throws away the server HTML and re-renders the whole tree. React
@@ -286,6 +286,123 @@ export function runReact418HydrationSafeTextTests() {
     utcSource,
     /const [A-Z_]*MONTHS[A-Z_]* = \[[\s\S]*?\][\s\S]*?const [A-Z_]*MONTHS[A-Z_]* = \[/,
     "there must be exactly one month table in this module",
+  );
+
+  // ── 3e. The generic en-GB formatter, and the repo-wide guard that ends this class ──────────
+  //
+  // The three named helpers above cover the formats this app renders most. They did not scale to
+  // the long tail: a sweep on 2026-09-08 found 69 further client-side sites across 21 option
+  // shapes — seconds, weekdays, month-only, `hour12`, in four different zones. So the remaining
+  // sites keep their OWN options and zone and route through stableEnGbFormatter, which replaces
+  // only the month token.
+  //
+  // Asserting literal strings rather than equality with `Intl`: comparing the helper against the
+  // platform passes trivially on CI's single engine, which is the mistake this whole file exists
+  // to avoid. These are the bytes an old engine must also produce.
+  const septUtc = new Date("2026-09-15T09:00:00.000Z");
+  assert.equal(
+    stableEnGbFormatter({ day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(septUtc),
+    "15 Sept 2026",
+    "the generic formatter must spell September from the shipped table, not the reader's ICU build",
+  );
+  assert.equal(
+    stableEnGbFormatter({ day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(new Date("2026-08-15T09:00:00.000Z")),
+    "15 Aug 2026",
+    "a month CLDR never changed must still render exactly as before",
+  );
+
+  // The zone is the caller's and is never touched — this migration moved the LOCALE axis only.
+  // 22:00 UTC on the 31st is already the 1st in Cairo, so these two must disagree.
+  const boundary = new Date("2026-08-31T22:00:00.000Z");
+  assert.equal(
+    stableEnGbFormatter({ day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(boundary),
+    "31 Aug 2026",
+    "a UTC-pinned caller must still get UTC — dragging these to Cairo is what shifts a date-only calendar day",
+  );
+  assert.equal(
+    stableEnGbFormatter({ day: "2-digit", month: "short", timeZone: "Africa/Cairo", year: "numeric" }).format(boundary),
+    "01 Sept 2026",
+    "a Cairo-pinned caller must still get Cairo",
+  );
+
+  // The invisible half. On Node 24 / ICU 78, en-GB with `hour12` puts a PLAIN space before "pm"
+  // through format() and U+202F (narrow no-break space) through formatToParts(). The helper joins
+  // parts, so without normalising it would silently swap in a character nobody can see — and an
+  // invisible character is still a text node, so it is still #418.
+  const pmLabel = stableEnGbFormatter({
+    hour: "2-digit",
+    hour12: true,
+    minute: "2-digit",
+    timeZone: "Africa/Cairo",
+  }).format(septUtc);
+  assert.ok(
+    !pmLabel.includes("\u202f"),
+    `the hour12 form must not carry U+202F — formatToParts emits it where format() emits a plain space, and the difference is invisible in review (got ${JSON.stringify(pmLabel)})`,
+  );
+
+  // ── 3f. Repo-wide: no client component may ask the platform for an en-GB month name ─────────
+  //
+  // This is the part that ends the cycle. #3336, #3337, #3340, #3463 and #3477 each fixed the
+  // sites that were known to be erroring, and each was followed by another report, because a site
+  // only throws while it is rendering a SEPTEMBER date — the other eleven months it looks perfect.
+  // A list of fixed files can never be complete; the absence of the pattern can.
+  //
+  // Scoped to the two call shapes that reach ICU's month data directly. `formatDateOnly(value,
+  // "en-GB", …)` in src/lib/date-only.ts is deliberately NOT matched: it already normalises with
+  // .replace(/\bSept\b/g, "Sep"), solving the same problem by canonicalising to the OLD spelling
+  // instead of the new one, so it is stable on every engine and its callers are safe.
+  const offenders: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(path.join(REPO_ROOT, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+        walk(rel);
+        continue;
+      }
+      if (!/\.(ts|tsx)$/.test(entry.name)) continue;
+      const source = codeOnly(fs.readFileSync(path.join(REPO_ROOT, rel), "utf8"));
+      if (!/^\s*["']use client["']/m.test(source.slice(0, 2000))) continue;
+      const patterns = [
+        /new Intl\.DateTimeFormat\(\s*["']en-GB["']\s*,/g,
+        /\.toLocale(?:Date|Time)?String\(\s*["']en-GB["']\s*,/g,
+      ];
+      for (const pattern of patterns) {
+        for (let m; (m = pattern.exec(source)); ) {
+          // Read the OPTIONS OBJECT by balancing braces, never a fixed window. A window runs past
+          // the end of this call into whatever is declared next, so a call that asks for NO month
+          // at all — which renders numerically, and is safe — gets reported because the function
+          // below it happens to use month: "short". That false positive cost a run here, and it is
+          // the same window bug the sweep script that found these sites had. The balance is the check.
+          const open = source.indexOf("{", m.index);
+          if (open === -1) continue;
+          let depth = 0;
+          let end = -1;
+          for (let i = open; i < source.length; i += 1) {
+            if (source[i] === "{") depth += 1;
+            else if (source[i] === "}") {
+              depth -= 1;
+              if (depth === 0) {
+                end = i;
+                break;
+              }
+            }
+          }
+          if (end === -1) continue;
+          const options = source.slice(open, end + 1);
+          if (/month:\s*["']short["']/.test(options) || /dateStyle:\s*["']medium["']/.test(options)) {
+            offenders.push(`${rel}:${source.slice(0, m.index).split("\n").length}`);
+          }
+        }
+      }
+    }
+  };
+  walk("src");
+  walk("app");
+  assert.deepEqual(
+    offenders,
+    [],
+    `these client components ask the reader's ICU build for an en-GB month abbreviation, which CLDR 42 changed from "Sep" to "Sept" — every one is React hydration error #418 for anyone on an older browser, and it will only show up in September:\n  ${offenders.join("\n  ")}\nRoute them through stableEnGbFormatter (keeping their own options and timeZone verbatim — the zone is not the bug).`,
   );
 
   // ── 4. The portal shell clock is NOT pinned here — #3336 owns it ─────────────────────

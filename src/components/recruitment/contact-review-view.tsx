@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import type { ContactReviewRow } from "@/lib/recruitment/contact-review-service";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 // Every moment this module shows a person is Cairo local time, never a raw UTC string. Written
 // here, matching intake-health-view.tsx and recruitment-workspace.tsx, rather than imported across
@@ -11,7 +12,7 @@ function cairoDate(iso: string | null | undefined): string {
   if (!iso) return "";
   const value = new Date(iso);
   if (Number.isNaN(value.getTime())) return "";
-  return value.toLocaleDateString("en-GB", {
+  return formatStableEnGb(value, {
     day: "2-digit",
     month: "short",
     timeZone: "Africa/Cairo",

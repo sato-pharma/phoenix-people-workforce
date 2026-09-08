@@ -42,6 +42,7 @@ import type {
   DoubleVisitRoleRollup,
   DoubleVisitTrendPoint,
 } from "@/lib/double-visit-analytics/types";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 type Tab = "summary" | "managers" | "mr-status" | "trends";
 type PeriodFilter = "ALL" | "AM" | "PM";
@@ -73,7 +74,7 @@ function fmtDate(v: string | null | undefined) {
   const d = new Date(`${v.slice(0, 10)}T00:00:00Z`);
   return Number.isNaN(d.getTime())
     ? v
-    : new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(d);
+    : stableEnGbFormatter({ day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(d);
 }
 
 // Midnight-UTC to midnight-UTC so this matches the server's daysSinceLastDv exactly.

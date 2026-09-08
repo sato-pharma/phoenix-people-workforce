@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { HeldDirectOrderRow } from "@/lib/direct-orders/service";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 type Props = { rows: HeldDirectOrderRow[] };
 
@@ -23,7 +24,7 @@ const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} E
 
 const cairoStamp = (iso: string | null) =>
   iso
-    ? new Intl.DateTimeFormat("en-GB", {
+    ? stableEnGbFormatter({
         timeZone: "Africa/Cairo",
         day: "2-digit",
         month: "short",

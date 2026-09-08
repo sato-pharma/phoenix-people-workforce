@@ -5,13 +5,14 @@ import { AlertTriangle, CheckCircle2, RefreshCcw, XCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { TerritorySyncReconciliationRow, TerritorySyncReport, TerritorySyncStatus } from "@/lib/sales/territory/types";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 const SYNC_ENDPOINT = "/api/employee-portals/territory-drilldown/sync";
 
 function formatDateTime(iso: string | null): string | null {
   if (!iso) return null;
   // Owner rule: report every time in Africa/Cairo local time, never raw UTC.
-  return new Date(iso).toLocaleString("en-GB", {
+  return formatStableEnGb(new Date(iso), {
     timeZone: "Africa/Cairo",
     day: "2-digit",
     month: "short",

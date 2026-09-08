@@ -2,6 +2,7 @@
 
 import { CalendarDays, Clock } from "lucide-react";
 import { useEffect, useState } from "react";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 /**
  * Live date + time for the CEO hero, rendered in Cairo local time and ticking each
@@ -22,7 +23,7 @@ export function CeoHeroClock() {
   }, []);
 
   const dateStr = now
-    ? new Intl.DateTimeFormat("en-GB", {
+    ? stableEnGbFormatter({
         day: "numeric",
         month: "short",
         year: "numeric",

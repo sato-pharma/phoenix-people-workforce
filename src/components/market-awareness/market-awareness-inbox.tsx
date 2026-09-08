@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { Conversation } from "@/components/market-awareness/market-awareness-conversation";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 /**
  * Market Awareness — the approvals inbox.
@@ -91,7 +92,7 @@ function cairoDate(value: string | null | undefined): string {
   const raw = String(value);
   const parsed = new Date(raw.length <= 10 ? `${raw}T12:00:00Z` : raw);
   if (Number.isNaN(parsed.getTime())) return raw;
-  return new Intl.DateTimeFormat("en-GB", {
+  return stableEnGbFormatter({
     day: "2-digit",
     month: "short",
     timeZone: "Africa/Cairo",
