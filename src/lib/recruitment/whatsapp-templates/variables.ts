@@ -18,6 +18,10 @@ export const AUTO_VARIABLE_KEYS = [
   "job_title",
   "sender_name",
   "company_name",
+  // Read through the candidate's application to its offer LETTER. Auto only when that link exists
+  // and the letter carries a date; otherwise it stays empty and the sender types it, which is the
+  // same refuse-rather-than-guess rule every other field here follows.
+  "start_date",
 ] as const;
 
 export type AutoVariableKey = (typeof AUTO_VARIABLE_KEYS)[number];
@@ -42,6 +46,7 @@ export const SUGGESTED_VARIABLE_LABELS: Record<string, string> = {
   job_title: "Job title applied for (auto)",
   location_link: "Location (Google Maps link)",
   sender_name: "Your name (auto)",
+  start_date: "First working day",
   website: "Web site",
 };
 

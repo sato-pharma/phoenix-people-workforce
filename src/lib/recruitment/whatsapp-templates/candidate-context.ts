@@ -6,9 +6,47 @@
 // nobody has recorded yet.
 
 import { systemLegalEntity } from "@/config/system-settings";
+// The offers module's own reader. recruitment -> offers is the permitted direction and the
+// only one; nothing under src/lib/offers/ imports anything from recruitment.
+import { getOffer } from "@/lib/offers/service";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import { toWhatsAppDialNumber } from "@/lib/recruitment/whatsapp-templates/send-link";
 import { AUTO_VARIABLE_KEYS, type AutoVariableKey } from "@/lib/recruitment/whatsapp-templates/variables";
+
+/**
+ * The agreed first working day for a candidate, or "" when nothing reliable says.
+ *
+ * Follows `ats_applications.offer_id`, which the offer-letter bridge stores (see
+ * `recordApplicationOfferLetter`). A candidate may have several applications; the most recently
+ * updated one carrying a link wins, because that is the offer currently in play.
+ *
+ * NEVER THROWS. `getOffer` raises `OfferNotFoundError` for a letter that has since been deleted,
+ * and a deleted letter must degrade to "type the date yourself" rather than failing the whole send
+ * screen — the recruiter is looking at a candidate, not at an offer.
+ */
+async function resolveOfferStartDate(candidateId: string): Promise<string> {
+  try {
+    const supabase = recruitmentDb();
+    const { data, error } = await supabase
+      .from("ats_applications")
+      .select("offer_id,updated_at")
+      .eq("candidate_id", candidateId)
+      .not("offer_id", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(1);
+    if (error) throw new Error(error.message);
+
+    const offerId = textOrNull((data ?? [])[0]?.offer_id);
+    if (!offerId) return "";
+
+    const offer = await getOffer(offerId);
+    return textOrNull(offer.startDate) ?? "";
+  } catch {
+    // Any miss — no application, no link, a deleted letter, a read failure — is an empty string, and
+    // the send screen then asks for the date. Nothing here may invent one.
+    return "";
+  }
+}
 
 export type CandidateSendContext = {
   candidateId: string;
@@ -100,6 +138,27 @@ export async function loadCandidateSendContext(
   const dialNumber = whatsappColumn ?? phoneColumn;
   const numberSource = whatsappColumn ? "whatsapp" : phoneColumn ? "phone" : null;
 
+  // The agreed first working day, read through the link the bridge now stores.
+  //
+  //   candidate -> ats_applications.offer_id -> offers.start_date
+  //
+  // 🔴 THE DIRECTION IS THE DESIGN. `src/lib/offers/types.ts` carries the owner's instruction that
+  // the offers module is independent of recruitment — an offer may go to somebody who never entered
+  // the ATS, and "the two must not be merged". So nothing here teaches `offers` about candidates: it
+  // follows a pointer recruitment already holds, and calls the offers module's own `getOffer`, the
+  // same one-way import the bridge uses.
+  //
+  // EVERY MISS IS AN EMPTY STRING, never a guess. No application, no offer_id, a letter since
+  // deleted, or a letter with no date — all leave this blank, `renderTemplate` reports it MISSING,
+  // and the send is refused until a human types the real day. Guessing a start date is worse than
+  // asking for one: it reaches a new hire as the day they are expected at work.
+  //
+  // NOT MATCHED BY NAME OR EMAIL, deliberately. The offer letters carry `candidate_name` and
+  // `candidate_email` as free text with no key, and matching on those was measured on 2026-09-08:
+  // 0 of 3 live offers matched a candidate by email and 1 of 3 by name. A wrong match here puts the
+  // wrong first working day in a welcome message, so only the stored pointer is trusted.
+  const startDate = await resolveOfferStartDate(candidateId);
+
   // 🔴 `applied_for_job_title` ONLY. NEVER fall back to `current_job_title`.
   //
   // `current_job_title` is where the candidate works TODAY, at somebody else's company. Used as a
@@ -127,6 +186,7 @@ export async function loadCandidateSendContext(
       company_name: systemLegalEntity.legalNameEn,
       job_title: jobTitle,
       sender_name: senderName ?? "",
+      start_date: startDate,
     },
     candidateId: String(row.id),
     dialNumber,
