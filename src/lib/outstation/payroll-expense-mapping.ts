@@ -150,9 +150,29 @@ export function outstationPayableTotal(input: {
     Number.isFinite(input.expectedTotalAmount) && input.expectedTotalAmount > 0
       ? roundMoney(input.expectedTotalAmount)
       : 0;
-  // A meeting-type trip with no explicit meeting figure files its whole cost as "meeting" —
-  // fall back to the server's own total, never the claim.
-  const meetingAmount = input.meetingAmount || (input.isMeetingTrip ? expected : 0);
+  // A meeting-type trip with no explicit meeting figure files its cost as "meeting" — but only
+  // the RESIDUAL, the part of the server's own total that the trip's other components do not
+  // already account for. Never the claim, and never the whole expected total.
+  //
+  // Falling back to the whole `expected` double-counted every meeting trip that also carried
+  // travel, because `expected` is itself travel + meeting + allowance + other (see
+  // `reportExpectedTotal` in service.ts): the trip's own total was added on top of the very
+  // components it was computed from. Request 72 (Dina Hamdy Fadel Mohamed Bdair, B-12,
+  // 12 August 2026 — LIVE, production ozucdzovmcqvepbozvqf) priced 323.14 of fuel with a zero
+  // meeting amount, and reached payroll at 646.28 against the 323.14 the Expense Approvals page
+  // showed the approver. The residual is 0 there, so both sides now read 323.14.
+  //
+  // sync-offline/route.ts already documents the MIRROR of this — a client-sent `tripType` of
+  // "meeting" doubling the APPROVER's total — and defends against it by refusing the field. The
+  // same arithmetic reached the push side through the row's own `expense_type` instead, where no
+  // gate could see it. Fixing it here closes both directions at the shared formula.
+  const nonMeetingComponents = roundMoney(
+    input.travelCost + input.allowanceAmount + input.otherAmount,
+  );
+  const meetingResidual = input.isMeetingTrip
+    ? Math.max(0, roundMoney(expected - nonMeetingComponents))
+    : 0;
+  const meetingAmount = input.meetingAmount || meetingResidual;
   const componentTotal = roundMoney(
     input.travelCost + meetingAmount + input.allowanceAmount + input.otherAmount,
   );
@@ -287,12 +307,28 @@ export function mapOutstationRequestRowToPayrollApproval(
   const pmWorkload = outstationWorkloadCount(row.pm_workload);
   const hrStatus = toText(row.report_hr_status) || toText(row.employee_name);
   const hrNotes = toText(row.report_hr_notes) || toText(row.eligibility_reason);
+  // The LABEL, and only the label. `report_trip_type` is the report-facing stay/duration wording
+  // ("Return same day", "Overnight / 3 days") that `reportTripTypeLabel` in service.ts derives
+  // from the trip's own dates — the approvals report renders it under "Travel Stay Type", which
+  // is why this preference stays exactly as it was.
   const tripType = toText(row.report_trip_type) || toText(row.expense_type) || "traveling";
+
+  // ...but the MEETING CLASSIFICATION must never be read off that label. `expense_type` is the
+  // column that says what kind of expense this is, and it is the one the push mapper reads
+  // (`request.expenseType === "meeting"`). Deriving the classification from `tripType` instead
+  // meant the duration string always won: all 93 live rows carry one, so the display side NEVER
+  // once resolved to "meeting" while the push side did — and on request 72 (Dina Hamdy Fadel
+  // Mohamed Bdair, B-12, 12 August 2026) the two priced the same trip at 323.14 and 646.28.
+  //
+  // A label and a classification are two different things; keeping them one expression is what
+  // let a display change silently move money. Same divergence class as PR #2951 (total), #2957
+  // (components), #2960 (zeroed override) and #2963 (workload).
+  const isMeetingTrip = toText(row.expense_type).toLowerCase() === "meeting";
 
   const { meetingAmount, total } = outstationPayableTotal({
     allowanceAmount: allowance,
     expectedTotalAmount: expectedTotal,
-    isMeetingTrip: tripType.toLowerCase() === "meeting",
+    isMeetingTrip,
     meetingAmount: rawMeetingAmount,
     otherAmount: other,
     travelCost,

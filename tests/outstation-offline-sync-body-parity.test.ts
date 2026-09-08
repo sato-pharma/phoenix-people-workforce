@@ -90,26 +90,40 @@ export function runOutstationOfflineSyncBodyParityTests() {
   );
   assert.equal(inflatedTravel.total, 9300, "and it carries straight into the payable total");
 
-  // A trip_type of "meeting" against a zero meeting_amount re-files the WHOLE expected total as
-  // the meeting amount, which then also enters componentTotal — the approver's total balloons
-  // past the expected total the server itself calculated.
+  // A planted `report_trip_type` is no longer a money lever, and that is exactly what these three
+  // assertions now pin — they are not obsolete, they changed sides.
+  //
+  // Until 2026-09-08 the display mapper read this column as the trip type, so "meeting" against a
+  // zero meeting_amount re-filed the WHOLE expected total as the meeting amount and it entered
+  // componentTotal a second time: 700 travel + 1000 "meeting" + 300 allowance = 2000, against an
+  // expected total of 1000. The same trip, merely re-typed, was worth double.
+  //
+  // Both halves are closed. The column is the report-facing stay/duration label ("Return same
+  // day", "Overnight / 3 days") and still renders as one, but the meeting CLASSIFICATION no
+  // longer reads it — that comes from `expense_type` now, the same column the push mapper reads;
+  // and the meeting fallback claims only the RESIDUAL the trip's other components leave
+  // unexplained, so neither route can double a total any more. The field stays
+  // banned at the route either way — `report_travel_cost` above is still a live lever, and an
+  // employee has no business writing an HR-facing report column — but the ban is no longer the
+  // only thing standing between a planted string and a doubled payout.
   const meetingTrip = mapOutstationRequestRowToPayrollApproval({
     ...honestRow(),
     report_trip_type: "meeting",
   });
   assert.equal(
     meetingTrip.meetingAmount,
-    1000,
-    "a zero meeting amount on a meeting-typed trip falls back to the whole expected total",
+    0,
+    "a planted report_trip_type must not re-file the expected total as a meeting cost",
   );
   assert.equal(
     meetingTrip.total,
-    2000,
-    "which double-counts: 700 travel + 1000 'meeting' + 300 allowance, against an expected total of 1000",
+    1000,
+    "the planted trip type must leave the payable total at the server's own 1000, not 2000",
   );
-  assert.ok(
-    meetingTrip.total > honest.total,
-    "the same claim, re-typed, is worth more — nothing else about the trip changed",
+  assert.equal(
+    meetingTrip.total,
+    honest.total,
+    "the same claim, re-typed, must be worth exactly the same — nothing else about the trip changed",
   );
 
   // The HR column an approver reads is still a lever. The AM/PM visit counts are NOT, any more:
