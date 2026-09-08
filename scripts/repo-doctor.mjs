@@ -119,6 +119,7 @@ import {
 import { classifyMemoryReachabilityAcrossRefs, memoryReachabilityLines } from "./memory-index-reachability.mjs";
 import { classifyBranchPr, listBranchPrs } from "./branch-pr-state.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
+import { buildCacheIdleMinutes, livenessVerdict, readHolderProbe } from "./worktree-liveness.mjs";
 import { archivePushTarget, listArchiveRefs, strandedArchives } from "./repo-doctor-archive-refs.mjs";
 import { classifySupabaseLink } from "./repo-doctor-supabase-link.mjs";
 import {
@@ -665,6 +666,10 @@ if (orphanLines.length) {
 const merged = [];
 /** Worktrees a PR state kept OUT of the list above, each with the reason. Printed, never silent. */
 const heldFromRetirement = [];
+// Who is SITTING in these folders, read once for the whole machine rather than once per worktree:
+// the sweep walks every process on the system. Null when it could not run at all, which
+// livenessVerdict treats as "cannot rule out a live session" rather than as "nobody is there".
+const holderProbe = readHolderProbe({ cwd: primaryRoot });
 for (const r of live) {
   const branch = git(["-C", r.dir, "rev-parse", "--abbrev-ref", "HEAD"]);
   if (!branch || branch === "HEAD" || branch === "main" || branch === "master") continue;
@@ -700,7 +705,24 @@ for (const r of live) {
   // NAMED below. A worktree that silently stops appearing reads as one that no longer exists.
   const verdict = classifyBranchPr(listBranchPrs(branch), tip);
   if (verdict.verdict === "retirable") {
-    merged.push({ ...r, branch, pr: verdict.pr, dirty, unpushed, tip });
+    // EVERY gate above this line asks about the CONTENT of the folder — uncommitted files, commits
+    // found nowhere upstream, whether the newest PR merged. None of them asks whether somebody is
+    // USING it, and on 2026-09-08 that gap emptied two folders out from under live Claude sessions
+    // that were reported here as retirable. scripts/worktree-liveness.mjs carries the account.
+    //
+    // Checked only for a worktree the PR state already cleared: the cache walk costs real time, and
+    // one held back for an open PR is held either way.
+    const liveness = livenessVerdict({
+      cacheIdleMin: buildCacheIdleMinutes(r.dir),
+      dir: r.dir,
+      probe: holderProbe,
+      sourceIdleMin: idleMinutes(r.dir),
+    });
+    if (liveness.live) {
+      heldFromRetirement.push(`${rel(r.dir)} (${branch}) — ${liveness.reason}`);
+    } else {
+      merged.push({ ...r, branch, pr: verdict.pr, dirty, unpushed, tip });
+    }
   } else if (verdict.verdict !== "none") {
     heldFromRetirement.push(`${rel(r.dir)} (${branch}) — ${verdict.reason}`);
   }
