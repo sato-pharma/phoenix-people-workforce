@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
+import { candidateFolderKindLabels } from "../src/lib/recruitment/candidate-folder.ts";
 import { chooseCvCopies, copyLabelsFor, shouldMirrorCopy, withCopyLabel } from "../src/lib/recruitment/cv-duplicate-copies.ts";
 import {
   CABINET_ROOT_NAME,
@@ -356,6 +357,59 @@ export function runDriveCabinetFolderTests() {
     rootBody,
     /rootFolderId\(\)/,
     "ensureRootFolder must NOT read GOOGLE_DRIVE_RECRUITMENT_FOLDER_ID — that pins the frozen tree",
+  );
+
+  // ── THE DEGREE RUNG: LAST, AND ONLY EVER FILLING A GAP ────────────────────────────────────────
+  //
+  // A pharmacy, science, veterinary or dentistry graduate with no job title anywhere is the medical
+  // rep pool. Measured 2026-09-08: 118 CVs sat in "Position not stated" and 31 were exactly that.
+  //
+  // The property that makes it safe is that it is LAST. Any title resolving to a family — including
+  // `other` — is reached first, so this can never move somebody away from the folder their own words
+  // earned. Measured over all 893 candidates: 31 moved, and 0 of them from anywhere but the shrug.
+  const bare = {
+    address: null, applied_for_job_title: null, current_job_title: null, declared_background: null,
+    faculty: null, folder_key: null, folder_kind: null, governorate: null, preferred_area_name: null,
+    preferred_region_code: null, sent_for_job_title: null, sent_for_region: null,
+  };
+
+  assert.equal(
+    cabinetPositionFolder({ ...bare, faculty: "Faculty of Pharmacy" }),
+    "Medical Representative",
+    "an eligible degree with no title anywhere files with the reps — the owner's choice, asked and answered",
+  );
+  assert.equal(
+    cabinetPositionFolder({ ...bare, faculty: "Faculty of Science" }),
+    "Medical Representative",
+    "science too — it is the largest single group in that pile",
+  );
+
+  // The gate is the app's own, and it refuses these. Re-deciding them here would be a second copy.
+  for (const refused of ["Faculty of Physical Therapy", "Faculty of Law", "Faculty of Commerce", "", "   "]) {
+    assert.equal(
+      cabinetPositionFolder({ ...bare, faculty: refused }),
+      POSITION_NOT_STATED,
+      `"${refused}" is not an eligible degree — canAutoFileBackground declines it, and so must this`,
+    );
+  }
+
+  // LAST. A stated title always wins, so the rung cannot relocate anybody.
+  assert.equal(
+    cabinetPositionFolder({ ...bare, applied_for_job_title: "District Manager", faculty: "Faculty of Pharmacy" }),
+    "District Manager",
+    "a stated applied-for title outranks the degree — the rung fills gaps, it never overrules",
+  );
+  // "Primary Lawyer" resolves to the `other` family — verified, not assumed. ("Accountant" does NOT:
+  // it is `finance`, which has its own shelf, and using it here would have tested nothing.)
+  assert.equal(
+    cabinetPositionFolder({ ...bare, current_job_title: "Primary Lawyer", faculty: "Faculty of Science" }),
+    candidateFolderKindLabels.other,
+    "even a title that resolves to `other` outranks the degree: the CV said something, and that is a fact",
+  );
+  assert.equal(
+    cabinetPositionFolder({ ...bare, current_job_title: "Accountant", faculty: "Faculty of Science" }),
+    "Finance & Accounting",
+    "and a title with its own shelf certainly outranks it",
   );
 }
 
