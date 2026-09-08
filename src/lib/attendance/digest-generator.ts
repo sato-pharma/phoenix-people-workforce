@@ -23,7 +23,17 @@ export type BuiltDigestLine = {
   shortMinutes: number;
   workedMinutes: number;
   deductionDays: number;
-  deductionValue: number;
+  /**
+   * NULL means the day is chargeable but could not be PRICED — never that it is free.
+   *
+   * The report returns the literal string "Base salary missing" when the employee has
+   * no salary on file, and coercing that to 0 tells someone two flagged days cost them
+   * nothing, while the same days go on to become real month-end candidates marked
+   * requires_review. Caught in the 2026-09-08 dry run: B-185 would have been shown
+   * "2 days, 0.00 EGP". Zero and unknown are different answers and must stay different
+   * values.
+   */
+  deductionValue: number | null;
   reason: string;
   /** The four columns that could contradict this charge, carried for the reviewer. */
   evidence: {
@@ -41,7 +51,15 @@ export type BuiltDigest = {
   employeeName: string;
   lines: BuiltDigestLine[];
   totalDeductionDays: number;
-  totalDeductionValue: number;
+  /**
+   * NULL when ANY day in the week could not be priced.
+   *
+   * A partial total presented as the total is the same lie in a quieter voice, so
+   * there is deliberately no "sum of the days we happen to know". The per-day figures
+   * still show everything that IS known.
+   */
+  totalDeductionValue: number | null;
+  hasUnpricedDay: boolean;
 };
 
 /** "06:03" -> 363. Blank or malformed -> 0. */
@@ -62,6 +80,14 @@ function statusFor(row: FingerprintReportRow): DigestLineStatus {
 function finiteNumber(value: unknown): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** Distinguishes "zero" from "could not be priced". Blank and "Base salary missing" both give null. */
+export function priceOrNull(value: unknown): number | null {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 /**
@@ -88,7 +114,7 @@ export function buildDigestLine(row: FingerprintReportRow): BuiltDigestLine {
     shortMinutes: finiteNumber(row.earlyLeaveMinutes),
     workedMinutes: durationTextToMinutes(row.timeLong),
     deductionDays: finiteNumber(row.deductionDays),
-    deductionValue: finiteNumber(row.deductionValue),
+    deductionValue: priceOrNull(row.deductionValue),
     reason: String(row.recommendedAction ?? "").trim(),
     evidence: {
       approvedLeave: String(row.approvedLeave ?? "").trim(),
@@ -117,7 +143,8 @@ export function buildWeekDigests(rows: readonly FingerprintReportRow[]): BuiltDi
       employeeName: row.employeeName || key,
       lines: [],
       totalDeductionDays: 0,
-      totalDeductionValue: 0,
+      totalDeductionValue: 0 as number | null,
+      hasUnpricedDay: false,
     };
     digest.lines.push(buildDigestLine(row));
     byEmployee.set(key, digest);
@@ -126,7 +153,12 @@ export function buildWeekDigests(rows: readonly FingerprintReportRow[]): BuiltDi
   for (const digest of byEmployee.values()) {
     digest.lines.sort((left, right) => left.workDate.localeCompare(right.workDate));
     digest.totalDeductionDays = round3(digest.lines.reduce((sum, line) => sum + line.deductionDays, 0));
-    digest.totalDeductionValue = round2(digest.lines.reduce((sum, line) => sum + line.deductionValue, 0));
+    digest.hasUnpricedDay = digest.lines.some((line) => line.deductionValue === null);
+    // One unpriced day makes the WEEK's total unknown. Summing only the days that
+    // happen to have a price would produce a number that looks complete and is not.
+    digest.totalDeductionValue = digest.hasUnpricedDay
+      ? null
+      : round2(digest.lines.reduce((sum, line) => sum + (line.deductionValue ?? 0), 0));
   }
 
   return [...byEmployee.values()].sort((left, right) => left.employeeHrId.localeCompare(right.employeeHrId));
