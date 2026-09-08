@@ -114,6 +114,27 @@ overrides:
   # no postcss release resolving >=3.3.18 on its own existed when this was added.
   # Remove once postcss ships one.
   nanoid: ^3.3.18
+  # Added 2026-09-09 for the Nodemailer addressparser advisory (high): quadratic O(n^2) time in
+  # `addressparser` lets a crafted address list stall the event loop — remote denial of service.
+  # Advisory covers `<9.1.0` and patches at 9.1.0; the graph had resolved TWO instances below it,
+  # 9.0.3 and 9.0.5.
+  #
+  # THIS IS PRODUCTION, by both routes. `imapflow` is the mail-ingestion client and `mailparser` is
+  # a direct `dependencies` entry — the same pair the deepmerge-ts and ip-address notes above are
+  # about — so `pnpm audit --prod` goes red and every open PR is blocked until the floor moves.
+  # It reads addresses off inbound mail, which is attacker-supplied by definition: anyone who can
+  # send to the monitored careers@ inbox chooses the header this parses.
+  #
+  # A floor inside the 9.x major, not a jump to 10.x. imapflow and mailparser both declare 9.x, and
+  # 9.1.1 is the newest release in that line, so this is a drop-in rather than a major bump forced
+  # through an override. Remove once both parents resolve >=9.1.0 unaided.
+  #
+  # Same registry-reads-live shape as the nanoid and deepmerge-ts notes: main was green at 22:30
+  # Cairo and the next run at 22:44 was not, with no diff between them. The failure looks like it
+  # belongs to whatever branch is in flight, and does not.
+  # WHERE IT BITES IF IT IS WRONG: mailbox monitoring and the CV intake reader, both of which speak
+  # IMAP through imapflow. A parse regression there is silent — mail simply stops being read.
+  nodemailer: ^9.1.1
   # Bumped 2026-08-04 for GHSA-fxqj-rqcc-2cmp (incomplete fix of GHSA-6g55-p6wh-862q: an
   # attacker-controlled sourceMappingURL reads arbitrary .map files when `from` is unset).
   # Advisory covers `<=8.5.22`, patched at 8.5.23; the previous ^8.5.18 floor ALLOWED the fix but
@@ -170,25 +191,6 @@ overrides:
   # blind spot already recorded in the qs and postcss notes above.
   "@xmldom/xmldom": ^0.8.15
 
-  # GHSA-2x7j-588g-ccc2 (HIGH): quadratic-time address parsing in nodemailer's addressparser lets a
-  # crafted address list burn CPU without bound. Covers <9.1.0, patched at >=9.1.0. Published
-  # 2026-09-08, the third advisory that evening after next and sharp.
-  #
-  # AN OVERRIDE RATHER THAN A BUMP, because nodemailer is not ours to bump. It is reached only
-  # transitively, two ways — `.>imapflow>nodemailer` and `.>mailparser>nodemailer` — so there is no
-  # direct pin to raise and Dependabot, which bumps direct dependencies, does not produce a PR for
-  # it. sharp the same evening WAS direct, and Dependabot had it fixed within twenty minutes; this
-  # one it leaves alone. That difference is the reason this entry exists at all.
-  #
-  # THE 9.x LINE ON PURPOSE. nodemailer 10.0.1 is current and both parents' newest releases want it,
-  # but 9.1.1 carries the fix and is a patch-level move from the 9.0.3/9.0.5 we resolve today. A
-  # major jump forced onto two packages that asked for neither is a bigger change than the advisory
-  # justifies, and this repository sends real employee mail through that path.
-  #
-  # WHERE IT BITES IF IT IS WRONG: mailbox monitoring and the CV intake reader, both of which speak
-  # IMAP through imapflow. A parse regression there is silent — mail simply stops being read — so
-  # prefer the smallest version move that clears the advisory.
-  "nodemailer": ^9.1.0
 
 # Unlike npm, pnpm blocks dependency lifecycle scripts unless approved here
 # (pnpm 11 hard-fails the install on undecided ones: ERR_PNPM_IGNORED_BUILDS).

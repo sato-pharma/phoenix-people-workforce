@@ -283,6 +283,57 @@ function renewalDateForEmployee(
     "";
 }
 
+/**
+ * The contract renewal date that is actually RECORDED for one employee, or "" when none is.
+ *
+ * 🔴 DELIBERATELY NOT `renewalDateForEmployee`, WHICH IS THE DASHBOARD'S ANSWER AND A DIFFERENT
+ * QUESTION. That function falls back to `nextContractAnniversary(hireDate)` — the next anniversary
+ * of the hire date — so the dashboard always has a date to sort and colour by. Measured on
+ * production 2026-09-09: `employee_contracts` holds ZERO rows and `employees.contract_renewal_date`
+ * is NULL for all 105 active employees, so **every date that dashboard shows is that computed
+ * anniversary**, not a contractual fact anyone recorded.
+ *
+ * That is fine for a screen HR reads as "renewals are due around here". It is NOT fine to put in a
+ * message to the employee, which states it back to them as their contract date. `date-rules.ts`
+ * claims nothing about policy for the anniversary — contrast `probation/date.ts`, which opens by
+ * naming hire+90 as an owner-locked business rule. One is a rule; this is a convenience.
+ *
+ * So this returns a date only when something recorded one, and "" otherwise. The WhatsApp send
+ * screen then asks a human to type it, which is the same refuse-rather-than-guess rule every other
+ * auto-filled field in that feature follows. The day contracts are actually recorded, it fills in
+ * by itself with no further change.
+ *
+ * NEVER THROWS. The contract tables are behind a feature flag and may not exist at all
+ * (`isContractRenewalSchemaMissing`); a missing table must degrade to "type the date yourself"
+ * rather than failing the whole send screen.
+ */
+export async function recordedContractRenewalDate(employeeHrId: string): Promise<string> {
+  const wanted = cleanHrId(employeeHrId);
+  if (!wanted) return "";
+
+  try {
+    const contractsByHrId = await getContractRowsByHrId();
+    const contract = contractsByHrId.get(wanted);
+    const fromContract = normalizeDate(contract?.contract_renewal_date);
+    if (fromContract) return fromContract;
+  } catch (error) {
+    if (!isContractRenewalSchemaMissing(error)) throw error;
+  }
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("employees")
+      .select("contract_renewal_date")
+      .eq("hr_id", employeeHrId)
+      .maybeSingle();
+    if (error) throw error;
+    return normalizeDate((data as { contract_renewal_date?: string | null } | null)?.contract_renewal_date) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export async function getContractRenewalDashboardData(access?: AccessContext): Promise<ContractRenewalDashboardData> {
   const employees = (await getEmployeeDirectoryRows()).filter(
     (employee) => isActiveEmployee(employee) && canSeeContractRow(access, employee),

@@ -15,6 +15,9 @@
 
 import { systemLegalEntity } from "@/config/system-settings";
 import { candidateSuppliedDocumentList } from "@/lib/hiring-documents/candidate-supplied";
+// The contracts module's own reader. It answers "what is RECORDED", never the dashboard's
+// anniversary fallback — see recordedContractRenewalDate for why the two are different questions.
+import { recordedContractRenewalDate } from "@/lib/contracts/service";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 // 🔴 THE OWNER-LOCKED PROBATION RULE. `src/lib/probation/date.ts` is the single source of truth:
 // probation ends at hire + 90 DAYS, not "+3 calendar months". Never re-derive it here.
@@ -73,12 +76,18 @@ export async function loadEmployeeSendContext(
   // types the real day. A dash rendered into a message is a hole that looks like text.
   const documentList = await candidateSuppliedDocumentList();
 
+  // Empty unless a contract renewal date was actually recorded for this person. Today that is
+  // every employee (employee_contracts holds no rows), so the sender types it — correctly, because
+  // the system does not know it. It fills in by itself the day contracts are recorded.
+  const contractRenewal = await recordedContractRenewalDate(String(row.hr_id ?? ""));
+
   const endDateOnly = probationEndDate(textOrNull(row.hire_date));
   const probationEnd = endDateOnly ? formatPhoenixLongDate(endDateOnly) : "";
 
   return {
     autoValues: {
       candidate_first_name: firstNameOf(fullName),
+      contract_renewal_date: contractRenewal ? formatPhoenixLongDate(contractRenewal) : "",
       candidate_name: fullName,
       company_name: systemLegalEntity.legalNameEn,
       // An employee's REAL job title, not what they once applied for. This is the one place the
