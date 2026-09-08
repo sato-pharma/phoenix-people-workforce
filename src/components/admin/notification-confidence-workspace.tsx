@@ -3,6 +3,14 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, Check, ChevronDown, ChevronUp, ShieldAlert, X } from "lucide-react";
 
+import {
+  formatHeldAge,
+  type HeldAgeBand,
+  heldAgeBand,
+  hoursHeldSince,
+  summarizeHeldQueue,
+} from "@/lib/notifications/held-ageing";
+
 export type AdminConfidenceCheck = {
   detail: string;
   name: string;
@@ -53,6 +61,16 @@ function statusTone(status: AdminNotificationSendReview["status"]) {
   }
 }
 
+/**
+ * Paint per age band. The BANDING lives in the domain (`heldAgeBand`) and is pinned by a test —
+ * only the colours are chosen here, so a restyle can never quietly move a threshold.
+ */
+const AGE_TONE: Record<HeldAgeBand, string> = {
+  critical: "bg-rose-200 text-rose-900",
+  stale: "bg-amber-100 text-amber-800",
+  fresh: "bg-slate-100 text-slate-600",
+};
+
 function confidenceTone(percent: number) {
   if (percent >= 90) return "text-emerald-700";
   if (percent >= 60) return "text-amber-600";
@@ -98,16 +116,28 @@ function ReviewRow({ review, onDecided }: { review: AdminNotificationSendReview;
     }
   }
 
+  // Computed at render. The queue is small (capped at 300) and this costs nothing, but it must not
+  // be memoised on the review alone: the age changes with the clock, not with the row.
+  const hoursHeld = hoursHeldSince(review.createdAt);
+
   return (
     <div className="border border-red-200 bg-red-50/40 px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${confidenceTone(review.confidencePercent)}`}>
+        <span className={`whitespace-nowrap px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${confidenceTone(review.confidencePercent)}`}>
           {review.confidencePercent}% confidence
         </span>
-        <span className="whitespace-nowrap rounded-sm bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-700">
+        <span className="whitespace-nowrap bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-700">
           {review.module ?? "unknown"} / {review.eventType ?? "unknown"}
         </span>
         <span className="whitespace-nowrap font-mono text-phx-xs text-slate-500">{formatWhen(review.createdAt)}</span>
+        {/* How long this has waited. A hold has no clock and nothing chases it, so the age is the
+            one thing on the row that gets worse by itself. */}
+        <span
+          className={`whitespace-nowrap px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${AGE_TONE[heldAgeBand(hoursHeld)]}`}
+          title={`Held ${hoursHeld} hour${hoursHeld === 1 ? "" : "s"} — nothing expires it and nothing chases it`}
+        >
+          waiting {formatHeldAge(hoursHeld)}
+        </span>
         <button className="ml-auto inline-flex items-center gap-1 text-phx-xs font-bold text-slate-500 hover:text-slate-800" onClick={() => setExpanded((value) => !value)} type="button">
           {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           Checks
@@ -133,13 +163,13 @@ function ReviewRow({ review, onDecided }: { review: AdminNotificationSendReview;
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <input
-          className="min-w-[220px] flex-1 rounded-sm border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 focus:border-orange-400 focus:outline-none"
+          className="min-w-[220px] flex-1 border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 focus:border-orange-400 focus:outline-none"
           onChange={(event) => setNote(event.target.value)}
           placeholder="Optional note"
           value={note}
         />
         <button
-          className="inline-flex items-center gap-1.5 rounded-sm bg-emerald-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-emerald-700 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 bg-emerald-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-emerald-700 disabled:opacity-50"
           disabled={submitting !== null}
           onClick={() => decide("approve")}
           type="button"
@@ -148,7 +178,7 @@ function ReviewRow({ review, onDecided }: { review: AdminNotificationSendReview;
           Approve &amp; send
         </button>
         <button
-          className="inline-flex items-center gap-1.5 rounded-sm bg-slate-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-slate-700 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 bg-slate-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-slate-700 disabled:opacity-50"
           disabled={submitting !== null}
           onClick={() => decide("discard")}
           type="button"
@@ -166,11 +196,11 @@ function RecentRow({ review }: { review: AdminNotificationSendReview }) {
   return (
     <div className="px-4 py-2.5">
       <div className="flex flex-wrap items-center gap-2">
-        <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${statusTone(review.status)}`}>
+        <span className={`whitespace-nowrap px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${statusTone(review.status)}`}>
           {review.status.replace("_", " ")}
         </span>
         <span className={`text-phx-xs font-black ${confidenceTone(review.confidencePercent)}`}>{review.confidencePercent}%</span>
-        <span className="whitespace-nowrap rounded-sm bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-700">
+        <span className="whitespace-nowrap bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-700">
           {review.module ?? "unknown"} / {review.eventType ?? "unknown"}
         </span>
         <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-800">{review.subject}</span>
@@ -218,6 +248,10 @@ export function NotificationConfidenceWorkspace({
     return { avgConfidence, held, total };
   }, [recent]);
 
+  // Keyed on the pending list, so decisions refresh it. Deliberately not on a timer: a queue this
+  // static does not need a ticking clock, and the page is re-rendered on every decision anyway.
+  const heldAges = useMemo(() => summarizeHeldQueue(pending.map((review) => review.createdAt)), [pending]);
+
   return (
     <section className="space-y-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -243,15 +277,29 @@ export function NotificationConfidenceWorkspace({
       ) : null}
 
       <div className="border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center gap-2 border-b border-slate-100 bg-red-700 px-5 py-3">
-          <ShieldAlert className="h-4 w-4 text-white" />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-slate-100 bg-red-700 px-5 py-3">
+          <ShieldAlert className="h-4 w-4 shrink-0 text-white" />
           <h2 className="text-xs font-black uppercase tracking-[0.14em] text-white">
             {pending.length} pending your review
           </h2>
+          {/* The ageing summary. Nothing expires a hold and nothing chases it, so how LONG the
+              queue has waited is the only signal that this needs attention today rather than
+              whenever somebody next opens the page. */}
+          {heldAges.empty ? null : (
+            <span className="text-phx-xs font-black uppercase tracking-[0.1em] text-red-100">
+              oldest {formatHeldAge(heldAges.oldestHours)}
+              {heldAges.critical > 0 ? ` · ${heldAges.critical} over 3 days` : ""}
+              {heldAges.stale > 0 ? ` · ${heldAges.stale} over a day` : ""}
+            </span>
+          )}
         </div>
         {pending.length === 0 ? (
           <div className="p-10 text-center">
             <p className="text-sm font-bold text-slate-500">Nothing is being held right now.</p>
+            <p className="mt-1 text-phx-sm text-slate-400">
+              A held notification waits for a decision indefinitely — it never expires and nothing
+              chases it, so this queue is only empty when it has genuinely been cleared.
+            </p>
           </div>
         ) : (
           <div className="space-y-2 p-3">
