@@ -100,10 +100,25 @@ export async function loadCandidateSendContext(
   const dialNumber = whatsappColumn ?? phoneColumn;
   const numberSource = whatsappColumn ? "whatsapp" : phoneColumn ? "phone" : null;
 
-  // `applied_for_job_title` is the role they are in the pipeline FOR — the right thing to name in an
-  // interview invitation. `current_job_title` is where they work today and would read as an error in
-  // an invitation, so it is only a fallback for templates used outside the pipeline.
-  const jobTitle = textOrNull(row.applied_for_job_title) ?? textOrNull(row.current_job_title) ?? "";
+  // 🔴 `applied_for_job_title` ONLY. NEVER fall back to `current_job_title`.
+  //
+  // `current_job_title` is where the candidate works TODAY, at somebody else's company. Used as a
+  // fallback it produces "Thank you for your interest in the Senior Product Specialist position at
+  // Sato Pharma" for a man whose CURRENT job is Senior Product Specialist somewhere else — a
+  // rejection notice that names, as the role we turned him down for, the job he already has.
+  // Observed exactly that way on 2026-09-08 against a real staging record while testing the
+  // rejection template, and it reaches 338 of 890 production candidates (38%) — every one of them
+  // silently, because the sentence is grammatical and the title is real.
+  //
+  // The fallback was written into this file with a comment saying current_job_title "would read as
+  // an error in an invitation", and then used anyway. Both halves of that sentence were true; only
+  // the second half was acted on.
+  //
+  // WITH NO FALLBACK, an absent applied-for title leaves this empty, `renderTemplate` reports it
+  // MISSING, and the send is refused until the recruiter types the real one. That is the intended
+  // outcome: asking a human for one field beats telling a candidate something false about himself,
+  // and it is the same reasoning the number repair follows — no chat is better than the wrong chat.
+  const jobTitle = textOrNull(row.applied_for_job_title) ?? "";
 
   return {
     autoValues: {
