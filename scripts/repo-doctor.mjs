@@ -838,9 +838,10 @@ if (heldByLiveSession.length) {
       "they see both a just-closed session and one open but idle for hours.",
   );
   console.log(
-    "  Blind spot, unchanged: `.claude/worktrees/*` only. An `_wt-*` session reports the PRIMARY " +
-      "as its cwd, so neither signal can tell it from any other session — an `_wt-*` folder " +
-      "absent from this list is UNKNOWN, not proven unattended.",
+    "  Reliable for `.claude/worktrees/*`. An `_wt-*` folder may appear above when a child command " +
+      "happened to be running in it, but its ABSENCE proves nothing: an `_wt-*` session reports " +
+      "the PRIMARY as its cwd, so neither signal sees it while it sits idle — UNKNOWN, not " +
+      "proven unattended.",
   );
   console.log("");
 }
