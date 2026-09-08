@@ -526,14 +526,16 @@ silence.
 
 ### p95 latency: obsolete
 
-There used to be a log-based metric (`phoenix_hr_production_request_latencies`, applied via
-`scripts/scope-p95-latency-alert-to-production-revision.py`) that excluded deploy-time smoke-test
-traffic from the p95 that paged the owner. It existed because `deploy-cloud-run.yml` smoke-tested
-each new revision through a no-traffic `sha-<8hex>` tag URL, and those cold-start hits polluted the
-raw Cloud Run latency metric.
+There used to be a log-based metric (`phoenix_hr_production_request_latencies`, applied via a script
+now deleted) that excluded deploy-time smoke-test traffic from the p95 that paged the owner. It
+existed because `deploy-cloud-run.yml` smoke-tested each new revision through a no-traffic
+`sha-<8hex>` tag URL, and those cold-start hits polluted the raw Cloud Run latency metric.
 
 **Both halves of that are gone**: there is no no-traffic tag deploy on Railway, and the alert it
-protected is dead with GCP Monitoring. The script is left in the repo but cannot run.
+protected is dead with GCP Monitoring. `scripts/scope-p95-latency-alert-to-production-revision.py`
+was deleted on 2026-09-08 — it had been kept as a dead file, and Semgrep flagged two findings in it,
+which is a poor reason to carry code that authenticates to a billing-closed project. Recover it from
+git history if the reasoning is ever wanted; the account above is the part worth keeping.
 
 ## Synthetic journeys
 
