@@ -513,6 +513,41 @@ export function runDriveScriptAgreesWithAppTests() {
       + "comparison disagrees with every file in the library",
   );
 
+  // ── THE ROOT IS THE CABINET, AND THE SCRIPT MUST NOT OWN A SECOND ANSWER ──────────────────────
+  //
+  // The segments handed to Drive are UNROOTED, so whatever `ensureFolderPath` starts from IS the
+  // tree the CV lands in. This script used to carry its own copy of that walker, rooted at
+  // `GOOGLE_DRIVE_RECRUITMENT_FOLDER_ID || "Phoenix CVs"` — the FROZEN tree — while writing the
+  // cabinet path into `drive_mirror_path`.
+  //
+  // Nothing caught it. The database read correct, `--verify` compares that stored STRING, and the
+  // run reported "Moved: 32   failed: 0". Only walking Drive's real parents found the 32 CVs sitting
+  // in `Phoenix CVs/Medical Representative/<region>` (production, 2026-09-09). The previous fix
+  // pinned the rooted-vs-unrooted ARRAY and left the ROOT itself on the old tree — so this pins the
+  // root separately, rather than trusting the comment that says it is the cabinet.
+  const codeLines = source
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("*") && !line.trimStart().startsWith("//"));
+
+  assert.ok(
+    codeLines.some(
+      (line) => line.includes("ensureFolderPath") && line.includes('from "@/lib/recruitment/drive-tree"'),
+    ),
+    "the backfill script must walk folders with the app's ensureFolderPath, which roots at the "
+      + "cabinet — its own copy rooted at the frozen Phoenix CVs tree",
+  );
+  assert.ok(
+    !codeLines.some((line) => line.includes("function ensureFolderPath")),
+    "the script must not define its own ensureFolderPath — a second walker is a second root, and "
+      + "that copy is what filed 32 CVs into the frozen tree",
+  );
+  for (const rooted of ["DRIVE_ROOT_NAME", "GOOGLE_DRIVE_RECRUITMENT_ROOT_NAME"]) {
+    assert.ok(
+      !codeLines.some((line) => line.includes(rooted)),
+      `${rooted} names the OLD tree's root — the cabinet's root comes from ensureRootFolder()`,
+    );
+  }
+
   // The old tree's two path builders. Either one back in this file means a second copy of the rule,
   // which is the whole defect: a copy cannot be kept in step, it can only be found later.
   for (const dead of ["driveFolderPathFor", "driveInferredFolderPath"]) {
