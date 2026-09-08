@@ -37,6 +37,35 @@ export const AUTO_VARIABLE_KEYS = [
 
 export type AutoVariableKey = (typeof AUTO_VARIABLE_KEYS)[number];
 
+/**
+ * Auto keys that ONLY the employee path can answer.
+ *
+ * A template using one of these can never be completed from a CV — a candidate has no hire date, so
+ * there is no probation window to speak of — and the send screen would offer it, refuse it, and ask
+ * the recruiter for a date that does not exist. So it is not offered there at all.
+ *
+ * DERIVED FROM THE BODY, NEVER FROM THE CATEGORY. Keying this on `category === "Probation"` would
+ * work this afternoon and break the first time the owner renames the category, which he can do from
+ * the template editor with no warning that anything depends on the old word. It would also miss a
+ * probation-shaped template filed under a different name, and hide a perfectly fillable one that
+ * happens to sit in that category. The placeholders a template uses are what actually decide whether
+ * it can be filled, so they are what decides where it is offered.
+ */
+export const EMPLOYEE_ONLY_VARIABLE_KEYS = ["probation_end_date"] as const;
+
+const EMPLOYEE_ONLY_KEY_SET = new Set<string>(EMPLOYEE_ONLY_VARIABLE_KEYS);
+
+/**
+ * True when this body needs something only an employee record can supply.
+ *
+ * Used to decide which templates a CV screen offers. The employee screen and the template MANAGER
+ * are unaffected: the manager must show every template, because it is where they are written.
+ */
+export function requiresEmployeeTarget(body: string): boolean {
+  return extractVariableKeys(body).some((key) => EMPLOYEE_ONLY_KEY_SET.has(key));
+}
+
+
 const AUTO_KEY_SET = new Set<string>(AUTO_VARIABLE_KEYS);
 
 /**
