@@ -1489,6 +1489,7 @@ import { runSecretBoxTests } from "./secret-box.test.ts";
 
 import { runAttendanceWeeklyDigestTests } from "./attendance-weekly-digest.test.ts";
 import { runMarketingCodeUnlinkFalloutTests } from "./marketing-code-unlink-fallout.test.ts";
+import { runMarketingCodeLinkReachTests } from "./marketing-code-link-reach.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4816,6 +4817,11 @@ await runTest(
 await runTest(
   "unlinking a distributor code refuses when it would leave a customer with no selectable target (silent block, 2026-09-06)",
   runMarketingCodeUnlinkFalloutTests,
+);
+
+await runTest(
+  "a new code link inherits its validation status and never elevates an unvalidated venue into the picker",
+  runMarketingCodeLinkReachTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
