@@ -1146,7 +1146,7 @@ import { runSosWarehouseOwnerRulingsTests } from "./sos-warehouse-owner-rulings.
 import { runEpdaPediaWarehouseRulingsTests } from "./epda-pedia-warehouse-rulings.test.ts";
 import { runImportSplitPreviewTests } from "./import-split-preview.test.ts";
 import { runCityListNewAreaGuardTests } from "./city-list-new-area-guard.test.ts";
-import { runQemaQalubeyaSplitTests } from "./qema-qalubeya-split.test.ts";
+import { runQemaWarehouseSplitTests } from "./qema-warehouse-split.test.ts";
 import { runAttributionStoreSplitNetTests } from "./attribution-store-split-net.test.ts";
 import { runStoreNamePrefixesTests } from "./store-name-prefixes.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
@@ -3407,8 +3407,8 @@ await runTest(
   runCityListNewAreaGuardTests,
 );
 await runTest(
-  "El Qema Qalubeya split (one way, El Qema only — Qalubeya reaches Cairo, Cairo never reaches Qalubeya, and the same warehouse through any other distributor does not split at all)",
-  runQemaQalubeyaSplitTests,
+  "El Qema warehouse split (up to 200 packs per product stays in the governorate; above 200 half stays and half spreads evenly over every other area in the country, origin governorate excluded — El Qema only, and the threshold is the month total, never one row)",
+  runQemaWarehouseSplitTests,
 );
 await runTest(
   "EPDA «م - » warehouse prefix (anchored at the START only — it matches 40 customers, while the same three characters appear MID-NAME in 590, and turning it into a keyword would move 550 pharmacies)",
