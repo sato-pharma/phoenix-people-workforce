@@ -147,23 +147,69 @@ export function writeTargetDraft(draft: TargetDraft | null): void {
 const fmtUnits = (value: number | null): string =>
   value == null ? "—" : value.toLocaleString("en-US", { maximumFractionDigits: 0 });
 
+/**
+ * The stored number as an input's default text.
+ *
+ * `String(4543.918236)` is what a target value looks like when it was computed as units × factory
+ * price, and a column of those is unreadable. Trimmed to a precision that still says the same
+ * number — 2 decimals for money, 3 for units — with trailing zeros dropped, so `74.79700` reads
+ * `74.797` and `4543.918236` reads `4543.92`.
+ *
+ * Display only: an untouched row is never sent on save (only edited keys are), so trimming here
+ * cannot rewrite a stored value behind anyone's back. A row he DOES retype saves what he can see,
+ * which is the honest outcome — the alternative is a field showing a number that differs from the
+ * one it would save.
+ */
+function fieldValue(value: number | null, decimals: number): string {
+  if (value == null) return "";
+  if (Number.isInteger(value)) return String(value);
+  return String(Number(value.toFixed(decimals)));
+}
+
+// ── Premium polish ───────────────────────────────────────────────────────────
+//
+// DEPTH ONLY, NEVER RADII. The square-edge golden rule stands: no round or semi-round corners
+// anywhere. PR #3114 once cut radii and depth together, so restoring "the premium look" out of
+// history re-rounds every corner — the depth is the half worth having and the only half taken
+// here. Every surface below is measured at `border-radius: 0px`.
+//
+// The visual language is the sibling one (CommandBand on Sales vs Target): slate-900 ground, a
+// hairline orange rule along the top, an orange kicker in wide tracking, white numerals. What is
+// NOT borrowed is its height — the owner threw out the 580px hero on 2026-09-08, so this carries
+// the same identity in a single line.
+const CARD_DEPTH = "shadow-[0_1px_2px_rgba(15,23,42,0.06),0_10px_30px_-18px_rgba(15,23,42,0.45)]";
+
 /** A labelled native select. Never shrunk — the owner's fits-the-screen rule forbids it. */
 function Picker({
   label,
   value,
   options,
   onChange,
+  tone = "light",
 }: {
   label: string;
   value: string;
   options: ReadonlyArray<{ value: string; label: string }>;
   onChange: (value: string) => void;
+  tone?: "light" | "dark";
 }) {
   return (
     <label className="flex min-w-0 items-center gap-1.5">
-      <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
+      <span
+        className={cn(
+          "text-phx-2xs font-black uppercase tracking-[0.18em]",
+          tone === "dark" ? "text-slate-500" : "text-muted-foreground",
+        )}
+      >
+        {label}
+      </span>
       <select
-        className="h-8 max-w-full border border-input bg-background px-2 text-phx-xs font-bold text-foreground"
+        className={cn(
+          "h-8 max-w-full border px-2 text-phx-xs font-bold transition-colors focus:outline-none focus:ring-1 focus:ring-orange-400",
+          tone === "dark"
+            ? "border-slate-700 bg-slate-800 text-white hover:border-slate-600"
+            : "border-input bg-background text-foreground hover:border-slate-400",
+        )}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
@@ -174,6 +220,19 @@ function Picker({
         ))}
       </select>
     </label>
+  );
+}
+
+/** Completeness, as a hairline. Square by construction — no rounded cap anywhere. */
+function CompletionBar({ done, of }: { done: number; of: number }) {
+  const fraction = of > 0 ? Math.max(0, Math.min(1, done / of)) : 0;
+  return (
+    <span className="block h-1 w-full bg-slate-200" aria-hidden>
+      <span
+        className={cn("block h-full transition-[width] duration-300", fraction === 1 ? "bg-emerald-500" : "bg-orange-500")}
+        style={{ width: `${fraction * 100}%` }}
+      />
+    </span>
   );
 }
 
@@ -607,35 +666,55 @@ export function TargetsAuthoring(props: {
     <div className="space-y-3 p-3 md:p-4">
       {/* ── Command strip. One line, no hero: line, month, and the two figures that describe the
              month being authored. Wraps rather than scrolls (fits-the-screen golden rule). ── */}
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border border-border bg-card px-4 py-2.5 shadow-sm">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <h1 className="text-sm font-black uppercase tracking-[0.14em] text-foreground">Targets</h1>
-          <Picker
-            label="Line"
-            value={props.selectedLine}
-            options={props.lines.map((line) => ({ value: line.code, label: line.label }))}
-            onChange={(value) => navigate(value, props.selectedPeriod)}
-          />
-          <Picker
-            label="Month"
-            value={props.selectedPeriod}
-            options={props.periods.map((period) => ({ value: period, label: formatPeriod(period) }))}
-            onChange={(value) => navigate(props.selectedLine, value)}
-          />
-        </div>
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <p className="text-phx-xs text-muted-foreground">
-            <span className="font-black uppercase tracking-[0.14em]">Target</span>{" "}
-            <span className="text-sm font-black tabular-nums text-foreground">{formatEgpFull(totals.value)}</span>
-          </p>
-          <p className="text-phx-xs text-muted-foreground">
-            <span className="font-black uppercase tracking-[0.14em]">Set</span>{" "}
-            <span className="text-sm font-black tabular-nums text-foreground">
-              {totals.set.toLocaleString("en-US")} of {totals.cells.toLocaleString("en-US")}
+      <section className={cn("relative border border-slate-800 bg-slate-900", CARD_DEPTH)}>
+        {/* The sibling module's signature: a hairline of orange along the top edge. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-orange-500/0 via-orange-400/90 to-orange-500/0"
+        />
+        <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <span className="min-w-0">
+              <span className="block text-phx-2xs font-black uppercase tracking-[0.28em] text-orange-400">
+                Sales Operations
+              </span>
+              <h1 className="block text-base font-black leading-none tracking-tight text-white">Targets</h1>
             </span>
-          </p>
+            <Picker
+              label="Line"
+              tone="dark"
+              value={props.selectedLine}
+              options={props.lines.map((line) => ({ value: line.code, label: line.label }))}
+              onChange={(value) => navigate(value, props.selectedPeriod)}
+            />
+            <Picker
+              label="Month"
+              tone="dark"
+              value={props.selectedPeriod}
+              options={props.periods.map((period) => ({ value: period, label: formatPeriod(period) }))}
+              onChange={(value) => navigate(props.selectedLine, value)}
+            />
+          </div>
+          <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
+            <span className="min-w-0">
+              <span className="block text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Target</span>
+              <span className="block whitespace-nowrap text-lg font-black leading-tight tabular-nums text-white">
+                {formatEgpFull(totals.value)}
+              </span>
+            </span>
+            <span className="min-w-0">
+              <span className="block text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Set</span>
+              <span className="block whitespace-nowrap text-lg font-black leading-tight tabular-nums text-white">
+                {totals.set.toLocaleString("en-US")}
+                <span className="text-sm text-slate-500"> / {totals.cells.toLocaleString("en-US")}</span>
+              </span>
+            </span>
+            <span className="w-28 shrink-0 pb-1.5">
+              <CompletionBar done={totals.set} of={totals.cells} />
+            </span>
+          </div>
         </div>
-      </div>
+      </section>
 
       {props.error ? (
         <div className="flex items-start gap-3 border border-red-300 bg-red-50 px-4 py-2.5">
@@ -650,7 +729,7 @@ export function TargetsAuthoring(props: {
 
       {/* ── Templates. Empty or populated, for a month, a quarter or a semester. ── */}
       {canEdit ? (
-        <SectionCard title="Template" subtitle={`${lineLabel} · fill it in Excel and upload it back`} icon={Download}>
+        <SectionCard title="Template" subtitle={`${lineLabel} · fill it in Excel and upload it back`} icon={Download} className={CARD_DEPTH}>
           <div className="flex flex-wrap items-center gap-2 p-3">
             <Picker
               label="Covering"
@@ -680,7 +759,7 @@ export function TargetsAuthoring(props: {
 
       {/* ── Upload ── */}
       {canEdit ? (
-        <SectionCard title="Upload" subtitle="Checked before anything is written" icon={Upload}>
+        <SectionCard title="Upload" subtitle="Checked before anything is written" icon={Upload} className={CARD_DEPTH}>
           <div className="flex flex-wrap items-center gap-2 p-3">
             <input
               type="file"
@@ -749,6 +828,7 @@ export function TargetsAuthoring(props: {
         title={`${lineLabel} · ${formatPeriod(props.selectedPeriod)}`}
         subtitle={`${regions.length.toLocaleString("en-US")} region${regions.length === 1 ? "" : "s"} · press one to open its areas`}
         icon={Layers}
+        className={CARD_DEPTH}
         actions={
           canEdit ? (
             <div className="flex flex-wrap items-center gap-2">
@@ -829,14 +909,14 @@ export function TargetsAuthoring(props: {
             {regions.map((region) => {
               const open = openRegions[region.name] === true;
               return (
-                <div className="border border-border bg-background" key={region.name}>
+                <div className={cn("border border-border bg-background transition-shadow", open && CARD_DEPTH)} key={region.name}>
                   {/* The region BUTTON. Full width, so it is a target on a phone too. */}
                   <button
                     type="button"
                     aria-expanded={open}
                     className={cn(
-                      "flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-1 px-3 py-2.5 text-left hover:bg-accent",
-                      open && "border-b border-border bg-muted/40",
+                      "flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-1 border-l-2 px-3 py-3 text-left transition-colors hover:bg-accent",
+                      open ? "border-l-orange-500 bg-muted/40" : "border-l-transparent",
                     )}
                     onClick={() => setOpenRegions((current) => ({ ...current, [region.name]: !open }))}
                   >
@@ -846,18 +926,24 @@ export function TargetsAuthoring(props: {
                       ) : (
                         <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                       )}
-                      <span className="break-words text-sm font-black text-foreground">{region.name}</span>
-                      <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">
+                      <span className="break-words text-sm font-black tracking-tight text-foreground">{region.name}</span>
+                      <span className="text-phx-2xs font-black uppercase tracking-[0.18em] text-muted-foreground">
                         {region.areas.length} area{region.areas.length === 1 ? "" : "s"}
                       </span>
                     </span>
-                    <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                      <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">
+                    <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                      <span className="w-24 shrink-0">
+                        <CompletionBar done={region.set} of={region.cells} />
+                      </span>
+                      <span className="text-phx-2xs font-black uppercase tracking-[0.18em] text-muted-foreground">
                         {region.set} of {region.cells} set
                       </span>
-                      <span className="text-sm font-black tabular-nums text-foreground">{formatEgpFull(region.value)}</span>
+                      <span className="whitespace-nowrap text-base font-black tabular-nums text-foreground">
+                        {formatEgpFull(region.value)}
+                      </span>
                     </span>
                   </button>
+                  {open ? <div className="border-b border-border" /> : null}
 
                   {open ? (
                     <div className="space-y-2 p-2">
@@ -880,8 +966,8 @@ export function TargetsAuthoring(props: {
                             {area.rows.map((row) => {
                               const key = keyOf(row);
                               const dirty = edits[key] !== undefined || unitEdits[key] !== undefined;
-                              const unitValue = unitEdits[key] ?? (row.targetUnits == null ? "" : String(row.targetUnits));
-                              const editValue = edits[key] ?? (row.targetValue == null ? "" : String(row.targetValue));
+                              const unitValue = unitEdits[key] ?? fieldValue(row.targetUnits, 3);
+                              const editValue = edits[key] ?? fieldValue(row.targetValue, 2);
                               return (
                                 <li
                                   className={cn(
@@ -909,7 +995,12 @@ export function TargetsAuthoring(props: {
                                         <Input
                                           type="number"
                                           inputMode="decimal"
-                                          className="h-8 w-24 text-right tabular-nums"
+                                          className={cn(
+                                            "h-8 w-24 text-right tabular-nums transition-colors",
+                                            // A gap you can see without reading: an unset cell is
+                                            // tinted, so a half-finished month shows itself.
+                                            unitValue === "" && "bg-amber-50/70",
+                                          )}
                                           value={unitValue}
                                           onChange={(event) => onUnitsChange(row, event.target.value)}
                                         />
@@ -921,7 +1012,10 @@ export function TargetsAuthoring(props: {
                                         <Input
                                           type="number"
                                           inputMode="decimal"
-                                          className="h-8 w-32 text-right tabular-nums"
+                                          className={cn(
+                                            "h-8 w-32 text-right font-semibold tabular-nums transition-colors",
+                                            editValue === "" && "bg-amber-50/70",
+                                          )}
                                           value={editValue}
                                           onChange={(event) => onValueChange(key, event.target.value)}
                                         />
