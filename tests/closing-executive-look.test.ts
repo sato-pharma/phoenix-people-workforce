@@ -48,9 +48,14 @@ const HOUSE_ONLY = [
 // imported the workbook's own constants could not fail when they changed -- it would assert only
 // that the file equals itself. These literals are the owner's decision written down independently
 // of the code that implements it, which is the whole point of a pinning test.
-const BAND_NAVY = "FF042C46";
-const BRAND_BLUE = "FF085080";
-const ACCENT_BLUE = "FF0868A8";
+// These moved on 2026-09-09, when the palette itself was ported. They were the TEMPLATE's colours;
+// these are the approved ones from the owner's brief, written out by name there: primary navy for
+// the mastheads, secondary navy for table headers and total bars, corporate blue for the accent.
+// Still typed out here rather than imported — a test that reads the workbook's own constants can
+// only ever assert that the file equals itself.
+const BAND_NAVY = "FF0A1F33";
+const HEADER_NAVY = "FF103A5C";
+const ACCENT_BLUE = "FF0B78B7";
 
 /** The three heights that carry the layout: title, navigation, warning strip. */
 const OVERVIEW_BAND = { nav: 37, title: 44, warning: 30 } as const;
@@ -162,7 +167,7 @@ export async function runClosingExecutiveLookTests() {
   }
 
   // ── ...and the look it was given instead is still here ───────────────────────────────────────
-  for (const colour of [BAND_NAVY, BRAND_BLUE, ACCENT_BLUE]) {
+  for (const colour of [BAND_NAVY, HEADER_NAVY, ACCENT_BLUE]) {
     assert.match(
       styles,
       new RegExp(colour.replace(/^FF/, ""), "i"),

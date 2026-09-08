@@ -1257,6 +1257,7 @@ import { runSalesStoreOverrideTests } from "./sales-store-override.test.ts";
 import { runClosingExportFilenameTests } from "./closing-export-filename.test.ts";
 import { runClosingEngineExportTests } from "./closing-engine-export.test.ts";
 import { runClosingExecutiveLookTests } from "./closing-executive-look.test.ts";
+import { runClosingLayoutInvariantTests } from "./closing-layout-invariants.test.ts";
 import { runClosingAchievementFollowsTheClosingTests } from "./closing-achievement-follows-the-closing.test.ts";
 import { runWeeklyPlansDistrictManagerBypassTests } from "./weekly-plans-district-manager-bypass.test.ts";
 import { runNotificationRecipientAddressResolutionTests } from "./notification-recipient-address-resolution.test.ts";
@@ -3950,6 +3951,10 @@ await runTest(
 await runTest(
   "the premium closing export FILLS the owner's .xlsm engine (pivots, slicers, Rep Card formulas and VBA all survive), never adds units across products, never scores an untargeted area at 0%, and moves every footnote, merge, colour band and sheet-local print area with the real row count",
   runClosingEngineExportTests,
+);
+await runTest(
+  "the premium closing workbook holds its LAYOUT invariants — no negative shape, no two buttons overlapping, nothing reaching the warning strip, every slicer wide enough for its captions",
+  runClosingLayoutInvariantTests,
 );
 await runTest(
   "the premium closing workbook keeps its APPROVED executive look (owner 2026-09-08) — exempt from the house identity, so no brand blue anywhere, rounded buttons kept, filled bands kept, band heights held",

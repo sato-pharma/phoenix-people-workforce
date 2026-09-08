@@ -620,8 +620,10 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
    * missing sources" outranks "one person, one month, every product", and displacing it keeps the
    * line short enough to be read rather than run off the card.
    */
-  const deck = (subtitle: string) =>
-    [coverageNote?.terse ?? subtitle, filterNote].filter(Boolean).join(SEP);
+  // The Rep Card's deck keeps its own tagline. The terse form of the completeness note used to
+  // displace it, which was the same line in shorter words -- removed with the rest of it on the
+  // owner's instruction of 2026-09-09.
+  const deck = (subtitle: string) => [subtitle, filterNote].filter(Boolean).join(SEP);
 
   const areas = buildAreas(input);
   const salesData = buildSalesData(input, areas);
@@ -1065,14 +1067,19 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
   // The Rep Card is skipped because it already carries the short form on A2 -- it is the one sheet
   // whose row 2 is spoken for, and the one most likely to be shared on its own. A sheet with no
   // caption (Data) has no emblem and no reader, and is skipped with it.
-  if (coverageNote) {
-    for (const [name, sheet] of Object.entries(fill.sheets)) {
-      if (name === "Rep Card") continue;
-      const cells = sheet.cells;
-      if (!cells?.A1) continue;
-      cells.A3 = coverageNote.full;
-    }
-  }
+  // REMOVED BY THE OWNER, 2026-09-09: "REMOVE AND DO NOT SHOW THIS LINE IN ANY TAB."
+  //
+  // The note is no longer written to any sheet. It is left COMPUTED above rather than deleted,
+  // because `coverageNote.terse` is a separate decision on the Rep Card's own deck line and the
+  // completeness figures behind it are read elsewhere; ripping the calculation out would make this
+  // a wider change than he asked for.
+  //
+  // What this costs, recorded here so nobody has to rediscover it: the workbook no longer says when
+  // a month is missing distributor feeds. A September that has three of its four sources absent now
+  // reads as a real collapse in sales rather than as an incomplete month, and nothing on the page
+  // distinguishes the two. He was told that and asked for it anyway, so it is a decision and not an
+  // oversight — do not reinstate the line on the reasoning that its absence looks like a bug.
+  void coverageNote;
 
   return fill;
 }
