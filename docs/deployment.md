@@ -22,9 +22,27 @@ no deploy workflow in `.github/workflows/` that ships production any more.
 
 **GCP is dead, not standby.** Billing account `01BDEA-A20B4C-CC568F` was closed 2026-08-01 over an
 unpaid balance; every API in project `phoenix-workforce-498619` returns `BILLING_DISABLED`.
-`deploy-cloud-run.yml` and `deploy-cloud-run-staging.yml` are still in the repo but their schedule
-triggers were removed — both are `workflow_dispatch:` only, so they never fire on their own. A
-`deploy: skipped` from either is expected, not informative. Do not run `gcloud` to verify anything.
+**The Cloud Run deploy path was DELETED on 2026-09-08** at the owner's instruction, having been
+trigger-disabled since 2026-08-01 and unable to run at all since billing closed. Five files went
+together, because they were one cluster and nothing outside it used any of them:
+`.github/workflows/deploy-cloud-run.yml`, `.github/workflows/deploy-cloud-run-staging.yml`,
+`cloudbuild.yaml`, `scripts/cleanup-stale-cloud-run-tags.py` and `scripts/retry-transient.sh`.
+
+🔴 **TO RESTORE IT, IF BILLING EVER REOPENS — the rollback the deleted headers carried, kept here
+because they are no longer around to carry it.** Every file is intact in git history at `86d6220aa`,
+the last commit holding them: `git show 86d6220aa:.github/workflows/deploy-cloud-run.yml`, and the
+same for the other four. Their triggers were the whole rollback — re-add `schedule: - cron:
+"0 */2 * * *"` to production and `"40 3 * * *"` to staging. **But restoring the workflows alone
+would not be enough:** GCP deletes a disabled project's resources roughly 30 days after closure and
+closure was 2026-08-01, so the Cloud Run service, its secrets and the scheduler jobs would have to
+be recreated first.
+
+`scripts/setup-gcp-cron.sh` was deliberately KEPT. It stopped being the schedule source of truth
+when GCP died, but five live files still cite it for where a scheduling window originally came from
+— including `src/lib/crm/dates.ts` and `tests/crm-live-sync-window.test.ts`, where the in-code gate
+is what actually decides a firing. Deleting it would strand those citations.
+
+Do not run `gcloud` to verify anything.
 
 ## Branch Model
 

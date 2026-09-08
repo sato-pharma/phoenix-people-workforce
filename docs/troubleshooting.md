@@ -60,9 +60,10 @@ Excel imports (payroll, employees, sales) require specific column formats. Check
 There is no per-branch preview deployment (that was a retired Vercel-era model).
 Verify locally, check that CI's `validate` job passed (it ends with a Playwright login
 smoke test run inside the CI runner against staging Supabase, not a deployed URL), and
-after merge, check the staging Cloud Run service for a live look against staging
-data. If production itself looks stale after a merge, check
-`.github/workflows/deploy-cloud-run.yml`'s run for that commit.
+after merge, check the Railway staging app for a live look against staging data
+(https://phoenix-people-workforce-staging.up.railway.app). If production itself looks stale
+after a merge, request `/api/healthz` and read `revision` — Railway deploys on push, so there
+is no deploy workflow run to inspect. The Cloud Run path was deleted 2026-09-08.
 
 ### Cron jobs not firing
 
