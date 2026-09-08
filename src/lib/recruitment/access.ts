@@ -69,6 +69,28 @@ export function canViewWhatsAppOutboundLog(access: Pick<AccessContext, "role" | 
   return access.scope === "system" || recruitmentManageRoles.includes(access.role);
 }
 
+// WhatsApp message templates — SENDING one to a candidate.
+//
+// Same authority as the rest of the pipeline: messaging an applicant in the company's name is
+// acting on the pipeline, exactly like sending their CV to a manager. Deliberately its own helper
+// rather than a caller of canViewWhatsAppOutboundLog, which it resolves identically to today —
+// that one guards READING what was said, this one guards SAYING it, and a later widening of the
+// read gate must not quietly hand a wider audience the ability to message the public.
+export function canSendWhatsAppTemplate(access: Pick<AccessContext, "role" | "scope">): boolean {
+  return access.scope === "system" || recruitmentManageRoles.includes(access.role);
+}
+
+// WhatsApp message templates — WRITING, EDITING and DELETING them.
+//
+// Narrower than sending, on purpose, and narrower than any other gate in this file: system scope
+// only. A template is the wording every recruiter then sends in the company's name, so editing one
+// changes what everybody says, to everybody, from that moment on. That is the same reasoning the
+// WhatsApp screening-question wording is gated on (admin:update, Super Admin only), and the two
+// must stay aligned — they are the two places where one person's typing becomes the company's voice.
+export function canManageWhatsAppTemplates(access: Pick<AccessContext, "role" | "scope">): boolean {
+  return access.scope === "system";
+}
+
 // Contact-details review — accepting an email or phone the AI read off a CV onto the candidate.
 //
 // Same authority as the rest of the pipeline, and deliberately NOT canViewInboundIntakeHealth even
