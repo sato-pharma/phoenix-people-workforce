@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { hrIdForStorage } from "@/lib/hr-id";
 
 import ExcelJS from "exceljs";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
@@ -479,19 +480,54 @@ function employeeNameKeys(...values: Array<string | null | undefined>) {
   return Array.from(keys);
 }
 
-function resolveHrIdFromEmployeeMaps(
+/**
+ * What an HR ID has to look like before the sheet's own value is trusted over a name match.
+ *
+ * Every one of the 186 employee ids in production matches this (measured 2026-09-08) — including
+ * the four that break the usual `letters-digits` shape: `AA`, `AB`, `B-HIST-MG` and `c-o1`. A
+ * stricter pattern would have silently rejected the CEO.
+ *
+ * Its job is only to tell an id from something that is not one. `Column2` is an alias for the HR ID
+ * column, and a sheet with a stray note in that column must not have it written into `hr_id`.
+ */
+const SHEET_HR_ID_SHAPE = /^[A-Za-z0-9-]{2,12}$/;
+
+/**
+ * The HR ID for one imported row.
+ *
+ * AN ID WRITTEN IN THE SHEET WINS — even when the employee directory has never heard of it. That
+ * order is the whole point, and it used to be the other way round: the directory was consulted
+ * first, and on a miss the row fell through to matching the SPECIALIST NAME.
+ *
+ * That is safe for anyone still employed and wrong for everyone who has left, because a leaver is
+ * not in the directory at all. Measured on the July 2026 sheet (2026-09-08): `Ahmed.Abdallah` is
+ * B-74, a District Sales Manager who resigned on 31 August. The directory therefore missed him, the
+ * name match found the active `Ahmed Hemdan Ahmed Elsayed Abdallah` — B-58, a Medical Rep in a
+ * different area — and 4,742 EGP of a departed manager's travel would have been paid to him.
+ * Writing `B-74` into the sheet did not help: the name match still won.
+ *
+ * So an explicit id now beats a fuzzy surname, which is the only order that makes sense — the id is
+ * a statement, the name is a guess. The directory is still consulted, but only to canonicalise the
+ * casing of an id it recognises; an id it does not recognise is used as written.
+ *
+ * A value that is not shaped like an id falls through to the name match exactly as before, so a
+ * sheet with something else in `Column2` behaves the way it always did.
+ */
+export function resolveHrIdFromEmployeeMaps(
   employeeMaps: EmployeeLookupMaps,
   specialist: string,
   fileHrId: string,
 ) {
-  const normalizedFileHrId = fileHrId.toLowerCase();
-  const byFileId = normalizedFileHrId ? employeeMaps.codeByHrId.get(normalizedFileHrId) : null;
-  if (byFileId) return byFileId;
+  const stated = fileHrId.trim();
+
+  if (stated && SHEET_HR_ID_SHAPE.test(stated)) {
+    return employeeMaps.codeByHrId.get(stated.toLowerCase()) ?? hrIdForStorage(stated) ?? stated;
+  }
 
   return employeeNameKeys(specialist)
     .map((key) => employeeMaps.codeByName.get(key))
     .find(Boolean) ??
-    (fileHrId || null);
+    (stated || null);
 }
 
 function resolveFromFromEmployeeMaps(
