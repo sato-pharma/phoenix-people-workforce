@@ -224,7 +224,11 @@ import { runCandidateFolderTests } from "./candidate-folders.test.ts";
 import { runCandidatePoolFiledSearchTests } from "./candidate-pool-filed-search.test.ts";
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
 import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
-import { runDriveCabinetFolderTests, runDriveTrashedFileTests } from "./drive-cabinet-folders.test.ts";
+import {
+  runDriveCabinetFolderTests,
+  runDriveScriptAgreesWithAppTests,
+  runDriveTrashedFileTests,
+} from "./drive-cabinet-folders.test.ts";
 import { runCandidateStatusRegressionGuardTests } from "./candidate-status-regression-guard.test.ts";
 import { runCvLifecycleFeedTests } from "./cv-lifecycle-feed.test.ts";
 import { runCvLifecycleShareLinksScreenTests } from "./cv-lifecycle-share-links-screen.test.ts";
@@ -1937,6 +1941,11 @@ await runTest(
   "Drive trashed-file detection (the bin is not a 404 — a binned CV must never be re-filed, and a "
     + "missing one still must be)",
   runDriveTrashedFileTests,
+);
+await runTest(
+  "the backfill script asks the app where a CV belongs (a second copy of the rule called 913 filed "
+    + "CVs misfiled, and --refile would have moved them back out of the cabinet)",
+  runDriveScriptAgreesWithAppTests,
 );
 await runTest(
   "candidate status regression guard (a CV sent to a manager cannot be walked back to shortlisted — "
