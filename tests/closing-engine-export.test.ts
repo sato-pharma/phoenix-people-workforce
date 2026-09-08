@@ -1105,9 +1105,41 @@ export async function runClosingEngineExportTests() {
   );
   const warnedOverview = await holed.file("xl/worksheets/sheet1.xml")!.async("string");
   const warnedCard = await holed.file(CLOSING_ENGINE_TEMPLATE_MANIFEST.sheets["Rep Card"]!.file)!.async("string");
-  const warnedNote = readRow(warnedOverview, 2).A ?? "";
+  // ROW 3. The note used to be written to row 2, which is empty in the template and therefore read
+  // as free — but every navigation button is a drawing anchored from row 2, so the buttons painted
+  // straight over it and the warning was unreadable on the owner's own September export. Empty is
+  // not free when a drawing floats above it, and no assertion here could see that, because the cell
+  // held exactly the text it was supposed to hold.
+  const warnedNote = readRow(warnedOverview, 3).A ?? "";
 
   assert.match(warnedNote, /INCOMPLETE/, "an incomplete month announces itself on its own row");
+
+  // ...and NO BUTTON MAY REACH THAT ROW. This is the assertion whose absence let the warning ship
+  // unreadable: every check here was about the note's TEXT, and the text was always right. What was
+  // wrong was where it sat relative to a drawing floating over the grid, which no cell-level read
+  // can see. Anchors are 0-based, so the note's row 3 is index 2, and a button spanning from row
+  // index 1 to row index 2 covers it.
+  {
+    const overviewRels = await holed.file("xl/worksheets/_rels/sheet1.xml.rels")!.async("string");
+    const overviewDrawing = /Target="\.\.\/(drawings\/drawing\d+\.xml)"/.exec(overviewRels)?.[1];
+    assert.ok(overviewDrawing, "Overview has a drawing — the buttons and the emblem live in it");
+    const drawingXml = await holed.file(`xl/${overviewDrawing}`)!.async("string");
+    const noteRowIndex = 2;
+    let reaching = 0;
+    for (const anchor of drawingXml.match(/<xdr:twoCellAnchor\b[\s\S]*?<\/xdr:twoCellAnchor>/g) ?? []) {
+      const from = Number(/<xdr:from>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/.exec(anchor)?.[1] ?? Number.NaN);
+      const to = Number(/<xdr:to>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/.exec(anchor)?.[1] ?? Number.NaN);
+      const rowOff = Number(/<xdr:to>[\s\S]*?<xdr:rowOff>(\d+)<\/xdr:rowOff>/.exec(anchor)?.[1] ?? 0);
+      if (!Number.isFinite(from) || !Number.isFinite(to)) continue;
+      // Reaching the row's top edge with a zero offset is touching, not overlapping.
+      if (to > noteRowIndex || (to === noteRowIndex && rowOff > 0)) reaching += 1;
+    }
+    assert.equal(
+      reaching,
+      0,
+      `${reaching} shape(s) on Overview reach into the warning row — the owner's brief forbids a button sitting over the warning`,
+    );
+  }
   assert.match(warnedNote, /missing 3 sources of the 17/, "it says how many are gone, against how many fed the month before");
   assert.match(warnedNote, /51,978,605 EGP/, "and the scale of the hole, so 'the number looks low' answers itself");
   assert.match(warnedNote, /understated/, "and states the consequence rather than leaving the reader to infer it");
@@ -1198,10 +1230,15 @@ export async function runClosingEngineExportTests() {
     // in the owner's template with NO row 2, and a cell aimed at a row that does not exist used to
     // be dropped in silence — the note appeared on eleven tabs and was missing, unremarked, from
     // the twelfth. A warning absent from one sheet is worse than one absent from all of them.
+    // Row 3 everywhere except the Rep Card, which keeps the SHORT form on its own deck line at row
+    // 2 — that row is spoken for on that sheet and displacing the tagline is deliberate, asserted a
+    // few dozen lines above. Every other sheet moved to row 3 when the note came out from under the
+    // navigation buttons.
+    const noteRow = name === "Rep Card" ? 2 : 3;
     assert.match(
-      `${readRow(sheetXml, 2).A ?? ""}`,
+      `${readRow(sheetXml, noteRow).A ?? ""}`,
       /INCOMPLETE/,
-      `${name} carries the completeness note — every sheet a reader opens does, or they learn not to look`,
+      `${name} carries the completeness note on row ${noteRow} — every sheet a reader opens does, or they learn not to look`,
     );
   }
 
@@ -1212,7 +1249,7 @@ export async function runClosingEngineExportTests() {
     ["a month with no prior to compare against", await buildWith(coverageOf([coverageEntry("overseas", 1)], false))],
     ["a coverage check that could not run", await buildWith(null)],
   ] as const) {
-    const quietNote = readRow(await book.file("xl/worksheets/sheet1.xml")!.async("string"), 2).A ?? "";
+    const quietNote = readRow(await book.file("xl/worksheets/sheet1.xml")!.async("string"), 3).A ?? "";
     const quietCard = await book.file(CLOSING_ENGINE_TEMPLATE_MANIFEST.sheets["Rep Card"]!.file)!.async("string");
     assert.doesNotMatch(quietNote, /INCOMPLETE/, `${what} says nothing in the masthead`);
     assert.doesNotMatch(readRow(quietCard, 2).A ?? "", /INCOMPLETE/, `${what} says nothing on the card either`);

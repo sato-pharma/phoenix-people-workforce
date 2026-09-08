@@ -1043,13 +1043,26 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
 
   // The completeness note, on its own row, on every sheet that carries a caption.
   //
-  // Row 2 rather than the end of A1: the caption overflows right into the emblem and
-  // `clearTitleEmblem` answers by sliding the emblem along, so a note appended there pushed the
-  // logo past the last column on 8 of the 12 sheets. Row 2 is empty on every sheet in the owner's
-  // own template and the emblem anchors to row 1 alone, so the note has a line to itself and
-  // nothing to collide with.
+  // Not the end of A1: the caption overflows right into the emblem and `clearTitleEmblem` answers
+  // by sliding the emblem along, so a note appended there pushed the logo past the last column on 8
+  // of the 12 sheets. It needs a line of its own.
   //
-  // The Rep Card is skipped because it already carries the short form on A2 — it is the one sheet
+  // ROW 3, NOT ROW 2 -- and row 2 is why this note has been unreadable for as long as it has
+  // existed. Row 2 is EMPTY in the owner's template, which is what the reasoning here used to
+  // check, but empty is not free: every navigation button on every sheet is a drawing anchored
+  // from row 2, so the note was written underneath them and the buttons painted straight over it.
+  // Measured on the owner's own September export, and it is the first thing his 2026-09-08 design
+  // brief forbids: "Warning must NEVER overlap buttons."
+  //
+  // Raising row 2 does not fix it, which is worth knowing before someone tries: the buttons are
+  // anchored INTO the row below and a `twoCellAnchor` resizes with its rows, so a taller row 2
+  // yields a taller button that still overhangs. The row the note sits in has to change.
+  //
+  // The approved reference separates the three the same way -- title row 1, navigation row 2,
+  // warning strip row 3, at 44/37/30 points. `EXECUTIVE_GEOMETRY` carries those heights and
+  // `fitNavigationBand` clamps the buttons to row 2, so the strip below them is clear.
+  //
+  // The Rep Card is skipped because it already carries the short form on A2 -- it is the one sheet
   // whose row 2 is spoken for, and the one most likely to be shared on its own. A sheet with no
   // caption (Data) has no emblem and no reader, and is skipped with it.
   if (coverageNote) {
@@ -1057,7 +1070,7 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
       if (name === "Rep Card") continue;
       const cells = sheet.cells;
       if (!cells?.A1) continue;
-      cells.A2 = coverageNote.full;
+      cells.A3 = coverageNote.full;
     }
   }
 
