@@ -79,7 +79,7 @@ export function runCrmDayMapPushdownTests() {
   // Both paths return the same rows, so a revert to a single company-wide scan for a bounded caller
   // is invisible to any behavioural test here — only the query strategy differs. Guard it at the
   // source, like the CRM connector's N+1 guard. Plain string checks, deliberately not a regex over
-  // match-anything (that shape is the SonarQube S5852 ReDoS hotspot that blocked an earlier PR).
+  // match-anything — a quantifier over `[\s\S]` is the classic ReDoS shape, banned here on sight.
   const source = readFileSync(
     new URL("../src/lib/attendance/crm-day-maps.ts", import.meta.url),
     "utf8",
