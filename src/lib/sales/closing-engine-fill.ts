@@ -7,7 +7,7 @@ import {
 } from "./closing-engine-template-generated";
 import { ACHIEVEMENT_ARROW_AT } from "./closing-engine-data";
 import { CLOSING_ENGINE_EMBLEM_ON_DARK_PNG_BASE64 } from "./closing-engine-emblem-on-dark";
-import { applyExecutiveGeometry, ensureAccentButtonStyle, fitNavigationBand, paintExecutiveBands, resolveSheetParts } from "./closing-executive-look";
+import { applyExecutiveGeometry, ensureAccentButtonStyle, fitNavigationBand, paintExecutiveBands, resolveSheetParts, useOnDarkEmblem } from "./closing-executive-look";
 import { PIVOT_GRID_SPECS, buildPivotGrid, type GridCellKind } from "./closing-pivot-grid";
 
 /**
@@ -337,7 +337,10 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   // a shape still hanging over the warning strip. Both builds need it -- the .xlsm carries the
   // owner's own buttons, which have the same overhang the clones inherited from them.
   const finalParts = await resolveSheetParts(zip);
-  await paintExecutiveBands(zip, finalParts);
+  const banded = await paintExecutiveBands(zip, finalParts);
+  // Only the sheets that actually got a navy masthead. A sheet still on white keeps the black-SATO
+  // mark, which is the correct one for it.
+  await useOnDarkEmblem(zip, finalParts, banded);
   await fitNavigationBand(zip, finalParts);
 
   // Directory entries must not reach the file, and this has to be the LAST thing done to the zip.

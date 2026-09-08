@@ -1,5 +1,7 @@
 import type JSZip from "jszip";
 
+import { CLOSING_ENGINE_EMBLEM_ON_DARK_PNG_BASE64 } from "./closing-engine-emblem-on-dark";
+
 /**
  * The Monthly Closing workbook's approved executive geometry.
  *
@@ -46,15 +48,18 @@ export const EXECUTIVE_GEOMETRY: Record<string, { body: number | null; cols: Rec
     cols: { 1: 22, 2: 16, 3: 16, 4: 14, 5: 14, 6: 14, 7: 14, 8: 14, 9: 14, 10: 14, 11: 14 },
     head: { 1: 34, 2: 34, 3: 34, 4: 26, 5: 27, 6: 8, 7: 22, 8: 22, 9: 22 },
   },
-  Contents: {
-    body: null,
-    cols: { 1: 2.2, 2: 22, 3: 36, 4: 14, 5: 14, 6: 14, 7: 14, 8: 14 },
-    head: {
-      1: 10, 2: 26, 3: 26, 4: 26, 5: 8, 6: 22, 7: 28, 8: 28, 9: 28, 10: 28, 11: 8, 12: 22, 13: 28,
-      14: 28, 15: 28, 16: 8, 17: 22, 18: 28, 19: 28, 20: 8, 21: 22, 22: 28, 23: 28, 24: 28, 25: 8,
-      26: 22, 27: 28, 28: 28, 29: 28, 30: 8, 31: 28,
-    },
-  },
+  // CONTENTS IS DELIBERATELY ABSENT, and this is the entry that must not come back.
+  //
+  // The reference's contents page is a THREE-column layout: a narrow rail at 2.2, the page name at
+  // 22, the description at 36. Ours is a TWO-column page that `addIndexSheet` authors itself -- the
+  // name at 28 and the description at 96 -- so the reference's widths do not describe it, they
+  // destroy it. Applied, column A shrank to 2.2 and every page name was clipped to its first
+  // letter: a contents page reading "O", "R", "T", "C" down the side, with every description cut
+  // off mid-word. It shipped that way in the first geometry PR and was live until this was removed.
+  //
+  // Porting the reference's contents layout means rebuilding the page on three columns, which is a
+  // change to `addIndexSheet` and to the tests that pin its banner -- not a row of numbers in a
+  // table. Until someone does that, this page keeps the geometry it was built with.
   Details: {
     body: 20,
     cols: { 1: 16, 2: 16, 3: 18, 4: 18, 5: 18, 6: 16, 7: 16, 8: 16, 9: 16, 10: 16, 11: 16, 12: 16, 13: 16, 14: 16, 15: 16, 16: 16, 17: 16, 18: 16 },
@@ -534,6 +539,63 @@ export async function paintExecutiveBands(zip: JSZip, sheetParts: Map<string, st
     }
   }
   return painted;
+}
+
+/**
+ * Put the ON-DARK lockup on every sheet whose masthead is now navy.
+ *
+ * The template's emblem is the on-LIGHT mark: its "SATO" is set in BLACK. That is correct on the
+ * white mastheads the workbook used to have, and it disappears entirely against the navy title band
+ * -- the reader is left with the word "PHARMA" floating over a dark rectangle. `addIndexEmblem` hit
+ * exactly this on the contents cover and answered it the same way; painting the band across the
+ * other sheets extends the problem to all of them, so it extends the answer too.
+ *
+ * The two files differ only in that one fill, so this repoints the RELATIONSHIP rather than moving,
+ * resizing or re-anchoring anything. Nothing about the emblem's placement changes -- which matters,
+ * because the placement maths on this sheet has already produced a shape with a negative width once
+ * tonight, and the least it can be asked to do here is nothing at all.
+ *
+ * Sheets are named by the caller, so only the ones that actually got a navy band are touched: a
+ * sheet still on a white masthead keeps the black-SATO mark that is right for it.
+ */
+export async function useOnDarkEmblem(zip: JSZip, sheetParts: Map<string, string>, sheets: string[]): Promise<string[]> {
+  if (!sheets.length) return [];
+  const emblemPart = "xl/media/phx-emblem-on-dark.png";
+  if (!zip.file(emblemPart)) {
+    zip.file(emblemPart, Buffer.from(CLOSING_ENGINE_EMBLEM_ON_DARK_PNG_BASE64, "base64"));
+  }
+
+  const swapped: string[] = [];
+  for (const sheetName of sheets) {
+    const part = sheetParts.get(sheetName);
+    if (!part) continue;
+    const relsPath = part.replace(/worksheets\/([^/]+)$/, "worksheets/_rels/$1.rels");
+    const relsFile = zip.file(relsPath);
+    if (!relsFile) continue;
+    const drawing = /Target="\.\.\/(drawings\/drawing\d+\.xml)"/.exec(await relsFile.async("string"))?.[1];
+    if (!drawing) continue;
+
+    const drawingFile = zip.file(`xl/${drawing}`);
+    const drawingRelsFile = zip.file(`xl/drawings/_rels/${drawing.replace(/^drawings\//, "")}.rels`);
+    if (!drawingFile || !drawingRelsFile) continue;
+
+    // The picture's own r:embed, so a drawing carrying other relationships - a slicer's, a
+    // hyperlink's - is not repointed at an image by accident.
+    const drawingXml = await drawingFile.async("string");
+    const embed = /<xdr:pic\b[\s\S]*?<a:blip\b[^>]*\br:embed="([^"]+)"/.exec(drawingXml)?.[1];
+    if (!embed) continue;
+
+    const rels = await drawingRelsFile.async("string");
+    const retargeted = rels.replace(/<Relationship\b[^>]*\/>/g, (tag) =>
+      new RegExp(`\\bId="${embed}"`).test(tag) && /relationships\/image/.test(tag)
+        ? tag.replace(/\bTarget="[^"]*"/, 'Target="../media/phx-emblem-on-dark.png"')
+        : tag,
+    );
+    if (retargeted === rels) continue;
+    zip.file(drawingRelsFile.name, retargeted);
+    swapped.push(sheetName);
+  }
+  return swapped;
 }
 
 export async function fitNavigationBand(zip: JSZip, sheetParts: Map<string, string>): Promise<string[]> {
