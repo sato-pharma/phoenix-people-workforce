@@ -13,9 +13,14 @@ import { DEFAULT_RADIUS_KM, findKnownHospitals, findNearbyContacts, mergeHospita
 import { getTerritoryReference, resolveTerritory, type TerritoryReference } from "./reference";
 import {
   EMPTY_TERRITORY,
+  PHOENIX_VENUE_ID_PREFIX,
+  type NearbyDoctor,
+  type NearbyHospital,
+  type PharmacyCoordinates,
   type PharmacyDistributorCode,
   type PharmacyProfile,
   type PharmacySalesPeriod,
+  type PharmacyTerritory,
 } from "./types";
 
 /** Sales periods shown, newest first. A pharmacy with four years of history is unreadable whole. */
@@ -26,6 +31,14 @@ export type PharmacyProfileRequest = {
   distributorCode: string | null;
   /** Required when there is no code — the Google-discovered and marketing-only paths. */
   name: string | null;
+  /**
+   * A venue registered in Phoenix itself, by its own code (`DOP-000079`).
+   *
+   * Takes precedence over every other identifier here, because a venue usually has NO row in the
+   * customer map: the distributor/customer pair cannot find it, and the name lookup would find a
+   * different pharmacy that happens to share its name.
+   */
+  phoenixPharmacyCode?: string | null;
   radiusKm?: number;
 };
 
@@ -132,12 +145,194 @@ async function loadSales(pairs: Array<{ clientCode: string; distributorCode: str
 }
 
 /**
+ * Where the pharmacy is and who is around it — the half of a profile that asks the same question
+ * whichever table the pharmacy came from.
+ *
+ * Shared rather than copied: the venue path below asks it too, and two copies of "no check-in
+ * within N km" would drift apart the first time one of them was reworded.
+ */
+async function loadSurroundings(input: {
+  name: string;
+  radiusKm: number;
+  territory: PharmacyTerritory;
+}): Promise<{
+  coordinates: PharmacyCoordinates | null;
+  hospitals: NearbyHospital[];
+  nearbyDoctors: NearbyDoctor[];
+  warnings: string[];
+}> {
+  const { name, radiusKm, territory } = input;
+  const coordinates = await resolvePharmacyCoordinates({ brickId: territory.brickId, name });
+  const centre = coordinates ? { latitude: coordinates.latitude, longitude: coordinates.longitude } : null;
+
+  const [contacts, knownHospitals] = await Promise.all([
+    centre ? findNearbyContacts(centre, radiusKm) : Promise.resolve({ doctors: [], hospitals: [] }),
+    findKnownHospitals({ brickId: territory.brickId, centre, radiusKm }),
+  ]);
+  const nearbyDoctors = contacts.doctors;
+  // CRM hospitals first: they are the only ones carrying a measured distance, and `mergeHospitals`
+  // keeps whichever entry for a given name actually knows how far away it is.
+  const hospitals = mergeHospitals(contacts.hospitals, knownHospitals);
+
+  const warnings: string[] = [];
+  if (!coordinates) {
+    warnings.push(
+      "No coordinates for this pharmacy — no rep has captured it, its address was never geocoded, and its brick has no centroid. Nearby doctors cannot be listed without a point.",
+    );
+  } else if (coordinates.source === "brick_centroid") {
+    warnings.push(
+      `Location is the centre of brick ${territory.brickName ?? territory.brickId ?? "unknown"}, not the pharmacy itself. Distances below are from that centre.`,
+    );
+  }
+
+  if (centre && nearbyDoctors.length === 0) {
+    warnings.push(
+      `No rep check-in within ${radiusKm} km. Check-ins are a partial feed — this means no visit was recorded here, not that no doctor practises nearby.`,
+    );
+  }
+
+  return { coordinates, hospitals, nearbyDoctors, warnings };
+}
+
+/** ONE string literal — see the note on VENUE_COLUMNS in search.ts for why that matters. */
+const VENUE_PROFILE_COLUMNS =
+  "phoenix_pharmacy_code, pharmacy_name, pharmacy_address, brick_id, area_code, region_code, verification_status, codes:direct_order_pharmacy_distributor_codes(distributor_code, customer_code, mapped_brick_id, mapped_area_code, mapped_region_code)";
+
+type VenueProfileRow = {
+  area_code: string | null;
+  brick_id: string | null;
+  codes:
+    | Array<{
+        customer_code: string | null;
+        distributor_code: string | null;
+        mapped_area_code: string | null;
+        mapped_brick_id: string | null;
+        mapped_region_code: string | null;
+      }>
+    | null;
+  pharmacy_address: string | null;
+  pharmacy_name: string | null;
+  phoenix_pharmacy_code: string | null;
+  region_code: string | null;
+  verification_status: string | null;
+};
+
+/**
+ * The profile for a venue registered in Phoenix itself.
+ *
+ * Deliberately NOT routed through the customer-map path below, for one reason. That path widens
+ * from the name — `loadSiblingRows` matches `customer_name` exactly but case-insensitively — to
+ * pick up the same pharmacy filed by other distributors. For a venue that is unsafe: "الانسانية"
+ * is FIVE different pharmacies in production, in Beheira, Cairo, Giza, Assiut and Sohag, so
+ * widening by name would hang another pharmacy's codes, and its SALES, on this one.
+ *
+ * A venue's identity is the distributor codes it declares and nothing else. Where it declares
+ * none, this says so rather than going looking — which is the common case, and exactly why the
+ * venue can be absent from every distributor file and still be real.
+ */
+async function loadVenueProfile(input: { phoenixPharmacyCode: string; radiusKm: number }): Promise<PharmacyProfile> {
+  const supabase = getSupabaseAdmin();
+  const reference = await getTerritoryReference();
+
+  const { data, error } = await supabase
+    .from("direct_order_pharmacies")
+    .select(VENUE_PROFILE_COLUMNS)
+    .eq("phoenix_pharmacy_code", input.phoenixPharmacyCode)
+    .maybeSingle();
+  if (error) throw new Error(`Venue lookup failed: ${error.message}`);
+
+  const row = (data ?? null) as VenueProfileRow | null;
+  if (!row) throw new PharmacyNotFoundError(`venue ${input.phoenixPharmacyCode}`);
+
+  const name = String(row.pharmacy_name ?? "").trim();
+  const territory = resolveTerritory(reference, {
+    areaCode: row.area_code,
+    brickId: row.brick_id,
+    regionCode: row.region_code,
+  });
+
+  const distributorCodes: PharmacyDistributorCode[] = (row.codes ?? [])
+    .map((code) => {
+      const distributorCode = String(code.distributor_code ?? "").trim();
+      return {
+        customerCode: String(code.customer_code ?? "").trim(),
+        distributorCode,
+        distributorName: reference.distributorNames.get(distributorCode) ?? distributorCode,
+        fromReferenceList: false,
+        // The code's own mapped territory where the customer map answered for it, the venue's
+        // otherwise — the same coalesce phx_search_direct_order_customers applies.
+        territory: resolveTerritory(reference, {
+          areaCode: code.mapped_area_code ?? row.area_code,
+          brickId: code.mapped_brick_id ?? row.brick_id,
+          regionCode: code.mapped_region_code ?? row.region_code,
+        }),
+      };
+    })
+    .filter((entry) => entry.distributorCode.length > 0 && entry.customerCode.length > 0)
+    .sort((a, b) => (a.distributorName ?? "").localeCompare(b.distributorName ?? ""));
+
+  const [sales, surroundings] = await Promise.all([
+    loadSales(
+      distributorCodes.map((entry) => ({ clientCode: entry.customerCode, distributorCode: entry.distributorCode })),
+    ),
+    loadSurroundings({ name, radiusKm: input.radiusKm, territory }),
+  ]);
+  const centre = surroundings.coordinates
+    ? { latitude: surroundings.coordinates.latitude, longitude: surroundings.coordinates.longitude }
+    : null;
+
+  const warnings: string[] = [];
+  if (distributorCodes.length === 0) {
+    warnings.push(
+      "This venue carries no distributor code, so nothing in the customer directory can be attributed to it. The sales section below is empty for that reason, not because it has never sold.",
+    );
+  }
+
+  const verificationStatus = String(row.verification_status ?? "").trim();
+  if (verificationStatus && verificationStatus !== "verified") {
+    warnings.push(
+      `Registered by hand at the direct-order desk and still "${verificationStatus.replace(/_/g, " ")}" — nobody has yet confirmed that its distributor codes are real.`,
+    );
+  }
+
+  warnings.push(...surroundings.warnings);
+
+  if (sales.length === 0) {
+    warnings.push("No sales rows for this venue in the customer directory.");
+  }
+
+  return {
+    address: row.pharmacy_address?.trim() || null,
+    coordinates: surroundings.coordinates,
+    distributorCodes,
+    googleAddress: null,
+    googleMapsUrl: googleMapsUrlFor(centre, name),
+    hospitals: surroundings.hospitals,
+    id: `${PHOENIX_VENUE_ID_PREFIX}${String(row.phoenix_pharmacy_code ?? "").trim()}`,
+    name,
+    nearbyDoctors: surroundings.nearbyDoctors,
+    origin: "phoenix",
+    sales,
+    territory: territory.brickId || territory.areaCode ? territory : EMPTY_TERRITORY,
+    territoryDerivedFromKm: null,
+    warnings,
+  };
+}
+
+/**
  * Build the full profile. Throws `PharmacyNotFoundError` only when the identifier resolves to
  * nothing at all — a pharmacy with no sales, no coordinates and no nearby doctors still returns a
  * profile, with `warnings` explaining each empty section. An empty section that looks like a zero
  * is the failure mode this guards against.
  */
 export async function loadPharmacyProfile(request: PharmacyProfileRequest): Promise<PharmacyProfile> {
+  // Answered first and returned whole: a venue is identified by its own code and must not be
+  // widened by name. See loadVenueProfile.
+  const phoenixPharmacyCode = request.phoenixPharmacyCode?.trim();
+  if (phoenixPharmacyCode) {
+    return await loadVenueProfile({ phoenixPharmacyCode, radiusKm: request.radiusKm ?? DEFAULT_RADIUS_KM });
+  }
+
   const supabase = getSupabaseAdmin();
   const reference = await getTerritoryReference();
   const radiusKm = request.radiusKm ?? DEFAULT_RADIUS_KM;
@@ -217,40 +412,17 @@ export async function loadPharmacyProfile(request: PharmacyProfileRequest): Prom
     distributorCodes.push(entry);
   }
 
-  const [sales, coordinates] = await Promise.all([
+  const [sales, surroundings] = await Promise.all([
     loadSales(
       distributorCodes
         .filter((entry) => !entry.fromReferenceList)
         .map((entry) => ({ clientCode: entry.customerCode, distributorCode: entry.distributorCode })),
     ),
-    resolvePharmacyCoordinates({ brickId: territory.brickId, name }),
+    loadSurroundings({ name, radiusKm, territory }),
   ]);
-
+  const { coordinates, hospitals, nearbyDoctors } = surroundings;
   const centre = coordinates ? { latitude: coordinates.latitude, longitude: coordinates.longitude } : null;
-  const [contacts, knownHospitals] = await Promise.all([
-    centre ? findNearbyContacts(centre, radiusKm) : Promise.resolve({ doctors: [], hospitals: [] }),
-    findKnownHospitals({ brickId: territory.brickId, centre, radiusKm }),
-  ]);
-  const nearbyDoctors = contacts.doctors;
-  // CRM hospitals first: they are the only ones carrying a measured distance, and `mergeHospitals`
-  // keeps whichever entry for a given name actually knows how far away it is.
-  const hospitals = mergeHospitals(contacts.hospitals, knownHospitals);
-
-  if (!coordinates) {
-    warnings.push(
-      "No coordinates for this pharmacy — no rep has captured it, its address was never geocoded, and its brick has no centroid. Nearby doctors cannot be listed without a point.",
-    );
-  } else if (coordinates.source === "brick_centroid") {
-    warnings.push(
-      `Location is the centre of brick ${territory.brickName ?? territory.brickId ?? "unknown"}, not the pharmacy itself. Distances below are from that centre.`,
-    );
-  }
-
-  if (centre && nearbyDoctors.length === 0) {
-    warnings.push(
-      `No rep check-in within ${radiusKm} km. Check-ins are a partial feed — this means no visit was recorded here, not that no doctor practises nearby.`,
-    );
-  }
+  warnings.push(...surroundings.warnings);
 
   if (sales.length === 0) {
     warnings.push("No sales rows for this pharmacy in the customer directory.");

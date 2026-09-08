@@ -24,7 +24,7 @@ import { __testables as searchTestables } from "../src/lib/pharmacy-search/searc
 // instead of the brick table, and a Google-derived brick presented as if it were a mapping.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { collapseByPharmacy, looksLikeCode, rankHits, sanitizeForOrFilter } = searchTestables;
+const { collapseByPharmacy, looksLikeCode, rankHits, sanitizeForOrFilter, venueRowToHit } = searchTestables;
 
 /** Source-scanning assertions read CODE, never prose — a comment explaining a rule is not a breach. */
 function stripComments(source: string): string {
@@ -63,6 +63,7 @@ function hit(overrides: Partial<Parameters<typeof collapseByPharmacy>[0][number]
     matchedOn: "name" as const,
     name: "الصيدلية الحديثة",
     origin: "database" as const,
+    phoenixPharmacyCode: null,
     territory: {
       areaCode: "HEL",
       areaName: "Heliopolis",
@@ -541,5 +542,161 @@ export function runPharmacySearchTests() {
       "the live-brick test must be satisfied by the territory reference's own brick map",
     );
     assert.ok(MAX_BRICK_SNAP_KM > 0, "the snap ceiling must stay a real distance");
+  }
+
+  // ── A pharmacy Phoenix registered ITSELF must be findable here ─────────────
+  // Owner rule, 2026-08-04, written into phx_search_direct_order_customers: "when any new pharmacy
+  // is added any way into Phoenix, the drop list is updated." A pharmacy is born down two disjoint
+  // paths and neither writes the other's table — the distributor customer directory, and
+  // `direct_order_pharmacies` when somebody registers a venue at the direct-order desk or inline
+  // while submitting an order. The picker has UNIONed both since that day; this search box read
+  // only the first, so it answered for half the database while sounding like it answered for all
+  // of it.
+  //
+  // Measured on production 2026-09-08: DOP-000079 "الإنسانية" (Zagazig, brick B211-3, area D24) was
+  // registered at 11:18 carrying no distributor code, and at 15:33 this box still said "Not in the
+  // Phoenix database" — whose next step is the Google fallback, ending in a saved discovery for a
+  // pharmacy Phoenix already held.
+  {
+    const venueReference = reference();
+    venueReference.bricks.set("B211-3", {
+      areaCode: "D24",
+      blockCode: "B211",
+      brickId: "B211-3",
+      brickName: "الزقازيق",
+      regionCode: "D2",
+    });
+    venueReference.areaNames.set("D24", "Zagazig");
+    venueReference.regionNames.set("D2", "Delta 2");
+
+    const venue = {
+      area_code: "D24",
+      brick_id: "B211-3",
+      codes: [] as Array<{
+        customer_code: string | null;
+        distributor_code: string | null;
+        mapped_area_code: string | null;
+        mapped_brick_id: string | null;
+        mapped_region_code: string | null;
+      }>,
+      pharmacy_address: "الزقازيق",
+      pharmacy_name: "الإنسانية",
+      phoenix_pharmacy_code: "DOP-000079",
+      region_code: "D2",
+    };
+
+    // The case that matters most: a venue carrying NO distributor code. It is the common shape — a
+    // rep types the pharmacy in while submitting an order — and it is the one row a code-keyed
+    // search can never reach, in either table.
+    const codeless = venueRowToHit(venue, venueReference, "name");
+    assert.ok(codeless, "a venue with no distributor code is still a result — it is a real pharmacy");
+    assert.equal(codeless?.origin, "phoenix", "and it must say which half of the estate it came from");
+    assert.equal(codeless?.id, "phoenix:DOP-000079", "the id is what the profile is then fetched by");
+    assert.equal(codeless?.phoenixPharmacyCode, "DOP-000079");
+    assert.equal(
+      codeless?.distributorCount,
+      0,
+      "0 distributors is the truth for a codeless venue; borrowing a 1 would read as a mapping it does not have",
+    );
+    assert.equal(codeless?.customerCode, null, "no code means no code — never an invented one");
+    assert.equal(codeless?.territory.areaName, "Zagazig", "the venue's own brick still resolves its area");
+    assert.equal(codeless?.territory.regionName, "Delta 2");
+
+    // Two codes: ONE row, counted like any pharmacy carried by two distributors. The code shown is
+    // deterministic — the embed's order is not specified, and a results row whose distributor
+    // changes between keystrokes reads as a bug.
+    const twoCodes = venueRowToHit(
+      {
+        ...venue,
+        codes: [
+          { customer_code: "344524", distributor_code: "IS", mapped_area_code: null, mapped_brick_id: null, mapped_region_code: null },
+          { customer_code: "0001558680", distributor_code: "PS", mapped_area_code: null, mapped_brick_id: null, mapped_region_code: null },
+        ],
+      },
+      venueReference,
+      "customer_code",
+    );
+    assert.equal(twoCodes?.distributorCount, 2, "one venue, one row, and the count says how many codes it holds");
+    assert.equal(twoCodes?.distributorCode, "IS", "the codes are sorted, so the row is stable across renders");
+    assert.equal(twoCodes?.distributorName, "Ibn sina", "the distributor's real name, never its bare code");
+    assert.equal(twoCodes?.customerCode, "344524");
+
+    // The code's MAPPED territory wins over the venue's own — the same coalesce
+    // phx_search_direct_order_customers applies, so this box and the direct-order picker cannot
+    // disagree about which area a venue sits in.
+    const mapped = venueRowToHit(
+      {
+        ...venue,
+        codes: [
+          { customer_code: "1", distributor_code: "PS", mapped_area_code: "HEL", mapped_brick_id: "B4-58", mapped_region_code: "CA" },
+        ],
+      },
+      venueReference,
+      "customer_code",
+    );
+    assert.equal(mapped?.territory.brickId, "B4-58", "the customer map's own mapping for that code wins");
+    assert.equal(mapped?.territory.areaName, "Heliopolis");
+
+    // A row nobody can read, or nobody can open, is not a result.
+    assert.equal(venueRowToHit({ ...venue, pharmacy_name: null }, venueReference, "name"), null);
+    assert.equal(venueRowToHit({ ...venue, phoenix_pharmacy_code: null }, venueReference, "name"), null);
+
+    // The search must actually reach the venue table. Comments are stripped first: this file and
+    // that one both explain the rule at length, and an explanation is not a query.
+    const searchSource = stripComments(
+      readFileSync(fileURLToPath(new URL("../src/lib/pharmacy-search/search.ts", import.meta.url)), "utf8"),
+    );
+    assert.match(
+      searchSource,
+      /\.from\("direct_order_pharmacies"\)\s*\.select\(VENUE_COLUMNS\)\s*\.eq\("active", true\)\s*\.or\(/,
+      "searchPharmacies must search direct_order_pharmacies BY NAME — a venue registered in Phoenix "
+        + "IS in the database, and answering 'not in the database' for one sends the reader to Google "
+        + "to save a discovery for a pharmacy we already hold. Pinned as the whole branch on purpose: "
+        + "the table is named twice in this file, so matching the name alone stayed green when the "
+        + "name branch was repointed at another table",
+    );
+    // The other half of the same claim: the venue's distributor codes have to come back WITH it, or
+    // every venue renders as though it carried none.
+    assert.match(
+      searchSource,
+      /codes:direct_order_pharmacy_distributor_codes\(/,
+      "the venue select must embed direct_order_pharmacy_distributor_codes — without it a venue that "
+        + "holds a code reads as one that holds none",
+    );
+    // PostgREST parses or=(...) itself, and a DOT inside it separates the column from the operator.
+    // "ن.م" appears in a great many of these names and sanitizeForOrFilter does not strip dots, so
+    // unquoted those searches do not fail — they quietly mean something else.
+    assert.match(
+      searchSource,
+      /pharmacy_name\.ilike\."\$\{like\}"/,
+      "the venue .or() must double-quote its values, or a pharmacy name carrying a dot changes the query",
+    );
+
+    // Clicking a venue must fetch its profile BY VENUE CODE. Falling through to the name would
+    // resolve a different pharmacy that happens to share it.
+    assert.match(
+      workspaceSource,
+      /params\.set\("venue", hit\.phoenixPharmacyCode\)/,
+      "the profile fetch must name the venue — a venue usually has no customer-map row at all",
+    );
+
+    // And the venue profile must not widen by name. "الانسانية" is FIVE different pharmacies in
+    // production (Beheira, Cairo, Giza, Assiut, Sohag); loadSiblingRows would hang another one's
+    // codes — and its SALES — on this venue.
+    const profileSource = readFileSync(
+      fileURLToPath(new URL("../src/lib/pharmacy-search/profile.ts", import.meta.url)),
+      "utf8",
+    );
+    const venueStart = profileSource.indexOf("async function loadVenueProfile");
+    const venueEnd = profileSource.indexOf("export async function loadPharmacyProfile", venueStart);
+    assert.ok(
+      venueStart !== -1 && venueEnd > venueStart,
+      "could not isolate loadVenueProfile — this test is measuring nothing until it can",
+    );
+    assert.ok(
+      !/loadSiblingRows|source_of_sales_customer_map/.test(stripComments(profileSource.slice(venueStart, venueEnd))),
+      "the venue profile must be built from the venue's OWN declared codes — widening by name "
+        + "attaches a different pharmacy's codes and sales to it",
+    );
   }
 }

@@ -110,6 +110,10 @@ export function PharmacySearchWorkspace() {
       setCandidates(null);
       try {
         const params = new URLSearchParams({ radius: String(radiusKm) });
+        // A venue is fetched by its OWN code. It usually has no customer-map row, so the
+        // distributor/customer pair below would find nothing — or, worse, a different pharmacy
+        // that happens to share its name.
+        if (hit.phoenixPharmacyCode) params.set("venue", hit.phoenixPharmacyCode);
         if (hit.distributorCode) params.set("distributor", hit.distributorCode);
         if (hit.customerCode) params.set("code", hit.customerCode);
         params.set("name", hit.name);
@@ -311,6 +315,9 @@ export function PharmacySearchWorkspace() {
                       // so a phone showed a bare number with no owner.
                       { label: "Distributor", value: hit.distributorName ?? "—" },
                       { label: "Code", value: hit.customerCode ?? "—" },
+                      ...(hit.phoenixPharmacyCode
+                        ? [{ label: "Phoenix venue", value: hit.phoenixPharmacyCode }]
+                        : []),
                     ]}
                   />
                 </PortalRecordCard>
@@ -336,7 +343,14 @@ export function PharmacySearchWorkspace() {
                       key={hit.id}
                       onClick={() => void openProfile(hit)}
                     >
-                      <td className={`${bodyCell} font-black text-slate-900`}>{hit.name}</td>
+                      <td className={`${bodyCell} font-black text-slate-900`}>
+                        {hit.name}
+                        {hit.phoenixPharmacyCode ? (
+                          <span className="ml-2 whitespace-nowrap border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[11px] font-black uppercase tracking-[0.12em] text-orange-700">
+                            {hit.phoenixPharmacyCode}
+                          </span>
+                        ) : null}
+                      </td>
                       <td className={bodyCell}>{hit.territory.brickName ?? hit.territory.brickId ?? "—"}</td>
                       <td className={bodyCell}>{hit.territory.areaName ?? "—"}</td>
                       <td className={bodyCell}>{hit.territory.regionName ?? "—"}</td>

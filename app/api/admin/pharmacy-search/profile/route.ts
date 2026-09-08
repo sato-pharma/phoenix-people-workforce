@@ -30,6 +30,9 @@ export async function GET(request: Request) {
         customerCode: params.get("code"),
         distributorCode: params.get("distributor"),
         name: params.get("name"),
+        // A Phoenix-registered venue is identified by its OWN code: it usually has no row in the
+        // customer map, so the distributor/customer pair below cannot find it.
+        phoenixPharmacyCode: params.get("venue"),
         radiusKm: parseRadius(params.get("radius")),
       }),
     );

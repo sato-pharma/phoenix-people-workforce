@@ -14,8 +14,29 @@ export type PharmacySearchOrigin =
   | "database"
   /** A row in `marketing_pharmacies` — captured by a rep, may not be in any distributor file. */
   | "marketing"
+  /**
+   * A venue registered in Phoenix itself (`direct_order_pharmacies`) — somebody put it through the
+   * direct-order desk. It may hold no distributor code at all, so it can be absent from every
+   * customer file and still be a real pharmacy we sell to. That is precisely why it has to appear
+   * here: without it, "not in the database" is answered about half the database.
+   */
+  | "phoenix"
   /** Found on Google Places just now. NOT in Phoenix. Never treat as an authority. */
   | "google";
+
+/**
+ * `id` prefix for a Phoenix-registered venue, mirroring `google:` for a Places result.
+ *
+ * A venue usually has no row in `source_of_sales_customer_map`, so distributor+customer code
+ * cannot identify it and the profile has to be fetched by its own code instead.
+ */
+export const PHOENIX_VENUE_ID_PREFIX = "phoenix:";
+
+/** The venue code inside a `phoenix:DOP-000079` id, or null when the id is not one. */
+export function phoenixVenueCodeFromId(id: string | null | undefined): string | null {
+  if (typeof id !== "string" || !id.startsWith(PHOENIX_VENUE_ID_PREFIX)) return null;
+  return id.slice(PHOENIX_VENUE_ID_PREFIX.length).trim() || null;
+}
 
 export type PharmacySearchMatchKind =
   | "customer_code"
@@ -47,6 +68,11 @@ export type PharmacySearchHit = {
   matchedOn: PharmacySearchMatchKind;
   name: string;
   origin: PharmacySearchOrigin;
+  /**
+   * The venue's own Phoenix code (`DOP-000079`), set ONLY when `origin` is "phoenix" and null on
+   * every other hit. It is what the profile is fetched by — see `PHOENIX_VENUE_ID_PREFIX`.
+   */
+  phoenixPharmacyCode: string | null;
   territory: PharmacyTerritory;
 };
 

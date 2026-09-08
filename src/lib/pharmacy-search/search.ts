@@ -12,7 +12,7 @@ import { normalizeArabicPharmacyName } from "@/lib/pharmacy-master/pharmacy-matc
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { getTerritoryReference, resolveTerritory, type TerritoryReference } from "./reference";
-import type { PharmacySearchHit, PharmacySearchMatchKind } from "./types";
+import { PHOENIX_VENUE_ID_PREFIX, type PharmacySearchHit, type PharmacySearchMatchKind } from "./types";
 
 /** Hard cap on rows returned to the browser. Deep paging is not what a search box is for. */
 export const PHARMACY_SEARCH_LIMIT = 60;
@@ -91,6 +91,7 @@ function toHit(
     matchedOn,
     name,
     origin: "database",
+    phoenixPharmacyCode: null,
     territory: resolveTerritory(reference, {
       areaCode: row.area_code,
       brickId: row.brick_id,
@@ -100,6 +101,104 @@ function toHit(
 }
 
 const CUSTOMER_MAP_COLUMNS = "distributor_code, customer_code, customer_name, address, brick_id, area_code, region_code";
+
+/**
+ * Phoenix's OWN venues — the other half of the estate, and the half this box could not see.
+ *
+ * Owner rule, 2026-08-04, written into `phx_search_direct_order_customers`: "when any new pharmacy
+ * is added any way into Phoenix, the drop list is updated." A pharmacy is born down two disjoint
+ * paths and neither writes the other's table — the distributor customer directory above, and
+ * `direct_order_pharmacies`, written when somebody registers a venue at the direct-order desk or
+ * inline while submitting an order.
+ *
+ * The direct-order picker has UNIONed both since that day. This search read only the distributor
+ * half, so a venue somebody registered here answered "Not in the Phoenix database" — and the
+ * reader's next move is the Google fallback, which ends in a discovery saved for a pharmacy Phoenix
+ * already holds. Measured on production 2026-09-08: DOP-000079 "الإنسانية" (Zagazig, D24) was
+ * registered at 11:18 and was still invisible to this search at 15:33.
+ *
+ * ONE string literal, never a concatenation: supabase-js infers the row type by parsing this
+ * argument as a literal type, and `"a, " + "b"` is not one — the row then degrades to
+ * GenericStringError and the error names the CAST, not this line.
+ */
+const VENUE_COLUMNS =
+  "phoenix_pharmacy_code, pharmacy_name, pharmacy_address, brick_id, area_code, region_code, codes:direct_order_pharmacy_distributor_codes(distributor_code, customer_code, mapped_brick_id, mapped_area_code, mapped_region_code)";
+
+/**
+ * Ceiling on the child-code rows a code search reads, and therefore on the id list built from them.
+ * A PostgREST `.in()` carrying several hundred ids returns ZERO rows and no error, so this stays
+ * far below that — 50 venues matching one typed code is already more than a reader can use.
+ */
+const VENUE_CODE_FETCH_LIMIT = 50;
+
+type VenueCodeRow = {
+  customer_code: string | null;
+  distributor_code: string | null;
+  mapped_area_code: string | null;
+  mapped_brick_id: string | null;
+  mapped_region_code: string | null;
+};
+
+type VenueRow = {
+  area_code: string | null;
+  brick_id: string | null;
+  codes: VenueCodeRow[] | null;
+  pharmacy_address: string | null;
+  pharmacy_name: string | null;
+  phoenix_pharmacy_code: string | null;
+  region_code: string | null;
+};
+
+/**
+ * One venue → ONE hit, carrying its first distributor code.
+ *
+ * One row per venue rather than one per code: the results list keys on `id`, and the profile shows
+ * the full code list anyway. `distributorCount` says how many codes the venue holds, so one
+ * carrying three reads exactly like a pharmacy carried by three distributors — and one carrying
+ * NONE reads as 0 rather than borrowing a 1 it has not earned. A codeless venue is the common case
+ * and half the reason this branch exists: it can be in no distributor file at all.
+ *
+ * The territory is the code's mapped one where it has one and the venue's own otherwise — the same
+ * coalesce `phx_search_direct_order_customers` applies, so this screen and the direct-order picker
+ * cannot disagree about which area a venue sits in.
+ */
+function venueRowToHit(
+  row: VenueRow,
+  reference: TerritoryReference,
+  matchedOn: PharmacySearchMatchKind,
+): PharmacySearchHit | null {
+  const name = row.pharmacy_name?.trim();
+  const phoenixPharmacyCode = row.phoenix_pharmacy_code?.trim();
+  // A row with no name cannot be read and one with no venue code cannot be opened. Both columns are
+  // NOT NULL in the table, so this guards a malformed select rather than a real case.
+  if (!name || !phoenixPharmacyCode) return null;
+
+  // Sorted so the code shown is the same one on every render — the embed's own order is not
+  // specified, and a results row that changes its distributor between keystrokes reads as a bug.
+  const codes = (row.codes ?? [])
+    .filter((code) => (code.distributor_code ?? "").trim().length > 0)
+    .sort((a, b) => (a.distributor_code ?? "").localeCompare(b.distributor_code ?? ""));
+  const first = codes[0] ?? null;
+  const distributorCode = first?.distributor_code?.trim() || null;
+
+  return {
+    address: row.pharmacy_address?.trim() || null,
+    customerCode: first?.customer_code?.trim() || null,
+    distributorCode,
+    distributorCount: codes.length,
+    distributorName: distributorCode ? reference.distributorNames.get(distributorCode) ?? distributorCode : null,
+    id: `${PHOENIX_VENUE_ID_PREFIX}${phoenixPharmacyCode}`,
+    matchedOn,
+    name,
+    origin: "phoenix",
+    phoenixPharmacyCode,
+    territory: resolveTerritory(reference, {
+      areaCode: first?.mapped_area_code ?? row.area_code,
+      brickId: first?.mapped_brick_id ?? row.brick_id,
+      regionCode: first?.mapped_region_code ?? row.region_code,
+    }),
+  };
+}
 
 /**
  * Collapse the same physical pharmacy carried by several distributors into one hit, and count
@@ -236,7 +335,60 @@ export async function searchPharmacies(rawQuery: string): Promise<PharmacySearch
     );
   }
 
-  const settled = await Promise.all(branches);
+  // Phoenix's own venues. Skipped when the query named a DISTRIBUTOR: that banner promises
+  // "pharmacies carried by X", which is a question about X's own customer file, and a venue
+  // registered here is not in it.
+  const venueBranches: Array<PromiseLike<{ kind: PharmacySearchMatchKind; rows: VenueRow[] }>> = [];
+
+  if (!matchedDistributor) {
+    venueBranches.push(
+      supabase
+        .from("direct_order_pharmacies")
+        .select(VENUE_COLUMNS)
+        // `active` alone, deliberately: rejecting a venue as false sets `active = false` in the same
+        // update, and this is the exact rule the direct-order picker applies (`where ph.active`).
+        // Two screens, one definition of which venues exist.
+        .eq("active", true)
+        // The values are DOUBLE-QUOTED. PostgREST parses `or=(...)` itself and a dot separates the
+        // column from the operator inside it — and "ن.م" appears in a great many of these names.
+        // Unquoted, those searches do not fail; they quietly mean something else.
+        .or(`pharmacy_name.ilike."${like}",phoenix_pharmacy_code.ilike."${like}"`)
+        .limit(BRANCH_FETCH_LIMIT)
+        .then(({ data, error }) => {
+          if (error) throw new Error(`Phoenix venue search failed: ${error.message}`);
+          return { kind: "name" as const, rows: (data ?? []) as VenueRow[] };
+        }),
+    );
+
+    if (looksLikeCode(safe)) {
+      venueBranches.push(
+        (async () => {
+          // Two steps rather than a filter on an embedded resource: the child table holds the
+          // distributor's code, and the parent then arrives carrying its FULL code list rather than
+          // only the one that matched — so the count on the row is the venue's, not the query's.
+          const { data: codeRows, error } = await supabase
+            .from("direct_order_pharmacy_distributor_codes")
+            .select("pharmacy_id")
+            .ilike("customer_code", `%${safe}%`)
+            .limit(VENUE_CODE_FETCH_LIMIT);
+          if (error) throw new Error(`Phoenix venue code search failed: ${error.message}`);
+
+          const ids = [...new Set((codeRows ?? []).map((code) => String(code.pharmacy_id ?? "")).filter(Boolean))];
+          if (ids.length === 0) return { kind: "customer_code" as const, rows: [] as VenueRow[] };
+
+          const { data, error: venueError } = await supabase
+            .from("direct_order_pharmacies")
+            .select(VENUE_COLUMNS)
+            .eq("active", true)
+            .in("id", ids);
+          if (venueError) throw new Error(`Phoenix venue lookup failed: ${venueError.message}`);
+          return { kind: "customer_code" as const, rows: (data ?? []) as VenueRow[] };
+        })(),
+      );
+    }
+  }
+
+  const [settled, settledVenues] = await Promise.all([Promise.all(branches), Promise.all(venueBranches)]);
 
   const seenRowKeys = new Set<string>();
   const hits: PharmacySearchHit[] = [];
@@ -250,8 +402,25 @@ export async function searchPharmacies(rawQuery: string): Promise<PharmacySearch
     }
   }
 
+  // Deduped by venue code: the name branch and the code branch can both return the same venue,
+  // and the results list keys on `id`.
+  const venueHits: PharmacySearchHit[] = [];
+  const seenVenues = new Set<string>();
+  for (const branch of settledVenues) {
+    for (const row of branch.rows) {
+      const venueHit = venueRowToHit(row, reference, branch.kind);
+      if (!venueHit || seenVenues.has(venueHit.id)) continue;
+      seenVenues.add(venueHit.id);
+      venueHits.push(venueHit);
+    }
+  }
+
   const collapsed = matchedDistributor ? hits : collapseByPharmacy(hits);
-  const ranked = rankHits(collapsed, normalizedQuery);
+  // Venue hits are APPENDED, never collapsed in. `collapseByPharmacy` keys on name + brick, so a
+  // pharmacy that is both in a distributor's file and registered here would merge into one row —
+  // hiding the very fact this search was missing. Two records is the honest answer, and `origin`
+  // is what tells them apart.
+  const ranked = rankHits([...collapsed, ...venueHits], normalizedQuery);
 
   return {
     hits: ranked.slice(0, PHARMACY_SEARCH_LIMIT),
@@ -263,4 +432,4 @@ export async function searchPharmacies(rawQuery: string): Promise<PharmacySearch
 }
 
 /** Exported for the marketing-only fallback path and for tests. */
-export const __testables = { collapseByPharmacy, looksLikeCode, rankHits, sanitizeForOrFilter };
+export const __testables = { collapseByPharmacy, looksLikeCode, rankHits, sanitizeForOrFilter, venueRowToHit };

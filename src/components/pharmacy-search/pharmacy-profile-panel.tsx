@@ -9,7 +9,12 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
-import type { NearbyDoctor, NearbyHospital, PharmacyProfile } from "@/lib/pharmacy-search/types";
+import {
+  phoenixVenueCodeFromId,
+  type NearbyDoctor,
+  type NearbyHospital,
+  type PharmacyProfile,
+} from "@/lib/pharmacy-search/types";
 
 const COORDINATE_SOURCE_LABEL: Record<NonNullable<PharmacyProfile["coordinates"]>["source"], string> = {
   brick_centroid: "Centre of its brick — not the pharmacy itself",
@@ -218,6 +223,9 @@ export function PharmacyProfilePanel({
   profile: PharmacyProfile;
   radiusKm: number;
 }) {
+  // Null for everything that is not a Phoenix-registered venue — see PHOENIX_VENUE_ID_PREFIX.
+  const venueCode = phoenixVenueCodeFromId(profile.id);
+
   return (
     <div className="space-y-5">
       <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 p-5 shadow-[0_20px_48px_rgba(15,23,42,0.10)]">
@@ -228,6 +236,14 @@ export function PharmacyProfilePanel({
               {profile.origin === "google" ? (
                 <span className="whitespace-nowrap rounded-full border border-phx-warn-line bg-phx-warn-bg px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-warn">
                   From Google — not in the database
+                </span>
+              ) : profile.origin === "phoenix" ? (
+                // Three states, not two. A venue IS in the database, so the plain chip below is not
+                // wrong — it is simply silent about the one thing that matters here: this record
+                // came from the direct-order desk rather than a distributor's customer file, so
+                // its codes are what somebody typed.
+                <span className="whitespace-nowrap rounded-full border border-phx-ok-line bg-phx-ok-bg px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ok">
+                  {venueCode ? "Phoenix venue " + venueCode : "Phoenix venue"} — registered at the direct-order desk
                 </span>
               ) : (
                 <span className="whitespace-nowrap rounded-full border border-phx-ok-line bg-phx-ok-bg px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ok">
