@@ -602,7 +602,8 @@ export function DeviceRegisterWorkspace({
           <p className="mt-1.5 text-[11px] font-semibold leading-relaxed text-slate-500">
             The template carries a dropdown of every employee, so you can record who is already
             holding each device as you enter it. A serial number or an IMEI is required on every
-            row. Nothing is written until you press Import.
+            row. It takes two presses: Check the file reads it and reports what it found without
+            saving anything, and the black Import button is the one that writes to the register.
           </p>
 
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
@@ -656,7 +657,47 @@ export function DeviceRegisterWorkspace({
 
           {importPreview ? (
             <div className="mt-3 border border-slate-200 px-3 py-2">
-              <p className="break-words text-[11px] font-bold text-slate-700">
+              {/*
+                THE PREVIEW READ AS SUCCESS, AND THAT COST THE FIRST TABLET A DAY. "Check the file"
+                is a dry run: it parses, validates and reports, and writes nothing at all. The owner
+                pressed it, read "1 row read, 1 ready, 0 with problems", and reasonably concluded the
+                device was in the register. It was not, and nothing on screen said so — the only way
+                to find out was to query the database.
+
+                The two states get different words because they need different actions. With rows
+                ready, the answer is to press the black button. With none ready that button is not
+                rendered at all, so its absence has to be explained or the page reads as broken.
+              */}
+              {importPreview.summary.canImport > 0 ? (
+                <div className="flex items-start gap-2 border border-amber-300 bg-amber-50 px-3 py-2">
+                  <TriangleAlert
+                    aria-hidden="true"
+                    className="mt-0.5 h-4 w-4 shrink-0 text-amber-700"
+                  />
+                  <p className="min-w-0 break-words text-[11px] font-bold leading-relaxed text-amber-900">
+                    Nothing has been saved yet. This was a check of the file only. Press the black{" "}
+                    <span className="font-black">
+                      Import {importPreview.summary.canImport.toLocaleString("en-US")} device
+                      {importPreview.summary.canImport === 1 ? "" : "s"}
+                    </span>{" "}
+                    button above to write{" "}
+                    {importPreview.summary.canImport === 1 ? "it" : "them"} to the register.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 border border-rose-200 bg-rose-50 px-3 py-2">
+                  <TriangleAlert
+                    aria-hidden="true"
+                    className="mt-0.5 h-4 w-4 shrink-0 text-rose-600"
+                  />
+                  <p className="min-w-0 break-words text-[11px] font-bold leading-relaxed text-rose-900">
+                    Nothing has been saved, and nothing can be imported from this file yet — every
+                    row still has a problem. Fix the rows listed below and choose the file again. The
+                    Import button appears as soon as one row is ready.
+                  </p>
+                </div>
+              )}
+              <p className="mt-2 break-words text-[11px] font-bold text-slate-700">
                 {importPreview.summary.total} row
                 {importPreview.summary.total === 1 ? "" : "s"} read, {importPreview.summary.canImport}{" "}
                 ready, {importPreview.summary.withErrors} with problems.{" "}
@@ -706,7 +747,21 @@ export function DeviceRegisterWorkspace({
 
           {importResult ? (
             <div className="mt-3 border border-slate-200 px-3 py-2">
-              <p className="break-words text-[11px] font-black uppercase tracking-[0.1em] text-slate-700">
+              {/* The counterpart to the "nothing has been saved yet" banner above. A person who has
+                  once been caught by the dry run needs to be told, in the same plain words, when
+                  the write actually happened — otherwise the fix just moves the doubt. */}
+              <div className="flex items-start gap-2 border border-emerald-300 bg-emerald-50 px-3 py-2">
+                <PackageCheck
+                  aria-hidden="true"
+                  className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700"
+                />
+                <p className="min-w-0 break-words text-[11px] font-bold leading-relaxed text-emerald-900">
+                  Saved to the register.{" "}
+                  {importResult.imported.toLocaleString("en-US")} device
+                  {importResult.imported === 1 ? " is" : "s are"} now recorded.
+                </p>
+              </div>
+              <p className="mt-2 break-words text-[11px] font-black uppercase tracking-[0.1em] text-slate-700">
                 {importResult.imported} imported, {importResult.issued} handed over,{" "}
                 {importResult.skipped} skipped, {importResult.failed} failed
               </p>
