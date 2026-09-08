@@ -750,17 +750,40 @@ export function DeviceRegisterWorkspace({
               {/* The counterpart to the "nothing has been saved yet" banner above. A person who has
                   once been caught by the dry run needs to be told, in the same plain words, when
                   the write actually happened — otherwise the fix just moves the doubt. */}
-              <div className="flex items-start gap-2 border border-emerald-300 bg-emerald-50 px-3 py-2">
-                <PackageCheck
-                  aria-hidden="true"
-                  className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700"
-                />
-                <p className="min-w-0 break-words text-[11px] font-bold leading-relaxed text-emerald-900">
-                  Saved to the register.{" "}
-                  {importResult.imported.toLocaleString("en-US")} device
-                  {importResult.imported === 1 ? " is" : "s are"} now recorded.
-                </p>
-              </div>
+              {/*
+                A COMPLETED IMPORT IS NOT A SUCCESSFUL ONE. Every row can fail — a duplicate asset
+                tag, a serial already in the register — and the route still answers 200 with a
+                per-row report. An unconditional "Saved to the register" would then say the one
+                thing that is not true, to the one person who has already been caught once by a
+                screen that looked like success. So the banner is chosen by what was WRITTEN.
+              */}
+              {importResult.imported > 0 ? (
+                <div className="flex items-start gap-2 border border-emerald-300 bg-emerald-50 px-3 py-2">
+                  <PackageCheck
+                    aria-hidden="true"
+                    className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700"
+                  />
+                  <p className="min-w-0 break-words text-[11px] font-bold leading-relaxed text-emerald-900">
+                    Saved to the register.{" "}
+                    {importResult.imported.toLocaleString("en-US")} device
+                    {importResult.imported === 1 ? " is" : "s are"} now recorded.
+                    {importResult.failed + importResult.skipped > 0
+                      ? ` The other ${(importResult.failed + importResult.skipped).toLocaleString("en-US")} did not go in — see below.`
+                      : ""}
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 border border-rose-200 bg-rose-50 px-3 py-2">
+                  <TriangleAlert
+                    aria-hidden="true"
+                    className="mt-0.5 h-4 w-4 shrink-0 text-rose-600"
+                  />
+                  <p className="min-w-0 break-words text-[11px] font-bold leading-relaxed text-rose-900">
+                    Nothing was saved. Every row was refused, for the reasons listed below. The
+                    register is unchanged.
+                  </p>
+                </div>
+              )}
               <p className="mt-2 break-words text-[11px] font-black uppercase tracking-[0.1em] text-slate-700">
                 {importResult.imported} imported, {importResult.issued} handed over,{" "}
                 {importResult.skipped} skipped, {importResult.failed} failed
