@@ -1420,6 +1420,7 @@ import { runSessionLockStalenessIsAgeTests } from "./session-lock-staleness-is-a
 import { runRepoDoctorOrphanedFoldersTests } from "./repo-doctor-orphaned-folders.test.ts";
 import { runRepoDoctorXlsxSnapshotTests } from "./repo-doctor-xlsx-snapshot.test.ts";
 import { runRepoDoctorSessionHoldTests } from "./repo-doctor-session-hold.test.ts";
+import { runWorktreeLivenessTests } from "./worktree-liveness.test.ts";
 import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
 import { runOutstationMobileWizardStaleCalculationTests } from "./outstation-mobile-wizard-stale-calculation.test.ts";
 import { runOutstationPayrollPayableTotalAgreementTests } from "./outstation-payroll-payable-total-agreement.test.ts";
@@ -4534,6 +4535,12 @@ await runTest("repo-doctor offers only what --strip-idle will actually reclaim",
 await runTest(
   "repo-doctor never offers a worktree a live session is standing in",
   runRepoDoctorSessionHoldTests,
+);
+
+await runTest(
+  "a worktree with a live PROCESS in it is never retirable (and a sweep that read 0 processes is "
+    + "broken, not proof the folder is free)",
+  runWorktreeLivenessTests,
 );
 await runTest(
   "a session lock is stale by AGE alone, and no shipped text teaches the PID rule (the lock stores "

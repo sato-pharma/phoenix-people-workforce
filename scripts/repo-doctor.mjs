@@ -122,6 +122,7 @@ import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
 import { archivePushTarget, listArchiveRefs, strandedArchives } from "./repo-doctor-archive-refs.mjs";
 import { classifySupabaseLink } from "./repo-doctor-supabase-link.mjs";
 import { sessionHoldReason } from "./repo-doctor-session-hold.mjs";
+import { buildCacheIdleMinutes, livenessVerdict, readHolderProbe } from "./worktree-liveness.mjs";
 import {
   classifyOrphanedFolder,
   orphanedFolderLines,
@@ -670,6 +671,10 @@ const heldFromRetirement = [];
  *  PR one: "the work is still in flight" and "somebody is standing in it" are different facts and
  *  a reader who sees the wrong one draws the wrong conclusion about whether it is safe later. */
 const heldByLiveSession = [];
+// Read ONCE for the whole machine, not once per worktree: the sweep walks every process on the
+// system. Null when it could not run at all, which livenessVerdict answers as "cannot rule out a
+// live session" rather than as "nobody is there".
+const holderProbe = readHolderProbe();
 for (const r of live) {
   const branch = git(["-C", r.dir, "rev-parse", "--abbrev-ref", "HEAD"]);
   if (!branch || branch === "HEAD" || branch === "main" || branch === "master") continue;
@@ -679,7 +684,30 @@ for (const r of live) {
   // there is no path — now or after a later edit — on which a removal command for a held folder
   // reaches the screen at all. The commands ARE the interface: they are meant to be pasted, and on
   // 2026-09-08 they were.
-  const heldBy = sessionHoldReason(r.dir);
+  //
+  // TWO signals, because each is blind exactly where the other sees, and the folder taken on
+  // 2026-09-08 was the overlap:
+  //
+  //   - sessionHoldReason reads Claude's own transcripts, so it sees a session that has JUST
+  //     CLOSED, inside its grace window. No process sweep can — the process is gone. Its own
+  //     header records its blind spot: an `_wt-*` session reports the PRIMARY as its cwd, so its
+  //     turns are indistinguishable from any other session's.
+  //   - livenessVerdict reads each process's working directory out of its PEB, so it sees a
+  //     session OPEN BUT IDLE FOR HOURS — which the transcript reads as dead once its newest turn
+  //     ages past the window, and an open session between turns is exactly what both lost folders
+  //     had. It also reaches `_wt-*` through the child processes that DO run there.
+  //
+  // It also carries the strip-idle invariant: `sourceIdleMin` is the same measurement --strip-idle
+  // already used to refuse a worktree as possibly-mid-edit, and never showed to this gate. Without
+  // it one half of a single run refused to drop `_wt-code-strand-guard`'s node_modules while the
+  // other half printed `git worktree remove` for the whole folder — measured, same report.
+  const liveness = livenessVerdict({
+    cacheIdleMin: buildCacheIdleMinutes(r.dir),
+    dir: r.dir,
+    probe: holderProbe,
+    sourceIdleMin: idleMinutes(r.dir),
+  });
+  const heldBy = sessionHoldReason(r.dir) ?? (liveness.live ? liveness.reason : null);
   if (heldBy) {
     heldByLiveSession.push(`${rel(r.dir)} (${branch}) — ${heldBy}`);
     continue;
@@ -799,9 +827,12 @@ if (heldByLiveSession.length) {
       "where bare git commands resolve against the primary checkout on `main`.",
   );
   console.log(
-    "  Blind spot, on purpose: this sees `.claude/worktrees/*` only. A sibling `_wt-*` session " +
-      "reports the PRIMARY as its cwd, so it cannot be told apart from any other session — an " +
-      "`_wt-*` folder absent from this list is UNKNOWN, not proven unattended.",
+    "  Coverage: a transcript read (reliable for `.claude/worktrees/*`) PLUS a sweep of every " +
+      "process's working directory, which also reaches `_wt-*`.",
+  );
+  console.log(
+    "  Residual blind spot: an `_wt-*` session that is idle AND running no child process in its " +
+      "folder reports the PRIMARY as its cwd, so it is UNKNOWN — not proven unattended.",
   );
   console.log("");
 }
