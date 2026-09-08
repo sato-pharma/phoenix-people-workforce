@@ -150,6 +150,8 @@ status, give it its own line.
 ## 4. Standing owner rules
 
 - **"continue verifying" means RESUME the paused Source of Sales audit — never restart…** — `continue-verifying-resumes-sos-audit` · `sos-deep-audit-paused-checkpoint`
+- **Open every reply with a single recommended next step — it goes FIRST, not last.** — `recommendation-goes-first-not-last` **(inline — load-bearing)**
+- **A PUBLISHED AND ANNOUNCED MONTH IS NEVER CORRECTED, however wrong it is.** — `never-fix-a-published-and-announced-month` **(inline — load-bearing)**
 - **THE FITS-THE-SCREEN GOLDEN RULE — never a horizontal scroll, always mobile AND…** — `never-horizontal-scroll-always-mobile-and-desktop-friendly` **(inline — load-bearing)**
 - **THE DOCUMENT IDENTITY — every company document wears SATO-DIS-2026-01 v1.0** — `the-house-document-identity-standard` **(inline — load-bearing)**
 - **A PHARMACY IS NOT A CONTACT — a CRM contact count is PM + AM only.** — `a-pharmacy-is-not-a-contact` **(inline — load-bearing)**
