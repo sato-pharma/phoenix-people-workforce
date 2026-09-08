@@ -195,6 +195,11 @@ export async function loadCandidateSendContext(
       company_name: systemLegalEntity.legalNameEn,
       document_list: documentList,
       job_title: jobTitle,
+      // A CANDIDATE HAS NO PROBATION, so this is empty here and `renderTemplate` reports it missing
+      // the moment a probation template is aimed at a CV by mistake. Empty rather than absent: the
+      // key is part of the auto-value contract, and a missing key is a type hole that renders as
+      // "undefined" if anything ever reads it without going through renderTemplate.
+      probation_end_date: "",
       sender_name: senderName ?? "",
       start_date: startDate,
     },

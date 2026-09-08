@@ -9,7 +9,9 @@ import {
   str,
 } from "@/app/api/recruitment/_lib/http";
 import { resolveCommentAuthor } from "@/lib/recruitment/candidate-comments";
+import { assertPermission } from "@/lib/auth/permissions";
 import { loadCandidateSendContext, manualSendAutoValues } from "@/lib/recruitment/whatsapp-templates/candidate-context";
+import { loadEmployeeSendContext } from "@/lib/recruitment/whatsapp-templates/employee-context";
 import { toWhatsAppDialNumber, whatsAppSendUrl } from "@/lib/recruitment/whatsapp-templates/send-link";
 import { getWhatsAppTemplate, recordTemplateSend } from "@/lib/recruitment/whatsapp-templates/store";
 import { renderTemplate, variableLabel } from "@/lib/recruitment/whatsapp-templates/variables";
@@ -39,6 +41,8 @@ function readValues(raw: unknown): Record<string, string> {
  *
  * TWO WAYS TO NAME THE RECIPIENT, and exactly one must win:
  *   candidateId — the number comes from that candidate's row, and the send is filed against them.
+ *   employeeHrId — the same, for someone already on the payroll. Gated separately on employees:read,
+ *     because this branch resolves a staff mobile number and must not become a directory dump.
  *   toNumber    — a number typed by hand, for someone with no CV in the system.
  * A typed number overrides the candidate's stored one when both arrive, because that is what typing
  * one MEANS: the recruiter is looking at a candidate whose number on file is wrong or missing.
@@ -54,6 +58,7 @@ export async function POST(request: Request) {
     const payload = await readJsonObject(request);
     const templateId = str(payload.templateId);
     const candidateId = str(payload.candidateId);
+    const employeeHrId = str(payload.employeeHrId);
     const typedNumber = str(payload.toNumber);
     const submitted = readValues(payload.values);
 
@@ -76,8 +81,17 @@ export async function POST(request: Request) {
       return recruitmentProblem("That candidate was not found.", 404);
     }
 
+    // Same gate as the GET, for the same reason: this resolves a staff mobile number. Refused
+    // rather than silently ignored, so a caller without the permission is told, instead of being
+    // handed a message addressed to nobody with the number quietly blank.
+    if (employeeHrId) await assertPermission(access, "employees", "read");
+    const employee = employeeHrId ? await loadEmployeeSendContext(employeeHrId, author.name) : null;
+    if (employeeHrId && !employee) {
+      return recruitmentProblem("That employee was not found.", 404);
+    }
+
     // A typed number wins; otherwise fall back to what is on the candidate's row.
-    const dialNumber = toWhatsAppDialNumber(typedNumber ?? candidate?.dialNumber ?? null);
+    const dialNumber = toWhatsAppDialNumber(typedNumber ?? candidate?.dialNumber ?? employee?.dialNumber ?? null);
     if (!dialNumber) {
       return recruitmentProblem(
         typedNumber
@@ -91,7 +105,7 @@ export async function POST(request: Request) {
     // a wrong auto one — a candidate whose stored name is "AYA M." can be addressed as "Aya" — while
     // still filling everything in by default.
     const values: Record<string, string> = {
-      ...(candidate ? candidate.autoValues : await manualSendAutoValues(author.name)),
+      ...(candidate?.autoValues ?? employee?.autoValues ?? (await manualSendAutoValues(author.name))),
       ...submitted,
     };
 
@@ -109,6 +123,7 @@ export async function POST(request: Request) {
     // recordTemplateSend. What is recorded is that the message was PREPARED, not that it arrived.
     await recordTemplateSend({
       candidateId: candidate?.candidateId ?? null,
+      employeeHrId: employee?.employeeHrId ?? null,
       openedByHrId: access.hrId ?? null,
       renderedBody: rendered.text,
       templateId: template.id,
