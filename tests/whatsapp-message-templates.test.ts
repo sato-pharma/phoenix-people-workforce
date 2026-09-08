@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import {
+  formatDocumentList,
+  selectCandidateSuppliedNames,
+} from "../src/lib/hiring-documents/candidate-supplied.ts";
 import { firstNameOf, softenShoutedName } from "../src/lib/recruitment/whatsapp-templates/candidate-context.ts";
 import {
   formatDialNumberForDisplay,
@@ -301,6 +305,136 @@ export function runWhatsAppMessageTemplateTests() {
         + "start date in reach, and only the stored pointer is trustworthy",
     );
   }
+
+  // ── the joining document list, read live from the checklist ──────────
+  //
+  // THE ONE THAT MATTERS: `hiring_document_definitions` IS NOT A LIST OF THINGS A CANDIDATE BRINGS.
+  // It is the whole personnel file, and on production 2026-09-08 eight of its sixteen slots are
+  // papers the COMPANY generates - six of them EXIT paperwork. Built from every active row, a
+  // "document request" asks somebody who has just accepted a job to bring their own resignation
+  // request, their own mutual-termination agreement and their own end-of-service clearances.
+  //
+  // That message is grammatical, the slot names are real, and nothing errors. This fixture is the
+  // exact production shape so the assertion below fires on the real thing rather than on a sketch.
+  const PRODUCTION_SLOTS = [
+    { hiringPackDocument: null, id: "d-nid", name: "National ID copy" },
+    { hiringPackDocument: null, id: "d-birth", name: "Birth certificate" },
+    { hiringPackDocument: null, id: "d-grad", name: "Graduation certificate" },
+    { hiringPackDocument: null, id: "d-mil", name: "Military status" },
+    { hiringPackDocument: null, id: "d-crim", name: "Criminal record" },
+    { hiringPackDocument: null, id: "d-bank", name: "Bank account details" },
+    { hiringPackDocument: "form1", id: "d-form1", name: "Social insurance form" },
+    { hiringPackDocument: "contract", id: "d-contract", name: "Signed employment contract" },
+    { hiringPackDocument: "nda", id: "d-nda", name: "Signed confidentiality undertaking" },
+    { hiringPackDocument: null, id: "d-med", name: "Medical check" },
+    { hiringPackDocument: "form6", id: "d-form6", name: "Signed social insurance Form 6" },
+    { hiringPackDocument: "resignation", id: "d-resign", name: "Signed resignation request" },
+    { hiringPackDocument: "mutualTermination", id: "d-mutual", name: "Signed mutual termination agreement" },
+    { hiringPackDocument: "clearanceEmployee", id: "d-clr-emp", name: "Signed employee clearance" },
+    { hiringPackDocument: "clearanceCompany", id: "d-clr-co", name: "Signed company clearance" },
+  ];
+
+  assert.deepEqual(
+    selectCandidateSuppliedNames(PRODUCTION_SLOTS, []),
+    [
+      "National ID copy",
+      "Birth certificate",
+      "Graduation certificate",
+      "Military status",
+      "Criminal record",
+      "Bank account details",
+      "Medical check",
+    ],
+    "only the papers a person supplies themselves - every slot a company paper files into is out",
+  );
+
+  for (const exitPaper of [
+    "Signed resignation request",
+    "Signed mutual termination agreement",
+    "Signed employee clearance",
+    "Signed company clearance",
+    "Signed social insurance Form 6",
+  ]) {
+    assert.ok(
+      !selectCandidateSuppliedNames(PRODUCTION_SLOTS, []).includes(exitPaper),
+      `"${exitPaper}" is EXIT paperwork the company issues - asking a new hire to bring it is the `
+        + "failure this filter exists to prevent, and it reads as a working message",
+    );
+  }
+
+  // THE SECOND HALF OF THE FILTER. A company template can file under a slot from the other
+  // direction, and that slot then carries a company paper while `hiring_pack_document` is still
+  // NULL. Nothing matches this today - it is the case that arrives the first time somebody uploads
+  // a company template, with no error to announce itself.
+  assert.deepEqual(
+    selectCandidateSuppliedNames(PRODUCTION_SLOTS, ["d-med"]),
+    [
+      "National ID copy",
+      "Birth certificate",
+      "Graduation certificate",
+      "Military status",
+      "Criminal record",
+      "Bank account details",
+    ],
+    "a slot a custom company template files under drops out too, though its own column is NULL",
+  );
+
+  // THE NAME IS NEVER THE MECHANISM. `name` is admin-editable free text, so renaming a slot must
+  // change what the message SAYS and never which slots it lists.
+  const renamedSlots = PRODUCTION_SLOTS.map((slot) =>
+    slot.id === "d-nid" ? { ...slot, name: "National ID (new wording)" } : slot,
+  );
+  assert.equal(
+    selectCandidateSuppliedNames(renamedSlots, []).length,
+    selectCandidateSuppliedNames(PRODUCTION_SLOTS, []).length,
+    "renaming a slot changes the wording, never the membership - the column is the mechanism",
+  );
+  assert.ok(
+    selectCandidateSuppliedNames(renamedSlots, []).includes("National ID (new wording)"),
+    "and the new wording is what the candidate is asked for, live, with no template edit",
+  );
+
+  // A DEACTIVATED SLOT never reaches the pure filter - `is_active` is applied in the query - so the
+  // rule here is only about company papers. "Personal photos" is inactive on production and is
+  // deliberately absent from the fixture for that reason.
+
+  // FORMATTING. The bullet is the one the owner's own templates are written with.
+  assert.equal(
+    formatDocumentList(["National ID copy", "Medical check"]),
+    "\u2022 National ID copy\n\u2022 Medical check",
+    "one bullet per line, joined with newlines - a block that drops into a message body",
+  );
+
+  // AN EMPTY LIST IS A REFUSED SEND, NEVER A HEADING WITH NOTHING UNDER IT. If the checklist cannot
+  // be read, the message must not go out saying "we need the following documents:" followed by
+  // blank space - the recruiter is asked to type the list instead.
+  assert.equal(formatDocumentList([]), "", "an empty list renders as nothing, not as a stray bullet");
+  const emptyListRender = renderTemplate("We need:\n\n{{document_list}}\n\nThanks", {
+    document_list: formatDocumentList([]),
+  });
+  assert.deepEqual(
+    emptyListRender.missing,
+    ["document_list"],
+    "an unreadable checklist blocks the send and asks for the list, rather than sending an empty one",
+  );
+
+  assert.ok(
+    isAutoVariable("document_list"),
+    "the list is auto-filled - a recruiter never retypes seven bullet points that the system holds",
+  );
+
+  // THE SEND PATH MUST NOT CARRY A COPY OF THE LIST. That copy is the whole defect being fixed: a
+  // hard-coded list goes stale the moment HR edits the checklist, silently and with no error.
+  const docSendPathSource = readFileSync("src/lib/recruitment/whatsapp-templates/candidate-context.ts", "utf8");
+  assert.match(
+    docSendPathSource,
+    /candidateSuppliedDocumentList/,
+    "the send context resolves the list live; nothing here may hold a hard-coded copy of it",
+  );
+  assert.ok(
+    !/National ID copy/.test(docSendPathSource),
+    "a document name hard-coded in the send path is a second source of truth - the checklist is the only one",
+  );
 
   // And the STORED name is never rewritten — an identity field is evidence, not display text.
   assert.equal(

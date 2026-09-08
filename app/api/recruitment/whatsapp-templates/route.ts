@@ -49,7 +49,7 @@ export async function GET(request: Request) {
       // The manual path gets the same auto values a candidate would, minus anything person-specific.
       // Handed over even when a candidate WAS named, so the dialog can switch to a typed number
       // without another request.
-      manualAutoValues: manualSendAutoValues(author.name),
+      manualAutoValues: await manualSendAutoValues(author.name),
       success: true,
       templates,
     });
