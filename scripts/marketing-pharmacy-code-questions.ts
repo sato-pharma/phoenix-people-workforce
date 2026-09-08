@@ -40,6 +40,14 @@
  *                           `codes_added` (inserted) in the run's backup schema — and the exact
  *                           reversal SQL is printed at the end.
  *
+ *                           It also names, in BOTH modes, every validated customer link and live
+ *                           request target pointing at a code it is about to switch off, and
+ *                           REFUSES the whole run if any of them would leave a customer with no
+ *                           selectable target — see `findUnlinkFallout`. That case is not
+ *                           hypothetical: it is what the 2026-09-06 run did to two District Sales
+ *                           Managers, correctly applying the owner's answers and silently taking
+ *                           the request form away from them at the same time.
+ *
  * That table is not incidental: the realized-ROI builder joins THROUGH it to decide which sales a
  * marketing request is credited for, so a wrong link moves money on a report. The header said
  * "nothing here writes to the database" until 2026-09-06, which was true of the default path and
@@ -59,6 +67,13 @@ import { dirname, resolve } from "node:path";
 
 import ExcelJS from "exceljs";
 import postgres from "postgres";
+
+import {
+  describeUnlinkFallout,
+  unlinkStrandingRefusal,
+  type StrandedLink,
+  type StrandedTarget,
+} from "../src/lib/marketing-requests/code-unlink-fallout.ts";
 
 const HEADER_FILL = "FF0F172A";
 const ACCENT_FILL = "FF0A6BA6";
@@ -599,6 +614,107 @@ type AddPlan = {
 const ADD_NOTE =
   "Added on the owner's answer, marketing-pharmacy-code-decisions sheet: same pharmacy as its existing code.";
 
+/* ── What a deactivation costs somebody else ────────────────────────────────────────────────────
+ *
+ * WHY THIS GUARD EXISTS. Unlinking a code is a decision about a CODE. It lands on a PERSON, and
+ * until 2026-09-08 nothing here looked.
+ *
+ * `marketing_customer_pharmacies.distributor_code_id` points at a code ROW by identity, and the
+ * request form resolves a target THROUGH it — `getMarketingRequestDraftWorkspace` builds
+ * `pharmaciesByCustomer` from the link's code id and skips any pharmacy-type venue whose code is
+ * not active, on purpose, because offering a target the server would refuse is worse. So the moment
+ * a code goes inactive, every validated link pointing at it disappears from the picker: no error,
+ * no amber row, nothing on screen at all.
+ *
+ * MEASURED. The 2026-09-06 apply deactivated 8 code rows on the owner's answers. All 8 answers were
+ * correct and stay applied. But 5 validated customer links pointed at those rows, and two customers
+ * — احمد السقا (B-119 Saad Salama) and هبه حبيب (B-154 Nermeen Salah) — were left with ZERO
+ * selectable targets. Both District Sales Managers then sat in front of a complete request form with
+ * a dead Save button reading "Select a target pharmacy" and an empty list to select from. Neither
+ * could have fixed it; nothing told either of them, or us. One of them re-registered her shop as a
+ * duplicate venue the next day to get around it, which is how a silent block becomes dirty data.
+ *
+ * WHY IT REFUSES RATHER THAN REPAIRS. Re-pointing a stranded link at some other code on the same
+ * venue would be this script inventing a business fact — which code represents a shop is exactly
+ * what the workbook exists to ASK. AGENTS.md §2.3: identity is never settled on a session's own
+ * inference. So this finds the fallout and stops; the answer comes back through the sheet.
+ *
+ * The refusal is deliberately narrow. A link that merely loses ONE of several targets is reported
+ * and applied — the customer still works, and blocking a 79-row apply over it would make the guard
+ * the thing people route around. Only a customer left with NOTHING stops the run, because that is
+ * the case that silently takes a manager's job away from him.
+ *
+ * The SQL lives here because it needs this script's connection; the judgement about what the rows
+ * MEAN is domain logic in `src/lib/marketing-requests/code-unlink-fallout.ts`, where a test can
+ * reach it without a database — importing THIS file would run `main()` and open production.
+ */
+
+/**
+ * Every validated customer link and live request target that points at a code row about to be
+ * deactivated, with `emptied` marking the links whose customer is left with no target at all.
+ *
+ * `still_offerable` mirrors the picker's own rule rather than approximating it: a nursery needs no
+ * code, and any other venue needs a code row that is active AND not one this run is switching off.
+ */
+async function findUnlinkFallout(sql: postgres.Sql, codeIds: string[]) {
+  if (codeIds.length === 0) return { links: [] as StrandedLink[], targets: [] as StrandedTarget[] };
+
+  const links = (await sql.unsafe(
+    `with live as (
+       select l.id, l.customer_id, l.pharmacy_id, l.distributor_code_id,
+              coalesce(p.venue_type, 'pharmacy') as venue_type,
+              p.id as venue_row, dc.id as code_row, coalesce(dc.active, true) as code_active
+       from public.marketing_customer_pharmacies l
+       join public.marketing_customers c on c.id = l.customer_id
+       left join public.marketing_pharmacies p on p.id = l.pharmacy_id
+       left join public.marketing_pharmacy_distributor_codes dc on dc.id = l.distributor_code_id
+       where coalesce(l.active, true)
+         and l.validation_status in ('system_validated', 'sfe_validated')
+         and coalesce(c.active, true)
+     ),
+     scored as (
+       select live.*,
+              case
+                when live.venue_type = 'nursery' and live.venue_row is not null then true
+                when live.code_row is not null and live.code_active
+                     and live.code_row <> all($1::uuid[]) then true
+                else false
+              end as still_offerable,
+              live.distributor_code_id = any($1::uuid[]) as hit
+       from live
+     ),
+     per_customer as (
+       select customer_id, bool_or(still_offerable) as keeps_a_target from scored group by customer_id
+     )
+     select c.display_name as customer, p.display_name as venue, e.full_name as venue_owner,
+            dc.distributor_pharmacy_code as code,
+            not coalesce(pc.keeps_a_target, false) as emptied
+     from scored s
+     join per_customer pc on pc.customer_id = s.customer_id
+     join public.marketing_customers c on c.id = s.customer_id
+     left join public.marketing_pharmacies p on p.id = s.pharmacy_id
+     left join public.employees e on lower(e.hr_id) = lower(c.owner_hr_id)
+     left join public.marketing_pharmacy_distributor_codes dc on dc.id = s.distributor_code_id
+     where s.hit
+     order by (not coalesce(pc.keeps_a_target, false)) desc, e.full_name nulls last, c.display_name`,
+    [codeIds],
+  )) as unknown as StrandedLink[];
+
+  const targets = (await sql.unsafe(
+    `select r.request_code, r.status, p.display_name as venue,
+            dc.distributor_pharmacy_code as code
+     from public.marketing_request_pharmacies rp
+     join public.marketing_requests r on r.id = rp.request_id
+     left join public.marketing_pharmacies p on p.id = rp.pharmacy_id
+     left join public.marketing_pharmacy_distributor_codes dc on dc.id = rp.distributor_code_id
+     where rp.distributor_code_id = any($1::uuid[])
+     order by r.request_code`,
+    [codeIds],
+  )) as unknown as StrandedTarget[];
+
+  return { links, targets };
+}
+
 async function runApply(sql: postgres.Sql, answerPath: string, dryRun: boolean): Promise<void> {
   const { mislinks, siblings } = await readAnswers(answerPath);
   await sql.unsafe(HELPERS);
@@ -675,6 +791,20 @@ async function runApply(sql: postgres.Sql, answerPath: string, dryRun: boolean):
     console.log(`  REFUSED, not applied:     ${refused.length}`);
     for (const line of refused) console.log(`      ${line}`);
   }
+
+  // Computed BEFORE the write and printed in BOTH modes — the whole point is that a --dry-run shows
+  // the human cost while it is still free to change your mind.
+  const fallout = await findUnlinkFallout(sql, unlinks.map((row) => row.id));
+  const report = describeUnlinkFallout(fallout.links, fallout.targets);
+  if (report.length > 0) {
+    console.log("");
+    for (const line of report) console.log(`  ${line}`);
+  }
+
+  // Thrown in dry-run too, deliberately: a dry run that reported the damage and still exited 0 would
+  // predict a success the real run is not going to deliver. Both modes have written nothing here.
+  const refusal = unlinkStrandingRefusal(fallout.links);
+  if (refusal) throw new Error(refusal);
 
   if (dryRun) { console.log("\nDRY RUN — nothing was written."); return; }
   if (plan.length === 0 && unlinks.length === 0) { console.log("\nNothing to apply."); return; }
