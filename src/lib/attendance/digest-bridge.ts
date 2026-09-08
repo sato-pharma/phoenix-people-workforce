@@ -43,15 +43,18 @@ type SettlementRow = {
   digest_line_id: number;
 };
 
+/**
+ * Only three outcomes exist, and every one of them is a person's decision.
+ *
+ * There is no auto-confirm: the module notifies nobody (owner, 2026-09-08), so an
+ * unanswered day has no settlement at all and never reaches this function. Its
+ * candidate simply stays Pending in the month-end queue, which is the same place it
+ * would have been if this module did not exist.
+ */
 function decisionFor(action: string): { status: DeductionsDecisionStatus; reason: string } | null {
   switch (action) {
     case "confirmed":
       return { status: "Approved for Payroll", reason: "Employee confirmed this day in their weekly attendance digest." };
-    case "auto_confirmed":
-      return {
-        status: "Approved for Payroll",
-        reason: "No response to the weekly attendance digest within the review window — auto-confirmed.",
-      };
     case "dispute_rejected":
       return { status: "Approved for Payroll", reason: "Dispute reviewed and rejected." };
     case "dispute_upheld":

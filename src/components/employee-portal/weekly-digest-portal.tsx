@@ -34,14 +34,15 @@ function formatDay(iso: string): string {
   }).format(date);
 }
 
-function hoursLeft(autoConfirmAt: string | null): string | null {
-  if (!autoConfirmAt) return null;
-  const ms = new Date(autoConfirmAt).getTime() - Date.now();
-  if (!Number.isFinite(ms)) return null;
-  if (ms <= 0) return "The review window has closed.";
-  const hours = Math.floor(ms / 3_600_000);
-  if (hours >= 1) return `${hours} ${hours === 1 ? "hour" : "hours"} left to reply.`;
-  return `${Math.max(1, Math.round(ms / 60_000))} minutes left to reply.`;
+/**
+ * How a money figure is shown.
+ *
+ * NULL is "we cannot price this day yet", never 0.00. The day is still chargeable —
+ * it becomes a real month-end candidate — so printing zero would tell someone a day
+ * costs them nothing when it does not.
+ */
+function money(value: number | null, currency = "EGP"): string {
+  return value === null ? "Amount not yet calculated" : `${value.toFixed(2)} ${currency}`;
 }
 
 export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }: Props) {
@@ -51,8 +52,8 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
   const [disputeFor, setDisputeFor] = useState<number | null>(null);
   const [disputeReason, setDisputeReason] = useState("");
 
-  const open = useMemo(() => digests.filter((digest) => digest.status === "sent"), [digests]);
-  const settled = useMemo(() => digests.filter((digest) => digest.status !== "sent"), [digests]);
+  const open = useMemo(() => digests.filter((digest) => digest.status === "open"), [digests]);
+  const settled = useMemo(() => digests.filter((digest) => digest.status !== "open"), [digests]);
 
   async function refresh() {
     const response = await fetch("/api/attendance/digests");
@@ -120,9 +121,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
         </p>
       ) : null}
 
-      {open.map((digest) => {
-        const countdown = hoursLeft(digest.autoConfirmAt);
-        return (
+      {open.map((digest) => (
           <section key={digest.id} className="border border-slate-300 bg-white">
             <header className="border-b border-slate-200 px-4 py-3">
               <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-700">
@@ -130,9 +129,14 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
               </h2>
               <p className="mt-1 text-xs font-semibold text-slate-500">
                 {digest.lines.length} {digest.lines.length === 1 ? "day" : "days"} to answer
-                {showAmounts ? ` · estimated ${digest.totalDeductionValue.toFixed(2)} ${digest.currency}` : ""}
+                {showAmounts ? ` · estimated ${money(digest.totalDeductionValue, digest.currency)}` : ""}
               </p>
-              {countdown ? <p className="mt-1 text-xs font-bold text-amber-700">{countdown}</p> : null}
+              {showAmounts && digest.hasUnpricedDay ? (
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  One or more days cannot be priced yet, so there is no week total. The days themselves still count.
+                </p>
+              ) : null}
+              {/* No countdown. Nothing was sent to you, so nothing runs out. */}
               {digest.dryRun ? (
                 <p className="mt-1 text-xs font-bold text-slate-500">
                   Trial run — nothing is deducted from this week.
@@ -155,7 +159,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
                     </p>
                     {showAmounts ? (
                       <p className="mt-1 text-sm font-semibold text-slate-700">
-                        Estimated {line.deductionValue.toFixed(2)} EGP
+                        {line.deductionValue === null ? money(null) : `Estimated ${money(line.deductionValue)}`}
                       </p>
                     ) : null}
                     {contradicting ? (
@@ -218,8 +222,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
               })}
             </ul>
           </section>
-        );
-      })}
+        ))}
 
       {settled.length ? (
         <section className="border border-slate-200 bg-white">
@@ -234,7 +237,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
                 </p>
                 <p className="text-xs text-slate-500">
                   {digest.lines.length} {digest.lines.length === 1 ? "day" : "days"}
-                  {showAmounts ? ` · ${digest.totalDeductionValue.toFixed(2)} ${digest.currency}` : ""}
+                  {showAmounts ? ` · ${money(digest.totalDeductionValue, digest.currency)}` : ""}
                 </p>
               </li>
             ))}

@@ -79,7 +79,11 @@ export function DisputeReviewInbox({ initialDisputes, initialError }: Props) {
                 {dispute.employeeHrId} · {dispute.workDate}
               </h2>
               <p className="mt-1 text-xs font-semibold text-slate-500">
-                {dispute.deductionDays} day · {dispute.deductionValue.toFixed(2)} EGP · {dispute.reason}
+                {dispute.deductionDays} day ·{" "}
+                {dispute.deductionValue === null
+                  ? "amount not yet calculated (no salary on file)"
+                  : `${dispute.deductionValue.toFixed(2)} EGP`}{" "}
+                · {dispute.reason}
               </p>
             </header>
 
