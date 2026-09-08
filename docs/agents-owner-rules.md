@@ -1518,3 +1518,76 @@ typeface assertion.
 `workbook.creator` went back to the app name along with the rest of the revert. It is file metadata
 in Excel's Properties dialog, not ink; if the company name is wanted there it can be set back
 without touching anything this rule protects.
+
+## The weekly BI export's design is locked — owner decision, 2026-09-08
+
+### What he said
+
+*"LEAVE THE weekly BI export AS IT IS PUT LOCK NEVER CHANGE ITS DESIGN."*
+
+Said immediately after the NSM/DSM book was restored to beige — i.e. having just watched two PRs
+(#3242, #3303) restyle a workbook he relies on without anyone asking him. The instruction is the
+opposite of that one: the NSM/DSM book had to *change back*, and this one must **never change at
+all**.
+
+Note what it is not. He is **not** asking for the BI workbook to come off the house identity. It
+wears SATO-DIS-2026-01 v1.0, that is what he is looking at, and that is the state being frozen. A
+session that reads "beige" from the neighbouring rule and applies it here has inverted the
+instruction.
+
+### What is locked
+
+`src/lib/sales/weekly/export-workbook.ts` and `src/lib/sales/weekly/export-kit.ts`. The kit is
+imported by that builder and by **nothing else** — verified, not assumed — so freezing it freezes
+this workbook and reaches no other module. That is what makes a lock at this level safe here and
+what made the equivalent impossible for `sales-workbook-kit.ts`, which eleven modules share.
+
+The locked surface, measured off the emitted package:
+
+- the **23 sheets**, their order, and which two are hidden (`Data`, `CoverageHelper`)
+- every **column width, row height, merge, freeze pane, autofilter and conditional format**
+- the **style index on every cell** — so a re-styled column is caught even when no width moves
+- the whole **style table** (`xl/styles.xml`) — every colour, font, border, fill and number format
+- the **5 charts**, by the series type each declares
+
+### What is deliberately NOT locked
+
+**Cell values and formulas.** A corrected number, a fixed SUMIFS or a re-worded heading is not a
+design change and must not need the owner's sign-off. This was proved, not asserted: re-wording a
+sheet's subtitle leaves the lock green, while restyling a single header cell on the same sheet turns
+it red and names `Pareto`.
+
+The pivot's own mechanics — `refreshOnLoad`, the `tblWeekly` table source, cache integrity — stay
+pinned separately in `weekly-export-workbook.test.ts`. Those are about the workbook opening on
+current data, not about how it looks, and they must keep working independently of this lock.
+
+### How it is held
+
+`tests/weekly-bi-design-lock.test.ts` builds the workbook from `sampleDashboard()` — the same fixed
+fixture `runWeeklyExportTests` uses, so no data change can move the pin — and compares a design
+fingerprint. It runs in the required CI `validate` job.
+
+The fingerprint is stored as a readable table of one digest per sheet, plus one for the style table
+and one for the charts, rather than a single opaque hash: a failure then says *which* sheet moved.
+It was confirmed deterministic across two builds in one process and across two separate processes
+before being trusted, because a flaky pin in a required check is worse than no pin.
+
+Proved red four ways and green on the one that must stay green:
+
+| change | result |
+| --- | --- |
+| the zebra tint moved (a polish sweep) | RED — style table |
+| a sheet renamed | RED — sheet set |
+| a sheet added | RED — sheet set |
+| one header cell restyled | RED — layout, naming `Pareto` |
+| a subtitle re-worded | **green**, correctly |
+
+### 🔴 The failure mode this exists to catch
+
+Re-pinning the digests to clear a red suite. That turns the lock into a rubber stamp, and it is the
+move a session reaches for when it does not know the digests are an owner decision — the same
+instinct that let #3242 restyle four workbooks while believing it was enforcing a standard. The
+digests change only when the owner has said so about **this** workbook in the live conversation.
+
+New capability ships **beside** this workbook, exactly as every new closing feature ships beside the
+frozen monthly closing export.
