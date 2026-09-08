@@ -83,10 +83,33 @@ export function runPayslipDocumentTests() {
   // ── the mark, and whose document this is ───────────────────────────────────────────────────────
   // The payslip carried `phoenix-main-logo.png` until 2026-09-05. A company document wears the
   // COMPANY's identity; the app's brand belongs on the app's screens.
+  //
+  // THE MARK MUST MATCH THE GROUND IT SITS ON, and that is what this asserts rather than naming one
+  // file. There are two: the stock mark sets "SATO" in WHITE for dark grounds, the on-light file is
+  // the one that survives on white paper. Picking the wrong one does not fail loudly — it prints a
+  // letterhead reading "PHARMA", which reached real printed output once, and the inverse (the dark
+  // mark on the deep band) is the same failure in the other direction.
+  //
+  // Until 2026-09-08 the answer was always the on-light file, because the ink rule left the format
+  // with no dark ground at all. The premium ruling restored the deep letterhead band, so the
+  // letterhead is now the one place the WHITE-wordmark file is correct. Pinning the pairing keeps
+  // this test true through either ruling, instead of pinning whichever was current when it was
+  // written.
+  const markOnDark = /class="lh__mark"><img src="\/brand\/sato-pharma-logo\.svg"/.test(SHEET);
+  // Read the EMITTED element, not the stylesheet: the payslip ships its own CSS and would
+  // report a band it never renders if this looked for the class rule.
+  const bandIsFilled = /<header class="lh"[^>]*style="[^"]*linear-gradient/.test(SHEET);
+  assert.equal(
+    markOnDark,
+    bandIsFilled,
+    markOnDark
+      ? "the letterhead uses the WHITE-wordmark mark, so the band behind it must be filled — on white paper that mark prints as \"PHARMA\""
+      : "the letterhead band is filled, so it must use the WHITE-wordmark mark — the on-light mark on a deep band is the same failure inverted",
+  );
   assert.match(
     SHEET,
-    /src="\/brand\/sato-pharma-logo-on-light\.svg"/,
-    "The payslip must carry the Sato Pharma mark — the ON-LIGHT file, whose SATO wordmark is not white.",
+    /src="\/brand\/sato-pharma-logo(-on-light)?\.svg"/,
+    "The payslip must carry the Sato Pharma mark, in one of its two files.",
   );
   assert.doesNotMatch(SHEET, /phoenix/i, "No Phoenix branding may appear on a company document.");
   assert.match(SHEET, /SATO-DIS-2026-01 v1\.0/, "The sheet states the standard it is drawn to.");
@@ -104,18 +127,29 @@ export function runPayslipDocumentTests() {
     );
   }
 
-  // ── the ink rule ───────────────────────────────────────────────────────────────────────────────
-  // Colour is carried by LINES AND TYPE. The only filled areas allowed are the 0.7 mm brand rule in
-  // the letterhead and the 6 % zebra row the owner asked for by name. This counts every painted
-  // background the document declares and names any third one.
+  // ── the palette gate (was the ink rule, lifted 2026-09-08) ─────────────────────────────────────
+  // The ink rule stood from 2026-09-05 and forbade filled areas outright: colour by LINES AND TYPE,
+  // measured at 3.18% page coverage against 9.97%. The owner lifted it on 2026-09-08 — "now make the
+  // documents premium polish too" — after being shown the toner figure, so fills are allowed again.
+  //
+  // WHAT THIS STILL GUARDS, and why it was not simply deleted with the rule: every painted area must
+  // be a HOUSE colour. The failure this catches is not decoration, it is a document quietly drifting
+  // off the identity one hex at a time — which is exactly how the offer letters ended up on a
+  // different blue and the payslip on the Phoenix logo. Lifting a restraint on HOW MUCH ink is not a
+  // licence for WHICH ink.
   const backgrounds = (PAYSLIP_DOCUMENT_CSS.match(/background:\s*([^;]+);/g) ?? [])
     .map((rule) => rule.replace(/background:\s*/, "").replace(/;$/, "").trim())
     .filter((value) => value !== "#fff" && value !== "#ffffff" && value !== "none" && value !== "transparent");
-  const allowed = new Set(["var(--phx-doc-tint)", "var(--phx-doc-blue)", "#eef2f6"]);
+  const HOUSE_VARS = /^(var\(--phx-doc-(deep|blue|light|tint|hair)\)|#eef2f6)$/;
   for (const value of backgrounds) {
+    const everyColourIsHouse = value
+      .split(/[\s,()]+/)
+      .filter((token) => token.startsWith("#") || token.startsWith("var(--"))
+      .every((token) => HOUSE_VARS.test(token) || HOUSE_VARS.test(`var(${token})`));
     assert.ok(
-      allowed.has(value),
-      `The ink rule allows the zebra tint, the brand rule and the on-screen ground only — found "${value}".`,
+      HOUSE_VARS.test(value) || (value.startsWith("linear-gradient") && everyColourIsHouse),
+      `Every filled area must use house colours — found "${value}". The ink rule is lifted; the `
+        + "palette is not.",
     );
   }
   assert.ok(

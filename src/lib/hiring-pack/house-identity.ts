@@ -10,14 +10,21 @@
 // job-offer letters were on a different blue entirely. A house identity that lives in five places is
 // not a house identity; it is five identities that happen to agree today.
 //
-// THE INK RULE IS THE POINT, not a preference. These print in volume on office machines — a contract
-// in three copies, a clearance in two, a custody receipt for every device issued. The owner's
-// instruction was to spend no toner on decoration, so the identity is carried by LINES AND TYPE and
-// never by filled area. Measured on the approved specimen, this took page coverage from 9.97% to
-// 3.18% — roughly a 69% toner saving for exactly the same information.
+// 🔒 THE INK RULE IS LIFTED — owner, 2026-09-08: "now make the documents premium polish too", taken
+// after being shown what it costs. It stood from 2026-09-05 and its reasoning was real and measured:
+// these print in volume on office machines — a contract in three copies, a clearance in two, a
+// custody receipt for every device issued — and carrying the identity in LINES AND TYPE alone took
+// page coverage from 9.97% to 3.18%, roughly a 69% toner saving for exactly the same information.
 //
-// The one deliberate filled element besides the mark is the zebra row on data tables, which the
-// owner asked for by name, at 6% of Brand Blue. It REPLACES the row hairline rather than joining it.
+// He was shown that figure and chose the ink. So filled areas are allowed again, and the identity is
+// carried by BAND AND TYPE: a deep band across the letterhead, a tinted title panel, a filled
+// purpose band, and the 6% zebra rows that were always permitted. Expect page coverage back around
+// 10%. A session that finds the 3.18% figure in git history or an old doc is reading a SUPERSEDED
+// rule — the measurement is still true, it is simply no longer the instruction.
+//
+// 🔴 GOVERNMENT FORMS REMAIN EXEMPT, AND THAT IS NOT A STYLE PREFERENCE — see the note below. It is
+// the one part of this file the premium ruling does not reach, because the cost of getting it wrong
+// is a filing the insurance office refuses, not an ugly page.
 //
 // GOVERNMENT FORMS ARE EXEMPT, PERMANENTLY. Social-insurance Form 1, Form 6 and the labour exit form
 // are facsimiles of what the Authority itself issues; they print exactly as the Authority lays them
@@ -46,7 +53,7 @@ export const HOUSE_COLORS = {
   blue: "#0A6BA6",
   /** The wave's lightest stroke. Callout edges. */
   light: "#1482C2",
-  /** Brand Blue at 6% on white — the zebra row, and nothing else. */
+  /** Brand Blue at 6% on white — zebra rows, and the tinted title panel. */
   tint: "#F2F6FA",
   hair: "#B9C7D4",
   muted: "#5A6B7C",
@@ -56,9 +63,15 @@ export const HOUSE_COLORS = {
 /**
  * The mark, as a path under `public/`.
  *
- * ALWAYS THE ON-LIGHT FILE ON PAPER. The stock mark sets "SATO" in WHITE for use on dark grounds;
- * the house format has no dark grounds, so on white paper that half of the mark disappears and the
- * letterhead reads "PHARMA". That has already reached printed output once.
+ * TWO FILES, AND THE BAND DECIDES WHICH. The stock mark sets "SATO" in WHITE for use on dark
+ * grounds; the on-light file is the one that survives on white paper. Until 2026-09-08 the house
+ * format had no dark grounds at all, so the on-light file was the only correct answer and picking
+ * the stock one printed a letterhead reading "PHARMA" — which reached printed output once.
+ *
+ * The premium letterhead restored that dark ground, so the WHITE-wordmark file is now the right one
+ * THERE and only there: `HOUSE_MARK_SRC` stays the on-light file for every other placement, and
+ * `HOUSE_MARK_ON_DARK_SRC` is what the band uses. Putting the on-light mark on the deep band would
+ * reproduce the same failure in reverse — a dark wordmark on a dark field.
  *
  * VECTOR, since 2026-09-05. The raster is 401 x 158 px — exactly 300 dpi at the 34 mm below, with no
  * headroom — so on the 600 dpi machines these papers are printed on it was being upsampled on every
@@ -68,6 +81,27 @@ export const HOUSE_COLORS = {
  * it the vector is the only one that holds.
  */
 export const HOUSE_MARK_SRC = "/brand/sato-pharma-logo-on-light.svg";
+
+/** The stock mark, whose "SATO" is WHITE. Correct ONLY on the deep letterhead band. */
+export const HOUSE_MARK_ON_DARK_SRC = "/brand/sato-pharma-logo.svg";
+
+/**
+ * The letterhead band, as an INLINE style rather than a class alone.
+ *
+ * 🔴 THE MARK AND ITS GROUND MUST NOT BE SEPARABLE. `houseLetterhead()` emits the markup, but not
+ * every consumer ships this module's stylesheet — `buildPayslipSheet` writes its own CSS and reuses
+ * only the markup, so it renders `.lh` with no rule behind the class at all. When the band lived
+ * solely in the stylesheet, that payslip took the WHITE-wordmark mark with no dark ground under it
+ * and printed a letterhead reading "PHARMA" — the exact failure the on-light file exists to prevent,
+ * reintroduced by the premium pass on 2026-09-08 and caught by `tests/payslip-document.test.ts`
+ * before it shipped.
+ *
+ * Inlining it makes the pairing structural: any consumer that emits the markup gets the ground,
+ * whatever CSS it does or does not load. The class stays for padding and layout.
+ */
+export const HOUSE_LETTERHEAD_BAND_STYLE =
+  `background:linear-gradient(100deg,${HOUSE_COLORS.deep} 0%,${HOUSE_COLORS.blue} 62%,${HOUSE_COLORS.deep} 100%);`
+  + "padding:4.5mm 6mm 4mm;";
 
 /** Standard width of the mark on a letterhead. Below 24 mm the PHARMA counters fill in. */
 export const HOUSE_MARK_WIDTH_MM = 34;
@@ -177,7 +211,7 @@ export const HOUSE_IDENTITY_CSS = `
     print-color-adjust: exact;
   }
 
-  /* ---------- the letterhead — no filled areas, anywhere ---------- */
+  /* ---------- the letterhead — filled again, 2026-09-08 ---------- */
   /* THE ROW IS PINNED LEFT-TO-RIGHT, and the direction is the whole point. These documents lay out
      right-to-left, so a direction-following row puts the mark on the RIGHT — which is not what the
      approved sheet shows, and not where the contract has always carried it. The mark belongs
@@ -186,16 +220,29 @@ export const HOUSE_IDENTITY_CSS = `
   .lh {
     display: flex; direction: ltr;
     align-items: flex-end; justify-content: space-between; gap: 8mm;
+    /* THE BAND. Deep on the outer edges through Brand Blue in the middle, so the sheet reads as one
+       object rather than as a strip laid on top of it. Padded in millimetres because these are
+       physical pages: the mark keeps its 34 mm and gains air around it rather than growing. */
+    background: linear-gradient(100deg, var(--phx-doc-deep) 0%, var(--phx-doc-blue) 62%, var(--phx-doc-deep) 100%);
+    padding: 4.5mm 6mm 4mm;
   }
   .lh__mark img { display: block; width: ${HOUSE_MARK_WIDTH_MM}mm; height: auto; }
-  .lh__id { text-align: right; color: var(--phx-doc-muted); font-size: 6.5pt; line-height: 1.5; }
-  .lh__id strong { display: block; color: var(--phx-doc-deep); font-size: 8pt; font-weight: 700; }
+  /* On the band every value inverts. The muted grey that reads as secondary on white is illegible
+     on deep blue, so the secondary line is white at 78% rather than a different hue. */
+  .lh__id { text-align: right; color: rgba(255,255,255,.78); font-size: 6.5pt; line-height: 1.5; }
+  .lh__id strong { display: block; color: #FFFFFF; font-size: 8pt; font-weight: 700; }
 
-  /* The one element on every document without exception. 0.7 mm of rule, and it is what makes a
-     page recognisable at arm's length — the job the filled navy band used to do, for ~1% of it. */
-  .lh__rule { height: .7mm; background: var(--phx-doc-blue); margin-top: 2.2mm; }
+  /* Now the seat of the band rather than a substitute for it: a light rule directly under the deep
+     block, which stops the band floating and gives the eye somewhere to land. No top margin — it
+     must touch the band, or the two read as separate objects. */
+  .lh__rule { height: .7mm; background: var(--phx-doc-light); margin-top: 0; }
 
-  .lh__title { text-align: center; padding: 3.3mm 0 2.2mm; }
+  /* The title sits in its own tinted panel, edged in Brand Blue on the side the page starts from. */
+  .lh__title {
+    text-align: center; padding: 3.3mm 3mm 2.6mm;
+    background: var(--phx-doc-tint);
+    border-bottom: .4pt solid var(--phx-doc-hair);
+  }
   .lh__title h1 { margin: 0; color: var(--phx-doc-deep); font-size: 17pt; font-weight: 700; line-height: 1.2; }
   .lh__title p { margin: 1.2mm 0 0; color: var(--phx-doc-muted); font-size: 8pt; font-weight: 600; }
 
@@ -206,12 +253,15 @@ export const HOUSE_IDENTITY_CSS = `
   }
   .lh__hair { border-top: .5pt solid var(--phx-doc-hair); }
 
-  /* Who keeps this copy. Ruled, never filled — it is the one line that stops the employee's copy
-     and the company's copy being confused, so it is given its own band rather than a footnote. */
+  /* Who keeps this copy. FILLED since 2026-09-08 — it is the one line that stops the employee's copy
+     and the company's copy being confused, so it is the line that most deserves the ink. Deep on
+     white type: at 8.5pt bold this is the highest-contrast element on the page after the band. */
   .lh__purpose {
-    margin: 0; padding: 1.5mm 0;
-    border-top: .5pt solid var(--phx-doc-hair);
-    border-bottom: .5pt solid var(--phx-doc-hair);
+    margin: 0; padding: 1.7mm 0;
+    background: var(--phx-doc-deep);
+    color: #FFFFFF !important;
+    border-top: none;
+    border-bottom: none;
     color: var(--phx-doc-deep); font-size: 8.5pt; font-weight: 700; text-align: center;
   }
   /* The band holds two lines when the paper states its purpose in both scripts. */
@@ -359,9 +409,9 @@ export function houseLetterhead(input: HouseLetterheadInput): string {
       + `<p class="lh__ar" dir="rtl" lang="ar">${escapeHtml(input.titleAr)}</p>`
     : `<h1>${escapeHtml(input.titleAr)}</h1>`;
 
-  return `<header class="lh">
-      <div class="lh__mark"><img src="${HOUSE_MARK_SRC}" alt="" width="401" height="158"></div>
-      <div class="lh__id"><strong>${escapeHtml(input.legalNameAr)}</strong>${nameEn}</div>
+  return `<header class="lh" style="${HOUSE_LETTERHEAD_BAND_STYLE}">
+      <div class="lh__mark"><img src="${HOUSE_MARK_ON_DARK_SRC}" alt="" width="401" height="158"></div>
+      <div class="lh__id" style="color:rgba(255,255,255,.78)"><strong style="color:#FFFFFF">${escapeHtml(input.legalNameAr)}</strong>${nameEn}</div>
     </header>
     <div class="lh__rule"></div>
     <div class="lh__title">
