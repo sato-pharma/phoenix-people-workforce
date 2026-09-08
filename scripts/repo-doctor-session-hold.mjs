@@ -96,7 +96,33 @@ export function sessionActivityMinutes(dir, options = {}) {
  * from the report without explanation reads as "that folder is gone" rather than "somebody is in
  * it" — the same distinction repo-doctor already draws for its PR-state holds.
  */
+/**
+ * Can this signal answer at all? The POSITIVE CONTROL, and it is the difference between two states
+ * that produce byte-identical output.
+ *
+ * `sessionActivityMinutes` returns null both when NO SESSION HAS EVER RUN in a folder and when
+ * `~/.claude/projects` could not be read — a wrong homedir, a permissions fault, a machine where
+ * Claude Code has never run. Only the first is an answer. Treating the second as "nothing holds
+ * this folder" is the AGENTS.md 2.3 shape where an empty result is indistinguishable from a broken
+ * query, and here it silently disarms the whole guard: every worktree reads as unheld.
+ *
+ * Readability alone is the control, deliberately — not non-emptiness. An empty `projects` directory
+ * is a real answer ("no session has been recorded"), whereas an unreadable one is no answer at all.
+ */
+export function transcriptProbeUsable(options = {}) {
+  const home = options.homedir ?? os.homedir();
+  try {
+    fs.readdirSync(path.join(home, ".claude", "projects"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function sessionHoldReason(dir, options = {}) {
+  if (!transcriptProbeUsable(options)) {
+    return "cannot read ~/.claude/projects, so a session in this folder cannot be ruled out";
+  }
   const mins = sessionActivityMinutes(dir, options);
   if (mins === null || mins >= (options.heldMin ?? SESSION_HELD_MIN)) return null;
   return `a session spoke in this folder ${mins} min ago — removing it deregisters the worktree under a live session`;

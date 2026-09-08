@@ -31,6 +31,15 @@
 // drive it without a live machine — the same split, for the same reason, as
 // `scripts/branch-pr-state.mjs`.
 //
+// WHAT THIS DOES NOT COVER, stated because a guard read as total is worse than a known gap.
+// It sees a session's own process only for `.claude/worktrees/*`. An `_wt-*` session's cwd is the
+// PRIMARY checkout (AGENTS.md 2.1), so no row of the sweep names its folder. Measured here on
+// 2026-09-08: every `claude` process reported a `.claude/worktrees/` path and not one reported an
+// `_wt-*` folder; the only `_wt-*` holders were transient `bash`/`node`/`sleep` children, in 2 of
+// the ~10 such folders on the machine, present only while a command ran. That is precisely not the
+// moment the folder is idle and at risk. This narrows the IDLE gap next to the transcript signal;
+// it does not narrow the `_wt-*` one, and the report says so on screen.
+//
 // THE DANGEROUS DIRECTION IS ONE-WAY, so every unknown answers "live". A probe that cannot run, or
 // that runs and reads zero processes, must never be reported as "the folder is free" — see
 // {@link livenessVerdict}, where that is the whole point of the first two rules.

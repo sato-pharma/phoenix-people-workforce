@@ -695,7 +695,14 @@ for (const r of live) {
   //   - livenessVerdict reads each process's working directory out of its PEB, so it sees a
   //     session OPEN BUT IDLE FOR HOURS — which the transcript reads as dead once its newest turn
   //     ages past the window, and an open session between turns is exactly what both lost folders
-  //     had. It also reaches `_wt-*` through the child processes that DO run there.
+  //     had.
+  //
+  // The two overlap on `.claude/worktrees/*` and NEITHER covers `_wt-*`. Both were measured on this
+  // machine: every `claude` process reported a `.claude/worktrees/` cwd and not one reported an
+  // `_wt-*` folder, because an `_wt-*` session's cwd is the PRIMARY (AGENTS.md 2.1) — which is also
+  // why its transcripts land in the primary's project directory. An `_wt-*` folder does sometimes
+  // hold a bash or node child, but only while a command is running, which is exactly not when the
+  // folder is idle and at risk. Combining these narrows the IDLE gap, not the `_wt-*` one.
   //
   // It also carries the strip-idle invariant: `sourceIdleMin` is the same measurement --strip-idle
   // already used to refuse a worktree as possibly-mid-edit, and never showed to this gate. Without
@@ -827,12 +834,13 @@ if (heldByLiveSession.length) {
       "where bare git commands resolve against the primary checkout on `main`.",
   );
   console.log(
-    "  Coverage: a transcript read (reliable for `.claude/worktrees/*`) PLUS a sweep of every " +
-      "process's working directory, which also reaches `_wt-*`.",
+    "  Coverage: a transcript read PLUS a sweep of every process's working directory. Together " +
+      "they see both a just-closed session and one open but idle for hours.",
   );
   console.log(
-    "  Residual blind spot: an `_wt-*` session that is idle AND running no child process in its " +
-      "folder reports the PRIMARY as its cwd, so it is UNKNOWN — not proven unattended.",
+    "  Blind spot, unchanged: `.claude/worktrees/*` only. An `_wt-*` session reports the PRIMARY " +
+      "as its cwd, so neither signal can tell it from any other session — an `_wt-*` folder " +
+      "absent from this list is UNKNOWN, not proven unattended.",
   );
   console.log("");
 }

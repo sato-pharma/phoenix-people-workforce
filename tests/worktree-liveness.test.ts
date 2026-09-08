@@ -7,6 +7,11 @@
 //     has JUST CLOSED, inside the grace window, which no process sweep can — the process is gone.
 //     Its documented blind spot is `_wt-*`: a sibling worktree's session reports the PRIMARY as its
 //     cwd (AGENTS.md 2.1), so its turns land in the primary's project directory.
+//     THE PROCESS SWEEP DOES NOT CLOSE THAT GAP, and no assertion below pretends it does. The same
+//     cwd fact defeats it: measured 2026-09-08, every `claude` process reported a
+//     `.claude/worktrees/` path and not one reported an `_wt-*` folder. The `_wt-*` case in this
+//     file pins the MECHANISM — a row whose cwd is inside the folder holds it — not coverage of
+//     `_wt-*` sessions, which neither signal has.
 //   - `worktree-liveness.mjs`, under test here, reads each process's working directory out of its
 //     PEB. It sees a session that is OPEN BUT IDLE FOR HOURS, which the transcript signal reads as
 //     dead once the newest turn ages past the window — and an open session sitting between turns is

@@ -10,6 +10,7 @@ import {
   encodeProjectDirName,
   sessionActivityMinutes,
   sessionHoldReason,
+  transcriptProbeUsable,
 } from "../scripts/repo-doctor-session-hold.mjs";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -97,14 +98,35 @@ export function runRepoDoctorSessionHoldTests() {
     assert.equal(sessionHoldReason(worktree, { homedir }), null, "21 hours idle is not a live session");
   }
 
-  // ── Never-run and unreadable both fall through, and that is deliberate ────
-  // This rule only ever SUBTRACTS from what is offered for removal. A folder no session has used
-  // returns null and the existing gates decide, exactly as before — so a wrong answer here costs a
-  // worktree that stays one more day, never a folder deleted under somebody.
+  // ── "Never ran here" and "could not look" are DIFFERENT, and used to be one answer ────
+  // Both make sessionActivityMinutes return null. Only the first is an answer. Reading the second
+  // as "nothing holds this folder" disarms the entire guard at once — every worktree reads unheld —
+  // and it is the same shape as a process sweep that read 0 processes: an empty result that is
+  // indistinguishable from a broken query unless something proves the probe ran. So the projects
+  // ROOT being readable is the positive control, and an unreadable one HOLDS.
   {
-    const homedir = fixture(worktree, null);
+    const homedir = fixture(worktree, null); // a home with no ~/.claude/projects at all
     assert.equal(sessionActivityMinutes(worktree, { homedir }), null, "no project directory is not an error");
-    assert.equal(sessionHoldReason(worktree, { homedir }), null);
+    assert.equal(transcriptProbeUsable({ homedir }), false, "an absent projects root means the probe cannot answer");
+    assert.match(
+      String(sessionHoldReason(worktree, { homedir })),
+      /cannot read/,
+      "a probe that could not look must HOLD the folder, never release it",
+    );
+  }
+  {
+    // The control's other half: the root reads fine, this worktree simply has no transcripts. That
+    // IS an answer — no session has ever run here — and it must fall through to the other gates,
+    // or nothing on the machine is ever retirable again.
+    const homedir = fs.mkdtempSync(path.join(os.tmpdir(), "repo-doctor-hold-"));
+    fs.mkdirSync(path.join(homedir, ".claude", "projects"), { recursive: true });
+    assert.equal(transcriptProbeUsable({ homedir }), true, "a readable projects root means the probe works");
+    assert.equal(
+      sessionHoldReason(worktree, { homedir }),
+      null,
+      "a folder no session has ever used must not be held — without this the guard blocks every "
+        + "retirement and the report becomes noise",
+    );
   }
   {
     // A project directory holding no transcript at all — present but empty.
