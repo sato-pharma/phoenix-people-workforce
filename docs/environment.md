@@ -330,7 +330,6 @@ copies directly with no variable fallback, so deleting the secret copies would s
 | RAILWAY_TOKEN | Auth for `sync-railway-production-secrets.yml`'s Railway CLI calls |
 | CLOUDFLARE_API_TOKEN | Not currently consumed by any workflow or app code — held for future Cloudflare DNS/cache automation |
 | SENTRY_AUTH_TOKEN | Build-time only — sourcemap upload for the Sentry Next.js plugin, never read at runtime |
-| SONAR_TOKEN | SonarQube Cloud scan (workflow is currently `workflow_dispatch`-only, not running on PRs) |
 
 ### CI / testing
 | Secret | Purpose |

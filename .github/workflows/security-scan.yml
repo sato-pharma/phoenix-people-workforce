@@ -14,8 +14,15 @@ name: Security Scan (OSS)
 #
 # Restored 2026-08-08 after #1889 removed the whole file. That PR also dropped the Semgrep
 # sast-scan job, which is NOT restored here, deliberately: Semgrep took 4m14s per PR against
-# gitleaks' 13s, and Sonar still covers overlapping static-analysis ground. This job is the cheap
-# half that nothing else replaces.
+# gitleaks' 13s. This job is the cheap half that nothing else replaces.
+#
+# READ THIS BEFORE ASSUMING SOMETHING ELSE CATCHES CODE FLAWS. This note used to justify dropping
+# Semgrep partly on the grounds that a hosted code-quality scanner covered overlapping ground. That
+# scanner was removed entirely on 2026-09-08 at the owner's instruction, so the justification is
+# gone with it: this repo now runs NO static application security testing at all. gitleaks finds
+# secrets, not vulnerabilities, and `lint`/`typecheck` are not security analysis. That is a
+# deliberate, known position rather than an oversight to quietly fix — but if it is ever revisited,
+# restoring Semgrep here is the cheaper move than reinstating a hosted service.
 #
 # NOW BLOCKING. The original rolled out with `--exit-code 0` "for this initial rollout", which
 # meant the job could not fail no matter what it found — 40 consecutive green runs that proved

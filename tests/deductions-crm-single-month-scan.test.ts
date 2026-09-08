@@ -164,11 +164,10 @@ export function runDeductionsCrmSingleMonthScanTests() {
     `crm.ts must call scanVisitsForRangeIncludingDeparted exactly ONCE (found ${scanCalls.length}) — one company-wide month scan shared by every leaver and by the zero-signal check, never one per employee`,
   );
   // Plain string slicing, deliberately not a regex. The previous form used
-  // `[\s\S]{0,600}?` — a lazy quantifier over match-anything, which is the shape
-  // SonarQube raises as a ReDoS security hotspot (S5852). A hotspot can only be
-  // cleared by a human marking it reviewed in the SonarCloud UI, so a scanner can
-  // never satisfy the "Security Hotspots Reviewed = 100%" gate condition on its
-  // own — it blocked this PR outright. The slice says the same thing more plainly.
+  // `[\s\S]{0,600}?` — a lazy quantifier over match-anything, which is the classic
+  // ReDoS shape: on input that never satisfies the tail, the engine retries every
+  // split point and the match cost goes quadratic. The slice says the same thing
+  // more plainly and cannot backtrack at all. Do not reintroduce the regex form.
   const loopAt = connectorSource.indexOf("for (const employeeRow");
   // Anchor must exist, or the check below inspects an empty string and passes
   // vacuously — proving nothing while looking green.

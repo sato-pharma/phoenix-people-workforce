@@ -1,29 +1,24 @@
 # Test coverage — what the number means here
 
-> **The SonarQube PR check was retired on 2026-08-05** (owner decision) —
-> `.github/workflows/sonarqube.yml` is trigger-disabled and no longer runs on pull requests. Its
-> Quality Gate proved unsatisfiable: the failing condition was `Security Hotspots Reviewed = 100%`,
-> which counts human UI reviews rather than code quality, and which re-raises every time
-> `update-branch` moves the head. See that workflow's header for the full account.
+> **Nothing gates on coverage in this repo.** There is no coverage threshold and no PR check that
+> reads one. The hosted scanner that used to publish these figures was removed entirely on
+> 2026-09-08 at the owner's instruction; `pnpm run coverage` (c8) is now the only thing that
+> produces them, on demand and locally.
 >
-> **The measurements below remain accurate and still worth reading** — the `c8 --all` wiring is
-> unchanged, and these are the real numbers for this codebase. What is no longer live is the *gate*:
-> the "recommended threshold" note near the end is superseded, since nothing is gating on it.
-> `security-scan.yml` was removed on 2026-08-08 by #1889 and restored the same day by #1894: its
-> gitleaks `secret-scan` job now runs on every PR, blocks on a finding, and **is** a required check
-> on `main`. Semgrep's `sast-scan` was deliberately not restored and no longer runs.
+> **The measurements below remain accurate and still worth reading.** They are the real numbers for
+> this codebase and the reasoning behind them is unchanged — what is gone is the gate, not the
+> arithmetic.
 
-Written 2026-08-05, after PR #1748 was blocked by SonarQube reporting **4.3% coverage on new code**
-while the repo appeared to be at **55%**. Both figures were produced by the same tooling, and the
-gap between them is the whole story.
+The point of this page is one lesson: **the same test data produced 4.3% and 55% depending on how
+absent files were counted.** That gap, not either figure, is the thing worth understanding.
 
 ## The short version
 
 | Figure | Value | What it is |
 |---|---|---|
 | Repo-wide, honest | **22.5%** | 117,862 / 523,394 lines, `c8 --all` |
-| Repo-wide, old reporting | 55.1% | flattered — see below |
-| **After coverage exclusions** | **44.9%** | 117,431 / 261,795 — the number the gate measures |
+| Repo-wide, flattered | 55.1% | what you get without `--all` — see below |
+| After excluding UI and routes | **44.9%** | 117,431 / 261,795 — of the code that can be unit-tested |
 | **Branch coverage** | **73.8%** | the figure that reflects tested decision logic |
 
 ## Why 55% was not real
@@ -34,12 +29,17 @@ they `readFileSync` a module and assert on its text — "this route must call `a
 the direct-orders evidence-gate regression, and what pins the locked pricing rule), but it never
 `import`s the module. So the file is absent from `lcov.info` entirely.
 
-Absent is not zero. The local summary quietly left those files **out of the denominator**, which
-inflated the average; SonarQube reads a missing file as **0%**. Same data, two answers an order of
-magnitude apart. `--all` in `.github/workflows/sonarqube.yml` closes that gap — the number dropped
-to 22.5% and nothing got worse, because the 55% was never true.
+**Absent is not zero.** Without `--all`, those files drop out of the *denominator*, which inflates
+the average; counting a never-loaded file as 0% is what gives 22.5%. Same data, two answers an order
+of magnitude apart, and only one of them is honest.
 
-## Why the metric excludes UI and routes
+🔴 **`--all` is why the honest number exists, and it has been lost once already.** It used to live in
+the scanner's workflow rather than in the repo, so deleting that workflow on 2026-09-08 would have
+silently reverted `pnpm run coverage` to the flattered figure — no error, no warning, just a number
+that quietly doubles. It is now baked into the `coverage` script in `package.json`. **Do not remove
+it**; a coverage number without `--all` is not a smaller truth, it is a different question.
+
+## Why UI and routes are read separately
 
 Measured by area:
 
@@ -54,24 +54,20 @@ Measured by area:
 browser or a running server.** No realistic amount of work moves that, and chasing it would mean
 writing tests that mock a browser instead of tests that catch bugs.
 
-They remain **fully analysed** for bugs, vulnerabilities and code smells. Only the coverage metric
-drops them (`sonar.coverage.exclusions`), so the number answers a question worth asking: *of the
-logic we can unit-test, how much do we?*
+So the useful question is not "what is the repo's coverage" but *of the logic we can unit-test, how
+much do we?* — which is the 44.9% row. Read the two halves apart; averaging them tells you nothing.
 
-## The threshold
+## If a threshold is ever wanted again
 
-**50% on new code.** Above today's 44.9%, so it pulls quality upward; reachable by an ordinary PR,
-so it stays credible. Set in the SonarQube Cloud UI — it is not a repo file:
+The number to beat would be today's 44.9%, and the lesson from the last attempt is the important
+part: the default **80% blocked a PR outright**. Over Supabase-bound services that is unreachable
+without a test-seam programme, and **an unreachable gate is one everybody learns to ignore** — worse
+than no gate, because it teaches the team to scroll past a red CI. Set one only slightly above the
+real number, if at all.
 
-> Project → Administration → Quality Gate → (custom gate) → Coverage on New Code ≥ 50
+## Raising the real number
 
-80% was the default that blocked #1748. Over Supabase-bound services it is unreachable without a
-test-seam programme, and **an unreachable gate is one everybody learns to ignore** — which is worse
-than no gate, because it teaches the team to scroll past a red CI.
-
-## Raising it later
-
-The honest path to a higher number is test seams for the Supabase-bound services (inject the client
-rather than importing `getSupabaseAdmin()`), which lets those modules be executed in tests instead
-of only inspected. `tests/stubs/` and `tests/alias-loader.mjs` already do this for the email layer —
-that is the pattern to copy. Raise the threshold as the real number climbs, never ahead of it.
+The honest path is test seams for the Supabase-bound services (inject the client rather than
+importing `getSupabaseAdmin()`), which lets those modules be executed in tests instead of only
+inspected. `tests/stubs/` and `tests/alias-loader.mjs` already do this for the email layer — that is
+the pattern to copy. Raise any threshold as the real number climbs, never ahead of it.

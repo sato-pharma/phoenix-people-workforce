@@ -119,7 +119,7 @@ export function runCrmDayMapVisitTypeStatusTests() {
     "utf8",
   );
   // VISIT_TYPE_TO_STATUS is module-private, so the third copy is pinned at the source. Plain string
-  // checks, deliberately not a regex over match-anything (the SonarQube S5852 ReDoS hotspot).
+  // checks, deliberately not a regex over match-anything (the classic ReDoS shape, banned here).
   for (const { code, status, name } of MAPPED_RULING) {
     assert.ok(
       sourceMap.includes(`[${code}, "${status}"]`),
