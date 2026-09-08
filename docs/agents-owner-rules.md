@@ -1043,9 +1043,101 @@ rows "Phoenix is right — I will fix my sheet". The correction is to his file, 
 
 ### What holds it
 
-`tests/qema-qalubeya-split.test.ts` asserts the seven-area target list and, beside it, names `CA5`
-specifically with this ruling attached — so removing Down town fails with an explanation rather than
+`tests/qema-warehouse-split.test.ts` (named `qema-qalubeya-split.test.ts` until the rule was
+replaced on 2026-09-08) carries the `CA5` assertion forward, naming it — so removing Down town fails with an explanation rather than
 just going red. Both run in the required CI `validate` job.
+
+## The warehouse split (تقسيمة المخازن) — owner ruling, 2026-09-08
+
+**This replaces the Qalubeya→Cairo rule of 2026-09-07 outright.** That rule was one day old. He
+opened with "we will change the concept of the qema distribution into تقسيمة المخازن" and then gave
+the rule in two halves:
+
+> اولا — اي مخزن لحد 200 علبة per product يوزع علي مندوبين المحافظة وليس له علاقه بتوزيع الجمهورية
+>
+> ثانيا — اي مخزن فوق 200 باي كميه يوزع 50 % علي مندوبين المحافظة وباقي ال 50% يوزع علي باقي
+> الجمهورية بالتساوي ماعدا مندوبين نفس المحافظة اللي اتطبع فيها الاوردر
+
+So, per warehouse, per product, per month: up to 200 packs stays inside the governorate and has
+**nothing to do** with the national spread; above 200, half stays in the governorate and half divides
+evenly across every other area in the country, with the origin governorate excluded from that half.
+
+### What this reverses, and why each reversal is asserted
+
+Three properties of the 2026-09-07 rule are now false. Each was load-bearing in the old test, so each
+is asserted in the new one in its inverted form — otherwise a session reading the older account in
+this file would "restore" them as bugs:
+
+| 2026-09-07 | 2026-09-08 |
+| --- | --- |
+| Cairo is the destination | Cairo is 6 areas of 49, taking the same share as Aswan |
+| One way — Cairo never reaches Qalubeya | Symmetric: a Cairo warehouse over 200 reaches Qalubeya |
+| Qalubeya gives up six sevenths | Qalubeya keeps half, and holding one area it keeps all of that half |
+
+What did **not** change, and is re-pinned because a rewrite is when it gets lost: the divisor is
+AREAS and not reps, so Down town (`CA5`) still takes a share; every El Qema customer is a warehouse;
+and a pharmacy or hospital never becomes one because El Qema invoiced it.
+
+### Scope — asked, and answered narrowly
+
+He was asked whether the 200-pack rule runs on every distributor or only El Qema, and answered:
+
+> any warehouse only in el qema distrbutor .. consider el qema distbutor not warehouse and the
+> customers in it vare the warehouses golden rule
+
+Two things at once. The rule is **El Qema only** — "اي مخزن" is scoped by that sentence, not open —
+and El Qema is a *distributor whose customers are warehouses*, never a warehouse itself. That second
+half is what `WHOLESALE_ONLY_DISTRIBUTORS` already encoded; the threshold set is kept separate
+(`WAREHOUSE_THRESHOLD_DISTRIBUTORS`) so a future wholesale-only distributor does not inherit the
+national spread silently.
+
+### 🔴 The threshold is the month's total, never one row
+
+The single trap in implementing this. One customer and one product arrives as several rows — several
+bricks, several invoices. Judged per row, three 100-pack rows read as three sub-threshold orders and
+**nothing leaves the governorate**; judged on the aggregate they are a 300-pack month and half the
+money goes national. Neither answer errors, and the split preserves each line's total, so the
+publication drift check — which compares units — cannot see the difference. `warehouseSplitQtyByKey`
+sums first, keyed on distributor, customer, line, closing area and product. Breaking that threading
+deliberately turns the new test red at "so all three rows go national together", 1 area against 49.
+
+The key carries the AREA as well, because one client code can name two venues in two governorates
+(see the EP-PHS case). Without it, one venue's volume could push another venue's small order across
+the country.
+
+### The universe is `AREA_CITY` — 49 areas
+
+Main Store (`OTMS`) and retired `OT3` are outside it, which is what keeps the national half from
+draining into a bucket with no rep, no DM and no target. That exclusion already existed for the city
+split; the national half simply inherits it.
+
+### Measured on August 2026, El Qema's real book
+
+41 customer×product rows, 8,768 packs, 1,888,898.40 EGP. Only **five** rows are above 200 packs, and
+three of them are the two Benha warehouses in Qalubeya. Run through the new rule (units preserved to
+1.8e-12, value to 5.1e-9):
+
+| Area | Before | Under the 2026-09-07 rule | Under this rule |
+| --- | --- | --- | --- |
+| `D11` Qalubeya | 6,656 | 950.86 | **3,344.21** |
+| each Cairo area | 0 | 950.86 | **123.42** |
+| `UE5` / `UE6` Sohag | 1,032 / 0 | — | 345.21 each |
+| every other area | 0 | 0 | 79.42 floor |
+
+34 of the 41 rows move. The 7 that do not are all sub-threshold orders in one-area governorates —
+Qalubeya, Fayoum, Beni Suef and Ismailia — where "the governorate only" means "exactly where it is".
+
+Qalubeya's rep therefore ends the month with **3.5× what the rule it replaced would have given him**,
+and Cairo with about an eighth. Nothing about the LINE total moves: the split relocates units, it
+never creates or destroys one.
+
+### What holds it
+
+`tests/qema-warehouse-split.test.ts`, in the required CI `validate` job, plus the neighbouring
+`import-split-preview`, `attribution-store-split-net` and `store-split-detail-report` suites, which
+all had to be moved onto the new geometry. `planShares` carries one running remainder across both
+blocks rather than concatenating two `evenShares` calls — measured, the naive version returned
+699.9999999999993 for 700 into 1 + 48, and the matrix is asserted to sum back bit-exactly.
 
 ## The automated payroll exports keep the Phoenix look — owner decision, 2026-09-08
 

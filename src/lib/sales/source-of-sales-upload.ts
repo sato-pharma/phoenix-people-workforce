@@ -75,6 +75,7 @@ function buildSplitPlan(parsedRows: readonly ParsedDistributorRow[], period: str
       distributorCode: r.distributorCode,
       isDirect: r.isDirect,
       officialLine: r.officialLine,
+      productCode: r.productCode,
       qty: r.qty,
     })),
   });

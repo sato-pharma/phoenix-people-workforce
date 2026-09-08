@@ -15,7 +15,11 @@ import {
  * The wholesaler city split is applied by the Closing Matrix in TypeScript. au.f_monthly_attribution
  * — Sales vs Target, the Business Review, incentives — reads the fact rollup straight and cannot see
  * it, so until 2026-09-07 the two disagreed: El Qema's Qalubeya wholesalers read 950.86 units in D11
- * on the closing and 6,656 on achievement, and the six Cairo areas got nothing.
+ * on the closing and 6,656 on achievement, and the rest of the country got nothing.
+ *
+ * The rule those figures came from was replaced on 2026-09-08 by the 200-pack warehouse split, so
+ * the geometry below is the new one. The BRIDGE is what these tests pin, and it is unchanged: the
+ * application computes the split and SQL only adds the result up.
  *
  * These tests pin the bridge: the net this module builds, which SQL only adds up.
  *
@@ -26,7 +30,11 @@ import {
  *   · a line name lower-cased on the way out joins to nothing in SQL and the split vanishes
  */
 
-const QALUBEYA_TARGETS = ["CA1", "CA2", "CA3", "CA4", "CA5", "CA6", "D11"];
+/** Every area on the city list — the reach of any El Qema order over 200 packs of one product. */
+const COUNTRY_AREAS = 49;
+
+/** Qalubeya holds one area, so the whole home half lands on D11 and the rest divides over 48. */
+const QALUBEYA_AWAY_AREAS = COUNTRY_AREAS - 1;
 
 function qemaRow(overrides: Partial<AttributionSplitRow> = {}): AttributionSplitRow {
   return {
@@ -60,11 +68,14 @@ export function runAttributionStoreSplitNetTests() {
   // ── The El Qema Qalubeya case, on the month it actually applies to ─────────────────────────────
   const august = buildStoreSplitNetPayload("Pedia", [qemaRow()], "2026-08");
 
-  assert.equal(august.length, 7, "the Qalubeya rule reaches seven areas — Qalubeya plus all six Cairo");
-  assert.deepEqual(
-    august.map((row) => row.area_code).sort(),
-    QALUBEYA_TARGETS,
-    "and they are exactly Qalubeya and the six Cairo areas",
+  assert.equal(august.length, COUNTRY_AREAS, "700 packs is over 200, so the net reaches every area");
+  assert.ok(
+    august.some((row) => row.area_code === "D11"),
+    "Qalubeya is in the net — it keeps half of its own sale, it is not emptied out",
+  );
+  assert.ok(
+    august.some((row) => row.area_code === "AB1"),
+    "and so is Alexandria, which the Cairo-only rule this replaced never reached",
   );
 
   // 🔴 The invariant the whole change rests on. A split relocates units; it never creates or
@@ -79,17 +90,19 @@ export function runAttributionStoreSplitNetTests() {
 
   const origin = august.find((row) => row.area_code === "D11");
   assert.ok(origin, "the origin area is in the net");
-  // Seven ways, so the origin gives up six sevenths and keeps one.
+  // Half stays home, and Qalubeya holds ONE area, so all 350 of the home half lands on D11.
   assert.ok(
-    Math.abs(origin.net_qty - (700 / 7 - 700)) < 1e-6,
-    `Qalubeya gives up six sevenths, got ${origin.net_qty}`,
+    Math.abs(origin.net_qty - (350 - 700)) < 1e-6,
+    `Qalubeya gives up half and keeps half, got ${origin.net_qty}`,
   );
-  for (const areaCode of ["CA1", "CA2", "CA3", "CA4", "CA5", "CA6"]) {
-    const cairo = august.find((row) => row.area_code === areaCode);
-    assert.ok(cairo, `${areaCode} receives a share`);
+  // 🔴 CAIRO IS NO LONGER SPECIAL. It is 6 areas of 49, each taking the same share as Aswan. If
+  // these ever diverge again, the 2026-09-08 rule has been reverted to the 2026-09-07 one.
+  for (const areaCode of ["CA1", "CA5", "AB1", "UE7", "OT7"]) {
+    const away = august.find((row) => row.area_code === areaCode);
+    assert.ok(away, `${areaCode} receives a share`);
     assert.ok(
-      Math.abs(cairo.net_qty - 700 / 7) < 1e-6,
-      `${areaCode} receives one seventh, got ${cairo.net_qty}`,
+      Math.abs(away.net_qty - 350 / QALUBEYA_AWAY_AREAS) < 1e-6,
+      `${areaCode} receives an equal part of the national half, got ${away.net_qty}`,
     );
   }
 
@@ -144,11 +157,11 @@ export function runAttributionStoreSplitNetTests() {
   const discountedOrigin = discounted.find((row) => row.area_code === "D11");
   assert.ok(discountedOrigin, "the discounted row still has an origin cell");
   assert.ok(
-    Math.abs(discountedOrigin.net_qty - (700 / 7 - 700)) < 1e-6,
+    Math.abs(discountedOrigin.net_qty - (350 - 700)) < 1e-6,
     "units move on the invoiced quantity",
   );
   assert.ok(
-    Math.abs(discountedOrigin.net_effective_units - (630 / 7 - 630)) < 1e-6,
+    Math.abs(discountedOrigin.net_effective_units - (315 - 630)) < 1e-6,
     "money moves on the effective units, not on the invoiced quantity",
   );
   assert.notEqual(
@@ -182,15 +195,31 @@ export function runAttributionStoreSplitNetTests() {
     0,
     "a direct row never enters the net",
   );
-  // A one-area governorate has nowhere to split to.
+  // A one-area governorate has nowhere to split to — as long as the order stays under 200. Fayoum
+  // bought 12 packs in August, which is the real shape of almost every El Qema line.
+  const fayoum = (qty: number) => qemaRow({
+    areaCode: "GZ6",
+    brickId: "B191-3",
+    clientCode: "1161",
+    clientName: "دلة الفيوم",
+    effectiveUnits: qty,
+    qty,
+    salesValue: qty * 270,
+  });
   assert.equal(
-    buildStoreSplitNetPayload(
-      "Pedia",
-      [qemaRow({ areaCode: "GZ6", brickId: "B191-3", clientCode: "1161", clientName: "دلة الفيوم" })],
-      "2026-08",
-    ).length,
+    buildStoreSplitNetPayload("Pedia", [fayoum(12)], "2026-08").length,
     0,
-    "Fayoum is a one-area governorate — nothing to share with, so nothing moves",
+    "Fayoum is a one-area governorate — under 200 there is nothing to share with, so nothing moves",
+  );
+  // 🔴 Over 200 the same order DOES move, and this is the case the old rule had no answer for: a
+  // one-area governorate used to be a dead end in every direction. Now half of it crosses the country.
+  const fayoumBig = buildStoreSplitNetPayload("Pedia", [fayoum(400)], "2026-08");
+  assert.equal(fayoumBig.length, COUNTRY_AREAS, "400 packs from a one-area governorate still reaches everywhere");
+  const fayoumOrigin = fayoumBig.find((row) => row.area_code === "GZ6");
+  assert.ok(fayoumOrigin, "and Fayoum keeps a cell of its own");
+  assert.ok(
+    Math.abs(fayoumOrigin.net_qty - (200 - 400)) < 1e-6,
+    `Fayoum keeps half of its own 400, got ${fayoumOrigin.net_qty}`,
   );
 
   // ── THE WRITER ALWAYS CALLS THROUGH, EVEN WITH AN EMPTY PAYLOAD ────────────────────────────────
@@ -221,7 +250,7 @@ export function runAttributionStoreSplitNetTests() {
       supabase,
       loadRowsForLine: async (line) => (line === "Pedia" ? [qemaRow()] : []),
     });
-    assert.equal(live.payloadRows, 7, "August sends the seven Qalubeya cells");
+    assert.equal(live.payloadRows, COUNTRY_AREAS, "August sends one cell per area in the country");
     assert.deepEqual(live.linesWithMovement, ["Pedia"], "and only Pedia moved");
     const sent = calls[1].args.p_rows as { net_qty: number; net_effective_units: number }[];
     const sentTotals = sumOf(sent);
