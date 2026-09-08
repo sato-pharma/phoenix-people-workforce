@@ -121,6 +121,8 @@ import { classifyBranchPr, listBranchPrs } from "./branch-pr-state.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
 import { archivePushTarget, listArchiveRefs, strandedArchives } from "./repo-doctor-archive-refs.mjs";
 import { classifySupabaseLink } from "./repo-doctor-supabase-link.mjs";
+import { sessionHoldReason } from "./repo-doctor-session-hold.mjs";
+import { buildCacheIdleMinutes, livenessVerdict, readHolderProbe } from "./worktree-liveness.mjs";
 import {
   classifyOrphanedFolder,
   orphanedFolderLines,
@@ -665,9 +667,58 @@ if (orphanLines.length) {
 const merged = [];
 /** Worktrees a PR state kept OUT of the list above, each with the reason. Printed, never silent. */
 const heldFromRetirement = [];
+/** Worktrees a LIVE SESSION kept out, each with the reason. Its own list, never folded into the
+ *  PR one: "the work is still in flight" and "somebody is standing in it" are different facts and
+ *  a reader who sees the wrong one draws the wrong conclusion about whether it is safe later. */
+const heldByLiveSession = [];
+// Read ONCE for the whole machine, not once per worktree: the sweep walks every process on the
+// system. Null when it could not run at all, which livenessVerdict answers as "cannot rule out a
+// live session" rather than as "nobody is there".
+const holderProbe = readHolderProbe();
 for (const r of live) {
   const branch = git(["-C", r.dir, "rev-parse", "--abbrev-ref", "HEAD"]);
   if (!branch || branch === "HEAD" || branch === "main" || branch === "master") continue;
+
+  // BEFORE the PR lookup, which costs a `gh` call per branch: a folder somebody is sitting in is
+  // not retirable whatever its PR says. Checked here rather than at the printing step below so
+  // there is no path — now or after a later edit — on which a removal command for a held folder
+  // reaches the screen at all. The commands ARE the interface: they are meant to be pasted, and on
+  // 2026-09-08 they were.
+  //
+  // TWO signals, because each is blind exactly where the other sees, and the folder taken on
+  // 2026-09-08 was the overlap:
+  //
+  //   - sessionHoldReason reads Claude's own transcripts, so it sees a session that has JUST
+  //     CLOSED, inside its grace window. No process sweep can — the process is gone. Its own
+  //     header records its blind spot: an `_wt-*` session reports the PRIMARY as its cwd, so its
+  //     turns are indistinguishable from any other session's.
+  //   - livenessVerdict reads each process's working directory out of its PEB, so it sees a
+  //     session OPEN BUT IDLE FOR HOURS — which the transcript reads as dead once its newest turn
+  //     ages past the window, and an open session between turns is exactly what both lost folders
+  //     had.
+  //
+  // The two overlap on `.claude/worktrees/*` and NEITHER covers `_wt-*`. Both were measured on this
+  // machine: every `claude` process reported a `.claude/worktrees/` cwd and not one reported an
+  // `_wt-*` folder, because an `_wt-*` session's cwd is the PRIMARY (AGENTS.md 2.1) — which is also
+  // why its transcripts land in the primary's project directory. An `_wt-*` folder does sometimes
+  // hold a bash or node child, but only while a command is running, which is exactly not when the
+  // folder is idle and at risk. Combining these narrows the IDLE gap, not the `_wt-*` one.
+  //
+  // It also carries the strip-idle invariant: `sourceIdleMin` is the same measurement --strip-idle
+  // already used to refuse a worktree as possibly-mid-edit, and never showed to this gate. Without
+  // it one half of a single run refused to drop `_wt-code-strand-guard`'s node_modules while the
+  // other half printed `git worktree remove` for the whole folder — measured, same report.
+  const liveness = livenessVerdict({
+    cacheIdleMin: buildCacheIdleMinutes(r.dir),
+    dir: r.dir,
+    probe: holderProbe,
+    sourceIdleMin: idleMinutes(r.dir),
+  });
+  const heldBy = sessionHoldReason(r.dir) ?? (liveness.live ? liveness.reason : null);
+  if (heldBy) {
+    heldByLiveSession.push(`${rel(r.dir)} (${branch}) — ${heldBy}`);
+    continue;
+  }
   // A retirable worktree can hold the only copy of real work in TWO independent ways, and both
   // have to be reported: uncommitted files, and commits that exist on no origin ref. This block
   // used to check only the first, so for a worktree carrying unpushed commits it printed an
@@ -768,6 +819,36 @@ if (merged.length) {
 if (heldFromRetirement.length) {
   console.log(`NOT retirable — the newest PR says the work is still in flight: ${heldFromRetirement.length}`);
   for (const line of heldFromRetirement) console.log(`  ${line}`);
+  console.log("");
+}
+
+// Same reasoning as the block above, for the other reason a worktree can be held: somebody is in
+// it. Printed separately because the two facts expire differently — a PR merges and the folder
+// becomes retirable, whereas this one clears when a person closes a window, and a reader who
+// cannot tell which is which will either wait forever or remove it anyway.
+if (heldByLiveSession.length) {
+  console.log(`NOT retirable — a session is HOLDING the folder: ${heldByLiveSession.length}`);
+  for (const line of heldByLiveSession) console.log(`  ${line}`);
+  console.log(
+    "  Close the holder first; a worktree removed under a live session leaves it in a DEREGISTERED " +
+      "folder, where bare git commands resolve against the primary checkout on `main`.",
+  );
+  console.log(
+    "  Coverage: a transcript read PLUS a sweep of every process's working directory. Together " +
+      "they see both a just-closed session and one open but idle for hours.",
+  );
+  console.log(
+    "  A holder need NOT be a session. A stray background process left with its cwd inside a " +
+      "worktree pins it just as hard, with no window anywhere to close — trust the PIDs above " +
+      "before hunting for a session. Stopping a background TASK does not clear it either: that " +
+      "kills the wrapper shell and leaves the child still holding the folder.",
+  );
+  console.log(
+    "  Reliable for `.claude/worktrees/*`. An `_wt-*` folder may appear above when a child command " +
+      "happened to be running in it, but its ABSENCE proves nothing: an `_wt-*` session reports " +
+      "the PRIMARY as its cwd, so neither signal sees it while it sits idle — UNKNOWN, not " +
+      "proven unattended.",
+  );
   console.log("");
 }
 
