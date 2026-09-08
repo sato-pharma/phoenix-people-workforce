@@ -25,6 +25,18 @@ export function runStaleDeployRecoveryTests() {
     true,
   );
   assert.equal(isStaleDeployChunkError(new Error("Importing a module script failed")), true);
+  // The shape production ACTUALLY recorded, verbatim from app_error_events on 2026-09-08. Every
+  // pattern above missed it, so the tab reported the failure and then sat there broken - and the
+  // name check does not rescue it either, because the reporter builds `new Error(message)` when the
+  // event carries no Error object, giving name "Error". Pinned as the literal string: a detector
+  // that misses what the platform emits only works on the failures nobody had.
+  assert.equal(
+    isStaleDeployChunkError(
+      new Error("Failed to load chunk /_next/static/chunks/34wtp2odnub3s.js from module 194818"),
+    ),
+    true,
+    "the Next.js \"Failed to load chunk <url> from module <id>\" shape must recover, not just report",
+  );
   // Webpack's own runtime symptom of a missing/stale module factory — seen in production
   // (app_error_events, module=command_center) going unrecovered before this was added.
   assert.equal(

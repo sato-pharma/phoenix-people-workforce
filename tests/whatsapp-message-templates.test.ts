@@ -240,6 +240,68 @@ export function runWhatsAppMessageTemplateTests() {
       + `human types the real one. Found: ${jobTitleLine}`,
   );
 
+  // ── the offer link: direction, and refuse-rather-than-guess ─────────────────────────────────
+  //
+  // `ats_applications.offer_id` existed from the day the table was created and NOTHING wrote it —
+  // 0 of 14 production rows on 2026-09-08 — so an offer letter and the candidate it was written for
+  // had never been connected. The bridge now stores it, and the start date is read back through it.
+  //
+  // 🔴 THE DIRECTION IS THE WHOLE DESIGN, and it is what these assertions defend.
+  // `src/lib/offers/types.ts` carries the owner's instruction that the offers module is independent
+  // of recruitment — an offer may go to somebody who never entered the ATS, and "the two must not be
+  // merged". The obvious implementation (a candidate_id column on `offers`) breaks that; the pointer
+  // therefore lives on the recruitment side and `offers` learns nothing.
+  const contextSrc = readFileSync("src/lib/recruitment/whatsapp-templates/candidate-context.ts", "utf8");
+  const routeSrc = readFileSync("app/api/recruitment/applications/[id]/offer-letter/route.ts", "utf8");
+
+  assert.match(
+    contextSrc,
+    /from "@\/lib\/offers\/service"/,
+    "the start date is read through the offers module's own getOffer — recruitment -> offers is the permitted direction",
+  );
+
+  // The reverse import is the breach. Nothing under src/lib/offers/ may reach into recruitment.
+  for (const file of ["src/lib/offers/service.ts", "src/lib/offers/types.ts"]) {
+    const src = readFileSync(file, "utf8");
+    assert.ok(
+      !/from "@\/lib\/recruitment/.test(src),
+      `${file} must never import from recruitment — the offers module is deliberately independent `
+        + '(owner: "the two must not be merged"), and an offer may be issued to somebody who never '
+        + "entered the ATS",
+    );
+    assert.ok(
+      !/candidate_id/.test(src),
+      `${file} must not learn that a candidate id exists — the pointer lives on the recruitment side`,
+    );
+  }
+
+  // BOTH branches of the bridge store the link. It reuses an existing draft as often as it creates
+  // one, and an application whose letter was reused is exactly as linked as one whose letter is new.
+  const linkCalls = routeSrc.match(/recordApplicationOfferLetter\(/g) ?? [];
+  assert.equal(
+    linkCalls.length,
+    2,
+    "the bridge must store the link on BOTH branches — the created letter and the reused draft. "
+      + `Found ${linkCalls.length}. Storing only one leaves a gap that reads as "no offer yet".`,
+  );
+
+  // NEVER matched by name or email. Measured 2026-09-08 on the three live offers: 0 of 3 matched a
+  // candidate by email, 1 of 3 by name. A wrong match puts the wrong first working day into a
+  // welcome message, so only the stored pointer may be trusted.
+  const resolver = contextSrc.match(/async function resolveOfferStartDate[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.ok(resolver.length > 0, "the start-date resolver must still be here — re-point this test if it moved");
+  assert.ok(
+    resolver.includes("offer_id"),
+    "the start date must be resolved through the stored offer_id pointer",
+  );
+  for (const forbidden of ["candidate_name", "candidate_email", "full_name", "ilike"]) {
+    assert.ok(
+      !resolver.includes(forbidden),
+      `the resolver must never match an offer by ${forbidden} — free-text matching put the wrong `
+        + "start date in reach, and only the stored pointer is trustworthy",
+    );
+  }
+
   // And the STORED name is never rewritten — an identity field is evidence, not display text.
   assert.equal(
     softenShoutedName("SHAABAN"),

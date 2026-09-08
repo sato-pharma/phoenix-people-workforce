@@ -619,6 +619,7 @@ import { runMarketingCoverageReportAnalyticsTests } from "./marketing-coverage-r
 import { runMarketingCoverageDistributorRollupTests } from "./marketing-coverage-distributor-rollup.test.ts";
 import { runMarketingCoverageUrlStateTests } from "./marketing-coverage-url-state.test.ts";
 import { runWeeklyExportTests } from "./weekly-export-workbook.test.ts";
+import { runWeeklyBiDesignLockTests } from "./weekly-bi-design-lock.test.ts";
 import { runMarketingValidationServiceTests } from "./marketing-validation-service.test.ts";
 import { runMarketingCompleteExistingCustomerTests } from "./marketing-complete-existing-customer.test.ts";
 import { runMarketingCompleteExistingVenueTests } from "./marketing-complete-existing-venue.test.ts";
@@ -1502,6 +1503,7 @@ import { runReturnedOrdersAgeingTests } from "./returned-orders-ageing.test.ts";
 import { runNotificationHeldAgeingTests } from "./notification-held-ageing.test.ts";
 import { runOverCapNeverBlocksTests } from "./over-cap-never-blocks.test.ts";
 import { runTargetsUnsavedEditGuardTests } from "./targets-unsaved-edit-guard.test.ts";
+import { runDirectOrderVenueGapsTests } from "./direct-order-venue-gaps.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2525,6 +2527,7 @@ await runTest("marketing coverage URL filter state (shareable link round-trip)",
 await runTest("marketing ROI attribution consistency (no brick/geography fallback across all paths)", runMarketingRoiAttributionConsistencyTests);
 await runTest("marketing ROI actuals toggle parity (includeRestricted must not silently drop direct-order sales)", runMarketingRoiActualsToggleParityTests);
 await runTest("weekly sales BI export workbook (xlsx builds + clean)", runWeeklyExportTests);
+await runTest("weekly BI export design is LOCKED (owner 2026-09-08: never change its design)", runWeeklyBiDesignLockTests);
 await runTest("marketing request service", runMarketingRequestServiceTests);
 await runTest("report rpc guardrails", runReportRpcGuardrailTests);
 await runTest("marketing review routing", runMarketingReviewRoutingTests);
@@ -4876,6 +4879,11 @@ await runTest(
 await runTest(
   "a typed sales target survives a reload, a sidebar click and a dropdown change (a month of Pedia targets was lost this way, 2026-09-08)",
   runTargetsUnsavedEditGuardTests,
+);
+
+await runTest(
+  "direct-order venue gaps: a BLANK pharmacist counts as missing, and each chip's count equals what its filter shows",
+  runDirectOrderVenueGapsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
