@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { currentCairoDateParts } from "@/lib/i18n/format";
-import {
-  autoConfirmElapsedDigests,
-  generateDigestsForCompletedWeek,
-  getDigestSettings,
-  sendDraftDigests,
-} from "@/lib/attendance/digest-service.ts";
+import { generateDigestsForCompletedWeek, getDigestSettings } from "@/lib/attendance/digest-service.ts";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
@@ -16,26 +11,22 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 /**
- * The weekly digest's whole clock, in three steps, in this order:
+ * The weekly digest's only scheduled work: build the digests for the settlement week
+ * that has just CLOSED, open for answers immediately.
  *
- *   1. generate — build digests for the settlement week that has CLOSED
- *   2. send     — deliver drafts and start each one's response window
- *   3. auto-confirm — settle anything whose window has now elapsed
+ * There is nothing to send and nothing to sweep. The module notifies nobody (owner,
+ * 2026-09-08), and with no notice there is no response window to expire — so the two
+ * steps this route used to carry, `send` and `auto-confirm`, are gone rather than
+ * disabled. An unanswered day writes no settlement and travels to the month-end
+ * Deductions queue as Pending.
  *
- * Order matters. Auto-confirm runs LAST so a digest can never be generated, sent and
- * auto-confirmed inside one invocation: step 2 stamps `auto_confirm_at` in the
- * future, so step 3 cannot see it. Running them the other way round would collapse
- * the employee's entire window into the gap between two statements.
- *
- * Safe to call more often than weekly. Generation skips a week it has already built,
- * sending only picks up drafts, and auto-confirm only touches an elapsed window — so
- * a daily or hourly schedule simply makes the auto-confirm sweep punctual rather than
- * doing the week's work repeatedly.
+ * Safe to call more often than weekly: generation skips a week it has already built,
+ * so a daily schedule simply makes the new week punctual.
  *
  * `enabled` is checked first and reported honestly: a disabled module returns
- * `skipped: "disabled"` rather than a cheerful zero, because "0 sent" and "switched
- * off" are indistinguishable otherwise — which is exactly how the outbox drain ran
- * perfectly and did nothing for 13 days.
+ * `skipped: "disabled"` rather than a cheerful zero, because "0 generated" and
+ * "switched off" are indistinguishable otherwise — which is exactly how the outbox
+ * drain ran perfectly and did nothing for 13 days.
  */
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/attendance-weekly-digest");
@@ -57,17 +48,8 @@ export async function GET(request: Request) {
       todayIso,
       createdBy: "system:attendance-weekly-digest-cron",
     });
-    const sent = await sendDraftDigests();
-    const autoConfirmed = await autoConfirmElapsedDigests(new Date().toISOString());
 
-    return NextResponse.json({
-      success: true,
-      dryRun: settings.dryRun,
-      todayIso,
-      generated,
-      sent,
-      autoConfirmed,
-    });
+    return NextResponse.json({ success: true, dryRun: settings.dryRun, todayIso, generated, notified: 0 });
   } catch (error) {
     logError("Weekly attendance digest cron failed", {
       labels: { event: "cron_failed", job: "attendance-weekly-digest" },

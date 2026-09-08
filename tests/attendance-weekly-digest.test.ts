@@ -10,6 +10,7 @@ import {
   buildWeekDigests,
   durationTextToMinutes,
   isDigestibleRow,
+  priceOrNull,
 } from "../src/lib/attendance/digest-generator.ts";
 import type { FingerprintReportRow } from "../src/lib/attendance/fingerprint-report.ts";
 
@@ -117,6 +118,40 @@ export function runAttendanceWeeklyDigestTests() {
     true,
     "no salary on file does NOT make the day free — it is still chargeable, and pricing it at zero silently is the defect people-with-no-salary-figure warns about",
   );
+
+  // --- Unpriced is not free ---------------------------------------------------
+  // Caught in the 2026-09-08 dry run: B-185 would have been shown "2 days, 0.00 EGP"
+  // for two days that then become real month-end candidates. The earlier test above
+  // only pinned that such a day still COUNTS; it never checked what number gets SHOWN.
+  assert.equal(priceOrNull("177.42"), 177.42, "a real price parses");
+  assert.equal(priceOrNull("0"), 0, "a genuine zero stays zero — not every falsy price is unknown");
+  assert.equal(
+    priceOrNull("Base salary missing"),
+    null,
+    "the report's own words for 'no salary on file' become null, never 0",
+  );
+  assert.equal(priceOrNull(""), null, "a blank price is unknown, not free");
+
+  const unpriced = buildWeekDigests([
+    row({ employeeHrId: "B-185", dateIso: "2026-09-01", deductionDays: "0.5", deductionValue: "Base salary missing" }),
+    row({ employeeHrId: "B-185", dateIso: "2026-09-02", deductionDays: "0.5", deductionValue: "177.42" }),
+  ])[0]!;
+  assert.equal(unpriced.lines[0]!.deductionValue, null, "the unpriced day carries null, not 0.00");
+  assert.equal(unpriced.lines[1]!.deductionValue, 177.42, "the priced day beside it is unaffected");
+  assert.equal(unpriced.hasUnpricedDay, true, "the digest records that it contains an unpriced day");
+  assert.equal(
+    unpriced.totalDeductionValue,
+    null,
+    "one unpriced day makes the WEEK total unknown — a partial sum would look complete, which is the same lie in a quieter voice",
+  );
+  assert.equal(unpriced.totalDeductionDays, 1, "the DAYS still add up: what is unknown is the price, not the charge");
+
+  const allPriced = buildWeekDigests([
+    row({ employeeHrId: "A-1", dateIso: "2026-09-01", deductionDays: "0.5", deductionValue: "100" }),
+    row({ employeeHrId: "A-1", dateIso: "2026-09-02", deductionDays: "0.5", deductionValue: "50" }),
+  ])[0]!;
+  assert.equal(allPriced.hasUnpricedDay, false, "a fully priced week says so");
+  assert.equal(allPriced.totalDeductionValue, 150, "and totals normally");
 
   // --- Grouping --------------------------------------------------------------
   const digests = buildWeekDigests([
