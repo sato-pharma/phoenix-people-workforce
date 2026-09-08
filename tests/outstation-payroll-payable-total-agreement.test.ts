@@ -653,6 +653,178 @@ export function runOutstationPayrollPayableTotalAgreementTests() {
     displayedWorkload52.total,
     "resolving workload must leave the pushed and displayed totals in agreement",
   );
+
+  // Request 72 (Dina Hamdy Fadel Mohamed Bdair, B-12, 12 August 2026) — LIVE, production
+  // ozucdzovmcqvepbozvqf, and the ONLY row in the whole table where the two mappers disagreed.
+  // A `meeting` trip carrying 323.14 of fuel and a ZERO meeting amount: the push mapper's
+  // meeting fallback took the whole `expected_total_amount` — which is itself that same fuel —
+  // and added it on top, reaching payroll at 646.28 against the 323.14 the Expense Approvals
+  // page showed the approver. Exactly doubled.
+  //
+  // `report_trip_type` carries the duration label the server generates, NOT a trip type, and it
+  // is set here deliberately: preferring it is what hid the divergence from the display side.
+  const meetingTripType = "Return the same day";
+  const request72 = baseRequest({
+    allowanceAmount: 0,
+    claimedTotalAmount: 323.14,
+    employeeHrId: "B-12",
+    employeeName: "Dina Hamdy Fadel Mohamed Bdair",
+    expectedTotalAmount: 323.14,
+    expenseType: "meeting",
+    fuelAmount: 323.14,
+    id: 72,
+    meetingAmount: 0,
+    reportTravelCost: 323.14,
+    reportTripType: meetingTripType,
+    status: "submitted",
+    ticketAmount: 0,
+  });
+  const row72 = {
+    allowance_amount: 0,
+    claimed_total_amount: 323.14,
+    created_at: "2026-08-12T00:00:00.000Z",
+    employee_hr_id: "B-12",
+    employee_name: "Dina Hamdy Fadel Mohamed Bdair",
+    expected_total_amount: 323.14,
+    expense_type: "meeting",
+    fuel_amount: 323.14,
+    id: 72,
+    meeting_amount: 0,
+    report_travel_cost: 323.14,
+    report_trip_type: meetingTripType,
+    status: "submitted",
+    ticket_amount: 0,
+    trip_start_date: "2026-08-12T00:00:00.000Z",
+  };
+
+  const pushed72 = mapOutstationRequestToPayrollExpenseRecord(request72);
+  const displayed72 = mapOutstationRequestRowToPayrollApproval(row72);
+
+  assert.equal(
+    pushed72.total,
+    323.14,
+    "a meeting trip's own expected total must not be added on top of the components it was computed from — request 72 is payable at 323.14, never 646.28",
+  );
+  assert.equal(
+    displayed72.total,
+    323.14,
+    "request 72 must be DISPLAYED at the same 323.14 it is paid",
+  );
+  assert.equal(
+    pushed72.total,
+    displayed72.total,
+    "the pushed and displayed totals must never diverge over a zero-meeting meeting trip",
+  );
+  assert.equal(
+    pushed72.meetingAmount,
+    0,
+    "a meeting trip whose whole cost is already travel has NO residual meeting cost",
+  );
+  // The stay label is untouched by the fix and must stay untouched: the approvals report renders
+  // it under "Travel Stay Type". Only the CLASSIFICATION moved off it — a label and a
+  // classification are two different things, and merging them is what moved money.
+  assert.equal(
+    displayed72.tripType,
+    meetingTripType,
+    "the stay/duration label must survive — the meeting classification comes from expense_type instead",
+  );
+
+  // The fallback itself must survive: a meeting trip whose cost lives ONLY in the expected total
+  // (no travel, no allowance, no explicit meeting figure) still files that whole total as the
+  // meeting cost. This is the case the fallback was written for, and narrowing it to the residual
+  // must not have taken it away.
+  const meetingOnlyRequest = baseRequest({
+    allowanceAmount: 0,
+    expectedTotalAmount: 550,
+    expenseType: "meeting",
+    fuelAmount: 0,
+    id: 306,
+    meetingAmount: 0,
+    reportTripType: meetingTripType,
+    ticketAmount: 0,
+  });
+  const meetingOnlyRow = {
+    allowance_amount: 0,
+    created_at: "2026-08-06T00:00:00.000Z",
+    employee_hr_id: "B-122",
+    employee_name: "Amr Mohamed Naguib Elsabey",
+    expected_total_amount: 550,
+    expense_type: "meeting",
+    fuel_amount: 0,
+    id: 306,
+    meeting_amount: 0,
+    report_trip_type: meetingTripType,
+    status: "accepted_by_system",
+    ticket_amount: 0,
+    trip_start_date: "2026-08-06T00:00:00.000Z",
+  };
+
+  const pushedMeetingOnly = mapOutstationRequestToPayrollExpenseRecord(meetingOnlyRequest);
+  const displayedMeetingOnly = mapOutstationRequestRowToPayrollApproval(meetingOnlyRow);
+
+  assert.equal(
+    pushedMeetingOnly.meetingAmount,
+    550,
+    "a meeting trip with no other components still files its whole expected total as the meeting cost",
+  );
+  assert.equal(
+    pushedMeetingOnly.total,
+    550,
+    "narrowing the fallback to the residual must not change a meeting-only trip's payable total",
+  );
+  assert.equal(
+    pushedMeetingOnly.total,
+    displayedMeetingOnly.total,
+    "the pushed and displayed totals must agree on a meeting-only trip",
+  );
+
+  // The middle case the residual actually recovers: a meeting trip priced at 700 that carries
+  // 200 of travel. The meeting cost is the 500 the other components do not explain — so the
+  // total is the 700 the server priced, not 200 (dropping the meeting) and not 900 (doubling it).
+  const meetingWithTravelRequest = baseRequest({
+    allowanceAmount: 0,
+    expectedTotalAmount: 700,
+    expenseType: "meeting",
+    fuelAmount: 200,
+    id: 307,
+    meetingAmount: 0,
+    reportTripType: meetingTripType,
+    ticketAmount: 0,
+  });
+  const meetingWithTravelRow = {
+    allowance_amount: 0,
+    created_at: "2026-08-06T00:00:00.000Z",
+    employee_hr_id: "B-122",
+    employee_name: "Amr Mohamed Naguib Elsabey",
+    expected_total_amount: 700,
+    expense_type: "meeting",
+    fuel_amount: 200,
+    id: 307,
+    meeting_amount: 0,
+    report_trip_type: meetingTripType,
+    status: "accepted_by_system",
+    ticket_amount: 0,
+    trip_start_date: "2026-08-06T00:00:00.000Z",
+  };
+
+  const pushedMeetingWithTravel = mapOutstationRequestToPayrollExpenseRecord(meetingWithTravelRequest);
+  const displayedMeetingWithTravel = mapOutstationRequestRowToPayrollApproval(meetingWithTravelRow);
+
+  assert.equal(
+    pushedMeetingWithTravel.meetingAmount,
+    500,
+    "the meeting cost is the residual of the expected total after travel, allowance and other",
+  );
+  assert.equal(
+    pushedMeetingWithTravel.total,
+    700,
+    "a meeting trip carrying travel is payable at the server's own price, neither halved nor doubled",
+  );
+  assert.equal(
+    pushedMeetingWithTravel.total,
+    displayedMeetingWithTravel.total,
+    "the pushed and displayed totals must agree on a meeting trip that also carried travel",
+  );
 }
 
 function roundTo2(value: number) {
