@@ -39,6 +39,7 @@ import process from "node:process";
 import { CABINET_ROOT_NAME, cabinetPathFor } from "@/lib/recruitment/drive-cabinet-folders";
 import { sanitizeDriveSegment } from "@/lib/recruitment/drive-cv-folders";
 import { REMOVED_FROM_DRIVE_BY_HAND } from "@/lib/recruitment/drive-cv-mirror";
+import { ensureFolderPath } from "@/lib/recruitment/drive-tree";
 
 // ── env ──────────────────────────────────────────────────────────────────────────────────────────
 // Loaded by hand rather than via a dependency: this script has to run from a bare worktree, where
@@ -108,8 +109,6 @@ async function downloadFromStorage(objectPath) {
 }
 
 // ── Google Drive ─────────────────────────────────────────────────────────────────────────────────
-const DRIVE_ROOT_NAME = (process.env.GOOGLE_DRIVE_RECRUITMENT_ROOT_NAME ?? "Phoenix CVs").trim() || "Phoenix CVs";
-const FOLDER_MIME = "application/vnd.google-apps.folder";
 let driveToken = null;
 
 async function getDriveToken() {
@@ -140,54 +139,6 @@ async function getDriveToken() {
   const data = JSON.parse(text);
   driveToken = { expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000, token: data.access_token };
   return driveToken.token;
-}
-
-function escapeQuery(value) {
-  return String(value ?? "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
-const folderCache = new Map();
-
-async function findOrCreateFolder(name, parentId) {
-  const q = `name = '${escapeQuery(name)}' and '${escapeQuery(parentId)}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`;
-  const token = await getDriveToken();
-  const listRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=10&spaces=drive`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  if (listRes.ok) {
-    const found = (await listRes.json()).files?.[0]?.id;
-    if (found) return found;
-  }
-  const createRes = await fetch("https://www.googleapis.com/drive/v3/files?fields=id", {
-    body: JSON.stringify({ mimeType: FOLDER_MIME, name, parents: [parentId] }),
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    method: "POST",
-  });
-  if (!createRes.ok) throw new Error(`folder create ${createRes.status}: ${(await createRes.text()).slice(0, 200)}`);
-  return (await createRes.json()).id;
-}
-
-async function ensureFolderPath(segments) {
-  let parentId = folderCache.get(" root");
-  if (!parentId) {
-    parentId = process.env.GOOGLE_DRIVE_RECRUITMENT_FOLDER_ID || (await findOrCreateFolder(DRIVE_ROOT_NAME, "root"));
-    folderCache.set(" root", parentId);
-  }
-  const walked = [];
-  for (const segment of segments) {
-    walked.push(segment);
-    const key = walked.join("/");
-    const cached = folderCache.get(key);
-    if (cached) {
-      parentId = cached;
-      continue;
-    }
-    const id = await findOrCreateFolder(segment, parentId);
-    folderCache.set(key, id);
-    parentId = id;
-  }
-  return parentId;
 }
 
 /**
@@ -300,8 +251,15 @@ function driveFileName(candidate, mimeType, originalName) {
  * The rooted form and the Drive form are NOT interchangeable, and the first version of this fix
  * used one array for both.
  *
- *   `driveSegments`  UNROOTED — what Drive is given. `ensureFolderPath` starts at
- *                    `ensureRootFolder()`, which IS the cabinet, and walks from there. Handing it a
+ *   `driveSegments`  UNROOTED — what Drive is given. `ensureFolderPath` is IMPORTED FROM THE APP
+ *                    (`drive-tree.ts`) and starts at `ensureRootFolder()`, which IS the cabinet.
+ *                    This script used to carry its OWN copy, rooted at
+ *                    `GOOGLE_DRIVE_RECRUITMENT_FOLDER_ID || "Phoenix CVs"` — the FROZEN tree — so a
+ *                    `--refile` wrote the cabinet path into the database and put the FILE in the old
+ *                    tree. Measured on production 2026-09-09: 32 CVs filed into
+ *                    `Phoenix CVs/Medical Representative/<region>` while every count read clean,
+ *                    because `--verify` compares the stored STRING. Two roots, two names for the
+ *                    same idea, and only one of them was the cabinet. Handing it a
  *                    rooted array makes it create a folder named "Phoenix CV Cabinet" INSIDE the
  *                    cabinet and file everything one level too deep.
  *   `storedPathKey`  ROOTED — what `drive_mirror_path` records. The prefix is the cutover safety
