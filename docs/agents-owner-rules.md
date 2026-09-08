@@ -1386,3 +1386,68 @@ call site of the three decorative layers.
 
 **No test pins flatness**, then or now — `tests/admin-shell-palette-scope.test.ts` pins the *corners*,
 which is why the square-edge half survived the reversal untouched and must keep surviving it.
+
+## 🔒 The weekly attendance digest is silent, passive and private — owner ruling, 2026-09-08
+
+Asked directly, after being shown what each option cost, and answered in one line:
+
+> "no one is notified, silence means nothing, only me sees it"
+
+Three rules, and all three were built the OTHER way earlier the same day and removed on his
+instruction. A session reading git history will find a 48-hour auto-confirm, a three-channel
+notifier and a portal nav row: **those are reversed decisions, not unfinished ones.**
+
+### 1. It notifies nobody, in any channel
+
+Not the employee, not a reviewer, not the owner. `src/lib/attendance/digest-notify.ts` is
+**deleted** and the `channel_in_app` / `channel_telegram` / `channel_email` columns are **absent
+from `attendance_digest_settings`** — dropped by
+`20260908163000_weekly_digest_silent_and_unpriced_days.sql`.
+
+That shape is deliberate: a switched-off sender is one edit away from sending, while restoring
+this one takes a migration *and* a module. Verified 2026-09-08: **0 channel columns, and 0
+`attendance%digest%` notification events since the original module died on 2026-07-22.**
+
+The earlier build had all three channels ON at his own instruction that morning. It was live for
+two minutes and sent nothing, only because no scheduler existed yet.
+
+### 2. Silence settles nothing
+
+There is no auto-confirm. `auto_confirm_hours` is gone from the settings table and
+`auto_confirmed` is **not a permitted value** of `attendance_digest_lines.action` or
+`attendance_settlements.action` — the check constraints refuse it.
+
+An unanswered day writes **no settlement**, never reaches `digest-bridge.ts`, and arrives in the
+month-end Deductions queue as **Pending**, exactly where it would have been if the module did not
+exist. The reasoning is not squeamishness: **a response window can only run against someone who
+was told it had started**, and rule 1 means nobody is told. Silence from a person who was never
+asked cannot be read as agreement.
+
+### 3. Only he may open it
+
+`canOpenDigestPortal` (`src/lib/attendance/digest-service.ts`) admits Super Admin or a name in
+`dispute_reviewer_hr_ids` — currently `B-10` alone, which is the owner himself. It is asked by
+**four** surfaces, not one: the portal page, `GET /api/attendance/digests`, and both the confirm
+and dispute routes. Confirm is the one that matters most, because a confirmation is what turns a
+flagged day into an approved deduction.
+
+Every one fails **closed**: a lookup that throws means *not verifiably allowed*, never *let them
+in*. `tests/attendance-weekly-digest.test.ts` asserts all four ask the gate and all four fail
+closed; removing it from the dispute route alone turns the suite red naming that file.
+
+The portal nav row was removed separately (#3520) — but **hiding a nav row is UX only**, and the
+page answered by direct URL until the gate shipped (#3525).
+
+### What is NOT forbidden
+
+The module still generates a digest every week and still applies a confirmed day to its month-end
+candidate. What is forbidden is **telling anyone, timing them out, or showing it to them**.
+
+### Why this is not a hook in AGENTS.md
+
+Measured on 2026-09-08: `CLAUDE.md + AGENTS.md` stood at **125,587 bytes against a 125,600-byte
+ceiling — 3 bytes of headroom.** A 1,145-byte hook took it 1,142 bytes over and turned
+`the-whole-auto-loaded-footprint-is-budgeted` red. The rule lives here instead, which costs
+nothing per request, and it is enforced **mechanically** rather than by memory: a dropped column,
+two check constraints, a gate and a test. A session cannot rebuild any of the three without
+hitting a constraint or a red suite first.
