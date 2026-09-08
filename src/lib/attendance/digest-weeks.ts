@@ -62,6 +62,25 @@ export function settlementWeekForDate(dateIso: string, cycle: CycleWindow): numb
 }
 
 /**
+ * The month key before `monthKey` ("2026-01" -> "2025-12").
+ *
+ * Here rather than inline in the cron route because the January boundary is the whole
+ * reason it exists: `month - 1` in January is 0, and a key built from that without
+ * rolling the year reads "2026-00" — a month the deductions collector has never heard
+ * of. Every answer given about December would then be silently stranded, on the one
+ * day of the year nobody is watching for it.
+ */
+export function previousMonthKey(monthKey: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!match) throw new Error(`Validation: monthKey must be YYYY-MM, received "${monthKey}".`);
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) throw new Error(`Validation: month out of range in "${monthKey}".`);
+  const previous = month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
+  return `${previous.year}-${String(previous.month).padStart(2, "0")}`;
+}
+
+/**
  * The week that has just ENDED as of `todayIso`, i.e. the one a digest is due for.
  * Returns null until the first week of a cycle has closed — a digest is never sent
  * for days that have not happened yet, which is the same reasoning that makes the
