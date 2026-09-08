@@ -8,6 +8,18 @@ export type AuditEntityType =
   // Consolidation screen. Written with `writeRequiredAuditLog` — a bulk org move that leaves no
   // audit trail is treated as a failed move, not a quiet success.
   | "area_consolidation"
+  // The weekly attendance digest, rebuilt 2026-09-08. Five entity types rather than one
+  // because they answer different questions and none contains the others: what the system
+  // generated for a week, what the employee said about a day, what they objected to, what a
+  // reviewer decided, and what was applied to payroll at month end. The middle three are the
+  // only record of an employee's own answer — a deduction that reaches a payslip through the
+  // auto-confirm path was decided by nobody, so the audit row is the whole story of how it
+  // got there.
+  | "attendance_digest_bridge_run"
+  | "attendance_digest_confirm"
+  | "attendance_digest_dispute"
+  | "attendance_digest_dispute_review"
+  | "attendance_weekly_digest_run"
   | "attendance_holiday_override"
   | "attendance_settlement"
   | "attendance_settlement_correction"

@@ -8,6 +8,7 @@
     "Approval Exceptions": 118,
     "Area Consolidation": 111,
     "Attendance Analytics": 122,
+    "Attendance Disputes": 120,
     "Attendance Exceptions": 132,
     "Attendance Policies": 113,
     "Audit Logs": 63,
@@ -243,6 +244,7 @@
     "Vacation Report": 90,
     "Vacation Request": 97,
     "Weekly / Monthly Plans": 135,
+    "Weekly Attendance": 110,
     "Weekly Sales": 73
   },
   "bottom-bar": {
