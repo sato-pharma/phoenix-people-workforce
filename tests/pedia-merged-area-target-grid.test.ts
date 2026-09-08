@@ -175,22 +175,48 @@ export function runPediaMergedAreaTargetGridTests() {
       + "a roll-up",
   );
 
-  // ── 6. The page must wire it that way ────────────────────────────────────────────────────────
-  const page = readSource("../app/(admin)/sales/targets/page.tsx");
+  // ── 6. Both pages must wire it that way ──────────────────────────────────────────────────────
+  //
+  // There are TWO Targets screens and they reach the same guarantee by different routes, so this
+  // section checks each on its own terms rather than pinning one call site.
+  //
+  // The PORTAL (District / Regional / National Sales Manager, read-only) still builds its grid from
+  // achievement rows, so it needs the explicit fold — and until 2026-09-08 it did not have one. It
+  // called applyAchievementAreaMerges, which rewrites the CODE without aggregating, and then mapped
+  // `lineRows` straight into the grid: on Pedia the merged pair arrived as two rows both keyed
+  // `GZ6|product`. Read-only, so nothing could overwrite a target the way the admin grid once did,
+  // but the area still rendered twice under one React key. This assertion moved here when the admin
+  // page stopped reading achievement, and it caught that on the way.
+  const portal = readSource("../app/employee-portals/targets/page.tsx");
   assert.ok(
-    /const gridRows = foldMergedAchievementCells\(lineRows\);/.test(page),
-    "the Targets page must fold before building its keyed grid rows",
+    /const gridRows = foldMergedAchievementCells\(lineRows\);/.test(portal),
+    "the portal Targets page must fold before building its keyed grid rows",
   );
   assert.ok(
-    /rows = gridRows\s*\n?\s*\.map\(/.test(page),
-    "and the grid must be built from the FOLDED rows — mapping lineRows again would restore the "
+    /rows = gridRows\s*\n?\s*\.map\(/.test(portal),
+    "and its grid must be built from the FOLDED rows — mapping lineRows again would restore the "
       + "duplicate key while leaving the fold in place, looking fixed",
   );
   for (const rollup of ["rollupAchievementByLine", "rollupAchievementByRegion", "rollupAchievementByDm"]) {
     assert.ok(
-      new RegExp(`${rollup}\\(lineRows\\)`).test(page),
+      new RegExp(`${rollup}\\(lineRows\\)`).test(portal),
       `${rollup} must keep reading the UNFOLDED lineRows — see assertion 5; passing it gridRows would `
-        + "inflate every covered-actual percentage on this page",
+        + "inflate every covered-actual percentage on that page",
     );
   }
+
+  // The ADMIN authoring page reaches the same place by not reading achievement at all (owner,
+  // 2026-09-08: no achievement on that tab). Its rows come from `loadTargetableAreas`, which folds
+  // merged pairs itself via foldAreaOptionsForLine — so Pedia offers "Fayoum - Beni Suef" ONCE and
+  // the duplicate key is impossible by construction. What has to stay true is that the row source
+  // is that loader and not the achievement rows, which is what this pins.
+  const admin = readSource("../app/(admin)/sales/targets/page.tsx");
+  assert.ok(
+    /loadTargetableAreas\(selectedLine\)/.test(admin),
+    "the admin Targets grid must be built from the canonical area loader, which folds merged pairs",
+  );
+  assert.ok(
+    !/loadMonthlyAchievement/.test(admin),
+    "and must not go back to achievement rows — that is what reintroduces the unfolded duplicate key",
+  );
 }

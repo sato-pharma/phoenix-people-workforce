@@ -14,6 +14,7 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import {
   SALES_LINES,
+  foldMergedAchievementCells,
   loadAllCanonicalAreaNames,
   loadEmployeeNameMap,
   loadMonthlyAchievement,
@@ -117,7 +118,17 @@ export default async function PortalTargetsPage({
     const scopedRows = filterAchievementForScope(mergedAchievement, bound);
     const lineRows = scopedRows.filter((row) => row.lineCode === selectedLine);
 
-    rows = lineRows
+    // FOLD before building the keyed grid rows, exactly as the admin authoring page did before it
+    // stopped reading achievement at all. applyAchievementAreaMerges above rewrites the CODE without
+    // aggregating, so on Pedia the merged Fayoum/Beni Suef pair arrives here as TWO rows that both key
+    // on `GZ6|product` — a duplicate React key, and the area printed twice with different numbers.
+    //
+    // The roll-ups below deliberately keep `lineRows`: they re-derive coveredActualValue from
+    // hasTarget, which the fold OR-s, so folding first would count an untargeted area's actuals as
+    // covered and inflate the very figure the card prints beside the grade.
+    const gridRows = foldMergedAchievementCells(lineRows);
+
+    rows = gridRows
       .map((row) => ({
         areaCode: row.areaCode ?? "",
         areaName: getMergedAreaName(selectedLine, row.areaCode ?? "") ?? areaName.get(row.areaCode ?? "") ?? "",
