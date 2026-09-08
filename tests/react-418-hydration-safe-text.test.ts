@@ -405,6 +405,30 @@ export function runReact418HydrationSafeTextTests() {
     `these client components ask the reader's ICU build for an en-GB month abbreviation, which CLDR 42 changed from "Sep" to "Sept" — every one is React hydration error #418 for anyone on an older browser, and it will only show up in September:\n  ${offenders.join("\n  ")}\nRoute them through stableEnGbFormatter (keeping their own options and timeZone verbatim — the zone is not the bug).`,
   );
 
+  // ── 3g. The page opts out of browser machine-translation ───────────────────────────────────
+  //
+  // A different cause of the SAME error, and the only one left after every code-level source was
+  // found and fixed. A browser translation rewrites text nodes; if that lands before or during
+  // hydration, React discards the server HTML — #418, always the `args[]=text` variant.
+  //
+  // The evidence that this is a real class here is the SHAPE of the production data rather than any
+  // one event: #418 is concentrated in PEOPLE, not pages. User B-10 alone produced 63 events across
+  // 23 unrelated routes and three different desktop browsers, which no page-level defect can do.
+  //
+  // Pinned so it cannot be quietly dropped in a layout tidy-up. If the remaining routes keep
+  // erroring, the right response is to REMOVE this deliberately and record why — not to let it rot.
+  const layoutSource = codeOnly(read("app/layout.tsx"));
+  assert.match(
+    layoutSource,
+    /<html[^>]*\stranslate="no"/,
+    'app/layout.tsx must keep translate="no" on <html> — a browser translation rewrites text nodes and turns every page into React hydration error #418',
+  );
+  assert.match(
+    layoutSource,
+    /other:\s*\{\s*google:\s*["']notranslate["']\s*\}/,
+    'the google=notranslate meta must stay in the metadata export — Chrome honours it ahead of the html[translate] attribute, so the attribute alone is the weaker half of the pair',
+  );
+
   // ── 4. The portal shell clock is NOT pinned here — #3336 owns it ─────────────────────
   //
   // The employee-portal header chip was the second cause on these routes: it called `new Date()`
