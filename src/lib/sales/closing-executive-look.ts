@@ -497,6 +497,74 @@ export async function applyExecutivePalette(zip: JSZip): Promise<number> {
   return changed;
 }
 
+/** A phone, in CSS pixels — the narrow case the owner's golden rule is written against. */
+const PHONE_PX = 375;
+
+/**
+ * Never freeze more columns than a phone can show.
+ *
+ * A frozen pane wider than the screen is worse than no pane: the frozen columns fill the display and
+ * the data they were meant to label has nowhere left to scroll into. The matrix pages shipped
+ * exactly this once -- 734px of labels on a 375px phone -- and `Details` still does it, freezing
+ * three columns totalling 726px because its third is 58 characters wide.
+ *
+ * The SPLIT is reduced rather than the columns narrowed. Those widths are what stop names being cut
+ * off on a desktop, which is a rule of its own; a phone loses a frozen column, it does not lose the
+ * column, which is still there when scrolled to.
+ *
+ * `topLeftCell` moves with the split. Left where it was, the unfrozen pane points at a column inside
+ * the frozen one and Excel scrolls the sheet to a position the reader never chose.
+ */
+export async function fitFrozenPanesForPhone(zip: JSZip, sheetParts: Map<string, string>): Promise<string[]> {
+  const narrowed: string[] = [];
+  for (const [sheetName, part] of sheetParts) {
+    const file = zip.file(part);
+    if (!file) continue;
+    const xml = await file.async("string");
+    const pane = /<pane\b[^>]*\/>/.exec(xml)?.[0];
+    if (!pane) continue;
+    const xSplit = Number(/\bxSplit="(\d+)"/.exec(pane)?.[1] ?? 0);
+    if (xSplit <= 1) continue;
+
+    const block = /<cols>[\s\S]*?<\/cols>/.exec(xml)?.[0] ?? "";
+    const runs = [...block.matchAll(/<col\b[^>]*\/>/g)].map((match) => ({
+      max: Number(/\bmax="(\d+)"/.exec(match[0])?.[1] ?? 0),
+      min: Number(/\bmin="(\d+)"/.exec(match[0])?.[1] ?? 0),
+      width: /\bhidden="1"/.test(match[0]) ? 0 : Number(/\bwidth="([\d.]+)"/.exec(match[0])?.[1] ?? 9.140625),
+    }));
+    // Later entries win, exactly as Excel resolves them and as `columnWidthReader` now does.
+    const pixels = (column: number): number => {
+      for (let at = runs.length - 1; at >= 0; at -= 1) {
+        const run = runs[at]!;
+        if (column >= run.min && column <= run.max) return run.width > 0 ? Math.round(run.width * 7) + 5 : 0;
+      }
+      return Math.round(9.140625 * 7) + 5;
+    };
+
+    let split = xSplit;
+    let width = 0;
+    for (let column = 1; column <= split; column += 1) width += pixels(column);
+    while (split > 1 && width > PHONE_PX) {
+      width -= pixels(split);
+      split -= 1;
+    }
+    if (split === xSplit) continue;
+
+    const letters = (column: number): string => {
+      let out = "";
+      for (let n = column; n > 0; n = Math.floor((n - 1) / 26)) out = String.fromCharCode(65 + ((n - 1) % 26)) + out;
+      return out;
+    };
+    const topLeftRow = /\btopLeftCell="[A-Z]+(\d+)"/.exec(pane)?.[1] ?? "1";
+    const fitted = pane
+      .replace(/\bxSplit="\d+"/, `xSplit="${split}"`)
+      .replace(/\btopLeftCell="[A-Z]+\d+"/, `topLeftCell="${letters(split + 1)}${topLeftRow}"`);
+    zip.file(part, xml.replace(pane, fitted));
+    narrowed.push(`${sheetName} ${xSplit}->${split}`);
+  }
+  return narrowed;
+}
+
 /** Append one element to a counted block in styles.xml, returning its index. */
 function appendCounted(styles: string, block: "fills" | "fonts" | "cellXfs", child: string): { index: number; xml: string } {
   const open = styles.indexOf(`<${block}`);

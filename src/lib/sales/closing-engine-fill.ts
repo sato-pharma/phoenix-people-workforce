@@ -7,7 +7,7 @@ import {
 } from "./closing-engine-template-generated";
 import { ACHIEVEMENT_ARROW_AT } from "./closing-engine-data";
 import { CLOSING_ENGINE_EMBLEM_ON_DARK_PNG_BASE64 } from "./closing-engine-emblem-on-dark";
-import { applyExecutiveGeometry, applyExecutivePalette, ensureAccentButtonStyle, fitNavigationBand, paintExecutiveBands, resolveSheetParts, applyOnDarkEmblem } from "./closing-executive-look";
+import { applyExecutiveGeometry, applyExecutivePalette, applyOnDarkEmblem, ensureAccentButtonStyle, fitFrozenPanesForPhone, fitNavigationBand, paintExecutiveBands, resolveSheetParts } from "./closing-executive-look";
 import { PIVOT_GRID_SPECS, buildPivotGrid, type GridCellKind } from "./closing-pivot-grid";
 
 /**
@@ -361,6 +361,9 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   // mark, which is the correct one for it.
   await applyOnDarkEmblem(zip, finalParts, banded);
   await fitNavigationBand(zip, finalParts);
+  // LAST of the layout passes: it measures the columns as they finally stand, and every earlier pass
+  // is still free to change them. A pane frozen wider than a phone hides the data it labels.
+  await fitFrozenPanesForPhone(zip, finalParts);
 
   // Directory entries must not reach the file, and this has to be the LAST thing done to the zip.
   // An OPC package is a flat set of parts: an item whose name ends in "/" is not a part at all and
