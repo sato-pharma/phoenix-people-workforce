@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { firstNameOf } from "../src/lib/recruitment/whatsapp-templates/candidate-context.ts";
+import { firstNameOf, softenShoutedName } from "../src/lib/recruitment/whatsapp-templates/candidate-context.ts";
 import {
   formatDialNumberForDisplay,
   isDialableWhatsApp,
@@ -187,4 +187,37 @@ export function runWhatsAppMessageTemplateTests() {
   assert.equal(firstNameOf("  Aya   Mohamed  "), "Aya", "extra whitespace does not become the name");
   assert.equal(firstNameOf("Mr. Ahmed Nour"), "Ahmed", "an honorific from a CV header is not the first name");
   assert.equal(firstNameOf("Dr Sara Ali"), "Sara", "an honorific without a full stop is also stripped");
+
+  // ── a SHOUTED name is softened for the greeting, and only for the greeting ───────────────────
+  //
+  // 160 of 890 production candidates — 18%, measured 2026-09-08 — store an ALL-CAPS first name,
+  // because that is how the CV said it. Left alone, nearly one applicant in five opens an interview
+  // invitation reading "Dear SHAABAN", which is shouting at somebody you are trying to hire.
+  assert.equal(firstNameOf("SHAABAN ABDELHAKIM MOHAMMED ABDELHAFZ"), "Shaaban", "an ALL-CAPS name is softened");
+  assert.equal(firstNameOf("MONA YOUSSEF SAYED"), "Mona", "the commonest shouted shape");
+  assert.equal(firstNameOf("Mr. AHMED NOUR"), "Ahmed", "the honorific goes first, then the shout is softened");
+  assert.equal(
+    firstNameOf("ABDEL-RAHMAN HASSAN"),
+    "Abdel-Rahman",
+    "an internal separator keeps its capital — Abdel-rahman is a different mistake, not a fix",
+  );
+
+  // THE HALF THAT MATTERS MORE: what it must NOT touch. A blanket title-caser mangles the names it
+  // was not aimed at, which is the failure this narrowness exists to avoid — it fires only on a
+  // token that is uniformly upper case.
+  assert.equal(firstNameOf("McDonald Smith"), "McDonald", "a name already carrying lower case is left exactly as typed");
+  assert.equal(firstNameOf("eSSam Ali"), "eSSam", "an unusual capitalisation someone chose is not ours to correct");
+  assert.equal(firstNameOf("Thomas Mamdouh Thabet"), "Thomas", "an ordinary name passes through untouched");
+  assert.equal(
+    firstNameOf("\u0645\u062d\u0645\u062f \u0639\u0628\u062f \u0627\u0644\u0644\u0647"),
+    "\u0645\u062d\u0645\u062f",
+    "an uncased script has no shout to detect and must fall through unchanged",
+  );
+
+  // And the STORED name is never rewritten — an identity field is evidence, not display text.
+  assert.equal(
+    softenShoutedName("SHAABAN"),
+    "Shaaban",
+    "the softener is a pure function on a COPY of the token; ats_candidates.full_name is untouched",
+  );
 }
