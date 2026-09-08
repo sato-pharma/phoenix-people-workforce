@@ -30,6 +30,7 @@ export async function GET(request: Request) {
         customerCode: params.get("code"),
         distributorCode: params.get("distributor"),
         name: params.get("name"),
+        phoenixPharmacyCode: params.get("phoenix"),
         radiusKm: parseRadius(params.get("radius")),
       }),
     );

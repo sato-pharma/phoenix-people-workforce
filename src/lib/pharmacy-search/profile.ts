@@ -26,6 +26,13 @@ export type PharmacyProfileRequest = {
   distributorCode: string | null;
   /** Required when there is no code — the Google-discovered and marketing-only paths. */
   name: string | null;
+  /**
+   * `DOP-000079`, when the row the reader clicked came from `direct_order_pharmacies`. Carried
+   * separately from the codes because a registered venue may have none: 6 of the 53 active ones
+   * (production, 2026-09-08) have no distributor code at all, and they are precisely the ones the
+   * distributor directory cannot answer for.
+   */
+  phoenixPharmacyCode?: string | null;
   radiusKm?: number;
 };
 
@@ -59,6 +66,72 @@ async function loadSiblingRows(name: string): Promise<CustomerMapRow[]> {
 
   if (error) throw new Error(`Distributor code lookup failed: ${error.message}`);
   return (data ?? []) as CustomerMapRow[];
+}
+
+type RegistryBase = {
+  /** The venue shaped as a mapping row, so everything downstream reads one thing. */
+  row: CustomerMapRow;
+  /** Codes the registry itself holds. Authoritative for this venue in a way a sibling is not. */
+  codes: Array<{ customerCode: string; distributorCode: string }>;
+  phoenixPharmacyCode: string;
+};
+
+/**
+ * A pharmacy registered inside Phoenix, by its `DOP-` code.
+ *
+ * This is what stops a search result being unopenable. The registry and the distributor directory
+ * are disjoint tables, so a venue someone registered by hand has no row in
+ * `source_of_sales_customer_map` at all — and every lookup above it would answer
+ * `PharmacyNotFoundError`, which on screen reads as "this pharmacy does not exist" about a
+ * pharmacy the search box just listed.
+ */
+async function loadRegistryBase(phoenixPharmacyCode: string): Promise<RegistryBase | null> {
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from("direct_order_pharmacies")
+    .select("id, phoenix_pharmacy_code, pharmacy_name, pharmacy_address, brick_id, area_code, region_code")
+    .eq("phoenix_pharmacy_code", phoenixPharmacyCode)
+    .eq("active", true)
+    .limit(1);
+
+  if (error) throw new Error(`Phoenix pharmacy registry lookup failed: ${error.message}`);
+  const row = data?.[0];
+  if (!row) return null;
+
+  const id = String(row.id ?? "").trim();
+  const name = String(row.pharmacy_name ?? "").trim();
+  const code = String(row.phoenix_pharmacy_code ?? "").trim();
+  if (!id || !name || !code) return null;
+
+  const { data: codeRows, error: codeError } = await supabase
+    .from("direct_order_pharmacy_distributor_codes")
+    .select("distributor_code, customer_code")
+    .eq("pharmacy_id", id)
+    .limit(50);
+
+  if (codeError) throw new Error(`Phoenix pharmacy code lookup failed: ${codeError.message}`);
+
+  const codes: Array<{ customerCode: string; distributorCode: string }> = [];
+  for (const codeRow of codeRows ?? []) {
+    const distributorCode = String(codeRow.distributor_code ?? "").trim();
+    const customerCode = String(codeRow.customer_code ?? "").trim();
+    if (distributorCode && customerCode) codes.push({ customerCode, distributorCode });
+  }
+
+  return {
+    codes,
+    phoenixPharmacyCode: code,
+    row: {
+      address: String(row.pharmacy_address ?? "").trim() || null,
+      area_code: String(row.area_code ?? "").trim() || null,
+      brick_id: String(row.brick_id ?? "").trim() || null,
+      customer_code: codes[0]?.customerCode ?? null,
+      customer_name: name,
+      distributor_code: codes[0]?.distributorCode ?? null,
+      region_code: String(row.region_code ?? "").trim() || null,
+    },
+  };
 }
 
 async function loadReferenceCodes(
@@ -162,13 +235,24 @@ export async function loadPharmacyProfile(request: PharmacyProfileRequest): Prom
     baseRow = rows[0] ?? null;
   }
 
+  // Only once the distributor directory has had its say: when a venue is in both, the directory
+  // row is the better base — it is the one with sales history behind it, and the search collapses
+  // to it for the same reason.
+  let registry: RegistryBase | null = null;
+  if (!baseRow && request.phoenixPharmacyCode) {
+    registry = await loadRegistryBase(request.phoenixPharmacyCode);
+    baseRow = registry?.row ?? null;
+  }
+
   if (!baseRow) {
     throw new PharmacyNotFoundError(
       request.customerCode
         ? `code ${request.customerCode}`
-        : request.name
-          ? `"${request.name}"`
-          : "the requested pharmacy",
+        : request.phoenixPharmacyCode
+          ? `Phoenix code ${request.phoenixPharmacyCode}`
+          : request.name
+            ? `"${request.name}"`
+            : "the requested pharmacy",
     );
   }
 
@@ -183,6 +267,22 @@ export async function loadPharmacyProfile(request: PharmacyProfileRequest): Prom
   const siblings = await loadSiblingRows(name);
   const distributorCodes: PharmacyDistributorCode[] = [];
   const seenPairs = new Set<string>();
+
+  // The registry's own codes go in first, and they are not `fromReferenceList`: someone recorded
+  // them against this specific venue in Phoenix. A name-matched sibling row is a weaker claim —
+  // it is another pharmacy that happens to be spelt the same — so it must not displace one.
+  for (const code of registry?.codes ?? []) {
+    const pairKey = `${code.distributorCode}:${code.customerCode}`;
+    if (seenPairs.has(pairKey)) continue;
+    seenPairs.add(pairKey);
+    distributorCodes.push({
+      customerCode: code.customerCode,
+      distributorCode: code.distributorCode,
+      distributorName: reference.distributorNames.get(code.distributorCode) ?? code.distributorCode,
+      fromReferenceList: false,
+      territory,
+    });
+  }
 
   for (const row of siblings) {
     if (normalizeArabicPharmacyName(row.customer_name) !== normalizedName) continue;
@@ -256,6 +356,15 @@ export async function loadPharmacyProfile(request: PharmacyProfileRequest): Prom
     warnings.push("No sales rows for this pharmacy in the customer directory.");
   }
 
+  if (registry) {
+    warnings.push(
+      `Registered in Phoenix as ${registry.phoenixPharmacyCode}, not loaded from a distributor file. `
+        + (registry.codes.length === 0
+          ? "No distributor has a code for it yet, so it has no sales history to read."
+          : "Its territory is the one recorded when the venue was registered."),
+    );
+  }
+
   return {
     address: baseRow.address?.trim() || null,
     coordinates,
@@ -266,10 +375,12 @@ export async function loadPharmacyProfile(request: PharmacyProfileRequest): Prom
     googleAddress: null,
     googleMapsUrl: googleMapsUrlFor(centre, name),
     hospitals,
-    id: `${baseRow.distributor_code ?? ""}:${baseRow.customer_code ?? ""}`,
+    id: registry ? `phoenix:${registry.phoenixPharmacyCode}` : `${baseRow.distributor_code ?? ""}:${baseRow.customer_code ?? ""}`,
     name,
     nearbyDoctors,
-    origin: "database",
+    // `saveDiscoveredPharmacy` refuses anything that is not "google", and the Save button only
+    // renders for one — so a registered venue is correctly unsaveable here. It is already saved.
+    origin: registry ? "phoenix" : "database",
     sales,
     territory: territory.brickId || territory.areaCode ? territory : EMPTY_TERRITORY,
     territoryDerivedFromKm: null,

@@ -8,6 +8,7 @@ import {
   KNOWN_HOSPITAL_SPECIALITIES,
   KNOWN_SP_SPECIALITIES,
 } from "../src/lib/crm/contact-taxonomy.ts";
+import { normalizeArabicPharmacyName } from "../src/lib/pharmacy-master/pharmacy-matching.ts";
 import { boundingBox, haversineKm, isUsablePoint, roundKm } from "../src/lib/pharmacy-search/geo.ts";
 import { MAX_BRICK_SNAP_KM, pickNearestBrick } from "../src/lib/pharmacy-search/locate.ts";
 import { mergeHospitals, __testables as nearbyTestables } from "../src/lib/pharmacy-search/nearby.ts";
@@ -24,7 +25,15 @@ import { __testables as searchTestables } from "../src/lib/pharmacy-search/searc
 // instead of the brick table, and a Google-derived brick presented as if it were a mapping.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { collapseByPharmacy, looksLikeCode, rankHits, sanitizeForOrFilter } = searchTestables;
+const {
+  collapseByPharmacy,
+  foldRegistryIntoDirectory,
+  looksLikeCode,
+  matchRegistryPharmacy,
+  rankHits,
+  registryHits,
+  sanitizeForOrFilter,
+} = searchTestables;
 
 /** Source-scanning assertions read CODE, never prose — a comment explaining a rule is not a breach. */
 function stripComments(source: string): string {
@@ -36,10 +45,12 @@ function reference(): TerritoryReference {
     areaNames: new Map([
       ["HEL", "Heliopolis"],
       ["MIN1", "Minia 1"],
+      ["D24", "Zagazig"],
     ]),
     bricks: new Map([
       ["B4-58", { areaCode: "HEL", blockCode: "B4", brickId: "B4-58", brickName: "ارض الجولف", regionCode: "CA" }],
       ["B129-41", { areaCode: "MIN1", blockCode: "B129", brickId: "B129-41", brickName: "مغاغه", regionCode: "UE" }],
+      ["B211-3", { areaCode: "D24", blockCode: "B211", brickId: "B211-3", brickName: "الزقازيق", regionCode: "D2" }],
     ]),
     distributorNames: new Map([
       ["IS", "Ibn sina"],
@@ -48,6 +59,7 @@ function reference(): TerritoryReference {
     regionNames: new Map([
       ["CA", "Cairo"],
       ["UE", "Upper Egypt"],
+      ["D2", "Delta 2"],
     ]),
   };
 }
@@ -63,6 +75,7 @@ function hit(overrides: Partial<Parameters<typeof collapseByPharmacy>[0][number]
     matchedOn: "name" as const,
     name: "الصيدلية الحديثة",
     origin: "database" as const,
+    phoenixPharmacyCode: null,
     territory: {
       areaCode: "HEL",
       areaName: "Heliopolis",
@@ -72,6 +85,25 @@ function hit(overrides: Partial<Parameters<typeof collapseByPharmacy>[0][number]
       regionCode: "CA",
       regionName: "Cairo",
     },
+    ...overrides,
+  };
+}
+
+/**
+ * DOP-000079 as production actually holds it: the pharmacy the owner searched for on 2026-09-08,
+ * registered by hand at 11:18 Cairo, searched at 15:33, and reported as not in the database.
+ */
+function registryPharmacy(
+  overrides: Partial<Parameters<typeof registryHits>[0]> = {},
+): Parameters<typeof registryHits>[0] {
+  return {
+    address: "الزقازيق",
+    areaCode: "D24",
+    brickId: "B211-3",
+    codes: [{ customerCode: "344524", distributorCode: "IS" }],
+    name: "الإنسانية",
+    phoenixPharmacyCode: "DOP-000079",
+    regionCode: "D2",
     ...overrides,
   };
 }
@@ -129,6 +161,206 @@ export function runPharmacySearchTests() {
     }),
   ]);
   assert.equal(twoBricks.length, 2, "the same name in two bricks is two pharmacies, not one");
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // The Phoenix registry — the fourth branch
+  //
+  // A pharmacy is born down two disjoint paths and neither writes the other's table:
+  // `source_of_sales_customer_map` from the distributor files, and `direct_order_pharmacies` when
+  // someone registers a venue in Phoenix. This screen searched only the first until 2026-09-08,
+  // when the owner searched صيدلية الإنسانية, was told it was not in the database, and spent a
+  // billed Google Places call being told so — while DOP-000079 "الإنسانية" (brick B211-3, area
+  // D24) had been registered by hand at 11:18 Cairo that morning, four hours earlier.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── The query is LONGER than the stored name, which is the direction nobody tests ──
+  // "صيدلية الإنسانية" typed against "الإنسانية" stored: a plain `name.includes(query)` is false,
+  // and so is an ILIKE '%query%' in SQL. Dropping the generic word from BOTH sides is what makes
+  // them meet — and it is the same word list the pharmacy-matching module already keeps.
+  const registryQuery = (raw: string) => ({ normalized: normalizeArabicPharmacyName(raw), raw });
+
+  assert.equal(
+    matchRegistryPharmacy(registryPharmacy(), registryQuery("صيدلية الإنسانية")),
+    "name",
+    "the owner's own query must reach the pharmacy someone registered that morning — the generic "
+      + "word makes the query longer than the stored name, so a substring test fails one way round",
+  );
+  assert.equal(
+    matchRegistryPharmacy(registryPharmacy(), registryQuery("الإنسانية")),
+    "name",
+    "the bare name must match too — stripping stop words must not be the only route",
+  );
+  assert.equal(
+    matchRegistryPharmacy(registryPharmacy(), registryQuery("الانسانيه فرع 2")),
+    null,
+    "a query naming a DIFFERENT branch must not match — stop-word removal widens the match, it "
+      + "must not make it unconditional",
+  );
+
+  // A code is an unambiguous identifier, and `matchedOn` must say which kind was recognised —
+  // reporting a code hit as a name hit tells the reader the wrong thing about why a row came back.
+  assert.equal(
+    matchRegistryPharmacy(registryPharmacy(), registryQuery("DOP-000079")),
+    "phoenix_code",
+    "the Phoenix registry code must be searchable — it is the only identifier a venue with no "
+      + "distributor code has",
+  );
+  assert.equal(
+    matchRegistryPharmacy(registryPharmacy(), registryQuery("dop-000079")),
+    "phoenix_code",
+    "…and its casing must not decide it",
+  );
+  assert.equal(
+    matchRegistryPharmacy(registryPharmacy(), registryQuery("344524")),
+    "customer_code",
+    "a distributor's own code recorded against the venue must find it",
+  );
+  assert.equal(
+    matchRegistryPharmacy(registryPharmacy(), registryQuery("الصيدلية الحديثة")),
+    null,
+    "an unrelated name must not match — every registered pharmacy would otherwise answer every query",
+  );
+
+  // ── One hit per distributor code, exactly as the directory branches emit one per mapping ──
+  const withTwoCodes = registryHits(
+    registryPharmacy({
+      codes: [
+        { customerCode: "344524", distributorCode: "IS" },
+        { customerCode: "0001559807", distributorCode: "PS" },
+      ],
+    }),
+    reference(),
+    "name",
+  );
+  assert.equal(withTwoCodes.length, 2, "a venue with two distributor codes emits one hit per code");
+  assert.equal(new Set(withTwoCodes.map((entry) => entry.id)).size, 2, "…with distinct ids, or React keys collide");
+  assert.ok(
+    withTwoCodes.every((entry) => entry.origin === "phoenix" && entry.phoenixPharmacyCode === "DOP-000079"),
+    "every registry hit must carry the origin and the DOP code, or the screen cannot label it",
+  );
+
+  // The territory is the VENUE's own brick, not a distributor's `mapped_*` view of it. Reading the
+  // mapped columns would split one pharmacy's hits across several collapse keys.
+  assert.equal(withTwoCodes[0]?.territory.brickName, "الزقازيق", "the venue's own brick resolves to its name");
+  assert.equal(withTwoCodes[0]?.territory.areaName, "Zagazig", "…and to its area");
+  assert.equal(withTwoCodes[0]?.territory.regionName, "Delta 2", "…and its region");
+
+  // ── A venue no distributor has heard of is the whole point of this branch ──
+  // 6 of the 53 active registrations (production, 2026-09-08) carry no distributor code at all.
+  // Emitting nothing for them would leave exactly the pharmacies the directory cannot answer for
+  // invisible — which is the defect, not an edge case.
+  const codeless = registryHits(registryPharmacy({ codes: [] }), reference(), "phoenix_code");
+  assert.equal(codeless.length, 1, "a venue with no distributor code still produces a hit");
+  assert.equal(codeless[0]?.distributorCode, null);
+  assert.equal(codeless[0]?.customerCode, null);
+  assert.equal(codeless[0]?.phoenixPharmacyCode, "DOP-000079", "…identified by its Phoenix code alone");
+
+  // ── The same distributor twice is one catalogue entry ──────────────────────
+  // A registry row and a directory row carrying the SAME distributor AND the same customer code
+  // are one entry in one distributor's own catalogue — identity by construction. (The inference
+  // that is NOT sound is the other one: a code shared BETWEEN distributors proves nothing,
+  // because each numbers from its own catalogue.) The directory row survives because it is the
+  // one with sales history behind it, but it must inherit the DOP code or the registration
+  // becomes invisible again — the exact failure this branch exists to fix, one step later.
+  const folded = foldRegistryIntoDirectory(
+    [hit({ customerCode: "344524", distributorCode: "IS", id: "IS:344524", name: "الإنسانية" })],
+    registryHits(registryPharmacy(), reference(), "name"),
+  );
+  assert.equal(folded.length, 1, "the same distributor's own code twice is one row, not two");
+  assert.equal(folded[0]?.origin, "database", "the directory row survives — it is the one with sales behind it");
+  assert.equal(
+    folded[0]?.phoenixPharmacyCode,
+    "DOP-000079",
+    "…and it must absorb the Phoenix code, or a registered venue reads as unregistered",
+  );
+
+  // A registry code no directory row carries is a real extra result, not a duplicate.
+  const notFolded = foldRegistryIntoDirectory(
+    [hit({ customerCode: "999", distributorCode: "IS", id: "IS:999", name: "الإنسانية" })],
+    registryHits(registryPharmacy(), reference(), "name"),
+  );
+  assert.equal(notFolded.length, 2, "a different code is a different catalogue entry and must survive");
+
+  // A code-less registry hit can never be folded away — there is no pair to match it on.
+  const codelessSurvives = foldRegistryIntoDirectory(
+    [hit({ customerCode: "344524", distributorCode: "IS", id: "IS:344524", name: "الإنسانية" })],
+    registryHits(registryPharmacy({ codes: [] }), reference(), "name"),
+  );
+  assert.equal(codelessSurvives.length, 2, "a venue with no distributor code has no pair to fold on and must survive");
+
+  // ── Registry and directory collapse together, not into separate lists ─────
+  // 40 of the 53 active registrations are ALSO in the directory at the same brick (production,
+  // 2026-09-08). Without a shared collapse the fourth branch would double three quarters of its
+  // own results — the screen would answer the owner twice for the same pharmacy.
+  const bothSources = collapseByPharmacy([
+    hit({ customerCode: "1", distributorCode: "PS", id: "PS:1", name: "الإنسانية" }),
+    ...registryHits(registryPharmacy({ brickId: "B4-58" }), reference(), "name").map((entry) => ({
+      ...entry,
+      territory: hit().territory,
+    })),
+  ]);
+  assert.equal(bothSources.length, 1, "one physical pharmacy in both tables must collapse to one row");
+  assert.equal(bothSources[0]?.origin, "database", "the directory row wins the tie — its profile assembles fully");
+  assert.equal(
+    bothSources[0]?.phoenixPharmacyCode,
+    "DOP-000079",
+    "the survivor must carry the Phoenix code across the collapse, whichever side won",
+  );
+  assert.equal(bothSources[0]?.distributorCount, 2, "both distributors must still be counted");
+  // The directory row leading must not cost the registry's facts. Preferring one row is about
+  // which identity leads, not about which side's information survives — and the address rule must
+  // never be able to promote the registry row instead, which is a different answer entirely.
+  assert.equal(
+    bothSources[0]?.address,
+    "الزقازيق",
+    "the survivor must absorb the address from whichever side has one, without changing which row won",
+  );
+
+  // The reverse order must give the same answer — a collapse whose result depends on which branch
+  // returned first is a collapse that reports a different pharmacy on a slow day.
+  const reversed = collapseByPharmacy([
+    ...registryHits(registryPharmacy({ brickId: "B4-58" }), reference(), "name").map((entry) => ({
+      ...entry,
+      territory: hit().territory,
+    })),
+    hit({ customerCode: "1", distributorCode: "PS", id: "PS:1", name: "الإنسانية" }),
+  ]);
+  assert.equal(reversed.length, 1);
+  assert.equal(reversed[0]?.origin, "database", "the directory row wins regardless of arrival order");
+  assert.equal(reversed[0]?.phoenixPharmacyCode, "DOP-000079", "…and the Phoenix code survives either way");
+
+  // ── ...but the brick still decides identity, and it cuts both ways here ───
+  // DOP-000079 sits in B211-3 (Zagazig) while the directory holds two pharmacies also called
+  // الإنسانية in B11-10 and B114-87 — different bricks, different pharmacies. "الإسعاف" is worse:
+  // registered once, and present in TWENTY separate directory bricks. Merging on name would
+  // report one pharmacy where there are twenty.
+  const differentBricks = collapseByPharmacy([
+    hit({ customerCode: "1", distributorCode: "PS", id: "PS:1", name: "الإنسانية" }),
+    ...registryHits(registryPharmacy(), reference(), "name"),
+  ]);
+  assert.equal(
+    differentBricks.length,
+    2,
+    "a registered venue in one brick and a same-named directory pharmacy in another are two "
+      + "pharmacies — the registry must not buy an exemption from the rule that governs the rest",
+  );
+
+  // ── "1 distributor" beside a blank distributor name is a lie the reader cannot check ──
+  // Every active directory row carries a distributor code (67,233 of 67,233, production
+  // 2026-09-08), so dropping the floor of 1 cannot make one of those read 0 — but a venue no
+  // distributor has a code for genuinely has none, and saying so is the honest answer.
+  const codelessCollapsed = collapseByPharmacy(registryHits(registryPharmacy({ codes: [] }), reference(), "name"));
+  assert.equal(codelessCollapsed.length, 1);
+  assert.equal(
+    codelessCollapsed[0]?.distributorCount,
+    0,
+    "a venue with no distributor code must count zero of them, not be floored up to one",
+  );
+  assert.equal(
+    collapseByPharmacy([hit()])[0]?.distributorCount,
+    1,
+    "a directory row still counts its own distributor — dropping the floor must not cost the normal case",
+  );
 
   // ── Ranking: an exact name must not sit below a 90-character one ───────────
   const ranked = rankHits(
@@ -297,6 +529,70 @@ export function runPharmacySearchTests() {
     "every save must leave an audit row — this is a human-initiated write to production data",
   );
 
+  // ── `origin` drives behaviour, so a fourth value must not open the write path ──
+  // Adding "phoenix" to PharmacySearchOrigin widens a union that `saveDiscoveredPharmacy` reads
+  // to decide whether a profile may be written at all. It must stay an ALLOW-list of exactly
+  // "google": a `!== "database"` style test would have let a registered venue be written into the
+  // Google discovery register, inventing a second identity for a pharmacy that already has one.
+  assert.ok(
+    /profile\.origin !== "google"/.test(saveSource),
+    'saveDiscoveredPharmacy must gate on origin being exactly "google" — a deny-list would admit '
+      + "every origin added later, starting with the Phoenix registry",
+  );
+
+  // ── The fourth search branch must actually read the registry ──────────────
+  // The search module is the only place that can answer "is this pharmacy in Phoenix at all".
+  // If this read is ever removed, every assertion above still passes on fixtures while the
+  // screen goes back to reporting a registered pharmacy as absent.
+  const searchSource = stripComments(
+    readFileSync(fileURLToPath(new URL("../src/lib/pharmacy-search/search.ts", import.meta.url)), "utf8"),
+  );
+  assert.match(
+    searchSource,
+    /\.from\("direct_order_pharmacies"\)/,
+    "search.ts must read direct_order_pharmacies — searching only the distributor directory is "
+      + "the defect this branch exists to fix",
+  );
+  assert.match(
+    searchSource,
+    /\.from\("direct_order_pharmacy_distributor_codes"\)/,
+    "…and its distributor codes, or a rep holding a distributor's code for a registered venue "
+      + "cannot find it",
+  );
+  assert.ok(
+    !/\.insert\(|\.update\(|\.upsert\(|\.delete\(/.test(searchSource),
+    "search.ts is read-only — a search box must never write, least of all to the registry",
+  );
+
+  // The profile must be able to resolve a registry-only venue. Without this a Phoenix-only hit is
+  // listed by the search and then answers PharmacyNotFoundError when clicked, which on screen
+  // reads as "this pharmacy does not exist" about one the box just offered.
+  const profileSource = stripComments(
+    readFileSync(fileURLToPath(new URL("../src/lib/pharmacy-search/profile.ts", import.meta.url)), "utf8"),
+  );
+  assert.match(
+    profileSource,
+    /\.from\("direct_order_pharmacies"\)/,
+    "profile.ts must fall back to the registry, or every Phoenix-only search hit is unopenable",
+  );
+  assert.match(
+    profileSource,
+    /origin: registry \? "phoenix" : "database"/,
+    "a registry-backed profile must say so — it has no distributor sales behind it and the reader "
+      + "must not read an empty sales section as a pharmacy that buys nothing",
+  );
+
+  // The route has to pass the code through, or the fallback above is unreachable from the browser.
+  const profileRouteSource = readFileSync(
+    fileURLToPath(new URL("../app/api/admin/pharmacy-search/profile/route.ts", import.meta.url)),
+    "utf8",
+  );
+  assert.match(
+    profileRouteSource,
+    /phoenixPharmacyCode: params\.get\("phoenix"\)/,
+    "the profile route must forward the Phoenix code — the registry fallback is dead code without it",
+  );
+
   // The save ROUTE must rebuild the profile server-side from the place id rather than trusting a
   // posted profile, or a caller could write any brick they liked into the register.
   const saveRouteSource = readFileSync(
@@ -439,6 +735,50 @@ export function runPharmacySearchTests() {
     assert.ok(
       card.indexOf('label: "Distributor"') < card.indexOf('label: "Code"'),
       "the distributor must sit immediately before its code, so the pair reads as one fact",
+    );
+
+    // A registered venue with no distributor code has "—" for both fields above. Without a field
+    // of its own the card would show a pharmacy with nothing at all saying where it came from.
+    assert.match(
+      card,
+      /label:\s*"Phoenix"/,
+      "the mobile card must carry the Phoenix registry code — for a venue no distributor has a "
+        + "code for it is the only identifier the card can show",
+    );
+  }
+
+  // ── The Google lookup must not be offered for a pharmacy we registered ourselves ──
+  // A billed Places call, spent to be told about DOP-000079 four hours after someone typed it in
+  // by hand. The prompt is gated on `isEmpty`, so what protects the owner is that a Phoenix-only
+  // hit lands in `hits` and makes `isEmpty` false — nothing in the component knows about origins.
+  {
+    const source = readFileSync(
+      fileURLToPath(new URL("../src/components/pharmacy-search/pharmacy-search-workspace.tsx", import.meta.url)),
+      "utf8",
+    );
+
+    assert.match(
+      source,
+      /Boolean\(visibleResults\?\.isEmpty\)/,
+      "the Google prompt must stay gated on isEmpty — a Phoenix-only hit makes it false and that "
+        + "is what stops the billed Places call",
+    );
+    assert.match(
+      source,
+      /params\.set\("phoenix", hit\.phoenixPharmacyCode\)/,
+      "opening a hit must carry its Phoenix code to the profile route, or a registered venue is "
+        + "listed and then unopenable",
+    );
+    assert.ok(
+      !/hit\.origin === "phoenix"[^\n]*params\.set\("phoenix"/.test(source),
+      "the Phoenix code must be sent for ANY hit that has one, not only a phoenix-origin row — a "
+        + "venue in both tables collapses to a database hit and still needs the fallback",
+    );
+    assert.match(
+      source,
+      /distributorSummary\(hit\.distributorCount\)/,
+      'the card must route the count through the helper — "0 distributors" is not what a venue '
+        + "with no distributor code should say",
     );
   }
 
