@@ -162,7 +162,7 @@
     "pdfjs-dist": "5.4.296",
     "pdfmake": "^0.3.11",
     "postgres": "^3.4.9",
-    "puppeteer-core": "^25.3.0",
+    "puppeteer-core": "^25.9.0",
     "radix-ui": "^1.6.6",
     "react": "19.2.8",
     "react-dom": "19.2.8",
