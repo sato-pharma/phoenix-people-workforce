@@ -13,16 +13,17 @@ name: Security Scan (OSS)
 # secret before (a shared passphrase sat in a committed file until 2026-07-31).
 #
 # Restored 2026-08-08 after #1889 removed the whole file. That PR also dropped the Semgrep
-# sast-scan job, which is NOT restored here, deliberately: Semgrep took 4m14s per PR against
-# gitleaks' 13s. This job is the cheap half that nothing else replaces.
+# sast-scan job, which was left out at the time because Semgrep took 4m14s per PR against
+# gitleaks' 13s, and a hosted code-quality scanner was covering overlapping ground.
 #
-# READ THIS BEFORE ASSUMING SOMETHING ELSE CATCHES CODE FLAWS. This note used to justify dropping
-# Semgrep partly on the grounds that a hosted code-quality scanner covered overlapping ground. That
-# scanner was removed entirely on 2026-09-08 at the owner's instruction, so the justification is
-# gone with it: this repo now runs NO static application security testing at all. gitleaks finds
-# secrets, not vulnerabilities, and `lint`/`typecheck` are not security analysis. That is a
-# deliberate, known position rather than an oversight to quietly fix — but if it is ever revisited,
-# restoring Semgrep here is the cheaper move than reinstating a hosted service.
+# BOTH HALVES OF THAT ARE NOW SETTLED, 2026-09-08. The hosted scanner was removed entirely at the
+# owner's instruction, which briefly left this repo with NO static application security testing at
+# all — gitleaks finds secrets, not vulnerabilities, and `lint`/`typecheck` are not security
+# analysis. Semgrep is restored below to close that, but on the daily schedule and on demand rather
+# than per-PR, which is what makes it affordable. The cost reasoning is on the sast-scan job.
+#
+# So this file now holds BOTH halves: secret-scan, which blocks every PR, and sast-scan, which
+# does not run on PRs at all. Read each job's own header before changing when it fires.
 #
 # NOW BLOCKING. The original rolled out with `--exit-code 0` "for this initial rollout", which
 # meant the job could not fail no matter what it found — 40 consecutive green runs that proved
@@ -50,6 +51,7 @@ permissions:
 
 env:
   GITLEAKS_VERSION: "8.30.1"
+  SEMGREP_VERSION: "1.171.0"
 
 jobs:
   secret-scan:
@@ -116,4 +118,79 @@ jobs:
         with:
           name: gitleaks-report
           path: gitleaks-report.sarif
+          retention-days: 14
+
+  # SAST. Restored 2026-09-08 at the owner's instruction, after the hosted code-quality scanner
+  # that had been covering this ground was removed the same day, leaving the repo with no static
+  # application security testing at all.
+  #
+  # DELIBERATELY NOT ON pull_request, which is the ONLY difference from the job dropped by #1889.
+  # It measured 4m14s per run against gitleaks' 13s, and this repo merges ~14 PRs a day — so a
+  # per-PR Semgrep costs roughly 60 Actions minutes daily, about doubling the standing spend, on a
+  # repo that has already hit its cap once. What that buys is immediacy and nothing else, because
+  # the job WARNS and never fails (see below): per-PR runs would gate nothing that a daily run over
+  # main does not also catch, one day later. Owner chose daily + on demand, 2026-09-08.
+  #
+  # Run it against a branch by hand any time: Actions -> Security scan -> Run workflow, picking the
+  # branch. That is what workflow_dispatch is for here, and it is the escape hatch that makes the
+  # per-PR cost unnecessary rather than merely unaffordable.
+  #
+  # WARNING-ONLY FOR NOW — and unlike the usual version of this note, the backlog IS measured.
+  # First run on the restore branch, 2026-09-08: 361 rules over 4,684 files, 4m27s, **5 findings**
+  # (2 × dynamic-urllib in scripts/scope-p95-latency-alert-to-production-revision.py, a dead-GCP-era
+  # script; 2 × react-insecure-request in src/components/attendance/device-user-mapping-manager.tsx,
+  # which talks to a fingerprint device over plain HTTP on the LAN; 1 × gcm-no-tag-length at
+  # src/lib/security/secret-box.ts:109).
+  #
+  # Five is small enough that gating is genuinely reachable — triage those, then flip this job to
+  # fail on findings and add it as a required check. That is the intended path, not a vague someday.
+  # It stays warning-only until they are cleared, because secret-scan could gate from day one only
+  # by starting from a proven-clean tree, and an alarm that is red on arrival is one everybody
+  # learns to scroll past. Re-measure before flipping: this count is from one commit, not a law.
+  sast-scan:
+    # Never on a PR. github.event_name is `schedule` or `workflow_dispatch` here.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep
+        run: pip install "semgrep==${SEMGREP_VERSION}"
+
+      - name: SAST scan (Semgrep)
+        run: |
+          set -euo pipefail
+          semgrep scan \
+            --config=p/security-audit \
+            --config=p/owasp-top-ten \
+            --config=p/javascript \
+            --config=p/typescript \
+            --config=p/react \
+            --exclude=node_modules --exclude=.next --exclude=dist \
+            --metrics=off \
+            --sarif --output=semgrep-report.sarif \
+            .
+          COUNT=$(jq '[.runs[]?.results[]?] | length' semgrep-report.sarif)
+          {
+            echo "### SAST scan (Semgrep v${SEMGREP_VERSION})"
+            echo "Findings: **${COUNT}**"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::warning::Semgrep found ${COUNT} potential issue(s) — see the semgrep-report artifact"
+          fi
+
+      - name: Upload Semgrep report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: semgrep-report
+          path: semgrep-report.sarif
           retention-days: 14
