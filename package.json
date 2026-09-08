@@ -191,7 +191,7 @@
     "jszip": "^3.10.1",
     "playwright": "1.62.1",
     "shadcn": "^4.16.0",
-    "supabase": "^2.109.1",
+    "supabase": "^2.116.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
