@@ -1,3 +1,4 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
@@ -7,6 +8,7 @@ import {
   DEVICE_IMPORT_MAX_ROWS,
   parseDeviceImportFile,
 } from "@/lib/devices/bulk-import";
+import { recordDeviceImportAttempt } from "@/lib/devices/import-attempt-log";
 import { deviceErrorMessage } from "@/lib/devices/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
@@ -27,12 +29,28 @@ export const dynamic = "force-dynamic";
  * make a logged-in browser fetch.
  */
 export async function POST(request: Request) {
+  // The check press is logged too. It writes nothing to the REGISTER, which is the property this
+  // route exists for - but whether somebody got as far as checking a file is exactly the question
+  // that could not be answered on 2026-09-08, so the attempt itself is recorded.
+  let fileName: string | null = null;
+  let fileBytes: number | null = null;
+  let rowsRead: number | null = null;
+  let logAttempt: ((fields: { outcome: string; ready?: number; withProblems?: number; imported?: number; issued?: number; skipped?: number; failed?: number }) => Promise<void>) | null = null;
+
   try {
     const csrfError = assertSameOriginMutation(request);
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
     await assertPermission(access, "company_devices", "import");
+
+    // Only after the gate - see the note in `import-attempt-log.ts` on why this is not logged
+    // before the permission check.
+    // Same expression the confirm route uses. HR ids are stored mixed-case, so the two presses
+    // must canonicalise identically or one person appears in the log as two.
+    const actor = hrIdForStorage(access.hrId) ?? access.loginId ?? access.role;
+    logAttempt = (fields) =>
+      recordDeviceImportAttempt({ stage: "check", actor, fileName, fileBytes, rowsRead, ...fields });
 
     // `request.formData()` THROWS when the request carries no multipart body at all, before any
     // check on the field — so a caller who forgot the file got a raw
@@ -42,6 +60,7 @@ export async function POST(request: Request) {
     try {
       formData = await request.formData();
     } catch {
+      await logAttempt?.({ outcome: "missing_file" });
       return NextResponse.json(
         { error: "missing_file", message: "Attach the filled-in device import template." },
         { status: 400 },
@@ -50,11 +69,14 @@ export async function POST(request: Request) {
 
     const file = formData.get("file");
     if (!(file instanceof File)) {
+      await logAttempt?.({ outcome: "missing_file" });
       return NextResponse.json(
         { error: "missing_file", message: "Attach the filled-in device import template." },
         { status: 400 },
       );
     }
+    fileName = file.name || null;
+    fileBytes = file.size;
 
     const validation = validateSpreadsheetFile(file, {
       ...xlsxSpreadsheetValidation,
@@ -66,6 +88,7 @@ export async function POST(request: Request) {
       unsupportedMessage: "Upload the device import template in .xlsx format.",
     });
     if (!validation.ok) {
+      await logAttempt?.({ outcome: validation.error });
       return NextResponse.json(
         { error: validation.error, message: validation.message },
         { status: validation.status },
@@ -73,8 +96,10 @@ export async function POST(request: Request) {
     }
 
     const rows = await parseDeviceImportFile(await file.arrayBuffer());
+    rowsRead = rows.length;
 
     if (rows.length === 0) {
+      await logAttempt?.({ outcome: "no_rows" });
       return NextResponse.json(
         {
           error: "no_rows",
@@ -88,6 +113,7 @@ export async function POST(request: Request) {
       );
     }
     if (rows.length > DEVICE_IMPORT_MAX_ROWS) {
+      await logAttempt?.({ outcome: "too_many_rows" });
       return NextResponse.json(
         {
           error: "too_many_rows",
@@ -97,7 +123,13 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json(await buildDeviceImportPreview(rows));
+    const preview = await buildDeviceImportPreview(rows);
+    await logAttempt?.({
+      outcome: "ok",
+      ready: preview.summary.canImport,
+      withProblems: preview.summary.withErrors,
+    });
+    return NextResponse.json(preview);
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(
@@ -107,6 +139,7 @@ export async function POST(request: Request) {
     }
     // A parse failure is the CALLER's file being wrong, not the server failing — and its message is
     // written to be read by the person who chose the file.
+    await logAttempt?.({ outcome: "device_import_dry_run_failed" });
     return NextResponse.json(
       { error: "device_import_dry_run_failed", message: deviceErrorMessage(error) },
       { status: 400 },
