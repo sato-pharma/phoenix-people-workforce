@@ -432,3 +432,51 @@ export function runDriveTrashedFileTests() {
     "a genuinely missing file must still clear its id so it can be re-filed",
   );
 }
+
+/**
+ * The backfill script and the app must answer the SAME question about where a CV belongs.
+ *
+ * They did not, for a day. The cabinet shipped in #3454 and `drive-cv-mirror.ts` began recording
+ * `drive_mirror_path` as `Phoenix CV Cabinet/...`, while `scripts/backfill-cvs-to-drive.mjs` went on
+ * computing the old `drive-cv-folders` tree. `--verify` compared the two and called 913 of 1,171
+ * mirrored CVs misfiled — then printed "run with --refile", which acts on that same comparison and
+ * would have moved every one of them back OUT of the cabinet, rewriting its recorded path as it went.
+ *
+ * Neither half was wrong on its own, which is exactly why nothing caught it: the app filed
+ * correctly, the script computed the old rule correctly, and only asking both the same question
+ * exposes the disagreement. So this pins the one thing that keeps them together — the script
+ * imports the app's function instead of keeping a copy.
+ */
+export function runDriveScriptAgreesWithAppTests() {
+  const source = fs.readFileSync(path.join(process.cwd(), "scripts", "backfill-cvs-to-drive.mjs"), "utf8");
+
+  assert.match(
+    source,
+    /import \{[^}]*cabinetPathFor[^}]*\} from "@\/lib\/recruitment\/drive-cabinet-folders"/,
+    "the backfill script must take its folder rule from the cabinet module the app itself runs",
+  );
+  assert.ok(
+    source.includes(CABINET_ROOT_NAME) || source.includes("CABINET_ROOT_NAME"),
+    "the expected path must be rooted — drive_mirror_path is recorded rooted, so an unrooted "
+      + "comparison disagrees with every file in the library",
+  );
+
+  // The old tree's two path builders. Either one back in this file means a second copy of the rule,
+  // which is the whole defect: a copy cannot be kept in step, it can only be found later.
+  for (const dead of ["driveFolderPathFor", "driveInferredFolderPath"]) {
+    assert.ok(
+      !source.includes(dead),
+      `${dead} builds the OLD tree's path — the backfill script must not compute a folder of its own`,
+    );
+  }
+
+  // The cabinet's title ladder reads two columns the old tree never asked for. A SELECT missing
+  // either one silently drops the candidate to a lower rung, so a correctly filed CV reads as
+  // misfiled — the same false alarm by a quieter route.
+  for (const column of ["current_job_title", "sent_for_job_title"]) {
+    assert.ok(
+      source.includes(column),
+      `the candidate SELECT must fetch ${column}, or cabinetPathFor files on a lower rung than the app did`,
+    );
+  }
+}
