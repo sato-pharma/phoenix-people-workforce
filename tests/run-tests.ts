@@ -1481,6 +1481,7 @@ import { runAgentsLongHooksCiteDocsTests } from "./agents-long-hooks-cite-docs.t
 import { runAttendanceDeductionCancelRuleTests } from "./attendance-deduction-cancel-rule.test.ts";
 
 import { runAttendanceDeductionCancelMatrixTests } from "./attendance-deduction-cancel-matrix.test.ts";
+import { runSecretBoxTests } from "./secret-box.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4780,6 +4781,10 @@ await runTest(
 await runTest(
   "attendance cancel matrix (all 96 flag combinations against the written policy, the worked-half start maths, and 46 real production days from April-August 2026)",
   runAttendanceDeductionCancelMatrixTests,
+);
+await runTest(
+  "secret-box (a blob sealed before authTagLength still opens and fingerprints identically, a truncated 64-bit tag is refused, and tampering fails closed)",
+  runSecretBoxTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
