@@ -203,6 +203,32 @@ export function payload(desired, desiredChannels) {
 }
 
 /**
+ * Re-read the project and return the slugs that STILL do not match the doc. `readChecks` is
+ * injected so this is testable without a network call.
+ *
+ * A check whose write failed will legitimately appear here, and that is the useful part: the caller
+ * learns which of the OTHER checks landed. Run this whether or not anything failed.
+ */
+export async function verifyAfterApply(syncable, desiredChannels, readChecks) {
+  const after = await readChecks();
+  const afterBySlug = new Map((after.checks || []).map((c) => [c.slug, c]));
+  const stillWrong = [];
+  for (const d of syncable) {
+    const { action } = diffCheck(d, afterBySlug.get(d.slug), desiredChannels);
+    if (action !== "ok") stillWrong.push(d.slug);
+  }
+  return stillWrong;
+}
+
+/**
+ * The exit code for an `--apply` run. A write that failed and a write that silently did not stick
+ * are the same outcome to whoever runs this - the doc and Healthchecks disagree - so both are 1.
+ */
+export function applyExitCode(failed, stillWrongCount) {
+  return failed > 0 || stillWrongCount > 0 ? 1 : 0;
+}
+
+/**
  * Every channel id configured in the project (Settings > Integrations), comma-joined and sorted -
  * the set every declared check should carry. Returns "" if the project has none, which callers
  * must treat as "skip channel enforcement", not "set channels to empty": a project that genuinely
@@ -292,22 +318,27 @@ async function main() {
     return;
   }
   console.log(`applied — ${created} created, ${updated} updated, ${ok} already correct, ${failed} failed`);
-  if (failed > 0) process.exit(1);
 
   // Read back rather than trusting the write. A 200 on POST is not proof the stored schedule is
   // what we asked for; the whole point of this file is that untuned checks lie quietly.
-  const after = await api("/checks/", key);
-  const afterBySlug = new Map((after.checks || []).map((c) => [c.slug, c]));
-  let drift = 0;
-  for (const d of syncable) {
-    const { action } = diffCheck(d, afterBySlug.get(d.slug), desiredChannels);
-    if (action !== "ok") {
-      drift += 1;
-      console.log(`  STILL WRONG after write: ${d.slug}`);
-    }
-  }
-  console.log(drift === 0 ? "verified — every check now matches the doc." : `${drift} check(s) still differ.`);
-  if (drift > 0) process.exit(1);
+  //
+  // UNCONDITIONAL, AND THE ORDERING IS THE POINT. This used to `process.exit(1)` on `failed > 0`
+  // immediately above, so the one run that most needed verifying - the run where something went
+  // wrong - was the only run that never checked what it had actually stored. A partial apply is
+  // exactly when you need to know which of the OTHER checks landed, and the failure of one write
+  // says nothing about the rest. Live example: the 2026-09-08 run updated six checks correctly and
+  // hit HTTP 403 on two creates; it exited 1 here and printed no verification at all, so the six
+  // good writes were confirmed only by re-reading the API by hand afterwards.
+  const stillWrong = await verifyAfterApply(syncable, desiredChannels, () => api("/checks/", key));
+  for (const slug of stillWrong) console.log(`  STILL WRONG after write: ${slug}`);
+  console.log(
+    stillWrong.length === 0
+      ? "verified — every check now matches the doc."
+      : `${stillWrong.length} check(s) still differ.`,
+  );
+  // `process.exitCode`, not `process.exit()`: the latter can truncate pending stdout on Windows,
+  // which would eat the very verification lines printed just above.
+  process.exitCode = applyExitCode(failed, stillWrong.length);
 }
 
 // Importable for tests; only runs the sync when executed directly.
