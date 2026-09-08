@@ -109,6 +109,18 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "app/(admin)/admin/recruitment-hiring/page.tsx",
   "app/(admin)/attendance/page.tsx",
   "app/employee-portals/account-activation/page.tsx",
+  // Names "HR Advisory" and "HR Business Partner" in a COMMENT only, and grants nothing.
+  //
+  // Reviewed verdict: it hands the seat NOTHING. The page's gate is `canSendWhatsAppTemplate`,
+  // which is where the reach is decided; the string here explains why the JOB TITLE needs no entry
+  // of its own — "HR Business Partner" is the title shown for the "HR Advisory" key
+  // (HR_SEAT_JOB_TITLES), not a PhoenixRole — so that the next reader does not "fix" it by adding
+  // a role string that matches nothing. She already held this page before the comment existed,
+  // through `recruitmentManageRoles`.
+  //
+  // Listed rather than reworded around, because the file genuinely does discuss the seat and this
+  // set is the register of exactly that.
+  "app/(admin)/recruitment/whatsapp-templates/page.tsx",
   // Names HR Advisory in TERRITORY_COMPANY_WIDE_NON_SALES_ROLES, added 2026-09-07 with the owner's
   // instruction to put Territory Management on her sidebar. Reviewed verdict: it GRANTS reach, and
   // it is listed for exactly that reason - it is the string that decides she sees the WHOLE brick
