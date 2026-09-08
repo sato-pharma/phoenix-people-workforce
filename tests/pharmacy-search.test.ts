@@ -9,6 +9,7 @@ import {
   KNOWN_SP_SPECIALITIES,
 } from "../src/lib/crm/contact-taxonomy.ts";
 import { boundingBox, haversineKm, isUsablePoint, roundKm } from "../src/lib/pharmacy-search/geo.ts";
+import { MAX_BRICK_SNAP_KM, pickNearestBrick } from "../src/lib/pharmacy-search/locate.ts";
 import { mergeHospitals, __testables as nearbyTestables } from "../src/lib/pharmacy-search/nearby.ts";
 import { resolveTerritory, type TerritoryReference } from "../src/lib/pharmacy-search/reference.ts";
 import { __testables as searchTestables } from "../src/lib/pharmacy-search/search.ts";
@@ -467,5 +468,78 @@ export function runPharmacySearchTests() {
           + "first thing this page answers, and the desktop table has always carried it",
       );
     }
+  }
+
+  // ── A retired brick id must never win the snap ─────────────────────────────
+  // `geo_locations` holds 1,142 brick_centroid pins for 700 real bricks: every centroid is
+  // pinned twice, once under a retired brick vocabulary and once under the current one, at the
+  // same coordinates. They therefore tie at EXACTLY the same distance, and the loop keeps
+  // whichever it met first — so which id won was decided by row order, with no ORDER BY.
+  //
+  // Measured on production 2026-09-08: a pharmacy in شرويدة (Zagazig) snapped to `B95-6`, which
+  // is in no brick table, at 1.72 km — the identical distance to `B211-3` الزقازيق, the live
+  // brick for that point. The saved discovery came out with brick_id set and area_code and
+  // region_code NULL, which reads as a mapped row until you try to use it.
+  {
+    const point = { latitude: 30.5768429, longitude: 31.4861073 };
+    const centroid = { latitude: 30.5629, longitude: 31.4952 };
+    const live = new Set(["B211-3", "B211-4"]);
+
+    // The retired pin is FIRST, so a picker without the live-brick rule keeps it and this fails.
+    const tie = pickNearestBrick({
+      isLiveBrick: (brickId) => live.has(brickId),
+      pins: [
+        { brickId: "B95-6", ...centroid },
+        { brickId: "B211-3", ...centroid },
+      ],
+      point,
+    });
+    assert.equal(
+      tie?.brickId,
+      "B211-3",
+      "a retired brick id tying at the same centroid must lose to the live brick — snapping to a "
+        + "brick the brick table does not know yields a discovery with no area and no region",
+    );
+
+    // Closer is not a reason. A retired id sitting exactly on the point still must not win.
+    const closer = pickNearestBrick({
+      isLiveBrick: (brickId) => live.has(brickId),
+      pins: [
+        { brickId: "B95-6", ...point },
+        { brickId: "B211-4", latitude: 30.6205, longitude: 31.5310 },
+      ],
+      point,
+    });
+    assert.equal(
+      closer?.brickId,
+      "B211-4",
+      "even a retired brick sitting on the point must lose — distance cannot buy back an id that "
+        + "resolves to nothing",
+    );
+
+    // Nothing live in range beats a wrong answer: the caller renders "area and region unknown".
+    const noneLive = pickNearestBrick({
+      isLiveBrick: (brickId) => live.has(brickId),
+      pins: [{ brickId: "B95-6", ...centroid }],
+      point,
+    });
+    assert.equal(noneLive, null, "with no live brick in range the snap must return null, never a retired id");
+
+    // The predicate the caller actually passes is the brick table itself, so a brick the
+    // reference holds must still be pickable — otherwise the filter would snap nothing at all.
+    const viaReference = pickNearestBrick({
+      isLiveBrick: (brickId) => reference().bricks.has(brickId),
+      pins: [
+        { brickId: "B999-1", ...centroid },
+        { brickId: "B4-58", ...centroid },
+      ],
+      point,
+    });
+    assert.equal(
+      viaReference?.brickId,
+      "B4-58",
+      "the live-brick test must be satisfied by the territory reference's own brick map",
+    );
+    assert.ok(MAX_BRICK_SNAP_KM > 0, "the snap ceiling must stay a real distance");
   }
 }
