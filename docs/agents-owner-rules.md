@@ -1610,3 +1610,70 @@ digests change only when the owner has said so about **this** workbook in the li
 
 New capability ships **beside** this workbook, exactly as every new closing feature ships beside the
 frozen monthly closing export.
+
+## The weekly BI and NSM/DSM export designs are password-locked — owner decision, 2026-09-08
+
+### What he said
+
+*"look templete design never change unless set this paswword: …"* (the password itself is
+not reproduced here — see below), and when asked which
+templates, he named **the weekly BI export** and **the weekly NSM/DSM export**.
+
+### Why a password and not just a test
+
+Both designs were pinned earlier the same day, by literals living inside their test files. That is
+real protection against an accidental restyle and **no protection at all** against the failure mode
+it was written for: a session meets the red test and edits the literals until it goes green. The pin
+and the thing guarding the pin were the same file.
+
+Now the pins live in `src/lib/sales/weekly/export-design.pins.json`, and the only sanctioned way to
+rewrite them is `scripts/weekly-export-design-unlock.ts --unlock`, which derives scrypt over the
+supplied password and compares it against a committed verifier.
+
+### What is committed, and what is not
+
+`src/lib/sales/weekly/export-design.lock.json` holds a scrypt verifier — a random 16-byte salt and
+the 64-byte derived key at N=2^17 — and nothing else. The password cannot be read back out of it.
+The repository, its clones, its CI logs and every AI session that reads these files hold something
+that can **check** the password and never one that can **supply** it. A plaintext passphrase in a
+committed file was tried here on 2026-07-31 and removed for exactly that reason: it authenticated
+nobody.
+
+⚠ **The password was typed into a session transcript**, and it is derivable from the repository's own
+contents — the company name plus the year. Both points were put to the owner before the lock was
+armed, and he chose to proceed. Changing it needs no code change: `--set-password` asks for the
+current one first, and the new one never leaves the terminal.
+
+### What is locked
+
+The sheet set with its order and visibility · every column width, row height, merge, freeze pane,
+autofilter and conditional format · the style index on every cell · the whole style table · the
+chart inventory.
+
+**Not locked, deliberately: cell values and formulas.** A corrected number, a fixed formula or a
+re-worded label is not a design change and must never need the owner's password to ship.
+
+### One fixture, one fingerprint, both callers
+
+`scripts/weekly-export-design-fixtures.ts` and `scripts/weekly-export-design-fingerprint.ts` are
+shared by the test and the unlock script on purpose. If the two computed fingerprints even slightly
+differently, a legitimate unlock would produce a pins file the test rejects — and a lock nobody can
+open is as broken as one that never closes. The BI fixture reuses `sampleDashboard` from
+`tests/weekly-export-workbook.test.ts` rather than restating it, for the same reason.
+
+### Proved, not asserted
+
+| break | result |
+| --- | --- |
+| BI zebra tint moved | RED — "the STYLE TABLE changed", naming the BI export |
+| NSM/DSM beige zebra moved | RED — same, naming the NSM/DSM export |
+| a sheet added to the NSM/DSM book | RED — "the SHEET SET changed" |
+| wrong password to `--unlock` | refused, pins byte-identical afterwards |
+| correct password, nothing changed | reports **"Nothing to re-pin"**, not a false success |
+
+That last row matters: running the unlock in the primary while the edit sits in a worktree re-pins
+unchanged source and prints success. Naming the drift — or its absence — is the tell.
+
+The test also asserts the lock is **armed**. A missing verifier reads exactly like a working lock
+from inside a session, which is the hazard the Office golden rule carried until 2026-09-05, when a
+session reading the docs would have believed a password was in place while none was.
