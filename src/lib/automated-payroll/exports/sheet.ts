@@ -8,6 +8,7 @@ import {
   PAYROLL_HEADER_ROW,
   payrollBodyCell,
   payrollHeaderCell,
+  payrollTemplateColumnWidth,
   payrollTotalsCell,
   resolvePayrollBands,
   writePayrollSectionBand,
@@ -198,7 +199,12 @@ export async function writePayrollWorksheet(
   // The bands are resolved from the headers actually written, never from the canonical column
   // numbers — the Part-1 sheet writes a subset, and absolute positions would caption the wrong
   // money on it. See `resolvePayrollBands`.
-  writePayrollSectionBand(sheet, resolvePayrollBands(headers, extraColumns.map((column) => column.label)));
+  const bands = resolvePayrollBands(headers, extraColumns.map((column) => column.label));
+  writePayrollSectionBand(sheet, bands);
+  // The previous salary template closes every section with a Brand Blue rule down its right edge.
+  // Taken from the bands actually written, never from the canonical column numbers — the Part-1
+  // sheet writes a subset, so an absolute position would rule off the middle of a section.
+  const sectionEndColumns = new Set(bands.map((band) => band.to));
 
   // Masthead 1-3, section band 4, header 5 — the positions the sheet already used, so nothing that
   // reads it moves.
@@ -216,13 +222,15 @@ export async function writePayrollWorksheet(
     });
     if (options.protect) cell.protection = { locked: true };
   });
-  headerRow.height = 26;
+  headerRow.height = 32;
 
   let rowNumber = headerRowNumber + 1;
   rows.forEach((entry, index) => {
     const record = toSheetRecord(entry);
     const excelRow = sheet.getRow(rowNumber);
-    const zebra = index % 2 === 1;
+    // Row parity, not row index — the previous salary template tints even SHEET rows, and data
+    // starts at row 6, so keying off the index tinted the opposite set of rows to the template.
+    const zebra = rowNumber % 2 === 0;
 
     headers.forEach((header, ci) => {
       const cell = excelRow.getCell(ci + 1);
@@ -234,6 +242,7 @@ export async function writePayrollWorksheet(
         header,
         held: entry.onHold,
         leading: ci === 0,
+        sectionEnd: sectionEndColumns.has(ci + 1),
         zebra,
       });
       if (options.protect) cell.protection = { locked: true };
@@ -253,6 +262,7 @@ export async function writePayrollWorksheet(
       payrollBodyCell(cell, {
         held: entry.onHold,
         numeric: column.kind === "money",
+        sectionEnd: sectionEndColumns.has(headers.length + ei + 1),
         zebra,
       });
       // Finance-edit columns stay editable even on a protected sheet.
@@ -269,7 +279,7 @@ export async function writePayrollWorksheet(
   const nonEmployees = options.nonEmployees ?? [];
   nonEmployees.forEach((entry, neIndex) => {
     const excelRow = sheet.getRow(rowNumber);
-    const zebra = (rows.length + neIndex) % 2 === 1;
+    const zebra = rowNumber % 2 === 0;
     // Both the variant's value column AND this person's own installment column —
     // see nonEmployeeMoneyColumns for why the installment one is load-bearing.
     const moneyColumns = nonEmployeeMoneyColumns(entry, headers, options.nonEmployeeValueHeader);
@@ -291,6 +301,7 @@ export async function writePayrollWorksheet(
         header,
         held: false,
         leading: ci === 0,
+        sectionEnd: sectionEndColumns.has(ci + 1),
         zebra,
       });
       if (options.protect) cell.protection = { locked: true };
@@ -302,7 +313,12 @@ export async function writePayrollWorksheet(
       else if (column.label === "Bank Account") cell.value = entry.bankAccount ?? "";
       else cell.value = "";
       if (column.kind === "money") cell.numFmt = VALUE_FMT;
-      payrollBodyCell(cell, { held: false, numeric: column.kind === "money", zebra });
+      payrollBodyCell(cell, {
+        held: false,
+        numeric: column.kind === "money",
+        sectionEnd: sectionEndColumns.has(headers.length + ei + 1),
+        zebra,
+      });
       if (options.protect) cell.protection = { locked: false };
     });
 
@@ -339,12 +355,13 @@ export async function writePayrollWorksheet(
     if (options.protect) cell.protection = { locked: true };
   });
 
-  // Column widths.
+  // Column widths — the previous salary template's rule, so the same column is the same width in
+  // both sheets. Full Name keeps its own wider setting: it carries the longest value on the row.
   labels.forEach((label, index) => {
-    const column = sheet.getColumn(index + 1);
-    column.width = Math.max(column.width ?? 9, Math.min(28, Math.max(12, label.length + 2)));
+    sheet.getColumn(index + 1).width = payrollTemplateColumnWidth(label);
   });
-  sheet.getColumn(5).width = 26; // Full Name
+  const fullNameColumn = headers.indexOf("Full Name");
+  if (fullNameColumn >= 0) sheet.getColumn(fullNameColumn + 1).width = 26;
   // Freeze through Full Name: with 37 money columns, scrolling to "Second Part" otherwise leaves
   // the reader looking at a row of figures with no idea whose they are.
   const nameColumn = headers.indexOf("Full Name");
