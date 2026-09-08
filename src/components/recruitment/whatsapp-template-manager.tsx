@@ -11,6 +11,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { deleteRequest, getJson, patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
+// The SHARED Cairo formatter, not a local toLocaleString. This string is hydrated, and en-GB's
+// abbreviated September changed from "Sep" to "Sept" in CLDR 42 — so a browser on older ICU
+// renders different bytes from the server and React throws #418, visibly, only in September.
+import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { WhatsAppSendDialog } from "@/components/recruitment/whatsapp-send-dialog";
 import { cn } from "@/lib/utils";
 
@@ -45,21 +49,6 @@ const SUGGESTIONS = [
   "sender_name",
   "company_name",
 ];
-
-/** Africa/Cairo, always — the owner's standing rule on every time this system prints. */
-function cairoTimestamp(iso: string | null): string {
-  if (!iso) return "—";
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return "—";
-  return parsed.toLocaleString("en-GB", {
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "short",
-    timeZone: "Africa/Cairo",
-    year: "numeric",
-  });
-}
 
 export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -394,7 +383,7 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
                         </span>
                       )}
                     </p>
-                    <p className="text-xs text-slate-600">Last changed {cairoTimestamp(template.updatedAt)} (Cairo)</p>
+                    <p className="text-xs text-slate-600">Last changed {cairoDateTime(template.updatedAt)} (Cairo)</p>
                   </div>
                   {canManage ? (
                     <div className="flex flex-wrap gap-1.5">
