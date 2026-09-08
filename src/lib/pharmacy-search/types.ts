@@ -23,6 +23,23 @@ export type PharmacySearchOrigin =
   /** Found on Google Places just now. NOT in Phoenix. Never treat as an authority. */
   | "google";
 
+/**
+ * `id` prefix for a pharmacy registered in Phoenix, mirroring `google:` for a Places result.
+ *
+ * A registered venue often has no row in `source_of_sales_customer_map`, so the usual
+ * `distributor:customer` pair cannot identify it and its profile is fetched by its own `DOP-` code
+ * instead. Defined once here because three files spell it and a typo in any of them fails silently
+ * — the id simply stops being recognised, and the profile falls back to reading as an ordinary
+ * directory row.
+ */
+export const PHOENIX_PROFILE_ID_PREFIX = "phoenix:";
+
+/** The `DOP-000079` inside a `phoenix:DOP-000079` id, or null when the id is not one. */
+export function phoenixCodeFromProfileId(id: string | null | undefined): string | null {
+  if (typeof id !== "string" || !id.startsWith(PHOENIX_PROFILE_ID_PREFIX)) return null;
+  return id.slice(PHOENIX_PROFILE_ID_PREFIX.length).trim() || null;
+}
+
 export type PharmacySearchMatchKind =
   | "customer_code"
   | "distributor_code"

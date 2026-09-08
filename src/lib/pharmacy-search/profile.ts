@@ -13,6 +13,7 @@ import { DEFAULT_RADIUS_KM, findKnownHospitals, findNearbyContacts, mergeHospita
 import { getTerritoryReference, resolveTerritory, type TerritoryReference } from "./reference";
 import {
   EMPTY_TERRITORY,
+  PHOENIX_PROFILE_ID_PREFIX,
   type PharmacyDistributorCode,
   type PharmacyProfile,
   type PharmacySalesPeriod,
@@ -375,7 +376,9 @@ export async function loadPharmacyProfile(request: PharmacyProfileRequest): Prom
     googleAddress: null,
     googleMapsUrl: googleMapsUrlFor(centre, name),
     hospitals,
-    id: registry ? `phoenix:${registry.phoenixPharmacyCode}` : `${baseRow.distributor_code ?? ""}:${baseRow.customer_code ?? ""}`,
+    id: registry
+      ? `${PHOENIX_PROFILE_ID_PREFIX}${registry.phoenixPharmacyCode}`
+      : `${baseRow.distributor_code ?? ""}:${baseRow.customer_code ?? ""}`,
     name,
     nearbyDoctors,
     // `saveDiscoveredPharmacy` refuses anything that is not "google", and the Save button only

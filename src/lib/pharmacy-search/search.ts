@@ -21,7 +21,7 @@ import { normalizeArabicPharmacyName, removeStopWords } from "@/lib/pharmacy-mas
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { getTerritoryReference, resolveTerritory, type TerritoryReference } from "./reference";
-import type { PharmacySearchHit, PharmacySearchMatchKind } from "./types";
+import { PHOENIX_PROFILE_ID_PREFIX, type PharmacySearchHit, type PharmacySearchMatchKind } from "./types";
 
 /** Hard cap on rows returned to the browser. Deep paging is not what a search box is for. */
 export const PHARMACY_SEARCH_LIMIT = 60;
@@ -227,7 +227,7 @@ function registryHits(
         distributorCode: null,
         distributorCount: 0,
         distributorName: null,
-        id: `phoenix:${pharmacy.phoenixPharmacyCode}`,
+        id: `${PHOENIX_PROFILE_ID_PREFIX}${pharmacy.phoenixPharmacyCode}`,
         matchedOn,
       },
     ];
@@ -241,7 +241,7 @@ function registryHits(
     distributorName: reference.distributorNames.get(code.distributorCode) ?? code.distributorCode,
     // Never `${distributor}:${customer}` on its own: a registry hit that survives beside a
     // directory row for a different pharmacy must not collide with it as a React key.
-    id: `phoenix:${pharmacy.phoenixPharmacyCode}:${code.customerCode}`,
+    id: `${PHOENIX_PROFILE_ID_PREFIX}${pharmacy.phoenixPharmacyCode}:${code.customerCode}`,
   }));
 }
 

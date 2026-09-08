@@ -13,6 +13,7 @@ import { boundingBox, haversineKm, isUsablePoint, roundKm } from "../src/lib/pha
 import { MAX_BRICK_SNAP_KM, pickNearestBrick } from "../src/lib/pharmacy-search/locate.ts";
 import { mergeHospitals, __testables as nearbyTestables } from "../src/lib/pharmacy-search/nearby.ts";
 import { resolveTerritory, type TerritoryReference } from "../src/lib/pharmacy-search/reference.ts";
+import { PHOENIX_PROFILE_ID_PREFIX, phoenixCodeFromProfileId } from "../src/lib/pharmacy-search/types.ts";
 import { __testables as searchTestables } from "../src/lib/pharmacy-search/search.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -362,6 +363,24 @@ export function runPharmacySearchTests() {
     "a directory row still counts its own distributor — dropping the floor must not cost the normal case",
   );
 
+  // ── The `phoenix:` id prefix is spelled in three files ────────────────────
+  // A registered venue's profile is fetched by its own code, not by distributor+customer, so the
+  // id carries the code. A typo in any of the three spellings fails SILENTLY — the id simply stops
+  // being recognised and the profile renders as an ordinary directory row, saying nothing.
+  assert.equal(phoenixCodeFromProfileId(`${PHOENIX_PROFILE_ID_PREFIX}DOP-000079`), "DOP-000079");
+  assert.equal(phoenixCodeFromProfileId("IS:344524"), null, "a directory id is not a Phoenix id");
+  assert.equal(phoenixCodeFromProfileId("google:ChIJabc"), null, "nor is a Places id");
+  assert.equal(phoenixCodeFromProfileId(PHOENIX_PROFILE_ID_PREFIX), null, "the bare prefix names no venue");
+  assert.equal(phoenixCodeFromProfileId(null), null);
+  assert.equal(phoenixCodeFromProfileId(undefined), null);
+
+  // The id the search emits must be the one the profile panel can read back, or the chip is dead.
+  assert.equal(
+    phoenixCodeFromProfileId(registryHits(registryPharmacy({ codes: [] }), reference(), "name")[0]?.id ?? null),
+    "DOP-000079",
+    "a code-less registry hit's id must round-trip through the reader the panel uses",
+  );
+
   // ── Ranking: an exact name must not sit below a 90-character one ───────────
   const ranked = rankHits(
     [
@@ -563,6 +582,17 @@ export function runPharmacySearchTests() {
     !/\.insert\(|\.update\(|\.upsert\(|\.delete\(/.test(searchSource),
     "search.ts is read-only — a search box must never write, least of all to the registry",
   );
+  for (const [label, source] of [["search.ts", searchSource], ["profile.ts", null]] as const) {
+    const text = source ?? stripComments(
+      readFileSync(fileURLToPath(new URL("../src/lib/pharmacy-search/profile.ts", import.meta.url)), "utf8"),
+    );
+    assert.ok(
+      !/["'`]phoenix:/.test(text),
+      `${label} must build the id from PHOENIX_PROFILE_ID_PREFIX, never a literal — a typo in one `
+        + "of the three spellings is invisible: the id stops being recognised and the profile "
+        + "quietly renders as an ordinary directory row",
+    );
+  }
 
   // The profile must be able to resolve a registry-only venue. Without this a Phoenix-only hit is
   // listed by the search and then answers PharmacyNotFoundError when clicked, which on screen
@@ -580,6 +610,26 @@ export function runPharmacySearchTests() {
     /origin: registry \? "phoenix" : "database"/,
     "a registry-backed profile must say so — it has no distributor sales behind it and the reader "
       + "must not read an empty sales section as a pharmacy that buys nothing",
+  );
+
+  // The profile panel must say WHICH database a record came from. A registered venue IS in the
+  // database, so the plain "In the Phoenix database" chip is not wrong — it is silent about the
+  // one thing the reader needs: this record came from the direct-order desk, its codes are what
+  // somebody typed, and it may have no sales history at all.
+  const panelSource = readFileSync(
+    fileURLToPath(new URL("../src/components/pharmacy-search/pharmacy-profile-panel.tsx", import.meta.url)),
+    "utf8",
+  );
+  assert.match(
+    panelSource,
+    /profile\.origin === "phoenix"/,
+    "the profile panel must handle the phoenix origin as a THIRD state — falling through to the "
+      + "generic chip loses the distinction the whole branch exists to draw",
+  );
+  assert.match(
+    panelSource,
+    /phoenixCodeFromProfileId\(profile\.id\)/,
+    "…and read the DOP code back out of the id, rather than re-deriving the prefix by hand",
   );
 
   // The route has to pass the code through, or the fallback above is unreachable from the browser.

@@ -9,7 +9,12 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
-import type { NearbyDoctor, NearbyHospital, PharmacyProfile } from "@/lib/pharmacy-search/types";
+import {
+  phoenixCodeFromProfileId,
+  type NearbyDoctor,
+  type NearbyHospital,
+  type PharmacyProfile,
+} from "@/lib/pharmacy-search/types";
 
 const COORDINATE_SOURCE_LABEL: Record<NonNullable<PharmacyProfile["coordinates"]>["source"], string> = {
   brick_centroid: "Centre of its brick — not the pharmacy itself",
@@ -228,6 +233,14 @@ export function PharmacyProfilePanel({
               {profile.origin === "google" ? (
                 <span className="whitespace-nowrap rounded-full border border-phx-warn-line bg-phx-warn-bg px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-warn">
                   From Google — not in the database
+                </span>
+              ) : profile.origin === "phoenix" ? (
+                // Three states, not two. A registered venue IS in the database, so the plain chip
+                // below is not wrong — it is simply silent about the thing that matters here: this
+                // record came from the direct-order desk rather than a distributor's customer file,
+                // so its codes are what somebody typed and it may have no sales history at all.
+                <span className="whitespace-nowrap rounded-full border border-phx-ok-line bg-phx-ok-bg px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ok">
+                  {phoenixCodeFromProfileId(profile.id) ?? "Registered in Phoenix"} — registered at the direct-order desk
                 </span>
               ) : (
                 <span className="whitespace-nowrap rounded-full border border-phx-ok-line bg-phx-ok-bg px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ok">
