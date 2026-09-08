@@ -12,11 +12,19 @@ const RELOAD_GUARD_WINDOW_MS = 10_000;
  * didn't previously recognize that message shape; only the byte-for-byte string
  * "(reading 'call')" is matched, not the generic "Cannot read properties of
  * undefined" prefix alone, which covers countless unrelated real application bugs.
+ *
+ * "Failed to load chunk <url> from module <id>" was added 2026-09-08. It is the shape Next.js
+ * itself emits, and the one production had actually recorded: app_error_events held it against
+ * /employee-portals on an Android handset, and NONE of the patterns above matched it, so the tab
+ * reported the failure and then sat there broken. The name check does not save that case either -
+ * the reporter builds `new Error(message)` when the event carries no Error object, and that name is
+ * "Error". A detector that misses the message the platform actually produces is a detector that
+ * only works on the failures nobody had.
  */
 export function isStaleDeployChunkError(error: Error) {
   return (
     error.name === "ChunkLoadError" ||
-    /loading chunk [\d]+ failed|failed to fetch dynamically imported module|error loading dynamically imported module|importing a module script failed|cannot read properties of undefined \(reading 'call'\)/i.test(
+    /loading chunk [\d]+ failed|failed to load chunk|failed to fetch dynamically imported module|error loading dynamically imported module|importing a module script failed|cannot read properties of undefined \(reading 'call'\)/i.test(
       error.message ?? "",
     )
   );
