@@ -1419,6 +1419,7 @@ import { runRepoDoctorNewestPrTests } from "./repo-doctor-newest-pr.test.ts";
 import { runSessionLockStalenessIsAgeTests } from "./session-lock-staleness-is-age.test.ts";
 import { runRepoDoctorOrphanedFoldersTests } from "./repo-doctor-orphaned-folders.test.ts";
 import { runRepoDoctorXlsxSnapshotTests } from "./repo-doctor-xlsx-snapshot.test.ts";
+import { runRepoDoctorSessionHoldTests } from "./repo-doctor-session-hold.test.ts";
 import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
 import { runOutstationMobileWizardStaleCalculationTests } from "./outstation-mobile-wizard-stale-calculation.test.ts";
 import { runOutstationPayrollPayableTotalAgreementTests } from "./outstation-payroll-payable-total-agreement.test.ts";
@@ -4530,6 +4531,10 @@ await runTest(
 await runTest("no source-pinning test strips comments with a regex that eats the code it pins", runCommentStripRatchetTests);
 
 await runTest("repo-doctor offers only what --strip-idle will actually reclaim", runRepoDoctorStripIdleOfferTests);
+await runTest(
+  "repo-doctor never offers a worktree a live session is standing in",
+  runRepoDoctorSessionHoldTests,
+);
 await runTest(
   "a session lock is stale by AGE alone, and no shipped text teaches the PID rule (the lock stores "
     + "the hook's own short-lived parent shell, so EVERY lock names a dead PID — the weekly hygiene "

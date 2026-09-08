@@ -121,6 +121,7 @@ import { classifyBranchPr, listBranchPrs } from "./branch-pr-state.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
 import { archivePushTarget, listArchiveRefs, strandedArchives } from "./repo-doctor-archive-refs.mjs";
 import { classifySupabaseLink } from "./repo-doctor-supabase-link.mjs";
+import { sessionHoldReason } from "./repo-doctor-session-hold.mjs";
 import {
   classifyOrphanedFolder,
   orphanedFolderLines,
@@ -665,9 +666,24 @@ if (orphanLines.length) {
 const merged = [];
 /** Worktrees a PR state kept OUT of the list above, each with the reason. Printed, never silent. */
 const heldFromRetirement = [];
+/** Worktrees a LIVE SESSION kept out, each with the reason. Its own list, never folded into the
+ *  PR one: "the work is still in flight" and "somebody is standing in it" are different facts and
+ *  a reader who sees the wrong one draws the wrong conclusion about whether it is safe later. */
+const heldByLiveSession = [];
 for (const r of live) {
   const branch = git(["-C", r.dir, "rev-parse", "--abbrev-ref", "HEAD"]);
   if (!branch || branch === "HEAD" || branch === "main" || branch === "master") continue;
+
+  // BEFORE the PR lookup, which costs a `gh` call per branch: a folder somebody is sitting in is
+  // not retirable whatever its PR says. Checked here rather than at the printing step below so
+  // there is no path — now or after a later edit — on which a removal command for a held folder
+  // reaches the screen at all. The commands ARE the interface: they are meant to be pasted, and on
+  // 2026-09-08 they were.
+  const heldBy = sessionHoldReason(r.dir);
+  if (heldBy) {
+    heldByLiveSession.push(`${rel(r.dir)} (${branch}) — ${heldBy}`);
+    continue;
+  }
   // A retirable worktree can hold the only copy of real work in TWO independent ways, and both
   // have to be reported: uncommitted files, and commits that exist on no origin ref. This block
   // used to check only the first, so for a worktree carrying unpushed commits it printed an
@@ -768,6 +784,25 @@ if (merged.length) {
 if (heldFromRetirement.length) {
   console.log(`NOT retirable — the newest PR says the work is still in flight: ${heldFromRetirement.length}`);
   for (const line of heldFromRetirement) console.log(`  ${line}`);
+  console.log("");
+}
+
+// Same reasoning as the block above, for the other reason a worktree can be held: somebody is in
+// it. Printed separately because the two facts expire differently — a PR merges and the folder
+// becomes retirable, whereas this one clears when a person closes a window, and a reader who
+// cannot tell which is which will either wait forever or remove it anyway.
+if (heldByLiveSession.length) {
+  console.log(`NOT retirable — a session is HOLDING the folder: ${heldByLiveSession.length}`);
+  for (const line of heldByLiveSession) console.log(`  ${line}`);
+  console.log(
+    "  Close the session first; a worktree removed under one leaves it in a DEREGISTERED folder, " +
+      "where bare git commands resolve against the primary checkout on `main`.",
+  );
+  console.log(
+    "  Blind spot, on purpose: this sees `.claude/worktrees/*` only. A sibling `_wt-*` session " +
+      "reports the PRIMARY as its cwd, so it cannot be told apart from any other session — an " +
+      "`_wt-*` folder absent from this list is UNKNOWN, not proven unattended.",
+  );
   console.log("");
 }
 
