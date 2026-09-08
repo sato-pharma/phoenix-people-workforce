@@ -387,12 +387,19 @@ export function runDriveCvFolderTests() {
   }
 
   // And the delegation itself, so that removing a copy can never quietly remove the behaviour too.
+  //
+  // AMENDED 2026-09-08, and the amendment is the second half of this pin's story. The list named the
+  // OLD tree's modules, and was right to until the cabinet shipped (#3454) and the script's folder
+  // rule moved to `drive-cabinet-folders`. After that, pinning the old imports held the script
+  // delegating correctly to the wrong module — real delegation, wrong target, which is a state this
+  // test was shaped to call healthy. `--verify` then reported 913 of 1,171 mirrored CVs misfiled,
+  // and `--refile` acts on that comparison: following it would have moved them back out of the
+  // cabinet. What is pinned here is DELEGATION, never a particular module, so the list has to follow
+  // the rule the app actually runs rather than the one it used to.
   for (const imported of [
+    'from "@/lib/recruitment/drive-cabinet-folders"',
     'from "@/lib/recruitment/drive-cv-folders"',
-    'from "@/lib/recruitment/candidate-folder-inference"',
-    'from "@/lib/recruitment/candidate-region"',
-    'from "@/lib/recruitment/candidate-folder"',
-    "inferCandidatePlacement",
+    "cabinetPathFor",
     "sanitizeDriveSegment",
   ]) {
     assert.ok(backfillSource.includes(imported), `the backfill script must import ${imported}`);
