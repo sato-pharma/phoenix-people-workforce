@@ -507,6 +507,7 @@ import { runWeeklyBranchNameScopeTests } from "./weekly-branch-name-scope.test.t
 import { runWeeklyTrackedLinesScopeTests } from "./weekly-tracked-lines-scope.test.ts";
 import { runWeeklySummaryReportTests } from "./weekly-summary-report.test.ts";
 import { runWeeklyNsmDsmWorkbookTests } from "./weekly-nsm-dsm-workbook.test.ts";
+import { runWeeklyNsmDsmBeigeLookTests } from "./weekly-nsm-dsm-beige-look.test.ts";
 import { runWeeklyMonthTargetScopeTests } from "./weekly-month-target-scope.test.ts";
 import { runSalesRawTemplateTests } from "./sales-raw-template.test.ts";
 import { runSalesMappingDatabaseTests } from "./sales-mapping-database.test.ts";
@@ -2407,6 +2408,7 @@ await runTest("weekly de-cumulation (cumulative → real per-week)", runWeeklyDe
 await runTest("weekly batch scope (cycle-month fetch narrowing)", runWeeklyBatchScopeTests);
 await runTest("weekly summarized report (manager attribution, YTD stock, low-sales)", runWeeklySummaryReportTests);
 await runTest("weekly NSM/DSM export (column arithmetic, date header)", runWeeklyNsmDsmWorkbookTests);
+await runTest("weekly NSM/DSM export keeps the beige look (exempt from the house identity)", runWeeklyNsmDsmBeigeLookTests);
 await runTest("weekly tracked-line scope (golden rule: CNS / Anti Infective / Pedia)", runWeeklyTrackedLinesScopeTests);
 await runTest("weekly branch area split (owner rule: even across governorates then areas)", runWeeklyBranchAreaSplitTests);
 await runTest("weekly branch name scope (a depot name names its territory)", runWeeklyBranchNameScopeTests);
