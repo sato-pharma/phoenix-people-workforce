@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { addDays, DEFAULT_OFFER_VALIDITY_DAYS, todayInCairo } from "@/lib/offers/dates";
 import { createOffer, listOfferJobTitles, listOffers } from "@/lib/offers/service";
-import { getApplication } from "@/lib/recruitment/applications";
+import { getApplication, recordApplicationOfferLetter } from "@/lib/recruitment/applications";
 import { buildOfferLetterDraft } from "@/lib/recruitment/offer-letter-bridge";
 import { getOffer } from "@/lib/recruitment/offers";
 import { hrIdForStorage } from "@/lib/hr-id";
@@ -90,6 +90,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         && draft.candidateEmail.trim() !== "",
     );
     if (existing) {
+      // The link is stored for a REUSED draft exactly as for a new one. An application whose letter
+      // was reused is no less linked, and recording only the created case would leave a gap that
+      // reads as "no offer yet".
+      await recordApplicationOfferLetter(application.id, existing.id);
       return NextResponse.json({
         carried,
         leftForYou,
@@ -117,6 +121,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       },
       hrIdForStorage(access.hrId) ?? access.loginId ?? null,
     );
+
+    // Store which letter this application produced. `ats_applications.offer_id` has existed since
+    // the table was created and nothing has ever written it, so the two halves of an offer have
+    // never been connected — see recordApplicationOfferLetter for why the pointer lives on this
+    // side and the offers module gains nothing.
+    await recordApplicationOfferLetter(application.id, created.id);
 
     return NextResponse.json({
       carried,
