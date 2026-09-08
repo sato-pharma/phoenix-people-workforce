@@ -922,6 +922,22 @@ export const accessRegistry = [
   // in the handler, exactly as the hiring-manager write routes above.
   sessionApi({ methods: ["POST"], pattern: "/api/recruitment/candidates/*/district-return", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: ["POST"], pattern: "/api/recruitment/district-returns/*/resolve", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
+  // WhatsApp message templates. THE GATE IS DELIBERATELY SPLIT BY VERB, and the split is the point:
+  // SENDING a message is `recruitment:update` — the recruiting-admin grant, the same one that sends a
+  // CV to a manager — while WRITING the wording is `admin:update`. The audience allowed to message a
+  // candidate in the company's name is much wider than the audience allowed to rewrite what everybody
+  // sends, and one entry covering both verbs would have quietly handed the second to the first.
+  //
+  // Registered ahead of nothing in particular — there is no /api/recruitment/** blanket — but the
+  // per-verb entries must stay separate for the reason above. `/send` is longer than the `/*` entry
+  // and carries a different method, so it resolves to its own row either way.
+  //
+  // The audit is declared on the three writes because these rows are what the company said to a
+  // member of the public, and on the send because it records the message text that was prepared.
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/whatsapp-templates", permission: { resource: "recruitment", action: "update" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/whatsapp-templates", permission: { resource: "admin", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH", "DELETE"], pattern: "/api/recruitment/whatsapp-templates/*", permission: { resource: "admin", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/whatsapp-templates/send", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/reports/vacancies", permission: { resource: "vacancies", action: "read" } }),
   // Listed AHEAD of the blanket /api/reports/** below, which would otherwise swallow it. The
   // permission is identical — this entry exists to DECLARE the audit. It is the one organogram

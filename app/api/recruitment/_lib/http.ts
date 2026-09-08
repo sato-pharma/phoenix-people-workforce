@@ -57,6 +57,18 @@ export function recruitmentApiError(error: unknown, fallback: string) {
   return NextResponse.json({ error: code, message: apiError.message, success: false }, { status });
 }
 
+/**
+ * A refusal the user is meant to READ.
+ *
+ * Sets `error` and `message` to the same sentence on purpose: the module's shared client helper
+ * (recruitment-fetch.ts) surfaces `message` and falls back to a bare "Request failed." when it is
+ * absent, so a route that sets only `error` throws away the very explanation it just wrote. That is
+ * how "Fill in Date, Time before sending." reaches the recruiter as "Request failed."
+ */
+export function recruitmentProblem(message: string, status: number, extra?: Record<string, unknown>) {
+  return NextResponse.json({ error: message, message, success: false, ...extra }, { status });
+}
+
 export async function readJsonObject(request: Request): Promise<Record<string, unknown>> {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) {

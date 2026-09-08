@@ -47,6 +47,7 @@ import {
   MapPinned,
   PauseCircle,
   Megaphone,
+  MessageCircle,
   MessageSquareText,
   Network,
   PlusCircle,
@@ -909,6 +910,18 @@ export const adminNavigationSectionSeeds = [
       // so the two cannot drift (every-offered-link-opens.test.ts). A plain row rather than a ninth
       // hub card, the same choice Returned CVs above made.
       { href: "/recruitment/cv-lifecycle-sheet", icon: Link2, label: "CV Sheet Links", permissions: [{ resource: "recruitment", action: "export" }], roles: hrAuthorityNavigationRoles },
+      // WhatsApp Templates — the wording the company sends candidates, and the one-click send
+      // (app/(admin)/recruitment/whatsapp-templates/page.tsx). A plain row rather than a hub card,
+      // the same choice Returned CVs and CV Sheet Links above made and for the same reason.
+      //
+      // `update`, not `read`: this screen SENDS a message to a member of the public in the company's
+      // name, which is acting on the pipeline — the same clause the send route asserts.
+      //
+      // THE ROLES ARE SPELLED OUT rather than reusing hrAuthorityNavigationRoles, which carries a
+      // third role (HR Operations) the page gate does not. canSendWhatsAppTemplate resolves to
+      // Super Admin + HR Advisory, and a row offered to someone the page then redirects is exactly
+      // what every-offered-link-opens.test.ts exists to catch. These two must be changed together.
+      { href: "/recruitment/whatsapp-templates", icon: MessageCircle, label: "WhatsApp Templates", permissions: [{ resource: "recruitment", action: "update" }], roles: ["Super Admin", "HR Advisory"] },
     ],
     // ── Renamed 2026-09-05, and the reason is the promotion, not the rows ───────────────────
     // The promoted "Recruitment & Hiring" band (hub-recruitment-hiring) holds the module's eight rows

@@ -782,6 +782,7 @@ import { runPhase21SecurityHardeningTests } from "./phase21-security-hardening.t
 import { runPhase22RoleMatrixSecurityTests } from "./phase22-role-matrix-security.test.ts";
 import { runCeoOrganogramVisibilityTests } from "./ceo-organogram-visibility.test.ts";
 import { runOrganogramWhatsAppNumberTests } from "./organogram-whatsapp-number.test.ts";
+import { runWhatsAppMessageTemplateTests } from "./whatsapp-message-templates.test.ts";
 import { runOrganogramWhatsAppGateTests } from "./organogram-whatsapp-gate.test.ts";
 import { runCeoCommandCenterTests } from "./ceo-command-center.test.ts";
 import { runPhase23BrowserRoleWalkthroughTests } from "./phase23-browser-role-walkthrough.test.ts";
@@ -1481,6 +1482,7 @@ import { runAgentsLongHooksCiteDocsTests } from "./agents-long-hooks-cite-docs.t
 import { runAttendanceDeductionCancelRuleTests } from "./attendance-deduction-cancel-rule.test.ts";
 
 import { runAttendanceDeductionCancelMatrixTests } from "./attendance-deduction-cancel-matrix.test.ts";
+import { runSecretBoxTests } from "./secret-box.test.ts";
 
 import { runAttendanceWeeklyDigestTests } from "./attendance-weekly-digest.test.ts";
 
@@ -4782,6 +4784,15 @@ await runTest(
 await runTest(
   "attendance cancel matrix (all 96 flag combinations against the written policy, the worked-half start maths, and 46 real production days from April-August 2026)",
   runAttendanceDeductionCancelMatrixTests,
+);
+await runTest(
+  "secret-box (a blob sealed before authTagLength still opens and fingerprints identically, a truncated 64-bit tag is refused, and tampering fails closed)",
+  runSecretBoxTests,
+);
+
+await runTest(
+  "WhatsApp message templates (placeholders derive the fields, an empty value is refused rather than rendering \"Dear ,\", the message survives the wa.me URL round trip, and an Egyptian number is repaired before it is read as international)",
+  runWhatsAppMessageTemplateTests,
 );
 await runTest(
   "weekly attendance digest (four settlement weeks with no gap, a closed week only, and a cancelled day never becoming a chargeable line)",
