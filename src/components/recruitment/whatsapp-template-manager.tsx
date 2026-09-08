@@ -243,7 +243,7 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
         </button>
         {canManage ? (
           <button
-            className="border border-[#0A527D] bg-[#0A527D] px-4 py-2 text-sm font-semibold text-white"
+            className="border border-phx-accent bg-phx-accent px-4 py-2 text-sm font-semibold text-white transition hover:bg-phx-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60"
             onClick={startCreate}
             type="button"
           >
@@ -307,7 +307,7 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {SUGGESTIONS.map((key) => (
                   <button
-                    className="border border-slate-300 bg-slate-50 px-2 py-1 font-mono text-[11px] text-slate-700 hover:border-[#0A6BA6] hover:bg-white"
+                    className="border border-phx-line bg-[#FBFCFD] px-2 py-1 font-mono text-[11px] text-slate-700 transition hover:border-phx-accent-line hover:bg-white hover:text-slate-900"
                     key={key}
                     onClick={() => insertPlaceholder(key)}
                     type="button"
@@ -342,7 +342,7 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
 
             <div className="flex flex-wrap gap-2">
               <button
-                className="border border-[#0A527D] bg-[#0A527D] px-4 py-2 text-sm font-semibold text-white disabled:border-slate-300 disabled:bg-slate-300"
+                className="border border-phx-accent bg-phx-accent px-4 py-2 text-sm font-semibold text-white transition hover:bg-phx-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60 disabled:border-slate-300 disabled:bg-slate-300"
                 disabled={busy}
                 onClick={save}
                 type="button"

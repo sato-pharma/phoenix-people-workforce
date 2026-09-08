@@ -269,7 +269,7 @@ export function WhatsAppSendDialog({
       <div
         aria-label={`Send a WhatsApp message to ${who}`}
         aria-modal="true"
-        className="w-full max-w-3xl border border-slate-300 bg-white shadow-xl"
+        className="w-full max-w-3xl border border-phx-line-strong bg-white"
         ref={dialogRef}
         role="dialog"
       >
@@ -311,8 +311,8 @@ export function WhatsAppSendDialog({
                       className={cn(
                         "border px-3 py-1.5 text-left text-xs font-medium",
                         template.id === selectedId
-                          ? "border-[#0A527D] bg-[#0A527D] text-white"
-                          : "border-slate-300 bg-white text-slate-700 hover:border-[#0A6BA6]",
+                          ? "border-phx-accent bg-phx-accent text-white"
+                          : "border-phx-line bg-white text-slate-700 hover:border-phx-accent-line hover:text-slate-900",
                       )}
                       key={template.id}
                       onClick={() => {
