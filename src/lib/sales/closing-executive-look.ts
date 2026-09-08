@@ -413,7 +413,6 @@ export const EXECUTIVE_PALETTE = {
 } as const;
 
 const EMU_PER_POINT = 12_700;
-const NAV_ROW = 2;
 /** The contents sheet's name, kept here so the band painter can leave its cover alone. */
 const INDEX_SHEET_NAME = "Contents";
 /** The two sheets carrying a Region slicer, whose columns `sizeMatrixColumns` already owns. */
@@ -712,7 +711,14 @@ export async function paintExecutiveBands(zip: JSZip, sheetParts: Map<string, st
  * Sheets are named by the caller, so only the ones that actually got a navy band are touched: a
  * sheet still on a white masthead keeps the black-SATO mark that is right for it.
  */
-export async function useOnDarkEmblem(zip: JSZip, sheetParts: Map<string, string>, sheets: string[]): Promise<string[]> {
+/**
+ * NOT NAMED `useOnDarkEmblem`. Any function whose name begins with "use" is a React Hook to
+ * `react-hooks/rules-of-hooks`, which then fails the lint job for calling it outside a component --
+ * in a workbook builder that has never rendered anything. The rule is right about the convention
+ * and wrong about this file, and renaming is cheaper than an eslint-disable that outlives the
+ * reason for it.
+ */
+export async function applyOnDarkEmblem(zip: JSZip, sheetParts: Map<string, string>, sheets: string[]): Promise<string[]> {
   if (!sheets.length) return [];
   const emblemPart = "xl/media/phx-emblem-on-dark.png";
   if (!zip.file(emblemPart)) {

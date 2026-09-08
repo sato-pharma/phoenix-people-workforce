@@ -7,7 +7,7 @@ import {
 } from "./closing-engine-template-generated";
 import { ACHIEVEMENT_ARROW_AT } from "./closing-engine-data";
 import { CLOSING_ENGINE_EMBLEM_ON_DARK_PNG_BASE64 } from "./closing-engine-emblem-on-dark";
-import { applyExecutiveGeometry, applyExecutivePalette, ensureAccentButtonStyle, fitNavigationBand, paintExecutiveBands, resolveSheetParts, useOnDarkEmblem } from "./closing-executive-look";
+import { applyExecutiveGeometry, applyExecutivePalette, ensureAccentButtonStyle, fitNavigationBand, paintExecutiveBands, resolveSheetParts, applyOnDarkEmblem } from "./closing-executive-look";
 import { PIVOT_GRID_SPECS, buildPivotGrid, type GridCellKind } from "./closing-pivot-grid";
 
 /**
@@ -359,7 +359,7 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   const banded = await paintExecutiveBands(zip, finalParts);
   // Only the sheets that actually got a navy masthead. A sheet still on white keeps the black-SATO
   // mark, which is the correct one for it.
-  await useOnDarkEmblem(zip, finalParts, banded);
+  await applyOnDarkEmblem(zip, finalParts, banded);
   await fitNavigationBand(zip, finalParts);
 
   // Directory entries must not reach the file, and this has to be the LAST thing done to the zip.
