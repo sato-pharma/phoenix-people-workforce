@@ -7,7 +7,7 @@ import {
 } from "./closing-engine-template-generated";
 import { ACHIEVEMENT_ARROW_AT } from "./closing-engine-data";
 import { CLOSING_ENGINE_EMBLEM_ON_DARK_PNG_BASE64 } from "./closing-engine-emblem-on-dark";
-import { applyExecutiveGeometry, ensureAccentButtonStyle, fitNavigationBand, paintExecutiveBands, resolveSheetParts, useOnDarkEmblem } from "./closing-executive-look";
+import { applyExecutiveGeometry, applyExecutivePalette, ensureAccentButtonStyle, fitNavigationBand, paintExecutiveBands, resolveSheetParts, useOnDarkEmblem } from "./closing-executive-look";
 import { PIVOT_GRID_SPECS, buildPivotGrid, type GridCellKind } from "./closing-pivot-grid";
 
 /**
@@ -350,6 +350,11 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   // button and the Rep Card's link are all authored above, and a shape clamped before it exists is
   // a shape still hanging over the warning strip. Both builds need it -- the .xlsm carries the
   // owner's own buttons, which have the same overhang the clones inherited from them.
+  // The palette first: it SUBSTITUTES colours the template already uses, so it must run before the
+  // band painter adds styles of its own -- those are authored in the approved colours already and
+  // would be swapped a second time by a map that does not expect them.
+  await applyExecutivePalette(zip);
+
   const finalParts = await resolveSheetParts(zip);
   const banded = await paintExecutiveBands(zip, finalParts);
   // Only the sheets that actually got a navy masthead. A sheet still on white keeps the black-SATO

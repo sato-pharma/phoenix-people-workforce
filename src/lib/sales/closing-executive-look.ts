@@ -319,6 +319,42 @@ export async function applyExecutiveGeometry(zip: JSZip, sheetParts: Map<string,
       }
     }
 
+    // A HEAD ROW THAT DOES NOT EXIST STILL NEEDS ITS HEIGHT.
+    //
+    // Rewriting only the rows already present looks complete and is not: `Area x Product` is the one
+    // sheet in the owner's template with NO row 2 element at all. Its height therefore stayed at
+    // Excel's default 15pt while everything else -- the navigation clamp above all -- computed
+    // against the 34pt this table specifies. The buttons were clamped to 34pt inside a 15pt row and
+    // hung 19pt past it, straight into the warning strip on the one sheet nobody had rendered.
+    //
+    // The same sheet caught `fillHeaderCells` out in exactly this way once before: a cell aimed at a
+    // row that does not exist was dropped in silence, and the completeness note went missing from
+    // one tab of twelve. An absent row is not an empty row; it is a row whose properties nothing can
+    // set.
+    const present = new Set(
+      [...xml.matchAll(/<row\b[^>]*?\br="(\d+)"/g)].map((match) => Number(match[1])),
+    );
+    const missing = Object.keys(geometry.head)
+      .map(Number)
+      .filter((row) => Number.isFinite(row) && !present.has(row))
+      .sort((left, right) => left - right);
+    for (const row of missing) {
+      const height = geometry.head[row]!;
+      const fresh = `<row r="${row}" ht="${height}" customHeight="1"/>`;
+      // Rows must ascend inside `<sheetData>`; Excel repairs a sheet whose rows descend. Insert
+      // before the first row that follows it, or at the end of the block when there is none.
+      const after = [...present].filter((candidate) => candidate > row).sort((left, right) => left - right)[0];
+      // ONLY A GAP, NEVER AN EXTENSION. A head row with nothing after it is not a hole in the
+      // masthead, it is a row the sheet simply does not reach -- a short month whose Overview ends
+      // at row 14 has no rows 15 to 17, and creating them appends three empty rows BELOW the
+      // footnotes. That silently moved the footnotes out of "the last three rows", which is how
+      // every reader of this sheet finds them, and turned a green suite red on an assertion about
+      // wording that had not changed. Fill gaps between real rows; never push past the last one.
+      if (after === undefined) continue;
+      xml = xml.replace(new RegExp(`<row\\b[^>]*?\\br="${after}"`), (match) => `${fresh}${match}`);
+      present.add(row);
+    }
+
     xml = xml.replace(/<row\b[^>]*?(?:\/>|>[\s\S]*?<\/row>)/g, (row) => {
       const number = Number(/^<row\b[^>]*\br="(\d+)"/.exec(row)?.[1] ?? Number.NaN);
       if (!Number.isFinite(number)) return row;
@@ -402,6 +438,66 @@ const SLICER_SHEETS = new Set(["Closing Matrix", "Units Matrix"]);
  * through the end of row 2. Nothing else in the drawing is touched - not the emblem, which lives in
  * row 1, and not the slicers, which ride inside an mc:AlternateContent of their own.
  */
+/**
+ * The approved palette, applied by SUBSTITUTION.
+ *
+ * Every colour on the left is one the template already uses, and every colour on the right is the
+ * owner's approved value for the same role. Swapping them in `styles.xml` moves every cell that
+ * uses one at once, without touching a single style index, cell or row -- so a KPI panel, a table
+ * header and a zebra stripe all change together and nothing can fall out of step with anything
+ * else.
+ *
+ * WHY NOT RESTYLE THE CELLS. The alternative is to work out which cells are headers, which are
+ * grounds and which are stripes, and point each at a new style. That means re-deriving a layout the
+ * template already encodes, on twelve sheets, and getting it wrong somewhere no render happens to
+ * cover. The template has already decided which cells share a role -- they share a fill -- and this
+ * inherits that decision rather than re-making it.
+ *
+ * The pairs are ROLE-FOR-ROLE, not nearest-neighbour: `085080` is the table header everywhere it
+ * appears, so it becomes the approved header navy, not the approved accent blue that happens to be
+ * closer to it numerically.
+ */
+const PALETTE_SUBSTITUTIONS: ReadonlyArray<readonly [string, string]> = [
+  // Deep navy: mastheads and the darkest bands.
+  ["FF042C46", EXECUTIVE_PALETTE.primaryNavy],
+  // Table headers and total bars.
+  ["FF085080", EXECUTIVE_PALETTE.secondaryNavy],
+  // The accent used for links, KPI figures and the arrow marks.
+  ["FF0868A8", EXECUTIVE_PALETTE.corporateBlue],
+  // KPI panel ground.
+  ["FFE8EFF8", EXECUTIVE_PALETTE.lightBlue],
+  // Page ground under a band, and the lighter half of a zebra.
+  ["FFF5F9FC", EXECUTIVE_PALETTE.veryLight],
+  // Body type and captions.
+  ["FF0F1E2B", EXECUTIVE_PALETTE.mainText],
+  ["FF7A93A3", EXECUTIVE_PALETTE.mutedText],
+];
+
+/**
+ * Repaint the workbook in the approved palette.
+ *
+ * Confined to `styles.xml` on purpose. The same eight-digit strings appear in drawings, in theme
+ * parts and inside slicer definitions, where they mean a shape's own fill or a theme slot rather
+ * than a cell's, and a blanket search-and-replace across the package would repaint the owner's
+ * button bar and his slicer chrome as a side effect of restyling a table header.
+ */
+export async function applyExecutivePalette(zip: JSZip): Promise<number> {
+  const stylesFile = zip.file("xl/styles.xml");
+  if (!stylesFile) return 0;
+  let styles = await stylesFile.async("string");
+  let changed = 0;
+  for (const [from, to] of PALETTE_SUBSTITUTIONS) {
+    if (from === to) continue;
+    const pattern = new RegExp(`(rgb=")${from}(")`, "gi");
+    styles = styles.replace(pattern, (_match, open: string, close: string) => {
+      changed += 1;
+      return `${open}${to}${close}`;
+    });
+  }
+  if (changed) zip.file("xl/styles.xml", styles);
+  return changed;
+}
+
 /** Append one element to a counted block in styles.xml, returning its index. */
 function appendCounted(styles: string, block: "fills" | "fonts" | "cellXfs", child: string): { index: number; xml: string } {
   const open = styles.indexOf(`<${block}`);
