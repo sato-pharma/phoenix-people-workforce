@@ -335,6 +335,38 @@ function assertOwnDigest(digest: DigestRow, actorHrId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Who may open the digest at all
+// ---------------------------------------------------------------------------
+
+/**
+ * TEMPORARY LOCKDOWN — owner instruction 2026-09-08, pending his rules on how
+ * employees are told this page exists.
+ *
+ * Six real digests carrying real names and EGP amounts already exist. The portal row
+ * was taken off the rail the same day, but hiding a nav row is UX only: the page and
+ * its API still answered for anyone holding the URL. This is the gate that actually
+ * closes them, and it is deliberately ONE function that all four employee-facing
+ * surfaces ask — the page, the list API, confirm and dispute — because a gate living
+ * in four places is a gate three of them will eventually disagree with.
+ *
+ * WHO GETS THROUGH TODAY: whoever may already decide a dispute, i.e. Super Admin or a
+ * name in `dispute_reviewer_hr_ids`. That is the owner, so he can still see exactly
+ * what an employee would. Everyone else is redirected or refused.
+ *
+ * HOW TO LIFT IT: replace the body with `return true` — the surfaces are already
+ * self-scoped, so opening it to everyone is that one line — or read a setting if it
+ * should be switchable without a deploy. Do NOT loosen it by adding roles: this is not
+ * a permissions question, it is "has the owner decided how to tell people yet", and
+ * today the answer is no.
+ */
+export async function canOpenDigestPortal(access: {
+  role?: string | null;
+  hrId?: string | null;
+}): Promise<boolean> {
+  return canReviewDisputes(access);
+}
+
+// ---------------------------------------------------------------------------
 // Who may decide a dispute
 // ---------------------------------------------------------------------------
 
