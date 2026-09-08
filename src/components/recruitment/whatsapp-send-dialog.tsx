@@ -188,7 +188,15 @@ export function WhatsAppSendDialog({
    * every popup blocker swallows it — silently, which reads as "the button does nothing". Opening
    * first and navigating second keeps the user gesture attached to the open.
    *
-   * If the blocker refuses even that, `win` is null and the URL is offered as a link instead, rather
+   * 🔴 NEVER PASS `noopener` HERE. `window.open` returns **null** whenever the feature list contains
+   * noopener — by specification, not as a quirk — while still opening the tab. That combination is
+   * the worst of both: the tab exists, the handle to navigate it does not, so the code below takes
+   * the "popup was blocked" branch and the tab is left sitting on about:blank forever. Shipped that
+   * way on 2026-09-08 and reported within the hour: "when i press send i was redirected to
+   * about:blank". The opener reference is the price of being able to navigate the tab at all, and
+   * the destination is wa.me, so it is a price worth paying.
+   *
+   * If a blocker genuinely refuses, `win` is null and the URL is offered as a link instead, rather
    * than the click appearing to fail.
    */
   const onSend = useCallback(async () => {
@@ -197,7 +205,21 @@ export function WhatsAppSendDialog({
     setError(null);
     setBlockedUrl(null);
 
-    const win = typeof window !== "undefined" ? window.open("", "_blank", "noopener,noreferrer") : null;
+    const win = typeof window !== "undefined" ? window.open("", "_blank") : null;
+    // Say something in the new tab straight away. Rendering the message server-side takes a moment,
+    // and a tab that sits empty in the meantime is indistinguishable from one that is broken — which
+    // is exactly how the noopener bug above was experienced.
+    if (win) {
+      try {
+        win.document.write(
+          '<!doctype html><title>Preparing your WhatsApp message…</title>' +
+            '<body style="font:14px system-ui;padding:24px;color:#334155">Preparing your WhatsApp message…</body>',
+        );
+        win.document.close();
+      } catch {
+        // A browser that refuses the write still navigates fine — the holding text is a courtesy.
+      }
+    }
     try {
       const data = await postJson("/api/recruitment/whatsapp-templates/send", {
         candidateId: candidateId ?? null,
@@ -214,8 +236,18 @@ export function WhatsAppSendDialog({
       }
       onClose();
     } catch (sendError) {
-      win?.close();
-      setError(sendError instanceof Error ? sendError.message : "Could not prepare the message.");
+      const reason = sendError instanceof Error ? sendError.message : "Could not prepare the message.";
+      // Close the holding tab, and if the browser refuses to close it, leave the reason IN it rather
+      // than abandoning a blank tab the user has to work out for themselves.
+      try {
+        win?.close();
+        if (win && !win.closed) {
+          win.document.body.textContent = reason;
+        }
+      } catch {
+        // Nothing further to do — the same reason is shown in the dialog below.
+      }
+      setError(reason);
     } finally {
       setBusy(false);
     }

@@ -783,6 +783,7 @@ import { runPhase22RoleMatrixSecurityTests } from "./phase22-role-matrix-securit
 import { runCeoOrganogramVisibilityTests } from "./ceo-organogram-visibility.test.ts";
 import { runOrganogramWhatsAppNumberTests } from "./organogram-whatsapp-number.test.ts";
 import { runWhatsAppMessageTemplateTests } from "./whatsapp-message-templates.test.ts";
+import { runWhatsAppSendOpensARealTabTests } from "./whatsapp-send-opens-a-real-tab.test.ts";
 import { runOrganogramWhatsAppGateTests } from "./organogram-whatsapp-gate.test.ts";
 import { runCeoCommandCenterTests } from "./ceo-command-center.test.ts";
 import { runPhase23BrowserRoleWalkthroughTests } from "./phase23-browser-role-walkthrough.test.ts";
@@ -4797,6 +4798,11 @@ await runTest(
 await runTest(
   "weekly attendance digest (four settlement weeks with no gap, a closed week only, and a cancelled day never becoming a chargeable line)",
   runAttendanceWeeklyDigestTests,
+);
+
+await runTest(
+  "WhatsApp send opens a tab it can navigate (noopener makes window.open return null, stranding the user on about:blank)",
+  runWhatsAppSendOpensARealTabTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
