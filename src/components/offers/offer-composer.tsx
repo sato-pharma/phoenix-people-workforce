@@ -815,6 +815,15 @@ export function OfferComposer({
                       never cut off with an ellipsis, and a half-shown candidate name on a phone is
                       exactly the failure that rule exists to prevent. A long name wraps instead. */}
                   <p className="break-words text-sm font-black text-slate-900">{offer.candidateName}</p>
+                  {/* The address the letter actually went to. The desktop table has carried this
+                      under the name since it shipped; this card did not, so on a phone — which is
+                      how these are read — an offer was a name and nothing else.
+                      Measured 2026-09-08: three offers sat here reading as three different people,
+                      and were one person testing the feature into a single inbox. Nothing on this
+                      card could have shown that. `break-all` because an email has no space to break
+                      at, and no `truncate` because a half-shown address is worse than a wrapped one:
+                      the whole value of this line is telling two addresses apart. */}
+                  <p className="mt-0.5 break-all text-xs text-slate-500">{offer.candidateEmail}</p>
                   <p className="mt-0.5 text-xs text-slate-500">{offer.title}</p>
                 </div>
                 <Badge className="capitalize" variant={STATUS_VARIANT[offer.status]}>
