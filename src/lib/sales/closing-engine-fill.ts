@@ -7,6 +7,7 @@ import {
 } from "./closing-engine-template-generated";
 import { ACHIEVEMENT_ARROW_AT } from "./closing-engine-data";
 import { CLOSING_ENGINE_EMBLEM_ON_DARK_PNG_BASE64 } from "./closing-engine-emblem-on-dark";
+import { applyExecutiveGeometry, fitNavigationBand, resolveSheetParts } from "./closing-executive-look";
 import { PIVOT_GRID_SPECS, buildPivotGrid, type GridCellKind } from "./closing-pivot-grid";
 
 /**
@@ -290,6 +291,14 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   // After the card is filled, never before: it rewrites whole rows, and the filler would then be
   // stamping products and moving footnotes around a layout it had not been told about.
   await polishRepCard(zip, fill);
+
+  // The approved executive geometry, and it has to land HERE: after every writer that authors rows,
+  // and before every reader that measures columns. Each drawing on these sheets -- the emblem, the
+  // owner's region buttons, the navigation bar -- is anchored in EMUs derived from the column
+  // widths, so a width changed after they are placed slides every one of them sideways by the
+  // difference, with nothing to show for it but a logo no longer sitting over its own title.
+  await applyExecutiveGeometry(zip, await resolveSheetParts(zip));
+
   await updateReferences(zip, fill);
   await fitRegionControls(zip, fill);
   await sizeMatrixColumns(zip, fill);
@@ -304,6 +313,10 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   await hideEmblemFromPrint(zip);
   const reviewAdded = options.reviewSheets ? await addReviewSheets(zip, options.reviewSheets) : [];
   await addIndexSheet(zip, fill, reviewAdded);
+  // Contents does not exist until the line above has authored it, so it gets its own pass. Scoped
+  // to that one sheet on purpose: a second blanket pass here would run AFTER `sizeMatrixColumns`
+  // and undo the widening that keeps real area names from being cut off.
+  await applyExecutiveGeometry(zip, await resolveSheetParts(zip), [INDEX_SHEET]);
   await openOnFirstSheet(zip);
   await recalculateOnOpen(zip);
   await restorePivotCacheSharedItems(zip, fill);
@@ -318,6 +331,12 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   if (options.macroFree && options.pdfLink) await linkPdfButtons(zip, options.pdfLink);
   if (options.macroFree && options.repCardPdfBase) await addRepCardPdfLink(zip, options.repCardPdfBase);
   if (options.macroFree) await stripMacros(zip);
+
+  // LAST of the drawing passes, and it has to be: the navigation bar, the re-pointed Export PDF
+  // button and the Rep Card's link are all authored above, and a shape clamped before it exists is
+  // a shape still hanging over the warning strip. Both builds need it -- the .xlsm carries the
+  // owner's own buttons, which have the same overhang the clones inherited from them.
+  await fitNavigationBand(zip, await resolveSheetParts(zip));
 
   // Directory entries must not reach the file, and this has to be the LAST thing done to the zip.
   // An OPC package is a flat set of parts: an item whose name ends in "/" is not a part at all and
