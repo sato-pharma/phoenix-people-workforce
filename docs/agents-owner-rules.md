@@ -1266,3 +1266,62 @@ the trim — so the trim removes bytes from the auto-loaded file and removes no 
 
 - 🔴 **IS-S 2026-04 and 2026-05 ARE THE SAME FILE, this is KNOWN, and the owner is LEAVING IT — do not "repair" it.** Both batches are `Monthly_Sales_by_Client_for_SATO_PHARMA_(PAS)20260603015619.xlsx`, 1,141 rows, **349,266.46 EGP each**, both `validated`. So **one month is counted twice and the other was never loaded**, and the filename's own timestamp (20260603) says it was downloaded in June. March (399,890.48) and June (396,038.78) are distinct files — the pair stands out precisely because those don't match. **Owner's decision 2026-09-05: leave BOTH pending, he is checking with Ibn Sina.** Do NOT void either batch, do NOT re-run the import, do NOT pick the likelier month — **the evidence that would settle it is gone**, because the legacy commit route erased the invoice date on 126,321 rows across 2026-04..06 (~90% of each month). **Quoting IS-S for 2026-04 or 2026-05 quotes a doubled figure**; say so rather than reporting either month clean. A future upload of that same file is now refused at the confirm step (`import-duplicate-guard.ts`), which does NOT touch the two rows already there.
 
+
+## 🔒 The premium-polish golden rule — owner ruling, 2026-09-08
+
+**His words, verbatim:** *"remove this rule 'NO MORE PREMIUM POLISH' and any thing current in system
+or wiull be built consider gomode premium polish gpolkden rule"*.
+
+This **reverses his own ruling of 2026-09-05** — *"NO MORE PREMIUM POLISH ... flat"* — which shipped
+as **#3114 (`feat(ui): flatten the three shared primitives`)**. Depth is the default again, for what
+already exists and for anything built from here on.
+
+### What #3114 had removed, and what came back
+
+| Surface | Flattened 2026-09-05 | Restored 2026-09-08 |
+| --- | --- | --- |
+| `adminPanelClassName` | border only | two-layer contact + ambient shadow |
+| `adminSoftPanelClassName` | border only | the same pair, lighter |
+| `adminInsetPanelClassName` | border only | an **inset** shadow — it is recessed, so it must not also float |
+| `adminHeroSurfaceClassName` | flat `#000` | three-stop diagonal + `0_28px_80px` drop shadow |
+| hero decoration | three layers **deleted, exports and all** | grid overlay + orange glow + amber glow, re-exported and re-rendered |
+| `adminHeroAccentBarClassName` | solid orange | transparent→orange→transparent gradient |
+| kicker / chips / primary action | flat | orange glow, `backdrop-blur`, orange drop shadow |
+| `pageHeaderRailClassName` / `RuleClassName` | solid | the vertical and horizontal gradients again |
+
+### 🔴 The trap: two rules were flattened in ONE commit, and only one was reversed
+
+**The square-edge golden rule (2026-09-04) is untouched and still binding.** #3114 removed the
+`rounded-[18px]` / `rounded-full` radii **and** the depth in the same diff, so the obvious move —
+`git show 862ac767e^:src/components/admin/admin-design-tokens.ts` and restore it — brings round
+corners back under cover of a ruling that says nothing whatever about corners.
+
+Depth returned; the radii did **not**. Inside the admin shell a radius is inert anyway
+(`.admin-shell [class*="rounded"] { border-radius: 0 !important }`), but the employee portal renders
+these same tokens with nothing zeroing them — which is exactly how one token produced two different
+looks before, and the stated reason the radii were dropped. Both things hold at once: **sharp
+corners, real depth.** The two hero glows are the visible proof of the compromise — they were
+circles, they are squares now, and at a 90–100px blur nobody can tell.
+
+### Scope — the system UI, and not the three locked identities
+
+It does **not** reach:
+
+- **the offer letter** (`src/lib/offers/`) — FROZEN by his 2026-09-05 *"donot change in offer design"*;
+- **the house document identity and its ink rule** — company paper, `SATO-DIS-2026-01 v1.0`;
+- **the automated payroll exports** — Phoenix black-and-orange by his 2026-09-08 ruling, pinned by
+  `tests/payroll-phoenix-look.test.ts`.
+
+Widening "anything current in system" across those would reverse three separate owner decisions in
+one sweep, each of which he made deliberately and two of which are pinned by tests. If he wants the
+documents restyled too, that is a fourth decision and he should be asked for it by name.
+
+### Where it lives
+
+One module: `src/components/admin/admin-design-tokens.ts`, read by `AdminPageHero` (131 pages),
+`PremiumHero` (the module pages), the KPI board, the resignations board and both route skeletons —
+so the language cannot drift page to page. `AdminHeroFrame` in `admin-design-system.tsx` is the only
+call site of the three decorative layers.
+
+**No test pins flatness**, then or now — `tests/admin-shell-palette-scope.test.ts` pins the *corners*,
+which is why the square-edge half survived the reversal untouched and must keep surviving it.
