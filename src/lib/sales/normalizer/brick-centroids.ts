@@ -215,8 +215,10 @@ async function collectFieldGpsCentroids(): Promise<Map<string, { lat: number; ln
 /**
  * Count a coverage summary over ONE population: bricks that still exist.
  *
- * `geo_locations` keeps a centroid row after its brick is retired — in production 446 of the 1,142
- * `brick_centroid` rows are orphans whose `source_key` matches no brick. Counting the numerator
+ * `geo_locations` keeps a centroid row after its brick is retired — in production 126 of the 822
+ * `brick_centroid` rows are orphans whose `source_key` matches no brick (it read 446 of 1,142 until
+ * 2026-09-08, when the 320 that merely duplicated a live pin's coordinates were deleted; the
+ * remainder hold coordinates of their own and stay). Counting the numerator
  * over the raw table while the denominator came from the live brick list put the two halves on
  * different populations, so the normalizer workspace rendered "949 / 698 bricks located" and its
  * `success < totalBricks` gate — the ONLY route to the Build geo index button — could never fire,
