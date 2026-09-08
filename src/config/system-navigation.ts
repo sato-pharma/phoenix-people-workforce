@@ -4005,6 +4005,16 @@ export const directOrdersPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin"],
   },
   {
+    href: "/admin/direct-orders/returned",
+    icon: Undo2,
+    label: "Returned Ageing",
+    description: "Orders sent back to a rep and never answered — no expiry clock, so they age until somebody looks.",
+    permissions: [{ resource: "direct_orders", action: "read" }],
+    // Same gate as the Held Desk beside it, and for the same reason: the service is System Admin
+    // only, so a wider link would lead to a redirect rather than a page.
+    roles: ["Super Admin"],
+  },
+  {
     href: "/admin/direct-orders/approval-exceptions",
     icon: Unlink,
     label: "Approval Exceptions",
@@ -4408,6 +4418,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/direct-orders",
           "/admin/direct-orders/report",
           "/admin/direct-orders/held",
+          "/admin/direct-orders/returned",
           "/admin/direct-orders/approval-exceptions",
           "/admin/direct-orders/rep-counters",
         ],
