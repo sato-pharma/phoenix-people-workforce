@@ -10,9 +10,13 @@
  * - **Reverse** (`snapToNearestBrick`) — Google hands back a point for a pharmacy Phoenix has
  *   never seen, and the owner's actual question is "which brick, area and region is it in".
  *   696 of the 700 bricks carry a geocoded centroid, which makes that answerable. The pin table
- *   holds more rows than that — retired brick ids are pinned at the same coordinates as the
- *   live ones that replaced them — so the snap considers only bricks the brick table still
- *   knows. See `pickNearestBrick`.
+ *   holds more rows than that — 822 as of 2026-09-08 — because `geo_locations` keeps a pin after
+ *   its brick is retired, so the snap considers only bricks the brick table still knows.
+ *
+ *   The 320 retired pins that merely DUPLICATED a live pin's coordinates were deleted that day.
+ *   The 126 that remain sit at coordinates of their OWN, so a retired id can now be genuinely
+ *   nearest rather than merely tie a live one: the filter matters MORE after that cleanup, not
+ *   less. See `pickNearestBrick`.
  */
 
 import { normalizeArabicPharmacyName } from "@/lib/pharmacy-master/pharmacy-matching";

@@ -105,13 +105,20 @@ function haversineKm(aLat: number, aLon: number, bLat: number, bLon: number): nu
 const loadBrickCentroidsCached = unstable_cache(
   async (): Promise<BrickCentroid[]> => {
     const supabase = getSupabaseAdmin();
-    // Both of these tables exceed PostgREST's 1,000-row cap, so an unpaginated read silently
-    // truncated them: production has 1,142 brick_centroid rows (446 of which are orphans whose
-    // brick no longer exists, and which therefore consumed the row budget for nothing) against
+    // These reads are paginated because the pin table HAS breached PostgREST's 1,000-row cap, and
+    // an unpaginated read truncates SILENTLY: production held 1,142 brick_centroid rows (446 of
+    // them orphans whose brick no longer exists, consuming the row budget for nothing) against
     // 696 live bricks — roughly 12% of real bricks never reached the index. A check-in inside a
     // dropped brick then snapped to the nearest SURVIVING centroid and still rendered a confident
     // "High · 0.8 km", and which bricks vanished depended on heap order, so it varied per render.
     // The same truncation also made brick VALIDATION reject legitimate brick ids elsewhere.
+    //
+    // 2026-09-08: the 320 orphan pins that merely duplicated a live pin's coordinates were deleted
+    // (pre-image in geo_pins_backup_20260908.orphan_duplicate_pins_pre), leaving 822 pins — 696
+    // live and 126 orphans holding coordinates of their own. The cap is no longer breached, so
+    // KEEPING fetchAllRows here is deliberate: the margin is 178 rows, every brick retired from
+    // source_of_sales_bricks mints a fresh orphan, and the failure mode is a silent truncation
+    // rather than an error — which is exactly what nobody notices.
     const [points, bricks, areasRes, regionsRes] = await Promise.all([
       fetchAllRows<{ latitude: number | null; longitude: number | null; source_key: string | null }>(
         () =>
