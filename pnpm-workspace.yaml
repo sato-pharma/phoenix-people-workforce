@@ -207,7 +207,18 @@ overrides:
   # WHERE IT BITES IF IT IS WRONG: mailbox monitoring and the CV intake reader, both of which speak
   # IMAP through imapflow. A parse regression there is silent — mail simply stops being read — so
   # prefer the smallest version move that clears the advisory.
-  "nodemailer": ^9.1.0
+  #
+  # THE KEY ITSELF LIVES ABOVE, at `nodemailer: ^9.1.1`, and this block is the reasoning for it.
+  # Two branches in flight the same evening each added an override for this one advisory and both
+  # merged — one bare key, one quoted — which YAML reads as the SAME key twice. pnpm then refused
+  # to parse this file at all ("duplicated mapping key"), so every job in every workflow died in
+  # the setup step before running anything, `main` went red, and three merged PRs failed to build
+  # on Railway while production quietly carried on serving the last commit that did.
+  #
+  # Removed rather than reconciled: ^9.1.1 is the stronger floor, it is what the lockfile already
+  # resolves (nodemailer@9.1.1), and it is what the paragraph above argues for. Before adding an
+  # override here, grep the file for the package name — a quoted key and a bare key look like two
+  # different entries to everything except the parser.
 
 # Unlike npm, pnpm blocks dependency lifecycle scripts unless approved here
 # (pnpm 11 hard-fails the install on undecided ones: ERR_PNPM_IGNORED_BUILDS).
