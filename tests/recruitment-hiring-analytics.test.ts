@@ -1,10 +1,13 @@
 import { strict as assert } from "node:assert";
+import fs from "node:fs";
+import path from "node:path";
 
 import {
   buildChannelEffectiveness,
   buildFunnel,
   firstHumanDecisionAt,
   MIN_CHANNEL_CANDIDATES,
+  offersMade,
 } from "../src/lib/recruitment/hiring-analytics.ts";
 
 /**
@@ -201,6 +204,42 @@ export function runRecruitmentHiringAnalyticsTests() {
       funnel[1].conversionFromPrevious,
       null,
       "0 of 0 is unknown, not 0% and certainly not NaN on a screen",
+    );
+  }
+
+  // ── The Offers step counted the empty table ───────────────────────────────────────────────────
+  //
+  // Measured on production 2026-09-08: `ats_offers` held 0 rows and had never held one, while
+  // `offers` held 3 — two sent that day. The funnel read its Offers step from `ats_offers` alone,
+  // so it showed ZERO while three real letters were out with real people. Zero is the worst wrong
+  // answer available, because it is also exactly what "no offers yet" looks like: nothing alerts on
+  // it and nothing contradicts it.
+  {
+    assert.equal(offersMade(0, 3), 3, "three letters and no governed offer is three offers, not zero");
+    assert.equal(offersMade(2, 0), 2, "the governed chain alone still counts");
+    assert.equal(offersMade(2, 3), 5, "both doors count — there is no key to deduplicate them on");
+    assert.equal(offersMade(0, 0), 0, "genuinely none is still none");
+    // A `head: true` count comes back null when the row is absent, and `null + 3` is 3, not NaN.
+    assert.equal(offersMade(null, 3), 3, "a null count must not poison the sum");
+    assert.equal(offersMade(undefined, undefined), 0, "two missing counts are zero, never NaN");
+  }
+
+  // And the reader itself must ask BOTH tables. The pure function above cannot see which tables the
+  // query list names, and querying one of them is the whole original defect.
+  {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), "src", "lib", "recruitment", "hiring-analytics.ts"),
+      "utf8",
+    );
+    for (const table of ['from("ats_offers")', 'from("offers")']) {
+      assert.ok(
+        source.includes(table),
+        `the funnel must count ${table} — reading only one of the two offer tables is the defect this fixes`,
+      );
+    }
+    assert.ok(
+      source.includes("offersMade("),
+      "the Offers step must go through offersMade, so the rule stays testable",
     );
   }
 }
