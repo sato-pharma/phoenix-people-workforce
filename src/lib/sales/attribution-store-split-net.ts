@@ -25,6 +25,7 @@
 // The two measures are equal on all 21,066 production rows from 2026-08 today. That is a fact about
 // the current data, not a definition, so they are carried separately.
 
+import { loadOthersAreas } from "@/lib/sales/closing-organogram-regions";
 import {
   isSplitEligibleLine,
   isStoreCitySplitActive,
@@ -98,14 +99,19 @@ export function buildStoreSplitNetPayload(
   officialLine: string,
   rows: readonly AttributionSplitRow[],
   period: string,
+  othersAreas?: ReadonlySet<string>,
 ): StoreSplitNetPayloadRow[] {
   if (!isStoreCitySplitActive(period)) return [];
   if (!isSplitEligibleLine(officialLine)) return [];
 
-  const qtyPass = splitStoreSalesAcrossCityAreas(rows, period);
+  // Both passes take the SAME exclusion set. They already have to move the same rows (asserted
+  // below); handing one of them a different set of target areas would put units on one geography
+  // and money on another, which is the one shape this function exists to make impossible.
+  const qtyPass = splitStoreSalesAcrossCityAreas(rows, period, othersAreas);
   const effectivePass = splitStoreSalesAcrossCityAreas(
     rows.map((row) => ({ ...row, qty: row.effectiveUnits })),
     period,
+    othersAreas,
   );
 
   // Both passes must have moved the SAME rows — see the header. If they ever diverge the net would
@@ -168,7 +174,11 @@ export async function writeAttributionStoreSplitNet(input: {
   if (isStoreCitySplitActive(period)) {
     for (const line of ATTRIBUTION_SPLIT_LINES) {
       const rows = await input.loadRowsForLine(line, period);
-      const lineRows = buildStoreSplitNetPayload(line, rows, period);
+      // The organogram's Others set, for THIS line and THIS month — see loadOthersAreas. Loaded
+      // per line because the set genuinely differs between them: Qalubeya is Others on Anti
+      // Infective and a district of its own on Pedia.
+      const othersAreas = await loadOthersAreas(line, period);
+      const lineRows = buildStoreSplitNetPayload(line, rows, period, othersAreas);
       if (lineRows.length > 0) linesWithMovement.push(line);
       payload.push(...lineRows);
     }

@@ -688,3 +688,41 @@ export async function loadRegionBySubmitter(lineCode: string | null | undefined)
     return resolved;
   }
 }
+
+/**
+ * The organogram region code that means "Others" — the manager territory a line parks an area in
+ * when it has no district of its own on that line.
+ *
+ * 🔴 IT IS NOT A GEOGRAPHY. Down town (CA5) sits in Cairo on the map and in OT on the Pedia
+ * organogram; Kafr El-Sheikh 2 (D17) is in OT on Pedia AND CNS; Qalubeya (D11) is in OT on Anti
+ * Infective. So "is this area in Others" can only be answered per LINE, from the map below — never
+ * from the area code, and never from the geographic region.
+ */
+export const OTHERS_REGION_CODE = "OT";
+
+/**
+ * Every area this line's organogram parks in Others, upper-cased.
+ *
+ * Pure: it reads a map the caller already loaded, so a caller that has the resolver spends no extra
+ * round trip. Returns an EMPTY set when the map is null — which is the safe direction, because an
+ * empty exclusion list splits exactly as the code did before this existed. A missing org chart must
+ * never silently REMOVE areas from a distribution; that would move money on an outage.
+ */
+export function othersAreasFrom(map: LineOperationalRegionMap | null): ReadonlySet<string> {
+  const others = new Set<string>();
+  if (!map) return others;
+  for (const [areaCode, region] of map.regionByArea) {
+    if (String(region.regionCode ?? "").trim().toUpperCase() === OTHERS_REGION_CODE) {
+      others.add(String(areaCode).trim().toUpperCase());
+    }
+  }
+  return others;
+}
+
+/** `othersAreasFrom` for a caller holding only a line and a period. One round trip. */
+export async function loadOthersAreas(
+  lineCode: string | null | undefined,
+  period: string | null | undefined,
+): Promise<ReadonlySet<string>> {
+  return othersAreasFrom(await loadLineOperationalRegions(lineCode, period));
+}
