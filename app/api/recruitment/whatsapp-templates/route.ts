@@ -10,7 +10,9 @@ import {
   str,
 } from "@/app/api/recruitment/_lib/http";
 import { resolveCommentAuthor } from "@/lib/recruitment/candidate-comments";
+import { assertPermission } from "@/lib/auth/permissions";
 import { loadCandidateSendContext, manualSendAutoValues } from "@/lib/recruitment/whatsapp-templates/candidate-context";
+import { loadEmployeeSendContext } from "@/lib/recruitment/whatsapp-templates/employee-context";
 import { createWhatsAppTemplate, listWhatsAppTemplates } from "@/lib/recruitment/whatsapp-templates/store";
 import { DEFAULT_TEMPLATE_CATEGORY } from "@/lib/recruitment/whatsapp-templates/template";
 
@@ -38,14 +40,24 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const candidateId = str(url.searchParams.get("candidateId"));
     const includeInactive = url.searchParams.get("includeInactive") === "true";
+    const employeeHrId = url.searchParams.get("employeeHrId");
 
     const author = await resolveCommentAuthor(access.hrId).catch(() => ({ jobTitle: null, name: null }));
     const templates = await listWhatsAppTemplates({ includeInactive });
 
     const candidate = candidateId ? await loadCandidateSendContext(candidateId, author.name) : null;
 
+    // THE EMPLOYEE TARGET CARRIES ITS OWN GATE. This branch returns a staff member's name, job title
+    // and MOBILE NUMBER, which `recruitment:update` does not cover and must not become a way to
+    // enumerate the directory. `employees:read` is the permission that already governs seeing an
+    // employee record, so it is the one asked for here — a recruiter who cannot open the employee
+    // record cannot pull the same fields out through this endpoint either.
+    if (employeeHrId) await assertPermission(access, "employees", "read");
+    const employee = employeeHrId ? await loadEmployeeSendContext(employeeHrId, author.name) : null;
+
     return NextResponse.json({
       candidate,
+      employee,
       // The manual path gets the same auto values a candidate would, minus anything person-specific.
       // Handed over even when a candidate WAS named, so the dialog can switch to a typed number
       // without another request.

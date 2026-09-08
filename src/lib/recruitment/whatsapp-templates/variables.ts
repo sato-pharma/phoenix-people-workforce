@@ -29,6 +29,10 @@ export const AUTO_VARIABLE_KEYS = [
   // too. Empty when the checklist cannot be read or holds nothing, and an empty value is REPORTED
   // missing: a document request with no documents in it is not a message worth sending.
   "document_list",
+  // The end of the 90-day probation window, filled only when the target is an EMPLOYEE. Derived
+  // through the owner-locked `probationEndDate` helper (hire + 90 days), never read from
+  // `employees.probation_end_date` — that column is NULL for every employee and always has been.
+  "probation_end_date",
 ] as const;
 
 export type AutoVariableKey = (typeof AUTO_VARIABLE_KEYS)[number];
@@ -52,6 +56,7 @@ export const SUGGESTED_VARIABLE_LABELS: Record<string, string> = {
   interviewer_name: "Interviewer name",
   interviewer_title: "Interviewer job title",
   job_title: "Job title applied for (auto)",
+  probation_end_date: "Probation end date (auto, for an employee)",
   location_link: "Location (Google Maps link)",
   sender_name: "Your name (auto)",
   start_date: "First working day",

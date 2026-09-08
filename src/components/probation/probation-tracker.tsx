@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Download,
+  MessageCircle,
   RefreshCw,
   Search,
   Shield,
@@ -40,6 +41,7 @@ import {
   classifyProbationTrafficStatus,
   summarizeProbationRiskRows,
 } from "@/lib/lifecycle-risk/metrics";
+import { WhatsAppSendDialog } from "@/components/recruitment/whatsapp-send-dialog";
 import type { ProbationRow, ProbationWorkflowAction, TrafficStatus } from "@/lib/probation/types";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -287,6 +289,8 @@ export function ProbationTracker({
   const [trafficFilter, setTrafficFilter] = useState<TrafficStatus | "all">("all");
   const [employmentFilter, setEmploymentFilter] = useState<string>(allValue);
   const [rows, setRows] = useState<ProbationRow[]>(initialData ?? []);
+  /** The probationer whose WhatsApp dialog is open, or null. One at a time, by row. */
+  const [whatsAppRow, setWhatsAppRow] = useState<ProbationRow | null>(null);
   const [selectedAction, setSelectedAction] = useState<SelectedWorkflowAction | null>(null);
   const [actionForm, setActionForm] = useState<WorkflowActionForm>(() => emptyActionForm());
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -502,6 +506,20 @@ export function ProbationTracker({
   function rowActions(row: ProbationRow) {
     return (
       <div className="flex flex-wrap gap-1.5">
+        {/*
+          Message this probationer on WhatsApp. Sits BEFORE the workflow actions because it is the
+          reversible one — it opens a dialog with a preview and sends nothing on its own, while
+          "Terminate" beside it ends someone's employment. Ordering the harmless action first keeps
+          the destructive one away from the thumb on a phone.
+        */}
+        <Button
+          className={probationActionButtonClassName}
+          onClick={() => setWhatsAppRow(row)}
+          variant="secondary"
+        >
+          <MessageCircle className="mr-1 h-3.5 w-3.5" />
+          WhatsApp
+        </Button>
         {row.workflow ? (
           <>
             {(row.workflow.allowedActions ?? row.allowedActions ?? [])
@@ -539,6 +557,18 @@ export function ProbationTracker({
 
   return (
     <div className={isPremium ? premiumPageClassName : "space-y-4"}>
+      {/*
+        ONE dialog for the whole table, keyed by the row that opened it — not one per row. A dialog
+        rendered inside every row mounts as many copies as there are probationers, and each one
+        fetches the template list on mount.
+      */}
+      {whatsAppRow ? (
+        <WhatsAppSendDialog
+          employeeHrId={whatsAppRow.hr_id}
+          employeeName={whatsAppRow.full_name}
+          onClose={() => setWhatsAppRow(null)}
+        />
+      ) : null}
       <div className="relative space-y-4">
         <AdminPageHero
           actions={

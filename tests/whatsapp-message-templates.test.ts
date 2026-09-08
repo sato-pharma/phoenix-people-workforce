@@ -436,6 +436,109 @@ export function runWhatsAppMessageTemplateTests() {
     "a document name hard-coded in the send path is a second source of truth - the checklist is the only one",
   );
 
+  // ── the employee target, and the probation date ─────────────
+  //
+  // WHY THE EMPLOYEE TARGET EXISTS. A probationer is not a candidate. Measured on production
+  // 2026-09-08: 30 people were inside their 90-day window and exactly ONE had a candidate record
+  // carrying a phone number, because nothing links an employee back to the CV they arrived as. A
+  // probation message driven off ats_candidates would have been typed by hand 29 times in 30.
+  const employeeSource = readFileSync("src/lib/recruitment/whatsapp-templates/employee-context.ts", "utf8");
+
+  assert.ok(
+    isAutoVariable("probation_end_date"),
+    "the probation end date is auto-filled, so a recruiter never works it out from a hire date",
+  );
+
+  // THE DATE IS DERIVED THROUGH THE OWNER-LOCKED HELPER, NEVER READ FROM THE STORED COLUMN.
+  // `employees.probation_end_date` is NULL for all 186 production employees and has never been
+  // written by anything, so a reader that trusted it would report "no date" for every person alive
+  // - which looks like missing data rather than like the wrong source, and would never be traced
+  // back to this line.
+  assert.match(
+    employeeSource,
+    /from "@\/lib\/probation\/date"/,
+    "the probation end date must come from the locked hire+90 helper, which is the single source of truth",
+  );
+  assert.ok(
+    !/select\([^)]*probation_end_date/.test(employeeSource),
+    "employee-context must never SELECT employees.probation_end_date - it is NULL for every employee, "
+      + "so trusting it silently blanks the date for everybody",
+  );
+  assert.ok(
+    !/hire_date[^\n]*\+[^\n]*90|addDays|3 months/.test(employeeSource.replace(/\/\/[^\n]*/g, "")),
+    "and it must not re-derive hire+90 by hand - the rule is owner-locked in one module so the two "
+      + "can never drift",
+  );
+
+  // THE NUMBER REPAIR IS LOAD-BEARING HERE, not a nicety. 126 of the 159 employees carrying a mobile
+  // number lost the leading zero to a spreadsheet import (production, 2026-09-08), so without the
+  // repair four employees in five are undialable and it reads as "no number on file".
+  assert.match(
+    employeeSource,
+    /toWhatsAppDialNumber/,
+    "an employee number goes through the Egyptian repair, or 126 of 159 employees cannot be messaged",
+  );
+  assert.equal(
+    toWhatsAppDialNumber("1093216421"),
+    "201093216421",
+    "a stored number that lost its leading zero is repaired to full international form",
+  );
+
+  // AN UNKNOWN HIRE DATE IS A REFUSED SEND, never "your probation ended on —". formatPhoenixLongDate
+  // returns an em dash for a null, and rendering that into a message is a hole that looks like text.
+  const noDate = renderTemplate("Your probation ended on {{probation_end_date}}.", {
+    probation_end_date: "",
+  });
+  assert.deepEqual(
+    noDate.missing,
+    ["probation_end_date"],
+    "an employee with no hire date blocks the send and asks for the date",
+  );
+  assert.ok(
+    !employeeSource.includes('probationEnd = formatPhoenixLongDate('),
+    "the formatter is only reached when a date exists - an unconditional call returns an em dash "
+      + "for a null hire date, and the em dash renders as message text rather than as a missing field",
+  );
+
+  // ONE VOCABULARY ACROSS BOTH TARGETS. A candidate and an employee answer the SAME auto keys, so a
+  // template written once works for either. The moment the two key sets differ, a template has to be
+  // written twice and the day they drift is the day one is missing a fix the other got.
+  const candidateSource = readFileSync("src/lib/recruitment/whatsapp-templates/candidate-context.ts", "utf8");
+  for (const key of ["candidate_first_name", "candidate_name", "company_name", "job_title", "sender_name", "probation_end_date", "start_date", "document_list"]) {
+    assert.ok(
+      candidateSource.includes(`${key}:`),
+      `the candidate path must answer every auto key, including ${key} - a key it omits is a type `
+        + "hole that renders as undefined",
+    );
+    assert.ok(
+      employeeSource.includes(`${key}:`),
+      `the employee path must answer every auto key, including ${key}`,
+    );
+  }
+
+  // 🔴 THE EMPLOYEE TARGET CARRIES ITS OWN PERMISSION. This branch resolves a staff member's name,
+  // job title and MOBILE NUMBER. `recruitment:update` - the gate the rest of this endpoint runs on -
+  // does not cover employee records, so without a second check any recruiter could read the whole
+  // directory's mobile numbers one hr_id at a time through a template endpoint.
+  for (const routeFile of [
+    "app/api/recruitment/whatsapp-templates/route.ts",
+    "app/api/recruitment/whatsapp-templates/send/route.ts",
+  ]) {
+    const routeSource = readFileSync(routeFile, "utf8");
+    assert.match(
+      routeSource,
+      /assertPermission\(access, "employees", "read"\)/,
+      `${routeFile} must gate the employee target on employees:read - the recruitment gate does not `
+        + "cover staff records, and this branch returns a mobile number",
+    );
+    assert.match(
+      routeSource,
+      /if \(employeeHrId\) await assertPermission/,
+      `${routeFile} must check BEFORE loading the employee, not after - a check that runs after the `
+        + "read has already done the thing it was meant to prevent",
+    );
+  }
+
   // And the STORED name is never rewritten — an identity field is evidence, not display text.
   assert.equal(
     softenShoutedName("SHAABAN"),
