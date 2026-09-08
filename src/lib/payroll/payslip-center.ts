@@ -216,6 +216,32 @@ function uniqueRows(rows: SalaryRecordLookupRow[]) {
   return [...byId.values()];
 }
 
+/**
+ * A PAYSLIP SHOWS THE TITLE IT WAS ISSUED WITH, NEVER TODAY'S. Owner decision 2026-09-08, asked
+ * and answered: "leave it as is".
+ *
+ * Every read below takes `job_title` — and `full_name`, `line`, `area` with it — from
+ * `salary_records`, the snapshot written at publish, never from the live `employees` row.
+ * Correcting someone's job title therefore does NOT reach a payslip that already exists, and is
+ * not meant to. Measured on production ozucdzovmcqvepbozvqf that day: 24 published rows across
+ * 5 people carry a title the employee record no longer says. Four of those five are the same job
+ * spelled differently — "Qppv" for QPPV, "Sfe Manager" for SFE Manager, the title-caser's
+ * fingerprint — and the fifth is a genuine change of title, which is exactly why a blanket
+ * "fix the stale ones" was declined rather than scoped down.
+ *
+ * THE TRAP, and the whole reason this comment exists: `public.v_employee_portal_payslips` does the
+ * OPPOSITE. It selects `COALESCE(e.job_title, sr.job_title)`, so the live row wins and the snapshot
+ * is only a fallback; it is defined in the schema baseline, granted to `authenticated`, and
+ * referenced NOWHERE in this repository. It reads exactly like an unfinished migration waiting to
+ * be wired up. It is not. Pointing these reads at it would silently restate the title on every
+ * historical payslip, which is the change that was put to the owner and refused.
+ *
+ * The database says the same thing twice, so this is not carried by convention alone:
+ * `phx_prevent_closed_salary_detail_mutation` refuses any insert, update or delete on a row whose
+ * batch is `approved` or `locked`, and names `job_title` again among the fields frozen once Part 1
+ * is paid. An attempt to correct one of the 24 by hand returns
+ * `P0001: Payroll batch cannot be changed while status is locked.`
+ */
 const publishedPayslipStatuses = ["approved", "locked"] as const;
 
 export async function getPayslipCenterEmployeeOptions(access: AccessContext) {
