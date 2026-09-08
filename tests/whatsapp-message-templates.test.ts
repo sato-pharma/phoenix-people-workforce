@@ -18,6 +18,7 @@ import {
   isAutoVariable,
   manualVariableKeys,
   renderTemplate,
+  requiresEmployeeTarget,
   variableLabel,
 } from "../src/lib/recruitment/whatsapp-templates/variables.ts";
 
@@ -538,6 +539,80 @@ export function runWhatsAppMessageTemplateTests() {
         + "read has already done the thing it was meant to prevent",
     );
   }
+
+  // ── which templates a CV screen is offered ──────────────────────────
+  //
+  // A probation template opened from a CV was refused rather than sent with a hole, which was safe
+  // but left two rows a recruiter could never use. They are no longer offered there.
+
+  assert.ok(
+    requiresEmployeeTarget("Your probation ended on {{probation_end_date}}."),
+    "a body needing the probation date can only be filled from an employee record",
+  );
+  assert.ok(
+    !requiresEmployeeTarget("Dear {{candidate_first_name}}, your interview is on {{interview_date}}."),
+    "an ordinary candidate template is unaffected",
+  );
+  assert.ok(
+    !requiresEmployeeTarget("Dear {{candidate_first_name}}\n\n{{document_list}}"),
+    "document_list is filled on BOTH paths, so it must not push a template off the CV screen",
+  );
+
+  // 🔴 DERIVED FROM THE BODY, NEVER FROM THE CATEGORY. Keying this on `category === "Probation"`
+  // works this afternoon and breaks the first time the category is renamed from the template editor
+  // - which the owner can do with no warning that anything depends on the old word.
+  // COMMENTS STRIPPED FIRST. Both files explain in prose why the category is the wrong key,
+  // quoting the very expression this forbids — so a naive scan matches the warning against doing
+  // it and reports the anti-pattern as present. A pinning test that pins the ANTI-pattern is worse
+  // than no test: it goes red on correct code, and gets "fixed" by deleting the explanation.
+  const stripComments = (source: string) =>
+    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  const variablesSource = stripComments(
+    readFileSync("src/lib/recruitment/whatsapp-templates/variables.ts", "utf8"),
+  );
+  const routeSource = readFileSync("app/api/recruitment/whatsapp-templates/route.ts", "utf8");
+  for (const [label, source] of [["variables.ts", variablesSource], ["the templates route", stripComments(routeSource)]]) {
+    // TWO SHAPES, because one operator is not the rule. Written as `=== "Probation"` an earlier
+    // version of this assertion caught it; written the natural way for a filter,
+    // `!== "Probation"`, the same assertion sailed through and reported category-keyed code as
+    // clean. So: any comparison against a template's category, and the bare category literal.
+    //
+    // NOT a blanket ban on the word. `variables.ts` legitimately carries the human label
+    // "Probation end date", and forbidding the word outright fails on correct code — which is how
+    // a pinning test ends up deleted rather than obeyed.
+    assert.ok(
+      !/\.category\s*[!=]==/.test(source),
+      `${label} must not branch on a template's category — a category is admin-editable free text, `
+        + "and renaming it from the template editor would silently put an unfillable template back "
+        + "on the CV screen. The placeholders a body uses decide what can be filled.",
+    );
+    assert.ok(
+      !/["'`]Probation["'`]/.test(source),
+      `${label} must not name the "Probation" category as a literal — same reason: the category is `
+        + "a label the owner can rename, not a mechanism",
+    );
+  }
+
+  // ONLY the candidate screen filters. The template MANAGER calls this route with no target and must
+  // keep every template, because it is where they are written: a template hidden from its own editor
+  // cannot be edited, switched off, or deleted.
+  assert.match(
+    routeSource,
+    /const templates = candidateId/,
+    "the filter is conditional on a candidate being named",
+  );
+  assert.ok(
+    !/includeInactive[^\n]*requiresEmployeeTarget|requiresEmployeeTarget[^\n]*includeInactive/.test(routeSource),
+    "the manager path (includeInactive, no target) must never be filtered",
+  );
+
+  // The employee screen keeps everything too - hiding candidate-flavoured templates there is a
+  // separate question nobody has asked, and doing it silently would be a second rule pretending to
+  // be this one.
+  assert.ok(
+    !/employeeHrId[^\n]*requiresEmployeeTarget/.test(routeSource),
+    "the employee target is not filtered by this rule",
+  );
 
   // And the STORED name is never rewritten — an identity field is evidence, not display text.
   assert.equal(

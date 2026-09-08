@@ -11,6 +11,7 @@ import {
 } from "@/app/api/recruitment/_lib/http";
 import { resolveCommentAuthor } from "@/lib/recruitment/candidate-comments";
 import { assertPermission } from "@/lib/auth/permissions";
+import { requiresEmployeeTarget } from "@/lib/recruitment/whatsapp-templates/variables";
 import { loadCandidateSendContext, manualSendAutoValues } from "@/lib/recruitment/whatsapp-templates/candidate-context";
 import { loadEmployeeSendContext } from "@/lib/recruitment/whatsapp-templates/employee-context";
 import { createWhatsAppTemplate, listWhatsAppTemplates } from "@/lib/recruitment/whatsapp-templates/store";
@@ -43,7 +44,19 @@ export async function GET(request: Request) {
     const employeeHrId = url.searchParams.get("employeeHrId");
 
     const author = await resolveCommentAuthor(access.hrId).catch(() => ({ jobTitle: null, name: null }));
-    const templates = await listWhatsAppTemplates({ includeInactive });
+    const allTemplates = await listWhatsAppTemplates({ includeInactive });
+
+    // A CV screen is not offered templates it could never fill. `probation_end_date` is answerable
+    // only from an employee record, so a probation template opened from a candidate was refused with
+    // "asks for: Probation end date" — safe, but two rows a recruiter can never use.
+    //
+    // ONLY when a candidate is named. The template MANAGER calls this route with no target at all
+    // (it passes includeInactive=true), and it must keep showing every template, because it is where
+    // they are written — a template hidden from its own editor cannot be edited. The employee screen
+    // is unaffected for the obvious reason.
+    const templates = candidateId
+      ? allTemplates.filter((template) => !requiresEmployeeTarget(template.body))
+      : allTemplates;
 
     const candidate = candidateId ? await loadCandidateSendContext(candidateId, author.name) : null;
 
