@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
+import { loadOthersAreas } from "@/lib/sales/closing-organogram-regions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   loadMonthlyClosingComparison,
@@ -534,6 +535,7 @@ export async function POST(request: Request) {
         // which of those areas this workbook actually covers.
         storeSplitApplied,
         storeSplitRows: monthRows.rows,
+        storeSplitOthersAreas: await loadOthersAreas(matrix.line, matrix.period),
         storeSplitScopeAreaCodes: scopedAreaCodes,
       });
       // The region comes from the matrix the workbook was actually built from, so a filtered export

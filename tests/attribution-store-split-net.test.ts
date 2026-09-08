@@ -110,9 +110,13 @@ export function runAttributionStoreSplitNetTests() {
   // August Anti Infective was published and announced on 2026-09-07, so a net for it would restate a
   // month the owner has frozen. The gate lives in customer-channel.ts; this proves it survives the
   // trip through this module rather than being re-decided here.
+  // ALEXANDRIA, not Qalubeya. El Qema is Pedia only (owner golden rule, 2026-09-08), so on Anti
+  // Infective it takes no national split at all — and Qalubeya holds ONE area, so a Qalubeya row
+  // would produce an empty net in BOTH months and prove nothing about the date gate. Alexandria has
+  // three areas, so the ordinary city split answers here and the only variable left is the date.
   const antiInfectiveAugust = buildStoreSplitNetPayload(
     "Anti Infective",
-    [qemaRow({ officialLine: "Anti Infective" })],
+    [qemaRow({ areaCode: "AB2", brickId: "B152-2", officialLine: "Anti Infective" })],
     "2026-08",
   );
   assert.equal(
@@ -123,7 +127,7 @@ export function runAttributionStoreSplitNetTests() {
 
   const antiInfectiveSeptember = buildStoreSplitNetPayload(
     "Anti Infective",
-    [qemaRow({ officialLine: "Anti Infective" })],
+    [qemaRow({ areaCode: "AB2", brickId: "B152-2", officialLine: "Anti Infective" })],
     "2026-09",
   );
   assert.ok(

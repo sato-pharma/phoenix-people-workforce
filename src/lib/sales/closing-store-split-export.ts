@@ -78,10 +78,11 @@ export function prepareClosingStoreSplit(
   monthRows: ClosingDetailsResult,
   scopeAreaCodes: readonly string[],
   shared?: ClosingStoreSplit | null,
+  othersAreas?: ReadonlySet<string>,
 ): ClosingStoreSplitExport {
   // Split ONCE. Both write-backs — the matrix's and the channel grids' — read this one result, so
   // the two sheets cannot describe different movements of the same money.
-  const split = shared ?? deriveSplit(monthRows);
+  const split = shared ?? deriveSplit(monthRows, othersAreas);
   return {
     details: narrowClosingDetailsToAreas(monthRows, scopeAreaCodes),
     exemptStoreValueByBrick: split.exemptStoreValueByBrick,
@@ -90,10 +91,17 @@ export function prepareClosingStoreSplit(
   };
 }
 
-function deriveSplit(monthRows: ClosingDetailsResult): ClosingStoreSplit {
+function deriveSplit(
+  monthRows: ClosingDetailsResult,
+  othersAreas?: ReadonlySet<string>,
+): ClosingStoreSplit {
+  // Others take no share of an El Qema split (owner, 2026-09-08). This is the FALLBACK path —
+  // the shared result above already carries the exclusion — so it has to be handed the same set,
+  // or a caller that skipped the cache would produce a different workbook from the screen.
   const { exemptStoreValueByBrick, movements } = splitStoreSalesAcrossCityAreas(
     monthRows.rows,
     monthRows.period,
+    othersAreas,
   );
   return { exemptStoreValueByBrick, movements, net: netStoreSplitByAreaProduct(movements) };
 }

@@ -90,10 +90,11 @@ export function runQemaWarehouseSplitTests() {
     "THE EXCLUSION: the origin governorate is never in its own away block — "
       + "«ماعدا مندوبين نفس المحافظة اللي اتطبع فيها الاوردر»",
   );
-  // 🔴 DOWN TOWN AGAIN. Carried forward from 2026-09-07, where he ruled against his own manual sheet:
-  // "down town should be included because we split in reference to areas not actual reps". CA5 is the
-  // only Cairo area with no Pedia seat at all — not vacant, none — and it still takes its share.
-  assert.ok(plan.awayAreas.includes("CA5"), "Down town takes a share — the divisor is areas, not reps");
+  // With NO exclusion set the universe is every area, Down town included. That is the baseline this
+  // module has always had, and the safe direction: a caller that cannot read the organogram splits
+  // exactly as before rather than silently dropping areas. The Others exclusion is asserted further
+  // down, where Down town comes OUT — see the 2026-09-08 block.
+  assert.ok(plan.awayAreas.includes("CA5"), "no exclusion set — every area is a target, Down town included");
 
   const qema = splitStoreSalesAcrossCityAreas([row()], "2026-09");
   const shares = qema.rows.filter((r) => r.clientCode === "QM-9001");
@@ -248,6 +249,88 @@ export function runQemaWarehouseSplitTests() {
       isStoreCustomerForPeriod(name, null, "QM", "2026-09", "Pedia"),
       false,
       `${name} does not become a warehouse just because El Qema invoiced it`,
+    );
+  }
+
+  // ── 🔴 OTHERS TAKE NO SHARE — owner, 2026-09-08 ─────────────────────────────────────────────
+  //
+  // "you will follow the EU organogram of pedia line and exclude in distribution the areas in others"
+  //
+  // The Pedia organogram parks 13 areas in the Others territory (`OT`): Down town, Kafr El-Sheikh 2,
+  // Qena 2 and the ten OT areas. Retired OT3 is not in AREA_CITY at all, so twelve of them come out
+  // of a 49-area universe and 37 remain. The set is per LINE and is NOT a geography — on Anti
+  // Infective it holds Qalubeya itself — which is why it is passed in rather than derived here.
+  const PEDIA_OTHERS: ReadonlySet<string> = new Set([
+    "CA5", "D17", "UE8", "OT1", "OT2", "OT4", "OT5", "OT6", "OT7", "OT8", "OT9", "OT10",
+  ]);
+  const REMAINING = ALL_SPLIT_AREAS.length - PEDIA_OTHERS.size;
+  assert.equal(REMAINING, 37, "49 areas less the 12 of Pedia's Others that are on the city list");
+
+  const excluded = splitTargetsFor(row(), 700, PEDIA_OTHERS);
+  assert.ok(excluded, "an El Qema Qalubeya warehouse still has a plan");
+  assert.deepEqual(
+    [...excluded.homeAreas],
+    ["D11"],
+    "Qalubeya is a district of its own on Pedia, so it keeps the whole home half",
+  );
+  assert.equal(excluded.awayAreas.length, REMAINING - 1, "the national half now reaches 36 areas, not 48");
+  for (const area of PEDIA_OTHERS) {
+    assert.equal(excluded.awayAreas.includes(area), false, `${area} is in Others and receives nothing`);
+  }
+
+  // 🔴 DOWN TOWN IS OUT, and that reverses the 2026-09-07 ruling ON PURPOSE. He was shown the
+  // reversal in those words on 2026-09-08 — that the Pedia organogram files Down town under Others,
+  // so excluding Others takes it out — and confirmed. The divisor is still AREAS, not reps; there
+  // are simply fewer areas. Re-adding CA5 here would restore a rule he has replaced.
+  assert.equal(
+    excluded.awayAreas.includes("CA5"),
+    false,
+    "Down town sits in Others on the Pedia organogram, so it takes no share",
+  );
+
+  // The money still all lands somewhere — fewer areas, bigger shares, identical total.
+  const exSplit = splitStoreSalesAcrossCityAreas([row()], "2026-09", PEDIA_OTHERS);
+  const exShares = exSplit.rows.filter((r) => r.clientCode === "QM-9001");
+  assert.equal(exShares.length, REMAINING, "one row per area that remains");
+  assert.equal(
+    Number(exShares.reduce((sum, r) => sum + r.qty, 0).toFixed(9)),
+    700,
+    "and the total is preserved exactly — excluding an area moves money, it never deletes any",
+  );
+
+  // 🔴 AN EMPTY SET IS THE SAFE DIRECTION. A caller whose organogram read failed must split as it
+  // always did, never strip areas out of a distribution on an outage.
+  assert.equal(
+    splitTargetsFor(row(), 700, new Set())?.areas.length,
+    ALL_SPLIT_AREAS.length,
+    "no exclusions means the whole country, exactly as before this rule existed",
+  );
+
+  // An area is excluded from receiving OTHER people's money, never from keeping its own.
+  const fromDownTown = splitTargetsFor(row({ areaCode: "CA5", clientCode: "QM-9020" }), 700, PEDIA_OTHERS);
+  assert.ok(fromDownTown, "a warehouse sitting IN an Others area still has a plan");
+  assert.ok(
+    fromDownTown.homeAreas.includes("CA5"),
+    "the origin keeps its own share — otherwise its home half would have nowhere at all to go",
+  );
+
+  // ── 🔒 EL QEMA IS PEDIA ONLY — owner golden rule, 2026-09-08, in those words ─────────────────
+  //
+  // Their whole book is Lacto Advanced 1 and 2, both Pedia. An El Qema row arriving on another line
+  // falls back to the plain city split rather than taking a rule he scoped to Pedia — which also
+  // means this change can never reach August Anti Infective, a published and announced month.
+  for (const line of ["CNS", "Anti Infective"]) {
+    const otherLine = splitTargetsFor(row({ officialLine: line }), 5_000, PEDIA_OTHERS);
+    assert.ok(otherLine, `El Qema on ${line} still resolves a plan`);
+    assert.equal(
+      otherLine.awayAreas.length,
+      0,
+      `El Qema on ${line} takes NO national split — the 200-pack rule is Pedia only`,
+    );
+    assert.deepEqual(
+      [...otherLine.areas],
+      ["D11"],
+      `and ${line} falls back to Qalubeya's ordinary one-area city split`,
     );
   }
 

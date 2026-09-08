@@ -3198,6 +3198,12 @@ export async function buildMonthlyClosingWorkbook(
     /** The areas this workbook covers, for marking Store Split rows as inside or outside it. */
     storeSplitScopeAreaCodes?: readonly string[];
     /**
+     * Areas the line's organogram parks in Others, which take NO share of an El Qema split —
+     * owner, 2026-09-08. Resolved by the caller because it is live organogram data, per line and
+     * per month; omitted, these sheets split across every area exactly as they did before.
+     */
+    storeSplitOthersAreas?: ReadonlySet<string>;
+    /**
      * The two halves of `matrix`, for the channel tabs: `retail` is the same grid before direct is
      * injected (with the identical store split applied), `directCells` the direct money by region
      * and product. Omitted under a row-level filter, where the matrix is rebuilt from invoice rows
@@ -3322,7 +3328,11 @@ export async function buildMonthlyClosingWorkbook(
       workbook,
       matrix.line,
       matrix.period,
-      summariseStoreSplitByArea(options?.storeSplitRows ?? details.rows, matrix.period),
+      summariseStoreSplitByArea(
+        options?.storeSplitRows ?? details.rows,
+        matrix.period,
+        options?.storeSplitOthersAreas,
+      ),
       options?.storeSplitScopeAreaCodes ?? [],
     );
     // Straight after it: which shop caused each moved number, on which product — the detail the
@@ -3331,8 +3341,8 @@ export async function buildMonthlyClosingWorkbook(
       workbook,
       matrix.line,
       matrix.period,
-      summariseStoreSplitByCustomer(splitSourceRows, matrix.period),
-      detailStoreSplitByCustomer(splitSourceRows, matrix.period),
+      summariseStoreSplitByCustomer(splitSourceRows, matrix.period, options?.storeSplitOthersAreas),
+      detailStoreSplitByCustomer(splitSourceRows, matrix.period, options?.storeSplitOthersAreas),
     );
   }
   writeComparisonSheet(workbook, comparison, ref);

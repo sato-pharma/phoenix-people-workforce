@@ -36,6 +36,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { systemAccessContext } from "@/lib/auth/permissions";
 import { loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
+import { loadOthersAreas } from "@/lib/sales/closing-organogram-regions";
 import { isStoreCitySplitActive } from "@/lib/sales/store-sales-city-split";
 import {
   ATTRIBUTION_SPLIT_LINES,
@@ -114,7 +115,13 @@ async function main(): Promise<void> {
     console.log(`${period}:`);
     const payload: StoreSplitNetPayloadRow[] = [];
     for (const line of ATTRIBUTION_SPLIT_LINES) {
-      const rows = buildStoreSplitNetPayload(line, await rowsForLine(line, period), period);
+      const othersAreas = await loadOthersAreas(line, period);
+      const rows = buildStoreSplitNetPayload(
+        line,
+        await rowsForLine(line, period),
+        period,
+        othersAreas,
+      );
       report(period, line, rows);
       payload.push(...rows);
     }

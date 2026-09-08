@@ -250,8 +250,54 @@ export const WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION = 0.5;
  */
 export const WAREHOUSE_THRESHOLD_DISTRIBUTORS: ReadonlySet<string> = new Set(["QM"]);
 
+/**
+ * 🔒 EL QEMA IS PEDIA ONLY — owner golden rule, 2026-09-08, in those words.
+ *
+ * Asked what happens when a warehouse's own governorate is an Others area — which is real on Anti
+ * Infective, where Qalubeya itself sits in OT — he answered that the question cannot arise: El Qema
+ * sells Pedia and nothing else. Their whole book is Lacto Advanced 1 and 2, both Pedia.
+ *
+ * So the threshold rule is gated on the LINE as well as the distributor. An El Qema row arriving on
+ * any other line does NOT take the national split — it falls back to the ordinary city split, which
+ * is the unchanged, safe behaviour, rather than applying a rule the owner scoped to Pedia to a line
+ * he never scoped it to.
+ */
+export const WAREHOUSE_THRESHOLD_LINES: ReadonlySet<string> = new Set(["pedia"]);
+
 /** Every area the split can reach, in a stable order. AREA_CITY's keys ARE the universe. */
 export const ALL_SPLIT_AREAS: readonly string[] = [...AREA_CITY.keys()].sort();
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * OTHERS ARE EXCLUDED FROM THE DISTRIBUTION — owner, 2026-09-08.
+ *
+ * "you will follow the EU organogram of pedia line and exclude in distribution the areas in others"
+ *
+ * The EU Organogram is already the closing's source of truth for this line (owner, 2026-08-07 —
+ * see CLOSING_ORGANOGRAM_REGION_LINES). It parks an area in the Others territory (`OT`) when the
+ * line has no district of its own for it. Those areas now receive NO share of a split.
+ *
+ * 🔴 OTHERS IS PER LINE AND IS NOT A GEOGRAPHY. On Pedia it holds Down town (CA5), Kafr El-Sheikh 2
+ * (D17), Qena 2 (UE8) and the nine OT areas — 13 of 50. On Anti Infective it holds Qalubeya. So the
+ * set can only come from the organogram, per line, per month; it can never be derived from an area
+ * code. It is passed IN rather than read here, because this module is pure geography and the
+ * organogram is live data that flips the moment a seat is created or filled.
+ *
+ * 🔴 THIS REVERSES THE DOWN TOWN RULING OF 2026-09-07, and the owner was asked in those words before
+ * it was written: on 09-07 he ruled Down town INTO the Cairo split because the divisor is areas and
+ * not reps; on 09-08, shown that the Pedia organogram files Down town under Others, he confirmed it
+ * comes out with the rest. The divisor is still areas — there are simply fewer of them.
+ *
+ * SCOPE: the El Qema rule only. Every other distributor's wholesaler keeps splitting across its
+ * whole governorate exactly as before, including into Others. Widening this to every Pedia
+ * wholesaler would move other distributors' money in a month about to be published, and he asked
+ * about El Qema's distribution, so the narrow reading is the reversible one.
+ *
+ * An EMPTY set is the safe direction and means 'split as before' — a caller that could not read the
+ * organogram must never silently strip areas out of a distribution.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+const NO_AREAS: ReadonlySet<string> = new Set<string>();
 
 export type SplitPlan = {
   /** Shown as the "city" on the Store Split sheet, so the movement says which rule moved it. */
@@ -322,22 +368,44 @@ export function warehouseSplitQtyByKey(rows: readonly StoreSplitRow[]): Readonly
  * of them would have produced a workbook whose Matrix and Detail sheet disagreed about the same
  * customer.
  */
-export function splitTargetsFor(row: StoreSplitRow, thresholdQty?: number): SplitPlan | null {
+export function splitTargetsFor(
+  row: StoreSplitRow,
+  thresholdQty?: number,
+  othersAreas?: ReadonlySet<string>,
+): SplitPlan | null {
   const origin = closingAreaOf(row);
   if (!origin) return null;
   const city = cityOfArea(origin);
   if (!city) return null;
-  const homeAreas = CITY_AREAS.get(city);
-  if (!homeAreas || homeAreas.length === 0) return null;
+  const cityAreas = CITY_AREAS.get(city);
+  if (!cityAreas || cityAreas.length === 0) return null;
 
-  const home: SplitPlan = { areas: homeAreas, awayAreas: [], group: city, homeAreas, homeFraction: 1 };
+  // The rule is the owner's El Qema rule, on the owner's El Qema line. Anything else falls through
+  // to the plain city split it has always had — see WAREHOUSE_THRESHOLD_LINES.
+  const ruleApplies = WAREHOUSE_THRESHOLD_DISTRIBUTORS.has(normalizeDistributor(row.distributorCode))
+    && WAREHOUSE_THRESHOLD_LINES.has(lineKey(row.officialLine));
+  const excluded = ruleApplies ? (othersAreas ?? NO_AREAS) : NO_AREAS;
 
-  if (!WAREHOUSE_THRESHOLD_DISTRIBUTORS.has(normalizeDistributor(row.distributorCode))) return home;
+  // The ORIGIN is never excluded from its own sale. An area is barred from receiving a share of
+  // somebody else's money, not from keeping what it sold itself — and without this a warehouse
+  // sitting in an Others area would have a home half with nowhere at all to go.
+  const keep = (area: string) => !excluded.has(area) || area === origin;
+  const homeAreas = cityAreas.filter(keep);
+
+  const home: SplitPlan = {
+    areas: homeAreas,
+    awayAreas: [],
+    group: city,
+    homeAreas,
+    homeFraction: 1,
+  };
+
+  if (!ruleApplies) return home;
 
   const qty = Number.isFinite(thresholdQty) ? Number(thresholdQty) : Number(row.qty) || 0;
   if (!(qty > WAREHOUSE_NATIONAL_SPLIT_THRESHOLD_QTY)) return home;
 
-  const awayAreas = ALL_SPLIT_AREAS.filter((area) => AREA_CITY.get(area) !== city);
+  const awayAreas = ALL_SPLIT_AREAS.filter((area) => AREA_CITY.get(area) !== city && keep(area));
   if (awayAreas.length === 0) return home;
 
   return {
@@ -505,6 +573,7 @@ export function isSplitEligible(
   row: StoreSplitRow,
   period?: string | null,
   thresholdQty?: number,
+  othersAreas?: ReadonlySet<string>,
 ): boolean {
   if (row.isDirect) return false;
   if (!row.includedInClosing) return false;
@@ -520,7 +589,7 @@ export function isSplitEligible(
   // and the Matrix books by the fact area. Taking a re-booked row's city from its brick would
   // subtract the money from an area that never carried it — the phantom the 441164 case produced.
   // Identical to `areaCode` on every row in production except a hand-apportioned one.
-  const targets = splitTargetsFor(row, thresholdQty);
+  const targets = splitTargetsFor(row, thresholdQty, othersAreas);
   if (!targets) return false;
   // One target splits to itself — nothing moves, so skip the work entirely.
   return targets.areas.length > 1;
@@ -601,6 +670,7 @@ export function evenShares(total: number, parts: number): number[] {
 export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
   rows: readonly T[],
   period?: string | null,
+  othersAreas?: ReadonlySet<string>,
 ): StoreSplitResult<T> {
   const out: T[] = [];
 
@@ -636,7 +706,7 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
 
   for (const row of rows) {
     const rowThreshold = thresholdByKey.get(warehouseSplitKey(row));
-    const eligible = isSplitEligible(row, period, rowThreshold);
+    const eligible = isSplitEligible(row, period, rowThreshold, othersAreas);
     if (!eligible || exemptCustomers.has(String(row.clientCode ?? "").trim())) {
       // An exempt row that WOULD otherwise have split is store money sitting on a brick that the
       // matrix never moved. The brick grid has to know, or it debits the brick anyway. Keyed by
@@ -658,7 +728,7 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
     // The area the CLOSING books this row in — see isSplitEligible, which picked the city the same
     // way. Money must leave the area that actually holds it.
     const origin = closingAreaOf(row);
-    const targets = splitTargetsFor(row, rowThreshold);
+    const targets = splitTargetsFor(row, rowThreshold, othersAreas);
     // isSplitEligible already proved this; the guard keeps the types honest.
     if (!targets) {
       out.push(row);
@@ -774,8 +844,9 @@ export type StoreSplitAreaSummary = {
 export function summariseStoreSplitByArea<T extends StoreSplitRow & { areaName?: string }>(
   rows: readonly T[],
   period?: string | null,
+  othersAreas?: ReadonlySet<string>,
 ): StoreSplitAreaSummary[] {
-  const { movements } = splitStoreSalesAcrossCityAreas(rows, period);
+  const { movements } = splitStoreSalesAcrossCityAreas(rows, period, othersAreas);
   if (movements.length === 0) return [];
 
   // The area's current closing position, from the untouched rows.
@@ -905,7 +976,11 @@ function round2(value: number): number {
  */
 export function detailStoreSplitByCustomer<
   T extends StoreSplitRow & { areaName?: string; clientCode?: string; productName?: string },
->(rows: readonly T[], period?: string | null): StoreSplitDetailRow[] {
+>(
+  rows: readonly T[],
+  period?: string | null,
+  othersAreas?: ReadonlySet<string>,
+): StoreSplitDetailRow[] {
   const areaNames = new Map<string, string>();
   for (const row of rows) {
     const area = normalizeArea(row.areaCode);
@@ -925,12 +1000,12 @@ export function detailStoreSplitByCustomer<
   for (const row of rows) {
     const rowThreshold = detailThresholdByKey.get(warehouseSplitKey(row));
     if (
-      !isSplitEligible(row, period, rowThreshold)
+      !isSplitEligible(row, period, rowThreshold, othersAreas)
       || detailExempt.has(String(row.clientCode ?? "").trim())
     ) continue;
     // The same origin the split itself uses, or this sheet would name a different area as the giver.
     const origin = closingAreaOf(row);
-    const targets = splitTargetsFor(row, rowThreshold);
+    const targets = splitTargetsFor(row, rowThreshold, othersAreas);
     if (!targets) continue;
     const city = targets.group;
     const areas = targets.areas;
@@ -1006,9 +1081,13 @@ export function detailStoreSplitByCustomer<
 /** The same movement folded to one row per store — which stores are split, and by how much. */
 export function summariseStoreSplitByCustomer<
   T extends StoreSplitRow & { areaName?: string; clientCode?: string; productName?: string },
->(rows: readonly T[], period?: string | null): StoreSplitCustomerSummary[] {
+>(
+  rows: readonly T[],
+  period?: string | null,
+  othersAreas?: ReadonlySet<string>,
+): StoreSplitCustomerSummary[] {
   const byStore = new Map<string, StoreSplitCustomerSummary & { productCodes: Set<string> }>();
-  for (const detail of detailStoreSplitByCustomer(rows, period)) {
+  for (const detail of detailStoreSplitByCustomer(rows, period, othersAreas)) {
     const key = `${detail.clientCode}|${detail.clientName}|${detail.originAreaCode}|${detail.line}`;
     const existing = byStore.get(key);
     if (existing) {

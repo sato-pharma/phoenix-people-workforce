@@ -1131,6 +1131,67 @@ Qalubeya's rep therefore ends the month with **3.5× what the rule it replaced w
 and Cairo with about an eighth. Nothing about the LINE total moves: the split relocates units, it
 never creates or destroys one.
 
+### Amended the same day — Others take no share, and El Qema is Pedia only
+
+Hours after the rule above shipped, he added two things:
+
+> look u will follow the eu organogram of pedia line and exclude in distrbution the areas in others
+
+**"EU organogram" is not a typo and not new.** It is already this closing's source of truth — the
+owner ruled on 2026-08-07 that Pedia and CNS must follow it (`CLOSING_ORGANOGRAM_REGION_LINES`), and
+the code comment there even names the consequence: it puts areas like Kafr El-Sheikh 2 under Others.
+So "the areas in others" resolves exactly to `operational_region_code = 'OT'`, which the closing
+already loads per line and per month.
+
+**Others is per LINE and is not a geography.** Measured on production 2026-09-08 at the August
+period end:
+
+| Line | Areas in Others |
+| --- | --- |
+| Pedia | 13 — `CA5`, `D17`, `UE8` and the ten `OT` areas |
+| CNS | 15 — `D17`, `GZ3`, `GZ6`, `UE8`, `UE9` and the `OT` areas |
+| Anti Infective | 15 — `CA5`, **`D11` Qalubeya**, `D17`, `D25`, `GZ7` and the `OT` areas |
+
+Down town sits in Cairo on the map and in `OT` on the Pedia organogram. Qalubeya is a district of its
+own on Pedia and an Others area on Anti Infective. Neither can be derived from an area code, which is
+why the set is loaded from the organogram and handed to the split rather than written down beside
+`AREA_CITY`. An empty set means "split as before" — a caller whose organogram read failed must never
+silently strip areas out of a distribution.
+
+### 🔴 This reverses the Down town ruling of 2026-09-07, deliberately
+
+On 09-07 he ruled Down town INTO the Cairo split — *"down town should be included because we split in
+reference to areas not actual reps"* — against his own six-way manual sheet. On 09-08 he was asked
+in those words whether excluding Others takes it back out, shown that it reverses the previous day's
+call and what it moves, and answered **"Yes, exclude it with the rest of Others"**. The divisor is
+still AREAS and not reps; there are simply fewer areas. The Pedia universe drops from **49 to 37**.
+
+A session that re-derives the 09-07 reasoning will reach "Down town should be in" every time, so the
+test asserts its exclusion with the reversal attached.
+
+### 🔒 El Qema is Pedia only
+
+Asked what happens when a warehouse's own governorate is an Others area — real on Anti Infective,
+where Qalubeya itself sits in `OT` — he answered: **"QEMA IS PEDIA ONLY GOLDEN RULE"**. The question
+cannot arise. Their entire book is Lacto Advanced 1 and 2, both Pedia.
+
+`WAREHOUSE_THRESHOLD_LINES` gates the rule on the line as well as the distributor, so an El Qema row
+arriving on any other line falls back to the plain city split. That is also what keeps this change
+away from **August Anti Infective, which was published and announced on 2026-09-07** — the rule
+cannot reach a line it is not scoped to, so the published month is protected by construction rather
+than by a period gate someone has to remember.
+
+The defensive fallback stays anyway: **the origin is never excluded from its own sale.** An area is
+barred from receiving a share of somebody else's money, never from keeping what it sold itself —
+without it, a warehouse sitting in an Others area would have a home half with nowhere to go.
+
+### Scope of the exclusion
+
+The El Qema rule only. Every other distributor's wholesaler keeps splitting across its whole
+governorate, Others included. Widening it to every Pedia wholesaler would move other distributors'
+money in a month about to be published, and he asked about El Qema's distribution — so the narrow
+reading is the reversible one. Widen it only if he says so.
+
 ### What holds it
 
 `tests/qema-warehouse-split.test.ts`, in the required CI `validate` job, plus the neighbouring
