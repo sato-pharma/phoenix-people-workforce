@@ -8,6 +8,8 @@ import {
   writeAttributionStoreSplitNet,
   type AttributionSplitRow,
 } from "@/lib/sales/attribution-store-split-net";
+import { othersLookupLineCode, usesOrganogramRegions } from "@/lib/sales/closing-organogram-regions";
+import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 
 /**
  * ATTRIBUTION MUST SEE THE SAME SPLIT THE CLOSING DOES.
@@ -32,6 +34,11 @@ import {
 
 /** Every area on the city list — the reach of any El Qema order over 200 packs of one product. */
 const COUNTRY_AREAS = 49;
+
+/** Pedia's Others areas that exist in AREA_CITY — the twelve the split can actually remove. */
+const PEDIA_OTHERS: ReadonlySet<string> = new Set([
+  "CA5", "D17", "UE8", "OT1", "OT2", "OT4", "OT5", "OT6", "OT7", "OT8", "OT9", "OT10",
+]);
 
 /** Qalubeya holds one area, so the whole home half lands on D11 and the rest divides over 48. */
 const QALUBEYA_AWAY_AREAS = COUNTRY_AREAS - 1;
@@ -65,6 +72,36 @@ function sumOf(rows: readonly { net_qty: number; net_effective_units: number }[]
 }
 
 export function runAttributionStoreSplitNetTests() {
+  // ── 🔴 THE LINE NAMES THESE CALLERS PASS MUST RESOLVE TO THE CODES THE ORG MAP IS KEYED BY ───
+  //
+  // `loadOthersAreas` looks the organogram up by line. The callers hold DISPLAY NAMES — this very
+  // list is ["Pedia", "Anti Infective", "CNS"] — while `au_v_line_area_map*` is keyed by CODE
+  // (`anti_infective`). Hand the view a name and the `.eq` matches nothing, which yields an EMPTY
+  // exclusion set; and an empty set is precisely how the split spells "nothing is in Others". So the
+  // rule silently does not apply: no error, no missing row, every area keeps its share.
+  //
+  // That is not hypothetical. The first deploy of the Others rule (2026-09-08) was completely inert
+  // in production for exactly this reason, and nothing caught it but a backfill dry run still
+  // printing "49 areas". This assertion is the cheap check that would have.
+  for (const line of ATTRIBUTION_SPLIT_LINES) {
+    const code = othersLookupLineCode(line);
+    assert.equal(code, resolveTargetLineCode(line), `${line} is looked up by its canonical code`);
+    assert.ok(
+      usesOrganogramRegions(code),
+      `${line} -> ${code} is a line the organogram map covers, so an Others lookup can return rows`,
+    );
+  }
+  // THE ASSERTION THAT WOULD HAVE CAUGHT IT: the two forms genuinely differ, so a lookup helper that
+  // passed its input straight through would fail here rather than quietly finding nothing.
+  assert.equal(
+    othersLookupLineCode("Anti Infective"),
+    "anti_infective",
+    "the display name is converted, not passed through — passing it through finds no rows and reads "
+      + "as an empty Others set, which is how the rule silently stops applying",
+  );
+  assert.equal(othersLookupLineCode("Pedia"), "pedia");
+  assert.equal(othersLookupLineCode("pedia"), "pedia", "a code already in canonical form survives unchanged");
+
   // ── The El Qema Qalubeya case, on the month it actually applies to ─────────────────────────────
   const august = buildStoreSplitNetPayload("Pedia", [qemaRow()], "2026-08");
 
@@ -249,12 +286,20 @@ export function runAttributionStoreSplitNetTests() {
     assert.equal(quiet.payloadRows, 0, "and reports nothing moved");
     assert.deepEqual(quiet.linesWithMovement, [], "and names no line");
 
+    // The Others set is INJECTED, not read from the live org chart. Without this the writer reaches
+    // into production, and a test that cannot control the answer silently exercises an EMPTY set —
+    // which looks exactly like the exclusion rule not existing.
     const live = await writeAttributionStoreSplitNet({
       period: "2026-08",
       supabase,
       loadRowsForLine: async (line) => (line === "Pedia" ? [qemaRow()] : []),
+      loadOthersAreasForLine: async (line) => (line === "Pedia" ? PEDIA_OTHERS : new Set<string>()),
     });
-    assert.equal(live.payloadRows, COUNTRY_AREAS, "August sends one cell per area in the country");
+    assert.equal(
+      live.payloadRows,
+      COUNTRY_AREAS - PEDIA_OTHERS.size,
+      "August sends one cell per area that is NOT in Others — 37, not 49",
+    );
     assert.deepEqual(live.linesWithMovement, ["Pedia"], "and only Pedia moved");
     const sent = calls[1].args.p_rows as { net_qty: number; net_effective_units: number }[];
     const sentTotals = sumOf(sent);
