@@ -135,6 +135,31 @@ async function loadRegistryBase(phoenixPharmacyCode: string): Promise<RegistryBa
   };
 }
 
+/**
+ * Which name-matched directory rows are the SAME pharmacy as this registry venue?
+ *
+ * `loadSiblingRows` answers "same name", and for a directory-backed profile that is the whole
+ * question — the rows all describe one customer under several distributors. For a REGISTRY venue
+ * it is not: a sibling is a different pharmacy that happens to be spelt the same, and this data
+ * has plenty (10 of the 54 active venues have an exact-name twin in another brick). Left
+ * unfiltered, those codes reach `loadSales` and another pharmacy's sales are printed as this
+ * venue's — the failure mode being that the number looks perfectly ordinary.
+ *
+ * The test is the one the search collapse already uses: same name AND same brick is one pharmacy;
+ * a different brick is a different pharmacy. Pure, so it can be exercised without a database.
+ */
+export function sameVenueSiblings<T extends { brick_id: string | null }>(
+  siblings: T[],
+  registry: { row: { brick_id: string | null } } | null,
+): T[] {
+  if (!registry) return siblings;
+  const venueBrick = registry.row.brick_id?.trim() || null;
+  // No brick on the venue means nothing to agree with, so nothing can be proven to be the same
+  // pharmacy. Widening on name alone there is exactly the guess this exists to refuse.
+  if (!venueBrick) return [];
+  return siblings.filter((row) => (row.brick_id?.trim() || null) === venueBrick);
+}
+
 async function loadReferenceCodes(
   codes: string[],
   reference: TerritoryReference,
@@ -231,18 +256,24 @@ export async function loadPharmacyProfile(request: PharmacyProfileRequest): Prom
     baseRow = (data?.[0] as CustomerMapRow | undefined) ?? null;
   }
 
-  if (!baseRow && request.name) {
-    const rows = await loadSiblingRows(request.name);
-    baseRow = rows[0] ?? null;
-  }
-
-  // Only once the distributor directory has had its say: when a venue is in both, the directory
-  // row is the better base — it is the one with sales history behind it, and the search collapses
-  // to it for the same reason.
+  // BEFORE the bare-name fallback, and after the code lookup above. A caller naming a Phoenix
+  // venue is naming THE subject; `loadSiblingRows` matches `customer_name` exactly but only
+  // case-insensitively, and exact-name duplicates are real here — 10 of the 54 active venues have
+  // a same-named directory pharmacy in a DIFFERENT brick (production, 2026-09-08). Letting the
+  // name win substituted that other pharmacy wholesale: DOP-000038 "المنصورية" (brick B160-6)
+  // opened as brick B193-6, labelled `database`, carrying three codes and two sales periods that
+  // were not its own. The code lookup still runs first, so a venue the directory can answer for
+  // keeps resolving to its directory row — that is the better base and the search collapses to it
+  // for the same reason.
   let registry: RegistryBase | null = null;
   if (!baseRow && request.phoenixPharmacyCode) {
     registry = await loadRegistryBase(request.phoenixPharmacyCode);
     baseRow = registry?.row ?? null;
+  }
+
+  if (!baseRow && request.name) {
+    const rows = await loadSiblingRows(request.name);
+    baseRow = rows[0] ?? null;
   }
 
   if (!baseRow) {
@@ -265,7 +296,7 @@ export async function loadPharmacyProfile(request: PharmacyProfileRequest): Prom
     regionCode: baseRow.region_code,
   });
 
-  const siblings = await loadSiblingRows(name);
+  const siblings = sameVenueSiblings(await loadSiblingRows(name), registry);
   const distributorCodes: PharmacyDistributorCode[] = [];
   const seenPairs = new Set<string>();
 

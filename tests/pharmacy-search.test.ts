@@ -12,6 +12,7 @@ import { normalizeArabicPharmacyName } from "../src/lib/pharmacy-master/pharmacy
 import { boundingBox, haversineKm, isUsablePoint, roundKm } from "../src/lib/pharmacy-search/geo.ts";
 import { MAX_BRICK_SNAP_KM, pickNearestBrick } from "../src/lib/pharmacy-search/locate.ts";
 import { mergeHospitals, __testables as nearbyTestables } from "../src/lib/pharmacy-search/nearby.ts";
+import { sameVenueSiblings } from "../src/lib/pharmacy-search/profile.ts";
 import { resolveTerritory, type TerritoryReference } from "../src/lib/pharmacy-search/reference.ts";
 import { PHOENIX_PROFILE_ID_PREFIX, phoenixCodeFromProfileId } from "../src/lib/pharmacy-search/types.ts";
 import { __testables as searchTestables } from "../src/lib/pharmacy-search/search.ts";
@@ -362,6 +363,70 @@ export function runPharmacySearchTests() {
     1,
     "a directory row still counts its own distributor — dropping the floor must not cost the normal case",
   );
+
+  // ── A registry venue must not inherit another pharmacy's codes, or its SALES ──
+  // `loadSiblingRows` answers "same name", which for a directory-backed profile IS the question —
+  // the rows describe one customer under several distributors. For a registry venue it is not: a
+  // sibling is a different pharmacy spelt the same, and 10 of the 54 active venues have an
+  // exact-name twin in another brick (production, 2026-09-08). Measured before the fix:
+  // DOP-000038 "المنصورية" (brick B160-6, and it holds NO distributor code of its own) served
+  // three Ibn Sina codes and two sales periods belonging to a pharmacy in B193-6. Nothing about
+  // that reads as wrong on screen — it is an ordinary-looking sales history against a real venue.
+  const venue = { row: { brick_id: "B160-6" } };
+  const rows = [
+    { brick_id: "B160-6", customer_code: "1", distributor_code: "IS" },
+    { brick_id: "B193-6", customer_code: "416005", distributor_code: "IS" },
+    { brick_id: null, customer_code: "9", distributor_code: "PS" },
+  ];
+
+  assert.deepEqual(
+    sameVenueSiblings(rows, venue).map((row) => row.customer_code),
+    ["1"],
+    "only a sibling in the venue's OWN brick is the same pharmacy — a same-named row in another "
+      + "brick hands this venue that pharmacy's codes, and through loadSales its sales",
+  );
+
+  // A venue with no brick has nothing to agree with, so nothing can be shown to be the same
+  // pharmacy. Widening on the name alone there is precisely the guess this refuses to make.
+  assert.deepEqual(sameVenueSiblings(rows, { row: { brick_id: null } }), []);
+  assert.deepEqual(sameVenueSiblings(rows, { row: { brick_id: "   " } }), [], "a blank brick is no brick");
+
+  // The directory path is untouched: siblings there are one customer under several distributors,
+  // which is exactly what the profile is for. Narrowing it would drop real distributor codes.
+  assert.equal(
+    sameVenueSiblings(rows, null).length,
+    3,
+    "a directory-backed profile must still widen across every distributor carrying the name",
+  );
+
+  // ── The registry must be consulted BEFORE the bare-name fallback ──────────
+  // Same defect, earlier: with `name` sent — which is what the workspace sends — the name lookup
+  // resolved DOP-000038 to the B193-6 pharmacy and labelled the profile `database`, so the reader
+  // opened a venue in one brick and was shown another. The code lookup still runs first, so a
+  // venue the directory can answer for keeps resolving to its directory row.
+  {
+    const source = stripComments(
+      readFileSync(fileURLToPath(new URL("../src/lib/pharmacy-search/profile.ts", import.meta.url)), "utf8"),
+    );
+    const registryAt = source.indexOf("request.phoenixPharmacyCode");
+    const nameFallbackAt = source.indexOf("await loadSiblingRows(request.name)");
+    const codeLookupAt = source.indexOf('.eq("distributor_code", request.distributorCode)');
+    assert.ok(
+      registryAt !== -1 && nameFallbackAt !== -1 && codeLookupAt !== -1,
+      "could not locate the three resolution steps — this test is measuring nothing until it can",
+    );
+    assert.ok(
+      codeLookupAt < registryAt,
+      "the distributor code lookup must stay first — a venue the directory can answer for belongs "
+        + "on its directory row, which is the one with sales behind it",
+    );
+    assert.ok(
+      registryAt < nameFallbackAt,
+      "the registry must be resolved BEFORE the bare-name fallback — a caller naming a Phoenix "
+        + "venue is naming the subject, and an exact-name twin in another brick is a different "
+        + "pharmacy, not a better match",
+    );
+  }
 
   // ── The `phoenix:` id prefix is spelled in three files ────────────────────
   // A registered venue's profile is fetched by its own code, not by distributor+customer, so the
