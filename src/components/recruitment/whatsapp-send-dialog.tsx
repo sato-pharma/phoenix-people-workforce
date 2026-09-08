@@ -2,9 +2,13 @@
 
 // Recruitment / ATS — the one-click "message this candidate on WhatsApp" dialog.
 //
-// Opens from a candidate (number and name filled in) or from nowhere at all (a number typed by
-// hand, for someone with no CV). Same component either way: two screens that drift apart is exactly
-// how the manual path ends up missing a fix the candidate path got.
+// Opens from a candidate, from an EMPLOYEE, or from nowhere at all (a number typed by hand, for
+// someone with no CV). Same component all three ways: two screens that drift apart is exactly how
+// one path ends up missing a fix another path got.
+//
+// The employee target exists because a probationer is not a candidate. Measured 2026-09-08: of the
+// 30 people inside their 90-day window, 29 had no candidate record, so a probation message driven
+// off the CV list would have been typed by hand nearly every time.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -25,6 +29,15 @@ type CandidateContext = {
   fullName: string;
   dialNumber: string | null;
   numberSource: "whatsapp" | "phone" | null;
+  autoValues: Record<string, string>;
+};
+
+type EmployeeContext = {
+  employeeHrId: string;
+  fullName: string;
+  jobTitle: string;
+  dialNumber: string | null;
+  numberSource: "mobile" | null;
   autoValues: Record<string, string>;
 };
 
@@ -112,10 +125,15 @@ function keysOf(body: string): string[] {
 export function WhatsAppSendDialog({
   candidateId,
   candidateName,
+  employeeHrId,
+  employeeName,
   onClose,
 }: {
   candidateId?: string | null;
   candidateName?: string | null;
+  /** An employee target. Mutually exclusive with candidateId — a person is one or the other here. */
+  employeeHrId?: string | null;
+  employeeName?: string | null;
   onClose: () => void;
 }) {
   const [loading, setLoading] = useState(true);
@@ -123,6 +141,7 @@ export function WhatsAppSendDialog({
   const [busy, setBusy] = useState(false);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [candidate, setCandidate] = useState<CandidateContext | null>(null);
+  const [employee, setEmployee] = useState<EmployeeContext | null>(null);
   const [manualAutoValues, setManualAutoValues] = useState<Record<string, string>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -139,18 +158,24 @@ export function WhatsAppSendDialog({
         // scan can tell from another segment — recruitment-api-routes-exist.test.ts reported it as a
         // route that does not exist, which is the same shape as the 404-button bug that test was
         // written for. Keeping the `?` inside the literal keeps the path readable to that guard.
-        const data = await getJson(
-          candidateId
-            ? `/api/recruitment/whatsapp-templates?candidateId=${encodeURIComponent(candidateId)}`
-            : "/api/recruitment/whatsapp-templates",
-        );
+        // THE ROUTE PATH STAYS A WHOLE LITERAL IN EVERY BRANCH — see the note above; an
+        // interpolation welded to the last path segment reads to a static scan as a route that
+        // does not exist, which is the shape of the 404-button bug that guard was written for.
+        const url = candidateId
+          ? `/api/recruitment/whatsapp-templates?candidateId=${encodeURIComponent(candidateId)}`
+          : employeeHrId
+            ? `/api/recruitment/whatsapp-templates?employeeHrId=${encodeURIComponent(employeeHrId)}`
+            : "/api/recruitment/whatsapp-templates";
+        const data = await getJson(url);
         if (cancelled) return;
         const list = (data.templates ?? []) as Template[];
         const context = (data.candidate ?? null) as CandidateContext | null;
+        const staff = (data.employee ?? null) as EmployeeContext | null;
         setTemplates(list);
         setCandidate(context);
+        setEmployee(staff);
         setManualAutoValues((data.manualAutoValues ?? {}) as Record<string, string>);
-        setToNumber(context?.dialNumber ?? "");
+        setToNumber(context?.dialNumber ?? staff?.dialNumber ?? "");
         setSelectedId(list[0]?.id ?? null);
       } catch (loadError) {
         if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Could not load the templates.");
@@ -161,15 +186,15 @@ export function WhatsAppSendDialog({
     return () => {
       cancelled = true;
     };
-  }, [candidateId]);
+  }, [candidateId, employeeHrId]);
 
   const selected = useMemo(() => templates.find((t) => t.id === selectedId) ?? null, [templates, selectedId]);
 
   // The auto values are the starting point for every field; whatever the recruiter has typed sits on
   // top. Recomputed rather than copied into state so switching template never strands a stale value.
   const effectiveValues = useMemo(
-    () => ({ ...(candidate?.autoValues ?? manualAutoValues), ...values }),
-    [candidate, manualAutoValues, values],
+    () => ({ ...(candidate?.autoValues ?? employee?.autoValues ?? manualAutoValues), ...values }),
+    [candidate, employee, manualAutoValues, values],
   );
 
   const fields = useMemo(() => (selected ? keysOf(selected.body) : []), [selected]);
@@ -229,6 +254,7 @@ export function WhatsAppSendDialog({
     try {
       const data = await postJson("/api/recruitment/whatsapp-templates/send", {
         candidateId: candidateId ?? null,
+        employeeHrId: employeeHrId ?? null,
         templateId: selected.id,
         toNumber: toNumber.trim() || null,
         values: effectiveValues,
@@ -257,7 +283,7 @@ export function WhatsAppSendDialog({
     } finally {
       setBusy(false);
     }
-  }, [selected, busy, candidateId, toNumber, effectiveValues, onClose]);
+  }, [selected, busy, candidateId, employeeHrId, toNumber, effectiveValues, onClose]);
 
   const dialogRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -268,7 +294,7 @@ export function WhatsAppSendDialog({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const who = candidate?.fullName ?? candidateName ?? "a WhatsApp number";
+  const who = candidate?.fullName ?? employee?.fullName ?? candidateName ?? employeeName ?? "a WhatsApp number";
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-2 sm:p-6">
@@ -348,9 +374,13 @@ export function WhatsAppSendDialog({
                 <p className="mt-1 text-xs text-slate-600">
                   {candidate?.numberSource
                     ? `From this candidate's ${candidate.numberSource === "whatsapp" ? "WhatsApp" : "phone"} field. Change it here if it is wrong.`
-                    : candidateId
-                      ? "Nothing usable on file for this candidate — type the number."
-                      : "Type any number. Nothing needs to exist in the system."}
+                    : employee?.numberSource
+                      ? "From this employee's mobile number. Change it here if it is wrong."
+                      : candidateId
+                        ? "Nothing usable on file for this candidate — type the number."
+                        : employeeHrId
+                          ? "No mobile number on file for this employee — type the number."
+                          : "Type any number. Nothing needs to exist in the system."}
                 </p>
               </div>
 
