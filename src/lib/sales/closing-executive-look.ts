@@ -219,10 +219,34 @@ function colOverrides(existing: string, widths: Record<number, number>): string 
     return null;
   };
 
+  // NEVER NARROWER THAN THE TEMPLATE HAD IT.
+  //
+  // The reference's widths were measured against the reference's own data, and ours is not the
+  // same data: "Upper Egypt 1 area 1" does not fit the 18 characters its Watch List allows, so the
+  // area names ran into the region column beside them. The same shrink clipped two mastheads and
+  // pushed the Rep Card's helper values into view. All of it is one mistake -- treating a width
+  // copied from another workbook as an instruction rather than as an intention.
+  //
+  // So the reference sets a FLOOR, never a ceiling: a column may grow to the approved width and
+  // never shrink below what the sheet was already built with. The look gets its proportions and
+  // nothing that fitted before stops fitting, which is the half a fixed number cannot promise.
+  const currentWidth = (column: number): number | null => {
+    for (const tag of existing.match(/<col\b[^>]*\/>/g) ?? []) {
+      const min = Number(/\bmin="(\d+)"/.exec(tag)?.[1] ?? Number.NaN);
+      const max = Number(/\bmax="(\d+)"/.exec(tag)?.[1] ?? Number.NaN);
+      if (!Number.isFinite(min) || !Number.isFinite(max) || column < min || column > max) continue;
+      const width = Number(/\bwidth="([\d.]+)"/.exec(tag)?.[1] ?? Number.NaN);
+      if (Number.isFinite(width)) return width;
+    }
+    return null;
+  };
+
   return entries
     .map((entry) => {
       const style = covering(existing, entry.index);
-      return `<col min="${entry.index}" max="${entry.index}" width="${entry.width}"${
+      const already = currentWidth(entry.index);
+      const width = already === null ? entry.width : Math.max(entry.width, already);
+      return `<col min="${entry.index}" max="${entry.index}" width="${width}"${
         style === null ? "" : ` style="${style}"`
       } customWidth="1"/>`;
     })
@@ -272,7 +296,20 @@ export async function applyExecutiveGeometry(zip: JSZip, sheetParts: Map<string,
     if (!file) continue;
     let xml = await file.async("string");
 
-    {
+    // THE TWO SLICER SHEETS KEEP THEIR OWN COLUMN WIDTHS.
+    //
+    // `sizeMatrixColumns` already owns them, and it earns that: it measures the longest real area
+    // name rather than copying a number from another workbook. Setting widths here as well put two
+    // passes on the same columns, and the Region slicer -- which is sized from those widths while
+    // they are still in flux -- came out 415pt wide against the 750pt it should be, with every
+    // region button truncated to "Ale...", "Delt...", "Upp...". Measured in Excel, on a build whose
+    // FINAL column widths were identical to the good one: the damage was done by what the widths
+    // were partway through, not by what they ended as, which is the kind of fault that cannot be
+    // seen in the finished file at all.
+    //
+    // An ellipsis on a button is also forbidden outright by the owner's standing rule, so this is
+    // not a matter of taste. Row heights still apply here; only the columns are left alone.
+    if (!SLICER_SHEETS.has(sheetName)) {
       const block = COL_BLOCK.exec(xml);
       const overrides = colOverrides(block?.[0] ?? "", geometry.cols);
       if (overrides) {
@@ -343,6 +380,8 @@ const EMU_PER_POINT = 12_700;
 const NAV_ROW = 2;
 /** The contents sheet's name, kept here so the band painter can leave its cover alone. */
 const INDEX_SHEET_NAME = "Contents";
+/** The two sheets carrying a Region slicer, whose columns `sizeMatrixColumns` already owns. */
+const SLICER_SHEETS = new Set(["Closing Matrix", "Units Matrix"]);
 
 /**
  * Keep the navigation band inside its own row.

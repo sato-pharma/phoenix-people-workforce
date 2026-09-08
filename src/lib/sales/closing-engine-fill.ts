@@ -1822,7 +1822,16 @@ async function clearTitleEmblem(zip: JSZip, fill: ClosingEngineFill): Promise<vo
     //
     // A logo left where the template put it is a cosmetic imperfection on one sheet. A workbook
     // that will not open is the whole file. So an unusable measurement means DO NOT MOVE IT.
-    const span = to ? anchorX(widthOf, to) - left : 0;
+    //
+    // BUT THE MEASUREMENT ITSELF WAS THE FAULT. Taking the width as the distance between the two
+    // corners resolves both through the column table, so the answer is only as stable as the
+    // columns -- and this workbook now sets several of them to two and three characters. Skipping
+    // the move kept the file openable and left the logo sitting ON TOP of the title, on exactly the
+    // sheet whose title is longest. `<a:ext cx>` is the shape's own cached size, not derived from
+    // the grid at all, so it survives any column change; the corner span is kept only as a fallback
+    // for a shape that carries no ext.
+    const cached = Number(/<a:ext\b[^>]*\bcx="(\d+)"/.exec(emblem)?.[1] ?? Number.NaN);
+    const span = Number.isFinite(cached) && cached > 0 ? cached : to ? anchorX(widthOf, to) - left : 0;
     if (to && span <= 0) continue;
     const moved = to
       ? moveAnchor(widthOf, emblem, needed, span)
