@@ -6,7 +6,10 @@ import { buildClosingEngineFill } from "../src/lib/sales/closing-engine-data.ts"
 import { fillClosingEngine } from "../src/lib/sales/closing-engine-fill.ts";
 import { EXECUTIVE_GEOMETRY } from "../src/lib/sales/closing-executive-look.ts";
 import { buildClosingPerformanceReview } from "../src/lib/sales/closing-performance-review.ts";
-import type { MonthlyClosingCell, MonthlyClosingMatrix } from "../src/lib/sales/monthly-closing.ts";
+// These live in `monthly-distributor-import.ts`, not in a `monthly-closing.ts` — there is no such
+// module, and the plausible-looking path typechecks nowhere. The local suite strips types, so a
+// wrong import here runs perfectly green and only the PR's typecheck job says otherwise.
+import type { MonthlyClosingCell, MonthlyClosingMatrix } from "../src/lib/sales/monthly-distributor-import.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THE PREMIUM MONTHLY CLOSING WORKBOOK IS EXEMPT FROM THE HOUSE DOCUMENT IDENTITY.
