@@ -14,15 +14,40 @@ export type PharmacySearchOrigin =
   | "database"
   /** A row in `marketing_pharmacies` — captured by a rep, may not be in any distributor file. */
   | "marketing"
+  /**
+   * A row in `direct_order_pharmacies` — registered inside Phoenix, by hand on the registry
+   * screen or inline while submitting a direct order. It is IN the database; it is simply in a
+   * different table from the distributor directory, and no distributor may have heard of it yet.
+   */
+  | "phoenix"
   /** Found on Google Places just now. NOT in Phoenix. Never treat as an authority. */
   | "google";
+
+/**
+ * `id` prefix for a pharmacy registered in Phoenix, mirroring `google:` for a Places result.
+ *
+ * A registered venue often has no row in `source_of_sales_customer_map`, so the usual
+ * `distributor:customer` pair cannot identify it and its profile is fetched by its own `DOP-` code
+ * instead. Defined once here because three files spell it and a typo in any of them fails silently
+ * — the id simply stops being recognised, and the profile falls back to reading as an ordinary
+ * directory row.
+ */
+export const PHOENIX_PROFILE_ID_PREFIX = "phoenix:";
+
+/** The `DOP-000079` inside a `phoenix:DOP-000079` id, or null when the id is not one. */
+export function phoenixCodeFromProfileId(id: string | null | undefined): string | null {
+  if (typeof id !== "string" || !id.startsWith(PHOENIX_PROFILE_ID_PREFIX)) return null;
+  return id.slice(PHOENIX_PROFILE_ID_PREFIX.length).trim() || null;
+}
 
 export type PharmacySearchMatchKind =
   | "customer_code"
   | "distributor_code"
   | "name"
   | "address"
-  | "distributor";
+  | "distributor"
+  /** The query was a `DOP-000079`-style Phoenix registry code. */
+  | "phoenix_code";
 
 export type PharmacyTerritory = {
   areaCode: string | null;
@@ -47,6 +72,13 @@ export type PharmacySearchHit = {
   matchedOn: PharmacySearchMatchKind;
   name: string;
   origin: PharmacySearchOrigin;
+  /**
+   * `DOP-000079` when this pharmacy is registered in `direct_order_pharmacies`, whatever its
+   * `origin`. It is a SEPARATE fact from the origin on purpose: a pharmacy that is both in the
+   * distributor directory and registered in Phoenix collapses to one `database` row, and this is
+   * what still lets the UI say it is registered. Null when Phoenix has no registration for it.
+   */
+  phoenixPharmacyCode: string | null;
   territory: PharmacyTerritory;
 };
 
