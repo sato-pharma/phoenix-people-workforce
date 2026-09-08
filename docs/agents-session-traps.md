@@ -1629,3 +1629,55 @@ from a stale picture — otherwise it would not need a second opinion about whos
 The safe form is `git rev-list --count origin/main..main` — name the ref, never measure from `HEAD`
 — and to sync, act in the worktree that actually holds the branch, with `merge --ff-only`, which
 cannot lose work by construction.
+
+## Two caches are one per repository, not one per worktree — 2026-09-08
+
+`AGENTS.md` §2.1 carries the hook; this is the account.
+
+The last task of a long session was to commit a script onto a fresh branch. The pattern used five
+times already that night was `git stash push <paths>` → `git checkout -b <branch> origin/main` →
+`git stash pop`. On the sixth run it took another session's work.
+
+**Why the push created nothing.** One of the two paths was an *untracked* file, and
+`git stash push <pathspec>` will not stash an untracked path without `-u`. The command carried
+`>/dev/null 2>&1`, so the refusal was invisible. The stack was therefore unchanged, and the `pop`
+that followed took whatever sat on top of it — `stash@{0}: WIP on codex/admin-strip-look`, belonging
+to a different live session.
+
+Nothing in `git status`, `git worktree list` or `gh pr list` would have shown that stack was shared.
+It is the same blind spot as the "a parallel session can collide with no git trace" hook, by a
+different route.
+
+**The conflict is what saved it.** The pop conflicted — 14 markers in `PhoenixIdentityStrip.tsx` —
+and a conflicted `git stash pop` does **not** drop the stash entry. Their work was never at risk of
+leaving the stack. Verified before and after: four stashes present, `stash@{0}` still naming their
+file.
+
+**The half that was nearly lost is the resolution, not the stash.** Clearing the conflicted path and
+committing printed:
+
+```
+Recorded resolution for 'src/components/phoenix-signature-card/PhoenixIdentityStrip.tsx'.
+```
+
+`rerere.enabled` is `true` in this repository, and `git rev-parse --git-common-dir` resolves to the
+**primary's** `.git` from inside every worktree. So that resolution — a `postimage` of exactly
+34,900 bytes, which is to say "take HEAD, discard the other side" — was immediately repository-wide.
+The next time that session popped their stash, rerere would have replayed it, rewritten their file
+to HEAD, and reported a perfectly ordinary resolution. `rerere.autoupdate` is unset, so it would not
+even have staged the result: the file would simply have contained the wrong thing.
+
+That is the worst shape available — silent, and indistinguishable from git working correctly.
+
+**The removal.** `git rerere forget` needs the conflict live in the index, which it no longer was.
+The entry was removed by hand, and identified **positively** rather than by recency: `postimage`
+byte-size equal to the resolved blob, `preimage` holding conflict markers and the file's own
+identifiers. Afterwards 235 entries remained with the newest predating the session's own conflict —
+the check that proves nothing else went with it.
+
+`git rerere gc` is the wrong instrument here. It prunes by age across the whole cache, and this
+repository holds 200+ entries other sessions rely on.
+
+**The rule.** There is no reason to stash for a branch move. `git switch -c <branch>` carries
+uncommitted work onto the new branch by itself, touches no shared stack, and the entire failure mode
+does not arise.
