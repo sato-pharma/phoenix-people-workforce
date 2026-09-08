@@ -1451,3 +1451,70 @@ ceiling — 3 bytes of headroom.** A 1,145-byte hook took it 1,142 bytes over an
 nothing per request, and it is enforced **mechanically** rather than by memory: a dropped column,
 two check constraints, a gate and a test. A session cannot rebuild any of the three without
 hitting a constraint or a red suite first.
+
+## The weekly NSM/DSM export keeps the beige look — owner decision, 2026-09-08
+
+### What happened
+
+The owner said: *"THE WEEKLY SALES NSM/DSM TEMPLETE CHANGED TO BLUE I WANT THE BEIGE ONE."*
+
+Two PRs put it there, three days apart, and neither asked:
+
+- **PR #3242, 2026-09-05** moved four of the five weekly workbooks onto the house document identity
+  (SATO-DIS-2026-01 v1.0). For this book it re-pointed every constant into the house blues, swapped
+  Calibri for Aptos, and turned the three warm-grey fills — the column header wash, the soft group
+  wash and the total wash — into rules, because the ink rule forbids filled area. Its own commit
+  message called this book "already the quiet one" and treated the conversion as finishing a job the
+  file had half-started.
+- **PR #3303, 2026-09-05** then painted a Brand Blue header band on it — white type on `#0A6BA6`.
+
+So the book a district manager prints went from warm grey and orange to white and blue.
+
+### What is exempt, and what is not
+
+Exempt: `src/lib/sales/weekly/nsm-dsm-workbook.ts`, the workbook behind the **NSM/DSM Export**
+button on Weekly Sales. It is back on Calibri, `FFF3F1EE` / `FFFAF8F5` / `FFEBE8E3` washes,
+the `FFF4F1EC` zebra, the `FFF6DCC4` warm heat marks, and the single `FFF97316` Phoenix orange
+accent. The masthead strip names the app again instead of printing the standard's reference.
+
+**Not exempt — do not convert these back.** The analyst BI workbook
+(`weekly/export-workbook.ts`) and the batches workbook stay on the house identity; PR #3242's work
+on them is untouched and `tests/weekly-export-workbook.test.ts` still passes unchanged. The split
+is per-EXPORT, exactly as it is for the automated payroll sheets above. The distinguishing fact is
+who reads it: this is the field manager's printed book, and the beige is what he recognises.
+
+The Weekly **Summarized Report** was never in scope for either direction — its layout and scope are
+locked, and the owner lifted its ink half himself on 2026-09-05.
+
+### Measured on the emitted artifact, both ways
+
+Same fixture, same seven sheets (`Summary`, `By area`, `By branch`, `By distributor`, `Ranked`,
+`Stock`, `Details`) — only the ink moved:
+
+| | `origin/main` (what he opened) | this change |
+| --- | --- | --- |
+| typefaces | `Aptos` | `Calibri` |
+| fills | `FF0A6BA6` `FF1482C2` `FFDDE8F1` `FFF2F6FA` | `FFEBE8E3` `FFF3F1EE` `FFF4F1EC` `FFF6DCC4` `FFFAF8F5` |
+| type | `FF0A6BA6` `FF0F766E` `FF1A1A1A` `FF5A6B7C` `FFB3261E` `FFB9C7D4` `FFFFFFFF` | `FF1A1A1A` `FF1E7A3C` `FF6B6B6B` `FFAAB0B6` `FFB3261E` `FFF97316` |
+
+### Why this needed a test and not just a note
+
+The exemption is invisible in the code. `house-identity.ts` says every company document wears the
+standard; a session sweeping for documents that do not will find three filled washes here, read
+them as the ink rule not yet applied, and convert them — reversing an owner decision while
+believing it is enforcing one. That is exactly what #3242 did, and what happened to the payroll
+exports before it.
+
+`tests/weekly-nsm-dsm-beige-look.test.ts` builds the workbook, reads the colours back off the
+emitted package, and fails on any of the four brand blues as fill or as type, on any typeface other
+than Calibri, and on the standard's reference appearing in the masthead. It carries a positive
+control first — an empty workbook would satisfy every "no house blue" assertion — and it was proved
+RED in both directions before being trusted: swapping the zebra to the house tint fired *"the zebra
+row must be the warm FFF4F1EC, not Brand Blue at 6%"*, and swapping Calibri for Aptos fired the
+typeface assertion.
+
+### One thing that is not palette
+
+`workbook.creator` went back to the app name along with the rest of the revert. It is file metadata
+in Excel's Properties dialog, not ink; if the company name is wanted there it can be set back
+without touching anything this rule protects.
