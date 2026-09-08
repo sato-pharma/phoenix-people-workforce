@@ -22,6 +22,13 @@ export const AUTO_VARIABLE_KEYS = [
   // and the letter carries a date; otherwise it stays empty and the sender types it, which is the
   // same refuse-rather-than-guess rule every other field here follows.
   "start_date",
+  // The joining documents a person brings in themselves, read LIVE from the Hiring Documents
+  // checklist. Renders as a bullet block, so a body says `{{document_list}}` on a line of its own.
+  //
+  // NOT CANDIDATE-DERIVED — it is the same list for everybody, which is why a MANUAL send fills it
+  // too. Empty when the checklist cannot be read or holds nothing, and an empty value is REPORTED
+  // missing: a document request with no documents in it is not a message worth sending.
+  "document_list",
 ] as const;
 
 export type AutoVariableKey = (typeof AUTO_VARIABLE_KEYS)[number];
@@ -38,6 +45,7 @@ export const SUGGESTED_VARIABLE_LABELS: Record<string, string> = {
   candidate_first_name: "Candidate first name (auto)",
   candidate_name: "Candidate full name (auto)",
   company_name: "Company name (auto)",
+  document_list: "Joining documents (auto, from the Hiring Documents checklist)",
   dress_code: "Dress code",
   interview_date: "Interview date",
   interview_time: "Interview time",
