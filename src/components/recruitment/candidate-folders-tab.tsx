@@ -38,6 +38,7 @@ import {
 } from "@/lib/recruitment/candidate-folder-suggestion";
 import type { Candidate } from "@/lib/recruitment/types";
 import { cn } from "@/lib/utils";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 /**
  * Cairo, always — the owner's standing rule, and the same helper shape the workspace uses. A filing
@@ -47,7 +48,7 @@ function cairoDateTime(iso: string | null | undefined): string {
   if (!iso) return "";
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toLocaleString("en-GB", {
+  return formatStableEnGb(parsed, {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",

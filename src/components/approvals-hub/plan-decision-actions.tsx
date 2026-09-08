@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, CornerUpLeft, Flag, ListChecks, MessageSquarePlus, XCircle } from "lucide-react";
 
 import type { PlanReturnableActivity } from "@/lib/approvals-hub/service";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 export type PlanDecisionActionsProps = {
   planId: string;
@@ -54,7 +55,7 @@ function dayLabel(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   if (!y) return iso;
   const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
-  return dt.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short", timeZone: "UTC" });
+  return formatStableEnGb(dt, { weekday: "short", day: "2-digit", month: "short", timeZone: "UTC" });
 }
 
 export function PlanDecisionActions({

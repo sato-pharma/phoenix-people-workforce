@@ -38,6 +38,7 @@ import type {
   UserTimeline,
 } from "@/lib/activity/types";
 import type { EngagementBand } from "@/lib/activity/engagement";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 const RANGE_OPTIONS = [
   { days: 1, label: "Today" },
@@ -76,7 +77,7 @@ function formatRelative(iso: string | null): string {
 
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString("en-GB", {
+  return formatStableEnGb(new Date(iso), {
     day: "2-digit",
     month: "short",
     hour: "2-digit",
@@ -227,7 +228,7 @@ function HeatmapCalendar({ sessions }: { sessions: { startedAt: string }[] }) {
               {/* Month label on first day of month */}
               <div className="h-3 text-phx-3xs leading-3 text-phx-ink-faint">
                 {week[0].date.getDate() <= 7
-                  ? week[0].date.toLocaleDateString("en-GB", { month: "short" })
+                  ? formatStableEnGb(week[0].date, { month: "short" })
                   : ""}
               </div>
               {week.map(({ date, key }) => {
@@ -237,7 +238,7 @@ function HeatmapCalendar({ sessions }: { sessions: { startedAt: string }[] }) {
                   <div
                     key={key}
                     className={`h-3 w-3 rounded-sm ${cellColor(count)} ${isToday ? "ring-1 ring-orange-500" : ""}`}
-                    title={`${date.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}: ${count} session${count === 1 ? "" : "s"}`}
+                    title={`${formatStableEnGb(date, { weekday: "short", day: "numeric", month: "short" })}: ${count} session${count === 1 ? "" : "s"}`}
                   />
                 );
               })}

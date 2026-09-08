@@ -11,6 +11,7 @@ import type {
   DoubleVisitIntegrityIssueType,
   DoubleVisitIntegrityReport,
 } from "@/lib/double-visit-analytics/types";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 const ALL = "ALL";
 
@@ -24,7 +25,7 @@ const ISSUE_TYPE_LABELS: Record<DoubleVisitIntegrityIssueType, string> = {
 
 function formatDate(value: string | null) {
   if (!value) return "—";
-  return new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return formatStableEnGb(new Date(value), { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function SortHeader<T extends string>({

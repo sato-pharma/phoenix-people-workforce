@@ -19,6 +19,7 @@ import type {
   MarketingAllRequestsRow,
   MarketingAllRequestsWorkspace,
 } from "@/lib/marketing-requests/types";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 const PAGE_SIZE = 25;
 
@@ -63,7 +64,7 @@ function cairoDate(value: string | null) {
   if (!value) return "Not set";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "Not set";
-  return parsed.toLocaleDateString("en-GB", {
+  return formatStableEnGb(parsed, {
     day: "2-digit",
     month: "short",
     timeZone: "Africa/Cairo",

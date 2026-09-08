@@ -11,12 +11,13 @@ import {
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import type { DoubleVisitRecoveredChain } from "@/lib/double-visit-analytics/types";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 // DATE-ONLY (`double_visit_reports.activity_date`, a `date` column), which `new Date` parses as UTC
 // midnight. UTC here is CORRECT and must stay: it is what stops the calendar day being shifted by a
 // zone offset. Not an instant — do not "fix" this one to Cairo.
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+  return formatStableEnGb(new Date(value), { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 /** The hinge → resolved-MR chain, rendered identically in the mobile card and the desktop row so

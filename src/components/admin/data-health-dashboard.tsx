@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import type { DataHealthStats, SalaryFlag, SalaryFlagsResult } from "@/lib/admin/service";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import { formatCurrency } from "@/lib/sales/format";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 const PAGE_SIZE = 12;
 
@@ -115,7 +116,7 @@ function Pagination({
 
 function formatDate(iso: string) {
   try {
-    return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    return formatStableEnGb(new Date(iso), { day: "2-digit", month: "short", year: "numeric" });
   } catch {
     return iso;
   }

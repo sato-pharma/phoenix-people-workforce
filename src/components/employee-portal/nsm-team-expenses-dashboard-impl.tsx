@@ -22,6 +22,7 @@ import {
   type ExpenseApprovalState,
 } from "@/lib/outstation/approval-state";
 import { formatEmployeeDisplayName } from "@/lib/utils";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 /* ---------- helpers ---------- */
 
@@ -51,7 +52,7 @@ function formatDate(value: string | null | undefined) {
   if (!value) return "N/A";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-GB", {
+  return stableEnGbFormatter({
     day: "2-digit",
     month: "short",
     year: "numeric",

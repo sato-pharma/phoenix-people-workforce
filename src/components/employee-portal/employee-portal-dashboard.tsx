@@ -65,6 +65,7 @@ import { shouldRenderSalesPanels } from "@/lib/employee-portal/sales-scope";
 import type { EmployeePortalShellData, MedicalRepPortalData } from "@/lib/employee-portal/service";
 import { canonicalHrIdKey, formatHrIdForDisplay } from "@/lib/hr-id";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 
 export { PayrollPayslipsSection } from "@/components/employee-portal/dashboard/payroll-payslips-section";
@@ -2394,7 +2395,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
   const formatRequestDate = (iso: string) => {
     if (!iso) return "-";
     try {
-      return new Intl.DateTimeFormat("en-GB", {
+      return stableEnGbFormatter({
         day: "2-digit",
         hour: "2-digit",
         minute: "2-digit",

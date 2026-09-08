@@ -8,6 +8,7 @@ import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-ev
 import type { MarketingApproverRequestDetail } from "@/lib/marketing-requests/approver-detail";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 /* ------------------------------------------------------------------------------------------- */
 /* Formatters                                                                                    */
@@ -26,7 +27,7 @@ function formatDate(value: string | null) {
   if (!value) return null;
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toLocaleDateString("en-GB", {
+  return formatStableEnGb(parsed, {
     day: "2-digit",
     month: "short",
     timeZone: PHOENIX_BUSINESS_TIME_ZONE,

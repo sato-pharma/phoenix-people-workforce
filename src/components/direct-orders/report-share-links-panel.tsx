@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import type { DirectOrderShareLink } from "@/lib/direct-orders/report-share-links";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 type Props = {
   /** The reader's current filter slice, captured into the link so it matches their screen. */
@@ -12,7 +13,7 @@ type Props = {
 
 const cairo = (iso: string | null) =>
   iso
-    ? new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", day: "2-digit", month: "short", year: "numeric" }).format(
+    ? stableEnGbFormatter({ timeZone: "Africa/Cairo", day: "2-digit", month: "short", year: "numeric" }).format(
         new Date(iso),
       )
     : "—";

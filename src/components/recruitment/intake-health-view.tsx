@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { HeldBackIntakeRow, InboundIntakeAnalytics } from "@/lib/recruitment/inbound/intake-analytics";
 import type { DeadLetteredInboundRow } from "@/lib/recruitment/inbound/intake-queue";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 function StatTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -37,7 +38,7 @@ function cairoDateTime(iso: string | null | undefined): string {
   if (!iso) return "";
   const value = new Date(iso);
   if (Number.isNaN(value.getTime())) return "";
-  const date = value.toLocaleDateString("en-GB", {
+  const date = formatStableEnGb(value, {
     day: "2-digit",
     month: "short",
     timeZone: "Africa/Cairo",

@@ -5,6 +5,7 @@ import { Clock } from "lucide-react";
 import { adminPanelClassName } from "@/components/admin/admin-design-system";
 import type { HistoricalApprovalItem } from "@/components/action-center/types";
 import { HISTORY_MODULE_LABELS } from "@/components/action-center/types";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 const DECISION_CLASSES: Record<HistoricalApprovalItem["decision"], string> = {
   approved: "border-emerald-200/80 bg-emerald-50 text-emerald-700",
@@ -31,7 +32,7 @@ type Props = {
 function formatDate(iso: string): string {
   if (!iso) return "—";
   try {
-    return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
+    return stableEnGbFormatter({ day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
   } catch {
     return iso;
   }

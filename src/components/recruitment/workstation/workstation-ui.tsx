@@ -35,6 +35,7 @@ import { useCallback, useState } from "react";
 import { ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 /**
  * The head of a pane — a name on the left, a count or a qualifier on the right.
@@ -288,7 +289,7 @@ export function FitBar({ state }: { state: "met" | "partial" | "missing" | "unkn
  * 01:30 Cairo reads as the previous day to a UTC renderer, so "arrived today" would be wrong for
  * the first hours of every working morning.
  */
-const cairoDateTime = new Intl.DateTimeFormat("en-GB", {
+const cairoDateTime = stableEnGbFormatter({
   day: "2-digit",
   hour: "2-digit",
   hour12: true,
@@ -298,7 +299,7 @@ const cairoDateTime = new Intl.DateTimeFormat("en-GB", {
   year: "numeric",
 });
 
-const cairoDateOnly = new Intl.DateTimeFormat("en-GB", {
+const cairoDateOnly = stableEnGbFormatter({
   day: "2-digit",
   month: "short",
   timeZone: "Africa/Cairo",

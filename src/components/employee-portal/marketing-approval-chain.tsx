@@ -6,6 +6,7 @@ import {
 } from "@/lib/marketing-requests/admin-override-note";
 import type { MarketingApproverChainRung } from "@/lib/marketing-requests/service";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------- Shared between the inbox's two tabs ------------------------------------------------------------------------------------------------ */
@@ -27,7 +28,7 @@ export function formatDate(value: string | null) {
   if (!value) return "-";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "-";
-  return parsed.toLocaleDateString("en-GB", {
+  return formatStableEnGb(parsed, {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -40,7 +41,7 @@ export function formatDateTime(value: string | null) {
   if (!value) return null;
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toLocaleString("en-GB", {
+  return formatStableEnGb(parsed, {
     day: "2-digit",
     hour: "2-digit",
     hour12: false,

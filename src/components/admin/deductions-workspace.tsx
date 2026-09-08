@@ -9,6 +9,7 @@ import {
   scaleDeductionAmountToDays,
 } from "@/lib/deductions/calculations.ts";
 import { visibleDeductionsCategories, type DeductionsCategory } from "@/lib/deductions/types.ts";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 type CandidateApiRow = {
   id: string;
@@ -75,7 +76,7 @@ function hireDateLabel(value: string | null | undefined): string {
   if (!value) return "—";
   const [year, month, day] = String(value).slice(0, 10).split("-").map(Number);
   if (!year || !month || !day) return "—";
-  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(
+  return stableEnGbFormatter({ day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(
     new Date(Date.UTC(year, month - 1, day)),
   );
 }

@@ -14,6 +14,7 @@ import type {
   SyntheticJourneyRunDetail,
   SyntheticJourneyRunSummary,
 } from "@/lib/synthetic-journeys/service";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 const STATUS_TONE: Record<string, string> = {
   passed: "bg-emerald-50 text-emerald-700",
@@ -38,7 +39,7 @@ function StatusPill({ status }: { status: string }) {
 
 function formatDateTime(value: string): string {
   try {
-    return new Intl.DateTimeFormat("en-GB", {
+    return stableEnGbFormatter({
       dateStyle: "medium",
       timeStyle: "short",
       timeZone: PHOENIX_BUSINESS_TIME_ZONE,

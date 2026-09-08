@@ -11,6 +11,7 @@ import type { ErrorEventRowWithStatus, GcpLogEntryWithStatus, ServiceHealthResul
 import type { IssueStatus } from "@/lib/error-monitor/derived-status";
 import type { ClusterSummary, ErrorExplanation } from "@/lib/error-monitor/ai-triage";
 import type { DeployTimeline, LoginSecuritySignals, ReproTrailEntry } from "@/lib/error-monitor/service";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 type ExplainState = { loading: boolean; error: string | null; data: ErrorExplanation | null };
 type SummaryState = { loading: boolean; error: string | null; data: ClusterSummary | null };
@@ -72,7 +73,7 @@ function StatusFilterPills({
 
 function formatDate(iso: string) {
   try {
-    return new Date(iso).toLocaleString("en-GB", {
+    return formatStableEnGb(new Date(iso), {
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",

@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { CrmIntegrityData, CrmIntegrityRow } from "@/lib/crm-integrity/types";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 // Both formatters below render with timeZone "UTC", for two DIFFERENT reasons — neither is a
 // missed Cairo conversion, and "fixing" either one shifts a real number.
@@ -19,7 +20,7 @@ import type { CrmIntegrityData, CrmIntegrityRow } from "@/lib/crm-integrity/type
 // component, so rendering it in Africa/Cairo would double-add the offset and show check-in times
 // 2–3h late.
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+  return formatStableEnGb(new Date(value), { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 function formatTime(value: string | null) {

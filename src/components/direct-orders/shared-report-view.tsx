@@ -3,13 +3,14 @@
 import { useState } from "react";
 
 import type { DirectOrderReportRow } from "@/lib/direct-orders/types";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 type Props = { token: string };
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
 const cairo = (iso: string | null) =>
   iso
-    ? new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(
+    ? stableEnGbFormatter({ timeZone: "Africa/Cairo", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(
         new Date(iso),
       )
     : "—";

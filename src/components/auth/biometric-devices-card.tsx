@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 type BiometricDevice = {
   backedUp: boolean;
@@ -16,7 +17,7 @@ type BiometricDevice = {
 };
 
 // Owner rule: every time shown to a person is Africa/Cairo local, never raw UTC.
-const cairoDateTime = new Intl.DateTimeFormat("en-GB", {
+const cairoDateTime = stableEnGbFormatter({
   day: "2-digit",
   hour: "2-digit",
   minute: "2-digit",

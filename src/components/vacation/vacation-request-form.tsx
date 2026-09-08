@@ -45,6 +45,7 @@ import type {
 import { VACATION_DAY_PARTS, VACATION_REQUEST_TYPES } from "@/lib/vacation/types";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -236,7 +237,7 @@ function durationDisplay(days: number) {
 }
 
 function dateLabel(value: string) {
-  return new Intl.DateTimeFormat("en-GB", {
+  return stableEnGbFormatter({
     day: "2-digit",
     month: "short",
     year: "numeric",

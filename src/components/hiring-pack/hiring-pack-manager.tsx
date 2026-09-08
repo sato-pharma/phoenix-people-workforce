@@ -90,6 +90,7 @@ import type {
   OffboardingProfileInput,
 } from "@/lib/hiring-pack/types";
 import { cn } from "@/lib/utils";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 const inputClassName =
   "h-10 rounded-xl border-phx-line bg-white/95 text-sm shadow-sm focus:border-phx-accent-line focus:ring-phx-accent/15";
@@ -544,7 +545,7 @@ function formatDate(iso: string | null): string {
   if (!iso) return "Not recorded";
   const parsed = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return iso;
-  return parsed.toLocaleDateString("en-GB", {
+  return formatStableEnGb(parsed, {
     day: "2-digit",
     month: "short",
     timeZone: "UTC",
@@ -557,7 +558,7 @@ function formatStamp(iso: string | null): string {
   if (!iso) return "Not printed yet";
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return iso;
-  return parsed.toLocaleString("en-GB", {
+  return formatStableEnGb(parsed, {
     day: "2-digit",
     hour: "2-digit",
     hour12: false,

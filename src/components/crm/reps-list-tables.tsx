@@ -36,6 +36,7 @@ import {
 } from "@/lib/crm/location-confidence";
 import type { PhoenixInsight } from "@/lib/crm/phoenix-insights";
 import type { ContactSeenAt, RepsListContact, RepsListGroup } from "@/lib/crm/reps-list";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 // Client half of Reps List — the rep's contacts, one block per brick.
 //
@@ -297,7 +298,7 @@ const searchHref = (address: string, locality: string | null): string =>
 function cairoDay(iso: string): string {
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "Africa/Cairo", year: "numeric" });
+  return formatStableEnGb(parsed, { day: "2-digit", month: "short", timeZone: "Africa/Cairo", year: "numeric" });
 }
 
 const LINK_CLASS =

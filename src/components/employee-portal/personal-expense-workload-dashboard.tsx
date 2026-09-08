@@ -49,6 +49,7 @@ import { extractKnownPlace } from "@/lib/utils/places";
 import { canonicalizeTransport, resolveGovernorate } from "@/lib/geo/egypt-locations";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ExtraTicketRowEditor } from "@/components/outstation/extra-ticket-manager";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 
 /** Inline relative-date helper for the pending-approval chip ("yesterday", "5 days ago"). */
@@ -192,7 +193,7 @@ function formatDate(value: string) {
   if (!value) return "N/A";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-GB", {
+  return stableEnGbFormatter({
     day: "2-digit",
     month: "short",
     year: "numeric",

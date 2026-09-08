@@ -162,6 +162,7 @@ import {
 } from "@/lib/recruitment/cv-extraction-fields";
 import { defaultCvPositionKey, getCvPositionSchema, listCvPositionSchemas } from "@/lib/recruitment/cv-field-schemas";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 
 type ManagerOption = { hrId: string; fullName: string };
@@ -234,7 +235,7 @@ function cairoDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const value = new Date(iso);
   if (Number.isNaN(value.getTime())) return "—";
-  const date = value.toLocaleDateString("en-GB", {
+  const date = formatStableEnGb(value, {
     day: "2-digit",
     month: "short",
     timeZone: "Africa/Cairo",
