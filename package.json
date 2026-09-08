@@ -109,6 +109,8 @@
     "check:office-rule": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/check-office-golden-rule.ts",
     "office-rule:password": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/office-rule-unlock.ts --set-password",
     "office-rule:unlock": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/office-rule-unlock.ts --unlock",
+    "weekly-design:password": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/weekly-export-design-unlock.ts --set-password",
+    "weekly-design:unlock": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/weekly-export-design-unlock.ts --unlock",
     "check:unbacked": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-unbacked-branches.ts",
     "check:routes": "node scripts/check-routes.mjs",
     "check:no-stale-domains": "node scripts/check-no-stale-domains.mjs",

@@ -1,0 +1,169 @@
+{
+  "bi": {
+    "charts": "5 charts | chart1.xml:barChart chart2.xml:barChart chart3.xml:barChart chart4.xml:lineChart chart5.xml:barChart",
+    "sheets": [
+      {
+        "design": "8486e4fbea264c6c",
+        "name": "Dashboard",
+        "state": "visible"
+      },
+      {
+        "design": "9a47619ca8b3d4a7",
+        "name": "Data",
+        "state": "hidden"
+      },
+      {
+        "design": "5ed2b4c5c6817633",
+        "name": "CoverageHelper",
+        "state": "hidden"
+      },
+      {
+        "design": "79c4b5772cc6c8d4",
+        "name": "By Region",
+        "state": "visible"
+      },
+      {
+        "design": "e4976ff2318a79da",
+        "name": "By Product",
+        "state": "visible"
+      },
+      {
+        "design": "d99aa33f68abe1e9",
+        "name": "By Distributor",
+        "state": "visible"
+      },
+      {
+        "design": "f45ab8479d129401",
+        "name": "By Branch",
+        "state": "visible"
+      },
+      {
+        "design": "05d1c2afd0ba96c0",
+        "name": "Region Drill",
+        "state": "visible"
+      },
+      {
+        "design": "720939738ec3f044",
+        "name": "By Line",
+        "state": "visible"
+      },
+      {
+        "design": "c01c183470c84066",
+        "name": "Region x Product",
+        "state": "visible"
+      },
+      {
+        "design": "b987fc2a8f0cebb5",
+        "name": "Region x Week",
+        "state": "visible"
+      },
+      {
+        "design": "457e00a360ca062a",
+        "name": "Zero-Sales Gaps",
+        "state": "visible"
+      },
+      {
+        "design": "7f1adb1380f3b5d9",
+        "name": "Distributor x Product",
+        "state": "visible"
+      },
+      {
+        "design": "96ac1898831be1cd",
+        "name": "Pareto",
+        "state": "visible"
+      },
+      {
+        "design": "0ea9492e428d636c",
+        "name": "Region Pareto",
+        "state": "visible"
+      },
+      {
+        "design": "5cf4165e1f2ce29e",
+        "name": "Growth Contribution",
+        "state": "visible"
+      },
+      {
+        "design": "cdb35307846ffd93",
+        "name": "Sell-Through &amp; Cover",
+        "state": "visible"
+      },
+      {
+        "design": "fedfa04dd08cae20",
+        "name": "Outliers",
+        "state": "visible"
+      },
+      {
+        "design": "87c6c405dacc0170",
+        "name": "Branch Coverage",
+        "state": "visible"
+      },
+      {
+        "design": "e7cdbf7e602c7074",
+        "name": "Waterfall",
+        "state": "visible"
+      },
+      {
+        "design": "1f7c982e46ec13f7",
+        "name": "Week Comparison",
+        "state": "visible"
+      },
+      {
+        "design": "4ab2759f5b23f4e1",
+        "name": "Pivot - Dist x Product",
+        "state": "visible"
+      },
+      {
+        "design": "cc21daedc69eaf06",
+        "name": "Report Sources",
+        "state": "visible"
+      }
+    ],
+    "styles": "041d311471e67b89"
+  },
+  "nsmDsm": {
+    "charts": "0 charts | ",
+    "sheets": [
+      {
+        "design": "b2750eaa103eaa24",
+        "name": "Summary",
+        "state": "visible"
+      },
+      {
+        "design": "45e27b9238fdcab7",
+        "name": "By area",
+        "state": "visible"
+      },
+      {
+        "design": "61c1efb7fb3dcaa7",
+        "name": "By branch",
+        "state": "visible"
+      },
+      {
+        "design": "20f781960c70b89a",
+        "name": "By distributor",
+        "state": "visible"
+      },
+      {
+        "design": "30754ffb2727ec1e",
+        "name": "Ranked",
+        "state": "visible"
+      },
+      {
+        "design": "4b708d0907fc4053",
+        "name": "Stock",
+        "state": "visible"
+      },
+      {
+        "design": "27270e6d4b27c558",
+        "name": "Stock by branch",
+        "state": "visible"
+      },
+      {
+        "design": "3279a0a37996f211",
+        "name": "Details",
+        "state": "visible"
+      }
+    ],
+    "styles": "786d524514fd2893"
+  }
+}
