@@ -1787,6 +1787,10 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: hrAuthorityNavigationRoles },
       // Vacation Action Center removed — replaced by the Approvals Hub › Vacation Approvals surface.
       { href: "/employee-portals/attendance", icon: Fingerprint, label: "Fingerprint Report", permissions: [{ resource: "attendance", action: "read" }] },
+      // Same grant as the report above: the digest page and its API are self-scoped in
+      // the service (listMyDigests takes no employee parameter), so attendance:read
+      // opens your own week and nobody else's.
+      { href: "/employee-portals/attendance/digests", icon: CalendarCheck, label: "Weekly Attendance", permissions: [{ resource: "attendance", action: "read" }] },
       { href: "/employee-portals/visits", icon: MapPinned, label: "My Visits", permissions: [{ resource: "crm_visits", action: "read" }] },
     ],
     label: "Leave Management",
@@ -2955,6 +2959,18 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Employee Day-by-Day Report",
     description: "One employee, any date range — every calendar day with full detail, and confirm or reject that day's fingerprint deduction directly.",
     permissions: [{ resource: "attendance", action: "read" }],
+    roles: systemAdministratorNavigationRoles,
+  },
+  {
+    href: "/attendance/disputes",
+    icon: Fingerprint,
+    label: "Attendance Disputes",
+    description:
+      "Days an employee says are wrong in their weekly digest, with the leave and CRM evidence for each one. A disputed day never settles until it is decided here.",
+    permissions: [{ resource: "attendance", action: "read" }],
+    // The page itself gates again on canReviewDisputes (Super Admin or the configured
+    // reviewer list) and redirects otherwise — this row only decides who SEES the link.
+    // system-navigation hiding a link is UX; the page-level check is the boundary.
     roles: systemAdministratorNavigationRoles,
   },
   {

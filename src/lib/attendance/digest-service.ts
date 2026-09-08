@@ -473,6 +473,23 @@ export async function disputeDigestLine(input: {
     newValues: { workDate: line.workDate, reason: input.reason.trim() },
     summary: `Employee disputed the attendance charge for ${line.workDate}`,
   });
+
+  // A dispute is the one event where a human MUST look, so a failed notice is
+  // logged loudly rather than swallowed — but it never rolls back the dispute
+  // itself: the line is already parked and cannot settle without a decision.
+  try {
+    const settings = await getDigestSettings();
+    const { notifyDisputeSubmitted } = await import("@/lib/attendance/digest-notify.ts");
+    await notifyDisputeSubmitted({
+      digest,
+      workDate: line.workDate,
+      reason: input.reason.trim(),
+      reviewerHrIds: settings.disputeReviewerHrIds,
+      settings,
+    });
+  } catch (notifyError) {
+    console.error("[attendance:digest] dispute notice failed:", notifyError);
+  }
 }
 
 export async function reviewDispute(input: {
@@ -516,6 +533,20 @@ export async function reviewDispute(input: {
     newValues: { uphold: input.uphold, notes: input.notes ?? null },
     summary: `Attendance dispute ${input.uphold ? "upheld" : "rejected"} for ${String(line.work_date)}`,
   });
+
+  try {
+    const settings = await getDigestSettings();
+    const { notifyDisputeResolved } = await import("@/lib/attendance/digest-notify.ts");
+    await notifyDisputeResolved({
+      digest,
+      workDate: String(line.work_date),
+      upheld: input.uphold,
+      notes: input.notes ?? null,
+      settings,
+    });
+  } catch (notifyError) {
+    console.error("[attendance:digest] dispute resolution notice failed:", notifyError);
+  }
 }
 
 /**
@@ -526,6 +557,7 @@ export async function reviewDispute(input: {
  * sent, whose window has really elapsed, and only on lines still untouched.
  */
 export async function autoConfirmElapsedDigests(nowIso: string): Promise<{ digests: number; lines: number }> {
+  const settings = await getDigestSettings();
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("attendance_weekly_digests")
@@ -564,6 +596,14 @@ export async function autoConfirmElapsedDigests(nowIso: string): Promise<{ diges
     if (touched) {
       digests += 1;
       lines += touched;
+      // Tell them AFTER the fact. This notice is what makes auto-confirm
+      // defensible at all — the alternative is finding it on a payslip.
+      try {
+        const { notifyDigestAutoConfirmed } = await import("@/lib/attendance/digest-notify.ts");
+        await notifyDigestAutoConfirmed({ digest, settings, linesAutoConfirmed: touched });
+      } catch (notifyError) {
+        console.error("[attendance:digest] auto-confirm notice failed:", notifyError);
+      }
     }
   }
 
@@ -587,6 +627,138 @@ async function maybeCloseDigest(digestId: number): Promise<void> {
     .update({ status: "settled", updated_at: new Date().toISOString() })
     .eq("id", digestId)
     .in("status", ["sent", "draft"]);
+}
+
+// ---------------------------------------------------------------------------
+// Who may decide a dispute
+// ---------------------------------------------------------------------------
+
+/**
+ * A dispute may be decided by Super Admin, or by anyone named in
+ * `dispute_reviewer_hr_ids`.
+ *
+ * The named list exists because Super Admin is currently ONE person, who is also
+ * the owner. Leaving the list empty is therefore a working configuration, not a
+ * broken one — it simply means every dispute lands on him — so this returns false
+ * rather than throwing when the list is empty, and never falls back to "anyone with
+ * attendance access", which would let a manager rule on their own team's pay.
+ */
+export async function canReviewDisputes(access: {
+  role?: string | null;
+  hrId?: string | null;
+}): Promise<boolean> {
+  if (access.role === "Super Admin") return true;
+  if (!access.hrId) return false;
+  const settings = await getDigestSettings();
+  return settings.disputeReviewerHrIds.some((reviewer) => hrIdsMatch(reviewer, access.hrId));
+}
+
+export type PendingDispute = {
+  lineId: number;
+  digestId: number;
+  employeeHrId: string;
+  workDate: string;
+  deductionDays: number;
+  deductionValue: number;
+  reason: string;
+  disputeReason: string | null;
+  evidence: Record<string, string>;
+};
+
+/** Every line waiting on a human decision, oldest first. */
+export async function listPendingDisputes(): Promise<PendingDispute[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("attendance_digest_lines")
+    .select(
+      "id,digest_id,work_date,deduction_days,deduction_value,reason,dispute_reason,evidence,attendance_weekly_digests!inner(employee_hr_id)",
+    )
+    .eq("action", "disputed")
+    .order("work_date", { ascending: true })
+    .limit(200);
+  if (error) throw error;
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
+    const nested = row.attendance_weekly_digests as
+      | { employee_hr_id?: string }
+      | Array<{ employee_hr_id?: string }>
+      | null;
+    const employeeHrId = Array.isArray(nested) ? nested[0]?.employee_hr_id : nested?.employee_hr_id;
+    return {
+      lineId: Number(row.id),
+      digestId: Number(row.digest_id),
+      employeeHrId: normalizeAttendanceHrId(employeeHrId ?? "") ?? String(employeeHrId ?? ""),
+      workDate: String(row.work_date),
+      deductionDays: Number(row.deduction_days) || 0,
+      deductionValue: Number(row.deduction_value) || 0,
+      reason: String(row.reason ?? ""),
+      disputeReason: (row.dispute_reason as string | null) ?? null,
+      evidence: (row.evidence ?? {}) as Record<string, string>,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Sending
+// ---------------------------------------------------------------------------
+
+/**
+ * Send every draft digest, and start its response window.
+ *
+ * `auto_confirm_at` is stamped from the moment the notice actually goes out, not
+ * from generation — an employee cannot be held to a window that began before they
+ * were told. A digest whose notification throws stays `draft`, so the next run
+ * retries it rather than silently starting a clock nobody heard begin.
+ */
+export async function sendDraftDigests(input: { limit?: number } = {}): Promise<{
+  sent: number;
+  failed: number;
+  skippedDisabled: boolean;
+}> {
+  const settings = await getDigestSettings();
+  if (!settings.enabled) return { sent: 0, failed: 0, skippedDisabled: true };
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("attendance_weekly_digests")
+    .select(DIGEST_COLUMNS)
+    .eq("status", "draft")
+    .order("week_start", { ascending: true })
+    .limit(input.limit ?? 100);
+  if (error) throw error;
+
+  const rows = (data ?? []) as Record<string, unknown>[];
+  const lineMap = await loadLines(rows.map((row) => Number(row.id)));
+  const { notifyDigestSent } = await import("@/lib/attendance/digest-notify.ts");
+
+  let sent = 0;
+  let failed = 0;
+  for (const raw of rows) {
+    const digest = mapDigest(raw, lineMap.get(Number(raw.id)) ?? []);
+    if (!digest.lines.length) continue;
+    const sentAt = new Date();
+    const autoConfirmAt = new Date(sentAt.getTime() + settings.autoConfirmHours * 3_600_000);
+    try {
+      await notifyDigestSent({ digest: { ...digest, sentAt: sentAt.toISOString() }, settings });
+    } catch (notifyError) {
+      failed += 1;
+      console.error("[attendance:digest] notification failed, leaving digest as draft:", notifyError);
+      continue;
+    }
+    const { error: updateError } = await supabase
+      .from("attendance_weekly_digests")
+      .update({
+        status: "sent",
+        sent_at: sentAt.toISOString(),
+        auto_confirm_at: autoConfirmAt.toISOString(),
+        updated_at: sentAt.toISOString(),
+      })
+      .eq("id", digest.id)
+      .eq("status", "draft");
+    if (updateError) throw updateError;
+    sent += 1;
+  }
+
+  return { sent, failed, skippedDisabled: false };
 }
 
 export { tileSettlementWeeks };
