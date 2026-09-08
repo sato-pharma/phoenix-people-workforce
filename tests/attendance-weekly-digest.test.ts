@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { resolveCycleWindow } from "../src/lib/payroll/copilot/cycle-window.ts";
 import {
   completedSettlementWeek,
+  previousMonthKey,
   settlementWeekForDate,
   tileSettlementWeeks,
 } from "../src/lib/attendance/digest-weeks.ts";
@@ -89,6 +90,20 @@ export function runAttendanceWeeklyDigestTests() {
     null,
     "a week is not due on its own last day — that day has not finished being worked",
   );
+
+  // --- Which months the bridge has to ask for --------------------------------
+  // A settlement is written the week the employee answers; the candidate it belongs to
+  // is not created until that month has CLOSED. So the answers waiting to be applied
+  // always span two months, and the January boundary is where a naive `month - 1`
+  // produces "2026-00" — a month that matches nothing, silently, on the one day of the
+  // year nobody is watching for it.
+  assert.equal(previousMonthKey("2026-09"), "2026-08", "an ordinary month steps back one");
+  assert.equal(previousMonthKey("2026-01"), "2025-12", "January steps back to December of the PREVIOUS year");
+  assert.equal(previousMonthKey("2026-10"), "2026-09", "the two-digit boundary keeps its padding");
+  assert.equal(previousMonthKey("2026-11"), "2026-10", "no off-by-one across the 10/11 boundary");
+  assert.throws(() => previousMonthKey("2026-13"), /out of range/, "an impossible month is refused, not wrapped");
+  assert.throws(() => previousMonthKey("2026-00"), /out of range/, "the bad value this function exists to prevent is itself refused");
+  assert.throws(() => previousMonthKey("202609"), /YYYY-MM/, "a malformed key is refused rather than parsed loosely");
 
   // --- Duration parsing ------------------------------------------------------
   assert.equal(durationTextToMinutes("06:03"), 363, "hh:mm parses to minutes");
