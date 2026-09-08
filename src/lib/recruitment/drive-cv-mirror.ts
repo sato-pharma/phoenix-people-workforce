@@ -39,6 +39,21 @@ import { isDriveConfigured } from "@/lib/recruitment/drive-storage";
 import { moveDriveFile, uploadCvToDrivePath } from "@/lib/recruitment/drive-tree";
 import { supabaseFileStorage } from "@/lib/recruitment/supabase-storage";
 
+/**
+ * What `drive_mirror_error` holds when a CV was binned in Drive by a person.
+ *
+ * Exported because it is a STATE, not a failure, and anything reporting on the mirror has to be able
+ * to tell the two apart. `scripts/backfill-cvs-to-drive.mjs --verify` counted it under "last attempt
+ * errored — run with --retry", which invites re-uploading a CV somebody deleted on purpose; a reader
+ * following that advice would undo the deletion and it would look like tidying up.
+ *
+ * It is a named constant rather than the same sentence written twice, for the reason the backfill
+ * script's own folder rule was deleted on 2026-09-08: a second copy cannot be kept in step, it can
+ * only be found later — and here the copy would be a string match, which fails silently the first
+ * time somebody rewords the message.
+ */
+export const REMOVED_FROM_DRIVE_BY_HAND = "Removed from Drive by hand — left alone, not re-filed.";
+
 /** How long the area→region grouping is held before being re-read. Areas change a few times a year. */
 const AREA_MAP_TTL_MS = 30 * 60_000;
 
@@ -305,7 +320,7 @@ export async function mirrorCvToDrive(fileId: string): Promise<MirrorOutcome> {
         // as a CV — binned from the cabinet on its first night. The database went on reporting it
         // filed under Medical Representative / Cairo, because a trashed file answers 200.
         await recordMirror(fileId, {
-          drive_mirror_error: "Removed from Drive by hand — left alone, not re-filed.",
+          drive_mirror_error: REMOVED_FROM_DRIVE_BY_HAND,
         });
         return "removed";
       }
