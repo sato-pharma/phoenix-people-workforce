@@ -9,7 +9,10 @@
  *   pin is.
  * - **Reverse** (`snapToNearestBrick`) — Google hands back a point for a pharmacy Phoenix has
  *   never seen, and the owner's actual question is "which brick, area and region is it in".
- *   696 of the 700 bricks carry a geocoded centroid, which makes that answerable.
+ *   696 of the 700 bricks carry a geocoded centroid, which makes that answerable. The pin table
+ *   holds more rows than that — retired brick ids are pinned at the same coordinates as the
+ *   live ones that replaced them — so the snap considers only bricks the brick table still
+ *   knows. See `pickNearestBrick`.
  */
 
 import { normalizeArabicPharmacyName } from "@/lib/pharmacy-master/pharmacy-matching";
@@ -26,7 +29,7 @@ import type { PharmacyCoordinates, PharmacyTerritory } from "./types";
  */
 export const MAX_BRICK_SNAP_KM = 25;
 
-type BrickPin = { brickId: string; latitude: number; longitude: number };
+export type BrickPin = { brickId: string; latitude: number; longitude: number };
 
 let cachedPins: { loadedAt: number; pins: BrickPin[] } | null = null;
 const PIN_TTL_MS = 10 * 60 * 1000;
@@ -43,6 +46,8 @@ async function loadBrickPins(): Promise<BrickPin[]> {
 
   if (error) throw new Error(`Could not load brick centroids: ${error.message}`);
 
+  // A faithful read of the table, retired brick ids included — `pickNearestBrick` is where the
+  // live-brick rule is applied, so this stays a plain read with one meaning.
   const pins: BrickPin[] = [];
   for (const row of data ?? []) {
     const brickId = String(row.source_key ?? "").trim();
@@ -66,24 +71,49 @@ export type BrickSnap = {
 };
 
 /**
+ * Nearest LIVE brick to a point. Pure and exported so the tie that matters can be pinned.
+ *
+ * `geo_locations` pins the same physical centroid under more than one brick vocabulary: a
+ * retired id and the current one sit at identical coordinates, so they tie at exactly the same
+ * distance and whichever the read happens to return first wins. `isLiveBrick` is what breaks
+ * that tie towards the id `source_of_sales_bricks` still knows. A retired id resolves to no area
+ * and no region, so snapping to one produces a saved discovery nobody can use — and it fails
+ * silently, because a brick id is present and only the territory behind it is empty.
+ */
+export function pickNearestBrick(options: {
+  isLiveBrick: (brickId: string) => boolean;
+  pins: readonly BrickPin[];
+  point: Point;
+}): { brickId: string; distanceKm: number } | null {
+  const { isLiveBrick, pins, point } = options;
+
+  let best: { brickId: string; distanceKm: number } | null = null;
+  for (const pin of pins) {
+    if (!isLiveBrick(pin.brickId)) continue;
+    const distanceKm = haversineKm(point, { latitude: pin.latitude, longitude: pin.longitude });
+    if (!best || distanceKm < best.distanceKm) best = { brickId: pin.brickId, distanceKm };
+  }
+  return best;
+}
+
+/**
  * Nearest brick to a coordinate, with the area and region that brick belongs to.
  *
  * Returns null when nothing is within `MAX_BRICK_SNAP_KM` — a wrong brick is far more damaging
  * than no brick, because a brick is what decides which area gets credited for a sale.
  */
 export async function snapToNearestBrick(point: Point): Promise<BrickSnap | null> {
-  const pins = await loadBrickPins();
+  const [pins, reference] = await Promise.all([loadBrickPins(), getTerritoryReference()]);
   if (pins.length === 0) return null;
 
-  let best: { brickId: string; distanceKm: number } | null = null;
-  for (const pin of pins) {
-    const distanceKm = haversineKm(point, { latitude: pin.latitude, longitude: pin.longitude });
-    if (!best || distanceKm < best.distanceKm) best = { brickId: pin.brickId, distanceKm };
-  }
+  const best = pickNearestBrick({
+    isLiveBrick: (brickId) => reference.bricks.has(brickId),
+    pins,
+    point,
+  });
 
   if (!best || best.distanceKm > MAX_BRICK_SNAP_KM) return null;
 
-  const reference = await getTerritoryReference();
   return {
     distanceKm: roundKm(best.distanceKm),
     territory: resolveTerritory(reference, { brickId: best.brickId }),
