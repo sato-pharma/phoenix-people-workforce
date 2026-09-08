@@ -369,6 +369,40 @@ if (args.includes("--remove")) {
     }
   })();
 
+  // A worktree branched from ANOTHER branch's tip (`--from origin/<their-branch>`) carries that
+  // branch's commits, and `pushed` above asks only whether a remote branch of THIS worktree's own
+  // name exists. It never does for that shape — so the gate refused, naming the SOURCE branch's
+  // own commits as stranded while they sat safely on origin under a different name. There was no
+  // way past it either: the rescue ref it advises does not satisfy the check, and the only thing
+  // that would is pushing the branch, which AGENTS.md forbids because it opens a conflicting PR.
+  //
+  // Measured 2026-09-08 on _wt-pharmacy-guard: refused over ca2b5445a and ff1b6f2c8, both of which
+  // answered `git branch -r --contains` with origin/claude/zealous-dewdney-7afb5e.
+  //
+  // Containment of the TIP is the whole question — every ancestor of a commit that sits on a remote
+  // ref sits on that ref too. But `git fetch` never prunes, so a remote-tracking ref outlives the
+  // branch GitHub deleted on merge; the candidates are therefore confirmed against the REMOTE in
+  // one `ls-remote`, so a stale local ref cannot answer this. Fails CLOSED: any error here leaves
+  // the strict refusal exactly as it was.
+  const onAnotherRemoteBranch = (() => {
+    try {
+      const candidates = execFileSync(
+        "git",
+        ["branch", "-r", "--contains", "HEAD", "--format=%(refname:short)"],
+        { cwd: dir, encoding: "utf8" },
+      )
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((name) => name.startsWith("origin/") && name !== "origin/HEAD")
+        .map((name) => name.slice("origin/".length));
+      if (candidates.length === 0) return null;
+      const live = git(["ls-remote", "--heads", "origin", ...candidates]);
+      return live.length > 0 ? candidates[0] : null;
+    } catch {
+      return null;
+    }
+  })();
+
   // delete_branch_on_merge is ON, so GitHub deletes a branch's remote ref the
   // moment its PR merges — and `git fetch` never prunes, so a stale
   // refs/remotes/origin/<branch> lingers and makes the branch look tracked.
@@ -390,7 +424,7 @@ if (args.includes("--remove")) {
     }
   })();
 
-  if (unpushed && !pushed && !mergedPr) {
+  if (unpushed && !pushed && !mergedPr && !onAnotherRemoteBranch) {
     console.error("  REFUSED — commits here are on no remote branch and no merged PR:");
     for (const line of unpushed.split("\n").slice(0, 10)) console.error("    " + line);
     fail(
@@ -411,7 +445,9 @@ if (args.includes("--remove")) {
         ? "none"
         : mergedPr
           ? "present, but PR #" + mergedPr + " merged them — squash residue, not stranded work"
-          : "present, and the branch is on origin"),
+          : pushed
+            ? "present, and the branch is on origin"
+            : "present, and on origin as " + onAnotherRemoteBranch + " — not this branch's name"),
   );
   console.log("  node_modules        " + dropModulesJunction(dir));
 
