@@ -658,6 +658,7 @@ import { runExpenseReadsAreNotCappedAt1000Tests } from "./expense-reads-are-not-
 import { runExpenseApprovalDecisionsSurviveTheSaveTests } from "./expense-approval-decisions-survive-the-save.test.ts";
 import { runExpenseApprovalsOneListTests } from "./expense-approvals-one-list.test.ts";
 import { runOutstationImportIsAdditiveTests } from "./outstation-import-is-additive.test.ts";
+import { runExpenseImportSheetHrIdWinsTests } from "./expense-import-sheet-hr-id-wins.test.ts";
 import { runSalaryRecordsUniqueBatchHrTests } from "./salary-records-unique-batch-hr.test.ts";
 import { runOutstationPolicyClassificationTests } from "./outstation-policy-classification.test.ts";
 import { runOutstationNotificationsTests } from "./outstation-notifications.test.ts";
@@ -2585,6 +2586,10 @@ await runTest(
   runExpenseApprovalsOneListTests,
 );
 await runTest("outstation import is additive and hr_id-scoped", runOutstationImportIsAdditiveTests);
+await runTest(
+  "expense import: an HR ID in the sheet beats a name match (leavers)",
+  runExpenseImportSheetHrIdWinsTests,
+);
 await runTest("salary_records unique per employee per batch", runSalaryRecordsUniqueBatchHrTests);
 await runTest("outstation policy classification", runOutstationPolicyClassificationTests);
 await runTest("outstation notifications", runOutstationNotificationsTests);
