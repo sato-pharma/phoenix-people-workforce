@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 
-import { buildPayrollCoverSheet } from "@/lib/payroll/payroll-sheet-style";
+import { buildCoverSheet } from "@/lib/export/phoenix-xlsx-style";
 import { payrollSheetHeaders } from "@/lib/payroll/salary-sheet-fields";
 
 import type { AssembledRow } from "../assemble.ts";
@@ -28,7 +28,7 @@ export async function buildFinanceSheetWorkbook(input: {
   const label = monthLabel(input.run.month, input.run.year);
   const scopeLabel = input.scope === "part1" ? "Part 1 (first installment)" : "Full monthly sheet";
 
-  buildPayrollCoverSheet(workbook, {
+  buildCoverSheet(workbook, {
     title: "Automated Payroll — Finance Sheet (locked)",
     subtitle: `${label} · ${scopeLabel}`,
     rows: [

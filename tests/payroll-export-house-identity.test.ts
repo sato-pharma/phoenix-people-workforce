@@ -114,11 +114,11 @@ export async function runPayrollExportHouseIdentityTests() {
   const part1 = await load(part1Buffer);
   const part1Sheet = part1.getWorksheet("Part 1");
   assert.ok(part1Sheet, "the Part 1 sheet must exist");
-  assert.equal(
-    captionAt(part1Sheet, columnOf(part1Sheet, "Finger Print")),
-    "INTERNAL DEDUCTIONS",
-    "the caption printed above Finger Print must name the section it truly belongs to",
-  );
+  // The caption BAND is not asserted here any more. The automated payroll exports went back to the
+  // Phoenix look on the owner's instruction (2026-09-08) and are exempt from the house identity, so
+  // they carry no section band at all — see tests/payroll-phoenix-look.test.ts, which pins that
+  // exemption. The band is still asserted on the sheet that DOES wear the house identity: the
+  // published batch download, in section 5 below.
 
   // ── 3. HELD is carried by words, not only by colour ──────────────────────────
   const fullBuffer = await buildFullSheetWorkbook({ rows, run });
@@ -235,6 +235,17 @@ export async function runPayrollExportHouseIdentityTests() {
   batchCover.eachRow((row) => {
     row.eachCell((cell) => batchCoverText.push(String(cell.value ?? "")));
   });
+  // The house identity's section band, on the one payroll sheet that still wears it. This is the
+  // check that moved out of section 2: `resolvePayrollBands` is asserted as a function above, and
+  // this proves the captions it computes really reach a sheet over the right columns.
+  const batchSheet = batchWorkbook.getWorksheet("Payroll");
+  assert.ok(batchSheet, "the batch download must carry a Payroll sheet");
+  assert.equal(
+    captionAt(batchSheet, columnOf(batchSheet, "Finger Print")),
+    "INTERNAL DEDUCTIONS",
+    "the caption printed above Finger Print must name the section it truly belongs to",
+  );
+
   assert.match(
     batchCoverText.join(" | "),
     /Held people are NOT here/,
