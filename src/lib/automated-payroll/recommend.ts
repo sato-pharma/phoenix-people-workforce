@@ -998,15 +998,37 @@ export function buildExpenseStepRows(
     if (!member) continue;
     const draft = drafts.get(compact);
 
-    // Identical running-round accumulation to the pre-detail version — the
-    // reimbursed figure must not move by a piastre just because the breakdown
-    // is now visible. It DOES move when HR approved a different amount than was
-    // claimed: that is the approval, and payableExpenseAmount is the one rule
-    // every payout path shares. Untouched rows have a null approved amount and
-    // still reimburse the claim exactly.
+    // THE PROPOSED FIGURE IS WHAT HR HAS ACTUALLY APPROVED — owner decision 2026-09-08.
+    //
+    // Until then this summed every trip the feeder returned, approved or merely undecided, on the
+    // reasoning that the wizard IS the approval point and HR would zero anything that should not
+    // pay. Measured against production the day it changed: the September 2026 payout carried 10
+    // approved trips worth 8,806.31 and 12 undecided ones worth 5,823.07, so the step proposed
+    // 14,629.38 — 66% above what the owner had approved on the Expense Approvals page. That gap
+    // is what he reported, and it is why he hand-typed all 15 figures of the August run rather
+    // than use the step at all.
+    //
+    // The undecided money is SURFACED, never dropped: it stays in `row.details` trip by trip and
+    // is subtotalled into the "Awaiting Decision" context column below. That distinction is the
+    // whole safety property here — his standing rule is that the system FLAGS an expense and
+    // never auto-rejects one, and a figure nobody can see is indistinguishable from a refusal.
+    // So this narrows what is PROPOSED, not what is visible or payable: approving the trip, or
+    // typing the amount, still pays it.
+    //
+    // `hrApproved` alone answers the question because REJECTED trips never reach this function —
+    // buildPayoutExpenseTripMap drops them upstream against the real `status` column (which a
+    // PayoutExpenseTrip does not even carry), so the surviving states are approved and pending
+    // only. tests/automated-payroll-rejected-expenses.test.ts pins that upstream half and is
+    // deliberately untouched by this change.
+    //
+    // HR's reduced amount still wins on an approved trip: payableExpenseAmount is the one rule
+    // every payout path shares, and an untouched row reimburses the claim exactly.
     let value = 0;
+    let awaitingDecision = 0;
     for (const trip of trips) {
-      value = roundCurrency(value + payableExpenseAmount(trip.approvedAmount, trip.total));
+      const payable = payableExpenseAmount(trip.approvedAmount, trip.total);
+      if (trip.hrApproved) value = roundCurrency(value + payable);
+      else awaitingDecision = roundCurrency(awaitingDecision + payable);
     }
 
     const tripDates = trips.map((trip) => trip.expenseDate).filter(Boolean).sort();
@@ -1022,6 +1044,9 @@ export function buildExpenseStepRows(
       "Trip Dates": tripDates.length
         ? formatDateRange(tripDates[0], tripEndDates[tripEndDates.length - 1] ?? tripDates[tripDates.length - 1])
         : "—",
+      // What this employee has waiting that the figure above does NOT include. Zero for anyone
+      // whose trips are all decided, which is the state HR is working towards.
+      "Awaiting Decision": awaitingDecision,
     };
     row.details = trips.map((trip) => ({
       Dates: formatDateRange(trip.expenseDate, trip.toDate),
