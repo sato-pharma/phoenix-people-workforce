@@ -36,14 +36,8 @@ import process from "node:process";
 // governorate spelling comes from the same pure modules the app itself calls, so this script and
 // the running site can never disagree about where a candidate belongs. See the block comment
 // above `sanitize` for the drift that made this non-negotiable.
-import { candidateFolderKindLabels } from "@/lib/recruitment/candidate-folder";
-import { inferCandidatePlacement } from "@/lib/recruitment/candidate-folder-inference";
-import { candidateRegionLabels } from "@/lib/recruitment/candidate-region";
-import {
-  driveFolderPathFor,
-  driveInferredFolderPath,
-  sanitizeDriveSegment,
-} from "@/lib/recruitment/drive-cv-folders";
+import { CABINET_ROOT_NAME, cabinetPathFor } from "@/lib/recruitment/drive-cabinet-folders";
+import { sanitizeDriveSegment } from "@/lib/recruitment/drive-cv-folders";
 
 // ── env ──────────────────────────────────────────────────────────────────────────────────────────
 // Loaded by hand rather than via a dependency: this script has to run from a bare worktree, where
@@ -281,52 +275,27 @@ function driveFileName(candidate, mimeType, originalName) {
 }
 
 /**
- * Where a candidate goes when nothing was declared - the caveated shelf, never the confirmed tree.
- * The reading and the path are both live functions; this only assembles the input columns.
+ * Where a CV belongs in Drive — the CABINET path, rooted, exactly as the live mirror writes it.
+ *
+ * THIS SCRIPT USED TO ANSWER A DIFFERENT QUESTION FROM THE APP, AND `--refile` ACTS ON THE ANSWER.
+ * The cabinet shipped in #3454: `drive-cv-mirror.ts` moved to `cabinetPathFor` and began recording
+ * `drive_mirror_path` as `Phoenix CV Cabinet/...`. This script was not moved with it and went on
+ * computing the OLD `drive-cv-folders` tree, so `--verify` compared a cabinet path against an
+ * old-tree path, disagreed on most of the library, and printed "in the WRONG folder <- run with
+ * --refile". Measured on production 2026-09-08: 913 of 1,171 mirrored CVs, not one of them
+ * actually misfiled.
+ *
+ * `--refile` acts on that same comparison and rewrites `drive_mirror_path` as it goes, so running
+ * it would have moved all 913 back out of the cabinet — the reorganisation undone by the tool built
+ * to check it, on the tool's own printed advice. Nothing caught it because each half was correct on
+ * its own; only asking both the same question exposes it.
+ *
+ * So there is deliberately no local copy of the foldering rule here any more, and none should be
+ * reintroduced: this imports the function the running site uses, which is the only way the two
+ * cannot drift apart again.
  */
-function inferredPathFor(candidate) {
-  const placement = inferCandidatePlacement({
-    address: candidate.address,
-    governorate: candidate.governorate,
-    preferredRegionCode: candidate.preferred_region_code,
-    sentForRegion: candidate.sent_for_region,
-  });
-  return driveInferredFolderPath(placement);
-}
-
-function folderPathFor(candidate, areaRegions) {
-  // A hand-filed candidate outranks anything derived — same rule as the live module.
-  if (candidate.folder_kind && candidate.folder_key && candidateFolderKindLabels[candidate.folder_kind]) {
-    return pathForShelf(candidate.folder_kind, candidate.folder_key, areaRegions);
-  }
-  // Only a candidate who ANSWERED reaches the confirmed tree. `applied_for_job_title` alone is three times in four
-  // the extractor's guess, not a stated intent — filing on it is what candidate-folder-suggestion.ts
-  // exists to refuse.
-  if (!candidate.preferences_declared_at) return inferredPathFor(candidate);
-  if (String(candidate.status ?? "").toLowerCase() === "rejected") return inferredPathFor(candidate);
-
-  const title = String(candidate.applied_for_job_title ?? "").trim();
-  if (!title) return inferredPathFor(candidate);
-  const lower = title.toLowerCase();
-
-  if (/medical\s*rep|\bmr\b|مندوب/.test(lower)) {
-    const area = String(candidate.preferred_area_name ?? "").trim();
-    return area ? pathForShelf("medical_rep", area, areaRegions) : inferredPathFor(candidate);
-  }
-  if (/district\s*manager|\bdm\b/.test(lower)) {
-    const code = String(candidate.preferred_region_code ?? "").trim().toUpperCase();
-    return candidateRegionLabels[code]
-      ? pathForShelf("district_manager", code, areaRegions)
-      : inferredPathFor(candidate);
-  }
-  return pathForShelf("other", title, areaRegions);
-}
-
-// An empty `label` is deliberate: `driveFolderPathFor` then asks `candidateFolderLabel`, which
-// is the same resolution the app performs — a region code becomes its region name, and every
-// other kind keeps the key verbatim.
-function pathForShelf(kind, key, areaRegions) {
-  return driveFolderPathFor({ key, kind, label: "" }, areaRegions);
+function cabinetPathForCandidate(candidate, areaRegions) {
+  return [CABINET_ROOT_NAME, ...cabinetPathFor(candidate, areaRegions)];
 }
 
 // ── run ──────────────────────────────────────────────────────────────────────────────────────────
@@ -376,7 +345,7 @@ async function main() {
         continue;
       }
       const candidates = await rest(
-        `ats_candidates?select=id,full_name,phone,whatsapp,status,applied_for_job_title,preferred_area_name,preferred_region_code,preferences_declared_at,folder_kind,folder_key,governorate,address,sent_for_region&id=eq.${file.candidate_id}`,
+        `ats_candidates?select=id,full_name,phone,whatsapp,status,applied_for_job_title,current_job_title,sent_for_job_title,preferred_area_name,preferred_region_code,preferences_declared_at,folder_kind,folder_key,governorate,address,sent_for_region&id=eq.${file.candidate_id}`,
       );
       const candidate = candidates[0];
       if (!candidate) {
@@ -384,7 +353,7 @@ async function main() {
         continue;
       }
 
-      const segments = folderPathFor(candidate, areaRegions);
+      const segments = cabinetPathForCandidate(candidate, areaRegions);
       const name = driveFileName(candidate, file.mime_type, file.file_name);
       const key = segments.join("/");
       if (!REFILE || file.drive_mirror_path !== key) {
@@ -518,8 +487,12 @@ async function verifyMirror(areaRegions) {
   // grows to several hundred, so the chunk size here is a correctness limit, not a tuning knob.
   const wanted = [...new Set(rows.map((f) => f.candidate_id).filter(Boolean))];
   const byId = new Map();
+  // `current_job_title` and `sent_for_job_title` are the two rungs of the cabinet's title ladder
+  // that the old tree never read. Omitting either silently drops a candidate to a lower rung, so
+  // the verifier would report a correctly filed CV as misfiled — the exact failure this fixes.
   const SELECT =
-    "id,full_name,status,applied_for_job_title,preferred_area_name,preferred_region_code," +
+    "id,full_name,status,applied_for_job_title,current_job_title,sent_for_job_title," +
+    "preferred_area_name,preferred_region_code," +
     "preferences_declared_at,folder_kind,folder_key,governorate,address,sent_for_region";
   for (let at = 0; at < wanted.length; at += 50) {
     const chunk = wanted.slice(at, at + 50);
@@ -541,7 +514,7 @@ async function verifyMirror(areaRegions) {
       stats.orphanCandidate += 1;
       continue;
     }
-    const expected = folderPathFor(candidate, areaRegions).join("/");
+    const expected = cabinetPathForCandidate(candidate, areaRegions).join("/");
     if (expected !== file.drive_mirror_path) {
       stats.misfiled += 1;
       const key = `${file.drive_mirror_path || "(nowhere)"}  ->  ${expected}`;
