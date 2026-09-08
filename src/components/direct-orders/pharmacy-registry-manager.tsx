@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+
+import { countVenueGaps, type VenueGap, venueHasGap } from "@/lib/direct-orders/venue-gaps";
 import { useRouter } from "next/navigation";
 
 import { CrmContactPicker } from "@/components/direct-orders/crm-contact-picker";
@@ -70,6 +72,46 @@ function CrmContactLine({ row }: { row: DirectOrderRegistryPharmacy }) {
   return <div className="mt-0.5 text-phx-xs font-semibold text-slate-400">Not linked to the CRM</div>;
 }
 
+/**
+ * The gap chips, in the order an admin should work them.
+ *
+ * `pharmacist` is last and deliberately the quietest of the four: unlike the other three it is not
+ * a fault. A venue materialised from the distributor directory has no pharmacist to record, so this
+ * chip is an invitation to fill something in, not a defect count. Painting it like the others would
+ * tell the reader 37 things are broken when nothing is.
+ */
+const GAP_CHIPS: ReadonlyArray<{
+  activeClass: string;
+  gap: VenueGap;
+  idleClass: string;
+  label: string;
+}> = [
+  {
+    gap: "pending",
+    label: "waiting for a System Admin to confirm",
+    idleClass: "border-rose-200 bg-rose-50 text-rose-800 hover:border-rose-400",
+    activeClass: "border-rose-700 bg-rose-700 text-white",
+  },
+  {
+    gap: "uncoded",
+    label: "with no distributor code — their distributor sales cannot be linked",
+    idleClass: "border-amber-200 bg-amber-50 text-amber-800 hover:border-amber-400",
+    activeClass: "border-amber-700 bg-amber-700 text-white",
+  },
+  {
+    gap: "unlinked",
+    label: "not linked to a CRM contact — no trade badge reaches the rep’s list",
+    idleClass: "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-400",
+    activeClass: "border-slate-900 bg-slate-900 text-white",
+  },
+  {
+    gap: "pharmacist",
+    label: "with no pharmacist recorded — fill one in if you know it",
+    idleClass: "border-slate-200 bg-white text-slate-600 hover:border-slate-400",
+    activeClass: "border-slate-700 bg-slate-700 text-white",
+  },
+];
+
 export function PharmacyRegistryManager({
   rows,
   areas,
@@ -90,6 +132,9 @@ export function PharmacyRegistryManager({
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  // Which gap the list is narrowed to, if any. The chips below are the only way to set it —
+  // clicking the active one clears it, so the filter can always be undone where it was applied.
+  const [gap, setGap] = useState<VenueGap | null>(null);
 
   // Add form
   const [adding, setAdding] = useState(false);
@@ -163,6 +208,7 @@ export function PharmacyRegistryManager({
             : false),
       )
     : rows;
+  const shown = gap ? visible.filter((r) => venueHasGap(r, gap)) : visible;
 
   function openEdit(row: DirectOrderRegistryPharmacy) {
     setEditingId(row.id);
@@ -238,9 +284,9 @@ export function PharmacyRegistryManager({
   }
 
   const inputClass = "w-full border border-slate-300 px-2 py-1.5 text-sm";
-  const pendingCount = rows.filter((r) => r.verificationStatus === "pending_review").length;
-  const uncodedCount = rows.filter((r) => r.distributorCodes.length === 0).length;
-  const unlinkedCount = rows.filter((r) => r.crmContactId === null).length;
+  // One vocabulary for count AND filter, so a chip can never claim 37 while the list shows a
+  // different 37.
+  const gapCounts = countVenueGaps(rows);
 
   return (
     <div className="space-y-4">
@@ -253,25 +299,34 @@ export function PharmacyRegistryManager({
       {ok ? <p className="text-sm font-semibold text-emerald-600">{ok}</p> : null}
 
       {/* What is worth acting on, said as counts rather than left for the eye to find. */}
+      {/* The gap chips. These were counts and nothing else: a number told you 37 venues had a hole
+          and left you to find them by scrolling. Each is now a toggle that narrows the list to
+          exactly the rows it counted — clicking the active one clears it, so the filter is always
+          undone where it was applied. */}
       <div className="flex flex-wrap gap-3 text-phx-sm">
-        <span className="border border-slate-200 bg-white px-3 py-1.5 font-bold text-slate-700">
+        <button
+          type="button"
+          onClick={() => setGap(null)}
+          aria-pressed={gap === null}
+          className={`border px-3 py-1.5 text-left font-bold ${
+            gap === null ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
+          }`}
+        >
           {rows.length.toLocaleString("en-US")} venues
-        </span>
-        {pendingCount > 0 ? (
-          <span className="border border-rose-200 bg-rose-50 px-3 py-1.5 font-bold text-rose-800">
-            {pendingCount} waiting for a System Admin to confirm
-          </span>
-        ) : null}
-        {uncodedCount > 0 ? (
-          <span className="border border-amber-200 bg-amber-50 px-3 py-1.5 font-bold text-amber-800">
-            {uncodedCount} with no distributor code — their distributor sales cannot be linked
-          </span>
-        ) : null}
-        {unlinkedCount > 0 ? (
-          <span className="border border-slate-200 bg-slate-50 px-3 py-1.5 font-bold text-slate-700">
-            {unlinkedCount} not linked to a CRM contact — no trade badge reaches the rep&rsquo;s list
-          </span>
-        ) : null}
+        </button>
+        {GAP_CHIPS.map((chip) =>
+          gapCounts[chip.gap] > 0 ? (
+            <button
+              key={chip.gap}
+              type="button"
+              onClick={() => setGap((current) => (current === chip.gap ? null : chip.gap))}
+              aria-pressed={gap === chip.gap}
+              className={`border px-3 py-1.5 text-left font-bold ${gap === chip.gap ? chip.activeClass : chip.idleClass}`}
+            >
+              {gapCounts[chip.gap]} {chip.label}
+            </button>
+          ) : null,
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -459,14 +514,14 @@ export function PharmacyRegistryManager({
             </tr>
           </thead>
           <tbody>
-            {visible.length === 0 ? (
+            {shown.length === 0 ? (
               <tr>
                 <td colSpan={canManage ? 5 : 4} className="px-3 py-6 text-center text-slate-500">
                   {term ? "No venue matches that search." : "No venues registered yet."}
                 </td>
               </tr>
             ) : null}
-            {visible.map((row) => (
+            {shown.map((row) => (
               <tr key={row.id} className="border-b border-slate-100 align-top">
                 {/* `whitespace-nowrap` is gone from every cell in this row on purpose: under
                     `table-fixed` a cell that cannot wrap does not widen the table, it spills out
@@ -560,7 +615,7 @@ export function PharmacyRegistryManager({
 
       {/* Mobile cards — the admin shell never shows a table on a phone. */}
       <div className="space-y-2 md:hidden">
-        {visible.map((row) => (
+        {shown.map((row) => (
           <div key={row.id} className="border border-slate-200 bg-white p-3">
             <div className="flex items-start justify-between gap-2">
               <div>
