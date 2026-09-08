@@ -719,10 +719,31 @@ export function othersAreasFrom(map: LineOperationalRegionMap | null): ReadonlyS
   return others;
 }
 
+/**
+ * The line code an Others lookup must use, from whatever form the caller holds.
+ *
+ * 🔴 EXTRACTED SO IT CAN BE TESTED WITHOUT A DATABASE, because getting it wrong fails GREEN.
+ * Callers hold DISPLAY NAMES — `ATTRIBUTION_SPLIT_LINES` is `["Pedia", "Anti Infective", "CNS"]`,
+ * and the closing passes `matrix.line` — while `au_v_line_area_map*` is keyed by CODE
+ * (`anti_infective`). Hand the view a name and the `.eq` matches nothing; no rows builds an EMPTY
+ * exclusion set, and an empty set is exactly how the split spells "nothing is in Others". The rule
+ * then silently does not apply: no error, no missing row, every area keeps its share.
+ *
+ * Measured 2026-09-08 — the first deploy of the Others rule was completely inert in production for
+ * this reason, and the only thing that caught it was a backfill dry run still printing "49 areas".
+ *
+ * Falls back to the trimmed input rather than null so a line the alias table has not heard of is
+ * looked up as given: it will find nothing, which is the same safe direction as before.
+ */
+export function othersLookupLineCode(officialLine: string | null | undefined): string {
+  const raw = String(officialLine ?? "").trim();
+  return resolveTargetLineCode(raw) ?? raw;
+}
+
 /** `othersAreasFrom` for a caller holding only a line and a period. One round trip. */
 export async function loadOthersAreas(
-  lineCode: string | null | undefined,
+  officialLine: string | null | undefined,
   period: string | null | undefined,
 ): Promise<ReadonlySet<string>> {
-  return othersAreasFrom(await loadLineOperationalRegions(lineCode, period));
+  return othersAreasFrom(await loadLineOperationalRegions(othersLookupLineCode(officialLine), period));
 }

@@ -162,6 +162,13 @@ export async function writeAttributionStoreSplitNet(input: {
   period: string;
   supabase: SupabaseLike;
   loadRowsForLine: (line: string, period: string) => Promise<readonly AttributionSplitRow[]>;
+  /**
+   * The organogram's Others set for a line and month. Injectable for the same reason
+   * `loadRowsForLine` is: without it this function reaches into the live org chart, and a test that
+   * cannot control that answer either hits production or silently exercises an EMPTY set — which is
+   * indistinguishable from the rule not applying at all. Defaults to the real loader.
+   */
+  loadOthersAreasForLine?: (line: string, period: string) => Promise<ReadonlySet<string>>;
 }): Promise<AttributionStoreSplitWriteResult> {
   const period = String(input.period ?? "").trim();
   const payload: StoreSplitNetPayloadRow[] = [];
@@ -177,7 +184,7 @@ export async function writeAttributionStoreSplitNet(input: {
       // The organogram's Others set, for THIS line and THIS month — see loadOthersAreas. Loaded
       // per line because the set genuinely differs between them: Qalubeya is Others on Anti
       // Infective and a district of its own on Pedia.
-      const othersAreas = await loadOthersAreas(line, period);
+      const othersAreas = await (input.loadOthersAreasForLine ?? loadOthersAreas)(line, period);
       const lineRows = buildStoreSplitNetPayload(line, rows, period, othersAreas);
       if (lineRows.length > 0) linesWithMovement.push(line);
       payload.push(...lineRows);
