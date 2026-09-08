@@ -1571,10 +1571,19 @@ export function scopeWho(name: string | null, role: string, scope: string): stri
  * branch is empty" where the truth is "nobody told us", which is the one lie a stock sheet must not
  * tell. They are left off and the strip NAMES the distributors the sheet is built from.
  *
- * A ZERO INSIDE A REPORTING DISTRIBUTOR IS KEPT, because there it is a real reading: 65 of
- * `overseas`'s 186 branches hold stock, and the empty ones are exactly what a manager is looking
- * for. They sort to the bottom of their area and print in the faint ink the rest of the book uses
- * for a true zero.
+ * A BRANCH HOLDING NOTHING IS DROPPED. Owner instruction, 2026-09-08, after reading the real
+ * August sheet: 140 of its 365 branches were empty, and a stock report that is 38% empty rows is
+ * harder to read, not more complete. Only branches actually holding something are listed.
+ *
+ * "EMPTY" MEANS NO UNITS, NEVER ZERO VALUE. The EGP figure is units x the price this scope sold
+ * that product for, so a product that is HELD but never SOLD in the period has no derived price and
+ * values at zero while the packs are really on the shelf. Keying the drop on value would delete
+ * exactly that stock, silently. On the August data the two predicates happen to agree (0 branches
+ * carry units at zero value), which is precisely why a later change could swap them and see nothing
+ * break — so the test pins a branch with units and no price as KEPT.
+ *
+ * An area or region left with no branches is dropped with them: a heading over nothing is noise,
+ * and its own total would be zero.
  *
  * UNITS ACROSS PRODUCTS ARE NEVER ADDED (owner rule). Each product keeps its own units column;
  * the only figure that closes a row, an area, a region or the sheet is MONEY, valued at what this
@@ -1629,13 +1638,16 @@ function drawStockByBranchSheet(workbook: ExcelJS.Workbook, context: SheetContex
     units: Map<string, number>;
     value: number;
   };
+  /** One definition of a branch's identity, so the build and the drop below cannot disagree. */
+  const entryKeyOf = (entry: { area: string; branch: string; distributor: string; region: string }) =>
+    [entry.distributor, entry.branch, entry.region, entry.area].join("||");
   const byKey = new Map<string, Branch>();
   for (const row of rows) {
     const region = regionOf(input, row);
     const area = areaLabel(input, row);
     const branch = row.branchName || row.branchCode;
     const distributor = row.distributorName || row.distributorCode;
-    const key = [distributor, branch, region, area].join("||");
+    const key = entryKeyOf({ area, branch, distributor, region });
     let entry = byKey.get(key);
     if (!entry) {
       entry = { area, branch, distributor, region, units: new Map(), value: 0 };
@@ -1648,10 +1660,16 @@ function drawStockByBranchSheet(workbook: ExcelJS.Workbook, context: SheetContex
     let value = 0;
     for (const [code, units] of entry.units) value += units * (context.unitPrice.get(code) ?? 0);
     entry.value = value;
+    // Owner, 2026-09-08: a branch holding nothing is not listed. Keyed on the UNITS map, which only
+    // ever gains a key when a non-zero stock figure arrives — never on `value`, which can be zero
+    // for stock that is genuinely there (see the note above the function).
+    if (entry.units.size === 0) byKey.delete(entryKeyOf(entry));
   }
 
   // region -> area -> branches, each level ordered by the money it holds so the biggest problem is
   // the first thing on the page.
+  // byKey now holds only branches that carry stock, so an area or region that ends up absent here
+  // simply has none — there is no heading to print and no total to print under it.
   const regions = new Map<string, Map<string, Branch[]>>();
   for (const entry of byKey.values()) {
     let areas = regions.get(entry.region);
@@ -1785,7 +1803,9 @@ function drawStockByBranchSheet(workbook: ExcelJS.Workbook, context: SheetContex
         const zebra = index % 2 === 1;
         const nameCell = sheet.getCell(line, 1);
         nameCell.value = entry.branch;
-        nameCell.font = { name: "Calibri", size: 10, color: { argb: entry.value === 0 ? SUB : INK } };
+        // Every branch here holds something, so the name is always full ink. A zero can still be
+        // printed in an individual PRODUCT cell, and that one keeps the faint treatment.
+        nameCell.font = { name: "Calibri", size: 10, color: { argb: INK } };
         nameCell.alignment = { vertical: "middle", horizontal: "left", indent: 3 };
         const distCell = sheet.getCell(line, 2);
         distCell.value = entry.distributor;
@@ -1860,7 +1880,7 @@ function drawStockByBranchSheet(workbook: ExcelJS.Workbook, context: SheetContex
   const named = [...reporting].sort();
   const note =
     named.length > 0
-      ? `every branch these distributors send a stock column for - ${named.join(", ")}; a branch of theirs at zero really is empty, and distributors that report no stock at all are not on this sheet`
+      ? `branches holding stock, from the distributors that send a stock column - ${named.join(", ")}; a branch holding nothing is not listed, and distributors that report no stock at all are not on this sheet`
       : "no distributor in this scope reports stock on hand";
   paintMasthead(sheet, columns, "Stock on hand, by branch", context.scopeLine, context.headline, note);
 
