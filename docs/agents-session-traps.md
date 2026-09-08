@@ -187,6 +187,42 @@ file holding the full account, under
   `node scripts/check-workbook-integrity.mjs <file>` answers "will Excel silently repair this", so run it
   as well, not instead. `looking-at-a-generated-workbook-two-ways-that-lie`
 
+### Excel names the part it repaired, and a CLEAN checker verdict is not a clean file — 2026-09-08
+
+The premium Monthly Closing export asked to be repaired again, and the first instinct was to go
+hunting: run the integrity checker, diff the package against a working export, deep-check the style
+and shared-string indices, validate the worksheet element order against the CT_Worksheet sequence. All
+of it came back clean, on a file Excel was refusing.
+
+**Excel had already written the answer down.** Clicking Yes on "We found a problem with some content"
+writes a recovery log to `%TEMP%\error<digits>_01.xml`, naming the part and the record kind verbatim:
+
+    <removedRecord>Removed Records: Merge cells from /xl/worksheets/sheet1.xml part</removedRecord>
+
+That is the FIRST thing to read, before any tooling — `Get-ChildItem "$env:TEMP\error*.xml"` finds it.
+If the owner clicked No, open a COPY through Excel COM instead. Two things there are worth knowing:
+`Workbooks.Open` on a file needing repair FAILS outright under `DisplayAlerts = $false` ("Unable to get
+the Open property of the Workbooks class"), which is itself a usable signal; and a successful open that
+writes **zero** new `error*.xml` files is the proof a fix actually worked.
+
+**And the checker's CLEAN means "none of the defects that have already bitten us", never "Excel will
+open this".** Every rule in `check-workbook-integrity.mjs` was written after a workbook shipped broken,
+so what it looks at is exactly the set of things that have already gone wrong. It printed CLEAN on the
+file above, because nothing in it looked at merged ranges: repeated merges parse, carry a content type,
+break no relationship and leave the rows in order. Rule 4b was added the same day. **When the next one
+gets through, add its rule to that script BEFORE fixing the cause** — otherwise the class stays
+invisible and the dialog comes back looking like the same bug returning.
+
+The defect itself: `moveMerges` in `closing-engine-fill.ts` ran one global string replace per moved
+row, so each rewrite it had already made was still on the page for the next pattern to match. With the
+footnote block sliding DOWN by less than its own height, each footnote's new row was the next one's old
+row, and all three merges cascaded onto `B21:J21`. It is a function of the REGION COUNT and nothing
+else — the template puts the footnotes at 18/19/20, so nine regions (September Anti Infective) shift
+them by one and collapse, eight (August Anti Infective) move them nowhere, and seven (Pedia) move them
+UP, which is always safe because a block moving up cannot land on a row it has not already left. Every
+export before that one happened to have a safe shape, which is why a latent bug read as a fix that kept
+coming undone. Fixed by mapping the whole list in one pass (PR #3541).
+
 **Git**
 
 - **Deleting a branch does not remove its pushed commit**, and **reusing a squash-merged branch makes a
