@@ -1482,6 +1482,8 @@ import { runAttendanceDeductionCancelRuleTests } from "./attendance-deduction-ca
 
 import { runAttendanceDeductionCancelMatrixTests } from "./attendance-deduction-cancel-matrix.test.ts";
 
+import { runAttendanceWeeklyDigestTests } from "./attendance-weekly-digest.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4780,6 +4782,10 @@ await runTest(
 await runTest(
   "attendance cancel matrix (all 96 flag combinations against the written policy, the worked-half start maths, and 46 real production days from April-August 2026)",
   runAttendanceDeductionCancelMatrixTests,
+);
+await runTest(
+  "weekly attendance digest (four settlement weeks with no gap, a closed week only, and a cancelled day never becoming a chargeable line)",
+  runAttendanceWeeklyDigestTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
