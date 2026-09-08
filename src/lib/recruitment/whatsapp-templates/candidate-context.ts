@@ -6,6 +6,10 @@
 // nobody has recorded yet.
 
 import { systemLegalEntity } from "@/config/system-settings";
+// The hiring-documents domain owns the rule for which papers a person supplies themselves.
+// This module asks it; it does not re-derive it, and it must never read the definitions table
+// directly — the "no company paper files here" filter has two halves and belongs in one place.
+import { candidateSuppliedDocumentList } from "@/lib/hiring-documents/candidate-supplied";
 // The offers module's own reader. recruitment -> offers is the permitted direction and the
 // only one; nothing under src/lib/offers/ imports anything from recruitment.
 import { getOffer } from "@/lib/offers/service";
@@ -159,6 +163,11 @@ export async function loadCandidateSendContext(
   // wrong first working day in a welcome message, so only the stored pointer is trusted.
   const startDate = await resolveOfferStartDate(candidateId);
 
+  // The joining documents, read live from the Hiring Documents checklist every time the send screen
+  // opens. Editing that checklist is therefore the ONLY place the list is maintained — the template
+  // body carries a placeholder, not a copy, so the two cannot drift apart.
+  const documentList = await candidateSuppliedDocumentList();
+
   // 🔴 `applied_for_job_title` ONLY. NEVER fall back to `current_job_title`.
   //
   // `current_job_title` is where the candidate works TODAY, at somebody else's company. Used as a
@@ -184,6 +193,7 @@ export async function loadCandidateSendContext(
       candidate_first_name: firstNameOf(fullName),
       candidate_name: fullName,
       company_name: systemLegalEntity.legalNameEn,
+      document_list: documentList,
       job_title: jobTitle,
       sender_name: senderName ?? "",
       start_date: startDate,
@@ -202,11 +212,17 @@ export async function loadCandidateSendContext(
  * placeholder: the send screen shows it as a box to type in, and the send is refused until it has a
  * value. That is deliberate — a manual send to a number with no CV still says "Dear <somebody>", and
  * the sender is the only one who knows who that is.
+ *
+ * The document list is the exception, because it is not candidate-derived at all.
  */
-export function manualSendAutoValues(senderName: string | null): Record<AutoVariableKey, string> {
+export async function manualSendAutoValues(senderName: string | null): Promise<Record<AutoVariableKey, string>> {
   const values = {} as Record<AutoVariableKey, string>;
   for (const key of AUTO_VARIABLE_KEYS) values[key] = "";
   values.company_name = systemLegalEntity.legalNameEn;
   values.sender_name = senderName ?? "";
+  // THE DOCUMENT LIST IS NOT CANDIDATE-DERIVED, so it is filled here as well. It is the same list
+  // for every person, and leaving it blank on the manual path would make a recruiter retype seven
+  // bullet points by hand for the one send that already has no CV to work from.
+  values.document_list = await candidateSuppliedDocumentList();
   return values;
 }

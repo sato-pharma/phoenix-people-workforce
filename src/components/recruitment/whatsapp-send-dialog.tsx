@@ -78,7 +78,13 @@ function labelFor(key: string): string {
 }
 
 /** Placeholders that want more than one line, so the box matches the shape of the answer. */
-const MULTILINE_KEYS = new Set(["address", "feedback", "notes"]);
+// Keys whose value is a block of text rather than a phrase. They get a textarea and the full width.
+//
+// `document_list` is auto-filled from the Hiring Documents checklist and normally arrives complete,
+// so this is its FALLBACK shape — what the recruiter sees if the checklist cannot be read. A single
+// -line <input> cannot hold a seven-line bullet block at all (there is no way to type a newline into
+// one), which would leave the only recovery path unusable exactly when it is needed.
+const MULTILINE_KEYS = new Set(["address", "document_list", "feedback", "notes"]);
 
 const PLACEHOLDER_PATTERN = /\{\{\s*([A-Za-z0-9_]+)\s*\}\}/gu;
 

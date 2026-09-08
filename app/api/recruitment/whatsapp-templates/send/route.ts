@@ -91,7 +91,7 @@ export async function POST(request: Request) {
     // a wrong auto one — a candidate whose stored name is "AYA M." can be addressed as "Aya" — while
     // still filling everything in by default.
     const values: Record<string, string> = {
-      ...(candidate ? candidate.autoValues : manualSendAutoValues(author.name)),
+      ...(candidate ? candidate.autoValues : await manualSendAutoValues(author.name)),
       ...submitted,
     };
 
