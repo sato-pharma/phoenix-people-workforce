@@ -185,10 +185,20 @@ jobs:
             --metrics=off \
             --sarif --output=semgrep-report.sarif \
             .
-          COUNT=$(jq '[.runs[]?.results[]?] | length' semgrep-report.sarif)
+          # A `nosemgrep` suppression does NOT remove the result from the SARIF — it is still
+          # emitted, carrying `"suppressions":[{"kind":"inSource"}]`. So the obvious count over
+          # `.results[]` includes every deliberately-suppressed finding, and it always did: while
+          # this job merely warned, that only skewed the summary and nobody noticed. Flipping the
+          # job to fail turned it into a permanent red on the two suppressed loopback fetches, with
+          # Semgrep's own console line one row above reading `0 findings` — measured 2026-09-08,
+          # run 34240252914. Filter on the suppressions array, and report both numbers so a rising
+          # suppression count stays visible instead of being the quiet way to make this job pass.
+          COUNT=$(jq '[.runs[]?.results[]? | select((.suppressions // []) | length == 0)] | length' semgrep-report.sarif)
+          SUPPRESSED=$(jq '[.runs[]?.results[]? | select((.suppressions // []) | length > 0)] | length' semgrep-report.sarif)
           {
             echo "### SAST scan (Semgrep v${SEMGREP_VERSION})"
             echo "Findings: **${COUNT}**"
+            echo "Suppressed in source (\`nosemgrep\`): ${SUPPRESSED}"
           } >> "$GITHUB_STEP_SUMMARY"
 
           # A report carrying no `runs` at all is not a clean scan, it is a scan that did not
