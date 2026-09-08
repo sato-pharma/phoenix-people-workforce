@@ -136,7 +136,7 @@
     "@node-projects/excelforge": "3.6.0",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.2",
-    "@supabase/supabase-js": "^2.110.8",
+    "@supabase/supabase-js": "^2.112.4",
     "@tanstack/react-virtual": "^3.14.9",
     "@types/pdfmake": "^0.3.3",
     "@types/sanitize-html": "^2.16.1",
