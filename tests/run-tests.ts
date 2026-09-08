@@ -1478,6 +1478,8 @@ import { runAgentsLongHooksCiteDocsTests } from "./agents-long-hooks-cite-docs.t
 
 import { runAttendanceDeductionCancelRuleTests } from "./attendance-deduction-cancel-rule.test.ts";
 
+import { runAttendanceDeductionCancelMatrixTests } from "./attendance-deduction-cancel-matrix.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4767,6 +4769,10 @@ await runTest(
 await runTest(
   "attendance deduction cancels (full-day leave, CRM leave and a CRM field visit cancel the charge; a half-day vacation is judged on the worked half, never waived)",
   runAttendanceDeductionCancelRuleTests,
+);
+await runTest(
+  "attendance cancel matrix (all 96 flag combinations against the written policy, the worked-half start maths, and 46 real production days from April-August 2026)",
+  runAttendanceDeductionCancelMatrixTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
