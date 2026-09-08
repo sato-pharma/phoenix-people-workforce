@@ -494,4 +494,45 @@ export function runDriveScriptAgreesWithAppTests() {
     !source.includes("Removed from Drive by hand"),
     "the hand-deleted marker must not be written out a second time — import the constant",
   );
+
+  // ── THE ROOTED PATH AND THE DRIVE PATH ARE NOT THE SAME ARRAY ─────────────────────────────────
+  //
+  // `ensureFolderPath` starts at `ensureRootFolder()`, which IS the cabinet, and walks the segments
+  // from there. So Drive must be handed an UNROOTED path. `drive_mirror_path`, by contrast, must be
+  // ROOTED: without the prefix a legacy path in the frozen `Phoenix CVs` tree is indistinguishable
+  // from a cabinet path, and the mirror would empty the old tree one candidate at a time.
+  //
+  // Conflating them on 2026-09-08 created a SECOND folder named "Phoenix CV Cabinet" and moved 264
+  // CVs into it. Nothing caught it: `--verify` compares `drive_mirror_path` as a STRING, and the
+  // string was correct — the folder it named was a different folder with the same name. The library
+  // was split 909 / 265 across two cabinets while every check reported zero misfiled.
+  {
+    const driveFn = source.slice(
+      source.indexOf("function cabinetDriveSegments"),
+      source.indexOf("function cabinetStoredPathKey"),
+    );
+    assert.ok(driveFn.length > 0, "cabinetDriveSegments must exist — it is the unrooted half");
+    assert.ok(
+      !driveFn.includes("CABINET_ROOT_NAME"),
+      "the DRIVE path must NOT carry the cabinet name: ensureFolderPath already roots there, so a "
+        + "rooted array builds a cabinet inside the cabinet",
+    );
+    assert.match(
+      source,
+      /function cabinetStoredPathKey[\s\S]{0,200}CABINET_ROOT_NAME/,
+      "the STORED path key must be rooted — the prefix is what tells a cabinet path from a legacy "
+        + "path in the frozen tree",
+    );
+    // And the two must actually be used in the right places.
+    assert.match(
+      source,
+      /const segments = cabinetDriveSegments\(/,
+      "the array handed to moveDriveFile must come from cabinetDriveSegments",
+    );
+    assert.match(
+      source,
+      /const key = cabinetStoredPathKey\(/,
+      "the value written to drive_mirror_path must come from cabinetStoredPathKey",
+    );
+  }
 }
