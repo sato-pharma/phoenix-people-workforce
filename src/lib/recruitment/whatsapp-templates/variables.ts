@@ -33,6 +33,12 @@ export const AUTO_VARIABLE_KEYS = [
   // through the owner-locked `probationEndDate` helper (hire + 90 days), never read from
   // `employees.probation_end_date` — that column is NULL for every employee and always has been.
   "probation_end_date",
+  // The contract renewal date, filled ONLY when one is actually RECORDED. The contracts
+  // dashboard falls back to the next anniversary of the hire date so it always has something to
+  // sort by; that fallback carries 100% of production today and is a convenience, not a
+  // contractual fact. Stating it back to an employee as their contract date would be the system
+  // asserting something nobody recorded, so this stays empty and the sender types it.
+  "contract_renewal_date",
 ] as const;
 
 export type AutoVariableKey = (typeof AUTO_VARIABLE_KEYS)[number];
@@ -51,7 +57,7 @@ export type AutoVariableKey = (typeof AUTO_VARIABLE_KEYS)[number];
  * happens to sit in that category. The placeholders a template uses are what actually decide whether
  * it can be filled, so they are what decides where it is offered.
  */
-export const EMPLOYEE_ONLY_VARIABLE_KEYS = ["probation_end_date"] as const;
+export const EMPLOYEE_ONLY_VARIABLE_KEYS = ["probation_end_date", "contract_renewal_date"] as const;
 
 const EMPLOYEE_ONLY_KEY_SET = new Set<string>(EMPLOYEE_ONLY_VARIABLE_KEYS);
 
@@ -85,6 +91,7 @@ export const SUGGESTED_VARIABLE_LABELS: Record<string, string> = {
   interviewer_name: "Interviewer name",
   interviewer_title: "Interviewer job title",
   job_title: "Job title applied for (auto)",
+  contract_renewal_date: "Contract renewal date",
   probation_end_date: "Probation end date (auto, for an employee)",
   location_link: "Location (Google Maps link)",
   sender_name: "Your name (auto)",

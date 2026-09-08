@@ -1,6 +1,13 @@
 ﻿"use client";
 
-import { AlertTriangle, Calendar, RefreshCw, Search } from "lucide-react";
+import {
+  AlertTriangle,
+  Calendar,
+  MessageCircle,
+  RefreshCw,
+  Search,
+} from "lucide-react";
+import { WhatsAppSendDialog } from "@/components/recruitment/whatsapp-send-dialog";
 import { useMemo, useState } from "react";
 
 import {
@@ -25,7 +32,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
 import { daysUntilLifecycleDate, summarizeContractRenewalRows } from "@/lib/lifecycle-risk/metrics";
-import type { ContractRenewalDashboardData } from "@/lib/contracts/types";
+import type { ContractRenewalDashboardData, ContractRow } from "@/lib/contracts/types";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -103,6 +110,9 @@ export function ContractRenewal({ initialData, initialError }: Props) {
     lines: [...new Set(rows.map((r) => r.line).filter(Boolean))].sort(),
     areas: [...new Set(rows.map((r) => r.area).filter(Boolean))].sort(),
   }), [rows]);
+
+  /** The employee whose WhatsApp dialog is open, or null. One at a time, by row. */
+  const [whatsAppRow, setWhatsAppRow] = useState<ContractRow | null>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -199,6 +209,15 @@ export function ContractRenewal({ initialData, initialError }: Props) {
 
   return (
     <ContractsPageShell>
+      {/* ONE dialog for the whole screen, keyed by the row that opened it — not one per row, which
+          would mount a copy per employee and have each fetch the template list on mount. */}
+      {whatsAppRow ? (
+        <WhatsAppSendDialog
+          employeeHrId={whatsAppRow.hr_id}
+          employeeName={whatsAppRow.full_name}
+          onClose={() => setWhatsAppRow(null)}
+        />
+      ) : null}
       <AdminPageHero
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -436,6 +455,15 @@ export function ContractRenewal({ initialData, initialError }: Props) {
                     { label: "Renewal Date", value: formatStoredDate(row.contract_renewal_date) },
                   ]}
                 />
+                {/* Mobile never renders the table, so the action has to exist here too. */}
+                <button
+                  className="mt-2 inline-flex items-center gap-1.5 text-phx-xs font-semibold text-text-secondary transition hover:text-text"
+                  onClick={() => setWhatsAppRow(row)}
+                  type="button"
+                >
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  Message on WhatsApp
+                </button>
               </PortalRecordCard>
             );
           }}
@@ -457,7 +485,26 @@ export function ContractRenewal({ initialData, initialError }: Props) {
                     <tr className="transition-colors hover:bg-slate-50/65" key={`${row.hr_id}-${index}`}>
                       <td className={cn(tableCellClassName, "max-w-[82px] break-words font-mono text-text-secondary")}>{row.hr_id || "-"}</td>
                       <td className={cn(tableCellClassName, "max-w-[82px] break-words font-mono text-text-secondary")}>{row.crm_id || "-"}</td>
-                      <td className={cn(tableCellClassName, "break-words font-semibold text-text")}>{row.full_name}</td>
+                      {/*
+                        The WhatsApp action lives INSIDE the employee cell rather than in a column of
+                        its own. This table is a PortalDesktopTable with a 820px min-width floor, so a
+                        tenth column pushes it further past the viewport — and the fits-the-screen rule
+                        says fit by MERGING columns, never by adding one and letting it scroll.
+                      */}
+                      <td className={cn(tableCellClassName, "break-words font-semibold text-text")}>
+                        <span className="flex items-center gap-1.5">
+                          <span>{row.full_name}</span>
+                          <button
+                            aria-label={`Message ${row.full_name} on WhatsApp`}
+                            className="shrink-0 text-text-secondary transition hover:text-text"
+                            onClick={() => setWhatsAppRow(row)}
+                            title="Message on WhatsApp"
+                            type="button"
+                          >
+                            <MessageCircle className="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                      </td>
                       <td className={cn("max-w-[190px] break-words", tableCellClassName)}>{row.job_title}</td>
                       <td className={tableCellClassName}>{row.line}</td>
                       <td className={tableCellClassName}>{row.area}</td>

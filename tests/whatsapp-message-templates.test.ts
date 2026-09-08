@@ -614,6 +614,73 @@ export function runWhatsAppMessageTemplateTests() {
     "the employee target is not filtered by this rule",
   );
 
+  // ── the contract renewal date ────────────────────────────────────
+  //
+  // 🔴 THE CONTRACTS DASHBOARD AND THIS MESSAGE ASK DIFFERENT QUESTIONS, and answering the second
+  // with the first is the defect this pins. `renewalDateForEmployee` falls back to
+  // `nextContractAnniversary(hireDate)` so the dashboard always has something to sort and colour by.
+  // Measured on production 2026-09-09: `employee_contracts` holds ZERO rows and
+  // `employees.contract_renewal_date` is NULL for all 105 active employees — so 100% of the dates
+  // that dashboard shows are that computed anniversary, and none of them is a recorded fact.
+  //
+  // Fine on a screen HR reads as "renewals are due around here". Not fine in a message that states
+  // it back to the employee as their contract date. `date-rules.ts` claims no policy for the
+  // anniversary; contrast `probation/date.ts`, which opens by naming hire+90 as an owner-locked
+  // business rule. One is a rule, the other a convenience, and only the rule may be asserted.
+  const contractsSource = readFileSync("src/lib/contracts/service.ts", "utf8");
+  const contractResolver = contractsSource.match(/export async function recordedContractRenewalDate[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.ok(contractResolver.length > 0, "the recorded-date contractResolver must still be here — re-point this test if it moved");
+  assert.ok(
+    !contractResolver.includes("nextContractAnniversary"),
+    "the message's date must never come from the hire-date anniversary — that is the dashboard's "
+      + "display fallback, carrying 100% of production, and stating it to an employee asserts a "
+      + "contract date nobody recorded",
+  );
+  assert.ok(
+    !/hireDate|hire_date/.test(contractResolver),
+    "and it must not reach the hire date by another name either",
+  );
+
+  const employeeSrc = readFileSync("src/lib/recruitment/whatsapp-templates/employee-context.ts", "utf8");
+  assert.match(
+    employeeSrc,
+    /recordedContractRenewalDate/,
+    "the send context asks the contracts module what is RECORDED, and nothing else",
+  );
+  assert.ok(
+    !employeeSrc.includes("nextContractAnniversary"),
+    "the send path must not compute an anniversary of its own",
+  );
+
+  // AN UNRECORDED DATE IS A TYPED FIELD, not a guess. Today that is every employee.
+  const noContract = renderTemplate("due for renewal on {{contract_renewal_date}}.", {
+    contract_renewal_date: "",
+  });
+  assert.deepEqual(
+    noContract.missing,
+    ["contract_renewal_date"],
+    "with no recorded contract the send screen asks a human for the date rather than inventing one",
+  );
+
+  // EMPLOYEE-ONLY, so it never reaches a CV screen: a candidate has no contract at all.
+  assert.ok(
+    requiresEmployeeTarget("renewal on {{contract_renewal_date}}"),
+    "a contract template is not offered on the CV screen — a candidate has no contract to renew",
+  );
+  assert.ok(
+    isAutoVariable("contract_renewal_date"),
+    "it is an auto key, so it fills in by itself the day contracts are actually recorded",
+  );
+
+  // Both context paths answer it, per the one-vocabulary rule pinned above.
+  for (const source of [employeeSrc, readFileSync("src/lib/recruitment/whatsapp-templates/candidate-context.ts", "utf8")]) {
+    assert.ok(
+      source.includes("contract_renewal_date:"),
+      "both the candidate and employee paths must answer the key — an omitted one is a type hole "
+        + "that renders as undefined",
+    );
+  }
+
   // And the STORED name is never rewritten — an identity field is evidence, not display text.
   assert.equal(
     softenShoutedName("SHAABAN"),
