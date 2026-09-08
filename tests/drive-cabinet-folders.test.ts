@@ -38,6 +38,8 @@ function candidate(overrides = {}) {
     address: null,
     applied_for_job_title: null,
     current_job_title: null,
+    declared_background: null,
+    faculty: null,
     folder_key: null,
     folder_kind: null,
     governorate: null,
@@ -367,11 +369,7 @@ export function runDriveCabinetFolderTests() {
   // The property that makes it safe is that it is LAST. Any title resolving to a family — including
   // `other` — is reached first, so this can never move somebody away from the folder their own words
   // earned. Measured over all 893 candidates: 31 moved, and 0 of them from anywhere but the shrug.
-  const bare = {
-    address: null, applied_for_job_title: null, current_job_title: null, declared_background: null,
-    faculty: null, folder_key: null, folder_kind: null, governorate: null, preferred_area_name: null,
-    preferred_region_code: null, sent_for_job_title: null, sent_for_region: null,
-  };
+  const bare = candidate();
 
   assert.equal(
     cabinetPositionFolder({ ...bare, faculty: "Faculty of Pharmacy" }),
