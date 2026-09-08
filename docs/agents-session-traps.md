@@ -339,9 +339,10 @@ file holding the full account, under
   wrong name** — verified 2026-08-29 across every ref (`git log -S "Gawish-1997/phoenix-workforce"
   --all` returns no commits), across all six `repos/…` references (`AGENTS.md` §7,
   `docs/deployment.md`, `docs/disaster-recovery-runbook.md`, `docs/agents-incident-history.md`,
-  and two in `.claude/skills/verify-context/SKILL.md`), and across all seven worktrees. The one
-  `gh api` call in automation, `.github/workflows/deploy-cloud-run.yml:127`, interpolates
-  `repos/${{ github.repository }}` and cannot be wrong. So this is never a defect to go fix in a
+  and two in `.claude/skills/verify-context/SKILL.md`), and across all seven worktrees. There is no longer ANY
+  `gh api` call in automation carrying the name — the one that did, in
+  `.github/workflows/deploy-cloud-run.yml`, interpolated `repos/${{ github.repository }}` and could
+  not be wrong; that workflow was deleted 2026-09-08. So this is never a defect to go fix in a
   file — it is a typo the checkout invites, and the fix is to read the name rather than infer it:
   `gh repo view --json nameWithOwner` returns `Gawish-1997/phoenix-people-workforce`, and
   `git remote -v` agrees.
