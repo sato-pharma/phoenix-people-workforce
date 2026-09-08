@@ -16,9 +16,11 @@ import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import {
   bracketsForEventType,
   evaluateFlexibleHoursDay,
+  halfDayEffectiveStartMinutes,
   requiredMinutesForHalfDayVacation,
   type FlexibleHoursConfig,
 } from "@/lib/attendance/flexible-hours";
+import { isAttendanceDeductionCancelled } from "@/lib/attendance/digest-reconcile";
 // The DEDUCTIONS implementation (Base ÷ ACTUAL calendar days). See the note in
 // attendance/employee-day-report.ts: there are two functions with this name and the
 // ÷30 one takes no month, so importing the wrong one type-checks and silently pays a
@@ -461,9 +463,29 @@ function statusFromFlexibleHours(input: {
 }): PolicyAttendanceStatusResult {
   const scheduledStartMinutes = policyTimeToMinutes(input.policy.scheduled_start) ?? 9 * 60;
   const requiredMinutes = requiredMinutesForHalfDayVacation(input.policy.required_minutes!, input.halfDayVacationPart);
-  const config: FlexibleHoursConfig = {
+  // An AM-only vacation moves the obligation to the SECOND half of the shift, so
+  // lateness must be judged from where that half BEGINS — not from a morning
+  // start the employee was formally excused from. requiredMinutes is already the
+  // halved figure, so the worked half opens exactly that far after the scheduled
+  // start. Only am_only shifts: a PM-only vacation still owes the morning, and
+  // its start is already correct.
+  //
+  // The short-hours half of this judgment was always right (the requirement is
+  // halved above); it was lateness alone that kept measuring against a start
+  // that no longer applied. Measured on August 2026 production data it charged
+  // two people 0.25 day each for "lateness" on a morning they had approved off,
+  // both of whom then completed the halved hours in full: A-7 on 08-02 (arrived
+  // 10:56, called 86 min late, 177.42 EGP) and A-9 on 08-02 (arrived 12:54,
+  // called 204 min late, 387.10 EGP). Owner decision 2026-09-08, asked and
+  // answered: judge the worked half.
+  const effectiveStartMinutes = halfDayEffectiveStartMinutes(
     scheduledStartMinutes,
-    flexCeilingMinutes: scheduledStartMinutes + (input.policy.flex_minutes ?? 0),
+    requiredMinutes,
+    input.halfDayVacationPart,
+  );
+  const config: FlexibleHoursConfig = {
+    scheduledStartMinutes: effectiveStartMinutes,
+    flexCeilingMinutes: effectiveStartMinutes + (input.policy.flex_minutes ?? 0),
     requiredMinutes,
   };
   const result = evaluateFlexibleHoursDay({
@@ -786,7 +808,33 @@ export async function getFingerprintAttendanceReport(input: {
     // all fully covered by an approved excuse: A-9 on 07-07 (800.00, late 78 /
     // short 97 min vs 120 excused) and B-155 on 07-09 (433.33, late 86 / short 98)
     // and 07-14 (433.33, short 109).
-    const deductionCancelled = hasApprovedException || hasApprovedExcuse;
+    //
+    // The same fail-open guard held for three MORE cancels that digest-reconcile.ts
+    // has always called universal — a full-day approved leave, a CRM-recorded
+    // leave, and a real CRM field visit. All three were fetched above, rendered
+    // into the approvedLeave/crmActivity labels below, and then ignored when
+    // computing the money. That mattered little while this was only a report, and
+    // began moving real money when the unified Deductions module started turning
+    // its rows into candidates (src/lib/deductions/connectors/fingerprint.ts reads
+    // row.deductionDays). Measured on August 2026 production data it charged
+    // 2,709.57 EGP over five days our own records already explained: A-1 on 08-04
+    // and A-2 on 08-11 (both on approved leave), A-1 on 08-26 (CRM Annual
+    // Vacation), B-155 on 08-11 (CRM Traveling, returning from Minya) and A-12 on
+    // 08-24 (CRM Campaign, a logged doctor meeting). All five were still Pending
+    // when this shipped — the never-auto-publish rule, not this code, is what kept
+    // them off a payslip.
+    //
+    // A HALF-day approved vacation deliberately does NOT cancel: the employee owes
+    // the other half, and statusFromFlexibleHours judges exactly that half. Owner
+    // decision 2026-09-08, asked and answered: "judge the worked half".
+    const deductionCancelled = isAttendanceDeductionCancelled({
+      halfDayVacationPart,
+      hasApprovedException,
+      hasApprovedExcuse,
+      hasApprovedLeave,
+      hasCrmFieldVisit,
+      hasCrmLeave,
+    });
 
     return {
       actualFirstPunch: firstPunchText,
