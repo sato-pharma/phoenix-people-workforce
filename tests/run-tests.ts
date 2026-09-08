@@ -103,7 +103,7 @@ import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.
 import { runPayrollSheetMappingTests } from "./payroll-sheet-mapping.test.ts";
 import { runPayrollUploadTemplateTests } from "./payroll-upload-template.test.ts";
 import { runPayrollExportHouseIdentityTests } from "./payroll-export-house-identity.test.ts";
-import { runPayrollPreviousTemplateFormatTests } from "./payroll-previous-template-format.test.ts";
+import { runPayrollPhoenixLookTests } from "./payroll-phoenix-look.test.ts";
 import { runPayrollSheetSectionsTests } from "./payroll-sheet-sections.test.ts";
 import { runPayrollWorkflowTests } from "./payroll-workflow.test.ts";
 import { runCspHeaderTests } from "./csp-headers.test.ts";
@@ -1674,7 +1674,7 @@ await runTest("money path silent failures (a confident zero is worse than an err
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);
 await runTest("payroll sheet sections and the Working Days column", runPayrollSheetSectionsTests);
 await runTest("payroll exports (house identity, computed bands, held in words, step round trip)", runPayrollExportHouseIdentityTests);
-await runTest("payroll exports follow the previous salary template (grid, widths, even-row zebra, subtotals)", runPayrollPreviousTemplateFormatTests);
+await runTest("automated payroll exports keep the Phoenix look (exempt from the house identity)", runPayrollPhoenixLookTests);
 await runTest("payroll upload template (house identity, captions cannot outscore the header row)", runPayrollUploadTemplateTests);
 await runTest("payroll workflow", runPayrollWorkflowTests);
 await runTest("automated payroll split (Part 1/2 freeze + FP-in-Part-1 + reconcile)", runAutomatedPayrollSplitTests);
