@@ -77,7 +77,10 @@ export function sealSecret(plaintext: string): string {
   const iv = randomBytes(IV_LENGTH);
   const key = deriveKey(secret, salt);
 
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  // Explicit for the same reason as the opener: it pins the tag this seal produces at 128 bits
+  // rather than relying on the default staying 128 bits. Same value as the default, so blobs
+  // sealed before and after this line are byte-compatible.
+  const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: TAG_LENGTH });
   const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
 
@@ -106,7 +109,17 @@ export function openSecret(sealed: string): string {
   }
 
   const key = deriveKey(envSecret(), salt);
-  const decipher = createDecipheriv("aes-256-gcm", key, iv);
+  // `authTagLength` is passed explicitly so NODE enforces the 128-bit tag, not just the length
+  // check above. GCM permits truncated tags (96, 64, even 32 bits), and a shorter tag is
+  // exponentially easier to forge — at 32 bits a blind forgery succeeds about 1 attempt in 4
+  // billion, which is reachable. Without this option `setAuthTag` accepts whatever length it is
+  // handed, so the ONLY thing rejecting a truncated tag would be the `tag.length !== TAG_LENGTH`
+  // check five lines up: correct today, but it reads as input validation rather than as a
+  // load-bearing crypto guarantee, and is exactly the kind of line a tidy-up deletes. Stating it
+  // here puts the guarantee at the point of use. 16 bytes is also GCM's default, so this changes
+  // nothing about which existing blobs open — pinned by the pre-change fixture in
+  // tests/secret-box.test.ts.
+  const decipher = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: TAG_LENGTH });
   decipher.setAuthTag(tag);
   try {
     return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
@@ -131,7 +144,9 @@ export function sealedFingerprint(sealed: string): string {
   // Deterministic tag over the plaintext, keyed by the env secret. Never reveals the plaintext.
   const plaintext = openSecret(sealed);
   const key = deriveKey(envSecret(), Buffer.alloc(SALT_LENGTH, 7)); // fixed salt → deterministic
-  const cipher = createCipheriv("aes-256-gcm", key, Buffer.alloc(IV_LENGTH, 11));
+  const cipher = createCipheriv("aes-256-gcm", key, Buffer.alloc(IV_LENGTH, 11), {
+    authTagLength: TAG_LENGTH,
+  });
   cipher.update(plaintext, "utf8");
   cipher.final();
   return cipher.getAuthTag().toString("hex").slice(0, 16);
