@@ -294,9 +294,35 @@ function driveFileName(candidate, mimeType, originalName) {
  * So there is deliberately no local copy of the foldering rule here any more, and none should be
  * reintroduced: this imports the function the running site uses, which is the only way the two
  * cannot drift apart again.
+ *
+ * ── TWO SHAPES, AND CONFLATING THEM BUILT A SECOND CABINET ──────────────────────────────────────
+ *
+ * The rooted form and the Drive form are NOT interchangeable, and the first version of this fix
+ * used one array for both.
+ *
+ *   `driveSegments`  UNROOTED — what Drive is given. `ensureFolderPath` starts at
+ *                    `ensureRootFolder()`, which IS the cabinet, and walks from there. Handing it a
+ *                    rooted array makes it create a folder named "Phoenix CV Cabinet" INSIDE the
+ *                    cabinet and file everything one level too deep.
+ *   `storedPathKey`  ROOTED — what `drive_mirror_path` records. The prefix is the cutover safety
+ *                    property: without it a legacy path in the frozen `Phoenix CVs` tree is
+ *                    indistinguishable from a cabinet path, and the mirror would empty the old tree
+ *                    one candidate at a time.
+ *
+ * `drive-cv-mirror.ts` has always kept them apart — `path` to `moveDriveFile`, `pathKey` to the
+ * database — and this now matches it exactly.
+ *
+ * Measured on production 2026-09-08: a `--refile` run passing the rooted array created a SECOND
+ * "Phoenix CV Cabinet" and moved 264 CVs into it. Every check passed while it happened, because
+ * `--verify` compares `drive_mirror_path` as a STRING: the string was right, the folder it named
+ * was a different folder with the same name.
  */
-function cabinetPathForCandidate(candidate, areaRegions) {
-  return [CABINET_ROOT_NAME, ...cabinetPathFor(candidate, areaRegions)];
+function cabinetDriveSegments(candidate, areaRegions) {
+  return cabinetPathFor(candidate, areaRegions);
+}
+
+function cabinetStoredPathKey(candidate, areaRegions) {
+  return [CABINET_ROOT_NAME, ...cabinetDriveSegments(candidate, areaRegions)].join("/");
 }
 
 // ── run ──────────────────────────────────────────────────────────────────────────────────────────
@@ -354,9 +380,10 @@ async function main() {
         continue;
       }
 
-      const segments = cabinetPathForCandidate(candidate, areaRegions);
+      // UNROOTED for Drive, ROOTED for the database. See cabinetDriveSegments.
+      const segments = cabinetDriveSegments(candidate, areaRegions);
       const name = driveFileName(candidate, file.mime_type, file.file_name);
-      const key = segments.join("/");
+      const key = cabinetStoredPathKey(candidate, areaRegions);
       if (!REFILE || file.drive_mirror_path !== key) {
         treePreview.set(key, (treePreview.get(key) ?? 0) + 1);
       }
@@ -526,7 +553,7 @@ async function verifyMirror(areaRegions) {
       stats.orphanCandidate += 1;
       continue;
     }
-    const expected = cabinetPathForCandidate(candidate, areaRegions).join("/");
+    const expected = cabinetStoredPathKey(candidate, areaRegions);
     if (expected !== file.drive_mirror_path) {
       stats.misfiled += 1;
       const key = `${file.drive_mirror_path || "(nowhere)"}  ->  ${expected}`;
