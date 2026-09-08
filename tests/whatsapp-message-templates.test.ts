@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { firstNameOf, softenShoutedName } from "../src/lib/recruitment/whatsapp-templates/candidate-context.ts";
 import {
@@ -212,6 +213,31 @@ export function runWhatsAppMessageTemplateTests() {
     firstNameOf("\u0645\u062d\u0645\u062f \u0639\u0628\u062f \u0627\u0644\u0644\u0647"),
     "\u0645\u062d\u0645\u062f",
     "an uncased script has no shout to detect and must fall through unchanged",
+  );
+
+  // ── the job title names the role APPLIED FOR, never the one they already hold ────────────────
+  //
+  // `loadCandidateSendContext` fell back to `current_job_title` when `applied_for_job_title` was
+  // absent, which reaches 338 of 890 production candidates (38%). It rendered "your interest in the
+  // Senior Product Specialist position at Sato Pharma" to a man whose CURRENT job is Senior Product
+  // Specialist elsewhere — naming, as the role we rejected him for, the job he already has. It is
+  // silent because the sentence is grammatical and the title is real.
+  //
+  // The source is asserted rather than the behaviour because the resolver needs a database row: what
+  // must never come back is a second `??` reaching for another title column.
+  const contextSource = readFileSync("src/lib/recruitment/whatsapp-templates/candidate-context.ts", "utf8");
+  const jobTitleLine = contextSource.match(/const jobTitle = [^;]+;/)?.[0] ?? "";
+  assert.ok(jobTitleLine.length > 0, "the jobTitle resolver must still be here — re-point this test if it moved");
+  assert.ok(
+    jobTitleLine.includes("applied_for_job_title"),
+    "the job title must come from applied_for_job_title",
+  );
+  assert.ok(
+    !jobTitleLine.includes("current_job_title"),
+    "current_job_title must NEVER be a fallback here — it names the job the candidate already holds "
+      + "at another company, and a rejection that cites it tells them we turned them down for their "
+      + "own job. An absent applied-for title must leave this EMPTY so the send is refused and a "
+      + `human types the real one. Found: ${jobTitleLine}`,
   );
 
   // And the STORED name is never rewritten — an identity field is evidence, not display text.
