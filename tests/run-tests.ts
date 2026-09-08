@@ -1493,6 +1493,7 @@ import { runAttendanceWeeklyDigestTests } from "./attendance-weekly-digest.test.
 import { runMarketingCodeUnlinkFalloutTests } from "./marketing-code-unlink-fallout.test.ts";
 import { runMarketingCodeLinkReachTests } from "./marketing-code-link-reach.test.ts";
 import { runReturnedOrdersAgeingTests } from "./returned-orders-ageing.test.ts";
+import { runOverCapNeverBlocksTests } from "./over-cap-never-blocks.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4840,6 +4841,11 @@ await runTest(
 await runTest(
   "returned-order ageing bands are INVERTED against the held desk (big days = urgent), and the latest return comment wins",
   runReturnedOrdersAgeingTests,
+);
+
+await runTest(
+  "over cap NEVER blocks a submission — it is flagged for approvers and submitted (owner rule 2026-08-03, restated 2026-09-08)",
+  runOverCapNeverBlocksTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
