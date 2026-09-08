@@ -20,10 +20,12 @@ import {
  * no rule is a badge that counts the wrong thing.
  */
 
-/** Rasha — a Group Product Manager, and the manager step on the rows below is routed to her. */
-const RASHA = { role: "Group Product Manager", hrId: "a-8" } as const;
-/** Hossam — also a Group Product Manager, and in nobody's chain here. */
-const HOSSAM = { role: "Group Product Manager", hrId: "a-12" } as const;
+/** Hossam — the Marketing Manager, and the first member of every group below. */
+const HOSSAM = { role: "Marketing Manager", hrId: "a-9" } as const;
+/** Magdy — National Sales Manager for ANTI INFECTIVE, line 1. */
+const MAGDY = { role: "National Sales Manager", hrId: "ai-0008" } as const;
+/** Ali — National Sales Manager for PEDIA, line 2. Three people hold that title, one per line. */
+const ALI = { role: "National Sales Manager", hrId: "a-12" } as const;
 const CEO = { role: "CEO", hrId: "a-1" } as const;
 const SUPER_ADMIN = { role: "Super Admin", hrId: "a-99" } as const;
 
@@ -33,153 +35,214 @@ const TWO_DAYS_AGO = "2026-09-05T12:00:00.000Z";
 /** 3 days before NOW — on the threshold, which slaTone reads as overdue. */
 const THREE_DAYS_AGO = "2026-09-04T12:00:00.000Z";
 
-function row(overrides: { managerHrId?: string | null; openedAt?: string | null; status: string }) {
+type BadgeSlot = {
+  approverRole: "marketing_manager" | "nsm";
+  lineId: number | null;
+  assignedHrId: string | null;
+  decision: "approve" | "reject" | "return" | null;
+};
+
+/** The Marketing Manager's slot and the Anti Infective NSM's — the ordinary two-person group. */
+function group(overrides: { mm?: "approve" | null; nsm?: "approve" | null } = {}): BadgeSlot[] {
+  return [
+    {
+      approverRole: "marketing_manager",
+      lineId: null,
+      assignedHrId: "A-9",
+      decision: overrides.mm ?? null,
+    },
+    { approverRole: "nsm", lineId: 1, assignedHrId: "AI-0008", decision: overrides.nsm ?? null },
+  ];
+}
+
+function row(overrides: {
+  approvers?: BadgeSlot[];
+  managerHrId?: string | null;
+  openedAt?: string | null;
+  status: string;
+}) {
   return {
-    managerHrId: overrides.managerHrId === undefined ? "A-8" : overrides.managerHrId,
+    approvers: overrides.approvers ?? group(),
+    managerHrId: overrides.managerHrId === undefined ? null : overrides.managerHrId,
     openedAt: overrides.openedAt === undefined ? TWO_DAYS_AGO : overrides.openedAt,
     status: overrides.status,
   };
 }
 
 export function runMarketAwarenessApprovalInboxNavBadgeTests() {
-  // ── 1. The manager step is IDENTITY-checked, so the badge is too ────────────
-  // Two Group Product Managers, one pending activity: the count is 1 for the one it was routed to
-  // and 0 for the other. A role-checked badge would pump orange at every GPM in the company for a
-  // decision only one of them can make — and the inbox behind it would then be empty, which reads
-  // as a broken badge rather than as somebody else's work.
+  // ── 1. ONE request counts on TWO badges at once ─────────────────────────────
+  // That is the whole shape of the parallel group (owner, 2026-09-09): the Marketing Manager and the
+  // line's National Sales Manager are asked at the same time, so the same row is owed by both of
+  // them and drops off each badge separately as each answers.
   {
-    const rows = [row({ status: "pending_manager" })];
+    const rows = [row({ status: "pending_group" })];
     assert.equal(
-      summarizeMarketAwarenessDecisionBadge({ access: RASHA, now: NOW, rows }).count,
+      summarizeMarketAwarenessDecisionBadge({ access: HOSSAM, now: NOW, rows }).count,
       1,
-      "1: the manager the activity was routed to owes the decision",
+      "1: the Marketing Manager owes it",
+    );
+    assert.equal(
+      summarizeMarketAwarenessDecisionBadge({ access: MAGDY, actorLineId: 1, now: NOW, rows }).count,
+      1,
+      "1: and the Anti Infective NSM owes the same one, at the same time",
+    );
+    // Three people hold the NSM title, one per line. A role check with no line in it would pump
+    // orange at all three for a decision only one of them can make.
+    assert.equal(
+      summarizeMarketAwarenessDecisionBadge({ access: ALI, actorLineId: 2, now: NOW, rows }).count,
+      0,
+      "1: the PEDIA national sales manager owes nothing on an Anti Infective request",
+    );
+  }
+
+  // ── 2. A member who has answered stops counting it ─────────────────────────
+  // Without this the badge would keep a permanent number on the link of somebody who has already
+  // approved, for a request he cannot act on again.
+  {
+    const rows = [row({ approvers: group({ mm: "approve" }), status: "pending_group" })];
+    assert.equal(
+      summarizeMarketAwarenessDecisionBadge({ access: HOSSAM, now: NOW, rows }).count,
+      0,
+      "2: the Marketing Manager has approved, so it is no longer his",
+    );
+    assert.equal(
+      summarizeMarketAwarenessDecisionBadge({ access: MAGDY, actorLineId: 1, now: NOW, rows }).count,
+      1,
+      "2: it is still the NSM's until he answers — he is the one holding it up",
+    );
+  }
+
+  // ── 3. HR ids are mixed-case, and the badge must survive it ─────────────────
+  // `assigned_hr_id` carries the employee master's real casing while the session id is lower-cased.
+  // A raw comparison would return 0 for every activity — a badge silent in exactly the state it
+  // exists to announce, and silence is indistinguishable from "nothing is waiting".
+  {
+    const badge = summarizeMarketAwarenessDecisionBadge({
+      access: MAGDY,
+      actorLineId: null,
+      now: NOW,
+      rows: [row({ status: "pending_group" })],
+    });
+    assert.equal(
+      badge.count,
+      1,
+      "3: 'AI-0008' on the slot and 'ai-0008' in the session are one person, line or no line",
+    );
+  }
+
+  // ── 4. The CEO step is ROLE-checked, and only for the CEO ───────────────────
+  {
+    const rows = [row({ approvers: group({ mm: "approve", nsm: "approve" }), status: "pending_ceo" })];
+    assert.equal(
+      summarizeMarketAwarenessDecisionBadge({ access: CEO, now: NOW, rows }).count,
+      1,
+      "4: the CEO owes the CEO step",
     );
     assert.equal(
       summarizeMarketAwarenessDecisionBadge({ access: HOSSAM, now: NOW, rows }).count,
       0,
-      "1: another manager of the same rank owes nothing — the step is identity-checked",
-    );
-  }
-
-  // ── 2. HR ids are mixed-case, and the badge must survive it ─────────────────
-  // `manager_hr_id` carries the employee master's real casing while the session id is lower-cased.
-  // A raw comparison here would return 0 for every activity — a badge silent in exactly the state
-  // it exists to announce, and silence is indistinguishable from "nothing is waiting".
-  {
-    const badge = summarizeMarketAwarenessDecisionBadge({
-      access: RASHA,
-      now: NOW,
-      rows: [row({ managerHrId: "A-8", status: "pending_manager" })],
-    });
-    assert.equal(badge.count, 1, "2: 'A-8' on the row and 'a-8' in the session are one person");
-  }
-
-  // ── 3. The CEO step is ROLE-checked, and only for the CEO ───────────────────
-  {
-    const rows = [row({ status: "pending_ceo" })];
-    assert.equal(
-      summarizeMarketAwarenessDecisionBadge({ access: CEO, now: NOW, rows }).count,
-      1,
-      "3: the CEO owes the CEO step",
-    );
-    assert.equal(
-      summarizeMarketAwarenessDecisionBadge({ access: RASHA, now: NOW, rows }).count,
-      0,
-      "3: the manager who already approved must not keep counting it — her step is done",
+      "4: the group who already approved must not keep counting it — their step is done",
     );
     assert.equal(
       summarizeMarketAwarenessDecisionBadge({ access: SUPER_ADMIN, now: NOW, rows }).count,
       1,
-      "3: Super Admin can act on any step",
+      "4: Super Admin can act on any step",
     );
   }
 
-  // ── 4. `returned` is in the open queue and belongs to NOBODY's badge ────────
-  // The inbox's open view deliberately includes `returned` so the requester can see it come back.
-  // It has no current step, so it is the requester's to act on — counting it would put a permanent
-  // number on an approver's link for work that is not theirs and that they cannot clear.
+  // ── 5. `returned` and `on_hold` are in the open queue and belong to NOBODY ──
+  // The open view deliberately includes both so a request cannot vanish from every list. Neither has
+  // a current step: a returned one is the requester's, and a FROZEN one is waiting on nobody until
+  // it is released. Counting either would put a number on an approver's link for work he cannot do.
   {
-    const rows = [row({ status: "returned" }), row({ managerHrId: null, status: "returned" })];
+    const rows = [row({ status: "returned" }), row({ status: "on_hold" })];
     const audience = [
-      ["Rasha", RASHA],
-      ["the CEO", CEO],
-      ["Super Admin", SUPER_ADMIN],
+      ["the Marketing Manager", HOSSAM, null],
+      ["the NSM", MAGDY, 1],
+      ["the CEO", CEO, null],
+      ["Super Admin", SUPER_ADMIN, null],
     ] as const;
-    for (const [who, access] of audience) {
+    for (const [who, access, actorLineId] of audience) {
       assert.equal(
-        summarizeMarketAwarenessDecisionBadge({ access, now: NOW, rows }).count,
+        summarizeMarketAwarenessDecisionBadge({ access, actorLineId, now: NOW, rows }).count,
         0,
-        `4: a returned activity is the requester's, never ${who}'s`,
+        `5: a returned or held activity is never ${who}'s to decide`,
       );
     }
   }
 
-  // ── 5. A row with no manager on it cannot be claimed by identity ────────────
-  {
-    const badge = summarizeMarketAwarenessDecisionBadge({
-      access: RASHA,
-      now: NOW,
-      rows: [row({ managerHrId: null, status: "pending_manager" })],
-    });
-    assert.equal(badge.count, 0, "5: a null manager matches nobody — never everybody");
-  }
-
-  // ── 6. Overdue graduates on the awareness SLA ───────────────────────────────
-  {
-    const inside = summarizeMarketAwarenessDecisionBadge({
-      access: RASHA,
-      now: NOW,
-      rows: [row({ openedAt: TWO_DAYS_AGO, status: "pending_manager" })],
-    });
-    assert.equal(inside.count, 1, "6: two days waiting still counts");
-    assert.equal(inside.overdue, false, "6: two days waiting against a 3-day SLA is not overdue");
-
-    const breached = summarizeMarketAwarenessDecisionBadge({
-      access: RASHA,
-      now: NOW,
-      rows: [row({ openedAt: THREE_DAYS_AGO, status: "pending_manager" })],
-    });
-    assert.equal(breached.overdue, true, "6: three days waiting breaches the 3-day SLA");
-  }
-
-  // ── 7. Overdue is ANY of them, and a clock that cannot be read is never late ─
-  {
-    const mixed = summarizeMarketAwarenessDecisionBadge({
-      access: RASHA,
-      now: NOW,
-      rows: [
-        row({ openedAt: TWO_DAYS_AGO, status: "pending_manager" }),
-        row({ openedAt: THREE_DAYS_AGO, status: "pending_manager" }),
-      ],
-    });
-    assert.equal(mixed.count, 2, "7: both count");
-    assert.equal(mixed.overdue, true, "7: one breach is enough to escalate the badge");
-
-    assert.equal(isDecisionOverdue(null, Date.parse(NOW)), false, "7: no clock is not a late clock");
-    assert.equal(
-      isDecisionOverdue("not-a-date", Date.parse(NOW)),
-      false,
-      "7: an unparseable clock is not a late clock",
-    );
-    assert.equal(
-      isDecisionOverdue("2026-09-09T12:00:00.000Z", Date.parse(NOW)),
-      false,
-      "7: a clock in the future is not a late clock — skew must not paint the badge red",
-    );
-  }
-
-  // ── 8. An overdue row somebody else owes never colours YOUR badge ───────────
-  // The overdue flag is computed AFTER the ownership filter, never over the raw queue.
+  // ── 6. A slot with an empty seat cannot be claimed by identity ──────────────
   {
     const badge = summarizeMarketAwarenessDecisionBadge({
       access: HOSSAM,
       now: NOW,
-      rows: [row({ managerHrId: "A-8", openedAt: THREE_DAYS_AGO, status: "pending_manager" })],
+      rows: [
+        row({
+          approvers: [{ approverRole: "nsm", lineId: 1, assignedHrId: null, decision: null }],
+          status: "pending_group",
+        }),
+      ],
+    });
+    assert.equal(badge.count, 0, "6: an empty seat matches nobody — never everybody");
+  }
+
+  // ── 7. Overdue graduates on the awareness SLA ───────────────────────────────
+  {
+    const inside = summarizeMarketAwarenessDecisionBadge({
+      access: HOSSAM,
+      now: NOW,
+      rows: [row({ openedAt: TWO_DAYS_AGO, status: "pending_group" })],
+    });
+    assert.equal(inside.count, 1, "7: two days waiting still counts");
+    assert.equal(inside.overdue, false, "7: two days waiting against a 3-day SLA is not overdue");
+
+    const breached = summarizeMarketAwarenessDecisionBadge({
+      access: HOSSAM,
+      now: NOW,
+      rows: [row({ openedAt: THREE_DAYS_AGO, status: "pending_group" })],
+    });
+    assert.equal(breached.overdue, true, "7: three days waiting breaches the 3-day SLA");
+  }
+
+  // ── 8. Overdue is ANY of them, and a clock that cannot be read is never late ─
+  {
+    const mixed = summarizeMarketAwarenessDecisionBadge({
+      access: HOSSAM,
+      now: NOW,
+      rows: [
+        row({ openedAt: TWO_DAYS_AGO, status: "pending_group" }),
+        row({ openedAt: THREE_DAYS_AGO, status: "pending_group" }),
+      ],
+    });
+    assert.equal(mixed.count, 2, "8: both count");
+    assert.equal(mixed.overdue, true, "8: one breach is enough to escalate the badge");
+
+    assert.equal(isDecisionOverdue(null, Date.parse(NOW)), false, "8: no clock is not a late clock");
+    assert.equal(
+      isDecisionOverdue("not-a-date", Date.parse(NOW)),
+      false,
+      "8: an unparseable clock is not a late clock",
+    );
+    assert.equal(
+      isDecisionOverdue("2026-09-09T12:00:00.000Z", Date.parse(NOW)),
+      false,
+      "8: a clock in the future is not a late clock — skew must not paint the badge red",
+    );
+  }
+
+  // ── 8b. An overdue row somebody else owes never colours YOUR badge ──────────
+  // The overdue flag is computed AFTER the ownership filter, never over the raw queue.
+  {
+    const badge = summarizeMarketAwarenessDecisionBadge({
+      access: ALI,
+      actorLineId: 2,
+      now: NOW,
+      rows: [row({ openedAt: THREE_DAYS_AGO, status: "pending_group" })],
     });
     assert.deepEqual(
       badge,
       { count: 0, overdue: false },
-      "8: a stranger's breach must not light up this person's link",
+      "8b: another line's breach must not light up this person's link",
     );
   }
 
@@ -196,8 +259,13 @@ export function runMarketAwarenessApprovalInboxNavBadgeTests() {
     assert.ok(badgeFn.length > 0, "9: getMarketAwarenessDecisionBadge must exist in the service");
     assert.match(
       badgeFn,
-      /\.select\("status, manager_hr_id, updated_at"\)/,
-      "9: the badge reads three columns — a select-star here is a hydrate by another name",
+      /market_awareness_activity_approvers\(id, approver_role, line_id, assigned_hr_id, decision\)/,
+      "9: the badge reads a named column list with the approvers EMBEDDED — a select-star here is " +
+        "a hydrate by another name, and a second query for the slots doubles a 30-second poll",
+    );
+    assert.ok(
+      !/\.select\("\*"\)/.test(badgeFn),
+      "9: the badge must never select-star",
     );
     assert.match(
       badgeFn,
@@ -225,9 +293,10 @@ export function runMarketAwarenessApprovalInboxNavBadgeTests() {
     );
     assert.match(
       badgeFn,
-      /openedAt: row\.updated_at/,
-      "9: the wait is measured from updated_at — the moment the CURRENT step opened. From " +
-        "submitted_at the CEO would inherit a clock the manager had already half spent",
+      /openedAt: row\.step_opened_at \?\? row\.updated_at/,
+      "9: the wait is measured from step_opened_at — the moment the CURRENT step opened. " +
+        "`updated_at` is stamped by a trigger on EVERY write, so under a parallel group one " +
+        "member approving would restart the clock for everyone still to answer",
     );
   }
 
@@ -236,8 +305,9 @@ export function runMarketAwarenessApprovalInboxNavBadgeTests() {
     const badgeRule = readFileSync("src/lib/market-awareness/badge.ts", "utf8");
     assert.match(
       badgeRule,
-      /canDecideStep\(\{ access: input\.access, managerHrId: row\.managerHrId, step \}\)/,
-      "10: ownership is decided by the same canDecideStep the decision route enforces",
+      /canDecideStep\(\{[\s\S]{0,260}approvers: row\.approvers[\s\S]{0,260}\}\)/,
+      "10: ownership is decided by the same canDecideStep the decision route enforces, over the " +
+        "same slots — a badge built from its own predicate shows a number its inbox cannot explain",
     );
     assert.match(
       badgeRule,
