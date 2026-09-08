@@ -19,6 +19,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { checkPlannedDate } from "@/lib/double-visit-analytics/date-check";
 import { summarizeRosterCoverage, type DvCoverageSummary } from "@/lib/double-visit-analytics/roster-summary";
 import type { DoubleVisitReportRow, DoubleVisitRosterEntry } from "@/lib/double-visit-analytics/types";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 // Per-rep "planned date" tracker: pick the date you chose to visit a rep, see whether CRM
 // confirmed a DV on that exact day using the roster already loaded — no separate fetch. Client-only
@@ -56,7 +57,7 @@ function usePlannedDates(storageKey: string): PlannedDates {
 
 function formatDate(value: string | null) {
   if (!value) return "—";
-  return new Intl.DateTimeFormat("en-GB", {
+  return stableEnGbFormatter({
     day: "2-digit",
     month: "short",
     year: "numeric",

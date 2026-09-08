@@ -25,6 +25,7 @@ import type {
   AttendanceDeviceUserMappingRow,
 } from "@/lib/attendance/device-user-mapping";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 
 // Called directly from the BROWSER, not proxied through the Next.js server - the server only
@@ -92,7 +93,7 @@ async function fetchAgentHealth(): Promise<AgentHealth> {
 
 function formatDate(value: string | null) {
   if (!value) return "No punches seen";
-  return new Intl.DateTimeFormat("en-GB", {
+  return stableEnGbFormatter({
     dateStyle: "medium",
     timeStyle: "short",
     timeZone: PHOENIX_BUSINESS_TIME_ZONE,

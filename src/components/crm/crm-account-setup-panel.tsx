@@ -10,6 +10,7 @@ import {
   type CrmAccountSetupSubject,
 } from "@/lib/crm/account-setup-messages";
 import type { CrmAccountSetupTaskRow } from "@/lib/crm/account-setup";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 /**
  * New Hire CRM Setup — the screen the "an employee was added" notice sends you to.
@@ -28,7 +29,7 @@ function formatOpenedAt(value: string): string {
   // An INSTANT we stamped (opened_at, timestamptz), so it renders in Africa/Cairo — the owner's
   // standing rule. This is the opposite case from the hiring date beside it, which is a calendar
   // day and must stay UTC; see account-setup-messages.ts.
-  return new Intl.DateTimeFormat("en-GB", {
+  return stableEnGbFormatter({
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",

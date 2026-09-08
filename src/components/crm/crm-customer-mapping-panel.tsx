@@ -11,6 +11,7 @@ import {
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
 import type { CrmCustomerResolutionAction, UnmappedCrmCustomerRow } from "@/lib/crm/customer-brick";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 type ImportSummary = {
   blockedRows: Array<{ reason: string; row: number }>;
@@ -90,7 +91,7 @@ const RESOLUTION_OPTIONS: Array<{ label: string; value: CrmCustomerResolutionAct
 // stay: it is what stops the calendar day being shifted by a zone offset. Not an instant — do not "fix"
 // this one to Cairo.
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+  return formatStableEnGb(new Date(value), { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 function ResolutionCell({

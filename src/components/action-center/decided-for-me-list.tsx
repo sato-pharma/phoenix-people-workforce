@@ -5,6 +5,7 @@ import { AlertTriangle, UserCheck } from "lucide-react";
 import { adminPanelClassName } from "@/components/admin/admin-design-system";
 import { HISTORY_MODULE_LABELS } from "@/components/action-center/types";
 import type { DecidedForMeItem } from "@/lib/action-center/decided-for-me";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 // Square corners throughout — house rule, no rounded or semi-round corners anywhere. The
 // sibling HistoricalApprovalsList still carries `rounded-full` pills from before that rule;
@@ -40,7 +41,7 @@ type Props = {
 function formatDecidedAt(iso: string): string {
   if (!iso) return "—";
   try {
-    return new Intl.DateTimeFormat("en-GB", {
+    return stableEnGbFormatter({
       day: "numeric",
       month: "short",
       year: "numeric",

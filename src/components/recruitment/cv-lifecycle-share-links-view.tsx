@@ -7,6 +7,7 @@ import {
   CV_LIFECYCLE_LINK_EXPIRY_WARNING_DAYS,
 } from "@/lib/recruitment/cv-lifecycle-link-expiry";
 import type { CvLifecycleShareLink } from "@/lib/recruitment/cv-lifecycle-share-links";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 type Props = { productionUrl: string };
 
@@ -396,7 +397,7 @@ function cairoDate(iso: string | null): string {
   if (!iso) return "—";
   const at = new Date(iso);
   if (!Number.isFinite(at.getTime())) return "—";
-  return new Intl.DateTimeFormat("en-GB", {
+  return stableEnGbFormatter({
     day: "2-digit",
     month: "short",
     timeZone: "Africa/Cairo",

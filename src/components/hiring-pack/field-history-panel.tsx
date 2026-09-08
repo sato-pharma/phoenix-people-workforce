@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import type { DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import type { FieldHistoryEntry } from "@/lib/hiring-pack/field-layout-store";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 export type FieldHistoryPanelProps = {
   /** The states themselves, or null while they are still being read. */
@@ -39,7 +40,7 @@ export type FieldHistoryPanelProps = {
 function stamp(iso: string): string {
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return iso;
-  return parsed.toLocaleString("en-GB", {
+  return formatStableEnGb(parsed, {
     day: "2-digit",
     hour: "2-digit",
     hour12: false,

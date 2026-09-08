@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { MessageSquare } from "lucide-react";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 /**
  * Market Awareness — the conversation on an activity, shared by both screens that need it.
@@ -34,7 +35,7 @@ function cairoStamp(value: string | null | undefined): string {
   if (!value) return "Not set";
   const parsed = new Date(String(value));
   if (Number.isNaN(parsed.getTime())) return String(value);
-  return new Intl.DateTimeFormat("en-GB", {
+  return stableEnGbFormatter({
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",

@@ -63,6 +63,7 @@ import type {
   MarkableDeviceStatus,
   ReturnCondition,
 } from "@/lib/devices/types";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 type StatusFilter = "leavers" | "assigned" | "in_stock" | "missing" | "all";
 
@@ -111,7 +112,7 @@ function formatDate(value: string | null) {
   if (!value) return "—";
   const parsed = new Date(`${value.slice(0, 10)}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return "—";
-  return parsed.toLocaleDateString("en-GB", {
+  return formatStableEnGb(parsed, {
     day: "2-digit",
     month: "short",
     timeZone: "UTC",

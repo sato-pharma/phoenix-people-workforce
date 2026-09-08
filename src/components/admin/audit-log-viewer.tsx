@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { AuditLogFilter, AuditLogPage } from "@/lib/admin/audit";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 
 const ENTITY_TYPES = [
@@ -22,7 +23,7 @@ const ENTITY_TYPES = [
 
 function formatDate(iso: string) {
   try {
-    return new Date(iso).toLocaleString("en-GB", {
+    return formatStableEnGb(new Date(iso), {
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",

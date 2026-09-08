@@ -50,6 +50,7 @@ import type {
   RetentionThemeInput,
   RetentionThemeSentiment,
 } from "@/lib/retention/types";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 type KindFilter = "all" | RetentionConversationKind;
 
@@ -66,7 +67,7 @@ function formatDate(value: string | null): string {
   if (!value) return "Not set";
   const parsed = Date.parse(`${value.slice(0, 10)}T00:00:00Z`);
   if (!Number.isFinite(parsed)) return value;
-  return new Date(parsed).toLocaleDateString("en-GB", {
+  return formatStableEnGb(new Date(parsed), {
     day: "2-digit",
     month: "short",
     year: "numeric",

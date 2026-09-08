@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 
 import { Conversation } from "@/components/market-awareness/market-awareness-conversation";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 /**
  * Market Awareness — one page, two tabs, exactly as the owner described it.
@@ -167,7 +168,7 @@ function cairoDate(value: string | null | undefined): string {
   const raw = String(value);
   const parsed = new Date(raw.length <= 10 ? `${raw}T12:00:00Z` : raw);
   if (Number.isNaN(parsed.getTime())) return raw;
-  return new Intl.DateTimeFormat("en-GB", {
+  return stableEnGbFormatter({
     day: "2-digit",
     month: "short",
     timeZone: "Africa/Cairo",
@@ -179,14 +180,14 @@ function monthLabel(period: string): string {
   const [year, month] = period.split("-");
   const parsed = new Date(Number(year), Number(month) - 1, 1);
   if (Number.isNaN(parsed.getTime())) return period;
-  return new Intl.DateTimeFormat("en-GB", { month: "short" }).format(parsed);
+  return stableEnGbFormatter({ month: "short" }).format(parsed);
 }
 
 function monthYearLabel(period: string): string {
   const [year, month] = period.split("-");
   const parsed = new Date(Number(year), Number(month) - 1, 1);
   if (Number.isNaN(parsed.getTime())) return period;
-  return new Intl.DateTimeFormat("en-GB", { month: "short", year: "numeric" }).format(parsed);
+  return stableEnGbFormatter({ month: "short", year: "numeric" }).format(parsed);
 }
 
 function activityName(activity: Activity): string {
