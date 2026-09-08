@@ -135,21 +135,25 @@ jobs:
   # branch. That is what workflow_dispatch is for here, and it is the escape hatch that makes the
   # per-PR cost unnecessary rather than merely unaffordable.
   #
-  # WARNING-ONLY FOR NOW — and unlike the usual version of this note, the backlog IS measured.
-  # First run on the restore branch, 2026-09-08: 361 rules over 4,684 files, 4m27s, 5 findings.
-  # Cleared since, same day:
-  #   - 1 × gcm-no-tag-length, src/lib/security/secret-box.ts — fixed (#3494)
-  #   - 2 × dynamic-urllib — the file was a dead GCP-era script and was deleted outright
-  # REMAINING: 2 × react-insecure-request in
-  # src/components/attendance/device-user-mapping-manager.tsx, which talks to a fingerprint device
-  # over plain HTTP on the LAN. Those devices have no TLS, so the likely correct answer is a scoped
-  # suppression carrying that reason, NOT a code change — confirm before "fixing" them.
+  # THIS JOB NOW FAILS ON ANY FINDING. Flipped 2026-09-08 at the owner's instruction, once the
+  # backlog reached zero: restored with 5 findings that morning, all cleared the same day — 1 ×
+  # gcm-no-tag-length fixed (#3494), 2 × dynamic-urllib deleted with a dead GCP-era script (#3497),
+  # 2 × react-insecure-request suppressed at the line (#3501, loopback). Zero was then confirmed on
+  # `main` itself, not merely on a branch: 361 rules over 4,711 files, 0 findings.
   #
-  # Two left is close enough that gating is genuinely reachable — settle those, then flip this job
-  # to fail on findings and add it as a required check. The intended path, not a vague someday.
-  # It stays warning-only until they are cleared, because secret-scan could gate from day one only
-  # by starting from a proven-clean tree, and an alarm that is red on arrival is one everybody
-  # learns to scroll past. Re-measure before flipping: this count is from one commit, not a law.
+  # Zero first, gate second, and that ORDER is the whole reason this can be a real check. secret-scan
+  # above could block from day one only because its tree was proven clean first; a gate that is red
+  # on arrival is one everybody learns to scroll past, which is worse than no gate at all.
+  #
+  # 🔴 IT IS DELIBERATELY *NOT* A REQUIRED CHECK, AND ADDING IT WOULD BE WORSE THAN LEAVING IT OFF.
+  # This job does not run on pull_request (see the cost note above), so on a PR it reports SKIPPED —
+  # and GitHub counts a skipped required check as PASSING. Listed in branch protection it would
+  # therefore sit there looking armed while being incapable of blocking anything, on a PR or
+  # anywhere else, since protection gates merges and never the post-merge push to `main`. The next
+  # person to ask "is SAST gating our PRs?" would read the settings page and get the wrong answer.
+  # A real PR gate means removing the `if:` below and paying ~60 Actions minutes a day; that was
+  # weighed and declined. What this failure DOES buy is a red daily run over `main` — a regression
+  # surfaces within a day, with a notification, instead of sitting in a summary nobody opens.
   sast-scan:
     # Never on a PR. github.event_name is `schedule` or `workflow_dispatch` here.
     if: github.event_name != 'pull_request'
@@ -186,8 +190,20 @@ jobs:
             echo "### SAST scan (Semgrep v${SEMGREP_VERSION})"
             echo "Findings: **${COUNT}**"
           } >> "$GITHUB_STEP_SUMMARY"
+
+          # A report carrying no `runs` at all is not a clean scan, it is a scan that did not
+          # happen — a bad --config, a resolver failure, an empty checkout. COUNT would be 0 and
+          # this job would go green on it. Same reasoning as the gitleaks SCAN_STATUS guard above:
+          # never report "clean" for a check that never actually ran.
+          RUNS=$(jq '[.runs[]?] | length' semgrep-report.sarif)
+          if [ "$RUNS" -lt 1 ]; then
+            echo "::error::Semgrep produced a report with no runs — the scan did not execute correctly. Not reporting this as clean."
+            exit 1
+          fi
+
           if [ "$COUNT" -gt 0 ]; then
-            echo "::warning::Semgrep found ${COUNT} potential issue(s) — see the semgrep-report artifact"
+            echo "::error::Semgrep found ${COUNT} potential issue(s) — see the semgrep-report artifact for rule, file and line. Fix it, or suppress it AT THE LINE with a nosemgrep comment carrying the reason (see device-user-mapping-manager.tsx for the shape). Do not silence the job."
+            exit 1
           fi
 
       - name: Upload Semgrep report
