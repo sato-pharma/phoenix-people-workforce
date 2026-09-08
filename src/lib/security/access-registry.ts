@@ -934,10 +934,14 @@ export const accessRegistry = [
   //
   // The audit is declared on the three writes because these rows are what the company said to a
   // member of the public, and on the send because it records the message text that was prepared.
-  sessionApi({ methods: readOnly, pattern: "/api/recruitment/whatsapp-templates", permission: { resource: "recruitment", action: "update" } }),
+  // TWO permissions, because this route has two targets. The template list and a CANDIDATE context
+  // are recruitment:update; naming an employeeHrId additionally asserts employees:read, because that
+  // branch returns a staff member's name, job title and MOBILE NUMBER. Declaring only the first
+  // would describe a gate narrower than the code enforces.
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/whatsapp-templates", permission: [{ resource: "recruitment", action: "update" }, { resource: "employees", action: "read" }] }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/whatsapp-templates", permission: { resource: "admin", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH", "DELETE"], pattern: "/api/recruitment/whatsapp-templates/*", permission: { resource: "admin", action: "update" }, csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/whatsapp-templates/send", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/whatsapp-templates/send", permission: [{ resource: "recruitment", action: "update" }, { resource: "employees", action: "read" }], csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/reports/vacancies", permission: { resource: "vacancies", action: "read" } }),
   // Listed AHEAD of the blanket /api/reports/** below, which would otherwise swallow it. The
   // permission is identical — this entry exists to DECLARE the audit. It is the one organogram
