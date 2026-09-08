@@ -8,7 +8,10 @@ import {
   executeDeviceImport,
   parseDeviceImportFile,
 } from "@/lib/devices/bulk-import";
-import { recordDeviceImportAttempt } from "@/lib/devices/import-attempt-log";
+import {
+  recordDeviceImportAttempt,
+  recordDeviceImportGateRejection,
+} from "@/lib/devices/import-attempt-log";
 import { deviceErrorMessage, getDeviceRegisterData } from "@/lib/devices/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
@@ -41,7 +44,12 @@ export async function POST(request: Request) {
 
   try {
     const csrfError = assertSameOriginMutation(request);
-    if (csrfError) return csrfError;
+    if (csrfError) {
+      // Above the permission gate, so this is the one log that has to defend itself - see
+      // `recordDeviceImportGateRejection`. A guest writes nothing and a real caller is rate-limited.
+      await recordDeviceImportGateRejection(request, "import", "same_origin_rejected");
+      return csrfError;
+    }
 
     const access = await resolveAccessContext(request);
     await assertPermission(access, "company_devices", "import");
@@ -138,6 +146,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ ...(await getDeviceRegisterData()), importResult: result });
   } catch (error) {
     if (isForbiddenError(error)) {
+      // The gate refused an AUTHENTICATED caller. Previously indistinguishable from a press that
+      // never arrived, which is exactly the ambiguity this log exists to remove.
+      await recordDeviceImportGateRejection(request, "import", "forbidden");
       return NextResponse.json(
         { error: "forbidden", message: "You do not have access to import devices." },
         { status: 403 },

@@ -3,6 +3,9 @@ import { strict as assert } from "node:assert";
 import {
   buildDeviceImportAuditInput,
   describeDeviceImportAttempt,
+  gateRejectionKey,
+  resetGateRejectionLimiterForTests,
+  shouldLogGateRejection,
   type DeviceImportAttempt,
 } from "../src/lib/devices/import-attempt-log.ts";
 
@@ -178,6 +181,96 @@ function testAnUnnamedFileStillReadsAsEnglish(): void {
   );
 }
 
+/**
+ * A request refused by the gate is a THIRD thing, and it needs its own sentence.
+ *
+ * The reader's next question differs: not "what is wrong with my sheet" but "why was I not allowed
+ * to try". Reusing the file-refusal wording would send somebody to inspect a spreadsheet that was
+ * never opened.
+ */
+function testAGateRejectionSaysNoFileWasEverRead(): void {
+  const summary = describeDeviceImportAttempt({
+    ...base,
+    rowsRead: null,
+    fileName: null,
+    outcome: "forbidden",
+  });
+
+  assert.ok(
+    summary.includes("blocked before it started"),
+    "a gate rejection is described as a block, not as a file that failed to import",
+  );
+  assert.ok(summary.includes("the permission check"), "and it names which gate refused it");
+  assert.ok(
+    summary.includes("No file was read"),
+    "and says no file was read - otherwise it reads as a spreadsheet problem and sends the reader to the wrong place",
+  );
+  assert.ok(
+    !summary.includes("row(s) read"),
+    "a block reports no row counts at all, because no row was ever looked at",
+  );
+
+  const sameOrigin = describeDeviceImportAttempt({ ...base, outcome: "same_origin_rejected" });
+  assert.ok(
+    sameOrigin.includes("the same-origin check"),
+    "the other gate is named distinctly - the two have completely different causes",
+  );
+}
+
+/**
+ * THE RATE LIMIT IS LOAD-BEARING, not tidiness. This row is written from a path any caller can
+ * reach by POSTing at the route, so without a limit the diagnostic becomes a way of filling
+ * `audit_logs` - burying the evidence it was added to provide.
+ */
+function testTheRejectionLogCannotBeUsedToFloodTheAuditTable(): void {
+  resetGateRejectionLimiterForTests();
+  const start = 1_000_000;
+
+  assert.equal(
+    shouldLogGateRejection("B-10:import:forbidden", start),
+    true,
+    "the first rejection from a caller is always recorded",
+  );
+  assert.equal(
+    shouldLogGateRejection("B-10:import:forbidden", start + 1_000),
+    false,
+    "a second one a second later is refused - one press per second is a script, not a person",
+  );
+  assert.equal(
+    shouldLogGateRejection("B-10:import:forbidden", start + 31_000),
+    true,
+    "and it opens again after the window, so a real person pressing repeatedly still leaves a visible pattern",
+  );
+
+  assert.equal(
+    shouldLogGateRejection("B-10:check:forbidden", start + 1_000),
+    true,
+    "a different press is a different key - rate-limiting one must not silence the other",
+  );
+  assert.equal(
+    shouldLogGateRejection("B-11:import:forbidden", start + 1_000),
+    true,
+    "and so is a different person, or one caller could mute everybody else's rows",
+  );
+
+  // The key the route actually passes. Asserted here because keying on the outcome alone would
+  // still LOOK like a working rate limiter while letting one refused caller silence everyone.
+  assert.notEqual(
+    gateRejectionKey("B-10", "import", "forbidden"),
+    gateRejectionKey("B-11", "import", "forbidden"),
+    "two people refused the same way must not share a rate-limit bucket",
+  );
+  assert.notEqual(
+    gateRejectionKey("B-10", "import", "forbidden"),
+    gateRejectionKey("B-10", "check", "forbidden"),
+    "and neither must the two presses",
+  );
+  assert.ok(
+    gateRejectionKey("B-10", "import", "forbidden").includes("B-10"),
+    "the caller is part of the key, not merely alongside it",
+  );
+}
+
 export async function runDeviceImportAttemptLogTests(): Promise<void> {
   testASuccessfulImportSaysWhatLanded();
   testAnImportThatWroteNothingNeverReadsLikeASuccess();
@@ -185,4 +278,6 @@ export async function runDeviceImportAttemptLogTests(): Promise<void> {
   testTheCheckPressNeverClaimsAWrite();
   testTheAuditRowCarriesTheAttemptAsData();
   testAnUnnamedFileStillReadsAsEnglish();
+  testAGateRejectionSaysNoFileWasEverRead();
+  testTheRejectionLogCannotBeUsedToFloodTheAuditTable();
 }

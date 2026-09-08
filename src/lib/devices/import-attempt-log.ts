@@ -19,6 +19,8 @@
  * table, not a way of learning anything.
  */
 import { writeAuditLog } from "@/lib/admin/audit";
+import { resolveAccessContext } from "@/lib/auth/server";
+import { hrIdForStorage } from "@/lib/hr-id";
 
 /** Which of the two presses this was. `check` writes nothing to the register; `import` does. */
 export type DeviceImportStage = "check" | "import";
@@ -48,6 +50,63 @@ const count = (value: number | null | undefined): string =>
   typeof value === "number" ? value.toLocaleString("en-US") : "?";
 
 /**
+ * Outcomes that happen ABOVE the permission gate, so no file was ever read.
+ *
+ * They are the blind spot the first version of this log deliberately left: everything below the
+ * gate is recorded, and a request refused by the gate itself produced the same silence as a request
+ * that never arrived. Closing it is the point of `recordDeviceImportGateRejection` below.
+ */
+const GATE_OUTCOMES = new Set(["forbidden", "same_origin_rejected"]);
+
+/**
+ * How often one caller may add a gate-rejection row.
+ *
+ * A rejection is logged from a path any caller can reach by POSTing at the route, so without a
+ * limit the diagnostic becomes a way of filling `audit_logs`. Thirty seconds per caller per outcome
+ * keeps a real person's repeated presses visible - they do not press twice a second - while making
+ * a flood pointless.
+ */
+const REJECTION_MIN_INTERVAL_MS = 30_000;
+const REJECTION_KEYS_MAX = 500;
+const rejectionSeenAt = new Map<string, number>();
+
+/**
+ * Pure, so the limiter is testable without a clock or a database. Returns whether this key may
+ * write now, and records the decision when it may.
+ */
+export function shouldLogGateRejection(key: string, now: number): boolean {
+  const last = rejectionSeenAt.get(key);
+  if (typeof last === "number" && now - last < REJECTION_MIN_INTERVAL_MS) return false;
+
+  // Bounded: the key space is caller-controlled, so an unbounded map would be the leak the rate
+  // limit exists to prevent, one level down. Oldest first, which is also least recently useful.
+  if (rejectionSeenAt.size >= REJECTION_KEYS_MAX) {
+    const oldest = [...rejectionSeenAt.entries()].sort((a, b) => a[1] - b[1])[0];
+    if (oldest) rejectionSeenAt.delete(oldest[0]);
+  }
+  rejectionSeenAt.set(key, now);
+  return true;
+}
+
+/**
+ * The limiter's key. Extracted so the composition is testable: keying on the outcome alone would
+ * let one refused caller silence everybody else's rows, and that mistake is invisible at the call
+ * site because the limiter still "works".
+ */
+export function gateRejectionKey(
+  actor: string,
+  stage: DeviceImportStage,
+  outcome: string,
+): string {
+  return `${actor}:${stage}:${outcome}`;
+}
+
+/** Test seam: the limiter holds process-level state, and a test must not inherit another's. */
+export function resetGateRejectionLimiterForTests(): void {
+  rejectionSeenAt.clear();
+}
+
+/**
  * The sentence that appears in the audit list. Pure, so the wording is testable without a database.
  *
  * It says what was WRITTEN, never merely what was attempted — an import that refused every row must
@@ -55,6 +114,17 @@ const count = (value: number | null | undefined): string =>
  */
 export function describeDeviceImportAttempt(attempt: DeviceImportAttempt): string {
   const file = attempt.fileName ? `"${attempt.fileName}"` : "an unnamed file";
+
+  if (GATE_OUTCOMES.has(attempt.outcome)) {
+    // A gate rejection is a different sentence from a refused FILE, because the reader's next
+    // question is different: not "what is wrong with my sheet" but "why was I not allowed to try".
+    const gate =
+      attempt.outcome === "forbidden" ? "the permission check" : "the same-origin check";
+    return (
+      `Device import blocked before it started - refused by ${gate} (${attempt.outcome}). ` +
+      "No file was read and nothing reached the register."
+    );
+  }
 
   if (attempt.outcome !== "ok") {
     return attempt.stage === "check"
@@ -104,4 +174,45 @@ export function buildDeviceImportAuditInput(attempt: DeviceImportAttempt) {
 
 export async function recordDeviceImportAttempt(attempt: DeviceImportAttempt): Promise<void> {
   await writeAuditLog(buildDeviceImportAuditInput(attempt));
+}
+
+/**
+ * Records a request that never got past the gate.
+ *
+ * TWO GUARDS, and they are the whole reason this is a separate function rather than another call to
+ * the one above:
+ *
+ * 1. AN UNAUTHENTICATED CALLER WRITES NOTHING. `resolveAccessContext` answers with a guest context
+ *    rather than throwing, so "no session" is a value here, not an error - and a guest is dropped
+ *    before any write. Filling a table is not evidence.
+ * 2. A REAL CALLER IS RATE-LIMITED per outcome. A person pressing a button that keeps being refused
+ *    produces one row every thirty seconds, which is enough to see the pattern and not enough to
+ *    bury the rest of the log.
+ *
+ * Failure here is swallowed on purpose: this runs on a path that is already returning an error to
+ * the caller, and a diagnostic that turns a 403 into a 500 would be worse than the gap it fills.
+ */
+export async function recordDeviceImportGateRejection(
+  request: Request,
+  stage: DeviceImportStage,
+  outcome: "forbidden" | "same_origin_rejected",
+): Promise<void> {
+  try {
+    const access = await resolveAccessContext(request);
+    if (!access || access.source === "guest") return;
+
+    const actor = hrIdForStorage(access.hrId) ?? access.loginId ?? access.role;
+    if (!shouldLogGateRejection(gateRejectionKey(actor, stage, outcome), Date.now())) return;
+
+    await recordDeviceImportAttempt({
+      stage,
+      actor,
+      fileName: null,
+      fileBytes: null,
+      rowsRead: null,
+      outcome,
+    });
+  } catch {
+    // Deliberately silent. See the note above.
+  }
 }
