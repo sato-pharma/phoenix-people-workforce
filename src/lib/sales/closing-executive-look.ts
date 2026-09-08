@@ -641,8 +641,7 @@ export async function fitNavigationBand(zip: JSZip, sheetParts: Map<string, stri
   const fitted: string[] = [];
   for (const [sheetName, part] of sheetParts) {
     const geometry = EXECUTIVE_GEOMETRY[sheetName];
-    const navHeight = geometry?.head[NAV_ROW];
-    if (!navHeight) continue;
+    if (!geometry) continue;
 
     const relsFile = zip.file(part.replace(/worksheets\/([^/]+)$/, "worksheets/_rels/$1.rels"));
     if (!relsFile) continue;
@@ -652,20 +651,30 @@ export async function fitNavigationBand(zip: JSZip, sheetParts: Map<string, stri
     const drawingFile = zip.file(`xl/${drawing}`);
     if (!drawingFile) continue;
 
-    const bottom = Math.round(navHeight * EMU_PER_POINT);
     let changed = false;
     const xml = (await drawingFile.async("string")).replace(
       /<xdr:twoCellAnchor\b[\s\S]*?<\/xdr:twoCellAnchor>/g,
       (anchor) => {
-        // 0-based, so the navigation row is index 1. Only a shape that STARTS there is a band
-        // member; the emblem starts in row 0 and must keep its own anchor exactly as it is.
+        // A BAND MEMBER IS NAMED, not located. The first version identified one by requiring it to
+        // START in row 2, which is true on most sheets and false on Area x Product, whose masthead
+        // is three rows deep -- so its buttons were never clamped and reached the warning strip
+        // exactly as before. The emblem is excluded by name for the same reason: it is placed
+        // independently and must keep its own anchor.
+        const shapeName = /<xdr:cNvPr[^>]*name="([^"]*)"/.exec(anchor)?.[1] ?? "";
+        if (!/^(Nav_|Cmd_)/.test(shapeName)) return anchor;
+
         const fromRow = Number(/<xdr:from>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/.exec(anchor)?.[1] ?? Number.NaN);
         const toRow = Number(/<xdr:to>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/.exec(anchor)?.[1] ?? Number.NaN);
-        if (fromRow !== NAV_ROW - 1 || !(toRow > fromRow)) return anchor;
+        if (!Number.isFinite(fromRow) || !(toRow > fromRow)) return anchor;
+
+        // End at the bottom of the row it starts in, whichever row that is. Heights are 1-based in
+        // the geometry table and anchors are 0-based.
+        const ownRowHeight = geometry?.head[fromRow + 1];
+        if (!ownRowHeight) return anchor;
         changed = true;
         return anchor.replace(
           /(<xdr:to>[\s\S]*?<xdr:row>)\d+(<\/xdr:row><xdr:rowOff>)\d+(<\/xdr:rowOff>)/,
-          `$1${fromRow}$2${bottom}$3`,
+          `$1${fromRow}$2${Math.round(ownRowHeight * EMU_PER_POINT)}$3`,
         );
       },
     );

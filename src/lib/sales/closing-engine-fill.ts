@@ -302,6 +302,20 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   await updateReferences(zip, fill);
   await fitRegionControls(zip, fill);
   await sizeMatrixColumns(zip, fill);
+  // AFTER the columns are final, and that ordering is the whole point. A slicer is a two-cell
+  // anchor: Excel sizes it from its two CORNERS, resolved against the column widths as they stand
+  // when the file is opened. Sizing it inside `fitRegionControls` -- one line above
+  // `sizeMatrixColumns` -- computed those corners against widths that were about to change, so the
+  // control came out narrower than its captions needed and every region button printed an
+  // ellipsis: "Ale...", "Delt...", "Upp...". Measured 653px where nine regions with a thirteen
+  // character name need about 1,035.
+  //
+  // Nothing in the finished file shows this. The columns and the corners are both perfectly
+  // reasonable; they simply were not computed against each other.
+  {
+    const regions = distinctColumn(fill.data.salesData, 0);
+    if (regions.length) await widenRegionSlicers(zip, regions);
+  }
   await sizePivotAchievementFormats(zip, fill);
   await orderPivotItems(zip, fill);
   await dropStaleLabelFormats(zip);
@@ -948,7 +962,8 @@ async function fitRegionControls(zip: JSZip, fill: ClosingEngineFill): Promise<v
   const regions = distinctColumn(fill.data.salesData, 0);
   if (!regions.length) return;
   await rebuildRegionButtons(zip, regions);
-  await widenRegionSlicers(zip, regions);
+  // `widenRegionSlicers` is NOT called here. It has to run after `sizeMatrixColumns`; see the note
+  // on the call site in `fillClosingEngine`.
 }
 
 /** A shape name has to be a plain identifier, and unique inside its drawing. */
