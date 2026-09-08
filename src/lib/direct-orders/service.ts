@@ -40,6 +40,7 @@ import { summarizeDirectOrderBasket } from "@/lib/direct-orders/basket-label";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
 import { canViewDirectOrderEvidenceAiNote } from "@/lib/direct-orders/validation-visibility";
 import { getDirectOrderPharmacyValidationForRequest } from "@/lib/direct-orders/pharmacy-validation";
+import { daysWaitingSince, pickLatestReturnPerRequest } from "@/lib/direct-orders/returned-ageing";
 import {
   canonicalPharmacyMap,
   DEDUPE_OPEN_STATUSES,
@@ -2525,6 +2526,106 @@ function assertHeldDeskAccess(access: AccessContext): void {
   if (!(access.scope === "system" || access.role === "Super Admin")) {
     throw new Error("Forbidden: the Held Desk is System Admin only.");
   }
+}
+
+/** One returned order, with its age and the comment the rep still has to answer. */
+export type ReturnedDirectOrderAgeingRow = {
+  id: string;
+  requesterHrId: string;
+  requesterName: string;
+  productName: string;
+  qty: number;
+  salesValue: number;
+  pharmacyId: string;
+  pharmacyName: string;
+  phoenixPharmacyCode: string;
+  /** Codes on the venue — several returns turn on the venue being on the wrong distributor. */
+  distributorCodes: string[];
+  /** The last `returned` event, falling back to submission when none was recorded. */
+  returnedAt: string | null;
+  /** Whole days since it was returned. `returned` has no expiry clock, so this only grows. */
+  daysWaiting: number;
+  /** The approver's own words. NEVER truncated — it IS the question the rep must answer. */
+  returnReason: string | null;
+};
+
+/**
+ * Every order sitting in `returned`, oldest first.
+ *
+ * WHY THIS DESK EXISTS. `returned` is the one queue with no clock and no chaser. `held` expires
+ * after 14 days and has a notice button; `pending_approval` sits in an approver's inbox. A
+ * returned order goes back to the rep and then nothing happens to it again — it is on nobody's
+ * screen, so it ages in silence. Measured on production 2026-09-08: 13 orders, 105,939 EGP, the
+ * oldest 27 days, and EVERY ONE had zero activity since the day it was returned.
+ *
+ * NO EXPIRY IS ADDED HERE, deliberately. Killing an order the rep may never have seen would
+ * destroy real work to tidy a queue; the answer to "nobody looked" is to make it visible.
+ *
+ * The reason comes from the last `returned` EVENT rather than a column, because that is where the
+ * approver actually types it, and it is the only text that tells the rep what to change.
+ */
+export async function listReturnedDirectOrdersAgeing(
+  access: AccessContext,
+): Promise<ReturnedDirectOrderAgeingRow[]> {
+  await assertPermission(access, "direct_orders", "read");
+  assertHeldDeskAccess(access);
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("direct_order_requests")
+    .select("*")
+    .eq("status", "returned")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  const requests = ((data ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
+  if (requests.length === 0) return [];
+
+  const [pharmacies, resolveName, eventResult] = await Promise.all([
+    loadPharmaciesByIds(requests.map((request) => request.pharmacyId)),
+    nameLookup(),
+    // Newest first, so the FIRST row seen per request is its latest return — an order can be
+    // returned, corrected and returned again, and only the last comment is still open.
+    supabase
+      .from("direct_order_events")
+      .select("request_id, created_at, message, event_type")
+      .in("event_type", ["returned", "return"])
+      .in("request_id", requests.map((request) => request.id))
+      .order("created_at", { ascending: false }),
+  ]);
+  if (eventResult.error) throw eventResult.error;
+
+  const lastReturn = pickLatestReturnPerRequest(
+    ((eventResult.data ?? []) as Array<{ request_id: string; created_at: string; message: string | null }>).map(
+      (row) => ({ requestId: row.request_id, createdAt: row.created_at, message: row.message }),
+    ),
+  );
+
+  const now = new Date();
+
+  return requests.map((request) => {
+    const pharmacy = pharmacies.get(request.pharmacyId) ?? null;
+    const event = lastReturn.get(request.id) ?? null;
+    // Fall back to submission: a row with no `returned` event is still genuinely waiting, and
+    // dropping it would hide exactly the case most likely to be a defect.
+    const returnedAt = event?.createdAt ?? request.createdAt ?? null;
+    const daysWaiting = daysWaitingSince(returnedAt, now);
+    return {
+      id: request.id,
+      requesterHrId: request.requesterHrId,
+      requesterName: resolveName(request.requesterHrId) || request.requesterHrId,
+      productName: request.productName,
+      qty: request.qty,
+      salesValue: request.salesValue,
+      pharmacyId: request.pharmacyId,
+      pharmacyName: pharmacy?.pharmacyName ?? "—",
+      phoenixPharmacyCode: pharmacy?.phoenixPharmacyCode ?? "—",
+      distributorCodes: (pharmacy?.distributorCodes ?? []).map(
+        (pair) => `${pair.distributorCode} ${pair.customerCode}`,
+      ),
+      returnedAt,
+      daysWaiting,
+      returnReason: event?.message ?? null,
+    };
+  });
 }
 
 /** Every held order, oldest first — the System Admin's queue (spec C3). */
