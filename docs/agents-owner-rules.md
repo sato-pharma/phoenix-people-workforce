@@ -999,7 +999,20 @@ an exception to it: **the house document identity does not reach `src/lib/offers
 Nothing was changed. `git status` over `src/lib/offers` and `app/api/offers` was empty at the end
 of the session that asked.
 
-## Down town stays in the El Qema Qalubeya split — owner ruling, 2026-09-07
+## Down town stays in the El Qema Qalubeya split — owner ruling, 2026-09-07 (SUPERSEDED)
+
+🔴 **REVERSED THE NEXT DAY. Down town (`CA5`) is now OUT of the El Qema split on Pedia — see "The
+warehouse split (تقسيمة المخازن) — owner ruling, 2026-09-08" below, and its "Amended the same day"
+subsection.** On 09-07 the owner ruled Down town INTO the Cairo split because the divisor is AREAS and
+not reps. On 09-08, shown that the Pedia organogram files Down town under Others, he confirmed it comes
+out with the rest; the divisor is still areas, there are simply fewer of them. `AGENTS.md` §4 and
+`src/lib/sales/store-sales-city-split.ts` both carry the current rule, and
+`tests/qema-warehouse-split.test.ts` pins it.
+
+**Kept, not rewritten, and worth reading anyway.** This section is a dated record of what was decided
+and measured on 09-07 — the 8,768-unit reconciliation below is still the evidence that El Qema's
+customers are its warehouses. What changed is only where Down town's share goes. Read it as history;
+do not act on its title.
 
 The hook lives in `AGENTS.md` §4 beside the El Qema rule. This is the account, and it exists
 because **the evidence a future session will find points the wrong way**.
