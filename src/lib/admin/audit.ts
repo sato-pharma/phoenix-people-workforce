@@ -46,6 +46,14 @@ export type AuditEntityType =
   // البند (10) of the custody receipt.
   | "company_device"
   | "device_assignment"
+  // A device import ATTEMPT, which is a different fact from its result. `company_device` is written
+  // when a device lands; nothing at all was written when an import was refused — so a failed import
+  // and an import that never reached the server looked identical from the database, and on
+  // 2026-09-08 that ambiguity cost an evening. One row per press, whatever came of it.
+  //
+  // Best-effort (`writeAuditLog`), unlike the two above: a diagnostic that can fail the import it
+  // was only meant to observe is worse than the blindness it replaces.
+  | "device_import"
   // Minting or revoking a bearer link to the live CV-lifecycle Google Sheet. The link outlives the
   // session that created it and copies candidate names and phone numbers out of Phoenix, so who
   // made one — and who killed it — is recorded. The token itself is never written here: an audit
