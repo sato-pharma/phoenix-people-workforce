@@ -7,8 +7,10 @@ import {
 import {
   evaluateFlexibleHoursDay,
   halfDayEffectiveStartMinutes,
+  halfDayEffectiveWindowMinutes,
   requiredMinutesForHalfDayVacation,
 } from "../src/lib/attendance/flexible-hours.ts";
+import { resolvePolicyAttendanceStatus } from "../src/lib/attendance/metrics.ts";
 
 type HalfDay = "am_only" | "pm_only" | null;
 
@@ -282,6 +284,109 @@ export function runAttendanceDeductionCancelMatrixTests() {
     } catch (error) {
       throw new Error(`${why}: ${(error as Error).message}`);
     }
+  }
+
+  // --- GROUP E: the LEGACY grace-period engine, judging the worked half ---
+  //
+  // The two policy groups with no `required_minutes` route through
+  // resolvePolicyAttendanceStatus rather than the flexible-hours engine, and it was
+  // never told about half-day vacations at all. It also measures EARLY LEAVE against
+  // scheduled_end, which the flexible engine has no concept of — so Pm-Only broke
+  // here in the mirror image of Am-Only: work the morning, leave at the agreed
+  // midpoint, and be charged for the afternoon you had approved off.
+  const legacyPolicy = {
+    effective_from: "2026-01-01",
+    effective_to: null,
+    grace_minutes: 10,
+    is_active: true,
+    scheduled_end: "17:00",
+    scheduled_start: "09:00",
+    target_type: "default",
+    target_value: null,
+  };
+  const legacy = (first: number, last: number, duration: number, part: HalfDay) =>
+    resolvePolicyAttendanceStatus({
+      baseSalary: 15000,
+      durationMinutes: duration,
+      firstPunchMinutes: first,
+      halfDayVacationPart: part,
+      lastPunchMinutes: last,
+      policy: legacyPolicy,
+      reportDate: "2026-08-10",
+      rules: [],
+      visiblePunchCount: 2,
+    });
+
+  const e: Array<[string, () => void]> = [
+    ["AM-only: arriving 13:00 and working the afternoon is Complete, not Late", () => {
+      assert.equal(legacy(780, 1020, 240, "am_only").status, "Complete");
+    }],
+    ["AM-only: that same day WAS charged when judged against the full schedule", () => {
+      assert.notEqual(legacy(780, 1020, 240, null).status, "Complete");
+    }],
+    ["PM-only: working 09:00-13:00 and leaving is Complete, not Early leave", () => {
+      assert.equal(legacy(540, 780, 240, "pm_only").status, "Complete");
+    }],
+    ["PM-only: that same day WAS charged for early leave against the full schedule", () => {
+      assert.equal(legacy(540, 780, 240, null).status, "Early leave");
+    }],
+    ["AM-only: arriving 13:05 is inside the 10-minute grace", () => {
+      assert.equal(legacy(785, 1020, 235, "am_only").status, "Complete");
+    }],
+    ["AM-only: arriving 14:00 is still charged", () => {
+      assert.notEqual(legacy(840, 1020, 180, "am_only").status, "Complete");
+    }],
+    ["PM-only: leaving at 11:00 skips half the owed morning and is still charged", () => {
+      assert.notEqual(legacy(540, 660, 120, "pm_only").status, "Complete");
+    }],
+    ["a whole ordinary day is judged exactly as before", () => {
+      assert.equal(legacy(540, 1020, 480, null).status, "Complete");
+    }],
+    ["omitting the field entirely still judges a whole day", () => {
+      const result = resolvePolicyAttendanceStatus({
+        baseSalary: 15000,
+        durationMinutes: 240,
+        firstPunchMinutes: 540,
+        lastPunchMinutes: 780,
+        policy: legacyPolicy,
+        reportDate: "2026-08-10",
+        rules: [],
+        visiblePunchCount: 2,
+      });
+      assert.equal(
+        result.status,
+        "Early leave",
+        "the explainer and policy-preview callers pass no half-day and must be unaffected",
+      );
+    }],
+  ];
+  for (const [why, run] of e) {
+    cases++;
+    try {
+      run();
+    } catch (error) {
+      throw new Error(`${why}: ${(error as Error).message}`);
+    }
+  }
+
+  // The window helper itself, both ends.
+  const w: Array<[HalfDay, number, number, string]> = [
+    ["am_only", 780, 1020, "AM-only opens the window at the midpoint and keeps the scheduled end"],
+    ["pm_only", 540, 780, "PM-only keeps the scheduled start and closes the window at the midpoint"],
+    [null, 540, 1020, "an ordinary day keeps both ends"],
+  ];
+  for (const [part, expectedStart, expectedEnd, why] of w) {
+    cases++;
+    assert.deepEqual(
+      halfDayEffectiveWindowMinutes({
+        halfDayVacationPart: part,
+        halfRequiredMinutes: 240,
+        scheduledEndMinutes: 1020,
+        scheduledStartMinutes: 540,
+      }),
+      { startMinutes: expectedStart, endMinutes: expectedEnd },
+      why,
+    );
   }
 
   assert.ok(cases >= 150, `expected at least 150 cases, ran ${cases}`);

@@ -109,6 +109,45 @@ export function halfDayEffectiveStartMinutes(
 }
 
 /**
+ * BOTH ends of the worked half — for the legacy grace-period engine, which the two
+ * policy groups with no `required_minutes` still route through.
+ *
+ * The flexible-hours engine needed only the start moved, because it judges presence
+ * as worked-minutes against a requirement and has no concept of leaving early. The
+ * legacy engine measures early leave against `scheduled_end`, so a Pm-Only vacation
+ * breaks there in the mirror-image way: the employee works the morning, leaves at
+ * the midpoint exactly as agreed, and is scored as hours of early leave against an
+ * evening they had approved off. Moving only the start would have fixed Am-Only on
+ * that path and left Pm-Only just as wrong.
+ *
+ * So: Am-Only moves the START forward to where the afternoon begins; Pm-Only pulls
+ * the END back to where the morning ends. Neither moves both, because exactly one
+ * half is owed. The start is delegated rather than recomputed so there is one
+ * definition of where the worked half begins.
+ *
+ * `scheduledEndMinutes` must already be normalized past midnight by the caller
+ * (end + 1440 for an overnight shift); this function does no wrapping of its own.
+ */
+export function halfDayEffectiveWindowMinutes(input: {
+  scheduledStartMinutes: number;
+  scheduledEndMinutes: number;
+  halfRequiredMinutes: number;
+  halfDayVacationPart: "am_only" | "pm_only" | null;
+}): { startMinutes: number; endMinutes: number } {
+  return {
+    startMinutes: halfDayEffectiveStartMinutes(
+      input.scheduledStartMinutes,
+      input.halfRequiredMinutes,
+      input.halfDayVacationPart,
+    ),
+    endMinutes:
+      input.halfDayVacationPart === "pm_only"
+        ? input.scheduledStartMinutes + input.halfRequiredMinutes
+        : input.scheduledEndMinutes,
+  };
+}
+
+/**
  * Returns the deduction (in days) for a minute value against a bracket set.
  * Brackets are inclusive on both bounds; `toMinutes: null` is open-ended.
  * Minutes at or below zero, or falling outside every bracket (e.g. a

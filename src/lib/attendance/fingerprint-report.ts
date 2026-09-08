@@ -772,6 +772,10 @@ export async function getFingerprintAttendanceReport(input: {
           baseSalary: employee?.base_salary ?? null,
           durationMinutes: Math.floor(durationMs / 60000),
           firstPunchMinutes,
+          // Passed here too, not only to the flexible-hours branch above: the two
+          // policy groups with no required_minutes route through this engine, and
+          // without it a half-day employee is judged against the whole scheduled day.
+          halfDayVacationPart,
           lastPunchMinutes,
           policy,
           reportDate: bucket.reportDate,
