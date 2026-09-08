@@ -5,6 +5,7 @@ import { HOUSE_XLSX_COLORS, writeHouseMasthead } from "@/lib/export/house-xlsx-i
 import {
   PAYROLL_HEADER_ROW,
   payrollHeaderCell,
+  payrollTemplateColumnWidth,
   writePayrollSectionBand,
 } from "@/lib/payroll/payroll-sheet-style";
 import { VALUE_FMT } from "@/lib/sales/sales-workbook-kit";
@@ -135,6 +136,8 @@ export async function buildStepTemplateWorkbook(input: {
     else bands.push({ from: index + 1, label, to: index + 1 });
   });
   writePayrollSectionBand(sheet, bands);
+  // The previous salary template rules off the end of every band; the body cells below carry it.
+  const sectionEndColumns = new Set(bands.map((band) => band.to));
 
   const headerRowNumber = PAYROLL_HEADER_ROW;
   const headerRow = sheet.getRow(headerRowNumber);
@@ -143,7 +146,7 @@ export async function buildStepTemplateWorkbook(input: {
     cell.value = column.label;
     payrollHeaderCell(cell, { execution: column.editable, numeric: column.money });
   });
-  headerRow.height = 28;
+  headerRow.height = 32;
 
   let rowNumber = headerRowNumber + 1;
   input.rows.forEach((row, index) => {
@@ -161,8 +164,17 @@ export async function buildStepTemplateWorkbook(input: {
         name: HOUSE_XLSX_FONT,
         size: 9.5,
       };
-      cell.alignment = { horizontal: column.money ? "right" : "left", vertical: "middle" };
-      cell.border = { bottom: { style: "hair", color: { argb: HOUSE_XLSX_COLORS.hair } } };
+      cell.alignment = {
+        horizontal: column.money ? "right" : "left",
+        vertical: "middle",
+        wrapText: true,
+      };
+      cell.border = {
+        bottom: { style: "hair", color: { argb: HOUSE_XLSX_COLORS.hair } },
+        right: sectionEndColumns.has(ci + 1)
+          ? { style: "thin", color: { argb: HOUSE_XLSX_COLORS.blue } }
+          : { style: "hair", color: { argb: HOUSE_XLSX_COLORS.hair } },
+      };
       if (column.editable) {
         cell.fill = { fgColor: { argb: HOUSE_XLSX_COLORS.tint }, pattern: "solid", type: "pattern" };
       }
@@ -194,9 +206,9 @@ export async function buildStepTemplateWorkbook(input: {
   });
 
   columns.forEach((column, index) => {
-    sheet.getColumn(index + 1).width = Math.min(26, Math.max(12, column.label.length + 2));
+    sheet.getColumn(index + 1).width = payrollTemplateColumnWidth(column.label);
   });
-  sheet.getColumn(3).width = 26;
+  sheet.getColumn(3).width = 26; // Full Name
   sheet.views = [{ showGridLines: false, state: "frozen", xSplit: 3, ySplit: headerRowNumber }];
 
   // Protection is what makes "locked" true rather than merely stated. Selection stays free so the
@@ -255,7 +267,7 @@ function appendDetailSheet(
     cell.value = label;
     payrollHeaderCell(cell, { numeric: index >= 2 && detailColumns[index - 2]?.money === true });
   });
-  headerRow.height = 28;
+  headerRow.height = 32;
 
   let rowNumber = headerRowNumber + 1;
   for (const row of input.rows) {
@@ -276,8 +288,11 @@ function appendDetailSheet(
         const isMoney = index >= 2 && detailColumns[index - 2]?.money === true;
         if (isMoney && typeof value === "number") cell.numFmt = VALUE_FMT;
         cell.font = { color: { argb: HOUSE_XLSX_COLORS.body }, name: HOUSE_XLSX_FONT, size: 9.5 };
-        cell.alignment = { horizontal: isMoney ? "right" : "left", vertical: "middle" };
-        cell.border = { bottom: { style: "hair", color: { argb: HOUSE_XLSX_COLORS.hair } } };
+        cell.alignment = { horizontal: isMoney ? "right" : "left", vertical: "middle", wrapText: true };
+        cell.border = {
+          bottom: { style: "hair", color: { argb: HOUSE_XLSX_COLORS.hair } },
+          right: { style: "hair", color: { argb: HOUSE_XLSX_COLORS.hair } },
+        };
         if (rowNumber % 2 === 0) {
           cell.fill = { fgColor: { argb: HOUSE_XLSX_COLORS.tint }, pattern: "solid", type: "pattern" };
         }
@@ -287,8 +302,8 @@ function appendDetailSheet(
   }
 
   labels.forEach((label, index) => {
-    sheet.getColumn(index + 1).width = Math.min(34, Math.max(12, label.length + 2));
+    sheet.getColumn(index + 1).width = payrollTemplateColumnWidth(label);
   });
-  sheet.getColumn(2).width = 26;
+  sheet.getColumn(2).width = 26; // Full Name
   sheet.views = [{ showGridLines: false, state: "frozen", xSplit: 2, ySplit: headerRowNumber }];
 }

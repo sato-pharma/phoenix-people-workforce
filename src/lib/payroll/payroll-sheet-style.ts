@@ -42,6 +42,7 @@ import { HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 import { HOUSE_XLSX_COLORS, writeHouseMasthead } from "@/lib/export/house-xlsx-identity";
 import {
   isPayrollNumericHeader,
+  payrollCountHeaders,
   payrollSheetHeaders,
   payrollSheetSectionForIndex,
   type PayrollSheetHeader,
@@ -110,14 +111,16 @@ export function resolvePayrollBands(
  */
 export function writePayrollSectionBand(sheet: ExcelJS.Worksheet, bands: PayrollBand[]) {
   const row = sheet.getRow(PAYROLL_SECTION_ROW);
-  row.height = 15;
+  // 24, and the caption indented one — the previous salary template's own band metrics. At 15 the
+  // 7.5pt caption sat hard against the header rule under it and read as part of the header.
+  row.height = 24;
 
   for (const band of bands) {
     for (let column = band.from; column <= band.to; column += 1) {
       const cell = row.getCell(column);
       cell.value = column === band.from ? band.label.toUpperCase() : null;
       cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.light }, name: HOUSE_XLSX_FONT, size: 7.5 };
-      cell.alignment = { horizontal: "left", vertical: "bottom" };
+      cell.alignment = { horizontal: "left", indent: 1, vertical: "bottom" };
       cell.border =
         column === band.from
           ? { left: { style: "thin", color: { argb: HOUSE_XLSX_COLORS.blue } } }
@@ -158,23 +161,75 @@ export type PayrollBodyOptions = {
   execution?: boolean;
   /** First column of the row, which carries the held row's leading rule. */
   leading?: boolean;
+  /**
+   * Last column of a section band. The previous salary template closed each section with a Brand
+   * Blue rule down its right edge and drew a hairline everywhere else; that boundary rule is what
+   * makes the six sections legible now that none of them has a fill of its own.
+   */
+  sectionEnd?: boolean;
 };
 
-/** Body cell. The zebra is the only fill in the format, exactly as the approved specimen has it. */
+/**
+ * The columns the previous salary template set in deep bold — the three subtotals a reader checks
+ * first. They are derived money, not entry, and on a 37-column row that is the only thing telling
+ * them apart from the figures that feed them.
+ */
+export const PAYROLL_TEMPLATE_TOTAL_HEADERS = new Set<PayrollSheetHeader>([
+  "Total Additions",
+  "Governmental Deductions",
+  "Total Deductions",
+]);
+
+/**
+ * A column's width in the previous salary template: the label plus four, with a floor of 14.
+ *
+ * NOT read off `Phoneix system template.xlsx`. That file's `<cols>` covers 30 columns and was cut
+ * for the 30-column sheet of its day; the list is 39 wide now, so its stored widths land on the
+ * wrong columns from "Working Days" onward. The formula is what the route actually applies to every
+ * column the file does not already size, so it — not the stale file — is the template's real width
+ * rule.
+ */
+export function payrollTemplateColumnWidth(label: string) {
+  return Math.max(label.length + 4, 14);
+}
+
+/**
+ * Body cell, in the previous salary template's grid.
+ *
+ * The grid is the template's: a hairline under and beside EVERY cell, a Brand Blue rule where one
+ * section ends, wrapped text, and the three subtotal columns in deep bold. The zebra stays the only
+ * fill. What is NOT the template's, and must survive, is everything that says a row is HELD or a
+ * column is the one finance executes — the template is an upload sheet and has no idea either
+ * exists, so those rules are layered on top and win where they collide.
+ */
 export function payrollBodyCell(cell: ExcelJS.Cell, options: PayrollBodyOptions) {
   const numeric = options.numeric ?? (options.header ? isPayrollNumericHeader(options.header) : false);
+  const total = options.header ? PAYROLL_TEMPLATE_TOTAL_HEADERS.has(options.header) : false;
 
   cell.font = {
-    bold: options.held || options.execution,
-    color: { argb: options.held ? HOUSE_XLSX_COLORS.flag : HOUSE_XLSX_COLORS.body },
+    bold: options.held || options.execution || total,
+    color: {
+      argb: options.held
+        ? HOUSE_XLSX_COLORS.flag
+        : total
+          ? HOUSE_XLSX_COLORS.deep
+          : HOUSE_XLSX_COLORS.body,
+    },
     name: HOUSE_XLSX_FONT,
     size: 9.5,
   };
-  cell.alignment = { horizontal: numeric ? "right" : "left", vertical: "middle" };
+  cell.alignment = { horizontal: numeric ? "right" : "left", vertical: "middle", wrapText: true };
 
-  const border: Partial<ExcelJS.Borders> = options.zebra
-    ? {}
-    : { bottom: { style: "hair", color: { argb: HOUSE_XLSX_COLORS.hair } } };
+  // A day count is a whole number, never a currency. The template formats it here so a caller that
+  // only knows about money cannot leave "26.00" in the Working Days column.
+  if (options.header && payrollCountHeaders.has(options.header)) cell.numFmt = "0";
+
+  const border: Partial<ExcelJS.Borders> = {
+    bottom: { style: "hair", color: { argb: HOUSE_XLSX_COLORS.hair } },
+    right: options.sectionEnd
+      ? { style: "thin", color: { argb: HOUSE_XLSX_COLORS.blue } }
+      : { style: "hair", color: { argb: HOUSE_XLSX_COLORS.hair } },
+  };
 
   // A held row carries a thick leading rule — the one held signal that survives greyscale.
   if (options.held && options.leading) {
