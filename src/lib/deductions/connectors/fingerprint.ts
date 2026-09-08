@@ -74,6 +74,16 @@ export async function collectFingerprintCandidates(input: {
         earlyLeaveMinutes: row.earlyLeaveMinutes,
         jobTitle: row.jobTitle,
         department: row.department,
+        // The four columns that can CONTRADICT this charge. The report carries
+        // them (owner request 2026-07-24, so a day can be re-verified by hand)
+        // and this connector used to drop them here — leaving the reviewer a
+        // screen that said "late 207 min, 419.35 EGP" with nothing to show the
+        // man had logged a CRM Traveling entry returning from Minya that day.
+        // Whoever approves the money should see the same evidence the report does.
+        approvedLeave: row.approvedLeave,
+        approvedExcuse: row.approvedExcuse,
+        crmActivity: row.crmActivity,
+        weeklyPlan: row.weeklyPlan,
       },
       dates: [row.dateIso],
     });

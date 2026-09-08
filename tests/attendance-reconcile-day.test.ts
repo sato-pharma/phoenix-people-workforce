@@ -130,12 +130,31 @@ export function runAttendanceReconcileDayTests() {
   //
   // A behaviour test cannot reach getFingerprintAttendanceReport (it builds a
   // Supabase client), so this is a wiring assertion on the live file.
+  //
+  // Extended 2026-09-08: the inline expression this used to pin named only the
+  // exception and the excuse, so it ALSO pinned the fail-open for the other three
+  // cancels — a full-day approved leave, a CRM-recorded leave and a real CRM field
+  // visit were each fetched, labelled and charged anyway, costing 3,274.19 EGP over
+  // five days in August 2026. The rule now lives in isAttendanceDeductionCancelled
+  // beside reconcileDay above, where the two can be read together; what this file
+  // still has to prove is that the LIVE money path actually calls it, since a
+  // correct helper nothing invokes is the same fail-open by another route.
   {
     const report = readFileSync("src/lib/attendance/fingerprint-report.ts", "utf8");
     assert.match(
       report,
+      /import \{ isAttendanceDeductionCancelled \} from "@\/lib\/attendance\/digest-reconcile"/,
+      "the live report must import the shared cancel rule rather than re-deriving its own",
+    );
+    assert.match(
+      report,
+      /const deductionCancelled = isAttendanceDeductionCancelled\(\{/,
+      "the deduction must be cancelled through the shared rule, so the gate and the money cannot drift apart",
+    );
+    assert.doesNotMatch(
+      report,
       /const deductionCancelled = hasApprovedException \|\| hasApprovedExcuse/,
-      "an approved excuse must cancel the attendance deduction, not merely be displayed",
+      "the old inline rule charged approved leave and CRM-covered days — it must not come back",
     );
     assert.match(
       report,

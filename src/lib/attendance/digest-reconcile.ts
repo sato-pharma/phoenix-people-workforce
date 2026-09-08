@@ -119,6 +119,38 @@ export function describeReconcileSkip(facts: ReconcileSkipFacts): ReconcileSkipO
   return "no_plan_field_day";
 }
 
+/** The facts that can cancel the MONEY on a judged day, as opposed to stopping it being judged. */
+export type DeductionCancelFacts = {
+  hasApprovedException: boolean;
+  hasApprovedExcuse: boolean;
+  hasApprovedLeave: boolean;
+  /** Set when the approved leave covers only half the day — then it never cancels; see below. */
+  halfDayVacationPart: "am_only" | "pm_only" | null;
+  hasCrmLeave: boolean;
+  hasCrmFieldVisit: boolean;
+};
+
+/**
+ * Whether a judged day's DEDUCTION is cancelled outright.
+ *
+ * reconcileDay above decides whether a day is judged at all; this decides whether
+ * the resulting charge survives. They must agree on what counts as cover, which is
+ * why both live in this file — the fingerprint report kept its own inline version
+ * that named only the exception and the excuse, and silently charged a full-day
+ * approved leave, a CRM-recorded leave and a real CRM field visit even though this
+ * module has always called all three universal cancels.
+ *
+ * A HALF-day approved vacation is deliberately NOT a cancel: the employee still
+ * owes the other half, and the flexible-hours engine judges exactly that half
+ * (requiredMinutesForHalfDayVacation + halfDayEffectiveStartMinutes). Owner
+ * decision 2026-09-08, asked and answered: "judge the worked half".
+ */
+export function isAttendanceDeductionCancelled(facts: DeductionCancelFacts): boolean {
+  if (facts.hasApprovedException || facts.hasApprovedExcuse) return true;
+  if (facts.hasApprovedLeave && !facts.halfDayVacationPart) return true;
+  return facts.hasCrmLeave || facts.hasCrmFieldVisit;
+}
+
 export function reconcileDay(input: ReconcileInput): ReconcileDecision {
   // Universal cancels — apply to both tiers, before any tier logic.
   if (!input.isWorkingDay) return { action: "skip", reason: "Weekly off — not a working day." };

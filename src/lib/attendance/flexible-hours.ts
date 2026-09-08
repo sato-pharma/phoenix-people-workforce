@@ -85,6 +85,30 @@ export function requiredMinutesForHalfDayVacation(
 }
 
 /**
+ * Where the WORKED half of a half-day vacation begins, in minutes from midnight.
+ *
+ * Halving the required presence (above) only ever fixed the SHORT-HOURS half of
+ * the judgment. Lateness is measured from the scheduled start, and on an Am-Only
+ * vacation that start is a time the employee was formally excused from — so an
+ * afternoon arrival was scored as hours of lateness against a morning they had
+ * approved off, even after completing the halved hours in full.
+ *
+ * `halfRequiredMinutes` is the already-halved figure from
+ * requiredMinutesForHalfDayVacation, so the afternoon half opens exactly that far
+ * after the scheduled start. Pm-Only is unchanged: the employee still owes the
+ * morning, so the normal start already applies.
+ *
+ * Owner decision 2026-09-08, asked and answered: judge the worked half.
+ */
+export function halfDayEffectiveStartMinutes(
+  scheduledStartMinutes: number,
+  halfRequiredMinutes: number,
+  halfDayVacationPart: "am_only" | "pm_only" | null,
+): number {
+  return halfDayVacationPart === "am_only" ? scheduledStartMinutes + halfRequiredMinutes : scheduledStartMinutes;
+}
+
+/**
  * Returns the deduction (in days) for a minute value against a bracket set.
  * Brackets are inclusive on both bounds; `toMinutes: null` is open-ended.
  * Minutes at or below zero, or falling outside every bracket (e.g. a
