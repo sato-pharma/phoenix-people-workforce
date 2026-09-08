@@ -1585,9 +1585,29 @@ function drawStockByBranchSheet(workbook: ExcelJS.Workbook, context: SheetContex
   const { input } = context;
   const sheet = workbook.addWorksheet(sanitizeSheetName(`${sheetPrefix}Stock by branch`).slice(0, 31));
   sheet.views = [{ showGridLines: false }];
-  // The headings sit ABOVE the rows they own, so a collapsed region shows its own name, not the row
-  // underneath it.
-  sheet.properties.outlineProperties = { summaryBelow: false, summaryRight: false };
+  // 🔴 DO NOT SET `outlineProperties` HERE. It is the natural way to say "my headings sit above
+  // the rows they own", and it produces a workbook Excel REFUSES TO OPEN — which is how this
+  // sheet's first sample reached the owner: "We found a problem with some content".
+  //
+  // ExcelJS 4.4.0 renders the children of <sheetPr> in the wrong order (sheet-properties-xform.js
+  // emits pageSetUpPr before outlinePr), but OOXML's CT_SheetPr is a SEQUENCE — tabColor,
+  // outlinePr, pageSetUpPr. `applyPrint` sets pageSetup.fitToPage, so asking for
+  // outlineProperties as well emits <sheetPr><pageSetUpPr/><outlinePr/></sheetPr> and Excel
+  // DISCARDS THE WHOLE SHEET PART.
+  //
+  // Nothing here catches it: the XML is well-formed, ExcelJS reads its own output back happily,
+  // `scripts/check-workbook-integrity.mjs` reports CLEAN, and CI went green. Only Excel objects,
+  // and only on the sheets carrying an outline group — which is the tell. The weekly Summarized
+  // Report carries the same warning for the same reason.
+  //
+  // What IS needed is outlineLevelRow, ABOVE the deepest level in use: ExcelJS derives a row's
+  // `collapsed` flag as `outlineLevel >= properties.outlineLevelRow` and offers no setter, so the
+  // default of 0 marks every grouped row collapsed while leaving it visible.
+  //
+  // The cost of not setting it is that summaryBelow stays at Excel's default of true, so the +/-
+  // button for a group sits just below the rows it folds rather than on the heading above them.
+  // The grouping itself, and every heading, is unaffected.
+  sheet.properties.outlineLevelRow = 3;
 
   const reporting = new Set<string>();
   for (const row of context.rawRows) {

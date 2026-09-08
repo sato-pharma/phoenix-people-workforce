@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
 
 import { buildNsmDsmWorkbook } from "../src/lib/sales/weekly/nsm-dsm-workbook.ts";
 import type { WeeklyManagerIndex } from "../src/lib/sales/weekly/manager-attribution.ts";
@@ -88,6 +89,22 @@ async function build(
   const sheet = workbook.getWorksheet(SHEET);
   assert.ok(sheet, `the workbook must carry a "${SHEET}" sheet`);
   return sheet!;
+}
+
+/** The workbook as a BUFFER, for the assertions that have to read the package rather than the model. */
+async function buildBuffer(rows: WeeklyFactExportRow[]): Promise<Buffer> {
+  return (await buildNsmDsmWorkbook({
+    areaNames: new Map([["C11", "Cairo 1"], ["C12", "Cairo 2"], ["D21", "Gharbia 2"]]),
+    areaSplit: null,
+    generatedAt: "2026-09-08T09:00:00.000Z",
+    lineFilter: ["CNS"],
+    managerIndex: MANAGER_INDEX,
+    periodLabel: "August 2026",
+    productAxis: ["TEB80", "TEB120"],
+    regionFilter: [],
+    regionNames: new Map([["GC", "Greater Cairo"], ["DL", "Delta"]]),
+    rows,
+  })) as Buffer;
 }
 
 /** Every row as [label, distributor, ...numbers], with the outline level that nests it. */
@@ -234,4 +251,38 @@ export async function runWeeklyNsmDsmStockByBranchTests() {
     "region (0) / area (1) / branch (2) — the outline levels that let a manager collapse the sheet " +
       "to region totals and open only the territory he is chasing",
   );
+
+  // ── 8. THE EMITTED PACKAGE IS SCHEMA-VALID, WHICH NOTHING ELSE HERE CHECKS ──
+  //
+  // This sheet shipped its first sample with an Excel repair dialog on it: "We found a problem
+  // with some content". ExcelJS 4.4.0 renders the children of <sheetPr> in the wrong order —
+  // pageSetUpPr before outlinePr — while OOXML's CT_SheetPr is a SEQUENCE (tabColor, outlinePr,
+  // pageSetUpPr), so setting `outlineProperties` beside `pageSetup.fitToPage` makes Excel DISCARD
+  // the entire sheet part.
+  //
+  // EVERY OTHER CHECK PASSED ON THE BROKEN FILE. The XML is well-formed, ExcelJS reads its own
+  // output back happily, `scripts/check-workbook-integrity.mjs` printed CLEAN, and all four CI
+  // checks went green. Only Excel objected. So this assertion reads the PART, not the model, and
+  // covers every sheet in the book rather than only the one that has an outline today.
+  const zip = await JSZip.loadAsync(await buildBuffer([row({ stockUnits: 40 })]));
+  const parts = Object.keys(zip.files).filter((name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name));
+  assert.ok(parts.length > 1, "the fixture must emit a real multi-sheet package to judge");
+  for (const part of parts) {
+    const xml = await zip.files[part].async("string");
+    // A GREEDY match to the closing tag: a non-greedy `.*?(?:/>|</sheetPr>)` stops at the first
+    // self-closing child and makes a correct file look broken. That decoy is on the record.
+    const block = /<sheetPr\b[\s\S]*?<\/sheetPr>/.exec(xml)?.[0] ?? /<sheetPr\b[^>]*\/>/.exec(xml)?.[0];
+    if (!block) continue; // a sheet with no <sheetPr> at all is fine
+    const order = [...block.matchAll(/<(tabColor|outlinePr|pageSetUpPr)\b/g)].map((match) => match[1]);
+    const wanted = ["tabColor", "outlinePr", "pageSetUpPr"];
+    const sorted = [...order].sort((left, right) => wanted.indexOf(left) - wanted.indexOf(right));
+    assert.deepEqual(
+      order,
+      sorted,
+      `${part}: CT_SheetPr is a SEQUENCE (tabColor, outlinePr, pageSetUpPr) and this part has ` +
+        `${order.join(", ")}. Excel discards the whole sheet and offers to repair the file. The ` +
+        "usual cause is setting sheet.properties.outlineProperties beside pageSetup.fitToPage — " +
+        "set outlineLevelRow instead and leave summaryBelow at its default.",
+    );
+  }
 }
