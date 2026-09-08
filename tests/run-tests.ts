@@ -782,6 +782,7 @@ import { runPhase21SecurityHardeningTests } from "./phase21-security-hardening.t
 import { runPhase22RoleMatrixSecurityTests } from "./phase22-role-matrix-security.test.ts";
 import { runCeoOrganogramVisibilityTests } from "./ceo-organogram-visibility.test.ts";
 import { runOrganogramWhatsAppNumberTests } from "./organogram-whatsapp-number.test.ts";
+import { runWhatsAppMessageTemplateTests } from "./whatsapp-message-templates.test.ts";
 import { runOrganogramWhatsAppGateTests } from "./organogram-whatsapp-gate.test.ts";
 import { runCeoCommandCenterTests } from "./ceo-command-center.test.ts";
 import { runPhase23BrowserRoleWalkthroughTests } from "./phase23-browser-role-walkthrough.test.ts";
@@ -4780,6 +4781,11 @@ await runTest(
 await runTest(
   "attendance cancel matrix (all 96 flag combinations against the written policy, the worked-half start maths, and 46 real production days from April-August 2026)",
   runAttendanceDeductionCancelMatrixTests,
+);
+
+await runTest(
+  "WhatsApp message templates (placeholders derive the fields, an empty value is refused rather than rendering \"Dear ,\", the message survives the wa.me URL round trip, and an Egyptian number is repaired before it is read as international)",
+  runWhatsAppMessageTemplateTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

@@ -40,6 +40,7 @@ import {
   Loader2,
   Mail,
   MapPin,
+  MessageCircle,
   Minimize2,
   Phone,
   Send,
@@ -54,6 +55,7 @@ import {
   type CandidateStatus,
 } from "@/lib/recruitment/candidate-status";
 import { ManagerPicker, type ManagerPickerOption } from "@/components/recruitment/manager-picker";
+import { WhatsAppSendDialog } from "@/components/recruitment/whatsapp-send-dialog";
 import { Pill, relativeDays, useSectionFold } from "@/components/recruitment/workstation/workstation-ui";
 import {
   composeRejectionNote,
@@ -115,6 +117,10 @@ export function WorkstationReviewHeader({
 }) {
   const [rejecting, setRejecting] = useState(false);
   const [sending, setSending] = useState(false);
+  // WhatsApp is a THIRD panel, and unlike the two above it opens a modal rather than an inline band.
+  // Deliberate: the message form is too tall for this bar, and the recruiter is leaving the screen
+  // for WhatsApp anyway — an inline band would push the CV itself off the page to do it.
+  const [whatsAppOpen, setWhatsAppOpen] = useState(false);
   // BOTH BANDS FOLD, and each remembers its answer for the session, so it is done once rather than
   // per candidate. Folding the identity hands roughly 60px of a laptop screen back to the document,
   // which on a two-page CV is the difference between reading and scrolling; what survives that fold
@@ -134,6 +140,26 @@ export function WorkstationReviewHeader({
   );
   const decisions = (
     <>
+      {/* WHATSAPP SITS FIRST, and it is not a decision — it decides nothing and notifies nobody
+          until the recruiter presses send inside WhatsApp itself. It lives in this group because
+          this group is what renders on EVERY candidate in both the folded and full bands, which is
+          what "on every CV" means. Rendered here rather than at the top level for the same reason:
+          only one of the two bands is ever mounted, so exactly one dialog exists. */}
+      <DecisionButton
+        disabled={busy}
+        icon={<MessageCircle className="h-3.5 w-3.5" />}
+        label="WhatsApp"
+        onClick={() => setWhatsAppOpen(true)}
+        pressed={whatsAppOpen}
+        tone="info"
+      />
+      {whatsAppOpen ? (
+        <WhatsAppSendDialog
+          candidateId={row.id}
+          candidateName={row.fullName}
+          onClose={() => setWhatsAppOpen(false)}
+        />
+      ) : null}
       <DecisionButton
         disabled={busy}
         icon={<ThumbsUp className="h-3.5 w-3.5" />}
