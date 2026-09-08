@@ -344,6 +344,72 @@ export async function runClosingLayoutInvariantTests() {
     }
   }
 
+  // ── 5. EVERY TAB HAS SOMETHING TO SHOW ON A PHONE ───────────────────────────────────────────
+  //
+  // Three separate ways a tab can be present and useless on a phone, all measured rather than
+  // assumed, because Excel for Android cannot be driven from here:
+  //
+  //   VISIBLE. A hidden sheet has no tab at all. Only `Data` may be hidden — it is the pivot
+  //   source, and no reader opens it.
+  //
+  //   POPULATED. A pivot renders BLANK on mobile: Excel mobile does not materialise a pivot cache,
+  //   so the page arrives empty unless a real grid was written into the cells. That shipped once,
+  //   and `writePivotGrids` exists because of it. A sheet with a pivot definition and no cells is
+  //   the failure, and it looks identical to a sheet that simply has no data.
+  //
+  //   READABLE. A pane frozen wider than the screen is worse than no pane: the frozen columns fill
+  //   the display and the data they label has nowhere to scroll into. The matrix pages shipped 734px
+  //   of labels on a 375px phone, and `Details` was still freezing 726px until `fitFrozenPanesForPhone`.
+  {
+    const phonePx = 375;
+    const defaultWidth = 9.140625;
+    let visible = 0;
+    for (const tag of workbook.match(/<sheet\b[^>]*\/?>/g) ?? []) {
+      const sheetName = /\bname="([^"]*)"/.exec(tag)?.[1];
+      const rid = /\br:id="([^"]*)"/.exec(tag)?.[1];
+      const state = /\bstate="([^"]*)"/.exec(tag)?.[1] ?? "visible";
+      if (!sheetName || !rid) continue;
+      const raw = target.get(rid);
+      if (!raw) continue;
+      const sheetFile = zip.file(raw.startsWith("xl/") ? raw : `xl/${raw}`);
+      if (!sheetFile) continue;
+      const sheetXml = await sheetFile.async("string");
+
+      if (state !== "visible") {
+        assert.equal(sheetName, "Data", `${sheetName} is ${state} — only the pivot source may have no tab`);
+        continue;
+      }
+      visible += 1;
+
+      const populated = [...sheetXml.matchAll(/<c\b[^>]*?>[\s\S]*?<\/c>/g)].filter((one) => /<v>|<is>|<f[ >]/.test(one[0])).length;
+      assert.ok(populated > 0, `${sheetName} has a tab and no cells with values — a pivot-only sheet is BLANK on mobile`);
+
+      const pane = /<pane\b[^>]*\/>/.exec(sheetXml)?.[0] ?? "";
+      const xSplit = Number(/\bxSplit="(\d+)"/.exec(pane)?.[1] ?? 0);
+      if (xSplit <= 0) continue;
+      const colBlock = /<cols>[\s\S]*?<\/cols>/.exec(sheetXml)?.[0] ?? "";
+      const runs = [...colBlock.matchAll(/<col\b[^>]*\/>/g)].map((one) => ({
+        max: Number(/\bmax="(\d+)"/.exec(one[0])?.[1] ?? 0),
+        min: Number(/\bmin="(\d+)"/.exec(one[0])?.[1] ?? 0),
+        width: /\bhidden="1"/.test(one[0]) ? 0 : Number(/\bwidth="([\d.]+)"/.exec(one[0])?.[1] ?? defaultWidth),
+      }));
+      let frozen = 0;
+      for (let column = 1; column <= xSplit; column += 1) {
+        let width = defaultWidth;
+        for (let at = runs.length - 1; at >= 0; at -= 1) {
+          const run = runs[at]!;
+          if (column >= run.min && column <= run.max) { width = run.width; break; }
+        }
+        frozen += width > 0 ? Math.round(width * 7) + 5 : 0;
+      }
+      assert.ok(
+        frozen <= phonePx,
+        `${sheetName} freezes ${frozen}px of columns onto a ${phonePx}px phone — the labels fill the screen and the data has nowhere to go`,
+      );
+    }
+    assert.ok(visible >= 12, `only ${visible} visible tabs — this is not an empty sweep`);
+  }
+
   // ── The positive control ──────────────────────────────────────────────────────────────────────
   // Every assertion above passes on a workbook with no shapes at all. These counts are what the
   // build this test was written against actually carries, so a sweep that quietly found nothing
