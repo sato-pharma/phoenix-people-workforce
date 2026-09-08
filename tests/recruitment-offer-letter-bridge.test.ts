@@ -288,6 +288,36 @@ export function runRecruitmentOfferLetterBridgeTests() {
     "the row's controls must wrap - overflow-x-auto over a min-width floor IS the bug, not the fix",
   );
 
+  // ── THE RECIPIENT ADDRESS, ON BOTH SURFACES ───────────────────────────────────────────────
+  //
+  // The desktop table has carried the email under the candidate's name since the module shipped.
+  // The mobile card did not, so on a phone an offer was a name and nothing else - and a phone is
+  // how these are read.
+  //
+  // Measured 2026-09-08: three offers in this list read as three different people and were one
+  // person testing the feature into a single inbox. An audit acted on that reading and moved a
+  // candidate's hiring status, which had to be reverted. Nothing on the card could have shown it;
+  // the address was one line away on the other surface.
+  //
+  // Counted rather than merely matched: one occurrence would pass while the card still showed
+  // nothing, which is exactly the state this fixes.
+  {
+    const shown = composer.match(/\{offer\.candidateEmail\}/g) ?? [];
+    assert.ok(
+      shown.length >= 2,
+      "offer.candidateEmail must be rendered on BOTH the desktop row and the mobile card - it was "
+        + `on the table only, and a name alone cannot tell two offers apart. Found ${shown.length}`,
+    );
+    // No ellipsis, and a break that actually works on an address: an email has no space to break
+    // at, so `break-words` alone leaves it overflowing its card at 375px.
+    assert.match(
+      composer,
+      /className="mt-0\.5 break-all text-xs text-slate-500">\{offer\.candidateEmail\}/,
+      "the card's address must be break-all and never truncated - a half-shown address defeats the "
+        + "whole point of showing it, which is telling two addresses apart",
+    );
+  }
+
   // And the bridge's own import must stay type-only, so it cannot create a runtime edge either.
   assert.match(
     bridge,
