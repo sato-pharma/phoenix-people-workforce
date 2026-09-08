@@ -440,16 +440,60 @@ async function fillHeaderCells(zip: JSZip, spec: SheetSpec, content: EngineSheet
  * row. Move the row without the merge and two things break at once: the footnote clips at one
  * column width instead of spanning the sheet, and the abandoned merge lands on whatever row now
  * occupies its old number — in a long month, a real data row, silently welded into one cell.
+ *
+ * ONE PASS, never a replacement per row. The version this replaces walked `moved` and ran a global
+ * string replace for each entry, so every rewrite it had already made was still on the page for the
+ * next one to match again. When the trailer block slides by LESS than its own height — a shift of
+ * one or two rows — each footnote's new row number is the next footnote's OLD one, and the three
+ * merges cascade onto a single range:
+ *
+ *     {18→19, 19→20, 20→21}   B18 becomes B19, both B19s become B20, all three become B21
+ *
+ * Excel answers repeated merge records with "We found a problem with some content", repairs the
+ * file by discarding EVERY merge on that sheet, and names the part in its recovery log:
+ * "Removed Records: Merge cells from /xl/worksheets/sheet1.xml part". Measured on the owner's
+ * September Anti Infective export (2026-09-08): nine region rows put the trailer at 19/20/21
+ * against the template's 18/19/20, a shift of exactly one. August's eight rows moved the block
+ * nowhere at all and Pedia's seven moved it UP, which is why every earlier export opened cleanly —
+ * the defect is a function of how many regions the line has, not of any change made to the code.
+ *
+ * Mapping the whole list at once removes the cascade by construction: a merge is read from the
+ * ORIGINAL text, so a row number that is both somebody's source and somebody else's target can only
+ * be applied once. Exact repeats are then dropped and the count restated, which also cleans up a
+ * template that shipped one twice.
  */
 function moveMerges(sheetXml: string, moved: Map<number, number>): string {
-  let out = sheetXml;
-  for (const [from, to] of moved) {
-    out = out.replace(
-      new RegExp(`<mergeCell ref="([A-Z]+)${from}:([A-Z]+)${from}"\\s*/>`, "g"),
-      `<mergeCell ref="$1${to}:$2${to}"/>`,
-    );
+  const block = /<mergeCells\b[^>]*>[\s\S]*?<\/mergeCells>/.exec(sheetXml);
+  if (!block) return sheetXml;
+
+  // Rewriting the block means owning every entry in it. If any one of them is spelled in a form this
+  // does not read — a paired tag, a ref this pattern misses — the whole block is left exactly as it
+  // was: a merge silently dropped is a worse failure than a merge left on the wrong row, and it is
+  // the kind that shows up as a mangled page rather than as an error.
+  const total = (block[0].match(/<mergeCell\b/g) ?? []).length;
+
+  const seen = new Set<string>();
+  const refs: string[] = [];
+  let read = 0;
+  for (const merge of block[0].matchAll(/<mergeCell ref="([A-Z]+)(\d+):([A-Z]+)(\d+)"\s*\/>/g)) {
+    const [, firstCol, firstRow, lastCol, lastRow] = merge;
+    read += 1;
+    // A footnote's strip is one row, which is the only shape that travels with a moved row. A merge
+    // spanning several rows is part of the sheet's furniture and stays where the owner put it.
+    const target = firstRow === lastRow ? moved.get(Number(firstRow)) : undefined;
+    const ref =
+      target === undefined ? `${firstCol}${firstRow}:${lastCol}${lastRow}` : `${firstCol}${target}:${lastCol}${target}`;
+    if (seen.has(ref)) continue;
+    seen.add(ref);
+    refs.push(ref);
   }
-  return out;
+
+  if (read !== total || refs.length === 0) return sheetXml;
+
+  const rebuilt = `<mergeCells count="${refs.length}">${refs
+    .map((ref) => `<mergeCell ref="${ref}"/>`)
+    .join("")}</mergeCells>`;
+  return `${sheetXml.slice(0, block.index)}${rebuilt}${sheetXml.slice(block.index + block[0].length)}`;
 }
 
 /**
