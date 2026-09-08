@@ -174,10 +174,17 @@ export function runTargetsRollupAchievementTests(): void {
     "coverage must still accumulate only on rows that carry a target",
   );
 
-  // Both pages still thread the coverage figure into the UI. It no longer explains the percentage
-  // — Actual over Target does that now — but it is what tells a manager how much of the line was
-  // targeted at all, which is the first thing asked when a percentage looks surprising.
-  for (const page of ["app/(admin)/sales/targets/page.tsx", "app/employee-portals/targets/page.tsx"]) {
+  // The PORTAL page still threads the coverage figure into the UI. It no longer explains the
+  // percentage — Actual over Target does that now — but it is what tells a manager how much of the
+  // line was targeted at all, which is the first thing asked when a percentage looks surprising.
+  //
+  // The ADMIN page was in this loop until 2026-09-08 and is deliberately no longer. The owner took
+  // achievement off the authoring tab entirely ("I don't need to see achievement in this tab"), so
+  // it has no roll-ups, no coverage figure and no LineTotal left to thread. Its half of this
+  // guarantee is the assertion BELOW — that it carries none of this — rather than a check for
+  // wiring the screen is not allowed to have. Removing a page from the loop without pinning the
+  // reason is how a deliberate deletion becomes indistinguishable from a regression.
+  for (const page of ["app/employee-portals/targets/page.tsx"]) {
     const src = flat(SRC(page));
     assert.ok(src.includes("coveredActualValue: line.coveredActualValue"), `${page} must pass the line's coverage figure`);
     // COUNTED, not merely present: each page maps TWO rollups (by region and by DM). An `includes`
@@ -193,6 +200,19 @@ export function runTargetsRollupAchievementTests(): void {
       !/let lineTotal: \{/.test(src),
       `${page} must not declare an inline lineTotal shape that can drift from the component`,
     );
+  }
+
+  // The admin authoring tab carries NO achievement — owner, 2026-09-08. Pinned positively so the
+  // removal above is a stated rule rather than a gap: a later session restoring a roll-up "for
+  // convenience" puts the percentage back on the one screen he asked to be free of it.
+  {
+    const admin = flat(SRC("app/(admin)/sales/targets/page.tsx"));
+    for (const banned of ["loadMonthlyAchievement", "rollupAchievementBy", "coveredActualValue", "achievementValue"]) {
+      assert.ok(
+        !admin.includes(banned),
+        `the admin Targets page must not carry ${banned} — achievement belongs to Business Review and the portal tab`,
+      );
+    }
   }
 
   // The Monthly Closing analytics dashboards roll the SAME engine up to (period, line, rep) in

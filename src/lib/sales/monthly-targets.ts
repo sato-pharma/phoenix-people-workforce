@@ -94,6 +94,43 @@ export function resolveTargetLineCode(officialLine: string | null | undefined): 
   return LINE_ALIASES[normKey(officialLine)] ?? null;
 }
 
+/** How much of the year one template download covers. */
+export type TargetPeriodScope = "month" | "quarter" | "semester";
+
+/**
+ * The months a template covers, given the month on screen.
+ *
+ * CALENDAR quarters and halves (Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec; Jan-Jun, Jul-Dec), not three
+ * or six months counted forward from the one selected. Targets here are set a quarter at a time
+ * and paid semesterly, so "this quarter" means the company's quarter — a rolling window would hand
+ * back a span that matches no plan and no payout, and the mistake would be invisible in the
+ * download because the sheet would still look right.
+ *
+ * An unparseable period yields just itself: the caller's validation owns rejecting it, and a
+ * template that silently expands a bad month into six bad months is worse than one that does not.
+ */
+export function expandTargetPeriodScope(period: string, scope: TargetPeriodScope): string[] {
+  if (!isValidPeriod(period)) return [period];
+  const [yearRaw, monthRaw] = period.split("-");
+  const year = Number(yearRaw);
+  const month = Number(monthRaw); // 1-12
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return [period];
+
+  const first =
+    scope === "quarter"
+      ? Math.floor((month - 1) / 3) * 3 + 1
+      : scope === "semester"
+        ? (month <= 6 ? 1 : 7)
+        : month;
+  const span = scope === "quarter" ? 3 : scope === "semester" ? 6 : 1;
+
+  const out: string[] = [];
+  for (let i = 0; i < span; i += 1) {
+    out.push(`${year}-${String(first + i).padStart(2, "0")}`);
+  }
+  return out;
+}
+
 // ── Validation reference data ─────────────────────────────────────────────────
 
 export type TargetValidationRefs = {

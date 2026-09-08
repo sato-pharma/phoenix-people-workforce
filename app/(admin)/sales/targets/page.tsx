@@ -1,12 +1,6 @@
 import { redirect } from "next/navigation";
 
-import {
-  TargetsWorkspace,
-  type DmRollup,
-  type LineTotal,
-  type RegionRollup,
-  type TargetGridRow,
-} from "@/components/sales/targets-workspace";
+import { TargetsAuthoring, type TargetGridRow } from "@/components/sales/targets-authoring";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -14,26 +8,18 @@ import { currentCairoDateParts } from "@/lib/i18n/format";
 import { canViewTargetsAdminPage } from "@/lib/sales/portal-targets";
 import {
   SALES_LINES,
-  loadAllCanonicalAreaNames,
-  foldMergedAchievementCells,
-  loadEmployeeNameMap,
-  loadMonthlyAchievement,
-  loadProductNameMap,
-  loadProductPriceMap,
-  loadSourceFiles,
+  loadMonthlyTargets,
+  loadTargetableAreas,
+  loadTargetableProducts,
   regionName,
-  rollupAchievementByDm,
-  rollupAchievementByLine,
-  rollupAchievementByRegion,
-  type SourceFileRow,
 } from "@/lib/sales/monthly-targets";
-import { applyAchievementAreaMerges, getMergedAreaName } from "@/lib/sales/closing-area-merges";
+import { getMergedAreaName } from "@/lib/sales/closing-area-merges";
 
 export const dynamic = "force-dynamic";
 
 /**
- * A 13-month window (6 back → current → 6 forward) so the picker covers loaded-actuals months and
- * forward target months.
+ * A 13-month window (6 back → current → 6 forward) so the picker covers closed months and the
+ * forward months targets are actually set for.
  *
  * `current` MUST come from Cairo, never the runtime clock: this is a server component on a UTC
  * runtime, and `current` becomes the default `selectedPeriod` that the grid SAVES with. Between
@@ -61,11 +47,9 @@ export default async function TargetsPage({
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals/source-of-sales");
   }
-  // VIEW vs EDIT. Until 2026-07-30 this page asserted `sales:import` for both, which only Super
-  // Admin and SFE Manager hold — so even the CEO could not open a report on company target
-  // achievement. Viewing is now `sales:read` bounded by an explicit role list (a bare `sales:read`
+  // VIEW vs EDIT. Viewing is `sales:read` bounded by an explicit role list (a bare `sales:read`
   // would also admit Finance Manager / Financial Advisor, which nobody asked for), and EDITING is
-  // still `sales:import`. Every write route remains `sales:import`-gated server-side.
+  // `sales:import`. Every write route remains `sales:import`-gated server-side.
   try {
     await assertPermission(access, "sales", "read");
   } catch {
@@ -80,96 +64,62 @@ export default async function TargetsPage({
   const selectedPeriod = sp.period && periods.includes(sp.period) ? sp.period : current;
 
   let rows: TargetGridRow[] = [];
-  let lineTotal: LineTotal = null;
-  let byRegion: RegionRollup[] = [];
-  let byDm: DmRollup[] = [];
-  let sourceFiles: SourceFileRow[] = [];
   let error: string | null = null;
 
   try {
-    const [achievement, areaName, productNames, productPrices, employeeNames, files] = await Promise.all([
-      loadMonthlyAchievement(selectedPeriod),
-      loadAllCanonicalAreaNames(),
-      loadProductNameMap(),
-      loadProductPriceMap(),
-      loadEmployeeNameMap(),
-      loadSourceFiles(selectedPeriod),
-    ]);
-    sourceFiles = files;
-    const nameFor = (hrId: string | null): string | null => (hrId ? employeeNames.get(hrId) ?? hrId : null);
-    
-    const mergedAchievement = applyAchievementAreaMerges(achievement);
-    const lineRows = mergedAchievement.filter((row) => row.lineCode === selectedLine);
-
-    // The grid is a KEYED surface: `${areaCode}|${productCode}` is its React key, its edit-state key
-    // and the areaCode it posts on Save. `applyAchievementAreaMerges` only rewrites the code, so on
-    // Pedia the GZ6/UE9 fold left two rows sharing one key — one visible edit box driving both, and
-    // a Save that wrote Fayoum's target while silently leaving Beni Suef's untouched.
+    // ── The row source is the MODEL, not the sales ────────────────────────────
     //
-    // Folded for the GRID ONLY. The roll-ups below deliberately keep `lineRows`: they re-derive
-    // `coveredActualValue` from `hasTarget`, which this fold OR-s, so folding first would count an
-    // untargeted area's actuals as covered and inflate the very percentage the covered rule protects.
-    const gridRows = foldMergedAchievementCells(lineRows);
+    // This page used to build its grid from `au.f_monthly_achievement`, which returns a row only
+    // where a target or a sale already exists. Two consequences, and the second is why it had to
+    // change: achievement belongs to Business Review and the owner does not want it on this tab
+    // at all — and a month with no sales yet returned ZERO rows, so October, November and
+    // December rendered "Nothing loaded" and a target for a future quarter could not be typed AT
+    // ALL. Targets are authored ahead of the sales they are later measured against; a screen that
+    // can only show months which already happened cannot do this job.
+    //
+    // `loadTargetableAreas` is the authority: `carries_target = true` only ("Other" areas carry
+    // none) and merged pairs already folded to one option, so Pedia offers "Fayoum - Beni Suef"
+    // once rather than a Beni Suef cell that no screen can ever display.
+    const [areas, products, targets] = await Promise.all([
+      loadTargetableAreas(selectedLine),
+      loadTargetableProducts(selectedLine),
+      loadMonthlyTargets(selectedPeriod),
+    ]);
 
-    rows = gridRows
-      .map((row) => ({
-        areaCode: row.areaCode ?? "",
-        areaName: getMergedAreaName(selectedLine, row.areaCode ?? "") ?? areaName.get(row.areaCode ?? "") ?? "",
-        regionCode: row.regionCode,
-        regionName: regionName(row.regionCode),
-        areaState: row.areaState,
-        productCode: row.productCode,
-        productName: productNames.get(row.productCode.toUpperCase()) ?? row.productCode,
-        unitPrice: productPrices.get(row.productCode.toUpperCase()) ?? null,
-        actualValue: row.actualValue,
-        targetUnits: row.targetUnits,
-        targetValue: row.targetValue,
-        achievementValue: row.achievementValue,
-        hasActual: row.hasActual,
-        repHrId: row.repHrId,
-        repName: nameFor(row.repHrId),
-        dmHrId: row.dmHrId,
-        dmName: nameFor(row.dmHrId),
-      }))
-      .sort((left, right) => left.areaCode.localeCompare(right.areaCode) || left.productCode.localeCompare(right.productCode));
+    const targetByCell = new Map(
+      targets
+        .filter((target) => target.lineCode === selectedLine)
+        .map((target) => [`${target.areaCode}|${target.productCode.toUpperCase()}`, target]),
+    );
 
-    const line = rollupAchievementByLine(lineRows)[0];
-    lineTotal = line
-      ? { actualValue: line.actualValue, coveredActualValue: line.coveredActualValue, targetValue: line.targetValue, achievementValue: line.achievementValue }
-      : null;
-    byRegion = rollupAchievementByRegion(lineRows)
-      .map((entry) => ({
-        region: regionName(entry.regionCode),
-        actualValue: entry.actualValue,
-        coveredActualValue: entry.coveredActualValue,
-        targetValue: entry.targetValue,
-        achievementValue: entry.achievementValue,
-      }))
-      .sort((left, right) => left.region.localeCompare(right.region));
-    byDm = rollupAchievementByDm(lineRows)
-      .map((entry) => ({
-        dmName: nameFor(entry.key) ?? entry.key,
-        actualValue: entry.actualValue,
-        coveredActualValue: entry.coveredActualValue,
-        targetValue: entry.targetValue,
-        achievementValue: entry.achievementValue,
-      }))
-      .sort((left, right) => left.dmName.localeCompare(right.dmName));
+    rows = areas.flatMap((area) =>
+      products.map((product) => {
+        const target = targetByCell.get(`${area.areaCode}|${product.productCode.toUpperCase()}`);
+        return {
+          areaCode: area.areaCode,
+          areaName: getMergedAreaName(selectedLine, area.areaCode) ?? area.areaName,
+          regionCode: area.regionCode,
+          regionName: regionName(area.regionCode),
+          areaState: area.areaState,
+          productCode: product.productCode,
+          productName: product.productName,
+          unitPrice: product.factoryPrice,
+          targetUnits: target?.targetUnits ?? null,
+          targetValue: target?.targetValue ?? null,
+        } satisfies TargetGridRow;
+      }),
+    );
   } catch (loadError) {
     error = loadError instanceof Error ? loadError.message : "Failed to load targets.";
   }
 
   return (
-    <TargetsWorkspace
+    <TargetsAuthoring
       lines={SALES_LINES}
       periods={periods}
       selectedLine={selectedLine}
       selectedPeriod={selectedPeriod}
       rows={rows}
-      lineTotal={lineTotal}
-      byRegion={byRegion}
-      byDm={byDm}
-      sourceFiles={sourceFiles}
       error={error}
       canEdit={canEdit}
     />

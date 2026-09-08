@@ -43,6 +43,9 @@ const SAMPLE_TEXT = "FF166534";
 const REF_HEADER_FILL = "FFFFF7ED"; // warm light-orange (reference sheet headers)
 
 const PREWIRED_ROWS = 200; // 42 areas × up to a few products, with headroom
+
+/** Blank rows kept below a laid-out block so a row can always be added by hand. */
+const SPARE_ROWS = 40;
 const BANNER_ROWS = 2; // row1 brand title, row2 subtitle
 const HEADER_ROW = BANNER_ROWS + 1; // = 3
 const FIRST_DATA_ROW = HEADER_ROW + 1; // = 4
@@ -128,12 +131,26 @@ export async function generateTargetsTemplate(opts?: {
   lineLabel?: string;
   areas?: ReadonlyArray<TargetTemplateArea>;
   products?: ReadonlyArray<TargetTemplateProduct>;
+  /**
+   * The months the sheet is laid out for — one row per (period × area × product). A month, a
+   * quarter or a semester, chosen on the page. Omitted (or empty) keeps the old two-example
+   * behaviour, which is what any caller that has not asked for a span still expects.
+   */
+  periods?: ReadonlyArray<string>;
+  /**
+   * Existing targets, keyed `${period}|${areaCode}|${productCode}`. Present = the POPULATED
+   * download: the same sheet with the numbers already in it, so a month can be edited in Excel
+   * and uploaded back rather than re-typed from nothing.
+   */
+  existing?: ReadonlyMap<string, { targetUnits: number | null; targetValue: number | null }>;
   now?: Date;
 }): Promise<ArrayBuffer> {
   const lineLabel = opts?.lineLabel?.trim() || "All lines";
   const areas = opts?.areas ?? [];
   const products = opts?.products ?? [];
-  const months = buildMonths(opts?.now ?? new Date());
+  // The dropdown offers the rolling 18 months PLUS every month this sheet was laid out for, so a
+  // populated download of a past month still validates against its own Period cells.
+  const months = [...new Set([...(opts?.periods ?? []), ...buildMonths(opts?.now ?? new Date())])].sort();
 
   const wb = new ExcelJS.Workbook();
   wb.creator = systemIdentity.appName;
@@ -194,38 +211,81 @@ export async function generateTargetsTemplate(opts?: {
   const areaFx = (r: number) => `IF($E${r}="","",IFERROR(VLOOKUP($E${r},${q(areaSheetName)}!$A:$C,2,FALSE),""))`;
   const valueFx = (r: number) => `IF(OR($G${r}="",$H${r}=""),"",$G${r}*$H${r})`;
 
-  // Two example rows (green) — picked from the real line data so they're valid to upload.
-  type Sample = { period: string; product?: TargetTemplateProduct; area?: TargetTemplateArea; units: number };
-  const samples: Sample[] = [];
-  if (products[0] && areas[0]) samples.push({ period: months[0], product: products[0], area: areas[0], units: 1000 });
-  if (products[Math.min(1, products.length - 1)] && areas[Math.min(1, areas.length - 1)]) {
-    samples.push({ period: months[0], product: products[Math.min(1, products.length - 1)], area: areas[Math.min(1, areas.length - 1)], units: 500 });
+  // ── The data block ──────────────────────────────────────────────────────────
+  //
+  // With a span (`periods`) the sheet is LAID OUT: one row for every period × area × product, with
+  // Period, Product and Area already filled, so the whole job is typing a column of units. The
+  // populated download is the same layout with `existing` written into it, which is what makes the
+  // sheet round-trip — download, edit, upload — instead of being a blank form.
+  //
+  // Without a span it keeps the two green examples it always had. Both shapes upload identically:
+  // `parseTargetsWorkbook` maps by header NAME and ignores blank rows.
+  type Planned = { period: string; product?: TargetTemplateProduct; area?: TargetTemplateArea; units: number | null; value: number | null; sample: boolean };
+  const planned: Planned[] = [];
+  const spanMonths = (opts?.periods ?? []).filter((period) => typeof period === "string" && period.trim() !== "");
+
+  if (spanMonths.length > 0) {
+    for (const period of spanMonths) {
+      for (const area of areas) {
+        for (const product of products) {
+          const stored = opts?.existing?.get(`${period}|${area.areaCode}|${product.productCode.toUpperCase()}`);
+          planned.push({
+            period,
+            product,
+            area,
+            units: stored?.targetUnits ?? null,
+            value: stored?.targetValue ?? null,
+            sample: false,
+          });
+        }
+      }
+    }
+  } else {
+    if (products[0] && areas[0]) planned.push({ period: months[0], product: products[0], area: areas[0], units: 1000, value: null, sample: true });
+    if (products[Math.min(1, products.length - 1)] && areas[Math.min(1, areas.length - 1)]) {
+      planned.push({
+        period: months[0],
+        product: products[Math.min(1, products.length - 1)],
+        area: areas[Math.min(1, areas.length - 1)],
+        units: 500,
+        value: null,
+        sample: true,
+      });
+    }
   }
 
-  for (let i = 0; i < PREWIRED_ROWS; i += 1) {
+  // Spare blank rows below the block, so a row can always be added by hand.
+  const dataRows = Math.max(PREWIRED_ROWS, planned.length + SPARE_ROWS);
+
+  for (let i = 0; i < dataRows; i += 1) {
     const r = FIRST_DATA_ROW + i;
-    const sample = samples[i];
+    const sample = planned[i];
     const price = sample?.product?.factoryPrice ?? null;
+    // A value-only target (units unknown) must survive the round trip, so the Target Value cell
+    // carries the stored number as a LITERAL rather than the units × price formula.
+    const valueIsLiteral = !!sample && sample.units == null && sample.value != null;
     const resultOf = {
       code: sample?.product?.productCode ?? "",
       line: sample ? lineLabel : "",
       area: sample?.area?.areaCode ?? "",
       price: price ?? "",
-      value: sample && price != null ? sample.units * price : "",
+      value: sample && sample.units != null && price != null ? sample.units * price : (sample?.value ?? ""),
     };
-    // Input cells (literal on sample rows, blank otherwise).
+    // Input cells (literal on planned rows, blank otherwise).
     if (sample) {
       ws.getCell(r, COL.period).value = sample.period;
       ws.getCell(r, COL.productName).value = sample.product?.productName ?? "";
       ws.getCell(r, COL.areaName).value = sample.area?.areaName ?? "";
-      ws.getCell(r, COL.units).value = sample.units;
+      if (sample.units != null) ws.getCell(r, COL.units).value = sample.units;
     }
     // Auto cells (formulas; sample rows carry a cached result so they read correct pre-recalc).
     ws.getCell(r, COL.productCode).value = { formula: codeFx(r), result: resultOf.code };
     ws.getCell(r, COL.line).value = { formula: lineFx(r), result: resultOf.line };
     ws.getCell(r, COL.areaCode).value = { formula: areaFx(r), result: resultOf.area };
     ws.getCell(r, COL.unitPrice).value = { formula: priceFx(r), result: resultOf.price };
-    ws.getCell(r, COL.value).value = { formula: valueFx(r), result: resultOf.value };
+    ws.getCell(r, COL.value).value = valueIsLiteral
+      ? sample.value
+      : { formula: valueFx(r), result: resultOf.value };
 
     // Per-cell styling + number formats.
     COLUMNS.forEach((col, ci) => {
@@ -233,7 +293,7 @@ export async function generateTargetsTemplate(opts?: {
       cell.border = gridBorder();
       if (col.numFmt) cell.numFmt = col.numFmt;
       cell.alignment = { vertical: "middle", horizontal: ci + 1 === COL.productName || ci + 1 === COL.areaName ? "left" : "center" };
-      if (sample) {
+      if (sample?.sample) {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: SAMPLE_CELL_FILL } };
         cell.font = { color: { argb: SAMPLE_TEXT }, name: "Calibri", size: 10, italic: col.kind === "auto" };
       } else {
@@ -244,7 +304,7 @@ export async function generateTargetsTemplate(opts?: {
   }
 
   // Dropdowns across the whole data block.
-  const lastRow = FIRST_DATA_ROW + PREWIRED_ROWS - 1;
+  const lastRow = FIRST_DATA_ROW + dataRows - 1;
   const listDV = (formula: string, promptTitle: string, prompt: string): ExcelJS.DataValidation => ({
     type: "list",
     allowBlank: true,
