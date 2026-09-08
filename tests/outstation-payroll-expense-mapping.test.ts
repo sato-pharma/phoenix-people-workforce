@@ -54,6 +54,10 @@ export function runOutstationPayrollExpenseMappingTests() {
   assert.equal(mapped.hrNotes, "Reviewed by HR");
   assert.equal(mapped.amWorkload, 1, "the resolved am_workload, not the zeroed report_am_workload");
   assert.equal(mapped.pmWorkload, 7, "the resolved pm_workload, not the zeroed report_pm_workload");
+  // The stay/duration label, unchanged — the approvals report renders it under "Travel Stay
+  // Type". What moved on 2026-09-08 is the MEETING CLASSIFICATION, which no longer reads this
+  // label and comes from `expense_type` instead; see the meeting cases in
+  // tests/outstation-payroll-payable-total-agreement.test.ts.
   assert.equal(mapped.tripType, "Return same day");
   assert.equal(mapped.payoutMonth, 6);
   assert.equal(mapped.payoutYear, 2026);
