@@ -1982,6 +1982,20 @@ const hrNavigationSectionSeeds = [
       // were — it is the rail that is quieter. Do not re-add them "for completeness": the
       // crowding IS the defect he named.
       { href: "/hr/recruitment/whatsapp-replies", icon: MessageSquareText, label: "WhatsApp Replies", permissions: [{ resource: "recruitment" }] },
+      // WhatsApp Templates — the HR shell's own row for /recruitment/whatsapp-templates.
+      //
+      // THE ADMIN ROW IS NOT ENOUGH, and that is the whole reason this exists. The HR Business
+      // Partner works in the `/hr` shell, which renders from THIS catalogue, so the admin-shell row
+      // added with the feature was invisible to the one person who uses it most: she could reach
+      // the page only by typing the URL. Measured 2026-09-08 by signing in as the seat and watching
+      // the redirect land on /hr/recruitment/whatsapp-templates with no row to click.
+      //
+      // `roles: ["HR Advisory"]` matches Manager CV Engagement two rows down, and it is required
+      // rather than cosmetic: HR Operations also renders this shell, and `canSendWhatsAppTemplate`
+      // redirects her — an offered link that redirects is what every-offered-link-opens.test.ts
+      // exists to catch. "HR Advisory" is the permission key; "HR Business Partner" is the job
+      // title shown for it (HR_SEAT_JOB_TITLES), never a role in its own right.
+      { href: "/hr/recruitment/whatsapp-templates", icon: MessageCircle, label: "WhatsApp Templates", permissions: [{ resource: "recruitment", action: "update" }], roles: ["HR Advisory"] },
       // Added 2026-09-01. The page was `admin:update` — Super Admin alone — and was re-gated to
       // `recruitment:update` rather than the resource being widened, because `admin:update` also
       // opens module locks, scope visibility, salary flags and a notification TEST-SEND endpoint.
