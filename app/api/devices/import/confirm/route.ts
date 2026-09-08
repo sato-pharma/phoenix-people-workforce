@@ -78,7 +78,14 @@ export async function POST(request: Request) {
     const rows = await parseDeviceImportFile(await file.arrayBuffer());
     if (rows.length === 0) {
       return NextResponse.json(
-        { error: "no_rows", message: "That file has no device rows in it." },
+        {
+          error: "no_rows",
+          // The likeliest way to reach this is the "Walk the fleet" sheet, which arrives with one
+          // row per employee and no device on any of them. "No device rows" reads there as a fault
+          // in the file rather than as "you have not filled it in yet", so the message says which.
+          message:
+            "Nothing has been saved. There is no device on any row of this file yet — put an asset tag and a serial number or an IMEI beside the people who are holding something, then choose the file again.",
+        },
         { status: 400 },
       );
     }
