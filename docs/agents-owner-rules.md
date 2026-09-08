@@ -1471,6 +1471,96 @@ nothing per request, and it is enforced **mechanically** rather than by memory: 
 two check constraints, a gate and a test. A session cannot rebuild any of the three without
 hitting a constraint or a red suite first.
 
+## The premium Monthly Closing wears its own executive look — owner decision, 2026-09-08
+
+He sent a redesigned Monthly Closing workbook with a long brief, and the instruction was not "try
+this": *"Treat this workbook as the OFFICIAL visual reference and design standard for all future
+Monthly Closing files. Your task is NOT to invent a new design."* Navy `#0A1F33` and `#103A5C`,
+corporate blue `#0B78B7`, a light-blue KPI band, an amber warning strip, Segoe UI throughout, and a
+Contents page organised as five numbered sections rather than a list.
+
+### It departs from three of his own locked rules, and he was told so before the work began
+
+- **Square-edge.** The navigation buttons are rounded rectangles. The golden rule of 2026-09-04 says
+  no round or semi-round corners anywhere.
+- **The ink rule.** The look is carried by AREA: a filled navy title band, filled table headers,
+  filled KPI panels — 136 filled shapes in the build this was measured on. The house standard's ink
+  rule says colour is carried by lines and type, never by area.
+- **The house palette.** Its navy is in no part of the Sato mark. The house palette is the four
+  blues measured from the logo (`#0A527D`, `#0A6BA6`, `#1482C2` and the tint), and `#0A1F33` is the
+  family that palette explicitly replaced.
+
+He was shown all three, in those words, and answered: *"yes, keep the design, pin it with a test."*
+So this is a per-EXPORT exemption, exactly like the automated payroll exports and the weekly NSM/DSM
+book before it. The offer letters, the hiring pack and the published payslip renderer are untouched
+by it and stay on the house identity.
+
+### Why it needs a test rather than a note
+
+Because it is the third time. `house-identity.ts` says every company document wears
+SATO-DIS-2026-01 v1.0, so a session sweeping for documents not yet on the standard finds this
+workbook, finds a rounded button bar and filled bands, and "finishes the job" — reversing an owner
+decision while believing it is enforcing one. That has already happened to the payroll exports and
+to the weekly book. `tests/closing-executive-look.test.ts` fails on any brand blue as fill or as
+type, on the workbook's own three colours going missing, on every shape being square-cornered, on
+the filled bands being stripped, and on the band heights being reset. It carries a positive control,
+because every colour assertion passes on an empty string, and it was proved RED four ways — buttons
+squared, fills stripped, a house blue painted in, and the warning strip reset to its old height —
+each firing its own message rather than the suite merely going red.
+
+### The reference file is a specification, not a template
+
+⚠ The approved workbook **cannot be opened by Microsoft Excel**. It is written by a .NET OOXML
+writer that puts its pivot cache outside `xl/` and uses absolute relationship targets; Excel refuses
+it outright, repair mode included, and writes no recovery log because it never gets far enough to
+repair anything. Verified against a control in the same Excel session, and relocating the pivot
+cache into `xl/` and rewriting every reference did not fix it. Whatever rendered it for the owner
+was not Excel.
+
+So the design was ported into our own engine rather than adopted as a file. That is also the only
+route that satisfies his own brief: the reference preserves the logic faithfully — 47 formulas, the
+Rep Card dropdown, three pivots, two slicers, identical counts to ours — but a workbook nobody can
+open cannot be the standard, and his brief ends *"Verify workbook opens normally in Microsoft
+Excel."*
+
+### What the port put in
+
+`src/lib/sales/closing-executive-look.ts` carries the measured geometry for all seventeen sheets,
+read out of the reference package rather than eyeballed off the four screenshots he sent, so it
+covers the thirteen sheets he did not photograph. Row heights are stored as a design block plus one
+repeated body height, so a month with more areas keeps its styling all the way down rather than
+stopping partway.
+
+Column widths are applied by APPENDING narrow overrides to each sheet's existing `<cols>`, never by
+rebuilding the block. Rebuilding produced a workbook Excel refused to open outright, and
+`check-workbook-integrity.mjs` called it CLEAN; bisecting sheet by sheet put it on Rep Ranking,
+whose block carries `style="2"` on every entry and a catch-all out to column 16384, both of which
+the rebuild dropped. Appending is also the shape the owner's own reference uses.
+
+### The warning strip, which is the first thing the brief forbids
+
+*"Warning must NEVER overlap buttons."* It did, on every sheet, for as long as the note has existed.
+It was written to A2 because row 2 is empty in the template — but empty is not free: every
+navigation button is a drawing anchored from row 2, so the buttons painted straight over it.
+
+Raising the row does not fix it, which is worth knowing before someone tries. The buttons are
+anchored from row 2 INTO row 3 (`+53,975` through `+6,350`), and a `twoCellAnchor` resizes with its
+rows, so a taller row 2 yields a taller button with the same overhang. The note moved to row 3,
+where the reference puts it, and `fitNavigationBand` clamps every band shape to end at the bottom of
+row 2 — uniformly, so the buttons stay identical in height to each other, which is the other half of
+the brief.
+
+`tests/closing-engine-export.test.ts` gained the assertion whose absence let this ship: no shape on
+Overview may reach the warning row. Every earlier check was about the note's TEXT, and the text was
+always right; what was wrong was a drawing floating over it, which no cell-level read can see.
+
+### Seeing it at all
+
+`scripts/render-workbook-sheets.ps1` renders each sheet to PNG through Excel itself, because all
+three of the documented ways of looking at a generated workbook lie (AGENTS.md §2.1). Four capture
+combinations were measured before one worked — the file's header carries the table and the byte
+floor that separates a real render from a blank page, since a blank render reads as an empty sheet.
+
 ## The weekly NSM/DSM export keeps the beige look — owner decision, 2026-09-08
 
 ### What happened
