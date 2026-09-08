@@ -27,6 +27,8 @@ export type WhatsAppTemplate = {
   body: string;
   isActive: boolean;
   sortOrder: number;
+  /** 'any' = candidates and employees; 'employee' = kept off the candidate screen. */
+  audience: "any" | "employee";
   /** Derived from the body on read — never stored, so it can never disagree with the text. */
   variableKeys: string[];
   updatedAt: string | null;
