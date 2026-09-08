@@ -479,4 +479,19 @@ export function runDriveScriptAgreesWithAppTests() {
       `the candidate SELECT must fetch ${column}, or cabinetPathFor files on a lower rung than the app did`,
     );
   }
+
+  // A CV binned in Drive by a person is a STATE, not a failed attempt. `--verify` counted it under
+  // "last attempt errored — run with --retry", which invites re-uploading a file somebody deleted on
+  // purpose; following that advice would undo the deletion and read as tidying up. The marker is
+  // matched by importing the app's constant, never by spelling the sentence again — a copied string
+  // match fails SILENTLY the first time the message is reworded, and the failure is the report going
+  // back to calling a deliberate deletion an error.
+  assert.ok(
+    source.includes("REMOVED_FROM_DRIVE_BY_HAND"),
+    "the script must import the hand-deleted marker from the mirror, not re-spell it",
+  );
+  assert.ok(
+    !source.includes("Removed from Drive by hand"),
+    "the hand-deleted marker must not be written out a second time — import the constant",
+  );
 }

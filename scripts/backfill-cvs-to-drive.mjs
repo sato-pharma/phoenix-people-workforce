@@ -38,6 +38,7 @@ import process from "node:process";
 // above `sanitize` for the drift that made this non-negotiable.
 import { CABINET_ROOT_NAME, cabinetPathFor } from "@/lib/recruitment/drive-cabinet-folders";
 import { sanitizeDriveSegment } from "@/lib/recruitment/drive-cv-folders";
+import { REMOVED_FROM_DRIVE_BY_HAND } from "@/lib/recruitment/drive-cv-mirror";
 
 // ── env ──────────────────────────────────────────────────────────────────────────────────────────
 // Loaded by hand rather than via a dependency: this script has to run from a bare worktree, where
@@ -500,10 +501,21 @@ async function verifyMirror(areaRegions) {
     for (const candidate of page) byId.set(candidate.id, candidate);
   }
 
-  const stats = { errored: 0, misfiled: 0, mirrored: 0, notMirrored: 0, orphanCandidate: 0, total: rows.length };
+  const stats = {
+    errored: 0,
+    misfiled: 0,
+    mirrored: 0,
+    notMirrored: 0,
+    orphanCandidate: 0,
+    removedByHand: 0,
+    total: rows.length,
+  };
   const moves = new Map();
   for (const file of rows) {
-    if (file.drive_mirror_error) stats.errored += 1;
+    // A CV somebody binned in Drive is a STATE, not a failed attempt. Counting it as an error made
+    // the report say "run with --retry", which would re-upload a file that was deleted on purpose.
+    if (file.drive_mirror_error === REMOVED_FROM_DRIVE_BY_HAND) stats.removedByHand += 1;
+    else if (file.drive_mirror_error) stats.errored += 1;
     if (!file.drive_mirror_file_id) {
       stats.notMirrored += 1;
       continue;
@@ -527,6 +539,10 @@ async function verifyMirror(areaRegions) {
   console.log(`  mirrored into Drive           ${stats.mirrored}`);
   console.log(`  NOT mirrored yet              ${stats.notMirrored}${stats.notMirrored ? "   <- run without --verify" : ""}`);
   console.log(`  last attempt errored          ${stats.errored}${stats.errored ? "   <- run with --retry" : ""}`);
+  console.log(
+    `  deleted in Drive by hand      ${stats.removedByHand}`
+      + `${stats.removedByHand ? "   <- left alone on purpose, nothing to do" : ""}`,
+  );
   console.log(`  in the WRONG folder           ${stats.misfiled}${stats.misfiled ? "   <- run with --refile" : ""}`);
   console.log(`  file has no candidate row     ${stats.orphanCandidate}`);
   if (moves.size) {
