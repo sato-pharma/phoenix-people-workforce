@@ -1484,6 +1484,8 @@ import { runAttendanceDeductionCancelRuleTests } from "./attendance-deduction-ca
 import { runAttendanceDeductionCancelMatrixTests } from "./attendance-deduction-cancel-matrix.test.ts";
 import { runSecretBoxTests } from "./secret-box.test.ts";
 
+import { runAttendanceWeeklyDigestTests } from "./attendance-weekly-digest.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -4791,6 +4793,10 @@ await runTest(
 await runTest(
   "WhatsApp message templates (placeholders derive the fields, an empty value is refused rather than rendering \"Dear ,\", the message survives the wa.me URL round trip, and an Egyptian number is repaired before it is read as international)",
   runWhatsAppMessageTemplateTests,
+);
+await runTest(
+  "weekly attendance digest (four settlement weeks with no gap, a closed week only, and a cancelled day never becoming a chargeable line)",
+  runAttendanceWeeklyDigestTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
