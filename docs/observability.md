@@ -528,7 +528,7 @@ silence.
 
 There used to be a log-based metric (`phoenix_hr_production_request_latencies`, applied via a script
 now deleted) that excluded deploy-time smoke-test traffic from the p95 that paged the owner. It
-existed because `deploy-cloud-run.yml` smoke-tested each new revision through a no-traffic
+existed because the since-deleted Cloud Run deploy workflow smoke-tested each new revision through a no-traffic
 `sha-<8hex>` tag URL, and those cold-start hits polluted the raw Cloud Run latency metric.
 
 **Both halves of that are gone**: there is no no-traffic tag deploy on Railway, and the alert it

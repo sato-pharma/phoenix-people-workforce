@@ -1800,10 +1800,15 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: hrAuthorityNavigationRoles },
       // Vacation Action Center removed — replaced by the Approvals Hub › Vacation Approvals surface.
       { href: "/employee-portals/attendance", icon: Fingerprint, label: "Fingerprint Report", permissions: [{ resource: "attendance", action: "read" }] },
-      // Same grant as the report above: the digest page and its API are self-scoped in
-      // the service (listMyDigests takes no employee parameter), so attendance:read
-      // opens your own week and nobody else's.
-      { href: "/employee-portals/attendance/digests", icon: CalendarCheck, label: "Weekly Attendance", permissions: [{ resource: "attendance", action: "read" }] },
+      // Weekly Attendance digest row REMOVED 2026-09-08, owner instruction, while he settles
+      // the rules for telling people the page exists. Six real digests carrying real names
+      // and EGP amounts are sitting behind it, and nobody has been told they are there.
+      //
+      // The row is deleted rather than commented back in later from memory: the page and its
+      // API are unchanged and still gated on attendance:read, so restoring visibility is one
+      // line here. What this does NOT do is close the page — hiding a nav row is UX only, and
+      // /employee-portals/attendance/digests still answers for anyone who has the URL. If the
+      // page itself must refuse, that is a gate in the page, not an entry in this file.
       { href: "/employee-portals/visits", icon: MapPinned, label: "My Visits", permissions: [{ resource: "crm_visits", action: "read" }] },
     ],
     label: "Leave Management",
