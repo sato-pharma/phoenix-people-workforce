@@ -288,6 +288,37 @@ export function runRecruitmentOfferLetterBridgeTests() {
     "the row's controls must wrap - overflow-x-auto over a min-width floor IS the bug, not the fix",
   );
 
+  // ── RECORDING THE ANSWER, ON BOTH SURFACES ────────────────────────────────────────────────
+  //
+  // The Accepted / Declined pair lived only in the desktop table, so an offer's outcome could be
+  // recorded at a desk and nowhere else - while a phone is how these are read. An offer nobody can
+  // answer sits on "sent" forever, which is the state that made every letter look outstanding and
+  // the reason this pair was added in the first place.
+  //
+  // Counted, not matched: one occurrence passes while the card still carries nothing.
+  {
+    for (const [what, pattern] of [
+      ["the accept action", /recordAnswer\(offer, "accepted"\)/g],
+      ["the decline action", /recordAnswer\(offer, "declined"\)/g],
+      ["both gates together", /canManage && offer\.status === "sent"/g],
+    ] as const) {
+      const found = composer.match(pattern) ?? [];
+      assert.ok(
+        found.length >= 2,
+        `${what} must appear on BOTH the desktop row and the mobile card - it was on the table `
+          + `only, so an answer could be recorded at a desk and nowhere else. Found ${found.length}`,
+      );
+    }
+    // The card's own row must wrap too. Three buttons do not fit one line at 375px, and the
+    // owner's rule makes wrapping the answer - never a sideways scroll, never a shrunk control.
+    assert.match(
+      composer,
+      /className="mt-3 flex flex-wrap gap-2"/,
+      "the card's controls must wrap: with Accepted, Declined and PDF on one line, a fixed row "
+        + "overflows a 375px card, and overflow-x-auto over a min-width floor IS the bug",
+    );
+  }
+
   // ── THE RECIPIENT ADDRESS, ON BOTH SURFACES ───────────────────────────────────────────────
   //
   // The desktop table has carried the email under the candidate's name since the module shipped.
