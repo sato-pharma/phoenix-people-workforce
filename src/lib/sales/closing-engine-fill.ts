@@ -7,7 +7,7 @@ import {
 } from "./closing-engine-template-generated";
 import { ACHIEVEMENT_ARROW_AT } from "./closing-engine-data";
 import { CLOSING_ENGINE_EMBLEM_ON_DARK_PNG_BASE64 } from "./closing-engine-emblem-on-dark";
-import { applyExecutiveGeometry, fitNavigationBand, resolveSheetParts } from "./closing-executive-look";
+import { applyExecutiveGeometry, applyExecutivePalette, ensureAccentButtonStyle, fitNavigationBand, paintExecutiveBands, resolveSheetParts, applyOnDarkEmblem } from "./closing-executive-look";
 import { PIVOT_GRID_SPECS, buildPivotGrid, type GridCellKind } from "./closing-pivot-grid";
 
 /**
@@ -302,6 +302,20 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   await updateReferences(zip, fill);
   await fitRegionControls(zip, fill);
   await sizeMatrixColumns(zip, fill);
+  // AFTER the columns are final, and that ordering is the whole point. A slicer is a two-cell
+  // anchor: Excel sizes it from its two CORNERS, resolved against the column widths as they stand
+  // when the file is opened. Sizing it inside `fitRegionControls` -- one line above
+  // `sizeMatrixColumns` -- computed those corners against widths that were about to change, so the
+  // control came out narrower than its captions needed and every region button printed an
+  // ellipsis: "Ale...", "Delt...", "Upp...". Measured 653px where nine regions with a thirteen
+  // character name need about 1,035.
+  //
+  // Nothing in the finished file shows this. The columns and the corners are both perfectly
+  // reasonable; they simply were not computed against each other.
+  {
+    const regions = distinctColumn(fill.data.salesData, 0);
+    if (regions.length) await widenRegionSlicers(zip, regions);
+  }
   await sizePivotAchievementFormats(zip, fill);
   await orderPivotItems(zip, fill);
   await dropStaleLabelFormats(zip);
@@ -336,7 +350,17 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   // button and the Rep Card's link are all authored above, and a shape clamped before it exists is
   // a shape still hanging over the warning strip. Both builds need it -- the .xlsm carries the
   // owner's own buttons, which have the same overhang the clones inherited from them.
-  await fitNavigationBand(zip, await resolveSheetParts(zip));
+  // The palette first: it SUBSTITUTES colours the template already uses, so it must run before the
+  // band painter adds styles of its own -- those are authored in the approved colours already and
+  // would be swapped a second time by a map that does not expect them.
+  await applyExecutivePalette(zip);
+
+  const finalParts = await resolveSheetParts(zip);
+  const banded = await paintExecutiveBands(zip, finalParts);
+  // Only the sheets that actually got a navy masthead. A sheet still on white keeps the black-SATO
+  // mark, which is the correct one for it.
+  await applyOnDarkEmblem(zip, finalParts, banded);
+  await fitNavigationBand(zip, finalParts);
 
   // Directory entries must not reach the file, and this has to be the LAST thing done to the zip.
   // An OPC package is a flat set of parts: an item whose name ends in "/" is not a part at all and
@@ -828,8 +852,21 @@ function columnWidthReader(sheetXml: string): (index: number) => number {
   const fallback = (Math.round(DEFAULT_COLUMN_WIDTH * 7) + 5) * EMU_PER_PIXEL;
   return (index) => {
     const column = index + 1;
-    const run = runs.find((candidate) => column >= candidate.min && column <= candidate.max);
-    return run ? run.emu : fallback;
+    // LAST match, not first. `<cols>` may carry overlapping entries -- the owner's approved
+    // reference does, and `applyExecutiveGeometry` appends narrow overrides on top of the template's
+    // runs rather than rebuilding the block, because rebuilding dropped attributes Excel needed.
+    // Excel resolves an overlap by letting the LATER entry win, so a reader that stops at the first
+    // one measures a width the sheet no longer uses.
+    //
+    // Nothing about that failure looks like a width problem. Every drawing here is anchored in EMUs
+    // computed from this function, so the whole navigation bar gets laid out against stale columns
+    // and the buttons land on top of each other. Measured on the Rep Card, whose columns moved most;
+    // Overview's barely moved and rendered perfectly, which is how it would have shipped.
+    for (let at = runs.length - 1; at >= 0; at -= 1) {
+      const run = runs[at]!;
+      if (column >= run.min && column <= run.max) return run.emu;
+    }
+    return fallback;
   };
 }
 
@@ -930,7 +967,8 @@ async function fitRegionControls(zip: JSZip, fill: ClosingEngineFill): Promise<v
   const regions = distinctColumn(fill.data.salesData, 0);
   if (!regions.length) return;
   await rebuildRegionButtons(zip, regions);
-  await widenRegionSlicers(zip, regions);
+  // `widenRegionSlicers` is NOT called here. It has to run after `sizeMatrixColumns`; see the note
+  // on the call site in `fillClosingEngine`.
 }
 
 /** A shape name has to be a plain identifier, and unique inside its drawing. */
@@ -1028,7 +1066,16 @@ async function rebuildRegionButtons(zip: JSZip, regions: string[]): Promise<void
   const measured = new Map<string, number>();
   for (const block of buttons) {
     const caption = /<a:t>([\s\S]*?)<\/a:t>/.exec(block)?.[1];
-    if (caption) measured.set(caption, edge(block, ANCHOR_TO) - edge(block, ANCHOR_FROM));
+    if (!caption) continue;
+    // A measured width is only usable if it is POSITIVE. Both edges are resolved through the column
+    // table, so a button whose two anchors land either side of a column whose width changed can
+    // measure as zero or negative -- and that width goes straight into `<a:ext cx>`, which Excel
+    // refuses outright: the workbook stops opening at all, with no repair prompt and nothing in the
+    // integrity check to see, because the XML is perfectly well-formed. Measured cx=-750166 on the
+    // Rep Ranking drawing. Dropping the bad measurement lets `buttonWidth` fall back to its caption
+    // estimate, which is what it does for a caption it has never seen.
+    const span = edge(block, ANCHOR_TO) - edge(block, ANCHOR_FROM);
+    if (span > 0) measured.set(caption, span);
   }
   const startX = Math.min(...buttons.map((block) => edge(block, ANCHOR_FROM)));
   const endX = Math.max(...buttons.map((block) => edge(block, ANCHOR_TO)));
@@ -1785,8 +1832,29 @@ async function clearTitleEmblem(zip: JSZip, fill: ClosingEngineFill): Promise<vo
     const to = ANCHOR_TO.exec(emblem)?.[0];
     // A one-cell anchor carries its own size and only the corner moves; a two-cell one is defined
     // by both corners, so it has to travel as a whole or the logo stretches.
+    //
+    // THE WIDTH MUST BE POSITIVE, and it is not always. Both corners are resolved through the
+    // column table, so an emblem whose anchor spans columns that have since narrowed can measure as
+    // zero or negative -- and that number goes straight into `<a:ext cx>`. Excel does not repair a
+    // shape with a negative width, it REFUSES THE WORKBOOK: no dialog, no recovery log, and nothing
+    // for the integrity check to see, because the XML is perfectly well formed. Measured
+    // cx=-750166 on the Rep Ranking emblem.
+    //
+    // A logo left where the template put it is a cosmetic imperfection on one sheet. A workbook
+    // that will not open is the whole file. So an unusable measurement means DO NOT MOVE IT.
+    //
+    // BUT THE MEASUREMENT ITSELF WAS THE FAULT. Taking the width as the distance between the two
+    // corners resolves both through the column table, so the answer is only as stable as the
+    // columns -- and this workbook now sets several of them to two and three characters. Skipping
+    // the move kept the file openable and left the logo sitting ON TOP of the title, on exactly the
+    // sheet whose title is longest. `<a:ext cx>` is the shape's own cached size, not derived from
+    // the grid at all, so it survives any column change; the corner span is kept only as a fallback
+    // for a shape that carries no ext.
+    const cached = Number(/<a:ext\b[^>]*\bcx="(\d+)"/.exec(emblem)?.[1] ?? Number.NaN);
+    const span = Number.isFinite(cached) && cached > 0 ? cached : to ? anchorX(widthOf, to) - left : 0;
+    if (to && span <= 0) continue;
     const moved = to
-      ? moveAnchor(widthOf, emblem, needed, anchorX(widthOf, to) - left)
+      ? moveAnchor(widthOf, emblem, needed, span)
       : emblem.replace(from, writeAnchorX(from, locateColumn(widthOf, needed)));
     zip.file(found.name, found.xml.replace(emblem, moved));
   }
@@ -2410,13 +2478,27 @@ async function addRepCardPdfLink(zip: JSZip, base: string): Promise<void> {
   // caught that. An empty cell is filled in place; one carrying anything is left alone.
   const existing = /<c r="F4"[^>]*?(?:\/>|>([\s\S]*?)<\/c>)/.exec(row);
   if (existing && (existing[1] ?? "").trim() !== "") return;
-  const style = /<c r="F4"[^>]*\bs="(\d+)"/.exec(row)?.[1] ?? /<c r="B4"[^>]*\bs="(\d+)"/.exec(row)?.[1];
+
+  // A BUTTON, IN THE ONE LOUD COLOUR ON THE SHEET. Owner, 2026-09-09: "Rep Card EXPORT PDF make it
+  // appearing as a button but different catchy color." It stays a CELL because the link has to
+  // follow the dropdown -- a drawing cannot read one, and a shape here would send every reader to
+  // whichever rep happened to be selected when the file was built. So the cell is dressed as a
+  // button instead: accent cyan, white bold type, centred.
+  //
+  // The captions are short for the same reason. A filled block cannot let its text overflow into
+  // the next cell the way an unfilled one does, so a long caption would be cut off at the fill's
+  // edge -- and the owner's standing rule forbids truncating text. Both branches fit.
+  const accent = await ensureAccentButtonStyle(zip);
+  const style =
+    accent >= 0
+      ? String(accent)
+      : (/<c r="F4"[^>]*\bs="(\d+)"/.exec(row)?.[1] ?? /<c r="B4"[^>]*\bs="(\d+)"/.exec(row)?.[1]);
 
   // `&` is the formula's own concatenation operator AND an XML entity, so it is escaped once here
   // and Excel sees a single `&`. Getting this wrong yields a workbook Excel offers to repair.
   const formula = xmlEscape(
-    `IF($N$1=0,"Pick a rep above to enable Export PDF",`
-      + `HYPERLINK("${base}&area="&INDEX(AreaBook[Area Code],$N$1),"▸ Export PDF for this rep"))`,
+    `IF($N$1=0,"PICK A REP FIRST",`
+      + `HYPERLINK("${base}&area="&INDEX(AreaBook[Area Code],$N$1),"EXPORT PDF  ↗"))`,
   );
   const cell = `<c r="F4"${style ? ` s="${style}"` : ""}><f>${formula}</f></c>`;
 

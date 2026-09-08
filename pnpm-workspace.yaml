@@ -114,6 +114,25 @@ overrides:
   # no postcss release resolving >=3.3.18 on its own existed when this was added.
   # Remove once postcss ships one.
   nanoid: ^3.3.18
+  # Added 2026-09-09 for the Nodemailer addressparser advisory (high): quadratic O(n^2) time in
+  # `addressparser` lets a crafted address list stall the event loop — remote denial of service.
+  # Advisory covers `<9.1.0` and patches at 9.1.0; the graph had resolved TWO instances below it,
+  # 9.0.3 and 9.0.5.
+  #
+  # THIS IS PRODUCTION, by both routes. `imapflow` is the mail-ingestion client and `mailparser` is
+  # a direct `dependencies` entry — the same pair the deepmerge-ts and ip-address notes above are
+  # about — so `pnpm audit --prod` goes red and every open PR is blocked until the floor moves.
+  # It reads addresses off inbound mail, which is attacker-supplied by definition: anyone who can
+  # send to the monitored careers@ inbox chooses the header this parses.
+  #
+  # A floor inside the 9.x major, not a jump to 10.x. imapflow and mailparser both declare 9.x, and
+  # 9.1.1 is the newest release in that line, so this is a drop-in rather than a major bump forced
+  # through an override. Remove once both parents resolve >=9.1.0 unaided.
+  #
+  # Same registry-reads-live shape as the nanoid and deepmerge-ts notes: main was green at 22:30
+  # Cairo and the next run at 22:44 was not, with no diff between them. The failure looks like it
+  # belongs to whatever branch is in flight, and does not.
+  nodemailer: ^9.1.1
   # Bumped 2026-08-04 for GHSA-fxqj-rqcc-2cmp (incomplete fix of GHSA-6g55-p6wh-862q: an
   # attacker-controlled sourceMappingURL reads arbitrary .map files when `from` is unset).
   # Advisory covers `<=8.5.22`, patched at 8.5.23; the previous ^8.5.18 floor ALLOWED the fix but
