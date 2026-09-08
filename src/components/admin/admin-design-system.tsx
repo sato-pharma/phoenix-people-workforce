@@ -13,6 +13,9 @@ export {
   adminHeroChipClassName,
   adminHeroChipOrangeClassName,
   adminHeroDescriptionClassName,
+  adminHeroGlowAmberClassName,
+  adminHeroGlowOrangeClassName,
+  adminHeroGridOverlayClassName,
   adminHeroKickerClassName,
   adminHeroSkeletonClassName,
   adminHeroSurfaceClassName,
@@ -29,12 +32,15 @@ import {
   pageHeaderRuleClassName,
   pageHeaderTitleClassName,
   adminHeroAccentBarClassName,
+  adminHeroGlowAmberClassName,
+  adminHeroGlowOrangeClassName,
+  adminHeroGridOverlayClassName,
   adminHeroSurfaceClassName,
 } from "@/components/admin/admin-design-tokens";
 
 /**
  * Single source of truth for the black command-center hero surface. Renders the
- * flat black surface and provides
+ * gradient surface with its three decorative layers, and provides
  * `DarkSurfaceContext` so primitives (Button, AdminInsightChip) inside it pick
  * legible-on-black styling. Used by `AdminPageHero` and by both command centers,
  * which supply their own bespoke inner content as `children`.
@@ -50,8 +56,20 @@ export function AdminHeroFrame({
   return (
     <DarkSurfaceContext.Provider value={true}>
       <section className={cn(adminHeroSurfaceClassName, className)}>
+        {/* The three decorative layers, restored 2026-09-08 with the premium-polish golden
+            rule. Order matters: grid first so the glows sit ON it, then the accent edge,
+            then the content. Every one is aria-hidden and pointer-events-none, so the hero
+            reads identically to a screen reader and nothing here can swallow a click.
+            `adminHeroSurfaceClassName` carries `overflow-hidden`, which is what keeps the
+            two oversized glows from widening the page — without it they would push the
+            document sideways and break the fits-the-screen golden rule. */}
+        <div aria-hidden="true" className={adminHeroGridOverlayClassName} />
+        <div aria-hidden="true" className={adminHeroGlowOrangeClassName} />
+        <div aria-hidden="true" className={adminHeroGlowAmberClassName} />
         <div aria-hidden="true" className={adminHeroAccentBarClassName} />
-        {children}
+        {/* Content sits above the decoration on its own stacking context, so a glow can
+            never wash out a title or a button. */}
+        <div className="relative">{children}</div>
       </section>
     </DarkSurfaceContext.Provider>
   );
