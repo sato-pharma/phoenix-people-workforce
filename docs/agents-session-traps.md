@@ -1286,6 +1286,21 @@ sample which returned **blank on both reads** and scored itself *the folder is q
 comparing equal. The folder had in fact been removed by another session seconds earlier. Verify
 with a positive control (bytes read, rows found), never with a clean-looking blank.
 
+### Why `list_sessions` cannot answer "is anyone in that folder" — 2026-09-08
+
+Relocated from the AGENTS.md hook so the hook could stay a hook (§2.2). Two fields there are
+routinely misread, and both make an occupied worktree look free:
+
+- **An `_wt-*` session reports the PRIMARY as its cwd**, not the worktree it is actually working in.
+  So a sweep of session cwds answers *nobody is in that folder* for a worktree in active use, and
+  §5's retirement gate passes on it. The reliable cross-check is by BRANCH: compare the worktree's
+  branch against every open PR's `headRefName`, and re-read HEAD at the moment of removal rather
+  than trusting a scan taken earlier. A `.claude/worktrees/` session is the exception — those pin
+  their cwd to the worktree itself.
+- **`isRunning: false` means IDLE, not CLOSED.** It reports only that the session is not mid-turn.
+  A session sitting idle still holds its folder, and killing on that signal is how a worktree gets
+  removed under someone.
+
 ## Two ways a Windows liveness check lies, and a count that invents a row — 2026-09-05
 
 All three were hit while building `xlsx-tripwire.ps1`, the watcher that names the process deleting
