@@ -1501,6 +1501,7 @@ import { runMarketingCodeLinkReachTests } from "./marketing-code-link-reach.test
 import { runReturnedOrdersAgeingTests } from "./returned-orders-ageing.test.ts";
 import { runNotificationHeldAgeingTests } from "./notification-held-ageing.test.ts";
 import { runOverCapNeverBlocksTests } from "./over-cap-never-blocks.test.ts";
+import { runDirectOrderVenueGapsTests } from "./direct-order-venue-gaps.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4870,6 +4871,11 @@ await runTest(
 await runTest(
   "confidence-gate held ageing: big is urgent (no expiry, unlike the held desk countdown), and the header takes the worst band present",
   runNotificationHeldAgeingTests,
+);
+
+await runTest(
+  "direct-order venue gaps: a BLANK pharmacist counts as missing, and each chip's count equals what its filter shows",
+  runDirectOrderVenueGapsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
