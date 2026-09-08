@@ -35,6 +35,7 @@ status, give it its own line.
 - **MSYS mangles paths silently, three ways:** — `git-ref-colon-path-is-mangled-by-msys-returns-empty`
 - **`TZ=Africa/Cairo date` silently returns UTC in MSYS — 3h early, no error** — `tz-africa-cairo-silently-returns-utc-in-msys` **(inline — load-bearing)**
 - **`main` is usually NOT in the primary — a worktree holds it, so ahead/behind read from HEAD there is real but mislabelled** — `main-is-not-the-primary-checkout` **(inline — load-bearing)**
+- **A scheduled task run by hand records no `lastRunAt` and creates no session — both absences are normal, not proof it failed** — `a-manual-scheduled-task-run-leaves-no-trace` **(inline — load-bearing)**
 - **A role probe cannot trust the HTTP status code** — `a-role-probe-cannot-trust-the-http-status-code` · `a-post-to-any-api-path-returns-403-even-if-it-does-not-exist`
 - **curl -d "@-" creates NOTHING on Windows** — `cron-job-org-is-managed-by-a-rest-api-not-just-the-web-ui`
 - **Reads of .env* are auto-approved deliberately, for EVERY key** — `env-file-reads-fully-auto-approved-2026-08-09`
