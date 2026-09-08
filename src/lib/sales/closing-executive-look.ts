@@ -290,8 +290,54 @@ export async function applyExecutiveGeometry(zip: JSZip, sheetParts: Map<string,
   return applied;
 }
 
+/**
+ * The approved palette, in the owner's own words.
+ *
+ * TAKEN FROM THE BRIEF, NOT FROM THE FILE. He wrote these values out by name on 2026-09-08 ("Use
+ * approximately this palette", then fifteen labelled hexes), and that is a better source than the
+ * reference workbook for one plain reason: the workbook cannot be opened by Excel, so no rendering
+ * of it can be checked, and reading its fills back out of the package by hand went wrong three
+ * times in a row here -- once on prefixed elements, once on relationship attribute order, and once
+ * on a self-closing `<row/>` whose slash was swallowed by an attribute run, which relabelled every
+ * row after an empty one. Each was caught only by a positive control. His written palette has none
+ * of those failure modes.
+ *
+ * The geometry above is different and stays measured: heights and widths were read from the package
+ * and then CONFIRMED by rendering the result through Excel, which is a check the colours could not
+ * have had.
+ */
+export const EXECUTIVE_PALETTE = {
+  /** Deep navy. The title band, and the rules that separate the bands. */
+  primaryNavy: "FF0A1F33",
+  /** Table headers and the second-level bands. */
+  secondaryNavy: "FF103A5C",
+  /** Links, KPI figures, the accent on a header row. */
+  corporateBlue: "FF0B78B7",
+  /** KPI panel ground. */
+  lightBlue: "FFE8F2F8",
+  /** Page ground under a band; the zebra's lighter half. */
+  veryLight: "FFF3F8FC",
+  /** Body type. */
+  mainText: "FF16324A",
+  /** Captions under a KPI, footnotes. */
+  mutedText: "FF6B8296",
+  /**
+   * The one deliberately loud colour, and it is spent on exactly one control: the Rep Card's Export
+   * PDF. Owner, 2026-09-09 -- "make it appearing as a button but different catchy color". It is his
+   * own accent cyan rather than an invented colour, so it belongs to the approved palette while
+   * still reading as the one thing on the sheet that is not navy.
+   */
+  accentCyan: "FF00A6D6",
+  /** The incomplete-month strip. */
+  warningFill: "FFFFF3D6",
+  warningText: "FF8A5A00",
+  white: "FFFFFFFF",
+} as const;
+
 const EMU_PER_POINT = 12_700;
 const NAV_ROW = 2;
+/** The contents sheet's name, kept here so the band painter can leave its cover alone. */
+const INDEX_SHEET_NAME = "Contents";
 
 /**
  * Keep the navigation band inside its own row.
@@ -312,6 +358,184 @@ const NAV_ROW = 2;
  * through the end of row 2. Nothing else in the drawing is touched - not the emblem, which lives in
  * row 1, and not the slicers, which ride inside an mc:AlternateContent of their own.
  */
+/** Append one element to a counted block in styles.xml, returning its index. */
+function appendCounted(styles: string, block: "fills" | "fonts" | "cellXfs", child: string): { index: number; xml: string } {
+  const open = styles.indexOf(`<${block}`);
+  const close = styles.indexOf(`</${block}>`);
+  if (open < 0 || close < 0) return { index: -1, xml: styles };
+  const body = styles.slice(styles.indexOf(">", open) + 1, close);
+  const tag = block === "cellXfs" ? "xf" : block.slice(0, -1);
+  const index = (body.match(new RegExp(`<${tag}\\b`, "g")) ?? []).length;
+  // The count attribute is restated from what is actually there. Excel repairs a workbook whose
+  // declared count disagrees with the children it finds, and this block has had that defect before.
+  return {
+    index,
+    xml: `${styles.slice(0, open)}<${block} count="${index + 1}">${body}${child}</${block}>${styles.slice(close + block.length + 3)}`,
+  };
+}
+
+/**
+ * The style that makes the Rep Card's Export PDF read as a button rather than as a line of text.
+ *
+ * IT HAS TO BE A CELL, NOT A SHAPE. The link's URL carries whichever rep the dropdown is set to,
+ * appended by the formula when the sheet recalculates, and a drawing cannot read a dropdown -- a
+ * shape here would send every reader to the same rep's PDF. So the control is a cell that LOOKS
+ * like a button: a filled block, white bold type, centred both ways, on a row tall enough to give
+ * the caption air.
+ *
+ * Returns the cellXf index, or -1 if styles.xml could not be read, in which case the caller leaves
+ * the cell's existing style alone rather than pointing it at an index that does not exist.
+ */
+export async function ensureAccentButtonStyle(zip: JSZip): Promise<number> {
+  const stylesFile = zip.file("xl/styles.xml");
+  if (!stylesFile) return -1;
+  let styles = await stylesFile.async("string");
+
+  const fill = appendCounted(
+    styles,
+    "fills",
+    `<fill><patternFill patternType="solid"><fgColor rgb="${EXECUTIVE_PALETTE.accentCyan}"/><bgColor indexed="64"/></patternFill></fill>`,
+  );
+  styles = fill.xml;
+  const font = appendCounted(
+    styles,
+    "fonts",
+    `<font><sz val="10"/><color rgb="${EXECUTIVE_PALETTE.white}"/><name val="Segoe UI"/><family val="2"/><b/></font>`,
+  );
+  styles = font.xml;
+  if (fill.index < 0 || font.index < 0) return -1;
+
+  const xf = appendCounted(
+    styles,
+    "cellXfs",
+    `<xf numFmtId="0" fontId="${font.index}" fillId="${fill.index}" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">`
+      + `<alignment horizontal="center" vertical="center"/></xf>`,
+  );
+  if (xf.index < 0) return -1;
+  zip.file("xl/styles.xml", xf.xml);
+  return xf.index;
+}
+
+/**
+ * Paint the title band and the incomplete-month strip.
+ *
+ * These are the two bands the owner's screenshots make unambiguous, and the two that carry most of
+ * the difference between the approved look and what shipped: a navy title band with white type, and
+ * an amber warning strip. Everything else on these sheets already has a fill of its own.
+ *
+ * ONE STYLE PER BAND, REUSED. Each band gets a single new `cellXf` and every cell in it points at
+ * that one index, rather than cloning each cell's existing style. Cloning would preserve per-cell
+ * font sizes, but a band is a band: the reference paints its title row in one weight and one colour
+ * across the whole width, and cloning would have carried through the muted grey of the "built on"
+ * caption that shares row 1.
+ *
+ * The strip is painted ONLY where there is something to warn about. A month with nothing missing has
+ * no note, and an amber band across an empty row would read as a warning with the text lost.
+ */
+export async function paintExecutiveBands(zip: JSZip, sheetParts: Map<string, string>): Promise<string[]> {
+  const stylesFile = zip.file("xl/styles.xml");
+  if (!stylesFile) return [];
+  let styles = await stylesFile.async("string");
+
+  const solid = (argb: string) => `<fill><patternFill patternType="solid"><fgColor rgb="${argb}"/><bgColor indexed="64"/></patternFill></fill>`;
+  const font = (argb: string, size: number, bold: boolean) =>
+    `<font><sz val="${size}"/><color rgb="${argb}"/><name val="Segoe UI"/><family val="2"/>${bold ? "<b/>" : ""}</font>`;
+
+  const titleFill = appendCounted(styles, "fills", solid(EXECUTIVE_PALETTE.primaryNavy));
+  styles = titleFill.xml;
+  const warnFill = appendCounted(styles, "fills", solid(EXECUTIVE_PALETTE.warningFill));
+  styles = warnFill.xml;
+  const titleFont = appendCounted(styles, "fonts", font(EXECUTIVE_PALETTE.white, 13, true));
+  styles = titleFont.xml;
+  const warnFont = appendCounted(styles, "fonts", font(EXECUTIVE_PALETTE.warningText, 9, true));
+  styles = warnFont.xml;
+  if ([titleFill, warnFill, titleFont, warnFont].some((one) => one.index < 0)) return [];
+
+  const xf = (fillId: number, fontId: number) =>
+    `<xf numFmtId="0" fontId="${fontId}" fillId="${fillId}" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf>`;
+  const titleXf = appendCounted(styles, "cellXfs", xf(titleFill.index, titleFont.index));
+  styles = titleXf.xml;
+  const warnXf = appendCounted(styles, "cellXfs", xf(warnFill.index, warnFont.index));
+  styles = warnXf.xml;
+  if (titleXf.index < 0 || warnXf.index < 0) return [];
+
+  zip.file("xl/styles.xml", styles);
+
+  const painted: string[] = [];
+  for (const [sheetName, part] of sheetParts) {
+    // Contents is excluded on purpose. It is a COVER, not a sheet with a masthead: `addIndexSheet`
+    // already builds it a banner three rows deep, in one fill, with its type reversed out — and
+    // `closing-engine-export.test.ts` pins exactly that ("a band needs room above and below its
+    // type"). Painting a one-row title band over the top of it broke the cover into a navy strip
+    // above a differently-coloured banner, which is the "two blue blocks a few points apart" the
+    // same test was written to stop.
+    if (sheetName === INDEX_SHEET_NAME) continue;
+    const geometry = EXECUTIVE_GEOMETRY[sheetName];
+    if (!geometry) continue;
+    const file = zip.file(part);
+    if (!file) continue;
+    let xml = await file.async("string");
+
+    const width = Math.max(...Object.keys(geometry.cols).map(Number), 1);
+    const letters = (column: number): string => {
+      let out = "";
+      for (let n = column; n > 0; n = Math.floor((n - 1) / 26)) out = String.fromCharCode(65 + ((n - 1) % 26)) + out;
+      return out;
+    };
+
+    let touched = false;
+    for (const [row, styleIndex] of [[1, titleXf.index], [3, warnXf.index]] as const) {
+      // Self-closing branch FIRST: `[^>]*(?:\/>|>)` consumes the slash of an empty row and then
+      // captures the NEXT row's body, which silently paints the wrong row.
+      const pattern = new RegExp(`<row\\b([^>]*?\\br="${row}"[^>]*?)\\/>|<row\\b([^>]*?\\br="${row}"[^>]*?)>([\\s\\S]*?)<\\/row>`);
+      const match = pattern.exec(xml);
+      if (!match) continue;
+      const attrs = match[1] ?? match[2] ?? "";
+      const body = match[3] ?? "";
+
+      // Only warn where there is a warning, and the test is the A CELL specifically. Asking whether
+      // the ROW has any content at all is not the same question: the Rep Card carries the short
+      // form of the note on row 2 by design, and its row 3 holds styled-but-empty cells, so the
+      // looser test painted a full-width amber band there with nothing written on it -- a warning
+      // whose text had gone missing, which is worse than no warning at all.
+      if (row === 3 && !/<c\b[^>]*\br="A3"[^>]*>[\s\S]*?(?:<v>|<is>)/.test(body)) continue;
+
+      // Keep each existing cell EXACTLY as it is and swap only its `s`. Rebuilding a cell from its
+      // inner XML means re-deciding its `t`, and a value cell re-emitted without its type reads as
+      // a number: the warning text would come back as a broken formula rather than a sentence.
+      const existing = new Map<string, string>();
+      for (const cell of body.matchAll(/<c\b[^>]*?\/>|<c\b[^>]*?>[\s\S]*?<\/c>/g)) {
+        const ref = /\br="([A-Z]+\d+)"/.exec(cell[0])?.[1];
+        if (ref) existing.set(ref, cell[0]);
+      }
+
+      // `r` STAYS FIRST. Attribute order is free in OOXML but not free in practice: readers in this
+      // repository match `<c r="..."` with the reference first, so prepending `s` made the warning
+      // cell invisible to them — the text was present in the file and read back as an empty string,
+      // and the only symptom was a pinning test failing on a sheet that rendered perfectly.
+      const restyle = (cell: string): string =>
+        /\bs="\d+"/.test(cell)
+          ? cell.replace(/\bs="\d+"/, `s="${styleIndex}"`)
+          : cell.replace(/^(<c\b[^>]*?)(\/?)>/, `$1 s="${styleIndex}"$2>`);
+
+      const cells: string[] = [];
+      for (let column = 1; column <= width; column += 1) {
+        const ref = `${letters(column)}${row}`;
+        const cell = existing.get(ref);
+        cells.push(cell ? restyle(cell) : `<c r="${ref}" s="${styleIndex}"/>`);
+      }
+      xml = xml.replace(pattern, `<row${attrs}>${cells.join("")}</row>`);
+      touched = true;
+    }
+
+    if (touched) {
+      zip.file(part, xml);
+      painted.push(sheetName);
+    }
+  }
+  return painted;
+}
+
 export async function fitNavigationBand(zip: JSZip, sheetParts: Map<string, string>): Promise<string[]> {
   const fitted: string[] = [];
   for (const [sheetName, part] of sheetParts) {
