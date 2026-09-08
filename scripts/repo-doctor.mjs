@@ -830,12 +830,18 @@ if (heldByLiveSession.length) {
   console.log(`NOT retirable — a session is HOLDING the folder: ${heldByLiveSession.length}`);
   for (const line of heldByLiveSession) console.log(`  ${line}`);
   console.log(
-    "  Close the session first; a worktree removed under one leaves it in a DEREGISTERED folder, " +
-      "where bare git commands resolve against the primary checkout on `main`.",
+    "  Close the holder first; a worktree removed under a live session leaves it in a DEREGISTERED " +
+      "folder, where bare git commands resolve against the primary checkout on `main`.",
   );
   console.log(
     "  Coverage: a transcript read PLUS a sweep of every process's working directory. Together " +
       "they see both a just-closed session and one open but idle for hours.",
+  );
+  console.log(
+    "  A holder need NOT be a session. A stray background process left with its cwd inside a " +
+      "worktree pins it just as hard, with no window anywhere to close — trust the PIDs above " +
+      "before hunting for a session. Stopping a background TASK does not clear it either: that " +
+      "kills the wrapper shell and leaves the child still holding the folder.",
   );
   console.log(
     "  Reliable for `.claude/worktrees/*`. An `_wt-*` folder may appear above when a child command " +

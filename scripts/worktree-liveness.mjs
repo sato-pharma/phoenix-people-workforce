@@ -31,6 +31,21 @@
 // drive it without a live machine — the same split, for the same reason, as
 // `scripts/branch-pr-state.mjs`.
 //
+// THE CASE THAT ARGUES FOR THIS SIGNAL BEST IS NOT THE IDLE ONE. Measured 2026-09-08, hours after
+// the incident: `_wt-repo-doctor-live-sessions` was pinned by a background `gh pr checks --watch`
+// whose cwd sat inside it — pids 22784 `bash`, 28404 `gh`, 1948 and 5612 `timeout`. NO session was
+// ever opened in that folder and NO transcript for it exists, so the transcript signal returns null
+// and would have offered it for removal. That is a blind spot rather than a threshold, which makes
+// it a stronger argument than "a session idle past the window". `git worktree remove` then failed
+// Permission denied, deregistered the worktree anyway, and left the husk.
+//
+// The same case is this signal's FALSE-POSITIVE class, and the direction is the safe one: a stray
+// process refuses a deletion rather than causing one. But somebody will eventually meet a folder
+// that will not retire and go looking for a session to close that does not exist, so the report
+// names the holding PIDs and says the holder may be a stray process. Stopping a background TASK is
+// not enough either — it kills the wrapper shell and leaves the child holding the folder, the shape
+// AGENTS.md 5 records for dev servers. Kill the named PIDs, never machine-wide.
+//
 // WHAT THIS DOES NOT COVER, stated because a guard read as total is worse than a known gap.
 // It sees a session's own process only for `.claude/worktrees/*`. An `_wt-*` session's cwd is the
 // PRIMARY checkout (AGENTS.md 2.1), so no row of the sweep names its folder. Measured here on
