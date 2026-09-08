@@ -26,7 +26,6 @@ import {
   PAYROLL_HEADER_ROW,
   payrollBodyCell,
   payrollHeaderCell,
-  payrollTemplateColumnWidth,
   payrollTotalsCell,
   resolvePayrollBands,
   writePayrollSectionBand,
@@ -110,12 +109,10 @@ export async function buildSalaryBatchWorkbook(input: {
     subtitle: `${label} · ${records.length} row${records.length === 1 ? "" : "s"} · ${batch.status}`,
     title: "Payroll — Published Batch",
   });
-  const bands = resolvePayrollBands(headers);
-  writePayrollSectionBand(sheet, bands);
-  const sectionEndColumns = new Set(bands.map((band) => band.to));
+  writePayrollSectionBand(sheet, resolvePayrollBands(headers));
 
   const headerRow = sheet.getRow(PAYROLL_HEADER_ROW);
-  headerRow.height = 32;
+  headerRow.height = 28;
   headers.forEach((header, index) => {
     const cell = headerRow.getCell(index + 1);
     cell.value = header;
@@ -127,8 +124,7 @@ export async function buildSalaryBatchWorkbook(input: {
 
   records.forEach((record, index) => {
     const row = sheet.getRow(PAYROLL_HEADER_ROW + 1 + index);
-    // Even SHEET rows, the previous salary template's rule — see payrollBodyCell.
-    const zebra = (PAYROLL_HEADER_ROW + 1 + index) % 2 === 0;
+    const zebra = index % 2 === 1;
     headers.forEach((header, columnIndex) => {
       const cell = row.getCell(columnIndex + 1);
       const value = payrollSheetValue(record, batch.month, batch.year, index + 1, header);
@@ -139,7 +135,6 @@ export async function buildSalaryBatchWorkbook(input: {
         header,
         held: false,
         leading: columnIndex === 0,
-        sectionEnd: sectionEndColumns.has(columnIndex + 1),
         zebra,
       });
     });
@@ -163,7 +158,7 @@ export async function buildSalaryBatchWorkbook(input: {
   });
 
   headers.forEach((header, index) => {
-    sheet.getColumn(index + 1).width = payrollTemplateColumnWidth(header);
+    sheet.getColumn(index + 1).width = Math.min(28, Math.max(12, header.length + 2));
   });
   const nameColumn = headers.indexOf("Full Name");
   sheet.getColumn(nameColumn + 1).width = 26;

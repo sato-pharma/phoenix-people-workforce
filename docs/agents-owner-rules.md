@@ -1047,6 +1047,82 @@ rows "Phoenix is right — I will fix my sheet". The correction is to his file, 
 specifically with this ruling attached — so removing Down town fails with an explanation rather than
 just going red. Both run in the required CI `validate` job.
 
+## The automated payroll exports keep the Phoenix look — owner decision, 2026-09-08
+
+### What happened
+
+PR #3177 rebuilt all four payroll exports onto the SATO house identity on **2026-09-05**. On
+**2026-09-08** the owner asked for "the previous salary template, the phoenix identity one" in the
+automated payroll. That was read as the salary UPLOAD template at `/api/payroll/template`, and PR
+#3486 matched the automated payroll sheets to it — grid, widths, even-row zebra, subtotals. It
+merged and shipped at 12:51 PM Cairo the same day.
+
+He then exported the July full sheet, said it still came out with "the whity blue template", and
+attached his own export — `Automated-Payroll-July-2026-full(3).xlsx`, written **8 Aug 2026, 2:32 PM
+Cairo** — with the words *"i want this"*.
+
+**The misread is worth recording, because the wording invites it.** The upload template is itself
+white-and-blue: it wears the house identity like every other company document. "The phoenix identity
+one" does not mean the house identity applied by the Phoenix app — it means the **Phoenix app's own
+brand**, the black-and-orange sheet that existed before 5 September. The two readings differ by
+exactly one word and land on opposite palettes.
+
+### What settled it
+
+The attached file, not the conversation. Its palette is decisive and unambiguous:
+
+| | attached file (8 Aug) | what was live (8 Sep) |
+| --- | --- | --- |
+| typeface | Calibri | the house font |
+| fills | `FF000000` black, `FFFDE7C7` amber, `FFF8FAFC` zebra, `FFDCFCE7` / `FFFEE2E2` execution and held, `FF166534` | none but the 6% house tint |
+| type | `FFF97316` / `FFF8B56B` Phoenix orange, `FF334155` slate | house deep / blue |
+
+No house blue anywhere. Asked directly whether that was the look he wanted back, he chose to restore
+it and exempt these exports from the house standard the way the offer letter already is.
+
+### What was restored, and what was NOT
+
+Restored to the pre-#3177 Phoenix look: `exports/sheet.ts` (the HR run sheet, Part 1 and Full),
+`exports/finance-sheet.ts` (the locked finance downloads, which wrap it) and
+`exports/step-template.ts` (the per-step wizard templates).
+
+**Left on the house identity: the published batch download (`salary-batch-workbook.ts`) and the
+payslip renderer.** He was offered the wider option — Phoenix across the whole payroll pack — and
+did not take it. So the split is per-EXPORT, not per-module, and `payroll-sheet-style.ts` is still
+the house module those two share. PR #3486's changes to it were reverted rather than kept, because
+they were made against the wrong target and he never asked for the batch download to change.
+
+**FAB and CIB were never in scope** — they are literal bank-execution artifacts and were left alone
+in the earlier decision the same day.
+
+### The two things that are not palette
+
+Restoring a file wholesale from before a rebuild silently reverts everything else that landed since.
+Two such things were re-applied by hand, and both are pinned:
+
+1. **The held row's NOTE.** The Phoenix look carries "held" as a red fill and red type and by
+   nothing else — which is exactly what the house rebuild had called out, because a fill survives
+   neither greyscale, nor a range copied into another workbook, nor a reader who cannot see it.
+   `publishToPayslips` filters `!onHold`, so a held row is dropped at publish with no
+   `salary_record` written. The note is words, is invisible until hovered, and costs the look
+   nothing. The cover's per-person "Held · <hr id> … Reason:" rows (from `82aed3da7`) were kept for
+   the same reason.
+2. **The step template's cell LOCKING.** The pre-2026-09-05 file's own doc comment claimed "locked
+   identity + context" and locked nothing; `cell.protection` and `sheet.protect` arrived with the
+   house rebuild. The upload parses editable labels only, so an edit to a context or recommendation
+   column is accepted by the sheet and then silently thrown away. The existing
+   `payroll-export-house-identity` test caught this reversion, which is why it is worth keeping that
+   suite pointed at the step template.
+
+### The hazard this section exists to stop
+
+`house-identity.ts` says every company document wears `SATO-DIS-2026-01`, and the ink rule forbids
+filled areas. A session sweeping for documents not yet on the standard will find these three files,
+find filled black bands in them, and "finish the job" — reversing an owner decision while believing
+it is enforcing one. `tests/payroll-phoenix-look.test.ts` fails on ANY house colour appearing in
+these workbooks, and runs in the required CI `validate` job, so the sweep goes red instead of
+shipping.
+
 ## §4 hooks trimmed to their cue — the full text, verbatim (2026-09-07)
 
 `AGENTS.md` auto-loads in full on every request; this file does not. Nine §4 rules had grown to
