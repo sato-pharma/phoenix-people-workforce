@@ -143,19 +143,54 @@ export async function runWeeklyNsmDsmStockByBranchTests() {
   const strip = String(withSilent.getCell(1, 1).value ?? "");
   assert.match(strip, /Ibn Sina-Sato/, "the masthead names the distributors that do report stock");
 
-  // ── 2. a genuinely EMPTY branch of a REPORTING distributor is kept ──────────
+  // ── 2. a branch holding NOTHING is dropped ─────────────────────────────────
   //
-  // That is a real reading: 65 of overseas' 186 branches hold stock, and the empty ones are exactly
-  // what a manager is looking for. Dropping them would answer a different question.
+  // Owner instruction, 2026-09-08, REVERSING what this test asserted when the sheet first
+  // shipped. It originally kept empty branches, on the reasoning that an empty branch is a real
+  // reading a manager would want. He read the real August sheet — 140 of its 365 branches were
+  // empty — and ruled the other way: a stock report that is 38% blank rows is harder to read.
   const withEmpty = await build([
     row({ branchName: "Holding Depot", stockUnits: 40 }),
     row({ branchCode: "BR2", branchName: "Empty Depot", stockUnits: 0 }),
   ]);
   const emptyRows = readRows(withEmpty);
   assert.ok(
-    emptyRows.some((line) => line.label === "Empty Depot"),
-    "a branch of a reporting distributor that holds nothing must still be listed — its zero is a " +
-      "measurement, not a gap",
+    emptyRows.some((line) => line.label === "Holding Depot"),
+    "a branch that holds stock is listed",
+  );
+  assert.ok(
+    !emptyRows.some((line) => line.label === "Empty Depot"),
+    "a branch of a reporting distributor holding NOTHING is not listed (owner, 2026-09-08)",
+  );
+
+  // ── 2b. "EMPTY" MEANS NO UNITS, NEVER ZERO VALUE ───────────────────────────
+  //
+  // The EGP column is units x the price this scope sold that product for, so a product that is
+  // HELD but never SOLD in the period has no derived price and values at ZERO while the packs are
+  // really on the shelf. Keying the drop on value would delete exactly that stock, silently.
+  //
+  // This is pinned because the two predicates AGREE on today's production data — measured on the
+  // real August export, 0 branches carry units at zero value — so a later change could swap
+  // `units.size === 0` for `value === 0`, see every test still pass, and lose real stock the first
+  // month a product goes unsold.
+  const heldNeverSold = await build([
+    // TEB80 sells, so it has a price. TEB120 is held by one branch and sold by nobody.
+    row({ branchName: "Selling Depot", productCode: "TEB80", salesUnits: 100, salesValue: 30_000, stockUnits: 5 }),
+    row({
+      branchCode: "BR9", branchName: "Warehouse Only", productCode: "TEB120",
+      productName: "Tebofortin 120mg", salesUnits: 0, salesValue: 0, stockUnits: 250,
+    }),
+  ]);
+  const heldRows = readRows(heldNeverSold).filter((line) => line.level === 2);
+  const warehouse = heldRows.find((line) => line.label === "Warehouse Only");
+  assert.ok(
+    warehouse,
+    "a branch holding 250 units of a product nobody sold must still be listed — it values at 0 EGP " +
+      "because there is no price to value it at, which is not the same as holding nothing",
+  );
+  assert.ok(
+    warehouse.cells.includes(250),
+    `and its units must be printed; got ${warehouse?.cells.join(", ")}`,
   );
 
   // ── 3. a branch with no area is bucketed, and that bucket sorts LAST ────────
