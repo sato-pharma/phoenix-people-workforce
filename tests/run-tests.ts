@@ -1487,6 +1487,7 @@ import { runAttendanceDeductionCancelMatrixTests } from "./attendance-deduction-
 import { runSecretBoxTests } from "./secret-box.test.ts";
 
 import { runAttendanceWeeklyDigestTests } from "./attendance-weekly-digest.test.ts";
+import { runMarketingCodeUnlinkFalloutTests } from "./marketing-code-unlink-fallout.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4805,6 +4806,11 @@ await runTest(
 await runTest(
   "WhatsApp send opens a tab it can navigate (noopener makes window.open return null, stranding the user on about:blank)",
   runWhatsAppSendOpensARealTabTests,
+);
+
+await runTest(
+  "unlinking a distributor code refuses when it would leave a customer with no selectable target (silent block, 2026-09-06)",
+  runMarketingCodeUnlinkFalloutTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
