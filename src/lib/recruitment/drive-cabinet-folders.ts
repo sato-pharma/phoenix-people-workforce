@@ -37,6 +37,7 @@ import {
   cleanFolderKey,
   isCandidateFolderKind,
 } from "@/lib/recruitment/candidate-folder";
+import { canAutoFileBackground } from "@/lib/recruitment/candidate-background";
 import { inferCandidatePlacement } from "@/lib/recruitment/candidate-folder-inference";
 import { candidateRoleFamilyLabels, candidateRoleFamilyOrNull } from "@/lib/recruitment/candidate-role-family";
 import {
@@ -70,6 +71,8 @@ export type CabinetCandidateRow = {
   applied_for_job_title: string | null;
   address: string | null;
   current_job_title: string | null;
+  declared_background: string | null;
+  faculty: string | null;
   folder_key: string | null;
   folder_kind: string | null;
   governorate: string | null;
@@ -144,6 +147,30 @@ export function cabinetPositionFolder(row: CabinetCandidateRow): string {
   // Blank is NOT "other": "we do not know this person's job" is a different claim from "their job is
   // none of these", and only the second deserves a folder full of unrelated roles.
   const family = candidateRoleFamilyOrNull(title);
+
+  // ── THE LAST RUNG: THE DEGREE, WHEN NO TITLE SURVIVED ──────────────────────────────────────────
+  //
+  // A pharmacy, science, veterinary or dentistry graduate with no job title anywhere is the medical
+  // rep pool. Measured 2026-09-08: 118 CVs sat in `Position not stated`, and 32 of them had exactly
+  // that — a recognised, eligible degree and nothing else. Filing them under the shrug meant the one
+  // group Phoenix hires most of was the hardest group to find.
+  //
+  // OWNER'S CHOICE, ASKED AND ANSWERED. This asserts a position nobody stated, and the alternative
+  // offered was a truthful `Graduate — Pharmacy` shelf that claims only what is known. He chose this
+  // one: the cabinet is where a recruiter LOOKS, and a science graduate with no title is looked for
+  // beside the reps. Recorded because the objection is real and a later reader will raise it again.
+  //
+  // LAST, so it can only ever fill a gap. Any title that resolves to a family — including `other` —
+  // is reached first, so this can never move somebody away from a folder their own words earned.
+  //
+  // THE GATE IS THE APP'S OWN. `canAutoFileBackground` already decides which degrees may be acted on
+  // unattended, and it refuses paramedical and unrecognised ones. Of the 118, it cleared 32 and
+  // declined 86 — 25 paramedical, 61 unreadable. Re-deriving that judgement here would be a second
+  // copy of a rule that has already been argued out once.
+  if (!family && canAutoFileBackground({ declaredBackground: row.declared_background, faculty: row.faculty })) {
+    return candidateRoleFamilyLabels.medical_rep;
+  }
+
   if (!family) return POSITION_NOT_STATED;
 
   // A job title that is really a WhatsApp message never becomes a folder name — the measured case is

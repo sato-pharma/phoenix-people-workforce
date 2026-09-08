@@ -107,6 +107,8 @@ type MirrorCandidateRow = {
   status: string | null;
   applied_for_job_title: string | null;
   current_job_title: string | null;
+  declared_background: string | null;
+  faculty: string | null;
   sent_for_job_title: string | null;
   preferred_area_name: string | null;
   preferred_region_code: string | null;
@@ -119,7 +121,7 @@ type MirrorCandidateRow = {
 };
 
 const CANDIDATE_FIELDS =
-  "id, full_name, phone, whatsapp, status, applied_for_job_title, current_job_title, sent_for_job_title, preferred_area_name, preferred_region_code, preferences_declared_at, folder_kind, folder_key, governorate, address, sent_for_region";
+  "id, full_name, phone, whatsapp, status, applied_for_job_title, current_job_title, declared_background, faculty, sent_for_job_title, preferred_area_name, preferred_region_code, preferences_declared_at, folder_kind, folder_key, governorate, address, sent_for_region";
 
 /**
  * The folder path for one candidate, and the name their file should carry.

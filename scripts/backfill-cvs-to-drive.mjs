@@ -372,7 +372,7 @@ async function main() {
         continue;
       }
       const candidates = await rest(
-        `ats_candidates?select=id,full_name,phone,whatsapp,status,applied_for_job_title,current_job_title,sent_for_job_title,preferred_area_name,preferred_region_code,preferences_declared_at,folder_kind,folder_key,governorate,address,sent_for_region&id=eq.${file.candidate_id}`,
+        `ats_candidates?select=id,full_name,phone,whatsapp,status,applied_for_job_title,current_job_title,declared_background,faculty,sent_for_job_title,preferred_area_name,preferred_region_code,preferences_declared_at,folder_kind,folder_key,governorate,address,sent_for_region&id=eq.${file.candidate_id}`,
       );
       const candidate = candidates[0];
       if (!candidate) {
@@ -519,7 +519,7 @@ async function verifyMirror(areaRegions) {
   // that the old tree never read. Omitting either silently drops a candidate to a lower rung, so
   // the verifier would report a correctly filed CV as misfiled — the exact failure this fixes.
   const SELECT =
-    "id,full_name,status,applied_for_job_title,current_job_title,sent_for_job_title," +
+    "id,full_name,status,applied_for_job_title,current_job_title,declared_background,faculty,sent_for_job_title," +
     "preferred_area_name,preferred_region_code," +
     "preferences_declared_at,folder_kind,folder_key,governorate,address,sent_for_region";
   for (let at = 0; at < wanted.length; at += 50) {
