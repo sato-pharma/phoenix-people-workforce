@@ -16,7 +16,7 @@ import { extractVariableKeys } from "@/lib/recruitment/whatsapp-templates/variab
 const TEMPLATES_TABLE = "ats_whatsapp_message_templates";
 const SENDS_TABLE = "ats_whatsapp_template_sends";
 
-const TEMPLATE_COLUMNS = "id,name,category,body,is_active,sort_order,updated_at,updated_by_hr_id";
+const TEMPLATE_COLUMNS = "id,name,category,body,is_active,sort_order,audience,updated_at,updated_by_hr_id";
 
 function mapTemplate(row: Record<string, unknown>): WhatsAppTemplate {
   const body = String(row.body ?? "");
@@ -27,6 +27,10 @@ function mapTemplate(row: Record<string, unknown>): WhatsAppTemplate {
     isActive: boolOrNull(row.is_active) ?? true,
     name: String(row.name ?? ""),
     sortOrder: numberOrNull(row.sort_order) ?? 0,
+    // 'any' unless the row explicitly says otherwise. An unreadable or unrecognised value reads as
+    // 'employee' — the NARROWER audience — because the failure this guards is a template reaching
+    // somebody it was not meant for, and a column we cannot parse must not widen who can be messaged.
+    audience: textOrNull(row.audience) === "employee" ? "employee" : textOrNull(row.audience) === "any" ? "any" : "employee",
     updatedAt: textOrNull(row.updated_at),
     updatedByHrId: textOrNull(row.updated_by_hr_id),
     // Derived here, on every read, rather than stored alongside the body. A stored copy is a second

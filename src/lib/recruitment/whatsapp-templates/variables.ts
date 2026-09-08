@@ -67,6 +67,27 @@ const EMPLOYEE_ONLY_KEY_SET = new Set<string>(EMPLOYEE_ONLY_VARIABLE_KEYS);
  * Used to decide which templates a CV screen offers. The employee screen and the template MANAGER
  * are unaffected: the manager must show every template, because it is where they are written.
  */
+/**
+ * Whether a template may be offered on a CANDIDATE screen.
+ *
+ * TWO INDEPENDENT REASONS to withhold it, either sufficient:
+ *
+ *   1. `audience: "employee"` — set explicitly on the row, for a template whose fields are all
+ *      TYPED and whose body therefore says nothing about who it is for. A salary increase is that
+ *      shape: the amount and the effective month are typed, because nothing in the database records
+ *      that a raise happened or when. Every placeholder in it is answerable for a candidate, so the
+ *      derived rule below offers it — and a recruiter could send a serving employee's pay rise to a
+ *      job applicant. Nothing errors; the message is simply wrong, and cannot be recalled.
+ *   2. The body needs a field only an employee record can answer, per `requiresEmployeeTarget`.
+ *
+ * Deliberately ONE-WAY: neither signal can make a template MORE widely offered, so adding the
+ * column cannot have widened anything that existed before it.
+ */
+export function templateAllowedForCandidate(template: { audience?: string; body: string }): boolean {
+  if (template.audience === "employee") return false;
+  return !requiresEmployeeTarget(template.body);
+}
+
 export function requiresEmployeeTarget(body: string): boolean {
   return extractVariableKeys(body).some((key) => EMPLOYEE_ONLY_KEY_SET.has(key));
 }

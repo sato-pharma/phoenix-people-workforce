@@ -19,6 +19,7 @@ import {
   manualVariableKeys,
   renderTemplate,
   requiresEmployeeTarget,
+  templateAllowedForCandidate,
   variableLabel,
 } from "../src/lib/recruitment/whatsapp-templates/variables.ts";
 
@@ -680,6 +681,67 @@ export function runWhatsAppMessageTemplateTests() {
         + "that renders as undefined",
     );
   }
+
+  // ── audience: the template that says nothing about who it is for ─────────────
+  //
+  // A salary increase has NO employee-only placeholder: the amount and the effective month are both
+  // typed, because nothing in the database records that a raise happened or when. Every field in it
+  // is answerable for a candidate, so the derived rule offers it on the CV screen — where a
+  // recruiter could send a serving employee's pay rise to a job applicant. Nothing errors. The
+  // message is simply wrong, and it cannot be recalled.
+  const salaryBody = "Dear {{candidate_first_name}}, your salary is now {{new_salary}} from {{effective_month}}.";
+
+  assert.ok(
+    !requiresEmployeeTarget(salaryBody),
+    "the derived rule CANNOT see this one — that is the gap the audience column exists to close, and "
+      + "this assertion is what stops someone deleting the column as redundant",
+  );
+  assert.ok(
+    !templateAllowedForCandidate({ audience: "employee", body: salaryBody }),
+    "marked employee-only, it is withheld from a candidate screen even though its body looks ordinary",
+  );
+  assert.ok(
+    templateAllowedForCandidate({ audience: "any", body: salaryBody }),
+    "and an unmarked template with an ordinary body is still offered — the column defaults to 'any', "
+      + "so adding it changed nothing about the templates that existed before it",
+  );
+
+  // EITHER SIGNAL IS SUFFICIENT, and the derived one still stands on its own.
+  assert.ok(
+    !templateAllowedForCandidate({ audience: "any", body: "ends on {{probation_end_date}}" }),
+    "an employee-only FIELD still withholds a template that is not marked",
+  );
+
+  // ONE-WAY, deliberately: no value of audience can make a template MORE widely offered than its
+  // body allows. Without this, marking a probation template 'any' would put it back on the CV screen.
+  for (const audience of ["any", "employee", undefined, "nonsense"]) {
+    assert.ok(
+      !templateAllowedForCandidate({ audience, body: "on {{contract_renewal_date}}" }),
+      `audience=${String(audience)} must not widen a template whose body needs an employee record`,
+    );
+  }
+
+  // 🔴 THE LIST FILTER IS UX; THE SEND ROUTE IS THE BOUNDARY. Hiding a template from the screen does
+  // not stop a POST naming a candidateId and that template's id. For a salary increase every field
+  // is typed, so nothing downstream would refuse it — the refusal has to be explicit and on the
+  // server, which is the same rule as "system-navigation hiding a link is UX only".
+  const sendRouteSrc = readFileSync("app/api/recruitment/whatsapp-templates/send/route.ts", "utf8");
+  assert.match(
+    sendRouteSrc,
+    /if \(candidateId && !templateAllowedForCandidate\(template\)\)/,
+    "the SEND route must refuse an employee-only template aimed at a candidate — filtering the list "
+      + "is a screen decision and stops nobody posting directly",
+  );
+
+  // The store must READ the column, or every template silently reads as its default.
+  const storeSrc = readFileSync("src/lib/recruitment/whatsapp-templates/store.ts", "utf8");
+  assert.match(storeSrc, /audience/, "the store selects and maps the audience column");
+  assert.match(
+    storeSrc,
+    /TEMPLATE_COLUMNS = "[^"]*audience/,
+    "audience is in the SELECT list — a mapper reading a column the query never asked for gets "
+      + "undefined for every row, which is the failure that looks like the feature working",
+  );
 
   // And the STORED name is never rewritten — an identity field is evidence, not display text.
   assert.equal(

@@ -11,7 +11,7 @@ import {
 } from "@/app/api/recruitment/_lib/http";
 import { resolveCommentAuthor } from "@/lib/recruitment/candidate-comments";
 import { assertPermission } from "@/lib/auth/permissions";
-import { requiresEmployeeTarget } from "@/lib/recruitment/whatsapp-templates/variables";
+import { templateAllowedForCandidate } from "@/lib/recruitment/whatsapp-templates/variables";
 import { loadCandidateSendContext, manualSendAutoValues } from "@/lib/recruitment/whatsapp-templates/candidate-context";
 import { loadEmployeeSendContext } from "@/lib/recruitment/whatsapp-templates/employee-context";
 import { createWhatsAppTemplate, listWhatsAppTemplates } from "@/lib/recruitment/whatsapp-templates/store";
@@ -55,7 +55,7 @@ export async function GET(request: Request) {
     // they are written — a template hidden from its own editor cannot be edited. The employee screen
     // is unaffected for the obvious reason.
     const templates = candidateId
-      ? allTemplates.filter((template) => !requiresEmployeeTarget(template.body))
+      ? allTemplates.filter((template) => templateAllowedForCandidate(template))
       : allTemplates;
 
     const candidate = candidateId ? await loadCandidateSendContext(candidateId, author.name) : null;

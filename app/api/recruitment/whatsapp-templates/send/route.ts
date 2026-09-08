@@ -10,6 +10,7 @@ import {
 } from "@/app/api/recruitment/_lib/http";
 import { resolveCommentAuthor } from "@/lib/recruitment/candidate-comments";
 import { assertPermission } from "@/lib/auth/permissions";
+import { templateAllowedForCandidate } from "@/lib/recruitment/whatsapp-templates/variables";
 import { loadCandidateSendContext, manualSendAutoValues } from "@/lib/recruitment/whatsapp-templates/candidate-context";
 import { loadEmployeeSendContext } from "@/lib/recruitment/whatsapp-templates/employee-context";
 import { toWhatsAppDialNumber, whatsAppSendUrl } from "@/lib/recruitment/whatsapp-templates/send-link";
@@ -72,6 +73,15 @@ export async function POST(request: Request) {
     }
     if (!template.isActive) {
       return recruitmentProblem("That template is switched off. Turn it back on before using it.", 409);
+    }
+
+    // 🔴 THE LIST FILTER IS UX; THIS IS THE BOUNDARY. The GET route stops an employee-only template
+    // appearing on a candidate screen, but that is a screen decision — a POST naming a candidateId
+    // and an employee-only templateId would otherwise send it. A salary increase is the case that
+    // makes this concrete: every field in it is typed, so nothing downstream would refuse, and a
+    // serving employee'"'"'s pay rise would reach a job applicant with no error anywhere.
+    if (candidateId && !templateAllowedForCandidate(template)) {
+      return recruitmentProblem("That template can only be sent to an employee, not to a candidate.", 409);
     }
 
     const author = await resolveCommentAuthor(access.hrId).catch(() => ({ jobTitle: null, name: null }));
