@@ -34,22 +34,46 @@ export type VacancyOptionLabelOptions = {
    * caller decides, by looking at what it is about to render.
    */
   omitPositionTitle?: boolean;
+  /**
+   * Put the district first: `Upper Egypt 1 (Minia 1)` rather than
+   * `Minia 1 (Upper Egypt 1)`.
+   *
+   * For a MANAGER seat the area on the vacancy is one arbitrary area out of the
+   * whole district that seat runs -- whichever one the leaver personally sat in
+   * -- so leading with it names the wrong thing. That is the mistake this whole
+   * label came from: on 2026-09-09 the owner read "Behira 1" and did not find
+   * the Alex-BHR-KFS district he was hiring for, then read one undivided "Upper
+   * Egypt" where the organogram already held two districts.
+   *
+   * The area still prints, in brackets, because it is what the new hire's own
+   * employee record will carry. For a REP seat the area IS the job, so the
+   * caller leaves this off.
+   */
+  leadWithRegion?: boolean;
 };
 
 function clean(value: string | null | undefined): string {
   return String(value ?? "").trim();
 }
 
+function placeName(areaName: string, regionName: string, leadWithRegion: boolean): string {
+  if (!areaName) return regionName;
+  if (!regionName) return areaName;
+  // A single-area district ("Cairo" inside region "Cairo") would print its own name twice.
+  if (regionName.toLowerCase() === areaName.toLowerCase()) return areaName;
+  return leadWithRegion ? `${regionName} (${areaName})` : `${areaName} (${regionName})`;
+}
+
 /**
  * `Behira 1 (Alex-BHR) - District Sales Manager - Manager: Hany Saad Mohamed Omar`,
  * or `Behira 1 (Alex-BHR) - Manager: Hany Saad Mohamed Omar` under
- * `omitPositionTitle`.
+ * `omitPositionTitle`, or `Alex-BHR (Behira 1) - Manager: Hany Saad Mohamed Omar`
+ * under `leadWithRegion` as well.
  *
- * The region is appended only when it says something the area does not: a
- * single-area district ("Cairo" inside region "Cairo") would otherwise print
- * its own name twice. Every segment is dropped when its value is missing, so a
- * vacancy with no manager yet reads `Behira 1 (Alex-BHR) - District Sales
- * Manager` rather than trailing an empty "Manager:".
+ * The region is printed only when it says something the area does not. Every
+ * segment is dropped when its value is missing, so a vacancy with no manager
+ * yet reads `Behira 1 (Alex-BHR) - District Sales Manager` rather than trailing
+ * an empty "Manager:".
  */
 export function formatVacancyOptionLabel(
   vacancy: VacancyOptionLabelInput,
@@ -60,12 +84,7 @@ export function formatVacancyOptionLabel(
   const positionTitle = options.omitPositionTitle ? "" : clean(vacancy.positionTitle);
   const managerName = clean(vacancy.managerName);
 
-  const sameAsArea = regionName.toLowerCase() === areaName.toLowerCase();
-  const place = areaName
-    ? regionName && !sameAsArea
-      ? `${areaName} (${regionName})`
-      : areaName
-    : regionName;
+  const place = placeName(areaName, regionName, options.leadWithRegion === true);
 
   const segments = [place, positionTitle, managerName ? `Manager: ${managerName}` : ""];
 

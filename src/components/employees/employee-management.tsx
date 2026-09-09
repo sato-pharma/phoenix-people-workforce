@@ -364,6 +364,10 @@ function isSalesPositionTitle(value: string | null | undefined) {
   );
 }
 
+function isManagerPositionTitle(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase().includes("manager");
+}
+
 function normalizeForMatch(value: string | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
 }
@@ -929,6 +933,19 @@ export function EmployeeManagement({
         .filter(Boolean),
     );
     return titles.size <= 1;
+  }, [filteredWorkforceVacancies]);
+
+  // A MANAGER vacancy carries the area its leaver personally sat in, one arbitrary area out of the
+  // whole district that seat runs -- so leading with it names the wrong thing, which is how the
+  // Alex-BHR-KFS district read as absent on 2026-09-09. Lead with the district for those rows and
+  // keep the area in brackets, since the area is what the new hire own record will carry. A REP
+  // vacancy is the opposite: the area IS the job. Ask the rows rather than the chosen position, so
+  // a mixed list never puts a rep row into district-first order.
+  const vacancyRowsAreManagerSeats = React.useMemo(() => {
+    if (filteredWorkforceVacancies.length === 0) return false;
+    return filteredWorkforceVacancies.every((vacancy) =>
+      isManagerPositionTitle(vacancy.positionTitle || vacancy.jobTitle),
+    );
   }, [filteredWorkforceVacancies]);
 
   const filteredWorkforceLines = React.useMemo(() => {
@@ -2740,7 +2757,10 @@ export function EmployeeManagement({
                       selectedPositionRequiresVacancy
                         ? filteredWorkforceVacancies.length > 0
                           ? filteredWorkforceVacancies.map((v) => ({
-                              label: formatVacancyOptionLabel(v, { omitPositionTitle: vacancyPositionsAgree }),
+                              label: formatVacancyOptionLabel(v, {
+                                omitPositionTitle: vacancyPositionsAgree,
+                                leadWithRegion: vacancyRowsAreManagerSeats,
+                              }),
                               value: String(v.areaId),
                             }))
                           : form.lineId
