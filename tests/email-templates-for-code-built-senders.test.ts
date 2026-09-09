@@ -5,7 +5,7 @@ import { emailTemplateKeys } from "@/lib/email-templates/key-resolution.ts";
 import { TOKEN_REGISTRY } from "@/lib/email-templates/token-registry.ts";
 
 /**
- * The six emails that used to build their body in code (2026-09-09).
+ * The seven emails that used to build their body in code (2026-09-09).
  *
  * Each was assembled inline by its own module and could not be edited from
  * /admin/email-templates at all. They now render from a template key. This pins the three
@@ -34,6 +34,7 @@ const CONVERTED: ReadonlyArray<{
   { file: "src/lib/sales/sos-report-delivery.ts", key: "sos_executive_report", idempotencyPrefix: "sos-bi-report:" },
   { file: "src/lib/recruitment/inbound/cv-intake-digest-6h.ts", key: "cv_intake_digest", idempotencyPrefix: "cv-intake-digest-6h:" },
   { file: "src/lib/notifications/telegram-onboarding.ts", key: "telegram_connect", idempotencyPrefix: "telegram-onboard:" },
+  { file: "src/lib/sales/weekly/upload-notification.ts", key: "weekly_sales_uploaded", idempotencyPrefix: "weekly-upload:" },
 ];
 
 function templateDefaultBlock(source: string, key: string) {
@@ -112,6 +113,20 @@ export function runEmailTemplatesForCodeBuiltSendersTests() {
     /idempotencyKey: input\.idempotencyKey\?\.trim\(\) \|\| `template-/,
     "sendTemplatedEmail must prefer the caller's idempotency key over the derived hash",
   );
+
+  // --- The weekly notice's own rule: NAMES ONLY, never a figure ----------------------
+  // One weekly-upload mail reaches every District Manager on the line off a NATIONAL sheet, so a
+  // sales figure would be wider than the region each reader is scoped to everywhere else. Making
+  // the wording admin-editable must not open a route to one, so no figure-bearing token may
+  // appear in the template body. tests/weekly-upload-line-notification.test.ts pins the sender
+  // side of the same rule.
+  const weeklyBlock = templateDefaultBlock(service, "weekly_sales_uploaded");
+  for (const figure of ["salesQty", "netQty", "returnQty", "bonusQty", "salesValue", "stockQty", "amount"]) {
+    assert.ok(
+      !weeklyBlock.includes(`{{${figure}}}`),
+      `the Weekly Sales Uploaded template must never render {{${figure}}} — one shared mail cannot carry a number scoped to one reader`,
+    );
+  }
 
   // The SoS workbook is the only attachment in the set, and an attachment that never reaches
   // the sender is invisible: the email arrives, just with nothing attached.
