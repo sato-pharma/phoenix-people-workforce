@@ -1996,3 +1996,70 @@ unchanged source and prints success. Naming the drift — or its absence — is 
 The test also asserts the lock is **armed**. A missing verifier reads exactly like a working lock
 from inside a session, which is the hazard the Office golden rule carried until 2026-09-05, when a
 session reading the docs would have believed a password was in place while none was.
+
+## Pedia's Upper Egypt splits in two, and August is frozen — owner decision, 2026-09-09
+
+### What he said
+
+> Upper Egypt will be divided, splitted into Upper Egypt one and Upper Egypt two. Upper Egypt one will be Fayoum as a separate area, Beni Suef as a separate area, Minya one, Minya two, Asyut one, Asyut two. Regarding Upper Egypt two, will be Suhag one, Suhag two, Qena 1 and Qena 2, Luxor, and Aswan in others. But golden rule, golden, golden, golden rule. August closing will be normally. The changes in sales will be starting from September.
+
+Asked to confirm, he said it twice more, and widened it:
+
+> this change will not affect anything in August but starting from September everything will be based on this distribution, every fucking thing ... in August closing it, this changes will not affect anything
+
+> yes, this changes is only in Pedia, only in Pedia, only in Pedia. No, you will change everything, sales geography and organogram and everything. But you will pause August, August as it is. But after August you will change everything that needs to be changed.
+
+Two answers came back as corrections, and both matter:
+
+- **Luxor is NOT a separate area.** *"no, no, no. Luxor is with Qena 2 ... not a separate area. And Aswan is with others."* The first reading, Luxor as its own area with its own rep, was wrong.
+- **The district managers are new hires.** *"The district managers of the two halves are new hired. After we make the splitting, I will add their data."* So both seats are created vacant.
+
+### The shape
+
+| District | Areas |
+| --- | --- |
+| Upper Egypt 1 | Fayoum, Beni Suef, Minia 1, Minia 2, Assuit 1, Assuit 2 |
+| Upper Egypt 2 | Sohag 1, Sohag 2, Qena 1, Qena 2, Luxor |
+| Others | Aswan, untouched |
+
+Giza drops from 8 areas to 6. Others drops from 12 to 10. Pedia only.
+
+🔴 **The region codes `UE-1` and `UE-2` already existed** — Anti Infective has run them since 2026-07-13 — so this is not a new shape, it is Pedia joining one the system already runs. **Their MEMBERSHIP differs per line on purpose:** Assuit sits in UE-2 on Anti Infective and in UE-1 on Pedia, and Fayoum is in Giza there. `au.line_area_map` is per line. A session that "aligns" the two reverses him.
+
+### Why a dated pair, and why he did not need a snapshot table
+
+He asked for one in plain words:
+
+> at least you can save a snapshot of the current organogram, and this is a snapshot the qema will work on for August. Okay, and starting from September, it will read normally from the organogram.
+
+The system already does exactly that, and more safely than a copy would. `closingRegionsAsOfDate` resolves the org chart at the **last day of the month being closed**, never at the day the closing is run, and `au.f_line_area_map_asof` uses the same predicate with `effective_to` **exclusive**. Closing the open rows at 2026-09-01 and opening the new ones on the same date puts August permanently out of reach of the change, whenever August is finally run, with nothing to remember on the 1st.
+
+This is the Delta (3) shape — `20260829113500_anti_infective_delta_3_from_september.sql` — deliberately mirrored. A pre-image is kept in `au.bak_20260909_pedia_ue_split_line_area_map` and `..._seats` as well, but it is belt and braces, not the mechanism.
+
+⚠ **August Pedia was NOT locked when this was written.** Only Anti Infective 2026-08 carried a `monthly_closing_locks` row, from 2026-09-07. So the dating was doing real work, not decorating a month already protected.
+
+### The one number this moves
+
+El Qema's priority ladder spreads that distributor's whole Pedia book across every area the line has except those parked in Others, and the exclusion keys on `operational_region_code = 'OT'` **alone** — never on `area_state`, never on `carries_target`. Qena 2 and Luxor leave Others here, so:
+
+| El Qema divisor, Pedia | Areas |
+| --- | --- |
+| August | 37 |
+| September | 39 |
+
+**Luxor still takes a share even though it carries no target**, because the ladder counts areas and not reps. That is not a defect. It is the same shape OT9 Ismailia rode into Delta (3) with: `other_permanent`, no rep seat, inside a real district.
+
+### The seat caveat, which cannot be dated away
+
+`au.seats` has `seat_id` alone as its primary key, so a seat **cannot** be forward-dated the way a map row can. The four new seats carry `effective_from = 2026-09-01`, but re-pointing the existing Upper Egypt rep seats to their new district happens the moment the migration is applied. That is chart metadata only — every number the closing produces comes from `au.line_area_map`, which is dated. Do not "fix" this by writing a second seat row; the primary key forbids it.
+
+⚠ When he adds the two district managers, an `employees` insert auto-seats them and flips `line_area_map.area_state`, which is hashed into the attribution fingerprint. **Re-stamp after the hires.**
+
+### Two things found on the way, neither fixed
+
+- The `runTest` label for `runQemaWarehouseSplitTests` still describes the 200 and 1,000 pack bands that #3583 deleted. The test itself pins the ladder; only its name is stale.
+- `buildOperationalRegionMap` resolves overlapping rows to the **latest** `effective_from`; `au.f_line_area_map_asof` orders `effective_from asc` and so takes the **earliest**. The TypeScript comment claims the two match. No overlap is written by this migration, so nothing here depends on it, but they disagree and a future overlapping pair would resolve differently in the sheet and in achievement.
+
+### How it is held
+
+`tests/pedia-upper-egypt-split.test.ts`, in the required CI `validate` job. Its headline assertion is the golden rule itself: August's El Qema distribution built **with** the September rows present is `deepEqual` to August's built **without** them. Proved red by dating the pair to 2026-08-01, the real failure mode.
