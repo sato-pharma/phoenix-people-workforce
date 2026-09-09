@@ -33,7 +33,7 @@ export function runTerritoryAreaFoldHardeningTests(): void {
     { areaCode: "GZ6", areaName: "Fayoum" },
     { areaCode: "UE9", areaName: "Beni Suef" },
     { areaCode: "CA3", areaName: "Cairo Centers" },
-  ]);
+  ], "2026-08");
   assert.deepEqual(
     bothOptions.map((a) => a.areaCode),
     ["GZ6", "CA3"],
@@ -46,7 +46,7 @@ export function runTerritoryAreaFoldHardeningTests(): void {
   );
 
   // Case 2 — GZ6 alone: still one option, still relabelled.
-  const gz6Only = foldAreaOptionsForLine("pedia", [{ areaCode: "GZ6", areaName: "Fayoum" }]);
+  const gz6Only = foldAreaOptionsForLine("pedia", [{ areaCode: "GZ6", areaName: "Fayoum" }], "2026-08");
   assert.deepEqual(
     gz6Only.map((a) => ({ code: a.areaCode, name: a.areaName })),
     [{ code: "GZ6", name: MERGED }],
@@ -55,7 +55,7 @@ export function runTerritoryAreaFoldHardeningTests(): void {
 
   // Case 3 — UE9 alone: THE FIX. The merged option must still appear, re-keyed to the survivor GZ6
   // and relabelled — never dropped to nothing (which was the blank-screen bug).
-  const ue9Only = foldAreaOptionsForLine("pedia", [{ areaCode: "UE9", areaName: "Beni Suef" }]);
+  const ue9Only = foldAreaOptionsForLine("pedia", [{ areaCode: "UE9", areaName: "Beni Suef" }], "2026-08");
   assert.equal(
     ue9Only.length,
     1,
@@ -92,21 +92,21 @@ export function runTerritoryAreaFoldHardeningTests(): void {
 
   // Both codes in scope (the live shape): both bricks kept, both displayed under GZ6.
   assert.deepEqual(
-    byId(scopeAndFoldAreaChildren("pedia", ["GZ6", "UE9"], bricks)),
+    byId(scopeAndFoldAreaChildren("pedia", ["GZ6", "UE9"], bricks, "2026-08")),
     { "b-fayoum": "GZ6", "b-benisuef": "GZ6" },
     "both in scope: both bricks kept and displayed under the survivor GZ6; the unrelated brick is out of scope",
   );
 
   // GZ6 alone: only Fayoum's brick — a rep scoped to Fayoum must NOT see Beni Suef's bricks.
   assert.deepEqual(
-    byId(scopeAndFoldAreaChildren("pedia", ["GZ6"], bricks)),
+    byId(scopeAndFoldAreaChildren("pedia", ["GZ6"], bricks, "2026-08")),
     { "b-fayoum": "GZ6" },
     "GZ6 alone: only the Fayoum brick, displayed as GZ6; the Beni Suef (UE9) brick is out of scope",
   );
 
   // UE9 alone: THE LEAK GUARD. Only Beni Suef's brick, re-keyed to GZ6 for display — and crucially
   // Fayoum's (GZ6) brick must NOT appear, even though both display under GZ6.
-  const ue9Bricks = scopeAndFoldAreaChildren("pedia", ["UE9"], bricks);
+  const ue9Bricks = scopeAndFoldAreaChildren("pedia", ["UE9"], bricks, "2026-08");
   assert.deepEqual(
     byId(ue9Bricks),
     { "b-benisuef": "GZ6" },

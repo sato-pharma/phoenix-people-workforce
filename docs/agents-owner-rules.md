@@ -2241,3 +2241,25 @@ Proved a no-op before shipping: 144 cases — nine origins across both halves of
 ⚠ **Neither the ladder nor the صعيد pass preserves "fayoum-banisuef one region".** Under the pool they were one member taking one share; under both later rules they are two areas taking two. That follows from his later choices and is not an oversight.
 
 ⚠ **`LOCAL_BLOCK_OVERRIDES`, the Cairo + Qalubeya rule, was unreachable under the ladder and was deliberately LEFT IN PLACE.** That decision paid off: the 2026-09-09 evening ruling names the block again in step 2, so it is live once more — without its 75/25 weighting.
+
+## Fayoum and Beni Suef separate on Pedia from September — owner decision, 2026-09-09
+
+His words: *"fayoum separate area and banisuef separate area but august closing not affected starting from september"*, and when asked why not October, *"why not septemvber?"*
+
+It arrived with the Upper Egypt split and matches it: the organogram already gives Beni Suef its own area and its own rep seat in Upper Egypt 1 from 1 September. Starting the closing separation in October instead would have left the chart and the closing disagreeing for a whole month.
+
+### How it is dated
+
+`ClosingAreaMergeRule` gained an `untilPeriod` — the mirror of the `fromPeriod` that already existed, and for the same reason. A merge that STOPS rewrites a published month exactly as surely as one that starts. Pedia now reads `untilPeriod: "2026-08"`, so August and every earlier closing renders as it was sent.
+
+🔴 **CNS IS DELIBERATELY UNTOUCHED.** Its merge was removed on 2026-08-30 at his instruction and put back from August on 2026-09-07, and he said "only Pedia" three times about this change. Ending CNS's merge too would reverse a two-day-old decision he has not revisited.
+
+### The defect this surfaced
+
+The target upload folded the area by **today**, not by the row's own month. Invisible while Pedia folded in every period; wrong the moment the merge gained an end date, because an August target uploaded in September would have been stored on Beni Suef, a row August's merged grid cannot render. The operator would have seen no target where he had just set one. `validateTargetRows` now folds on `row.period`.
+
+### Why Beni Suef has no target
+
+Every Pedia target since February sits on Fayoum alone: September is 988 units and 147,953.25 value on Fayoum, nothing on Beni Suef. That is the merge's own doing — the Targets grid keyed its rows, its edit box and its save on the folded code, so it saved Fayoum's number and never wrote Beni Suef's. Separating them is what makes both settable, and a single upload now stores two cells.
+
+⚠ **The September split between the two is HIS to give.** The two obvious bases disagree almost exactly in reverse — the last separately-set targets (January and February) put Fayoum at 69%, while sales since February put it at 32% — and the sales series is untrustworthy here because one rep has covered both areas throughout, swinging hard and twice going negative on returns. Do not derive it.

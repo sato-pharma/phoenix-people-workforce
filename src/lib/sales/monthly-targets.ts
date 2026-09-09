@@ -300,7 +300,7 @@ export function validateTargetRows(
     // ACCEPTED and folded onto GZ6 rather than rejected — under the owner's ruling it is the same
     // area, so the row means what the author intended. Validation above deliberately ran on the
     // ORIGINAL code, so a genuinely unmapped or "Other" area still reports itself by name.
-    const targetAreaCode = foldAreaCodeForLine(lineCode, areaCode);
+    const targetAreaCode = foldAreaCodeForLine(lineCode, areaCode, row.period);
 
     // Folding makes a collision reachable that the sheet does not look like it has: Fayoum on one
     // row and Beni Suef on another now resolve to ONE cell. `phx_upsert_monthly_targets` is
