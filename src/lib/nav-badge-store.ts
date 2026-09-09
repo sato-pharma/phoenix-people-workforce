@@ -42,7 +42,8 @@ type BatchKey =
   | "directOrders"
   | "directOrdersUnbooked"
   | "directOrdersNeedsAction"
-  | "marketing";
+  | "marketing"
+  | "marketAwareness";
 
 /** Maps each legacy per-src badge URL to its key in the batched response. */
 const BATCH_KEY_BY_SRC: Record<string, BatchKey> = {
@@ -65,6 +66,9 @@ const BATCH_KEY_BY_SRC: Record<string, BatchKey> = {
   // Marketing keeps its own dedicated approval inbox (it is deliberately excluded from the
   // consolidated hub), so it needs its own slot — "hub" will never carry a marketing item.
   "/api/marketing-requests/pending-count": "marketing",
+  // Market Awareness keeps its own approvals inbox for the same reason marketing does, so it needs
+  // its own slot too — "hub" will never carry an awareness activity either.
+  "/api/market-awareness/pending-count": "marketAwareness",
 };
 
 /** Shared polling infrastructure for every batched channel (one poll serves all). */

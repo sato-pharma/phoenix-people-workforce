@@ -8,6 +8,7 @@ import {
   normalizeLineKey,
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
+import { maskClosingSourceRows } from "@/lib/sales/closing-source-mask";
 import { applyClosingAreaMergesToDetails } from "@/lib/sales/closing-area-merges";
 import { countsInClosingHeadline } from "@/lib/sales/closing-headline";
 import { loadOperationalRegionResolver } from "@/lib/sales/closing-organogram-regions";
@@ -119,7 +120,7 @@ export type ClosingDetailRow = {
   qty: number;
   bonusQty: number;
   discount: number;
-  /** qty x (1 - discount) — the base the matrix values (mirrors fact_rollup.effective_units). */
+  /** qty — the base the matrix values (mirrors fact_rollup.effective_units). Units are units. */
   effectiveUnits: number;
   /**
    * The row's contribution to the closing's sales value. Normally effectiveUnits x factoryPrice —
@@ -281,7 +282,7 @@ export function resolveClosingDetailSalesValue(input: {
   isDirect: boolean;
   /** The row's own invoice period, `YYYY-MM`. Retained for callers; no longer branched on. */
   invoicePeriod: string;
-  /** qty x (1 - discount). */
+  /** qty. The discount factor was struck out of the whole system on 2026-09-07. */
   effectiveUnits: number;
   factoryPrice: number;
   /** The value column exactly as the sheet stored it. */
@@ -422,6 +423,15 @@ export type LoadClosingDetailsInput = {
   period?: string | null;
   /** Honoured only for a role allowed to reveal confidential products. */
   includeConfidential?: boolean;
+  /**
+   * Return the real distributor and customer on rows this viewer would otherwise see masked.
+   *
+   * 🔴 FOR COMPUTATION ONLY. The split keys on `distributorCode` and the customer aggregation
+   * keys on `clientCode`, so a computation path reading masked rows does not throw — it quietly
+   * produces a different distribution. Every caller that passes this is listed and pinned by
+   * tests/closing-source-mask.test.ts, so adding one is a deliberate act rather than a habit.
+   */
+  revealSource?: boolean;
   availableLines?: string[];
   availablePeriods?: string[];
   filters?: ClosingDetailsFilters;
@@ -619,7 +629,13 @@ export async function loadMonthlyClosingDetails(
 
     const qty = num(raw.qty);
     const discount = num(raw.discount);
-    const effectiveUnits = qty * (1 - discount);
+    // UNITS ARE UNITS. This was `qty * (1 - discount)` until 2026-09-07, when the owner struck the
+    // discount factor out of the whole system: "we neglect the bonus and the value in any
+    // distributor sheet, we take the units and multiply by factory". The sheet's discount column is
+    // still imported and still displayed beside the row — it is simply no longer allowed to reduce
+    // the units a rep is credited with. The ten database functions that carried the same factor are
+    // replaced in the migration of the same date.
+    const effectiveUnits = qty;
     const isDirect = raw.is_direct === true;
     const clientCode = text(raw.client_code);
     const isConfidential = isRestrictedProductCode(productCode);
@@ -699,7 +715,7 @@ export async function loadMonthlyClosingDetails(
     };
   });
 
-  const merged = applyClosingAreaMergesToDetails(resolveTargetLineCode(line), mapped);
+  const merged = applyClosingAreaMergesToDetails(resolveTargetLineCode(line), mapped, period);
 
   const scoped = applyDetailScope(merged, {
     allowedRegionCodes,
@@ -741,13 +757,20 @@ export async function loadMonthlyClosingDetails(
 
   const filtered = applyDetailFilters(relabelled, input.filters);
   const start = (page - 1) * pageSize;
+  const paged = input.unpaged ? filtered : filtered.slice(start, start + pageSize);
+
+  // 🔒 The source mask, applied LAST and defaulting ON. Everything above this line — the scope,
+  // the relabelling, the filters, every total — has already been computed from the real rows, so
+  // masking here changes what is SHOWN and nothing that is COUNTED. See closing-source-mask.ts for
+  // the owner's words and for why the reveal is granted by scope rather than per call site.
+  const shown = input.revealSource === true ? paged : maskClosingSourceRows(paged, access);
 
   return {
     line,
     period,
     availableLines,
     availablePeriods,
-    rows: input.unpaged ? filtered : filtered.slice(start, start + pageSize),
+    rows: [...shown],
     filteredRowCount: filtered.length,
     page,
     pageSize,

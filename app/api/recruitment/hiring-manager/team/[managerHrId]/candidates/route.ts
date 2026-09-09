@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 
+import {
+  redactCandidateListContact,
+  redactDistrictBoardsContact,
+} from "@/lib/recruitment/candidate-call-claims";
+import { loadCallClaims } from "@/lib/recruitment/candidate-call-claims-db";
+import { districtBoardCandidateIds } from "@/lib/recruitment/district-manager-folders-db";
 import { listTeamManagerCandidates } from "@/lib/recruitment/hiring-manager-team";
 import { recruitmentApiError, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
 
@@ -33,7 +39,30 @@ export async function GET(request: Request, { params }: { params: Promise<{ mana
     // who asked for it — the owner, 2026-08-31: "when he choose his district manager, he can see
     // their folders and the CV in per folder." It comes back from the SAME call as the candidates
     // deliberately: one gate, passed once, rather than a second route with a second copy of it.
-    return NextResponse.json({ candidates, districtBoards, files, manager, success: true });
+
+    // ── THE PHONE NUMBERS COME OUT HERE, AND THEY ALWAYS COME OUT ────────────────────────────────
+    //
+    // This is the one list where the redaction is unconditional rather than claim-dependent. The
+    // caller is a manager reading what sits with the managers BELOW him, and he may not reserve any
+    // of it (the owner's 2026-08-30 rule that the answer belongs to the manager the CV was sent to),
+    // so he can never be the holder — `redactCandidateListContact` reaches the same conclusion on
+    // its own, and it is asked rather than short-circuited so there is one redactor and not two.
+    //
+    // The claims still travel: he needs to SEE that a CV is taken and by whom. That is the whole
+    // point of the reservation on this screen.
+    const callClaims = await loadCallClaims([
+      ...candidates.map((candidate) => candidate.id),
+      ...districtBoardCandidateIds(districtBoards),
+    ]);
+
+    return NextResponse.json({
+      callClaims,
+      candidates: redactCandidateListContact(candidates, callClaims, access.hrId),
+      districtBoards: redactDistrictBoardsContact(districtBoards, callClaims, access.hrId),
+      files,
+      manager,
+      success: true,
+    });
   } catch (error) {
     return recruitmentApiError(error, "Failed to load that manager's candidates.");
   }

@@ -41,6 +41,8 @@ export type SplitPlanSourceRow = {
   distributorCode: string | null;
   isDirect?: boolean;
   officialLine: string | null;
+  /** Required by the 200-pack warehouse rule, which is judged per product and not per basket. */
+  productCode?: string | null;
   qty: number;
 };
 
@@ -49,13 +51,23 @@ export type SplitPlanCustomer = {
   clientName: string;
   /** The area the file books this customer in. */
   originArea: string;
-  /** The city, or the label of a distributor override such as "Qalubeya + Cairo (El Qema)". */
+  /** The governorate, or the label of a national split such as "Qalubeya + nationwide". */
   group: string | null;
   /** Every area the units will reach, origin included. Empty when nothing moves. */
   targetAreas: string[];
   units: number;
-  /** Units each target area receives. Equal by construction — the split is always even. */
+  /**
+   * Units each area of the ORIGIN GOVERNORATE receives.
+   *
+   * It used to be every target area, equal by construction. The El Qema 200-pack rule ended that:
+   * above the threshold half the sale stays in the governorate and half crosses the country, so
+   * one number can no longer describe both sides. `unitsPerAwayArea` carries the other one.
+   */
   unitsPerArea: number;
+  /** Units each area OUTSIDE the governorate receives. 0 unless the national half applied. */
+  unitsPerAwayArea: number;
+  /** True when at least one product crossed 200 packs and took the national half. */
+  nationalSplit: boolean;
   willSplit: boolean;
   /** Present only when `willSplit` is false: why this customer's sales stay where they are. */
   reason: string | null;
@@ -90,7 +102,7 @@ function text(value: unknown): string {
  * Why this customer's units are not moving. Ordered the same way `isSplitEligible` decides, so the
  * reason names the FIRST gate that stopped it rather than a later one that also would have.
  */
-function reasonNotSplit(row: StoreSplitRow, period: string): string {
+function reasonNotSplit(row: StoreSplitRow, period: string, thresholdQty?: number): string {
   if (row.isDirect) return "direct order — placed by its own area, never split";
   if (!row.includedInClosing) return "not included in the closing";
   if (!isSplitEligibleLine(row.officialLine)) {
@@ -102,7 +114,7 @@ function reasonNotSplit(row: StoreSplitRow, period: string): string {
     // The cutover is per line, so the honest reason names the line as well as the month.
     return `classified as a pharmacy, not a wholesaler (on ${text(row.officialLine) || "this line"} for ${period})`;
   }
-  const targets = splitTargetsFor(row);
+  const targets = splitTargetsFor(row, thresholdQty);
   if (!targets) return `area ${text(row.areaCode) || "(blank)"} is not on the city list — sales stay where they are`;
   if (targets.areas.length <= 1) {
     return `${targets.group} holds one area only — nothing to divide across`;
@@ -132,19 +144,28 @@ export function buildImportSplitPlan(input: {
 
   // Grouped by customer AND origin area: one chain trading in two areas is two placements, and
   // folding them together would report a fan-out that never happens.
-  const byKey = new Map<string, { row: StoreSplitRow; units: number }>();
+  // Displayed per customer x area, but summed per PRODUCT underneath: the 200-pack rule is judged
+  // per product, so a customer whose basket totals 300 across three products has crossed nothing.
+  // Reading the basket total would report a national fan-out that the closing will not perform.
+  const byKey = new Map<
+    string,
+    { row: StoreSplitRow; units: number; byProduct: Map<string, number> }
+  >();
   for (const raw of input.rows) {
     const clientCode = text(raw.clientCode);
     if (!clientCode) continue;
     const areaCode = text(raw.areaCode).toUpperCase();
     const key = `${clientCode}|${areaCode}`;
+    const productCode = text(raw.productCode).toUpperCase();
     const qty = Number(raw.qty) || 0;
     const found = byKey.get(key);
     if (found) {
       found.units += qty;
+      found.byProduct.set(productCode, (found.byProduct.get(productCode) ?? 0) + qty);
       continue;
     }
     byKey.set(key, {
+      byProduct: new Map([[productCode, qty]]),
       units: qty,
       row: {
         areaCode,
@@ -154,7 +175,7 @@ export function buildImportSplitPlan(input: {
         includedInClosing: true,
         isDirect: Boolean(raw.isDirect),
         officialLine: text(raw.officialLine),
-        productCode: "",
+        productCode,
         qty,
         salesValue: 0,
       },
@@ -169,12 +190,41 @@ export function buildImportSplitPlan(input: {
   let widestFanOut = 0;
   const unlisted = new Set<string>();
 
-  for (const { row, units } of byKey.values()) {
+  for (const { row, units, byProduct } of byKey.values()) {
     if (isUnlistedArea(row.areaCode)) unlisted.add(row.areaCode);
-    const eligible = splitActive && isSplitEligible(row, period);
-    const targets = eligible ? splitTargetsFor(row) : null;
-    const areas = targets ? [...targets.areas] : [];
-    const willSplit = eligible && areas.length > 1;
+
+    // One plan per product, because only the product decides which side of 200 it falls on. The
+    // customer line then reports the union of what its products reach.
+    const reached = new Set<string>();
+    let unitsPerHomeArea = 0;
+    let unitsPerAwayArea = 0;
+    let nationalSplit = false;
+    let group: string | null = null;
+    let widestProduct = 0;
+    let biggestProductUnits = 0;
+
+    for (const [productCode, productUnits] of byProduct) {
+      const productRow: StoreSplitRow = { ...row, productCode, qty: productUnits };
+      if (productUnits > biggestProductUnits) biggestProductUnits = productUnits;
+      const plan = splitActive && isSplitEligible(productRow, period, productUnits)
+        ? splitTargetsFor(productRow, productUnits)
+        : null;
+      if (!plan || plan.areas.length <= 1) continue;
+      for (const area of plan.areas) reached.add(area);
+      if (plan.areas.length > widestProduct) {
+        widestProduct = plan.areas.length;
+        group = plan.group;
+      }
+      const home = productUnits * plan.homeFraction;
+      unitsPerHomeArea += home / plan.homeAreas.length;
+      if (plan.awayAreas.length > 0) {
+        nationalSplit = true;
+        unitsPerAwayArea += (productUnits - home) / plan.awayAreas.length;
+      }
+    }
+
+    const areas = [...reached].sort();
+    const willSplit = areas.length > 1;
 
     if (willSplit) {
       splittingCustomers += 1;
@@ -188,16 +238,18 @@ export function buildImportSplitPlan(input: {
     customers.push({
       clientCode: row.clientCode,
       clientName: row.clientName,
-      group: targets?.group ?? splitTargetsFor(row)?.group ?? null,
+      group: group ?? splitTargetsFor(row, biggestProductUnits)?.group ?? null,
+      nationalSplit,
       originArea: row.areaCode,
       reason: willSplit
         ? null
         : splitActive
-          ? reasonNotSplit(row, period)
+          ? reasonNotSplit(row, period, biggestProductUnits)
           : `the city split does not apply to ${period || "this period"}`,
-      targetAreas: willSplit ? areas.slice().sort() : [],
+      targetAreas: areas,
       units,
-      unitsPerArea: willSplit ? units / areas.length : units,
+      unitsPerArea: willSplit ? unitsPerHomeArea : units,
+      unitsPerAwayArea: willSplit ? unitsPerAwayArea : 0,
       willSplit,
     });
   }

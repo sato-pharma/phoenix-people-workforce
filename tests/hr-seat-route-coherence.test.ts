@@ -196,6 +196,16 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "canViewWhatsAppOutboundLog(access) — true for Advisory, the only seat offered it. Verified by " +
     "CALLING the predicate for each seat, not by reading it: recruitmentManageRoles is [Super Admin, " +
     "HR Advisory], and Operations holds no recruitment grant so the row is never offered to her",
+  // Added 2026-09-08 with the HR-shell row. The owner asked to "show this tab to the HR Business
+  // Partner" — which is the JOB TITLE for the "HR Advisory" key, so her gate never needed widening;
+  // what she lacked was a row in the shell she actually works in.
+  "/hr/recruitment/whatsapp-templates":
+    "canSendWhatsAppTemplate(access) — TRUE for Advisory, FALSE for Operations, and the row carries " +
+    "roles: [\"HR Advisory\"] so Operations is never offered it. Verified by CALLING both predicates " +
+    "for both seats rather than by reading them: Advisory send=true/manage=false, Operations " +
+    "send=false/manage=false. The seat can SEND a message from a template but cannot rewrite what " +
+    "the templates say — canManageWhatsAppTemplates is system scope only, and the editor is hidden " +
+    "from her rather than merely failing server-side, so no row her sidebar offers 403s her halfway",
   // Both added 2026-09-05 by the owner's ruling that no rail row may open a page of modules: each
   // was a card on the /hr/attendance hub, and the hub row that fronted them is gone, so they are
   // rail rows in their own right now. Both verified by CALLING the predicate for each seat rather

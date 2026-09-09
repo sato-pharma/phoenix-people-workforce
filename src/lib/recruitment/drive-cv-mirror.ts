@@ -26,6 +26,8 @@ import {
   type CandidateFolderSuggestion,
 } from "@/lib/recruitment/candidate-folder-suggestion";
 import { inferCandidatePlacement } from "@/lib/recruitment/candidate-folder-inference";
+import { copyLabelsFor, shouldMirrorCopy, withCopyLabel } from "@/lib/recruitment/cv-duplicate-copies";
+import { CABINET_ROOT_NAME, cabinetPathFor } from "@/lib/recruitment/drive-cabinet-folders";
 import {
   driveFileNameFor,
   driveFolderPathFor,
@@ -36,6 +38,21 @@ import {
 import { isDriveConfigured } from "@/lib/recruitment/drive-storage";
 import { moveDriveFile, uploadCvToDrivePath } from "@/lib/recruitment/drive-tree";
 import { supabaseFileStorage } from "@/lib/recruitment/supabase-storage";
+
+/**
+ * What `drive_mirror_error` holds when a CV was binned in Drive by a person.
+ *
+ * Exported because it is a STATE, not a failure, and anything reporting on the mirror has to be able
+ * to tell the two apart. `scripts/backfill-cvs-to-drive.mjs --verify` counted it under "last attempt
+ * errored — run with --retry", which invites re-uploading a CV somebody deleted on purpose; a reader
+ * following that advice would undo the deletion and it would look like tidying up.
+ *
+ * It is a named constant rather than the same sentence written twice, for the reason the backfill
+ * script's own folder rule was deleted on 2026-09-08: a second copy cannot be kept in step, it can
+ * only be found later — and here the copy would be a string match, which fails silently the first
+ * time somebody rewords the message.
+ */
+export const REMOVED_FROM_DRIVE_BY_HAND = "Removed from Drive by hand — left alone, not re-filed.";
 
 /** How long the area→region grouping is held before being re-read. Areas change a few times a year. */
 const AREA_MAP_TTL_MS = 30 * 60_000;
@@ -89,6 +106,10 @@ type MirrorCandidateRow = {
   whatsapp: string | null;
   status: string | null;
   applied_for_job_title: string | null;
+  current_job_title: string | null;
+  declared_background: string | null;
+  faculty: string | null;
+  sent_for_job_title: string | null;
   preferred_area_name: string | null;
   preferred_region_code: string | null;
   preferences_declared_at: string | null;
@@ -100,7 +121,7 @@ type MirrorCandidateRow = {
 };
 
 const CANDIDATE_FIELDS =
-  "id, full_name, phone, whatsapp, status, applied_for_job_title, preferred_area_name, preferred_region_code, preferences_declared_at, folder_kind, folder_key, governorate, address, sent_for_region";
+  "id, full_name, phone, whatsapp, status, applied_for_job_title, current_job_title, declared_background, faculty, sent_for_job_title, preferred_area_name, preferred_region_code, preferences_declared_at, folder_kind, folder_key, governorate, address, sent_for_region";
 
 /**
  * The folder path for one candidate, and the name their file should carry.
@@ -176,7 +197,12 @@ async function recordMirror(
   }
 }
 
-export type MirrorOutcome = "uploaded" | "moved" | "unchanged" | "skipped" | "failed";
+/**
+ * What one mirror pass did. `removed` is NOT a failure — it records that the owner binned the file
+ * in Drive and the mirror deliberately left it alone, which is a different fact from every other
+ * member here and the only one that means "working as intended, and doing nothing".
+ */
+export type MirrorOutcome = "uploaded" | "moved" | "unchanged" | "skipped" | "removed" | "failed";
 
 /**
  * Mirror ONE stored CV into Drive, or move it if it is already there and its folder has changed.
@@ -218,22 +244,93 @@ export async function mirrorCvToDrive(fileId: string): Promise<MirrorOutcome> {
     if (candidateError) throw candidateError;
     if (!candidateRow) return "skipped";
 
-    const areaRegions = await loadAreaRegionMap();
-    const { fileName, path } = placementFor(candidateRow as MirrorCandidateRow, areaRegions, row.mime_type);
-    const pathKey = path.join("/");
+    // ONE COPY PER DISTINCT FILE. An applicant who sends the same CV again gets a new `ats_files`
+    // row — correctly, it is a real event — and until now that row was mirrored as a second copy in
+    // the owner's cabinet. Measured 2026-09-07: 264 of 1,156 mirrored files were byte-identical
+    // re-sends, one candidate having THIRTEEN copies of one file in one folder. The row stays; the
+    // COPY is suppressed. `content_md5` has existed since 2026-09-05 but nothing read it for this,
+    // so the pile was still growing — 15 groups gained a copy after that column shipped.
+    const { data: siblingRows, error: siblingError } = await supabase
+      .from("ats_files")
+      .select("id, content_md5, created_at")
+      .eq("candidate_id", row.candidate_id)
+      .eq("kind", "cv");
+    if (siblingError) throw siblingError;
+    const siblings = (siblingRows ?? []) as Array<{ content_md5: string | null; created_at: string | null; id: string }>;
+    if (!shouldMirrorCopy(fileId, siblings)) return "skipped";
 
-    // Already mirrored: this is a MOVE, and only when the folder actually changed. The common case
-    // by far is "unchanged" — the retry sweep re-reads rows it has already handled.
-    if (row.drive_mirror_file_id) {
-      if (row.drive_mirror_path === pathKey) return "unchanged";
+    const areaRegions = await loadAreaRegionMap();
+    const { fileName: baseFileName } = placementFor(candidateRow as MirrorCandidateRow, areaRegions, row.mime_type);
+    // A candidate who sent TWO DIFFERENT CVs gets both, and until now both wore the same name in the
+    // same folder. The label separates them; a candidate with one CV gets an empty label and the
+    // plain name. Owner's request, 2026-09-07: "add the date to the duplicate names".
+    const fileName = withCopyLabel(baseFileName, copyLabelsFor(siblings).get(fileId) ?? "");
+    // THE CABINET, NOT THE OLD TREE. `Phoenix CVs` is frozen at the owner's instruction ("don't fix.
+    // Create a new folder and reroute"), and `ensureRootFolder` resolves the cabinet, so this path
+    // is created beneath it. `placementFor` is still the source of the FILE NAME, which the two
+    // trees share — only the folders differ.
+    const path = cabinetPathFor(candidateRow as MirrorCandidateRow, areaRegions);
+
+    // THE STORED PATH IS ROOTED, AND THAT PREFIX IS THE WHOLE CUTOVER SAFETY PROPERTY.
+    //
+    // Every row written before 2026-09-07 records a path in the OLD tree — "From the CV (not
+    // confirmed)/Cairo", "Medical Representative/Cairo". Two of those shapes ("Medical
+    // Representative/<Region>", "District Manager/<Region>") are indistinguishable from a legitimate
+    // CABINET path, so there is no way to tell the trees apart from an unrooted path alone. Without
+    // this prefix the mirror would read a legacy row, see a folder mismatch, and MOVE the file —
+    // emptying the frozen tree one candidate at a time, silently, with no error anywhere.
+    //
+    // Prefixed, a legacy row is unmistakable and is treated as "not mirrored HERE": a fresh copy is
+    // made in the cabinet and the file in the old tree is never touched.
+    const pathKey = [CABINET_ROOT_NAME, ...path].join("/");
+    const recordedInCabinet = String(row.drive_mirror_path ?? "").startsWith(`${CABINET_ROOT_NAME}/`);
+
+    // Already in the cabinet: reconcile it. The folder may have changed, and so may the NAME.
+    //
+    // THE NAME IS WHY THIS NO LONGER SHORT-CIRCUITS ON A MATCHING PATH. A candidate's first CV is
+    // named plainly; the moment a SECOND, different CV arrives, both need an arrival-date label to
+    // tell them apart (`copyLabelsFor`). `mirrorCandidateCvsToDrive` re-walks every one of that
+    // candidate's rows, so the first file IS revisited — but returning early on an unchanged folder
+    // meant it kept its plain name while its sibling got a dated one. One dated and one not is worse
+    // than neither, because it reads as though the undated file is the only real one.
+    //
+    // `moveDriveFile` already reads the file's current parents and name in one request and patches
+    // only what actually differs, so letting it run costs one GET on an otherwise unchanged row and
+    // nothing else. That is a handful of requests per intake, against a name that is wrong until
+    // something else happens to move the file.
+    if (row.drive_mirror_file_id && recordedInCabinet) {
+      const folderUnchanged = row.drive_mirror_path === pathKey;
       const moved = await moveDriveFile({
         driveFileId: row.drive_mirror_file_id,
         newName: fileName,
         path,
       });
-      if (!moved) {
-        // The owner deleted or moved it himself. Clear our record so the next sweep re-uploads it
-        // rather than repeatedly patching a file that is not there.
+      if (moved === "trashed") {
+        // THE OWNER BINNED IT, AND THAT IS AN INSTRUCTION, NOT A FAULT.
+        //
+        // Handled apart from "missing" because the two want opposite responses, and the difference
+        // is the whole point of asking Drive for `trashed`. A file that has vanished should be
+        // re-filed; a file somebody deliberately deleted must never be — putting it back would
+        // overrule the owner with a cron job, and he would have to delete it again after every
+        // classification event, with no way to make it stop.
+        //
+        // So the id is KEPT rather than cleared. Clearing it is what routes a row to the upload
+        // branch below, which is exactly the resurrection this avoids; keeping it means every later
+        // pass lands here again, reads `trashed`, and does nothing. Idempotent by construction.
+        //
+        // Real case, 2026-09-07: `MRs JO.pdf` — a job posting that arrived by email and was treated
+        // as a CV — binned from the cabinet on its first night. The database went on reporting it
+        // filed under Medical Representative / Cairo, because a trashed file answers 200.
+        await recordMirror(fileId, {
+          drive_mirror_error: REMOVED_FROM_DRIVE_BY_HAND,
+        });
+        return "removed";
+      }
+      if (moved === "ok" && folderUnchanged) return "unchanged";
+      if (moved === "missing") {
+        // Gone rather than binned — moved out from under us, or deleted permanently. Clear our
+        // record so the next sweep re-uploads it rather than repeatedly patching a file that is
+        // not there.
         await recordMirror(fileId, { drive_mirror_error: "The mirrored file is no longer in Drive." });
         await supabase.from("ats_files").update({ drive_mirror_file_id: null }).eq("id", fileId);
         return "failed";

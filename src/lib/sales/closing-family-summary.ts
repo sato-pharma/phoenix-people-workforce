@@ -147,3 +147,70 @@ export function buildClosingFamilySummary(matrix: MonthlyClosingMatrix): Closing
     regions,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE SAME SUMMARY, READ FAMILY-FIRST — so a screen can start collapsed.
+//
+// The wide shape above (areas down, families across) fits by construction, but it is always at full
+// height: every area of every region, whether or not the reader cares about them. The owner asked
+// for the opposite default — show the families, open one, then open a region inside it.
+//
+// THIS IS A PIVOT, NOT A SECOND CALCULATION. Every number below is lifted from the summary that was
+// already folded from the matrix: the family's grand total is `grandTotal.byFamily`, a region's is
+// that region's own `subtotal.byFamily`, an area's is its `byFamily`. Nothing is re-added here, so
+// the collapsed view, the wide view and the matrix beside them all carry the same money.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type ClosingFamilyAreaNode = {
+  areaCode: string;
+  areaName: string;
+  cell: ClosingFamilyCell;
+};
+
+export type ClosingFamilyRegionNode = {
+  areas: ClosingFamilyAreaNode[];
+  /** The region's own subtotal for this family — the matrix's subtotal row, folded. */
+  cell: ClosingFamilyCell;
+  regionCode: string;
+  regionName: string;
+};
+
+export type ClosingFamilyNode = {
+  family: string;
+  regions: ClosingFamilyRegionNode[];
+  /** The family's grand total — the matrix's grand-total row, folded. */
+  total: ClosingFamilyCell;
+};
+
+/**
+ * Pick one family's cell out of a folded row.
+ *
+ * `foldCells` builds its result with `families.map`, so index alignment is guaranteed and the index
+ * is the fast path. The lookup by name behind it is the honest fallback: a missing family reads as
+ * an empty cell with a NULL target, which prints a dash — never a 0% that would look like failure.
+ */
+function cellAt(cells: readonly ClosingFamilyCell[], family: string, index: number): ClosingFamilyCell {
+  const byIndex = cells[index];
+  if (byIndex !== undefined && byIndex.family === family) return byIndex;
+  return (
+    cells.find((cell) => cell.family === family) ?? { achievement: null, family, targetValue: null, value: 0 }
+  );
+}
+
+/** Turn area-first summary rows into family → region → area, keeping the matrix's own numbers. */
+export function pivotClosingSummaryByFamily(summary: ClosingFamilySummary): ClosingFamilyNode[] {
+  return summary.families.map((family, index) => ({
+    family,
+    regions: summary.regions.map((region) => ({
+      areas: region.areas.map((area) => ({
+        areaCode: area.areaCode,
+        areaName: area.areaName,
+        cell: cellAt(area.byFamily, family, index),
+      })),
+      cell: cellAt(region.subtotal.byFamily, family, index),
+      regionCode: region.regionCode,
+      regionName: region.regionName,
+    })),
+    total: cellAt(summary.grandTotal.byFamily, family, index),
+  }));
+}

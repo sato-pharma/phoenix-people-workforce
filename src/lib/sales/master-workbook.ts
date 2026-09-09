@@ -429,7 +429,7 @@ export async function buildMasterWorkbookBuffer(
       const notes = [
         p.productColumns[1] ? `Product name col = "${p.productColumns[1]}"` : "",
         p.bonusColumns?.[0] ? `Bonus qty col = "${p.bonusColumns[0]}"` : "",
-        p.valueSource === "sheet" ? "Value taken from the sheet (Direct)" : "Value recomputed = Qty x factory price x (1 - discount)",
+        p.valueSource === "sheet" ? "Value taken from the sheet (Direct)" : "Value recomputed = Qty x factory price",
         (p.territoryColumns?.length ?? 0) > 1 ? `Territory fallbacks: ${p.territoryColumns!.slice(1).map((c) => `"${c}"`).join(", ")}` : "",
         p.discountColumns?.[0] ? `Discount col = "${p.discountColumns[0]}"` : "",
         "Area & Region are derived from the Brick.",

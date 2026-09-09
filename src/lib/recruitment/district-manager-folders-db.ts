@@ -35,6 +35,10 @@
 // copy of a policy that would then drift from the one the tests pin.
 
 import { logError } from "@/lib/observability/log";
+// The skips half of the folder suppression. It imports the PURE district-manager-folders for the key
+// function, never this file, so the dependency runs one way and there is no cycle to pay for — the
+// same care isCandidateInViewerTeamDistrict is kept out of this module for.
+import { loadManagerSkipSuppressions } from "@/lib/recruitment/candidate-call-claims-db";
 import { mapCandidate, recruitmentDb, type CandidateDbRow } from "@/lib/recruitment/db";
 import {
   boardsForManager,
@@ -187,10 +191,24 @@ export async function listDistrictBoardsForManager(
   // His returns are read alongside the CV sweep, not before it: a CV he has handed back to the
   // administrator drops out of his folders here, and stays in every other line's. The report path
   // (loadAllDistrictBoards) deliberately does NOT do this — a returned CV was still received.
-  const [candidates, suppressedReturns] = await Promise.all([
+  //
+  // TWO WAYS OUT OF ONE MANAGER'S FOLDER, ONE SUPPRESSION SET. Since 2026-09-09 a manager may also
+  // press Skip on a CV in his folder, which is the same shape as a return — his own pass, leaving
+  // the CV in front of every other manager who can see it — so it feeds the SAME set through the
+  // SAME key function and the pure placement rule never learns there are two. What differs is only
+  // where they go: a return puts the CV in the administrator's queue, a skip tells nobody.
+  const [candidates, returnedByHim, skippedByHim] = await Promise.all([
     loadRoutableCandidates(),
     loadManagerReturnSuppressions(managerHrId),
+    loadManagerSkipSuppressions(managerHrId),
   ]);
+  // ONE SET, and it keeps the name the placement rule knows it by. Both halves are the same fact —
+  // this manager has finished with this CV — and the pure rule has no business learning that there
+  // are two ways to reach it. Naming the variable anything else also breaks the source pin in
+  // tests/recruitment-district-returns.test.ts, which exists to prove the manager-scoped path
+  // applies suppressions at all; that pin is worth keeping intact rather than editing around.
+  const suppressedReturns =
+    skippedByHim.size === 0 ? returnedByHim : new Set([...returnedByHim, ...skippedByHim]);
   const { boards } = placeCandidatesInDistrictFolders({ candidates, rows, suppressedReturns });
   return boardsForManager(boards, managerHrId);
 }

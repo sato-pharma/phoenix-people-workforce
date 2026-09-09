@@ -72,6 +72,9 @@ type EmployeeWorkRow = {
   mobile_number: string | null;
   name_ar: string | null;
   organogram_visible: boolean | null;
+  /** The LIVE team link. `team_name` beside it is a denormalized twin nobody writes — measured
+   *  2026-09-09: 0 of 107 active employees carry it while 105 carry this. */
+  team_id: number | null;
   team_name: string | null;
   work_email: string | null;
 };
@@ -125,8 +128,35 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
   const { data: empData } = await supabase
     .from("employees")
     .select(
-      "hr_id, full_name, name_ar, work_email, mobile_number, job_title, employment_status, contract_type, contract_renewal_date, hire_date, department_name, team_name, line_id, manager_hr_id, organogram_visible",
+      "hr_id, full_name, name_ar, work_email, mobile_number, job_title, employment_status, contract_type, contract_renewal_date, hire_date, department_name, team_id, team_name, line_id, manager_hr_id, organogram_visible",
     );
+
+  // THE TEAM NAME COMES FROM THE LINK, NOT FROM THE TWIN BESIDE IT.
+  //
+  // `employees.team_name` is a denormalized copy that nothing in this codebase writes: measured on
+  // production 2026-09-09, 0 of 107 active employees had it while 105 carried a real `team_id`. So
+  // every organogram surface that showed a team showed an empty one, for everybody, and a team
+  // assigned correctly in the data model was unreadable in the one module you would look for it.
+  //
+  // A second round trip, accepted for the same reason as the vacancy read below: `teams` is ~120
+  // rows, there is nothing to fold it into, and the alternative is a column that is blank by
+  // construction. It FAILS SOFT — a failed read leaves the map empty and the twin takes over, which
+  // is exactly today's behaviour, rather than taking the whole chart down for a label.
+  const teamNameById = new Map<number, string>();
+  const { data: teamData, error: teamError } = await supabase.from("teams").select("id, name");
+  if (teamError) {
+    console.warn(
+      `organogram: team names could not be read (${teamError.message}); rows fall back to employees.team_name`,
+    );
+  }
+  for (const team of (teamData ?? []) as Array<{ id: number | null; name: string | null }>) {
+    if (typeof team.id === "number" && team.name?.trim()) teamNameById.set(team.id, team.name.trim());
+  }
+  /** The link first, the dead twin only as a fallback for a row that somehow carries one. */
+  const teamNameFor = (employee: { team_id?: number | null; team_name?: string | null }): string | null =>
+    (typeof employee.team_id === "number" ? teamNameById.get(employee.team_id) : null)
+      ?? employee.team_name
+      ?? null;
   const nameByHr = new Map<string, string>();
   const hireDateByHr = new Map<string, string>();
   const workByHr = new Map<string, EmployeeWorkRow>();
@@ -159,7 +189,7 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
       contractType: employee.contract_type,
       employeeDepartmentName: employee.department_name,
       employeeJobTitle: employee.job_title,
-      employeeTeamName: employee.team_name,
+      employeeTeamName: teamNameFor(employee),
       employmentStatus: employee.employment_status,
       hasWhatsApp: hasWhatsAppNumber(employee.mobile_number),
       nameAr: employee.name_ar,
@@ -250,9 +280,11 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
     rows.push({
       ...workFieldsFor(s.occupant_hr_id),
       areaId: null,
-      // Pedia folds Fayoum (GZ6) + Beni Suef (UE9) into ONE area "Fayoum - Beni Suef" (owner rule
-      // 2026-08-30). Pedia has a single GZ6 seat and no UE9 seat, so this only renames that node.
-      // Anti Infective and CNS keep both areas separate — getMergedAreaName returns null for them.
+      // Pedia folds Fayoum (GZ6) + Beni Suef (UE9) into ONE area "Fayoum - Beni Suef", and CNS does
+      // the same from 2026-08 (owner, 2026-09-07). Pedia has a single GZ6 seat and no UE9 seat, so
+      // this only renames that node. Anti Infective keeps both areas separate — getMergedAreaName
+      // returns null for it. No period is passed here on purpose: the organogram shows the org as
+      // it stands NOW, not as of any month.
       areaName: getMergedAreaName(s.line_code, s.area_code ?? "") ?? s.area_name,
       departmentId: null,
       // Stays null, as it always has. The employee master's department reaches the
@@ -321,6 +353,9 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
     ceoNodeKey: ceoSeat ? (nodeKeyBySeat.get(ceoSeat.seat_id) ?? null) : null,
     occupiedHrIds,
     vacancies: vacancyData ?? [],
+    // The Head Office branch reads the same employee rows, so it resolves the team the same way.
+    // Without this the two halves of one chart would disagree about where a team name comes from.
+    teamNameFor,
   });
 
   return { organogramRows: [...rows, ...headOfficeRows], rows: [], summary: { ...emptySummary } };

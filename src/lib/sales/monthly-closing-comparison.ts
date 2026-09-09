@@ -4,8 +4,8 @@ import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 
 // Distributor comparison + insights for the Monthly Closing report. The on-screen matrix
 // MERGES all distributors; here we split them (PS / IS / IS-S) and derive rankings, mix,
-// white-space and insight tables. Value is ALWAYS recomputed in the RPCs (Qty x (1 - discount)
-// x live factory_price); the stored value is never used. All higher-level numbers are DERIVED
+// white-space and insight tables. Value is ALWAYS recomputed in the RPCs (Qty x live
+// factory_price); neither the stored value nor the discount column is used. All higher-level numbers are DERIVED
 // from the leaf rows the RPCs return — never by summing subtotals (no double counting).
 
 export type DistProductRow = {

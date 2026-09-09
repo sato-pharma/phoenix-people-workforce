@@ -31,6 +31,8 @@
 
 import { unstable_cache } from "next/cache.js";
 
+import { loadSplitRegions } from "@/lib/sales/closing-organogram-regions";
+import type { SplitRegions } from "@/lib/sales/store-sales-city-split";
 import { systemAccessContext } from "@/lib/auth/permissions";
 import { loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
 import {
@@ -81,7 +83,14 @@ const loadClosingStoreSplitUncached = async (line: string, period: string): Prom
   // rulings from September on, the six words alone before that. Passed explicitly here because this
   // loader is the ONE place both the screen and the export read, so neither can use a different
   // rule from the other, and neither can restate a month the owner froze.
-  const { exemptStoreValueByBrick, movements } = splitStoreSalesAcrossCityAreas(details.rows, period);
+  // The organogram parks some areas in Others, and those take no share of an El Qema split —
+  // owner, 2026-09-08. Resolved here, from the same line and month the rows were loaded for.
+  const regions = await loadSplitRegions(line, period);
+  const { exemptStoreValueByBrick, movements } = splitStoreSalesAcrossCityAreas(
+    details.rows,
+    period,
+    regions,
+  );
   return {
     exempt: Array.from(exemptStoreValueByBrick.entries()),
     movements,

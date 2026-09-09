@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
+import { loadSplitRegions } from "@/lib/sales/closing-organogram-regions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   loadMonthlyClosingComparison,
@@ -11,6 +12,7 @@ import {
   loadMonthlyClosingChannelComparison,
 } from "@/lib/sales/monthly-closing-channel-comparison";
 import { type ClosingDetailsFilters, loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
+import { maskClosingSourceRows, maskedClosingClientCodes } from "@/lib/sales/closing-source-mask";
 import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
 import {
   buildClosingDetailsWorkbook,
@@ -287,6 +289,10 @@ export async function POST(request: Request) {
         filters: { ...detailFilters, areaCodes: [], regionCodes: [] },
         includeConfidential: body.includeConfidential === true,
         unpaged: true,
+        // 🔒 The split and the matrix rebuild below BOTH key on the real distributor, so this
+        // read reveals and the mask is applied on the way into the workbook instead. Masking here
+        // would not throw — it would quietly export a different distribution from the screen's.
+        revealSource: true,
       });
       // Started here, awaited below. Null when the comparison must be rebuilt from the detail
       // rows, which cannot begin until those rows exist.
@@ -510,7 +516,11 @@ export async function POST(request: Request) {
         )
         : null;
 
-      const buffer = await buildMonthlyClosingWorkbook(workbookMatrix, comparison, details, {
+      // 🔒 Everything that computes from the real rows is finished by here — the split, the
+      // comparison, both matrix rebuilds. The workbook only writes them out, so this is where
+      // the source mask belongs. See closing-source-mask.ts.
+      const shownMatrixDetails = { ...details, rows: [...maskClosingSourceRows(details.rows, access)] };
+      const buffer = await buildMonthlyClosingWorkbook(workbookMatrix, comparison, shownMatrixDetails, {
         channelBreakdown,
         channelComparison: await channelComparisonPromise,
         channels,
@@ -534,6 +544,10 @@ export async function POST(request: Request) {
         // which of those areas this workbook actually covers.
         storeSplitApplied,
         storeSplitRows: monthRows.rows,
+        // Computed from the REAL rows above; the answer is masked by code, because a split
+        // entry carries no distributor to recognise. See closing-source-mask.ts.
+        storeSplitMaskedClients: maskedClosingClientCodes(details.rows, access),
+        storeSplitRegions: await loadSplitRegions(matrix.line, matrix.period),
         storeSplitScopeAreaCodes: scopedAreaCodes,
       });
       // The region comes from the matrix the workbook was actually built from, so a filtered export
@@ -565,6 +579,8 @@ export async function POST(request: Request) {
       period: body.period ?? null,
       availableLines,
       availablePeriods,
+      // Revealed for the same reason as above; masked below, once nothing computes from it.
+      revealSource: true,
       filters: detailFilters,
       includeConfidential: body.includeConfidential === true,
       unpaged: true,
@@ -617,17 +633,20 @@ export async function POST(request: Request) {
     const scopedPortal =
       await loadPortalMonthlyClosing({ access, line: details.line, period: details.period }).catch(() => null);
     const scopedMatrix = scopedPortal?.matrix ?? null;
+    // 🔒 EVERYTHING ABOVE THIS LINE HAS FINISHED COMPUTING. From here the rows are only written
+    // into a workbook, so this is where the source mask belongs. See closing-source-mask.ts.
+    const shownDetails = { ...details, rows: [...maskClosingSourceRows(details.rows, access)] };
     const buffer = scopedMatrix
       ? await buildPortalClosingWorkbook(
           scopedMatrix,
           // Built from the SAME already-scoped rows the Data sheet lists — never a company-wide
           // read — so the Matrix tab's ClosingExportData (Calc sheet) cannot disagree with Data.
           await loadMonthlyClosingComparisonFromRows(details.line, details.period, details.rows),
-          details,
+          shownDetails,
           // Same read as the skeleton, so the Office grid is never company-wide beside scoped sales.
           scopedPortal?.office ?? null,
         )
-      : await buildClosingDetailsWorkbook(details);
+      : await buildClosingDetailsWorkbook(shownDetails);
     // These rows are already narrowed to this caller's own access, so a District Manager's file is
     // named for their region without the route having to re-derive the scope.
     return fileResponse(buffer, closingFileName({

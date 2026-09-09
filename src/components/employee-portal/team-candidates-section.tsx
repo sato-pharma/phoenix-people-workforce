@@ -8,6 +8,8 @@ import { useState } from "react";
 import { CandidateReadCard } from "@/components/employee-portal/candidate-read-card";
 import { DistrictFoldersSection } from "@/components/employee-portal/district-folders-section";
 import { Card } from "@/components/ui/card";
+import type { CandidateCallClaims } from "@/lib/recruitment/candidate-call-claims";
+import type { OutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock";
 import type { DistrictManagerBoard } from "@/lib/recruitment/district-manager-folders";
 import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
 
@@ -45,9 +47,15 @@ function managerLabel(manager: TeamManagerOption): string {
 
 export function TeamCandidatesSection({
   managers,
+  onFeedbackGiven,
+  outstandingFeedback = null,
   viewerHrId,
 }: {
   managers: TeamManagerOption[];
+  /** He writes the feedback he owed, and the block lifts in place. */
+  onFeedbackGiven?: (candidateId: string) => void;
+  /** The CV he owes feedback on, which blocks him opening any other. */
+  outstandingFeedback?: OutstandingFeedback | null;
   viewerHrId: string | null;
 }) {
   const [selected, setSelected] = useState<TeamManagerOption | null>(null);
@@ -57,6 +65,10 @@ export function TeamCandidatesSection({
   // what has arrived for his territory — and merging the two would hide which is which.
   const [districtBoards, setDistrictBoards] = useState<DistrictManagerBoard<Candidate>[]>([]);
   const [files, setFiles] = useState<Record<string, TeamCandidateFile[]>>({});
+  // Who has said "I will call" each of the CVs sitting with this manager. Read-only here: a National
+  // Sales Manager sees the reservation and cannot take one, which is the 2026-08-30 rule that the
+  // answer belongs to the manager the CV was sent to.
+  const [callClaims, setCallClaims] = useState<CandidateCallClaims>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,12 +82,14 @@ export function TeamCandidatesSection({
       setCandidates(null);
       setDistrictBoards([]);
       setFiles({});
+      setCallClaims({});
       return;
     }
     setSelected(manager);
     setCandidates(null);
     setDistrictBoards([]);
     setFiles({});
+    setCallClaims({});
     setError(null);
     setBusy(true);
     try {
@@ -95,6 +109,14 @@ export function TeamCandidatesSection({
       setFiles(
         data.files && typeof data.files === "object"
           ? (data.files as Record<string, TeamCandidateFile[]>)
+          : {},
+      );
+      // The claims arrive WITH the list, exactly like the files and for a sharper reason: the claim
+      // is what decides whether a phone number is printed, so a card still waiting to hear back
+      // would show "Hidden" on a CV the reader can already see is reserved.
+      setCallClaims(
+        data.callClaims && typeof data.callClaims === "object"
+          ? (data.callClaims as CandidateCallClaims)
           : {},
       );
     } catch (caught) {
@@ -170,8 +192,11 @@ export function TeamCandidatesSection({
             (candidates ?? []).map((candidate) => (
               <CandidateReadCard
                 candidate={candidate}
+                claim={callClaims[candidate.id] ?? null}
                 files={files[candidate.id] ?? []}
                 key={candidate.id}
+                onFeedbackGiven={onFeedbackGiven}
+                outstandingFeedback={outstandingFeedback}
                 viewerHrId={viewerHrId}
               />
             ))
@@ -184,7 +209,10 @@ export function TeamCandidatesSection({
           {busy ? null : (
             <DistrictFoldersSection
               boards={districtBoards}
+              callClaims={callClaims}
               files={files}
+              onFeedbackGiven={onFeedbackGiven}
+              outstandingFeedback={outstandingFeedback}
               heading={`${managerLabel(selected)}'s areas`}
               subheading={`Every area ${managerLabel(selected)} holds in the organogram, and the CVs of applicants who asked to work in it.`}
               viewerHrId={viewerHrId}

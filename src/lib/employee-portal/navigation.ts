@@ -224,12 +224,24 @@ const hideMyPerformanceTabRoles = new Set<PhoenixRole>([
  * identity, because the matrix has no per-row layer and a Product Manager sees only his own.
  */
 /**
- * Who can hold a Market Awareness decision: the two seats a requester's manager step can resolve to,
- * plus the CEO. Super Admin is included because he can act on any step.
+ * Who can hold a Market Awareness decision, and therefore who is offered the Awareness Approvals
+ * inbox in the portal sidebar. This list is what DRAWS the link — the portal builds its own nav from
+ * these flags, so a seat missing here has no door to the queue however complete its permissions are.
+ *
+ * The parallel group (2026-09-09) put every activity in front of the Marketing Manager AND the
+ * National Sales Manager of each line it targets, so the NSM belongs here. He shipped without it and
+ * was routed decisions he had nowhere to answer. The Group Product Manager stays for the retired
+ * single-manager step, which historical rows can still sit on, and the CEO is the final step.
+ * Super Admin is included because he can act on any step.
+ *
+ * UX only, like every list in this file. The page itself gates on market_awareness:read and the
+ * queue is scoped server-side to the decisions that are actually the caller's, so a seat on this
+ * list holding no decision sees an empty inbox rather than a refusal.
  */
 export const MARKET_AWARENESS_DECIDER_ROLES: readonly PhoenixRole[] = [
   "Group Product Manager",
   "Marketing Manager",
+  "National Sales Manager",
   "CEO",
   "Super Admin",
 ] as const;

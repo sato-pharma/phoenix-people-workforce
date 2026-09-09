@@ -25,6 +25,7 @@ import type {
   AttendanceDeviceUserMappingRow,
 } from "@/lib/attendance/device-user-mapping";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 
 // Called directly from the BROWSER, not proxied through the Next.js server - the server only
@@ -79,6 +80,11 @@ type AgentHealth = {
 
 async function fetchAgentHealth(): Promise<AgentHealth> {
   try {
+    // http:// is correct here and must stay. LOCAL_AGENT_BASE_URL is hardcoded loopback
+    // (127.0.0.1), so this request never reaches a network — there is no wire to intercept. The
+    // Secure Contexts spec classes loopback as a potentially trustworthy origin for exactly that
+    // reason, which is why the browser does not flag it either. See the /sync-now call below.
+    // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
     const response = await fetch(`${LOCAL_AGENT_BASE_URL}/health`, { cache: "no-store" });
     const payload = await response.json().catch(() => undefined);
     return { ok: response.ok, reachable: true, payload };
@@ -92,7 +98,7 @@ async function fetchAgentHealth(): Promise<AgentHealth> {
 
 function formatDate(value: string | null) {
   if (!value) return "No punches seen";
-  return new Intl.DateTimeFormat("en-GB", {
+  return stableEnGbFormatter({
     dateStyle: "medium",
     timeStyle: "short",
     timeZone: PHOENIX_BUSINESS_TIME_ZONE,
@@ -337,6 +343,18 @@ export function DeviceUserMappingManager({
         throw new Error("Sync Now is not available for your role.");
       }
 
+      // http:// is correct here and must stay — same loopback reasoning as fetchAgentHealth above.
+      // THE BEARER TOKEN BELOW IS THE PART WORTH THINKING ABOUT, AND IT IS FINE FOR ONE REASON
+      // ONLY: 127.0.0.1 never leaves the machine. A bearer token over plaintext http:// to any
+      // routable address would be a real finding, not a suppressible one — so if
+      // LOCAL_AGENT_BASE_URL ever stops being loopback, this suppression is wrong and must go with
+      // it, not be carried along.
+      //
+      // Do not "fix" this by switching to https://. The agent would then need a locally trusted
+      // certificate, which means shipping a private key with it or minting one per machine — a
+      // real key-management problem bought in exchange for securing a channel that has no network
+      // segment to secure.
+      // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
       const response = await fetch(`${LOCAL_AGENT_BASE_URL}/sync-now`, {
         body: "{}",
         headers: {

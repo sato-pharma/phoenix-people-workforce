@@ -13,11 +13,16 @@ WORKDIR /app
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 
-# CACHE KEY (do not reorder): cloudbuild.yaml builds this `deps` stage alone and
-# pushes it as $_CACHE_REPO:deps-cache. This COPY is what keys that layer — it
-# must name pnpm-lock.yaml (NOT package-lock.json, which no longer exists) plus
-# pnpm-workspace.yaml (overrides + allowBuilds change resolution/build behavior),
-# so the expensive install below is reused until one of these three files changes.
+# CACHE KEY (do not reorder): this COPY is what keys the `deps` layer — it must name
+# pnpm-lock.yaml (NOT package-lock.json, which no longer exists) plus pnpm-workspace.yaml
+# (overrides + allowBuilds change resolution/build behavior), so the expensive install below
+# is reused until one of those three files changes.
+#
+# The rule OUTLIVED the reason it was written for. It was originally about cloudbuild.yaml,
+# which built this stage alone and pushed it as $_CACHE_REPO:deps-cache; that file and the
+# whole Cloud Run path were deleted 2026-09-08 (docs/deployment.md). Railway builds this same
+# Dockerfile and caches layers the same way, so reordering still throws away the install —
+# do not read the dead reference as licence to rearrange these lines.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
@@ -38,12 +43,15 @@ COPY . .
 # Uncomment the following line in case you want to disable telemetry during the build.
 ENV NEXT_TELEMETRY_DISABLED 1
 
-# NEXT_PUBLIC_* values are inlined into the client bundle at `next build` time, not read
-# from the container's runtime env, so they must arrive as --build-arg (see cloudbuild.yaml
-# — gcloud run deploy --source's --set-build-env-vars only reaches the build when Cloud
-# Build picks the Buildpacks path; a Dockerfile like this one gets a plain `docker build`
-# with no --build-arg at all unless the caller passes it explicitly). Declared here and
-# re-exported as ENV so `RUN pnpm run build` below can see them.
+# NEXT_PUBLIC_* values are inlined into the client bundle at `next build` time, not read from
+# the container's runtime env, so they must arrive as --build-arg. Declared here and re-exported
+# as ENV so `RUN pnpm run build` below can see them.
+#
+# This is the trap the removed Cloud Run comment used to describe, and it is NOT specific to
+# GCP: a builder that sets these as runtime variables leaves them undefined at build time, and
+# the app ships with an empty NEXT_PUBLIC_* baked into the client bundle — no build error, just
+# a broken value in the browser. Railway passes its service variables as build args for a
+# Dockerfile build, which is why this works there; anything else must pass them explicitly.
 ARG NEXT_PUBLIC_APP_URL
 ARG NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
 ARG NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
@@ -126,7 +134,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # lockfile or workspace settings are involved, npm ships inside node:24-alpine anyway,
 # and pnpm here would need corepack + a store for zero benefit in this final image layer.
 RUN cd /tmp && npm init -y >/dev/null 2>&1 \
- && npm install --omit=dev puppeteer-core@25.3.0 >/dev/null 2>&1 \
+ && npm install --omit=dev puppeteer-core@25.9.0 >/dev/null 2>&1 \
  && cp -R /tmp/node_modules/. /app/node_modules/ \
  && rm -rf /tmp/node_modules /tmp/package.json /tmp/package-lock.json
 

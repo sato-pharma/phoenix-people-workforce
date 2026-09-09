@@ -8,6 +8,18 @@ export type AuditEntityType =
   // Consolidation screen. Written with `writeRequiredAuditLog` — a bulk org move that leaves no
   // audit trail is treated as a failed move, not a quiet success.
   | "area_consolidation"
+  // The weekly attendance digest, rebuilt 2026-09-08. Five entity types rather than one
+  // because they answer different questions and none contains the others: what the system
+  // generated for a week, what the employee said about a day, what they objected to, what a
+  // reviewer decided, and what was applied to payroll at month end. The middle three are the
+  // only record of an employee's own answer — a deduction that reaches a payslip through the
+  // auto-confirm path was decided by nobody, so the audit row is the whole story of how it
+  // got there.
+  | "attendance_digest_bridge_run"
+  | "attendance_digest_confirm"
+  | "attendance_digest_dispute"
+  | "attendance_digest_dispute_review"
+  | "attendance_weekly_digest_run"
   | "attendance_holiday_override"
   | "attendance_settlement"
   | "attendance_settlement_correction"
@@ -19,6 +31,29 @@ export type AuditEntityType =
   // it any more: the module stopped being a fixed S1 report when it grew a period filter.
   | "business_review_s1_export"
   | "calendar_event"
+  // The device register. `company_device` is the asset — registered, sent for repair, marked lost,
+  // stolen or retired. `device_assignment` is one custody event against it — issued, returned, or
+  // written off.
+  //
+  // TWO ENTITY TYPES RATHER THAN ONE, because they answer different questions and neither answer
+  // contains the other: "what has happened to this laptop over its life" is the device, and "what
+  // did this person sign for and what became of it" is the assignment. Folding them together would
+  // make the second unanswerable without reading every row of the first.
+  //
+  // Every write against both is REQUIRED audit, not best-effort. Each one attests that a named
+  // person physically handed over, received back, or stopped pursuing a company asset — and two of
+  // them (a damaged return, a write-off) can end in money coming out of somebody's wages under
+  // البند (10) of the custody receipt.
+  | "company_device"
+  | "device_assignment"
+  // A device import ATTEMPT, which is a different fact from its result. `company_device` is written
+  // when a device lands; nothing at all was written when an import was refused — so a failed import
+  // and an import that never reached the server looked identical from the database, and on
+  // 2026-09-08 that ambiguity cost an evening. One row per press, whatever came of it.
+  //
+  // Best-effort (`writeAuditLog`), unlike the two above: a diagnostic that can fail the import it
+  // was only meant to observe is worse than the blindness it replaces.
+  | "device_import"
   // Minting or revoking a bearer link to the live CV-lifecycle Google Sheet. The link outlives the
   // session that created it and copies candidate names and phone numbers out of Phoenix, so who
   // made one — and who killed it — is recorded. The token itself is never written here: an audit
@@ -28,6 +63,13 @@ export type AuditEntityType =
   | "deduction_candidate"
   | "deduction_comment"
   | "deduction_decision"
+  // Recording a new hire's CRM username and code from the New Hire CRM Setup tab, or ruling that
+  // they need no CRM account. It is a write to the EMPLOYEE MASTER made by a role that does not
+  // hold employees:update (Super Admin + SFE Manager, through canUseAdminCrmWorkspace), so who
+  // changed a CRM identity is worth recording on its own. Written best-effort: the durable record
+  // of who acted is crm_account_setup_tasks.resolved_by_hr_id, which the table's own CHECK refuses
+  // to leave empty, so a failed audit row must not fail a save that already landed.
+  | "crm_account_setup"
   | "crm_master_export"
   // Pulling the mobile numbers behind the organogram export. The only route in the module
   // that hands back personal contact details in bulk, so who took the list is recorded.

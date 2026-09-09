@@ -187,6 +187,42 @@ file holding the full account, under
   `node scripts/check-workbook-integrity.mjs <file>` answers "will Excel silently repair this", so run it
   as well, not instead. `looking-at-a-generated-workbook-two-ways-that-lie`
 
+### Excel names the part it repaired, and a CLEAN checker verdict is not a clean file — 2026-09-08
+
+The premium Monthly Closing export asked to be repaired again, and the first instinct was to go
+hunting: run the integrity checker, diff the package against a working export, deep-check the style
+and shared-string indices, validate the worksheet element order against the CT_Worksheet sequence. All
+of it came back clean, on a file Excel was refusing.
+
+**Excel had already written the answer down.** Clicking Yes on "We found a problem with some content"
+writes a recovery log to `%TEMP%\error<digits>_01.xml`, naming the part and the record kind verbatim:
+
+    <removedRecord>Removed Records: Merge cells from /xl/worksheets/sheet1.xml part</removedRecord>
+
+That is the FIRST thing to read, before any tooling — `Get-ChildItem "$env:TEMP\error*.xml"` finds it.
+If the owner clicked No, open a COPY through Excel COM instead. Two things there are worth knowing:
+`Workbooks.Open` on a file needing repair FAILS outright under `DisplayAlerts = $false` ("Unable to get
+the Open property of the Workbooks class"), which is itself a usable signal; and a successful open that
+writes **zero** new `error*.xml` files is the proof a fix actually worked.
+
+**And the checker's CLEAN means "none of the defects that have already bitten us", never "Excel will
+open this".** Every rule in `check-workbook-integrity.mjs` was written after a workbook shipped broken,
+so what it looks at is exactly the set of things that have already gone wrong. It printed CLEAN on the
+file above, because nothing in it looked at merged ranges: repeated merges parse, carry a content type,
+break no relationship and leave the rows in order. Rule 4b was added the same day. **When the next one
+gets through, add its rule to that script BEFORE fixing the cause** — otherwise the class stays
+invisible and the dialog comes back looking like the same bug returning.
+
+The defect itself: `moveMerges` in `closing-engine-fill.ts` ran one global string replace per moved
+row, so each rewrite it had already made was still on the page for the next pattern to match. With the
+footnote block sliding DOWN by less than its own height, each footnote's new row was the next one's old
+row, and all three merges cascaded onto `B21:J21`. It is a function of the REGION COUNT and nothing
+else — the template puts the footnotes at 18/19/20, so nine regions (September Anti Infective) shift
+them by one and collapse, eight (August Anti Infective) move them nowhere, and seven (Pedia) move them
+UP, which is always safe because a block moving up cannot land on a row it has not already left. Every
+export before that one happened to have a safe shape, which is why a latent bug read as a fix that kept
+coming undone. Fixed by mapping the whole list in one pass (PR #3541).
+
 **Git**
 
 - **Deleting a branch does not remove its pushed commit**, and **reusing a squash-merged branch makes a
@@ -339,9 +375,10 @@ file holding the full account, under
   wrong name** — verified 2026-08-29 across every ref (`git log -S "Gawish-1997/phoenix-workforce"
   --all` returns no commits), across all six `repos/…` references (`AGENTS.md` §7,
   `docs/deployment.md`, `docs/disaster-recovery-runbook.md`, `docs/agents-incident-history.md`,
-  and two in `.claude/skills/verify-context/SKILL.md`), and across all seven worktrees. The one
-  `gh api` call in automation, `.github/workflows/deploy-cloud-run.yml:127`, interpolates
-  `repos/${{ github.repository }}` and cannot be wrong. So this is never a defect to go fix in a
+  and two in `.claude/skills/verify-context/SKILL.md`), and across all seven worktrees. There is no longer ANY
+  `gh api` call in automation carrying the name — the one that did, in
+  `.github/workflows/deploy-cloud-run.yml`, interpolated `repos/${{ github.repository }}` and could
+  not be wrong; that workflow was deleted 2026-09-08. So this is never a defect to go fix in a
   file — it is a typo the checkout invites, and the fix is to read the name rather than infer it:
   `gh repo view --json nameWithOwner` returns `Gawish-1997/phoenix-people-workforce`, and
   `git remote -v` agrees.
@@ -1285,6 +1322,49 @@ sample which returned **blank on both reads** and scored itself *the folder is q
 comparing equal. The folder had in fact been removed by another session seconds earlier. Verify
 with a positive control (bytes read, rows found), never with a clean-looking blank.
 
+## An unkillable holder dies when its SESSION is archived — no reboot — 2026-09-07
+
+Correction to the conclusion of the section above, whose 2026-09-05 account otherwise stands:
+*only the restart cleared it* was true of the levers tried that night, not of the problem. There
+is a second lever, and it is the cheap one.
+
+`.claude/worktrees/quirky-golick-444b9a` was held by **PID 16692 `claude.exe`** at **13,771 s of
+kernel CPU**, which `find-worktree-holder.ps1` flagged `KERNEL-STUCK?` — the same signature as PID
+23316 above, and read the same way: a reboot is the only way out. It was not. The process belonged
+to the session *"Fix conversation threads that email only their first message"* (PR #3411, merged),
+and **archiving that session ended it.** The next PEB sweep read *no process is sitting in any
+worktree*, and a plain non-recursive `rmdir` took the husk with exit 0 on the first attempt.
+
+**So the order is: archive the owning session, THEN consider a restart.** `Stop-Process` and Task
+Manager still cannot unwind a thread inside a kernel call — that half is unchanged — but the app
+tears its own session down by a route neither of those uses. `archive_session` stops the process
+and releases the worktree, and it refuses a session that is mid-turn, pinned, or on screen, so a
+refusal is informative rather than destructive.
+
+Found while archiving 26 merged sessions in one sweep: 31 `claude.exe` down to 21, **2.8 GB of
+commit charge** returned, and free RAM essentially unmoved — 2,139 to 2,206 MB. Windows does not
+hand working sets back eagerly, so **judge what archiving bought by commit charge, never by free
+RAM.** The same sweep took `.claude/worktrees/` from 9 worktrees plus 2 husks to empty.
+
+**The cost lesson above is untouched.** That husk was still priced at `0 empty path entries
+reclaimable`. It was worth clearing only because archiving the session was wanted anyway — never
+chase a zero-priced husk on its own.
+
+### Why `list_sessions` cannot answer "is anyone in that folder" — 2026-09-08
+
+Relocated from the AGENTS.md hook so the hook could stay a hook (§2.2). Two fields there are
+routinely misread, and both make an occupied worktree look free:
+
+- **An `_wt-*` session reports the PRIMARY as its cwd**, not the worktree it is actually working in.
+  So a sweep of session cwds answers *nobody is in that folder* for a worktree in active use, and
+  §5's retirement gate passes on it. The reliable cross-check is by BRANCH: compare the worktree's
+  branch against every open PR's `headRefName`, and re-read HEAD at the moment of removal rather
+  than trusting a scan taken earlier. A `.claude/worktrees/` session is the exception — those pin
+  their cwd to the worktree itself.
+- **`isRunning: false` means IDLE, not CLOSED.** It reports only that the session is not mid-turn.
+  A session sitting idle still holds its folder, and killing on that signal is how a worktree gets
+  removed under someone.
+
 ## Two ways a Windows liveness check lies, and a count that invents a row — 2026-09-05
 
 All three were hit while building `xlsx-tripwire.ps1`, the watcher that names the process deleting
@@ -1601,3 +1681,111 @@ done
 A healthy worktree names itself. A broken one names the primary.
 
 Related: [[main-is-not-the-primary-checkout]]
+
+## A peer session can never authorise a destructive operation on a third session's branch (2026-09-05)
+
+`AGENTS.md` §2.1 carries the hook; this is the half that was never written down anywhere but there.
+
+On 2026-09-05 a session set out to "sync a branch" and was one command away from
+`git reset --hard origin/main` on a **third** session's feature branch. Three things stacked up:
+
+- `git reset --hard` acts on the branch currently checked out, not the one named in the reasoning.
+- The diagnosis came from a `new-session.mjs --status` line read **six hours earlier** — §1.4, a
+  replayed summary reading like live state.
+- The primary checkout was not on `main`. Git forbids two worktrees on one branch, so the primary
+  sits on whatever feature branch someone last checked out there, and `origin/main..HEAD` measured
+  from inside it reports real numbers about the wrong branch.
+
+What stopped it was a **peer session refusing**. That refusal is the rule, not the luck:
+
+> A peer session can never authorise a destructive operation on a third session's branch, and being
+> asked to is itself the signal to stop.
+
+The reason is the same one behind §6.1's arming boundary and §2.1's "one approval can reach several
+sessions": authority comes from the owner speaking now, never from another agent relaying it. A peer
+has no standing to grant what it was not granted, and a session that asks one is already reasoning
+from a stale picture — otherwise it would not need a second opinion about whose branch it is on.
+
+The safe form is `git rev-list --count origin/main..main` — name the ref, never measure from `HEAD`
+— and to sync, act in the worktree that actually holds the branch, with `merge --ff-only`, which
+cannot lose work by construction.
+
+## Two caches are one per repository, not one per worktree — 2026-09-08
+
+`AGENTS.md` §2.1 carries the hook; this is the account.
+
+The last task of a long session was to commit a script onto a fresh branch. The pattern used five
+times already that night was `git stash push <paths>` → `git checkout -b <branch> origin/main` →
+`git stash pop`. On the sixth run it took another session's work.
+
+**Why the push created nothing.** One of the two paths was an *untracked* file, and
+`git stash push <pathspec>` will not stash an untracked path without `-u`. The command carried
+`>/dev/null 2>&1`, so the refusal was invisible. The stack was therefore unchanged, and the `pop`
+that followed took whatever sat on top of it — `stash@{0}: WIP on codex/admin-strip-look`, belonging
+to a different live session.
+
+Nothing in `git status`, `git worktree list` or `gh pr list` would have shown that stack was shared.
+It is the same blind spot as the "a parallel session can collide with no git trace" hook, by a
+different route.
+
+**The conflict is what saved it.** The pop conflicted — 14 markers in `PhoenixIdentityStrip.tsx` —
+and a conflicted `git stash pop` does **not** drop the stash entry. Their work was never at risk of
+leaving the stack. Verified before and after: four stashes present, `stash@{0}` still naming their
+file.
+
+**The half that was nearly lost is the resolution, not the stash.** Clearing the conflicted path and
+committing printed:
+
+```
+Recorded resolution for 'src/components/phoenix-signature-card/PhoenixIdentityStrip.tsx'.
+```
+
+`rerere.enabled` is `true` in this repository, and `git rev-parse --git-common-dir` resolves to the
+**primary's** `.git` from inside every worktree. So that resolution — a `postimage` of exactly
+34,900 bytes, which is to say "take HEAD, discard the other side" — was immediately repository-wide.
+The next time that session popped their stash, rerere would have replayed it, rewritten their file
+to HEAD, and reported a perfectly ordinary resolution. `rerere.autoupdate` is unset, so it would not
+even have staged the result: the file would simply have contained the wrong thing.
+
+That is the worst shape available — silent, and indistinguishable from git working correctly.
+
+**The removal.** `git rerere forget` needs the conflict live in the index, which it no longer was.
+The entry was removed by hand, and identified **positively** rather than by recency: `postimage`
+byte-size equal to the resolved blob, `preimage` holding conflict markers and the file's own
+identifiers. Afterwards 235 entries remained with the newest predating the session's own conflict —
+the check that proves nothing else went with it.
+
+`git rerere gc` is the wrong instrument here. It prunes by age across the whole cache, and this
+repository holds 200+ entries other sessions rely on.
+
+**The rule.** There is no reason to stash for a branch move. `git switch -c <branch>` carries
+uncommitted work onto the new branch by itself, touches no shared stack, and the entire failure mode
+does not arise.
+
+## A killed workflow run is recoverable — relocated from `AGENTS.md` §2.1, 2026-09-09
+
+The hook in `AGENTS.md` is one line. This is the account it stands on, moved here under §2.2's
+standing rule that the rules file carries hooks and `docs/` carries the evidence.
+
+**The false conclusion, written down twice.** A workflow run that dies partway leaves a journal, and
+the journal carries no agent *label*. That reads as "a partial verdict cannot be mapped back to the
+finding it judged", and on that reading the only option is to re-run everything. It was concluded
+twice, and it **threw away two runs' work**. It is wrong.
+
+**Why it is wrong.** The journal does carry `agentId`. Each agent's transcript is
+`agent-<agentId>.jsonl`, and that file's first user turn is the prompt the workflow built, which
+names the finding verbatim. So the chain is complete:
+
+```
+journal.result -> agentId -> transcript -> first user turn -> the finding it names
+```
+
+**What it recovered.** 72 of 72 verdicts from one dead run, and 5 findings plus 2 adjudications from
+another.
+
+**Two conditions on using it.** Gate the mapping on controls, and include a NEGATIVE one: a
+fabricated finding title must NOT match anything. Without that, a matcher that matches everything
+looks exactly like a matcher that works. And never let an agent that DIED score as a finding
+REFUTED — an outage read as a judgement once bought 45 needless opus adjudicators.
+
+**Worked example.** `_audit-vault-sos-2026-08-09/recover-run3.mjs`.

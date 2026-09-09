@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 
 import { Conversation } from "@/components/market-awareness/market-awareness-conversation";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 /**
  * Market Awareness — one page, two tabs, exactly as the owner described it.
@@ -131,7 +132,10 @@ type Tracking = {
  */
 const STATUS: Record<string, { label: string; tone: "neutral" | "live" | "good" | "warn" | "bad" }> = {
   draft: { label: "Draft", tone: "neutral" },
-  pending_manager: { label: "With the manager", tone: "live" },
+  // Named for the people, not the step code. The requester's question is "who has it", and under the
+  // parallel group the answer is two or three people at once.
+  pending_group: { label: "With marketing and sales", tone: "live" },
+  on_hold: { label: "On hold", tone: "warn" },
   pending_ceo: { label: "With the CEO", tone: "live" },
   returned: { label: "Returned for changes", tone: "warn" },
   rejected: { label: "Rejected", tone: "bad" },
@@ -167,7 +171,7 @@ function cairoDate(value: string | null | undefined): string {
   const raw = String(value);
   const parsed = new Date(raw.length <= 10 ? `${raw}T12:00:00Z` : raw);
   if (Number.isNaN(parsed.getTime())) return raw;
-  return new Intl.DateTimeFormat("en-GB", {
+  return stableEnGbFormatter({
     day: "2-digit",
     month: "short",
     timeZone: "Africa/Cairo",
@@ -179,14 +183,14 @@ function monthLabel(period: string): string {
   const [year, month] = period.split("-");
   const parsed = new Date(Number(year), Number(month) - 1, 1);
   if (Number.isNaN(parsed.getTime())) return period;
-  return new Intl.DateTimeFormat("en-GB", { month: "short" }).format(parsed);
+  return stableEnGbFormatter({ month: "short" }).format(parsed);
 }
 
 function monthYearLabel(period: string): string {
   const [year, month] = period.split("-");
   const parsed = new Date(Number(year), Number(month) - 1, 1);
   if (Number.isNaN(parsed.getTime())) return period;
-  return new Intl.DateTimeFormat("en-GB", { month: "short", year: "numeric" }).format(parsed);
+  return stableEnGbFormatter({ month: "short", year: "numeric" }).format(parsed);
 }
 
 function activityName(activity: Activity): string {
@@ -664,7 +668,11 @@ export function MarketAwarenessWorkspace({ canCreate }: { canCreate: boolean }) 
   );
 
   const stats = useMemo(() => {
-    const live = rows.filter((a) => a.status === "pending_manager" || a.status === "pending_ceo");
+    // A held one is still live. It has not been answered, and dropping it out of the count is how a
+    // frozen request comes to be forgotten by the person who raised it.
+    const live = rows.filter((a) =>
+      ["pending_group", "on_hold", "pending_ceo"].includes(a.status),
+    );
     const settled = rows.filter((a) => ["approved", "executed", "closed"].includes(a.status));
     const approvedValue = settled.reduce((sum, a) => sum + (a.approvedCost ?? a.estimatedCost), 0);
     return { approvedValue, live: live.length, total: rows.length, tracked: settled.length };
@@ -815,7 +823,7 @@ function RequestTab({
           <SkeletonRows />
         ) : activities.length === 0 ? (
           <EmptyState
-            body="Raise one and it goes to your own manager, then the CEO. Once approved, every district manager in that region, the national sales manager, the SFE manager, the area's rep and Finance are told."
+            body="Raise one and it goes to the marketing manager and the national sales manager of each line you target, all at the same time. Once every one of them has approved, it goes to the CEO. Once he approves, every district manager in that region, the national sales manager, the SFE manager, the area's rep and Finance are told."
             icon={Sparkles}
             title="No awareness activities yet"
           />

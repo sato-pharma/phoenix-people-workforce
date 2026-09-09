@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { cairoDate, cairoDateTime, cairoDateTimeSortable } from "../src/lib/format/cairo-datetime.ts";
+import { cairoDate, cairoDateTime, cairoDateTimeSortable, stableEnGbFormatter, utcDate } from "../src/lib/format/cairo-datetime.ts";
 
 // React error #418 is a hydration mismatch: the server renders a text node one way, the browser
 // renders it another, so React throws away the server HTML and re-renders the whole tree. React
@@ -162,6 +162,271 @@ export function runReact418HydrationSafeTextTests() {
     pageSource,
     /expiryLabel=\{/,
     "the finished string must be handed to the form as expiryLabel",
+  );
+
+  // ── 3b. The plan decision timeline, which BOTH earlier fixes missed ─────────────────────────
+  //
+  // /employee-portals/plans kept throwing #418 after #3336 and #3337 both shipped on 2026-09-06.
+  // Confirmed rather than assumed: every event's `release` column was resolved back to a commit and
+  // `git merge-base --is-ancestor` says all six erroring builds already contained both fixes. The
+  // last arrived 2026-09-07 13:06 Cairo.
+  //
+  // What they missed is this call site — the decision timeline rendered
+  // `new Date(d.createdAt).toLocaleDateString("en-GB", { month: "short", … })` straight into a text
+  // node, inside a `"use client"` component. `createdAt` is an INSTANT and the month is the en-GB
+  // abbreviation, the one field CLDR 42 changed, so it is cause (1) at a second site rather than a
+  // new cause.
+  //
+  // Pinned by SOURCE, like the password-setup pair above: the value assertions in section 1 pass on
+  // a reverted implementation too, because CI runs one engine.
+  const plansSource = codeOnly(read("src/components/employee-portal/plans-workspace.tsx"));
+  assert.match(
+    plansSource,
+    /\{cairoDate\(d\.createdAt\)\}/,
+    "the plan decision timeline must render the instant through the shared cairoDate helper",
+  );
+  assert.doesNotMatch(
+    plansSource,
+    /toLocaleDateString\("en-GB"/,
+    'no en-GB toLocaleDateString may survive in plans-workspace — that pairing is what CLDR 42 split, and this file renders during SSR',
+  );
+  // The date-only helpers in the same file are NOT this bug and must survive the fix. They format a
+  // plan row's `activity_date` in locale "en" — where the September abbreviation never changed —
+  // and their UTC zone is what stops the calendar day shifting. A sweep that "finishes the job" by
+  // dragging them to Cairo breaks the grid's day alignment, which is why they are asserted present.
+  assert.match(plansSource, /function formatDate\(/, "the date-only helpers must stay");
+  assert.match(
+    plansSource,
+    /timeZone: "UTC"/,
+    "the date-only helpers keep UTC deliberately — see their own comment; Cairo there shifts the calendar day",
+  );
+
+  // ── 3c. No component may re-implement the shared formatter ──────────────────────────────────
+  //
+  // validated-customer-register.tsx had its own `cairoDateTime` built on
+  // `Intl.DateTimeFormat("en-GB", { month: "short" })` — a second, unsafe copy of the exact thing
+  // the shared helper exists to be. It is a `"use client"` component, so it was a live #418 waiting
+  // for two readers on different ICU versions. It now delegates.
+  const registerSource = codeOnly(read("src/components/marketing-requests/validated-customer-register.tsx"));
+  assert.doesNotMatch(
+    registerSource,
+    /Intl\.DateTimeFormat\("en-GB"/,
+    "validated-customer-register must not rebuild the Cairo formatter — delegate to @/lib/format/cairo-datetime",
+  );
+  assert.match(registerSource, /sharedCairoDateTime/, "validated-customer-register must delegate to the shared helper");
+  assert.match(
+    registerSource,
+    /"Not recorded"/,
+    'the register keeps its own "Not recorded" copy for an absent instant — the shared dash reads wrong in that column',
+  );
+
+  // ── 3d. The UTC date-only sibling, and the three sites that still used the platform ────────
+  //
+  // `utcDate` exists because the previous three fixes all treated "is the zone deliberate?" as the
+  // question. At these sites it WAS deliberate and correct — a `date` column, or a vendor
+  // wall-clock already in Cairo but tagged UTC — so each one carried a comment defending its UTC
+  // and each was still throwing #418, because the engine-dependent part is the LOCALE, not the
+  // zone. `en-GB` + `month: "short"` is the pairing CLDR 42 split; the UTC pin never touched it.
+  //
+  // Measured on production before the fix: /employee-portals/visits last threw 2026-09-06 23:57
+  // Cairo and /employee-portals/double-visit-report 2026-09-07 00:06, both on builds that already
+  // contained #3336, #3337 and #3340 — confirmed by resolving each event's `release` column back
+  // to a commit and asking `git merge-base --is-ancestor`.
+  const utcMonthSamples: readonly (readonly [string, string])[] = [
+    ["2026-01-15T00:00:00.000Z", "15 Jan 2026"],
+    ["2026-02-15T00:00:00.000Z", "15 Feb 2026"],
+    ["2026-03-15T00:00:00.000Z", "15 Mar 2026"],
+    ["2026-04-15T00:00:00.000Z", "15 Apr 2026"],
+    ["2026-05-15T00:00:00.000Z", "15 May 2026"],
+    ["2026-06-15T00:00:00.000Z", "15 Jun 2026"],
+    ["2026-07-15T00:00:00.000Z", "15 Jul 2026"],
+    ["2026-08-15T00:00:00.000Z", "15 Aug 2026"],
+    ["2026-09-15T00:00:00.000Z", "15 Sept 2026"],
+    ["2026-10-15T00:00:00.000Z", "15 Oct 2026"],
+    ["2026-11-15T00:00:00.000Z", "15 Nov 2026"],
+    ["2026-12-15T00:00:00.000Z", "15 Dec 2026"],
+  ];
+  for (const [iso, expected] of utcMonthSamples) {
+    assert.equal(
+      utcDate(iso),
+      expected,
+      `${iso} must render exactly "${expected}" — same engine-independent month table as cairoDate, so an older ICU cannot render "Sep" where the server rendered "Sept"`,
+    );
+  }
+
+  // The whole point of the UTC pin: a date-only value must NOT shift a calendar day. Cairo is
+  // UTC+2/+3, so if this ever fell back to Cairo these two would read 01 Sept and 01 Jan.
+  assert.equal(utcDate("2026-08-31T22:00:00Z"), "31 Aug 2026", "22:00 UTC must stay the 31st — a Cairo pin here would advance the calendar day");
+  assert.equal(utcDate("2025-12-31T23:30:00Z"), "31 Dec 2025", "a date-only value must not roll into the next year");
+  assert.equal(utcDate(null), "—", "an absent value renders a dash, never today");
+  assert.equal(utcDate("not-a-date"), "—", "an unparseable value renders a dash, never 'Invalid Date' text");
+
+  // Source pins for the three call sites, same reasoning as every other pin in this file: the value
+  // assertions above pass on a reverted implementation too, because CI runs a single engine.
+  for (const [file, what] of [
+    ["src/components/employee-portal/my-visits-workspace.tsx", "the visits list (visit_date and the vendor check-in stamp)"],
+    ["src/components/double-visit-report/double-visit-report-workspace.tsx", "the double-visit report's date column"],
+    ["src/components/weekly-planning/plan-conversation-thread.tsx", "the plan conversation thread"],
+  ] as const) {
+    const source = codeOnly(read(file));
+    assert.doesNotMatch(
+      source,
+      /["']en-GB["']/,
+      `${what} (${file}) must not name the en-GB locale — its month abbreviation is what CLDR 42 changed, and this file renders during SSR`,
+    );
+  }
+
+  const utcSource = codeOnly(read(CAIRO_DATETIME_PATH));
+  assert.match(
+    utcSource,
+    /export function utcDate\(/,
+    "the UTC date-only sibling must live beside cairoDate and share CAIRO_MONTHS — a second month table is how validated-customer-register grew its own unsafe copy",
+  );
+  assert.doesNotMatch(
+    utcSource,
+    /const [A-Z_]*MONTHS[A-Z_]* = \[[\s\S]*?\][\s\S]*?const [A-Z_]*MONTHS[A-Z_]* = \[/,
+    "there must be exactly one month table in this module",
+  );
+
+  // ── 3e. The generic en-GB formatter, and the repo-wide guard that ends this class ──────────
+  //
+  // The three named helpers above cover the formats this app renders most. They did not scale to
+  // the long tail: a sweep on 2026-09-08 found 69 further client-side sites across 21 option
+  // shapes — seconds, weekdays, month-only, `hour12`, in four different zones. So the remaining
+  // sites keep their OWN options and zone and route through stableEnGbFormatter, which replaces
+  // only the month token.
+  //
+  // Asserting literal strings rather than equality with `Intl`: comparing the helper against the
+  // platform passes trivially on CI's single engine, which is the mistake this whole file exists
+  // to avoid. These are the bytes an old engine must also produce.
+  const septUtc = new Date("2026-09-15T09:00:00.000Z");
+  assert.equal(
+    stableEnGbFormatter({ day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(septUtc),
+    "15 Sept 2026",
+    "the generic formatter must spell September from the shipped table, not the reader's ICU build",
+  );
+  assert.equal(
+    stableEnGbFormatter({ day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(new Date("2026-08-15T09:00:00.000Z")),
+    "15 Aug 2026",
+    "a month CLDR never changed must still render exactly as before",
+  );
+
+  // The zone is the caller's and is never touched — this migration moved the LOCALE axis only.
+  // 22:00 UTC on the 31st is already the 1st in Cairo, so these two must disagree.
+  const boundary = new Date("2026-08-31T22:00:00.000Z");
+  assert.equal(
+    stableEnGbFormatter({ day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(boundary),
+    "31 Aug 2026",
+    "a UTC-pinned caller must still get UTC — dragging these to Cairo is what shifts a date-only calendar day",
+  );
+  assert.equal(
+    stableEnGbFormatter({ day: "2-digit", month: "short", timeZone: "Africa/Cairo", year: "numeric" }).format(boundary),
+    "01 Sept 2026",
+    "a Cairo-pinned caller must still get Cairo",
+  );
+
+  // The invisible half. On Node 24 / ICU 78, en-GB with `hour12` puts a PLAIN space before "pm"
+  // through format() and U+202F (narrow no-break space) through formatToParts(). The helper joins
+  // parts, so without normalising it would silently swap in a character nobody can see — and an
+  // invisible character is still a text node, so it is still #418.
+  const pmLabel = stableEnGbFormatter({
+    hour: "2-digit",
+    hour12: true,
+    minute: "2-digit",
+    timeZone: "Africa/Cairo",
+  }).format(septUtc);
+  assert.ok(
+    !pmLabel.includes("\u202f"),
+    `the hour12 form must not carry U+202F — formatToParts emits it where format() emits a plain space, and the difference is invisible in review (got ${JSON.stringify(pmLabel)})`,
+  );
+
+  // ── 3f. Repo-wide: no client component may ask the platform for an en-GB month name ─────────
+  //
+  // This is the part that ends the cycle. #3336, #3337, #3340, #3463 and #3477 each fixed the
+  // sites that were known to be erroring, and each was followed by another report, because a site
+  // only throws while it is rendering a SEPTEMBER date — the other eleven months it looks perfect.
+  // A list of fixed files can never be complete; the absence of the pattern can.
+  //
+  // Scoped to the two call shapes that reach ICU's month data directly. `formatDateOnly(value,
+  // "en-GB", …)` in src/lib/date-only.ts is deliberately NOT matched: it already normalises with
+  // .replace(/\bSept\b/g, "Sep"), solving the same problem by canonicalising to the OLD spelling
+  // instead of the new one, so it is stable on every engine and its callers are safe.
+  const offenders: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(path.join(REPO_ROOT, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+        walk(rel);
+        continue;
+      }
+      if (!/\.(ts|tsx)$/.test(entry.name)) continue;
+      const source = codeOnly(fs.readFileSync(path.join(REPO_ROOT, rel), "utf8"));
+      if (!/^\s*["']use client["']/m.test(source.slice(0, 2000))) continue;
+      const patterns = [
+        /new Intl\.DateTimeFormat\(\s*["']en-GB["']\s*,/g,
+        /\.toLocale(?:Date|Time)?String\(\s*["']en-GB["']\s*,/g,
+      ];
+      for (const pattern of patterns) {
+        for (let m; (m = pattern.exec(source)); ) {
+          // Read the OPTIONS OBJECT by balancing braces, never a fixed window. A window runs past
+          // the end of this call into whatever is declared next, so a call that asks for NO month
+          // at all — which renders numerically, and is safe — gets reported because the function
+          // below it happens to use month: "short". That false positive cost a run here, and it is
+          // the same window bug the sweep script that found these sites had. The balance is the check.
+          const open = source.indexOf("{", m.index);
+          if (open === -1) continue;
+          let depth = 0;
+          let end = -1;
+          for (let i = open; i < source.length; i += 1) {
+            if (source[i] === "{") depth += 1;
+            else if (source[i] === "}") {
+              depth -= 1;
+              if (depth === 0) {
+                end = i;
+                break;
+              }
+            }
+          }
+          if (end === -1) continue;
+          const options = source.slice(open, end + 1);
+          if (/month:\s*["']short["']/.test(options) || /dateStyle:\s*["']medium["']/.test(options)) {
+            offenders.push(`${rel}:${source.slice(0, m.index).split("\n").length}`);
+          }
+        }
+      }
+    }
+  };
+  walk("src");
+  walk("app");
+  assert.deepEqual(
+    offenders,
+    [],
+    `these client components ask the reader's ICU build for an en-GB month abbreviation, which CLDR 42 changed from "Sep" to "Sept" — every one is React hydration error #418 for anyone on an older browser, and it will only show up in September:\n  ${offenders.join("\n  ")}\nRoute them through stableEnGbFormatter (keeping their own options and timeZone verbatim — the zone is not the bug).`,
+  );
+
+  // ── 3g. The page opts out of browser machine-translation ───────────────────────────────────
+  //
+  // A different cause of the SAME error, and the only one left after every code-level source was
+  // found and fixed. A browser translation rewrites text nodes; if that lands before or during
+  // hydration, React discards the server HTML — #418, always the `args[]=text` variant.
+  //
+  // The evidence that this is a real class here is the SHAPE of the production data rather than any
+  // one event: #418 is concentrated in PEOPLE, not pages. User B-10 alone produced 63 events across
+  // 23 unrelated routes and three different desktop browsers, which no page-level defect can do.
+  //
+  // Pinned so it cannot be quietly dropped in a layout tidy-up. If the remaining routes keep
+  // erroring, the right response is to REMOVE this deliberately and record why — not to let it rot.
+  const layoutSource = codeOnly(read("app/layout.tsx"));
+  assert.match(
+    layoutSource,
+    /<html[^>]*\stranslate="no"/,
+    'app/layout.tsx must keep translate="no" on <html> — a browser translation rewrites text nodes and turns every page into React hydration error #418',
+  );
+  assert.match(
+    layoutSource,
+    /other:\s*\{\s*google:\s*["']notranslate["']\s*\}/,
+    'the google=notranslate meta must stay in the metadata export — Chrome honours it ahead of the html[translate] attribute, so the attribute alone is the weaker half of the pair',
   );
 
   // ── 4. The portal shell clock is NOT pinned here — #3336 owns it ─────────────────────

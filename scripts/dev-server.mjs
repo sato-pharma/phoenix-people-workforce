@@ -82,6 +82,115 @@ if (override === "turbopack" || override === "webpack") {
 // Pass through anything the caller added, e.g. `pnpm run dev --port 3100`.
 const passthrough = process.argv.slice(2);
 
+/*
+ * ONE DEV SERVER AT A TIME — ENFORCED HERE, added 2026-09-09.
+ *
+ * AGENTS.md § 5 has said "One dev server at a time, ever" for weeks. Nothing checked it, and on
+ * 2026-09-09 that cost the owner two hard freezes, at 17:34 and 20:36 Cairo. Neither left a
+ * minidump; both left a GPU watchdog dump (video timeout 0x117 / 0x141), which is the signature
+ * of the desktop compositor being paged out rather than a driver fault.
+ *
+ * The arithmetic is not close. Measured that night on this repo, one `next dev --webpack` server
+ * serving ten admin routes from cold peaked at 10,221 MB of commit and 7,497 MB resident (5,933 /
+ * 5,665 after the dev-only next.config.ts flags landed the same day). The machine has 16 GB, of
+ * which roughly 10 GB is already held by the owner's sessions and browser before any server
+ * starts. So a SECOND server has never been able to fit, and both freezes were exactly that
+ * state: mem-watchdog.log shows four to seven node processes holding 5.1-8.6 GB together, with
+ * every rule in the watchdog logging "no idle dev server" because all of them were busy.
+ *
+ * A refusal here is worth more than any amount of reclaiming afterwards: the watchdog can only
+ * choose which server to kill once both exist, and by then the box has already been over the
+ * line for however long the compile took.
+ *
+ * WHY IT SCANS PROCESSES AND NOT THE PORT. The second server is usually on a different port —
+ * worktrees run 3100, 3200 and so on — so a port probe answers "free" in precisely the case
+ * this exists to stop. The scan looks for the child Next actually spawns, start-server.js,
+ * because the cheap `next dev` parent carries no memory and the child's own command line
+ * contains no "dev" flag at all (mem-watchdog.ps1 records the same trap).
+ *
+ * ESCAPE HATCH: PHOENIX_ALLOW_MULTIPLE_DEV_SERVERS=1 skips the check. It is there because a
+ * refusal that cannot be overridden becomes a reason to delete the whole guard the first time it
+ * is wrong, which is how the --webpack guard in this same file was lost three times.
+ */
+function findRunningDevServers() {
+  if (process.env.PHOENIX_ALLOW_MULTIPLE_DEV_SERVERS === "1") return [];
+  try {
+    if (isWindows) {
+      // Name='node.exe' is what keeps the query from matching the PowerShell process running it —
+      // a CommandLine filter alone matches the command carrying the filter, which is the trap
+      // AGENTS.md § 2.1 records for Win32_Process sweeps.
+      const ps = spawnSync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | " +
+            "Where-Object { $_.CommandLine -and ($_.CommandLine -like '*next*dist*server*lib*start-server*' -or $_.CommandLine -like '*next*dev*') } | " +
+            "ForEach-Object { \"$($_.ProcessId)`t$([math]::Round($_.PrivatePageCount/1MB))\" }",
+        ],
+        { encoding: "utf8", timeout: 20000 },
+      );
+      if (ps.status !== 0 || !ps.stdout) return [];
+      return ps.stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          const [pid, mb] = line.split("\t");
+          return { pid: Number(pid), mb: Number(mb) };
+        })
+        .filter((p) => Number.isFinite(p.pid) && p.pid !== process.pid);
+    }
+    const ps = spawnSync("bash", ["-lc", "ps -eo pid=,rss=,args= | grep -i 'next' | grep -v grep"], {
+      encoding: "utf8",
+      timeout: 20000,
+    });
+    if (ps.status !== 0 || !ps.stdout) return [];
+    return ps.stdout
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => /start-server|next dev/.test(l))
+      .map((l) => {
+        const [pid, rss] = l.split(/\s+/);
+        return { pid: Number(pid), mb: Math.round(Number(rss) / 1024) };
+      })
+      .filter((p) => Number.isFinite(p.pid) && p.pid !== process.pid);
+  } catch {
+    // A guard that cannot answer must not block the work. Say nothing and let the server start.
+    return [];
+  }
+}
+
+const running = findRunningDevServers();
+if (running.length > 0) {
+  const list = running.map((p) => `      pid ${p.pid}  ${p.mb} MB`).join("\n");
+  console.error(
+    [
+      "",
+      "[dev-server] REFUSING TO START — a dev server is already running on this machine.",
+      "",
+      list,
+      "",
+      "  This box has 16 GB and one dev server on this repo peaks near 6 GB resident, so a second",
+      "  one does not fit. Two of them running at once hard-froze the machine twice on 2026-09-09.",
+      "",
+      "  Stop the running one BY PORT, not by killing the task that started it (AGENTS.md § 5):",
+      "      Get-NetTCPConnection -LocalPort 3000 -State Listen",
+      "      Stop-Process -Id <OwningProcess> -Force",
+      "",
+      "  Then confirm the port is actually free before starting again — a curl that returns 000",
+      "  is the only proof:",
+      "      curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/healthz",
+      "",
+      "  If you genuinely need two (and you have measured the headroom for it):",
+      "      PHOENIX_ALLOW_MULTIPLE_DEV_SERVERS=1 pnpm run dev",
+      "",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
+
 // NO MEMORY CAP HERE, AND DO NOT ADD ONE BACK. This file shipped with
 // `--max-old-space-size=4096` and a comment claiming it kept the server under the watchdog's
 // 6 GB ceiling. The claim was false. It is corrected here rather than quietly deleted, because
@@ -98,7 +207,29 @@ const passthrough = process.argv.slice(2);
 // ExcelJS leak ("off-heap so --max-old-space-size cannot cap it"). It applies here identically.
 //
 // A cap that DID bind (say 2048) would be a real behaviour change — more GC, slower rebuilds,
-// possible OOM — so it needs measuring before it is worth shipping. Nobody has measured it.
+// possible OOM — so it needs measuring before it is worth shipping.
+//
+// MEASURED 2026-09-09, and it CORRECTS the sentence above it. "The growth is off-heap, which
+// --max-old-space-size cannot bound by construction" was over-general: the 4096 test could not
+// bind because node's default old space here is already 4,288 MB, so that flag was a no-op for
+// the arithmetic reason, not because the memory was out of reach. A cap that actually binds does
+// bound it. Same checkout, same ten admin routes from cold, only NODE_OPTIONS differing, all
+// three runs carrying the dev-only next.config.ts flags added the same day:
+//
+//                              peak commit   peak working set   slowest route
+//     no flags at all            10,221 MB          7,497 MB          14.0 s
+//     config flags only           5,933 MB          5,665 MB          14.1 s
+//     + --max-old-space-size=3072 4,835 MB          4,421 MB          62.1 s
+//
+// So the cap buys roughly 1.2 GB and costs 3-4x on the heaviest compiles: /admin/approvals-hub
+// went 14.1 s -> 62.1 s and /admin/analytics/source-sales 10.5 s -> 37.5 s. Nothing OOM'd; every
+// route still returned 200.
+//
+// NOT SHIPPED BY DEFAULT, deliberately. A minute-long page compile is paid on every edit, and the
+// config flags above already removed the 4.3 GB spike that was actually freezing the machine. Set
+// it by hand for a session where RAM matters more than iteration speed:
+//     $env:NODE_OPTIONS='--max-old-space-size=3072'; pnpm run dev
+// Do not "fix" it back to a permanent flag without re-measuring both columns.
 
 const args = ["dev", `--${bundler}`, ...passthrough];
 

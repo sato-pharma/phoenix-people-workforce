@@ -13,9 +13,17 @@ name: Security Scan (OSS)
 # secret before (a shared passphrase sat in a committed file until 2026-07-31).
 #
 # Restored 2026-08-08 after #1889 removed the whole file. That PR also dropped the Semgrep
-# sast-scan job, which is NOT restored here, deliberately: Semgrep took 4m14s per PR against
-# gitleaks' 13s, and Sonar still covers overlapping static-analysis ground. This job is the cheap
-# half that nothing else replaces.
+# sast-scan job, which was left out at the time because Semgrep took 4m14s per PR against
+# gitleaks' 13s, and a hosted code-quality scanner was covering overlapping ground.
+#
+# BOTH HALVES OF THAT ARE NOW SETTLED, 2026-09-08. The hosted scanner was removed entirely at the
+# owner's instruction, which briefly left this repo with NO static application security testing at
+# all — gitleaks finds secrets, not vulnerabilities, and `lint`/`typecheck` are not security
+# analysis. Semgrep is restored below to close that, but on the daily schedule and on demand rather
+# than per-PR, which is what makes it affordable. The cost reasoning is on the sast-scan job.
+#
+# So this file now holds BOTH halves: secret-scan, which blocks every PR, and sast-scan, which
+# does not run on PRs at all. Read each job's own header before changing when it fires.
 #
 # NOW BLOCKING. The original rolled out with `--exit-code 0` "for this initial rollout", which
 # meant the job could not fail no matter what it found — 40 consecutive green runs that proved
@@ -43,6 +51,7 @@ permissions:
 
 env:
   GITLEAKS_VERSION: "8.30.1"
+  SEMGREP_VERSION: "1.171.0"
 
 jobs:
   secret-scan:
@@ -109,4 +118,108 @@ jobs:
         with:
           name: gitleaks-report
           path: gitleaks-report.sarif
+          retention-days: 14
+
+  # SAST. Restored 2026-09-08 at the owner's instruction, after the hosted code-quality scanner
+  # that had been covering this ground was removed the same day, leaving the repo with no static
+  # application security testing at all.
+  #
+  # DELIBERATELY NOT ON pull_request, which is the ONLY difference from the job dropped by #1889.
+  # It measured 4m14s per run against gitleaks' 13s, and this repo merges ~14 PRs a day — so a
+  # per-PR Semgrep costs roughly 60 Actions minutes daily, about doubling the standing spend, on a
+  # repo that has already hit its cap once. What that buys is immediacy and nothing else, because
+  # the job WARNS and never fails (see below): per-PR runs would gate nothing that a daily run over
+  # main does not also catch, one day later. Owner chose daily + on demand, 2026-09-08.
+  #
+  # Run it against a branch by hand any time: Actions -> Security scan -> Run workflow, picking the
+  # branch. That is what workflow_dispatch is for here, and it is the escape hatch that makes the
+  # per-PR cost unnecessary rather than merely unaffordable.
+  #
+  # THIS JOB NOW FAILS ON ANY FINDING. Flipped 2026-09-08 at the owner's instruction, once the
+  # backlog reached zero: restored with 5 findings that morning, all cleared the same day — 1 ×
+  # gcm-no-tag-length fixed (#3494), 2 × dynamic-urllib deleted with a dead GCP-era script (#3497),
+  # 2 × react-insecure-request suppressed at the line (#3501, loopback). Zero was then confirmed on
+  # `main` itself, not merely on a branch: 361 rules over 4,711 files, 0 findings.
+  #
+  # Zero first, gate second, and that ORDER is the whole reason this can be a real check. secret-scan
+  # above could block from day one only because its tree was proven clean first; a gate that is red
+  # on arrival is one everybody learns to scroll past, which is worse than no gate at all.
+  #
+  # 🔴 IT IS DELIBERATELY *NOT* A REQUIRED CHECK, AND ADDING IT WOULD BE WORSE THAN LEAVING IT OFF.
+  # This job does not run on pull_request (see the cost note above), so on a PR it reports SKIPPED —
+  # and GitHub counts a skipped required check as PASSING. Listed in branch protection it would
+  # therefore sit there looking armed while being incapable of blocking anything, on a PR or
+  # anywhere else, since protection gates merges and never the post-merge push to `main`. The next
+  # person to ask "is SAST gating our PRs?" would read the settings page and get the wrong answer.
+  # A real PR gate means removing the `if:` below and paying ~60 Actions minutes a day; that was
+  # weighed and declined. What this failure DOES buy is a red daily run over `main` — a regression
+  # surfaces within a day, with a notification, instead of sitting in a summary nobody opens.
+  sast-scan:
+    # Never on a PR. github.event_name is `schedule` or `workflow_dispatch` here.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep
+        run: pip install "semgrep==${SEMGREP_VERSION}"
+
+      - name: SAST scan (Semgrep)
+        run: |
+          set -euo pipefail
+          semgrep scan \
+            --config=p/security-audit \
+            --config=p/owasp-top-ten \
+            --config=p/javascript \
+            --config=p/typescript \
+            --config=p/react \
+            --exclude=node_modules --exclude=.next --exclude=dist \
+            --metrics=off \
+            --sarif --output=semgrep-report.sarif \
+            .
+          # A `nosemgrep` suppression does NOT remove the result from the SARIF — it is still
+          # emitted, carrying `"suppressions":[{"kind":"inSource"}]`. So the obvious count over
+          # `.results[]` includes every deliberately-suppressed finding, and it always did: while
+          # this job merely warned, that only skewed the summary and nobody noticed. Flipping the
+          # job to fail turned it into a permanent red on the two suppressed loopback fetches, with
+          # Semgrep's own console line one row above reading `0 findings` — measured 2026-09-08,
+          # run 34240252914. Filter on the suppressions array, and report both numbers so a rising
+          # suppression count stays visible instead of being the quiet way to make this job pass.
+          COUNT=$(jq '[.runs[]?.results[]? | select((.suppressions // []) | length == 0)] | length' semgrep-report.sarif)
+          SUPPRESSED=$(jq '[.runs[]?.results[]? | select((.suppressions // []) | length > 0)] | length' semgrep-report.sarif)
+          {
+            echo "### SAST scan (Semgrep v${SEMGREP_VERSION})"
+            echo "Findings: **${COUNT}**"
+            echo "Suppressed in source (\`nosemgrep\`): ${SUPPRESSED}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # A report carrying no `runs` at all is not a clean scan, it is a scan that did not
+          # happen — a bad --config, a resolver failure, an empty checkout. COUNT would be 0 and
+          # this job would go green on it. Same reasoning as the gitleaks SCAN_STATUS guard above:
+          # never report "clean" for a check that never actually ran.
+          RUNS=$(jq '[.runs[]?] | length' semgrep-report.sarif)
+          if [ "$RUNS" -lt 1 ]; then
+            echo "::error::Semgrep produced a report with no runs — the scan did not execute correctly. Not reporting this as clean."
+            exit 1
+          fi
+
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::error::Semgrep found ${COUNT} potential issue(s) — see the semgrep-report artifact for rule, file and line. Fix it, or suppress it AT THE LINE with a nosemgrep comment carrying the reason (see device-user-mapping-manager.tsx for the shape). Do not silence the job."
+            exit 1
+          fi
+
+      - name: Upload Semgrep report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: semgrep-report
+          path: semgrep-report.sarif
           retention-days: 14

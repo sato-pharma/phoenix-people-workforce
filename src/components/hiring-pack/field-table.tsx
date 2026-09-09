@@ -61,6 +61,7 @@ import {
   type FieldWarning,
   type PageSize,
 } from "@/lib/hiring-pack/field-warnings";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 export type FieldTableProps = {
   busy: boolean;
@@ -251,7 +252,7 @@ function WarningNotes({ warnings }: { warnings: readonly FieldWarning[] | undefi
 function formatChangeStamp(iso: string): string {
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return iso;
-  return parsed.toLocaleString("en-GB", {
+  return formatStableEnGb(parsed, {
     day: "2-digit",
     hour: "2-digit",
     hour12: false,

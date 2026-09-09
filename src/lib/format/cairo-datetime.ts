@@ -88,6 +88,45 @@ export function cairoDateTime(iso: string | null | undefined): string {
   return `${formatCairoDatePart(value)} · ${hour}:${minute}`;
 }
 
+const UTC_PARTS = new Intl.DateTimeFormat("en-GB", {
+  day: "2-digit",
+  month: "2-digit",
+  timeZone: "UTC",
+  year: "numeric",
+});
+
+/**
+ * e.g. `15 Sept 2026`, pinned to UTC — the DATE-ONLY sibling of `cairoDate`.
+ *
+ * A UTC formatter in a file named cairo-datetime looks out of place, and it is here on purpose.
+ * Two kinds of value must NOT be dragged to Cairo: a DATE-ONLY column (`activity_date`, a period
+ * key), which `new Date` parses as UTC midnight so UTC is what stops the calendar day shifting;
+ * and a vendor wall-clock that is already Cairo but tagged UTC (iReports360 sends zone-less local
+ * times). Both were already correct on that axis — their bug was the LOCALE.
+ *
+ * `en-GB` + `month: "short"` is engine-dependent: CLDR 42 (ICU 72) renamed the abbreviation for
+ * September from "Sep" to "Sept", so Railway's Node 24 (ICU 78) and an older mobile browser
+ * produce different bytes for the same value. In a `"use client"` component that text is built
+ * twice — once by Node for the HTML, once by the browser on hydrate — and React discards the
+ * server HTML over the one-character difference: hydration error #418.
+ *
+ * So this shares `CAIRO_MONTHS` rather than carrying its own copy. A second month table is exactly
+ * how validated-customer-register grew an unsafe private `cairoDateTime`, and the point of putting
+ * the names in code is lost the moment there are two lists to keep in step.
+ *
+ * Output is byte-identical to what `en-GB` renders on current ICU, so nothing on screen changes for
+ * a reader on an up-to-date browser; an old engine simply converges on the string the server sent.
+ */
+export function utcDate(iso: string | null | undefined): string {
+  const value = parseIsoInstant(iso);
+  if (!value) return "—";
+  const parts: Record<string, string> = {};
+  for (const part of UTC_PARTS.formatToParts(value)) {
+    if (part.type !== "literal") parts[part.type] = part.value;
+  }
+  return `${parts.day} ${CAIRO_MONTHS[Number(parts.month) - 1]} ${parts.year}`;
+}
+
 /**
  * The same Cairo instant as `2026-08-30 14:05` — for spreadsheets, not screens.
  *
@@ -109,4 +148,64 @@ export function cairoDateTimeSortable(iso: string | null | undefined): string {
   if (!value) return "";
   const { day, hour, minute, month, year } = cairoParts(value);
   return `${year}-${month}-${day} ${hour}:${minute}`;
+}
+
+/**
+ * Engine-stable `en-GB`, for the sites that are NOT one of the fixed shapes above.
+ *
+ * `cairoDate`/`cairoDateTime`/`utcDate` cover the three formats this app renders most, and each
+ * builds its string from numeric parts. That does not scale to the long tail: a repo sweep on
+ * 2026-09-08 found 69 further client-side sites across 21 distinct option shapes — some with
+ * seconds, some with a weekday, some month-only, some `hour12`, in four different zones. Twenty-one
+ * more named helpers would be worse than the disease.
+ *
+ * So this keeps the CALLER'S options verbatim — every field, and above all the timeZone — and
+ * replaces only the month token, which is the single thing measured to vary between ICU versions
+ * (CLDR 42 renamed en-GB's abbreviated September from "Sep" to "Sept"). Structure, ordering and
+ * separators still come from the engine; the month name now ships with the code.
+ *
+ * THE ZONE IS NEVER TOUCHED, and that is the point. Most of those 69 sites are correctly zoned
+ * already — a `date` column pinned to UTC so the calendar day cannot shift, a vendor wall-clock
+ * that is Cairo but tagged UTC — and a blanket move to Cairo would break every one of them. This
+ * migration changes one axis, the locale data, and leaves the zone question to the separate
+ * instant-format ratchet that already tracks it.
+ *
+ * Two mechanisms, one of them invisible:
+ *
+ *   1. The month token, as above.
+ *   2. `formatToParts` and `format` DISAGREE WITH EACH OTHER inside one engine. On Node 24 / ICU 78,
+ *      `en-GB` with `hour12` puts a plain space before "pm" via `format()` and U+202F (narrow
+ *      no-break space) via `formatToParts()`. Joining the parts would therefore change a character
+ *      nobody can see, on six of these sites — and an invisible character is still a text node, so
+ *      it is still hydration error #418. Normalised back to a plain space, which is both what
+ *      renders today and a value that cannot drift.
+ *
+ * Verified byte-identical to `new Intl.DateTimeFormat("en-GB", options).format(value)` on current
+ * ICU across 16 shapes x 12 months x 3 days x 3 hours (1,728 cases), so nothing on screen moves.
+ */
+function applyStableMonth(parts: readonly Intl.DateTimeFormatPart[], monthIndex: number): string {
+  return parts
+    .map((part) => (part.type === "month" ? CAIRO_MONTHS[monthIndex] : part.value))
+    .join("")
+    .replace(/\u202f/g, " ");
+}
+
+/**
+ * Drop-in for `new Intl.DateTimeFormat("en-GB", options)` — same `.format(date)` shape, so a module
+ * that builds its formatter once still builds it once.
+ */
+export function stableEnGbFormatter(options: Intl.DateTimeFormatOptions): { format(value: Date): string } {
+  const display = new Intl.DateTimeFormat("en-GB", options);
+  // Numeric month in the SAME zone as the caller asked for; digits are identical on every ICU.
+  const month = new Intl.DateTimeFormat("en-GB", { month: "2-digit", timeZone: options.timeZone });
+  return {
+    format(value: Date): string {
+      return applyStableMonth(display.formatToParts(value), Number(month.format(value)) - 1);
+    },
+  };
+}
+
+/** Drop-in for `date.toLocaleDateString("en-GB", options)` and its toLocaleString siblings. */
+export function formatStableEnGb(value: Date, options: Intl.DateTimeFormatOptions): string {
+  return stableEnGbFormatter(options).format(value);
 }

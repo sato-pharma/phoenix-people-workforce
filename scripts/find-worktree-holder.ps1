@@ -10,10 +10,11 @@
 #
 # A folder whose `rmdir` fails with exit 32 is held by one of the processes printed.
 # Close that session. If it will not die -- mostly-kernel CPU with zero threads in
-# Terminated state -- it is stuck inside a kernel call and only a restart frees the
-# folder. See AGENTS.md 2.1 (Worktrees) before spending time on one.
+# Terminated state -- it is stuck inside a kernel call: Stop-Process and Task Manager
+# cannot unwind it, but ARCHIVING the owning session does end it, with no reboot.
+# Restart only if that fails. See AGENTS.md 2.1 (Worktrees) before spending time on one.
 
-param([string]$Path)
+param([string]$Path, [switch]$Json)
 
 Add-Type -TypeDefinition @"
 using System;
@@ -71,6 +72,24 @@ foreach ($p in (Get-Process)) {
       Cwd       = $cd
     }
   }
+}
+
+if ($Json) {
+  # Machine-readable form, consumed by scripts/worktree-liveness.mjs.
+  #
+  # `readable` is the POSITIVE CONTROL and it is not decoration. An empty `rows` means "no session
+  # is sitting in a worktree" ONLY when readable > 0. If the PEB sweep itself came back empty --
+  # a hardened process, a policy block, ntdll refusing, this script run without the rights it
+  # needs -- then rows is empty for a reason that has nothing to do with the folders, and a caller
+  # that trusted it would read a broken probe as proof every folder is free. That is the exact
+  # shape AGENTS.md section 2.3 records for a dependency sweep: without a positive control an
+  # empty result is indistinguishable from a broken query.
+  #
+  # Built by hand rather than with ConvertTo-Json on the array: Windows PowerShell 5.1 collapses a
+  # one-element array to a bare object, so a single holder would not parse as a list.
+  $body = ($rows | ForEach-Object { $_ | ConvertTo-Json -Compress }) -join ","
+  "{""readable"":$readable,""rows"":[$body]}"
+  return
 }
 
 "read the working directory of $readable process(es)"

@@ -9,6 +9,14 @@ import { RecruitmentCandidatesPortal } from "@/components/employee-portal/recrui
 import { canAccess, canOpenPersonalCandidateInbox } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listApplications } from "@/lib/recruitment/applications";
+import {
+  redactCandidateContact,
+  redactCandidateListContact,
+  redactDistrictBoardsContact,
+  revealPhoneToViewer,
+} from "@/lib/recruitment/candidate-call-claims";
+import { loadCallClaims } from "@/lib/recruitment/candidate-call-claims-db";
+import { loadOutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock-db";
 import { listCandidateFolderAreaOptions } from "@/lib/recruitment/candidate-folder-options";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
 import {
@@ -82,13 +90,40 @@ async function AdminRecruitmentCandidatesContent() {
   // One query for every card's CV file, rather than one request per card after it mounts. Same
   // reason as the portal page: the owner's rule for this screen is that the CV must be openable, and
   // a View/Download control that turns up seconds after the card is one he reported as missing.
-  const initialFiles = await listCandidateCardFiles([
+  const cardCandidateIds = [
     ...sentToMe.map((candidate) => candidate.id),
     ...myCandidates.map((application) => application.candidate?.id ?? ""),
     // The folders' CVs too. A View CV button that is absent because its file was never fetched is
     // the same defect as no button at all, and the owner reported that one by name.
     ...districtBoardCandidateIds(districtBoards),
-  ]);
+  ];
+
+  const initialFiles = await listCandidateCardFiles(cardCandidateIds);
+
+  // The hidden phone number and the "I will call" reservation, exactly as on the portal twin — and
+  // for the fourth time on the same argument every paragraph above makes: this page renders the
+  // IDENTICAL component. Loading the claims there and not here would leave one copy of this screen
+  // where a reserved CV looks free and the number is printed to somebody who never asked for it.
+  const callClaims = await loadCallClaims(cardCandidateIds);
+
+  // THE CV HE OPENED AND HAS NOT WRITTEN ABOUT. Owner, 2026-09-09: candidates are being telephoned
+  // twice because nothing records that anyone called, so a manager must write what he found before
+  // he may open another CV. Read once here rather than per card; it fails open on any error, so a
+  // database problem can never lock a manager out of every CV in the company.
+  const outstandingFeedback = await loadOutstandingFeedback(access.hrId);
+  const visibleSentToMe = redactCandidateListContact(sentToMe, callClaims, access.hrId);
+  const visibleDistrictBoards = redactDistrictBoardsContact(districtBoards, callClaims, access.hrId);
+  const visibleApplications = myCandidates.map((application) =>
+    application.candidate
+      ? {
+          ...application,
+          candidate: redactCandidateContact(
+            application.candidate,
+            revealPhoneToViewer(callClaims[application.candidate.id] ?? null, access.hrId),
+          ),
+        }
+      : application,
+  );
 
   return (
     <PageContainer>
@@ -101,11 +136,13 @@ async function AdminRecruitmentCandidatesContent() {
         />
         <RecruitmentCandidatesPortal
           areaOptions={areaOptions}
-          initialApplications={myCandidates}
-          initialDistrictBoards={districtBoards}
+          initialApplications={visibleApplications}
+          initialCallClaims={callClaims}
+        initialOutstandingFeedback={outstandingFeedback}
+          initialDistrictBoards={visibleDistrictBoards}
           initialFilings={filings}
           initialFiles={initialFiles}
-          initialSentToMe={sentToMe}
+          initialSentToMe={visibleSentToMe}
           initialTeam={team}
           viewerHrId={access.hrId}
         />

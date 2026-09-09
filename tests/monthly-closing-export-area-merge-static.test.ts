@@ -154,7 +154,7 @@ function findAreaRowInMatrix(matrix: MonthlyClosingMatrix, areaCode: string) {
 }
 
 function buildMergedMatrix(lineCode: "pedia", protect: boolean): MonthlyClosingMatrix {
-  const merged = applyClosingAreaMerges(lineCode, AREAS, CELLS, []);
+  const merged = applyClosingAreaMerges(lineCode, AREAS, CELLS, [], "2026-06");
   const matrix = buildMonthlyClosingMatrix({
     areas: merged.areas,
     availableLines: ["Pedia"],
@@ -165,7 +165,7 @@ function buildMergedMatrix(lineCode: "pedia", protect: boolean): MonthlyClosingM
     products: [PRODUCT],
     targets: merged.targets,
   });
-  return protect ? markMergedAreaRowsStatic(matrix, lineCode) : matrix;
+  return protect ? markMergedAreaRowsStatic(matrix, lineCode, "2026-06") : matrix;
 }
 
 const NO_CALC = "no Closing Matrix cell may reference the hidden Calc sheet — it carries GZ6 and "
@@ -173,14 +173,14 @@ const NO_CALC = "no Closing Matrix cell may reference the hidden Calc sheet — 
 
 export async function runMonthlyClosingExportAreaMergeStaticTests() {
   // ── applyClosingAreaMerges fixture sanity, and Anti Infective stays untouched ────────────────
-  const merged = applyClosingAreaMerges("pedia", AREAS, CELLS, []);
+  const merged = applyClosingAreaMerges("pedia", AREAS, CELLS, [], "2026-06");
   assert.equal(merged.areas.length, 3, "GZ6 and UE9 collapse to one area; GZ1 and CA3 are untouched -> 3 areas remain");
   const survivor = merged.areas.find((a) => a.areaCode === "GZ6");
   assert.equal(survivor?.areaName, "Fayoum - Beni Suef", "the surviving row is renamed");
   const survivorCell = merged.cells.find((c) => c.areaCode === "GZ6" && c.productCode === "AF001");
   assert.equal(survivorCell?.salesValue, 24_000, "GZ6 + UE9 = 15,000 + 9,000 = 24,000");
 
-  const untouched = applyClosingAreaMerges("anti_infective", AREAS, CELLS, []);
+  const untouched = applyClosingAreaMerges("anti_infective", AREAS, CELLS, [], "2026-06");
   assert.equal(untouched.areas.length, 4, "anti_infective has no merge rule -- all 4 areas stay separate");
   assert.ok(
     untouched.areas.some((a) => a.areaCode === "UE9" && a.areaName === "Beni Suef"),
@@ -230,11 +230,65 @@ export async function runMonthlyClosingExportAreaMergeStaticTests() {
     "region subtotal = GZ6 15,000 + UE9 9,000 + GZ1 6,000 = 30,000",
   );
 
-  // ── CNS no longer merges — owner split it back into two areas (2026-08-30) ───────────────────
-  // Same fixture, line = cns: applyClosingAreaMerges must now leave GZ6 and UE9 as two separate
-  // rows, exactly like Anti Infective. Only Pedia folds.
-  const cnsUnmerged = applyClosingAreaMerges("cns", AREAS, CELLS, []);
-  assert.equal(cnsUnmerged.areas.length, 4, "cns no longer merges -- all 4 areas stay separate");
+  // ── CNS: separate through July, ONE area from August ────────────────────────────────────────
+  // The owner split CNS back into two areas on 2026-08-30, then reversed it on 2026-09-07 — "in
+  // pedia and cns fayoum and bani suef are one area" — asking that August onward merge and July
+  // stay as published. July 2026 CNS is locked (105,152 units), so both halves are pinned here:
+  // the month he has already sent out must keep rendering as the two rows it was sent as.
+  const cnsJuly = applyClosingAreaMerges("cns", AREAS, CELLS, [], "2026-07");
+  assert.equal(cnsJuly.areas.length, 4, "cns July: published as two rows, and it stays that way");
+  assert.ok(
+    cnsJuly.areas.some((a) => a.areaCode === "UE9" && a.areaName === "Beni Suef"),
+    "cns July: Beni Suef keeps its own name and its own row",
+  );
+
+  const cnsAugust = applyClosingAreaMerges("cns", AREAS, CELLS, [], "2026-08");
+  assert.equal(cnsAugust.areas.length, 3, "cns August: GZ6 and UE9 fold into one row");
+  assert.equal(
+    cnsAugust.areas.find((a) => a.areaCode === "GZ6")?.areaName,
+    "Fayoum - Beni Suef",
+    "cns August: the surviving row carries the combined name",
+  );
+  assert.equal(
+    cnsAugust.cells.find((c) => c.areaCode === "GZ6" && c.productCode === "AF001")?.salesValue,
+    24_000,
+    "cns August: the folded row carries both areas' sales, 15,000 + 9,000",
+  );
+  assert.ok(
+    !cnsAugust.areas.some((a) => a.areaCode === "UE9"),
+    "cns August: Beni Suef no longer stands as its own row",
+  );
+
+  // A MALFORMED period must not merge a dated rule: failing to merge shows two rows that were always
+  // real, while merging early rewrites a month somebody has been sent.
+  for (const bad of ["2026", "not-a-period", "2026-13-01"]) {
+    assert.equal(
+      applyClosingAreaMerges("cns", AREAS, CELLS, [], bad).areas.length,
+      4,
+      `cns: an unreadable period (${bad}) must fall back to two separate rows`,
+    );
+  }
+
+  // An ABSENT period is a different thing entirely, and the distinction is load-bearing. A picker,
+  // an organogram or the pre-month closing skeleton is not "as of" anything — it shows the state
+  // NOW — so null means today, and today is past the August start. Reading null as "unknown" would
+  // leave every one of those surfaces showing CNS as two areas forever.
+  for (const now of [null, ""]) {
+    assert.equal(
+      applyClosingAreaMerges("cns", AREAS, CELLS, [], now).areas.length,
+      3,
+      `cns: no period means now, and now merges (${JSON.stringify(now)})`,
+    );
+  }
+
+  // Pedia carries no start date, so it merges in every period — including the ones before CNS did.
+  assert.equal(
+    applyClosingAreaMerges("pedia", AREAS, CELLS, [], "2026-05").areas.length,
+    3,
+    "pedia has always merged, and the CNS start date must not have dated Pedia by accident",
+  );
+
+  const cnsUnmerged = cnsJuly;
   assert.ok(
     cnsUnmerged.areas.some((a) => a.areaCode === "UE9" && a.areaName === "Beni Suef"),
     "cns: Beni Suef keeps its own name and its own row",

@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
+import type { SplitRegions } from "@/lib/sales/store-sales-city-split";
 import type {
   MonthlyClosingAggregateCell,
   MonthlyClosingDirectCell,
@@ -687,4 +688,107 @@ export async function loadRegionBySubmitter(lineCode: string | null | undefined)
   } catch {
     return resolved;
   }
+}
+
+/**
+ * The organogram region code that means "Others" — the manager territory a line parks an area in
+ * when it has no district of its own on that line.
+ *
+ * 🔴 IT IS NOT A GEOGRAPHY. Down town (CA5) sits in Cairo on the map and in OT on the Pedia
+ * organogram; Kafr El-Sheikh 2 (D17) is in OT on Pedia AND CNS; Qalubeya (D11) is in OT on Anti
+ * Infective. So "is this area in Others" can only be answered per LINE, from the map below — never
+ * from the area code, and never from the geographic region.
+ */
+export const OTHERS_REGION_CODE = "OT";
+
+/**
+ * Every area this line's organogram parks in Others, upper-cased.
+ *
+ * Pure: it reads a map the caller already loaded, so a caller that has the resolver spends no extra
+ * round trip. Returns an EMPTY set when the map is null — which is the safe direction, because an
+ * empty exclusion list splits exactly as the code did before this existed. A missing org chart must
+ * never silently REMOVE areas from a distribution; that would move money on an outage.
+ */
+export function othersAreasFrom(map: LineOperationalRegionMap | null): ReadonlySet<string> {
+  const others = new Set<string>();
+  if (!map) return others;
+  for (const [areaCode, region] of map.regionByArea) {
+    if (String(region.regionCode ?? "").trim().toUpperCase() === OTHERS_REGION_CODE) {
+      others.add(String(areaCode).trim().toUpperCase());
+    }
+  }
+  return others;
+}
+
+/**
+ * The line code an Others lookup must use, from whatever form the caller holds.
+ *
+ * 🔴 EXTRACTED SO IT CAN BE TESTED WITHOUT A DATABASE, because getting it wrong fails GREEN.
+ * Callers hold DISPLAY NAMES — `ATTRIBUTION_SPLIT_LINES` is `["Pedia", "Anti Infective", "CNS"]`,
+ * and the closing passes `matrix.line` — while `au_v_line_area_map*` is keyed by CODE
+ * (`anti_infective`). Hand the view a name and the `.eq` matches nothing; no rows builds an EMPTY
+ * exclusion set, and an empty set is exactly how the split spells "nothing is in Others". The rule
+ * then silently does not apply: no error, no missing row, every area keeps its share.
+ *
+ * Measured 2026-09-08 — the first deploy of the Others rule was completely inert in production for
+ * this reason, and the only thing that caught it was a backfill dry run still printing "49 areas".
+ *
+ * Falls back to the trimmed input rather than null so a line the alias table has not heard of is
+ * looked up as given: it will find nothing, which is the same safe direction as before.
+ */
+export function othersLookupLineCode(officialLine: string | null | undefined): string {
+  const raw = String(officialLine ?? "").trim();
+  return resolveTargetLineCode(raw) ?? raw;
+}
+
+/** `othersAreasFrom` for a caller holding only a line and a period. One round trip. */
+export async function loadOthersAreas(
+  officialLine: string | null | undefined,
+  period: string | null | undefined,
+): Promise<ReadonlySet<string>> {
+  return othersAreasFrom(await loadLineOperationalRegions(othersLookupLineCode(officialLine), period));
+}
+
+/**
+ * Every area of the line's organogram, grouped by its operational region code, upper-cased.
+ *
+ * Pure, same as `othersAreasFrom`, and an EMPTY map for a null input for the same reason: a missing
+ * org chart must never silently change a distribution. An empty map means no regional block matches,
+ * so every warehouse falls back to its own governorate — where the money already was.
+ */
+export function areasByRegionFrom(
+  map: LineOperationalRegionMap | null,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const byRegion = new Map<string, Set<string>>();
+  if (!map) return byRegion;
+  for (const [areaCode, region] of map.regionByArea) {
+    const code = String(region.regionCode ?? "").trim().toUpperCase();
+    const area = String(areaCode).trim().toUpperCase();
+    if (!code || !area) continue;
+    const bucket = byRegion.get(code) ?? new Set<string>();
+    bucket.add(area);
+    byRegion.set(code, bucket);
+  }
+  return byRegion;
+}
+
+/**
+ * Everything the split needs from one organogram read, in the shape the split takes.
+ *
+ * 🔴 THE POINT IS THAT IT IS ONE CALL. Others and the Upper Egypt block come from the same
+ * rows, and both fail SILENTLY and in the same direction when a lookup misses — an empty set reads
+ * as "the rule does not apply", which is precisely how the Others rule shipped inert in production
+ * on 2026-09-08. Two loaders would let a caller update one and not the other, and nothing would
+ * report it. See `SplitRegions` in store-sales-city-split.ts.
+ */
+export function splitRegionsFrom(map: LineOperationalRegionMap | null): SplitRegions {
+  return { areasByRegion: areasByRegionFrom(map), others: othersAreasFrom(map) };
+}
+
+/** `splitRegionsFrom` for a caller holding only a line and a period. One round trip. */
+export async function loadSplitRegions(
+  officialLine: string | null | undefined,
+  period: string | null | undefined,
+): Promise<SplitRegions> {
+  return splitRegionsFrom(await loadLineOperationalRegions(othersLookupLineCode(officialLine), period));
 }

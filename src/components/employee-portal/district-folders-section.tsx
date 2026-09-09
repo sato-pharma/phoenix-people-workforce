@@ -5,6 +5,8 @@ import { useState } from "react";
 import { CandidateReadCard } from "@/components/employee-portal/candidate-read-card";
 import { CandidateReturnControl } from "@/components/employee-portal/candidate-return-control";
 import { Card } from "@/components/ui/card";
+import type { CandidateCallClaims } from "@/lib/recruitment/candidate-call-claims";
+import type { OutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock";
 import type { DistrictManagerBoard } from "@/lib/recruitment/district-manager-folders";
 import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
 
@@ -34,24 +36,41 @@ import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
  */
 export function DistrictFoldersSection({
   boards,
+  callClaims,
   files,
+  onFeedbackGiven,
+  outstandingFeedback = null,
   heading = "Your areas",
   subheading = "Every area you hold in the organogram, and the CVs of applicants who asked to work in it or whose CV places them there. Open a folder to read them.",
   viewerHrId,
   ownFolders = false,
 }: {
   boards: DistrictManagerBoard<Candidate>[];
+  /**
+   * Who has said "I will call" each CV, keyed by candidate id.
+   *
+   * THE FOLDERS ARE WHERE THIS MATTERS MOST. They are derived from the area an applicant asked for,
+   * so one Nasr City CV sits in three managers' folders at once and nothing else on the screen tells
+   * any of them that. An absent key means nobody has taken that CV.
+   */
+  callClaims: CandidateCallClaims;
   files: Record<string, TeamCandidateFile[]>;
+  /** The CV this reader owes feedback on, which blocks him opening any other. */
+  outstandingFeedback?: OutstandingFeedback | null;
+  /** He writes it, and the block lifts in place. */
+  onFeedbackGiven?: (candidateId: string) => void;
   heading?: string;
   subheading?: string;
   viewerHrId: string | null;
   /**
    * TRUE only when the viewer is looking at HIS OWN folders — the self-view on the recruitment
    * portal. It turns on the two things a manager may do to his own folder and nobody else's: the
-   * screening banner that explains why these CVs are here, and the per-CV "Return to administrator"
-   * control. A National Sales Manager reading a district manager's folders leaves it false, so he
-   * reads the same CVs with neither the banner addressed to someone else nor a return button that
-   * would be his to press. The API enforces the same boundary; this only keeps the screen honest.
+   * screening banner that explains why these CVs are here, the per-CV "Return to administrator"
+   * control, and — since 2026-09-09 — the owner's two buttons, "I will call" and "Skip". A National
+   * Sales Manager reading a district manager's folders leaves it false, so he reads the same CVs
+   * with none of those: no banner addressed to someone else, no return that is not his to press, and
+   * no taking a call that belongs to the manager below him. He still SEES who has reserved each CV,
+   * which is the thing he needs. The API enforces the same boundary; this keeps the screen honest.
    */
   ownFolders?: boolean;
 }) {
@@ -60,6 +79,8 @@ export function DistrictFoldersSection({
   // he presses Return — the folders are derived server-side and only refresh on reload, so without
   // this the returned CV would sit there looking un-returned until the next navigation.
   const [returnedIds, setReturnedIds] = useState<Set<string>>(() => new Set());
+  /** The same, for the CVs he has skipped. See handleSkipped for why they are two sets. */
+  const [skippedIds, setSkippedIds] = useState<Set<string>>(() => new Set());
 
   // Renders NOTHING for anybody who holds no district seat, which is most people who reach this
   // page. An empty heading over an empty list would read as a fault in the screen.
@@ -73,6 +94,18 @@ export function DistrictFoldersSection({
 
   const handleReturned = (candidateId: string) => {
     setReturnedIds((current) => {
+      const next = new Set(current);
+      next.add(candidateId);
+      return next;
+    });
+  };
+
+  // The same in-session collapse as a return, and for the same reason: the folders are derived on
+  // the server and only refresh on reload, so without this a skipped CV would sit there looking
+  // un-skipped until the manager navigates away. A separate set from the returns because the two say
+  // different things — a return went to the administrator, a skip went nowhere.
+  const handleSkipped = (candidateId: string) => {
+    setSkippedIds((current) => {
       const next = new Set(current);
       next.add(candidateId);
       return next;
@@ -204,12 +237,19 @@ export function DistrictFoldersSection({
                   </Card>
                 ) : (
                   openFolder.candidates.map((candidate) =>
-                    returnedIds.has(candidate.id) ? (
+                    skippedIds.has(candidate.id) ? (
+                      <SkippedStrip key={candidate.id} name={candidate.fullName} />
+                    ) : returnedIds.has(candidate.id) ? (
                       <ReturnedStrip key={candidate.id} name={candidate.fullName} />
                     ) : (
                       <CandidateReadCard
+                        canCall={ownFolders}
                         candidate={candidate}
+                        claim={callClaims[candidate.id] ?? null}
                         files={files[candidate.id] ?? []}
+                        onFeedbackGiven={onFeedbackGiven}
+                        onSkipped={handleSkipped}
+                        outstandingFeedback={outstandingFeedback}
                         footer={
                           ownFolders ? (
                             <CandidateReturnControl
@@ -293,6 +333,28 @@ function ReturnedStrip({ name }: { name: string | null }) {
         {name?.trim() ? name : "This CV"}
       </span>
       <span className="text-phx-xs font-medium text-emerald-700">returned to the administrator.</span>
+    </Card>
+  );
+}
+
+/**
+ * The same collapse for a Skip, in its own words and its own colour.
+ *
+ * NOT the returned strip with a different verb, because they are not the same event and a manager
+ * must be able to tell them apart at a glance the next time he opens the folder. A return went to
+ * the administrator and somebody will look at it. A skip went nowhere: the CV is still live, still in
+ * every other manager's folder, and still there for the recruitment team — it has simply left HIS
+ * list. Saying so is the difference between "I passed" and "I reported it".
+ */
+function SkippedStrip({ name }: { name: string | null }) {
+  return (
+    <Card className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
+      <span className="text-sm font-semibold text-slate-800" dir="auto">
+        {name?.trim() ? name : "This CV"}
+      </span>
+      <span className="text-phx-xs font-medium text-slate-600">
+        skipped — it stays with the recruitment team and with every other manager who can see it.
+      </span>
     </Card>
   );
 }

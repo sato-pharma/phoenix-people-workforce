@@ -294,17 +294,19 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
     });
   }
 
-  // Negative value NOT explained by a negative qty (a return). For recompute this means discount > 1.
+  // Negative value NOT explained by a negative qty (a return). On a recompute sheet the value is
+  // qty x factory price, so since 2026-09-07 a discount above 100% can no longer produce one — the
+  // remaining causes are a negative master price or, on a sheet-value distributor, a bad value cell.
   const negativeValue = coded.filter((r) => r.value < 0 && r.qty >= 0);
   if (negativeValue.length > 0) {
     add({
       code: "negative_value",
       severity: "warning",
       title: "Negative value on a non-return line",
-      detail: `${negativeValue.length.toLocaleString()} row(s) have a negative value while quantity is not negative — usually a discount above 100% (recompute) or a bad sheet value.`,
+      detail: `${negativeValue.length.toLocaleString()} row(s) have a negative value while quantity is not negative — usually a negative factory price (recompute) or a bad sheet value.`,
       count: negativeValue.length,
       sampleRows: sampleRows(negativeValue),
-      fixHint: "Fix the discount or value cell. A genuine credit should normally carry a negative quantity too.",
+      fixHint: "Check the product's factory price and the sheet's value cell. A genuine credit should normally carry a negative quantity too.",
     });
   }
 
@@ -314,12 +316,12 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
       code: "zero_value_with_qty",
       severity: "warning",
       title: "Sold units with zero value",
-      detail: `${zeroValueWithQty.length.toLocaleString()} row(s) have a positive quantity but a value of zero — usually a missing factory price or a 100% discount.`,
+      detail: `${zeroValueWithQty.length.toLocaleString()} row(s) have a positive quantity but a value of zero — on a recompute sheet that means the product has no factory price.`,
       count: zeroValueWithQty.length,
       sampleRows: sampleRows(zeroValueWithQty),
       fixHint: ctx.valueSource === "sheet"
         ? "Check the value column in the source sheet for these rows."
-        : "Add the product's factory price in Master Data & Profiles, and check the discount column.",
+        : "Add the product's factory price in Master Data & Profiles — the discount column no longer affects the value.",
     });
   }
 
@@ -366,14 +368,14 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
   if (ctx.valueSource === "sheet" && ctx.priceByProductCode && ctx.priceByProductCode.size > 0) {
     const extreme = coded.filter((r) => {
       if (r.qty <= 0 || r.value <= 0) return false;
-      // A 100%+ discount makes the net divisor ~0 (a known degenerate handled by zero_value/discount
-      // checks) — skip it here so the clamp below never manufactures a fake "extreme" unit price.
-      if (r.discount >= 1) return false;
       const price = ctx.priceByProductCode?.get(r.productCode);
       if (!price || price <= 0) return false;
-      // Clamp the discount to [0, 0.999] purely to avoid divide-by-zero; rows at/above 100% are
-      // already excluded above, and negative discounts are handled by discount_out_of_range.
-      const unit = r.value / (r.qty * (1 - Math.min(Math.max(r.discount, 0), 0.999)));
+      // Implied unit price = value / qty. This divided by `qty x (1 - discount)` until 2026-09-07,
+      // when the owner struck the discount factor out of the whole system — so the divisor here is
+      // the plain quantity like everywhere else, and the clamp that existed only to stop a 100%
+      // discount dividing by zero went with it. The discount column is still parsed, stored and
+      // range-checked (discount_out_of_range above); it simply no longer divides or multiplies.
+      const unit = r.value / r.qty;
       return unit > price * UNIT_PRICE_HIGH_FACTOR || unit < price * UNIT_PRICE_LOW_FACTOR;
     });
     if (extreme.length > 0) {

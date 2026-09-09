@@ -65,6 +65,8 @@ type WeeklyPostInput = {
   periodDate?: string;
   /** week-of-month 1–4 (the confirmed label); omitted lets the server fall back to the date suggestion */
   weekNumber?: number | null;
+  /** false suppresses the per-line "weekly sales uploaded" email; the server defaults to sending. */
+  notify?: boolean;
   file?: File | null;
   salesFile?: File | null;
   stockFile?: File | null;
@@ -74,7 +76,7 @@ type WeeklyPostInput = {
 // (both PS files together count toward the cap, so if either pushes the combined body over the limit
 // both are streamed) and the endpoint is called by JSON reference.
 async function postWeekly(endpoint: string, input: WeeklyPostInput): Promise<Response> {
-  const { distributorCode, isPS, periodDate, weekNumber, file, salesFile, stockFile } = input;
+  const { distributorCode, isPS, periodDate, weekNumber, notify, file, salesFile, stockFile } = input;
   const combinedSize = isPS
     ? (salesFile?.size ?? 0) + (stockFile?.size ?? 0)
     : file?.size ?? 0;
@@ -84,6 +86,8 @@ async function postWeekly(endpoint: string, input: WeeklyPostInput): Promise<Res
     form.set("distributorCode", distributorCode);
     if (periodDate) form.set("periodDate", periodDate);
     if (weekNumber) form.set("weekNumber", String(weekNumber));
+    // Only ever sent to turn the email OFF — an absent field means notify, on both transports.
+    if (notify === false) form.set("notify", "false");
     if (isPS) {
       form.set("salesFile", salesFile as File);
       form.set("stockFile", stockFile as File);
@@ -96,6 +100,7 @@ async function postWeekly(endpoint: string, input: WeeklyPostInput): Promise<Res
   const body: Record<string, string> = { distributorCode };
   if (periodDate) body.periodDate = periodDate;
   if (weekNumber) body.weekNumber = String(weekNumber);
+  if (notify === false) body.notify = "false";
   if (isPS) {
     const [salesStoragePath, stockStoragePath] = await Promise.all([
       uploadWeeklyFileToStorage(salesFile as File),
@@ -149,6 +154,9 @@ export function WeeklyUploadWorkspace({
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadDone, setUploadDone] = useState(false);
+  // Email the line managers about this upload. On by default (the owner's asked-for behaviour); the
+  // operator turns it off for a correction or a re-upload nobody needs to hear about.
+  const [notifyLines, setNotifyLines] = useState(true);
 
   // Global load error passed from the server
   const [pageError] = useState<string | null>(initialError);
@@ -340,7 +348,7 @@ export function WeeklyUploadWorkspace({
     setUploadBusy(true);
     setUploadError(null);
     try {
-      const response = await postWeekly("/api/sales/weekly/upload", { distributorCode, file, isPS, periodDate, weekNumber, salesFile, stockFile });
+      const response = await postWeekly("/api/sales/weekly/upload", { distributorCode, file, isPS, notify: notifyLines, periodDate, weekNumber, salesFile, stockFile });
       const payload = (await response.json()) as { success?: boolean; data?: WeeklySalesValidationResult; error?: string };
       if (payload?.success) {
         setUploadDone(true);
@@ -623,6 +631,8 @@ export function WeeklyUploadWorkspace({
           uploadDone={uploadDone}
           uploadError={uploadError}
           onUpload={handleUpload}
+          notifyLines={notifyLines}
+          onToggleNotifyLines={setNotifyLines}
         />
       )}
 
@@ -1289,6 +1299,62 @@ function FileSelfCheckPanel({ fileTotals }: { fileTotals: WeeklyFileTotalsReport
   );
 }
 
+/** "CNS" · "CNS and Pedia" · "Anti Infective, CNS and Pedia" — a readable list at every length. */
+function joinLineNames(lines: string[]): string {
+  if (lines.length <= 1) return lines[0] ?? "";
+  return `${lines.slice(0, -1).join(", ")} and ${lines[lines.length - 1]}`;
+}
+
+/**
+ * Names the audience BEFORE the upload is confirmed, and lets the operator mute it.
+ *
+ * Confirming an upload emails every District Manager and the National Sales Manager of each line
+ * whose products the sheet carries. The mute exists for the correction case: deleting a batch and
+ * re-uploading it is the documented fix for a wrong week, and without this it would re-mail the
+ * whole field force every time a file is corrected.
+ *
+ * `lines` is the server's own answer (result.notifiableLines), not a guess made here — the
+ * tracked-line rule is not reachable from the client.
+ */
+function NotifyLinesChoice({
+  disabled,
+  lines,
+  onChange,
+  value,
+}: {
+  disabled: boolean;
+  lines: string[];
+  onChange: (next: boolean) => void;
+  value: boolean;
+}) {
+  if (lines.length === 0) {
+    return (
+      <p className="w-full text-xs font-semibold text-phx-ink-soft">
+        No tracked line in this sheet — no manager email will be sent.
+      </p>
+    );
+  }
+  return (
+    <label className="flex w-full cursor-pointer flex-wrap items-start gap-2 border border-phx-line bg-phx-surface-soft px-3 py-2">
+      <input
+        checked={value}
+        className="mt-0.5 h-4 w-4 shrink-0 accent-phx-accent"
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        type="checkbox"
+      />
+      <span className="text-xs font-semibold text-phx-ink">
+        Email the line managers about this upload
+        <span className="block font-medium text-phx-ink-soft">
+          {value
+            ? `District Managers and the National Sales Manager of ${joinLineNames(lines)} will be told which of their products this sheet carries. No figures are included.`
+            : `Nobody will be emailed about this upload. Leave it ticked to tell ${joinLineNames(lines)}.`}
+        </span>
+      </span>
+    </label>
+  );
+}
+
 function ValidationResultPanel({
   result,
   selectedWeek,
@@ -1297,6 +1363,8 @@ function ValidationResultPanel({
   uploadBusy,
   uploadError,
   uploadDone,
+  notifyLines,
+  onToggleNotifyLines,
 }: {
   result: WeeklySalesValidationResult;
   selectedWeek: number | null;
@@ -1305,6 +1373,8 @@ function ValidationResultPanel({
   uploadBusy: boolean;
   uploadError: string | null;
   uploadDone: boolean;
+  notifyLines: boolean;
+  onToggleNotifyLines: (next: boolean) => void;
 }) {
   const validated = result.status === "validated";
   const isPS = result.distributor.code === "PS";
@@ -1492,6 +1562,12 @@ function ValidationResultPanel({
           </div>
         ) : validated ? (
           <div className="flex flex-wrap items-center gap-3">
+            <NotifyLinesChoice
+              disabled={uploadBusy}
+              lines={result.notifiableLines ?? []}
+              onChange={onToggleNotifyLines}
+              value={notifyLines}
+            />
             {uploadError && (
               <div className="w-full flex items-start gap-2 rounded-[6px] border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />

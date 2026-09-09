@@ -167,6 +167,9 @@ function packFixture(
     profile,
     offboarding,
     exit: null,
+    // Null: no device chosen. A custody receipt printed without one carries ruled blanks
+    // through its technical block, which is what these fixtures are about.
+    custodyDevice: null,
     renewal: overrides.renewal ?? null,
     company: COMPANY_DETAILS_DEFAULT,
     suggestedJobTitleAr: null,
@@ -640,9 +643,12 @@ function testBothPapersRenderCompletely(): void {
     assert.ok(html.includes("نور عادل"), `${name}: the Arabic name governs, as it does on the contract`);
     assert.ok(!html.includes("Nour Adel"), `${name}: the Latin name must not appear as the party`);
     // THE BRAND RULE — the one element the house identity puts on every document without exception.
+    // It was 0.7 mm of filled Brand Blue until 2026-09-09, when the owner replaced it with the
+    // engine-turned band on every Sato template. Matched on the band's shape rather than on an exact
+    // URI, so a later change to the curve or the ink does not false-fail this.
     assert.ok(
-      html.includes("border-bottom: 0.7mm solid #0A6BA6"),
-      `${name}: the 0.7 mm Brand Blue rule is what makes a house document recognisable at arm's length`,
+      /url\(data:image\/svg\+xml,[^)]*Q[^)]*\)/.test(html),
+      `${name}: the engine-turned band is what makes a house document recognisable at arm's length`,
     );
     assert.ok(
       html.includes("/brand/sato-pharma-logo-on-light.svg"),

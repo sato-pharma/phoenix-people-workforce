@@ -3,6 +3,7 @@
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
+import { openAndAnnounceCrmAccountSetup } from "@/lib/crm/account-setup-notify";
 import { invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
 import { loadEmployeeImportExistingState } from "@/lib/imports/employee-import-existing-state";
 import { createEmployeeImportPlan } from "@/lib/imports/employee-import-plan";
@@ -1249,6 +1250,21 @@ export async function POST(request: Request) {
     });
 
     invalidateEmployeeDirectoryCache();
+
+    // Every employee the sheet CREATED needs an iReports360 (CRM) account before their field work
+    // can be matched to them — owner instruction 2026-09-07. `rowsToInsert` is the same list access
+    // provisioning uses above, so the two can never disagree about who is new. Rows the import only
+    // UPDATED are deliberately excluded: those people already existed and were never announced.
+    //
+    // The cache is cleared first, on purpose: the notice reads each new hire's line, area, region
+    // and manager back out of the directory, and a stale read would send a notice full of blanks.
+    if (dryRunResult.rowsToInsert.length > 0) {
+      await openAndAnnounceCrmAccountSetup({
+        actorId: access.loginId ?? access.hrId ?? access.role,
+        hrIds: dryRunResult.rowsToInsert.map((record) => record.hrId),
+        source: "employee_import",
+      });
+    }
 
     return NextResponse.json(response);
   } catch (error) {

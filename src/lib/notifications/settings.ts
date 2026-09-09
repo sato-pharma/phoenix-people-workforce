@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { buildTelegramDeepLinkFromToken, hashTelegramToken, resolveTelegramBotUsername } from "@/lib/notifications/telegram";
+import { TELEGRAM_CONNECT_TOKEN_TTL_MINUTES, buildTelegramDeepLinkFromToken, hashTelegramToken, resolveTelegramBotUsername } from "@/lib/notifications/telegram";
 import { withPushOptInNudgeDismissed } from "@/lib/notifications/push-opt-in-nudge-rules";
 // Re-exported for existing callers/tests — the rules themselves live in push-opt-in-nudge-rules.ts
 // (no server-only imports) so the "use client" nudge card can depend on the RULE without pulling
@@ -271,7 +271,7 @@ export async function createTelegramConnectionToken(access: Pick<AccessContext, 
   }
 
   const now = new Date();
-  const expires = new Date(now.getTime() + 15 * 60 * 1000);
+  const expires = new Date(now.getTime() + TELEGRAM_CONNECT_TOKEN_TTL_MINUTES * 60 * 1000);
   const supabase = getSupabaseAdmin();
   const existing = await supabase
     .from("telegram_connections")

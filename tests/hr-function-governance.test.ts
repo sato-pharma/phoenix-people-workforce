@@ -109,6 +109,34 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "app/(admin)/admin/recruitment-hiring/page.tsx",
   "app/(admin)/attendance/page.tsx",
   "app/employee-portals/account-activation/page.tsx",
+  // Names "HR Advisory" and "HR Business Partner" in a COMMENT only, and grants nothing.
+  //
+  // Reviewed verdict: it hands the seat NOTHING. The page's gate is `canSendWhatsAppTemplate`,
+  // which is where the reach is decided; the string here explains why the JOB TITLE needs no entry
+  // of its own — "HR Business Partner" is the title shown for the "HR Advisory" key
+  // (HR_SEAT_JOB_TITLES), not a PhoenixRole — so that the next reader does not "fix" it by adding
+  // a role string that matches nothing. She already held this page before the comment existed,
+  // through `recruitmentManageRoles`.
+  //
+  // Listed rather than reworded around, because the file genuinely does discuss the seat and this
+  // set is the register of exactly that.
+  "app/(admin)/recruitment/whatsapp-templates/page.tsx",
+  // Names HR Advisory in TERRITORY_COMPANY_WIDE_NON_SALES_ROLES, added 2026-09-07 with the owner's
+  // instruction to put Territory Management on her sidebar. Reviewed verdict: it GRANTS reach, and
+  // it is listed for exactly that reason - it is the string that decides she sees the WHOLE brick
+  // map rather than an empty one.
+  //
+  // It is not a permission. `territory:read` is what admits her, composed onto workforce_insight and
+  // asserted by the page and all four read routes; this set only answers "which areas", after the
+  // gate. It exists because every other reader of that function is on the sales ladder, so the scope
+  // resolver asks resolveSalesAccessScope - which answers NONE for her, and NONE means EMPTY sets,
+  // not "everything". Without this she would pass the gate and read a blank map.
+  //
+  // Company-wide is the right bound and withholds nothing the job description reserves: the map
+  // carries bricks, areas, coordinates, coverage counts and a rep-residence recommendation, and no
+  // money at all. The two privileged acts on the module stay shut - pinning is sales:import,
+  // publishing a public preview link is sales:export, and she holds neither.
+  "src/lib/territory-management/service.ts",
   "src/components/admin/access-control-manager.tsx",
   "src/components/admin/workflow-registry-manager.tsx",
   // Names both seats in the Retention Register's confidentiality notice, added 2026-09-01.
@@ -180,6 +208,25 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/deductions/permissions.ts",
   "src/lib/employee-360/access.ts",
   "src/lib/employees/access-provisioning.ts",
+  // Names both seats in `employeeCvReaderRoles`, added 2026-09-09 with the owner's instruction to
+  // let a new hire's CV be attached to the master record and downloaded from the notice. Reviewed
+  // verdict: it GRANTS reach, and it is listed for exactly that reason — it is the string that
+  // decides HR Advisory and HR Operations may open an employee's CV.
+  //
+  // It withholds nothing and takes nothing away. Both seats already hold `employees:read` —
+  // workforce_insight for HR Advisory, people_records for HR Operations — so reading one document
+  // filed on the employee master is inside both job descriptions rather than beside them. The
+  // owner named all four seats himself when asked who should be able to open the link.
+  //
+  // WRITING IS NOT IN THIS SET AND MUST NOT JOIN IT. Attaching, replacing and removing a CV rides
+  // `employees:update`, which people_records holds and workforce_insight deliberately does not
+  // (her boundary is "may not terminate or destroy a record"). So HR Advisory can read this
+  // document and cannot change it, and that split is the composed matrix's, not this file's.
+  //
+  // A named set rather than a permission resource, on the same reasoning as
+  // companyVacationReportReaderRoles: the SFE Manager holds no `employees` grant at all, and a
+  // permission-shaped gate would refuse the one person the notice is addressed to.
+  "src/lib/employees/employee-cv.ts",
   "src/lib/excuses/service.ts",
   "src/lib/hiring-documents/service.ts",
   // Names HR Advisory in resolvePayslipCenterAudience, added 2026-09-01. Reviewed verdict: it

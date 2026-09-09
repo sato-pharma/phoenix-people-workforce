@@ -37,6 +37,16 @@ export type PhoenixEmailHeroStat = {
 
 export type PhoenixEmailLayoutProps = {
   action?: PhoenixEmailAction;
+  /**
+   * A SECOND button under the first, for the case where the email asks for one thing and offers
+   * another alongside it. Added 2026-09-09 for the new-hire notice, which asks the SFE Manager to
+   * record a CRM account (the primary) and hands him the person's CV to download (this one).
+   *
+   * Optional and rendered only when set, so every existing email is byte-identical. It is
+   * deliberately not a list of actions: two buttons is already the most an email can ask for
+   * without the primary stopping being primary.
+   */
+  secondaryAction?: PhoenixEmailAction;
   bodyHtml: string;
   closingText?: string;
   greeting?: string;
@@ -208,7 +218,12 @@ function renderPhoenixHeroStatText(stat: PhoenixEmailHeroStat | undefined) {
   return `${stat.label}: ${stat.value}${badge ? ` (${badge})` : ""}`;
 }
 
-function renderPhoenixAction(action: PhoenixEmailAction | undefined) {
+/**
+ * One button. `spaced` puts a gap to its left so a second button sits BESIDE the first rather than
+ * touching it — margin-left rather than a flex gap, because email clients do not do flex and a
+ * table cell per button would wrap onto two lines on a phone.
+ */
+function renderPhoenixAction(action: PhoenixEmailAction | undefined, options?: { spaced?: boolean }) {
   if (!action) return "";
 
   const toneClass = action.tone === "danger" ? "danger" : action.tone === "secondary" ? "secondary" : "primary";
@@ -219,7 +234,7 @@ function renderPhoenixAction(action: PhoenixEmailAction | undefined) {
         ? "border-color:#cbd5e1;background:#f8fafc;color:#0f172a;-webkit-text-fill-color:#0f172a"
         : "border-color:#fed7aa;background:#fff7ed;color:#ea580c;-webkit-text-fill-color:#ea580c";
 
-  return `<a class="phoenix-action phoenix-action-${toneClass}" href="${escapeEmailHtml(action.href)}" style="display:inline-block;margin-top:22px;border:1px solid;${toneStyle};border-radius:10px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:900;line-height:1.2;text-decoration:none;padding:12px 18px">${escapeEmailHtml(action.label)}</a>`;
+  return `<a class="phoenix-action phoenix-action-${toneClass}" href="${escapeEmailHtml(action.href)}" style="display:inline-block;margin-top:22px;${options?.spaced ? "margin-left:10px;" : ""}border:1px solid;${toneStyle};border-radius:10px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:900;line-height:1.2;text-decoration:none;padding:12px 18px">${escapeEmailHtml(action.label)}</a>`;
 }
 
 export function renderPhoenixEmailHtml(input: PhoenixEmailLayoutProps) {
@@ -373,6 +388,7 @@ export function renderPhoenixEmailHtml(input: PhoenixEmailLayoutProps) {
                       ${renderPhoenixMetadataSections(input.metadataSections)}
                       ${renderPhoenixMetadataTable(input.metadataRows)}
                       ${renderPhoenixAction(input.action)}
+                      ${renderPhoenixAction(input.secondaryAction, { spaced: Boolean(input.action) })}
                       ${
                         input.closingText
                           ? `<p class="phoenix-text" style="margin:16px 0 0;${bodyTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:400;line-height:1.75">${escapeAndIsolate(input.closingText)}</p>`
@@ -428,6 +444,7 @@ export function renderPhoenixEmailHtml(input: PhoenixEmailLayoutProps) {
 
 export function renderPhoenixEmailText(input: {
   action?: PhoenixEmailAction;
+  secondaryAction?: PhoenixEmailAction;
   bodyText: string;
   closingText?: string;
   greeting?: string;
@@ -453,6 +470,7 @@ export function renderPhoenixEmailText(input: {
     ...(sectionsText ? sectionsText.split("\n") : (input.metadataRows ?? []).map((row) => `${row.label}: ${row.value ?? ""}`)),
     input.action ? "" : "",
     input.action ? `${input.action.label}: ${input.action.href}` : "",
+    input.secondaryAction ? `${input.secondaryAction.label}: ${input.secondaryAction.href}` : "",
     input.closingText ? "" : "",
     input.closingText ?? "",
     "",

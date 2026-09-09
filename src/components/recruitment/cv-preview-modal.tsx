@@ -7,9 +7,44 @@ import { Minus, Plus, X } from "lucide-react";
 
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
+import { hasPhoneLike, maskPhoneLike } from "@/lib/recruitment/cv-phone-redaction";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
-type CvDocumentProps = {
+/**
+ * May the reader take a COPY of this document away?
+ *
+ * TRUE everywhere it has always been true — the recruitment workspace, screening, the CV database —
+ * and FALSE on the manager's portal only, where the owner blocked it on 2026-09-09: *"the download
+ * to be blocked of the cv"*. A manager reads the CV on the screen and answers on the screen; he does
+ * not keep the document.
+ *
+ * IT IS NOT WHAT ENFORCES THE BLOCK, and must never be mistaken for it. Hiding a link is UX. The
+ * file route itself refuses to hand a manager anything but the in-page base64 render — see
+ * app/api/recruitment/hiring-manager/candidates/[candidateId]/files/[fileId]/route.ts. This flag
+ * exists so the screen does not offer a control that the server would then refuse, which reads as a
+ * broken button rather than as a decision.
+ */
+type CvDownloadAllowance = {
+  allowDownload?: boolean;
+  /**
+   * Paint out every phone number PRINTED ON THE DOCUMENT.
+   *
+   * TRUE on a manager's portal for any CV he has not reserved, FALSE everywhere else. Hiding the
+   * database field was never the whole job: a CV prints its own contact details, usually beside a
+   * telephone icon in 14pt, so the number the screen had just taken away was back the instant he
+   * pressed View CV. The owner, 2026-09-09, on seeing exactly that: *"when I press on view the CV
+   * the number is clearly showing"*.
+   *
+   * It covers what CAN be covered. A PDF and a Word file carry their text as text, so the runs are
+   * found and painted over. A PHOTOGRAPHED CV is pixels, with nothing to find without optical
+   * character recognition, so it is not shown at all until he takes the call — 41 of the 1,188 CVs
+   * on record, measured 2026-09-09. Showing those anyway would make every other redaction on this
+   * screen decorative, since a manager who wants a number would simply learn to look there.
+   */
+  redactPhones?: boolean;
+};
+
+type CvDocumentProps = CvDownloadAllowance & {
   fileName: string;
   mimeType: string | null;
   downloadUrl: string;
@@ -34,7 +69,7 @@ type CvDocumentProps = {
   fitToWidth?: boolean;
 };
 
-type Props = {
+type Props = CvDownloadAllowance & {
   fileName: string;
   mimeType: string | null;
   downloadUrl: string;
@@ -93,7 +128,15 @@ function clampZoom(value: number): number {
  * quirk documented below was learned the hard way and none of it is duplicated: the modal now
  * renders this component too, so both paths cannot drift.
  */
-export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fitToWidth = true }: CvDocumentProps) {
+export function CvDocumentView({
+  allowDownload = true,
+  className,
+  downloadUrl,
+  fileName,
+  mimeType,
+  redactPhones = false,
+  fitToWidth = true,
+}: CvDocumentProps) {
   const kind = detectCvFileKind(mimeType ?? "", fileName);
   const separator = downloadUrl.includes("?") ? "&" : "?";
   // The Download link needs "attachment" (a real save-file prompt); "inline" is for the
@@ -182,6 +225,15 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
         const bytes = base64ToBytes(await res.text());
 
         if (kind === "image") {
+          // A PHOTOGRAPHED CV CANNOT BE REDACTED, so where redaction is required it is not shown.
+          // There is no text to find in a photograph, and every other number on this screen is
+          // hidden — leaving this one window open would just teach a manager where to look.
+          if (redactPhones) {
+            throw new Error(
+              "This CV is a photograph, so the phone number printed on it cannot be covered. "
+                + "Press \"I will call\" to take this candidate, and it opens.",
+            );
+          }
           // Same reasoning as the PDF path below: the bytes are already in hand, so the <img>
           // never issues a second request that a download-manager extension could intercept.
           // Photographed CVs arrive this way over WhatsApp, so this is a real intake path.
@@ -236,6 +288,47 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
             canvas.className = "mx-auto mb-3 block bg-white shadow-sm";
             await page.render({ canvas, viewport }).promise;
             if (!active) return;
+
+            // ── PAINT OUT THE PHONE NUMBERS PRINTED ON THE PAGE ──────────────────────────────
+            //
+            // AFTER the render, onto the same canvas, so what the reader sees and what any copy of
+            // it would contain are the one image. There is no text layer over this canvas and no
+            // second copy of the page anywhere: pdf.js draws pixels, and the covered pixels are
+            // simply never drawn back.
+            //
+            // The whole TEXT ITEM is covered rather than the matching characters inside it. An item
+            // is one run in the PDF's own layout, which for a contact line is the number by itself,
+            // and measuring a sub-span means re-deriving glyph advances from a font this code has
+            // not loaded. Covering the run errs towards hiding, which is the safe direction here.
+            if (redactPhones) {
+              const context = canvas.getContext("2d");
+              const content = await page.getTextContent();
+              if (context) {
+                context.fillStyle = "#0f172a";
+                for (const item of content.items) {
+                  const textItem = item as { str?: string; transform?: number[]; width?: number; height?: number };
+                  if (!textItem.str || !hasPhoneLike(textItem.str) || !textItem.transform) continue;
+                  // The item's own matrix through the viewport's gives its box in canvas pixels.
+                  // transform[4]/[5] are the baseline origin, so the box starts one height above it.
+                  const placed = pdfjsLib.Util.transform(viewport.transform, textItem.transform);
+                  const height = (textItem.height ?? 0) * viewport.scale || Math.abs(placed[3]) || 12;
+                  const width = (textItem.width ?? 0) * viewport.scale;
+                  if (width <= 0) continue;
+                  // ROUNDED OUTWARD, then bled. Both halves matter and both were measured.
+                  //
+                  // A text item lands on fractional device pixels, so filling at those coordinates
+                  // anti-aliases the edge and can leave a readable sliver of a digit along it —
+                  // caught on 2026-09-09 by counting light pixels inside the box against a version
+                  // that rounded first, where the same box left none. Flooring the origin and
+                  // ceiling the size guarantees whole pixels; the bleed then covers ink that sits
+                  // outside its own reported box, which is ordinary for a glyph with a descender.
+                  const left = Math.floor(placed[4]) - 3;
+                  const top = Math.floor(placed[5] - height) - 3;
+                  context.fillRect(left, top, Math.ceil(width) + 6, Math.ceil(height) + 6);
+                }
+              }
+            }
+
             container.appendChild(canvas);
           }
           return;
@@ -250,7 +343,11 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
         const sig = bytes.subarray(0, 4);
         const isOoxmlZip = sig[0] === 0x50 && sig[1] === 0x4b && sig[2] === 0x03 && sig[3] === 0x04;
         if (!isOoxmlZip) {
-          throw new Error("This is an older Word (.doc) format that can't be previewed here — use Download to open it.");
+          // What to DO about it is left to the failure notice below, because the answer differs by
+          // caller: a recruiter is told to download it, and a manager — who may not — is told to ask
+          // for a readable copy. Baking one of those two into the thrown message gave the manager an
+          // instruction pointing at a button his screen does not have.
+          throw new Error("This is an older Word (.doc) format that can't be previewed here.");
         }
         // docx-preview relies on browser-only APIs, so it's dynamically imported here rather than
         // at module scope (this component is "use client", but the import still must not run during
@@ -264,9 +361,24 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
           ignoreWidth: false,
           ignoreHeight: false,
         });
+
+        // The Word half of the same rule. docx-preview paints real DOM, so the numbers are text
+        // nodes and are rewritten in place — masked to the SAME LENGTH, so the page keeps the
+        // layout the applicant gave it and the reader can see where something was taken out. Done
+        // after renderAsync rather than on the source, because the source is a zip of XML and the
+        // thing that has to be clean is what ends up on the screen.
+        if (redactPhones) {
+          const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+          const nodes: Text[] = [];
+          for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node as Text);
+          for (const node of nodes) {
+            const masked = maskPhoneLike(node.nodeValue ?? "");
+            if (masked !== node.nodeValue) node.nodeValue = masked;
+          }
+        }
       } catch (caught) {
         if (active) {
-          setError(caught instanceof Error ? caught.message : "This document couldn't be previewed — use Download to open it.");
+          setError(caught instanceof Error ? caught.message : "This document couldn't be previewed.");
         }
       } finally {
         if (active) setLoading(false);
@@ -276,7 +388,10 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [kind, bytesUrl, mimeType]);
+    // redactPhones is a dependency because it changes what gets PAINTED, not just what is read: a
+    // manager who reserves the CV while the preview is open must see the page redrawn with the
+    // number, and one who releases it must see it painted out again, without a reload.
+  }, [kind, bytesUrl, mimeType, redactPhones]);
 
 
   // A failed in-page render must never be a dead end. Whatever went wrong — a document the
@@ -285,18 +400,29 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
   // bare "Failed to fetch" text) — the reader still needs to READ the CV. So the failure notice
   // always carries a direct inline link to the real file, which does not depend on any of the
   // in-page rendering that just failed.
+  //
+  // WHERE DOWNLOADS ARE BLOCKED THERE IS NO ESCAPE HATCH, and there cannot be one: the inline URL IS
+  // the file, so offering it to a manager would hand back in a failure state exactly what the block
+  // takes away in the working one. He is told what to do instead, in words, rather than being left
+  // looking at a red sentence with nothing under it.
   const failureNotice = error ? (
     <div className="p-1 text-sm">
       <p className="text-rose-600">{error}</p>
       <p className="mt-1">
-        <a
-          className="font-semibold text-slate-900 underline underline-offset-2"
-          href={inlineUrl}
-          rel="noreferrer"
-          target="_blank"
-        >
-          Open the CV in a new tab
-        </a>
+        {allowDownload ? (
+          <a
+            className="font-semibold text-slate-900 underline underline-offset-2"
+            href={inlineUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Open the CV in a new tab
+          </a>
+        ) : (
+          <span className="text-slate-500">
+            Ask the recruitment team to send you a readable copy of this CV.
+          </span>
+        )}
       </p>
     </div>
   ) : null;
@@ -329,7 +455,9 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
       </div>
     ) : (
       <p className="p-5 text-sm text-slate-500">
-        Preview isn&apos;t available for this file type — use Download instead.
+        {allowDownload
+          ? "Preview isn't available for this file type — use Download instead."
+          : "Preview isn't available for this file type. Ask the recruitment team to send you a readable copy."}
       </p>
     );
 
@@ -395,12 +523,28 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
   );
 }
 
-export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sidePanel }: Props) {
+export function CvPreviewModal({
+  allowDownload = true,
+  fileName,
+  mimeType,
+  downloadUrl,
+  onClose,
+  redactPhones = false,
+  sidePanel,
+}: Props) {
   const dialogRef = useDialogA11y({ open: true, onClose });
 
   if (typeof document === "undefined") return null;
 
-  const documentBody = <CvDocumentView downloadUrl={downloadUrl} fileName={fileName} mimeType={mimeType} />;
+  const documentBody = (
+    <CvDocumentView
+      allowDownload={allowDownload}
+      downloadUrl={downloadUrl}
+      fileName={fileName}
+      mimeType={mimeType}
+      redactPhones={redactPhones}
+    />
+  );
 
   const modal = (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#020617]/65 p-4 backdrop-blur-sm">
@@ -416,14 +560,16 @@ export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sideP
         <div className="flex items-center justify-between gap-4 border-b border-phx-line px-5 py-3">
           <p className="break-all text-sm font-semibold text-slate-900">{fileName}</p>
           <div className="flex items-center gap-3">
-            <a
-              className="text-xs font-semibold text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"
-              href={downloadUrl}
-              rel="noreferrer"
-              target="_blank"
-            >
-              Download
-            </a>
+            {allowDownload ? (
+              <a
+                className="text-xs font-semibold text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"
+                href={downloadUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Download
+              </a>
+            ) : null}
             <button
               aria-label="Close"
               className="rounded-md p-1 text-phx-ink-soft transition hover:bg-phx-paper-2 hover:text-slate-900"

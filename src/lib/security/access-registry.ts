@@ -174,6 +174,7 @@ export const accessRegistry = [
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/ireports360-visits-reconcile", reason: "Scheduled wide iReports360 reconciliation sync route guarded by cron controls." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/ireports360-visits-live-sync", reason: "Scheduled high-frequency morning iReports360 visits sync route guarded by cron controls." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/background-jobs", reason: "Durable background-job worker drain guarded by CRON_SECRET." }),
+  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/attendance-weekly-digest", reason: "Weekly attendance digest clock — generate a closed week, send drafts, auto-confirm elapsed windows; guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/recruitment-email-intake", reason: "Scheduled IMAP poll for inbound recruitment CV intake, guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/inbound-intake", reason: "Durable inbound-CV intake queue worker drain, guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/recruitment-cv-digest", reason: "6-hourly email digest to each hiring manager who received candidate pushes, with their manager CC chain; guarded by CRON_SECRET." }),
@@ -307,6 +308,13 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/crm/resolve-customer", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/crm/customer-mapping/template", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/crm/customer-mapping/import", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // New Hire CRM Setup: records a newly created employee's CRM username and code, or that they
+  // need no CRM account. Same posture as the CRM resolvers above — the fine gate is
+  // canUseAdminCrmWorkspace (Super Admin + SFE Manager), not the permission matrix, because this
+  // writes two columns on an employee and the SFE Manager deliberately does NOT hold
+  // employees:update. Audited as a mutation: it is a write to the employee master, reached from a
+  // screen whose whole purpose is that somebody acted on a notification.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/crm/account-setup", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/admin/field-workforce-compliance/**", permission: { resource: "hr_calendar", action: "read" } }),
   // Unified Deductions module — the sole deductions pipeline as of the C6 cutover (2026-08-30); the
   // legacy deductions-governance routes it replaced were removed in the same change. Every route
@@ -381,6 +389,21 @@ export const accessRegistry = [
   sessionApi({ methods: ["PATCH", "DELETE"], pattern: "/api/attendance/exceptions/:id", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/attendance/holiday-calendar", permission: { resource: "employees", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: ["POST"], pattern: "/api/attendance/holiday-calendar", permission: { resource: "employees", action: "update" }, guard: "domain-helper", csrfRequired: true }),
+
+  // Weekly attendance digest (rebuilt 2026-09-08). The employee routes carry the
+  // plain `attendance:read` grant because they are self-scoped INSIDE the service —
+  // listMyDigests takes no employee parameter, and confirm/dispute assert the
+  // digest's own owner — so the grant opens a door to your OWN week and nobody
+  // else's. The two dispute routes are guard: "domain-helper" instead: they show
+  // and decide other people's pay disputes, so canReviewDisputes gates them on
+  // Super Admin or the configured reviewer list ON TOP of the matrix grant. A
+  // matrix grant alone is what once let a Regional Manager export 69 employees'
+  // deduction amounts.
+  sessionApi({ methods: readOnly, pattern: "/api/attendance/digests", permission: { resource: "attendance", action: "read" } }),
+  sessionApi({ methods: ["POST"], pattern: "/api/attendance/digests/:id/confirm", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
+  sessionApi({ methods: ["POST"], pattern: "/api/attendance/digests/:id/dispute", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
+  sessionApi({ methods: readOnly, pattern: "/api/attendance/disputes", permission: { resource: "attendance", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ methods: ["POST"], pattern: "/api/attendance/disputes/:lineId/review", permission: { resource: "attendance", action: "read" }, guard: "domain-helper", csrfRequired: true }),
 
   // Business Review workbook export. Gated by a direct allow-list of CEO / SFE Manager /
   // Super Admin rather than the permission matrix — the same direct-role-check pattern as the
@@ -661,6 +684,10 @@ export const accessRegistry = [
   // The approvals queue. Gated on `read`, not `approve`: it is scoped inside the service to the
   // decisions that are actually the caller's, so a reader sees an empty queue rather than a refusal.
   sessionApi({ methods: ["GET"], pattern: "/api/market-awareness/inbox", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
+  // The queue's nav badge. Registered ABOVE the /:activityId entries on purpose — it is a literal
+  // segment, and a pattern list that reached `:activityId` first would gate a count behind the
+  // wrong entry. Same `read` gate as the inbox it counts, and the service narrows it identically.
+  sessionApi({ methods: ["GET"], pattern: "/api/market-awareness/pending-count", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
   // The conversation. Read is gated with the activity itself (getActivity carries the per-row
   // narrowing), and posting is `read` too: commenting is not a decision, and the people who must be
   // able to answer a returned activity are exactly the people who can see it.
@@ -671,8 +698,9 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/market-awareness/:activityId/tracking", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness/:activityId/submit", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // The approval steps. `approve` is held by the CEO, the Group Product Manager, the Marketing
-  // Manager and Super Admin — and canDecideStep then checks IDENTITY for the manager step, so a
-  // GPM cannot approve an activity routed to somebody else.
+  // Manager, each line's National Sales Manager and Super Admin — and canDecideStep then narrows
+  // further: an NSM answers only his own line's slot, and the retired manager step checks IDENTITY,
+  // so a GPM cannot approve an activity routed to somebody else.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness/:activityId/decision", permission: { resource: "market_awareness", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness/:activityId/withdraw", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness/:activityId/close", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper", csrfRequired: true }),
@@ -855,6 +883,15 @@ export const accessRegistry = [
   // Acquisition's screen untouched, and the manager's HR_ID comes off the session so no shape of
   // this call reaches another manager's shelf.
   sessionApi({ methods: ["PATCH", "DELETE"], pattern: "/api/recruitment/hiring-manager/candidates/*/folder", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
+  // "I will call this candidate" / "Skip" — the owner's two buttons, 2026-09-09. Same permission and
+  // the same reason as the three writes above, but a NARROWER per-record rule than any of them: the
+  // route admits only a CV sent to this caller or sitting in one of his OWN area folders, never one
+  // that belongs to a manager reporting to him. A National Sales Manager sees who reserved a CV and
+  // may not take it — the 2026-08-30 rule that the answer stays with the manager it was sent to, in
+  // a new shape. This is also the route that reveals a candidate's phone number, which is hidden on
+  // every card until the caller holds the claim, so its scoping is the thing standing between a
+  // manager and a number he has not committed to using.
+  sessionApi({ methods: ["PATCH"], pattern: "/api/recruitment/hiring-manager/candidates/*/call", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/hiring-manager/candidates/**", permission: { resource: "hiring_interviews", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/applications/**", permission: { resource: "hiring_interviews", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/interviews/**", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
@@ -895,6 +932,26 @@ export const accessRegistry = [
   // in the handler, exactly as the hiring-manager write routes above.
   sessionApi({ methods: ["POST"], pattern: "/api/recruitment/candidates/*/district-return", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: ["POST"], pattern: "/api/recruitment/district-returns/*/resolve", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
+  // WhatsApp message templates. THE GATE IS DELIBERATELY SPLIT BY VERB, and the split is the point:
+  // SENDING a message is `recruitment:update` — the recruiting-admin grant, the same one that sends a
+  // CV to a manager — while WRITING the wording is `admin:update`. The audience allowed to message a
+  // candidate in the company's name is much wider than the audience allowed to rewrite what everybody
+  // sends, and one entry covering both verbs would have quietly handed the second to the first.
+  //
+  // Registered ahead of nothing in particular — there is no /api/recruitment/** blanket — but the
+  // per-verb entries must stay separate for the reason above. `/send` is longer than the `/*` entry
+  // and carries a different method, so it resolves to its own row either way.
+  //
+  // The audit is declared on the three writes because these rows are what the company said to a
+  // member of the public, and on the send because it records the message text that was prepared.
+  // TWO permissions, because this route has two targets. The template list and a CANDIDATE context
+  // are recruitment:update; naming an employeeHrId additionally asserts employees:read, because that
+  // branch returns a staff member's name, job title and MOBILE NUMBER. Declaring only the first
+  // would describe a gate narrower than the code enforces.
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/whatsapp-templates", permission: [{ resource: "recruitment", action: "update" }, { resource: "employees", action: "read" }] }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/whatsapp-templates", permission: { resource: "admin", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH", "DELETE"], pattern: "/api/recruitment/whatsapp-templates/*", permission: { resource: "admin", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/whatsapp-templates/send", permission: [{ resource: "recruitment", action: "update" }, { resource: "employees", action: "read" }], csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/reports/vacancies", permission: { resource: "vacancies", action: "read" } }),
   // Listed AHEAD of the blanket /api/reports/** below, which would otherwise swallow it. The
   // permission is identical — this entry exists to DECLARE the audit. It is the one organogram
@@ -922,6 +979,32 @@ export const accessRegistry = [
   // re-attesting an existing one asserts `update`. Declared as `update` alone until 2026-09-03, so
   // the entry named only half of what the route enforces.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/mailbox-offboarding", permission: [{ resource: "mailbox_offboarding", action: "create" }, { resource: "mailbox_offboarding", action: "update" }], csrfRequired: true }),
+  // Company device register. The GET returns, per employee, the serial or IMEI of the machine he
+  // carries and what the company values it at — a shopping list if it were readable company-wide,
+  // which is why `company_devices` is its own resource rather than a corner of `sales` or `team`.
+  sessionApi({ methods: readOnly, pattern: "/api/devices", permission: { resource: "company_devices", action: "read" } }),
+  // The POST branches five ways and the handler asserts each: registering a device is `create`;
+  // issuing, returning, marking and writing off are all `update`. A write-off is `update` and NOT
+  // `delete` deliberately — it ends a debt البند (10) of the custody receipt created, and leaves
+  // every record of that debt in place. Every mutation writes a REQUIRED audit row, because each is
+  // an attestation that a named person physically handed over, received back, or stopped pursuing a
+  // company asset, and two of them can end in money leaving somebody's wages.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices", permission: [{ resource: "company_devices", action: "create" }, { resource: "company_devices", action: "update" }], csrfRequired: true }),
+  // Bulk import. All three gate on `company_devices:import` — the ACTION, matching how every other
+  // import here is gated (`employees:import`) — so the bulk door can be withdrawn on its own
+  // without taking single-device registration with it.
+  //
+  // The TEMPLATE is gated the same as the write, not as a read: it is not a report, it carries a
+  // dropdown of every employee's name, and it is useful only to somebody about to import.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/devices/import/template", permission: { resource: "company_devices", action: "import" } }),
+  // The DRY RUN writes nothing, and is still a POST (it carries a file) and still CSRF-guarded: it
+  // reads the whole employee directory to resolve holders, which is not a payload a cross-origin
+  // page should be able to make a logged-in browser fetch. Audited as a read, not a mutation.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/devices/import/dry-run", permission: { resource: "company_devices", action: "import" }, csrfRequired: true }),
+  // The COMMIT. Required audit, like every other device mutation — each imported row also writes
+  // its own per-device audit row, because it goes through createDevice/issueDevice rather than
+  // around them.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/import/confirm", permission: { resource: "company_devices", action: "import" }, csrfRequired: true }),
   // Retention register (Phase 6). The GET returns stay and exit conversations, which hold what an
   // employee said in confidence about their manager and their pay — the permission is the whole
   // protection, since RLS is disabled-by-default here like every other table in this app.
@@ -1004,10 +1087,15 @@ export const accessRegistry = [
   // rule. Guarded on sales:import, matching the route's own assertPermission.
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/sales/source-of-sales/raw-template", permission: { resource: "sales", action: "import" } }),
   // Territory Management — read-only geographic view of brick allocation per line.
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/filters", permission: { resource: "sales", action: "read" } }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/scope", permission: { resource: "sales", action: "read" } }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/map", permission: { resource: "sales", action: "read" } }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/search", permission: { resource: "sales", action: "read" } }),
+  // The four Territory Management reads moved from `sales:read` to `territory:read` on 2026-09-07,
+  // when the owner asked for the module on the HR Business Partner's sidebar. Not a narrowing of
+  // intent: every role the nav offers the module to holds the new key. It IS a narrowing of the raw
+  // URL surface — `Employee` carries sales:read, so any signed-in person could call these four and
+  // get a fail-closed empty scope back. The writes below still key on sales (import/export).
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/filters", permission: { resource: "territory", action: "read" } }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/scope", permission: { resource: "territory", action: "read" } }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/map", permission: { resource: "territory", action: "read" } }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/search", permission: { resource: "territory", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/territory-management/pin", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated Super-Admin-only JSON write: stores one hand-placed brick coordinate after a server-side role check and an Egypt bounding-box validation." }),
   // Area Consolidation — the Super Admin folds a legacy area's live rows onto a current one, and
   // can put them back. The gate is assertAreaConsolidationAccess INSIDE

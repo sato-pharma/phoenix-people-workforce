@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 
 type ActiveTab = "submit" | "input";
@@ -60,7 +61,7 @@ function formatDate(value: string | null | undefined) {
   if (!value) return "N/A";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-GB", {
+  return stableEnGbFormatter({
     day: "2-digit",
     month: "short",
     year: "numeric",

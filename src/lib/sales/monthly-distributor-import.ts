@@ -32,6 +32,7 @@ import { isOfficeDistributorCode } from "@/lib/sales/office-distributor";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
+import { writeStoreSplitNetForBatch } from "@/lib/sales/attribution-store-split-refresh";
 
 export type SalesDistributorOption = {
   code: string;
@@ -339,8 +340,8 @@ type DistributorSalesTemplate = {
   // Optional per-customer columns (each a list of header fallbacks). Used to capture the
   // client identity for the Customer Directory; never affects validation.
   customerFields?: { address: string[]; code: string[]; name: string[] };
-  // Optional per-row discount column. Blank/0 means no discount; otherwise the
-  // row value is reduced by the discount (value = Qty x factory_price x (1 - discount)).
+  // Optional per-row discount column. Captured and stored on the row for display only — since
+  // 2026-09-07 it does NOT reduce anything (value = Qty x factory_price, full stop).
   discountField?: string;
   distributorCodes: string[];
   // areaCode / brickId are optional so a region-only channel (Direct) can omit them; the
@@ -466,7 +467,7 @@ const IBN_SINA_SATO_ISS_TEMPLATE: DistributorSalesTemplateDef = {
 // EGD Branch (code EG-BR) — a separate branch of EGD (parent code EG). Fully-coded EGD monthly sheet:
 // EGD's raw export with the Phoenix coded columns (Product ID / Brick ID / Area ID / Region ID /
 // Distrub ID, where Distrub ID = "EG-BR") appended. Date is "Invoice Date", qty the net "Qty",
-// customer CUSTOMER_CODE/NAME/ADDRESS. Value RECOMPUTED from Qty x factory_price x (1 - Discount%).
+// customer CUSTOMER_CODE/NAME/ADDRESS. Value RECOMPUTED from Qty x factory_price.
 const EGD_PH_TEMPLATE: DistributorSalesTemplateDef = {
   customerFields: { address: ["CUSTOMER_ADDRESS"], code: ["CUSTOMER_CODE"], name: ["CUSTOMER_NAME"] },
   discountField: "Discount%",
@@ -516,7 +517,7 @@ const MEC_MC_TEMPLATE: DistributorSalesTemplateDef = {
 // from those coded columns like every other distributor. Sofico keeps its raw header names: the date
 // is "BILLINGDATE" (added to INVOICE_DATE_HEADER_ALIASES), the quantity is the net "qty" (returns
 // already signed), and there is no free-unit column. Value is RECOMPUTED from
-// Qty x factory_price x (1 - Discount%) (no valueField). Captures Sofico's customer code/name so
+// Qty x factory_price (no valueField). Captures Sofico's customer code/name so
 // client_code is populated like the other distributors.
 const SOFICO_SF_TEMPLATE: DistributorSalesTemplateDef = {
   customerFields: {
@@ -547,7 +548,7 @@ const SOFICO_SF_TEMPLATE: DistributorSalesTemplateDef = {
 // those coded columns. Ramco keeps ARABIC raw headers, so the qty is the net "صافى كمية" (returns
 // already signed) and the date is "تاريخ" (a real Excel date cell — unambiguous, no day-first issue);
 // both are listed first, then the shared English aliases as a defensive fallback. Discount is
-// "خصم%". Value is RECOMPUTED from Qty x factory_price x (1 - discount) (no valueField —
+// "خصم%". Value is RECOMPUTED from Qty x factory_price (no valueField —
 // the sheet's "صافى البيع" includes tax and is ignored). Captures the Ramco customer code/name/address.
 const RAMCO_RM_TEMPLATE: DistributorSalesTemplateDef = {
   customerFields: { address: ["عنوان"], code: ["كود"], name: ["عميل"] },
@@ -595,8 +596,8 @@ const DIRECT_TEMPLATE: DistributorSalesTemplateDef = {
 // Unified Normalizer coded sheet. The Source Normalizer emits ONE coded format (CODED_HEADERS in
 // src/lib/sales/normalizer/service.ts) for every distributor, so its output can flow through the same
 // Source-of-Sales validation + import as everything else. Value is RECOMPUTED from
-// Qty x factory_price x (1 - Discount%); the Normalizer writes the exact discount it applied (the coded
-// sheet's "Discount%" column) so the recompute reproduces the engine's value. Offered as a FINAL fallback
+// Qty x factory_price; the Normalizer still writes the discount it read into the coded sheet's
+// "Discount%" column, but neither side multiplies by it any more. Offered as a FINAL fallback
 // in templateForDistributor — tried AFTER the distributor's own template — so a coded sheet validates
 // under any distributor while raw/hand-coded sheets still match their dedicated template first.
 export const NORMALIZER_TEMPLATE: DistributorSalesTemplateDef = {
@@ -1549,14 +1550,14 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     const areaReference = areaCode ? maps.areaByCode.get(areaCode) : undefined;
     const blockReference = brickReference ? maps.blockByCode.get(normalizeCode(brickReference.blockCode)) : undefined;
 
-    // Value is computed from Qty only (bonus/free units neglected) times the
-    // product factory price, reduced by the per-row discount. The distributor
-    // sheet's own Value/Net column is intentionally ignored — EXCEPT for the Direct
-    // channel, which is the only sheet whose own Value column is the source of truth.
+    // Value is Qty times the product factory price. Nothing else touches it: bonus/free units are
+    // neglected, the distributor sheet's own Value/Net column is ignored, and since 2026-09-07 the
+    // per-row discount is ignored too — the owner struck that factor out of the whole system. The
+    // Direct channel remains the one exception, the only sheet whose own Value column is truth.
     const value = isDirect
       ? parseNumber(rawSheetValue, { emptyAsZero: true })
       : Number.isFinite(qty)
-        ? qty * (productReference?.factoryPrice ?? 0) * (1 - discountRate)
+        ? qty * (productReference?.factoryPrice ?? 0)
         : Number.NaN;
 
     // When geography is taken from the brick, the master Region/Area NAMES win too, so a stored
@@ -3218,17 +3219,40 @@ export async function persistDistributorSalesUpload(
     // Distributor×product rollup — after the fact rollup it reads, same fallback site.
     const distProductRollupRefresh = await supabase.rpc("phx_refresh_sos_distributor_product_rollup", { p_batch_id: batchId });
     if (distProductRollupRefresh.error) throw distProductRollupRefresh.error;
-    // Sales-vs-target attribution rollup — after the channel rollup, same fallback site.
-    const attributionRollupRefresh = await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
-    if (attributionRollupRefresh.error) throw attributionRollupRefresh.error;
-    // Import summaries — the Source of Sales dashboard's own aggregate. This path just inserted
-    // them from the same parsed rows, so the refresh is a no-op here; it is called anyway to keep
-    // ONE rule with no exceptions — every site that refreshes the rollups also refreshes the
-    // summaries — which is what tests/sos-import-summaries-refresh.test.ts enforces. The exception
-    // list is the thing that let them drift apart in the first place.
-    const summaryRefresh = await supabase.rpc("phx_refresh_sos_import_summaries", { p_batch_id: batchId });
-    if (summaryRefresh.error) throw summaryRefresh.error;
-    invalidateSalesDashboardCache("source of sales multi-period import (fallback refresh)");
+  }
+
+  // 🔴 GATED ON validated, unlike the same tail in normalizer/service.ts. That commit path is
+  // only ever reached by an accepted upload; this one also runs for a REJECTED batch, which
+  // refreshes no rollup at all today and must keep not refreshing one. The gate is the SAME
+  // condition both branches above already test, lifted out so neither branch owns the tail.
+  if (result.status === "validated") {
+    // ── THE SPLIT NET, THEN ATTRIBUTION — ONE SHARED TAIL, OUTSIDE BOTH BRANCHES ────────────
+    //
+    // 🔴 THIS USED TO SIT INSIDE THE FALLBACK ABOVE, and that is the whole defect. The period-known
+    // path calls phx_finalize_sos_batch, which refreshes the attribution rollup INSIDE its own SQL
+    // transaction and knows nothing about au.monthly_store_split_net — so every real upload rebuilt
+    // achievement from fresh sales against the PREVIOUS import's split, with no error anywhere.
+    //
+    // It cannot run BEFORE finalize either: writeStoreSplitNetForBatch resolves the batch's periods
+    // from source_of_sales_fact_rollup, which finalize is what populates. Called earlier it finds no
+    // periods and silently does nothing — the same failure, one step to the left.
+    //
+    // So it lives here, after the whole if/else, where BOTH paths reach it and the fact rows are
+    // current either way: write the net, then refresh attribution on top of it. On the finalize path
+    // that is a second attribution refresh, which is the price of keeping finalize atomic.
+    await writeStoreSplitNetForBatch(supabase, batchId);
+    const attributionAfterNet = await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
+    if (attributionAfterNet.error) throw attributionAfterNet.error;
+    // Import summaries beside it, so "every site that refreshes the rollups also refreshes the
+    // summaries" holds with no exceptions. See tests/sos-import-summaries-refresh.test.ts.
+    const summariesAfterNet = await supabase.rpc("phx_refresh_sos_import_summaries", { p_batch_id: batchId });
+    if (summariesAfterNet.error) throw summariesAfterNet.error;
+    // The cache bust belongs LAST, for the same reason the net does. Both paths busted it too
+    // early: the fallback did it before this tail existed, and the finalize path does it inside
+    // finalizeSosBatchAndAuditSupersede — in both cases before the net is written, so the very next
+    // dashboard read re-cached the attribution the net had not reached yet and held it for the
+    // full TTL. Those earlier busts are harmless and stay; this one is the one that matters.
+    invalidateSalesDashboardCache("source of sales import — split net written, attribution refreshed");
   }
 
   return {
@@ -4469,7 +4493,7 @@ export async function loadMonthlyClosingParts(input?: {
     // Skeleton groups exactly as the loaded month will — including a merged Fayoum/Beni Suef row
     // on Pedia and CNS — so the area/region filters offer the same choices before and after a
     // month is picked.
-    const skeletonMerged = applyClosingAreaMerges(skeletonLineCode, areas, [], []);
+    const skeletonMerged = applyClosingAreaMerges(skeletonLineCode, areas, [], [], null);
     const skeleton = buildMonthlyClosingMatrix({
       areas: applyOperationalRegions(skeletonMerged.areas, operationalRegions),
       availableLines,
@@ -4563,7 +4587,7 @@ export async function loadMonthlyClosingParts(input?: {
   // Fayoum (GZ6) and Beni Suef (UE9) fold into one row on Pedia and CNS — see
   // closing-area-merges.ts. Applied to a COPY, after the Direct allocation above already read the
   // real (unmerged) areas/cells it needed for region-level attribution.
-  const areaMerged = applyClosingAreaMerges(targetLineCode, areas, cells, targets);
+  const areaMerged = applyClosingAreaMerges(targetLineCode, areas, cells, targets, selectedPeriod);
 
   const matrix = markMergedAreaRowsStatic(
     buildMonthlyClosingMatrix({
@@ -4577,6 +4601,7 @@ export async function loadMonthlyClosingParts(input?: {
       targets: areaMerged.targets,
     }),
     targetLineCode,
+    selectedPeriod,
   );
 
   // The Office grid, built through the SAME pipeline as `matrix` — same area merges, same
@@ -4590,7 +4615,7 @@ export async function loadMonthlyClosingParts(input?: {
   // The city store split is not applied either, and must not be: it moves WHOLESALER customers
   // between the areas of a city, and Office rows carry no customer at all. An area's total moves
   // with the split; its Office component does not.
-  const officeMerged = applyClosingAreaMerges(targetLineCode, areas, officeData, []);
+  const officeMerged = applyClosingAreaMerges(targetLineCode, areas, officeData, [], selectedPeriod);
   const officeMatrix = markMergedAreaRowsStatic(
     buildMonthlyClosingMatrix({
       areas: applyOperationalRegions(officeMerged.areas, operationalRegions),
@@ -4602,6 +4627,7 @@ export async function loadMonthlyClosingParts(input?: {
       products,
     }),
     targetLineCode,
+    selectedPeriod,
   );
 
   return {

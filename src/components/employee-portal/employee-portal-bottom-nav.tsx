@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Lock } from "lucide-react";
 
 import { isNavItemLockedFor, useLockedModuleKeys } from "@/components/layout/module-lock-context";
+import { ApprovalNavBadge } from "@/components/layout/nav-badge";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import {
   DEFAULT_BOTTOM_NAV_HREFS,
@@ -83,7 +84,33 @@ export function EmployeePortalBottomNav({
                 }`}
                 href={item.href}
               >
-                <Icon className="h-[19px] w-[19px] shrink-0" />
+                {/*
+                  The pending-count badge, as the COMPACT dot on the icon rather than the count
+                  pill the sidebar uses.
+
+                  On a phone this bar IS the navigation, so a queue with nothing on its tab is a
+                  queue nobody is told about — the failure the sidebar badges already prevent, on
+                  the surface where it costs most. Owner, 2026-09-07.
+
+                  The dot, never the pill: six tabs share a 375px bar and every label is already
+                  wrapped to fit it (see the note below), so a pill would take its width out of the
+                  label — and the golden rule forbids both shrinking the type and truncating it.
+                  The dot is absolutely positioned, so it adds nothing to any tab's layout floor
+                  and the bar's width arithmetic is untouched.
+
+                  `relative` on this wrapper is what the dot anchors to; it is sized to the icon so
+                  the dot sits on the glyph's corner rather than the tab's. The badge rings itself
+                  in white, which is this bar (`bg-white/97`) — the first compact badge the portal
+                  has ever rendered on a light surface, and the reason ApprovalNavBadge's `dark`
+                  prop is left at its default here rather than passed.
+
+                  A LOCKED tab keeps its badge, exactly as the sidebar row does: the count is still
+                  true, and the lock icon is already the tab's own message.
+                */}
+                <span className="relative flex h-[19px] w-[19px] shrink-0 items-center justify-center">
+                  <Icon className="h-[19px] w-[19px] shrink-0" />
+                  <ApprovalNavBadge compact navBadge={item.navBadge} />
+                </span>
                 {/*
                   The label WRAPS rather than running on one line, and the box it wraps inside is a
                   fixed two lines tall.

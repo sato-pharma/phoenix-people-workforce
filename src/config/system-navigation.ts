@@ -32,6 +32,7 @@ import {
   IdCard,
   Inbox,
   Landmark,
+  Laptop,
   ListChecks,
   Lock,
   Package,
@@ -46,6 +47,7 @@ import {
   MapPinned,
   PauseCircle,
   Megaphone,
+  MessageCircle,
   MessageSquareText,
   Network,
   PlusCircle,
@@ -125,7 +127,7 @@ export type NavigationSectionItem = {
    */
   exact?: boolean;
   activeTab?: string;
-  navBadge?: "direct-orders-needs-action" | "direct-orders-approvals-pending" | "direct-orders-unbooked" | "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending" | "marketing-approvals-pending";
+  navBadge?: "direct-orders-needs-action" | "direct-orders-approvals-pending" | "direct-orders-unbooked" | "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending" | "marketing-approvals-pending" | "market-awareness-approvals-pending";
 };
 
 export type NavigationSection = {
@@ -860,6 +862,37 @@ export const adminNavigationSectionSeeds = [
       // sidebar opening a hub whose seven cards are all filtered out for her — the same empty-hub
       // defect already recorded above for SFE Manager and Finance Manager on People Management.
       { href: "/admin/recruitment-hiring", icon: BriefcaseBusiness, label: "Recruitment & Hiring", permissions: [{ resource: "recruitment", action: "read" }], roles: hrAuthorityNavigationRoles },
+      // Screening Queue — the CV screening workstation (app/(admin)/recruitment/screening/page.tsx),
+      // which until now had NO entry in this file at all.
+      //
+      // WHY IT NEEDED ONE. That page's own header records the decision to keep it off the
+      // Recruitment & Hiring hub — a ninth card trips four unrelated CI gates — on the reasoning
+      // that "a route and a link from the pool already do" make it reachable. The reach turned out
+      // not to be there. Measured on production 2026-09-07 by calling the page's own loader: the
+      // workstation renders 400 CVs in "New CVs — first review required", 143 in "Recommended",
+      // 8 unreviewed duplicate pairs and 13 overdue manager sends, against 46 open vacancies. It
+      // works, it is full, and 75% of the pool had never had a decision recorded against it — the
+      // best tool in the module was the only one you could not get to without typing its URL.
+      //
+      // A PLAIN ROW, NOT A HUB CARD, and deliberately so: the same choice Returned CVs and Manager
+      // CV Engagement each made and recorded below, for the same reason. A row costs one measured
+      // label; a card costs the portal twin pairing, the mobile bottom-nav registry and the pinned
+      // hub count as well, and buys no more reach than this.
+      //
+      // The gate is copied from the page rather than chosen here — `isHrAuthorityRole` plus
+      // recruitment:read — so the row and the screen it opens cannot drift
+      // (every-offered-link-opens.test.ts).
+      //
+      // NO `?unseen=1`, though the page documents that as its entry point and it was the obvious
+      // thing to put here. A query string makes the href stop resolving to a page.tsx, and that
+      // test then SKIPS the row entirely rather than failing — it reports the href among the ones it
+      // "was not checked", which is easy to read past. The two outstation hub cards carrying
+      // `?tab=queue` are already sitting in that unchecked list. Trading the gate-drift guard for a
+      // pre-selected filter is a bad deal on the one row whose whole purpose is reaching a screen
+      // that reads every field on every candidate. Landing on the workstation itself is also the
+      // better arrival: the rail shows New CVs beside Duplicate review and overdue manager sends,
+      // and the pile you should open is not always the unread one.
+      { href: "/recruitment/screening", icon: ListChecks, label: "Screening Queue", permissions: [{ resource: "recruitment", action: "read" }], roles: hrAuthorityNavigationRoles },
       // Returned CVs — where a district manager's "return this CV to the administrator" lands, one
       // pile per returning manager and reason (app/(admin)/recruitment/returned-cvs/page.tsx). A
       // plain sidebar row rather than a ninth hub card, which would trip four unrelated CI gates for
@@ -877,6 +910,18 @@ export const adminNavigationSectionSeeds = [
       // so the two cannot drift (every-offered-link-opens.test.ts). A plain row rather than a ninth
       // hub card, the same choice Returned CVs above made.
       { href: "/recruitment/cv-lifecycle-sheet", icon: Link2, label: "CV Sheet Links", permissions: [{ resource: "recruitment", action: "export" }], roles: hrAuthorityNavigationRoles },
+      // WhatsApp Templates — the wording the company sends candidates, and the one-click send
+      // (app/(admin)/recruitment/whatsapp-templates/page.tsx). A plain row rather than a hub card,
+      // the same choice Returned CVs and CV Sheet Links above made and for the same reason.
+      //
+      // `update`, not `read`: this screen SENDS a message to a member of the public in the company's
+      // name, which is acting on the pipeline — the same clause the send route asserts.
+      //
+      // THE ROLES ARE SPELLED OUT rather than reusing hrAuthorityNavigationRoles, which carries a
+      // third role (HR Operations) the page gate does not. canSendWhatsAppTemplate resolves to
+      // Super Admin + HR Advisory, and a row offered to someone the page then redirects is exactly
+      // what every-offered-link-opens.test.ts exists to catch. These two must be changed together.
+      { href: "/recruitment/whatsapp-templates", icon: MessageCircle, label: "WhatsApp Templates", permissions: [{ resource: "recruitment", action: "update" }], roles: ["Super Admin", "HR Advisory"] },
     ],
     // ── Renamed 2026-09-05, and the reason is the promotion, not the rows ───────────────────
     // The promoted "Recruitment & Hiring" band (hub-recruitment-hiring) holds the module's eight rows
@@ -1514,7 +1559,7 @@ const employeePortalNavigationSectionSeeds = [
       // Portal-shell counterpart of /sales/territory-management — same component, own-scope data.
       // Medical Rep is deliberately excluded: this compares MULTIPLE areas' bricks against each
       // other, which is a District-Manager-and-up decision, not a single rep's own area view.
-      { href: "/employee-portals/territory-management", icon: Waypoints, label: "Territory Management", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager"] },
+      { href: "/employee-portals/territory-management", icon: Waypoints, label: "Territory Management", permissions: [{ resource: "territory" }], roles: ["District Manager", "Regional Manager", "National Sales Manager"] },
       // Read-only Targets (owner decision 2026-07-30). Mirrors PORTAL_TARGETS_ROLES; editing and
       // upload stay on the admin surface with SFE Manager / Super Admin.
       { href: "/employee-portals/targets", icon: Target, label: "Targets", permissions: [{ resource: "sales", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager"] },
@@ -1606,14 +1651,28 @@ const employeePortalNavigationSectionSeeds = [
         href: "/employee-portals/market-awareness/inbox",
         icon: Inbox,
         label: "Awareness Approvals",
-        // The DECISION surface, not the module — so a much shorter list than the tab above: the two
-        // seats a requester's manager step can resolve to, plus the CEO. Like every list here it is
-        // UX only. listDecisionInbox calls assertPermission(market_awareness, read) and then filters
-        // through the same canDecideStep the decision route enforces, so a role on this list who
-        // holds no decision sees an empty queue rather than a refusal, and one off it could not act
-        // even if the link were rendered.
+        // Its own badge kind. Market Awareness is deliberately outside the consolidated approvals
+        // hub (the owner asked for a separate queue), so "approvals-hub-pending" counts everything
+        // EXCEPT this inbox — the link would sit silent while a decision waited behind it.
+        navBadge: "market-awareness-approvals-pending",
+        // The DECISION surface, not the module — so a much shorter list than the tab above: the
+        // parallel group (the Marketing Manager and each line's National Sales Manager), the Group
+        // Product Manager for the retired single-manager step, and the CEO. Like every list here it
+        // is UX only. listDecisionInbox calls assertPermission(market_awareness, read) and then
+        // filters through the same canDecideStep the decision route enforces, so a role on this list
+        // who holds no decision sees an empty queue rather than a refusal, and one off it could not
+        // act even if the link were rendered.
+        //
+        // Kept in step with MARKET_AWARENESS_DECIDER_ROLES, which is what actually draws this link
+        // in the portal shell — these seeds do not.
         permissions: [{ resource: "market_awareness", action: "read" }],
-        roles: ["Group Product Manager", "Marketing Manager", "CEO", "Super Admin"],
+        roles: [
+          "Group Product Manager",
+          "Marketing Manager",
+          "National Sales Manager",
+          "CEO",
+          "Super Admin",
+        ],
       },
     ],
     label: "Market Awareness",
@@ -1751,6 +1810,15 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: hrAuthorityNavigationRoles },
       // Vacation Action Center removed — replaced by the Approvals Hub › Vacation Approvals surface.
       { href: "/employee-portals/attendance", icon: Fingerprint, label: "Fingerprint Report", permissions: [{ resource: "attendance", action: "read" }] },
+      // Weekly Attendance digest row REMOVED 2026-09-08, owner instruction, while he settles
+      // the rules for telling people the page exists. Six real digests carrying real names
+      // and EGP amounts are sitting behind it, and nobody has been told they are there.
+      //
+      // The row is deleted rather than commented back in later from memory: the page and its
+      // API are unchanged and still gated on attendance:read, so restoring visibility is one
+      // line here. What this does NOT do is close the page — hiding a nav row is UX only, and
+      // /employee-portals/attendance/digests still answers for anyone who has the URL. If the
+      // page itself must refuse, that is a gate in the page, not an entry in this file.
       { href: "/employee-portals/visits", icon: MapPinned, label: "My Visits", permissions: [{ resource: "crm_visits", action: "read" }] },
     ],
     label: "Leave Management",
@@ -1839,6 +1907,19 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/employees", icon: UsersRound, label: "Employee Directory", permissions: [{ resource: "employees", action: "read" }] },
       { href: "/hr/employee-360", icon: IdCard, label: "Employee 360", permissions: [{ resource: "employee_profile", action: "read" }] },
       { href: "/hr/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
+      // Owner instruction 2026-09-07: "territory management is not appearing in hr business partner
+      // account make it appear to her." It sits next to the Organogram because that is what it is —
+      // the same seat model seen as geography rather than as a chart.
+      //
+      // The address is the `/hr` spelling of the ADMIN page (proxy.ts rewrites /hr/sales/... to
+      // /sales/...), not a third copy of the module. There are already two — the admin page and the
+      // portal twin for the sales ladder — and a third would be the fourth place to forget when the
+      // map changes.
+      //
+      // `roles` pins it to HR Advisory even though the permission would do it alone: HR Operations
+      // holds no `territory` grant today, and if she ever gains one it should be because somebody
+      // decided that, not because this row was written permission-only.
+      { href: "/hr/sales/territory-management", icon: Waypoints, label: "Territory Management", permissions: [{ resource: "territory" }], roles: ["HR Advisory"] },
       // ONBOARDING PAPERWORK — HER COPY of the two rows the Recruitment section carries below.
       // Listed twice with mutually-exclusive gates, the same pattern Organogram already uses:
       // getSections dedupes by href and keeps the FIRST occurrence, so for HR Operations this copy
@@ -1871,6 +1952,11 @@ const hrNavigationSectionSeeds = [
       // sidebar does not enforce that - the route handler does - but the split is the reason a
       // reader of this file should not "helpfully" grant both to both.
       { href: "/hr/mailbox-offboarding", icon: MailX, label: "Mailbox Revocation", permissions: [{ resource: "mailbox_offboarding" }] },
+      // Device Custody sits with the other two because it closes the same way they do — the
+      // custody receipt's البند (7) has the device returned "قبل استلام مستحقاتي النهائية", before
+      // final dues. It is not offboarding-only: the same register issues the machine on a joiner's
+      // first morning, which is why the label names the OBLIGATION rather than either end of it.
+      { href: "/hr/devices", icon: Laptop, label: "Device Custody", permissions: [{ resource: "company_devices" }] },
       { href: "/hr/retention", icon: HeartPulse, label: "Retention Register", permissions: [{ resource: "retention" }] },
       { href: "/hr/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
       { href: "/hr/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }] },
@@ -1911,6 +1997,20 @@ const hrNavigationSectionSeeds = [
       // were — it is the rail that is quieter. Do not re-add them "for completeness": the
       // crowding IS the defect he named.
       { href: "/hr/recruitment/whatsapp-replies", icon: MessageSquareText, label: "WhatsApp Replies", permissions: [{ resource: "recruitment" }] },
+      // WhatsApp Templates — the HR shell's own row for /recruitment/whatsapp-templates.
+      //
+      // THE ADMIN ROW IS NOT ENOUGH, and that is the whole reason this exists. The HR Business
+      // Partner works in the `/hr` shell, which renders from THIS catalogue, so the admin-shell row
+      // added with the feature was invisible to the one person who uses it most: she could reach
+      // the page only by typing the URL. Measured 2026-09-08 by signing in as the seat and watching
+      // the redirect land on /hr/recruitment/whatsapp-templates with no row to click.
+      //
+      // `roles: ["HR Advisory"]` matches Manager CV Engagement two rows down, and it is required
+      // rather than cosmetic: HR Operations also renders this shell, and `canSendWhatsAppTemplate`
+      // redirects her — an offered link that redirects is what every-offered-link-opens.test.ts
+      // exists to catch. "HR Advisory" is the permission key; "HR Business Partner" is the job
+      // title shown for it (HR_SEAT_JOB_TITLES), never a role in its own right.
+      { href: "/hr/recruitment/whatsapp-templates", icon: MessageCircle, label: "WhatsApp Templates", permissions: [{ resource: "recruitment", action: "update" }], roles: ["HR Advisory"] },
       // Added 2026-09-01. The page was `admin:update` — Super Admin alone — and was re-gated to
       // `recruitment:update` rather than the resource being widened, because `admin:update` also
       // opens module locks, scope visibility, salary flags and a notification TEST-SEND endpoint.
@@ -2350,15 +2450,25 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     // Gate carried over VERBATIM from the rail row, deliberately. District / Regional / National
     // Sales Managers land in the employee-portal shell (resolveNavigationMode) and their entry point
     // is /employee-portals/territory-management, so naming only the admin-shell roles keeps this
-    // card from being offered to someone who would be redirected straight past it. It is `sales`
-    // read, NOT `sales:import` like the mapping cards around it — this is a narrower gate than its
-    // neighbours, which is correct and must not be "tidied" into line with them.
+    // card from being offered to someone who would be redirected straight past it. Its gate is
+    // `territory` read, NOT `sales:import` like the mapping cards around it — a narrower key than
+    // its neighbours, which is correct and must not be "tidied" into line with them. It read
+    // `sales` until 2026-09-07; the resource was split out then so the map could reach the HR
+    // Business Partner without the money pages, and it grants these three roles exactly what they
+    // had before.
     href: "/sales/territory-management",
     icon: Waypoints,
     label: "Territory Management",
     description: "Bricks, areas and territory coverage.",
-    permissions: [{ resource: "sales" }],
-    roles: ["CEO", "SFE Manager", "Super Admin"],
+    // HR Advisory joined the list on 2026-09-07 and changes nothing on this hub: reaching the card
+    // means reaching /sales/source-of-sales-tools first, which is `sales:read` and which she does
+    // not hold. She is named because the roles list is the answer to "which admin-shell role may
+    // open this page", and hers now may — her own entry point is the /hr row beside the Organogram.
+    // tests/hr-url-namespace.test.ts checks exactly that equivalence: an /hr row may only point at
+    // a page the admin navigation already admits for a seat, so omitting her here would make her
+    // row read as the namespace WIDENING the matrix rather than narrowing it.
+    permissions: [{ resource: "territory" }],
+    roles: ["CEO", "SFE Manager", "Super Admin", "HR Advisory"],
   },
   {
     href: "/sales/distributor-profiles",
@@ -2894,6 +3004,18 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     roles: systemAdministratorNavigationRoles,
   },
   {
+    href: "/attendance/disputes",
+    icon: Fingerprint,
+    label: "Attendance Disputes",
+    description:
+      "Days an employee says are wrong in their weekly digest, with the leave and CRM evidence for each one. A disputed day never settles until it is decided here.",
+    permissions: [{ resource: "attendance", action: "read" }],
+    // The page itself gates again on canReviewDisputes (Super Admin or the configured
+    // reviewer list) and redirects otherwise — this row only decides who SEES the link.
+    // system-navigation hiding a link is UX; the page-level check is the boundary.
+    roles: systemAdministratorNavigationRoles,
+  },
+  {
     href: "/attendance/monthly-summary",
     icon: CalendarCheck,
     label: "Monthly Summary",
@@ -3425,6 +3547,13 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "mailbox_offboarding" }],
   },
   {
+    href: "/devices",
+    icon: Laptop,
+    label: "Device Custody",
+    description: "Every laptop, tablet and phone the company owns, and who signed for it.",
+    permissions: [{ resource: "company_devices" }],
+  },
+  {
     href: "/retention",
     icon: HeartPulse,
     label: "Retention Register",
@@ -3891,6 +4020,16 @@ export const directOrdersPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin"],
   },
   {
+    href: "/admin/direct-orders/returned",
+    icon: Undo2,
+    label: "Returned Ageing",
+    description: "Orders sent back to a rep and never answered — no expiry clock, so they age until somebody looks.",
+    permissions: [{ resource: "direct_orders", action: "read" }],
+    // Same gate as the Held Desk beside it, and for the same reason: the service is System Admin
+    // only, so a wider link would lead to a redirect rather than a page.
+    roles: ["Super Admin"],
+  },
+  {
     href: "/admin/direct-orders/approval-exceptions",
     icon: Unlink,
     label: "Approval Exceptions",
@@ -4105,6 +4244,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/resignations",
           "/retention",
           "/mailbox-offboarding",
+          "/devices",
         ],
       },
       {
@@ -4171,6 +4311,9 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/attendance/monthly-summary",
           "/attendance/analytics",
           "/attendance/exceptions",
+          // Banded with the reports rather than the calendars: a dispute is read
+          // alongside the day it argues with, and the same evidence answers both.
+          "/attendance/disputes",
         ],
       },
       {
@@ -4290,6 +4433,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/direct-orders",
           "/admin/direct-orders/report",
           "/admin/direct-orders/held",
+          "/admin/direct-orders/returned",
           "/admin/direct-orders/approval-exceptions",
           "/admin/direct-orders/rep-counters",
         ],

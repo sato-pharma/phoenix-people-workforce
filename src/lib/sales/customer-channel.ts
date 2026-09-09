@@ -307,6 +307,51 @@ export const STORE_OVERRIDE_NAMES: readonly ChannelNameKeyword[] = [
   { label: "طيبة جروب", stem: "طيبه جروب" },
   { label: "ابو عميرة", stem: "ابو عميره" },
   { label: "ابوعميرة", stem: "ابوعميره" },
+  // Seven more from the same conversation, 2026-09-07: the owner read the EPDA Pedia August list
+  // and ruled these seven wholesalers. None carries a store word, a prefix or the trade phrase.
+  //
+  // EVERY STEM WAS COUNTED BOTH WAYS ON PRODUCTION FIRST, because this list is the one that can
+  // CREATE a warehouse — unlike PHARMACY_OVERRIDE_CHAINS, where over-matching only ever refuses one.
+  // Together they move 8,201.25 EGP, all of it August 2026 Pedia; every other customer they touch is
+  // already a warehouse by another route, so nothing else changes hands.
+  //
+  // «الفرسان» ALONE WOULD HAVE BEEN A DISASTER: bare, it matches 9 customers worth 15,615,203.94 EGP
+  // across five different businesses, so the one he named is named in full. Its neighbour «الفرسان
+  // جروب - بنها» (163700, EPDA, 3,637,392.75) is NOT covered by any stem here and stays a pharmacy —
+  // he has not ruled on it, and this list is not the place to guess.
+  { label: "الفرسان - الزاوية", stem: "الفرسان - الزاويه" },
+  // Matches its own bigger sibling «الصفا ميديكال لتجارة وتوزيع الا دوية» (IS) too, which the trade
+  // phrase already calls a warehouse — so the stem adds this account and nothing else.
+  { label: "الصفا ميديكال", stem: "الصفا ميديكال" },
+  // «شركة اورينت جروب - بهتيم» (164162) — ruled a pharmacy on 2026-09-06 and a wholesaler on the
+  // EPDA sheet on 2026-09-07. Put back to him, and he settled it: "wholesaler IS THE CORRECT". The
+  // fifth such reversal in this rule and handled like the other four — the later answer stands and
+  // the pinned fixture carries it, so the contradiction is recorded rather than argued again.
+  //
+  // The stem reaches this one business on its two accounts (EP-BK and EP-PHS, both code 164162) and
+  // nothing else; «جروب» alone is common and is deliberately not used.
+  { label: "اورينت جروب", stem: "اورينت جروب" },
+  // Also matches «مخزن النهضة للادوية» (PS, 10,447,616.25) — already a warehouse on مخزن. The 151.88
+  // account is the only thing this changes, and the 10.4M is not at risk from it.
+  { label: "النهضة للادوية", stem: "النهضه للادويه" },
+  // Also matches «مالتي ستورز فارما ن.م» (PS), already a warehouse on فارم.
+  { label: "مالتى ستورز", stem: "مالتي ستورز" },
+  // Named in full: bare «فيوتشر» matches only this one customer today, but a stem that narrow costs
+  // nothing and cannot adopt a future pharmacy of the same name.
+  { label: "فيوتشر - الزقازيق", stem: "فيوتشر - الزقازيق" },
+  // Spelled «هاحر» in the source data, with two spaces before the dash. Folding collapses the
+  // spaces; the misspelling is theirs and is kept exactly, because it is what the files carry.
+  { label: "هاحر والشروق", stem: "هاحر والشروق" },
+  // The neighbour this list deliberately left out until he ruled on it — owner, 2026-09-07, asked
+  // directly and answered "wholesaler". Its siblings «الفرسان بنها جملة» and «الفرسان انترناشول
+  // جروب بنها» were already warehouses through El Qema, so it was the odd one out.
+  //
+  // «الفرسان جروب» measured on production matches exactly this ONE business, on its two accounts
+  // (EP-PHS and EP-BK, both code 163700) — the other seven «الفرسان» customers put a word between
+  // «الفرسان» and «جروب», so none is swept in. Changes NO number today: all 3,667,524.75 EGP of it is
+  // Head Office, which is untracked and never splits. It decides how the account is treated the
+  // first time it sells on a rep line.
+  { label: "الفرسان جروب - بنها", stem: "الفرسان جروب" },
 ];
 
 /**
@@ -353,14 +398,21 @@ export function isWholesaleOnlyDistributor(distributorCode: string | null | unde
  * توريد (supply) sits beside تجارة and توزيع because the owner ruled
  * "شركة الهضبه لتوريد الادويه" and "شركة ابوعميره لتوريد وتوزيع الادوية" are warehouses.
  */
-const TRADE_BUSINESS_STEMS = ["تجار", "توزيع", "توريد"] as const;
+export const TRADE_BUSINESS_STEMS = ["تجار", "توزيع", "توريد"] as const;
 
 /**
  * The goods half: WHAT it trades. `الادي` is not a typo — it catches the real production spelling
  * "الفتح لتجارة وتوزيع الادية", a name the owner confirmed is a warehouse and whose goods word the
  * distributor typed without its و.
  */
-const TRADE_GOODS_STEMS = ["ادوي", "دواء", "دوائ", "الادي"] as const;
+export const TRADE_GOODS_STEMS = ["ادوي", "دواء", "دوائ", "الادي"] as const;
+
+/**
+ * The two business words that mean a warehouse together, without naming the goods —
+ * "لتجارة وتوزيع" says the business plainly enough on its own. Named rather than inlined so
+ * `customerChannelSqlRule()` can hand the same pair to SQL instead of a second copy of it.
+ */
+export const TRADE_BUSINESS_PAIR_STEMS = ["تجار", "توزيع"] as const;
 
 /**
  * The name with ALL whitespace removed, not merely collapsed.
@@ -386,7 +438,7 @@ export function matchesTradePhrase(name: string | null | undefined): boolean {
   if (!squashed) return false;
   const business = TRADE_BUSINESS_STEMS.filter((stem) => squashed.includes(stem));
   if (business.length === 0) return false;
-  if (squashed.includes("تجار") && squashed.includes("توزيع")) return true;
+  if (TRADE_BUSINESS_PAIR_STEMS.every((stem) => squashed.includes(stem))) return true;
   return TRADE_GOODS_STEMS.some((stem) => squashed.includes(stem));
 }
 

@@ -2,14 +2,34 @@
 
 import { useEffect, useState } from "react";
 
+import {
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { Card } from "@/components/ui/card";
 import type { TerritoryPreviewLink } from "@/lib/territory-management/preview-links";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 type Props = { productionUrl: string };
 
+/**
+ * One reading of a link's state, shared by the phone card and the desktop row.
+ *
+ * `loadedAtMs` is stamped with the data rather than read at render: Date.now() in a render body is
+ * impure and would let a re-render flip a row from active to expired on its own.
+ */
+function linkState(
+  link: TerritoryPreviewLink,
+  loadedAtMs: number,
+): "active" | "expired" | "switched off" {
+  if (link.revokedAt) return "switched off";
+  return new Date(link.expiresAt).getTime() < loadedAtMs ? "expired" : "active";
+}
+
 const cairo = (iso: string | null) =>
   iso
-    ? new Intl.DateTimeFormat("en-GB", {
+    ? stableEnGbFormatter({
         timeZone: "Africa/Cairo",
         day: "2-digit",
         month: "short",
@@ -208,46 +228,89 @@ export function TerritoryPreviewLinksPanel({ productionUrl }: Props) {
       ) : null}
 
       {links.length > 0 ? (
-        <div className="overflow-x-auto border-t pt-3">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="text-muted-foreground text-xs uppercase">
-                <th className="px-2 py-1 whitespace-nowrap">Label</th>
-                <th className="px-2 py-1 whitespace-nowrap">Areas</th>
-                <th className="px-2 py-1 whitespace-nowrap">Stops working</th>
-                <th className="px-2 py-1 whitespace-nowrap">Opens</th>
-                <th className="px-2 py-1 whitespace-nowrap">Status</th>
-                <th className="px-2 py-1"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {links.map((link) => {
-                const dead = Boolean(link.revokedAt) || new Date(link.expiresAt).getTime() < loadedAtMs;
-                return (
-                  <tr className="border-t" key={link.id}>
-                    <td className="px-2 py-1.5 font-medium whitespace-nowrap">{link.label ?? "—"}</td>
-                    <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{link.areaCount}</td>
-                    <td className="px-2 py-1.5 whitespace-nowrap">{cairo(link.expiresAt)}</td>
-                    <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{link.accessCount}</td>
-                    <td className="px-2 py-1.5 whitespace-nowrap">
-                      {link.revokedAt ? "switched off" : dead ? "expired" : "active"}
-                    </td>
-                    <td className="px-2 py-1.5 whitespace-nowrap">
-                      {!dead ? (
-                        <button
-                          className="text-destructive text-xs underline"
-                          onClick={() => void revoke(link.id)}
-                          type="button"
-                        >
-                          Switch off
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="border-t pt-3">
+          {/* Six columns, and every one of them was `whitespace-nowrap` inside an overflow-x-auto —
+              a sideways-scrolling phone, which is the golden rule's exact defect. Cards below md,
+              table from md up. PortalResponsiveDataList (not the stacking pattern) because no row
+              holds an unsaved edit: "Switch off" acts immediately and re-reads the list, so the two
+              copies of a row can never disagree about a pending change. */}
+          <PortalResponsiveDataList
+            empty={null}
+            getKey={(link) => link.id}
+            items={links}
+            renderCard={(link) => {
+              const state = linkState(link, loadedAtMs);
+              return (
+                <PortalRecordCard
+                  accent={state === "active" ? "emerald" : "slate"}
+                  actions={
+                    state === "active" ? (
+                      <button
+                        className="text-destructive text-xs underline"
+                        onClick={() => void revoke(link.id)}
+                        type="button"
+                      >
+                        Switch off
+                      </button>
+                    ) : null
+                  }
+                  status={<span className="text-xs font-semibold text-muted-foreground">{state}</span>}
+                  title={link.label ?? "—"}
+                >
+                  <PortalRecordFields
+                    fields={[
+                      { label: "Areas", value: link.areaCount },
+                      { label: "Opens", value: link.accessCount },
+                      { label: "Stops working", value: cairo(link.expiresAt) },
+                    ]}
+                  />
+                </PortalRecordCard>
+              );
+            }}
+            renderTable={() => (
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="text-muted-foreground text-xs uppercase">
+                      <th className="px-2 py-1">Label</th>
+                      <th className="px-2 py-1 whitespace-nowrap">Areas</th>
+                      <th className="px-2 py-1 whitespace-nowrap">Stops working</th>
+                      <th className="px-2 py-1 whitespace-nowrap">Opens</th>
+                      <th className="px-2 py-1 whitespace-nowrap">Status</th>
+                      <th className="px-2 py-1"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {links.map((link) => {
+                      const state = linkState(link, loadedAtMs);
+                      return (
+                        <tr className="border-t" key={link.id}>
+                          {/* The one column that may hold long free text, so it WRAPS rather than
+                              widening the table. The other five are short and stay nowrap. */}
+                          <td className="px-2 py-1.5 font-medium">{link.label ?? "—"}</td>
+                          <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{link.areaCount}</td>
+                          <td className="px-2 py-1.5 whitespace-nowrap">{cairo(link.expiresAt)}</td>
+                          <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{link.accessCount}</td>
+                          <td className="px-2 py-1.5 whitespace-nowrap">{state}</td>
+                          <td className="px-2 py-1.5 whitespace-nowrap">
+                            {state === "active" ? (
+                              <button
+                                className="text-destructive text-xs underline"
+                                onClick={() => void revoke(link.id)}
+                                type="button"
+                              >
+                                Switch off
+                              </button>
+                            ) : null}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          />
         </div>
       ) : null}
     </Card>

@@ -117,9 +117,19 @@ export const hiringManagerDecisionStatus: Record<HiringManagerDecision, Candidat
   not_interested: "rejected",
 };
 
+/**
+ * The words on the two buttons.
+ *
+ * `not_interested` reads "Skip" since 2026-09-09, at the owner's instruction — *"have 2 buttons on
+ * every cv, I will call and skip ... if the manager chooses skip then he is skipped normally"*. Only
+ * the label moved: the decision, the status it lands on, the required reason and the route behind it
+ * are all untouched, which is what "normally" means here. The CODE stays `not_interested` on purpose:
+ * it is the wire value the decision route validates against, so renaming it would be an API change
+ * dressed up as a wording change, and every open tab still posting the old word would start failing.
+ */
 export const hiringManagerDecisionLabels: Record<HiringManagerDecision, string> = {
   interview: "I want to interview",
-  not_interested: "Not interested",
+  not_interested: "Skip",
 };
 
 export function isHiringManagerDecision(value: unknown): value is HiringManagerDecision {
@@ -165,6 +175,49 @@ export const BULK_DECISION_MAX = 200;
 
 export function isBulkDecidableStatus(value: unknown): value is BulkDecidableStatus {
   return typeof value === "string" && (bulkDecidableStatuses as readonly string[]).includes(value);
+}
+
+/**
+ * Why this candidate may not move from `current` to `next`, or null when the move is allowed.
+ *
+ * ONE RULE, AND IT COST FIFTY RECORDS. Measured on production 2026-09-08: fifty candidates held a
+ * row in `ats_candidate_manager_sends` naming a manager, a position and a time — they had been sent
+ * — while their status read `shortlisted`. The event trail shows each send followed 1.5–2.5 SECONDS
+ * later by a move back to `shortlisted` carrying no note.
+ *
+ * It was not a race and not a machine. `Shortlist` and `Send to manager` sit as adjacent icon
+ * buttons in one dense pool row, and Shortlist was disabled only when the candidate was ALREADY
+ * shortlisted — so after a send it stayed live, labelled plainly "Shortlist". Sending a CV on and
+ * marking it shortlisted reads as two complementary acts; nothing said the status is a single slot
+ * and that the second press discards the first. Two clicks, two seconds apart, fifty times.
+ *
+ * The consequence was not cosmetic. Every screen that keys off status showed those fifty as not yet
+ * sent, so they could be sent to the same manager twice, and the overdue-feedback queue undercounted
+ * by fifty against a reported total of thirteen.
+ *
+ * SO THIS MIRRORS A RULE THE SEND PATH ALREADY HAS. `notifyManagerAboutCandidates` refuses to
+ * overwrite `hired` — "sending a hired candidate's CV on to another manager is a reference request,
+ * not a re-entry into the pipeline". This is that same idea in the other direction: a decision that
+ * has already left the building is not quietly walked back to the shelf it came from.
+ *
+ * DELIBERATELY NARROW. It refuses exactly the one transition that has actually gone wrong and says
+ * nothing about any other. A recruiter genuinely pulling somebody back still has `Reject`, and the
+ * undo control still restores whatever a row carried moments ago. This is not a state machine, and
+ * inventing one from a single incident is how a screen acquires refusals nobody can explain.
+ */
+export function statusChangeRefusal(
+  current: string | null | undefined,
+  next: string | null | undefined,
+): string | null {
+  const from = normalizeCandidateStatus(current);
+  const to = normalizeCandidateStatus(next);
+  if (!from || !to) return null;
+  if (from === "sent_to_manager" && to === "shortlisted") {
+    return "This CV has already been sent to a hiring manager, so it cannot be moved back to shortlisted — "
+      + "that would hide it from the manager-feedback queue and let it be sent again. "
+      + "Use Reject if they are not proceeding, or Undo to take back the send itself.";
+  }
+  return null;
 }
 
 /**

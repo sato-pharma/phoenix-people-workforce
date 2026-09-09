@@ -103,6 +103,7 @@ import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.
 import { runPayrollSheetMappingTests } from "./payroll-sheet-mapping.test.ts";
 import { runPayrollUploadTemplateTests } from "./payroll-upload-template.test.ts";
 import { runPayrollExportHouseIdentityTests } from "./payroll-export-house-identity.test.ts";
+import { runPayrollPhoenixLookTests } from "./payroll-phoenix-look.test.ts";
 import { runPayrollSheetSectionsTests } from "./payroll-sheet-sections.test.ts";
 import { runPayrollWorkflowTests } from "./payroll-workflow.test.ts";
 import { runCspHeaderTests } from "./csp-headers.test.ts";
@@ -220,9 +221,18 @@ import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.t
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
 import { runRecruitmentScreeningWorkstationTests } from "./recruitment-screening-workstation.test.ts";
 import { runCandidateFolderTests } from "./candidate-folders.test.ts";
+import { runCandidateCallClaimTests } from "./candidate-call-claims.test.ts";
+import { runCvPhoneRedactionTests } from "./cv-phone-redaction.test.ts";
+import { runCvFeedbackLockTests } from "./cv-feedback-lock.test.ts";
 import { runCandidatePoolFiledSearchTests } from "./candidate-pool-filed-search.test.ts";
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
 import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
+import {
+  runDriveCabinetFolderTests,
+  runDriveScriptAgreesWithAppTests,
+  runDriveTrashedFileTests,
+} from "./drive-cabinet-folders.test.ts";
+import { runCandidateStatusRegressionGuardTests } from "./candidate-status-regression-guard.test.ts";
 import { runCvLifecycleFeedTests } from "./cv-lifecycle-feed.test.ts";
 import { runCvLifecycleShareLinksScreenTests } from "./cv-lifecycle-share-links-screen.test.ts";
 import { runCvLifecycleSheetTokenRotationTests } from "./cv-lifecycle-sheet-token-rotation.test.ts";
@@ -504,6 +514,8 @@ import { runWeeklyBranchNameScopeTests } from "./weekly-branch-name-scope.test.t
 import { runWeeklyTrackedLinesScopeTests } from "./weekly-tracked-lines-scope.test.ts";
 import { runWeeklySummaryReportTests } from "./weekly-summary-report.test.ts";
 import { runWeeklyNsmDsmWorkbookTests } from "./weekly-nsm-dsm-workbook.test.ts";
+import { runWeeklyNsmDsmBeigeLookTests } from "./weekly-nsm-dsm-beige-look.test.ts";
+import { runWeeklyNsmDsmStockByBranchTests } from "./weekly-nsm-dsm-stock-by-branch.test.ts";
 import { runWeeklyMonthTargetScopeTests } from "./weekly-month-target-scope.test.ts";
 import { runSalesRawTemplateTests } from "./sales-raw-template.test.ts";
 import { runSalesMappingDatabaseTests } from "./sales-mapping-database.test.ts";
@@ -520,6 +532,7 @@ import { runSalesPharmacyOverrideTests } from "./sales-pharmacy-override.test.ts
 import { runSalesChannelsByRepTests } from "./sales-channels-by-rep.test.ts";
 import { runSosNormalizerPersistShapeTests } from "./sos-normalizer-persist-shape.test.ts";
 import { runSosImportTemplateTests } from "./sos-import-template.test.ts";
+import { runUnitsAreUnitsNoDiscountFactorTests } from "./units-are-units-no-discount-factor.test.ts";
 import { runImportPreviewTests } from "./import-preview.test.ts";
 import { runEmployeeImportTeamResurrectionGuardTests } from "./employee-import-team-resurrection-guard.test.ts";
 import { runOrgTitleCaseAcronymTests } from "./org-title-case-acronyms.test.ts";
@@ -610,6 +623,7 @@ import { runMarketingCoverageReportAnalyticsTests } from "./marketing-coverage-r
 import { runMarketingCoverageDistributorRollupTests } from "./marketing-coverage-distributor-rollup.test.ts";
 import { runMarketingCoverageUrlStateTests } from "./marketing-coverage-url-state.test.ts";
 import { runWeeklyExportTests } from "./weekly-export-workbook.test.ts";
+import { runWeeklyExportDesignLockTests } from "./weekly-export-design-lock.test.ts";
 import { runMarketingValidationServiceTests } from "./marketing-validation-service.test.ts";
 import { runMarketingCompleteExistingCustomerTests } from "./marketing-complete-existing-customer.test.ts";
 import { runMarketingCompleteExistingVenueTests } from "./marketing-complete-existing-venue.test.ts";
@@ -650,7 +664,11 @@ import { runOutstationExpenseExportTests } from "./outstation-expense-export.tes
 import { runOutstationLocalDraftTests } from "./outstation-local-draft.test.ts";
 import { runOutstationPayrollExpenseMappingTests } from "./outstation-payroll-expense-mapping.test.ts";
 import { runOutstationWorkflowResyncPreservesHrDecisionTests } from "./outstation-workflow-resync-preserves-hr-decision.test.ts";
+import { runExpenseReadsAreNotCappedAt1000Tests } from "./expense-reads-are-not-capped-at-1000.test.ts";
+import { runExpenseApprovalDecisionsSurviveTheSaveTests } from "./expense-approval-decisions-survive-the-save.test.ts";
+import { runExpenseApprovalsOneListTests } from "./expense-approvals-one-list.test.ts";
 import { runOutstationImportIsAdditiveTests } from "./outstation-import-is-additive.test.ts";
+import { runExpenseImportSheetHrIdWinsTests } from "./expense-import-sheet-hr-id-wins.test.ts";
 import { runSalaryRecordsUniqueBatchHrTests } from "./salary-records-unique-batch-hr.test.ts";
 import { runOutstationPolicyClassificationTests } from "./outstation-policy-classification.test.ts";
 import { runOutstationNotificationsTests } from "./outstation-notifications.test.ts";
@@ -681,6 +699,7 @@ import { runAccessProfileHrIdCasingTests } from "./access-profile-hrid-casing.te
 import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.test.ts";
 import { runSourceEncodingGuardTests } from "./source-encoding-guard.test.ts";
 import { runPortalNavActingDmUsesAppRoleTests } from "./portal-nav-acting-dm-uses-app-role.test.ts";
+import { runEmployeePortalBottomNavBadgesTests } from "./employee-portal-bottom-nav-badges.test.ts";
 import { runEmployeePortalBottomNavTests } from "./employee-portal-bottom-nav.test.ts";
 import { runEmployeePortalNavCatalogSyncTests } from "./employee-portal-nav-catalog-sync.test.ts";
 import { runEmployeePortalNavPermissionMatchesPageTests } from "./employee-portal-nav-permission-matches-page.test.ts";
@@ -700,6 +719,10 @@ import { runHrRetentionRegisterTests } from "./hr-retention-register.test.ts";
 import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
 import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
+import { runDeviceRegisterTests } from "./device-register.test.ts";
+import { runDeviceRegisterFitsTheScreenTests } from "./device-register-fits-the-screen.test.ts";
+import { runDeviceBulkImportTests } from "./device-bulk-import.test.ts";
+import { runDeviceImportAttemptLogTests } from "./device-import-attempt-log.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
 import { runHrTodayTasksTests } from "./hr-today-tasks.test.ts";
 import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
@@ -770,6 +793,8 @@ import { runPhase21SecurityHardeningTests } from "./phase21-security-hardening.t
 import { runPhase22RoleMatrixSecurityTests } from "./phase22-role-matrix-security.test.ts";
 import { runCeoOrganogramVisibilityTests } from "./ceo-organogram-visibility.test.ts";
 import { runOrganogramWhatsAppNumberTests } from "./organogram-whatsapp-number.test.ts";
+import { runWhatsAppMessageTemplateTests } from "./whatsapp-message-templates.test.ts";
+import { runWhatsAppSendOpensARealTabTests } from "./whatsapp-send-opens-a-real-tab.test.ts";
 import { runOrganogramWhatsAppGateTests } from "./organogram-whatsapp-gate.test.ts";
 import { runCeoCommandCenterTests } from "./ceo-command-center.test.ts";
 import { runPhase23BrowserRoleWalkthroughTests } from "./phase23-browser-role-walkthrough.test.ts";
@@ -794,6 +819,7 @@ import { runEmailProviderFailoverTests } from "./email-provider-failover.test.ts
 import { runBrevoWebhookEventsTests } from "./brevo-webhook-events.test.ts";
 import { runEmailActivityTests } from "./email-activity.test.ts";
 import { runEmailTemplatesTriggersTests } from "./email-templates-triggers.test.ts";
+import { runEmailTemplateKeyResolutionTests } from "./email-template-key-resolution.test.ts";
 import { runEmailFollowupsTests } from "./email-followups.test.ts";
 import { runReportItAccessTests } from "./report-it-access.test.ts";
 import { runSosInvoiceDateTests } from "./sos-invoice-date.test.ts";
@@ -1056,6 +1082,7 @@ import { runMigrationsCairoDateGuardTests } from "./migrations-cairo-date-guard.
 import { runMigrationGrandfatherStalenessTests } from "./migration-grandfather-staleness.test.ts";
 import { runStagingMigrationApplierTests } from "./staging-migration-applier.test.ts";
 import { runAutomatedPayrollRejectedExpensesTests } from "./automated-payroll-rejected-expenses.test.ts";
+import { runAutomatedPayrollExpenseStepApprovedOnlyTests } from "./automated-payroll-expense-step-approved-only.test.ts";
 import { runAutomatedPayrollExpenseResyncTests } from "./automated-payroll-expense-resync.test.ts";
 import { runAutomatedPayrollReadsDeductionsModuleTests } from "./automated-payroll-reads-deductions-module.test.ts";
 import { runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests } from "./automated-payroll-manual-expenses-and-part2-non-employees.test.ts";
@@ -1130,9 +1157,13 @@ import { runAchievementHashableJoinKeyTests } from "./achievement-hashable-join-
 import { runDirectOrdersRegistryChainGrantsTests } from "./direct-orders-registry-chain-grants.test.ts";
 import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
 import { runSosWarehouseOwnerRulingsTests } from "./sos-warehouse-owner-rulings.test.ts";
+import { runEpdaPediaWarehouseRulingsTests } from "./epda-pedia-warehouse-rulings.test.ts";
 import { runImportSplitPreviewTests } from "./import-split-preview.test.ts";
 import { runCityListNewAreaGuardTests } from "./city-list-new-area-guard.test.ts";
-import { runQemaQalubeyaSplitTests } from "./qema-qalubeya-split.test.ts";
+import { runClosingSourceMaskTests } from "./closing-source-mask.test.ts";
+import { runQemaWarehouseSplitTests } from "./qema-warehouse-split.test.ts";
+import { runPediaUpperEgyptSplitTests } from "./pedia-upper-egypt-split.test.ts";
+import { runAttributionStoreSplitNetTests } from "./attribution-store-split-net.test.ts";
 import { runStoreNamePrefixesTests } from "./store-name-prefixes.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
 import { runClosingStoreSplitHonoursEvenSplitRegistryTests } from "./closing-store-split-honours-even-split-registry.test.ts";
@@ -1147,6 +1178,7 @@ import { runClosingManagerAsOfTests, runClosingPerformanceReviewTests } from "./
 import { runMonthlyClosingPeriodMergeTests } from "./monthly-closing-period-merge.test.ts";
 import { runClosingReviewFilterTests } from "./closing-review-filters.test.ts";
 import { runCeoMarketingApprovalInboxTests } from "./ceo-marketing-approval-inbox.test.ts";
+import { runMarketAwarenessApprovalInboxNavBadgeTests } from "./market-awareness-approval-inbox-nav-badge.test.ts";
 import { runMarketingApprovalInboxNavBadgeTests } from "./marketing-approval-inbox-nav-badge.test.ts";
 
 import { runMarketingApproverChainHistoryTests } from "./marketing-approver-chain-history.test.ts";
@@ -1230,6 +1262,8 @@ import { runMonthlyClosingExportAreaMergeStaticTests } from "./monthly-closing-e
 import { runSalesStoreOverrideTests } from "./sales-store-override.test.ts";
 import { runClosingExportFilenameTests } from "./closing-export-filename.test.ts";
 import { runClosingEngineExportTests } from "./closing-engine-export.test.ts";
+import { runClosingExecutiveLookTests } from "./closing-executive-look.test.ts";
+import { runClosingLayoutInvariantTests } from "./closing-layout-invariants.test.ts";
 import { runClosingAchievementFollowsTheClosingTests } from "./closing-achievement-follows-the-closing.test.ts";
 import { runWeeklyPlansDistrictManagerBypassTests } from "./weekly-plans-district-manager-bypass.test.ts";
 import { runNotificationRecipientAddressResolutionTests } from "./notification-recipient-address-resolution.test.ts";
@@ -1265,6 +1299,7 @@ import { runPortalCanonicalSalesRowsTests } from "./portal-canonical-sales-rows.
 import { runCanonicalDashboardRowsTests } from "./canonical-dashboard-rows.test.ts";
 import { runEmployee360CanonicalSalesTests } from "./employee-360-canonical-sales.test.ts";
 import { runNationalHolidaysObservanceFilterTests } from "./national-holidays-observance-filter.test.ts";
+import { runBenignClientDisconnectTests } from "./benign-client-disconnect.test.ts";
 import { runDescribeThrownTests } from "./describe-thrown.test.ts";
 import { runManagerCascadeFrozenTablesTests } from "./manager-cascade-frozen-tables.test.ts";
 import { runSalesBatchDeleteGuardTests } from "./sales-batch-delete-guard.test.ts";
@@ -1274,6 +1309,7 @@ import { runMarketingPharmacyCodeCompactTests } from "./marketing-pharmacy-code-
 import { runMasterMapMergeTests } from "./master-map-merge.test.ts";
 import { runMasterMapOrganogramRegionsTests } from "./master-map-organogram-regions.test.ts";
 import { runMasterMapDistrictManagersTests } from "./master-map-district-managers.test.ts";
+import { runMasterMapFinderGridTests } from "./master-map-finder-grid.test.ts";
 import { runZoomablePhotoTests } from "./zoomable-photo.test.ts";
 import { runMarketingCaseFileDecisionBarTests } from "./marketing-case-file-decision-bar.test.ts";
 import { runMarketingDecisionPageReturnGatingTests } from "./marketing-decision-page-return-gating.test.ts";
@@ -1312,7 +1348,11 @@ import { runCvContentFingerprintTests } from "./cv-content-fingerprint.test.ts";
 import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
 import { runCandidateNameFromCvTests } from "./candidate-name-from-cv.test.ts";
 import { runLegacyDocCvTests } from "./recruitment-legacy-doc-cv.test.ts";
-import { runCvLibraryTests } from "./cv-library.test.ts";
+import {
+  runCvGradeNormalizerTests,
+  runCvLibraryScreeningFilterTests,
+  runCvLibraryTests,
+} from "./cv-library.test.ts";
 import { runHiringEmployeeScopeTests } from "./hiring-employee-scope.test.ts";
 import { runMarketingAdminOverrideNoteTests } from "./marketing-admin-override-note.test.ts";
 import { runRecruitmentPoolFilterTests } from "./recruitment-pool-filters.test.ts";
@@ -1389,6 +1429,7 @@ import { runPortalToolsGridFitsAPhoneTests } from "./portal-tools-grid-fits-a-ph
 import { runRecruitmentFolderCvPopupTests } from "./recruitment-folder-cv-popup.test.ts";
 
 import { runRepoDoctorWorktreeRestoreAdviceTests } from "./repo-doctor-worktree-restore-advice.test.ts";
+import { runWorktreeRemoveRemoteContainmentTests } from "./worktree-remove-remote-containment.test.ts";
 import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
 
 import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer.test.ts";
@@ -1396,6 +1437,8 @@ import { runRepoDoctorNewestPrTests } from "./repo-doctor-newest-pr.test.ts";
 import { runSessionLockStalenessIsAgeTests } from "./session-lock-staleness-is-age.test.ts";
 import { runRepoDoctorOrphanedFoldersTests } from "./repo-doctor-orphaned-folders.test.ts";
 import { runRepoDoctorXlsxSnapshotTests } from "./repo-doctor-xlsx-snapshot.test.ts";
+import { runRepoDoctorSessionHoldTests } from "./repo-doctor-session-hold.test.ts";
+import { runWorktreeLivenessTests } from "./worktree-liveness.test.ts";
 import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
 import { runOutstationMobileWizardStaleCalculationTests } from "./outstation-mobile-wizard-stale-calculation.test.ts";
 import { runOutstationPayrollPayableTotalAgreementTests } from "./outstation-payroll-payable-total-agreement.test.ts";
@@ -1449,10 +1492,39 @@ import { runMarketAwarenessTests } from "./market-awareness.test.ts";
 import { runMonthlySalesRunReconcileTests } from "./monthly-sales-run-reconcile.test.ts";
 import { runWorktreeNodeModulesJunctionTests } from "./worktree-node-modules-junction.test.ts";
 import { runChannelsByRepPharmacyOverrideTests } from "./channels-by-rep-pharmacy-override.test.ts";
+import { runCustomerChannelSqlRuleTests } from "./customer-channel-sql-rule.test.ts";
 import { runSalesUploadAnalyzeMatchesCommitTests } from "./sales-upload-analyze-matches-commit.test.ts";
 import { runSalesUploadReceiptConfidentialityTests } from "./sales-upload-receipt-confidentiality.test.ts";
 import { runRetentionRiskDetectorTests } from "./retention-risk-detector.test.ts";
 import { runRetentionRiskNotifyTests } from "./retention-risk-notify.test.ts";
+import { runCrmAccountSetupTests } from "./crm-account-setup.test.ts";
+import {
+  runEmployeeManagementCanEditReachTests,
+  runEmployeeManagementCanEditTests,
+} from "./employee-management-can-edit.test.ts";
+import { runEmployeeCvTests } from "./employee-cv.test.ts";
+import { runHrbpTerritoryManagementAccessTests } from "./hrbp-territory-management-access.test.ts";
+
+import { runAgentsLongHooksCiteDocsTests } from "./agents-long-hooks-cite-docs.test.ts";
+
+import { runAttendanceDeductionCancelRuleTests } from "./attendance-deduction-cancel-rule.test.ts";
+
+import { runAttendanceDeductionCancelMatrixTests } from "./attendance-deduction-cancel-matrix.test.ts";
+import { runSecretBoxTests } from "./secret-box.test.ts";
+
+import { runAttendanceWeeklyDigestTests } from "./attendance-weekly-digest.test.ts";
+import { runMarketingCodeUnlinkFalloutTests } from "./marketing-code-unlink-fallout.test.ts";
+import { runMarketingCodeLinkReachTests } from "./marketing-code-link-reach.test.ts";
+import { runReturnedOrdersAgeingTests } from "./returned-orders-ageing.test.ts";
+import { runNotificationHeldAgeingTests } from "./notification-held-ageing.test.ts";
+import { runOverCapNeverBlocksTests } from "./over-cap-never-blocks.test.ts";
+import { runTargetsUnsavedEditGuardTests } from "./targets-unsaved-edit-guard.test.ts";
+import { runDirectOrderVenueGapsTests } from "./direct-order-venue-gaps.test.ts";
+import { runVacancyOptionLabelTests } from "./vacancy-option-label.test.ts";
+import { runOrganogramArabicSearchTests } from "./organogram-arabic-search.test.ts";
+import { runOrganogramTeamLabelTests } from "./organogram-team-label.test.ts";
+import { runWeeklyUploadLineNotificationTests } from "./weekly-upload-line-notification.test.ts";
+import { runSalesNotificationExclusionsTests } from "./sales-notification-exclusions.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1647,6 +1719,7 @@ await runTest("money path silent failures (a confident zero is worse than an err
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);
 await runTest("payroll sheet sections and the Working Days column", runPayrollSheetSectionsTests);
 await runTest("payroll exports (house identity, computed bands, held in words, step round trip)", runPayrollExportHouseIdentityTests);
+await runTest("automated payroll exports keep the Phoenix look (exempt from the house identity)", runPayrollPhoenixLookTests);
 await runTest("payroll upload template (house identity, captions cannot outscore the header row)", runPayrollUploadTemplateTests);
 await runTest("payroll workflow", runPayrollWorkflowTests);
 await runTest("automated payroll split (Part 1/2 freeze + FP-in-Part-1 + reconcile)", runAutomatedPayrollSplitTests);
@@ -1886,6 +1959,25 @@ await runTest(
 await runTest(
   "recruitment Drive mirror (region then area, and Delta (3) files where recruitment says, not where sales does)",
   runDriveCvFolderTests,
+);
+await runTest(
+  "CV cabinet (position is classified not typed — 40 top-level folders collapse to 12 — and an identical re-send is never copied twice)",
+  runDriveCabinetFolderTests,
+);
+await runTest(
+  "Drive trashed-file detection (the bin is not a 404 — a binned CV must never be re-filed, and a "
+    + "missing one still must be)",
+  runDriveTrashedFileTests,
+);
+await runTest(
+  "the backfill script asks the app where a CV belongs (a second copy of the rule called 913 filed "
+    + "CVs misfiled, and --refile would have moved them back out of the cabinet)",
+  runDriveScriptAgreesWithAppTests,
+);
+await runTest(
+  "candidate status regression guard (a CV sent to a manager cannot be walked back to shortlisted — "
+    + "the adjacent button that did it fifty times, two seconds after each send)",
+  runCandidateStatusRegressionGuardTests,
 );
 await runTest(
   "CV lifecycle sheet (the day bucket is Cairo's, a backfilled mirror still counts on its arrival day, and no column claims the candidate's send time)",
@@ -2351,6 +2443,8 @@ await runTest("weekly de-cumulation (cumulative → real per-week)", runWeeklyDe
 await runTest("weekly batch scope (cycle-month fetch narrowing)", runWeeklyBatchScopeTests);
 await runTest("weekly summarized report (manager attribution, YTD stock, low-sales)", runWeeklySummaryReportTests);
 await runTest("weekly NSM/DSM export (column arithmetic, date header)", runWeeklyNsmDsmWorkbookTests);
+await runTest("weekly NSM/DSM export keeps the beige look (exempt from the house identity)", runWeeklyNsmDsmBeigeLookTests);
+await runTest("weekly NSM/DSM Stock by branch (reporting distributors, no apportioned stock)", runWeeklyNsmDsmStockByBranchTests);
 await runTest("weekly tracked-line scope (golden rule: CNS / Anti Infective / Pedia)", runWeeklyTrackedLinesScopeTests);
 await runTest("weekly branch area split (owner rule: even across governorates then areas)", runWeeklyBranchAreaSplitTests);
 await runTest("weekly branch name scope (a depot name names its territory)", runWeeklyBranchNameScopeTests);
@@ -2366,6 +2460,7 @@ await runTest("sales linkage gate (one engine)", runSalesLinkageTests);
 await runTest("sales channels by rep (stems derived, restricted fail-closed, unattributed kept)", runSalesChannelsByRepTests);
 await runTest("sos normalizer persist shape", runSosNormalizerPersistShapeTests);
 await runTest("sos import template", runSosImportTemplateTests);
+await runTest("units are units — no discount factor", runUnitsAreUnitsNoDiscountFactorTests);
 await runTest("import preview diff", runImportPreviewTests);
 await runTest("employee import never resurrects a deactivated team (insert-only org entities)", runEmployeeImportTeamResurrectionGuardTests);
 await runTest("org title casing keeps acronyms (HR/QPPV/CEO/SFE/R&D), lower-cases minor words mid-name, and round-trips to the same code", runOrgTitleCaseAcronymTests);
@@ -2454,6 +2549,7 @@ await runTest("marketing coverage URL filter state (shareable link round-trip)",
 await runTest("marketing ROI attribution consistency (no brick/geography fallback across all paths)", runMarketingRoiAttributionConsistencyTests);
 await runTest("marketing ROI actuals toggle parity (includeRestricted must not silently drop direct-order sales)", runMarketingRoiActualsToggleParityTests);
 await runTest("weekly sales BI export workbook (xlsx builds + clean)", runWeeklyExportTests);
+await runTest("weekly BI + NSM/DSM export designs are PASSWORD-LOCKED (owner 2026-09-08)", runWeeklyExportDesignLockTests);
 await runTest("marketing request service", runMarketingRequestServiceTests);
 await runTest("report rpc guardrails", runReportRpcGuardrailTests);
 await runTest("marketing review routing", runMarketingReviewRoutingTests);
@@ -2529,7 +2625,23 @@ await runTest(
   "outstation workflow resync preserves the HR decision",
   runOutstationWorkflowResyncPreservesHrDecisionTests,
 );
+await runTest(
+  "expense reads are not capped at PostgREST's 1000 rows",
+  runExpenseReadsAreNotCappedAt1000Tests,
+);
+await runTest(
+  "expense approval decisions survive the save (undone rejection, request approve, unsaved draft)",
+  runExpenseApprovalDecisionsSurviveTheSaveTests,
+);
+await runTest(
+  "expense approvals are one ordered list, not three tabs",
+  runExpenseApprovalsOneListTests,
+);
 await runTest("outstation import is additive and hr_id-scoped", runOutstationImportIsAdditiveTests);
+await runTest(
+  "expense import: an HR ID in the sheet beats a name match (leavers)",
+  runExpenseImportSheetHrIdWinsTests,
+);
 await runTest("salary_records unique per employee per batch", runSalaryRecordsUniqueBatchHrTests);
 await runTest("outstation policy classification", runOutstationPolicyClassificationTests);
 await runTest("outstation notifications", runOutstationNotificationsTests);
@@ -2541,6 +2653,10 @@ await runTest("employee portal navigation", runEmployeePortalNavigationTests);
 await runTest("source encoding guard", runSourceEncodingGuardTests);
 await runTest("portal nav acting DM follows app access role, not job title", runPortalNavActingDmUsesAppRoleTests);
 await runTest("employee portal bottom nav", runEmployeePortalBottomNavTests);
+await runTest(
+  "employee portal bottom nav badges (the mirrored navBadge matches its nav row in both directions, Awareness carries one, and the bar renders the COMPACT dot through the shared pump inside the shell that squares it)",
+  runEmployeePortalBottomNavBadgesTests,
+);
 await runTest("employee portal nav catalog sync (M12)", runEmployeePortalNavCatalogSyncTests);
 await runTest("employee portal nav permission matches page gate (B6)", runEmployeePortalNavPermissionMatchesPageTests);
 await runTest("company calendar", runCompanyCalendarTests);
@@ -2627,6 +2743,31 @@ await runTest(
   + "measured 1840px inside a 909px content box, and the page-level overflow check read clean the "
   + "whole time; four table-fixed columns, merged not shrunk, and long values wrap)",
   runMailboxOffboardingTableFitsTheScreenTests,
+);
+await runTest(
+  "company device register (a device signed out to somebody who has LEFT is the flag the register "
+  + "exists to raise, and an unknown holder counts as one; the settlement cap of البند (10), the "
+  + "frozen agreed value of البند (9), and a lost device NOT releasing its holder all live in the "
+  + "plpgsql where a page cannot bypass them)",
+  runDeviceRegisterTests,
+);
+await runTest(
+  "device register fits the screen (four table-fixed columns totalling 100%, the action column "
+  + "widest because it holds the employee <select>, long values wrap with break-words, and no "
+  + "rounded corner anywhere - pinned at birth, not after the defect the sibling register shipped)",
+  runDeviceRegisterFitsTheScreenTests,
+);
+await runTest(
+  "device bulk import (one column definition drives the template writer AND the parser, matched by "
+  + "header text so a moved column cannot put a serial in the IMEI field; a leaver MAY hold a "
+  + "device because that is the exposure the register exists to surface; no sample data row)",
+  runDeviceBulkImportTests,
+);
+await runTest(
+  "device import attempt log (every press is recorded whatever becomes of it, and an import that "
+  + "wrote nothing can never read like a success - the ambiguity that made an empty register "
+  + "indistinguishable from an import that never arrived)",
+  runDeviceImportAttemptLogTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
@@ -2772,6 +2913,7 @@ await runTest("email provider failover (Resend → Brevo, dedup-safe)", runEmail
 await runTest("brevo webhook events (auth + event mapping + dedup)", runBrevoWebhookEventsTests);
 await runTest("email activity (provider/recipient inference)", runEmailActivityTests);
 await runTest("email templates triggers", runEmailTemplatesTriggersTests);
+await runTest("email template key resolution (retired alias must not shadow)", runEmailTemplateKeyResolutionTests);
 await runTest("email followups", runEmailFollowupsTests);
 await runTest("report-it access", runReportItAccessTests);
 await runTest("sos invoice date", runSosInvoiceDateTests);
@@ -3152,6 +3294,7 @@ await runTest(
   runStagingMigrationApplierTests,
 );
 await runTest("automated payroll rejected expenses (an HR rejection must not be reimbursed; pending still flows)", runAutomatedPayrollRejectedExpensesTests);
+await runTest("automated payroll expense step proposes only approved trips, and surfaces the undecided ones", runAutomatedPayrollExpenseStepApprovedOnlyTests);
 await runTest("automated payroll expense resync (an approval changed after the step was confirmed must reach payroll)", runAutomatedPayrollExpenseResyncTests);
 await runTest("automated payroll reads the Deductions module (only what HR confirmed reaches the sheet; unknown statuses fail closed)", runAutomatedPayrollReadsDeductionsModuleTests);
 await runTest("automated payroll manual expenses + Part 2 non-employees (a hand-added employee survives reload; a Part 2 non-employee reaches the bank file)", runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests);
@@ -3282,6 +3425,10 @@ await runTest(
   runClosingAndTargetsAgreeTests,
 );
 await runTest(
+  "attribution applies the wholesaler city split (the net sums to ZERO in both measures so a month's total cannot move; the per-line gate holds -- Pedia splits in August, Anti Infective does not until September because August is published; units move on total_qty and money on effective_units, proven with a discounted row where they differ; the line name reaches SQL verbatim because au.sos_official_line_map is not the identity; and a quiet period still writes, to clear a stale net)",
+  runAttributionStoreSplitNetTests,
+);
+await runTest(
   "achievement counts the unmapped channel (no channel filter survives, the line_code rejoins are NULL-safe so a line-less sale is not zeroed, and service_role keeps execute)",
   runAchievementCountsUnmappedTests,
 );
@@ -3299,6 +3446,10 @@ await runTest(
   runSosWarehouseOwnerRulingsTests,
 );
 await runTest(
+  "EPDA Pedia warehouse rulings 2026-09-07 (seven named, and the 3.6M neighbour they must not catch)",
+  runEpdaPediaWarehouseRulingsTests,
+);
+await runTest(
   "CEO marketing approval inbox (the final rung reaches page, sidebar link and decision page in the admin shell; the opt-in widens nothing else)",
   runCeoMarketingApprovalInboxTests,
 );
@@ -3312,8 +3463,16 @@ await runTest(
   runCityListNewAreaGuardTests,
 );
 await runTest(
-  "El Qema Qalubeya split (one way, El Qema only — Qalubeya reaches Cairo, Cairo never reaches Qalubeya, and the same warehouse through any other distributor does not split at all)",
-  runQemaQalubeyaSplitTests,
+  "El Qema priority ladder (the whole Pedia book divided across every area the line has, with Qalubeya, Menoufia, Gharbia and Cairo one 2% step apart in that order — where a warehouse sits and how much it sold both stopped mattering, and Others take nothing including their own sales)",
+  runQemaWarehouseSplitTests,
+);
+await runTest(
+  "El Qema leaves no trace in a closing detail (distributor and customer blanked for every viewer but Super Admin, masked AFTER the split computes and BEFORE any workbook is written — never relabelled as another real distributor)",
+  runClosingSourceMaskTests,
+);
+await runTest(
+  "Pedia Upper Egypt split (August closes on the single Upper Egypt district over 37 El Qema areas; September resolves Upper Egypt 1 and Upper Egypt 2 with Luxor inside Qena 2 over 39; and the August distribution is identical before and after the dated pair is written)",
+  runPediaUpperEgyptSplitTests,
 );
 await runTest(
   "EPDA «م - » warehouse prefix (anchored at the START only — it matches 40 customers, while the same three characters appear MID-NAME in 590, and turning it into a keyword would move 550 pharmacies)",
@@ -3377,6 +3536,10 @@ await runTest(
 await runTest(
   "marketing approval inbox nav badge (gating rows only — not CC, not upcoming, not a request that already left pending_approval; overdue on the step's own default_sla_days, never on a null one)",
   runMarketingApprovalInboxNavBadgeTests,
+);
+await runTest(
+  "awareness approvals nav badge (identity-checked manager step so a peer GPM counts 0, the CEO step role-checked, a returned activity belongs to nobody's badge, mixed-case HR ids still match, overdue on the current step's own clock and never from a stranger's breach; wired end to end through the one shared badge pump and the batched poll)",
+  runMarketAwarenessApprovalInboxNavBadgeTests,
 );
 await runTest(
   "marketing approval history on the inbox row (ordered, CC excluded, credits the decider, silent approvals named)",
@@ -3817,6 +3980,14 @@ await runTest(
   runClosingEngineExportTests,
 );
 await runTest(
+  "the premium closing workbook holds its LAYOUT invariants — no negative shape, no two buttons overlapping, nothing reaching the warning strip, every slicer wide enough for its captions",
+  runClosingLayoutInvariantTests,
+);
+await runTest(
+  "the premium closing workbook keeps its APPROVED executive look (owner 2026-09-08) — exempt from the house identity, so no brand blue anywhere, rounded buttons kept, filled bands kept, band heights held",
+  runClosingExecutiveLookTests,
+);
+await runTest(
   "the premium closing's achievement IS the Monthly Closing's (all sales over target, owner 2026-09-05) on a MIXED area, on the masthead, on every region row, on Family Performance, and in the owner's own four .xlsm formulas",
   runClosingAchievementFollowsTheClosingTests,
 );
@@ -3969,6 +4140,10 @@ await runTest(
   runDescribeThrownTests,
 );
 await runTest(
+  "benign client disconnects never reach the error table (Next 16.3.3's 'The destination stream closed early.' carries no errno and made 15 rows in 8 hours), while a real 'Connection closed.' still does",
+  runBenignClientDisconnectTests,
+);
+await runTest(
   "manager cascade skips frozen tables (no sales_records PATCH — service_role lost UPDATE and it is the only record of what H1 was paid on; sales_targets was dropped 2026-09-06 and must not be PATCHed either)",
   runManagerCascadeFrozenTablesTests,
 );
@@ -3999,6 +4174,10 @@ await runTest(
 await runTest(
   "master map district managers (three per shop, never blank, and appended so the finder's column letters hold)",
   runMasterMapDistrictManagersTests,
+);
+await runTest(
+  "master map finder grid (the hidden helper is sized from the shop count, so the filter never spills into a grid too small to hold it)",
+  runMasterMapFinderGridTests,
 );
 
 await runTest(
@@ -4231,6 +4410,16 @@ await runTest(
     + "medical-sales answers, and no null leaking onto a screen)",
   runCvLibraryTests,
 );
+await runTest(
+  "CV screening filters (eligibility is borrowed from judgeBackground not re-decided, and 'not on "
+    + "file' stays reachable in both ranges — 172 have no graduation year and 426 no experience figure)",
+  runCvLibraryScreeningFilterTests,
+);
+await runTest(
+  "CV degree-grade normaliser (318 graded CVs in 98 spellings fold to four Egyptian grades; "
+    + "'Very Good' must not be swallowed by 'Good', and a bare GPA is never guessed at)",
+  runCvGradeNormalizerTests,
+);
 
 await runTest(
   "hiring employee scope (Hiring Documents and Hiring Pack both mean current staff, and neither "
@@ -4409,9 +4598,23 @@ await runTest("portal tile grids are single-column on a phone (a PremiumNavTile 
 await runTest("recruitment folder row opens the CV in place (modal + download, never the ?candidate= redirect)", runRecruitmentFolderCvPopupTests);
 
 await runTest("repo-doctor never advises pnpm install in a worktree (restore is new-session --repair)", runRepoDoctorWorktreeRestoreAdviceTests);
+await runTest(
+  "worktree removal frees a tip that is on origin under ANOTHER branch's name (confirmed against the remote, fails closed)",
+  runWorktreeRemoveRemoteContainmentTests,
+);
 await runTest("no source-pinning test strips comments with a regex that eats the code it pins", runCommentStripRatchetTests);
 
 await runTest("repo-doctor offers only what --strip-idle will actually reclaim", runRepoDoctorStripIdleOfferTests);
+await runTest(
+  "repo-doctor never offers a worktree a live session is standing in",
+  runRepoDoctorSessionHoldTests,
+);
+
+await runTest(
+  "a worktree with a live PROCESS in it is never retirable (and a sweep that read 0 processes is "
+    + "broken, not proof the folder is free)",
+  runWorktreeLivenessTests,
+);
 await runTest(
   "a session lock is stale by AGE alone, and no shipped text teaches the PID rule (the lock stores "
     + "the hook's own short-lived parent shell, so EVERY lock names a dead PID — the weekly hygiene "
@@ -4625,6 +4828,10 @@ await runTest(
   runChannelsByRepPharmacyOverrideTests,
 );
 await runTest(
+  "the channel rule reaches SQL whole (prefix anchored, cutover per line, every payload key read)",
+  runCustomerChannelSqlRuleTests,
+);
+await runTest(
   "market awareness (manager step by identity, approved is locked, Head Office never targetable)",
   runMarketAwarenessTests,
 );
@@ -4652,6 +4859,132 @@ await runTest(
   "decided for you (a cover's decisions surface to the manager they were taken for, outcomes never soften to Approved, and the viewer never sees his own decisions back)",
   runDecidedForMeTests,
 );
+await runTest(
+  "the HR Business Partner reaches Territory Management (territory:read from workforce_insight, her own sidebar row, a company-wide map scope) without gaining sales:read",
+  runHrbpTerritoryManagementAccessTests,
+);
+await runTest(
+  "AGENTS.md long hooks cite their account in docs/ (relocate first, never delete a hook)",
+  runAgentsLongHooksCiteDocsTests,
+);
+await runTest(
+  "new hire CRM account setup (the notice carries all seven facts, states a blank instead of dropping it, is email + in-app only, and fires on the CREATE path alone)",
+  runCrmAccountSetupTests,
+);
+await runTest(
+  "employee master canEdit (every page rendering it passes the grant, found by scanning rather than by a hand-kept list, and the default fails closed)",
+  runEmployeeManagementCanEditTests,
+);
+await runTest(
+  "employee master canEdit reach (whoever can open the portal copy gets controls matching their own employees:update)",
+  runEmployeeManagementCanEditReachTests,
+);
+await runTest(
+  "employee CV on the master record (the SFE Manager can open the link he is sent, the CV is filed BEFORE the notice is composed, and the bucket is private)",
+  runEmployeeCvTests,
+);
+await runTest(
+  "attendance deduction cancels (full-day leave, CRM leave and a CRM field visit cancel the charge; a half-day vacation is judged on the worked half, never waived)",
+  runAttendanceDeductionCancelRuleTests,
+);
+await runTest(
+  "attendance cancel matrix (all 96 flag combinations against the written policy, the worked-half start maths, and 46 real production days from April-August 2026)",
+  runAttendanceDeductionCancelMatrixTests,
+);
+await runTest(
+  "secret-box (a blob sealed before authTagLength still opens and fingerprints identically, a truncated 64-bit tag is refused, and tampering fails closed)",
+  runSecretBoxTests,
+);
+
+await runTest(
+  "WhatsApp message templates (placeholders derive the fields, an empty value is refused rather than rendering \"Dear ,\", the message survives the wa.me URL round trip, and an Egyptian number is repaired before it is read as international)",
+  runWhatsAppMessageTemplateTests,
+);
+await runTest(
+  "weekly attendance digest (four settlement weeks with no gap, a closed week only, and a cancelled day never becoming a chargeable line)",
+  runAttendanceWeeklyDigestTests,
+);
+
+await runTest(
+  "WhatsApp send opens a tab it can navigate (noopener makes window.open return null, stranding the user on about:blank)",
+  runWhatsAppSendOpensARealTabTests,
+);
+
+await runTest(
+  "unlinking a distributor code refuses when it would leave a customer with no selectable target (silent block, 2026-09-06)",
+  runMarketingCodeUnlinkFalloutTests,
+);
+
+await runTest(
+  "a new code link inherits its validation status and never elevates an unvalidated venue into the picker",
+  runMarketingCodeLinkReachTests,
+);
+
+await runTest(
+  "returned-order ageing bands are INVERTED against the held desk (big days = urgent), and the latest return comment wins",
+  runReturnedOrdersAgeingTests,
+);
+
+await runTest(
+  "over cap NEVER blocks a submission — it is flagged for approvers and submitted (owner rule 2026-08-03, restated 2026-09-08)",
+  runOverCapNeverBlocksTests,
+);
+
+await runTest(
+  "confidence-gate held ageing: big is urgent (no expiry, unlike the held desk countdown), and the header takes the worst band present",
+  runNotificationHeldAgeingTests,
+);
+
+await runTest(
+  "a typed sales target survives a reload, a sidebar click and a dropdown change (a month of Pedia targets was lost this way, 2026-09-08)",
+  runTargetsUnsavedEditGuardTests,
+);
+
+await runTest(
+  "direct-order venue gaps: a BLANK pharmacist counts as missing, and each chip's count equals what its filter shows",
+  runDirectOrderVenueGapsTests,
+);
+
+await runTest(
+  "vacancy option label (a district vacancy names its district, not only the leaver own area)",
+  runVacancyOptionLabelTests,
+);
+
+await runTest(
+  "organogram Arabic search (nameAr is indexed, and query and row fold to one spelling policy)",
+  runOrganogramArabicSearchTests,
+);
+
+await runTest(
+  "a manager's CV card: the phone is revealed by the \"I will call\" reservation and by nothing else, and the download is blocked in the route",
+  runCandidateCallClaimTests,
+);
+
+await runTest(
+  "the phone number PRINTED ON the CV is painted out for every manager but the one who reserved it",
+  runCvPhoneRedactionTests,
+);
+
+await runTest(
+  "a manager who opens a CV owes his feedback on it before he may open another (and may always reopen that one)",
+  runCvFeedbackLockTests,
+);
+
+await runTest(
+  "the organogram team label comes from the LINK, never the denormalized twin (which is empty for every employee)",
+  runOrganogramTeamLabelTests,
+);
+
+await runTest(
+  "a weekly upload mails only the lines whose products are in the sheet (Head Office never), with no figures in the body",
+  runWeeklyUploadLineNotificationTests,
+);
+
+await runTest(
+  "one shared list decides who is left out of a sales announcement, read by both senders, matched case-insensitively",
+  runSalesNotificationExclusionsTests,
+);
+
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

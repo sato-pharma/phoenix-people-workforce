@@ -4,6 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  CandidateCallControl,
+  CandidateCallNotice,
+  hiddenPhoneText,
+  useCandidateCall,
+} from "@/components/employee-portal/candidate-call-control";
 import { CandidateCommentThread } from "@/components/employee-portal/candidate-comment-thread";
 import { CandidateCvActions } from "@/components/employee-portal/candidate-cv-actions";
 import { CandidateFolderControl } from "@/components/employee-portal/candidate-folder-control";
@@ -14,6 +20,8 @@ import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { dateOnly } from "@/lib/format/date-only";
 import { APPLIED_FOR_SOURCE_LABEL, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
+import type { CandidateCallClaim, CandidateCallClaims } from "@/lib/recruitment/candidate-call-claims";
+import type { OutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock";
 import {
   CANDIDATE_STATUS_NOTE_MAX_LENGTH,
   candidateStatusLabel,
@@ -40,6 +48,26 @@ type Props = {
    */
   areaOptions: CandidateFolderAreaOption[];
   initialApplications: ApplicationWithContext[];
+  /**
+   * Who has said "I will call" on each CV on this page, keyed by candidate id.
+   *
+   * Loaded on the SERVER with the lists themselves, never per card. A card fetching its own claim is
+   * the pattern that made the View CV button take fifteen seconds to appear on the team screen, and
+   * this one is worse to get wrong: the claim decides whether the phone number is printed, so a card
+   * that has not heard back yet would show "Hidden" to the very manager holding the reservation.
+   *
+   * An absent key means nobody has claimed that CV. Absent for EVERY key — which is what a database
+   * without the table answers — is the pre-claim screen and is deliberately not an error state.
+   */
+  initialCallClaims: CandidateCallClaims;
+  /**
+   * The CV this manager opened and has not yet written about, read on the server with the page.
+   *
+   * The owner, 2026-09-09, on candidates being telephoned twice: he must write what he found before
+   * he may open another CV. Null is the normal state. The server refuses the file regardless; this
+   * is what lets the card say so instead of a preview breaking.
+   */
+  initialOutstandingFeedback: OutstandingFeedback | null;
   /**
    * This manager's own districts, and inside each one a folder per area he holds — every area,
    * including the ones nobody has applied to. Empty for anybody who holds no district seat, which is
@@ -149,16 +177,33 @@ function Field({ label, value }: { label: string; value: string | null | undefin
 
 function CandidateCard({
   application,
+  claim,
   files,
   onChanged,
+  onFeedbackGiven,
+  outstandingFeedback,
+  viewerHrId,
 }: {
   application: ApplicationWithContext;
+  /** Who has said they will call this candidate — the only thing that reveals the phone number. */
+  claim: CandidateCallClaim | null;
   /** Loaded with the page, for the same reason as the sent-to-you cards. */
   files: TeamCandidateFile[];
   onChanged: () => void;
+  /** He writes the feedback he owed, so the block lifts without a reload. */
+  onFeedbackGiven: (candidateId: string) => void;
+  /** The CV he owes feedback on, which blocks him opening any other. */
+  outstandingFeedback: OutstandingFeedback | null;
+  viewerHrId: string | null;
 }) {
   const candidate = application.candidate!;
   const requisition = application.requisition!;
+  // The phone is hidden here too, on a candidate already booked into this manager's own round.
+  // "On every CV", the owner said, and this is the list where an exception would be most tempting —
+  // nobody is competing for somebody already assigned to him. It is also the list where a hidden
+  // number with no way to reveal it would be worst, which is why the SAME control sits on the card:
+  // one press and he has it. There is no Skip here; the round has its own reject path.
+  const call = useCandidateCall(candidate, claim, viewerHrId);
   const [interviews, setInterviews] = useState<Interview[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -256,7 +301,9 @@ function CandidateCard({
     .join(" · ");
 
   return (
-    <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6">
+    <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6" id={`candidate-${candidate.id}`}>
+      <CandidateCallNotice claim={call.claim} viewerHrId={viewerHrId} />
+
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-base font-semibold text-slate-900">{candidate.fullName}</p>
@@ -271,7 +318,10 @@ function CandidateCard({
 
       <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
         <Field label="Email" value={candidate.email} />
-        <Field label="Phone" value={candidate.phone} />
+        {/* The hint tracks `canAct`, which gates every control on this card. Hard-coding it to true
+            would point a manager at an "I will call" button that his own card is not rendering,
+            because the candidate has not reached his interview round yet. */}
+        <Field label="Phone" value={call.phone ?? hiddenPhoneText(canAct)} />
         <Field label="Governorate" value={candidate.governorate} />
         <Field label="Address" value={candidate.address} />
         <Field label="Faculty" value={candidate.faculty} />
@@ -281,7 +331,31 @@ function CandidateCard({
         {candidate.hasMedicalRepExperience ? <Field label="Medical Rep tenure" value={tenureLine} /> : null}
       </div>
 
-      <CandidateCvActions candidateId={candidate.id} initialFiles={files} />
+      <CandidateCvActions
+        candidateId={candidate.id}
+        initialFiles={files}
+        outstandingFeedback={outstandingFeedback}
+        showPhoneNumbers={call.mine}
+      />
+
+      <CandidateCallControl
+        canAct={canAct}
+        candidateId={candidate.id}
+        claim={call.claim}
+        onChanged={call.apply}
+        viewerHrId={viewerHrId}
+      />
+
+      {/* ADDED WITH THE FEEDBACK LOCK, and required by it rather than decorative. Opening a CV here
+          creates the same obligation as opening one anywhere else, and this was the one card in the
+          portal with nowhere to write anything — a manager who opened an applicant in his own
+          interview round would have been locked out of every other CV with nothing on the screen in
+          front of him that could release it. */}
+      <CandidateCommentThread
+        candidateId={candidate.id}
+        onCommentAdded={onFeedbackGiven}
+        viewerHrId={viewerHrId}
+      />
 
       {error ? <p className="text-xs text-rose-600">{error}</p> : null}
 
@@ -371,24 +445,34 @@ function CandidateCard({
 function SentCandidateCard({
   areaOptions,
   candidate: initial,
+  claim: initialClaim,
   filing,
   files,
+  onFeedbackGiven,
   onFilingChanged,
+  outstandingFeedback,
   viewerHrId,
 }: {
   areaOptions: CandidateFolderAreaOption[];
   candidate: Candidate;
+  /** Who has said they will call this candidate, loaded with the list. */
+  claim: CandidateCallClaim | null;
   /** This manager's own filing of this CV, or null while it is still in his live list. */
   filing: ManagerFolderFiling | null;
   /** This candidate's files, already loaded with the list — so View CV is there with the card. */
   files: TeamCandidateFile[];
+  /** He writes the feedback he owed, so the block lifts without a reload. */
+  onFeedbackGiven: (candidateId: string) => void;
   onFilingChanged: (candidateId: string, filing: ManagerFolderFiling | null) => void;
+  /** The CV he owes feedback on, which blocks him opening any other. */
+  outstandingFeedback: OutstandingFeedback | null;
   viewerHrId: string | null;
 }) {
   const [candidate, setCandidate] = useState(initial);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const call = useCandidateCall(initial, initialClaim, viewerHrId);
 
   const notified = candidate.managerNotified;
   // Only an untouched candidate still needs an answer. Once the manager (or the recruiter) has
@@ -409,6 +493,11 @@ function SentCandidateCard({
         note: note.trim() || undefined,
       });
       if (data.candidate) setCandidate(data.candidate as Candidate);
+      // Skipping releases his reservation on the server, so the card has to follow: without this the
+      // number stays printed on a CV he has just passed on, until he happens to reload. The route
+      // answers with whatever claim now stands — null after his own Skip, unchanged when somebody
+      // else holds it — so the card never has to work it out for itself.
+      call.apply({ claim: (data.claim as CandidateCallClaim | null) ?? null, phone: null, whatsapp: null });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Failed to record your answer.");
     } finally {
@@ -417,7 +506,11 @@ function SentCandidateCard({
   };
 
   return (
-    <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6">
+    <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6" id={`candidate-${candidate.id}`}>
+      {/* Who has taken this CV, at the TOP of the card. A manager must know it is somebody else's
+          before he reads a word of it, not after he has formed an opinion at the foot of the card. */}
+      <CandidateCallNotice claim={call.claim} viewerHrId={viewerHrId} />
+
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-base font-semibold text-slate-900">{candidate.fullName}</p>
@@ -443,7 +536,9 @@ function SentCandidateCard({
       </div>
 
       <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Phone" value={candidate.phone} />
+        {/* Hidden until he takes the CV. The owner, 2026-09-09 — and it is the reservation that
+            reveals it, which is what makes "I will call" something he can act on. */}
+        <Field label="Phone" value={call.phone ?? hiddenPhoneText(true)} />
         <Field label="Email" value={candidate.email} />
         <Field label="Governorate" value={candidate.governorate} />
         <Field label="Current job title" value={candidate.currentJobTitle} />
@@ -458,7 +553,12 @@ function SentCandidateCard({
       </div>
 
       <div className="flex flex-wrap items-start gap-2">
-        <CandidateCvActions candidateId={candidate.id} initialFiles={files} />
+        <CandidateCvActions
+        candidateId={candidate.id}
+        initialFiles={files}
+        outstandingFeedback={outstandingFeedback}
+        showPhoneNumbers={call.mine}
+      />
         {/* The third answer, and the one the owner asked for on 2026-08-30: neither "Interview" nor
             "Not interested" is true of a good CV that simply is not needed this month. Filing writes
             to HIS shelf only - the recruitment team's pool does not move. */}
@@ -475,22 +575,50 @@ function SentCandidateCard({
       {awaitingAnswer ? (
         <div className="space-y-2 border-t border-slate-100 pt-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Your answer</p>
+
           <textarea
             className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
             maxLength={CANDIDATE_STATUS_NOTE_MAX_LENGTH}
             onChange={(event) => setNote(event.target.value)}
-            placeholder="A short note for the recruitment team (required if you are not interested)"
+            placeholder="A short note for the recruitment team (required if you skip)"
             rows={2}
             value={note}
           />
-          <div className="flex flex-wrap gap-2">
-            <Button disabled={busy} onClick={() => void answer("interview")} size="sm">
-              {hiringManagerDecisionLabels.interview}
-            </Button>
+
+          {/* THE OWNER'S TWO BUTTONS, IN ONE ROW. "I will call" comes from the control and Skip is
+              passed into it, because he asked for a pair and a pair separated by a text box does not
+              read as one. "I will call" is not a verdict — owner, 2026-09-09: it "only reserves; he
+              answers after the call" — so it moves no status and the recruiter's screens do not
+              change. What it does is reveal the phone number, to him alone. */}
+          <CandidateCallControl
+            canAct
+            candidateId={candidate.id}
+            claim={call.claim}
+            onChanged={call.apply}
+            viewerHrId={viewerHrId}
+          >
+            {/* THE ANSWER AFTER THE CALL, and it appears once he has taken it. Two buttons at every
+                moment, which is what was asked for: "I will call" and "Skip" before, "I want to
+                interview" and "Skip" after. Showing all three at once would put the verdict in front
+                of a manager who has not yet spoken to anybody — the exact step this feature inserts.
+
+                `call.unavailable` is the safety valve. If a reservation cannot be recorded at all
+                (the table not applied yet, a dropped connection) the answer would otherwise be
+                unreachable and the recruiter would simply stop hearing back, silently. So a press
+                that fails opens this instead — degrading towards MORE ability, never less. */}
+            {call.mine || call.unavailable ? (
+              <Button disabled={busy} onClick={() => void answer("interview")} size="sm">
+                {hiringManagerDecisionLabels.interview}
+              </Button>
+            ) : null}
+            {/* THE SECOND OF THE TWO. Deliberately the SAME decision route "Not interested" always
+                took — owner: "if the manager chooses skip then he is skipped normally" — so the
+                candidate is answered, the recruitment team gets the reason it asked for, and only
+                the word on the button has changed. */}
             <Button disabled={busy} onClick={() => void answer("not_interested")} size="sm" variant="destructive">
               {hiringManagerDecisionLabels.not_interested}
             </Button>
-          </div>
+          </CandidateCallControl>
         </div>
       ) : (
         <div className="border-t border-slate-100 pt-3">
@@ -505,7 +633,11 @@ function SentCandidateCard({
           holding the CV actually opens, because that is the only place a comment from above can do
           its job — a National Sales Manager's opinion filed somewhere only he can see is an opinion
           he may as well not have written. */}
-      <CandidateCommentThread candidateId={candidate.id} viewerHrId={viewerHrId} />
+      <CandidateCommentThread
+        candidateId={candidate.id}
+        onCommentAdded={onFeedbackGiven}
+        viewerHrId={viewerHrId}
+      />
     </Card>
   );
 }
@@ -513,6 +645,8 @@ function SentCandidateCard({
 export function RecruitmentCandidatesPortal({
   areaOptions,
   initialApplications,
+  initialCallClaims: callClaims,
+  initialOutstandingFeedback,
   initialDistrictBoards,
   initialFilings,
   initialFiles: files,
@@ -521,6 +655,13 @@ export function RecruitmentCandidatesPortal({
   viewerHrId,
 }: Props) {
   const [applications, setApplications] = useState(initialApplications);
+  // Held in state, not read straight from the prop, so writing the feedback lifts the block in place.
+  // The page only re-reads it on a reload, and a manager who has just typed his comment should not
+  // have to reload to be let through.
+  const [outstandingFeedback, setOutstandingFeedback] = useState(initialOutstandingFeedback);
+  const onFeedbackGiven = (candidateId: string) => {
+    setOutstandingFeedback((current) => (current && current.candidateId === candidateId ? null : current));
+  };
   const [filings, setFilings] = useState<ManagerFolderFilings>(initialFilings);
 
   // The manager's own shelf, folded by the RECRUITER's own partition function so a folder means one
@@ -546,10 +687,13 @@ export function RecruitmentCandidatesPortal({
     <SentCandidateCard
       areaOptions={areaOptions}
       candidate={candidate}
+      claim={callClaims[candidate.id] ?? null}
       filing={filings[candidate.id] ?? null}
       files={files[candidate.id] ?? []}
       key={candidate.id}
+      onFeedbackGiven={onFeedbackGiven}
       onFilingChanged={onFilingChanged}
+      outstandingFeedback={outstandingFeedback}
       viewerHrId={viewerHrId}
     />
   );
@@ -662,12 +806,25 @@ export function RecruitmentCandidatesPortal({
       {/* His own areas, after the CVs he owes an answer on and before his team's. This is a place to
           go looking rather than a queue: nobody is waiting on him for anything in here, so it must
           not sit above the list that is. */}
-      <DistrictFoldersSection boards={initialDistrictBoards} files={files} ownFolders viewerHrId={viewerHrId} />
+      <DistrictFoldersSection
+        boards={initialDistrictBoards}
+        callClaims={callClaims}
+        files={files}
+        onFeedbackGiven={onFeedbackGiven}
+        outstandingFeedback={outstandingFeedback}
+        ownFolders
+        viewerHrId={viewerHrId}
+      />
 
       {/* After the caller's own CVs, deliberately. The ones sent to HIM are the ones he still owes an
           answer on; his team's are for oversight and carry no obligation, so they must not push his
           own queue below the fold. */}
-      <TeamCandidatesSection managers={initialTeam} viewerHrId={viewerHrId} />
+      <TeamCandidatesSection
+        managers={initialTeam}
+        onFeedbackGiven={onFeedbackGiven}
+        outstandingFeedback={outstandingFeedback}
+        viewerHrId={viewerHrId}
+      />
 
       {applications.length > 0 ? (
         <section className="space-y-4">
@@ -680,9 +837,13 @@ export function RecruitmentCandidatesPortal({
           {applications.map((application) => (
             <CandidateCard
               application={application}
+              claim={callClaims[application.candidate?.id ?? ""] ?? null}
               files={files[application.candidate?.id ?? ""] ?? []}
               key={application.id}
               onChanged={reload}
+              onFeedbackGiven={onFeedbackGiven}
+              outstandingFeedback={outstandingFeedback}
+              viewerHrId={viewerHrId}
             />
           ))}
         </section>

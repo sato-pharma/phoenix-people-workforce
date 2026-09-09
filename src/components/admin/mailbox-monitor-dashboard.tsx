@@ -28,6 +28,7 @@ import type {
   MailboxMonitorStatus,
 } from "@/lib/mailbox-monitor/types";
 import { cn } from "@/lib/utils";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 const STATUS_STYLE: Record<MailboxMonitorStatus, { label: string; className: string }> = {
   active: { label: "Connected", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
@@ -50,7 +51,7 @@ function formatCairo(iso: string | null): string {
   if (!iso) return "—";
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return "—";
-  return new Intl.DateTimeFormat("en-GB", {
+  return stableEnGbFormatter({
     timeZone: "Africa/Cairo",
     day: "2-digit",
     month: "short",

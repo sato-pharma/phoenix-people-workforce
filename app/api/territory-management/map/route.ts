@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "sales", "read");
+    await assertPermission(access, "territory", "read");
 
     const params = new URL(request.url).searchParams;
     const lineCode = params.get("lineCode") ?? "";

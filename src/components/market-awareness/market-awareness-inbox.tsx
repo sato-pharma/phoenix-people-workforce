@@ -9,6 +9,8 @@ import {
   Inbox,
   MapPin,
   MessageSquare,
+  PauseCircle,
+  PlayCircle,
   RefreshCcw,
   RotateCcw,
   TriangleAlert,
@@ -17,6 +19,10 @@ import {
 } from "lucide-react";
 
 import { Conversation } from "@/components/market-awareness/market-awareness-conversation";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+// Pure, and client-safe: workflow.ts imports permissions only as a TYPE, so nothing server-side
+// follows it into this bundle.
+import { describeInboxStep } from "@/lib/market-awareness/workflow";
 
 /**
  * Market Awareness — the approvals inbox.
@@ -33,9 +39,32 @@ import { Conversation } from "@/components/market-awareness/market-awareness-con
  * `rounded-*` class in this file), no ellipsis, human names never codes, Cairo time.
  */
 
+/**
+ * The five answers. `hold` and `release` are the owner's 2026-09-09 addition: any member of the
+ * group may freeze the request, and only whoever froze it, the CEO or Super Admin may lift it.
+ */
+type DecisionAction = "approve" | "reject" | "return" | "hold" | "release";
+
 type Line = { id: number; lineCode: string; name: string };
 
 type SeatHolder = { name: string | null; vacant: boolean };
+
+/**
+ * One member of the parallel approval group. `decision` null means they have not answered yet, and
+ * that is what the progress strip counts — a request is waiting on everyone who has not answered,
+ * all at once, which is the whole point of the group.
+ */
+type ApproverSlot = {
+  id: number;
+  approverRole: "marketing_manager" | "nsm";
+  lineName: string | null;
+  isPrimaryLine: boolean;
+  assignedName: string | null;
+  decision: "approve" | "reject" | "return" | null;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  comment: string | null;
+};
 
 type Activity = {
   id: string;
@@ -44,6 +73,10 @@ type Activity = {
   requesterName: string | null;
   requesterHrId: string;
   managerName: string | null;
+  approvers: ApproverSlot[];
+  heldByName: string | null;
+  heldAt: string | null;
+  holdReason: string | null;
   activityType: { name: string };
   title: string | null;
   venue: string | null;
@@ -76,10 +109,11 @@ type Activity = {
   }>;
 };
 
-const STEP_LABEL: Record<string, string> = {
-  pending_manager: "Waiting on you as the manager",
-  pending_ceo: "Waiting on you as the CEO",
-};
+/** What a slot is, in the words the owner uses. Never a code, and the line is part of the name. */
+function slotLabel(slot: ApproverSlot): string {
+  if (slot.approverRole === "marketing_manager") return "Marketing Manager";
+  return slot.lineName ? `National Sales Manager · ${slot.lineName}` : "National Sales Manager";
+}
 
 function money(amount: number | null | undefined, currency = "EGP"): string {
   if (amount === null || amount === undefined) return "Not set";
@@ -91,7 +125,7 @@ function cairoDate(value: string | null | undefined): string {
   const raw = String(value);
   const parsed = new Date(raw.length <= 10 ? `${raw}T12:00:00Z` : raw);
   if (Number.isNaN(parsed.getTime())) return raw;
-  return new Intl.DateTimeFormat("en-GB", {
+  return stableEnGbFormatter({
     day: "2-digit",
     month: "short",
     timeZone: "Africa/Cairo",
@@ -131,7 +165,7 @@ const TEXTAREA =
 
 type InboxScope = "open" | "history";
 
-type InboxRow = { activity: Activity; canDecide: boolean };
+type InboxRow = { activity: Activity; canDecide: boolean; canRelease: boolean };
 
 const INBOX_TABS: ReadonlyArray<{ description: string; icon: typeof Inbox; key: InboxScope; label: string }> = [
   { description: "Still moving through the chain", icon: Inbox, key: "open", label: "In approval" },
@@ -193,7 +227,7 @@ export function MarketAwarenessInbox({ isCeoStepHolder }: { isCeoStepHolder: boo
 
   const decide = async (
     activityId: string,
-    action: "approve" | "reject" | "return",
+    action: DecisionAction,
     comment: string,
     amendedCost: number | null,
   ) => {
@@ -311,6 +345,7 @@ export function MarketAwarenessInbox({ isCeoStepHolder }: { isCeoStepHolder: boo
                 busy={busyId === row.activity.id}
                 canAmend={isCeoStepHolder && row.activity.status === "pending_ceo"}
                 canDecide={row.canDecide}
+                canRelease={row.canRelease}
                 onDecide={(action, comment, amended) =>
                   void decide(row.activity.id, action, comment, amended)
                 }
@@ -326,16 +361,23 @@ export function MarketAwarenessInbox({ isCeoStepHolder }: { isCeoStepHolder: boo
 /**
  * Who a row is currently waiting on, for someone who is watching rather than deciding.
  *
- * Named, never a status code — the owner's standing rule is human-readable names. A pending manager
- * step always has a manager (the submit path routes past the step when there is none), so a missing
- * name here means the seat was emptied after submission, and saying so is better than printing an
- * id or an empty space.
+ * Named, never a status code — the owner's standing rule is human-readable names. At the group step
+ * that means EVERY name still outstanding, because they are all being waited on at once and naming
+ * only the first reads as a queue they take in turns. A missing name means the seat was emptied
+ * after submission, and saying so is better than printing an id or an empty space.
  */
 function waitingOn(activity: Activity): string {
-  if (activity.status === "pending_manager") {
-    return activity.managerName
-      ? `Waiting on ${activity.managerName}`
-      : "Waiting on the requester's manager";
+  if (activity.status === "pending_group") {
+    const names = activity.approvers
+      .filter((slot) => slot.decision === null)
+      .map((slot) => slot.assignedName ?? `${slotLabel(slot)} (seat empty)`);
+    if (names.length === 0) return "Waiting on the marketing and sales approvers";
+    return `Waiting on ${names.join(" and ")}`;
+  }
+  if (activity.status === "on_hold") {
+    return activity.heldByName
+      ? `On hold — ${activity.heldByName} froze it`
+      : "On hold until it is released";
   }
   if (activity.status === "pending_ceo") return "Waiting on the CEO";
   if (activity.status === "returned") {
@@ -344,16 +386,82 @@ function waitingOn(activity: Activity): string {
   return "No decision is outstanding";
 }
 
+/**
+ * The group, as a strip: who has answered and who has not.
+ *
+ * THIS IS WHAT MAKES A PARALLEL STEP READABLE. Sequentially, "who has it" is one name and the
+ * status carries it. In parallel it is two or three at once, and without this an approver cannot
+ * tell whether he is the last one holding it up or the first to be asked.
+ */
+function ApproverStrip({ activity }: { activity: Activity }) {
+  if (activity.approvers.length === 0) return null;
+  const answered = activity.approvers.filter((slot) => slot.decision !== null).length;
+
+  return (
+    <div className="mt-3 min-w-0 border border-phx-line bg-phx-paper-2 px-3 py-2">
+      <MicroLabel>
+        Marketing and sales approval — {answered} of {activity.approvers.length} answered
+      </MicroLabel>
+      <ul className="mt-1.5 flex min-w-0 flex-col gap-1.5">
+        {activity.approvers.map((slot) => {
+          const tone =
+            slot.decision === "approve"
+              ? "text-phx-ok"
+              : slot.decision === null
+                ? "text-phx-ink-faint"
+                : "text-phx-warn";
+          const answer =
+            slot.decision === "approve"
+              ? "Approved"
+              : slot.decision === "reject"
+                ? "Rejected"
+                : slot.decision === "return"
+                  ? "Sent back"
+                  : "Not answered yet";
+          return (
+            <li className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5" key={slot.id}>
+              <span className="break-words text-phx-2xs font-black text-phx-ink">
+                {slot.assignedName ?? "Seat empty"}
+              </span>
+              <span className="break-words text-phx-3xs font-bold uppercase tracking-[0.08em] text-phx-ink-soft">
+                {slotLabel(slot)}
+              </span>
+              <span className={`text-phx-3xs font-black uppercase tracking-[0.08em] ${tone}`}>
+                {answer}
+              </span>
+              {/* Somebody covering answered in place of the person it was sent to. Said plainly,
+                  because a decision attributed to the wrong name is worse than an extra line. */}
+              {slot.decidedByName && slot.decidedByName !== slot.assignedName ? (
+                <span className="break-words text-phx-3xs font-medium text-phx-ink-faint">
+                  answered by {slot.decidedByName}
+                </span>
+              ) : null}
+              {slot.comment ? (
+                <span className="block w-full break-words text-phx-2xs font-medium text-phx-ink-soft">
+                  {slot.comment}
+                </span>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 function InboxCard({
   activity,
   busy,
   canAmend,
   canDecide,
+  canRelease,
   onDecide,
 }: {
   activity: Activity;
   busy: boolean;
   canAmend: boolean;
+  /** Whether the release route would accept a release from this viewer, resolved server-side. */
+  canRelease: boolean;
   /**
    * Whether the decision route would accept a decision from this viewer, resolved server-side.
    * False for a row somebody is only TRACKING — the Group Product Manager watching a request that
@@ -361,15 +469,14 @@ function InboxCard({
    * a control the server refuses is worse than not offering it.
    */
   canDecide: boolean;
-  onDecide: (
-    action: "approve" | "reject" | "return",
-    comment: string,
-    amendedCost: number | null,
-  ) => void;
+  onDecide: (action: DecisionAction, comment: string, amendedCost: number | null) => void;
 }) {
   const [comment, setComment] = useState("");
   const [amend, setAmend] = useState("");
   const [confirming, setConfirming] = useState<"reject" | null>(null);
+  // Hold belongs to the group, never to the CEO — his answers are approve, reject and return, as
+  // they have always been. The server refuses it either way; this stops the button appearing.
+  const canHold = canDecide && activity.status === "pending_group";
 
   const asked = activity.estimatedCost;
   const amendedValue = amend.trim() === "" ? null : Number(amend);
@@ -390,7 +497,7 @@ function InboxCard({
 
       <header className="flex min-w-0 flex-wrap items-start justify-between gap-3 border-b border-phx-line px-4 py-3 pl-5">
         <div className="min-w-0">
-          <MicroLabel>{STEP_LABEL[activity.status] ?? "Waiting on you"}</MicroLabel>
+          <MicroLabel>{describeInboxStep({ canDecide, status: activity.status })}</MicroLabel>
           <h3 className="break-words text-phx-md font-black text-phx-ink">
             {activity.title?.trim() || activity.activityType.name}
           </h3>
@@ -437,7 +544,22 @@ function InboxCard({
           </p>
         </div>
 
-        {/* What the step below already said. A manager's return comment is the CEO's context. */}
+        <ApproverStrip activity={activity} />
+
+        {/* Frozen. Stated at the top of the body rather than buried, because it is the reason
+            nothing else on this card can be pressed. */}
+        {activity.status === "on_hold" ? (
+          <div className="mt-3 flex min-w-0 items-start gap-2 border border-phx-warn-line bg-phx-warn-bg px-3 py-2.5">
+            <PauseCircle aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-phx-warn" />
+            <p className="min-w-0 break-words text-phx-xs font-bold text-phx-warn">
+              {activity.heldByName ? `${activity.heldByName} put this on hold` : "This is on hold"}
+              {activity.heldAt ? ` on ${cairoDate(activity.heldAt)}` : ""}
+              {activity.holdReason ? `: ${activity.holdReason}` : "."}
+            </p>
+          </div>
+        ) : null}
+
+        {/* What the step below already said. A group return comment is the CEO's context. */}
         {activity.decisions.length > 0 ? (
           <div className="mt-3 min-w-0">
             <MicroLabel>Already decided</MicroLabel>
@@ -565,13 +687,43 @@ function InboxCard({
                   <span>Reject</span>
                 </button>
               )}
+
+              {/* Hold freezes it for EVERYONE, so it says why — the requester is told, and the
+                  reason is the only thing that tells him what it is waiting on. */}
+              {canHold ? (
+                <button
+                  className={BTN_RETURN}
+                  disabled={busy || comment.trim() === ""}
+                  onClick={() => onDecide("hold", comment, null)}
+                  type="button"
+                >
+                  <PauseCircle aria-hidden="true" className="h-4 w-4 shrink-0" />
+                  <span>Put on hold</span>
+                </button>
+              ) : null}
             </div>
 
             <p className="break-words text-phx-3xs font-medium text-phx-ink-faint">
               {activity.status === "pending_ceo"
                 ? "Approving releases it: every district manager in the region for this line, the national sales manager, the SFE manager, the area's rep and Finance are told."
-                : "Approving sends it to the CEO. Returning it sends it back to the requester to edit and resubmit."}
+                : "It goes to the CEO once everyone here has approved. Returning it sends it back to the requester to edit and resubmit, and the whole group is asked again. Putting it on hold freezes it for everyone until you release it."}
             </p>
+          </div>
+        ) : canRelease ? (
+          <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2.5 border-t border-phx-line pt-4">
+            <button
+              className={BTN_APPROVE}
+              disabled={busy}
+              onClick={() => onDecide("release", "", null)}
+              type="button"
+            >
+              <PlayCircle aria-hidden="true" className="h-4 w-4 shrink-0" />
+              <span>{busy ? "Saving" : "Release the hold"}</span>
+            </button>
+            <span className="min-w-0 break-words text-phx-3xs font-medium text-phx-ink-faint">
+              Puts it back in front of everyone who has not answered. The days it spent on hold do
+              not count against them.
+            </span>
           </div>
         ) : (
           <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2 border-t border-phx-line pt-4">

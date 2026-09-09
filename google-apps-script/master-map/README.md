@@ -67,7 +67,7 @@ master is not readable by anyone who guesses the URL.
 On an unchanged database a tick costs one `probe` and stops. Nothing is repainted, and the sheet
 is not touched at all.
 
-### Two things worth knowing before changing it
+### Three things worth knowing before changing it
 
 **The hourly full check is not belt-and-braces padding.** None of the `source_of_sales_*` tables
 has an update trigger — verified against production, `pg_trigger` returns nothing for all five — so
@@ -75,6 +75,17 @@ has an update trigger — verified against production, `pg_trigger` returns noth
 repo, would change a pharmacy without moving the stamp. Additions and removals always move the row
 count and so are caught within five minutes; edits are caught by the hourly plan fetch, which
 compares real content hashes. Remove that hourly check and hand-edited rows go stale silently.
+
+**The hidden Lists tab's grid is sized from the shop count, and it has to stay that way.** The
+finder is one big `FILTER` that spills a row per shop into that tab, and a spill with nowhere to go
+does not truncate — it fails the whole tab. The height used to be a fixed 55,000, chosen when the
+master held 50,622 shops. The master reached 63,510 and the finder went dead: `Lists!F2` became
+`#REF!`, the results table emptied, and the status line read *"Showing 1 of 1 matching shops"*,
+because `COUNTA` counts the single error cell as a match. Every other tab stayed correct and
+current throughout, so there was nothing in the data to see it by. The height is now derived, and
+the shop count is written into that tab's own header text on purpose — the plan hashes each tab's
+text, so the hash moves the moment the master grows, which is what makes the tab repaint and resize
+itself. Do not take the count back out of the text to tidy it.
 
 **A tab is painted clear → text → formatting, in that order.** Apps Script kills an execution at
 six minutes and a big repaint spans two of them, so every intermediate state is one the owner can

@@ -23,6 +23,7 @@ import {
   type RepVisitStanding,
   type RepVisitsSummary,
 } from "@/lib/crm/rep-visits";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 // The visits behind one rep's call rate. Styling copies the board next door verbatim — flat borders,
 // slate-900 header row, orange focus — because this IS that board, one level down (owner's standing
@@ -59,7 +60,7 @@ function dayText(dateIso: string): string {
   if (!dateIso) return "—";
   const parsed = new Date(`${dateIso}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return dateIso;
-  return parsed.toLocaleDateString("en-GB", {
+  return formatStableEnGb(parsed, {
     day: "2-digit",
     month: "short",
     timeZone: "UTC",

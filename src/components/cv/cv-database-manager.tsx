@@ -16,7 +16,24 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDurationMonths, type CvExperienceStatus } from "@/lib/cv/cv-database";
-import { CV_LIBRARY_BLANK, summarizeCvLibrary, type CvLibraryRow } from "@/lib/cv/cv-library";
+import {
+  CV_LIBRARY_BLANK,
+  experienceBandLabels,
+  experienceBands,
+  gradeFilterLabels,
+  gradeFilterOptions,
+  graduationBucketLabels,
+  graduationBuckets,
+  matchesExperienceBand,
+  matchesGradeFilter,
+  matchesGraduationBucket,
+  summarizeCvLibrary,
+  type CvLibraryRow,
+  type ExperienceBand,
+  type GradeFilter,
+  type GraduationBucket,
+} from "@/lib/cv/cv-library";
+import type { BackgroundOutcome } from "@/lib/recruitment/candidate-background";
 import {
   candidateRegionCodes,
   candidateRegionLabels,
@@ -280,6 +297,17 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
   // domain classifier rather than the stored string.
   const [roleFilter, setRoleFilter] = React.useState<CandidateRoleFamily | "" | "unknown">("");
   const [regionFilter, setRegionFilter] = React.useState<CandidateRegionCode | "" | "unknown" | "foreign">("");
+  // The field-force eligibility verdict — the owner's rule that a paramedical degree is refused for
+  // a rep or a district manager and is normal for an office coordinator. `judgeBackground` has
+  // answered this for every candidate since the background review shipped; nothing ever asked it.
+  // 295 of 875 are paramedical, so a third of any unfiltered list cannot take the field job.
+  const [backgroundFilter, setBackgroundFilter] = React.useState<BackgroundOutcome | "">("");
+  const [graduationFilter, setGraduationFilter] = React.useState<GraduationBucket>("");
+  const [experienceBand, setExperienceBand] = React.useState<ExperienceBand>("");
+  // 318 candidates carry a grade in 98 distinct spellings, so the raw column could never be a facet.
+  // `normalizeDegreeGrade` folds them to the four Egyptian names and refuses to guess at the ~50 that
+  // are only a GPA or a letter — those get their own option rather than an invented grade.
+  const [gradeFilter, setGradeFilter] = React.useState<GradeFilter>("");
 
   const summary = React.useMemo(() => summarizeCvLibrary(rows), [rows]);
 
@@ -299,6 +327,12 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
     return rows.filter((row) => {
       if (experienceFilter !== "all" && row.medicalSales !== experienceFilter) return false;
       if (governorate && row.governorate !== governorate) return false;
+      // Read off the row, which took it from `judgeBackground` — never re-decided here. A second
+      // opinion about somebody's degree is how two screens start disagreeing about one person.
+      if (backgroundFilter && row.backgroundOutcome !== backgroundFilter) return false;
+      if (!matchesGraduationBucket(row, graduationFilter)) return false;
+      if (!matchesExperienceBand(row, experienceBand)) return false;
+      if (!matchesGradeFilter(row, gradeFilter)) return false;
       if (roleFilter) {
         const family = candidateRoleFamilyOrNull(row.currentJobTitle);
         if (roleFilter === "unknown" ? family !== null : family !== roleFilter) return false;
@@ -343,9 +377,19 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
 
       return searchable.includes(normalizedQuery);
     });
-  }, [experienceFilter, governorate, query, regionFilter, roleFilter, rows]);
+  }, [backgroundFilter, experienceBand, experienceFilter, governorate, gradeFilter, graduationFilter, query, regionFilter, roleFilter, rows]);
 
-  const hasActiveFilters = Boolean(query || experienceFilter !== "all" || governorate || roleFilter || regionFilter);
+  const hasActiveFilters = Boolean(
+    query ||
+      experienceFilter !== "all" ||
+      governorate ||
+      roleFilter ||
+      regionFilter ||
+      backgroundFilter ||
+      graduationFilter ||
+      experienceBand ||
+      gradeFilter,
+  );
 
   function clearFilters() {
     setQuery("");
@@ -353,6 +397,10 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
     setGovernorate("");
     setRoleFilter("");
     setRegionFilter("");
+    setBackgroundFilter("");
+    setGraduationFilter("");
+    setExperienceBand("");
+    setGradeFilter("");
   }
 
   return (
@@ -484,6 +532,80 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
               ))}
               <option value="foreign">{foreignRegionLabel}</option>
               <option value="unknown">Region not known</option>
+            </select>
+            {/*
+              FIELD-FORCE ELIGIBILITY. The wording is deliberately about the FIELD FORCE and not
+              about the person: a paramedical degree is a refusal for a rep or a district manager and
+              is perfectly normal for an office coordinator, so a bare "Not eligible" would be a
+              false statement about a third of this pool.
+            */}
+            <label className="sr-only" htmlFor="cv-database-background">
+              Academic background
+            </label>
+            <select
+              className={selectClassName}
+              id="cv-database-background"
+              onChange={(event) => setBackgroundFilter(event.target.value as BackgroundOutcome | "")}
+              value={backgroundFilter}
+            >
+              <option value="">Any background</option>
+              <option value="eligible">Field-force eligible</option>
+              <option value="paramedical">Paramedical — not for the field</option>
+              <option value="unknown">Background not known</option>
+            </select>
+            <label className="sr-only" htmlFor="cv-database-graduation">
+              Graduation year
+            </label>
+            <select
+              className={selectClassName}
+              id="cv-database-graduation"
+              onChange={(event) => setGraduationFilter(event.target.value as GraduationBucket)}
+              value={graduationFilter}
+            >
+              <option value="">Any graduation year</option>
+              {graduationBuckets.map((bucket) => (
+                <option key={bucket} value={bucket}>
+                  {graduationBucketLabels[bucket]}
+                </option>
+              ))}
+            </select>
+            {/*
+              "A GPA or letter grade" is a real option, not a leftover. Around fifty of the 318
+              graded CVs record only `3.67`, `65%`, `B+ (3.462/4.0)` or `CGPA: 8.60`, and naming
+              those needs an awarding scale we do not have. Folding them into "not on file" would
+              claim their record is empty when it is not.
+            */}
+            <label className="sr-only" htmlFor="cv-database-grade">
+              Degree grade
+            </label>
+            <select
+              className={selectClassName}
+              id="cv-database-grade"
+              onChange={(event) => setGradeFilter(event.target.value as GradeFilter)}
+              value={gradeFilter}
+            >
+              <option value="">Any grade</option>
+              {gradeFilterOptions.map((option) => (
+                <option key={option} value={option}>
+                  {gradeFilterLabels[option]}
+                </option>
+              ))}
+            </select>
+            <label className="sr-only" htmlFor="cv-database-experience-band">
+              Years of experience
+            </label>
+            <select
+              className={selectClassName}
+              id="cv-database-experience-band"
+              onChange={(event) => setExperienceBand(event.target.value as ExperienceBand)}
+              value={experienceBand}
+            >
+              <option value="">Any experience</option>
+              {experienceBands.map((band) => (
+                <option key={band} value={band}>
+                  {experienceBandLabels[band]}
+                </option>
+              ))}
             </select>
             {governorateOptions.length > 1 ? (
               <label className="sr-only" htmlFor="cv-database-governorate">

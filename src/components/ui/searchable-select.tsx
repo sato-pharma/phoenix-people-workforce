@@ -345,7 +345,7 @@ export function SearchableSelect({
               ref={dropdownRef}
               role="listbox"
               aria-label={placeholder ?? "Options"}
-              className="fixed z-[1000] max-h-64 w-max overflow-auto rounded-lg border border-slate-200 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.14)]"
+              className="fixed z-[1000] max-h-64 w-max overflow-x-hidden overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.14)]"
               id={`${id ?? "searchable-select"}-options`}
               style={{
                 top: menuRect.top,
@@ -367,7 +367,7 @@ export function SearchableSelect({
                         aria-disabled="true"
                         aria-selected={false}
                         className={cn(
-                          "w-full whitespace-nowrap border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-400",
+                          "w-full whitespace-normal break-words border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-400",
                           "last:border-b-0"
                         )}
                       >
@@ -392,14 +392,26 @@ export function SearchableSelect({
                       }}
                     >
                       {/*
-                        Not `truncate`. That class is overflow-hidden + text-overflow: ellipsis,
-                        and it is what turned "Ahmed Abdallah · District Sales Manager" into
-                        "Ahmed Abdallah · District Sales Mana…" in every dropdown in the app —
-                        a person picking a manager could not tell two long names apart. `nowrap`
-                        alone keeps the one-line rule without ever clipping; the panel above is
-                        what grows to fit it.
+                        Not `truncate`, and no longer `whitespace-nowrap` either. Both were tried, in that
+                        order, and each moved the same damage one step further out.
+
+                        `truncate` is overflow-hidden + text-overflow: ellipsis, and it is what turned
+                        "Ahmed Abdallah / District Sales Manager" into "Ahmed Abdallah / District Sales Mana..."
+                        in every dropdown in the app, so a person picking a manager could not tell two long
+                        names apart. It stays banned — tests/searchable-select-no-ellipsis.test.ts.
+
+                        `whitespace-nowrap` replaced it and clipped nothing, but the panel is capped at the
+                        viewport (maxWidth below), so a row wider than the cap made the panel scroll SIDEWAYS.
+                        Measured on the Employee Master vacancy picker, 2026-09-09: 708px of row inside a 491px
+                        panel, with the district and the manager sitting past the right edge.
+
+                        AGENTS.md §4 settles which rule wins: the no-horizontal-scroll golden rule supersedes
+                        the old "never let text wrap" companion, and WRAPPING is the permitted answer. So the
+                        row wraps. `break-words` because an area name can be one long unbroken token, and
+                        `min-w-0` because without it this flex child refuses to shrink below its content and
+                        the scroll comes straight back.
                       */}
-                      <span className="whitespace-nowrap">{option.label}</span>
+                      <span className="min-w-0 whitespace-normal break-words">{option.label}</span>
                       {isActive ? <Check aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-orange-600" /> : null}
                     </button>
                   );

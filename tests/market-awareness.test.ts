@@ -3,6 +3,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { conversationMessageIdempotencyKey } from "../src/lib/conversations/notify.ts";
+import type { MarketAwarenessApproverSlot } from "../src/lib/market-awareness/approvers.ts";
+import {
+  canDecideSlot,
+  groupHasApproved,
+  pendingSlotsFor,
+  planApproverSlots,
+  summarizeApproverProgress,
+} from "../src/lib/market-awareness/approvers.ts";
 import { isTrackableProductLine } from "../src/lib/market-awareness/lines.ts";
 import { MARKET_AWARENESS_STATUSES } from "../src/lib/market-awareness/types.ts";
 import { resolvePendingDecisionRecipients } from "../src/lib/market-awareness/notifications.ts";
@@ -21,9 +29,11 @@ import {
 } from "../src/lib/market-awareness/tracking.ts";
 import {
   canDecideStep,
+  canReleaseHold,
   currentStep,
+  describeInboxStep,
   findTransition,
-  resolveManagerStep,
+  resolveGroupApproval,
   statusAfterResubmit,
 } from "../src/lib/market-awareness/workflow.ts";
 
@@ -41,126 +51,329 @@ import {
 // passes review, and silently routes Nahed's activity to the wrong approver — which is why the
 // manager step is resolved from the reporting line and pinned here.
 
+/** A slot as the group holds it, with only the fields a rule reads. */
+function slot(overrides: Partial<MarketAwarenessApproverSlot> = {}): MarketAwarenessApproverSlot {
+  return {
+    id: 1,
+    approverRole: "nsm",
+    lineId: 1,
+    lineName: "Anti Infective",
+    isPrimaryLine: true,
+    assignedHrId: "AI-0008",
+    assignedName: "Magdy El Senosey",
+    decision: null,
+    decidedByHrId: null,
+    decidedByName: null,
+    decidedAt: null,
+    comment: null,
+    ...overrides,
+  };
+}
+
+const ANTI_INFECTIVE = { id: 1, lineCode: "anti_infective", name: "Anti Infective" };
+const PEDIA = { id: 2, lineCode: "pedia", name: "Pedia" };
+const CNS = { id: 3, lineCode: "cns", name: "CNS" };
+
+/** The live directory, measured on production 2026-09-09. */
+const DIRECTORY = [
+  { hrId: "A-9", name: "Hossam Abdelghafar", approverRole: "marketing_manager" as const, lineId: 4 },
+  { hrId: "AI-0008", name: "Magdy El Senosey", approverRole: "nsm" as const, lineId: 1 },
+  { hrId: "A-12", name: "Ali Elsayed", approverRole: "nsm" as const, lineId: 2 },
+  { hrId: "B-122", name: "Amr Elsebaey", approverRole: "nsm" as const, lineId: 3 },
+];
+
 export function runMarketAwarenessTests() {
-  // ── The manager step is resolved by IDENTITY, never by title ───────────────
-
-  const ahmed = resolveManagerStep({
-    requesterHrId: "B-155",
-    requesterManagerHrId: "A-8",
-    managerIsCeo: false,
-  });
-  assert.equal(ahmed.managerHrId, "A-8", "Ahmed Sharaf's manager step is Rasha, the GPM");
-  assert.equal(ahmed.skipManagerStep, false);
-
-  const nahed = resolveManagerStep({
-    requesterHrId: "A-10",
-    requesterManagerHrId: "A-9",
-    managerIsCeo: false,
-  });
-  assert.equal(
-    nahed.managerHrId,
-    "A-9",
-    "Nahed reports to the Marketing Manager, NOT to the Group Product Manager",
-  );
-
-  const rasha = resolveManagerStep({
-    requesterHrId: "A-8",
-    requesterManagerHrId: "A-9",
-    managerIsCeo: false,
-  });
-  assert.equal(rasha.managerHrId, "A-9", "the GPM's own request goes to her manager");
-
-  // The Marketing Manager reports to the CEO, so there is no step underneath him. Owner answer 35.
-  const hossam = resolveManagerStep({
-    requesterHrId: "A-9",
-    requesterManagerHrId: "AA",
-    managerIsCeo: true,
-  });
-  assert.equal(hossam.skipManagerStep, true, "a request from the Marketing Manager skips to the CEO");
-  assert.equal(hossam.managerHrId, null, "and stores no manager, so nobody can decide that step");
-
-  // A row with no manager, and a row that manages itself, both fall through to the CEO rather than
-  // letting the requester approve his own activity.
-  assert.equal(
-    resolveManagerStep({ requesterHrId: "AA", requesterManagerHrId: null, managerIsCeo: false })
-      .skipManagerStep,
-    true,
-  );
-  assert.equal(
-    resolveManagerStep({ requesterHrId: "A-8", requesterManagerHrId: "a-8", managerIsCeo: false })
-      .skipManagerStep,
-    true,
-    "an HR id that manages itself must not become its own approver, in either casing",
-  );
-
-  assert.equal(statusAfterResubmit(false), "pending_manager");
-  assert.equal(statusAfterResubmit(true), "pending_ceo");
-
-  // ── The manager step is identity-checked, not role-checked ─────────────────
+  // ── The group is the Marketing Manager plus one NSM PER LINE ───────────────
   //
-  // A role check would let ANY Group Product Manager approve ANY Product Manager's activity, which
-  // is not what "his direct manager" means.
+  // Owner, 2026-09-09: "based on the primary line the next step the approval should go to MM and the
+  // primary NSM at the same time and if chosen second line then also the sec line NSM".
+
+  const oneLine = planApproverSlots({
+    requesterHrId: "A-10",
+    primaryLine: ANTI_INFECTIVE,
+    lines: [ANTI_INFECTIVE],
+    directory: DIRECTORY,
+  });
+  assert.equal(oneLine.slots.length, 2, "one line means two approvers: the MM and that line's NSM");
+  assert.deepEqual(
+    oneLine.slots.map((entry) => entry.assignedHrId),
+    ["A-9", "AI-0008"],
+    "the Marketing Manager and the ANTI INFECTIVE national sales manager, nobody else's",
+  );
+  assert.equal(oneLine.slots[1]?.isPrimaryLine, true);
+
+  const twoLines = planApproverSlots({
+    requesterHrId: "A-10",
+    primaryLine: ANTI_INFECTIVE,
+    lines: [ANTI_INFECTIVE, CNS],
+    directory: DIRECTORY,
+  });
+  assert.deepEqual(
+    twoLines.slots.map((entry) => entry.assignedHrId),
+    ["A-9", "AI-0008", "B-122"],
+    "a second line adds that line's NSM — three approvers, the primary line's first",
+  );
+  // The NSM title is held by three people, one per line. A role check with no line in it would put
+  // all three on every activity, which is the failure this ordering exists to make visible.
+  assert.equal(
+    twoLines.slots.filter((entry) => entry.approverRole === "nsm").length,
+    2,
+    "two lines means exactly two national sales managers, never all three",
+  );
+
+  // A line listed twice, and a primary line missing from the list, both resolve to one slot each.
+  const duplicated = planApproverSlots({
+    requesterHrId: "A-10",
+    primaryLine: PEDIA,
+    lines: [PEDIA, PEDIA],
+    directory: DIRECTORY,
+  });
+  assert.equal(duplicated.slots.length, 2, "a line repeated cannot ask the same person twice");
+
+  // Nobody approves his own spending. The Marketing Manager is a creator role, so this is real.
+  const hossamsOwn = planApproverSlots({
+    requesterHrId: "a-9",
+    primaryLine: PEDIA,
+    lines: [PEDIA],
+    directory: DIRECTORY,
+  });
+  assert.deepEqual(
+    hossamsOwn.slots.map((entry) => entry.assignedHrId),
+    ["A-12"],
+    "the Marketing Manager's own request drops his slot, in either HR id casing",
+  );
+  assert.deepEqual(hossamsOwn.droppedForRequester, ["marketing_manager"]);
+
+  // A line whose NSM seat is empty is REPORTED, never silently dropped — a request carrying a slot
+  // nobody can fill looks exactly like one somebody is being slow about.
+  const noNsm = planApproverSlots({
+    requesterHrId: "A-10",
+    primaryLine: ANTI_INFECTIVE,
+    lines: [ANTI_INFECTIVE],
+    directory: DIRECTORY.filter((entry) => entry.hrId !== "AI-0008"),
+  });
+  assert.deepEqual(
+    noNsm.linesWithoutNsm.map((line) => line.name),
+    ["Anti Infective"],
+    "a line with no NSM in the seat is named, so submission can refuse and say which",
+  );
+
+  assert.equal(statusAfterResubmit(true), "pending_group");
+  assert.equal(
+    statusAfterResubmit(false),
+    "pending_ceo",
+    "a request nobody could be resolved for goes to the CEO, never into an empty queue",
+  );
+
+  // ── A slot is a ROLE AND A LINE, never a frozen person ─────────────────────
+  //
+  // The Marketing Manager was on leave for a fortnight in August with the GPM covering him. A slot
+  // welded to one person deadlocks the whole queue for the length of a holiday.
 
   assert.equal(
-    canDecideStep({
-      access: { role: "Group Product Manager", hrId: "A-8" },
-      step: "manager",
-      managerHrId: "A-8",
+    canDecideSlot({
+      access: { role: "National Sales Manager", hrId: "AI-0008" },
+      slot: slot(),
+      actorLineId: 1,
     }),
     true,
-    "the manager the activity was routed to may decide it",
+    "the Anti Infective NSM may answer the Anti Infective slot",
   );
   assert.equal(
-    canDecideStep({
-      access: { role: "Group Product Manager", hrId: "A-8" },
-      step: "manager",
-      managerHrId: "A-9",
+    canDecideSlot({
+      access: { role: "National Sales Manager", hrId: "A-12" },
+      slot: slot(),
+      actorLineId: 2,
     }),
     false,
-    "a GPM may NOT approve an activity routed to somebody else, even holding the same role",
+    "the PEDIA national sales manager may NOT answer an Anti Infective slot — three people hold that title",
   );
   // HR ids are mixed case on this database; the comparison is canonical on both sides.
   assert.equal(
-    canDecideStep({
-      access: { role: "Group Product Manager", hrId: "a-8" },
-      step: "manager",
-      managerHrId: "A-8",
+    canDecideSlot({
+      access: { role: "National Sales Manager", hrId: "ai-0008" },
+      slot: slot(),
+      actorLineId: null,
     }),
     true,
-    "HR id casing must not decide who may approve",
+    "HR id casing must not decide who may approve, even with no line resolved",
   );
   assert.equal(
-    canDecideStep({ access: { role: "CEO", hrId: "AA" }, step: "manager", managerHrId: "A-8" }),
+    canDecideSlot({
+      access: { role: "Marketing Manager", hrId: "A-99" },
+      slot: slot({ approverRole: "marketing_manager", lineId: null, lineName: null, assignedHrId: "A-9" }),
+      actorLineId: null,
+    }),
+    true,
+    "whoever holds the Marketing Manager role may answer its slot, which is what makes cover work",
+  );
+  assert.equal(
+    canDecideSlot({
+      access: { role: "Group Product Manager", hrId: "A-8" },
+      slot: slot({ approverRole: "marketing_manager", lineId: null, lineName: null, assignedHrId: "A-9" }),
+      actorLineId: null,
+    }),
     false,
-    "the CEO does not get the manager step by virtue of being the CEO",
+    "a Group Product Manager is not in the group and may not answer for the Marketing Manager",
   );
   assert.equal(
-    canDecideStep({ access: { role: "CEO", hrId: "AA" }, step: "ceo", managerHrId: "A-8" }),
+    canDecideSlot({
+      access: { role: "National Sales Manager", hrId: "AI-0008" },
+      slot: slot({ approverRole: "marketing_manager", lineId: null, lineName: null, assignedHrId: "A-9" }),
+      actorLineId: 1,
+    }),
+    false,
+    "an NSM may not answer the Marketing Manager's slot, and vice versa",
+  );
+
+  // ── The gate: everybody, and every answer a yes ────────────────────────────
+
+  assert.equal(
+    groupHasApproved([]),
+    false,
+    "an EMPTY group is never unanimous consent — that would move a request nobody looked at",
+  );
+  assert.equal(groupHasApproved([slot({ decision: "approve" })]), true);
+  assert.equal(
+    groupHasApproved([slot({ id: 1, decision: "approve" }), slot({ id: 2, decision: null })]),
+    false,
+    "one approval out of two does not move it — the whole point of the parallel step",
+  );
+  assert.equal(
+    resolveGroupApproval([slot({ id: 1, decision: "approve" }), slot({ id: 2, decision: null })])
+      .nextStatus,
+    "pending_group",
+    "a partial approval leaves it exactly where it is",
+  );
+  assert.equal(
+    resolveGroupApproval([
+      slot({ id: 1, decision: "approve" }),
+      slot({ id: 2, decision: "approve" }),
+    ]).nextStatus,
+    "pending_ceo",
+    "the LAST approval is what informs the CEO",
+  );
+
+  const progress = summarizeApproverProgress([
+    slot({ id: 1, decision: "approve", assignedName: "Hossam Abdelghafar" }),
+    slot({ id: 2, decision: null, assignedName: "Magdy El Senosey" }),
+  ]);
+  assert.deepEqual(progress, { approved: 1, total: 2, waitingOn: ["Magdy El Senosey"] });
+
+  // ── canDecideStep at the group step ───────────────────────────────────────
+
+  const group = [
+    slot({ id: 1, approverRole: "marketing_manager", lineId: null, lineName: null, assignedHrId: "A-9", assignedName: "Hossam Abdelghafar" }),
+    slot({ id: 2 }),
+  ];
+
+  assert.equal(
+    canDecideStep({
+      access: { role: "National Sales Manager", hrId: "AI-0008" },
+      step: "group",
+      actorLineId: 1,
+      approvers: group,
+    }),
+    true,
+  );
+  assert.equal(
+    canDecideStep({
+      access: { role: "National Sales Manager", hrId: "AI-0008" },
+      step: "group",
+      actorLineId: 1,
+      approvers: [group[0]!, slot({ id: 2, decision: "approve" })],
+    }),
+    false,
+    "somebody who has already answered is no longer being waited on",
+  );
+  assert.equal(
+    canDecideStep({
+      access: { role: "CEO", hrId: "AA" },
+      step: "group",
+      actorLineId: null,
+      approvers: group,
+    }),
+    false,
+    "the CEO does not get the group step by virtue of being the CEO",
+  );
+  assert.equal(
+    canDecideStep({ access: { role: "CEO", hrId: "AA" }, step: "ceo", approvers: [] }),
     true,
   );
   assert.equal(
     canDecideStep({
       access: { role: "Marketing Manager", hrId: "A-9" },
       step: "ceo",
-      managerHrId: null,
+      approvers: [],
     }),
     false,
     "nobody approves the CEO step for him",
   );
 
+  assert.deepEqual(
+    pendingSlotsFor({
+      access: { role: "Marketing Manager", hrId: "A-9" },
+      actorLineId: null,
+      slots: group,
+    }).map((entry) => entry.id),
+    [1],
+    "an approver is offered his own slot and nobody else's",
+  );
+
+  // ── Hold: who may lift one ────────────────────────────────────────────────
+  //
+  // Whoever froze it, the CEO, and Super Admin. NOT every approver — a hold any peer can undo is
+  // not a hold.
+
+  assert.equal(canReleaseHold({ access: { role: "Marketing Manager", hrId: "a-9" }, heldByHrId: "A-9" }), true);
+  assert.equal(
+    canReleaseHold({ access: { role: "National Sales Manager", hrId: "AI-0008" }, heldByHrId: "A-9" }),
+    false,
+    "a peer approver may not lift somebody else's hold",
+  );
+  assert.equal(canReleaseHold({ access: { role: "CEO", hrId: "AA" }, heldByHrId: "A-9" }), true);
+  assert.equal(canReleaseHold({ access: { role: "Super Admin", hrId: null }, heldByHrId: "A-9" }), true);
+
   // ── Transitions ───────────────────────────────────────────────────────────
 
-  assert.equal(currentStep("pending_manager"), "manager");
+  assert.equal(currentStep("pending_group"), "group");
   assert.equal(currentStep("pending_ceo"), "ceo");
   assert.equal(currentStep("approved"), null, "an approved activity waits on no decision");
+  assert.equal(
+    currentStep("on_hold"),
+    null,
+    "a FROZEN request is waiting on nobody, so it counts towards no badge and offers no buttons",
+  );
 
-  assert.equal(findTransition("pending_manager", "approve")?.to, "pending_ceo");
+  assert.equal(
+    findTransition("pending_group", "approve"),
+    null,
+    "a group approval has TWO destinations and is resolved by the gate, never by the table",
+  );
+  assert.equal(findTransition("pending_group", "hold")?.to, "on_hold");
+  assert.equal(findTransition("pending_group", "reject")?.to, "rejected");
+  assert.equal(findTransition("pending_group", "return")?.to, "returned");
+  assert.equal(findTransition("on_hold", "release")?.to, "pending_group");
+  assert.equal(
+    findTransition("on_hold", "approve"),
+    null,
+    "nothing can be approved while it is frozen — it has to be released first",
+  );
+  assert.equal(
+    findTransition("pending_ceo", "hold"),
+    null,
+    "hold belongs to the group; the CEO's answers are approve, reject and return",
+  );
   assert.equal(findTransition("pending_ceo", "approve")?.to, "approved");
   assert.equal(findTransition("pending_ceo", "return")?.to, "returned");
 
   // Owner answer 39: withdrawable "before the CEO decides" — so a request in his queue still is,
   // and one he has approved is not.
   assert.ok(findTransition("pending_ceo", "withdraw"), "a PM may withdraw before the CEO decides");
+  assert.ok(
+    findTransition("on_hold", "withdraw"),
+    "a held request is frozen for the APPROVERS, never for its owner — he can still pull it back",
+  );
   assert.equal(
     findTransition("approved", "withdraw"),
     null,
@@ -389,11 +602,44 @@ export function runMarketAwarenessTests() {
   // that fires AFTER the CEO approves. A queue nobody is sent to is a queue nobody reads, and the
   // symptom is indistinguishable from "nobody wanted to approve it yet".
 
-  // The manager step is identity-based, matching canDecideStep.
+  // THE GROUP STEP TELLS EVERY MEMBER STILL OUTSTANDING, AT ONCE. Telling only the first of them
+  // reproduces the sequential chain the owner replaced, and it would do so silently: the request
+  // would sit with somebody who had never been told it existed.
   assert.deepEqual(
-    resolvePendingDecisionRecipients({ ceoHrIds: ["A-1"], managerHrId: "A-8", step: "manager" }),
-    ["A-8"],
-    "the manager step must tell the manager the activity was actually routed to",
+    resolvePendingDecisionRecipients({
+      approvers: [
+        { assignedHrId: "A-9", decision: null },
+        { assignedHrId: "AI-0008", decision: null },
+      ],
+      ceoHrIds: ["AA"],
+      managerHrId: null,
+      step: "group",
+    }),
+    ["A-9", "AI-0008"],
+    "both members of the group are told at the same time, not one after the other",
+  );
+  assert.deepEqual(
+    resolvePendingDecisionRecipients({
+      approvers: [
+        { assignedHrId: "A-9", decision: "approve" },
+        { assignedHrId: "AI-0008", decision: null },
+      ],
+      ceoHrIds: ["AA"],
+      managerHrId: null,
+      step: "group",
+    }),
+    ["AI-0008"],
+    "somebody who has already approved is not told again — that reads as his answer not registering",
+  );
+  assert.deepEqual(
+    resolvePendingDecisionRecipients({
+      approvers: [{ assignedHrId: null, decision: null }],
+      ceoHrIds: ["AA"],
+      managerHrId: null,
+      step: "group",
+    }),
+    [],
+    "an empty seat notifies nobody rather than falling back to somebody else",
   );
 
   // The CEO step is role-based and must IGNORE the manager entirely. A Group Product Manager has
@@ -420,7 +666,7 @@ export function runMarketAwarenessTests() {
 
   // No holder is an empty list, never a crash and never a silent fallback to somebody else.
   assert.deepEqual(
-    resolvePendingDecisionRecipients({ ceoHrIds: [], managerHrId: null, step: "manager" }),
+    resolvePendingDecisionRecipients({ ceoHrIds: [], managerHrId: null, step: "ceo" }),
     [],
     "a step with no holder notifies nobody rather than guessing a recipient",
   );
@@ -448,12 +694,34 @@ export function runMarketAwarenessTests() {
 
   const decideBody = functionBody("decideActivity");
   assert.ok(
-    /transition\.to === "pending_ceo"[\s\S]{0,400}notifyDecisionPending\(/.test(decideBody),
-    "advancing to the CEO must tell the CEO",
+    /movedTo === "pending_ceo"[\s\S]{0,600}notifyDecisionPending\(/.test(decideBody),
+    "advancing to the CEO must tell the CEO — the owner's 'once they approve, the CEO is informed'",
   );
   assert.ok(
-    /transition\.to === "returned" \|\| transition\.to === "rejected"[\s\S]{0,600}notifyActivityReturned\(/.test(decideBody),
+    /movedTo === "returned" \|\| movedTo === "rejected"[\s\S]{0,600}notifyActivityReturned\(/.test(decideBody),
     "a returned or rejected activity must tell the person who raised it",
+  );
+  // A hold freezes the request with nothing asked of the requester, so the ONLY thing that tells him
+  // why it stopped moving is this notification. Without it a hold is indistinguishable from an
+  // approver who has gone quiet.
+  assert.ok(
+    /movedTo === "on_hold"[\s\S]{0,600}notifyActivityHeld\(/.test(decideBody),
+    "putting a request on hold must tell the person who raised it, and say why",
+  );
+
+  const releaseBody = (() => {
+    const start = maService.indexOf("async function releaseActivityHold");
+    assert.notEqual(start, -1, "releaseActivityHold must exist for its pin to mean anything");
+    const next = maService.indexOf("\nexport ", start + 1);
+    return maService.slice(start, next === -1 ? maService.length : next);
+  })();
+  assert.ok(
+    /canReleaseHold\(/.test(releaseBody),
+    "releasing a hold must go through canReleaseHold, never through the ordinary decide gate",
+  );
+  assert.ok(
+    /notifyDecisionPending\(/.test(releaseBody),
+    "releasing must ask the outstanding approvers again, or a released request sits unnoticed",
   );
 
   // -------------------------------------------------------------------------
@@ -585,4 +853,40 @@ export function runMarketAwarenessTests() {
     /grant execute on function[\s\S]*?to service_role;/.test(atomicMigration),
     "the decision function must be granted to service_role, which the revoke above strips",
   );
+
+  // ── An inbox card is headed by WHOSE decision it is, never by the status alone ─────────────
+  //
+  // The inbox lists every open activity the viewer may SEE, and the informed roles see all of
+  // them. Reading the status back told Ali Elsayed, the Pedia National Sales Manager, "Waiting on
+  // your approval" over two Anti Infective conferences he holds no slot on — while the summary
+  // line above said "2 moving, none waiting on you" and no decision buttons were drawn. Verified
+  // in the browser 2026-09-09 as both men.
+  assert.equal(
+    describeInboxStep({ canDecide: true, status: "pending_group" }),
+    "Waiting on your approval",
+    "the holder of an open slot is still told it is his",
+  );
+  assert.equal(
+    describeInboxStep({ canDecide: false, status: "pending_group" }),
+    "Waiting on the approval group",
+    "somebody who cannot answer must not be told the decision is his",
+  );
+  assert.equal(
+    describeInboxStep({ canDecide: true, status: "pending_ceo" }),
+    "Waiting on you as the CEO",
+    "the CEO step keeps its own words for the CEO",
+  );
+  assert.equal(
+    describeInboxStep({ canDecide: false, status: "pending_ceo" }),
+    "Waiting on the CEO",
+    "every other viewer was told the CEO step was waiting on HIM — the worst case of the same bug",
+  );
+  // A hold reads the same either way: it is frozen for everyone, and saying so is the point.
+  for (const canDecide of [true, false]) {
+    assert.equal(
+      describeInboxStep({ canDecide, status: "on_hold" }),
+      "On hold",
+      "a hold is frozen for everyone, so it reads the same to everyone",
+    );
+  }
 }

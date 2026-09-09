@@ -185,8 +185,13 @@ export function runPortalCanonicalSalesRowsTests() {
   );
   assert.equal(
     getMergedAreaName("cns", "GZ6"),
+    "Fayoum - Beni Suef",
+    "CNS carries the combined name from August — the owner merged CNS from 2026-08 (2026-09-07: «in pedia and cns fayoum and bani suef are one area»), reversing his 2026-08-30 split",
+  );
+  assert.equal(
+    getMergedAreaName("cns", "GZ6", "2026-07"),
     null,
-    "CNS no longer merges — owner split Fayoum and Beni Suef back into two areas on 2026-08-30",
+    "but July CNS is published as two separate areas, and keeps their own names",
   );
   assert.equal(
     getMergedAreaName("anti_infective", "GZ6"),

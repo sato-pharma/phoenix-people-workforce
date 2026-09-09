@@ -78,6 +78,7 @@ import { primaryCvFile } from "@/lib/recruitment/cv-file-choice";
 import type { StoredCvExtraction } from "@/lib/recruitment/cv-extraction-fields";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
 import type { Candidate } from "@/lib/recruitment/types";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 type LoadedCandidate = { profile: CandidateProfile; extraction: StoredCvExtraction | null };
 
@@ -114,7 +115,7 @@ const SEEN_DWELL_MS = 2500;
 // a FROZEN send stamp, which has no headings around it — see `priorSendPosition` below.
 
 /** "26 Aug, 05:07" — Cairo, per the standing rule that no raw UTC ever reaches a person. */
-const seenAtFormat = new Intl.DateTimeFormat("en-GB", {
+const seenAtFormat = stableEnGbFormatter({
   day: "2-digit",
   hour: "2-digit",
   minute: "2-digit",

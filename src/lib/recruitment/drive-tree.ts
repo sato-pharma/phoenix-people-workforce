@@ -12,16 +12,23 @@
 // invisible under this scope, and asking for it 404s in a way that reads like a wrong id.
 
 import { logError } from "@/lib/observability/log";
-import { driveMultipartUpload, getDriveAccessToken, isDriveConfigured, rootFolderId } from "@/lib/recruitment/drive-storage";
+import { driveMultipartUpload, getDriveAccessToken, isDriveConfigured } from "@/lib/recruitment/drive-storage";
+import { CABINET_ROOT_NAME } from "@/lib/recruitment/drive-cabinet-folders";
 import { sanitizeDriveSegment } from "@/lib/recruitment/drive-cv-folders";
 
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 /**
- * The name of the root folder when one is not pinned by env.
+ * The name of the OLD, FROZEN tree — "Phoenix CVs".
  *
- * Configurable so a second environment (staging) can file into its own tree rather than mixing test
- * CVs into the real cabinet — the same reason every other integration here is environment-aware.
+ * NOTHING IN THE MIRROR READS THIS ANY MORE. It named the root every CV was filed under until
+ * 2026-09-07, when the owner froze that tree and asked for a new one; `ensureRootFolder` below now
+ * resolves `CABINET_ROOT_NAME` instead. Kept, and kept accurate, because the variable it reads is
+ * still set in production and still pins the old tree for `googleDriveFileStorage.uploadFile` —
+ * deleting it would make that variable look unused and invite someone to clear it.
+ *
+ * Still configurable so a second environment (staging) files into its own tree rather than mixing
+ * test CVs into the real one.
  */
 export function driveRootFolderName(): string {
   return (process.env.GOOGLE_DRIVE_RECRUITMENT_ROOT_NAME ?? "Phoenix CVs").trim() || "Phoenix CVs";
@@ -97,17 +104,31 @@ async function findOrCreateFolder(name: string, parentId: string): Promise<strin
 }
 
 /**
- * The root folder's id — pinned by env, else found or created by name at the Drive root.
+ * The CABINET's root folder id — every CV the mirror files goes beneath this.
  *
- * The env pin is checked first and trusted without a lookup: an id the owner has set by hand is a
- * statement of intent, and verifying it on every call would spend a round trip to learn something
- * that changes roughly never.
+ * IT IS DELIBERATELY NOT `GOOGLE_DRIVE_RECRUITMENT_FOLDER_ID`. That variable pins the OLD tree
+ * ("Phoenix CVs"), which the owner froze on 2026-09-07 — "don't fix. Create a new folder and
+ * reroute" — and it still pins it, because `googleDriveFileStorage.uploadFile` in drive-storage.ts
+ * uses it for non-CV recruitment attachments. Reading it here would send every new CV straight back
+ * into the tree we were told to stop writing to.
+ *
+ * RESOLVING BY NAME IS WHAT MAKES THE CUTOVER ATOMIC, and that is the whole reason it works this
+ * way rather than through a second pinned id. The alternative was flipping a Railway variable, and
+ * either order of (deploy, flip) leaves a window: flip first and the OLD code writes old-shape
+ * folders into the new cabinet; deploy first and the NEW code writes cabinet-shape folders into the
+ * frozen tree AND moves its files out. Resolving by name means the instant this code is live it is
+ * writing to the cabinet, with no variable to change and no window at all. The lookup finds the
+ * folder the fill script already created, because `drive.file` can see anything this app created.
+ *
+ * `GOOGLE_DRIVE_CABINET_FOLDER_ID` stays supported for pinning that id once it exists — trusted
+ * without a lookup, since an id set by hand is a statement of intent and verifying it every call
+ * would spend a round trip to learn something that changes roughly never.
  */
 export async function ensureRootFolder(): Promise<string> {
-  const pinned = rootFolderId();
+  const pinned = (process.env.GOOGLE_DRIVE_CABINET_FOLDER_ID ?? "").trim();
   if (pinned) return pinned;
 
-  const name = driveRootFolderName();
+  const name = CABINET_ROOT_NAME;
   const cached = folderIdCache.get(`/root:${name}`);
   if (cached) return cached;
 
@@ -160,6 +181,15 @@ export async function uploadCvToDrivePath(input: {
 }
 
 /**
+ * What became of a file the mirror tried to reconcile.
+ *
+ * THREE ANSWERS, NOT TWO, and the third is the whole reason this is not a boolean. A file the owner
+ * DELETED and a file that is merely GONE want opposite handling: gone should be re-filed, deleted
+ * must never be. Collapsing them is how a mirror puts back what somebody threw away.
+ */
+export type DriveMoveResult = "ok" | "missing" | "trashed";
+
+/**
  * Move an already-uploaded CV into a different folder, and optionally rename it.
  *
  * This is the second half of the design, not an afterthought: the applicant sends the CV BEFORE
@@ -167,26 +197,38 @@ export async function uploadCvToDrivePath(input: {
  * minutes later when the answers arrive. Drive moves by patching `parents`, which is one request and
  * does not touch the bytes.
  *
- * Returns false rather than throwing when the file is gone — the owner may have moved or deleted it
- * himself, and that is his cabinet to rearrange. A missing file is not an incident.
+ * `missing` rather than throwing when the file is gone — the owner may have moved it himself, and
+ * that is his cabinet to rearrange. A missing file is not an incident.
+ *
+ * `trashed` IS A SEPARATE ANSWER BECAUSE DRIVE'S BIN IS NOT A 404. A trashed file resolves normally:
+ * `files/{id}` returns 200, with its parents and name intact. So the check that catches deletion
+ * everywhere else — the 404 — never fires, and the mirror goes on believing a CV is filed in a
+ * folder the owner emptied. Found on 2026-09-07, the cabinet's first night: the owner opened it,
+ * binned `MRs JO.pdf` (a job posting that had arrived by email and been treated as somebody's CV),
+ * and the database went on recording it as filed under Medical Representative / Cairo. `trashed`
+ * has to be ASKED FOR — it is not in the default field set — which is why nothing noticed.
  */
 export async function moveDriveFile(input: {
   driveFileId: string;
   path: readonly string[];
   newName?: string | null;
-}): Promise<boolean> {
+}): Promise<DriveMoveResult> {
   const id = encodeURIComponent(input.driveFileId);
 
-  const currentRes = await driveRequest(`files/${id}?fields=parents,name`);
-  if (currentRes.status === 404) return false;
+  const currentRes = await driveRequest(`files/${id}?fields=parents,name,trashed`);
+  if (currentRes.status === 404) return "missing";
   if (!currentRes.ok) throw new Error(`Google Drive file lookup failed (${currentRes.status}).`);
-  const current = (await currentRes.json()) as { parents?: string[]; name?: string };
+  const current = (await currentRes.json()) as { parents?: string[]; name?: string; trashed?: boolean };
+  // Answered BEFORE the folder walk, deliberately: `ensureFolderPath` CREATES folders, so asking it
+  // first would rebuild the very shelf the owner had just emptied, on the way to deciding not to
+  // file anything into it.
+  if (current.trashed) return "trashed";
 
   const targetId = await ensureFolderPath(input.path);
   const currentParents = current.parents ?? [];
   const alreadyThere = currentParents.length === 1 && currentParents[0] === targetId;
   const rename = input.newName && input.newName !== current.name ? input.newName : null;
-  if (alreadyThere && !rename) return true;
+  if (alreadyThere && !rename) return "ok";
 
   const params = new URLSearchParams({ fields: "id" });
   if (!alreadyThere) {
@@ -201,9 +243,9 @@ export async function moveDriveFile(input: {
     headers: { "Content-Type": "application/json" },
     method: "PATCH",
   });
-  if (patchRes.status === 404) return false;
+  if (patchRes.status === 404) return "missing";
   if (!patchRes.ok) throw new Error(`Google Drive move failed (${patchRes.status}).`);
-  return true;
+  return "ok";
 }
 
 /**

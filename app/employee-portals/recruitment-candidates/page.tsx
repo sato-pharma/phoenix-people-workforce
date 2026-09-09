@@ -8,6 +8,14 @@ import { RecruitmentCandidatesPortal } from "@/components/employee-portal/recrui
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listApplications } from "@/lib/recruitment/applications";
+import {
+  redactCandidateContact,
+  redactCandidateListContact,
+  redactDistrictBoardsContact,
+  revealPhoneToViewer,
+} from "@/lib/recruitment/candidate-call-claims";
+import { loadCallClaims } from "@/lib/recruitment/candidate-call-claims-db";
+import { loadOutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock-db";
 import { listCandidateFolderAreaOptions } from "@/lib/recruitment/candidate-folder-options";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
 import {
@@ -82,14 +90,51 @@ export default async function EmployeePortalRecruitmentCandidatesPage() {
   // Nothing is widened by loading it here. Both lists are already scoped — `sentToMe` by this
   // caller's own HR_ID, `myCandidates` by listApplications' own hiring-manager filter — so these are
   // the files of CVs this caller was already entitled to open, fetched once instead of one by one.
-  const initialFiles = await listCandidateCardFiles([
+  const cardCandidateIds = [
     ...sentToMe.map((candidate) => candidate.id),
     ...myCandidates.map((application) => application.candidate?.id ?? ""),
     // The district folders' CVs too, and for the same reason: a folder whose cards have no View CV
     // button is a folder a manager cannot use. Deduplicated — one applicant can sit in three
     // managers' folders and in this caller's own sent list at once.
     ...districtBoardCandidateIds(districtBoards),
-  ]);
+  ];
+
+  const initialFiles = await listCandidateCardFiles(cardCandidateIds);
+
+  // ── WHO HAS SAID "I WILL CALL", AND THE PHONE NUMBERS THAT GO WITH IT ─────────────────────────
+  //
+  // The owner, 2026-09-09: *"on every cv i want the phone number to be hidden ... if pressed I will
+  // call then every other manager receiving this CV when open the same CV shows that Ahmed will call
+  // this CV."*
+  //
+  // THE REDACTION HAPPENS HERE, ON THE SERVER, and that is the whole security of it. Hiding a field
+  // in JSX leaves the number sitting in the page payload for anyone who opens the network tab, which
+  // is not hiding it. Every list this page renders goes through the same redactor, against the same
+  // claims, so a number can only reach the browser of the ONE manager holding the reservation.
+  //
+  // All three lists, and the third is the one that is easy to forget: the district folders carry
+  // their candidates nested two levels down, so they get their own redactor rather than a hand-
+  // written map that would eventually cover the cards and miss the folders.
+  const callClaims = await loadCallClaims(cardCandidateIds);
+
+  // THE CV HE OPENED AND HAS NOT WRITTEN ABOUT. Owner, 2026-09-09: candidates are being telephoned
+  // twice because nothing records that anyone called, so a manager must write what he found before
+  // he may open another CV. Read once here rather than per card; it fails open on any error, so a
+  // database problem can never lock a manager out of every CV in the company.
+  const outstandingFeedback = await loadOutstandingFeedback(access.hrId);
+  const visibleSentToMe = redactCandidateListContact(sentToMe, callClaims, access.hrId);
+  const visibleDistrictBoards = redactDistrictBoardsContact(districtBoards, callClaims, access.hrId);
+  const visibleApplications = myCandidates.map((application) =>
+    application.candidate
+      ? {
+          ...application,
+          candidate: redactCandidateContact(
+            application.candidate,
+            revealPhoneToViewer(callClaims[application.candidate.id] ?? null, access.hrId),
+          ),
+        }
+      : application,
+  );
 
   return (
     <EmployeePortalPageShell
@@ -99,11 +144,13 @@ export default async function EmployeePortalRecruitmentCandidatesPage() {
     >
       <RecruitmentCandidatesPortal
         areaOptions={areaOptions}
-        initialApplications={myCandidates}
-        initialDistrictBoards={districtBoards}
+        initialApplications={visibleApplications}
+        initialCallClaims={callClaims}
+        initialOutstandingFeedback={outstandingFeedback}
+        initialDistrictBoards={visibleDistrictBoards}
         initialFilings={filings}
         initialFiles={initialFiles}
-        initialSentToMe={sentToMe}
+        initialSentToMe={visibleSentToMe}
         initialTeam={team}
         viewerHrId={access.hrId}
       />

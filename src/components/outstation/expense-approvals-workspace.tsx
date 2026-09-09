@@ -40,7 +40,9 @@ import { formatCurrencyValue, formatDateValue, formatNumberValue } from "@/lib/i
 import {
   APPROVED_STATUS,
   REJECTED_STATUS,
+  expenseApprovalQueueRank,
   expenseApprovalState,
+  expenseDecisionChanged,
   isAdjustedAmount,
   isRejectedStatus,
   planBulkApproval,
@@ -92,6 +94,74 @@ function savedDecision(record: LoadedRecord): Decision {
     hrComment: record.hrComment ?? "",
     status: record.status ?? "",
   };
+}
+
+/**
+ * Where an unsaved decision set survives leaving the page.
+ *
+ * Every decision on this screen is held in React state until Save is pressed, and a reviewer works
+ * a ~400-row queue one trip at a time. Any exit discarded the lot with no message: a sidebar click,
+ * the browser back button, a reload, the hard navigation Next.js performs after a deploy. On
+ * 2026-09-07 that cost a full evening's review — the database recorded ONE save, and everything
+ * decided around it was gone.
+ *
+ * `localStorage`, not `sessionStorage`: closing the tab and coming back is exactly the case that
+ * lost the work. Per browser and per viewer, which is what it should be — a draft is one person's
+ * unsaved thinking, not shared state.
+ */
+const DECISION_DRAFT_KEY = "phoenix.outstation.expense-approvals.draft.v1";
+
+/** A draft older than this belongs to a different sitting — drop it rather than silently re-open
+ * decisions taken against a queue that has moved on. */
+const DECISION_DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Never let a storage failure reach the queue. Private mode, a full quota and a browser with site
+ * data blocked all throw here, and none of them is a reason to stop reviewing expenses. */
+function readExpenseDecisionDraft(): Record<string, Decision> | null {
+  try {
+    const raw = window.localStorage.getItem(DECISION_DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { decisions?: unknown; savedAt?: unknown };
+    const savedAt = Number(parsed?.savedAt);
+    if (!Number.isFinite(savedAt) || Date.now() - savedAt > DECISION_DRAFT_MAX_AGE_MS) return null;
+    const entries = parsed?.decisions;
+    if (!entries || typeof entries !== "object") return null;
+
+    // Validated field by field rather than cast: this is the one input to the page that is not
+    // the API, and a half-shaped entry would flow straight into a Save payload.
+    const draft: Record<string, Decision> = {};
+    for (const [tripId, value] of Object.entries(entries as Record<string, unknown>)) {
+      const entry = value as Partial<Decision> | null;
+      if (!entry || typeof entry !== "object") continue;
+      if (typeof entry.approvedAmount !== "number" || !Number.isFinite(entry.approvedAmount)) continue;
+      if (typeof entry.hrApproved !== "boolean") continue;
+      if (typeof entry.hrComment !== "string" || typeof entry.status !== "string") continue;
+      draft[tripId] = {
+        approvedAmount: entry.approvedAmount,
+        hrApproved: entry.hrApproved,
+        hrComment: entry.hrComment,
+        status: entry.status,
+      };
+    }
+    return Object.keys(draft).length > 0 ? draft : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeExpenseDecisionDraft(decisions: Record<string, Decision>) {
+  try {
+    if (Object.keys(decisions).length === 0) {
+      window.localStorage.removeItem(DECISION_DRAFT_KEY);
+      return;
+    }
+    window.localStorage.setItem(
+      DECISION_DRAFT_KEY,
+      JSON.stringify({ decisions, savedAt: Date.now() }),
+    );
+  } catch {
+    // A draft that cannot be written is the behaviour this page had before — never a save failure.
+  }
 }
 
 function egp(value: number) {
@@ -177,7 +247,6 @@ export function ExpenseApprovalsWorkspace({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
-  const [tab, setTab] = useState<"pending" | "approved" | "rejected">("pending");
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<ExpenseApprovalFilters>({ employee: "", month: "" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -189,7 +258,11 @@ export function ExpenseApprovalsWorkspace({
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
   const [view, setView] = useState<"queue" | "employees">("queue");
   const [expandedEmployees, setExpandedEmployees] = useState<Set<string>>(() => new Set());
+  const [restoredDraftCount, setRestoredDraftCount] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
+  // Guards BOTH draft effects below: nothing may be persisted before the stored draft has been
+  // read, or the empty initial state would erase the very work being recovered.
+  const draftRestoredRef = useRef(false);
 
   // No setState before the first `await`, so this stays safe to call straight from an effect
   // (loading starts true on mount; the retry handler re-arms it).
@@ -225,6 +298,55 @@ export function ExpenseApprovalsWorkspace({
     };
   }, [load]);
 
+  // Bring back whatever was left unsaved last time. Runs once, and only once the queue itself is
+  // on screen, because a draft entry is only meaningful against a record: a trip that has since
+  // left the queue, or one somebody else has already decided the same way, must not be re-opened.
+  //
+  // Shaped around the `await Promise.resolve()` for the same reason the loader above is: a
+  // synchronous setState in an effect body is a lint ERROR here (react-hooks/set-state-in-effect),
+  // and this genuinely is the case that rule allows — reconciling with a store outside React that
+  // cannot be read during render.
+  useEffect(() => {
+    if (draftRestoredRef.current || records.length === 0) return;
+    draftRestoredRef.current = true;
+
+    let cancelled = false;
+    async function restoreDraft() {
+      await Promise.resolve();
+      if (cancelled) return;
+
+      const draft = readExpenseDecisionDraft();
+      if (!draft) return;
+
+      const restored: Record<string, Decision> = {};
+      for (const record of records) {
+        const entry = draft[record.tripId];
+        // Dropped rather than restored when it now MATCHES the stored row — that draft entry is
+        // already committed, and carrying it would show a permanent phantom "1 decision not saved".
+        if (entry && expenseDecisionChanged(entry, savedDecision(record))) {
+          restored[record.tripId] = entry;
+        }
+      }
+
+      const count = Object.keys(restored).length;
+      if (count === 0) return;
+      // `...current` last: anything decided in the moment before this landed outranks the draft.
+      setDecisions((current) => ({ ...restored, ...current }));
+      setRestoredDraftCount(count);
+    }
+
+    void restoreDraft();
+    return () => {
+      cancelled = true;
+    };
+  }, [records]);
+
+  // Persist on every change, so the draft is never more than one decision behind the screen.
+  useEffect(() => {
+    if (!draftRestoredRef.current) return;
+    writeExpenseDecisionDraft(decisions);
+  }, [decisions]);
+
   const decisionFor = useCallback(
     (record: LoadedRecord): Decision => decisions[record.tripId] ?? savedDecision(record),
     [decisions],
@@ -238,21 +360,38 @@ export function ExpenseApprovalsWorkspace({
     });
   }, []);
 
+  // `expenseDecisionChanged` rather than an inline compare, and the SAME call `save()` makes below
+  // — the two were written separately once and disagreed about a rejection being undone, so this
+  // bar counted a decision the payload then left out (see approval-state.ts).
   const dirtyCount = useMemo(() => {
-    return records.reduce((count, record) => {
-      const local = decisions[record.tripId];
-      if (!local) return count;
-      const saved = savedDecision(record);
-      const changed =
-        local.hrApproved !== saved.hrApproved ||
-        Math.abs(local.approvedAmount - saved.approvedAmount) > 0.5 ||
-        local.hrComment.trim() !== saved.hrComment.trim() ||
-        // A rejection changes ONLY the status, so without this the Save button stays
-        // disabled and the decision is silently discarded.
-        isRejectedStatus(local.status) !== isRejectedStatus(saved.status);
-      return changed ? count + 1 : count;
-    }, 0);
+    return records.reduce(
+      (count, record) => {
+        const local = decisions[record.tripId];
+        if (!local) return count;
+        return expenseDecisionChanged(local, savedDecision(record)) ? count + 1 : count;
+      },
+      0,
+    );
   }, [records, decisions]);
+
+  // A full page unload — reload, tab close, the hard navigation Next.js forces after a deploy — is
+  // the one exit the draft above cannot narrate on the way out, so say so before it happens.
+  // Registered ONLY while something is unsaved: a permanently attached `beforeunload` makes the
+  // page ineligible for the back/forward cache (the same reason report-client-error.ts avoids it),
+  // and this page is otherwise perfectly safe to leave.
+  //
+  // It does NOT catch an in-app link — Next.js client navigation never fires it — which is exactly
+  // why the draft is the load-bearing half of this fix and the warning only the polite half.
+  useEffect(() => {
+    if (dirtyCount === 0) return;
+    function onBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      // Browsers show their own wording and ignore ours; the assignment is what arms the dialog.
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirtyCount]);
 
   // Month/employee choices come from the loaded queue itself, so every option has at least one
   // trip behind it — a fixed calendar or the full directory would offer dead ends.
@@ -300,7 +439,31 @@ export function ExpenseApprovalsWorkspace({
     };
   }, [records, search, filters, decisionFor]);
 
-  const activeList = tab === "pending" ? pending : tab === "approved" ? approved : rejected;
+  /**
+   * ONE LIST, not three tabs — owner, 2026-09-08: "i want them in one list not tabs".
+   *
+   * Ordered by the STORED state, deliberately not the live one. A row therefore does NOT jump out
+   * from under the cursor the moment it is decided: it stays exactly where it is and changes its
+   * own chip, and the list re-orders on the next load — which is after Save, which is the only
+   * point a reviewer expects things to move. Sorting on the live decision would make every single
+   * approval shuffle the list the reviewer is working down.
+   *
+   * `pending` / `approved` / `rejected` above are still computed, from the LIVE decision, because
+   * the header chips, the stat cards and the bulk bar all count what is on screen right now. So
+   * nothing the tabs carried is lost: the split moved to the stat cards, and an individual trip's
+   * state was always on its own row — the coloured spine and the Approved / Rejected chip.
+   */
+  const activeList = useMemo(() => {
+    const rank = (record: LoadedRecord) =>
+      expenseApprovalQueueRank(expenseApprovalState(savedDecision(record)));
+    return records
+      .filter(
+        (record) =>
+          matchesExpenseApprovalFilters(record, filters) &&
+          matchesExpenseApprovalSearchText(record, search),
+      )
+      .sort((left, right) => rank(left) - rank(right) || right.total - left.total);
+  }, [records, filters, search]);
   // Derive (don't store) the effective selection so it stays valid as tabs/filters change,
   // without a setState-in-effect. An explicit click still wins via `selectedId`.
   const effectiveSelectedId =
@@ -332,7 +495,7 @@ export function ExpenseApprovalsWorkspace({
   }, [pending, approved, decisionFor]);
 
   // Built from the CURRENT decisions (the three filtered queues), not from what is stored, so a
-  // trip approved a moment ago and not yet saved counts here exactly as it does in the tab counts.
+  // trip approved a moment ago and not yet saved counts here exactly as it does in the stat cards.
   const employeeSummaries = useMemo(
     () =>
       buildExpenseApprovalEmployeeSummary(
@@ -466,7 +629,11 @@ export function ExpenseApprovalsWorkspace({
     [selectedVisible, decisionFor],
   );
 
-  const allVisibleSelected = activeList.length > 0 && selectedVisible.length === activeList.length;
+  // Both of these track the PENDING rows, not the whole list. Only an undecided trip can be
+  // bulk-approved, so a "select all" that ticked decided rows would report a header checkbox as
+  // unchecked for ever — every decided row is one it can never tick.
+  const allVisibleSelected =
+    pending.length > 0 && pending.every((record) => selectedTripIds.has(record.tripId));
 
   const toggleTrip = useCallback((tripId: string) => {
     setBulkMessage(null);
@@ -482,14 +649,14 @@ export function ExpenseApprovalsWorkspace({
     setBulkMessage(null);
     setSelectedTripIds((current) => {
       const next = new Set(current);
-      const everySelected = activeList.length > 0 && activeList.every((record) => next.has(record.tripId));
-      for (const record of activeList) {
+      const everySelected = pending.length > 0 && pending.every((record) => next.has(record.tripId));
+      for (const record of pending) {
         if (everySelected) next.delete(record.tripId);
         else next.add(record.tripId);
       }
       return next;
     });
-  }, [activeList]);
+  }, [pending]);
 
   // Bulk approve writes the same local decision the single-trip button writes — it does NOT save.
   // The reviewer still presses Save, so a mis-click stays reversible right up to that point.
@@ -552,12 +719,13 @@ export function ExpenseApprovalsWorkspace({
       for (const record of records) {
         const local = decisions[record.tripId];
         if (!local) continue;
-        const saved = savedDecision(record);
-        const changed =
-          local.hrApproved !== saved.hrApproved ||
-          Math.abs(local.approvedAmount - saved.approvedAmount) > 0.5 ||
-          local.hrComment.trim() !== saved.hrComment.trim();
-        if (changed) changedReportIds.add(record.reportId ?? null);
+        // The SAME predicate the unsaved count uses. When this was a narrower copy of it, a report
+        // whose only change was an undone rejection never entered this set — so nothing was posted
+        // for it, `setDecisions({})` below threw the decision away, and the reviewer was told
+        // "Approvals saved."
+        if (expenseDecisionChanged(local, savedDecision(record))) {
+          changedReportIds.add(record.reportId ?? null);
+        }
       }
 
       // Save one report at a time with its FULL record set so the report's row/approval totals
@@ -599,6 +767,9 @@ export function ExpenseApprovalsWorkspace({
       }
 
       setDecisions({});
+      // The banner speaks for work that is still only on screen. Once it is written the notice has
+      // to go, or a reviewer who saved is still being told they have something outstanding.
+      setRestoredDraftCount(0);
       await load();
       // A partial save must say so. App-submitted requests go down a different write path (the
       // outstation workflow), and it can refuse a row the queue was willing to show — a trip
@@ -686,6 +857,21 @@ export function ExpenseApprovalsWorkspace({
         />
       </div>
 
+      {/* Says plainly that work was recovered, and that it is still NOT saved — the whole failure
+          this replaces is a reviewer believing decisions were committed when they were not. Tied to
+          `dirtyCount` so it disappears the moment nothing is outstanding, whether that came from a
+          Save or from undoing the restored decisions by hand. */}
+      {restoredDraftCount > 0 && dirtyCount > 0 ? (
+        <AdminCallout tone="warning">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Brought back {formatNumberValue(restoredDraftCount)} decision
+            {restoredDraftCount === 1 ? "" : "s"} you had not saved. They are on screen again and
+            still unsaved — press Save to commit them.
+          </span>
+        </AdminCallout>
+      ) : null}
+
       {saveMessage ? (
         // A partial save is neither a success nor a failure, and must not wear a green tick: some
         // decisions landed and some did not, and the reviewer has to see which. `saveSkipped` is
@@ -738,54 +924,9 @@ export function ExpenseApprovalsWorkspace({
         </div>
       </div>
 
-      {/* Segmented control — the same identity the module's other tab bar uses. The three tabs are
-          `whitespace-nowrap` and total ~455px, so at 375px they were dragging the whole PAGE
-          sideways (pre-existing, measured at 80px); keeping them in their own scroll box means
-          nothing truncates, nothing wraps, and the page itself no longer moves. */}
-      <div className={cn("-mx-1 overflow-x-auto px-1", view !== "queue" && "hidden")}>
-        <div className="inline-flex min-w-max border border-slate-200 bg-white p-1 shadow-sm" role="tablist">
-          {([
-            { key: "pending", label: "Pending", count: pending.length, icon: Inbox },
-            { key: "approved", label: "Approved", count: approved.length, icon: CheckCircle2 },
-            { key: "rejected", label: "Rejected", count: rejected.length, icon: XCircle },
-          ] as const).map(({ key, label, count, icon: Icon }) => (
-            <button
-              aria-selected={tab === key}
-              className={cn(
-                "inline-flex shrink-0 items-center gap-2 whitespace-nowrap px-4 py-2 text-sm font-bold transition-colors",
-                tab === key
-                  ? "bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.18)]"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
-              )}
-              key={key}
-              onClick={() => {
-                setTab(key);
-                // Selection never survives a tab change — a tick made in Pending must not still be
-                // armed when the reviewer is looking at a different queue.
-                setSelectedTripIds(new Set());
-                setBulkMessage(null);
-              }}
-              role="tab"
-              type="button"
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-              <span
-                className={cn(
-                  "inline-flex min-w-[1.5rem] items-center justify-center px-1.5 py-0.5 text-phx-2xs font-black leading-none",
-                  tab === key ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-500",
-                )}
-              >
-                {formatNumberValue(count)}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* One panel narrows the whole queue — free text, trip month, employee. It sits above the
           grid rather than inside the list column so a long employee name has room to render in
-          full, and because the tab counts above are computed from this same filtered set: a count
+          full, and because the stat cards above are computed from this same filtered set: a count
           is therefore never larger than the list underneath it. */}
       <div className={cn(PANEL_CLASS, "p-4")}>
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
@@ -886,7 +1027,7 @@ export function ExpenseApprovalsWorkspace({
       {/* Bulk bar. It states the exact count, the money behind it, and anything the selection
           contains that CANNOT be approved — so the reviewer reads the consequence before pressing,
           not after. Approving here only writes local decisions; Save still commits them. */}
-      {view === "queue" && tab === "pending" && selectedVisible.length > 0 ? (
+      {view === "queue" && selectedVisible.length > 0 ? (
         <div className="flex flex-wrap items-center justify-between gap-3 border border-orange-300 bg-orange-50 px-4 py-3">
           <div className="min-w-0">
             <p className="text-sm font-black text-slate-900">
@@ -977,17 +1118,15 @@ export function ExpenseApprovalsWorkspace({
               {/* An empty list because of a filter is a different fact from an empty queue —
                   saying "nothing waiting for approval" while a month is selected reads as
                   "this month is done" when the work is simply filtered out of view. */}
-              {narrowed
-                ? "No trips match these filters."
-                : tab === "pending"
-                  ? "Nothing waiting for approval."
-                  : tab === "approved"
-                    ? "No approved trips yet."
-                    : "No rejected trips."}
+              {narrowed ? "No trips match these filters." : "No trips in the queue yet."}
             </p>
           ) : (
             <>
-              {tab === "pending" ? (
+              {/* Scoped to the PENDING rows, not to everything on screen. With one list, "select
+                  all" over 400 trips would tick hundreds already decided; planBulkApproval refuses
+                  those and reports "N were already decided" — a wall of noise standing in for a
+                  button that did nothing. */}
+              {pending.length > 0 ? (
                 <label className="flex cursor-pointer items-center gap-2.5 border border-slate-200 bg-white px-4 py-2.5 text-xs font-black uppercase tracking-wide text-slate-600 transition-colors hover:bg-slate-50">
                   <input
                     checked={allVisibleSelected}
@@ -995,7 +1134,7 @@ export function ExpenseApprovalsWorkspace({
                     onChange={toggleAllVisible}
                     type="checkbox"
                   />
-                  Select all {formatNumberValue(activeList.length)} shown
+                  Select all {formatNumberValue(pending.length)} awaiting decision
                 </label>
               ) : null}
               <div className="max-h-[70vh] space-y-2 overflow-y-auto pr-1">
@@ -1036,7 +1175,10 @@ export function ExpenseApprovalsWorkspace({
                                 : "bg-slate-200 group-hover:bg-orange-400",
                         )}
                       />
-                      {tab === "pending" ? (
+                      {/* Only an undecided trip carries a tick box — the bulk action can approve
+                          nothing else, and offering one on a decided row invites a click that
+                          silently does nothing. Reversing a decision brings the box back. */}
+                      {state === "pending" ? (
                         <label className="flex shrink-0 cursor-pointer items-center pl-3">
                           <input
                             aria-label={`Select ${record.specialist || "Unassigned"} ${record.tripId}`}

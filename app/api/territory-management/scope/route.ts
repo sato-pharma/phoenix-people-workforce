@@ -13,7 +13,7 @@ export async function GET(request: Request) {
     // Same boundary as /filters and /map: sales:read gates the route, resolveTerritoryScope
     // (inside loadTerritoryScopeOverview) narrows the actual content to the caller's own patch.
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "sales", "read");
+    await assertPermission(access, "territory", "read");
 
     return NextResponse.json({ lines: await loadTerritoryScopeOverview(access) });
   } catch (error) {

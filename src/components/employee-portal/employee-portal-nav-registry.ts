@@ -40,7 +40,7 @@ import {
   Waypoints,
 } from "lucide-react";
 
-import type { NavigationPermission } from "@/config/system-navigation";
+import type { NavigationPermission, NavigationSectionItem } from "@/config/system-navigation";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 
 export type PortalNavEntry = {
@@ -60,6 +60,23 @@ export type PortalNavEntry = {
    * decided by a role set, an unreadable predicate, or a computed visibility flag alone).
    */
   permission?: NavigationPermission;
+  /**
+   * The live pending-count badge this destination carries, mirrored from its own row in
+   * `employeePortalNavigationSectionSeeds` (src/config/system-navigation.ts) so the bottom bar
+   * announces exactly what the sidebar does.
+   *
+   * The bar is the ONLY navigation on a phone, so a queue with nothing on its tab is a queue
+   * nobody is told about — the same failure the sidebar badges exist to prevent, on the surface
+   * where it costs most. It renders as the `compact` dot on the icon, never the count pill: at
+   * most six tabs share a 375px bar and a pill would eat a label the golden rule already forbids
+   * shrinking or truncating.
+   *
+   * A mirrored copy, like `permission` above, and kept honest the same way:
+   * `employee-portal-bottom-nav-badges.test.ts` re-reads the seed and fails if the two disagree,
+   * in EITHER direction — a badge added to a nav row and forgotten here is the drift that would
+   * otherwise show up as one surface counting and the other silent.
+   */
+  navBadge?: NavigationSectionItem["navBadge"];
 };
 
 /**
@@ -83,10 +100,10 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Coaching", fullLabel: "Coaching Reports", href: "/employee-portals/coaching", icon: ClipboardCheck, flags: ["showMyCoachingTab", "showTeamCoachingTab"], permission: { resource: "coaching", action: "read" } },
   { label: "Plans", fullLabel: "Weekly / Monthly Plan", href: "/employee-portals/plans", icon: CalendarDays, flags: ["showPlansTab"] },
   { label: "Planning", fullLabel: "Planning Calendar", href: "/employee-portals/plans/calendar", icon: CalendarClock, flags: ["showPlanningCalendarTab"], permission: { resource: "weekly_plans", action: "read" } },
-  { label: "Vac Appr", fullLabel: "Leave Approvals", href: "/employee-portals/approvals/vacation", icon: CalendarDays, flags: ["showVacationApprovalsTab"] },
-  { label: "Exc Appr", fullLabel: "Excuse Approvals", href: "/employee-portals/approvals/excuse", icon: CalendarClock, flags: ["showExcuseApprovalsTab"] },
-  { label: "Plan Appr", fullLabel: "Plan Approvals", href: "/employee-portals/approvals/plan", icon: CalendarRange, flags: ["showPlanApprovalsTab"] },
-  { label: "Approvals", fullLabel: "Other Approvals", href: "/employee-portals/approvals-hub", icon: Inbox, flags: ["showActionsTab"] },
+  { label: "Vac Appr", fullLabel: "Leave Approvals", href: "/employee-portals/approvals/vacation", icon: CalendarDays, flags: ["showVacationApprovalsTab"], navBadge: "vacation-approvals-pending" },
+  { label: "Exc Appr", fullLabel: "Excuse Approvals", href: "/employee-portals/approvals/excuse", icon: CalendarClock, flags: ["showExcuseApprovalsTab"], navBadge: "excuse-approvals-pending" },
+  { label: "Plan Appr", fullLabel: "Plan Approvals", href: "/employee-portals/approvals/plan", icon: CalendarRange, flags: ["showPlanApprovalsTab"], navBadge: "plan-approvals-pending" },
+  { label: "Approvals", fullLabel: "Other Approvals", href: "/employee-portals/approvals-hub", icon: Inbox, flags: ["showActionsTab"], navBadge: "approvals-hub-pending" },
   { label: "Payslips", fullLabel: "Payslips", href: "/employee-portals/payslips", icon: FileText, permission: { resource: "payslips", action: "read" } },
   { label: "Deductions", fullLabel: "Deductions", href: "/employee-portals/deductions", icon: ReceiptText, permission: { resource: "employee_profile", action: "read" } },
   { label: "360", fullLabel: "Employee 360", href: "/employee-portals/employee-360", icon: IdCard, permission: { resource: "employee_profile", action: "read" } },
@@ -129,10 +146,10 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // Footprints rather than the admin shell's Gauge because Gauge is already Sales vs Target here,
   // and in a bar that draws the icon larger than the word a duplicate icon misleads first.
   { label: "Reps Plans", fullLabel: "Reps Plans", href: "/employee-portals/reps-plans", icon: Footprints, flags: ["showRepsPlansTab"], permission: { resource: "crm_visits", action: "read" } },
-  { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"], permission: { resource: "sales", action: "read" } },
+  { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"], permission: { resource: "territory", action: "read" } },
   { label: "Targets", fullLabel: "Targets", href: "/employee-portals/targets", icon: Target, flags: ["showTargetsTab"], permission: { resource: "sales", action: "read" } },
   { label: "ROI Tracker", fullLabel: "Marketing ROI Tracker", href: "/employee-portals/roi-tracker", icon: Target, flags: ["showMarketingRoiTrackingTab"] },
-  { label: "Direct Order", fullLabel: "Direct Orders", href: "/employee-portals/direct-orders", icon: ReceiptText, flags: ["showDirectOrdersTab"] },
+  { label: "Direct Order", fullLabel: "Direct Orders", href: "/employee-portals/direct-orders", icon: ReceiptText, flags: ["showDirectOrdersTab"], navBadge: "direct-orders-needs-action" },
   { label: "Visits", fullLabel: "My Visits", href: "/employee-portals/visits", icon: MapPinned, flags: ["showMyVisitsTab"], permission: { resource: "crm_visits", action: "read" } },
   { label: "Calendar", fullLabel: "Team Calendar", href: "/employee-portals/team-calendar", icon: CalendarRange, flags: ["showTeamCalendarTab"] },
   { label: "Scores", fullLabel: "Coaching Analytics", href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, flags: ["showCoachingAnalyticsTab"], permission: { resource: "coaching", action: "read" } },
@@ -145,12 +162,12 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "New report", fullLabel: "Create Coaching Report", href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, flags: ["showTrainingManagerCreateCoachingTab"], permission: { resource: "coaching", action: "create" } },
   { label: "Field", fullLabel: "Field Coaching", href: "/employee-portals/training-manager/field-coaching", icon: ClipboardCheck, flags: ["showTrainingManagerFieldCoachingTab"], permission: { resource: "coaching", action: "read" } },
   // Market Awareness
-  { label: "Awr Appr", fullLabel: "Awareness Approvals", href: "/employee-portals/market-awareness/inbox", icon: Inbox, flags: ["showMarketAwarenessInboxTab"], permission: { resource: "market_awareness", action: "read" } },
+  { label: "Awr Appr", fullLabel: "Awareness Approvals", href: "/employee-portals/market-awareness/inbox", icon: Inbox, flags: ["showMarketAwarenessInboxTab"], permission: { resource: "market_awareness", action: "read" }, navBadge: "market-awareness-approvals-pending" },
   { label: "Awareness", fullLabel: "Market Awareness", href: "/employee-portals/market-awareness", icon: Sparkles, flags: ["showMarketAwarenessTab"], permission: { resource: "market_awareness", action: "read" } },
   // Marketing Requests
   { label: "Validation", fullLabel: "Customer Validation", href: "/employee-portals/marketing-requests/validation", icon: ShieldCheck, flags: ["showMarketingRequestsTab"] },
   { label: "Marketing", fullLabel: "Marketing Requests", href: "/employee-portals/marketing-requests", icon: Send, flags: ["showMarketingRequestsTab"] },
-  { label: "Inbox", fullLabel: "Marketing Inbox", href: "/employee-portals/marketing-requests/inbox", icon: Inbox, flags: ["showMarketingInboxTab"] },
+  { label: "Inbox", fullLabel: "Marketing Inbox", href: "/employee-portals/marketing-requests/inbox", icon: Inbox, flags: ["showMarketingInboxTab"], navBadge: "marketing-approvals-pending" },
   { label: "All", fullLabel: "All Marketing Requests", href: "/employee-portals/marketing-requests/all", icon: ClipboardList, flags: ["showMarketingAllRequestsTab"] },
   { label: "Control", fullLabel: "Marketing Control", href: "/employee-portals/marketing-requests/control", icon: Settings2, flags: ["showMarketingControlTab"] },
   { label: "Customers", fullLabel: "Customer Database", href: "/employee-portals/marketing-requests/customer-database", icon: Database, flags: ["showMarketingCustomerDatabaseTab"] },

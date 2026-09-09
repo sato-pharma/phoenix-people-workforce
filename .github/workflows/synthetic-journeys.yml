@@ -68,6 +68,16 @@ jobs:
     name: synthetic
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
+    # `secrets` is NOT a valid context in a step-level `if:` — GitHub rejects it with
+    # "Unrecognized named-value: 'secrets'" and the ENTIRE workflow fails to parse, so every run
+    # goes red before any job starts. That is exactly what happened to migration-drift-check.yml
+    # on 2026-07-30; its header carries the same warning. Surface the key as a job-level env var
+    # instead — `env` CAN read secrets, and a step `if:` CAN read job-level `env`. The secret's
+    # VALUE is still injected only into the step that uses it; this copy is a presence flag only.
+    env:
+      HAS_PRODUCTION_SUPABASE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY != '' }}
+
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -117,6 +127,37 @@ jobs:
           # regardless; SYNTHETIC_ALLOW_MUTATION is deliberately never set here.
           SYNTHETIC_ALLOW_PRODUCTION: "true"
         run: pnpm run synthetic:test
+
+      # SAVE THE RESULT. Without this step the suite ran, passed, and told nobody: the admin
+      # Synthetic Journeys page reads public.synthetic_journey_runs, and between 2026-07-03 and
+      # 2026-09-09 that table held exactly ONE row while the workflow ran and passed roughly 27
+      # times a day. The checks were never blind; their DISPLAY was, which is the harder failure
+      # to notice because the workflow's own green tick keeps saying everything is fine.
+      #
+      # `always()` so a FAILED run is saved too. A run that fails is the one worth looking at on
+      # the dashboard, and saving only the passes would rebuild the same silent-green hole from
+      # the other side.
+      #
+      # Reuses PRODUCTION_SUPABASE_SERVICE_ROLE_KEY rather than introducing a token of its own.
+      # The alternative was the bearer-token HTTP route (/api/admin/synthetic-journeys/ingest,
+      # SYNTHETIC_INGEST_TOKEN) — declined because that variable is set in NEITHER GitHub nor
+      # Railway, so wiring it would mean minting a new production credential to fix a reporting
+      # gap. Same secret and same pattern as migration-drift-check.yml's production legs.
+      - name: Save the run to the dashboard
+        if: ${{ always() && env.HAS_PRODUCTION_SUPABASE_KEY == 'true' }}
+        run: pnpm run synthetic:save-report
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "https://ozucdzovmcqvepbozvqf.supabase.co"
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
+          SYNTHETIC_BASE_URL: ${{ inputs.base_url || 'https://phoenix-hr.satopharma.com' }}
+
+      # Same reasoning as the step above and as migration-drift-check.yml: a skipped save and a
+      # successful one are indistinguishable in the run list, and that is precisely how the
+      # dashboard sat two months stale without anyone noticing.
+      - name: Warn when the run could not be saved
+        if: ${{ always() && env.HAS_PRODUCTION_SUPABASE_KEY != 'true' }}
+        run: |
+          echo "::warning::PRODUCTION_SUPABASE_SERVICE_ROLE_KEY is not set — the journeys ran but the result was NOT saved, so the admin Synthetic Journeys page still shows the previous run. Add the secret (production project ref ozucdzovmcqvepbozvqf) to enable the dashboard."
 
       - name: Upload Playwright report
         if: always()

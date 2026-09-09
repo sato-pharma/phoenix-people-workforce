@@ -1,0 +1,10 @@
+{
+  "algorithm": "scrypt",
+  "N": 131072,
+  "r": 8,
+  "p": 1,
+  "keyLength": 64,
+  "salt": "e2909d7ef7d7e2ec94d87c259e767df2",
+  "verifier": "890d6fdd10a1d6ea643ef0bd5feba6c15ae21d23f20c0506ab8fbf8639270200c212f8ec26daf1bb01ecb7940c807a84848c3e590cdd63075e2fce809de58d4d",
+  "setAt": "2026-09-08T21:06:15.600Z"
+}

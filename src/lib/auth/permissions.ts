@@ -127,7 +127,24 @@ export type PermissionResource =
   | "synthetic_journeys"
   | "mailbox_monitor"
   | "mailbox_offboarding"
-  | "retention";
+  | "retention"
+  // Territory Management — the brick/area MAP. SEPARATE from `sales` on purpose, exactly like
+  // `crm_plans` above. The module gated on `sales:read` until 2026-09-07, when the owner asked for
+  // it on the HR Business Partner's sidebar; `sales:read` is the wrong key for that, because the
+  // Employee role holds it too and it opens Source of Sales, Monthly Closing, Sales vs Target and
+  // every other money page in the sidebar's Sales section. This map carries no money at all — its
+  // payload is bricks, areas, coordinates, coverage counts and a "where should a rep hired here
+  // live" recommendation — so it earns its own key rather than dragging the commercial surface
+  // along with it.
+  | "territory"
+  // Company device register — the laptops, tablets and phones an employee signs for on the custody
+  // receipt (إقرار استلام عهدة). SEPARATE from `employees` on purpose, exactly like `crm_plans` and
+  // `territory` above. `employees` is a Super-Admin-only hard boundary holding salaries and
+  // national IDs; this payload is asset tags, serials, IMEIs and who is carrying them. The people
+  // who run it are HR Operations, at a joiner's desk and again at an exit, and handing somebody a
+  // laptop must not require the personnel file — riding on `employees` would have meant either
+  // opening that file to do it, or the register being unusable by the only seat that needs it.
+  | "company_devices";
 
 /**
  * The runtime twin of the `PermissionResource` union above. Both lists must hold exactly the same
@@ -208,6 +225,16 @@ export const permissionResources: PermissionResource[] = [
   // reader talks himself into "helpfully" widening it.
   "mailbox_offboarding",
   "retention",
+  // Territory Management. Omitting this would offer the brick map — and its residence
+  // recommendations, which name where the company's field force lives — to every role, since
+  // `permissionAllowed` treats a key the lookup has never seen as PERMITTED. Mechanism at the head
+  // of this array.
+  "territory",
+  // Company device register. Omitting this would offer it to every role, since `permissionAllowed`
+  // treats a key the lookup has never seen as PERMITTED — and the payload names, per employee, the
+  // serial and IMEI of the machine he is carrying and what the company values it at. That is a
+  // shopping list, and it would be readable by the whole company.
+  "company_devices",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -554,6 +581,30 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
       if (role === "HR Advisory") return ["read", "create", "update", "export"];
       if (role === "CEO") return ["read", "export"];
       return [];
+    case "company_devices":
+      // The custody receipt is signed by three parties — the holder, IT (مُسلِّم العهدة) and
+      // Finance (اعتماد الإدارة المالية) — but only one of them has a seat in Phoenix that runs the
+      // paperwork: HR Operations already prints the receipt out of the hiring pack at a joiner's
+      // desk and closes it at an exit, so the register goes where that work already happens.
+      //
+      // No delete for anyone but Super Admin, the same rule mailbox_offboarding follows above. A
+      // custody row is the record that a named person signed for a named machine; البند (10) of the
+      // receipt makes it the basis of a wage deduction, so destroying one destroys both the
+      // company's claim and the employee's defence against it.
+      //
+      // Finance Manager is deliberately NOT here yet. He signs the paper and البند (10) is his
+      // clause, so a read grant is arguable — but it is the owner's call, not a default, and a
+      // resource is easier to widen later than to narrow after people have used it.
+      //
+      // `import` is the ACTION rather than a resource of its own, because that is how every other
+      // import in this codebase is gated (`employees:import`). Without it HR Operations — the seat
+      // that actually walks the fleet and enters it — could register devices one at a time but not
+      // in bulk, which for ~85 of them is the same as not at all. It opens no door that `create`
+      // did not already open; it only names the bulk one so it can be withdrawn on its own.
+      if (role === "Super Admin") return allActions;
+      if (role === "HR Operations") return ["read", "create", "update", "export", "import"];
+      if (role === "CEO") return ["read", "export"];
+      return [];
     case "mailbox_monitor":
       // Reading employees' company mailboxes for compliance — the most sensitive surface in the
       // app. Super Admin (the owner) only; no other role, ever.
@@ -773,8 +824,10 @@ const defaultPermissionMatrix: PermissionMap = {
     mailbox_monitor: allActions,
     mailbox_offboarding: allActions,
     retention: allActions,
+    company_devices: allActions,
     workflow_registry: allActions,
     sales: allActions,
+    territory: allActions,
     direct_orders: allActions,
     weekly_sales: allActions,
     team: allActions,
@@ -849,6 +902,9 @@ const defaultPermissionMatrix: PermissionMap = {
     // SoD: read/export only — resignation finalization belongs to Super Admin/HR.
     resignations: ["read", "export"],
     sales: ["read", "export"],
+    // Territory Management, split out of `sales:read` on 2026-09-07. Same reach as before —
+    // this key exists so the map can be granted without the money pages, not to narrow anyone.
+    territory: ["read"],
     weekly_sales: ["read", "export"],
     team: ["read", "export"],
     vacancies: ["read", "export"],
@@ -873,6 +929,9 @@ const defaultPermissionMatrix: PermissionMap = {
     // not record that a leaver's mailbox was actually closed.
     mailbox_offboarding: ["read", "export"],
     retention: ["read", "export"],
+    // Same SoD line. The CEO reads what the company owns and what has walked out of the door with
+    // a leaver — that is his question — and does not record a handover or price a settlement.
+    company_devices: ["read", "export"],
   },
   // ── The two HR seats, composed from functions ─────────────────────────────────────────────
   // These entries are NOT hand-maintained. Each is the union of the grants carried by the
@@ -1069,6 +1128,9 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     probation: ["read", "export"],
     sales: ["read", "export"],
+    // Territory Management (the portal twin at /employee-portals/territory-management). His own
+    // areas only — resolveTerritoryScope still narrows the map to his seat's areas.
+    territory: ["read"],
     weekly_sales: ["read", "export"],
     team: ["read", "export"],
     vacancies: ["read", "export"],
@@ -1111,6 +1173,8 @@ const defaultPermissionMatrix: PermissionMap = {
     // med reps in their own subtree — the same rows the tracker already shows them.
     probation: ["read", "export"],
     sales: ["read", "export"],
+    // Territory Management (portal twin), narrowed to his own region by resolveTerritoryScope.
+    territory: ["read"],
     weekly_sales: ["read", "export"],
     team: ["read", "export"],
     // Same undeclared-access correction as `deductions` above: getEmployeePortalVacancies already
@@ -1125,7 +1189,14 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "National Sales Manager": {
-    market_awareness: ["read", "export"],
+    // Market Awareness: an APPROVER since the parallel group shipped (2026-09-09). Every activity
+    // waits on the Marketing Manager and on the National Sales Manager of each line it targets, so
+    // this seat holds `approve` for the same reason the Marketing Manager does. It reads far
+    // narrower than it looks: `approve` gates exactly one route, the decision POST, and
+    // `canDecideSlot` then admits him to HIS line's slot only — three people hold this title, one
+    // per line. Without it he was routed a decision the route refused him, which is a queue that
+    // cannot be cleared by the only person allowed to clear it.
+    market_awareness: ["read", "approve", "export"],
     direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],
@@ -1141,6 +1212,8 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
+    // Territory Management (portal twin), narrowed to his own line by resolveTerritoryScope.
+    territory: ["read"],
     weekly_sales: ["read", "export"],
     team: ["read", "export"],
     organogram: ["read"],
@@ -1243,6 +1316,9 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "import", "export"],
+    // Territory Management. Carried over verbatim from `sales:read`, which gated the module
+    // until 2026-09-07 — he owns the brick/area geography and loses nothing in the split.
+    territory: ["read"],
     weekly_sales: allActions,
     weekly_plans: ["read", "create", "update"],
     report_it: ["read", "create"],

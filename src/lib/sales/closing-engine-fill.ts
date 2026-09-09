@@ -6,6 +6,8 @@ import {
   closingEngineTemplateBytes,
 } from "./closing-engine-template-generated";
 import { ACHIEVEMENT_ARROW_AT } from "./closing-engine-data";
+import { CLOSING_ENGINE_EMBLEM_ON_DARK_PNG_BASE64 } from "./closing-engine-emblem-on-dark";
+import { applyExecutiveGeometry, applyExecutivePalette, applyOnDarkEmblem, ensureAccentButtonStyle, fitFrozenPanesForPhone, fitNavigationBand, paintExecutiveBands, resolveSheetParts } from "./closing-executive-look";
 import { PIVOT_GRID_SPECS, buildPivotGrid, type GridCellKind } from "./closing-pivot-grid";
 
 /**
@@ -289,9 +291,31 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   // After the card is filled, never before: it rewrites whole rows, and the filler would then be
   // stamping products and moving footnotes around a layout it had not been told about.
   await polishRepCard(zip, fill);
+
+  // The approved executive geometry, and it has to land HERE: after every writer that authors rows,
+  // and before every reader that measures columns. Each drawing on these sheets -- the emblem, the
+  // owner's region buttons, the navigation bar -- is anchored in EMUs derived from the column
+  // widths, so a width changed after they are placed slides every one of them sideways by the
+  // difference, with nothing to show for it but a logo no longer sitting over its own title.
+  await applyExecutiveGeometry(zip, await resolveSheetParts(zip));
+
   await updateReferences(zip, fill);
   await fitRegionControls(zip, fill);
   await sizeMatrixColumns(zip, fill);
+  // AFTER the columns are final, and that ordering is the whole point. A slicer is a two-cell
+  // anchor: Excel sizes it from its two CORNERS, resolved against the column widths as they stand
+  // when the file is opened. Sizing it inside `fitRegionControls` -- one line above
+  // `sizeMatrixColumns` -- computed those corners against widths that were about to change, so the
+  // control came out narrower than its captions needed and every region button printed an
+  // ellipsis: "Ale...", "Delt...", "Upp...". Measured 653px where nine regions with a thirteen
+  // character name need about 1,035.
+  //
+  // Nothing in the finished file shows this. The columns and the corners are both perfectly
+  // reasonable; they simply were not computed against each other.
+  {
+    const regions = distinctColumn(fill.data.salesData, 0);
+    if (regions.length) await widenRegionSlicers(zip, regions);
+  }
   await sizePivotAchievementFormats(zip, fill);
   await orderPivotItems(zip, fill);
   await dropStaleLabelFormats(zip);
@@ -303,6 +327,10 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   await hideEmblemFromPrint(zip);
   const reviewAdded = options.reviewSheets ? await addReviewSheets(zip, options.reviewSheets) : [];
   await addIndexSheet(zip, fill, reviewAdded);
+  // Contents does not exist until the line above has authored it, so it gets its own pass. Scoped
+  // to that one sheet on purpose: a second blanket pass here would run AFTER `sizeMatrixColumns`
+  // and undo the widening that keeps real area names from being cut off.
+  await applyExecutiveGeometry(zip, await resolveSheetParts(zip), [INDEX_SHEET]);
   await openOnFirstSheet(zip);
   await recalculateOnOpen(zip);
   await restorePivotCacheSharedItems(zip, fill);
@@ -317,6 +345,25 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   if (options.macroFree && options.pdfLink) await linkPdfButtons(zip, options.pdfLink);
   if (options.macroFree && options.repCardPdfBase) await addRepCardPdfLink(zip, options.repCardPdfBase);
   if (options.macroFree) await stripMacros(zip);
+
+  // LAST of the drawing passes, and it has to be: the navigation bar, the re-pointed Export PDF
+  // button and the Rep Card's link are all authored above, and a shape clamped before it exists is
+  // a shape still hanging over the warning strip. Both builds need it -- the .xlsm carries the
+  // owner's own buttons, which have the same overhang the clones inherited from them.
+  // The palette first: it SUBSTITUTES colours the template already uses, so it must run before the
+  // band painter adds styles of its own -- those are authored in the approved colours already and
+  // would be swapped a second time by a map that does not expect them.
+  await applyExecutivePalette(zip);
+
+  const finalParts = await resolveSheetParts(zip);
+  const banded = await paintExecutiveBands(zip, finalParts);
+  // Only the sheets that actually got a navy masthead. A sheet still on white keeps the black-SATO
+  // mark, which is the correct one for it.
+  await applyOnDarkEmblem(zip, finalParts, banded);
+  await fitNavigationBand(zip, finalParts);
+  // LAST of the layout passes: it measures the columns as they finally stand, and every earlier pass
+  // is still free to change them. A pane frozen wider than a phone hides the data it labels.
+  await fitFrozenPanesForPhone(zip, finalParts);
 
   // Directory entries must not reach the file, and this has to be the LAST thing done to the zip.
   // An OPC package is a flat set of parts: an item whose name ends in "/" is not a part at all and
@@ -439,16 +486,60 @@ async function fillHeaderCells(zip: JSZip, spec: SheetSpec, content: EngineSheet
  * row. Move the row without the merge and two things break at once: the footnote clips at one
  * column width instead of spanning the sheet, and the abandoned merge lands on whatever row now
  * occupies its old number — in a long month, a real data row, silently welded into one cell.
+ *
+ * ONE PASS, never a replacement per row. The version this replaces walked `moved` and ran a global
+ * string replace for each entry, so every rewrite it had already made was still on the page for the
+ * next one to match again. When the trailer block slides by LESS than its own height — a shift of
+ * one or two rows — each footnote's new row number is the next footnote's OLD one, and the three
+ * merges cascade onto a single range:
+ *
+ *     {18→19, 19→20, 20→21}   B18 becomes B19, both B19s become B20, all three become B21
+ *
+ * Excel answers repeated merge records with "We found a problem with some content", repairs the
+ * file by discarding EVERY merge on that sheet, and names the part in its recovery log:
+ * "Removed Records: Merge cells from /xl/worksheets/sheet1.xml part". Measured on the owner's
+ * September Anti Infective export (2026-09-08): nine region rows put the trailer at 19/20/21
+ * against the template's 18/19/20, a shift of exactly one. August's eight rows moved the block
+ * nowhere at all and Pedia's seven moved it UP, which is why every earlier export opened cleanly —
+ * the defect is a function of how many regions the line has, not of any change made to the code.
+ *
+ * Mapping the whole list at once removes the cascade by construction: a merge is read from the
+ * ORIGINAL text, so a row number that is both somebody's source and somebody else's target can only
+ * be applied once. Exact repeats are then dropped and the count restated, which also cleans up a
+ * template that shipped one twice.
  */
 function moveMerges(sheetXml: string, moved: Map<number, number>): string {
-  let out = sheetXml;
-  for (const [from, to] of moved) {
-    out = out.replace(
-      new RegExp(`<mergeCell ref="([A-Z]+)${from}:([A-Z]+)${from}"\\s*/>`, "g"),
-      `<mergeCell ref="$1${to}:$2${to}"/>`,
-    );
+  const block = /<mergeCells\b[^>]*>[\s\S]*?<\/mergeCells>/.exec(sheetXml);
+  if (!block) return sheetXml;
+
+  // Rewriting the block means owning every entry in it. If any one of them is spelled in a form this
+  // does not read — a paired tag, a ref this pattern misses — the whole block is left exactly as it
+  // was: a merge silently dropped is a worse failure than a merge left on the wrong row, and it is
+  // the kind that shows up as a mangled page rather than as an error.
+  const total = (block[0].match(/<mergeCell\b/g) ?? []).length;
+
+  const seen = new Set<string>();
+  const refs: string[] = [];
+  let read = 0;
+  for (const merge of block[0].matchAll(/<mergeCell ref="([A-Z]+)(\d+):([A-Z]+)(\d+)"\s*\/>/g)) {
+    const [, firstCol, firstRow, lastCol, lastRow] = merge;
+    read += 1;
+    // A footnote's strip is one row, which is the only shape that travels with a moved row. A merge
+    // spanning several rows is part of the sheet's furniture and stays where the owner put it.
+    const target = firstRow === lastRow ? moved.get(Number(firstRow)) : undefined;
+    const ref =
+      target === undefined ? `${firstCol}${firstRow}:${lastCol}${lastRow}` : `${firstCol}${target}:${lastCol}${target}`;
+    if (seen.has(ref)) continue;
+    seen.add(ref);
+    refs.push(ref);
   }
-  return out;
+
+  if (read !== total || refs.length === 0) return sheetXml;
+
+  const rebuilt = `<mergeCells count="${refs.length}">${refs
+    .map((ref) => `<mergeCell ref="${ref}"/>`)
+    .join("")}</mergeCells>`;
+  return `${sheetXml.slice(0, block.index)}${rebuilt}${sheetXml.slice(block.index + block[0].length)}`;
 }
 
 /**
@@ -764,8 +855,21 @@ function columnWidthReader(sheetXml: string): (index: number) => number {
   const fallback = (Math.round(DEFAULT_COLUMN_WIDTH * 7) + 5) * EMU_PER_PIXEL;
   return (index) => {
     const column = index + 1;
-    const run = runs.find((candidate) => column >= candidate.min && column <= candidate.max);
-    return run ? run.emu : fallback;
+    // LAST match, not first. `<cols>` may carry overlapping entries -- the owner's approved
+    // reference does, and `applyExecutiveGeometry` appends narrow overrides on top of the template's
+    // runs rather than rebuilding the block, because rebuilding dropped attributes Excel needed.
+    // Excel resolves an overlap by letting the LATER entry win, so a reader that stops at the first
+    // one measures a width the sheet no longer uses.
+    //
+    // Nothing about that failure looks like a width problem. Every drawing here is anchored in EMUs
+    // computed from this function, so the whole navigation bar gets laid out against stale columns
+    // and the buttons land on top of each other. Measured on the Rep Card, whose columns moved most;
+    // Overview's barely moved and rendered perfectly, which is how it would have shipped.
+    for (let at = runs.length - 1; at >= 0; at -= 1) {
+      const run = runs[at]!;
+      if (column >= run.min && column <= run.max) return run.emu;
+    }
+    return fallback;
   };
 }
 
@@ -866,7 +970,8 @@ async function fitRegionControls(zip: JSZip, fill: ClosingEngineFill): Promise<v
   const regions = distinctColumn(fill.data.salesData, 0);
   if (!regions.length) return;
   await rebuildRegionButtons(zip, regions);
-  await widenRegionSlicers(zip, regions);
+  // `widenRegionSlicers` is NOT called here. It has to run after `sizeMatrixColumns`; see the note
+  // on the call site in `fillClosingEngine`.
 }
 
 /** A shape name has to be a plain identifier, and unique inside its drawing. */
@@ -964,7 +1069,16 @@ async function rebuildRegionButtons(zip: JSZip, regions: string[]): Promise<void
   const measured = new Map<string, number>();
   for (const block of buttons) {
     const caption = /<a:t>([\s\S]*?)<\/a:t>/.exec(block)?.[1];
-    if (caption) measured.set(caption, edge(block, ANCHOR_TO) - edge(block, ANCHOR_FROM));
+    if (!caption) continue;
+    // A measured width is only usable if it is POSITIVE. Both edges are resolved through the column
+    // table, so a button whose two anchors land either side of a column whose width changed can
+    // measure as zero or negative -- and that width goes straight into `<a:ext cx>`, which Excel
+    // refuses outright: the workbook stops opening at all, with no repair prompt and nothing in the
+    // integrity check to see, because the XML is perfectly well-formed. Measured cx=-750166 on the
+    // Rep Ranking drawing. Dropping the bad measurement lets `buttonWidth` fall back to its caption
+    // estimate, which is what it does for a caption it has never seen.
+    const span = edge(block, ANCHOR_TO) - edge(block, ANCHOR_FROM);
+    if (span > 0) measured.set(caption, span);
   }
   const startX = Math.min(...buttons.map((block) => edge(block, ANCHOR_FROM)));
   const endX = Math.max(...buttons.map((block) => edge(block, ANCHOR_TO)));
@@ -1721,8 +1835,29 @@ async function clearTitleEmblem(zip: JSZip, fill: ClosingEngineFill): Promise<vo
     const to = ANCHOR_TO.exec(emblem)?.[0];
     // A one-cell anchor carries its own size and only the corner moves; a two-cell one is defined
     // by both corners, so it has to travel as a whole or the logo stretches.
+    //
+    // THE WIDTH MUST BE POSITIVE, and it is not always. Both corners are resolved through the
+    // column table, so an emblem whose anchor spans columns that have since narrowed can measure as
+    // zero or negative -- and that number goes straight into `<a:ext cx>`. Excel does not repair a
+    // shape with a negative width, it REFUSES THE WORKBOOK: no dialog, no recovery log, and nothing
+    // for the integrity check to see, because the XML is perfectly well formed. Measured
+    // cx=-750166 on the Rep Ranking emblem.
+    //
+    // A logo left where the template put it is a cosmetic imperfection on one sheet. A workbook
+    // that will not open is the whole file. So an unusable measurement means DO NOT MOVE IT.
+    //
+    // BUT THE MEASUREMENT ITSELF WAS THE FAULT. Taking the width as the distance between the two
+    // corners resolves both through the column table, so the answer is only as stable as the
+    // columns -- and this workbook now sets several of them to two and three characters. Skipping
+    // the move kept the file openable and left the logo sitting ON TOP of the title, on exactly the
+    // sheet whose title is longest. `<a:ext cx>` is the shape's own cached size, not derived from
+    // the grid at all, so it survives any column change; the corner span is kept only as a fallback
+    // for a shape that carries no ext.
+    const cached = Number(/<a:ext\b[^>]*\bcx="(\d+)"/.exec(emblem)?.[1] ?? Number.NaN);
+    const span = Number.isFinite(cached) && cached > 0 ? cached : to ? anchorX(widthOf, to) - left : 0;
+    if (to && span <= 0) continue;
     const moved = to
-      ? moveAnchor(widthOf, emblem, needed, anchorX(widthOf, to) - left)
+      ? moveAnchor(widthOf, emblem, needed, span)
       : emblem.replace(from, writeAnchorX(from, locateColumn(widthOf, needed)));
     zip.file(found.name, found.xml.replace(emblem, moved));
   }
@@ -2346,13 +2481,27 @@ async function addRepCardPdfLink(zip: JSZip, base: string): Promise<void> {
   // caught that. An empty cell is filled in place; one carrying anything is left alone.
   const existing = /<c r="F4"[^>]*?(?:\/>|>([\s\S]*?)<\/c>)/.exec(row);
   if (existing && (existing[1] ?? "").trim() !== "") return;
-  const style = /<c r="F4"[^>]*\bs="(\d+)"/.exec(row)?.[1] ?? /<c r="B4"[^>]*\bs="(\d+)"/.exec(row)?.[1];
+
+  // A BUTTON, IN THE ONE LOUD COLOUR ON THE SHEET. Owner, 2026-09-09: "Rep Card EXPORT PDF make it
+  // appearing as a button but different catchy color." It stays a CELL because the link has to
+  // follow the dropdown -- a drawing cannot read one, and a shape here would send every reader to
+  // whichever rep happened to be selected when the file was built. So the cell is dressed as a
+  // button instead: accent cyan, white bold type, centred.
+  //
+  // The captions are short for the same reason. A filled block cannot let its text overflow into
+  // the next cell the way an unfilled one does, so a long caption would be cut off at the fill's
+  // edge -- and the owner's standing rule forbids truncating text. Both branches fit.
+  const accent = await ensureAccentButtonStyle(zip);
+  const style =
+    accent >= 0
+      ? String(accent)
+      : (/<c r="F4"[^>]*\bs="(\d+)"/.exec(row)?.[1] ?? /<c r="B4"[^>]*\bs="(\d+)"/.exec(row)?.[1]);
 
   // `&` is the formula's own concatenation operator AND an XML entity, so it is escaped once here
   // and Excel sees a single `&`. Getting this wrong yields a workbook Excel offers to repair.
   const formula = xmlEscape(
-    `IF($N$1=0,"Pick a rep above to enable Export PDF",`
-      + `HYPERLINK("${base}&area="&INDEX(AreaBook[Area Code],$N$1),"▸ Export PDF for this rep"))`,
+    `IF($N$1=0,"PICK A REP FIRST",`
+      + `HYPERLINK("${base}&area="&INDEX(AreaBook[Area Code],$N$1),"EXPORT PDF  ↗"))`,
   );
   const cell = `<c r="F4"${style ? ` s="${style}"` : ""}><f>${formula}</f></c>`;
 
@@ -2458,6 +2607,17 @@ function nextWorksheetPart(zip: JSZip): string {
 const INDEX_SHEET = "Contents";
 
 /**
+ * How much larger the cover's mark is than the one the working sheets carry.
+ *
+ * Theirs sits in the corner of a table and only has to be present. This one is the mark ON the
+ * cover, beside a 22pt title in a 66pt band, and at the siblings' size it read as an afterthought
+ * dropped into a lot of empty colour. The band's height is set from this, so the two cannot drift
+ * apart: change the scale and the band grows with it.
+ */
+const INDEX_MARK_SCALE = 1.7;
+
+
+/**
  * Add the contents page, and put it first.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -2517,88 +2677,90 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
     .filter((section) => section.entries.length > 0);
   if (sections.length === 0) return;
 
-  // Formats written for this page, not borrowed whole. See ensureIndexStyles: s81 was picked for its
-  // font and brought a right alignment and a bottom rule with it, which is what made the page read
-  // as a broken table.
-  const own = await ensureIndexStyles(zip);
-  const linkStyle = own?.link ?? INDEX_STYLE.link;
-  const bandStyle = own?.band ?? INDEX_STYLE.subtitle;
+  // The look is cloned off the Overview, never named by index. See resolveIndexStyles.
+  const own = await resolveIndexStyles(zip);
+  const s: IndexPalette = own ?? {
+    band: "0", bannerBlank: "0", bannerFoot: "0", bannerSub: "0", bannerTitle: "0", body: "0", foot: "0",
+    header: "0", link: "0", title: "0", titlePt: "13", titleTail: "0",
+  };
 
   const line = String(fill.sheets.Overview?.cells?.A1 ?? "").trim();
   const rows: string[] = [];
   // Collected as the rows are written rather than counted afterwards: every band adds one, so a
   // hard-coded `count` is a repair prompt waiting for the next section.
-  const merges: string[] = ["A1:B1", "A2:B2"];
+  const merges: string[] = [];
   let rowNumber = 1;
 
   const inline = (ref: string, style: string, value: string) =>
     `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(xmlSafe(value))}</t></is></c>`;
 
-  rows.push(`<row r="${rowNumber}" ht="33.95" customHeight="1">${inline(`A${rowNumber}`, INDEX_STYLE.title, line || "Monthly Closing")}</row>`);
-  rowNumber += 1;
-  rows.push(`<row r="${rowNumber}" ht="18" customHeight="1">${inline(`A${rowNumber}`, INDEX_STYLE.subtitle, "Every page in this workbook. Press a name to go there.")}</row>`);
-  rowNumber += 2; // one blank row, as the other sheets space their header off the title
-
-  // ── The month in four figures, before the list of pages ─────────────────────────────────────
+  // ── THE SKELETON IS THE SIBLINGS' ─────────────────────────────────────────────────────────────
   //
-  // Taken from the Overview's OWN header cells rather than recomputed, so the front page cannot
-  // disagree with the page it summarises. A figure the fill did not write is skipped rather than
-  // shown as a zero.
-  const kpi = fill.sheets.Overview?.cells ?? {};
-  const kpiCells: Array<{ label: string; note: string; percent: boolean; value: number }> = [];
-  const kpiSpec: Array<{ label: string; note: string; percent: boolean; ref: string; noteRef: string }> = [
-    { label: "Sales value", note: "", percent: false, ref: "B5", noteRef: "B6" },
-    { label: "Target value", note: "", percent: false, ref: "D5", noteRef: "D6" },
-    { label: "Achievement", note: "", percent: true, ref: "F5", noteRef: "F6" },
-    { label: String(kpi.I4 ?? "Against last month"), note: "", percent: true, ref: "I5", noteRef: "I6" },
-  ];
-  for (const spec of kpiSpec) {
-    const value = kpi[spec.ref];
-    if (typeof value !== "number" || !Number.isFinite(value)) continue;
-    kpiCells.push({ label: spec.label, note: String(kpi[spec.noteRef] ?? ""), percent: spec.percent, value });
-  }
+  // Rep Ranking, Watch List and the Overview are all built the same way, and this page is now built
+  // that way too rather than to a look of its own: the masthead on row 1 at 33.95 with the rule
+  // carried across it, the blue column band on row 2 at the same height, two spacer rows, and the
+  // table from row 5 at 16.5 — the height every data row in this workbook uses. The pane freezes at
+  // row 4 exactly as theirs do, so the band stays put while the list scrolls.
+  // Tall enough for the bigger title AND the emblem beside it: the mark is 330200 EMU (26pt) and
+  // wants clear air above and below, which 33.95 does not give once the type grows.
+  // THE BUILD STAMP COMES OFF THE TITLE. The sibling sheets carry
+  // "… Anti Infective   ·   built 7 September 2026" as one string, which is right on a working
+  // sheet; on the cover at this size it is what pushed the headline onto a second line and left the
+  // emblem beside a wrapped edge. The month keeps the headline, the stamp moves to the footnote —
+  // still on the page, still answerable, no longer competing with the title.
+  const separator = line.lastIndexOf("·");
+  const stamp = separator > 0 ? line.slice(separator + 1).trim() : "";
+  const headline = (separator > 0 ? line.slice(0, separator) : line).trim();
 
-  if (own && kpiCells.length > 0) {
-    for (const cell of kpiCells) {
-      // THE NOTE BELONGS TO THE LABEL, not to a second column. It used to sit in B, which begins 26
-      // characters to the right of a figure that is seven characters long — so "EGP, August 2026"
-      // floated away from the 477,499 it qualifies and read as an unrelated remark. Folded into the
-      // label above the figure, the three parts are one block, and column B is left to the
-      // descriptions it exists for.
-      const heading = cell.note ? `${cell.label}  ·  ${cell.note}` : cell.label;
-      rows.push(
-        `<row r="${rowNumber}" ht="15" customHeight="1">`
-          + inline(`A${rowNumber}`, own.kpiLabel, heading)
-          + "</row>",
-      );
-      rows.push(
-        `<row r="${rowNumber + 1}" ht="21" customHeight="1">`
-          + `<c r="A${rowNumber + 1}" s="${cell.percent ? own.kpiPercent : own.kpiMoney}"><v>${cell.value}</v></c>`
-          + "</row>",
-      );
-      rowNumber += 2;
-    }
+  // The sheets write their caption as one run separated by wide gaps —
+  // "Monthly Closing   August 2026   Anti Infective". The banner sets the first part as the
+  // headline and the rest as the line under it, which is the only split that survives a line whose
+  // parts change from month to month.
+  const captionParts = headline.split(/\s{2,}/).map((part) => part.trim()).filter(Boolean);
+  const bannerHead = (captionParts[0] ?? "Monthly Closing").toUpperCase();
+  const bannerSub = captionParts.slice(1).join("   ·   ");
+
+  // THE BANNER: four rows, so the type has air above and below it inside the band rather than
+  // sitting hard against its edges. Column A stays WHITE across all four — that panel is what the
+  // mark stands on; see resolveIndexStyles for why it cannot sit on the band itself.
+  // Sized around the mark rather than guessed: the emblem is INDEX_MARK_SCALE times the siblings'
+  // ~26pt, so the band has to clear that with air above and below or the logo touches its edges.
+  const bannerRowsPt = [10, 32, 22, 10];
+  const bannerText = [null, { style: s.bannerTitle, value: bannerHead },
+    { style: s.bannerSub, value: bannerSub }, null];
+  const lastBannerRow = bannerRowsPt.length - 1;
+  bannerRowsPt.forEach((heightPt, index) => {
+    const cell = bannerText[index];
+    rows.push(
+      `<row r="${rowNumber}" ht="${heightPt}" customHeight="1">`
+        // BOTH columns take the band, so it runs edge to edge. The mark does not sit on a white
+        // COLUMN — that read as a pale rectangle floating beside a blue one rather than as one
+        // masthead. It sits on a white CHIP drawn inside the band, which is what addIndexEmblem
+        // puts there.
+        + `<c r="A${rowNumber}" s="${index === lastBannerRow ? s.bannerFoot : s.bannerBlank}"/>`
+        + (cell && cell.value
+          ? inline(`B${rowNumber}`, cell.style, cell.value)
+          : `<c r="B${rowNumber}" s="${index === lastBannerRow ? s.bannerFoot : s.bannerBlank}"/>`)
+        + "</row>",
+    );
     rowNumber += 1;
-  }
+  });
 
-  const headerRow = rowNumber;
-  rows.push(
-    `<row r="${headerRow}" ht="21.95" customHeight="1">`
-      + inline(`A${headerRow}`, INDEX_STYLE.header, "Page")
-      + inline(`B${headerRow}`, INDEX_STYLE.header, "What it holds")
-      + "</row>",
-  );
+  // A thin breath between the band and the table, so the two are not welded together.
   rowNumber += 1;
 
-  for (const section of sections) {
-    // The band label spans both columns and carries the subtitle style, whose hairline blue rule
-    // draws the divider — a line, never a filled bar, which is the house rule for how colour is
-    // allowed to mark a document.
+
+  // NO ZEBRA. It was #F5F9FC on white — at reading size it is invisible, so it was adding a style
+  // to the file and nothing to the page. The rules under each row do the separating.
+  for (const [sectionIndex, section] of sections.entries()) {
+    // A blank row above every section but the first. Air is what turns a list into a contents page,
+    // and it is the one thing the cramped version was missing most.
+    if (sectionIndex > 0) rowNumber += 1;
     merges.push(`A${rowNumber}:B${rowNumber}`);
     rows.push(
-      `<row r="${rowNumber}" ht="26" customHeight="1">`
-        + inline(`A${rowNumber}`, bandStyle, section.band.toUpperCase())
-        + `<c r="B${rowNumber}" s="${bandStyle}"/>`
+      `<row r="${rowNumber}" ht="30" customHeight="1">`
+        + inline(`A${rowNumber}`, s.band, section.band.toUpperCase())
+        + `<c r="B${rowNumber}" s="${s.band}"/>`
         + "</row>",
     );
     rowNumber += 1;
@@ -2608,9 +2770,9 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
       // so the cell itself is the control. `#` and the quoted sheet name are both required.
       const jump = xmlEscape(`HYPERLINK("#'${entry.sheet.replace(/'/g, "''")}'!A1","${entry.sheet}")`);
       rows.push(
-        `<row r="${rowNumber}" ht="22.5" customHeight="1">`
-          + `<c r="A${rowNumber}" s="${linkStyle}"><f>${jump}</f></c>`
-          + inline(`B${rowNumber}`, INDEX_STYLE.body, entry.what)
+        `<row r="${rowNumber}" ht="24" customHeight="1">`
+          + `<c r="A${rowNumber}" s="${s.link}"><f>${jump}</f></c>`
+          + inline(`B${rowNumber}`, s.body, entry.what)
           + "</row>",
       );
       rowNumber += 1;
@@ -2620,17 +2782,26 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   // The footnote, one blank row below the last band.
   rowNumber += 1;
   merges.push(`A${rowNumber}:B${rowNumber}`);
-  rows.push(`<row r="${rowNumber}" ht="18" customHeight="1">${inline(`A${rowNumber}`, INDEX_STYLE.subtitle, INDEX_FOOTNOTE)}</row>`);
+  rows.push(
+    `<row r="${rowNumber}" ht="20" customHeight="1">`
+      + inline(`A${rowNumber}`, s.foot, stamp ? `${INDEX_FOOTNOTE}   ·   ${stamp}` : INDEX_FOOTNOTE)
+      + "</row>",
+  );
 
   const lastRow = rowNumber;
   const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:B${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><selection activeCell="A1" sqref="A1"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="26" customWidth="1"/><col min="2" max="2" width="96" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait"/></worksheet>`;
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:B${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="2" topLeftCell="A3" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A3" sqref="A3"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="28" customWidth="1"/><col min="2" max="2" width="96" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="1"/></worksheet>`;
 
-  zip.file(indexPart, sheetXml);
+  // The emblem, beside the title. Done before the part is written so the sheet lands with its
+  // <drawing> already in place.
+  zip.file(
+    indexPart,
+    await addIndexEmblem(zip, indexPart, sheetXml, { columnIndex: 0, rowHeightsPt: bannerRowsPt }),
+  );
 
   zip.file(
     "[Content_Types].xml",
-    (await typesFile.async("string")).replace(
+    (await zip.file("[Content_Types].xml")!.async("string")).replace(
       "</Types>",
       `<Override PartName="/${indexPart}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`,
     ),
@@ -2666,15 +2837,6 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   );
 }
 
-/**
- * Style indices borrowed from the template — the look the other sheets already use.
- *
- * CHOSEN BY READING THE CATALOGUE, not by guessing an index: s81 is bold 12pt in the brand blue
- * `#0868A8`, s8 is white on that same blue, s77 the 13pt title, s79 the grey subtitle, s9 the body.
- * The first version used s9 for the link too, which is 9.5pt plain dark — the page rendered as a
- * wall of identical text with nothing to press.
- */
-const INDEX_STYLE = { title: "77", subtitle: "79", header: "8", link: "81", body: "9" } as const;
 
 /** Sheet names reach `workbook.xml` XML-escaped; the comparisons here do not. */
 function unescapeSheetName(value: string): string {
@@ -2797,7 +2959,7 @@ async function addReviewSheets(zip: JSZip, sheets: ReviewSheet[]): Promise<Revie
     zip.file(
       part,
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${columnLetters(columns)}${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A5" sqref="A5"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>${cols}</cols><sheetData>${rows.join("")}</sheetData><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`,
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${columnLetters(columns)}${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="2" topLeftCell="A3" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A3" sqref="A3"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>${cols}</cols><sheetData>${rows.join("")}</sheetData><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`,
     );
 
     types = types.replace(
@@ -2860,17 +3022,378 @@ function appendCellXf(stylesXml: string, xf: string): { index: number; xml: stri
 }
 
 /**
- * The contents page's own formats, built from the template's fonts and borders.
+ * Put the workbook's OWN emblem on the contents page, top right, as every sibling carries it.
  *
- * fontId 22 is the bold brand blue the owner uses for a figure that matters; fontId 2 the 13pt title
- * face; fontId 20 the grey subtitle; fontId 11 the body. borderId 4 is his medium blue rule, which
- * is what gives a band its divider without a filled bar — the house rule is colour on lines and type,
- * never on area.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * THE PICTURE IS NOT SHIPPED, IT IS REUSED. `xl/media/image1.png` is already in the package — the
+ * logo every other sheet anchors in its masthead row — so this adds a drawing that points at that
+ * same part rather than embedding a second copy of the mark. One image in the zip, one mark in the
+ * workbook, and nothing to keep in step when the owner replaces it.
+ *
+ * The `<xdr:pic>` is cloned from whichever sheet already carries one, so the fill, the aspect lock
+ * and the print behaviour come from his own drawing rather than from a block written here. Only
+ * three things are replaced: the shape id and name, which must be unique inside their own drawing,
+ * and the relationship id, which is local to the new part.
+ *
+ * WHERE IT SITS. Right-aligned against the end of the last column, on row 1, with the same 50800
+ * EMU drop the siblings use — the top-right corner of the sheet, which is where every one of them
+ * puts it. The x is computed from THIS page's own column widths rather than copied, because the
+ * contents page is two wide columns and the sheets it was cloned from are ten narrow ones; copying
+ * the anchor would land the mark somewhere out past the edge of the page.
+ *
+ * A worksheet's `<drawing>` is the LAST child in `CT_Worksheet`'s sequence, after `pageSetup` — put
+ * anywhere else it is a schema violation, and Excel answers a schema violation by repairing the
+ * workbook and dropping what it could not read.
+ *
+ * Every step is optional by construction: no media, no source picture, no room for it, and the page
+ * is returned exactly as it came in. A contents page with no logo is a small loss; a contents page
+ * Excel refuses to open is not.
  */
-async function ensureIndexStyles(zip: JSZip): Promise<Record<string, string> | null> {
-  const file = zip.file("xl/styles.xml");
-  if (!file) return null;
-  let xml = await file.async("string");
+async function addIndexEmblem(
+  zip: JSZip,
+  indexPart: string,
+  sheetXml: string,
+  masthead: { columnIndex: number; rowHeightsPt: number[] },
+): Promise<string> {
+  const drawingNames = Object.keys(zip.files)
+    .filter((name) => /^xl\/drawings\/drawing\d+\.xml$/.test(name))
+    .sort();
+
+  // Only the <xdr:pic> STRUCTURE is borrowed from a sheet that already carries one — its fill, its
+  // aspect lock, its print behaviour. The image it points at is replaced below.
+  let picture: string | null = null;
+  for (const name of drawingNames) {
+    const xml = await zip.file(name)!.async("string");
+    const block = (xml.match(ANY_ANCHOR) ?? []).find((one) => one.includes("<xdr:pic"));
+    const pic = block ? /<xdr:pic\b[\s\S]*?<\/xdr:pic>/.exec(block)?.[0] : null;
+    if (!pic) continue;
+    const embed = /r:embed="(rId\d+)"/.exec(pic)?.[1];
+    const relsXml = await zip.file(`xl/drawings/_rels/${name.split("/").pop()}.rels`)?.async("string");
+    const target = embed && relsXml
+      ? new RegExp(`Id="${embed}"[^>]*Target="([^"]+)"`).exec(relsXml)?.[1]
+      : null;
+    if (!target) continue;
+    const resolved = `xl/${target.replace(/^\.\.\//, "")}`;
+    if (!zip.file(resolved)) continue;
+    picture = pic;
+    break;
+  }
+  if (!picture) return sheetXml;
+
+  // THE ON-DARK MARK, not the one already in the zip.
+  //
+  // The template's own emblem is the on-LIGHT lockup: its "SATO" is set in BLACK, which is right on
+  // the white mastheads its siblings use and disappears completely on this page's banner, leaving
+  // the word "PHARMA" alone. The two files are identical but for that one fill, so the banner gets
+  // its own copy of the white-SATO lockup and the mark needs no white tile behind it.
+  const emblemPart = "xl/media/phx-emblem-on-dark.png";
+  if (!zip.file(emblemPart)) {
+    zip.file(emblemPart, Buffer.from(CLOSING_ENGINE_EMBLEM_ON_DARK_PNG_BASE64, "base64"));
+  }
+  const image = "../media/phx-emblem-on-dark.png";
+
+  const size = /<a:ext\b[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(picture);
+  if (!size) return sheetXml;
+
+  // BIGGER THAN THE SIBLINGS'. Their emblem sits in the corner of a working sheet and only has to
+  // be present; this one is the mark ON the cover and has to carry it. Scaled from the template's
+  // own dimensions rather than typed in, so the aspect ratio is the owner's and cannot drift.
+  const width = Math.round(Number(size[1]) * INDEX_MARK_SCALE);
+  const height = Math.round(Number(size[2]) * INDEX_MARK_SCALE);
+
+  // BESIDE THE TITLE — the mark FIRST, then the words, the way a letterhead reads.
+  //
+  // It is deliberately NOT placed after the caption. That was tried: this page's title is the whole
+  // "Monthly Closing   August 2026   Anti Infective   ·   built 7 September 2026", which at the
+  // masthead's size measures wider than this sheet's own two columns, so the mark had nowhere left
+  // to sit and was dropped entirely — the page came out with no logo at all. Putting it first makes
+  // the placement independent of how long a given month's title happens to be.
+  //
+  // It is CENTRED ON THE WHITE PANEL at the left of the banner — the only ground this mark is
+  // legible on, and a panel that exists for the mark alone, so an off-centre placement in it would
+  // read as a mistake in a way an off-centre mark in a wide masthead does not.
+  const widthOf = columnWidthReader(sheetXml);
+  const panelWidth = widthOf(masthead.columnIndex);
+  if (width >= panelWidth) return sheetXml;
+  const at = { col: masthead.columnIndex, colOff: Math.round((panelWidth - width) / 2) };
+
+  // The vertical centre of the WHOLE band, resolved back to the row it lands in. A rowOff is an
+  // offset INTO its own row, so one offset measured from the top of the band would overflow the
+  // first row and Excel would place the mark somewhere of its own choosing.
+  //
+  /** An absolute y, as the (row, rowOff) pair an anchor wants. */
+  const locateRow = (y: number) => {
+    let left = Math.max(0, y);
+    let row = 0;
+    for (const pt of masthead.rowHeightsPt) {
+      const rowEmu = pt * 12_700;
+      if (left < rowEmu) break;
+      left -= rowEmu;
+      row += 1;
+    }
+    return { row, rowOff: Math.round(left) };
+  };
+
+  const bandEmu = masthead.rowHeightsPt.reduce((total, pt) => total + pt * 12_700, 0);
+  const top = Math.max(0, Math.round((bandEmu - height) / 2));
+  const from = locateRow(top);
+  const to = locateRow(top + height);
+  const anchorRow = from.row;
+  const drop = from.rowOff;
+
+  const part = `xl/drawings/drawing${
+    Math.max(0, ...drawingNames.map((name) => Number(/drawing(\d+)\.xml$/.exec(name)?.[1] ?? 0))) + 1
+  }.xml`;
+
+  // ANCHORED TO THE CELLS, not floating over them.
+  //
+  // A `twoCellAnchor` is defined by two CORNERS rather than by a corner and a size, so the mark
+  // belongs to the block of cells it sits in: it moves when rows or columns move, resizes when they
+  // resize, and cannot be dragged loose from the banner. `editAs="twoCell"` is what makes it size
+  // with them — `oneCell` would move it and keep its size, `absolute` would pin it to the page and
+  // let the banner slide out from under it.
+  //
+  // A oneCellAnchor carries an <xdr:ext>; a twoCellAnchor must NOT — its size comes from the
+  // corners, and leaving a stale ext there is a schema violation Excel answers by repairing the
+  // file. The picture's own <a:ext> inside spPr is restated instead, so the shape and the anchor
+  // agree on how big it is.
+  const sized = picture
+    .replace(/<xdr:cNvPr\b[^>]*?(\/>|>[\s\S]*?<\/xdr:cNvPr>)/, '<xdr:cNvPr id="2" name="Emblem"/>')
+    .replace(/r:embed="rId\d+"/, 'r:embed="rId1"')
+    .replace(/<a:off\b[^>]*\/>/, '<a:off x="0" y="0"/>')
+    .replace(/<a:ext\b[^>]*\/>/, `<a:ext cx="${width}" cy="${height}"/>`);
+
+  const anchor =
+    '<xdr:twoCellAnchor editAs="twoCell">'
+    + `<xdr:from><xdr:col>${at.col}</xdr:col><xdr:colOff>${at.colOff}</xdr:colOff>`
+    + `<xdr:row>${anchorRow}</xdr:row><xdr:rowOff>${drop}</xdr:rowOff></xdr:from>`
+    + `<xdr:to><xdr:col>${at.col}</xdr:col><xdr:colOff>${at.colOff + width}</xdr:colOff>`
+    + `<xdr:row>${to.row}</xdr:row><xdr:rowOff>${to.rowOff}</xdr:rowOff></xdr:to>`
+    + sized
+    // Not printed, matching the emblem on every other sheet.
+    + '<xdr:clientData fPrintsWithSheet="0"/>'
+    + "</xdr:twoCellAnchor>";
+
+  zip.file(
+    part,
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"'
+      + ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+      + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+      + `${anchor}</xdr:wsDr>`,
+  );
+  zip.file(
+    `xl/drawings/_rels/${part.split("/").pop()}.rels`,
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${image}"/>`
+      + "</Relationships>",
+  );
+  zip.file(
+    `xl/worksheets/_rels/${indexPart.split("/").pop()}.rels`,
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/${part.split("/").pop()}"/>`
+      + "</Relationships>",
+  );
+
+  const typesXml = await zip.file("[Content_Types].xml")!.async("string");
+  if (!typesXml.includes(`PartName="/${part}"`)) {
+    zip.file(
+      "[Content_Types].xml",
+      typesXml.replace(
+        "</Types>",
+        `<Override PartName="/${part}" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>`,
+      ),
+    );
+  }
+
+  return sheetXml.replace("</worksheet>", '<drawing r:id="rId1"/></worksheet>');
+}
+
+/**
+ * The contents page's formats, CLONED from the sheets it sits in front of.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * NOTHING HERE NAMES A STYLE INDEX, and that is the whole point. `addRepCardStyles` already spells
+ * out why, and this page is the proof: it used to carry `INDEX_STYLE = { title: "77", subtitle:
+ * "79", link: "81", ... }` while the template ships 77 cellXfs — valid indices 0..76. Those three
+ * resolved to anything at all only because the style writer had appended six entries first, so
+ * "title" was in fact the appended link format. It rendered by luck. An id is whatever position the
+ * owner's source workbook happened to put it in, and it moves whenever the engine is rebuilt from a
+ * fresh one; a wrong id is not an error, it is a differently coloured cell nobody notices.
+ *
+ * So the look is READ OFF THE OVERVIEW SHEET — the one page that is always present — and the page
+ * is painted with the very formats its siblings use:
+ *
+ *   title      the Overview's own A1 masthead, and B1's blank that carries the rule across
+ *   header     the first bold-white-on-solid style the Overview uses: its blue column band
+ *   body       the first plain unfilled style below that band: its data row
+ *
+ * Everything else is one of those with a single attribute swapped, exactly as addRepCardStyles
+ * does it. The zebra takes the palest solid fill the workbook already owns rather than inventing a
+ * colour; the link and the band take the brand-blue and the muted greys the template already
+ * defines, found by their COLOUR rather than by their position.
+ */
+type IndexPalette = Record<
+  "band" | "bannerBlank" | "bannerFoot" | "bannerSub" | "bannerTitle" | "body" | "foot" | "header"
+  | "link" | "title" | "titlePt" | "titleTail",
+  string
+>;
+
+/** Top-level `<child>` elements of `<tag>`, by scan: one regex cannot match `<xf/>` and `<xf>…</xf>`. */
+function styleList(xml: string, tag: string, child: string): string[] {
+  const open = xml.indexOf(`<${tag}`);
+  if (open < 0) return [];
+  const body = xml.slice(xml.indexOf(">", open) + 1, xml.indexOf(`</${tag}>`));
+  const out: string[] = [];
+  let cursor = 0;
+  for (;;) {
+    const at = body.indexOf(`<${child}`, cursor);
+    if (at < 0) break;
+    const gt = body.indexOf(">", at);
+    if (body[gt - 1] === "/") { out.push(body.slice(at, gt + 1)); cursor = gt + 1; continue; }
+    const close = body.indexOf(`</${child}>`, gt);
+    out.push(body.slice(at, close + child.length + 3));
+    cursor = close + 1;
+  }
+  return out;
+}
+
+async function resolveIndexStyles(zip: JSZip): Promise<IndexPalette | null> {
+  const stylesFile = zip.file("xl/styles.xml");
+  const overviewPart = MANIFEST.sheets.Overview?.file;
+  const overviewFile = overviewPart ? zip.file(overviewPart) : null;
+  if (!stylesFile || !overviewFile) return null;
+
+  let xml = await stylesFile.async("string");
+  const overview = await overviewFile.async("string");
+
+  const xfs = styleList(xml, "cellXfs", "xf");
+  const fills = styleList(xml, "fills", "fill");
+  const fonts = styleList(xml, "fonts", "font");
+  const borders = styleList(xml, "borders", "border");
+  if (xfs.length === 0) return null;
+
+  // `\\b` and `\\d`, not `\b` and `\d`: inside a template literal a lone `\b` is a BACKSPACE
+  // character and `\d` is just the letter d, so the pattern silently becomes one that can never
+  // match. It fails as a clean "not found" rather than as an error — every style resolved to 0 and
+  // the page came out unstyled with nothing to see anywhere.
+  const idIn = (xf: string | undefined, name: string) =>
+    Number(new RegExp(`\\b${name}="(\\d+)"`).exec(xf ?? "")?.[1] ?? 0);
+  const fontOf = (xf: string | undefined) => fonts[idIn(xf, "fontId")] ?? "";
+  const fillOf = (xf: string | undefined) => fills[idIn(xf, "fillId")] ?? "";
+  const styleAt = (ref: string) =>
+    new RegExp(`<c r="${ref}"[^>]*?\\bs="(\\d+)"`).exec(overview)?.[1];
+
+  // Document order, so "the first one below the band" means what it says.
+  const usedOnOverview = [...overview.matchAll(/<c r="[A-Z]+\d+"[^>]*?\bs="(\d+)"/g)].map((m) => Number(m[1]));
+
+  const isBanner = (index: number) => {
+    const xf = xfs[index];
+    if (!xf) return false;
+    return /patternType="solid"/.test(fillOf(xf)) && fontOf(xf).includes("<b/>") && /FFFFFF/i.test(fontOf(xf));
+  };
+  const isPlainRow = (index: number) => {
+    const xf = xfs[index];
+    if (!xf) return false;
+    return !/patternType="solid"/.test(fillOf(xf)) && !fontOf(xf).includes("<b/>");
+  };
+
+  const bannerAt = usedOnOverview.findIndex(isBanner);
+  const header = bannerAt >= 0 ? usedOnOverview[bannerAt] : undefined;
+  const body = usedOnOverview.slice(bannerAt >= 0 ? bannerAt + 1 : 0).find(isPlainRow);
+  const title = Number(styleAt("A1") ?? NaN);
+  const titleTail = Number(styleAt("B1") ?? NaN);
+  if (header === undefined || body === undefined || !Number.isFinite(title)) return null;
+
+  // The palest solid fill the workbook already owns, white excepted — the section bands stand on
+  // it, without inventing a colour that would disagree with every panel on every other sheet.
+  let tintFill = -1;
+  let palest = -1;
+  fills.forEach((fill, index) => {
+    const rgb = /fgColor rgb="FF([0-9A-Fa-f]{6})"/.exec(fill)?.[1];
+    if (!rgb || rgb.toUpperCase() === "FFFFFF") return;
+    const value = parseInt(rgb, 16);
+    const luma = ((value >> 16) & 255) * 0.299 + ((value >> 8) & 255) * 0.587 + (value & 255) * 0.114;
+    if (luma > palest) { palest = luma; tintFill = index; }
+  });
+
+  const sizeOf = (font: string) => Number(/sz val="([0-9.]+)"/.exec(font)?.[1] ?? NaN);
+  const bodySize = sizeOf(fontOf(xfs[body]));
+
+  /**
+   * A font already in the workbook in colour `rgb`, NEAREST THE BODY'S SIZE — never the first match.
+   *
+   * The size matters as much as the colour. Taking the first bold `#0868A8` font finds the
+   * Overview's 18pt headline face, and a page name set at 18pt in a 16.5-high row is the difference
+   * between a contents list and a mess. The point of cloning is to land in the same type scale as
+   * the rows beside it, not merely in the same hue.
+   */
+  const fontColoured = (rgb: string, bold: boolean) => {
+    const matcher = new RegExp(`color rgb="FF${rgb}"`, "i");
+    let best: number | null = null;
+    let bestGap = Number.POSITIVE_INFINITY;
+    fonts.forEach((font, index) => {
+      if (!matcher.test(font) || font.includes("<b/>") !== bold) return;
+      const gap = Number.isFinite(bodySize) ? Math.abs(sizeOf(font) - bodySize) : 0;
+      if (gap < bestGap) { bestGap = gap; best = index; }
+    });
+    return best;
+  };
+  const brandFont = fontColoured("0868A8", true) ?? fontColoured("0868A8", false);
+  const mutedFont = fontColoured("7A93A3", false);
+
+  /**
+   * A border the workbook already draws, found by SHAPE: `edge` is its only edge and it is drawn in
+   * `weights`. The engine's own catalogue has a hairline grey under a row and a medium blue under a
+   * heading, and those are the two rules every sheet here is ruled with — so the table gets the
+   * workbook's rules rather than a line invented for this page.
+   */
+  const borderWith = (edge: "bottom" | "top", weights: string[], rgb?: string) =>
+    borders.findIndex((border) => {
+      const edges = [...border.matchAll(/<(left|right|top|bottom|diagonal)[^>]*style="([a-z]+)"/g)];
+      if (edges.length !== 1 || edges[0][1] !== edge) return false;
+      if (!weights.includes(edges[0][2])) return false;
+      return rgb === undefined || new RegExp(`color rgb="FF${rgb}"`, "i").test(border);
+    });
+  const hairline = borderWith("bottom", ["thin", "hair"], "7A93A3");
+  const heavyRule = borderWith("bottom", ["medium", "thick"], "0868A8");
+  // A section OPENS with its rule, so the line belongs to the heading above the pages it covers.
+  // With the rule underneath, the band floated free and its line read as the first entry's.
+  const openingRule = borderWith("top", ["medium", "thick"], "0868A8");
+
+  const swap = (xf: string, patch: { borderId?: number; fillId?: number; fontId?: number; indent?: number }) => {
+    let out = xf;
+    if (patch.fontId !== undefined) {
+      out = out.replace(/\bfontId="\d+"/, `fontId="${patch.fontId}"`);
+      if (!/\bapplyFont="1"/.test(out)) out = out.replace(/\bxfId="(\d+)"/, `xfId="$1" applyFont="1"`);
+    }
+    if (patch.fillId !== undefined) {
+      out = out.replace(/\bfillId="\d+"/, `fillId="${patch.fillId}"`);
+      if (!/\bapplyFill="1"/.test(out)) out = out.replace(/\bxfId="(\d+)"/, `xfId="$1" applyFill="1"`);
+    }
+    if (patch.borderId !== undefined) {
+      out = out.replace(/\bborderId="\d+"/, `borderId="${patch.borderId}"`);
+      // Without applyBorder a cellXf's borderId may be ignored in favour of the style it derives
+      // from, so the rule would simply not be drawn and there would be nothing to see anywhere.
+      if (!/\bapplyBorder="1"/.test(out)) out = out.replace(/\bxfId="(\d+)"/, `xfId="$1" applyBorder="1"`);
+    }
+    if (patch.indent !== undefined) {
+      if (/<alignment\b/.test(out)) {
+        out = /\bindent="\d+"/.test(out)
+          ? out.replace(/\bindent="\d+"/, `indent="${patch.indent}"`)
+          : out.replace(/<alignment\b/, `<alignment indent="${patch.indent}"`);
+      } else {
+        // No alignment element at all: give it one, and close the xf properly either way.
+        out = /\/>$/.test(out)
+          ? out.replace(/\/>$/, `><alignment horizontal="left" vertical="center" indent="${patch.indent}"/></xf>`)
+          : out.replace(/>(?=(?:(?!<alignment)[\s\S])*<\/xf>)/, `><alignment horizontal="left" vertical="center" indent="${patch.indent}"/>`);
+      }
+      if (!/\bapplyAlignment="1"/.test(out)) out = out.replace(/\bxfId="(\d+)"/, `xfId="$1" applyAlignment="1"`);
+    }
+    return out;
+  };
 
   const add = (definition: string): string => {
     const result = appendCellXf(xml, definition);
@@ -2878,37 +3401,186 @@ async function ensureIndexStyles(zip: JSZip): Promise<Record<string, string> | n
     return String(result.index);
   };
 
-  const styles = {
-    // The page name: his bold blue, LEFT where a reader starts, and no border at all.
-    link: add(
-      '<xf numFmtId="0" fontId="22" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">'
-      + '<alignment horizontal="left" vertical="center" indent="1"/></xf>',
+  // ── THE COVER BANNER ────────────────────────────────────────────────────────────────────────
+  //
+  // A deep band across the masthead with the month reversed out of it, and the mark on a WHITE
+  // PANEL at its left.
+  //
+  // THE WHITE PANEL IS NOT DECORATION — it is the only way the logo survives. The mark in this
+  // workbook is the on-light file: "SATO" is set in BLACK, so on a dark band that half of the
+  // wordmark disappears and the banner reads "PHARMA". The stock on-dark file has the opposite
+  // problem here: its "SATO" is white and would show, but its "PHARMA" is the brand blue `#0868A8`
+  // sitting on a `#085080` band — about 1.5:1, which is not a contrast at all. Neither file works
+  // directly on the band, so the band gives it a white ground to stand on, which is also what the
+  // house standard asks for: the on-light mark, on white.
+  const darkFill = fills.reduce(
+    (best, fill, index) => {
+      const rgb = /fgColor rgb="FF([0-9A-Fa-f]{6})"/.exec(fill)?.[1];
+      if (!rgb) return best;
+      const value = parseInt(rgb, 16);
+      const luma = ((value >> 16) & 255) * 0.299 + ((value >> 8) & 255) * 0.587 + (value & 255) * 0.114;
+      return best.luma <= luma ? best : { index, luma };
+    },
+    { index: -1, luma: Number.POSITIVE_INFINITY },
+  ).index;
+
+  /** The largest white face the workbook owns, bold or not — the type that reverses out of the band. */
+  // A DEEPER SHADE OF THE OWNER'S OWN BLUE, appended once, for the band to stand on.
+  //
+  // Not a new colour so much as a darker step of the darkest one the workbook already has. It is
+  // needed because the mark's "PHARMA" is set in `#0A6BA6`; on the template's darkest fill,
+  // `#085080`, that is roughly 1.5:1 and the word sinks into the band — measured on a real render,
+  // where "SATO" read white and "PHARMA" had all but vanished. Taking the same hue down to ~55%
+  // luminance puts it near 3:1, which is what a mark this size needs.
+  const bannerFill = (() => {
+    const rgb = darkFill >= 0 ? /fgColor rgb="FF([0-9A-Fa-f]{6})"/.exec(fills[darkFill] ?? "")?.[1] : null;
+    if (!rgb) return darkFill;
+    const value = parseInt(rgb, 16);
+    const deepen = (channel: number) => Math.max(0, Math.round(channel * 0.55));
+    const deeper = [
+      deepen((value >> 16) & 255),
+      deepen((value >> 8) & 255),
+      deepen(value & 255),
+    ].map((channel) => channel.toString(16).padStart(2, "0").toUpperCase()).join("");
+    const existing = fills.findIndex((fill) => new RegExp(`fgColor rgb="FF${deeper}"`, "i").test(fill));
+    if (existing >= 0) return existing;
+    const open = xml.indexOf("<fills");
+    const close = xml.indexOf("</fills>");
+    if (open < 0 || close < 0) return darkFill;
+    const count = fills.length;
+    xml = xml.slice(0, open)
+      + xml.slice(open, close).replace(/count="\d+"/, `count="${count + 1}"`)
+      + `<fill><patternFill patternType="solid"><fgColor rgb="FF${deeper}"/><bgColor indexed="64"/></patternFill></fill>`
+      + xml.slice(close);
+    fills.push(`<fill><patternFill patternType="solid"><fgColor rgb="FF${deeper}"/></patternFill></fill>`);
+    return count;
+  })();
+
+  const whiteFont = (bold: boolean) => {
+    let best: number | null = null;
+    let bestSize = -1;
+    fonts.forEach((font, index) => {
+      if (!/color rgb="FFFFFFFF"/i.test(font) || font.includes("<b/>") !== bold) return;
+      const size = sizeOf(font);
+      if (!Number.isFinite(size) || size <= bestSize) return;
+      bestSize = size;
+      best = index;
+    });
+    return best;
+  };
+  /** Add a font the workbook does not have, and return its index. */
+  const addFont = (definition: string): number => {
+    const open = xml.indexOf("<fonts");
+    const close = xml.indexOf("</fonts>");
+    if (open < 0 || close < 0) return -1;
+    const index = fonts.length;
+    xml = xml.slice(0, open)
+      + xml.slice(open, close).replace(/count="\d+"/, `count="${index + 1}"`)
+      + definition
+      + xml.slice(close);
+    fonts.push(definition);
+    return index;
+  };
+
+  // A COVER-SIZED TITLE. The largest white bold face the template owns is 17pt, which is a heading
+  // on a working sheet and looks tentative reversed out of a 74pt band. 22pt is added once, in the
+  // template's own Segoe UI so it sits in the same type family as everything around it.
+  const existingWhiteBold = whiteFont(true);
+  const bannerTitleFont = (() => {
+    const wanted = 22;
+    const current = existingWhiteBold === null ? 0 : sizeOf(fonts[existingWhiteBold] ?? "");
+    if (Number.isFinite(current) && current >= wanted) return existingWhiteBold;
+    const added = addFont(
+      `<font><b/><sz val="${wanted}"/><color rgb="FFFFFFFF"/><name val="Segoe UI"/><family val="2"/></font>`,
+    );
+    return added < 0 ? existingWhiteBold : added;
+  })();
+  // The line under the headline at 9.5pt read as a caption rather than as the month. 12pt is added
+  // once, in the same face, so the two lines of the banner are a pair instead of a title with a
+  // footnote stuck to it.
+  const bannerSubFont = (() => {
+    const wanted = 12;
+    const existing = whiteFont(false);
+    const current = existing === null ? 0 : sizeOf(fonts[existing] ?? "");
+    if (Number.isFinite(current) && current >= wanted) return existing;
+    const added = addFont(
+      `<font><sz val="${wanted}"/><color rgb="FFFFFFFF"/><name val="Segoe UI"/><family val="2"/></font>`,
+    );
+    return added < 0 ? (existing ?? bannerTitleFont) : added;
+  })();
+
+  // THE TITLE, ONE SIZE UP. The masthead the siblings use is 13pt, which is right on a sheet whose
+  // job is a dense table; the contents page is the cover and reads as timid at that size. It takes
+  // the LARGEST bold face the workbook ALREADY OWNS in the title's own colour, so the page grows
+  // into type the owner already set rather than into a size invented here — and if his template
+  // has nothing bigger, it simply stays as it was.
+  const titleXf = xfs[title]!;
+  const titleColour = /color rgb="FF([0-9A-Fa-f]{6})"/.exec(fontOf(titleXf))?.[1];
+  const baseTitlePt = sizeOf(fontOf(titleXf));
+  let bigTitleFont = -1;
+  let titlePt = Number.isFinite(baseTitlePt) ? baseTitlePt : 13;
+  fonts.forEach((font, index) => {
+    if (!font.includes("<b/>")) return;
+    if (titleColour && !new RegExp(`color rgb="FF${titleColour}"`, "i").test(font)) return;
+    const size = sizeOf(font);
+    if (!Number.isFinite(size) || size <= titlePt) return;
+    titlePt = size;
+    bigTitleFont = index;
+  });
+
+  const bodyXf = xfs[body]!;
+  // Every row is ruled. A zebra alone separates rows by shade; the hairline is what makes the two
+  // columns read as ONE row across 96 characters of description, which is the whole job of this
+  // page. Where the workbook has no such border, the variants collapse back to the plain style
+  // rather than inventing one.
+  const ruled = (patch: { fillId?: number; fontId?: number }) =>
+    add(swap(bodyXf, { ...patch, ...(hairline >= 0 ? { borderId: hairline } : {}) }));
+
+  /** A banner cell: on the dark band, no rule, optionally carrying reversed-out type. */
+  const banner = (fontId: number | null) =>
+    add(swap(bodyXf, { borderId: 0, ...(bannerFill >= 0 ? { fillId: bannerFill } : {}), ...(fontId === null ? {} : { fontId }) }));
+
+  const palette: IndexPalette = {
+    bannerTitle: banner(bannerTitleFont),
+    bannerSub: banner(bannerSubFont),
+    bannerBlank: banner(null),
+    // The band closes on the brand rule, so its bottom edge is a deliberate line rather than the
+    // place a colour happens to stop. It is the same rule the sheets already draw under a heading.
+    bannerFoot: add(
+      swap(bodyXf, {
+        borderId: heavyRule >= 0 ? heavyRule : 0,
+        ...(bannerFill >= 0 ? { fillId: bannerFill } : {}),
+      }),
     ),
-    // A band label: same blue, smaller, with the medium rule under it so the section is a section.
+    title: add(
+      swap(titleXf, {
+        ...(bigTitleFont < 0 ? {} : { fontId: bigTitleFont }),
+      }),
+    ),
+    titlePt: String(titlePt),
+    titleTail: Number.isFinite(titleTail) ? String(titleTail) : String(title),
+    header: String(header),
+    body: ruled({}),
+    link: brandFont === null ? ruled({}) : ruled({ fontId: brandFont }),
+    // A section bar: tinted, in the brand blue, opening with the heavier rule ABOVE it. Small blue
+    // caps floating over white had no weight at all — the sections were invisible and the page read
+    // as one undifferentiated list.
     band: add(
-      '<xf numFmtId="0" fontId="10" fillId="0" borderId="4" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">'
-      + '<alignment horizontal="left" vertical="bottom" indent="1"/></xf>',
+      swap(bodyXf, {
+        ...(brandFont === null ? {} : { fontId: brandFont }),
+        ...(tintFill >= 0 ? { fillId: tintFill } : {}),
+        ...(openingRule >= 0
+          ? { borderId: openingRule }
+          : heavyRule >= 0
+            ? { borderId: heavyRule }
+            : {}),
+      }),
     ),
-    kpiLabel: add(
-      '<xf numFmtId="0" fontId="20" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">'
-      + '<alignment horizontal="left" vertical="bottom" indent="1"/></xf>',
-    ),
-    kpiMoney: add(
-      '<xf numFmtId="165" fontId="2" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyAlignment="1">'
-      + '<alignment horizontal="left" vertical="center" indent="1"/></xf>',
-    ),
-    kpiPercent: add(
-      '<xf numFmtId="164" fontId="2" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyAlignment="1">'
-      + '<alignment horizontal="left" vertical="center" indent="1"/></xf>',
-    ),
-    kpiNote: add(
-      '<xf numFmtId="0" fontId="11" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">'
-      + '<alignment horizontal="left" vertical="top" indent="1"/></xf>',
-    ),
+    foot: mutedFont === null ? String(body) : add(swap(bodyXf, { fontId: mutedFont })),
   };
 
   zip.file("xl/styles.xml", xml);
-  return styles;
+  return palette;
 }
 
 /**

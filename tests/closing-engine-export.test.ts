@@ -152,6 +152,51 @@ function fixtureMatrix(period: string, scale = 1): MonthlyClosingMatrix {
   };
 }
 
+/**
+ * The same closing with a chosen number of REGIONS — one area each.
+ *
+ * Overview writes one row per region, so this is the only knob that decides where that sheet's
+ * footnotes land, and it is the dimension `fixtureMatrix` above holds fixed at two. A line with
+ * nine regions puts them one row below the template's own, which is the shape that broke the
+ * owner's September Anti Infective export while August's eight left them exactly where they were.
+ */
+function regionsMatrix(period: string, regionCount: number, scale = 1): MonthlyClosingMatrix {
+  const regions = Array.from({ length: regionCount }, (_, index) => {
+    const code = `R${index + 1}`;
+    const only = area(`${code}A`, `Area ${index + 1}`, code, `Region ${index + 1}`, [
+      cell(1000 * scale, 500_000 * scale, 900, 450_000),
+      cell(200 * scale, 300_000 * scale, 250, 375_000),
+      cell(50 * scale, 20_000 * scale, 40, 16_000),
+    ]);
+    return {
+      areas: [only],
+      regionCode: code,
+      regionName: `Region ${index + 1}`,
+      subtotal: {
+        cells: only.cells.map((one) => sum([one])),
+        kind: "regionSubtotal" as const,
+        regionCode: code,
+        regionName: `Region ${index + 1}`,
+        rowTotal: sum([only.rowTotal]),
+      },
+    };
+  });
+  const allAreas = regions.flatMap((group) => group.areas);
+  return {
+    availableLines: ["CNS"],
+    availablePeriods: ["2026-08", "2026-09"],
+    columns: PRODUCTS,
+    grandTotal: {
+      cells: PRODUCTS.map((_, index) => sum(allAreas.map((one) => one.cells[index]!))),
+      kind: "grandTotal",
+      rowTotal: sum(allAreas.map((one) => one.rowTotal)),
+    },
+    line: "CNS",
+    period,
+    regions,
+  };
+}
+
 const SEATS = new Map<string, AreaSeatAssignment>([
   ["cns::CA1", { managerName: "Hala Fouad", repIsVacant: false, repName: "Mostafa Kamel" }],
   ["cns::CA2", { managerName: "Hala Fouad", repIsVacant: true, repName: null }],
@@ -379,8 +424,13 @@ export async function runClosingEngineExportTests() {
     }
   }
   // A loop that matched nothing would pass every assertion above it. These are the counts measured
-  // on the owner's August Anti-Infective export: 12 emblems and 2 slicers, in each of the two builds.
-  assert.equal(emblemsChecked, 24, "both builds must have been walked — 12 emblem anchors in each");
+  // on the owner's August Anti-Infective export: 13 emblems and 2 slicers, in each of the two builds.
+  //
+  // Twelve of the thirteen are the owner's own, one per sheet that carries a masthead. The
+  // thirteenth is the contents page's, added 2026-09-07 — it reuses the same `xl/media/image1.png`
+  // rather than embedding a second copy, so the count of PICTURES rose while the count of IMAGES in
+  // the package did not.
+  assert.equal(emblemsChecked, 26, "both builds must have been walked — 13 emblem anchors in each");
   assert.equal(slicersChecked, 4, "both builds must have been walked — 2 slicer anchors in each");
 
   const cacheDefinition = await zip.file("xl/pivotCache/pivotCacheDefinition1.xml")!.async("string");
@@ -708,6 +758,75 @@ export async function runClosingEngineExportTests() {
     "no merge may be left behind on a data row — that is what a footnote moving without its merge does",
   );
 
+  // ── …and they do not pile onto each other when the block barely moves ────────────────────────
+  //
+  // Everything above passes at two regions, because two regions move the footnotes six rows UP and
+  // a block moving up can never land on a row it has not already left. The failure is the other
+  // direction, and only just: the footnotes sit at 18/19/20 in the owner's template, so a line with
+  // NINE regions puts them at 19/20/21 — each one's new row is the next one's old row. The mover
+  // used to rewrite the sheet once per row, so every rewrite was still on the page for the next
+  // pattern to match again, and all three merges cascaded onto B21:J21.
+  //
+  // Excel does not repair that record. It discards EVERY merge on the sheet and names the part:
+  // "Removed Records: Merge cells from /xl/worksheets/sheet1.xml part". Measured on the owner's own
+  // September Anti Infective export, 2026-09-08 — nine regions. August had eight, which moves the
+  // block nowhere at all, and Pedia has seven, which moves it up; both opened cleanly, which is why
+  // this looked like a fix that kept coming undone rather than a shape nobody had exported yet.
+  //
+  // The region count is the whole test. Nothing else in this file varies it, and no other input
+  // reaches it: not the month, not the line, not the filter.
+  const trailerShifts: number[] = [];
+  for (const regionCount of [8, 9, 10, 11]) {
+    const wide = regionsMatrix("2026-09", regionCount);
+    const wideBook = await fillClosingEngine(
+      buildClosingEngineFill({
+        matrix: wide,
+        priorMatrix: regionsMatrix("2026-08", regionCount, 0.5),
+        review: buildClosingPerformanceReview({
+          availableLines: ["CNS"],
+          availablePeriods: ["2026-08", "2026-09"],
+          generatedAt: "2026-09-08T12:00:00.000Z",
+          matrix: wide,
+          seatAssignments: new Map(),
+          seriesMatrices: [{ matrix: wide, period: "2026-09" }],
+        }),
+      }),
+      { macroFree: true },
+    );
+    const wideSheet = await (await JSZip.loadAsync(wideBook)).file("xl/worksheets/sheet1.xml")!.async("string");
+    const refs = [...wideSheet.matchAll(/<mergeCell ref="([^"]+)"/g)].map((one) => one[1]!);
+    const label = `${regionCount} regions`;
+
+    assert.equal(
+      new Set(refs).size,
+      refs.length,
+      `${label}: two merges landed on the same range — Excel answers that by dropping every merge on the sheet`,
+    );
+    assert.equal(
+      Number(/<mergeCells count="(\d+)"/.exec(wideSheet)![1]),
+      refs.length,
+      `${label}: the declared merge count is what the sheet actually carries`,
+    );
+
+    const wideRows = rowNumbers(wideSheet);
+    const trailer = wideRows.slice(-3);
+    for (const row of trailer) {
+      assert.ok(
+        wideSheet.includes(`<mergeCell ref="B${row}:J${row}"/>`),
+        `${label}: footnote row ${row} keeps its own strip across the sheet`,
+      );
+    }
+    trailerShifts.push(trailer[0]! - CLOSING_ENGINE_TEMPLATE_MANIFEST.sheets.Overview!.trailerRows![0]!);
+  }
+  // The control. A loop whose every build happened to leave the footnotes where the template put
+  // them would pass all of the above and prove nothing, so the shifts that actually occurred are
+  // asserted: one of them has to be the +1 that broke, and one the +2 that breaks the same way.
+  assert.deepEqual(
+    trailerShifts,
+    [0, 1, 2, 3],
+    "the loop has to walk the footnotes from where the template left them through the shift that collapsed them",
+  );
+
   // ── The colouring is cut to the real row count ───────────────────────────────────────────────
   // The template's ranges are July's sizes. Too short and the banding stops partway down; too long
   // and it paints the footnotes. Both are invisible except by looking at the file.
@@ -986,34 +1105,32 @@ export async function runClosingEngineExportTests() {
   );
   const warnedOverview = await holed.file("xl/worksheets/sheet1.xml")!.async("string");
   const warnedCard = await holed.file(CLOSING_ENGINE_TEMPLATE_MANIFEST.sheets["Rep Card"]!.file)!.async("string");
-  const warnedNote = readRow(warnedOverview, 2).A ?? "";
-
-  assert.match(warnedNote, /INCOMPLETE/, "an incomplete month announces itself on its own row");
-  assert.match(warnedNote, /missing 3 sources of the 17/, "it says how many are gone, against how many fed the month before");
-  assert.match(warnedNote, /51,978,605 EGP/, "and the scale of the hole, so 'the number looks low' answers itself");
-  assert.match(warnedNote, /understated/, "and states the consequence rather than leaving the reader to infer it");
-  assert.doesNotMatch(
-    readRow(warnedOverview, 1).A ?? "",
-    /INCOMPLETE/,
-    "row 1 stays the sheet's identity — a note appended there slides the emblem off the sheet",
-  );
-
-  // Months in words. The standing rule is human-readable everywhere, and a note that says
-  // "2026-06" beside a headline that says "July 2026" reads as two different systems talking.
-  assert.match(warnedNote, /June 2026/, "the month compared against is named, not keyed");
-  assert.doesNotMatch(warnedNote, /2026-0\d/, "and never as a raw period key");
-
-
-  // The card takes the short form, and it DISPLACES the tagline rather than joining it — the sheet
-  // is 798px wide and the warning has to survive the trip, not trail off the edge behind a slogan.
+  // ROW 3. The note used to be written to row 2, which is empty in the template and therefore read
+  // as free — but every navigation button is a drawing anchored from row 2, so the buttons painted
+  // straight over it and the warning was unreadable on the owner's own September export. Empty is
+  // not free when a drawing floats above it, and no assertion here could see that, because the cell
+  // held exactly the text it was supposed to hold.
+  // THE COMPLETENESS NOTE IS GONE FROM EVERY TAB. Owner, 2026-09-09: "REMOVE AND DO NOT SHOW THIS
+  // LINE IN ANY TAB." It used to announce a month missing distributor feeds, on its own row, on
+  // every sheet; the assertions that required it are now assertions that it is absent.
+  //
+  // What that costs is recorded in `closing-engine-data.ts` beside the removal: a month with three
+  // of its four sources missing now reads as a real collapse rather than an incomplete month, and
+  // nothing on the page tells the two apart. He was told and asked for it anyway. Do NOT reinstate
+  // the line on the reasoning that its absence looks like a defect.
+  const warnedNote = readRow(warnedOverview, 3).A ?? "";
   const warnedDeck = readRow(warnedCard, 2).A ?? "";
-  assert.match(warnedDeck, /INCOMPLETE/, "the card says it too — it is the tab most likely to be shared alone");
-  assert.doesNotMatch(warnedDeck, /one person, one month/, "and the warning takes the tagline's place, not room beside it");
-  assert.doesNotMatch(
-    readRow(warnedCard, 1).A ?? "",
-    /INCOMPLETE/,
-    "row 1 stays the card's identity — the note goes on the row that is clear of the emblem",
+
+  assert.doesNotMatch(warnedNote, /INCOMPLETE/, "no sheet announces an incomplete month any more");
+  assert.doesNotMatch(readRow(warnedOverview, 1).A ?? "", /INCOMPLETE/, "and not in the masthead either");
+  assert.doesNotMatch(warnedNote, /understated/, "nor the consequence the note used to state");
+  assert.doesNotMatch(warnedDeck, /INCOMPLETE/, "and the Rep Card's deck is clear of it too");
+  assert.match(
+    warnedDeck,
+    /one person, one month, every product/,
+    "the card keeps its own tagline — the note used to displace it, and with the note gone the tagline comes back",
   );
+
   const deckWidth = warnedDeck.length * 91_500;
   const cardWidth = [0, 1, 2, 3, 4, 5, 6, 7].reduce((sum, index) => sum + columnEmu(index), 0);
   assert.ok(
@@ -1079,11 +1196,19 @@ export async function runClosingEngineExportTests() {
     // in the owner's template with NO row 2, and a cell aimed at a row that does not exist used to
     // be dropped in silence — the note appeared on eleven tabs and was missing, unremarked, from
     // the twelfth. A warning absent from one sheet is worse than one absent from all of them.
-    assert.match(
-      `${readRow(sheetXml, 2).A ?? ""}`,
-      /INCOMPLETE/,
-      `${name} carries the completeness note — every sheet a reader opens does, or they learn not to look`,
-    );
+    // Row 3 everywhere except the Rep Card, which keeps the SHORT form on its own deck line at row
+    // 2 — that row is spoken for on that sheet and displacing the tagline is deliberate, asserted a
+    // few dozen lines above. Every other sheet moved to row 3 when the note came out from under the
+    // navigation buttons.
+    // Clear on EVERY sheet, not just the ones anybody thought to check. The note was written by a
+    // loop over all of them, so its removal is verified the same way.
+    for (const row of [1, 2, 3]) {
+      assert.doesNotMatch(
+        `${readRow(sheetXml, row).A ?? ""}`,
+        /INCOMPLETE/,
+        `${name} still shows the completeness note on row ${row} — the owner removed it from every tab`,
+      );
+    }
   }
 
   // Silence is the other half. A workbook that certifies its own completeness on every tab teaches
@@ -1093,7 +1218,7 @@ export async function runClosingEngineExportTests() {
     ["a month with no prior to compare against", await buildWith(coverageOf([coverageEntry("overseas", 1)], false))],
     ["a coverage check that could not run", await buildWith(null)],
   ] as const) {
-    const quietNote = readRow(await book.file("xl/worksheets/sheet1.xml")!.async("string"), 2).A ?? "";
+    const quietNote = readRow(await book.file("xl/worksheets/sheet1.xml")!.async("string"), 3).A ?? "";
     const quietCard = await book.file(CLOSING_ENGINE_TEMPLATE_MANIFEST.sheets["Rep Card"]!.file)!.async("string");
     assert.doesNotMatch(quietNote, /INCOMPLETE/, `${what} says nothing in the masthead`);
     assert.doesNotMatch(readRow(quietCard, 2).A ?? "", /INCOMPLETE/, `${what} says nothing on the card either`);
@@ -1356,6 +1481,291 @@ export async function runClosingEngineExportTests() {
       declaredMerges,
       actualMerges,
       `${label}: mergeCells declares ${declaredMerges} but the sheet carries ${actualMerges} — Excel repairs that`,
+    );
+
+    // ── The polish: a coloured header and a zebra that holds ──────────────────────────────────
+    //
+    // Owner, 2026-09-07: the contents page in the house look — a coloured header and a zebra table.
+    //
+    // ASSERTED BY RESOLVING EVERY INDEX, never by matching one. An index is precisely what was
+    // wrong before: the page named cellXfs 77, 79 and 81 while the template ships 77 of them
+    // (0..76), and those three resolved only because the style writer had already appended six
+    // entries. It rendered by luck, and any code appending a cellXf earlier would have re-pointed
+    // all three at something else with no error. The first assertion below is the one that would
+    // have caught it.
+    const stylesXml = await opened.file("xl/styles.xml")!.async("string");
+    /**
+     * Top-level <child> elements of <tag>, by scan — one greedy regex cannot match both
+     * `<xf .../>` and `<xf ...>…</xf>`, and getting that wrong silently swallows the rest and
+     * reports perfectly valid indices as out of range.
+     */
+    const listOf = (tag: string, child: string): string[] => {
+      const open = stylesXml.indexOf(`<${tag}`);
+      if (open < 0) return [];
+      const body = stylesXml.slice(stylesXml.indexOf(">", open) + 1, stylesXml.indexOf(`</${tag}>`));
+      const out: string[] = [];
+      let cursor = 0;
+      for (;;) {
+        const at = body.indexOf(`<${child}`, cursor);
+        if (at < 0) break;
+        const gt = body.indexOf(">", at);
+        if (body[gt - 1] === "/") { out.push(body.slice(at, gt + 1)); cursor = gt + 1; continue; }
+        const close = body.indexOf(`</${child}>`, gt);
+        out.push(body.slice(at, close + child.length + 3));
+        cursor = close + 1;
+      }
+      return out;
+    };
+    const xfs = listOf("cellXfs", "xf");
+    const fillList = listOf("fills", "fill");
+    const fontList = listOf("fonts", "font");
+    const borderList = listOf("borders", "border");
+    const idOf = (xf: string, name: string) => Number((new RegExp(`${name}="(\\d+)"`).exec(xf) ?? [, "0"])[1]);
+    const fillOf = (style: string) => {
+      const fill = fillList[idOf(xfs[Number(style)] ?? "", "fillId")] ?? "";
+      return (/fgColor rgb="([0-9A-Fa-f]+)"/.exec(fill) ?? [, "none"])[1];
+    };
+    const fontOf = (style: string) => fontList[idOf(xfs[Number(style)] ?? "", "fontId")] ?? "";
+
+    // 1) Nothing on this page may point past the end of the style table.
+    const usedStyles = [...sheet.matchAll(/<c r="[A-Z]+\d+" s="(\d+)"/g)].map((m) => Number(m[1]));
+    assert.ok(usedStyles.length > 0, `${label}: the contents page carries no styled cells at all`);
+    const outOfRange = [...new Set(usedStyles)].filter((index) => index >= xfs.length);
+    assert.deepEqual(
+      outOfRange,
+      [],
+      `${label}: the contents page names cellXf ${outOfRange.join(", ")} but the workbook has `
+        + `${xfs.length} (0..${xfs.length - 1}) — a style index into a list nobody controls`,
+    );
+
+    // 2) THE LOOK IS CLONED FROM A SIBLING, not invented for this page.
+    //
+    // The masthead and the column band must be the very same formats the Overview uses, so the
+    // front page cannot drift into a look of its own — which is what it had, and what the owner
+    // rejected. Asserted as "this index is also used over there", because that is the only claim
+    // that stays true when the ids move, and they DO move: Rep Ranking's masthead was s30 in one
+    // build of this workbook and s58 in the next.
+    const overviewPart = (() => {
+      const tag = [...workbook.matchAll(/<sheet [^>]*\/>/g)].map((m) => m[0])
+        .find((one) => /name="Overview"/.test(one));
+      const rel = tag ? /r:id="(rId\d+)"/.exec(tag)?.[1] : undefined;
+      const target = rel ? new RegExp(`Id="${rel}"[^>]*Target="([^"]+)"`).exec(wbRels)?.[1] : undefined;
+      return target ? `xl/${target.replace(/^\//, "")}` : null;
+    })();
+    assert.ok(overviewPart && opened.file(overviewPart), `${label}: the Overview sheet must be resolvable`);
+    const overviewXml = await opened.file(overviewPart!)!.async("string");
+    const overviewStyles = new Set(
+      [...overviewXml.matchAll(/<c r="[A-Z]+\d+"[^>]*?\bs="(\d+)"/g)].map((m) => m[1]),
+    );
+
+    const titleStyle = /<row r="1"[^>]*>(?:(?!<\/row>)[\s\S])*?<c r="A1" s="(\d+)"/.exec(sheet)?.[1];
+    assert.ok(titleStyle, `${label}: the contents page must carry a masthead on row 1`);
+
+    // THE COVER BANNER. The contents page is the cover, so unlike its siblings it opens with a band
+    // rather than a line of type: a deep fill running edge to edge with the month reversed out of
+    // it. Owner's choice, 2026-09-07.
+    const bannerFill = fillOf(titleStyle!);
+    assert.notEqual(bannerFill, "none", `${label}: the cover must open with a filled banner`);
+
+    // Edge to edge: both columns of the band carry the same fill. A band covering only the second
+    // column reads as a rectangle floating beside the page, not as a masthead — that was the first
+    // attempt at this and it was rejected on sight.
+    const bannerRows: string[] = [];
+    for (const [, index, body] of sheet.matchAll(/<row r="(\d+)"[^>]*>((?:(?!<\/row>)[\s\S])*?)<\/row>/g)) {
+      const cells = [...body.matchAll(/<c r="([A-Z]+)\d+" s="(\d+)"/g)];
+      if (cells.length === 0 || fillOf(cells[0][2]) !== bannerFill) break;
+      assert.ok(
+        cells.length >= 2 && cells.every((cell) => fillOf(cell[2]) === bannerFill),
+        `${label}: banner row ${index} does not carry the band across both columns`,
+      );
+      bannerRows.push(index);
+    }
+    assert.ok(
+      bannerRows.length >= 3,
+      `${label}: the banner is ${bannerRows.length} row(s) — a band needs room above and below its `
+        + "type, or the words sit hard against its edges",
+    );
+
+    // The month is reversed OUT of the band: white type on that fill, or it is unreadable.
+    const bannerType = [...sheet.matchAll(/<row r="\d+"[^>]*>((?:(?!<\/row>)[\s\S])*?)<\/row>/g)]
+      .slice(0, bannerRows.length)
+      .flatMap(([, body]) => [...body.matchAll(/<c r="[A-Z]+\d+" s="(\d+)"[^>]*t="inlineStr"/g)])
+      .map((m) => m[1]);
+    assert.ok(bannerType.length >= 1, `${label}: the banner carries no type at all`);
+    for (const style of bannerType) {
+      assert.match(
+        fontOf(style),
+        /FFFFFF/i,
+        `${label}: banner type is not reversed out — it must be white on the band`,
+      );
+    }
+
+    // 3) NO SECOND BAR. The banner IS the header. A "Page / What it holds" bar under it put two blue
+    //    blocks a few points apart, which read as one confused double-header and was the main thing
+    //    making the page look like a spreadsheet rather than a cover.
+    assert.ok(
+      !/<t[^>]*>What it holds<\/t>/.test(sheet),
+      `${label}: there is a second header bar under the banner — one blue block on this page, not two`,
+    );
+
+    // 4) AIR. Every row below the banner is at least 20pt. The first version used the data sheets'
+    //    16.5, which is right for a dense table and cramped for a page whose whole job is to be read
+    //    once and navigated from.
+    // `\bht=` and NOT `[^>]*ht=`: the latter is greedy, runs on to the `ht="1"` inside
+    // `customHeight="1"`, and reports every row in the sheet as one point high.
+    const bodyHeights = [...sheet.matchAll(/<row r="(\d+)"[^>]*?\bht="([0-9.]+)"/g)]
+      .filter((row) => Number(row[1]) > bannerRows.length)
+      .map((row) => Number(row[2]));
+    assert.ok(bodyHeights.length > 0, `${label}: no rows below the banner`);
+    const cramped = bodyHeights.filter((height) => height < 20);
+    assert.equal(
+      cramped.length,
+      0,
+      `${label}: ${cramped.length} row(s) under 20pt — the page reads as a list, not a contents page`,
+    );
+
+    // 5) NO ZEBRA, and every row ruled. The stripe was #F5F9FC on white: invisible at reading size,
+    //    so it put a style in the file and nothing on the page. The rule does the separating.
+    const entryRows = [...sheet.matchAll(
+      /<row r="\d+"[^>]*>((?:(?!<\/row>)[\s\S])*?<f>HYPERLINK(?:(?!<\/row>)[\s\S])*?)<\/row>/g,
+    )].map((m) => m[1]);
+    assert.ok(entryRows.length >= 10, `${label}: expected a row per page, got ${entryRows.length}`);
+    for (const row of entryRows) {
+      for (const cell of row.matchAll(/<c r="([A-Z]+)\d+" s="(\d+)"/g)) {
+        assert.equal(
+          fillOf(cell[2]),
+          "none",
+          `${label}: entry column ${cell[1]} is filled — the zebra came out for being invisible`,
+        );
+        const border = borderList[idOf(xfs[Number(cell[2])] ?? "", "borderId")] ?? "";
+        assert.match(
+          border,
+          /<bottom[^>]*style="[a-z]+"/,
+          `${label}: entry column ${cell[1]} carries no rule under it`,
+        );
+      }
+    }
+
+    // 6) The emblem. It must be ON the page, wired the way Excel needs it, and it must REUSE the
+    //    picture already in the package rather than adding a second copy of the same mark.
+    assert.match(
+      sheet,
+      /<drawing r:id="[^"]+"\/><\/worksheet>\s*$/,
+      `${label}: the contents page needs its <drawing>, and it is the LAST child of a worksheet — `
+        + "anywhere else is a schema violation, and Excel answers those by repairing the workbook",
+    );
+    const sheetRelsPart = `xl/worksheets/_rels/${part.split("/").pop()}.rels`;
+    assert.ok(opened.file(sheetRelsPart), `${label}: the contents sheet has a drawing but no ${sheetRelsPart}`);
+    const sheetRels = await opened.file(sheetRelsPart)!.async("string");
+    const drawingTarget = /Type="[^"]*\/drawing"[^>]*Target="([^"]+)"/.exec(sheetRels)?.[1]
+      ?? /Target="([^"]+)"[^>]*Type="[^"]*\/drawing"/.exec(sheetRels)?.[1];
+    assert.ok(drawingTarget, `${label}: the sheet relationship must point at a drawing`);
+    const drawingPart = `xl/${drawingTarget!.replace(/^\.\.\//, "")}`;
+    assert.ok(opened.file(drawingPart), `${label}: ${drawingPart} is referenced but not in the zip`);
+    assert.ok(
+      types.includes(`PartName="/${drawingPart}"`),
+      `${label}: a drawing part with no content-type override is a repair prompt`,
+    );
+
+    const drawingXml = await opened.file(drawingPart)!.async("string");
+    assert.match(drawingXml, /<xdr:pic\b/, `${label}: the contents drawing carries no picture`);
+    assert.match(
+      drawingXml,
+      /fPrintsWithSheet="0"/,
+      `${label}: the contents emblem must stay off the paper, like the emblem on every other sheet`,
+    );
+    const drawingRels = await opened
+      .file(`xl/drawings/_rels/${drawingPart.split("/").pop()}.rels`)!
+      .async("string");
+    const imageTarget = /Target="([^"]+)"/.exec(drawingRels)?.[1];
+    assert.ok(
+      imageTarget && opened.file(`xl/${imageTarget.replace(/^\.\.\//, "")}`),
+      `${label}: the emblem points at ${imageTarget}, which is not in the package`,
+    );
+    const media = Object.keys(opened.files).filter((name) => /^xl\/media\/[^/]+$/.test(name));
+    // TWO images, and no more: the template's on-light mark that every other sheet uses, plus the
+    // on-dark lockup this banner needs. They differ in ONE path fill — "SATO" in black against
+    // white — and that one fill is the whole reason for the second file: the black wordmark
+    // disappears on the band and the masthead reads "PHARMA".
+    assert.equal(
+      media.length,
+      2,
+      `${label}: expected the on-light mark and the on-dark one, found ${media.length}: `
+        + media.join(", "),
+    );
+    assert.match(
+      imageTarget!,
+      /phx-emblem-on-dark\.png$/,
+      `${label}: the banner points at ${imageTarget} — on the dark band it must use the WHITE-SATO `
+        + "lockup, or half the wordmark vanishes",
+    );
+
+    // 7) BESIDE THE TITLE. The mark goes in the first column, on the masthead row, and the title
+    //    indents past it. Both halves are asserted because they are one arrangement held from two
+    //    ends: drop the indent and the logo lands on the first word — a defect nothing but a render
+    //    would ever show, which is exactly how this page went wrong three times.
+    assert.match(
+      drawingXml,
+      /<xdr:col>0<\/xdr:col>/,
+      `${label}: the emblem must sit in the first column, beside the title — not out in a far corner`,
+    );
+    // INSIDE THE BANNER, on a row of it. The mark is centred on the band, so it lands on whichever
+    // row that centre falls in — pinning row 0 would pin the arithmetic, not the requirement.
+    const emblemRow = Number(/<xdr:row>(\d+)<\/xdr:row>/.exec(drawingXml)?.[1] ?? NaN);
+    assert.ok(
+      Number.isFinite(emblemRow) && emblemRow < bannerRows.length,
+      `${label}: the emblem is anchored to row ${emblemRow}, outside the ${bannerRows.length}-row `
+        + "banner — it belongs on the band",
+    );
+
+    // AND NO WHITE TILE BEHIND IT. An earlier version put the on-LIGHT mark on the band and had to
+    // draw a white rectangle under it so the black "SATO" would show. That rectangle read as a
+    // sticker pasted on the banner, and getting its z-order wrong showed a blank white tile instead
+    // of a logo. The on-dark lockup removes the need for it entirely — so if a shape ever comes
+    // back, the wrong mark is being used again.
+    // `<xdr:sp[\s>]` and not `<xdr:sp`: the shorter form also matches `<xdr:spPr>`, which EVERY
+    // picture carries, so it would fail on a drawing that has no shape in it at all.
+    assert.ok(
+      !/<xdr:sp[\s>]/.test(drawingXml),
+      `${label}: the banner has a shape behind the mark — with the on-dark lockup nothing needs to `
+        + "sit under it, and a white tile there is the old on-light workaround coming back",
+    );
+
+    // AND IT IS THE COVER'S MARK, not the corner one. The siblings' emblem only has to be present;
+    // this one carries the cover, and at their size it read as an afterthought dropped into a lot of
+    // empty colour. Compared against a SIBLING'S OWN ext rather than a number typed in here, so the
+    // claim stays true if the owner ever replaces the artwork.
+    // ANCHORED TO THE CELLS. A twoCellAnchor is defined by two corners, so the mark belongs to the
+    // banner's cells: it moves and resizes with them and cannot be dragged loose. `editAs="twoCell"`
+    // is the part that makes it SIZE with them.
+    assert.match(
+      drawingXml,
+      /<xdr:twoCellAnchor editAs="twoCell">/,
+      `${label}: the emblem is not bound to its cells — it floats over them and can drift`,
+    );
+    assert.match(drawingXml, /<xdr:to>/, `${label}: a twoCellAnchor needs its second corner`);
+    // A twoCellAnchor takes its size from the corners; an <xdr:ext> left over from the one-cell form
+    // is a schema violation, and Excel answers those by repairing the workbook.
+    assert.ok(
+      !/<xdr:ext\b/.test(drawingXml),
+      `${label}: a stale <xdr:ext> is left on a twoCellAnchor — Excel will offer to repair the file`,
+    );
+
+    const coverWidth = Number(/<a:ext\b[^>]*cx="(\d+)"/.exec(drawingXml)?.[1] ?? 0);
+    let cornerWidth = 0;
+    for (const name of Object.keys(opened.files).filter((one) => /^xl\/drawings\/drawing\d+\.xml$/.test(one))) {
+      if (name === drawingPart) continue;
+      const xml = await opened.file(name)!.async("string");
+      const anchor = (xml.match(/<xdr:(twoCellAnchor|oneCellAnchor)\b[\s\S]*?<\/xdr:\1>/g) ?? [])
+        .find((one) => one.includes("<xdr:pic"));
+      const ext = anchor ? /<a:ext\b[^>]*cx="(\d+)"/.exec(anchor)?.[1] : null;
+      if (ext) { cornerWidth = Number(ext); break; }
+    }
+    assert.ok(cornerWidth > 0, `${label}: no sibling emblem to compare the cover's mark against`);
+    assert.ok(
+      coverWidth > cornerWidth * 1.3,
+      `${label}: the cover's mark is ${coverWidth} against the siblings' ${cornerWidth} — on the `
+        + "banner it has to carry the page, not sit in it",
     );
 
     // Same class of defect: a dimension that stops short of the rows actually written.

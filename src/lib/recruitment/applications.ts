@@ -426,6 +426,47 @@ async function loadHiredEmployeeTerms(employeeHrId: string): Promise<HiredEmploy
 // written; and the approved terms are compared against the employee that was created,
 // with any difference flagged — recorded on the hire's own audit event and returned to
 // the caller — never rejected.
+/**
+ * Record which offer LETTER an application produced.
+ *
+ * 🔴 THE POINTER LIVES ON THE RECRUITMENT SIDE, AND THAT DIRECTION IS THE WHOLE DESIGN.
+ * `src/lib/offers/types.ts` carries the owner's instruction that the offers module is deliberately
+ * independent of recruitment — an offer may be issued to somebody who never entered the ATS, and
+ * "the two must not be merged". So `offers` gains no candidate column and learns nothing; the
+ * application points AT the offer. The arrow stays recruitment -> offers, exactly as the bridge's
+ * own comment describes it.
+ *
+ * `ats_applications.offer_id` has existed since the table was created and NOTHING has ever written
+ * it — 0 of 14 production rows on 2026-09-08, read once in `mapApplication` and set nowhere. The
+ * bridge already creates the letter and hands its id back to the browser; it simply never stored
+ * it, so the two halves of an offer have never been connected in the database and no screen can
+ * answer "which candidate is this offer for".
+ *
+ * WRITTEN FOR BOTH BRANCHES OF THE BRIDGE. It reuses an existing draft as often as it creates one,
+ * and an application whose letter was reused is exactly as linked as one whose letter was new —
+ * storing only the created case would leave a gap that looks like "no offer yet".
+ *
+ * BEST-EFFORT, and never fatal. The recruiter's letter is already created and on screen by the time
+ * this runs; failing their request because a pointer could not be stored would lose the letter to
+ * save the bookkeeping. A missed link degrades to what the system did before this existed.
+ */
+export async function recordApplicationOfferLetter(applicationId: string, offerLetterId: string): Promise<void> {
+  try {
+    const supabase = recruitmentDb();
+    const { error } = await supabase
+      .from("ats_applications")
+      .update({ offer_id: offerLetterId, updated_at: new Date().toISOString() })
+      .eq("id", applicationId);
+    if (error) throw new Error(error.message);
+  } catch (error) {
+    logError("Failed to link an offer letter to its application", {
+      error,
+      labels: { event: "application_offer_link_failed" },
+      context: { applicationId, offerLetterId },
+    });
+  }
+}
+
 export async function markApplicationHired(
   id: string,
   access: AccessContext,

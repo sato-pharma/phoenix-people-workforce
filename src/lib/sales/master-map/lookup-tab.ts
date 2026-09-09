@@ -40,7 +40,7 @@ export const LOOKUP_TAB = "Find a pharmacy";
 /** Hidden. Holds the dropdown lists and the one live filter both halves of the tab read. */
 export const LISTS_TAB = "Lists";
 
-const LAYOUT_VERSION = "v3";
+const LAYOUT_VERSION = "v4";
 
 /** How many matching shops the tab shows at once. The true total is always stated beside it. */
 const VISIBLE_LIMIT = 500;
@@ -176,6 +176,30 @@ function dropdownRequest(sheetId: number, column: number, range: string, help: s
   };
 }
 
+/** "63510" -> "63,510". Matches how the grouped tabs write a shop count. */
+function withThousands(total: number): string {
+  return total.toLocaleString("en-US");
+}
+
+/**
+ * How tall the hidden helper's grid has to be, derived from the number of shops it must hold.
+ *
+ * THIS WAS A FIXED 55,000 AND THE FINDER DIED WHEN THE MASTER GREW PAST IT. The filter spills one
+ * row per shop from F2, and a spill with nowhere to go fails the whole tab rather than truncating:
+ * Lists!F2 goes #REF!, the results table under "Find a pharmacy" is empty, and the status line
+ * reads "Showing 1 of 1 matching shops" — because COUNTA counts that single error cell as a match.
+ * Nothing else on the sheet looks wrong while that is true. Measured live 2026-09-09: a 55,000-row
+ * grid against 63,510 shops, up from the 50,622 the constant was chosen for three weeks earlier.
+ *
+ * Rounded up to the next 10,000 with a third again on top, because the grid can only grow when the
+ * tab repaints, and the whole workbook is well under Google's 10,000,000-cell ceiling either way.
+ */
+export function listsRowCount(shopCount: number): number {
+  // +1 because the spill starts at row 2, under the header text in A1.
+  const needed = Math.ceil(((shopCount + 1) * 4) / 3);
+  return Math.max(60_000, Math.ceil(needed / 10_000) * 10_000);
+}
+
 /**
  * The hidden helper tab.
  *
@@ -183,8 +207,18 @@ function dropdownRequest(sheetId: number, column: number, range: string, help: s
  * spill areas. A written-then-blanked cell still counts as occupied to a spilling array, which
  * shows up as #REF! across the whole tab.
  */
-export function renderListsSheet(sheetId: number): RenderedSheet {
-  const values = [[`Master Map helper — do not edit. Layout ${LAYOUT_VERSION}`]];
+export function renderListsSheet(sheetId: number, shopCount: number): RenderedSheet {
+  // THE SHOP COUNT IS IN THE TEXT ON PURPOSE, and it is what keeps the grid below correct without
+  // anyone remembering to do anything. The plan hashes each tab's TEXT, so naming the count here
+  // moves this tab's hash the moment the master grows, which repaints the tab and recomputes the
+  // height. Take it out and the height changes only when LAYOUT_VERSION does — which is exactly
+  // how a 55,000-row grid outlived a master that passed 55,000 shops, with no error anywhere.
+  const values = [
+    [
+      `Master Map helper — do not edit. Layout ${LAYOUT_VERSION} · ` +
+        `grid sized for ${withThousands(shopCount)} shops`,
+    ],
+  ];
 
   const clearRequests: unknown[] = [
     { updateCells: { fields: "userEnteredValue,userEnteredFormat", range: { sheetId } } },
@@ -193,7 +227,7 @@ export function renderListsSheet(sheetId: number): RenderedSheet {
   const requests: unknown[] = [
     // Grow the grid BEFORE the formulas land, and grow it to hold every shop.
     //
-    // With no filters set the result spills all 50,622 rows, and a spill with nowhere to go fails
+    // With no filters set the result spills one row per shop, and a spill with nowhere to go fails
     // the whole tab rather than truncating. The script's own ensureTab only ever asks for 1,000
     // rows here, because it sizes a tab from the TEXT it is about to write and this tab's text is
     // a single cell — so the height has to be claimed here, in the request pass that follows it.
@@ -202,7 +236,7 @@ export function renderListsSheet(sheetId: number): RenderedSheet {
         fields: "gridProperties(rowCount,columnCount)",
         properties: {
           // Derived, because a grid one column short of the spill fails the whole tab, not clips it.
-          gridProperties: { columnCount: LISTS_COLUMN_COUNT, rowCount: 55_000 },
+          gridProperties: { columnCount: LISTS_COLUMN_COUNT, rowCount: listsRowCount(shopCount) },
           sheetId,
         },
       },

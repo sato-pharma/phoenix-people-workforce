@@ -68,15 +68,16 @@ export default async function AdminApprovalsHubPage({
     MyRequestItem[],
     HistoricalApprovalItem[],
     Awaited<ReturnType<typeof listPendingPrivateCalendarDataDisputes>> | null,
-    DecidedForMeItem[],
+    DecidedForMeItem[] | null,
   ] = await Promise.all([
     getAwaitingMyActionItems(access, "admin"),
     getMyRequestItems(access).catch((): MyRequestItem[] => []),
     getMyApprovalHistory(access).catch((): HistoricalApprovalItem[] => []),
     access.role === "Super Admin" ? listPendingPrivateCalendarDataDisputes(access).catch(() => []) : Promise.resolve(null),
-    // Never fatal to the page: an approvals hub that fails to load because a supplementary
-    // "what did I miss" list threw would be a worse outcome than not showing the tab.
-    getDecisionsMadeForMe(access).catch((): DecidedForMeItem[] => []),
+    // Still never fatal to the page — but null, not []. An empty array claims "nothing was
+    // decided for you", which is a confident lie when the lookup actually failed; null lets the
+    // tab say "could not load" instead.
+    getDecisionsMadeForMe(access).catch((): DecidedForMeItem[] | null => null),
   ]);
   // Every migrated module (leave/excuse/weekly_plan) has its own "My Requests"/"History" tabs on
   // its dedicated hub (approvals-hub/service.ts filters these same shared functions down to one

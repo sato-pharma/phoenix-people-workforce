@@ -37,6 +37,7 @@ import {
   type StoreSplitAreaSummary,
   type StoreSplitCustomerSummary,
   type StoreSplitDetailRow,
+  type SplitRegions,
 } from "@/lib/sales/store-sales-city-split";
 import type { MonthlySourceCoverage, SourceCoverageEntry } from "@/lib/sales/source-coverage";
 
@@ -2104,7 +2105,7 @@ function writeSummarySheet(workbook: ExcelJS.Workbook, c: MonthlyClosingComparis
 
   writeTable(sheet, row, {
     columns: [{ label: "Category", width: 16 }, { label: "Insight", width: 90 }],
-    note: "Values in EGP · live formulas referencing the hidden Data sheet · recomputed as Qty × (1 − discount) × factory price · single month (month-over-month N/A until more months are uploaded).",
+    note: "Values in EGP · live formulas referencing the hidden Data sheet · recomputed as Qty × factory price · single month (month-over-month N/A until more months are uploaded).",
     rows: c.insights.map((b) => [b.category, b.text]),
     title: "Key Insights",
   });
@@ -2343,6 +2344,24 @@ function writeStoreSplitDetailSheet(
   });
 }
 
+/**
+ * Blank the customer on split entries the viewer may not see the source of.
+ *
+ * Structural rather than typed to one shape, because the summary and the detail rows are different
+ * types that happen to share the two fields this touches.
+ */
+function maskSplitEntries<T extends { clientCode: string; clientName: string }>(
+  entries: readonly T[],
+  masked: ReadonlySet<string> | undefined,
+): T[] {
+  if (!masked || masked.size === 0) return [...entries];
+  return entries.map((entry) => (
+    masked.has(String(entry.clientCode ?? "").trim())
+      ? { ...entry, clientCode: "", clientName: "" }
+      : entry
+  ));
+}
+
 function writeStoreSplitSheet(
   workbook: ExcelJS.Workbook,
   line: string | null,
@@ -2533,7 +2552,7 @@ function writeSourceCoverageSheet(workbook: ExcelJS.Workbook, coverage: MonthlyS
     note:
       `${asOf ? `Last upload for ${coverage.period}: ${asOf}. ` : ""}` +
       "Presence is decided on rows, not value — a source with only credit notes still counts as present. " +
-      "Values follow the closing's own basis (Direct at submitted value, distributor rows at effective units × factory price, confidential products excluded), so these columns tie to the Closing Matrix.",
+      "Values follow the closing's own basis (Direct at submitted value, distributor rows at units × factory price, confidential products excluded), so these columns tie to the Closing Matrix.",
     rows: coverage.sources.map((entry) => [
       entry.name, entry.prevUnits, entry.prevValue, entry.curUnits, entry.curValue, statusLabel(entry),
     ]),
@@ -3198,6 +3217,19 @@ export async function buildMonthlyClosingWorkbook(
     /** The areas this workbook covers, for marking Store Split rows as inside or outside it. */
     storeSplitScopeAreaCodes?: readonly string[];
     /**
+     * Areas the line's organogram parks in Others, which take NO share of an El Qema split —
+     * owner, 2026-09-08. Resolved by the caller because it is live organogram data, per line and
+     * per month; omitted, these sheets split across every area exactly as they did before.
+     */
+    storeSplitRegions?: SplitRegions;
+    /**
+     * Customer codes whose identity must not reach the Store Split sheets.
+     *
+     * 🔒 The split is computed from the REAL rows and the answer is masked, because a split entry
+     * carries no distributor to recognise. See closing-source-mask.ts.
+     */
+    storeSplitMaskedClients?: ReadonlySet<string>;
+    /**
      * The two halves of `matrix`, for the channel tabs: `retail` is the same grid before direct is
      * injected (with the identical store split applied), `directCells` the direct money by region
      * and product. Omitted under a row-level filter, where the matrix is rebuilt from invoice rows
@@ -3322,7 +3354,11 @@ export async function buildMonthlyClosingWorkbook(
       workbook,
       matrix.line,
       matrix.period,
-      summariseStoreSplitByArea(options?.storeSplitRows ?? details.rows, matrix.period),
+      summariseStoreSplitByArea(
+        options?.storeSplitRows ?? details.rows,
+        matrix.period,
+        options?.storeSplitRegions,
+      ),
       options?.storeSplitScopeAreaCodes ?? [],
     );
     // Straight after it: which shop caused each moved number, on which product — the detail the
@@ -3331,8 +3367,14 @@ export async function buildMonthlyClosingWorkbook(
       workbook,
       matrix.line,
       matrix.period,
-      summariseStoreSplitByCustomer(splitSourceRows, matrix.period),
-      detailStoreSplitByCustomer(splitSourceRows, matrix.period),
+      maskSplitEntries(
+        summariseStoreSplitByCustomer(splitSourceRows, matrix.period, options?.storeSplitRegions),
+        options?.storeSplitMaskedClients,
+      ),
+      maskSplitEntries(
+        detailStoreSplitByCustomer(splitSourceRows, matrix.period, options?.storeSplitRegions),
+        options?.storeSplitMaskedClients,
+      ),
     );
   }
   writeComparisonSheet(workbook, comparison, ref);

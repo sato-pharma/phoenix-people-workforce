@@ -137,11 +137,25 @@ function testScopeAndSafetyRails() {
 function testEveryModuleCarriesTheDecidersWords() {
   const text = source();
 
-  const populated = text.split("decidedNote: decisionNote(").length - 1;
+  // Pin the SOURCE COLUMN each module reads, not the shape of the call — marketing routes its
+  // note through a local so the reporting gate can see it, and an earlier version of this
+  // assertion counted the literal `decidedNote: decisionNote(` and went red on that refactor
+  // while the behaviour was still correct.
+  const teamNotes = text.split("decisionNote(row.manager_decision_comment)").length - 1;
   assert.equal(
-    populated,
-    4,
-    `all four modules must carry the decider's note (leave, excuse, weekly plan, marketing); found ${populated}`,
+    teamNotes,
+    3,
+    `leave, excuse and weekly plan must each read manager_decision_comment; found ${teamNotes}`,
+  );
+  assert.ok(
+    text.includes("decisionNote(row.decision_note)"),
+    "the marketing step must read its decision_note",
+  );
+  const carried = text.split("decidedNote:").length - 1;
+  assert.equal(
+    carried,
+    5,
+    `expected 4 module rows to carry decidedNote plus the type declaration; found ${carried}`,
   );
 
   // Each team-module SELECT must request the comment column it then reads.
@@ -164,9 +178,45 @@ function testEveryModuleCarriesTheDecidersWords() {
   );
 }
 
+// Measured against production 2026-09-07, and the reason all three of these exist: Hossam's tab
+// returned 38 rows where only 8 were decisions taken on his behalf. 14 were legacy leave
+// backfills and admin corrections, and 9 more had no decider recorded at all — they rendered as
+// "Decided by" followed by nothing. A separate run of the same code returned ZERO, because a
+// transient directory failure was being swallowed into an empty list.
+function testTheListReportsOnlyRealStandInDecisions() {
+  const text = source();
+
+  // Both push paths (the three team modules share one, marketing has its own) go through the
+  // same gate. A future module that skips it reintroduces exactly the noise this removed.
+  const gated = text.split("shouldReport(").length - 1;
+  assert.equal(gated, 2, `both push paths must go through shouldReport(); found ${gated}`);
+
+  // A decider that cannot be resolved to a real person is not reported at all.
+  assert.ok(
+    text.includes("nameByHrId.has(key)"),
+    "a decider must resolve to a real employee before the row is shown",
+  );
+
+  // Records being tidied are not decisions taken for you.
+  for (const marker of ["historical import", "manual admin record update"]) {
+    assert.ok(text.includes(marker), `system-record marker "${marker}" must be filtered out`);
+  }
+
+  // THE LOAD-BEARING ONE: a directory failure must propagate, never become [].
+  assert.ok(
+    !text.includes("getEmployeeDirectory().catch"),
+    'getEmployeeDirectory must NOT be caught here — swallowing it renders as "nothing happened while you were away", which is indistinguishable from a real quiet period and is the one wrong answer this tab must never give',
+  );
+  assert.ok(
+    text.includes("const directory = await getEmployeeDirectory();"),
+    "the directory lookup must be allowed to throw so the page can show 'could not load'",
+  );
+}
+
 export function runDecidedForMeTests() {
   testOutcomeVocabulary();
   testEveryModuleFiltersOutTheViewersOwnDecisions();
   testScopeAndSafetyRails();
   testEveryModuleCarriesTheDecidersWords();
+  testTheListReportsOnlyRealStandInDecisions();
 }

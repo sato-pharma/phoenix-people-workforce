@@ -4,6 +4,13 @@
 // required_minutes IS NULL - 2 of 15 groups, so it is live money.
 import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions/calculations.ts";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id.ts";
+// The half-day geometry lives with the flexible-hours engine so both engines share one
+// definition of where the worked half begins and ends. flexible-hours.ts imports nothing,
+// so this cannot cycle.
+import {
+  halfDayEffectiveWindowMinutes,
+  requiredMinutesForHalfDayVacation,
+} from "@/lib/attendance/flexible-hours.ts";
 
 export const standardAttendanceDayMs = 8 * 60 * 60 * 1000;
 
@@ -70,6 +77,19 @@ export type PolicyAttendanceStatusInput = {
   // fall back to a flat 30, which is the defect this closes. 2 of 15 policy groups
   // still route here (required_minutes IS NULL), so this path is live money.
   reportDate: string;
+  /**
+   * An approved Am/Pm-Only vacation covering this day.
+   *
+   * Optional because the explainer and the policy-preview callers judge a policy in
+   * the abstract — no employee, so no leave to look up — and omitting it judges a
+   * whole day exactly as before. The MONEY caller (fingerprint-report.ts) passes it.
+   *
+   * Owner decision 2026-09-08: a half-day vacation is judged on the worked half,
+   * never cancelled. The flexible-hours engine got that on 2026-09-08; this legacy
+   * path did not, so the two policy groups without `required_minutes` kept judging a
+   * half-day employee against the full scheduled day at both ends.
+   */
+  halfDayVacationPart?: "am_only" | "pm_only" | null;
 };
 
 export type PolicyAttendanceStatusResult = {
@@ -289,15 +309,30 @@ export function resolvePolicyAttendanceStatus(input: PolicyAttendanceStatusInput
   }
 
   const graceMinutes = boundedInteger(policy.grace_minutes ?? null, 0);
-  const scheduledWorkMinutes = scheduleDurationMinutes(policy);
+  const fullScheduledWorkMinutes = scheduleDurationMinutes(policy);
   const normalizedScheduledEnd = scheduledEnd >= scheduledStart ? scheduledEnd : scheduledEnd + 1440;
   const firstPunchMinutes = input.firstPunchMinutes;
   const lastPunchMinutes = input.lastPunchMinutes >= firstPunchMinutes
     ? input.lastPunchMinutes
     : input.lastPunchMinutes + 1440;
   const durationMinutes = Math.max(0, Math.floor(input.durationMinutes));
-  const lateFromSchedule = Math.max(0, firstPunchMinutes - scheduledStart);
-  const earlyLeaveMinutes = Math.max(0, normalizedScheduledEnd - lastPunchMinutes);
+
+  // An approved half-day vacation halves the presence owed and moves ONE end of the
+  // window: Am-Only opens it where the afternoon begins, Pm-Only closes it where the
+  // morning ends. Judging all three of lateness, early leave and short hours against
+  // the full scheduled day is what charged a half-day employee for the half they had
+  // approved off — at both ends on this path, since it measures early leave too.
+  const halfDayVacationPart = input.halfDayVacationPart ?? null;
+  const scheduledWorkMinutes = requiredMinutesForHalfDayVacation(fullScheduledWorkMinutes, halfDayVacationPart);
+  const window = halfDayEffectiveWindowMinutes({
+    halfDayVacationPart,
+    halfRequiredMinutes: scheduledWorkMinutes,
+    scheduledEndMinutes: normalizedScheduledEnd,
+    scheduledStartMinutes: scheduledStart,
+  });
+
+  const lateFromSchedule = Math.max(0, firstPunchMinutes - window.startMinutes);
+  const earlyLeaveMinutes = Math.max(0, window.endMinutes - lastPunchMinutes);
   const shortMinutes = Math.max(0, Math.ceil(scheduledWorkMinutes - durationMinutes));
   const dailyGraceUsageMinutes = Math.max(shortMinutes, lateFromSchedule + earlyLeaveMinutes);
 

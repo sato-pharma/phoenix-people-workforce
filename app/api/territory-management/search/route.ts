@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "sales", "read");
+    await assertPermission(access, "territory", "read");
 
     const query = new URL(request.url).searchParams.get("q") ?? "";
     return NextResponse.json({ results: await searchBricks(query) });

@@ -115,7 +115,9 @@ async function loadNearMisses(params: {
     const qty = Number(row.qty) || 0;
     const valueRaw = row.is_direct === true
       ? Number(row.value) || 0
-      : qty * (1 - (Number(row.discount) || 0)) * (factoryByCode.get(productCode) ?? 0);
+      // UNITS ARE UNITS (2026-09-07): a distributor row is qty x factory price. This mirrors
+      // phx_marketing_request_roi_actuals, so the two lost the discount factor together.
+      : qty * (factoryByCode.get(productCode) ?? 0);
     const list = rowsByKind.get(kind) ?? [];
     list.push({
       clientCode: normalizePharmacyCode(row.client_code),
@@ -528,7 +530,8 @@ export async function explainMarketingRequestRoi(
         const qty = Number(row.qty) || 0;
         const valueRaw = row.is_direct === true
           ? Number(row.value) || 0
-          : qty * (1 - (Number(row.discount) || 0)) * (sosFactoryByCode.get(upperProduct) ?? 0);
+          // UNITS ARE UNITS (2026-09-07) — same rule, and the same pairing with the RPC.
+          : qty * (sosFactoryByCode.get(upperProduct) ?? 0);
         rebuilt.push({
           ledgerKey: rowId,
           sosRowId: Number(row.id),

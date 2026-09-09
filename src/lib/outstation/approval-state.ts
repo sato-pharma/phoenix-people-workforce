@@ -47,6 +47,22 @@ export function expenseApprovalState(input: {
 }
 
 /**
+ * Where a trip sits in the single approvals queue: undecided first, then approved, then rejected.
+ *
+ * The screen showed three tabs until 2026-09-08, when the owner asked for one list instead. The
+ * work still has to surface first — a reviewer opening a 400-trip queue is there for the 60 nobody
+ * has decided — so the ordering carries what the tabs used to, without hiding the other two states
+ * behind a click.
+ *
+ * Rank the STORED decision, never the live one. Ranking what is on screen would move a row the
+ * instant it is decided, so every approval would shuffle the list out from under the reviewer
+ * working down it. The list settles on the next load, which is after Save.
+ */
+export function expenseApprovalQueueRank(state: ExpenseApprovalState): number {
+  return state === "pending" ? 0 : state === "approved" ? 1 : 2;
+}
+
+/**
  * Whether HR moved the payable figure off the employee's claim.
  *
  * Half a pound of tolerance: the figure round-trips through a number input and currency rounding,
@@ -112,6 +128,40 @@ export function planBulkApproval(candidates: ReadonlyArray<BulkApprovalCandidate
   }
 
   return { approvableTripIds, needsReasonTripIds, notPendingTripIds };
+}
+
+/** One reviewer decision as the Expense Approvals screen holds it. */
+export type ExpenseApprovalDecision = {
+  approvedAmount: number;
+  hrApproved: boolean;
+  hrComment: string;
+  status: string;
+};
+
+/**
+ * Whether a decision on screen differs from the one stored on the row — the ONE answer to that,
+ * shared by the Save button's unsaved count and by the payload Save actually sends.
+ *
+ * It lives here because those two were written separately and drifted: the count included the
+ * rejected/not-rejected term and the payload builder did not, so "Undo rejection" raised the Save
+ * bar, sent nothing, and reported "Approvals saved." while the row came back rejected. A reviewer
+ * has no way to tell that apart from a save that worked.
+ *
+ * All four terms matter, and none is derivable from another: approval lives in `hrApproved`,
+ * rejection in `status`, the payable figure in `approvedAmount` and the reason in `hrComment`.
+ * The half-pound tolerance on the amount is the same one `isAdjustedAmount` uses — the figure
+ * round-trips through a number input, so an exact compare marks untouched rows as changed.
+ */
+export function expenseDecisionChanged(
+  local: ExpenseApprovalDecision,
+  stored: ExpenseApprovalDecision,
+): boolean {
+  return (
+    local.hrApproved !== stored.hrApproved ||
+    Math.abs(local.approvedAmount - stored.approvedAmount) > 0.5 ||
+    local.hrComment.trim() !== stored.hrComment.trim() ||
+    isRejectedStatus(local.status) !== isRejectedStatus(stored.status)
+  );
 }
 
 /**

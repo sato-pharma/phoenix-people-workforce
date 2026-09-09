@@ -16,6 +16,7 @@ import {
 // (it reaches node:crypto through the employee directory) and importing a value from it here
 // breaks the webpack dev build for this route and every route compiled after it.
 import { TEAM_VISIT_ROW_CAP } from "@/lib/employee-portal/my-crm-visits-constants";
+import { utcDate } from "@/lib/format/cairo-datetime";
 import type {
   MyCrmCheckinRow,
   MyCrmDoubleVisitRow,
@@ -41,11 +42,18 @@ const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
 // timestamptz handled by formatVendorLocal below), which `new Date` parses as UTC midnight. UTC here is
 // CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset. Not an
 // instant — do not "fix" this one to Cairo.
+//
+// The zone was never the bug here; the LOCALE was. `en-GB` + `month: "short"` is the one field
+// CLDR 42 changed ("Sep" -> "Sept"), so this rendered differently on Railway's Node 24 and on an
+// older mobile browser, and React discarded the server HTML over the one-character difference —
+// hydration error #418, live on /employee-portals/visits until 2026-09-08. `utcDate` keeps the UTC
+// pin and the exact output, taking the month from a table that ships with the code rather than
+// from whichever ICU build the reader happens to be holding.
 function formatDateOnly(value: string | null): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(date);
+  return utcDate(date.toISOString());
 }
 
 /** Vendor timestamps are stored as Cairo wall-clock but tagged UTC (iReports360 sends
@@ -55,7 +63,9 @@ function formatVendorLocal(value: string | null): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  const datePart = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(date);
+  // Date half via the shared table (see formatDateOnly). The time half stays inline: `en-US` with
+  // hour12 renders digits and a plain-space "PM" identically on every ICU version in play here.
+  const datePart = utcDate(date.toISOString());
   const timePart = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: true, minute: "2-digit", timeZone: "UTC" }).format(date);
   return `${datePart}, ${timePart}`;
 }

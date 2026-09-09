@@ -78,6 +78,17 @@ export type NotificationEmailInput = {
   originEnvironment?: string;
   ctaHref?: string;
   ctaLabel?: string;
+  /**
+   * A SECOND button beside the primary CTA, for an email that asks for one thing and offers
+   * another alongside it. Added 2026-09-09 for the new-hire notice: the primary asks the SFE
+   * Manager to record the CRM account, this one downloads the person's CV.
+   *
+   * Both halves must be set for it to render — a label with no href is a dead button, and an href
+   * with no label is an unnamed one. `dashboardUrl` is applied to it exactly as to ctaHref, so a
+   * relative app path becomes an absolute link in the delivered mail.
+   */
+  secondaryCtaHref?: string | null;
+  secondaryCtaLabel?: string | null;
   /** The originating CreateSystemNotificationInput.eventType — threaded through purely so the
    * Notification Confidence Gate (send-phoenix-email.ts) can group its fan-out anomaly check
    * by (module, eventType) instead of just module. */
@@ -867,10 +878,25 @@ function effectiveTemplate(input: NotificationEmailInput, policy?: EmailNotifica
   };
 }
 
+/**
+ * The optional second button. Returns undefined unless BOTH halves are present, so a partially
+ * filled caller renders the email it always rendered rather than a button that goes nowhere.
+ *
+ * Tone "secondary" rather than "primary": the email still has exactly one thing it is asking for,
+ * and two orange buttons would make the reader choose between them.
+ */
+function secondaryActionFor(input: NotificationEmailInput) {
+  const href = String(input.secondaryCtaHref ?? "").trim();
+  const label = String(input.secondaryCtaLabel ?? "").trim();
+  if (!href || !label) return undefined;
+  return { href: dashboardUrl(href), label, tone: "secondary" as const };
+}
+
 function renderText(input: NotificationEmailInput, policy?: EmailNotificationPolicy) {
   const template = effectiveTemplate(input, policy);
   return renderGeneralNotificationEmailText({
     action: input.ctaHref ? { href: dashboardUrl(input.ctaHref), label: input.ctaLabel ?? "Open dashboard" } : undefined,
+    secondaryAction: secondaryActionFor(input),
     bodyText: template.bodyText,
     closingText: template.closingText,
     greeting: template.greeting,
@@ -886,6 +912,7 @@ function renderHtml(input: NotificationEmailInput, policy?: EmailNotificationPol
   const template = effectiveTemplate(input, policy);
   return renderGeneralNotificationEmailHtml({
     action: input.ctaHref ? { href: dashboardUrl(input.ctaHref), label: input.ctaLabel ?? "Open dashboard" } : undefined,
+    secondaryAction: secondaryActionFor(input),
     bodyText: template.bodyText,
     closingText: template.closingText,
     greeting: template.greeting,

@@ -6,15 +6,13 @@ import { systemIdentity } from "@/config/system-settings";
 import { renderTelegramConnectEmailHtml, renderTelegramConnectEmailText } from "@/emails/telegram-connect";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
-import { buildTelegramDeepLinkFromToken, hashTelegramToken, resolveTelegramBotUsername } from "@/lib/notifications/telegram";
+import { TELEGRAM_CONNECT_TOKEN_TTL_MINUTES, buildTelegramDeepLinkFromToken, hashTelegramToken, resolveTelegramBotUsername } from "@/lib/notifications/telegram";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-// Email-onboarding tokens live longer than the 15-minute in-portal token because
-// employees may open the invitation hours later — but a connect link is a bearer
-// credential, so the window is kept short (48h) to limit exposure of a leaked link.
-// The token stays single-use: the webhook marks connect_token_used_at on first /start
-// and nulls the hash, and the post-link security alert makes any hijack detectable.
-const DEFAULT_TTL_MINUTES = 48 * 60; // 48 hours
+// Both ways of issuing a connect link now share ONE window, declared beside the hash helper in
+// telegram.ts with the measurement that set it. This file used to own its own 48 hours while the
+// in-portal path quietly used 15 minutes, and that gap is what killed every attempt to connect.
+const DEFAULT_TTL_MINUTES = TELEGRAM_CONNECT_TOKEN_TTL_MINUTES;
 const DEFAULT_CAMPAIGN_LIMIT = 250;
 // Lifecycle statuses that must NOT be invited (terminal/offboarding). Mirrors the
 // active-employee definition in src/lib/employees/employee-directory.ts.

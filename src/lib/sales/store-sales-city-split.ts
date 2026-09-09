@@ -196,74 +196,531 @@ function normalizeArea(value: string | null | undefined): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// ONE-WAY, DISTRIBUTOR-SPECIFIC TARGETS — owner, 2026-09-07.
+// THE WAREHOUSE SPLIT (تقسيمة المخازن) — owner, 2026-09-08.
 //
-// "سوف يتم تقسيم بيع القليوبية على مندوب القليوبية بالإضافة إلى كل مندوبين القاهرة بالتساوى"
-// — El Qema's Qalubeya sales spread across Qalubeya AND all six Cairo areas, evenly.
+// Replaces the Qalubeya→Cairo rule of 2026-09-07, which he retired the next day in favour of this.
+// His words, both halves:
 //
-// Asked whether it runs both ways and whether it applies to every distributor, he answered
-// "one way only, only for el qema". Both halves of that answer are load-bearing:
+//   "اي مخزن لحد 200 علبة per product يوزع علي مندوبين المحافظة وليس له علاقه بتوزيع الجمهورية"
+//   "اي مخزن فوق 200 باي كميه يوزع 50 % علي مندوبين المحافظة وباقي ال 50% يوزع علي باقي الجمهورية
+//    بالتساوي ماعدا مندوبين نفس المحافظة اللي اتطبع فيها الاوردر"
 //
-//   ONE WAY. A warehouse IN Qalubeya reaches Cairo. A warehouse in Cairo does NOT reach Qalubeya —
-//   there is no `QM|CA*` key, so a Cairo row falls through to the ordinary six-area Cairo city. This
-//   is why the rule cannot live in AREA_CITY: city membership is symmetric by construction, and
-//   moving D11 into "Cairo" would silently start paying Qalubeya a share of every Cairo wholesaler.
+// Per warehouse, per product, per month:
+//   * up to 200 packs — the governorate's own areas only, exactly as every other city split works,
+//     and explicitly nothing to do with the national spread ("وليس له علاقه بتوزيع الجمهورية").
+//   * above 200 packs — HALF across the governorate's own areas, HALF evenly across every other
+//     area in the country, the origin governorate excluded from that second half.
 //
-//   EL QEMA ONLY. Keyed by distributor, so Overseas or Ibn Sina selling to the same Qalubeya
-//   warehouse still splits it the ordinary way — which for a one-area governorate means not at all.
+// 🔴 SCOPE IS EL QEMA, AND EL QEMA IS NOT ITSELF THE WAREHOUSE. Asked directly whether the 200-pack
+// rule runs on every distributor, he answered: "any warehouse only in el qema distrbutor .. consider
+// el qema distbutor not warehouse and the customers in it vare the warehouses golden r=ule". El Qema
+// is a distributor whose whole book is wholesale — which is what WHOLESALE_ONLY_DISTRIBUTORS already
+// encodes — so every customer under it is a warehouse and is judged by the threshold. The same
+// warehouse reached through Ibn Sina or Overseas keeps the plain city split. Do NOT generalise this
+// to other distributors without asking him again; "اي مخزن" is scoped by that answer, not open.
 //
-// The ORIGIN AREA IS IN ITS OWN TARGET LIST. Qalubeya keeps a seventh, it does not give everything
-// away; every other split in this file behaves the same way, and leaving it out would quietly move
-// 100% of the money out of the area that made the sale.
+// 🔴 THE DIVISOR IS AREAS, NOT REPS — carried forward unchanged from 2026-09-07, where he ruled on
+// exactly this question against his own manual sheet: "down town should be included because we split
+// in reference to areas not actual reps". He writes "مندوبين" (reps) here too; it means territories.
+// So a vacant seat, and an area with no seat at all, both keep their share. AREA_CITY is the whole
+// universe, which is also why Main Store and retired OT3 are outside it — see
+// AREAS_DELIBERATELY_NOT_SPLIT, they are not territories to spread across.
 //
-// WHY A CODE CONSTANT AND NOT A TABLE. This is geography, and geography lives here beside AREA_CITY
-// — the same "SINGLE edit point" rule applies. A per-customer registry was considered and rejected
-// by the owner the same day: the city rule always wins, except EZ and Office.
+// 🔴 THE THRESHOLD IS TAKEN ON THE AGGREGATE, NEVER ON ONE ROW. One customer and one product can
+// arrive as several rows — several bricks, several invoices in the month. Judging each row on its
+// own qty would read three 100-pack rows as three sub-threshold orders and never send the national
+// half: 300 packs would sit in the governorate, with no error and nothing downstream reporting it
+// (the split preserves each line's total, so the publication drift check cannot see it).
+// `warehouseSplitQtyByKey` sums the set first, and the whole set is judged on that one number.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-type DistributorSplitTarget = {
-  /** Shown as the "city" on the Store Split sheet, so the movement says which rule moved it. */
-  readonly group: string;
-  readonly areas: readonly string[];
+/** Packs. At or below this, a warehouse's product stays inside its own governorate. */
+export const WAREHOUSE_NATIONAL_SPLIT_THRESHOLD_QTY = 200;
+
+/** The share that stays in the origin governorate in the MIDDLE band, 201 to 999 packs. */
+export const WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION = 0.5;
+
+/**
+ * Packs. At or above this, the local block stops being privileged and the whole quantity spreads
+ * FLAT across every area the line has — owner, 2026-09-09, giving the rule as three ordered steps:
+ *
+ *   1. up to 200            → the governorate's reps only
+ *   2. 201 to 999           → half the governorate, half the rest of the country
+ *   3. 1000 and above       → "يقسم علي مندوبي الجمهوريه بالتساوي وليس Others"
+ *
+ * 🔴 STEP THREE IS NOT A BIGGER STEP TWO. Step two says "باقي الجمهورية", the REST of the
+ * country, against a privileged home half. Step three drops the word باقي: every area takes the
+ * same share and the origin is simply one of them. Asked directly on 2026-09-09 whether the
+ * warehouse's own governorate still takes an equal share, he answered that it does. So a 5,600-pack
+ * Benha product leaves Qalubeya with the same amount as Aswan, not with half the book.
+ *
+ * Reading step three as "half stays, half spreads, but wider" is the mistake this note exists to
+ * stop: it looks like the natural continuation of step two and it silently keeps ~2,800 packs in a
+ * governorate the owner has just said should hold one thirty-seventh of them.
+ */
+export const WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY = 1000;
+
+/**
+ * The fraction of a sale that stays in the local block, for a quantity and a plan's two block sizes.
+ *
+ * 🔴 ONE FUNCTION BECAUSE THERE ARE TWO CALLERS AND THEY MUST NEVER DISAGREE. splitTargetsFor
+ * builds the plan the Matrix applies; storeSplitDetailRows rebuilds the same arithmetic to report
+ * it on the Store Split sheet. Before the third band those two could each hold `0.5` and stay
+ * correct — the detail sheet read the fraction off `awayParts > 0` alone, with a comment saying that
+ * was what kept them from drifting. That stopped being true the moment the fraction began to depend
+ * on the QUANTITY as well as the shape, and a sheet disagreeing with the Matrix about the same
+ * customer is exactly the failure the comment was guarding against.
+ *
+ * Flat is expressed as a fraction rather than as a separate code path so `planShares` needs no
+ * change at all: homeParts / (homeParts + awayParts) hands each block its own headcount's worth, so
+ * every area — home or away — comes out with an identical share.
+ */
+export function warehouseHomeFraction(qty: number, homeParts: number, awayParts: number): number {
+  if (awayParts <= 0) return 1;
+  if (qty >= WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY) return homeParts / (homeParts + awayParts);
+  return WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION;
+}
+
+/**
+ * Distributors whose customers are judged by the 200-pack rule — El Qema only, owner 2026-09-08.
+ *
+ * Deliberately a second set rather than a reuse of WHOLESALE_ONLY_DISTRIBUTORS, even though both
+ * hold exactly `QM` today: one answers "is this customer a warehouse", the other "does the national
+ * threshold apply to it". A future distributor could be wholesale-only without taking this rule, and
+ * merging the two would grant it silently.
+ */
+export const WAREHOUSE_THRESHOLD_DISTRIBUTORS: ReadonlySet<string> = new Set(["QM"]);
+
+/**
+ * 🔒 EL QEMA IS PEDIA ONLY — owner golden rule, 2026-09-08, in those words.
+ *
+ * Asked what happens when a warehouse's own governorate is an Others area — which is real on Anti
+ * Infective, where Qalubeya itself sits in OT — he answered that the question cannot arise: El Qema
+ * sells Pedia and nothing else. Their whole book is Lacto Advanced 1 and 2, both Pedia.
+ *
+ * So the threshold rule is gated on the LINE as well as the distributor. An El Qema row arriving on
+ * any other line does NOT take the national split — it falls back to the ordinary city split, which
+ * is the unchanged, safe behaviour, rather than applying a rule the owner scoped to Pedia to a line
+ * he never scoped it to.
+ */
+export const WAREHOUSE_THRESHOLD_LINES: ReadonlySet<string> = new Set(["pedia"]);
+
+/**
+ * Lines whose split excludes the areas their organogram parks in Others — owner, 2026-09-08:
+ * "you will follow the EU organogram of PEDIA LINE and exclude in distribution the areas in others".
+ *
+ * 🔴 THIS IS A LINE RULE, NOT A DISTRIBUTOR RULE, and the difference is the whole reason this set
+ * exists separately from WAREHOUSE_THRESHOLD_DISTRIBUTORS. It first shipped scoped to El Qema alone,
+ * on the reading that he was talking about El Qema's distribution. He was not: measured on August
+ * Pedia the next day, El Qema sent 0.000 packs into Others while OTHER distributors still sent
+ * 79.667 — 44.167 into Down town and 35.500 into Kafr El-Sheikh 2 — and he replied "NOT APPLIED EL
+ * QEMA RULE". An area in Others receives nothing on this line, whoever sold it.
+ *
+ * The 200-pack national split stays El Qema's alone. These are two different rules that happen to
+ * have arrived in the same sentence: WHO spreads nationwide, and WHERE nobody may receive.
+ */
+export const OTHERS_EXCLUDED_LINES: ReadonlySet<string> = new Set(["pedia"]);
+
+export type SplitRegions = {
+  /** Areas the line parks in Others. They receive nothing, but always keep what they sold. */
+  others: ReadonlySet<string>;
+  /** Operational region code to its areas, for this line and period. */
+  areasByRegion: ReadonlyMap<string, ReadonlySet<string>>;
 };
 
-/** Key is `DISTRIBUTOR|ORIGIN AREA`, both uppercase. */
-export const DISTRIBUTOR_SPLIT_TARGETS: ReadonlyMap<string, DistributorSplitTarget> = new Map([
+/** No organogram loaded. Splits exactly as the code did before any of these rules existed. */
+export const NO_SPLIT_REGIONS: SplitRegions = { areasByRegion: new Map(), others: new Set() };
+
+/**
+ * \U0001F512 THE PRIORITY LADDER — owner, 2026-09-09, and it REPLACES everything El Qema had before it.
+ *
+ *   "what I want is that the qalubeya be qalubeya, then the Monofiua and the gharbia one and two,
+ *    okay, then cairo, then any rearrangement after this. But I don't want the areas I mentioned to
+ *    be far away from the others — I want them to be exceeding them, but with a very small scale."
+ *
+ * Every area the line has takes a share of El Qema's whole book. The named areas take slightly more,
+ * in his order, and nothing else decides anything.
+ *
+ * \U0001F534 WHAT THIS THREW AWAY, so a later session does not "restore" any of it as a regression:
+ * the three quantity bands (200 / 1,000), the Upper Egypt pool, the Qalubeya + Cairo local block with
+ * its 75/25 weighting, and the city rule itself for this distributor. WHERE A WAREHOUSE SITS NO
+ * LONGER MATTERS — a Benha sale and an Aswan sale of the same product spread identically. He was
+ * told that in those words before choosing it. Each of those rules is in this file's git history and
+ * in docs/agents-owner-rules.md, and every one of them was HIS, so finding a discarded rule here is
+ * never evidence of a bug.
+ *
+ * \U0001F534 THE ORIGIN IS NO LONGER EXEMPT FROM THE OTHERS EXCLUSION EITHER — "neglect others, don't
+ * add others". Under the old rules an area in Others still kept what it sold itself, because a home
+ * half had to land somewhere; there is no home half now, so a warehouse in Others keeps nothing and
+ * its sales spread like anyone else's. On August that moves Ismailia's own 24 packs out.
+ */
+export const QEMA_PRIORITY_STEP = 0.02;
+
+/**
+ * The rungs, most-favoured first. An area named nowhere here sits on the bottom rung with everyone
+ * else, which is what "then any rearrangement after this" means.
+ *
+ * Cairo is listed with all six codes on purpose: Down town is one of them and Pedia parks it in
+ * Others, so it drops out through the exclusion rather than through a hand-maintained short list.
+ * Move it out of Others in the organogram and it rejoins the Cairo rung with no code change.
+ */
+export const QEMA_PRIORITY_RUNGS: readonly (readonly string[])[] = [
+  ["D11"],                                      // Qalubeya
+  ["D12", "D13"],                               // Menoufia 1 and 2
+  ["D14", "D15"],                               // Gharbia 1 and 2
+  ["CA1", "CA2", "CA3", "CA4", "CA5", "CA6"],   // Cairo
+];
+
+/** How many steps above the bottom rung this area sits. Zero for every unnamed area. */
+export function qemaPriorityRung(areaCode: string): number {
+  const code = normalizeArea(areaCode);
+  const index = QEMA_PRIORITY_RUNGS.findIndex((rung) => rung.includes(code));
+  return index < 0 ? 0 : QEMA_PRIORITY_RUNGS.length - index;
+}
+
+/**
+ * The ladder plan: every area the line has, weighted by rung.
+ *
+ * Weights are returned as FRACTIONS summing to 1, which is what planShares expects, so the row still
+ * sums back to exactly what it started as. Returns null when the exclusion set leaves nothing to
+ * spread to — a caller then leaves the row where it is, which is the safe direction.
+ */
+export function qemaLadderPlan(excluded: ReadonlySet<string>): SplitPlan | null {
+  const areas = ALL_SPLIT_AREAS.filter((area) => !excluded.has(area));
+  if (areas.length === 0) return null;
+  const raw = areas.map((area) => 1 + qemaPriorityRung(area) * QEMA_PRIORITY_STEP);
+  const total = raw.reduce((sum, weight) => sum + weight, 0);
+  return {
+    areas,
+    awayAreas: [],
+    group: "El Qema priority ladder",
+    homeAreas: areas,
+    homeFraction: 1,
+    homeWeights: raw.map((weight) => weight / total),
+  };
+}
+
+
+/**
+ * 🔴 THE CAIRO + QALUBEYA RULE STANDS — it was never replaced, and removing it was an error.
+ *
+ * Owner 2026-09-07: "سوف يتم تقسيم بيع القليوبية على مندوب القليوبية بالإضافة إلى كل مندوبين القاهرة
+ * بالتساوى" — El Qema's Qalubeya sales reach Qalubeya AND Cairo. When he introduced the 200-pack
+ * warehouse split the next day with "we will change the concept of the qema distribution into
+ * تقسيمة المخازن", that was read as REPLACING this rule. It was not. Told plainly on 2026-09-09:
+ * "YOU ARE NOT APPLYING THE CAIRO AND QALUBEYA RULE + THE NEW RULE" — both, together.
+ *
+ * They compose cleanly because they answer different questions. This map says WHAT COUNTS AS LOCAL
+ * for a warehouse: Benha is on Cairo's edge and supplies it, so Qalubeya's local catchment is
+ * Qalubeya plus the six Cairo areas rather than Qalubeya alone. The 200-pack rule then works on that
+ * block exactly as it works on any governorate — under 200 the whole sale stays local, over 200 half
+ * stays local and half crosses the country.
+ *
+ * WITHOUT THIS, Qalubeya is a ONE-AREA governorate, so a Benha warehouse keeps the entire local half
+ * itself and Cairo receives nothing — which is precisely the state he rejected.
+ *
+ * Keyed `DISTRIBUTOR|ORIGIN AREA`, so it is El Qema's alone and one-way: there is no `QM|CA*` entry,
+ * so a Cairo warehouse still treats Cairo as its own local block and never reaches Qalubeya.
+ */
+export type LocalBlockOverride = {
+  label: string;
+  areas: readonly string[];
+  /**
+   * One area takes this fraction of the local block and the rest share what is left, evenly.
+   *
+   * \🔴 THE REMAINDER IS SPREAD OVER THE SURVIVORS, NOT OVER THE ORIGINAL LIST. Down town is a
+   * Cairo area that Pedia parks in Others, so the Cairo half is divided by FIVE, not six. Writing
+   * the weights as a fixed per-area table would silently lose Down town's eighth of the block the
+   * day the organogram moved it, and nothing downstream would report the shortfall.
+   */
+  primaryArea?: string;
+  primaryFraction?: number;
+};
+
+export const LOCAL_BLOCK_OVERRIDES: ReadonlyMap<string, LocalBlockOverride> = new Map([
   ["QM|D11", {
-    group: "Qalubeya + Cairo (El Qema)",
     areas: ["CA1", "CA2", "CA3", "CA4", "CA5", "CA6", "D11"],
+    label: "Qalubeya + Cairo",
+    // Owner, 2026-09-09, twice in one afternoon: "make cairo to qalyebyua 60 40" and then
+    // "qalyubya to cairo 75% 25%, 75 to qalyubeya". Before either, the block divided evenly and
+    // Benha kept a sixth of it. It now keeps 75% and the five live Cairo areas take 5% each.
+    //
+    // Applied in bands 1 and 2 ONLY. Band 3 pays every area the same by his own words, and a
+    // weighted home block there would quietly make Qalubeya bigger than Aswan in the one band
+    // that exists to make them equal.
+    primaryArea: "D11",
+    primaryFraction: 0.75,
   }],
 ]);
+
+/** Every area the split can reach, in a stable order. AREA_CITY's keys ARE the universe. */
+export const ALL_SPLIT_AREAS: readonly string[] = [...AREA_CITY.keys()].sort();
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * OTHERS ARE EXCLUDED FROM THE DISTRIBUTION — owner, 2026-09-08.
+ *
+ * "you will follow the EU organogram of pedia line and exclude in distribution the areas in others"
+ *
+ * The EU Organogram is already the closing's source of truth for this line (owner, 2026-08-07 —
+ * see CLOSING_ORGANOGRAM_REGION_LINES). It parks an area in the Others territory (`OT`) when the
+ * line has no district of its own for it. Those areas now receive NO share of a split.
+ *
+ * 🔴 OTHERS IS PER LINE AND IS NOT A GEOGRAPHY. On Pedia it holds Down town (CA5), Kafr El-Sheikh 2
+ * (D17), Qena 2 (UE8) and the nine OT areas — 13 of 50. On Anti Infective it holds Qalubeya. So the
+ * set can only come from the organogram, per line, per month; it can never be derived from an area
+ * code. It is passed IN rather than read here, because this module is pure geography and the
+ * organogram is live data that flips the moment a seat is created or filled.
+ *
+ * 🔴 THIS REVERSES THE DOWN TOWN RULING OF 2026-09-07, and the owner was asked in those words before
+ * it was written: on 09-07 he ruled Down town INTO the Cairo split because the divisor is areas and
+ * not reps; on 09-08, shown that the Pedia organogram files Down town under Others, he confirmed it
+ * comes out with the rest. The divisor is still areas — there are simply fewer of them.
+ *
+ * SCOPE: the El Qema rule only. Every other distributor's wholesaler keeps splitting across its
+ * whole governorate exactly as before, including into Others. Widening this to every Pedia
+ * wholesaler would move other distributors' money in a month about to be published, and he asked
+ * about El Qema's distribution, so the narrow reading is the reversible one.
+ *
+ * An EMPTY set is the safe direction and means 'split as before' — a caller that could not read the
+ * organogram must never silently strip areas out of a distribution.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+const NO_AREAS: ReadonlySet<string> = new Set<string>();
+
+export type SplitPlan = {
+  /** Shown as the "city" on the Store Split sheet, so the movement says which rule moved it. */
+  readonly group: string;
+  /** The origin governorate's own areas. Never empty. */
+  readonly homeAreas: readonly string[];
+  /** The rest of the country. EMPTY unless the national half applies. */
+  readonly awayAreas: readonly string[];
+  /** Fraction that stays home: 1 below the threshold, 0.5 above it. */
+  readonly homeFraction: number;
+  /**
+   * How the home block divides internally, aligned with `homeAreas`. Absent means evenly, which is
+   * every block except El Qema's Qalubeya since 2026-09-09.
+   */
+  readonly homeWeights?: readonly number[];
+  /** Every area this row reaches — home first, then away. The flat list callers read. */
+  readonly areas: readonly string[];
+};
 
 function normalizeDistributor(value: string | null | undefined): string {
   return String(value ?? "").trim().toUpperCase();
 }
 
 /**
- * The areas this row's money divides across, and the label for the movement.
+ * The key the 200-pack threshold is measured over: one warehouse, one product, one month, in the
+ * area the closing books it in.
  *
- * A distributor override wins; everything else falls through to the row's own city. Returns null
- * when there is nothing to divide across — an area outside AREA_CITY, or a city that does not exist
- * — which every caller treats as "leave this row exactly where it is".
+ * AREA IS PART OF THE KEY. One client code can appear in two areas — distributors reuse codes for
+ * different venues — and those are two different warehouses in two different governorates. Summing
+ * them would let one venue's volume push another venue's small order over the threshold and scatter
+ * it nationwide.
+ */
+export function warehouseSplitKey(row: StoreSplitRow): string {
+  return [
+    normalizeDistributor(row.distributorCode),
+    String(row.clientCode ?? "").trim().toUpperCase(),
+    lineKey(row.officialLine),
+    normalizeArea(closingAreaOf(row)),
+    String(row.productCode ?? "").trim().toUpperCase(),
+  ].join("|");
+}
+
+/**
+ * Total packs per `warehouseSplitKey` across a whole closing, so the threshold is judged once on the
+ * month's real quantity rather than on whichever row happens to be in hand.
+ *
+ * Direct rows and rows the closing excludes are left out: they move no closing money, so counting
+ * them would let money the closing never shows decide where money it does show goes.
+ */
+export function warehouseSplitQtyByKey(rows: readonly StoreSplitRow[]): ReadonlyMap<string, number> {
+  const totals = new Map<string, number>();
+  for (const row of rows) {
+    if (row.isDirect) continue;
+    if (!row.includedInClosing) continue;
+    const key = warehouseSplitKey(row);
+    totals.set(key, (totals.get(key) ?? 0) + (Number(row.qty) || 0));
+  }
+  return totals;
+}
+
+/**
+ * The areas this row's money divides across, how it is weighted, and the label for the movement.
+ *
+ * `thresholdQty` is the month's total for this warehouse and product — pass it from
+ * `warehouseSplitQtyByKey`. It defaults to the row's own qty, which is right only when the key holds
+ * exactly one row; every caller holding the whole set passes the aggregate.
+ *
+ * Returns null when there is nothing to divide across — an area outside AREA_CITY, or a city that
+ * does not exist — which every caller treats as "leave this row exactly where it is".
  *
  * Deliberately ONE function rather than the three copies that grew here: `isSplitEligible`, the
- * split itself and the detail sheet each derived the area set independently, so an override added to
- * one of them would have produced a workbook whose Matrix and Detail sheet disagreed about the same
+ * split itself and the detail sheet each derived the area set independently, so a rule added to one
+ * of them would have produced a workbook whose Matrix and Detail sheet disagreed about the same
  * customer.
  */
-export function splitTargetsFor(row: StoreSplitRow): DistributorSplitTarget | null {
+export function splitTargetsFor(
+  row: StoreSplitRow,
+  thresholdQty?: number,
+  regions?: SplitRegions,
+): SplitPlan | null {
   const origin = closingAreaOf(row);
   if (!origin) return null;
-  const distributor = normalizeDistributor(row.distributorCode);
-  if (distributor) {
-    const override = DISTRIBUTOR_SPLIT_TARGETS.get(`${distributor}|${origin}`);
-    if (override) return override;
-  }
   const city = cityOfArea(origin);
   if (!city) return null;
-  const areas = CITY_AREAS.get(city);
-  if (!areas || areas.length === 0) return null;
-  return { group: city, areas };
+  const cityAreas = CITY_AREAS.get(city);
+  if (!cityAreas || cityAreas.length === 0) return null;
+
+  // The rule is the owner's El Qema rule, on the owner's El Qema line. Anything else falls through
+  // to the plain city split it has always had — see WAREHOUSE_THRESHOLD_LINES.
+  const line = lineKey(row.officialLine);
+  const distributor = normalizeDistributor(row.distributorCode);
+  const ruleApplies = WAREHOUSE_THRESHOLD_DISTRIBUTORS.has(distributor)
+    && WAREHOUSE_THRESHOLD_LINES.has(line);
+
+  // \U0001F512 THE LADDER ANSWERS FIRST AND ANSWERS COMPLETELY. Everything below it — the bands, the
+  // pool, the local block — is now reached only by OTHER distributors' plain city split. Reading the
+  // code below as still applying to El Qema is the mistake to expect here.
+  if (ruleApplies) {
+    const laddered = qemaLadderPlan(
+      OTHERS_EXCLUDED_LINES.has(line) ? (regions?.others ?? NO_AREAS) : NO_AREAS,
+    );
+    if (laddered) return laddered;
+  }
+
+  // The quantity decides the band, and from 2026-09-09 it also decides the local BLOCK, so it has to
+  // be resolved before the block rather than after it.
+  const qty = Number.isFinite(thresholdQty) ? Number(thresholdQty) : Number(row.qty) || 0;
+  const overThreshold = qty > WAREHOUSE_NATIONAL_SPLIT_THRESHOLD_QTY;
+
+  // What counts as LOCAL for this warehouse: its governorate, unless an owner override widens it.
+  //
+  // LOCAL_BLOCK_OVERRIDES is unconditional — Benha reaches Cairo at any quantity, because that map
+  // says what Qalubeya's reps ARE. It is the owner's Cairo + Qalubeya rule.
+  //
+  // 🔴 THE UPPER EGYPT POOL USED TO SIT BESIDE IT AND HAS BEEN DELETED — owner, 2026-09-09, after
+  // the removal was measured and put to him. It was his own rule from earlier that same day
+  // ("calculate their total and then redistribute on them the sales evenly, fayoum-banisuef one
+  // region"), and the priority ladder replaced it hours later in #3583, which names it as one of
+  // the five rules it discards. The ladder returns before this line is ever reached, so the pool
+  // had been unreachable from the moment that merged. Deleting it FINISHES that decision and is
+  // not a regression. Do not restore it from git history. Account: docs/agents-owner-rules.md.
+  //
+  // ⚠ The ladder does NOT preserve "fayoum-banisuef one region" — under it Fayoum and Beni Suef are
+  // two areas taking two shares. That is a consequence of his later choice, not an oversight here.
+  const override = ruleApplies ? LOCAL_BLOCK_OVERRIDES.get(`${distributor}|${origin}`) : undefined;
+  const localBlock = override?.areas ?? cityAreas;
+  // The Store Split sheet names the rule that moved the money, so a reader never has to guess why
+  // Cairo gained from a Benha warehouse.
+  const localLabel = override?.label ?? city;
+  // The exclusion is keyed on the LINE alone — every warehouse on it, not just El Qema's. The
+  // threshold above is the distributor's rule; this one is the organogram's.
+  const excluded = OTHERS_EXCLUDED_LINES.has(line) ? (regions?.others ?? NO_AREAS) : NO_AREAS;
+
+  // The ORIGIN is never excluded from its own sale. An area is barred from receiving a share of
+  // somebody else's money, not from keeping what it sold itself — and without this a warehouse
+  // sitting in an Others area would have a home half with nowhere at all to go.
+  const keep = (area: string) => !excluded.has(area) || area === origin;
+  const homeAreas = localBlock.filter(keep);
+  const localSet = new Set(localBlock);
+
+  // The weighted split of the home block, when the owner gave one for this block. `undefined`
+  // everywhere else, which planShares reads as "evenly".
+  const weightsFor = (block: readonly string[]): readonly number[] | undefined => {
+    const primary = override?.primaryArea;
+    const fraction = override?.primaryFraction;
+    if (!primary || typeof fraction !== "number" || !block.includes(primary)) return undefined;
+    const others = block.length - 1;
+    if (others <= 0) return undefined;
+    const rest = (1 - fraction) / others;
+    return block.map((area) => (area === primary ? fraction : rest));
+  };
+
+  const home: SplitPlan = {
+    areas: homeAreas,
+    awayAreas: [],
+    group: localLabel,
+    homeAreas,
+    homeFraction: 1,
+    homeWeights: weightsFor(homeAreas),
+  };
+
+  if (!ruleApplies) return home;
+
+  if (!overThreshold) return home;
+
+  // Everything the local block does NOT already hold. Testing the block rather than the city is what
+  // stops Cairo being paid twice when it is part of Qalubeya's local block.
+  const awayAreas = ALL_SPLIT_AREAS.filter((area) => !localSet.has(area) && keep(area));
+  if (awayAreas.length === 0) return home;
+
+  // Band two keeps half at home; band three keeps only a headcount's worth, which is what makes
+  // every area equal. The label follows, so the Store Split sheet names which step moved the money
+  // rather than leaving a reader to infer it from the numbers.
+  const homeFraction = warehouseHomeFraction(qty, homeAreas.length, awayAreas.length);
+  const flat = qty >= WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY;
+
+  return {
+    areas: [...homeAreas, ...awayAreas],
+    awayAreas,
+    group: flat ? "nationwide, equal shares" : `${localLabel} + nationwide`,
+    homeAreas,
+    homeFraction,
+    // Band 3 pays every area the same by his own words, so the home weighting stops there. Carrying
+    // it in would make Qalubeya larger than Aswan in the one band that exists to make them equal.
+    homeWeights: flat ? undefined : weightsFor(homeAreas),
+  };
+}
+
+/**
+ * Divide `total` across a plan's areas, home block first, in the same order as `plan.areas`.
+ *
+ * The two halves are taken as `total * 0.5` and `total - home`, never as two independent halvings:
+ * multiplying a float by 0.5 is exact in binary, and the subtraction then closes any gap, so the
+ * shares sum back to `total` bit-for-bit. `evenShares` gives the same guarantee inside each block.
+ */
+export function planShares(plan: SplitPlan, total: number): number[] {
+  // The home block divides by weight when the owner gave one. Taken as `total - assigned` on the
+  // last element, exactly as the even path does, so a weighted block still sums back to `total`.
+  const homeShareAt = (index: number, pool: number): number => (
+    plan.homeWeights ? pool * plan.homeWeights[index] : pool / plan.homeAreas.length
+  );
+
+  if (plan.awayAreas.length === 0) {
+    if (!plan.homeWeights) return evenShares(total, plan.homeAreas.length);
+    const shares: number[] = [];
+    let running = 0;
+    for (let index = 0; index < plan.homeAreas.length - 1; index += 1) {
+      const share = homeShareAt(index, total);
+      shares.push(share);
+      running += share;
+    }
+    shares.push(total - running);
+    return shares;
+  }
+
+  // ONE running remainder across BOTH blocks, never two independent evenShares calls concatenated.
+  // evenShares guarantees its own block sums back exactly only when that block is summed from zero;
+  // append a second block behind it and the compensations no longer line up — measured, 700 into
+  // 1 + 48 came back 699.9999999999993. So the last area of the away block absorbs the remainder for
+  // the whole row, exactly as evenShares does for a single block.
+  const home = total * plan.homeFraction;
+  const away = total - home;
+  const awayShare = away / plan.awayAreas.length;
+  const count = plan.homeAreas.length + plan.awayAreas.length;
+
+  const shares: number[] = [];
+  let assigned = 0;
+  for (let index = 0; index < count - 1; index += 1) {
+    const share = index < plan.homeAreas.length ? homeShareAt(index, home) : awayShare;
+    shares.push(share);
+    assigned += share;
+  }
+  shares.push(total - assigned);
+  return shares;
 }
 
 export function cityOfArea(areaCode: string | null | undefined): string | null {
@@ -386,7 +843,12 @@ export function customersExemptFromCitySplit(rows: readonly StoreSplitRow[]): Re
  * is read from the row rather than passed in, so the two can never disagree about which month this
  * row belongs to.
  */
-export function isSplitEligible(row: StoreSplitRow, period?: string | null): boolean {
+export function isSplitEligible(
+  row: StoreSplitRow,
+  period?: string | null,
+  thresholdQty?: number,
+  regions?: SplitRegions,
+): boolean {
   if (row.isDirect) return false;
   if (!row.includedInClosing) return false;
   if (!isSplitEligibleLine(row.officialLine)) return false;
@@ -401,7 +863,7 @@ export function isSplitEligible(row: StoreSplitRow, period?: string | null): boo
   // and the Matrix books by the fact area. Taking a re-booked row's city from its brick would
   // subtract the money from an area that never carried it — the phantom the 441164 case produced.
   // Identical to `areaCode` on every row in production except a hand-apportioned one.
-  const targets = splitTargetsFor(row);
+  const targets = splitTargetsFor(row, thresholdQty, regions);
   if (!targets) return false;
   // One target splits to itself — nothing moves, so skip the work entirely.
   return targets.areas.length > 1;
@@ -482,6 +944,7 @@ export function evenShares(total: number, parts: number): number[] {
 export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
   rows: readonly T[],
   period?: string | null,
+  regions?: SplitRegions,
 ): StoreSplitResult<T> {
   const out: T[] = [];
 
@@ -511,8 +974,13 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
     return created;
   };
 
+  // The 200-pack threshold is a property of the warehouse month, not of whichever row is in
+  // hand, so it is summed ONCE here and every row of that key is judged on the same number.
+  const thresholdByKey = warehouseSplitQtyByKey(rows);
+
   for (const row of rows) {
-    const eligible = isSplitEligible(row, period);
+    const rowThreshold = thresholdByKey.get(warehouseSplitKey(row));
+    const eligible = isSplitEligible(row, period, rowThreshold, regions);
     if (!eligible || exemptCustomers.has(String(row.clientCode ?? "").trim())) {
       // An exempt row that WOULD otherwise have split is store money sitting on a brick that the
       // matrix never moved. The brick grid has to know, or it debits the brick anyway. Keyed by
@@ -534,7 +1002,7 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
     // The area the CLOSING books this row in — see isSplitEligible, which picked the city the same
     // way. Money must leave the area that actually holds it.
     const origin = closingAreaOf(row);
-    const targets = splitTargetsFor(row);
+    const targets = splitTargetsFor(row, rowThreshold, regions);
     // isSplitEligible already proved this; the guard keeps the types honest.
     if (!targets) {
       out.push(row);
@@ -546,14 +1014,22 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
     splitRowCount += 1;
     const line = String(row.officialLine ?? "").trim();
     const productCode = String(row.productCode ?? "").trim().toUpperCase();
-    const valueShares = evenShares(Number(row.salesValue) || 0, areas.length);
-    const qtyShares = evenShares(Number(row.qty) || 0, areas.length);
+    // planShares, not evenShares: above the threshold the governorate block and the national
+    // block carry different weights, and an even division would quietly pay them the same.
+    const plannedValue = planShares(targets, Number(row.salesValue) || 0);
+    const plannedQty = planShares(targets, Number(row.qty) || 0);
+
+    // No pooling pass any more: the priority ladder decides El Qema's whole distribution in
+    // splitTargetsFor, and every other distributor takes the plain city split. Levelling here as
+    // well would silently overwrite the ladder for the eight areas the pool used to hold.
+    const levelled = { areas, qtyShares: plannedQty, valueShares: plannedValue };
 
     const originMovement = movementFor(origin, city, line, productCode);
     originMovement.outQty += Number(row.qty) || 0;
     originMovement.outValue += Number(row.salesValue) || 0;
 
-    areas.forEach((areaCode, index) => {
+    const { areas: landing, qtyShares, valueShares } = levelled;
+    landing.forEach((areaCode, index) => {
       const received = movementFor(areaCode, city, line, productCode);
       received.inQty += qtyShares[index];
       received.inValue += valueShares[index];
@@ -648,8 +1124,9 @@ export type StoreSplitAreaSummary = {
 export function summariseStoreSplitByArea<T extends StoreSplitRow & { areaName?: string }>(
   rows: readonly T[],
   period?: string | null,
+  regions?: SplitRegions,
 ): StoreSplitAreaSummary[] {
-  const { movements } = splitStoreSalesAcrossCityAreas(rows, period);
+  const { movements } = splitStoreSalesAcrossCityAreas(rows, period, regions);
   if (movements.length === 0) return [];
 
   // The area's current closing position, from the untouched rows.
@@ -733,11 +1210,21 @@ export type StoreSplitDetailRow = {
   /** Exactly as imported, before anything moved. */
   units: number;
   value: number;
-  /** The areas of the city this was divided across, in a stable order. */
+  /** Every area this was divided across, in a stable order — governorate first, then national. */
   sharedWithAreaCodes: readonly string[];
-  /** units / value each area received. The last share absorbs the rounding remainder. */
+  /** The origin governorate own areas — the half that always stays local. */
+  homeAreaCodes: readonly string[];
+  /** Areas outside the governorate taking the national half. EMPTY below the 200-pack rule. */
+  awayAreaCodes: readonly string[];
+  /**
+   * units / value each area of the ORIGIN GOVERNORATE received. Below the threshold that is
+   * every area on the row; above it, the governorate block splits half the sale between them.
+   */
   shareUnits: number;
   shareValue: number;
+  /** units / value ONE area outside the governorate received. 0 when the sale never left it. */
+  awayShareUnits: number;
+  awayShareValue: number;
   /** What the origin area keeps of its own sale — its single share, not the whole. */
   originKeepsValue: number;
 };
@@ -769,7 +1256,11 @@ function round2(value: number): number {
  */
 export function detailStoreSplitByCustomer<
   T extends StoreSplitRow & { areaName?: string; clientCode?: string; productName?: string },
->(rows: readonly T[], period?: string | null): StoreSplitDetailRow[] {
+>(
+  rows: readonly T[],
+  period?: string | null,
+  regions?: SplitRegions,
+): StoreSplitDetailRow[] {
   const areaNames = new Map<string, string>();
   for (const row of rows) {
     const area = normalizeArea(row.areaCode);
@@ -781,12 +1272,23 @@ export function detailStoreSplitByCustomer<
   // the matrix left alone — the two tabs must describe the same operation.
   const detailExempt = customersExemptFromCitySplit(rows);
 
+  // The SAME aggregate the split judges the threshold on. Deriving it separately here is how the
+  // Matrix and this sheet would come to disagree about which customers crossed 200.
+  const detailThresholdByKey = warehouseSplitQtyByKey(rows);
+
   const byKey = new Map<string, StoreSplitDetailRow>();
+  // The aggregate each entry's band is judged on. Kept beside the entries rather than on them:
+  // StoreSplitDetailRow is exported and rendered, and nothing downstream needs this number.
+  const bandQtyByKey = new Map<string, number>();
   for (const row of rows) {
-    if (!isSplitEligible(row, period) || detailExempt.has(String(row.clientCode ?? "").trim())) continue;
+    const rowThreshold = detailThresholdByKey.get(warehouseSplitKey(row));
+    if (
+      !isSplitEligible(row, period, rowThreshold, regions)
+      || detailExempt.has(String(row.clientCode ?? "").trim())
+    ) continue;
     // The same origin the split itself uses, or this sheet would name a different area as the giver.
     const origin = closingAreaOf(row);
-    const targets = splitTargetsFor(row);
+    const targets = splitTargetsFor(row, rowThreshold, regions);
     if (!targets) continue;
     const city = targets.group;
     const areas = targets.areas;
@@ -804,8 +1306,13 @@ export function detailStoreSplitByCustomer<
       existing.value += Number(row.salesValue) || 0;
       continue;
     }
+    bandQtyByKey.set(key, Number.isFinite(rowThreshold) ? Number(rowThreshold) : Number(row.qty) || 0);
     byKey.set(key, {
+      awayAreaCodes: targets.awayAreas,
+      awayShareUnits: 0,
+      awayShareValue: 0,
       city,
+      homeAreaCodes: targets.homeAreas,
       clientCode: clientCode || "—",
       clientName: clientName || "(no customer name)",
       line: String(row.officialLine ?? "").trim(),
@@ -824,15 +1331,30 @@ export function detailStoreSplitByCustomer<
 
   // Shares are derived AFTER the products of a store are summed, so they describe the sale as the
   // split actually divides it rather than per invoice line.
-  return [...byKey.values()]
-    .map((entry) => {
-      const parts = entry.sharedWithAreaCodes.length;
-      const share = parts > 0 ? entry.value / parts : 0;
+  return [...byKey.entries()]
+    .map(([key, entry]) => {
+      const homeParts = entry.homeAreaCodes.length;
+      const awayParts = entry.awayAreaCodes.length;
+      // The band is decided by the SAME aggregate the split judged, never by entry.units. The two
+      // agree for a customer trading in one area and diverge for one trading in two, because these
+      // entries are keyed on the origin as well and the threshold is not — so entry.units can sit
+      // below 1000 for a customer whose month total is above it, and this sheet would then report a
+      // 50/50 split of a sale the Matrix had already spread flat.
+      const bandQty = bandQtyByKey.get(key) ?? entry.units;
+      const homeFraction = warehouseHomeFraction(bandQty, homeParts, awayParts);
+      const homeValue = entry.value * homeFraction;
+      const homeUnits = entry.units * homeFraction;
+      const awayValue = entry.value - homeValue;
+      const awayUnits = entry.units - homeUnits;
+      const homeShareValue = homeParts > 0 ? homeValue / homeParts : 0;
+      const homeShareUnits = homeParts > 0 ? homeUnits / homeParts : 0;
       return {
         ...entry,
-        originKeepsValue: round2(share),
-        shareUnits: parts > 0 ? Number((entry.units / parts).toFixed(3)) : 0,
-        shareValue: round2(share),
+        awayShareUnits: awayParts > 0 ? Number((awayUnits / awayParts).toFixed(3)) : 0,
+        awayShareValue: awayParts > 0 ? round2(awayValue / awayParts) : 0,
+        originKeepsValue: round2(homeShareValue),
+        shareUnits: Number(homeShareUnits.toFixed(3)),
+        shareValue: round2(homeShareValue),
         units: round2(entry.units),
         value: round2(entry.value),
       };
@@ -847,9 +1369,13 @@ export function detailStoreSplitByCustomer<
 /** The same movement folded to one row per store — which stores are split, and by how much. */
 export function summariseStoreSplitByCustomer<
   T extends StoreSplitRow & { areaName?: string; clientCode?: string; productName?: string },
->(rows: readonly T[], period?: string | null): StoreSplitCustomerSummary[] {
+>(
+  rows: readonly T[],
+  period?: string | null,
+  regions?: SplitRegions,
+): StoreSplitCustomerSummary[] {
   const byStore = new Map<string, StoreSplitCustomerSummary & { productCodes: Set<string> }>();
-  for (const detail of detailStoreSplitByCustomer(rows, period)) {
+  for (const detail of detailStoreSplitByCustomer(rows, period, regions)) {
     const key = `${detail.clientCode}|${detail.clientName}|${detail.originAreaCode}|${detail.line}`;
     const existing = byStore.get(key);
     if (existing) {

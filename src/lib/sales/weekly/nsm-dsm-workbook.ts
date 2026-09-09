@@ -29,8 +29,7 @@
 
 import ExcelJS from "exceljs";
 
-import { systemLegalEntity } from "@/config/system-settings";
-import { HOUSE_DOCUMENT_STANDARD, HOUSE_XLSX_COLORS, HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
+import { systemIdentity } from "@/config/system-settings";
 import { sanitizeSheetName } from "@/lib/sales/sales-workbook-kit";
 import type { WeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
 import { splitWeeklyRowsByBranch } from "@/lib/sales/weekly/branch-attribution";
@@ -40,29 +39,25 @@ import {
 } from "@/lib/sales/weekly/manager-attribution";
 import type { WeeklyFactExportRow } from "@/lib/sales/weekly/types";
 
-// ── the house document identity — SATO-DIS-2026-01 v1.0 ─────────────────────────
-//
-// This book was ALREADY the quiet one — "ink on white with one accent, not a dark band per section",
-// because a manager reads it on paper. That instinct was right and the standard is the same instinct
-// written down: colour carried by LINES and TYPE, never by filled area, with the 6% zebra as the one
-// exception. What changed is whose colours, and the three warm-grey fills that survived the original
-// pass — a header wash, a soft group wash and a total wash — which are now rules.
-const INK = HOUSE_XLSX_COLORS.body;
-const SUB = HOUSE_XLSX_COLORS.muted;
-const FAINT = HOUSE_XLSX_COLORS.hair;
-const RULE = HOUSE_XLSX_COLORS.hair;
-const RULE_STRONG = HOUSE_XLSX_COLORS.light;
-const ZEBRA = HOUSE_XLSX_COLORS.tint;
-const ACCENT = HOUSE_XLSX_COLORS.blue;
-const DEEP = HOUSE_XLSX_COLORS.deep;
+// ── palette ─────────────────────────────────────────────────────────────────────
+// Deliberately quieter than the BI workbook's slate slabs: this one is printed, and a manager
+// reading it on paper wants ink on white with one accent, not a dark band per section.
+const INK = "FF1A1A1A";
+const SUB = "FF6B6B6B";
+const FAINT = "FFAAB0B6";
+const RULE = "FFE4E4E4";
+const RULE_STRONG = "FF9AA0A6";
+const HEAD = "FFF3F1EE";
+const HEAD_SOFT = "FFFAF8F5";
+const TOTAL_BG = "FFEBE8E3";
+const ZEBRA = "FFF4F1EC";
+const ACCENT = "FFF97316";
 // The only colours in this book that carry MEANING rather than structure, so they are the only ones
 // allowed to be seen from across a desk. Everything else is ink, rule and paper.
-const UP = "FF0F766E";
-const DOWN = HOUSE_XLSX_COLORS.flag;
-// The heat marks on a total column are data, not chrome — a shaded total says "this one is large"
-// and there is no type-only form of that. Re-pointed into the house blues rather than removed.
-const HEAT_TOP = "FFDDE8F1";
-const HEAT_MID = HOUSE_XLSX_COLORS.tint;
+const UP = "FF1E7A3C";
+const DOWN = "FFB3261E";
+const HEAT_TOP = "FFF6DCC4";
+const HEAT_MID = "FFFBEFE2";
 
 const F_UNITS = "#,##0";
 const F_VALUE = "#,##0";
@@ -708,7 +703,7 @@ function paintMasthead(
   for (let column = 1; column <= columns; column += 1) widths.push(sheet.getColumn(column).width ?? 10);
   let total = widths.reduce((sum, value) => sum + value, 0);
 
-  const stripParts = [HOUSE_DOCUMENT_STANDARD, scopeLine, ...headline.notes];
+  const stripParts = [systemIdentity.appName.toUpperCase(), scopeLine, ...headline.notes];
   if (extraNote) stripParts.push(extraNote);
   const strip = stripParts.join("   ·   ");
 
@@ -726,7 +721,7 @@ function paintMasthead(
   sheet.mergeCells(1, 1, 1, columns);
   const stripCell = sheet.getCell(1, 1);
   stripCell.value = strip;
-  stripCell.font = { name: HOUSE_XLSX_FONT, size: stripSize, bold: true, color: { argb: SUB } };
+  stripCell.font = { name: "Calibri", size: stripSize, bold: true, color: { argb: SUB } };
   stripCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
   sheet.getRow(1).height = 14;
 
@@ -738,7 +733,7 @@ function paintMasthead(
 
   const titleCell = sheet.getCell(2, 1);
   titleCell.value = title;
-  titleCell.font = { name: HOUSE_XLSX_FONT, size: titleSize, bold: true, color: { argb: INK } };
+  titleCell.font = { name: "Calibri", size: titleSize, bold: true, color: { argb: INK } };
   titleCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
 
   // The date needs enough merged columns to render at full size without clipping.
@@ -753,7 +748,7 @@ function paintMasthead(
     sheet.mergeCells(2, dateFirst, 2, columns);
     const dateCell = sheet.getCell(2, dateFirst);
     dateCell.value = headline.big;
-    dateCell.font = { name: HOUSE_XLSX_FONT, size: titleSize, bold: false, color: { argb: ACCENT } };
+    dateCell.font = { name: "Calibri", size: titleSize, bold: false, color: { argb: ACCENT } };
     dateCell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
   }
   sheet.getRow(2).height = Math.round(titleSize * 1.9);
@@ -794,17 +789,8 @@ function autofit(
 }
 
 function styleHeader(cell: ExcelJS.Cell, right: boolean, soft = false): void {
-  // White on a Brand Blue band — deep for a real column header, the lighter blue for the softer
-  // group row above one. Type on white does not separate from its data on a book this wide.
-  cell.font = { name: HOUSE_XLSX_FONT, size: 10, bold: true, color: { argb: HOUSE_XLSX_COLORS.white } };
-  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: soft ? RULE_STRONG : ACCENT } };
-  cell.border = {
-    ...(cell.border ?? {}),
-    bottom: { style: "medium", color: { argb: DEEP } },
-    left: { style: "thin", color: { argb: DEEP } },
-    right: { style: "thin", color: { argb: DEEP } },
-    top: { style: "medium", color: { argb: DEEP } },
-  };
+  cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
+  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: soft ? HEAD_SOFT : HEAD } };
   cell.alignment = { vertical: "middle", horizontal: right ? "right" : "left", indent: 1 };
   cell.border = {
     top: { style: "thin", color: { argb: RULE_STRONG } },
@@ -817,6 +803,9 @@ function styleHeader(cell: ExcelJS.Cell, right: boolean, soft = false): void {
 type SheetContext = {
   input: NsmDsmWorkbookInput;
   rows: Split[];
+  /** The UNSPLIT rows for this line. Stock lives at a physical branch, so the Stock-by-branch
+   *  sheet must not read the pro-rata area split that is correct for sales. */
+  rawRows: WeeklyFactExportRow[];
   products: { code: string; name: string }[];
   weekNumbers: number[];
   weekLabel: Map<number, string>;
@@ -916,11 +905,11 @@ function drawFlatSheet(workbook: ExcelJS.Workbook, tab: TabKey, context: SheetCo
     if (to > from) sheet.mergeCells(GROUP_ROW, from, GROUP_ROW, to);
     const cell = sheet.getCell(GROUP_ROW, from);
     cell.value = product.name;
-    cell.font = { name: HOUSE_XLSX_FONT, size: 10, bold: true, color: { argb: INK } };
+    cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
     cell.alignment = { vertical: "middle", horizontal: "center" };
     cell.border = { bottom: { style: "thin", color: { argb: RULE_STRONG } } };
     for (let column = from; column <= to; column += 1) {
-      sheet.getCell(GROUP_ROW, column).border = { bottom: { style: "thin", color: { argb: RULE_STRONG } } };
+      sheet.getCell(GROUP_ROW, column).fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEAD_SOFT } };
     }
     cursor = to + 1;
   }
@@ -965,7 +954,7 @@ function drawFlatSheet(workbook: ExcelJS.Workbook, tab: TabKey, context: SheetCo
     idColumns.forEach((label, position) => {
       const cell = sheet.getCell(row, position + 1);
       cell.value = group.id[label] ?? "";
-      cell.font = { name: HOUSE_XLSX_FONT, size: 10, bold: position === 0, color: { argb: position === 0 ? INK : SUB } };
+      cell.font = { name: "Calibri", size: 10, bold: position === 0, color: { argb: position === 0 ? INK : SUB } };
       cell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
     });
     let column = idColumns.length + 1;
@@ -976,7 +965,7 @@ function drawFlatSheet(workbook: ExcelJS.Workbook, tab: TabKey, context: SheetCo
         cell.value = value;
         cell.numFmt = F_UNITS;
         cell.font = {
-          name: HOUSE_XLSX_FONT,
+          name: "Calibri",
           size: 10,
           bold: measure.key === "M" && measures.length > 1,
           // A return reads as a negative unit count. It is the one figure on the grid that says
@@ -991,7 +980,7 @@ function drawFlatSheet(workbook: ExcelJS.Workbook, tab: TabKey, context: SheetCo
     const totalValue = Math.round(tab === "stock" ? group.stockValue : group.value);
     totalCell.value = totalValue;
     totalCell.numFmt = F_VALUE;
-    totalCell.font = { name: HOUSE_XLSX_FONT, size: 10, bold: true, color: { argb: INK } };
+    totalCell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
     totalCell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
     heat.push({ row, value: totalValue });
 
@@ -1000,7 +989,7 @@ function drawFlatSheet(workbook: ExcelJS.Workbook, tab: TabKey, context: SheetCo
       const mark = pair ? shareTrend(pair, trendLineLast, trendLinePrev) : null;
       const arrow = sheet.getCell(row, trendColumn);
       arrow.value = mark ? mark.glyph : "";
-      arrow.font = { name: HOUSE_XLSX_FONT, size: 8, bold: true, color: { argb: mark ? mark.colour : FAINT } };
+      arrow.font = { name: "Calibri", size: 8, bold: true, color: { argb: mark ? mark.colour : FAINT } };
       arrow.alignment = { vertical: "middle", horizontal: "center" };
     }
 
@@ -1033,19 +1022,19 @@ function drawFlatSheet(workbook: ExcelJS.Workbook, tab: TabKey, context: SheetCo
   if (lastData >= FIRST_DATA_ROW) {
     const totalRow = sheet.getCell(row, 1);
     totalRow.value = "Total (rows shown)";
-    totalRow.font = { name: HOUSE_XLSX_FONT, size: 10, bold: true, color: { argb: INK } };
+    totalRow.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
     totalRow.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
     for (let column = idColumns.length + 1; column <= totalColumn; column += 1) {
       const letter = sheet.getColumn(column).letter;
       const cell = sheet.getCell(row, column);
       cell.value = { formula: `SUBTOTAL(109,${letter}${FIRST_DATA_ROW}:${letter}${lastData})` };
       cell.numFmt = column === totalColumn ? F_VALUE : F_UNITS;
-      cell.font = { name: HOUSE_XLSX_FONT, size: 10, bold: true, color: { argb: INK } };
+      cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
       cell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
     }
     for (let column = 1; column <= columns; column += 1) {
       const cell = sheet.getCell(row, column);
-      cell.border = { ...(cell.border ?? {}), bottom: { style: "medium", color: { argb: ACCENT } }, top: { style: "medium", color: { argb: ACCENT } } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TOTAL_BG } };
       cell.border = { top: { style: "thin", color: { argb: RULE_STRONG } } };
     }
     sheet.autoFilter = {
@@ -1158,11 +1147,11 @@ function drawRankedSheet(workbook: ExcelJS.Workbook, context: SheetContext, shee
     if (block.money > block.from) sheet.mergeCells(GROUP_ROW, block.from, GROUP_ROW, block.money);
     const cell = sheet.getCell(GROUP_ROW, block.from);
     cell.value = block.name;
-    cell.font = { name: HOUSE_XLSX_FONT, size: 10, bold: true, color: { argb: INK } };
+    cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
     cell.alignment = { vertical: "middle", horizontal: "center" };
     cell.border = { bottom: { style: "thin", color: { argb: RULE_STRONG } } };
     for (let column = block.from; column <= block.money; column += 1) {
-      sheet.getCell(GROUP_ROW, column).border = { bottom: { style: "thin", color: { argb: RULE_STRONG } } };
+      sheet.getCell(GROUP_ROW, column).fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEAD_SOFT } };
     }
   }
   sheet.getCell(GROUP_ROW, totalColumn).value = "Sales Value (EGP)";
@@ -1192,7 +1181,7 @@ function drawRankedSheet(workbook: ExcelJS.Workbook, context: SheetContext, shee
     idColumns.forEach((label, position) => {
       const cell = sheet.getCell(row, position + 1);
       cell.value = group.id[label] ?? "";
-      cell.font = { name: HOUSE_XLSX_FONT, size: 10, bold: position === 0, color: { argb: position === 0 ? INK : SUB } };
+      cell.font = { name: "Calibri", size: 10, bold: position === 0, color: { argb: position === 0 ? INK : SUB } };
       cell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
     });
 
@@ -1209,7 +1198,7 @@ function drawRankedSheet(workbook: ExcelJS.Workbook, context: SheetContext, shee
         cell.value = units;
         cell.numFmt = F_UNITS;
         cell.font = {
-          name: HOUSE_XLSX_FONT,
+          name: "Calibri",
           size: 10,
           color: { argb: units === 0 ? FAINT : units < 0 ? DOWN : INK },
         };
@@ -1220,7 +1209,7 @@ function drawRankedSheet(workbook: ExcelJS.Workbook, context: SheetContext, shee
       cell.value = money;
       cell.numFmt = F_VALUE;
       cell.font = {
-        name: HOUSE_XLSX_FONT,
+        name: "Calibri",
         size: 10,
         bold: true,
         color: { argb: money === 0 ? FAINT : money < 0 ? DOWN : INK },
@@ -1231,7 +1220,7 @@ function drawRankedSheet(workbook: ExcelJS.Workbook, context: SheetContext, shee
     const totalCell = sheet.getCell(row, totalColumn);
     totalCell.value = totalValue;
     totalCell.numFmt = F_VALUE;
-    totalCell.font = { name: HOUSE_XLSX_FONT, size: 10, bold: true, color: { argb: INK } };
+    totalCell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
     totalCell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
     heat.push({ row, value: totalValue });
 
@@ -1240,7 +1229,7 @@ function drawRankedSheet(workbook: ExcelJS.Workbook, context: SheetContext, shee
       const mark = pair ? shareTrend(pair, trendLineLast, trendLinePrev) : null;
       const arrow = sheet.getCell(row, trendColumn);
       arrow.value = mark ? mark.glyph : "";
-      arrow.font = { name: HOUSE_XLSX_FONT, size: 8, bold: true, color: { argb: mark ? mark.colour : FAINT } };
+      arrow.font = { name: "Calibri", size: 8, bold: true, color: { argb: mark ? mark.colour : FAINT } };
       arrow.alignment = { vertical: "middle", horizontal: "center" };
     }
 
@@ -1268,19 +1257,19 @@ function drawRankedSheet(workbook: ExcelJS.Workbook, context: SheetContext, shee
   if (lastData >= FIRST_DATA_ROW) {
     const label = sheet.getCell(row, 1);
     label.value = "Total (rows shown)";
-    label.font = { name: HOUSE_XLSX_FONT, size: 10, bold: true, color: { argb: INK } };
+    label.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
     label.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
     for (let column = idColumns.length + 1; column <= totalColumn; column += 1) {
       const letter = sheet.getColumn(column).letter;
       const cell = sheet.getCell(row, column);
       cell.value = { formula: `SUBTOTAL(109,${letter}${FIRST_DATA_ROW}:${letter}${lastData})` };
       cell.numFmt = plan.some((block) => block.money === column) || column === totalColumn ? F_VALUE : F_UNITS;
-      cell.font = { name: HOUSE_XLSX_FONT, size: 10, bold: true, color: { argb: INK } };
+      cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
       cell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
     }
     for (let column = 1; column <= columns; column += 1) {
       const cell = sheet.getCell(row, column);
-      cell.border = { ...(cell.border ?? {}), bottom: { style: "medium", color: { argb: ACCENT } }, top: { style: "medium", color: { argb: ACCENT } } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TOTAL_BG } };
       cell.border = { top: { style: "thin", color: { argb: RULE_STRONG } } };
     }
     sheet.autoFilter = { from: { row: HEADER_ROW, column: 1 }, to: { row: lastData, column: columns } };
@@ -1342,7 +1331,7 @@ function drawSummarySheet(workbook: ExcelJS.Workbook, context: SheetContext, she
   let row = GROUP_ROW;
   const glance = sheet.getCell(row, 1);
   glance.value = "The line at a glance";
-  glance.font = { name: HOUSE_XLSX_FONT, size: 11, bold: true, color: { argb: INK } };
+  glance.font = { name: "Calibri", size: 11, bold: true, color: { argb: INK } };
   row += 1;
 
   const headerRow = row;
@@ -1359,7 +1348,7 @@ function drawSummarySheet(workbook: ExcelJS.Workbook, context: SheetContext, she
   products.forEach((product, index) => {
     const cell = sheet.getCell(row, 1);
     cell.value = product.name;
-    cell.font = { name: HOUSE_XLSX_FONT, size: 10, bold: true, color: { argb: INK } };
+    cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
     cell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
     measures.forEach((measure, position) => {
       let sum = 0;
@@ -1367,18 +1356,18 @@ function drawSummarySheet(workbook: ExcelJS.Workbook, context: SheetContext, she
       const numberCell = sheet.getCell(row, position + 2);
       numberCell.value = sum;
       numberCell.numFmt = F_UNITS;
-      numberCell.font = { name: HOUSE_XLSX_FONT, size: 10, bold: measure.key === "M", color: { argb: sum === 0 ? FAINT : INK } };
+      numberCell.font = { name: "Calibri", size: 10, bold: measure.key === "M", color: { argb: sum === 0 ? FAINT : INK } };
       numberCell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
     });
     const valueCell = sheet.getCell(row, measures.length + 2);
     valueCell.value = Math.round(productValue.get(product.code) ?? 0);
     valueCell.numFmt = F_VALUE;
-    valueCell.font = { name: HOUSE_XLSX_FONT, size: 10, color: { argb: INK } };
+    valueCell.font = { name: "Calibri", size: 10, color: { argb: INK } };
     valueCell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
     const shareCell = sheet.getCell(row, measures.length + 3);
     shareCell.value = lineValue > 0 ? (productValue.get(product.code) ?? 0) / lineValue : 0;
     shareCell.numFmt = F_PCT;
-    shareCell.font = { name: HOUSE_XLSX_FONT, size: 10, color: { argb: INK } };
+    shareCell.font = { name: "Calibri", size: 10, color: { argb: INK } };
     shareCell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
     if (index % 2 === 1) {
       for (let column = 1; column <= columns; column += 1) {
@@ -1400,12 +1389,12 @@ function drawSummarySheet(workbook: ExcelJS.Workbook, context: SheetContext, she
     row += 1;
     const heading = sheet.getCell(row, 1);
     heading.value = region;
-    heading.font = { name: HOUSE_XLSX_FONT, size: 11, bold: true, color: { argb: INK } };
+    heading.font = { name: "Calibri", size: 11, bold: true, color: { argb: INK } };
     heading.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
     const headingValue = sheet.getCell(row, measures.length + 2);
     headingValue.value = Math.round(regionValue(list));
     headingValue.numFmt = F_VALUE;
-    headingValue.font = { name: HOUSE_XLSX_FONT, size: 11, bold: true, color: { argb: ACCENT } };
+    headingValue.font = { name: "Calibri", size: 11, bold: true, color: { argb: ACCENT } };
     headingValue.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
     row += 1;
 
@@ -1417,20 +1406,20 @@ function drawSummarySheet(workbook: ExcelJS.Workbook, context: SheetContext, she
     sorted.forEach((group, index) => {
       const cell = sheet.getCell(row, 1);
       cell.value = group.id.Area ?? "";
-      cell.font = { name: HOUSE_XLSX_FONT, size: 10, color: { argb: INK } };
+      cell.font = { name: "Calibri", size: 10, color: { argb: INK } };
       cell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
       products.forEach((product, position) => {
         const value = group.print.get(cellKey(product.code, "M")) ?? 0;
         const numberCell = sheet.getCell(row, position + 2);
         numberCell.value = value;
         numberCell.numFmt = F_UNITS;
-        numberCell.font = { name: HOUSE_XLSX_FONT, size: 10, color: { argb: value === 0 ? FAINT : INK } };
+        numberCell.font = { name: "Calibri", size: 10, color: { argb: value === 0 ? FAINT : INK } };
         numberCell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
       });
       const valueCell = sheet.getCell(row, products.length + 2);
       valueCell.value = Math.round(group.value);
       valueCell.numFmt = F_VALUE;
-      valueCell.font = { name: HOUSE_XLSX_FONT, size: 10, bold: true, color: { argb: INK } };
+      valueCell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
       valueCell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
       if (index % 2 === 1) {
         for (let column = 1; column <= Math.max(columns, products.length + 2); column += 1) {
@@ -1442,7 +1431,7 @@ function drawSummarySheet(workbook: ExcelJS.Workbook, context: SheetContext, she
 
     const totalCell = sheet.getCell(row, 1);
     totalCell.value = `${region} - total`;
-    totalCell.font = { name: HOUSE_XLSX_FONT, size: 10, bold: true, color: { argb: INK } };
+    totalCell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
     totalCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
     products.forEach((product, position) => {
       let sum = 0;
@@ -1450,17 +1439,17 @@ function drawSummarySheet(workbook: ExcelJS.Workbook, context: SheetContext, she
       const cell = sheet.getCell(row, position + 2);
       cell.value = sum;
       cell.numFmt = F_UNITS;
-      cell.font = { name: HOUSE_XLSX_FONT, size: 10, bold: true, color: { argb: INK } };
+      cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
       cell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
     });
     const regionTotal = sheet.getCell(row, products.length + 2);
     regionTotal.value = Math.round(regionValue(list));
     regionTotal.numFmt = F_VALUE;
-    regionTotal.font = { name: HOUSE_XLSX_FONT, size: 10, bold: true, color: { argb: INK } };
+    regionTotal.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
     regionTotal.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
     for (let column = 1; column <= Math.max(columns, products.length + 2); column += 1) {
       const cell = sheet.getCell(row, column);
-      cell.border = { ...(cell.border ?? {}), bottom: { style: "medium", color: { argb: ACCENT } }, top: { style: "medium", color: { argb: ACCENT } } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TOTAL_BG } };
       cell.border = { top: { style: "thin", color: { argb: RULE } } };
     }
     row += 1;
@@ -1517,7 +1506,7 @@ const normalizeLine = (value: string) => value.trim();
  */
 export async function buildNsmDsmWorkbook(input: NsmDsmWorkbookInput): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = systemLegalEntity.legalNameEn;
+  workbook.creator = systemIdentity.appName;
   workbook.created = new Date();
 
   const all = explode(input, input.rows);
@@ -1525,19 +1514,20 @@ export async function buildNsmDsmWorkbook(input: NsmDsmWorkbookInput): Promise<B
   const lines = picked.length > 1 ? picked : [];
 
   if (lines.length === 0) {
-    buildTabSet(workbook, input, all, "", picked.length === 1 ? picked[0] : null);
+    buildTabSet(workbook, input, all, input.rows, "", picked.length === 1 ? picked[0] : null);
   } else {
     for (const line of lines) {
-      const forLine = all.filter((row) => row.line.trim().toLowerCase() === line.trim().toLowerCase());
+      const sameLine = (row: { line: string }) => row.line.trim().toLowerCase() === line.trim().toLowerCase();
+      const forLine = all.filter(sameLine);
       if (forLine.length === 0) continue;
-      buildTabSet(workbook, input, forLine, `${line} - `, line);
+      buildTabSet(workbook, input, forLine, input.rows.filter(sameLine), `${line} - `, line);
     }
   }
 
   if (workbook.worksheets.length === 0) {
     const sheet = workbook.addWorksheet("Summary");
     sheet.getCell(2, 1).value = "No weekly sales rows match these filters.";
-    sheet.getCell(2, 1).font = { name: HOUSE_XLSX_FONT, size: 12, bold: true, color: { argb: INK } };
+    sheet.getCell(2, 1).font = { name: "Calibri", size: 12, bold: true, color: { argb: INK } };
     sheet.getColumn(1).width = 60;
   }
 
@@ -1559,10 +1549,350 @@ export function scopeWho(name: string | null, role: string, scope: string): stri
   return named && named !== role ? `${named} - ${role}, ${scope}` : `${role}, ${scope}`;
 }
 
+/**
+ * "Stock by branch" — what every branch is holding, per product, sectioned by region and then area.
+ *
+ * WHY THIS EXISTS BESIDE THE "Stock" TAB RATHER THAN REPLACING IT. That one is titled "Stock with
+ * no sales" and shows only branches that sold NOTHING and still hold stock — a short exception
+ * list. The owner asked for the other question: all the stock, in all the branches, so a manager can
+ * see where his line is sitting. Both are useful and neither answers the other, so this is a new
+ * sheet and the old one is untouched.
+ *
+ * THE RAW ROWS, NEVER THE SPLIT ONES. `splitWeeklyRowsByBranch` divides `stockUnits` pro rata
+ * across the areas a depot serves. That is right for SALES — a depot's sales really do belong to the
+ * territories it served — and it is a fabrication for STOCK, because a pack sits in ONE physical
+ * building. Measured on production 2026-09-08: in the raw rows NO branch carries more than one area
+ * code (230 carry exactly one, 106 carry none), so reading the raw rows makes the area grouping
+ * EXACT rather than apportioned, and no branch is ever cut in half across two sections.
+ *
+ * ONLY DISTRIBUTORS THAT SEND A STOCK COLUMN. Measured the same day: `overseas`, `Ibn sina`,
+ * `Ibn Sina-Sato` and `EGD` report stock; `POS Purchasing Sales` (107 branches) and
+ * `Direct (Company)` (6) report none at all. Printing those 113 branches as zero would say "this
+ * branch is empty" where the truth is "nobody told us", which is the one lie a stock sheet must not
+ * tell. They are left off and the strip NAMES the distributors the sheet is built from.
+ *
+ * A BRANCH HOLDING NOTHING IS DROPPED. Owner instruction, 2026-09-08, after reading the real
+ * August sheet: 140 of its 365 branches were empty, and a stock report that is 38% empty rows is
+ * harder to read, not more complete. Only branches actually holding something are listed.
+ *
+ * "EMPTY" MEANS NO UNITS, NEVER ZERO VALUE. The EGP figure is units x the price this scope sold
+ * that product for, so a product that is HELD but never SOLD in the period has no derived price and
+ * values at zero while the packs are really on the shelf. Keying the drop on value would delete
+ * exactly that stock, silently. On the August data the two predicates happen to agree (0 branches
+ * carry units at zero value), which is precisely why a later change could swap them and see nothing
+ * break — so the test pins a branch with units and no price as KEPT.
+ *
+ * An area or region left with no branches is dropped with them: a heading over nothing is noise,
+ * and its own total would be zero.
+ *
+ * UNITS ACROSS PRODUCTS ARE NEVER ADDED (owner rule). Each product keeps its own units column;
+ * the only figure that closes a row, an area, a region or the sheet is MONEY, valued at what this
+ * scope actually sold each product for. Summing one product's units DOWN a column is a different
+ * thing and is done — that is the same object in every cell.
+ */
+function drawStockByBranchSheet(workbook: ExcelJS.Workbook, context: SheetContext, sheetPrefix: string): void {
+  const { input } = context;
+  const sheet = workbook.addWorksheet(sanitizeSheetName(`${sheetPrefix}Stock by branch`).slice(0, 31));
+  sheet.views = [{ showGridLines: false }];
+  // 🔴 DO NOT SET `outlineProperties` HERE. It is the natural way to say "my headings sit above
+  // the rows they own", and it produces a workbook Excel REFUSES TO OPEN — which is how this
+  // sheet's first sample reached the owner: "We found a problem with some content".
+  //
+  // ExcelJS 4.4.0 renders the children of <sheetPr> in the wrong order (sheet-properties-xform.js
+  // emits pageSetUpPr before outlinePr), but OOXML's CT_SheetPr is a SEQUENCE — tabColor,
+  // outlinePr, pageSetUpPr. `applyPrint` sets pageSetup.fitToPage, so asking for
+  // outlineProperties as well emits <sheetPr><pageSetUpPr/><outlinePr/></sheetPr> and Excel
+  // DISCARDS THE WHOLE SHEET PART.
+  //
+  // Nothing here catches it: the XML is well-formed, ExcelJS reads its own output back happily,
+  // `scripts/check-workbook-integrity.mjs` reports CLEAN, and CI went green. Only Excel objects,
+  // and only on the sheets carrying an outline group — which is the tell. The weekly Summarized
+  // Report carries the same warning for the same reason.
+  //
+  // What IS needed is outlineLevelRow, ABOVE the deepest level in use: ExcelJS derives a row's
+  // `collapsed` flag as `outlineLevel >= properties.outlineLevelRow` and offers no setter, so the
+  // default of 0 marks every grouped row collapsed while leaving it visible.
+  //
+  // The cost of not setting it is that summaryBelow stays at Excel's default of true, so the +/-
+  // button for a group sits just below the rows it folds rather than on the heading above them.
+  // The grouping itself, and every heading, is unaffected.
+  sheet.properties.outlineLevelRow = 3;
+
+  const reporting = new Set<string>();
+  for (const row of context.rawRows) {
+    if (num(row.stockUnits) !== 0) reporting.add(row.distributorName || row.distributorCode);
+  }
+  const rows = context.rawRows.filter((row) => reporting.has(row.distributorName || row.distributorCode));
+
+  // Only products that are actually held somewhere in scope. A column of zeros across every branch
+  // in the line is a column the eye has to cross and learn nothing from.
+  const held = new Set<string>();
+  for (const row of rows) if (num(row.stockUnits) !== 0) held.add(row.productCode);
+  const products = context.products.filter((product) => held.has(product.code));
+
+  type Branch = {
+    area: string;
+    branch: string;
+    distributor: string;
+    region: string;
+    units: Map<string, number>;
+    value: number;
+  };
+  /** One definition of a branch's identity, so the build and the drop below cannot disagree. */
+  const entryKeyOf = (entry: { area: string; branch: string; distributor: string; region: string }) =>
+    [entry.distributor, entry.branch, entry.region, entry.area].join("||");
+  const byKey = new Map<string, Branch>();
+  for (const row of rows) {
+    const region = regionOf(input, row);
+    const area = areaLabel(input, row);
+    const branch = row.branchName || row.branchCode;
+    const distributor = row.distributorName || row.distributorCode;
+    const key = entryKeyOf({ area, branch, distributor, region });
+    let entry = byKey.get(key);
+    if (!entry) {
+      entry = { area, branch, distributor, region, units: new Map(), value: 0 };
+      byKey.set(key, entry);
+    }
+    const units = num(row.stockUnits);
+    if (units !== 0) entry.units.set(row.productCode, (entry.units.get(row.productCode) ?? 0) + units);
+  }
+  for (const entry of byKey.values()) {
+    let value = 0;
+    for (const [code, units] of entry.units) value += units * (context.unitPrice.get(code) ?? 0);
+    entry.value = value;
+    // Owner, 2026-09-08: a branch holding nothing is not listed. Keyed on the UNITS map, which only
+    // ever gains a key when a non-zero stock figure arrives — never on `value`, which can be zero
+    // for stock that is genuinely there (see the note above the function).
+    if (entry.units.size === 0) byKey.delete(entryKeyOf(entry));
+  }
+
+  // region -> area -> branches, each level ordered by the money it holds so the biggest problem is
+  // the first thing on the page.
+  // byKey now holds only branches that carry stock, so an area or region that ends up absent here
+  // simply has none — there is no heading to print and no total to print under it.
+  const regions = new Map<string, Map<string, Branch[]>>();
+  for (const entry of byKey.values()) {
+    let areas = regions.get(entry.region);
+    if (!areas) regions.set(entry.region, (areas = new Map()));
+    const list = areas.get(entry.area);
+    if (list) list.push(entry);
+    else areas.set(entry.area, [entry]);
+  }
+  const money = (list: Branch[]) => list.reduce((sum, entry) => sum + entry.value, 0);
+  const NO_AREA = "Region level (no single area)";
+  const orderedRegions = [...regions.entries()].sort(
+    (left, right) => money([...right[1].values()].flat()) - money([...left[1].values()].flat()),
+  );
+
+  const FIRST_PRODUCT = 3;
+  const totalColumn = FIRST_PRODUCT + products.length;
+  const columns = totalColumn;
+
+  // Row 5: one band per product, over its single units column.
+  const spans: { name: string; from: number; to: number }[] = [];
+  products.forEach((product, index) => {
+    const column = FIRST_PRODUCT + index;
+    spans.push({ name: product.name, from: column, to: column });
+    const cell = sheet.getCell(GROUP_ROW, column);
+    cell.value = product.name;
+    cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEAD_SOFT } };
+    cell.border = { bottom: { style: "thin", color: { argb: RULE_STRONG } } };
+  });
+  sheet.getCell(GROUP_ROW, totalColumn).value = "Stock value (EGP)";
+  styleHeader(sheet.getCell(GROUP_ROW, totalColumn), true, true);
+
+  // Row 6: the header.
+  ["Branch", "Distributor"].forEach((label, index) => {
+    const cell = sheet.getCell(HEADER_ROW, index + 1);
+    cell.value = label;
+    styleHeader(cell, false);
+  });
+  // The band above already names the product, so the header says what the NUMBER is. It has to,
+  // because the last column on the row is money and every column before it is not.
+  products.forEach((_product, index) => {
+    const cell = sheet.getCell(HEADER_ROW, FIRST_PRODUCT + index);
+    cell.value = "Units";
+    styleHeader(cell, true);
+  });
+  const totalHeader = sheet.getCell(HEADER_ROW, totalColumn);
+  totalHeader.value = "EGP";
+  styleHeader(totalHeader, true);
+
+  const unitsOf = (entry: Branch, code: string) => Math.round(entry.units.get(code) ?? 0);
+  const heat: { row: number; value: number }[] = [];
+  let row = FIRST_DATA_ROW;
+
+  /** A figure row: per-product units, closed by money. Used by every level of the section. */
+  const writeNumbers = (line: number, get: (code: string) => number, value: number, bold: boolean, zebra: boolean) => {
+    products.forEach((product, index) => {
+      const column = FIRST_PRODUCT + index;
+      const units = get(product.code);
+      const cell = sheet.getCell(line, column);
+      cell.value = units;
+      cell.numFmt = F_UNITS;
+      cell.font = { name: "Calibri", size: 10, bold, color: { argb: units === 0 ? FAINT : INK } };
+      cell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
+      if (zebra) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ZEBRA } };
+    });
+    const cell = sheet.getCell(line, totalColumn);
+    cell.value = Math.round(value);
+    cell.numFmt = F_VALUE;
+    cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: value === 0 ? FAINT : INK } };
+    cell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
+    if (zebra) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ZEBRA } };
+  };
+
+  for (const [regionName, areas] of orderedRegions) {
+    const regionBranches = [...areas.values()].flat();
+
+    // ── the region band ──────────────────────────────────────────────────────
+    const regionRow = row;
+    sheet.mergeCells(regionRow, 1, regionRow, 2);
+    const regionCell = sheet.getCell(regionRow, 1);
+    regionCell.value = regionName;
+    regionCell.font = { name: "Calibri", size: 11, bold: true, color: { argb: INK } };
+    regionCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+    const regionTotals = (code: string) => regionBranches.reduce((sum, entry) => sum + unitsOf(entry, code), 0);
+    writeNumbers(regionRow, regionTotals, money(regionBranches), true, false);
+    for (let column = 1; column <= columns; column += 1) {
+      const cell = sheet.getCell(regionRow, column);
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEAD } };
+      cell.border = {
+        ...(cell.border ?? {}),
+        bottom: { style: "medium", color: { argb: ACCENT } },
+        top: { style: "medium", color: { argb: ACCENT } },
+      };
+    }
+    sheet.getRow(regionRow).height = 20;
+    row += 1;
+
+    // Areas biggest first, with the branches that belong to no single area always LAST — they are
+    // the key accounts and wholesale depots, and they are the least useful thing to open on.
+    const orderedAreas = [...areas.entries()].sort((left, right) => {
+      if (left[0] === NO_AREA) return 1;
+      if (right[0] === NO_AREA) return -1;
+      return money(right[1]) - money(left[1]);
+    });
+
+    for (const [areaName, branches] of orderedAreas) {
+      // ── the area sub-heading ───────────────────────────────────────────────
+      const areaRow = row;
+      sheet.mergeCells(areaRow, 1, areaRow, 2);
+      const areaCell = sheet.getCell(areaRow, 1);
+      areaCell.value = areaName;
+      areaCell.font = { name: "Calibri", size: 10, bold: true, color: { argb: areaName === NO_AREA ? SUB : INK } };
+      areaCell.alignment = { vertical: "middle", horizontal: "left", indent: 2 };
+      const areaTotals = (code: string) => branches.reduce((sum, entry) => sum + unitsOf(entry, code), 0);
+      writeNumbers(areaRow, areaTotals, money(branches), true, false);
+      for (let column = 1; column <= columns; column += 1) {
+        const cell = sheet.getCell(areaRow, column);
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEAD_SOFT } };
+        cell.border = { ...(cell.border ?? {}), bottom: { style: "thin", color: { argb: RULE_STRONG } } };
+      }
+      sheet.getRow(areaRow).outlineLevel = 1;
+      row += 1;
+
+      // ── the branches ───────────────────────────────────────────────────────
+      // Holding something first, biggest first; the empty ones fall to the bottom of their own area
+      // rather than being scattered through it.
+      const ordered = [...branches].sort((left, right) => right.value - left.value || left.branch.localeCompare(right.branch));
+      ordered.forEach((entry, index) => {
+        const line = row;
+        const zebra = index % 2 === 1;
+        const nameCell = sheet.getCell(line, 1);
+        nameCell.value = entry.branch;
+        // Every branch here holds something, so the name is always full ink. A zero can still be
+        // printed in an individual PRODUCT cell, and that one keeps the faint treatment.
+        nameCell.font = { name: "Calibri", size: 10, color: { argb: INK } };
+        nameCell.alignment = { vertical: "middle", horizontal: "left", indent: 3 };
+        const distCell = sheet.getCell(line, 2);
+        distCell.value = entry.distributor;
+        distCell.font = { name: "Calibri", size: 10, color: { argb: SUB } };
+        distCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+        if (zebra) {
+          for (const column of [1, 2]) {
+            sheet.getCell(line, column).fill = { type: "pattern", pattern: "solid", fgColor: { argb: ZEBRA } };
+          }
+        }
+        writeNumbers(line, (code) => unitsOf(entry, code), entry.value, false, zebra);
+        sheet.getRow(line).outlineLevel = 2;
+        heat.push({ row: line, value: entry.value });
+        row += 1;
+      });
+    }
+  }
+
+  // ── the sheet total ────────────────────────────────────────────────────────
+  const everything = [...byKey.values()];
+  if (everything.length > 0) {
+    const totalRow = row;
+    sheet.mergeCells(totalRow, 1, totalRow, 2);
+    const label = sheet.getCell(totalRow, 1);
+    label.value = "Total stock on hand";
+    label.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
+    label.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+    writeNumbers(
+      totalRow,
+      (code) => everything.reduce((sum, entry) => sum + unitsOf(entry, code), 0),
+      money(everything),
+      true,
+      false,
+    );
+    for (let column = 1; column <= columns; column += 1) {
+      const cell = sheet.getCell(totalRow, column);
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TOTAL_BG } };
+      cell.border = { ...(cell.border ?? {}), top: { style: "thin", color: { argb: RULE_STRONG } } };
+    }
+    row += 1;
+  }
+
+  // The heaviest branches get the warm wash on their money column, the same one the rest of the
+  // book uses to say "this row is large" — it is data, not decoration.
+  const ranked = heat.filter((entry) => entry.value > 0).sort((left, right) => right.value - left.value);
+  const strongRows = new Set(ranked.slice(0, Math.ceil(ranked.length * 0.1)).map((entry) => entry.row));
+  const softRows = new Set(ranked.slice(Math.ceil(ranked.length * 0.1), Math.ceil(ranked.length * 0.3)).map((entry) => entry.row));
+  for (const entry of heat) {
+    const shade = strongRows.has(entry.row) ? HEAT_TOP : softRows.has(entry.row) ? HEAT_MID : null;
+    if (shade) sheet.getCell(entry.row, totalColumn).fill = { type: "pattern", pattern: "solid", fgColor: { argb: shade } };
+  }
+
+  const floor = new Map<number, number>();
+  autofit(sheet, columns, HEADER_ROW, row - 1, floor);
+  // A merged band is never measured by autofit, so give a product column whatever its own name needs.
+  for (const span of spans) {
+    const column = sheet.getColumn(span.to);
+    const need = widthOf(span.name, 10) * 0.62;
+    if ((column.width ?? 0) < need) column.width = Math.round(need * 10) / 10;
+  }
+  sheet.getRow(GROUP_ROW).height = 30;
+
+  // A rule down each side of every product's column — the owner asked for these by name on the
+  // other grids, and this one is just as wide.
+  for (const span of spans) {
+    for (let line = GROUP_ROW; line <= row - 1; line += 1) {
+      addSide(sheet.getCell(line, span.from), "left");
+      addSide(sheet.getCell(line, span.to), "right");
+    }
+  }
+
+  const named = [...reporting].sort();
+  const note =
+    named.length > 0
+      ? `branches holding stock, from the distributors that send a stock column - ${named.join(", ")}; a branch holding nothing is not listed, and distributors that report no stock at all are not on this sheet`
+      : "no distributor in this scope reports stock on hand";
+  paintMasthead(sheet, columns, "Stock on hand, by branch", context.scopeLine, context.headline, note);
+
+  sheet.views = [{ state: "frozen", xSplit: 2, ySplit: HEADER_ROW, showGridLines: false }];
+  applyPrint(sheet, columns, row - 1);
+}
+
 function buildTabSet(
   workbook: ExcelJS.Workbook,
   input: NsmDsmWorkbookInput,
   rows: Split[],
+  rawRows: WeeklyFactExportRow[],
   sheetPrefix: string,
   lineLabel: string | null,
 ): void {
@@ -1615,6 +1945,7 @@ function buildTabSet(
   const context: SheetContext = {
     input,
     rows,
+    rawRows,
     products,
     weekNumbers,
     weekLabel,
@@ -1633,5 +1964,7 @@ function buildTabSet(
   drawSummarySheet(workbook, context, sheetPrefix);
   for (const tab of ["area", "branch", "dist"] as TabKey[]) drawFlatSheet(workbook, tab, context, sheetPrefix);
   drawRankedSheet(workbook, context, sheetPrefix);
-  for (const tab of ["stock", "details"] as TabKey[]) drawFlatSheet(workbook, tab, context, sheetPrefix);
+  drawFlatSheet(workbook, "stock", context, sheetPrefix);
+  drawStockByBranchSheet(workbook, context, sheetPrefix);
+  drawFlatSheet(workbook, "details", context, sheetPrefix);
 }

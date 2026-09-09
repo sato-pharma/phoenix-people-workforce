@@ -36,14 +36,10 @@ import process from "node:process";
 // governorate spelling comes from the same pure modules the app itself calls, so this script and
 // the running site can never disagree about where a candidate belongs. See the block comment
 // above `sanitize` for the drift that made this non-negotiable.
-import { candidateFolderKindLabels } from "@/lib/recruitment/candidate-folder";
-import { inferCandidatePlacement } from "@/lib/recruitment/candidate-folder-inference";
-import { candidateRegionLabels } from "@/lib/recruitment/candidate-region";
-import {
-  driveFolderPathFor,
-  driveInferredFolderPath,
-  sanitizeDriveSegment,
-} from "@/lib/recruitment/drive-cv-folders";
+import { CABINET_ROOT_NAME, cabinetPathFor } from "@/lib/recruitment/drive-cabinet-folders";
+import { sanitizeDriveSegment } from "@/lib/recruitment/drive-cv-folders";
+import { REMOVED_FROM_DRIVE_BY_HAND } from "@/lib/recruitment/drive-cv-mirror";
+import { ensureFolderPath } from "@/lib/recruitment/drive-tree";
 
 // ── env ──────────────────────────────────────────────────────────────────────────────────────────
 // Loaded by hand rather than via a dependency: this script has to run from a bare worktree, where
@@ -113,8 +109,6 @@ async function downloadFromStorage(objectPath) {
 }
 
 // ── Google Drive ─────────────────────────────────────────────────────────────────────────────────
-const DRIVE_ROOT_NAME = (process.env.GOOGLE_DRIVE_RECRUITMENT_ROOT_NAME ?? "Phoenix CVs").trim() || "Phoenix CVs";
-const FOLDER_MIME = "application/vnd.google-apps.folder";
 let driveToken = null;
 
 async function getDriveToken() {
@@ -145,54 +139,6 @@ async function getDriveToken() {
   const data = JSON.parse(text);
   driveToken = { expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000, token: data.access_token };
   return driveToken.token;
-}
-
-function escapeQuery(value) {
-  return String(value ?? "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
-const folderCache = new Map();
-
-async function findOrCreateFolder(name, parentId) {
-  const q = `name = '${escapeQuery(name)}' and '${escapeQuery(parentId)}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`;
-  const token = await getDriveToken();
-  const listRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=10&spaces=drive`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  if (listRes.ok) {
-    const found = (await listRes.json()).files?.[0]?.id;
-    if (found) return found;
-  }
-  const createRes = await fetch("https://www.googleapis.com/drive/v3/files?fields=id", {
-    body: JSON.stringify({ mimeType: FOLDER_MIME, name, parents: [parentId] }),
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    method: "POST",
-  });
-  if (!createRes.ok) throw new Error(`folder create ${createRes.status}: ${(await createRes.text()).slice(0, 200)}`);
-  return (await createRes.json()).id;
-}
-
-async function ensureFolderPath(segments) {
-  let parentId = folderCache.get(" root");
-  if (!parentId) {
-    parentId = process.env.GOOGLE_DRIVE_RECRUITMENT_FOLDER_ID || (await findOrCreateFolder(DRIVE_ROOT_NAME, "root"));
-    folderCache.set(" root", parentId);
-  }
-  const walked = [];
-  for (const segment of segments) {
-    walked.push(segment);
-    const key = walked.join("/");
-    const cached = folderCache.get(key);
-    if (cached) {
-      parentId = cached;
-      continue;
-    }
-    const id = await findOrCreateFolder(segment, parentId);
-    folderCache.set(key, id);
-    parentId = id;
-  }
-  return parentId;
 }
 
 /**
@@ -281,52 +227,60 @@ function driveFileName(candidate, mimeType, originalName) {
 }
 
 /**
- * Where a candidate goes when nothing was declared - the caveated shelf, never the confirmed tree.
- * The reading and the path are both live functions; this only assembles the input columns.
+ * Where a CV belongs in Drive — the CABINET path, rooted, exactly as the live mirror writes it.
+ *
+ * THIS SCRIPT USED TO ANSWER A DIFFERENT QUESTION FROM THE APP, AND `--refile` ACTS ON THE ANSWER.
+ * The cabinet shipped in #3454: `drive-cv-mirror.ts` moved to `cabinetPathFor` and began recording
+ * `drive_mirror_path` as `Phoenix CV Cabinet/...`. This script was not moved with it and went on
+ * computing the OLD `drive-cv-folders` tree, so `--verify` compared a cabinet path against an
+ * old-tree path, disagreed on most of the library, and printed "in the WRONG folder <- run with
+ * --refile". Measured on production 2026-09-08: 913 of 1,171 mirrored CVs, not one of them
+ * actually misfiled.
+ *
+ * `--refile` acts on that same comparison and rewrites `drive_mirror_path` as it goes, so running
+ * it would have moved all 913 back out of the cabinet — the reorganisation undone by the tool built
+ * to check it, on the tool's own printed advice. Nothing caught it because each half was correct on
+ * its own; only asking both the same question exposes it.
+ *
+ * So there is deliberately no local copy of the foldering rule here any more, and none should be
+ * reintroduced: this imports the function the running site uses, which is the only way the two
+ * cannot drift apart again.
+ *
+ * ── TWO SHAPES, AND CONFLATING THEM BUILT A SECOND CABINET ──────────────────────────────────────
+ *
+ * The rooted form and the Drive form are NOT interchangeable, and the first version of this fix
+ * used one array for both.
+ *
+ *   `driveSegments`  UNROOTED — what Drive is given. `ensureFolderPath` is IMPORTED FROM THE APP
+ *                    (`drive-tree.ts`) and starts at `ensureRootFolder()`, which IS the cabinet.
+ *                    This script used to carry its OWN copy, rooted at
+ *                    `GOOGLE_DRIVE_RECRUITMENT_FOLDER_ID || "Phoenix CVs"` — the FROZEN tree — so a
+ *                    `--refile` wrote the cabinet path into the database and put the FILE in the old
+ *                    tree. Measured on production 2026-09-09: 32 CVs filed into
+ *                    `Phoenix CVs/Medical Representative/<region>` while every count read clean,
+ *                    because `--verify` compares the stored STRING. Two roots, two names for the
+ *                    same idea, and only one of them was the cabinet. Handing it a
+ *                    rooted array makes it create a folder named "Phoenix CV Cabinet" INSIDE the
+ *                    cabinet and file everything one level too deep.
+ *   `storedPathKey`  ROOTED — what `drive_mirror_path` records. The prefix is the cutover safety
+ *                    property: without it a legacy path in the frozen `Phoenix CVs` tree is
+ *                    indistinguishable from a cabinet path, and the mirror would empty the old tree
+ *                    one candidate at a time.
+ *
+ * `drive-cv-mirror.ts` has always kept them apart — `path` to `moveDriveFile`, `pathKey` to the
+ * database — and this now matches it exactly.
+ *
+ * Measured on production 2026-09-08: a `--refile` run passing the rooted array created a SECOND
+ * "Phoenix CV Cabinet" and moved 264 CVs into it. Every check passed while it happened, because
+ * `--verify` compares `drive_mirror_path` as a STRING: the string was right, the folder it named
+ * was a different folder with the same name.
  */
-function inferredPathFor(candidate) {
-  const placement = inferCandidatePlacement({
-    address: candidate.address,
-    governorate: candidate.governorate,
-    preferredRegionCode: candidate.preferred_region_code,
-    sentForRegion: candidate.sent_for_region,
-  });
-  return driveInferredFolderPath(placement);
+function cabinetDriveSegments(candidate, areaRegions) {
+  return cabinetPathFor(candidate, areaRegions);
 }
 
-function folderPathFor(candidate, areaRegions) {
-  // A hand-filed candidate outranks anything derived — same rule as the live module.
-  if (candidate.folder_kind && candidate.folder_key && candidateFolderKindLabels[candidate.folder_kind]) {
-    return pathForShelf(candidate.folder_kind, candidate.folder_key, areaRegions);
-  }
-  // Only a candidate who ANSWERED reaches the confirmed tree. `applied_for_job_title` alone is three times in four
-  // the extractor's guess, not a stated intent — filing on it is what candidate-folder-suggestion.ts
-  // exists to refuse.
-  if (!candidate.preferences_declared_at) return inferredPathFor(candidate);
-  if (String(candidate.status ?? "").toLowerCase() === "rejected") return inferredPathFor(candidate);
-
-  const title = String(candidate.applied_for_job_title ?? "").trim();
-  if (!title) return inferredPathFor(candidate);
-  const lower = title.toLowerCase();
-
-  if (/medical\s*rep|\bmr\b|مندوب/.test(lower)) {
-    const area = String(candidate.preferred_area_name ?? "").trim();
-    return area ? pathForShelf("medical_rep", area, areaRegions) : inferredPathFor(candidate);
-  }
-  if (/district\s*manager|\bdm\b/.test(lower)) {
-    const code = String(candidate.preferred_region_code ?? "").trim().toUpperCase();
-    return candidateRegionLabels[code]
-      ? pathForShelf("district_manager", code, areaRegions)
-      : inferredPathFor(candidate);
-  }
-  return pathForShelf("other", title, areaRegions);
-}
-
-// An empty `label` is deliberate: `driveFolderPathFor` then asks `candidateFolderLabel`, which
-// is the same resolution the app performs — a region code becomes its region name, and every
-// other kind keeps the key verbatim.
-function pathForShelf(kind, key, areaRegions) {
-  return driveFolderPathFor({ key, kind, label: "" }, areaRegions);
+function cabinetStoredPathKey(candidate, areaRegions) {
+  return [CABINET_ROOT_NAME, ...cabinetDriveSegments(candidate, areaRegions)].join("/");
 }
 
 // ── run ──────────────────────────────────────────────────────────────────────────────────────────
@@ -376,7 +330,7 @@ async function main() {
         continue;
       }
       const candidates = await rest(
-        `ats_candidates?select=id,full_name,phone,whatsapp,status,applied_for_job_title,preferred_area_name,preferred_region_code,preferences_declared_at,folder_kind,folder_key,governorate,address,sent_for_region&id=eq.${file.candidate_id}`,
+        `ats_candidates?select=id,full_name,phone,whatsapp,status,applied_for_job_title,current_job_title,declared_background,faculty,sent_for_job_title,preferred_area_name,preferred_region_code,preferences_declared_at,folder_kind,folder_key,governorate,address,sent_for_region&id=eq.${file.candidate_id}`,
       );
       const candidate = candidates[0];
       if (!candidate) {
@@ -384,9 +338,10 @@ async function main() {
         continue;
       }
 
-      const segments = folderPathFor(candidate, areaRegions);
+      // UNROOTED for Drive, ROOTED for the database. See cabinetDriveSegments.
+      const segments = cabinetDriveSegments(candidate, areaRegions);
       const name = driveFileName(candidate, file.mime_type, file.file_name);
-      const key = segments.join("/");
+      const key = cabinetStoredPathKey(candidate, areaRegions);
       if (!REFILE || file.drive_mirror_path !== key) {
         treePreview.set(key, (treePreview.get(key) ?? 0) + 1);
       }
@@ -518,8 +473,12 @@ async function verifyMirror(areaRegions) {
   // grows to several hundred, so the chunk size here is a correctness limit, not a tuning knob.
   const wanted = [...new Set(rows.map((f) => f.candidate_id).filter(Boolean))];
   const byId = new Map();
+  // `current_job_title` and `sent_for_job_title` are the two rungs of the cabinet's title ladder
+  // that the old tree never read. Omitting either silently drops a candidate to a lower rung, so
+  // the verifier would report a correctly filed CV as misfiled — the exact failure this fixes.
   const SELECT =
-    "id,full_name,status,applied_for_job_title,preferred_area_name,preferred_region_code," +
+    "id,full_name,status,applied_for_job_title,current_job_title,declared_background,faculty,sent_for_job_title," +
+    "preferred_area_name,preferred_region_code," +
     "preferences_declared_at,folder_kind,folder_key,governorate,address,sent_for_region";
   for (let at = 0; at < wanted.length; at += 50) {
     const chunk = wanted.slice(at, at + 50);
@@ -527,10 +486,21 @@ async function verifyMirror(areaRegions) {
     for (const candidate of page) byId.set(candidate.id, candidate);
   }
 
-  const stats = { errored: 0, misfiled: 0, mirrored: 0, notMirrored: 0, orphanCandidate: 0, total: rows.length };
+  const stats = {
+    errored: 0,
+    misfiled: 0,
+    mirrored: 0,
+    notMirrored: 0,
+    orphanCandidate: 0,
+    removedByHand: 0,
+    total: rows.length,
+  };
   const moves = new Map();
   for (const file of rows) {
-    if (file.drive_mirror_error) stats.errored += 1;
+    // A CV somebody binned in Drive is a STATE, not a failed attempt. Counting it as an error made
+    // the report say "run with --retry", which would re-upload a file that was deleted on purpose.
+    if (file.drive_mirror_error === REMOVED_FROM_DRIVE_BY_HAND) stats.removedByHand += 1;
+    else if (file.drive_mirror_error) stats.errored += 1;
     if (!file.drive_mirror_file_id) {
       stats.notMirrored += 1;
       continue;
@@ -541,7 +511,7 @@ async function verifyMirror(areaRegions) {
       stats.orphanCandidate += 1;
       continue;
     }
-    const expected = folderPathFor(candidate, areaRegions).join("/");
+    const expected = cabinetStoredPathKey(candidate, areaRegions);
     if (expected !== file.drive_mirror_path) {
       stats.misfiled += 1;
       const key = `${file.drive_mirror_path || "(nowhere)"}  ->  ${expected}`;
@@ -554,6 +524,10 @@ async function verifyMirror(areaRegions) {
   console.log(`  mirrored into Drive           ${stats.mirrored}`);
   console.log(`  NOT mirrored yet              ${stats.notMirrored}${stats.notMirrored ? "   <- run without --verify" : ""}`);
   console.log(`  last attempt errored          ${stats.errored}${stats.errored ? "   <- run with --retry" : ""}`);
+  console.log(
+    `  deleted in Drive by hand      ${stats.removedByHand}`
+      + `${stats.removedByHand ? "   <- left alone on purpose, nothing to do" : ""}`,
+  );
   console.log(`  in the WRONG folder           ${stats.misfiled}${stats.misfiled ? "   <- run with --refile" : ""}`);
   console.log(`  file has no candidate row     ${stats.orphanCandidate}`);
   if (moves.size) {

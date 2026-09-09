@@ -250,14 +250,29 @@ policy):
    One row is deliberately **Simple** rather than a cron expression: it is pinged on an interval,
    not at a wall-clock time.
 
+   Two rows are marked **in-house only**. They are declared here and in `JOB_SCHEDULES` like every
+   other job — the heartbeat register watches them and alerts in-app, Telegram and push when one
+   stops reporting — but `scripts/healthchecks-sync.mjs` deliberately does not push them to
+   Healthchecks. The project is at its check limit, creating a further check answers HTTP 403 with
+   an empty body, and the owner has ruled out raising the plan (2026-09-08). Without the marker the
+   sync reports two permanent `CREATE … FAILED` lines for jobs that are working perfectly, which is
+   the "always red, so ignored" failure this whole page exists to prevent.
+
+   The marker withholds the external push, never the watch. What is given up is the outside observer
+   for those two jobs specifically — and "is Phoenix alive?" is already answered within minutes by
+   `phoenix-inbound-intake` (2m), `phoenix-process-notifications` (5m) and
+   `phoenix-ireports360-live-poll` (5m), which is why a daily and a monthly job are the right two to
+   leave off. **To give one its slot back:** free a check in the Healthchecks project or raise the
+   plan, delete `· **in-house only**` from its row, and re-run the sync with `--apply`.
+
    | Check slug | Cron expression | Suggested grace | What actually pings it |
    |---|---|---|---|
    | `phoenix-notify-daily` | `36 6 * * *` | 1h | cron-job.org job `8200909` |
    | `phoenix-marketing-field-capture-nudge` | `50 6 * * *` | 1h | cron-job.org job `8348773` |
    | `phoenix-marketing-invoice-overdue-nudge` | `5 7 * * *` | 1h | cron-job.org job `8350529` |
    | `phoenix-distributor-upload-overdue-nudge` | `20 7 * * *` | 1h | cron-job.org job `8375333` |
-   | `phoenix-retention-risk-sweep` | `40 7 * * *` | 1h | cron-job.org job `8397172` |
-   | `phoenix-retention-risk-pre-payroll` | `45 7 25 * *` | 2h | cron-job.org job `8397174` |
+   | `phoenix-retention-risk-sweep` | `40 7 * * *` | 1h | cron-job.org job `8397172` · **in-house only** |
+   | `phoenix-retention-risk-pre-payroll` | `45 7 25 * *` | 2h | cron-job.org job `8397174` · **in-house only** |
    | `phoenix-mailbox-offboarding-sweep` | `15 8 * * *` | 1h | cron-job.org job `8350624` |
    | `phoenix-process-notifications` | `*/5 * * * *` | 10m | cron-job.org job `8200914` |
    | `phoenix-background-jobs` | `0 3 * * 5` | 2h | cron-job.org job `8200915` |
@@ -511,14 +526,16 @@ silence.
 
 ### p95 latency: obsolete
 
-There used to be a log-based metric (`phoenix_hr_production_request_latencies`, applied via
-`scripts/scope-p95-latency-alert-to-production-revision.py`) that excluded deploy-time smoke-test
-traffic from the p95 that paged the owner. It existed because `deploy-cloud-run.yml` smoke-tested
-each new revision through a no-traffic `sha-<8hex>` tag URL, and those cold-start hits polluted the
-raw Cloud Run latency metric.
+There used to be a log-based metric (`phoenix_hr_production_request_latencies`, applied via a script
+now deleted) that excluded deploy-time smoke-test traffic from the p95 that paged the owner. It
+existed because the since-deleted Cloud Run deploy workflow smoke-tested each new revision through a no-traffic
+`sha-<8hex>` tag URL, and those cold-start hits polluted the raw Cloud Run latency metric.
 
 **Both halves of that are gone**: there is no no-traffic tag deploy on Railway, and the alert it
-protected is dead with GCP Monitoring. The script is left in the repo but cannot run.
+protected is dead with GCP Monitoring. `scripts/scope-p95-latency-alert-to-production-revision.py`
+was deleted on 2026-09-08 — it had been kept as a dead file, and Semgrep flagged two findings in it,
+which is a poor reason to carry code that authenticates to a billing-closed project. Recover it from
+git history if the reasoning is ever wanted; the account above is the part worth keeping.
 
 ## Synthetic journeys
 
