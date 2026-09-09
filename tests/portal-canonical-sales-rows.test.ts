@@ -179,7 +179,7 @@ export function runPortalCanonicalSalesRowsTests() {
     "portal territory must label the merged Pedia row as 'Fayoum - Beni Suef' via getMergedAreaName",
   );
   assert.equal(
-    getMergedAreaName("pedia", "GZ6"),
+    getMergedAreaName("pedia", "GZ6", "2026-08"),
     "Fayoum - Beni Suef",
     "Pedia's merged GZ6 row carries the combined Fayoum - Beni Suef name",
   );

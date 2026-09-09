@@ -149,7 +149,7 @@ export function runCanonicalDashboardRowsTests() {
     "dashboard territory must label the merged Pedia row as 'Fayoum - Beni Suef' via getMergedAreaName",
   );
   assert.equal(
-    getMergedAreaName("pedia", "GZ6"),
+    getMergedAreaName("pedia", "GZ6", "2026-08"),
     "Fayoum - Beni Suef",
     "Pedia's merged GZ6 row carries the combined Fayoum - Beni Suef name",
   );
@@ -164,17 +164,17 @@ export function runCanonicalDashboardRowsTests() {
   // - Beni Suef" (GZ6) option MUST expand a GZ6 selection back to both codes before it queries, or
   // Beni Suef's numbers silently vanish. Every non-merged code, and every other line, is untouched.
   assert.deepEqual(
-    expandAreaCodeForLine("pedia", "GZ6").sort(),
+    expandAreaCodeForLine("pedia", "GZ6", "2026-08").sort(),
     ["GZ6", "UE9"],
     "Pedia's merged GZ6 expands to both real codes so a filter on it never drops Beni Suef",
   );
   assert.deepEqual(
-    expandAreaCodeForLine("pedia", "UE9"),
+    expandAreaCodeForLine("pedia", "UE9", "2026-08"),
     ["UE9"],
     "the folded-away code is not itself a keep-code — it expands to just itself",
   );
   assert.deepEqual(
-    expandAreaCodeForLine("pedia", "gz6"),
+    expandAreaCodeForLine("pedia", "gz6", "2026-08"),
     ["GZ6", "UE9"],
     "input casing does not matter — codes come back upper-cased",
   );
@@ -195,12 +195,12 @@ export function runCanonicalDashboardRowsTests() {
     "Anti Infective never merges Fayoum and Beni Suef",
   );
   assert.deepEqual(
-    expandAreaCodeForLine("pedia", "CA3"),
+    expandAreaCodeForLine("pedia", "CA3", "2026-08"),
     ["CA3"],
     "an unrelated area is returned unchanged",
   );
   assert.deepEqual(
-    expandAreaCodesForLine("pedia", ["GZ6", "CA3", "GZ6"]).sort(),
+    expandAreaCodesForLine("pedia", ["GZ6", "CA3", "GZ6"], "2026-08").sort(),
     ["CA3", "GZ6", "UE9"],
     "the plural form expands each code and de-duplicates",
   );
@@ -210,7 +210,7 @@ export function runCanonicalDashboardRowsTests() {
     { areaCode: "GZ6", areaName: "Fayoum" },
     { areaCode: "UE9", areaName: "Beni Suef" },
     { areaCode: "CA3", areaName: "Cairo Centers" },
-  ]);
+  ], "2026-08");
   assert.deepEqual(
     pediaOptions.map((a) => a.areaCode),
     ["GZ6", "CA3"],

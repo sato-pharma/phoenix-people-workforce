@@ -389,7 +389,7 @@ export function runWeeklyPlanRegionAreasTests() {
   // applies foldAreaOptionsForLine to the seat list before returning it; this pins the exact call
   // it makes (the picker keys on name, so folding the seat list folds both picker paths and the
   // submit-time area check at once).
-  const foldedPedia = foldAreaOptionsForLine("pedia", PEDIA_GZ_SEATS_RAW);
+  const foldedPedia = foldAreaOptionsForLine("pedia", PEDIA_GZ_SEATS_RAW, "2026-08");
   assert.deepEqual(
     foldedPedia.map((seat) => seat.areaName).sort(),
     ["Fayoum - Beni Suef", "Haram - Faisal"],

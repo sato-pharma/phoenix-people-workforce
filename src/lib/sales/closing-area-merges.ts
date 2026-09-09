@@ -48,19 +48,37 @@ export type ClosingAreaMergeRule = {
    * the date it starts, and everything before it renders exactly as it was published.
    */
   fromPeriod?: string;
+  /**
+   * LAST period the merge applies to, inclusive, as `YYYY-MM`. Absent means it never ends.
+   *
+   * The mirror of `fromPeriod` and it exists for the same reason: a merge that STOPS rewrites a
+   * published month just as surely as one that starts. Ending a rule on the month it last applied
+   * leaves every closing already sent rendering exactly as it was sent.
+   */
+  untilPeriod?: string;
 };
 
 /**
- * The ONLY lines whose area rows are folded into one. Pedia folds Fayoum (GZ6) + Beni Suef (UE9) in
- * every period; CNS folds the same pair from 2026-08.
+ * The ONLY lines whose area rows are folded into one. Pedia folds Fayoum (GZ6) + Beni Suef (UE9)
+ * UP TO AND INCLUDING 2026-08; CNS folds the same pair from 2026-08 onwards.
  *
- * ADDING A LINE HERE MERGES THAT LINE'S AREA ROWS — ask the owner first, every time. CNS has been
- * both ways: merged, removed on 2026-08-30 at his instruction, then merged again from August on
- * 2026-09-07. Give a rule added after a line has been published a `fromPeriod`, or it silently
- * rewrites months that have already been sent out.
+ * 🔒 PEDIA SEPARATES FROM SEPTEMBER — owner, 2026-09-09: "fayoum separate area and banisuef
+ * separate area but august closing not affected starting from september". It arrived in the same
+ * breath as the Upper Egypt split, which gives Beni Suef its own rep seat in Upper Egypt 1 from the
+ * same date, so the organogram and the closing now say the same thing about them.
+ *
+ * 🔴 CNS IS DELIBERATELY UNTOUCHED. Its merge was removed on 2026-08-30 at his instruction and put
+ * back from August on 2026-09-07, and he has said "only Pedia" three times about this change.
+ * Ending CNS's merge too would reverse a decision two days old that he has not revisited.
+ *
+ * ADDING A LINE HERE MERGES THAT LINE'S AREA ROWS — ask the owner first, every time. Give a rule
+ * added after a line has been published a `fromPeriod`, and one withdrawn after publication an
+ * `untilPeriod`, or it silently rewrites months that have already been sent out.
  */
 const CLOSING_AREA_MERGES: Record<string, ClosingAreaMergeRule[]> = {
-  pedia: [{ keepAreaCode: "GZ6", mergeAreaCode: "UE9", mergedAreaName: "Fayoum - Beni Suef" }],
+  pedia: [
+    { keepAreaCode: "GZ6", mergeAreaCode: "UE9", mergedAreaName: "Fayoum - Beni Suef", untilPeriod: "2026-08" },
+  ],
   cns: [
     { keepAreaCode: "GZ6", mergeAreaCode: "UE9", mergedAreaName: "Fayoum - Beni Suef", fromPeriod: "2026-08" },
   ],
@@ -97,9 +115,13 @@ function rulesFor(
   if (rules.length === 0) return rules;
   const asOf = String(period ?? "").trim() === "" ? currentClosingPeriod() : String(period).trim();
   return rules.filter((rule) => {
-    if (!rule.fromPeriod) return true;
+    if (!rule.fromPeriod && !rule.untilPeriod) return true;
+    // A malformed period falls to NOT merging a dated rule, in EITHER direction: showing two rows
+    // that were always real is recoverable, rewriting a published month is not.
     if (!/^\d{4}-\d{2}$/.test(asOf)) return false;
-    return asOf >= rule.fromPeriod;
+    if (rule.fromPeriod && asOf < rule.fromPeriod) return false;
+    if (rule.untilPeriod && asOf > rule.untilPeriod) return false;
+    return true;
   });
 }
 
@@ -307,12 +329,13 @@ export function scopeAndFoldAreaChildren<T extends { areaCode: string }>(
   lineCode: string | null | undefined,
   realAreaCodesInScope: Iterable<string>,
   rows: readonly T[],
+  period?: string | null,
 ): T[] {
   const inScope = new Set([...realAreaCodesInScope].map(up));
   return rows
     .filter((row) => inScope.has(up(row.areaCode)))
     .map((row) => {
-      const folded = foldAreaCodeForLine(lineCode, row.areaCode);
+      const folded = foldAreaCodeForLine(lineCode, row.areaCode, period);
       const areaCode = folded === up(row.areaCode) ? row.areaCode : folded;
       return { ...row, areaCode };
     });

@@ -37,13 +37,14 @@ const ROUTE_SOURCE = readFileSync(
 function selectedForArea(
   rows: readonly { areaCode: string | null; brickId: string; lineCode: string | null }[],
   area: string,
+  period?: string,
 ) {
-  return rows.filter((row) => foldAreaCodeForLine(row.lineCode, row.areaCode ?? "") === area);
+  return rows.filter((row) => foldAreaCodeForLine(row.lineCode, row.areaCode ?? "", period) === area);
 }
 
 export async function runBrickDrilldownFollowsTheAreaMergeTests(): Promise<void> {
   // ── 1. the fold itself, per line ───────────────────────────────────────────────────────────
-  assert.equal(foldAreaCodeForLine("pedia", "UE9"), "GZ6", "Pedia folds Beni Suef into Fayoum");
+  assert.equal(foldAreaCodeForLine("pedia", "UE9", "2026-08"), "GZ6", "Pedia folds Beni Suef into Fayoum");
   assert.equal(
     foldAreaCodeForLine("cns", "UE9"),
     "GZ6",
@@ -62,8 +63,8 @@ export async function runBrickDrilldownFollowsTheAreaMergeTests(): Promise<void>
       "make an Anti Infective row answer a request for Fayoum — corrupting the opposite " +
       "drill-down, which is the mirror-image bug",
   );
-  assert.equal(foldAreaCodeForLine("pedia", "GZ6"), "GZ6", "the surviving code folds to itself");
-  assert.equal(foldAreaCodeForLine("pedia", " ue9 "), "GZ6", "codes are trimmed and upper-cased");
+  assert.equal(foldAreaCodeForLine("pedia", "GZ6", "2026-08"), "GZ6", "the surviving code folds to itself");
+  assert.equal(foldAreaCodeForLine("pedia", " ue9 ", "2026-08"), "GZ6", "codes are trimmed and upper-cased");
 
   // ── 2. the predicate over a realistic mixed set ────────────────────────────────────────────
   const rows = [
@@ -75,20 +76,20 @@ export async function runBrickDrilldownFollowsTheAreaMergeTests(): Promise<void>
   ];
 
   assert.deepEqual(
-    selectedForArea(rows, "GZ6").map((row) => row.brickId).sort(),
+    selectedForArea(rows, "GZ6", "2026-08").map((row) => row.brickId).sort(),
     ["B-BENI-1", "B-BENI-2", "B-FAYOUM-1"],
     "asking for GZ6 must return Fayoum's brick AND the Beni Suef bricks of every line that folds " +
       "today — Pedia and, since August, CNS. Anti Infective still keeps Beni Suef separate.",
   );
   for (const unmergedLine of ["anti infective"]) {
     assert.ok(
-      !selectedForArea(rows, "GZ6").some((row) => row.lineCode === unmergedLine),
+      !selectedForArea(rows, "GZ6", "2026-08").some((row) => row.lineCode === unmergedLine),
       `the ${unmergedLine} Beni Suef brick must NOT appear under Fayoum — that line shows the two ` +
         "areas separately, and pulling it in would corrupt the opposite drill-down",
     );
   }
   assert.deepEqual(
-    selectedForArea(rows, "UE9").map((row) => row.brickId),
+    selectedForArea(rows, "UE9", "2026-08").map((row) => row.brickId),
     ["B-BENI-3"],
     "asking for UE9 returns only the line that still shows UE9 as its own area — Anti Infective. " +
       "The Pedia and CNS bricks answer under GZ6, where the page shows them",
@@ -97,6 +98,23 @@ export async function runBrickDrilldownFollowsTheAreaMergeTests(): Promise<void>
     selectedForArea(rows, "AB4").map((row) => row.brickId),
     ["B-OTHER"],
     "an unmerged area is unaffected",
+  );
+
+  // ── 2b. FROM SEPTEMBER PEDIA SHOWS THEM SEPARATELY ────────────────────────────────────────
+  //
+  // Owner 2026-09-09: "fayoum separate area and banisuef separate area but august closing not
+  // affected starting from september". Pedia's merge now ENDS at 2026-08, so the same rows answer
+  // differently either side of that date — which is the whole point of dating the rule rather than
+  // deleting it. CNS is untouched and still folds, so this also proves the change is per line.
+  assert.deepEqual(
+    selectedForArea(rows, "GZ6", "2026-09").map((row) => row.brickId).sort(),
+    ["B-BENI-2", "B-FAYOUM-1"],
+    "September: Fayoum keeps its own brick and CNS's folded one — Pedia's Beni Suef brick has left",
+  );
+  assert.deepEqual(
+    selectedForArea(rows, "UE9", "2026-09").map((row) => row.brickId).sort(),
+    ["B-BENI-1", "B-BENI-3"],
+    "September: Beni Suef answers for itself on Pedia, beside Anti Infective which never folded",
   );
 
   // ── 3. the route uses that predicate, and AFTER the bound ──────────────────────────────────
