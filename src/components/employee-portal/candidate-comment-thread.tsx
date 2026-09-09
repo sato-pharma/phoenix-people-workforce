@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
@@ -22,6 +22,7 @@ import { CANDIDATE_COMMENT_MAX_LENGTH, type CandidateComment } from "@/lib/recru
  */
 export function CandidateCommentThread({
   candidateId,
+  composerActions,
   onCommentAdded,
   viewerHrId,
 }: {
@@ -35,6 +36,19 @@ export function CandidateCommentThread({
    * else's comment, because another manager's words are not the feedback he owes.
    */
   onCommentAdded?: (candidateId: string) => void;
+  /**
+   * The card's own answer buttons, rendered BESIDE Add comment and sharing this one text box.
+   *
+   * ONE FIELD, NOT TWO. The owner, 2026-09-09: *"I have two fields for your answer and your comments
+   * — merge them into one field, no need two fields."* He was right: after the feedback lock there is
+   * only one thing to type on a CV, which is what he found. So the answer buttons come DOWN here to
+   * the comment box rather than the box being duplicated above them, and Skip sends whatever is in
+   * it as its required reason.
+   *
+   * It receives the live draft and a way to clear it, because the button that consumes the text is
+   * not the one that owns it.
+   */
+  composerActions?: (draft: string, clearDraft: () => void) => ReactNode;
   /** Used only to decide whose comments offer a Delete — the server re-checks it on every delete. */
   viewerHrId: string | null;
 }) {
@@ -110,7 +124,9 @@ export function CandidateCommentThread({
 
   return (
     <div className="space-y-3 border-t border-slate-100 pt-3">
-      <p className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-slate-500">Comments</p>
+      <p className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {composerActions ? "Your feedback" : "Comments"}
+      </p>
 
       {comments === null ? (
         <p className="text-xs text-slate-400">Loading…</p>
@@ -158,13 +174,16 @@ export function CandidateCommentThread({
           dir="auto"
           maxLength={CANDIDATE_COMMENT_MAX_LENGTH}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder="Add a comment on this CV"
+          placeholder={composerActions ? "What did you find? Say whether you called them." : "Add a comment on this CV"}
           rows={2}
           value={draft}
         />
-        <Button disabled={busy || !draft.trim()} onClick={() => void post()} size="sm" variant="outline">
-          Add comment
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={busy || !draft.trim()} onClick={() => void post()} size="sm" variant="outline">
+            Add comment
+          </Button>
+          {composerActions?.(draft, () => setDraft(""))}
+        </div>
       </div>
     </div>
   );

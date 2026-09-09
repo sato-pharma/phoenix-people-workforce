@@ -91,7 +91,7 @@ export async function loadOutstandingFeedback(
     }
 
     // 3 · And which he answered with a note — the reason Skip already requires. Also collects the
-    // name, so the message can say "Write your feedback on Ahmed Hasan" rather than quote a uuid.
+    // name, so the message can end "Start with Ahmed Hasan" rather than quote a uuid at him.
     const names = new Map<string, string | null>();
     const answeredWithNote = new Set<string>();
     for (const batch of chunkIds(ids, 50)) {
