@@ -292,9 +292,20 @@ the full account, under
   the allowance to match the total — is exactly what a session reaching for arithmetic will do, and it
   would have quietly underpaid him by 60. The total was corrected to 300 on 2026-09-03 under a guarded
   `WHERE` that also required the row to be unimported to payroll, so nothing was double-paid.
-- 🔴 **The mailbox-monitor app-password entry is `___`, never "Phoenix".** Owner rule 2026-08-28:
-  the entry name an employee types into Yahoo/Turbify is three underscores, and the monitor UI must
-  never print the word Phoenix anywhere in that instruction.
+- 🔴 **The mailbox-monitor app-password entry is `imap`, never "Phoenix".** Owner rule 2026-08-28
+  set this to `___` — three underscores — so that an employee generating an app password on their
+  own mailbox could not tell what it was for; the monitor UI must never print the word Phoenix
+  anywhere in that instruction. **Amended 2026-09-07: the name is now `imap`.** The owner hit it
+  himself while connecting his own mailbox (`omar.anwar@satopharma.com`) for a vacation-request
+  audit — **Yahoo/Turbify rejects an app-password name made only of underscores**, so the entry
+  will not save. That made the rule unfollowable for every mailbox, not just his, and the UI stated
+  it as *"three underscores — nothing else, no other label"*, so an employee obeying it literally
+  had no way forward and no reason to suspect the instruction itself.
+
+  **The discretion is the part that matters, not the specific string.** `imap` was chosen over
+  `mail` and `sync` because it reads as an ordinary mail-client entry, tells a monitored employee
+  nothing, and is accepted by the name field. If it ever has to change again, the test is the same:
+  neutral, accepted by Yahoo, and never the word Phoenix.
   `mailbox-monitor-app-password-entry-is-three-underscores-never-phoenix`
 - 🔒 **Turbify CANNOT issue app passwords centrally — the owner is STAYING, so do not re-pitch a
   migration.** There is no API and there never was one (a session claimed otherwise and was wrong):

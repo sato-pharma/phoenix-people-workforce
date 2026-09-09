@@ -168,7 +168,7 @@ status, give it its own line.
 - **SCOPE RUNS DOWNWARD ONLY — an employee never sees his own manager, nor anyone at or above his own RANK.** — `scope-runs-downward-only-never-your-own-manager` **(inline — load-bearing)**
 - **An NSM's outstation expense is NEVER held** — `nsm-outstation-expense-is-never-held` **(inline — load-bearing)**
 - **THE SYSTEM NEVER AUTO-APPROVES A PLAN — a DM's weekly plan is submit → NSM (or RSM if applicable) → HR acknowledge, with NO CEO stage.** — `the-system-never-auto-approves-a-plan` **(inline — load-bearing)**
-- **The mailbox-monitor app-password entry is ___, never "Phoenix".** — `mailbox-monitor-app-password-entry-is-three-underscores-never-phoenix` **(inline — load-bearing)**
+- **The mailbox-monitor app-password entry is `imap` (was ___ until 2026-09-07), never "Phoenix".** — `mailbox-monitor-app-password-entry-is-three-underscores-never-phoenix` **(inline — load-bearing)**
 - **Turbify CANNOT issue app passwords centrally — the owner is STAYING, so do not…** — `turbify-cannot-issue-app-passwords-centrally-owner-stays` **(inline — load-bearing)**
 - **A password reset does NOT revoke a Turbify mailbox — the app passwords survive it.** — `a-password-reset-does-not-revoke-a-turbify-mailbox` **(inline — load-bearing)**
 - **Four sales-attribution facts that silently change a number.** `ez-is-credited-evenly-across-cairo-giza-cns-reps` **(inline — load-bearing)** `closing-reads-distributor-product-rollup-not-fact-rollup` **(inline — load-bearing)** `a-case-duplicate-line-map-row-doubled-a-whole-line` **(inline — load-bearing)** `owner-sheet-vocabulary-stores-is-office-upa-is-a-channel` **(inline — load-bearing)**
