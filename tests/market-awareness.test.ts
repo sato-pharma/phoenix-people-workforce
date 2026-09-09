@@ -31,6 +31,7 @@ import {
   canDecideStep,
   canReleaseHold,
   currentStep,
+  describeInboxStep,
   findTransition,
   resolveGroupApproval,
   statusAfterResubmit,
@@ -852,4 +853,40 @@ export function runMarketAwarenessTests() {
     /grant execute on function[\s\S]*?to service_role;/.test(atomicMigration),
     "the decision function must be granted to service_role, which the revoke above strips",
   );
+
+  // ── An inbox card is headed by WHOSE decision it is, never by the status alone ─────────────
+  //
+  // The inbox lists every open activity the viewer may SEE, and the informed roles see all of
+  // them. Reading the status back told Ali Elsayed, the Pedia National Sales Manager, "Waiting on
+  // your approval" over two Anti Infective conferences he holds no slot on — while the summary
+  // line above said "2 moving, none waiting on you" and no decision buttons were drawn. Verified
+  // in the browser 2026-09-09 as both men.
+  assert.equal(
+    describeInboxStep({ canDecide: true, status: "pending_group" }),
+    "Waiting on your approval",
+    "the holder of an open slot is still told it is his",
+  );
+  assert.equal(
+    describeInboxStep({ canDecide: false, status: "pending_group" }),
+    "Waiting on the approval group",
+    "somebody who cannot answer must not be told the decision is his",
+  );
+  assert.equal(
+    describeInboxStep({ canDecide: true, status: "pending_ceo" }),
+    "Waiting on you as the CEO",
+    "the CEO step keeps its own words for the CEO",
+  );
+  assert.equal(
+    describeInboxStep({ canDecide: false, status: "pending_ceo" }),
+    "Waiting on the CEO",
+    "every other viewer was told the CEO step was waiting on HIM — the worst case of the same bug",
+  );
+  // A hold reads the same either way: it is frozen for everyone, and saying so is the point.
+  for (const canDecide of [true, false]) {
+    assert.equal(
+      describeInboxStep({ canDecide, status: "on_hold" }),
+      "On hold",
+      "a hold is frozen for everyone, so it reads the same to everyone",
+    );
+  }
 }

@@ -177,3 +177,31 @@ export function canReleaseHold(input: {
   if (!actorKey || !holderKey) return false;
   return actorKey === holderKey;
 }
+
+/**
+ * What one card in the approvals inbox is headed with.
+ *
+ * KEYED ON WHOSE DECISION IT IS, NEVER ON THE STATUS ALONE. The inbox lists every open activity the
+ * viewer may SEE, not only the ones he can answer — the informed roles see all of them — and the
+ * header used to read the status back, so a Pedia National Sales Manager opened the page and was
+ * told "Waiting on your approval" twice over two Anti Infective conferences he holds no slot on.
+ * The summary line directly above already said "2 moving, none waiting on you", and the page's own
+ * description promises "only the decisions that are actually yours appear here", so the card
+ * contradicted both its neighbours at once. Worse in the CEO case, where every viewer was told
+ * "Waiting on you as the CEO".
+ *
+ * Nothing here grants anything. `canDecide` is computed server-side by canDecideStep and is the same
+ * flag that decides whether the buttons are drawn; this only makes the words match what the buttons
+ * already do.
+ */
+export function describeInboxStep(input: { status: string; canDecide: boolean }): string {
+  if (input.status === "on_hold") return "On hold";
+  if (input.canDecide) {
+    if (input.status === "pending_group") return "Waiting on your approval";
+    if (input.status === "pending_ceo") return "Waiting on you as the CEO";
+    return "Waiting on you";
+  }
+  if (input.status === "pending_group") return "Waiting on the approval group";
+  if (input.status === "pending_ceo") return "Waiting on the CEO";
+  return "Moving through the chain";
+}
