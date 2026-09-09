@@ -40,8 +40,9 @@ const PEDIA_OTHERS: ReadonlySet<string> = new Set([
   "CA5", "D17", "UE8", "OT1", "OT2", "OT4", "OT5", "OT6", "OT7", "OT8", "OT9", "OT10",
 ]);
 
-/** Qalubeya holds one area, so the whole home half lands on D11 and the rest divides over 48. */
-const QALUBEYA_AWAY_AREAS = COUNTRY_AREAS - 1;
+/** Qalubeya's LOCAL block is itself plus the six Cairo areas, so the rest of the country is 42. */
+const QALUBEYA_LOCAL_AREAS = 7;
+const QALUBEYA_AWAY_AREAS = COUNTRY_AREAS - QALUBEYA_LOCAL_AREAS;
 
 function qemaRow(overrides: Partial<AttributionSplitRow> = {}): AttributionSplitRow {
   return {
@@ -127,14 +128,26 @@ export function runAttributionStoreSplitNetTests() {
 
   const origin = august.find((row) => row.area_code === "D11");
   assert.ok(origin, "the origin area is in the net");
-  // Half stays home, and Qalubeya holds ONE area, so all 350 of the home half lands on D11.
+  // Half stays LOCAL, and the local block is Qalubeya plus Cairo, so Qalubeya keeps one seventh of
+  // that half — 50 of 700 — and Cairo holds the other six sevenths. The 2026-09-07 Cairo rule and the
+  // 2026-09-08 threshold rule BOTH apply; collapsing the block back to [D11] restores 350 here and
+  // leaves Cairo with nothing, which is the state the owner rejected on 2026-09-09.
   assert.ok(
-    Math.abs(origin.net_qty - (350 - 700)) < 1e-6,
-    `Qalubeya gives up half and keeps half, got ${origin.net_qty}`,
+    Math.abs(origin.net_qty - (350 / QALUBEYA_LOCAL_AREAS - 700)) < 1e-6,
+    `Qalubeya keeps one seventh of the local half, got ${origin.net_qty}`,
   );
-  // 🔴 CAIRO IS NO LONGER SPECIAL. It is 6 areas of 49, each taking the same share as Aswan. If
-  // these ever diverge again, the 2026-09-08 rule has been reverted to the 2026-09-07 one.
-  for (const areaCode of ["CA1", "CA5", "AB1", "UE7", "OT7"]) {
+  // 🔴 CAIRO IS LOCAL, NOT NATIONAL. Each Cairo area takes a LOCAL share (350/7), which is far more
+  // than the national one — that is the Cairo rule. The areas below are outside the local block and
+  // take the national share instead.
+  for (const cairo of ["CA1", "CA3"]) {
+    const local = august.find((row) => row.area_code === cairo);
+    assert.ok(local, `${cairo} is in the local block`);
+    assert.ok(
+      Math.abs(local.net_qty - 350 / QALUBEYA_LOCAL_AREAS) < 1e-6,
+      `${cairo} takes a LOCAL share, got ${local.net_qty}`,
+    );
+  }
+  for (const areaCode of ["AB1", "UE7", "OT7"]) {
     const away = august.find((row) => row.area_code === areaCode);
     assert.ok(away, `${areaCode} receives a share`);
     assert.ok(
@@ -198,11 +211,11 @@ export function runAttributionStoreSplitNetTests() {
   const discountedOrigin = discounted.find((row) => row.area_code === "D11");
   assert.ok(discountedOrigin, "the discounted row still has an origin cell");
   assert.ok(
-    Math.abs(discountedOrigin.net_qty - (350 - 700)) < 1e-6,
+    Math.abs(discountedOrigin.net_qty - (350 / QALUBEYA_LOCAL_AREAS - 700)) < 1e-6,
     "units move on the invoiced quantity",
   );
   assert.ok(
-    Math.abs(discountedOrigin.net_effective_units - (315 - 630)) < 1e-6,
+    Math.abs(discountedOrigin.net_effective_units - (315 / QALUBEYA_LOCAL_AREAS - 630)) < 1e-6,
     "money moves on the effective units, not on the invoiced quantity",
   );
   assert.notEqual(

@@ -55,15 +55,23 @@ export function runImportSplitPreviewTests() {
   const forsan = sept.customers[0];
   assert.equal(forsan.willSplit, true);
   assert.equal(forsan.nationalSplit, true, "700 packs of one product is over 200");
-  assert.equal(forsan.group, "Qalubeya + nationwide", "the city column names the rule that moved it");
+  assert.equal(
+    forsan.group,
+    "Qalubeya + Cairo + nationwide",
+    "the city column names BOTH rules — the Cairo block and the national half",
+  );
   assert.equal(forsan.targetAreas.length, COUNTRY_AREAS, "every area in the country receives something");
   assert.ok(forsan.targetAreas.includes("D11"), "Qalubeya keeps a share of its own sale");
   assert.ok(forsan.targetAreas.includes("AB1"), "and Alexandria, which the old Cairo-only rule never reached");
-  assert.equal(forsan.unitsPerArea, 350, "half of 700 stays in Qalubeya, which holds one area");
+  assert.equal(
+    Number(forsan.unitsPerArea.toFixed(6)),
+    Number((350 / 7).toFixed(6)),
+    "half of 700 stays in the LOCAL block — Qalubeya plus the six Cairo areas — and divides evenly",
+  );
   assert.equal(
     Number(forsan.unitsPerAwayArea.toFixed(6)),
-    Number((350 / 48).toFixed(6)),
-    "the other half divides evenly over the 48 areas outside Qalubeya",
+    Number((350 / 42).toFixed(6)),
+    "the other half divides evenly over the 42 areas outside that block",
   );
   assert.equal(sept.widestFanOut, COUNTRY_AREAS, "the headline reports the widest reach in the file");
 
@@ -117,10 +125,15 @@ export function runImportSplitPreviewTests() {
   });
   assert.equal(basket.customers[0].units, 300, "the customer bought 300 packs in total");
   assert.equal(
-    basket.customers[0].willSplit,
+    basket.customers[0].nationalSplit,
     false,
-    "but no single PRODUCT crossed 200, so nothing goes national — reading the basket total here "
-      + "would promise a fan-out the closing never performs",
+    "but no single PRODUCT crossed 200, so NOTHING goes national — reading the basket total here "
+      + "would promise a nationwide fan-out the closing never performs",
+  );
+  assert.equal(
+    basket.customers[0].targetAreas.length,
+    7,
+    "it still spreads across the local block, Qalubeya plus Cairo — that rule has no threshold",
   );
 
   // ── A pharmacy is reported as a pharmacy, not as an unexplained no ────────────────────────────
@@ -159,7 +172,11 @@ export function runImportSplitPreviewTests() {
   });
   assert.equal(summed.customers.length, 1, "two invoice lines, one customer, one placement");
   assert.equal(summed.customers[0].units, 700);
-  assert.equal(summed.customers[0].unitsPerArea, 350, "and the 200 rule is judged on the 700, not on either 350");
+  assert.equal(
+    Number(summed.customers[0].unitsPerArea.toFixed(6)),
+    Number((350 / 7).toFixed(6)),
+    "and the 200 rule is judged on the summed 700, then halved across the seven local areas",
+  );
 
   // ── Biggest first, so a file of small pharmacies cannot bury the one that moves ───────────────
   const ordered = buildImportSplitPlan({

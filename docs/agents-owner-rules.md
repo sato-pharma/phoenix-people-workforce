@@ -1204,12 +1204,81 @@ The defensive fallback stays anyway: **the origin is never excluded from its own
 barred from receiving a share of somebody else's money, never from keeping what it sold itself —
 without it, a warehouse sitting in an Others area would have a home half with nowhere to go.
 
-### Scope of the exclusion
+### 🔴 The Cairo + Qalubeya rule was never replaced — 2026-09-09
 
-The El Qema rule only. Every other distributor's wholesaler keeps splitting across its whole
-governorate, Others included. Widening it to every Pedia wholesaler would move other distributors'
-money in a month about to be published, and he asked about El Qema's distribution — so the narrow
-reading is the reversible one. Widen it only if he says so.
+**"we will change the concept of the qema distribution into تقسيمة المخازن" does NOT mean the 09-07
+rule is gone.** It was read that way, the Qalubeya→Cairo targets were deleted, and Cairo went to
+zero. He said so in one line:
+
+> YOU ARE NOT APPLYING THE CAIRO AND QALUBEYA RULE + THE NEW RULE
+
+Both. Together. They compose cleanly because they answer different questions:
+
+| Rule | Question it answers |
+| --- | --- |
+| Cairo + Qalubeya (09-07) | what counts as **LOCAL** for this warehouse |
+| The 200-pack split (09-08) | how the sale divides between local and the rest of the country |
+| Others excluded (09-08) | which areas may **receive** anything at all |
+
+So El Qema's Qalubeya local block is **Qalubeya plus the six Cairo areas** — Benha sits on Cairo's
+edge and supplies it — and the 200-pack rule then works on that block exactly as it works on any
+governorate. Without it Qalubeya is a ONE-AREA governorate, so a Benha warehouse keeps the whole
+local half itself and Cairo receives nothing, which is the state he rejected.
+
+`LOCAL_BLOCK_OVERRIDES` is keyed `DISTRIBUTOR|ORIGIN AREA`, so it stays El Qema's alone and one-way:
+there is no `QM|CA*` entry, so a Cairo warehouse treats Cairo as its own block and never reaches
+Qalubeya.
+
+**Cairo is not paid twice.** The national half is every area the LOCAL block does not already hold —
+tested on the block, not on the city — so the six Cairo areas take a local share and are absent from
+the national one.
+
+### Measured on Benha, August 2026
+
+الفرسان بنها جملة(ت2), 4,532 packs of Lacto Advanced 1, booked in Qalubeya:
+
+| | Areas | Each |
+| --- | --- | --- |
+| Local half (2,266) | 6 — Qalubeya + Cairo, less Down town as Others | **377.667** |
+| National half (2,266) | 31 | **73.097** |
+
+Across El Qema's whole August book the effect is Qalubeya 6,656 → **569.38** and each Cairo area
+0 → **622.18**, with the 8,768-pack total preserved exactly. Qalubeya falls because it now shares the
+local half with Cairo instead of keeping all of it — that is the 09-07 rule doing its work, not a
+regression.
+
+**A sub-threshold order still reaches Cairo.** The Cairo rule has no threshold of its own; only the
+NATIONAL half is gated at 200. A 120-pack Benha order spreads across the seven-area block and goes
+no further.
+
+### 🔴 Scope of the exclusion — it is a LINE rule, and shipping it narrow was wrong
+
+**Every warehouse on Pedia, whoever sold it.** Not El Qema's alone.
+
+It shipped scoped to El Qema first, on the reading that the conversation was about El Qema's
+distribution and that widening it would move other distributors' money in a month about to be
+published. That reading was wrong, and his own words already said so — *"the EU organogram of **pedia
+line**"*.
+
+Measured on August Pedia the next day, through the closing's own code path:
+
+| Source | Packs arriving in Others areas |
+| --- | --- |
+| El Qema | **0.000** |
+| every other distributor | **79.667** — Down town 44.167, Kafr El-Sheikh 2 35.500 |
+
+He replied **"NOT APPLIED EL QEMA RULE"**. The El Qema half was applied perfectly; what he was
+looking at was Down town and Kafr El-Sheikh 2 still holding numbers, put there by EP-PHS, IS-S and
+PS. An area in Others receives nothing on this line, whoever sold it.
+
+**Two rules arrived in one sentence and they have different scopes.** `WAREHOUSE_THRESHOLD_LINES` +
+`WAREHOUSE_THRESHOLD_DISTRIBUTORS` answer *who spreads nationwide* — El Qema, on Pedia.
+`OTHERS_EXCLUDED_LINES` answers *where nobody may receive* — the Pedia line, every distributor.
+Collapsing them back into one predicate restores exactly the state he rejected, so the test asserts a
+**non-El-Qema** Cairo warehouse skipping Down town while taking no national half.
+
+CNS and Anti Infective are untouched: the exclusion is gated on the line, and August Anti Infective
+is published.
 
 ### What holds it
 
