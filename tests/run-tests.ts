@@ -1159,6 +1159,7 @@ import { runEpdaPediaWarehouseRulingsTests } from "./epda-pedia-warehouse-ruling
 import { runImportSplitPreviewTests } from "./import-split-preview.test.ts";
 import { runCityListNewAreaGuardTests } from "./city-list-new-area-guard.test.ts";
 import { runQemaWarehouseSplitTests } from "./qema-warehouse-split.test.ts";
+import { runPediaUpperEgyptSplitTests } from "./pedia-upper-egypt-split.test.ts";
 import { runAttributionStoreSplitNetTests } from "./attribution-store-split-net.test.ts";
 import { runStoreNamePrefixesTests } from "./store-name-prefixes.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
@@ -3456,6 +3457,10 @@ await runTest(
 await runTest(
   "El Qema warehouse split (up to 200 packs per product stays in the governorate; above 200 half stays and half spreads evenly over every other area in the country, origin governorate excluded — El Qema only, and the threshold is the month total, never one row)",
   runQemaWarehouseSplitTests,
+);
+await runTest(
+  "Pedia Upper Egypt split (August closes on the single Upper Egypt district over 37 El Qema areas; September resolves Upper Egypt 1 and Upper Egypt 2 with Luxor inside Qena 2 over 39; and the August distribution is identical before and after the dated pair is written)",
+  runPediaUpperEgyptSplitTests,
 );
 await runTest(
   "EPDA «م - » warehouse prefix (anchored at the START only — it matches 40 customers, while the same three characters appear MID-NAME in 590, and turning it into a keyword would move 550 pharmacies)",
