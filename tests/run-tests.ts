@@ -1524,6 +1524,7 @@ import { runVacancyOptionLabelTests } from "./vacancy-option-label.test.ts";
 import { runOrganogramArabicSearchTests } from "./organogram-arabic-search.test.ts";
 import { runOrganogramTeamLabelTests } from "./organogram-team-label.test.ts";
 import { runWeeklyUploadLineNotificationTests } from "./weekly-upload-line-notification.test.ts";
+import { runSalesNotificationExclusionsTests } from "./sales-notification-exclusions.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4977,6 +4978,11 @@ await runTest(
 await runTest(
   "a weekly upload mails only the lines whose products are in the sheet (Head Office never), with no figures in the body",
   runWeeklyUploadLineNotificationTests,
+);
+
+await runTest(
+  "one shared list decides who is left out of a sales announcement, read by both senders, matched case-insensitively",
+  runSalesNotificationExclusionsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
