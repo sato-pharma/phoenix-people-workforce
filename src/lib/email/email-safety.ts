@@ -25,8 +25,12 @@ export function sanitizeEmailTemplateHtml(value: string) {
       img: ["src", "alt", "width", "height", "style"],
       span: ["title", "style", "dir"],
       table: ["width", "cellpadding", "cellspacing", "border", "style", "dir"],
-      td: ["colspan", "rowspan", "style", "dir"],
-      th: ["colspan", "rowspan", "style", "dir"],
+      // `bgcolor` is the legacy half of the zebra striping: Outlook's Word engine ignores CSS
+      // backgrounds on a table cell, so the attribute is what stripes the row there. Dropping it
+      // here flattened every {{detailsTable}} that reached an email through a template body.
+      tr: ["bgcolor", "style", "dir"],
+      td: ["colspan", "rowspan", "bgcolor", "style", "dir"],
+      th: ["colspan", "rowspan", "bgcolor", "style", "dir"],
     },
     allowedSchemes: ["http", "https", "mailto", "tel"],
     // Email clients only load remote images over HTTPS; plain-http would also break the
