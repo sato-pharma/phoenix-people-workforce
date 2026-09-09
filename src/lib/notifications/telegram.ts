@@ -64,6 +64,27 @@ export function telegramWebhookSecretToken() {
   return crypto.createHash("sha256").update(raw).digest("hex");
 }
 
+/**
+ * How long a Telegram connect link stays usable, for BOTH ways of issuing one.
+ *
+ * ONE WINDOW, DELIBERATELY. The two paths used to disagree: the emailed invitation lasted 48 hours,
+ * and the link the employee generates for himself in the portal lasted 15 MINUTES. The short one
+ * was measured against reality on 2026-09-09 and it fails: every pending row in production — eight
+ * of them, going back to June, against two people ever connected — expired UNUSED, and every one
+ * carried the 15-minute stamp. Nobody abandoned the flow; the credential died while they were
+ * looking for it.
+ *
+ * Fifteen minutes assumes the link is used where it is shown. It is not: the employee sees it on a
+ * desktop and has to reach Telegram on his phone, which means installing the app, signing up, or
+ * simply finding the message he sent himself. The email path's own comment already says people
+ * "may open the invitation hours later" — that is just as true of the portal link.
+ *
+ * The exposure is no worse than the email path's, and is arguably smaller: this link never leaves
+ * the authenticated session it was created in, it is single-use, the webhook nulls the hash on
+ * first use, and a post-link security alert makes a hijack detectable.
+ */
+export const TELEGRAM_CONNECT_TOKEN_TTL_MINUTES = 48 * 60;
+
 export function hashTelegramToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
