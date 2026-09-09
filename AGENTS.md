@@ -151,7 +151,7 @@ it for the hook's wording. Which memory backs which hook:
 
 - **A migration FILE written is not a migration APPLIED**, and **a merged migration file does not mean the grants are live.**
 - **Migration timestamps COLLIDE across parallel branches, and CI judges the MERGE ref — so a green `check:migrations` flips RED with NO change from you, over a file that is not on your branch at all.** Reproduce by extracting main’s copy in; a green local suite cannot see it, and the second red on a PR is NOT the first one again. And **the ledger version never matches the filename — ask the ledger by NAME; a re-stamp cannot desync a NORMALLY stamped row, but READ the row — one embeds its old filename in `name`.** A prefix lookup reported 11 of the 12 newest files *not applied* when 10 of those 11 were. **Applied-state also FLIPS mid-PR**, so re-read it before asserting one durably.
-- **A PostgREST `.in()` carrying several hundred ids returns ZERO rows and NO error.** Chunk at ~50 and print the intermediate count.
+- **A PostgREST `.in()` fails 3 ways: ZERO rows and NO error; `22P02` on ONE null id; headers over ~16KB.** Chunk at ~50, drop nulls.
 - **A `neq` against an ABSENT jsonb key matches ZERO rows**, and **an unbounded `.select()` stops at 1000** with no marker. Write the OR-form; `count(*)` before trusting any select, then page with an explicit `.order()`.
 - **`n_live_tup` is STALE in production — it reports LIVE tables as empty.** Sweep with a real `count(*)` via `query_to_xml`.
 - **A Supabase client request that times out at 15s STILL COMMITS**, leaving a half-applied state with no audit row. Do heavy multi-step mutations in ONE `plpgsql` function.
