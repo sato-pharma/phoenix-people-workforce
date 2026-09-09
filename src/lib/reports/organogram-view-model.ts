@@ -1,3 +1,4 @@
+import { normalizeArabic } from "@/lib/geo/egypt-locations";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import {
   classifyOrganogramStructureLevel,
@@ -136,14 +137,28 @@ export function normalizeHrIdKey(value: string | null | undefined) {
   return canonicalHrIdKey(value)?.toUpperCase() ?? "";
 }
 
+/**
+ * One spelling policy for both halves of a search: the row's text and the query the viewer typed
+ * both come through here, so folding has to happen in this one function or not at all. Folding only
+ * the row would mean an Arabic name matched a query nobody could type.
+ *
+ * `normalizeArabic` is imported rather than re-implemented. Its own comment says the same thing for
+ * the geography module — one spelling policy, not two — and a private copy here would drift the
+ * first time a variant is added to either.
+ */
 export function normalizeSearchValue(value: string | null | undefined) {
-  return value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
+  return normalizeArabic(value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "");
 }
 
 export function organogramSearchText(row: OrganogramRow) {
   return [
     row.hrId,
     row.fullName,
+    // Every employee record carries an Arabic name and HR types in Arabic. Without this the
+    // organogram search answered "nobody" for a name spelled the way it appears on the person's
+    // own contract — an empty result that reads as "she is not on the chart" rather than as a
+    // search that never looked. Owner instruction, 2026-09-09.
+    row.nameAr,
     row.managerHrId,
     row.managerName,
     row.jobTitle,
@@ -163,13 +178,18 @@ export function organogramSearchText(row: OrganogramRow) {
 }
 
 export function rowMatchesOrganogramSearch(row: OrganogramRow, query: string) {
-  if (!query) return true;
-  const compactQuery = query.replace(/[^a-z0-9]/g, "");
+  // Normalized here rather than trusted from the caller. Both live callers already normalize, so
+  // this changes nothing for them — normalizeSearchValue is idempotent. It matters for the next
+  // caller: the row side is always folded, so an unfolded query silently matches NOTHING, and an
+  // empty chart reads as "these people are not in the organogram" rather than as a bad comparison.
+  const normalizedQuery = normalizeSearchValue(query);
+  if (!normalizedQuery) return true;
+  const compactQuery = normalizedQuery.replace(/[^a-z0-9]/g, "");
   const compactHrId = normalizeSearchValue(row.hrId).replace(/[^a-z0-9]/g, "");
   const compactManagerHrId = normalizeSearchValue(row.managerHrId).replace(/[^a-z0-9]/g, "");
 
   return (
-    organogramSearchText(row).includes(query) ||
+    organogramSearchText(row).includes(normalizedQuery) ||
     Boolean(compactQuery && (compactHrId.includes(compactQuery) || compactManagerHrId.includes(compactQuery)))
   );
 }
