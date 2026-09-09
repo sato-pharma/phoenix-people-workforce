@@ -102,6 +102,13 @@ export function runEmailNotificationTests() {
     // src/lib/sales/closing-publish-notification.ts.
     "src/lib/sales/closing-publish-notification.ts",
     "src/lib/sales/sos-report-delivery.ts",
+    // A confirmed weekly sales upload tells each tracked line's District Managers and NSM which of
+    // THEIR products the sheet carried — one mail per line, recipients resolved live from the
+    // organogram, product names only and never a figure. Direct send for the same reason as
+    // closing-publish-notification.ts directly above: a system-triggered domain announcement with a
+    // per-line recipient list, not an HR-editable DB template. See
+    // src/lib/sales/weekly/upload-notification.ts.
+    "src/lib/sales/weekly/upload-notification.ts",
     "src/lib/vacation/email.ts",
   ]);
   assert.match(emailTemplateServiceSource, /renderPhoenixEmailHtml/);

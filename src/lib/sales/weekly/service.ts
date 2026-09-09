@@ -1,6 +1,7 @@
 import { normalizeRole } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
+import { logError } from "@/lib/observability/log";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import {
   applyWeeklyAccessScope,
@@ -21,6 +22,7 @@ import { decumulateRows, suppressGapSpannedValue, weekHasDecumulationGap } from 
 import { resolveWeeklyContractWithSource } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { loadProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
 import { weeklyTemplateDistributorFallbackName } from "@/lib/sales/weekly/templates";
+import { groupWeeklyProductsByTrackedLine, notifyWeeklyUploadLines } from "@/lib/sales/weekly/upload-notification";
 import {
   applyWeeklyTrackedLineScope,
   weeklyTrackedLineOptions,
@@ -156,6 +158,13 @@ export async function importWeeklySalesFile(input: {
   cycleMonth?: string | null;
   /** when true, parse + validate but never persist — used by the validate-only step */
   dryRun?: boolean;
+  /**
+   * `false` uploads the sheet without telling the line managers about it — the weekly counterpart
+   * of the monthly closing's silent publish, for a correction or a back-fill that nobody needs to
+   * be mailed about. Defaults to notifying, which is the owner's asked-for behaviour; only an
+   * explicit false suppresses it, so a caller can never inherit a silence it did not ask for.
+   */
+  notify?: boolean;
 }): Promise<WeeklySalesValidationResult> {
   const rawCode = (input.distributorCode ?? "").trim();
   if (!rawCode) throw new SalesWorkflowError("invalid_request", "Pick a distributor before uploading.", 400);
@@ -211,6 +220,9 @@ export async function importWeeklySalesFile(input: {
   }
   // Stamp which column contract parsed this batch (built-in vs in-app override) for traceability.
   parsed.result.contractSource = contractSource;
+  // The lines whose managers this upload will email. Stamped on the dry-run too, so the wizard can
+  // name the audience on the review screen instead of the operator finding out by having sent it.
+  parsed.result.notifiableLines = [...groupWeeklyProductsByTrackedLine(parsed.result.byProduct).byLine.keys()].sort();
 
   // Week-of-month tagging: cycle = month of the sheet date (override-able); week = confirmed value
   // from the wizard, else the date-derived suggestion. Both flow through to the stored batch + rows.
@@ -232,6 +244,31 @@ export async function importWeeklySalesFile(input: {
   // dryRun=true skips persistence so the validate step can show tables without storing anything.
   if (!input.dryRun && parsed.result.status === "validated") {
     const { batchId, createdAt } = await persistWeeklyUpload(parsed.rows, parsed.result, input.uploadedBy);
+
+    // Tell each tracked line's District Managers and NSM that their products were read from this
+    // sheet (owner request, 2026-09-09). Deliberately sited HERE rather than in the upload route:
+    // this is the one place a batch actually persists, so the notification cannot fire for a
+    // dry-run validate, for a blocked file, or for a duplicate that threw above — every one of
+    // which reaches the route as a perfectly ordinary call.
+    //
+    // Best-effort and un-awaited: the rows are already stored, so an email failure must never turn
+    // a successful upload into an error response for the person who uploaded it.
+    if (input.notify !== false) {
+      notifyWeeklyUploadLines({
+        batchId,
+        byProduct: parsed.result.byProduct,
+        distributorName: parsed.result.distributor.name,
+        weekNumber: parsed.result.weekNumber,
+        weekStart: parsed.result.weekStart,
+      }).catch((notifyError) => {
+        logError("weekly_upload_notification_failed", {
+          error: notifyError,
+          labels: { event: "weekly_upload_notification_failed" },
+          context: { batchId, distributorCode: parsed.result.distributor.code },
+        });
+      });
+    }
+
     return { ...parsed.result, batchId, createdAt };
   }
   return parsed.result;

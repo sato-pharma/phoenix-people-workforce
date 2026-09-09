@@ -216,6 +216,19 @@ export type WeeklySalesValidationResult = {
   excludedItems: WeeklyExcludedItem[];
   /** depots excluded on purpose via the branch→region map — informational, never blocking */
   excludedBranches: WeeklyExcludedBranch[];
+  /**
+   * The tracked lines this sheet carries products for — i.e. exactly the lines whose District
+   * Managers and NSM are emailed when the upload is confirmed. Computed on both the dry-run and the
+   * real upload so the wizard can name the audience BEFORE the operator presses Confirm rather than
+   * after the mail has gone. Head Office and IGNORE never appear here.
+   *
+   * The client cannot derive this itself: the tracked-line rule reaches the server Supabase client
+   * through its line-code resolver, so it has to be answered here and carried down.
+   *
+   * Optional because the PARSER builds this result and the SERVICE fills this in, exactly as it does
+   * for contractSource — an absent value means "not computed", never "no lines".
+   */
+  notifiableLines?: string[];
 };
 
 // ── Pre-upload verification (AI column check) ─────────────────────────────────────────────────────
