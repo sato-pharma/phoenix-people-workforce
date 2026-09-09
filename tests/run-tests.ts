@@ -1163,6 +1163,7 @@ import { runImportSplitPreviewTests } from "./import-split-preview.test.ts";
 import { runCityListNewAreaGuardTests } from "./city-list-new-area-guard.test.ts";
 import { runClosingSourceMaskTests } from "./closing-source-mask.test.ts";
 import { runQemaWarehouseSplitTests } from "./qema-warehouse-split.test.ts";
+import { runMergedAreaAttributionTests } from "./merged-area-attribution.test.ts";
 import { runPediaUpperEgyptSplitTests } from "./pedia-upper-egypt-split.test.ts";
 import { runAttributionStoreSplitNetTests } from "./attribution-store-split-net.test.ts";
 import { runStoreNamePrefixesTests } from "./store-name-prefixes.test.ts";
@@ -3469,6 +3470,10 @@ await runTest(
 await runTest(
   "El Qema three bands and the صعيد redistribution (200 / 201-999 / 1000+ per warehouse and product, Qalubeya meaning Qalubeya + Cairo evenly, then half of Upper Egypt's credited sales back across Upper Egypt and half over the republic — every share checked against an independent reading of the owner's words)",
   runQemaWarehouseSplitTests,
+);
+await runTest(
+  "merged areas and the attribution net (the Fayoum - Beni Suef display fold rewrites the area the split charges money OUT of, and au.monthly_attribution_rollup does not fold — so exactly the attribution-net builders keep the two apart, and Fayoum stops going negative)",
+  runMergedAreaAttributionTests,
 );
 await runTest(
   "El Qema leaves no trace in a closing detail (distributor and customer blanked for every viewer but Super Admin, masked AFTER the split computes and BEFORE any workbook is written — never relabelled as another real distributor)",

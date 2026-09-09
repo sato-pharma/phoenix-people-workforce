@@ -60,6 +60,9 @@ type PeriodQuery = {
  */
 async function loadRowsForLine(line: string, period: string): Promise<readonly AttributionSplitRow[]> {
   const details = await loadMonthlyClosingDetails({
+    // The REAL areas, not the display fold — this net feeds au.monthly_attribution_rollup, which
+    // keys on the real area. See keepMergedAreasApart.
+    keepMergedAreasApart: true,
     access: systemAccessContext,
     line,
     period,

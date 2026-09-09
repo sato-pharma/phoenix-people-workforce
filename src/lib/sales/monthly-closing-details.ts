@@ -432,6 +432,22 @@ export type LoadClosingDetailsInput = {
    * tests/closing-source-mask.test.ts, so adding one is a deliberate act rather than a habit.
    */
   revealSource?: boolean;
+  /**
+   * Keep Fayoum (GZ6) and Beni Suef (UE9) as the two areas they really are.
+   *
+   * 🔴 FOR THE ATTRIBUTION NET ONLY, AND IT FIXES A WRONG NUMBER RATHER THAN A PREFERENCE.
+   * `applyClosingAreaMergesToDetails` rewrites a Beni Suef row's `sheetAreaCode` to GZ6 so the
+   * Data sheet and the Details panel show one "Fayoum - Beni Suef" row. The closing MATRIX folds
+   * the same pair, so inside the closing that is self-consistent. `au.monthly_attribution_rollup`
+   * does NOT fold: it keys on the real area. So a net computed on folded rows charges Beni Suef's
+   * whole book OUT of Fayoum while attribution still credits Beni Suef its own base, and Fayoum
+   * goes negative — measured live 2026-09-09, Fayoum at −24.95 units on a base of 64.
+   *
+   * It was there before El Qema's rule changed and merely stayed positive: under the priority
+   * ladder Fayoum's net was −29.44 against the same base of 64. So a session finding this is
+   * looking at an old defect surfaced by a new distribution, not at a regression in the rule.
+   */
+  keepMergedAreasApart?: boolean;
   availableLines?: string[];
   availablePeriods?: string[];
   filters?: ClosingDetailsFilters;
@@ -715,7 +731,11 @@ export async function loadMonthlyClosingDetails(
     };
   });
 
-  const merged = applyClosingAreaMergesToDetails(resolveTargetLineCode(line), mapped, period);
+  // The display fold, skipped for the attribution net — see keepMergedAreasApart, which exists
+  // because the rollup this net feeds keys on the real area and the fold sends the debit elsewhere.
+  const merged = input.keepMergedAreasApart === true
+    ? mapped
+    : applyClosingAreaMergesToDetails(resolveTargetLineCode(line), mapped, period);
 
   const scoped = applyDetailScope(merged, {
     allowedRegionCodes,
