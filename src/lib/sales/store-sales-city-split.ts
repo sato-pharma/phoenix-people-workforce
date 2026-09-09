@@ -345,6 +345,29 @@ export const OTHERS_EXCLUDED_LINES: ReadonlySet<string> = new Set(["pedia"]);
  */
 export const POOLED_BLOCK_REGION_CODE = "UE";
 
+/**
+ * Every region code that IS Upper Egypt — the base code and any district split off it.
+ *
+ * 🔴 WHY A FAMILY AND NOT ONE STRING. The members are read from the organogram so the pool tracks
+ * him when he MOVES a seat. It did not track him when he RENAMES a region, and that is a different
+ * operation: splitting Pedia's Upper Egypt into `UE-1` and `UE-2` leaves NO area coded `UE`, so the
+ * single-string lookup found nothing, `pooledBlockMembers` returned its empty "no pooling" answer,
+ * and El Qema's Upper Egypt block switched itself off with no error anywhere. Measured before this
+ * existed: 8 members under `UE`, 0 under `UE-1`/`UE-2`.
+ *
+ * The base code still matches, so this is a NO-OP until such a split is applied — which is what
+ * lets it ship ahead of the migration rather than racing it.
+ *
+ * A PREFIX, deliberately, rather than a list of `UE-1`/`UE-2`: a list is the third copy of a fact
+ * the organogram already owns, and it would go stale the day a `UE-3` appears. Anti Infective
+ * already runs `UE-1`/`UE-2` and they are Upper Egypt there too, so the family reads correctly on
+ * every line — even though El Qema itself is Pedia only.
+ */
+export function isPooledBlockRegion(regionCode: string | null | undefined): boolean {
+  const code = String(regionCode ?? "").trim().toUpperCase();
+  return code === POOLED_BLOCK_REGION_CODE || code.startsWith(`${POOLED_BLOCK_REGION_CODE}-`);
+}
+
 /** The label the Store Split sheet shows for the pool. */
 export const POOLED_BLOCK_LABEL = "Upper Egypt + Fayoum - Beni Suef";
 
@@ -359,8 +382,15 @@ export function pooledBlockMembers(
   officialLine: string,
   regions: SplitRegions | undefined,
 ): readonly (readonly string[])[] {
-  const upperEgypt = regions?.areasByRegion.get(POOLED_BLOCK_REGION_CODE);
-  if (!upperEgypt || upperEgypt.size === 0) return [];
+  // The UNION of every Upper Egypt region, so a split into districts keeps ONE pool rather than
+  // silently becoming none. Whether he later wants each half to pool only over itself is a
+  // question for him; until he says so, a rename must not change what the rule does.
+  const upperEgypt = new Set<string>();
+  for (const [regionCode, areas] of regions?.areasByRegion ?? []) {
+    if (!isPooledBlockRegion(regionCode)) continue;
+    for (const area of areas) upperEgypt.add(area);
+  }
+  if (upperEgypt.size === 0) return [];
   const excluded = regions?.others ?? NO_AREAS;
   const members: string[][] = [];
 
