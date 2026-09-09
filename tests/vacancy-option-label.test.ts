@@ -104,6 +104,47 @@ export async function runVacancyOptionLabelTests() {
     "Alex-BHR",
     "with nothing else to say the row is the district alone, never a stray separator",
   );
+  // A MANAGER row leads with the district. The area on such a vacancy is one arbitrary area out of
+  // the district the seat runs -- whichever one the leaver sat in -- so naming it first is what made
+  // the Alex-BHR-KFS district read as absent, and then made two Upper Egypt districts read as one.
+  assert.equal(
+    formatVacancyOptionLabel(districtManagerVacancy, { omitPositionTitle: true, leadWithRegion: true }),
+    "Alex-BHR (Behira 1) - Manager: Hany Saad Mohamed Omar",
+    "a manager row must name its district first and keep the area in brackets",
+  );
+  assert.ok(
+    formatVacancyOptionLabel(districtManagerVacancy, { leadWithRegion: true }).startsWith("Alex-BHR"),
+    "the headline assertion: the district is the first thing a manager row says",
+  );
+  // A rep row is the opposite case and must be untouched by the flag being available.
+  assert.equal(
+    formatVacancyOptionLabel({
+      areaName: "Kafr El-Sheikh 1",
+      managerName: "Hany Saad Mohamed Omar",
+      positionTitle: "Medical Representative",
+      regionName: "Alex-BHR",
+    }),
+    "Kafr El-Sheikh 1 (Alex-BHR) - Medical Representative - Manager: Hany Saad Mohamed Omar",
+    "without the flag the area still leads, because for a rep seat the area IS the job",
+  );
+  // The two shapes that have nothing to swap must not change under the flag.
+  assert.equal(
+    formatVacancyOptionLabel(
+      { areaName: "Cairo", managerName: null, positionTitle: null, regionName: "Cairo" },
+      { leadWithRegion: true },
+    ),
+    "Cairo",
+    "a single-area district still prints its name once",
+  );
+  assert.equal(
+    formatVacancyOptionLabel(
+      { areaName: "Haram - Faisal", managerName: null, positionTitle: null, regionName: null },
+      { leadWithRegion: true },
+    ),
+    "Haram - Faisal",
+    "a vacancy with no region has no district to lead with",
+  );
+
   // The picker must render through the helper -- an inline template literal in the component is
   // exactly how the region went missing, and a pure-function test alone would not see it come back.
   const componentPath = path.join(
@@ -115,8 +156,18 @@ export async function runVacancyOptionLabelTests() {
   );
   const component = fs.readFileSync(componentPath, "utf8");
   assert.ok(
-    component.includes("formatVacancyOptionLabel(v, { omitPositionTitle:"),
+    /formatVacancyOptionLabel\(v, \{/.test(component),
     "the vacancy picker must build its option text with formatVacancyOptionLabel",
+  );
+  // Decided from the rows, never from the chosen position: a mixed list must not put a rep row into
+  // district-first order.
+  assert.ok(
+    component.includes("leadWithRegion: vacancyRowsAreManagerSeats"),
+    "district-first order must be decided from the listed vacancies",
+  );
+  assert.ok(
+    !component.includes("leadWithRegion: true"),
+    "leadWithRegion must not be hard-coded on — a rep row would then name its district before its own area",
   );
   // The flag has to be decided from the rows on screen, never hard-coded true: with a Title typed
   // and no Job Position picked, the list holds a mix of positions and needs them printed.
