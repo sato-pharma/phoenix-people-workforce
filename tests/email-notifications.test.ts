@@ -84,12 +84,6 @@ export function runEmailNotificationTests() {
     // Its body is built from the letter design HR edits in the module itself, not from a DB email
     // template. See src/lib/offers/send.ts.
     "src/lib/offers/send.ts",
-    // A confirmed weekly sales upload tells each tracked line's District Managers and NSM which of
-    // THEIR products the sheet carried — one mail per line, recipients resolved live from the
-    // organogram, product names only and never a figure. Added on main while the six conversions
-    // below were in flight; it is the same shape as those and a candidate for the same treatment.
-    // See src/lib/sales/weekly/upload-notification.ts.
-    "src/lib/sales/weekly/upload-notification.ts",
     // The five leave fallback bodies, which fire ONLY when the matching template has been
     // deactivated — so they deliberately cannot themselves be templates.
     "src/lib/vacation/email.ts",

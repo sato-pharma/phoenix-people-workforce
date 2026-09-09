@@ -78,6 +78,7 @@ export const EMAIL_TEMPLATE_KEYS = {
   SOS_EXECUTIVE_REPORT: "sos_executive_report",
   CV_INTAKE_DIGEST: "cv_intake_digest",
   TELEGRAM_CONNECT: "telegram_connect",
+  WEEKLY_SALES_UPLOADED: "weekly_sales_uploaded",
 } as const satisfies Record<string, EmailTemplateKey>;
 
 export const emailTemplateRecipientRoleOptions = [
@@ -171,6 +172,19 @@ export type EmailTemplateContext = {
   stepsBlock?: string | null;
   /** Plain-text projection used wherever {{stepsBlock}} appears in text fields. */
   stepsBlockText?: string | null;
+  /**
+   * The product NAMES on this line, pre-rendered as a list. Deliberately names and codes only:
+   * one weekly-upload mail reaches every District Manager on the line off a NATIONAL sheet, so a
+   * sales figure here would be wider than the region each reader is scoped to everywhere else.
+   * Pinned by tests/weekly-upload-line-notification.test.ts.
+   */
+  productList?: string | null;
+  /** Plain-text projection used wherever {{productList}} appears in text fields. */
+  productListText?: string | null;
+  /** The distributor whose sheet this is about. */
+  distributorName?: string | null;
+  /** Human count of the products on this line, e.g. "4 Pedia products". */
+  productCountLabel?: string | null;
   /** Pre-rendered HTML table (e.g. submitted plan rows); sanitized, not escaped, in bodyHtml. */
   planTable?: string | null;
   /** Plain-text projection used wherever {{planTable}} appears in text fields. */
@@ -451,6 +465,7 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   sos_executive_report: emptyRules(["admin"], ["ceo"]),
   cv_intake_digest: emptyRules(["hiring_manager"], ["recruiter"]),
   telegram_connect: emptyRules(["employee"], []),
+  weekly_sales_uploaded: emptyRules(["district_manager"], ["regional_sales_manager"]),
   contract_renewal: emptyRules(["manager_chain"], ["hr"]),
   general: emptyRules(["admin"], ["hr"]),
   marketing_request: emptyRules(["admin"], ["hr"]),
@@ -711,6 +726,18 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     subject: "{{subject}}",
     templateKey: "telegram_connect",
     templateName: "Telegram Connect Invitation",
+  },
+  weekly_sales_uploaded: {
+    bodyHtml: "<p>A weekly sales file from <strong>{{distributorName}}</strong> has been uploaded to Phoenix Workforce, and it carries <strong>{{productCountLabel}}</strong>.</p><p>Your products read from this sheet:</p>{{productList}}<p>The figures are live now in Weekly Sales, scoped to the areas you cover.</p>{{detailsTable}}",
+    bodyText: "A weekly sales file from {{distributorName}} has been uploaded to Phoenix Workforce, and it carries {{productCountLabel}}.\n\nYour products read from this sheet:\n{{productList}}\n\nThe figures are live now in Weekly Sales, scoped to the areas you cover.\n\n{{detailsTable}}",
+    closingText: "Please open Weekly Sales to review the figures for your own areas.",
+    description: "Tells a line's District Managers and NSM which of THEIR products a weekly distributor sheet carried. Product names only — never a sales figure.",
+    greeting: "Dear {{line}} Leaders,",
+    isActive: true,
+    previewText: "{{productCountLabel}} in the {{distributorName}} weekly sheet.",
+    subject: "{{subject}}",
+    templateKey: "weekly_sales_uploaded",
+    templateName: "Weekly Sales Uploaded",
   },
   general: {
     bodyHtml: "<p>{{summary}}</p><p>{{status}}</p>",
@@ -1124,6 +1151,7 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   sos_executive_report: "Sales",
   cv_intake_digest: "Recruitment",
   telegram_connect: "Account Access",
+  weekly_sales_uploaded: "Sales",
 };
 
 export const emailTemplateCategories = [

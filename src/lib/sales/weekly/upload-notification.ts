@@ -21,8 +21,8 @@
 // owner's standing rule is that it is not tracked weekly at all, so a sheet carrying only Head
 // Office products correctly sends nothing. isWeeklyTrackedLine is the single gate.
 
-import { escapeEmailHtml, renderPhoenixEmailHtml, renderPhoenixEmailText } from "@/emails/phoenix-email-layout";
-import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { escapeEmailHtml, renderPhoenixMetadataTable, renderPhoenixMetadataTableText } from "@/emails/phoenix-email-layout";
+import { sendTemplatedEmail } from "@/lib/email-templates/service";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import { logError } from "@/lib/observability/log";
 import { isWeeklyTrackedLine } from "@/lib/sales/weekly/tracked-lines";
@@ -122,23 +122,15 @@ async function sendOneLine(input: {
   const countLabel = `${products.length} ${line} product${products.length === 1 ? "" : "s"}`;
   const subject = `${line} — weekly sales uploaded (${distributorName}, ${period})`;
   const action = { href: appUrl("/employee-portals/weekly-sales"), label: "Open Weekly Sales" };
-  const greeting = `Dear ${line} Leaders,`;
-  const title = "Weekly Sales Uploaded";
-  const closingText = "Please open Weekly Sales to review the figures for your own areas.";
 
-  const productListHtml = products
-    .map((product) => `<li>${escapeEmailHtml(product.productName)} <span style="opacity:0.7">(${escapeEmailHtml(product.productCode)})</span></li>`)
-    .join("");
-  const bodyHtml =
-    `<p>A weekly sales file from <strong>${escapeEmailHtml(distributorName)}</strong> has been uploaded to Phoenix Workforce, and it carries <strong>${escapeEmailHtml(countLabel)}</strong>.</p>` +
-    `<p>Your products read from this sheet:</p>` +
-    `<ul>${productListHtml}</ul>` +
-    `<p>The figures are live now in Weekly Sales, scoped to the areas you cover.</p>`;
-  const bodyText =
-    `A weekly sales file from ${distributorName} has been uploaded to Phoenix Workforce, and it carries ${countLabel}.\n\n` +
-    `Your products read from this sheet:\n` +
-    products.map((product) => `  - ${product.productName} (${product.productCode})`).join("\n") +
-    `\n\nThe figures are live now in Weekly Sales, scoped to the areas you cover.`;
+  // Product NAMES and codes only. One mail reaches every District Manager on the line off a
+  // NATIONAL sheet, so a sales figure here would be wider than the region each reader is scoped
+  // to everywhere else — pinned by tests/weekly-upload-line-notification.test.ts.
+  const productListHtml =
+    `<ul>${products
+      .map((product) => `<li>${escapeEmailHtml(product.productName)} <span style="opacity:0.7">(${escapeEmailHtml(product.productCode)})</span></li>`)
+      .join("")}</ul>`;
+  const productListText = products.map((product) => `  - ${product.productName} (${product.productCode})`).join("\n");
 
   const metadataRows = [
     { label: "Line", value: line },
@@ -147,29 +139,33 @@ async function sendOneLine(input: {
     { label: "Products on your line", value: String(products.length) },
   ];
 
-  const html = renderPhoenixEmailHtml({
-    action,
-    bodyHtml,
-    closingText,
-    greeting,
-    metadataRows,
-    previewText: `${products.length} ${line} product${products.length === 1 ? "" : "s"} in the ${distributorName} weekly sheet.`,
-    subject,
-    subtitle: `${line} · ${distributorName}`,
-    title,
-  });
-  const text = renderPhoenixEmailText({ action, bodyText, closingText, greeting, metadataRows, title });
-
-  const result = await sendPhoenixEmail({
-    cc: secondary.map((recipient) => recipient.email),
-    html,
-    // The batch id is unique per persisted upload, so this is one send per line per upload. Deleting
-    // a batch and re-uploading it mints a new id and legitimately notifies again.
+  // Wording lives in /admin/email-templates under "Weekly Sales Uploaded". Routing stays here —
+  // who hears about an upload is decided by the line's organogram, not by recipient rules.
+  const result = await sendTemplatedEmail({
+    context: {
+      ctaLabel: action.label,
+      ctaUrl: action.href,
+      detailsTable: renderPhoenixMetadataTable(metadataRows),
+      detailsTableText: renderPhoenixMetadataTableText(metadataRows),
+      distributorName,
+      line,
+      periodLabel: period,
+      productCountLabel: countLabel,
+      productList: productListHtml,
+      productListText,
+      subject,
+    },
+    fallbackTo: primary.map((recipient) => recipient.email),
+    // The batch id is unique per persisted upload, so this is one send per line per upload.
+    // Deleting a batch and re-uploading it mints a new id and legitimately notifies again.
     idempotencyKey: `weekly-upload:${batchId}:${line}`,
     origin: { eventType: "weekly_sales_uploaded", module: "sales" },
-    subject,
-    text,
-    to: primary.map((recipient) => recipient.email),
+    overrides: {
+      cc: secondary.map((recipient) => recipient.email),
+      replaceRecipients: true,
+      to: primary.map((recipient) => recipient.email),
+    },
+    templateKey: "weekly_sales_uploaded",
   });
 
   return {
