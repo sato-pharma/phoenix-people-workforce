@@ -264,6 +264,47 @@ export const WAREHOUSE_THRESHOLD_DISTRIBUTORS: ReadonlySet<string> = new Set(["Q
  */
 export const WAREHOUSE_THRESHOLD_LINES: ReadonlySet<string> = new Set(["pedia"]);
 
+/**
+ * Lines whose split excludes the areas their organogram parks in Others — owner, 2026-09-08:
+ * "you will follow the EU organogram of PEDIA LINE and exclude in distribution the areas in others".
+ *
+ * 🔴 THIS IS A LINE RULE, NOT A DISTRIBUTOR RULE, and the difference is the whole reason this set
+ * exists separately from WAREHOUSE_THRESHOLD_DISTRIBUTORS. It first shipped scoped to El Qema alone,
+ * on the reading that he was talking about El Qema's distribution. He was not: measured on August
+ * Pedia the next day, El Qema sent 0.000 packs into Others while OTHER distributors still sent
+ * 79.667 — 44.167 into Down town and 35.500 into Kafr El-Sheikh 2 — and he replied "NOT APPLIED EL
+ * QEMA RULE". An area in Others receives nothing on this line, whoever sold it.
+ *
+ * The 200-pack national split stays El Qema's alone. These are two different rules that happen to
+ * have arrived in the same sentence: WHO spreads nationwide, and WHERE nobody may receive.
+ */
+export const OTHERS_EXCLUDED_LINES: ReadonlySet<string> = new Set(["pedia"]);
+
+/**
+ * 🔴 THE CAIRO + QALUBEYA RULE STANDS — it was never replaced, and removing it was an error.
+ *
+ * Owner 2026-09-07: "سوف يتم تقسيم بيع القليوبية على مندوب القليوبية بالإضافة إلى كل مندوبين القاهرة
+ * بالتساوى" — El Qema's Qalubeya sales reach Qalubeya AND Cairo. When he introduced the 200-pack
+ * warehouse split the next day with "we will change the concept of the qema distribution into
+ * تقسيمة المخازن", that was read as REPLACING this rule. It was not. Told plainly on 2026-09-09:
+ * "YOU ARE NOT APPLYING THE CAIRO AND QALUBEYA RULE + THE NEW RULE" — both, together.
+ *
+ * They compose cleanly because they answer different questions. This map says WHAT COUNTS AS LOCAL
+ * for a warehouse: Benha is on Cairo's edge and supplies it, so Qalubeya's local catchment is
+ * Qalubeya plus the six Cairo areas rather than Qalubeya alone. The 200-pack rule then works on that
+ * block exactly as it works on any governorate — under 200 the whole sale stays local, over 200 half
+ * stays local and half crosses the country.
+ *
+ * WITHOUT THIS, Qalubeya is a ONE-AREA governorate, so a Benha warehouse keeps the entire local half
+ * itself and Cairo receives nothing — which is precisely the state he rejected.
+ *
+ * Keyed `DISTRIBUTOR|ORIGIN AREA`, so it is El Qema's alone and one-way: there is no `QM|CA*` entry,
+ * so a Cairo warehouse still treats Cairo as its own local block and never reaches Qalubeya.
+ */
+export const LOCAL_BLOCK_OVERRIDES: ReadonlyMap<string, { label: string; areas: readonly string[] }> = new Map([
+  ["QM|D11", { areas: ["CA1", "CA2", "CA3", "CA4", "CA5", "CA6", "D11"], label: "Qalubeya + Cairo" }],
+]);
+
 /** Every area the split can reach, in a stable order. AREA_CITY's keys ARE the universe. */
 export const ALL_SPLIT_AREAS: readonly string[] = [...AREA_CITY.keys()].sort();
 
@@ -382,20 +423,34 @@ export function splitTargetsFor(
 
   // The rule is the owner's El Qema rule, on the owner's El Qema line. Anything else falls through
   // to the plain city split it has always had — see WAREHOUSE_THRESHOLD_LINES.
-  const ruleApplies = WAREHOUSE_THRESHOLD_DISTRIBUTORS.has(normalizeDistributor(row.distributorCode))
-    && WAREHOUSE_THRESHOLD_LINES.has(lineKey(row.officialLine));
-  const excluded = ruleApplies ? (othersAreas ?? NO_AREAS) : NO_AREAS;
+  const line = lineKey(row.officialLine);
+  const distributor = normalizeDistributor(row.distributorCode);
+  const ruleApplies = WAREHOUSE_THRESHOLD_DISTRIBUTORS.has(distributor)
+    && WAREHOUSE_THRESHOLD_LINES.has(line);
+
+  // What counts as LOCAL for this warehouse: its governorate, unless an owner override widens it.
+  // See LOCAL_BLOCK_OVERRIDES — El Qema's Qalubeya reaches Cairo, and that rule stands alongside the
+  // 200-pack split rather than being replaced by it.
+  const override = ruleApplies ? LOCAL_BLOCK_OVERRIDES.get(`${distributor}|${origin}`) : undefined;
+  const localBlock = override?.areas ?? cityAreas;
+  // The Store Split sheet names the rule that moved the money, so a reader never has to guess why
+  // Cairo gained from a Benha warehouse.
+  const localLabel = override?.label ?? city;
+  // The exclusion is keyed on the LINE alone — every warehouse on it, not just El Qema's. The
+  // threshold above is the distributor's rule; this one is the organogram's.
+  const excluded = OTHERS_EXCLUDED_LINES.has(line) ? (othersAreas ?? NO_AREAS) : NO_AREAS;
 
   // The ORIGIN is never excluded from its own sale. An area is barred from receiving a share of
   // somebody else's money, not from keeping what it sold itself — and without this a warehouse
   // sitting in an Others area would have a home half with nowhere at all to go.
   const keep = (area: string) => !excluded.has(area) || area === origin;
-  const homeAreas = cityAreas.filter(keep);
+  const homeAreas = localBlock.filter(keep);
+  const localSet = new Set(localBlock);
 
   const home: SplitPlan = {
     areas: homeAreas,
     awayAreas: [],
-    group: city,
+    group: localLabel,
     homeAreas,
     homeFraction: 1,
   };
@@ -405,13 +460,15 @@ export function splitTargetsFor(
   const qty = Number.isFinite(thresholdQty) ? Number(thresholdQty) : Number(row.qty) || 0;
   if (!(qty > WAREHOUSE_NATIONAL_SPLIT_THRESHOLD_QTY)) return home;
 
-  const awayAreas = ALL_SPLIT_AREAS.filter((area) => AREA_CITY.get(area) !== city && keep(area));
+  // Everything the local block does NOT already hold. Testing the block rather than the city is what
+  // stops Cairo being paid twice when it is part of Qalubeya's local block.
+  const awayAreas = ALL_SPLIT_AREAS.filter((area) => !localSet.has(area) && keep(area));
   if (awayAreas.length === 0) return home;
 
   return {
     areas: [...homeAreas, ...awayAreas],
     awayAreas,
-    group: `${city} + nationwide`,
+    group: `${localLabel} + nationwide`,
     homeAreas,
     homeFraction: WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION,
   };

@@ -81,33 +81,62 @@ export function runQemaWarehouseSplitTests() {
   // ── Above 200: half home, half across the rest of the country ────────────────────────────────
   const plan = splitTargetsFor(row());
   assert.ok(plan, "an El Qema Qalubeya warehouse over 200 has a plan");
-  assert.deepEqual([...plan.homeAreas], ["D11"], "Qalubeya holds exactly one area, so it IS the home block");
-  assert.equal(plan.homeFraction, 0.5, "and half the order stays on it");
-  assert.equal(plan.awayAreas.length, ALL_SPLIT_AREAS.length - 1, "the away block is every other area");
+  // 🔴 THE LOCAL BLOCK IS QALUBEYA **PLUS CAIRO** — the 2026-09-07 rule, which the 200-pack rule of
+  // 09-08 did NOT replace. Told plainly on 09-09: "YOU ARE NOT APPLYING THE CAIRO AND QALUBEYA RULE
+  // + THE NEW RULE". Benha is on Cairo's edge and supplies it, so Qalubeya's LOCAL catchment is
+  // seven areas; the 200-pack rule then works on that block exactly as on any governorate.
+  // Collapsing this back to ["D11"] leaves Cairo with nothing, which is the state he rejected.
+  assert.deepEqual(
+    [...plan.homeAreas].sort(),
+    ["CA1", "CA2", "CA3", "CA4", "CA5", "CA6", "D11"],
+    "the local block is Qalubeya plus all six Cairo areas",
+  );
+  assert.equal(plan.homeFraction, 0.5, "and half the order stays inside that block");
+  assert.equal(
+    plan.awayAreas.length,
+    ALL_SPLIT_AREAS.length - plan.homeAreas.length,
+    "the away block is every area the LOCAL block does not already hold",
+  );
+  for (const cairo of CAIRO) {
+    assert.equal(
+      plan.awayAreas.includes(cairo),
+      false,
+      `${cairo} is in the local block, so it must not ALSO be paid from the national half`,
+    );
+  }
   assert.equal(
     plan.awayAreas.includes("D11"),
     false,
     "THE EXCLUSION: the origin governorate is never in its own away block — "
       + "«ماعدا مندوبين نفس المحافظة اللي اتطبع فيها الاوردر»",
   );
-  // With NO exclusion set the universe is every area, Down town included. That is the baseline this
-  // module has always had, and the safe direction: a caller that cannot read the organogram splits
-  // exactly as before rather than silently dropping areas. The Others exclusion is asserted further
-  // down, where Down town comes OUT — see the 2026-09-08 block.
-  assert.ok(plan.awayAreas.includes("CA5"), "no exclusion set — every area is a target, Down town included");
+  // With NO exclusion set Down town is in the LOCAL block (it is a Cairo area). That is the baseline
+  // and the safe direction: a caller that cannot read the organogram splits as before rather than
+  // silently dropping areas. The Others exclusion is asserted below, where Down town comes OUT.
+  assert.ok(plan.homeAreas.includes("CA5"), "no exclusion set — Down town is in the local block");
 
   const qema = splitStoreSalesAcrossCityAreas([row()], "2026-09");
   const shares = qema.rows.filter((r) => r.clientCode === "QM-9001");
   assert.equal(shares.length, ALL_SPLIT_AREAS.length, "one row becomes one per area in the country");
 
-  const home = shares.find((r) => r.areaCode === "D11");
-  assert.ok(home, "Qalubeya keeps a row of its own");
-  assert.equal(Number(home.qty.toFixed(6)), 350, "half of 700 stays in Qalubeya, all on its single area");
-  assert.equal(Number(home.salesValue.toFixed(2)), 94_500, "and half the value with it");
+  const localRows = shares.filter((r) => plan.homeAreas.includes(r.areaCode));
+  assert.equal(localRows.length, 7, "seven local rows — Qalubeya and the six Cairo areas");
+  assert.equal(
+    Number(localRows.reduce((sum, r) => sum + r.qty, 0).toFixed(6)),
+    350,
+    "half of 700 stays in the local block",
+  );
+  for (const share of localRows) {
+    assert.equal(
+      Number(share.qty.toFixed(6)),
+      Number((350 / 7).toFixed(6)),
+      "and it divides evenly inside the block — Qalubeya keeps no more than a Cairo area",
+    );
+  }
 
-  const away = shares.filter((r) => r.areaCode !== "D11");
-  assert.equal(away.length, 48, "48 areas outside Qalubeya");
-  const awayQty = 350 / 48;
+  const away = shares.filter((r) => !plan.homeAreas.includes(r.areaCode));
+  assert.equal(away.length, ALL_SPLIT_AREAS.length - 7, "every area outside the local block");
+  const awayQty = 350 / away.length;
   for (const share of away) {
     assert.equal(Number(share.qty.toFixed(6)), Number(awayQty.toFixed(6)), "the other half divides evenly");
   }
@@ -127,7 +156,8 @@ export function runQemaWarehouseSplitTests() {
   // ── Up to 200: the governorate only, and nothing to do with the country ──────────────────────
   //
   // He drew the line at "لحد 200" — up TO 200 — so 200 exactly is a local sale and 201 is not.
-  // Alexandria is the origin here because Qalubeya has one area and would show nothing either way.
+  // Alexandria is the origin here because Qalubeya carries the Cairo override and would not show the
+  // plain governorate-only behaviour this assertion is about.
   const atThreshold = splitTargetsFor(row({ areaCode: "AB2", clientCode: "QM-9010", qty: 200 }), 200);
   assert.ok(atThreshold);
   assert.deepEqual([...atThreshold.areas], ["AB1", "AB2", "AB3"], "200 exactly stays inside Alexandria");
@@ -138,11 +168,21 @@ export function runQemaWarehouseSplitTests() {
   assert.ok(overThreshold);
   assert.equal(overThreshold.awayAreas.length, ALL_SPLIT_AREAS.length - 3, "201 crosses it — Alexandria's 3 areas stay home");
 
-  // A Qalubeya order at or below 200 has a single target, so nothing moves at all.
+  // A Qalubeya order at or below 200 still spreads — across the LOCAL block, which is Qalubeya plus
+  // Cairo. That is the 2026-09-07 rule: it has no threshold of its own, so a small Benha order
+  // reaches Cairo exactly as a large one does. Only the NATIONAL half is gated at 200.
+  const smallQalubeya = splitTargetsFor(row({ qty: 120 }), 120);
+  assert.ok(smallQalubeya);
+  assert.equal(smallQalubeya.awayAreas.length, 0, "120 packs never leaves the local block");
+  assert.deepEqual(
+    [...smallQalubeya.areas].sort(),
+    ["CA1", "CA2", "CA3", "CA4", "CA5", "CA6", "D11"],
+    "but it does reach Cairo — the Cairo rule is not gated on the 200 threshold",
+  );
   assert.equal(
     isSplitEligible(row({ qty: 120 }), "2026-09", 120),
-    false,
-    "up to 200 in a one-area governorate is simply left where it is",
+    true,
+    "so a sub-threshold Qalubeya order DOES move",
   );
 
   // ── THE ONE-WAY PROPERTY IS GONE, DELIBERATELY ───────────────────────────────────────────────
@@ -217,8 +257,8 @@ export function runQemaWarehouseSplitTests() {
   assert.ok(movement, "the split reports a movement out of the origin");
   assert.equal(
     movement.city,
-    "Qalubeya + nationwide",
-    "the Store Split sheet names the national rule, so a reader is never left guessing why Aswan gained",
+    "Qalubeya + Cairo + nationwide",
+    "the Store Split sheet names BOTH rules, so a reader is never left guessing why Cairo or Aswan gained",
   );
 
   // ── EVERY El Qema customer is a warehouse — owner, 2026-09-07, restated 2026-09-08 ───────────
@@ -269,11 +309,15 @@ export function runQemaWarehouseSplitTests() {
   const excluded = splitTargetsFor(row(), 700, PEDIA_OTHERS);
   assert.ok(excluded, "an El Qema Qalubeya warehouse still has a plan");
   assert.deepEqual(
-    [...excluded.homeAreas],
-    ["D11"],
-    "Qalubeya is a district of its own on Pedia, so it keeps the whole home half",
+    [...excluded.homeAreas].sort(),
+    ["CA1", "CA2", "CA3", "CA4", "CA6", "D11"],
+    "the local block loses Down town to Others and keeps the other six",
   );
-  assert.equal(excluded.awayAreas.length, REMAINING - 1, "the national half now reaches 36 areas, not 48");
+  assert.equal(
+    excluded.awayAreas.length,
+    REMAINING - excluded.homeAreas.length,
+    "the national half reaches every remaining area outside the local block",
+  );
   for (const area of PEDIA_OTHERS) {
     assert.equal(excluded.awayAreas.includes(area), false, `${area} is in Others and receives nothing`);
   }
@@ -304,6 +348,44 @@ export function runQemaWarehouseSplitTests() {
     splitTargetsFor(row(), 700, new Set())?.areas.length,
     ALL_SPLIT_AREAS.length,
     "no exclusions means the whole country, exactly as before this rule existed",
+  );
+
+  // ── 🔴 THE EXCLUSION IS A LINE RULE, NOT A DISTRIBUTOR RULE ─────────────────────────────────
+  //
+  // It first shipped scoped to El Qema alone. Measured on August Pedia the next day, El Qema sent
+  // 0.000 packs into Others while OTHER distributors still sent 79.667 — 44.167 into Down town and
+  // 35.500 into Kafr El-Sheikh 2 — and the owner's answer was "NOT APPLIED EL QEMA RULE". His words
+  // were "the EU organogram of PEDIA LINE": an area in Others receives nothing on this line, whoever
+  // sold it. Narrowing this back to El Qema restores exactly the state he rejected.
+  const otherDistributor = splitTargetsFor(
+    row({ areaCode: "CA2", clientCode: "PS-7001", distributorCode: "PS", qty: 120 }),
+    120,
+    PEDIA_OTHERS,
+  );
+  assert.ok(otherDistributor, "a non-El-Qema Cairo warehouse still splits");
+  assert.deepEqual(
+    [...otherDistributor.homeAreas],
+    ["CA1", "CA2", "CA3", "CA4", "CA6"],
+    "Cairo's FIVE non-Others areas — Down town is skipped for every distributor, not just El Qema",
+  );
+  assert.equal(
+    otherDistributor.awayAreas.length,
+    0,
+    "but it takes no national half: the 200-pack rule is still El Qema's alone, and these are two "
+      + "different rules that merely arrived in the same sentence",
+  );
+
+  // The exclusion is Pedia's. A CNS row ignores the set entirely — he scoped it to the Pedia
+  // organogram, and August Anti Infective is published, so neither of the other lines may move.
+  const cnsRow = splitTargetsFor(
+    row({ areaCode: "CA2", clientCode: "PS-7002", distributorCode: "PS", officialLine: "CNS", qty: 120 }),
+    120,
+    PEDIA_OTHERS,
+  );
+  assert.ok(cnsRow);
+  assert.ok(
+    cnsRow.homeAreas.includes("CA5"),
+    "CNS still spreads across all six Cairo areas — the exclusion is gated on the LINE",
   );
 
   // An area is excluded from receiving OTHER people's money, never from keeping its own.
