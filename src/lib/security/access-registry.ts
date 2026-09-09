@@ -882,6 +882,15 @@ export const accessRegistry = [
   // Acquisition's screen untouched, and the manager's HR_ID comes off the session so no shape of
   // this call reaches another manager's shelf.
   sessionApi({ methods: ["PATCH", "DELETE"], pattern: "/api/recruitment/hiring-manager/candidates/*/folder", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
+  // "I will call this candidate" / "Skip" — the owner's two buttons, 2026-09-09. Same permission and
+  // the same reason as the three writes above, but a NARROWER per-record rule than any of them: the
+  // route admits only a CV sent to this caller or sitting in one of his OWN area folders, never one
+  // that belongs to a manager reporting to him. A National Sales Manager sees who reserved a CV and
+  // may not take it — the 2026-08-30 rule that the answer stays with the manager it was sent to, in
+  // a new shape. This is also the route that reveals a candidate's phone number, which is hidden on
+  // every card until the caller holds the claim, so its scoping is the thing standing between a
+  // manager and a number he has not committed to using.
+  sessionApi({ methods: ["PATCH"], pattern: "/api/recruitment/hiring-manager/candidates/*/call", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/hiring-manager/candidates/**", permission: { resource: "hiring_interviews", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/applications/**", permission: { resource: "hiring_interviews", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/interviews/**", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),

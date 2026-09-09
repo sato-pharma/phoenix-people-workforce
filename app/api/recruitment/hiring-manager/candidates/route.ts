@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { redactCandidateListContact } from "@/lib/recruitment/candidate-call-claims";
+import { loadCallClaims } from "@/lib/recruitment/candidate-call-claims-db";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
 import { recruitmentApiError, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
 
@@ -20,7 +22,18 @@ export async function GET(request: Request) {
   try {
     const access = await requireRecruitmentAccess(request, "hiring_interviews", "read");
     const candidates = await listCandidatesSentToManager(access.hrId);
-    return NextResponse.json({ candidates, success: true });
+
+    // THE PHONE NUMBERS COME OUT HERE TOO, and this is the route it would be easiest to forget: the
+    // portal renders its own list on the server and no screen calls this at all today. It is still
+    // live, still reachable by anyone holding `hiring_interviews:read`, and it returned every
+    // candidate's number — which would leave the whole rule resting on a page that happens not to
+    // ask. Redacted against the same claims, by the same function, as the page.
+    const claims = await loadCallClaims(candidates.map((candidate) => candidate.id));
+    return NextResponse.json({
+      callClaims: claims,
+      candidates: redactCandidateListContact(candidates, claims, access.hrId),
+      success: true,
+    });
   } catch (error) {
     return recruitmentApiError(error, "Failed to load the candidates sent to you.");
   }

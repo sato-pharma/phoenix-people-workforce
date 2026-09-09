@@ -98,6 +98,23 @@ async function assertCandidateInHiringManagerScope(access: AccessContext, candid
   // isCandidateInViewerTeamDistrict.
   if (await isCandidateInViewerTeamDistrict(access, candidateId)) return;
 
+  if (await isCandidateInCallerRequisition(access, candidateId)) return;
+
+  throw new Error("Forbidden: candidate is outside your recruitment scope.");
+}
+
+/**
+ * THE FIRST ROUTE INTO SCOPE — a candidate sitting on a requisition this caller owns.
+ *
+ * Pulled out of the walk above on 2026-09-09 so the "I will call" route can ask the same question
+ * rather than carry a second copy of it. The alternative was worse than a duplicate: without this,
+ * the card for a candidate in the caller's OWN interview round would offer a button that answers 403
+ * — the one list on the page reached by neither a push nor a district folder.
+ */
+export async function isCandidateInCallerRequisition(
+  access: AccessContext,
+  candidateId: string,
+): Promise<boolean> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
     .from("ats_applications")
@@ -113,12 +130,12 @@ async function assertCandidateInHiringManagerScope(access: AccessContext, candid
       // getRequisition throws Forbidden internally when out of scope — a caught throw
       // just means "not this one", so keep checking the candidate's other requisitions.
       const requisition = await getRequisition(access, requisitionId);
-      if (requisition) return;
+      if (requisition) return true;
     } catch {
       /* try the next requisition */
     }
   }
-  throw new Error("Forbidden: candidate is outside your recruitment scope.");
+  return false;
 }
 
 export async function listHiringManagerCandidateFiles(

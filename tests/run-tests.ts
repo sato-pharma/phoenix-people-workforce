@@ -221,6 +221,7 @@ import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.t
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
 import { runRecruitmentScreeningWorkstationTests } from "./recruitment-screening-workstation.test.ts";
 import { runCandidateFolderTests } from "./candidate-folders.test.ts";
+import { runCandidateCallClaimTests } from "./candidate-call-claims.test.ts";
 import { runCandidatePoolFiledSearchTests } from "./candidate-pool-filed-search.test.ts";
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
 import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
@@ -4913,6 +4914,11 @@ await runTest(
 await runTest(
   "organogram Arabic search (nameAr is indexed, and query and row fold to one spelling policy)",
   runOrganogramArabicSearchTests,
+);
+
+await runTest(
+  "a manager's CV card: the phone is revealed by the \"I will call\" reservation and by nothing else, and the download is blocked in the route",
+  runCandidateCallClaimTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

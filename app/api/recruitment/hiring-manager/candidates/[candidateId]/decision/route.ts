@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 
+import {
+  redactCandidateContact,
+  revealPhoneToViewer,
+} from "@/lib/recruitment/candidate-call-claims";
+import { loadCallClaim, releaseCandidateCall } from "@/lib/recruitment/candidate-call-claims-db";
 import { updateCandidateStatus } from "@/lib/recruitment/candidates";
 import {
   CANDIDATE_STATUS_NOTE_MAX_LENGTH,
@@ -75,7 +80,27 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     }
 
     const candidate = await updateCandidateStatus(access, candidateId, hiringManagerDecisionStatus[decision], note);
-    return NextResponse.json({ candidate, success: true });
+
+    // A manager who has just skipped somebody has plainly stopped intending to phone them, so his
+    // own reservation goes with the answer. Leaving it would lock the CV away from every other
+    // manager with nobody working it — the one failure mode a claim can produce. It removes only HIS
+    // row, so a CV reserved by somebody else is untouched, and it can never block the answer: the
+    // decision is already written by this point, and a failed release must not turn a recorded Skip
+    // into an error on his screen.
+    if (decision === "not_interested" && access.hrId) {
+      await releaseCandidateCall({ candidateId, managerHrId: access.hrId }).catch(() => undefined);
+    }
+
+    // The candidate this route hands back is the row as STORED, phone number and all, and a screen
+    // that renders it from anywhere but the claim would print what the page took away. Redacted
+    // against whatever claim now stands — which, after a Skip, is no longer his. Read AFTER the
+    // release above, deliberately, so the answer reflects the state the manager is left in.
+    const claim = await loadCallClaim(candidateId);
+    return NextResponse.json({
+      candidate: redactCandidateContact(candidate, revealPhoneToViewer(claim, access.hrId)),
+      claim,
+      success: true,
+    });
   } catch (error) {
     return recruitmentApiError(error, "Failed to record your answer on that candidate.");
   }

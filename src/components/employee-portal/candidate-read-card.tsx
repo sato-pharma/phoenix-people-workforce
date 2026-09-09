@@ -2,10 +2,17 @@
 
 import type { ReactNode } from "react";
 
+import {
+  CandidateCallControl,
+  CandidateCallNotice,
+  hiddenPhoneText,
+  useCandidateCall,
+} from "@/components/employee-portal/candidate-call-control";
 import { CandidateCommentThread } from "@/components/employee-portal/candidate-comment-thread";
 import { CandidateCvActions } from "@/components/employee-portal/candidate-cv-actions";
 import { Card } from "@/components/ui/card";
 import { APPLIED_FOR_SOURCE_LABEL, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
+import type { CandidateCallClaim } from "@/lib/recruitment/candidate-call-claims";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
@@ -34,12 +41,35 @@ import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
  */
 export function CandidateReadCard({
   candidate,
+  claim: initialClaim = null,
+  canCall = false,
   files,
+  onSkipped,
   viewerHrId,
   footer,
 }: {
   candidate: Candidate;
+  /**
+   * Who has said "I will call" this candidate, loaded with the list.
+   *
+   * Shown on BOTH screens, and that is the point of the feature: the owner, 2026-09-09 — *"every
+   * other manager receiving this CV when open the same CV shows that Ahmed will call this CV"*. The
+   * same applicant genuinely sits in three managers' folders and on a National Sales Manager's team
+   * view at once, and until now none of those readers could tell that another had taken him.
+   */
+  claim?: CandidateCallClaim | null;
+  /**
+   * May this reader take the CV, or only see who has?
+   *
+   * TRUE only in a manager's OWN area folders. False on the team screen, where a National Sales
+   * Manager reads what sits with the managers below him — the 2026-08-30 rule that the answer stays
+   * with the manager the CV was sent to, which taking the call from above would break in a new
+   * shape. The API enforces the same boundary; this only keeps the screen honest.
+   */
+  canCall?: boolean;
   files: TeamCandidateFile[];
+  /** Called after a Skip, so the folder can drop the card in place. Own folders only. */
+  onSkipped?: (candidateId: string) => void;
   viewerHrId: string | null;
   /**
    * An optional action strip below the comment thread. Passed ONLY from the district folders, where
@@ -49,8 +79,14 @@ export function CandidateReadCard({
   footer?: ReactNode;
 }) {
   const appliedFor = candidateRowAppliedFor(candidate);
+  const call = useCandidateCall(candidate, initialClaim, viewerHrId);
   return (
     <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6">
+      {/* Who has taken this CV, before anything else on the card. On the team screen this is the ONLY
+          part of the feature the reader gets, and it is the part he needs: he can see that a CV
+          sitting with one of his managers has been claimed, and by whom. */}
+      <CandidateCallNotice claim={call.claim} viewerHrId={viewerHrId} />
+
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-base font-semibold text-slate-900" dir="auto">
@@ -73,7 +109,9 @@ export function CandidateReadCard({
       </div>
 
       <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Phone" value={candidate.phone} />
+        {/* Hidden unless this reader is the one who took the CV. On the team screen he never can be,
+            so it reads a plain "Hidden" rather than pointing at a button that is not there. */}
+        <Field label="Phone" value={call.phone ?? hiddenPhoneText(canCall)} />
         <Field label="Email" value={candidate.email} />
         <Field label="Governorate" value={candidate.governorate} />
         {/* What the applicant ASKED for, which is what put this CV in a district folder at all. Kept
@@ -95,6 +133,19 @@ export function CandidateReadCard({
       </div>
 
       <CandidateCvActions candidateId={candidate.id} initialFiles={files} />
+
+      {/* The owner's two buttons, on the folder screen where several managers see one CV. `skip`
+          here is his OWN pass — it clears the card from his folder and leaves the candidate in front
+          of everybody else, exactly as returning it to the administrator does. Nobody asked him for
+          an answer on this CV, so there is nothing to answer and no note to require. */}
+      <CandidateCallControl
+        canAct={canCall}
+        candidateId={candidate.id}
+        claim={call.claim}
+        onChanged={call.apply}
+        skip={canCall && onSkipped ? { onSkipped } : undefined}
+        viewerHrId={viewerHrId}
+      />
 
       <CandidateCommentThread candidateId={candidate.id} viewerHrId={viewerHrId} />
 
