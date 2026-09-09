@@ -648,13 +648,22 @@ export function splitTargetsFor(
  * adjustment is not a property of any one sale. The Matrix, the attribution net and the closing all
  * do. That is a real difference between those surfaces and it is stated rather than hidden.
  */
-export const QEMA_LEAD_AREAS: readonly string[] = [
-  "D11", // Qalubeya
-  "D14", // Gharbia 1 — Tanta
-  "D15", // Gharbia 2 — Mahalla
+export const QEMA_LEAD_TIERS: readonly (readonly string[])[] = [
+  ["D11"],          // Qalubeya — first, on its own
+  ["D14", "D15"],   // Gharbia 1 (Tanta) and Gharbia 2 (Mahalla), level with each other behind it
 ];
 
-/** How far above the highest other area the three land. His "very small scale". */
+/**
+ * 🔒 QALUBEYA IS FIRST, NOT JOINT-FIRST — owner, 2026-09-09, in two words: "Qalubeya number 1".
+ *
+ * The first build of the guarantee put all three on ONE figure and left the display order to the
+ * sort, so Qalubeya read third of three at the same percentage. He wants a rank, so the tiers above
+ * are a ladder: each takes one step more than the tier below, and the tier below takes one step
+ * more than the field. Within a tier the members are LEVEL — Tanta never sits behind Mahalla.
+ */
+export const QEMA_LEAD_AREAS: readonly string[] = QEMA_LEAD_TIERS.flat();
+
+/** One step between tiers, and between the bottom tier and the field. His "very small scale". */
 export const QEMA_LEAD_STEP = 0.02;
 
 /**
@@ -666,11 +675,13 @@ export const QEMA_LEAD_STEP = 0.02;
  */
 export function qemaLeadTargets(
   totals: ReadonlyMap<string, number>,
-  leadAreas: readonly string[],
+  tiers: readonly (readonly string[])[],
 ): Map<string, number> | null {
-  const lead = leadAreas.map(normalizeArea).filter((area) => area.length > 0);
-  if (lead.length === 0) return null;
-  const leadSet = new Set(lead);
+  const ladder = tiers
+    .map((tier) => tier.map(normalizeArea).filter((area) => area.length > 0))
+    .filter((tier) => tier.length > 0);
+  if (ladder.length === 0) return null;
+  const leadSet = new Set(ladder.flat());
 
   let pool = 0;
   let topOther = 0;
@@ -681,41 +692,71 @@ export function qemaLeadTargets(
   }
   if (pool <= 0) return null;
 
-  // 🔴 THE STEP IS MEASURED AFTER THE MONEY MOVES, WHICH MAKES THE FLOOR A FIXED POINT.
-  // Lifting the three is paid for by everyone else, so the area they have to beat is SMALLER once
-  // they have been paid. Taking the floor from the figure before the take overshoots — measured on
-  // August, it landed them 5.4% clear when he asked for a very small scale. Twenty passes settle it
-  // to double precision; the sequence is a contraction, so it converges from any start.
-  let floor = topOther * (1 + QEMA_LEAD_STEP);
-  let shortfall = lead.map((area) => Math.max(0, floor - (totals.get(area) ?? 0)));
-  let need = shortfall.reduce((sum, gap) => sum + gap, 0);
+  /**
+   * The floor each tier must reach, given what the field is worth once the lift has been paid for.
+   *
+   * Read from the BOTTOM up, so every tier clears the one under it by a step and the lowest clears
+   * the field. A tier whose own strongest member already sits above its floor pulls the whole tier
+   * up to that member rather than leaving one of them behind — within a tier they are level.
+   */
+  const floorsFor = (keep: number): number[] => {
+    const floors: number[] = new Array(ladder.length).fill(0);
+    let under = topOther * keep;
+    for (let index = ladder.length - 1; index >= 0; index -= 1) {
+      const strongest = Math.max(...ladder[index].map((area) => totals.get(area) ?? 0));
+      const floor = Math.max(under * (1 + QEMA_LEAD_STEP), strongest);
+      floors[index] = floor;
+      under = floor;
+    }
+    return floors;
+  };
+
+  const needFor = (floors: readonly number[]): number => ladder.reduce(
+    (sum, tier, index) => sum + tier.reduce(
+      (tierSum, area) => tierSum + Math.max(0, floors[index] - (totals.get(area) ?? 0)),
+      0,
+    ),
+    0,
+  );
+
+  // 🔴 THE STEPS ARE MEASURED AFTER THE MONEY MOVES, WHICH MAKES THE FLOORS A FIXED POINT.
+  // Lifting the named areas is paid for by everyone else, so the field they have to clear is
+  // SMALLER once they have been paid. Taking the step against the field as it stood before
+  // overshoots — measured on August, it put them 5.4% clear when he asked for a very small scale.
+  // Twenty passes settle it to double precision; the sequence is a contraction from any start.
+  let keep = 1;
+  let floors = floorsFor(keep);
+  let need = needFor(floors);
   for (let pass = 0; pass < 20 && need > 0 && need < pool; pass += 1) {
-    const next = topOther * ((pool - need) / pool) * (1 + QEMA_LEAD_STEP);
-    if (Math.abs(next - floor) <= Number.EPSILON * Math.max(1, floor)) break;
-    floor = next;
-    shortfall = lead.map((area) => Math.max(0, floor - (totals.get(area) ?? 0)));
-    need = shortfall.reduce((sum, gap) => sum + gap, 0);
+    const next = (pool - need) / pool;
+    if (Math.abs(next - keep) <= Number.EPSILON * 8) break;
+    keep = next;
+    floors = floorsFor(keep);
+    need = needFor(floors);
   }
   if (need <= 0) return null;
 
-  // Clamped at the pool. It cannot bind on any real month — the three need a few percent of the
-  // book and the rest of the country holds ninety — but a product sold entirely inside one other
-  // city would otherwise ask for money that does not exist. At the clamp the others reach zero,
-  // which satisfies the guarantee by itself.
+  // Clamped at the pool. It cannot bind on any real month — the named areas need a few percent of
+  // the book and the rest of the country holds ninety — but a product sold entirely inside one
+  // other city would otherwise ask for money that does not exist. At the clamp the others reach
+  // zero, which satisfies the ladder by itself.
   const take = Math.min(need, pool);
-  const keep = (pool - take) / pool;
+  const survivorShare = (pool - take) / pool;
 
   const out = new Map<string, number>();
   for (const [area, amount] of totals) {
-    if (!leadSet.has(area)) out.set(area, amount * keep);
+    if (!leadSet.has(area)) out.set(area, amount * survivorShare);
   }
-  // The last lead area absorbs the rounding, exactly as evenShares and planShares do, so the
+  // The last named area absorbs the rounding, exactly as evenShares and planShares do, so the
   // adjusted landing sums back to the untouched one bit for bit.
+  const flat = ladder.flatMap((tier, index) => tier.map((area) => ({ area, floor: floors[index] })));
   let given = 0;
-  lead.forEach((area, index) => {
-    const share = index < lead.length - 1 ? (take * shortfall[index]) / need : take - given;
+  flat.forEach(({ area, floor }, index) => {
+    const own = totals.get(area) ?? 0;
+    const wanted = Math.max(0, floor - own);
+    const share = index < flat.length - 1 ? (take * wanted) / need : take - given;
     given += share;
-    out.set(area, (totals.get(area) ?? 0) + share);
+    out.set(area, own + share);
   });
   return out;
 }
@@ -1256,7 +1297,7 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
 }
 
 /**
- * 🔒 Lift Qalubeya, Tanta and Mahalla above every other area, once, over the whole month.
+ * 🔒 Rank Qalubeya first, Tanta and Mahalla level behind it, all three above the field.
  *
  * Runs per line and per product over the shares El Qema's rule already landed, and moves money
  * between areas without changing what any line or product totals. The rows and the movements are
@@ -1298,8 +1339,10 @@ function applyQemaLeadGuarantee<T extends StoreSplitRow>(
   for (const group of groups.values()) {
     const line = lineKey(group[0].line);
     const excluded = OTHERS_EXCLUDED_LINES.has(line) ? (regions?.others ?? NO_AREAS) : NO_AREAS;
-    const leadAreas = QEMA_LEAD_AREAS.filter((area) => !excluded.has(area));
-    if (leadAreas.length === 0) continue;
+    const ladder = QEMA_LEAD_TIERS
+      .map((tier) => tier.filter((area) => !excluded.has(area)))
+      .filter((tier) => tier.length > 0);
+    if (ladder.length === 0) continue;
 
     const rowsByArea = new Map<string, QemaLandedShare<T>[]>();
     const qtyByArea = new Map<string, number>();
@@ -1315,8 +1358,8 @@ function applyQemaLeadGuarantee<T extends StoreSplitRow>(
     // Units and money are targeted separately. They move together on every El Qema row today
     // because one product carries one price, and they would not on a product priced two ways —
     // deriving money from the unit ratio would then quietly reprice it.
-    const qtyTargets = qemaLeadTargets(qtyByArea, leadAreas);
-    const valueTargets = qemaLeadTargets(valueByArea, leadAreas);
+    const qtyTargets = qemaLeadTargets(qtyByArea, ladder);
+    const valueTargets = qemaLeadTargets(valueByArea, ladder);
     if (!qtyTargets && !valueTargets) continue;
 
     // The biggest row of the group is the template for a lead area that landed nothing.

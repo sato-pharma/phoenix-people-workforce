@@ -17,6 +17,7 @@ import {
   planShares,
   QEMA_LEAD_AREAS,
   QEMA_LEAD_STEP,
+  QEMA_LEAD_TIERS,
   splitStoreSalesAcrossCityAreas,
   splitTargetsFor,
   UPPER_EGYPT_AREAS,
@@ -128,9 +129,9 @@ export function referenceQemaShares(
  */
 export function referenceQemaLead(
   landing: ReadonlyMap<string, number>,
-  leadAreas: readonly string[] = QEMA_LEAD_AREAS,
+  tiers: readonly (readonly string[])[] = QEMA_LEAD_TIERS,
 ): Map<string, number> {
-  const leadSet = new Set(leadAreas);
+  const leadSet = new Set(tiers.flat());
   let pool = 0;
   let top = 0;
   for (const [area, amount] of landing) {
@@ -138,29 +139,34 @@ export function referenceQemaLead(
     pool += amount;
     if (amount > top) top = amount;
   }
+  const own = [...leadSet].reduce((sum, area) => sum + (landing.get(area) ?? 0), 0);
   const k = 1 + QEMA_LEAD_STEP;
 
-  // A lead area already above the floor is not lifted and does not pay either, so it drops out of
-  // the equation — which changes the equation. Solve for the areas below, re-read which those are,
-  // and repeat. At most one pass per lead area, and on August it settles on the first.
-  let below = [...leadAreas];
-  let floor = 0;
-  for (let pass = 0; pass < leadAreas.length + 1; pass += 1) {
-    const own = below.reduce((sum, area) => sum + (landing.get(area) ?? 0), 0);
-    floor = (k * top * (pool + own)) / (pool + k * below.length * top);
-    const next = leadAreas.filter((area) => (landing.get(area) ?? 0) < floor);
-    if (next.length === below.length) break;
-    below = next;
-  }
-  const belowSet = new Set(below);
-  const need = below.reduce((sum, area) => sum + (floor - (landing.get(area) ?? 0)), 0);
+  // Each tier clears the one below it by a step, and the bottom tier clears the field, so tier t
+  // (counting from the top) sits at k^(n−t) times the field. The field itself shrinks by the same
+  // factor everyone pays, which is what makes this one equation rather than a loop:
+  //
+  //     need = T·keep·S − ΣL,  keep = (P − need)/P,  S = Σ k^(n−t)·m_t
+  //   ⇒ need = P·(T·S − ΣL) / (P + T·S)
+  const weight = (index: number) => k ** (tiers.length - index);
+  const S = tiers.reduce((sum, tier, index) => sum + weight(index) * tier.length, 0);
+  const need = (pool * (top * S - own)) / (pool + top * S);
   const keep = (pool - need) / pool;
 
   const out = new Map<string, number>();
   for (const [area, amount] of landing) {
-    out.set(area, leadSet.has(area) ? (belowSet.has(area) ? floor : amount) : amount * keep);
+    if (!leadSet.has(area)) out.set(area, amount * keep);
   }
-  for (const area of leadAreas) if (!out.has(area)) out.set(area, floor);
+  tiers.forEach((tier, index) => {
+    const floor = top * keep * weight(index);
+    for (const area of tier) {
+      assert.ok(
+        (landing.get(area) ?? 0) < floor,
+        `${area} must start below its floor for the closed form to hold`,
+      );
+      out.set(area, floor);
+    }
+  });
   return out;
 }
 
@@ -441,8 +447,13 @@ export function runQemaWarehouseSplitTests() {
   // Owner, twice: inside the ruling itself and again when the first build reported them 22nd, 20th
   // and 21st instead of making it so. "لابد" is a requirement. It is the only part of this rule
   // stated as an outcome, so it is enforced as one, once, over the whole month.
-  assert.deepEqual([...QEMA_LEAD_AREAS], ["D11", "D14", "D15"], "Qalubeya, Tanta, Mahalla");
-  assert.equal(QEMA_LEAD_STEP, 0.02, "and they clear the field by his own very small scale");
+  assert.deepEqual(
+    QEMA_LEAD_TIERS.map((tier) => [...tier]),
+    [["D11"], ["D14", "D15"]],
+    "Qalubeya alone on top, Tanta and Mahalla level behind it — \"Qalubeya number 1\"",
+  );
+  assert.deepEqual([...QEMA_LEAD_AREAS], ["D11", "D14", "D15"], "flattened, in rank order");
+  assert.equal(QEMA_LEAD_STEP, 0.02, "one step between tiers, and above the field");
 
   // A book shaped like August's: one huge band-3 warehouse in Qalubeya, and a band-1 city sale in
   // Alexandria, which is what actually led the table before this existed.
@@ -483,10 +494,22 @@ export function runQemaWarehouseSplitTests() {
       `${area} finishes above every other area (${landedQty.get(area)} vs ${topOther})`,
     );
   }
+  // 🔒 QALUBEYA NUMBER 1, and the pair level behind it. Three assertions rather than one,
+  // because "all three on top" and "Qalubeya on top" are different requirements and the first
+  // build delivered only the first.
+  assert.ok(
+    (landedQty.get("D11") ?? 0) > (landedQty.get("D14") ?? 0),
+    "Qalubeya finishes above Tanta",
+  );
   assert.equal(
-    new Set(QEMA_LEAD_AREAS.map((area) => round(landedQty.get(area) ?? 0))).size,
-    1,
-    "and the three land together — none of them is behind the other two",
+    round(landedQty.get("D14") ?? 0),
+    round(landedQty.get("D15") ?? 0),
+    "Tanta and Mahalla finish level with each other, never one behind the other",
+  );
+  assert.equal(
+    round((landedQty.get("D11") ?? 0) / (landedQty.get("D14") ?? 1)),
+    round(1 + QEMA_LEAD_STEP),
+    "and Qalubeya clears them by exactly one step",
   );
 
   // 🔴 THE STEP IS MEASURED AFTER THE MONEY MOVES. Taking it against the field BEFORE the take
@@ -494,9 +517,14 @@ export function runQemaWarehouseSplitTests() {
   // put them 5.4% clear when he asked for a very small scale. This is the assertion that fails if
   // the fixed point is ever "simplified" back to one pass.
   assert.equal(
-    round((landedQty.get("D11") ?? 0) / topOther),
+    round((landedQty.get("D14") ?? 0) / topOther),
     round(1 + QEMA_LEAD_STEP),
-    "exactly one step above the field, measured on the final numbers",
+    "the bottom tier clears the field by exactly one step, measured on the final numbers",
+  );
+  assert.equal(
+    round((landedQty.get("D11") ?? 0) / topOther),
+    round((1 + QEMA_LEAD_STEP) ** 2),
+    "and Qalubeya by two — the ladder is measured after the money moves, not before",
   );
 
   // Against the closed-form solution, area by area — algebra against the shipped iteration.

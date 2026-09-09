@@ -12,7 +12,7 @@ import { othersLookupLineCode, usesOrganogramRegions } from "@/lib/sales/closing
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { ALL_SPLIT_AREAS } from "@/lib/sales/store-sales-city-split";
 
-import { referenceQemaLead, referenceQemaShares } from "./qema-warehouse-split.test.ts";
+import { referenceQemaShares } from "./qema-warehouse-split.test.ts";
 
 /**
  * ATTRIBUTION MUST SEE THE SAME SPLIT THE CLOSING DOES.
@@ -135,46 +135,46 @@ export function runAttributionStoreSplitNetTests() {
   // is that share minus whatever the area sold. Nothing here is passed a regions map, so Others is
   // empty and all 49 areas are in play — which is what makes 49 the count asserted above.
   const NO_OTHERS: ReadonlySet<string> = new Set<string>();
-  // The bands and the صعيد pass divide one sale; the lead guarantee then runs ONCE over the month.
-  // Both are applied here, in that order, because `buildStoreSplitNetPayload` applies both — the
-  // guarantee is what puts Qalubeya, Tanta and Mahalla on top and it moves every other area too.
-  const shareOf = (origin: string, code: string, bandQty: number, total = bandQty) =>
-    referenceQemaLead(referenceQemaShares(origin, bandQty, total, NO_OTHERS)).get(code) ?? 0;
+  const netOf = (code: string) => august.find((row) => row.area_code === code)?.net_qty ?? 0;
+  // Qalubeya SOLD this row, so its net is deeply negative while its LANDING is the highest in the
+  // country. Every assertion about rank below is on the landing; reading the net alone inverts it.
+  const landed = (code: string) => netOf(code) + (code === "D11" ? 700 : 0);
 
   const origin = august.find((row) => row.area_code === "D11");
   assert.ok(origin, "the origin area is in the net");
-  assert.ok(
-    Math.abs(origin.net_qty - (shareOf("D11", "D11", 700) - 700)) < 1e-6,
-    `Qalubeya keeps its share of its own sale and gives up the rest, got ${origin.net_qty}`,
-  );
 
-  // The shape, seen through the net rather than through the plan: at 700 packs the governorate
-  // block keeps half, so Qalubeya and Cairo sit above the country, and Upper Egypt sits below it
-  // because the second rule takes half of what the bands credited there back out again.
-  const netOf = (code: string) => august.find((row) => row.area_code === code)?.net_qty ?? 0;
-  assert.ok(netOf("CA1") > netOf("AB1"), "Cairo is inside Qalubeya's block, so it keeps more");
-  assert.ok(netOf("AB1") > netOf("UE7"), "and Qena ends below Alexandria after the Upper Egypt pass");
+  // 🔒 THE LADDER, seen through the net attribution actually reads. Owner: "Qalubeya number 1".
+  const others = august
+    .filter((row) => !["D11", "D14", "D15"].includes(row.area_code))
+    .map((row) => landed(row.area_code));
+  const topOther = Math.max(...others);
+  assert.ok(landed("D11") > landed("D14"), "Qalubeya finishes above Tanta");
   assert.equal(
-    Number(netOf("AB1").toFixed(9)),
-    Number(netOf("D21").toFixed(9)),
-    "the national half is flat outside Upper Egypt",
+    Number(landed("D14").toFixed(9)),
+    Number(landed("D15").toFixed(9)),
+    "Tanta and Mahalla finish level with each other",
   );
-  for (const code of ["AB1", "UE7", "OT7", "CA1", "GZ6", "D14", "D15"]) {
-    assert.ok(
-      Math.abs(netOf(code) - shareOf("D11", code, 700)) < 1e-6,
-      `${code} receives what his rule gives it, got ${netOf(code)}`,
+  assert.ok(landed("D15") > topOther, "and both clear every other area in the country");
+
+  // 🔴 THE RATIOS BETWEEN THE AREAS THAT PAY FOR IT ARE UNTOUCHED. The lift is taken pro rata,
+  // so the bands and the صعيد pass still decide how the rest of the country divides among itself.
+  // That is what this file can check without restating the ladder's own arithmetic: the shape the
+  // owner's three steps produce survives, and only its scale moves.
+  const banded = referenceQemaShares("D11", 700, 700, NO_OTHERS);
+  const ratio = (code: string) => landed(code) / (banded.get(code) ?? Number.NaN);
+  for (const code of ["AB1", "UE7", "OT7", "CA1", "GZ6", "D21"]) {
+    assert.equal(
+      Number(ratio(code).toFixed(9)),
+      Number(ratio("AB1").toFixed(9)),
+      `${code} is scaled by the same factor as every other area that pays — nobody is picked off`,
     );
   }
-  // 🔒 AND THE THREE HE NAMED FINISH ON TOP, seen through the net attribution actually reads.
-  // Qalubeya SOLD this row, so its net is deeply negative while its LANDING is the highest in the
-  // country. Reading the net alone reports the opposite, which is why the landing is rebuilt here.
-  const landed = (code: string) => netOf(code) + (code === "D11" ? 700 : 0);
-  const topOther = Math.max(
-    ...august.filter((r) => !["D11", "D14", "D15"].includes(r.area_code)).map((r) => landed(r.area_code)),
-  );
-  for (const code of ["D11", "D14", "D15"]) {
-    assert.ok(landed(code) > topOther, `${code} tops the table, got ${landed(code)} against ${topOther}`);
-  }
+  assert.ok(ratio("AB1") < 1, "and that factor is a reduction, because the three were paid out of it");
+
+  // The shape underneath is still his: Cairo sits inside Qalubeya's block, Upper Egypt sits below
+  // the country because the صعيد pass took half of what the bands credited there back out.
+  assert.ok(landed("CA1") > landed("AB1"), "Cairo is inside Qalubeya's block, so it keeps more");
+  assert.ok(landed("AB1") > landed("UE7"), "and Qena ends below Alexandria after the Upper Egypt pass");
 
   // ── THE PER-LINE GATE. Pedia starts in August; every other line starts in September. ───────────
   // August Anti Infective was published and announced on 2026-09-07, so a net for it would restate a
@@ -231,13 +231,15 @@ export function runAttributionStoreSplitNetTests() {
   const discountedOrigin = discounted.find((row) => row.area_code === "D11");
   assert.ok(discountedOrigin, "the discounted row still has an origin cell");
   assert.ok(
-    Math.abs(discountedOrigin.net_qty - (shareOf("D11", "D11", 700) - 700)) < 1e-6,
-    "units move on the invoiced quantity",
+    Math.abs(discountedOrigin.net_qty - origin.net_qty) < 1e-9,
+    "units move on the invoiced quantity, which this row shares with the one above",
   );
   // 🔴 The BAND is judged on the invoiced 700 for BOTH passes — only the amount divided changes.
   // Re-banding the effective pass on 630 would put units and money on two different geometries.
+  // Every step of the rule is homogeneous, the ladder included, so 630 lands at exactly 90% of what
+  // 700 lands — which is the check, and it needs no second copy of the arithmetic.
   assert.ok(
-    Math.abs(discountedOrigin.net_effective_units - (shareOf("D11", "D11", 700, 630) - 630)) < 1e-6,
+    Math.abs(discountedOrigin.net_effective_units - ((landed("D11") * 630) / 700 - 630)) < 1e-6,
     "money moves on the effective units, not on the invoiced quantity",
   );
   assert.notEqual(
@@ -293,23 +295,23 @@ export function runAttributionStoreSplitNetTests() {
   );
   const fayoumSmallOrigin = fayoumSmall.find((row) => row.area_code === "GZ6");
   assert.ok(fayoumSmallOrigin, "Fayoum keeps a cell of its own");
+  // Fayoum gives most of its own 12 away and keeps a share back, because the صعيد pass pools even a
+  // band-1 sale. Bounded on BOTH sides: above −12 says it kept something, below 0 says it did not
+  // keep the lot, and only a rule that both pools and returns can land between them.
   assert.ok(
-    Math.abs(fayoumSmallOrigin.net_qty - (shareOf("GZ6", "GZ6", 12) - 12)) < 1e-6,
-    `Fayoum keeps its share of its 12, got ${fayoumSmallOrigin.net_qty}`,
+    fayoumSmallOrigin.net_qty > -12 && fayoumSmallOrigin.net_qty < 0,
+    `Fayoum keeps a share of its own 12 and gives the rest away, got ${fayoumSmallOrigin.net_qty}`,
   );
 
   const fayoumBig = buildStoreSplitNetPayload("Pedia", [fayoum(400)], "2026-08");
   assert.equal(fayoumBig.length, COUNTRY_AREAS, "and 400 packs reaches every area as well");
   const fayoumOrigin = fayoumBig.find((row) => row.area_code === "GZ6");
   assert.ok(fayoumOrigin, "with a cell of its own again");
-  assert.ok(
-    Math.abs(fayoumOrigin.net_qty - (shareOf("GZ6", "GZ6", 400) - 400)) < 1e-6,
-    `Fayoum keeps its share of its 400, got ${fayoumOrigin.net_qty}`,
-  );
-  // The two bands are genuinely different geometries underneath, or the pair above proves nothing.
+  // The two are genuinely different geometries underneath, or the pair above proves nothing: 12
+  // packs is band 1 and 400 is band 2, so the same area keeps a different PROPORTION of each.
   assert.notEqual(
-    Number((shareOf("GZ6", "GZ6", 12) / 12).toFixed(9)),
-    Number((shareOf("GZ6", "GZ6", 400) / 400).toFixed(9)),
+    Number(((fayoumSmallOrigin.net_qty + 12) / 12).toFixed(6)),
+    Number(((fayoumOrigin.net_qty + 400) / 400).toFixed(6)),
     "12 packs and 400 packs are banded differently — band 1 keeps its half inside Fayoum",
   );
 
