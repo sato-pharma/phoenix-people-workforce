@@ -86,7 +86,7 @@ export function runPediaTargetTemplateAndUploadFoldTests() {
     { areaCode: "GZ6", areaName: "Fayoum", regionCode: "GZ", areaState: null },
     { areaCode: "UE9", areaName: "Beni Suef", regionCode: "UE", areaState: null },
   ];
-  const pediaOptions = foldAreaOptionsForLine("pedia", fromMap);
+  const pediaOptions = foldAreaOptionsForLine("pedia", fromMap, "2026-08");
   assert.deepEqual(
     pediaOptions.map((a) => `${a.areaCode}:${a.areaName}`),
     ["GZ1:Giza 1", "GZ6:Fayoum - Beni Suef"],
@@ -127,14 +127,33 @@ export function runPediaTargetTemplateAndUploadFoldTests() {
       + "template offers \"Beni Suef\" for Pedia again and the helper tests above still pass",
   );
 
-  // ── 2. THE UPLOAD — a "Beni Suef" row is accepted and stored on the merged cell ──────────────
-  const folded = validateTargetRows([inputRow({ rowNumber: 2, area: "Beni Suef" })], refs());
-  assert.deepEqual(folded.errors, [], "a Pedia Beni Suef row is valid input — it names a real area");
+  // ── 2. THE UPLOAD — folded by the ROW'S OWN MONTH, never by today ────────────────────────────
+  //
+  // 🔴 THE FOLD READS `row.period`. It used to read "now", which was invisible while Pedia folded in
+  // every period and became wrong the moment the owner ended that merge at 2026-08: an August target
+  // uploaded in September would have been stored on UE9, a row August's merged grid cannot render,
+  // and the operator would see no target where he had just set one. A target upload always names its
+  // own month, so the month is what decides.
+  const august = validateTargetRows(
+    [inputRow({ rowNumber: 2, area: "Beni Suef", period: "2026-08" })],
+    refs(),
+  );
+  assert.deepEqual(august.errors, [], "a Pedia Beni Suef row is valid input — it names a real area");
   assert.equal(
-    folded.valid[0]!.area_code,
+    august.valid[0]!.area_code,
     "GZ6",
-    "and must be STORED on the merged cell. Left on UE9 it is written to a row the grid never "
-      + "renders, so the operator sees no target where he just set one",
+    "an AUGUST Beni Suef target is stored on the merged cell, whatever month it is uploaded in",
+  );
+
+  // From September the pair is two areas again — owner 2026-09-09 — so the same row stands on its
+  // own code. This is what makes Beni Suef's own target settable at all: while it folded, the grid
+  // shared one edit box between the two and saved only Fayoum's.
+  const september = validateTargetRows([inputRow({ rowNumber: 2, area: "Beni Suef" })], refs());
+  assert.deepEqual(september.errors, [], "still valid input in September");
+  assert.equal(
+    september.valid[0]!.area_code,
+    "UE9",
+    "a SEPTEMBER Beni Suef target is stored on Beni Suef's own cell",
   );
 
   // CNS folds too, from August — so a CNS "Beni Suef" row is stored on the merged cell exactly as
@@ -148,11 +167,11 @@ export function runPediaTargetTemplateAndUploadFoldTests() {
       "row the grid never renders",
   );
 
-  // ── 3. THE COLLISION the fold makes reachable ───────────────────────────────────────────────
+  // ── 3. THE COLLISION the fold makes reachable — in a month that still folds ──────────────────
   const clash = validateTargetRows(
     [
-      inputRow({ rowNumber: 2, area: "Fayoum", targetValue: 100 }),
-      inputRow({ rowNumber: 7, area: "Beni Suef", targetValue: 50 }),
+      inputRow({ rowNumber: 2, area: "Fayoum", targetValue: 100, period: "2026-08" }),
+      inputRow({ rowNumber: 7, area: "Beni Suef", targetValue: 50, period: "2026-08" }),
     ],
     refs(),
   );
@@ -172,6 +191,25 @@ export function runPediaTargetTemplateAndUploadFoldTests() {
     /Row 2 already sets [\s\S]*"GZ6" and "UE9" are ONE area[\s\S]*Combine them into a single row\./,
     "the message must name the row it collides with AND explain that the two areas are one on this "
       + "line — otherwise the author sees a duplicate error for two rows that look different",
+  );
+
+  // ── 3b. …and from September they no longer collide, because they are two areas again ─────────
+  //
+  // This is the assertion that matters operationally. While the pair folded, the Targets grid gave
+  // them one edit box and saved only Fayoum's, which is why Beni Suef has carried no target since
+  // February. Two rows now land on two cells, so both numbers can finally be set in one upload.
+  const separate = validateTargetRows(
+    [
+      inputRow({ rowNumber: 2, area: "Fayoum", targetValue: 100 }),
+      inputRow({ rowNumber: 7, area: "Beni Suef", targetValue: 50 }),
+    ],
+    refs(),
+  );
+  assert.deepEqual(separate.errors, [], "September: no duplicate-cell error — they are two cells now");
+  assert.deepEqual(
+    separate.valid.map((row) => `${row.area_code}:${row.target_value}`).sort(),
+    ["GZ6:100", "UE9:50"],
+    "both targets are stored, each on its own area",
   );
 
   // ── 4. The same guard on a plain duplicate — a silent loss that predates the fold ────────────

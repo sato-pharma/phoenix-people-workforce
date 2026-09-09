@@ -329,12 +329,13 @@ export function scopeAndFoldAreaChildren<T extends { areaCode: string }>(
   lineCode: string | null | undefined,
   realAreaCodesInScope: Iterable<string>,
   rows: readonly T[],
+  period?: string | null,
 ): T[] {
   const inScope = new Set([...realAreaCodesInScope].map(up));
   return rows
     .filter((row) => inScope.has(up(row.areaCode)))
     .map((row) => {
-      const folded = foldAreaCodeForLine(lineCode, row.areaCode);
+      const folded = foldAreaCodeForLine(lineCode, row.areaCode, period);
       const areaCode = folded === up(row.areaCode) ? row.areaCode : folded;
       return { ...row, areaCode };
     });
