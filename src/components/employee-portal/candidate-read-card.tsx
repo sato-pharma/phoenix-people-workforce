@@ -13,6 +13,7 @@ import { CandidateCvActions } from "@/components/employee-portal/candidate-cv-ac
 import { Card } from "@/components/ui/card";
 import { APPLIED_FOR_SOURCE_LABEL, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import type { CandidateCallClaim } from "@/lib/recruitment/candidate-call-claims";
+import type { OutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
@@ -44,11 +45,17 @@ export function CandidateReadCard({
   claim: initialClaim = null,
   canCall = false,
   files,
+  onFeedbackGiven,
   onSkipped,
+  outstandingFeedback = null,
   viewerHrId,
   footer,
 }: {
   candidate: Candidate;
+  /** The CV this manager owes feedback on, which blocks him opening any other. */
+  outstandingFeedback?: OutstandingFeedback | null;
+  /** Called when he writes the feedback he owed, so the block lifts without a reload. */
+  onFeedbackGiven?: (candidateId: string) => void;
   /**
    * Who has said "I will call" this candidate, loaded with the list.
    *
@@ -81,7 +88,7 @@ export function CandidateReadCard({
   const appliedFor = candidateRowAppliedFor(candidate);
   const call = useCandidateCall(candidate, initialClaim, viewerHrId);
   return (
-    <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6">
+    <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6" id={`candidate-${candidate.id}`}>
       {/* Who has taken this CV, before anything else on the card. On the team screen this is the ONLY
           part of the feature the reader gets, and it is the part he needs: he can see that a CV
           sitting with one of his managers has been claimed, and by whom. */}
@@ -132,7 +139,12 @@ export function CandidateReadCard({
         <Field label="Their answer" value={candidate.statusNote?.trim() ? candidate.statusNote : null} />
       </div>
 
-      <CandidateCvActions candidateId={candidate.id} initialFiles={files} showPhoneNumbers={call.mine} />
+      <CandidateCvActions
+        candidateId={candidate.id}
+        initialFiles={files}
+        outstandingFeedback={outstandingFeedback}
+        showPhoneNumbers={call.mine}
+      />
 
       {/* The owner's two buttons, on the folder screen where several managers see one CV. `skip`
           here is his OWN pass — it clears the card from his folder and leaves the candidate in front
@@ -147,7 +159,11 @@ export function CandidateReadCard({
         viewerHrId={viewerHrId}
       />
 
-      <CandidateCommentThread candidateId={candidate.id} viewerHrId={viewerHrId} />
+      <CandidateCommentThread
+        candidateId={candidate.id}
+        onCommentAdded={onFeedbackGiven}
+        viewerHrId={viewerHrId}
+      />
 
       {footer ? <div className="border-t border-slate-100 pt-3">{footer}</div> : null}
     </Card>

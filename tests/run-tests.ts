@@ -223,6 +223,7 @@ import { runRecruitmentScreeningWorkstationTests } from "./recruitment-screening
 import { runCandidateFolderTests } from "./candidate-folders.test.ts";
 import { runCandidateCallClaimTests } from "./candidate-call-claims.test.ts";
 import { runCvPhoneRedactionTests } from "./cv-phone-redaction.test.ts";
+import { runCvFeedbackLockTests } from "./cv-feedback-lock.test.ts";
 import { runCandidatePoolFiledSearchTests } from "./candidate-pool-filed-search.test.ts";
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
 import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
@@ -4961,6 +4962,11 @@ await runTest(
 await runTest(
   "the phone number PRINTED ON the CV is painted out for every manager but the one who reserved it",
   runCvPhoneRedactionTests,
+);
+
+await runTest(
+  "a manager who opens a CV owes his feedback on it before he may open another (and may always reopen that one)",
+  runCvFeedbackLockTests,
 );
 
 await runTest(

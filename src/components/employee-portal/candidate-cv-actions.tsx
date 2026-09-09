@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
+import { cvOpenRefusal, type OutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 
 type CandidateFileSummary = { id: string; fileName: string; kind: string; mimeType: string | null };
@@ -30,9 +31,21 @@ type CandidateFileSummary = { id: string; fileName: string; kind: string; mimeTy
 export function CandidateCvActions({
   candidateId,
   initialFiles,
+  outstandingFeedback = null,
   showPhoneNumbers = false,
 }: {
   candidateId: string;
+  /**
+   * The CV this manager has already opened and not yet written about, if any.
+   *
+   * WHY THE BUTTON REFUSES RATHER THAN THE PREVIEW FAILING. The server is what enforces this — it
+   * answers 423 and does not send the bytes — but a manager who presses View CV, watches a preview
+   * open and then break, has learned only that the screen is faulty. Refusing at the button lets the
+   * card say what is owed and offer the way straight back to it.
+   *
+   * Null is the normal state, and the state every screen outside this portal is always in.
+   */
+  outstandingFeedback?: OutstandingFeedback | null;
   /**
    * TRUE only for the manager holding the reservation on this candidate.
    *
@@ -92,6 +105,9 @@ export function CandidateCvActions({
   // no longer can be: there is nowhere left for such a file to go, so the card says so in words
   // rather than opening a preview whose only content would be the same sentence.
   const cvKind = cvFile ? detectCvFileKind(cvFile.mimeType ?? "", cvFile.fileName) : "unsupported";
+  // Asked, never re-derived. The same function the server refuses with, so the sentence on the card
+  // and the sentence in the 423 are one sentence, and reopening the CV he owes is allowed by both.
+  const blocked = cvOpenRefusal(outstandingFeedback, candidateId);
   const href = cvFile ? `/api/recruitment/hiring-manager/candidates/${candidateId}/files/${cvFile.id}` : "";
 
   if (!loaded) return null;
@@ -107,7 +123,20 @@ export function CandidateCvActions({
           to the side. Wrapping is the permitted answer and truncation is never one, so the whole
           name is printed underneath and breaks where it must. */}
       <div className="space-y-1">
-        {cvKind !== "unsupported" ? (
+        {blocked ? (
+          /* The owner's rule, on screen. It names the person he owes it on and links straight to
+             that card, because a block with no way out is the version of this that gets reported as
+             the portal being broken. */
+          <div className="border-l-2 border-amber-500 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <p className="font-semibold">{blocked}</p>
+            <a
+              className="mt-1 inline-block font-semibold text-amber-900 underline underline-offset-2"
+              href={`#candidate-${outstandingFeedback?.candidateId ?? ""}`}
+            >
+              Go to that CV →
+            </a>
+          </div>
+        ) : cvKind !== "unsupported" ? (
           <>
             <Button variant="secondary" onClick={() => setPreviewOpen(true)}>
               View CV

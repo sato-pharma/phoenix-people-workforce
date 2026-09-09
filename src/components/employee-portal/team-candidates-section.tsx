@@ -9,6 +9,7 @@ import { CandidateReadCard } from "@/components/employee-portal/candidate-read-c
 import { DistrictFoldersSection } from "@/components/employee-portal/district-folders-section";
 import { Card } from "@/components/ui/card";
 import type { CandidateCallClaims } from "@/lib/recruitment/candidate-call-claims";
+import type { OutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock";
 import type { DistrictManagerBoard } from "@/lib/recruitment/district-manager-folders";
 import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
 
@@ -46,9 +47,15 @@ function managerLabel(manager: TeamManagerOption): string {
 
 export function TeamCandidatesSection({
   managers,
+  onFeedbackGiven,
+  outstandingFeedback = null,
   viewerHrId,
 }: {
   managers: TeamManagerOption[];
+  /** He writes the feedback he owed, and the block lifts in place. */
+  onFeedbackGiven?: (candidateId: string) => void;
+  /** The CV he owes feedback on, which blocks him opening any other. */
+  outstandingFeedback?: OutstandingFeedback | null;
   viewerHrId: string | null;
 }) {
   const [selected, setSelected] = useState<TeamManagerOption | null>(null);
@@ -188,6 +195,8 @@ export function TeamCandidatesSection({
                 claim={callClaims[candidate.id] ?? null}
                 files={files[candidate.id] ?? []}
                 key={candidate.id}
+                onFeedbackGiven={onFeedbackGiven}
+                outstandingFeedback={outstandingFeedback}
                 viewerHrId={viewerHrId}
               />
             ))
@@ -202,6 +211,8 @@ export function TeamCandidatesSection({
               boards={districtBoards}
               callClaims={callClaims}
               files={files}
+              onFeedbackGiven={onFeedbackGiven}
+              outstandingFeedback={outstandingFeedback}
               heading={`${managerLabel(selected)}'s areas`}
               subheading={`Every area ${managerLabel(selected)} holds in the organogram, and the CVs of applicants who asked to work in it.`}
               viewerHrId={viewerHrId}
