@@ -1160,6 +1160,7 @@ import { runSosWarehouseOwnerRulingsTests } from "./sos-warehouse-owner-rulings.
 import { runEpdaPediaWarehouseRulingsTests } from "./epda-pedia-warehouse-rulings.test.ts";
 import { runImportSplitPreviewTests } from "./import-split-preview.test.ts";
 import { runCityListNewAreaGuardTests } from "./city-list-new-area-guard.test.ts";
+import { runClosingSourceMaskTests } from "./closing-source-mask.test.ts";
 import { runQemaWarehouseSplitTests } from "./qema-warehouse-split.test.ts";
 import { runPediaUpperEgyptSplitTests } from "./pedia-upper-egypt-split.test.ts";
 import { runAttributionStoreSplitNetTests } from "./attribution-store-split-net.test.ts";
@@ -3463,8 +3464,12 @@ await runTest(
   runCityListNewAreaGuardTests,
 );
 await runTest(
-  "El Qema warehouse split (up to 200 packs per product stays in the governorate; above 200 half stays and half spreads evenly over every other area in the country, origin governorate excluded — El Qema only, and the threshold is the month total, never one row)",
+  "El Qema priority ladder (the whole Pedia book divided across every area the line has, with Qalubeya, Menoufia, Gharbia and Cairo one 2% step apart in that order — where a warehouse sits and how much it sold both stopped mattering, and Others take nothing including their own sales)",
   runQemaWarehouseSplitTests,
+);
+await runTest(
+  "El Qema leaves no trace in a closing detail (distributor and customer blanked for every viewer but Super Admin, masked AFTER the split computes and BEFORE any workbook is written — never relabelled as another real distributor)",
+  runClosingSourceMaskTests,
 );
 await runTest(
   "Pedia Upper Egypt split (August closes on the single Upper Egypt district over 37 El Qema areas; September resolves Upper Egypt 1 and Upper Egypt 2 with Luxor inside Qena 2 over 39; and the August distribution is identical before and after the dated pair is written)",

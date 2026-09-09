@@ -8,6 +8,7 @@ import {
   normalizeLineKey,
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
+import { maskClosingSourceRows } from "@/lib/sales/closing-source-mask";
 import { applyClosingAreaMergesToDetails } from "@/lib/sales/closing-area-merges";
 import { countsInClosingHeadline } from "@/lib/sales/closing-headline";
 import { loadOperationalRegionResolver } from "@/lib/sales/closing-organogram-regions";
@@ -422,6 +423,15 @@ export type LoadClosingDetailsInput = {
   period?: string | null;
   /** Honoured only for a role allowed to reveal confidential products. */
   includeConfidential?: boolean;
+  /**
+   * Return the real distributor and customer on rows this viewer would otherwise see masked.
+   *
+   * 🔴 FOR COMPUTATION ONLY. The split keys on `distributorCode` and the customer aggregation
+   * keys on `clientCode`, so a computation path reading masked rows does not throw — it quietly
+   * produces a different distribution. Every caller that passes this is listed and pinned by
+   * tests/closing-source-mask.test.ts, so adding one is a deliberate act rather than a habit.
+   */
+  revealSource?: boolean;
   availableLines?: string[];
   availablePeriods?: string[];
   filters?: ClosingDetailsFilters;
@@ -747,13 +757,20 @@ export async function loadMonthlyClosingDetails(
 
   const filtered = applyDetailFilters(relabelled, input.filters);
   const start = (page - 1) * pageSize;
+  const paged = input.unpaged ? filtered : filtered.slice(start, start + pageSize);
+
+  // 🔒 The source mask, applied LAST and defaulting ON. Everything above this line — the scope,
+  // the relabelling, the filters, every total — has already been computed from the real rows, so
+  // masking here changes what is SHOWN and nothing that is COUNTED. See closing-source-mask.ts for
+  // the owner's words and for why the reveal is granted by scope rather than per call site.
+  const shown = input.revealSource === true ? paged : maskClosingSourceRows(paged, access);
 
   return {
     line,
     period,
     availableLines,
     availablePeriods,
-    rows: input.unpaged ? filtered : filtered.slice(start, start + pageSize),
+    rows: [...shown],
     filteredRowCount: filtered.length,
     page,
     pageSize,

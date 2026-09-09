@@ -1,0 +1,102 @@
+import type { AccessContext } from "@/lib/auth/permissions";
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * 🔒 EL QEMA LEAVES NO TRACE IN ANY CLOSING DETAIL — owner, 2026-09-09.
+ *
+ *   "I want the El Qema to be shown in the achievements only, never show in details, never show in
+ *    details… at the end of the day they should never appear, never anyone know that these sales
+ *    are from Al Qimma, but they appear in their total and achievements but not in the details.
+ *    No any traces for Al Qimma detail. Never anyone know."
+ *
+ * The totals and the achievement figures are untouched: they read the distribution, not the source.
+ * What this removes is the ability to look at a detail row and see who supplied it.
+ *
+ * 🔴 HE OFFERED TO RELABEL THEM AS ANOTHER REAL DISTRIBUTOR AND THAT WAS DECLINED — "you can mix
+ * them between distributors and change the distributors and sign them by any sign". Writing Ibn Sina
+ * or EGD onto El Qema's invoice lines puts false records into the monthly closing, which is the
+ * auditor's file by his own standing rule: a supplier reconciling their own invoices would find
+ * quantities that do not exist, and the discrepancy would land on the wrong company. Asked to choose
+ * between a neutral code and blank columns, he chose BLANK. Never invent a source here.
+ *
+ * 🔴 IT IS A MASK, NOT AN ERASE. The import batch and the raw rows keep the truth; only the read is
+ * blanked, and only for viewers who are not Super Admin. Asked whether the trace should survive for
+ * him, he chose to keep it — stripping it at import would end any reconciliation against El Qema's
+ * own invoices and would stop a future El Qema rule from ever being applied to a past month.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+
+/** Distributors whose identity never reaches a detail surface. El Qema alone, owner 2026-09-09. */
+export const MASKED_SOURCE_DISTRIBUTORS: ReadonlySet<string> = new Set(["QM"]);
+
+/**
+ * May this viewer see who supplied a row?
+ *
+ * `system` is here for the same reason Super Admin is: every computation path — the split, the
+ * attribution net, the backfill — runs as the system context and MUST see the real distributor, or
+ * El Qema's own rules stop applying and the numbers change silently. That is the one failure mode
+ * of this whole module, so the reveal is granted by scope rather than remembered per call site.
+ */
+export function canRevealClosingSource(access: Pick<AccessContext, "role" | "scope">): boolean {
+  return access.role === "Super Admin" || access.scope === "system";
+}
+
+/** The minimum shape the mask touches. Structural, so both detail rows and split rows satisfy it. */
+export type MaskableSourceRow = {
+  distributorCode?: string | null;
+  clientCode?: string | null;
+  clientName?: string | null;
+  clientAddress?: string | null;
+};
+
+/**
+ * Blank the source columns on every masked distributor's rows, unless this viewer may reveal them.
+ *
+ * Returns the SAME array when nothing is masked, so the common path allocates nothing and a caller
+ * can apply it unconditionally.
+ *
+ * 🔴 APPLY THIS LAST, AFTER EVERY COMPUTATION. The split keys on `distributorCode` and the customer
+ * aggregation keys on `clientCode`; masking before either of those runs does not throw, it quietly
+ * produces a different distribution. That is why the loader reveals for `system` and why the export
+ * masks only on the way into the workbook.
+ */
+export function maskClosingSourceRows<T extends MaskableSourceRow>(
+  rows: readonly T[],
+  access: Pick<AccessContext, "role" | "scope">,
+): readonly T[] {
+  if (canRevealClosingSource(access)) return rows;
+  let touched = false;
+  const masked = rows.map((row) => {
+    const code = String(row.distributorCode ?? "").trim().toUpperCase();
+    if (!MASKED_SOURCE_DISTRIBUTORS.has(code)) return row;
+    touched = true;
+    return { ...row, distributorCode: "", clientCode: "", clientName: "", clientAddress: "" };
+  });
+  return touched ? masked : rows;
+}
+
+/**
+ * The customer codes whose identity this viewer may not see, taken from UNMASKED rows.
+ *
+ * 🔴 THE STORE SPLIT SHEET NEEDS THIS BECAUSE ITS ENTRIES CARRY NO DISTRIBUTOR. They are grouped
+ * per customer and product, so by the time the sheet has them there is nothing on the entry that
+ * says who supplied it — masking the rows first would instead fold every El Qema customer into one
+ * blank-coded entry AND stop El Qema's own split rule from applying, changing the numbers. So the
+ * split is computed from the real rows and the ANSWER is masked, keyed on this set.
+ *
+ * Empty when the viewer may reveal, so a caller can hand it straight through.
+ */
+export function maskedClosingClientCodes(
+  rows: readonly MaskableSourceRow[],
+  access: Pick<AccessContext, "role" | "scope">,
+): ReadonlySet<string> {
+  const codes = new Set<string>();
+  if (canRevealClosingSource(access)) return codes;
+  for (const row of rows) {
+    const distributor = String(row.distributorCode ?? "").trim().toUpperCase();
+    if (!MASKED_SOURCE_DISTRIBUTORS.has(distributor)) continue;
+    const code = String(row.clientCode ?? "").trim();
+    if (code) codes.add(code);
+  }
+  return codes;
+}

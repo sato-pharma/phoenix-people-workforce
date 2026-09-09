@@ -1071,6 +1071,62 @@ rows "Phoenix is right — I will fix my sheet". The correction is to his file, 
 replaced on 2026-09-08) carries the `CA5` assertion forward, naming it — so removing Down town fails with an explanation rather than
 just going red. Both run in the required CI `validate` job.
 
+## El Qema leaves no trace in a closing detail — owner ruling, 2026-09-09
+
+> I want the El Qema to be shown in the achievements only, never show in details, never show in
+> details… at the end of the day they should never appear, never anyone know that these sales are
+> from Al Qimma, but they appear in their total and achievements but not in the details. No any
+> traces for Al Qimma detail. Never anyone know. I don't know how you can do it, but never.
+
+Two questions were put to him and answered the same day.
+
+**How far does it go?** Hidden from everyone, kept underneath. No sales manager, rep, product
+manager or auditor sees El Qema in the closing detail, the Store Split sheets or any export. The
+import batch and the raw rows keep the true source, readable by Super Admin alone. He chose this over
+stripping it at import, which would have ended any reconciliation against El Qema's own invoices and
+stopped a future El Qema rule from ever reaching a past month.
+
+**What do the columns say instead?** Blank. He was shown that an empty column in a full sheet is
+conspicuous and invites the question, and chose it over a neutral code anyway.
+
+### The one thing that was declined
+
+He offered a third way: *"you can mix them between distributors and change the distributors and sign
+them by any sign"*. Relabelling El Qema's invoice lines as Ibn Sina or EGD puts false records into
+the monthly closing, which is the auditor's file by his own standing rule. A supplier reconciling
+their own invoices against it would find quantities that do not exist, and the discrepancy would land
+on the wrong company. It is also irreversible: the true source would be gone. He was told this and
+chose the blanking option instead, so the decline is settled rather than open.
+
+### Why placement is the whole difficulty
+
+Both mistakes are silent, and they fail in opposite directions.
+
+| Mistake | What happens | What you would see |
+| --- | --- | --- |
+| Masked too early | the split stops recognising El Qema, so its rules do not apply | different numbers, no error |
+| Masked too late, or not at all | the identity reaches a screen | correct numbers, broken rule |
+
+So `loadMonthlyClosingDetails` masks BY DEFAULT, and `revealSource: true` is passed by exactly one
+file: the closing export route, which computes the split from those rows before writing them and
+masks again on the way into each workbook. Everything else either runs as `scope: "system"`, which
+reveals by scope, or renders, and a render must never reveal.
+
+The Store Split sheets need their own treatment because a split entry carries no distributor at all
+— it is grouped per customer and product. Masking the rows first would fold every El Qema customer
+into one blank-coded entry AND stop their split rule applying. So the split is computed from the real
+rows and the answer is masked by client code.
+
+`tests/closing-source-mask.test.ts` pins the exact list of files that reveal, so adding one is a
+deliberate act somebody has to justify rather than a habit. Proved red by flipping the loader's
+default.
+
+### Still open
+
+The Source of Sales dashboard's distributor breakdown and the import batches list were not covered by
+this change. The batches list is Super Admin only already; the dashboard breakdown has not been
+checked and may still name El Qema.
+
 ## The priority ladder — owner ruling, 2026-09-09 (CURRENT, and it replaced everything)
 
 This is the live El Qema rule. Every El Qema section below it is history.
