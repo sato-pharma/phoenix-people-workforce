@@ -71,7 +71,10 @@ export async function runCvFeedbackLockTests() {
   {
     const message = String(cvOpenRefusal(owed(), "other"));
     assert.match(message, /Ahmed Hasan/, "it names the candidate rather than quoting an id");
-    assert.match(message, /second time/, "and says what it is protecting against, which is the whole point");
+    // The owner dictated this sentence; it must survive intact. He asked for the CONDITION and the
+    // REMEDY in one line, not for an explanation of the policy behind it.
+    assert.match(message, /To open this CV or any other/, "the opener is the owner's own wording");
+    assert.match(message, /feedback on the ones you opened before/, "and so is the remedy half of it");
     // A CV whose name could not be resolved must still produce a sentence, not "undefined".
     const nameless = feedbackBlockMessage(owed({ candidateName: null }));
     assert.doesNotMatch(nameless, /undefined|null/, `a nameless CV still reads as English: ${nameless}`);
@@ -145,5 +148,58 @@ export async function runCvFeedbackLockTests() {
     (portal.match(/<CandidateCommentThread/g) ?? []).length,
     2,
     "both portal cards that open a CV must carry a comment thread, or opening one is a trap with no way out",
+  );
+
+  // ── 6 · A locked CV explains itself; it does not pretend to be broken ─────────────────────────
+  //
+  // MEASURED ON SCREEN, 2026-09-09. Opening a second CV while owing feedback showed "Could not load
+  // the document. Ask the recruitment team to send you a readable copy of this CV." Nothing was
+  // wrong with that file. The owner read it as the portal being broken, and worse, it points him at
+  // somebody else over a problem only he can clear.
+  const viewer = read("../src/components/recruitment/cv-preview-modal.tsx");
+  assert.ok(
+    /res\.status === 423/.test(viewer),
+    "the preview must recognise the lock's 423 instead of treating it as a failed document load",
+  );
+  assert.ok(
+    viewer.includes("#candidate-"),
+    "and must carry the link back to the CV he owes, or the notice is a dead end",
+  );
+  assert.ok(
+    /const documentBody = locked \?/.test(viewer),
+    "when the lock refused there is no document and nothing loading, so the notice must REPLACE the body rather than sit beside a spinner and a red error",
+  );
+
+  // ── 7 · One box, not two ─────────────────────────────────────────────────────────────────────
+  //
+  // The owner, 2026-09-09: *"I have two fields for your answer and your comments — merge them into
+  // one field, no need two fields."* After the lock there is only one thing to type on a CV.
+  assert.doesNotMatch(
+    portal,
+    /A short note for the recruitment team/,
+    "the card's second textarea must be gone — the answer and the comment are one box now",
+  );
+  {
+    // Scoped to the SENT card, which is the one the owner was looking at. The interview-outcome
+    // form further up owns a "Feedback notes" box of its own and is a different thing entirely —
+    // the result of an interview, with scores, not what he found on the CV. A whole-file textarea
+    // count catches that one too and reads as a defect, which is how a correct screen gets
+    // "fixed".
+    const start = portal.indexOf("function SentCandidateCard(");
+    assert.ok(start > 0, "the sent-CV card must still be here");
+    const card = portal.slice(start, portal.indexOf("\nexport function RecruitmentCandidatesPortal"));
+    assert.equal(
+      (card.match(/<textarea/g) ?? []).length,
+      0,
+      "the sent-CV card must own no textarea of its own; the comment composer is the only box on it",
+    );
+  }
+  assert.ok(
+    portal.includes("composerActions={"),
+    "the answer buttons must be rendered INSIDE the comment composer, sharing its text",
+  );
+  assert.ok(
+    /answer\("not_interested", draft, clearDraft\)/.test(portal),
+    "and Skip must take its required reason from that shared box",
   );
 }
