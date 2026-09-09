@@ -20,6 +20,9 @@ import {
 
 import { Conversation } from "@/components/market-awareness/market-awareness-conversation";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+// Pure, and client-safe: workflow.ts imports permissions only as a TYPE, so nothing server-side
+// follows it into this bundle.
+import { describeInboxStep } from "@/lib/market-awareness/workflow";
 
 /**
  * Market Awareness — the approvals inbox.
@@ -104,12 +107,6 @@ type Activity = {
     comment: string | null;
     createdAt: string;
   }>;
-};
-
-const STEP_LABEL: Record<string, string> = {
-  pending_group: "Waiting on your approval",
-  on_hold: "On hold",
-  pending_ceo: "Waiting on you as the CEO",
 };
 
 /** What a slot is, in the words the owner uses. Never a code, and the line is part of the name. */
@@ -500,7 +497,7 @@ function InboxCard({
 
       <header className="flex min-w-0 flex-wrap items-start justify-between gap-3 border-b border-phx-line px-4 py-3 pl-5">
         <div className="min-w-0">
-          <MicroLabel>{STEP_LABEL[activity.status] ?? "Waiting on you"}</MicroLabel>
+          <MicroLabel>{describeInboxStep({ canDecide, status: activity.status })}</MicroLabel>
           <h3 className="break-words text-phx-md font-black text-phx-ink">
             {activity.title?.trim() || activity.activityType.name}
           </h3>
