@@ -75,6 +75,7 @@ status, give it its own line.
 - **A CV import OVERWROTE a candidate's whole identity** `a-cv-import-overwrote-a-candidates-whole-identity` **(inline — load-bearing)** `the-email-import-allowlist-holds-an-inbox-not-a-sender` **(inline — load-bearing)** `cv-file-is-in-ats-files-not-cv-external-url` **(inline — load-bearing)**
 - **A 200 from a health endpoint can be blind to the thing that is broken** — `openai-key-is-401-and-cv-extraction-silently-falls-back-to-rules` · `openai-spend-cannot-be-read-from-the-api-reconstruct-it`
 - **app_error_events returning 0 rows means QUIET, not broken.** — `app-error-events-is-user-triggered-zero-is-not-broken`
+- **A client-error census by MESSAGE reads iOS-ONLY on an every-platform failure — masking spares iOS WebKit's message and blanks Android's** — `census-client-errors-by-stack-not-message` **(inline — load-bearing)**
 - **The Error Monitor HIDES rows whose environment is NULL** — `error-monitor-hides-null-environment-rows` · `ad-hoc-backup-tables-are-anon-readable`
 - **updated_by_hr_id LIES about who wrote a row.** — `how-to-attribute-a-production-write`
 - **HR ids are MIXED CASE, so a plain .eq silently under-returns** — `activity-events-hr-id-is-mixed-case-not-lowercase` · `direct-order-hr-id-columns-are-mixed-case-and-access-hrid-is-lowercase`

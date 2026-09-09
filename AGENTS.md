@@ -172,6 +172,7 @@ it for the hook's wording. Which memory backs which hook:
 
 - **A 200 from a health endpoint can be blind to the thing that is broken** — OpenAI's `/v1/models` certifies a key with no balance. The BILL cannot be read from the API at all.
 - **`app_error_events` returning 0 rows means QUIET, not broken.** Prove the route with 405 against a 404 control; never POST a synthetic error to production.
+- **A client-error census by MESSAGE reads iOS-ONLY on an every-platform failure** — masking blanks the Android and desktop messages and spares iOS WebKit's, so every legible row is an iPhone: 112 Android vs 39 iOS, ONE cause. Group on the STACK; never platform-predicate the FIX. `census-client-errors-by-stack-not-message`
 - **The Error Monitor HIDES rows whose `environment` is NULL**, and a `create table … as select` copies rows but never RLS — **measure the new table's ACL, never assume it either way.**
 - **`updated_by_hr_id` LIES about who wrote a row.**
 - **HR ids are MIXED CASE, so a plain `.eq` silently under-returns** — one `.eq` hid 28% of reps' own orders, and on `au.occupancy_history` the loss is TOTAL (0 of 120 join), where a row matching nobody reads as *a vacant seat* rather than a bug. Lower BOTH sides.
