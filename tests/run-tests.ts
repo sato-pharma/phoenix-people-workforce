@@ -1517,6 +1517,7 @@ import { runTargetsUnsavedEditGuardTests } from "./targets-unsaved-edit-guard.te
 import { runDirectOrderVenueGapsTests } from "./direct-order-venue-gaps.test.ts";
 import { runVacancyOptionLabelTests } from "./vacancy-option-label.test.ts";
 import { runOrganogramArabicSearchTests } from "./organogram-arabic-search.test.ts";
+import { runOrganogramTeamLabelTests } from "./organogram-team-label.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4942,6 +4943,11 @@ await runTest(
 await runTest(
   "the phone number PRINTED ON the CV is painted out for every manager but the one who reserved it",
   runCvPhoneRedactionTests,
+);
+
+await runTest(
+  "the organogram team label comes from the LINK, never the denormalized twin (which is empty for every employee)",
+  runOrganogramTeamLabelTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
