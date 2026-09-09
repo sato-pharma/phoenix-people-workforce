@@ -794,7 +794,12 @@ function DirectoryAvatar({
 }
 
 export function EmployeeManagement({
-  canEdit = true,
+  // FAILS CLOSED. This defaulted to `true`, so a page that forgot the prop handed every viewer
+  // Save and Add controls the API then refuses — which is what happened to the portal copy of the
+  // employees page for as long as it has existed. Both call sites now pass it explicitly, so the
+  // default is only ever reached by a THIRD page that forgets, and read-only is the safe way for
+  // that to be wrong.
+  canEdit = false,
   initialData = null,
   initialError = null,
 }: EmployeeManagementProps) {
