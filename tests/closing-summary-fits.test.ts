@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { buildClosingFamilySummary } from "../src/lib/sales/closing-family-summary.ts";
+import {
+  buildClosingFamilySummary,
+  pivotClosingSummaryByFamily,
+} from "../src/lib/sales/closing-family-summary.ts";
 import type {
   MonthlyClosingCell,
   MonthlyClosingMatrix,
@@ -153,9 +156,15 @@ export async function runClosingSummaryFitsTests(): Promise<void> {
   assert.match(COMPONENT, /<colgroup>/, "with a colgroup, so the columns are declared not discovered");
   assert.match(
     COMPONENT,
-    /width: `\$\{(areaPct|familyPct|totalPct)\}%`/,
+    /width: `\$\{\w+Pct\}%`/,
     "column widths must be PERCENTAGES: a percentage table cannot exceed its container whatever " +
       "the family count, which is what makes this fit by construction rather than by tuning",
+  );
+  assert.doesNotMatch(
+    COMPONENT,
+    /colSpan/,
+    "depth is carried by INDENT inside the first column, never by spanning or adding columns — " +
+      "that is what keeps the width fixed at three columns however deep the tree is opened",
   );
   assert.doesNotMatch(
     COMPONENT,
@@ -178,4 +187,77 @@ export async function runClosingSummaryFitsTests(): Promise<void> {
   // ── 7. mobile gets cards, never this table ─────────────────────────────────────────────────
   assert.match(COMPONENT, /hidden md:block/, "the table is desktop-only");
   assert.match(COMPONENT, /md:hidden/, "and a card list stands in on mobile");
+
+  // ── 8. THE FAMILY-FIRST TREE IS A PIVOT, NOT A SECOND CALCULATION ──────────────────────────
+  // The owner asked for a screen that starts collapsed: families, then regions inside a family,
+  // then that region's areas. The danger is the same one section 2 guards — a second view of the
+  // same money that quietly disagrees. So every node must carry the SAME cell object the folded
+  // summary already holds, never a re-addition of its children.
+  const tree = pivotClosingSummaryByFamily(summary);
+  assert.deepEqual(
+    tree.map((node) => node.family),
+    ["Saginko", "Royafloxacin"],
+    "the tree's top level is the families, in the matrix's own column order",
+  );
+
+  const saginkoNode = tree[0]!;
+  assert.equal(
+    saginkoNode.total,
+    summary.grandTotal.byFamily[0],
+    "a family's headline number IS the folded grand-total cell — the same object, not a copy that " +
+      "could be computed differently",
+  );
+  assert.equal(
+    saginkoNode.regions[0]!.cell,
+    summary.regions[0]!.subtotal.byFamily[0],
+    "and a region's is that region's own folded subtotal cell, which came from the matrix's " +
+      "subtotal row rather than from re-adding the areas",
+  );
+  assert.equal(
+    saginkoNode.regions[0]!.areas[0]!.cell,
+    summary.regions[0]!.areas[0]!.byFamily[0],
+    "and an area's is that area's own folded cell",
+  );
+  assert.equal(saginkoNode.total.value, 300, "so Saginko still reads 300 at the top of the tree");
+  assert.equal(
+    tree[1]!.total.achievement,
+    null,
+    "and a family with no target still reads a dash at every level, never 0%",
+  );
+  assert.equal(
+    saginkoNode.regions[0]!.areas.length,
+    1,
+    "each region carries its own areas, so opening one cannot show another region's",
+  );
+
+  // A family the fold never produced must not invent a 0% achievement.
+  const missing = pivotClosingSummaryByFamily({ ...summary, families: [...summary.families, "Ghost"] });
+  const ghost = missing.at(-1)!;
+  assert.equal(ghost.total.value, 0, "an unknown family reads as no money");
+  assert.equal(ghost.total.achievement, null, "with a NULL achievement, so the screen prints a dash");
+
+  // ── 9. IT STARTS COLLAPSED — the whole point of the owner's request ────────────────────────
+  // EVERY level, not merely one of them. A plain `assert.match` here passed while the family level
+  // was seeded wide open, because the region level still carried the empty form it was looking for
+  // — caught by breaking the component on purpose. So read all the initialisers and check each.
+  const disclosureState = COMPONENT.match(/useState<ReadonlySet<string>>\([^\n]*\)/g) ?? [];
+  assert.equal(
+    disclosureState.length,
+    2,
+    "two disclosure levels: the family and the region inside it",
+  );
+  for (const initialiser of disclosureState) {
+    assert.equal(
+      initialiser,
+      "useState<ReadonlySet<string>>(() => new Set<string>())",
+      "every disclosure level starts as an EMPTY set: collapsed by default, per the owner's " +
+        "instruction. Seeding either one would put the old full-height view back",
+    );
+  }
+  assert.match(
+    COMPONENT,
+    /aria-expanded=\{/,
+    "every disclosure control reports its state, so the rows are reachable by keyboard and screen " +
+      "reader rather than by mouse alone",
+  );
 }
