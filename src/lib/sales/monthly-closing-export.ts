@@ -2344,6 +2344,24 @@ function writeStoreSplitDetailSheet(
   });
 }
 
+/**
+ * Blank the customer on split entries the viewer may not see the source of.
+ *
+ * Structural rather than typed to one shape, because the summary and the detail rows are different
+ * types that happen to share the two fields this touches.
+ */
+function maskSplitEntries<T extends { clientCode: string; clientName: string }>(
+  entries: readonly T[],
+  masked: ReadonlySet<string> | undefined,
+): T[] {
+  if (!masked || masked.size === 0) return [...entries];
+  return entries.map((entry) => (
+    masked.has(String(entry.clientCode ?? "").trim())
+      ? { ...entry, clientCode: "", clientName: "" }
+      : entry
+  ));
+}
+
 function writeStoreSplitSheet(
   workbook: ExcelJS.Workbook,
   line: string | null,
@@ -3205,6 +3223,13 @@ export async function buildMonthlyClosingWorkbook(
      */
     storeSplitRegions?: SplitRegions;
     /**
+     * Customer codes whose identity must not reach the Store Split sheets.
+     *
+     * 🔒 The split is computed from the REAL rows and the answer is masked, because a split entry
+     * carries no distributor to recognise. See closing-source-mask.ts.
+     */
+    storeSplitMaskedClients?: ReadonlySet<string>;
+    /**
      * The two halves of `matrix`, for the channel tabs: `retail` is the same grid before direct is
      * injected (with the identical store split applied), `directCells` the direct money by region
      * and product. Omitted under a row-level filter, where the matrix is rebuilt from invoice rows
@@ -3342,8 +3367,14 @@ export async function buildMonthlyClosingWorkbook(
       workbook,
       matrix.line,
       matrix.period,
-      summariseStoreSplitByCustomer(splitSourceRows, matrix.period, options?.storeSplitRegions),
-      detailStoreSplitByCustomer(splitSourceRows, matrix.period, options?.storeSplitRegions),
+      maskSplitEntries(
+        summariseStoreSplitByCustomer(splitSourceRows, matrix.period, options?.storeSplitRegions),
+        options?.storeSplitMaskedClients,
+      ),
+      maskSplitEntries(
+        detailStoreSplitByCustomer(splitSourceRows, matrix.period, options?.storeSplitRegions),
+        options?.storeSplitMaskedClients,
+      ),
     );
   }
   writeComparisonSheet(workbook, comparison, ref);
