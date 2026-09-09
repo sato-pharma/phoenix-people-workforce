@@ -1500,6 +1500,7 @@ import { runRetentionRiskDetectorTests } from "./retention-risk-detector.test.ts
 import { runRetentionRiskNotifyTests } from "./retention-risk-notify.test.ts";
 import { runRetentionRiskRecipientExclusionTests } from "./retention-risk-recipient-exclusion.test.ts";
 import { runCrmAccountSetupTests } from "./crm-account-setup.test.ts";
+import { runPortalSosSourceMaskTests } from "./portal-sos-source-mask.test.ts";
 import {
   runEmployeeManagementCanEditReachTests,
   runEmployeeManagementCanEditTests,
@@ -4877,6 +4878,10 @@ await runTest(
 await runTest(
   "new hire CRM account setup (the notice carries all seven facts, states a blank instead of dropping it, is email + in-app only, and fires on the CREATE path alone)",
   runCrmAccountSetupTests,
+);
+await runTest(
+  "El Qema leaves no trace on the SoS dashboard either (13 of 19 roles can open it; the filter, the ranked bars, the customer rows and the code-keyed comparison all mask, and totals never move)",
+  runPortalSosSourceMaskTests,
 );
 await runTest(
   "employee master canEdit (every page rendering it passes the grant, found by scanning rather than by a hand-kept list, and the default fails closed)",
