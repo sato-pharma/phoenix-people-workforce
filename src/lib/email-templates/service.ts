@@ -13,6 +13,12 @@ import { summarizeEmailTemplateReadiness } from "@/lib/communication/metrics";
 import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
 import { listEmailCustomVariables, resolveEmailCustomVariables, sampleEmailCustomVariables } from "./custom-variables";
 import { contextVariables, htmlBlockTokens, interpolate } from "./render-core";
+import {
+  emailTemplateKeys,
+  findRowForKey,
+  normalizeTemplateKey,
+  type EmailTemplateKey,
+} from "./key-resolution";
 import { TOKEN_REGISTRY } from "./token-registry";
 import { buildDvDigestSummaryEmail } from "@/lib/double-visit-analytics/weekly-digest";
 import { sendPhoenixEmail, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
@@ -22,44 +28,11 @@ import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export const emailTemplateKeys = [
-  "offer",
-  "interview_invitation",
-  "interview_feedback",
-  "probation_workflow",
-  "probation_reminder",
-  "probation_dv_snapshot",
-  "probation_weekly_digest",
-  "dv_planner_weekly",
-  "probation_day30",
-  "probation_day60",
-  "probation_day75",
-  "contract_renewal",
-  "birthday",
-  "resignation_workflow",
-  "leave_request",
-  "leave_approval",
-  "leave_rejection",
-  "leave_submission_confirmation",
-  "leave_resubmit_confirmation",
-  "leave_returned",
-  "leave_manager_step_decision",
-  "vacation_balance_settlement",
-  "password_setup",
-  "password_reset",
-  "user_created",
-  "weekly_plans",
-  "outstation",
-  "marketing_request",
-  "excuse_request",
-  "excuse_decision",
-  "offer_status",
-  "recruitment_update",
-  "coaching_report",
-  "payroll_update",
-  "attendance_workflow",
-  "general",
-] as const;
+// Key resolution lives in ./key-resolution so it can be unit-tested without this module's
+// JSX-layout and Supabase imports. Re-exported here: these are the paths every caller uses.
+export { emailTemplateKeys, type EmailTemplateKey };
+
+
 
 export const EMAIL_TEMPLATE_KEYS = {
   ATTENDANCE_WORKFLOW: "attendance_workflow",
@@ -125,7 +98,7 @@ export const emailTemplateRecipientRoleOptions = [
   "selected_lines_selected_titles",
 ] as const;
 
-export type EmailTemplateKey = (typeof emailTemplateKeys)[number];
+
 export type EmailTemplateRecipientRole = (typeof emailTemplateRecipientRoleOptions)[number];
 
 export type EmailTemplateContext = {
@@ -978,13 +951,7 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
   },
 };
 
-const aliases: Record<string, EmailTemplateKey> = {
-  job_offer: "offer",
-  probation: "probation_workflow",
-  probation_tracker: "probation_workflow",
-  resignation: "resignation_workflow",
-  user_creation: "user_created",
-};
+
 
 const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   attendance_workflow: "Attendance",
@@ -1062,11 +1029,7 @@ export function normalizeEmailTemplateKey(value: string | null | undefined): Ema
   return normalizeTemplateKey(value);
 }
 
-function normalizeTemplateKey(value: string | null | undefined): EmailTemplateKey | null {
-  const normalized = String(value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
-  if ((emailTemplateKeys as readonly string[]).includes(normalized)) return normalized as EmailTemplateKey;
-  return aliases[normalized] ?? null;
-}
+
 
 function isTemplateRole(value: unknown): value is EmailTemplateRecipientRole {
   return typeof value === "string" && emailTemplateRecipientRoleOptions.includes(value as EmailTemplateRecipientRole);
@@ -1375,6 +1338,8 @@ async function readTemplateTables() {
   };
 }
 
+
+
 async function readTemplateDrafts() {
   const result = await getSupabaseAdmin()
     .from(emailTemplateDraftsTable)
@@ -1398,9 +1363,9 @@ export async function getEmailTemplateCatalog(options: { includeDrafts?: boolean
     const customTokens = new Set(customVariables.filter((variable) => variable.sourceAllowed).map((variable) => variable.token));
     return emailTemplateKeys
       .map((key) => {
-        const templateRow = templates.find((row) => normalizeTemplateKey(row.template_key) === key) ?? null;
-        const rulesRow = rules.find((row) => normalizeTemplateKey(row.template_key) === key) ?? null;
-        const draftRow = drafts.find((row) => normalizeTemplateKey(row.template_key) === key) ?? null;
+        const templateRow = findRowForKey(templates, key);
+        const rulesRow = findRowForKey(rules, key);
+        const draftRow = findRowForKey(drafts, key);
         return toTemplateRow(mapTemplate(templateRow, key), templateRow, rulesRow, draftRow, sendStats[key] ?? null, customTokens);
       })
       .sort((left, right) => left.templateName.localeCompare(right.templateName));
@@ -1443,8 +1408,8 @@ export async function getEmailTemplate(templateKey: string): Promise<EmailTempla
       listEmailCustomVariables(),
     ]);
     const customTokens = new Set(customVariables.filter((variable) => variable.sourceAllowed).map((variable) => variable.token));
-    const templateRow = templates.find((row) => normalizeTemplateKey(row.template_key) === key) ?? null;
-    const rulesRow = rules.find((row) => normalizeTemplateKey(row.template_key) === key) ?? null;
+    const templateRow = findRowForKey(templates, key);
+    const rulesRow = findRowForKey(rules, key);
     return toTemplateRow(mapTemplate(templateRow, key), templateRow, rulesRow, null, sendStats[key] ?? null, customTokens);
   } catch (error) {
     if (!tableMissing(error)) throw error;
