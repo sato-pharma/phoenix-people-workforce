@@ -485,9 +485,11 @@ function testEveryPaperRendersOnTheHouseIdentity(): void {
     assert.ok(!html.includes("{{"), `${paper.id}: an unsubstituted token reached the page`);
     assert.ok(html.includes('<html lang="ar" dir="rtl">'), `${paper.id}: Arabic, right-to-left`);
     assert.ok(html.includes("نور عادل"), `${paper.id}: the Arabic name governs`);
+    // Was `border-bottom: 0.7mm solid #0A6BA6` until 2026-09-09, when the owner replaced the filled
+    // brand rule with the engine-turned band on every Sato template.
     assert.ok(
-      html.includes("border-bottom: 0.7mm solid #0A6BA6"),
-      `${paper.id}: the brand rule is the one element on every house document`,
+      /url\(data:image\/svg\+xml,[^)]*Q[^)]*\)/.test(html),
+      `${paper.id}: the engine-turned band is the one element on every house document`,
     );
     assert.ok(
       html.includes("/brand/sato-pharma-logo-on-light.svg"),
@@ -1093,9 +1095,44 @@ function testTheBandTilesAtOneWavelength(): void {
   );
 }
 
+/**
+ * EVERY MASTHEAD CARRIES THE BAND — checked on the RENDERED DOCUMENT, not on one stylesheet.
+ *
+ * There are THREE mastheads in this codebase, not one. `houseLetterhead()` draws the clearances,
+ * the custody receipts and the worker data form; `render-contract.ts` and `render-hr-paper.ts`
+ * each draw their own `.doc-mast`. Styling `.lh__rule` alone therefore reached five documents and
+ * missed eight — and the first pass at this change reported success because it searched for the
+ * selector it had just edited rather than for the band itself.
+ *
+ * So this renders real papers and searches the emitted HTML, and it also refuses the old 0.7 mm
+ * filled bar anywhere, which is what a half-applied change leaves behind.
+ */
+function testEveryMastheadCarriesTheBand(): void {
+  const pack = packFixture();
+  const rendered: ReadonlyArray<readonly [string, string]> = [
+    ["contract", renderContractHtml(pack, 1)],
+    ["confidentiality undertaking", renderHrPaperHtml(pack, 1, HR_PAPER_NDA_V1)],
+    ["absence warning", renderHrPaperHtml(pack, 1, HR_PAPER_ABSENCE_WARNING_V1)],
+    ["experience certificate", renderHrPaperHtml(pack, 1, HR_PAPER_EXPERIENCE_CERTIFICATE_V1)],
+  ];
+
+  for (const [name, html] of rendered) {
+    assert.ok(
+      /url\(data:image\/svg\+xml,[^)]*Q[^)]*\)/.test(html),
+      `The ${name} does not carry the engine-turned band. It draws its own masthead, so styling `
+        + "the shared .lh__rule does not reach it — take the value from houseBandBackground().",
+    );
+    assert.ok(
+      !/border-bottom:\s*0\.7mm solid/.test(html),
+      `The ${name} still draws the old 0.7 mm filled brand rule, which the band replaced.`,
+    );
+  }
+}
+
 export function runHrFormsHousePapersTests(): void {
   testTheBandSurvivesAnInlineStyleAttribute();
   testTheBandTilesAtOneWavelength();
+  testEveryMastheadCarriesTheBand();
   testTheAbsenceThresholdIsMoreThanTenDays();
   testTheSecondNoticeDeclaresRatherThanAcceptsAResignation();
   testEveryPaperIsRegisteredAndCurrent();

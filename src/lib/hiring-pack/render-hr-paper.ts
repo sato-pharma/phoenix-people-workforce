@@ -1,6 +1,10 @@
 import type { CompanyDetails } from "@/lib/hiring-pack/company-details";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
-import { HOUSE_COLORS, HOUSE_MARK_SRC } from "@/lib/hiring-pack/house-identity";
+import {
+  HOUSE_COLORS,
+  HOUSE_MARK_SRC,
+  houseBandBackground,
+} from "@/lib/hiring-pack/house-identity";
 import {
   HR_PAPER_BLANK_RULE,
   HR_PAPER_BLANK_RULE_WIDE,
@@ -538,8 +542,11 @@ export function renderHrPaperHtml(
     align-items: center;
     gap: 4mm;
     margin-bottom: 2.5mm;
-    padding-bottom: 1.5mm;
-    border-bottom: 0.7mm solid ${HOUSE_COLORS.blue};
+    padding-bottom: 4.2mm;
+    /* The engine-turned band, from houseBandBackground() rather than re-typed — this is one of
+       THREE mastheads in the codebase and they drifted apart once already. A bottom-anchored
+       background rather than a border, because a border cannot carry a pattern. */
+    background: ${houseBandBackground("left bottom")};
   }
   .doc-mast__side { flex: 0 0 34mm; }
   .doc-mast__id { text-align: right; color: ${HOUSE_COLORS.muted}; font-size: 6.5pt; line-height: 1.5; }

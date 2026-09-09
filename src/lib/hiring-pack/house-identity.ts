@@ -204,6 +204,27 @@ export function houseEngineTurnedBand(color: string = HOUSE_COLORS.blue): string
 }
 
 /**
+ * The band as a complete `background` shorthand value.
+ *
+ * 🔴 THREE RENDERERS DRAW THEIR OWN MASTHEAD, and that is why this exists rather than one CSS rule.
+ * `houseLetterhead()` covers the clearances, the custody receipts and the worker data form; the
+ * CONTRACT and every HR PAPER (the undertaking, both warnings, both document receipts, the social
+ * status sheet and the Arabic certificate) build their own `.doc-mast` and each carried a private
+ * copy of the 0.7 mm brand rule as a `border-bottom`. Styling `.lh__rule` alone therefore reached
+ * five documents and missed eight — measured 2026-09-09 by rendering all of them and searching the
+ * emitted HTML, after a first attempt claimed to cover every one.
+ *
+ * So the band is published as a value the three mastheads share. Anything drawing a house masthead
+ * takes it from here; nothing re-types the URI.
+ *
+ * `position` is `center` for a standalone strip, and `left bottom` for a box that wears the band on
+ * its lower edge in place of a border.
+ */
+export function houseBandBackground(position = "center"): string {
+  return `${houseEngineTurnedBand()} ${position} / ${HOUSE_BAND_WAVELENGTH_MM}mm ${HOUSE_BAND_HEIGHT_MM}mm repeat-x`;
+}
+
+/**
  * The house stylesheet: the letterhead, the type scale, tables, callouts and the signature block.
  *
  * Written as CSS custom properties so a document's own stylesheet can reach the palette by name
@@ -281,7 +302,7 @@ export const HOUSE_IDENTITY_CSS = `
      houseEngineTurnedBand in this module for why the tile is exactly one wavelength. */
   .lh__rule {
     height: ${HOUSE_BAND_HEIGHT_MM}mm; margin-top: 2.2mm;
-    background: ${houseEngineTurnedBand()} center / ${HOUSE_BAND_WAVELENGTH_MM}mm ${HOUSE_BAND_HEIGHT_MM}mm repeat-x;
+    background: ${houseBandBackground()};
   }
 
   .lh__title { text-align: center; padding: 3.3mm 0 2.2mm; }

@@ -1,5 +1,9 @@
 import type { CompanyDetails } from "@/lib/hiring-pack/company-details";
-import { HOUSE_COLORS, HOUSE_MARK_SRC } from "@/lib/hiring-pack/house-identity";
+import {
+  HOUSE_COLORS,
+  HOUSE_MARK_SRC,
+  houseBandBackground,
+} from "@/lib/hiring-pack/house-identity";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import { spellEgyptianAmount } from "@/lib/hiring-pack/arabic-amount";
 import {
@@ -1024,10 +1028,13 @@ export function renderContractHtml(
     align-items: center;
     gap: 4mm;
     margin-bottom: 2.5mm;
-    padding-bottom: 1.5mm;
-    /* THE BRAND RULE — 0.7 mm of Brand Blue, the one element the house identity puts on every
-       document without exception. It is what makes a page recognisable at arm's length. */
-    border-bottom: 0.7mm solid ${HOUSE_COLORS.blue};
+    padding-bottom: 4.2mm;
+    /* THE BRAND RULE, now the engine-turned band — the one element the house identity puts on every
+       document without exception, and what makes a page recognisable at arm's length. Drawn from
+       houseBandBackground() rather than re-typed, because this masthead is one of THREE and they
+       drifted apart once already. It is a bottom-anchored background rather than a border because a
+       border cannot carry a pattern. */
+    background: ${houseBandBackground("left bottom")};
   }
   .doc-mast__side { flex: 0 0 34mm; }
   /* The registered name, opposite the mark. Latin is pinned LTR: the full stop ending
