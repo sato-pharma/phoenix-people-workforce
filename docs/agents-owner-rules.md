@@ -1181,7 +1181,7 @@ for UE-1 and UE-2, and `upperEgyptAreasFor` widens it with any UE-prefixed regio
 holds, then subtracts Others. **Nine areas in August** (Qena 2 and Luxor are parked in Others),
 **eleven from September**, with no code change on the day. Aswan is not Upper Egypt for this rule.
 
-### 🔒 THE LEAD GUARANTEE — Qalubeya, Tanta and Mahalla top the table
+### 🔒 THE LEAD LADDER — Qalubeya first, Tanta and Mahalla level behind it
 
 > مع الحفاظ على منطقة القليوبية الاولى و الثانية طنطا لابد ان يكونوا اكبر نسبة contribution
 
@@ -1195,9 +1195,15 @@ Tanta, Mahalla and Al-Yubayya should be the biggest contribution in all areas"*.
 requirement.** An outcome he states is a rule to enforce, not a finding to report — and he had
 already said it once inside the ruling itself, so it was said twice before it was built.
 
-**How it works.** After the bands and the صعيد pass, the three named areas are lifted to one figure
-and everyone else is scaled down pro rata to pay for it. The step is **2%**, his own *"exceeding
-them, but with a very small scale"*.
+**How it works.** After the bands and the صعيد pass the named areas are lifted onto a LADDER and
+everyone else is scaled down pro rata to pay for it. Qalubeya takes one **2%** step more than Tanta
+and Mahalla, and those two take one step more than the highest other area. Within a tier the members
+are level, so Tanta never sits behind Mahalla.
+
+🔴 **"QALUBEYA NUMBER 1" IS A SECOND RULING, AND IT COST A ROUND TRIP TOO.** The first build put
+all three on ONE figure, which satisfied "they must be the biggest contribution" but left the display
+order to the sort — so Qalubeya read THIRD of three at the same percentage. He answered in two words:
+*"Qalubeya number 1"*. A tie is not a rank.
 
 🔴 **IT CANNOT LIVE IN `splitTargetsFor`, AND THE ARITHMETIC IS WHY.** A plan is one customer's
 sale; contribution is the month. A per-row floor is infeasible on a small plan — a 150-pack
@@ -1211,7 +1217,7 @@ taking 2% of the field as it stood BEFORE the move overshoots — measured on Au
 5.4% clear when he asked for a very small scale. The shipping code iterates to the fixed point; the
 test solves the same equation as algebra, which is a genuinely different derivation:
 
-    F = (1+k)·T·(P + ΣL) / (P + (1+k)·n·T)
+    need = P·(T·S − ΣL) / (P + T·S),   S = Σ k^(n−t)·m_t   over tiers t of size m_t
 
 ⚠ **THE DETAIL SHEET AND THE IMPORT PREVIEW DO NOT SHOW IT**, and that is correct rather than a
 bug: both describe one customer's sale being divided, and a month-level adjustment is not a property
@@ -1228,11 +1234,11 @@ Fayoum and Suez negatives the ladder produced are gone. The band mix by packs: *
 
 | | Contribution | Note |
 | --- | --- | --- |
-| **Qalubeya, Tanta, Mahalla** | **3.531%** | ranks 1 to 3, exactly 2% clear of the field |
-| Alexandria × 3 | 3.462% | led at 3.565% before the guarantee |
-| Cairo × 5 | 3.139% | |
-| Sharkia × 2 | 2.856% | |
-| Upper Egypt × 9 | 1.989% | every one identical, Fayoum and Beni Suef included |
+| **Qalubeya** | **3.599%** | rank 1, one step clear of the pair below |
+| **Tanta, Mahalla** | **3.528%** | ranks 2 and 3, level, one step clear of the field |
+| Alexandria × 3 | 3.459% | led at 3.565% before the ladder |
+| Cairo × 5 | 3.136% | |
+| Upper Egypt × 9 | 1.987% | every one identical, Fayoum and Beni Suef included |
 | Ismailia | 0.274% | in Others: keeps its own 24 packs, receives nothing |
 
 Without the guarantee the same book put Alexandria first at 3.565% and the three named areas at
