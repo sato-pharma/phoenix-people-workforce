@@ -9,8 +9,11 @@ import {
   buildOfferTokens,
   fillOfferTokens,
   renderOfferBlock,
+  offerDocumentCss,
   renderOfferDocument,
 } from "../src/lib/offers/render.ts";
+import { HOUSE_COLORS } from "../src/lib/hiring-pack/house-identity.ts";
+import { OFFER_DEFAULT_FONT, OFFER_DEFAULT_FONT_SIZE_PT } from "../src/lib/offers/default-template.ts";
 import { renderOfferEmail } from "../src/lib/offers/render-email.ts";
 import type { OfferFields } from "../src/lib/offers/types.ts";
 
@@ -50,7 +53,64 @@ const SAMAA: OfferFields = {
   validUntil: "1 September 2026",
 };
 
+
+/**
+ * THE ENGINE-TURNED BAND ON BOTH OFFER TEMPLATES, IN THE LETTER'S OWN BLUE.
+ *
+ * The offer letter design is frozen (owner 2026-09-05, "donot change in offer design"). On
+ * 2026-09-09 he asked for the band here too and chose the OFFER'S blue over the house Brand Deep,
+ * so the band must follow `theme.brand` and must never be drawn in HOUSE_COLORS.deep — that is the
+ * whole content of his choice, and a later "consistency" sweep would quietly undo it.
+ *
+ * BOTH VARIANTS, because the executive skin overrides `.divider-micro::after`: the band added to
+ * the base stylesheet does not reach that letter on its own. Checking one variant is how this
+ * change missed four mastheads in the hiring pack the same week.
+ */
+function testTheBandIsOnBothOfferTemplatesInTheirOwnBlue(): void {
+  const variants = [
+    ["classic", "#0879b8"],
+    ["executive", "#0b86be"],
+  ] as const;
+
+  for (const [variant, brand] of variants) {
+    const css = offerDocumentCss(
+      { brand },
+      OFFER_DEFAULT_FONT,
+      OFFER_DEFAULT_FONT_SIZE_PT,
+      variant,
+    );
+    const rule = css.slice(css.lastIndexOf(".divider-micro::after"));
+    assert.ok(
+      /url\(data:image\/svg\+xml,[^)]*Q[^)]*\)/.test(rule),
+      `${variant}: the divider carries no engine-turned band. The executive skin overrides this `
+        + "selector, so a band added only to the base stylesheet never reaches that letter.",
+    );
+
+    const uri = rule.match(/url\(data:image\/svg\+xml,([^)]*)\)/)?.[1] ?? "";
+    const svg = decodeURIComponent(uri);
+    assert.ok(
+      svg.includes(`stroke="${brand}"`),
+      `${variant}: the band must be drawn in the letter's own blue (${brand}).`,
+    );
+    assert.ok(
+      !svg.includes(HOUSE_COLORS.deep),
+      `${variant}: the band is drawn in the HOUSE Brand Deep. The owner chose the offer's own blue `
+        + "on 2026-09-09 — the offer letter is deliberately not on the house identity.",
+    );
+  }
+
+  // The executive's own 11.4 pt ink segment is part of the frozen look and must survive beside the
+  // band rather than be replaced by it.
+  const exec = offerDocumentCss({}, OFFER_DEFAULT_FONT, OFFER_DEFAULT_FONT_SIZE_PT, "executive");
+  const execRule = exec.slice(exec.lastIndexOf(".divider-micro::after"));
+  assert.ok(
+    execRule.includes("linear-gradient"),
+    "The executive divider lost its ink segment; the band layers over it, it does not replace it.",
+  );
+}
+
 export function runOfferLetterPayAndRenderTests() {
+  testTheBandIsOnBothOfferTemplatesInTheirOwnBlue();
   // ---------------------------------------------------------------- the formula --
   // The three signed offers this formula was decoded from. Basic and transport are what the
   // signed PDFs actually say — not what this code computes — so a drift shows up as a mismatch

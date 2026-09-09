@@ -1,3 +1,22 @@
+/* ─────────────────────────────────────────────────────────────────────────────────────────────
+ * 🔴 THE HOUSE-IDENTITY IMPORT BELOW DOES NOT PUT THE OFFER LETTER UNDER THE HOUSE IDENTITY.
+ * Read this before "finishing the job".
+ *
+ * The offer letter design is FROZEN — owner 2026-09-05, asked and answered: "donot change in offer
+ * design". Its own blue, the filled brand bands, the tinted salary table and the circular initials
+ * disc all STAY, and none of the house rules reach this folder: not the ink rule, not the
+ * square-edge rule, not the vector mark.
+ *
+ * On 2026-09-09 the owner asked for the engine-turned band here too, and chose THE OFFER'S OWN BLUE
+ * for it rather than the house Brand Deep. So the band is drawn from `merged.brand` — whatever the
+ * template resolves that to — and never from HOUSE_COLORS. This is the one element that crossed,
+ * on his instruction, and it is purely additive: it removed nothing the freeze protects.
+ *
+ * `houseEngineTurnedBand` is imported for the CURVE, not for the identity. It takes a colour and
+ * returns a tiled data URI; drawing that same curve a second time in this folder is what produced
+ * four drifting mastheads in the hiring pack the same week. Everything else here stays frozen.
+ * ───────────────────────────────────────────────────────────────────────────────────────────── */
+import { houseEngineTurnedBand } from "@/lib/hiring-pack/house-identity";
 import { OFFER_DEFAULT_FONT, OFFER_DEFAULT_FONT_SIZE_PT, OFFER_DEFAULT_THEME } from "@/lib/offers/default-template";
 import { deriveOfferPay, formatOfferAmount } from "@/lib/offers/pay";
 import { systemLegalEntity } from "@/config/system-settings";
@@ -358,6 +377,9 @@ export function offerDocumentCss(
   variant: OfferTemplateVariant = "classic",
 ): string {
   const merged = { ...OFFER_DEFAULT_THEME, ...theme };
+  // Drawn in the letter's OWN brand colour, never the house Brand Deep - see the note at the top
+  // of this file for why that distinction is the whole point.
+  const band = houseEngineTurnedBand(merged.brand ?? "#0b86be");
   const vars = Object.entries(merged)
     .filter(([, value]) => typeof value === "string" && value.trim() !== "")
     .map(([key, value]) => `--${key}:${value}`)
@@ -376,7 +398,11 @@ body{background:#fff;color:var(--ink);font-family:${fontFamily};
 .rail{height:6px;background:var(--brand)}
 .divider-micro{display:flex;align-items:center;margin:11px 0}
 .divider-micro::before{content:"";width:72px;height:2px;background:var(--brand);flex:none}
-.divider-micro::after{content:"";height:1px;background:var(--hair);flex:1}
+/* The engine-turned band, owner 2026-09-09, in THIS letter's blue rather than the house one.
+   It replaces the 1 px hairline that used to trail the brand bar; the bar itself is part of
+   the frozen look and is untouched. The colour is baked into the URI because a var() cannot
+   be read from inside a data URI - the SVG is parsed as its own document. */
+.divider-micro::after{content:"";height:1.5mm;background:${band} left center/6mm 1.5mm repeat-x;flex:1}
 .micro{font-size:7.8pt;line-height:1.35;font-weight:700;letter-spacing:1.4px;text-transform:uppercase}
 .micro-wide{letter-spacing:1.8px}
 .tnum{font-variant-numeric:tabular-nums}
@@ -489,7 +515,24 @@ table{width:100%;border-collapse:collapse}
 @media print{.sheet{max-width:none;padding:0;margin:0}.sheet .rail{margin:0}}
 `.trim();
 
-  return variant === "executive" ? `${base}\n${EXECUTIVE_SKIN}` : base;
+  /* THE EXECUTIVE SKIN OVERRIDES `.divider-micro::after`, so the band added to `base` above does
+     NOT reach that letter on its own — the same shape as the four drifting mastheads in the hiring
+     pack. This rule is appended AFTER the skin so it wins, and it keeps the executive's own 11.4 pt
+     ink segment by layering that OVER the band rather than replacing it. Longhand rather than the
+     `background` shorthand, because two layers at different sizes is exactly where shorthand goes
+     wrong silently. */
+  const executiveBand = `
+.divider-micro{height:1.5mm}
+.divider-micro::before{width:72pt;height:1.5mm}
+.divider-micro::after{
+  height:1.5mm;
+  background-image:linear-gradient(90deg,var(--ink) 0 11.4pt,transparent 11.4pt),${band};
+  background-size:auto,6mm 1.5mm;
+  background-position:left center,left center;
+  background-repeat:no-repeat,repeat-x;
+}`;
+
+  return variant === "executive" ? `${base}\n${EXECUTIVE_SKIN}\n${executiveBand}` : base;
 }
 
 /**
