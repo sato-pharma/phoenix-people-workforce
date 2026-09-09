@@ -3,6 +3,17 @@ import { randomUUID } from "node:crypto";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission } from "@/lib/auth/permissions";
 import { canonicalHrIdKey, hrIdForStorage } from "@/lib/hr-id";
+import type {
+  ApproverDirectoryEntry,
+  MarketAwarenessApproverRole,
+  MarketAwarenessApproverSlot,
+} from "@/lib/market-awareness/approvers";
+import {
+  NATIONAL_SALES_MANAGER_ROLE,
+  MARKETING_MANAGER_ROLE,
+  pendingSlotsFor,
+  planApproverSlots,
+} from "@/lib/market-awareness/approvers";
 import type { MarketAwarenessDecisionBadge } from "@/lib/market-awareness/badge";
 import { summarizeMarketAwarenessDecisionBadge } from "@/lib/market-awareness/badge";
 import { findLineById, loadMarketAwarenessLines } from "@/lib/market-awareness/lines";
@@ -11,6 +22,7 @@ import { findArea, loadRegionManagers } from "@/lib/market-awareness/geography";
 import { notifyConversationMessage } from "@/lib/conversations/notify";
 import {
   notifyActivityApproved,
+  notifyActivityHeld,
   notifyActivityReturned,
   notifyDecisionPending,
 } from "@/lib/market-awareness/notifications";
@@ -36,9 +48,9 @@ import type {
 } from "@/lib/market-awareness/types";
 import {
   canDecideStep,
+  canReleaseHold,
   currentStep,
   findTransition,
-  resolveManagerStep,
   statusAfterResubmit,
 } from "@/lib/market-awareness/workflow";
 import { logError } from "@/lib/observability/log";
@@ -82,7 +94,15 @@ function toNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-type EmployeeRow = { hr_id: string; full_name: string | null; manager_hr_id: string | null; job_title: string | null };
+type EmployeeRow = {
+  hr_id: string;
+  full_name: string | null;
+  manager_hr_id: string | null;
+  job_title: string | null;
+  /** Which sales line this person sits on. A National Sales Manager slot is answerable only by the
+   * NSM of that line, and three people hold the title. */
+  line_id: number | null;
+};
 
 async function loadEmployees(hrIds: Array<string | null | undefined>) {
   const wanted = [...new Set(hrIds.filter((id): id is string => Boolean(id?.trim())))];
@@ -97,7 +117,7 @@ async function loadEmployees(hrIds: Array<string | null | undefined>) {
     const chunk = wanted.slice(index, index + 50);
     const { data, error } = await supabase
       .from("employees")
-      .select("hr_id, full_name, manager_hr_id, job_title")
+      .select("hr_id, full_name, manager_hr_id, job_title, line_id")
       .in("hr_id", chunk);
     if (error) throw toQueryError(error);
     for (const row of (data as EmployeeRow[] | null) ?? []) {
@@ -134,6 +154,75 @@ async function loadRoleHolderHrIds(roles: string[]): Promise<string[]> {
     .filter((hrId): hrId is string => Boolean(hrId?.trim()));
 }
 
+/**
+ * The people who can hold an approval slot: the Marketing Manager, and every National Sales Manager
+ * with the line he sits on.
+ *
+ * Two reads rather than one join, because `app_auth_users` holds the ROLE and `employees` holds the
+ * LINE, and PostgREST cannot join them without an embedded relationship that does not exist here.
+ * The role is matched case-insensitively for the reason `loadRoleHolderHrIds` gives: the column is
+ * free text, and a case-sensitive match returns nobody, which looks exactly like "nobody holds that
+ * role" and would route every activity to an empty group.
+ */
+async function loadApproverDirectory(): Promise<ApproverDirectoryEntry[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("app_auth_users")
+    .select("hr_id, role, is_active")
+    .eq("is_active", true)
+    .limit(1000);
+  if (error) throw toQueryError(error);
+
+  const holders = ((data as Array<{ hr_id?: string | null; role?: string | null }> | null) ?? [])
+    .map((row) => ({
+      hrId: String(row.hr_id ?? "").trim(),
+      role: String(row.role ?? "").trim().toLowerCase(),
+    }))
+    .filter((row) => row.hrId)
+    .map((row) => ({
+      hrId: row.hrId,
+      approverRole:
+        row.role === MARKETING_MANAGER_ROLE.toLowerCase()
+          ? ("marketing_manager" as const)
+          : row.role === NATIONAL_SALES_MANAGER_ROLE.toLowerCase()
+            ? ("nsm" as const)
+            : null,
+    }))
+    .filter((row): row is { hrId: string; approverRole: MarketAwarenessApproverRole } =>
+      row.approverRole !== null,
+    );
+
+  const employees = await loadEmployees(holders.map((holder) => holder.hrId));
+
+  return holders.map((holder) => {
+    const row = employees.get(canonicalHrIdKey(holder.hrId) ?? "");
+    return {
+      hrId: holder.hrId,
+      name: row?.full_name ?? null,
+      approverRole: holder.approverRole,
+      lineId: row?.line_id == null ? null : Number(row.line_id),
+    };
+  });
+}
+
+/**
+ * The line the person acting sits on. Only a National Sales Manager slot reads it, and reading it
+ * for anybody else costs one lookup and removes a whole class of "which of the three is this".
+ */
+async function loadActorLineId(hrId: string | null | undefined): Promise<number | null> {
+  const key = canonicalHrIdKey(hrId ?? "");
+  if (!key) return null;
+  const row = (await loadEmployees([hrId])).get(key);
+  return row?.line_id == null ? null : Number(row.line_id);
+}
+
+/** One person's name for a message. Human names, never a raw id printed in place of one. */
+async function nameOfHrId(hrId: string | null | undefined): Promise<string | null> {
+  const key = canonicalHrIdKey(hrId ?? "");
+  if (!key) return null;
+  return (await loadEmployees([hrId])).get(key)?.full_name ?? null;
+}
+
 /** Is this HR id the CEO — i.e. is there no approval step above them? */
 async function isCeo(hrId: string | null): Promise<boolean> {
   if (!hrId) return false;
@@ -154,16 +243,20 @@ async function hydrate(
   const supabase = getSupabaseAdmin();
   const ids = rows.map((row) => String(row.id));
 
-  const [types, lineRows, productRows, brickRows, costRows, decisionRows] = await Promise.all([
-    supabase.from("market_awareness_activity_types").select("*"),
-    supabase.from("market_awareness_activity_lines").select("*").in("activity_id", ids),
-    supabase.from("market_awareness_activity_products").select("*").in("activity_id", ids),
-    supabase.from("market_awareness_activity_bricks").select("*").in("activity_id", ids),
-    supabase.from("market_awareness_cost_items").select("*").in("activity_id", ids).order("sort_order"),
-    supabase.from("market_awareness_decisions").select("*").in("activity_id", ids).order("created_at"),
-  ]);
+  const [types, lineRows, productRows, brickRows, costRows, decisionRows, approverRows] =
+    await Promise.all([
+      supabase.from("market_awareness_activity_types").select("*"),
+      supabase.from("market_awareness_activity_lines").select("*").in("activity_id", ids),
+      supabase.from("market_awareness_activity_products").select("*").in("activity_id", ids),
+      supabase.from("market_awareness_activity_bricks").select("*").in("activity_id", ids),
+      supabase.from("market_awareness_cost_items").select("*").in("activity_id", ids).order("sort_order"),
+      supabase.from("market_awareness_decisions").select("*").in("activity_id", ids).order("created_at"),
+      // Ordered so the screen always lists the Marketing Manager first and then the lines in the
+      // order they were chosen, rather than in whatever order the rows come back.
+      supabase.from("market_awareness_activity_approvers").select("*").in("activity_id", ids).order("id"),
+    ]);
 
-  for (const result of [types, lineRows, productRows, brickRows, costRows, decisionRows]) {
+  for (const result of [types, lineRows, productRows, brickRows, costRows, decisionRows, approverRows]) {
     if (result.error) throw toQueryError(result.error);
   }
 
@@ -197,15 +290,26 @@ async function hydrate(
   const bricksByActivity = group((brickRows.data as Array<{ activity_id: unknown } & Record<string, unknown>> | null) ?? []);
   const costsByActivity = group((costRows.data as Array<{ activity_id: unknown } & Record<string, unknown>> | null) ?? []);
   const decisionsByActivity = group((decisionRows.data as Array<{ activity_id: unknown } & Record<string, unknown>> | null) ?? []);
+  const approversByActivity = group((approverRows.data as Array<{ activity_id: unknown } & Record<string, unknown>> | null) ?? []);
 
   const peopleWanted = rows.flatMap((row) => [
     row.requester_hr_id as string | null,
     row.manager_hr_id as string | null,
+    row.held_by_hr_id as string | null,
     row.rep_hr_id_at_approval as string | null,
     row.dm_hr_id_at_approval as string | null,
   ]);
   for (const list of decisionsByActivity.values()) {
     for (const decision of list) peopleWanted.push(decision.actor_hr_id as string | null);
+  }
+  // Both halves of a slot: who it was routed to, and who actually answered it. They differ whenever
+  // somebody is covering, and the screen has to be able to say so rather than printing one name for
+  // two different people.
+  for (const list of approversByActivity.values()) {
+    for (const slot of list) {
+      peopleWanted.push(slot.assigned_hr_id as string | null);
+      peopleWanted.push(slot.decided_by_hr_id as string | null);
+    }
   }
   const people = await loadEmployees(peopleWanted);
   const nameOf = (hrId: unknown) => {
@@ -255,6 +359,27 @@ async function hydrate(
       requesterName: nameOf(row.requester_hr_id),
       managerHrId: (row.manager_hr_id as string | null) ?? null,
       managerName: nameOf(row.manager_hr_id),
+      approvers: (approversByActivity.get(id) ?? []).map((slot) => {
+        const lineId = toNumber(slot.line_id);
+        return {
+          id: Number(slot.id),
+          approverRole: String(slot.approver_role) as MarketAwarenessApproverRole,
+          lineId,
+          lineName: findLineById(lines, lineId)?.name ?? null,
+          isPrimaryLine: Boolean(slot.is_primary_line),
+          assignedHrId: (slot.assigned_hr_id as string | null) ?? null,
+          assignedName: nameOf(slot.assigned_hr_id),
+          decision: (slot.decision as MarketAwarenessApproverSlot["decision"]) ?? null,
+          decidedByHrId: (slot.decided_by_hr_id as string | null) ?? null,
+          decidedByName: nameOf(slot.decided_by_hr_id),
+          decidedAt: (slot.decided_at as string | null) ?? null,
+          comment: (slot.comment as string | null) ?? null,
+        };
+      }),
+      heldByHrId: (row.held_by_hr_id as string | null) ?? null,
+      heldByName: nameOf(row.held_by_hr_id),
+      heldAt: (row.held_at as string | null) ?? null,
+      holdReason: (row.hold_reason as string | null) ?? null,
       activityType:
         typeById.get(Number(row.activity_type_id)) ??
         { id: Number(row.activity_type_id), code: "unknown", name: "Unknown", description: null, sortOrder: 0, active: false },
@@ -377,10 +502,25 @@ export type MarketAwarenessInboxRow = {
   activity: MarketAwarenessActivity;
   /** True only when the decision route would accept a decision from this caller right now. */
   canDecide: boolean;
+  /**
+   * True only when the release route would accept a release from this caller right now. A frozen
+   * request offers no decision buttons at all, so without this the one control that can unfreeze it
+   * would be the one control nobody is shown.
+   */
+  canRelease: boolean;
 };
 
-/** Still moving through the chain. */
-const OPEN_STATUSES: MarketAwarenessStatus[] = ["pending_manager", "pending_ceo", "returned"];
+/**
+ * Still moving through the chain. `on_hold` belongs here: a frozen request has not been answered and
+ * dropping it out of the open view is how one comes to be forgotten — it would appear in neither
+ * list, which is worse than appearing in the wrong one.
+ */
+const OPEN_STATUSES: MarketAwarenessStatus[] = [
+  "pending_group",
+  "on_hold",
+  "pending_ceo",
+  "returned",
+];
 
 /** Answered, one way or another. `draft` is in neither: nobody has been told about it. */
 const HISTORY_STATUSES: MarketAwarenessStatus[] = [
@@ -447,16 +587,41 @@ export async function listInbox(
 
   const lines = await loadMarketAwarenessLines();
   const activities = await hydrate((data as ActivityRow[] | null) ?? [], lines);
+  const actorLineId = await loadActorLineIdIfNeeded(access);
 
   return activities.map((activity) => {
     const step = currentStep(activity.status);
     return {
       activity,
       canDecide: step
-        ? canDecideStep({ access, managerHrId: activity.managerHrId, step })
+        ? canDecideStep({
+            access,
+            actorLineId,
+            approvers: activity.approvers,
+            managerHrId: activity.managerHrId,
+            step,
+          })
         : false,
+      canRelease:
+        activity.status === "on_hold" &&
+        canReleaseHold({ access, heldByHrId: activity.heldByHrId }),
     };
   });
+}
+
+/**
+ * The actor's line, but only when a slot could actually need it.
+ *
+ * A National Sales Manager slot is answerable by the NSM OF THAT LINE, and three people hold the
+ * title — so the check needs the actor's line. Nobody else's line changes any answer, and this runs
+ * on a list and on a badge polled every thirty seconds by every open tab, so the lookup is skipped
+ * rather than paid for on every request.
+ */
+async function loadActorLineIdIfNeeded(
+  access: Pick<AccessContext, "role" | "hrId">,
+): Promise<number | null> {
+  if (access.role !== NATIONAL_SALES_MANAGER_ROLE) return null;
+  return loadActorLineId(access.hrId);
 }
 
 /**
@@ -499,8 +664,12 @@ export async function getMarketAwarenessDecisionBadge(
   const supabase = getSupabaseAdmin();
   let query = supabase
     .from("market_awareness_activities")
-    // Three columns: who must decide, at which step, and since when. Nothing here is displayed.
-    .select("status, manager_hr_id, updated_at")
+    // Who must decide, at which step, and since when. The approvers come back EMBEDDED rather than
+    // as a second query, because this is polled every thirty seconds by every open tab and a
+    // parallel step cannot be counted without them. Nothing here is displayed.
+    .select(
+      "status, manager_hr_id, step_opened_at, updated_at, market_awareness_activity_approvers(id, approver_role, line_id, assigned_hr_id, decision)",
+    )
     .in("status", OPEN_STATUSES)
     // Explicit bound, same as the list: an unbounded select stops at 1000 with no marker.
     .limit(500);
@@ -511,14 +680,30 @@ export async function getMarketAwarenessDecisionBadge(
   if (error) throw toQueryError(error);
 
   const rows =
-    (data as Array<{ manager_hr_id: string | null; status: string; updated_at: string | null }> | null) ?? [];
+    (data as Array<{
+      manager_hr_id: string | null;
+      status: string;
+      step_opened_at: string | null;
+      updated_at: string | null;
+      market_awareness_activity_approvers?: Array<Record<string, unknown>> | null;
+    }> | null) ?? [];
   return summarizeMarketAwarenessDecisionBadge({
     access,
+    actorLineId: await loadActorLineIdIfNeeded(access),
     now: new Date().toISOString(),
     rows: rows.map((row) => ({
       managerHrId: row.manager_hr_id ?? null,
-      openedAt: row.updated_at ?? null,
+      // `step_opened_at`, falling back to `updated_at` only where the column has never been set.
+      // An update trigger stamps `updated_at` on every write, so under a parallel group each partial
+      // approval would silently restart the clock for everyone still to answer.
+      openedAt: row.step_opened_at ?? row.updated_at ?? null,
       status: row.status,
+      approvers: (row.market_awareness_activity_approvers ?? []).map((slot) => ({
+        approverRole: String(slot.approver_role) as MarketAwarenessApproverRole,
+        lineId: slot.line_id == null ? null : Number(slot.line_id),
+        assignedHrId: (slot.assigned_hr_id as string | null) ?? null,
+        decision: (slot.decision as MarketAwarenessApproverSlot["decision"]) ?? null,
+      })),
     })),
   });
 }
@@ -866,8 +1051,17 @@ export async function updateActivity(
 }
 
 /**
- * Submit. Resolves the manager step from the requester's reporting line and freezes it, then routes
- * to the manager — or straight to the CEO when the requester reports to him.
+ * Submit. Builds the parallel approval group — the Marketing Manager and one National Sales Manager
+ * per targeted line — and routes to all of them at once.
+ *
+ * THE GROUP IS REBUILT FROM SCRATCH, NEVER PATCHED. A resubmission may target different lines from
+ * the one that was returned, and every existing answer is stale by definition: what those people
+ * approved is not what is now in front of them. Deleting and rewriting is also what makes the
+ * owner's "a return resets the group" true without a second rule saying so.
+ *
+ * IT REFUSES RATHER THAN SHIPPING AN UNAPPROVABLE REQUEST. A line whose National Sales Manager seat
+ * is empty produces no slot, and a request carrying a slot nobody can fill looks exactly like one
+ * somebody is being slow about — it would sit in the queue for ever with no error anywhere.
  */
 export async function submitActivity(
   access: AccessContext,
@@ -881,24 +1075,58 @@ export async function submitActivity(
     throw new MarketAwarenessError("Only the requester can submit this activity.", 403);
   }
 
-  const requesterKey = canonicalHrIdKey(existing.requesterHrId);
-  const requester = requesterKey
-    ? (await loadEmployees([existing.requesterHrId])).get(requesterKey)
-    : undefined;
-  const managerHrId = requester?.manager_hr_id ?? null;
-  const resolution = resolveManagerStep({
+  const plan = planApproverSlots({
     requesterHrId: existing.requesterHrId,
-    requesterManagerHrId: managerHrId,
-    managerIsCeo: await isCeo(managerHrId),
+    primaryLine: existing.primaryLine,
+    lines: existing.lines,
+    directory: await loadApproverDirectory(),
   });
 
+  if (plan.linesWithoutNsm.length > 0) {
+    // Named lines, never a code and never a count. The person reading this is the one who chose
+    // them, and "one of your lines has no approver" is not something he can act on.
+    const names = plan.linesWithoutNsm.map((line) => line.name).join(" and ");
+    throw new MarketAwarenessError(
+      `There is no National Sales Manager in the seat for ${names}, so this cannot be sent for approval yet. Ask for the seat to be filled, or remove that line.`,
+    );
+  }
+
   const supabase = getSupabaseAdmin();
+  const now = new Date().toISOString();
+
+  // Clear first, then write. A resubmission of a returned activity would otherwise collide with its
+  // own previous group on the one-slot-per-role-and-line index.
+  const { error: clearError } = await supabase
+    .from("market_awareness_activity_approvers")
+    .delete()
+    .eq("activity_id", activityId);
+  if (clearError) throw toQueryError(clearError);
+
+  if (plan.slots.length > 0) {
+    const { error: slotError } = await supabase
+      .from("market_awareness_activity_approvers")
+      .insert(
+        plan.slots.map((slot) => ({
+          activity_id: activityId,
+          approver_role: slot.approverRole,
+          line_id: slot.lineId,
+          is_primary_line: slot.isPrimaryLine,
+          assigned_hr_id: slot.assignedHrId ? hrIdForStorage(slot.assignedHrId) : null,
+        })),
+      );
+    if (slotError) throw toQueryError(slotError);
+  }
+
   const { error } = await supabase
     .from("market_awareness_activities")
     .update({
-      status: statusAfterResubmit(resolution.skipManagerStep),
-      manager_hr_id: resolution.managerHrId ? hrIdForStorage(resolution.managerHrId) : null,
-      submitted_at: new Date().toISOString(),
+      status: statusAfterResubmit(plan.slots.length > 0),
+      // The retired single-manager step. Cleared rather than left pointing at somebody who is no
+      // longer in the chain, which would read on the screen as an approver who never answered.
+      manager_hr_id: null,
+      submitted_at: now,
+      // The group's clock starts now, not at the first submission of a request that came back.
+      step_opened_at: now,
       returned_at: null,
       updated_by_hr_id: hrIdForStorage(access.hrId),
     })
@@ -999,26 +1227,157 @@ async function applyDecisionAtomically(input: {
   }
 }
 
+/**
+ * Apply one GROUP decision — its slot, the activity's status, the parallel gate and the audit row —
+ * as a single database statement.
+ *
+ * Separate from `applyDecisionAtomically`, which still serves the CEO step untouched. New capability
+ * ships beside the working thing rather than being folded into it, so the CEO path's behaviour is
+ * unchanged and provably so.
+ */
+async function applyGroupDecisionAtomically(input: {
+  action: Extract<MarketAwarenessDecisionAction, "approve" | "reject" | "return" | "hold" | "release">;
+  activityId: string;
+  actorHrId: string;
+  comment?: string | null;
+  expectedStatus: MarketAwarenessStatus;
+  slotId?: number | null;
+}): Promise<{ groupComplete: boolean }> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc("phx_market_awareness_apply_group_decision", {
+    p_activity_id: input.activityId,
+    p_action: input.action,
+    p_actor_hr_id: input.actorHrId,
+    p_comment: input.comment ?? null,
+    p_expected_status: input.expectedStatus,
+    p_slot_id: input.slotId ?? null,
+  });
+  if (error) throw toQueryError(error);
+
+  const result = (data ?? null) as
+    | { applied?: boolean; currentStatus?: string; groupComplete?: boolean; reason?: string }
+    | null;
+
+  if (!result?.applied) {
+    if (result?.reason === "slot_already_decided") {
+      throw new MarketAwarenessError(
+        "Your answer on this one is already recorded. Refresh to see where it stands.",
+        409,
+      );
+    }
+    // Somebody decided first. Say what happened rather than "something went wrong" — the person is
+    // looking at a screen that still shows the old state and needs to know to refresh it.
+    throw new MarketAwarenessError(
+      `Somebody has already acted on this — it is now ${result?.currentStatus ?? "in another state"}. Refresh to see where it stands.`,
+      409,
+    );
+  }
+
+  return { groupComplete: Boolean(result.groupComplete) };
+}
+
+/**
+ * Lift a hold and put the request back in front of the group.
+ *
+ * WHO MAY: whoever froze it, the CEO, and Super Admin — `canReleaseHold`. Deliberately not every
+ * approver: a hold any peer can undo is not a hold. The CEO is in the list because a hold nobody is
+ * left to lift is a request that has quietly died.
+ *
+ * The clock the group is judged on is advanced by exactly how long it sat frozen, inside the same
+ * statement, so a hold stops the clock rather than hiding a breach that had already accrued.
+ */
+async function releaseActivityHold(
+  access: AccessContext,
+  activityId: string,
+  existing: MarketAwarenessActivity,
+): Promise<MarketAwarenessActivity> {
+  if (existing.status !== "on_hold") {
+    throw new MarketAwarenessError("That activity is not on hold.");
+  }
+  if (!canReleaseHold({ access, heldByHrId: existing.heldByHrId })) {
+    throw new MarketAwarenessError(
+      `Only ${existing.heldByName ?? "whoever put this on hold"} or the CEO can release it.`,
+      403,
+    );
+  }
+  if (!access.hrId?.trim()) {
+    throw new MarketAwarenessError(
+      "Your account has no HR id, so a decision could not be attributed to you.",
+      403,
+    );
+  }
+
+  await applyGroupDecisionAtomically({
+    action: "release",
+    activityId,
+    actorHrId: hrIdForStorage(access.hrId) as string,
+    comment: existing.holdReason ?? null,
+    expectedStatus: "on_hold",
+  });
+
+  const released = await getActivity(access, activityId);
+
+  // The people who still owe an answer are being asked again, and nothing else would tell them the
+  // request had started moving. Best-effort, like every other notification here.
+  await notifyDecisionPending({
+    activity: released,
+    actionUrl: "/employee-portals/market-awareness/inbox",
+    ceoHrIds: [],
+    step: "group",
+  });
+
+  return released;
+}
+
 export async function decideActivity(
   access: AccessContext,
   activityId: string,
   input: {
-    action: Extract<MarketAwarenessDecisionAction, "approve" | "reject" | "return">;
+    action: Extract<
+      MarketAwarenessDecisionAction,
+      "approve" | "reject" | "return" | "hold" | "release"
+    >;
     comment?: string | null;
     amendedCost?: number | null;
+    /** Which slot is being answered. Only meaningful for somebody holding more than one. */
+    slotId?: number | null;
   },
 ): Promise<MarketAwarenessActivity> {
   await assertPermission(access, "market_awareness", "approve");
   const existing = await getActivity(access, activityId);
 
-  const step = currentStep(existing.status);
-  if (!step) throw new MarketAwarenessError("That activity is not waiting on a decision.");
+  // A release acts on a FROZEN activity, which by design is waiting on nobody — `currentStep`
+  // answers null for it. So it is settled before the step is resolved, or the guard below would
+  // refuse the one action that can unfreeze it.
+  if (input.action === "release") {
+    return releaseActivityHold(access, activityId, existing);
+  }
 
-  if (!canDecideStep({ access, step, managerHrId: existing.managerHrId })) {
+  const step = currentStep(existing.status);
+  if (!step) {
+    if (existing.status === "on_hold") {
+      throw new MarketAwarenessError(
+        `This is on hold${existing.heldByName ? ` — ${existing.heldByName} froze it` : ""}. It has to be released before anyone can decide on it.`,
+      );
+    }
+    throw new MarketAwarenessError("That activity is not waiting on a decision.");
+  }
+
+  const actorLineId = await loadActorLineIdIfNeeded(access);
+
+  if (!canDecideStep({ access, step, actorLineId, approvers: existing.approvers, managerHrId: existing.managerHrId })) {
     throw new MarketAwarenessError("This decision is not yours to make.", 403);
   }
   if (input.action === "return" && !input.comment?.trim()) {
     throw new MarketAwarenessError("A return has to say why.");
+  }
+  if (input.action === "hold" && !input.comment?.trim()) {
+    throw new MarketAwarenessError("A hold has to say why, so the requester knows what it waits on.");
+  }
+  if (input.action === "hold" && step !== "group") {
+    // The owner gave Hold to the group — the Marketing Manager and the National Sales Managers. The
+    // CEO's answers are approve, reject and return, as they have always been.
+    throw new MarketAwarenessError("Only the marketing and sales approvers can put this on hold.");
   }
 
   // BEFORE ANY MUTATION, because the two writes below are not one transaction.
@@ -1040,48 +1399,85 @@ export async function decideActivity(
     );
   }
 
-  const transition = findTransition(existing.status, input.action);
-  if (!transition) {
-    throw new MarketAwarenessError(`Cannot ${input.action} an activity that is ${existing.status}.`);
-  }
-
-  // An amended amount is the CEO's alone. Accepting one at the manager step would let the step
-  // below change what the CEO is asked to approve, without his decision recording it.
-  const amendedCost =
-    step === "ceo" && input.action === "approve" ? input.amendedCost ?? null : null;
-  if (amendedCost !== null && !(amendedCost > 0)) {
-    throw new MarketAwarenessError("An amended amount has to be greater than zero.");
-  }
-
   const now = new Date().toISOString();
+  let movedTo: MarketAwarenessStatus;
 
-  // Freeze the seat holders as they are at approval. The screen shows today's holder; this is what
-  // lets it say the original was replaced. Resolved BEFORE the write so a lookup failure cannot
-  // land between the status change and its audit row.
-  const area =
-    transition.to === "approved"
-      ? await findArea(existing.primaryLine.lineCode, existing.areaCode)
-      : null;
+  if (step === "group") {
+    // Which of his slots he is answering. A real approver has exactly one; Super Admin can hold
+    // several, and answers them one at a time rather than having several silently filled under one
+    // press. `slotId` is validated against HIS pending set, never trusted from the request.
+    const mine = pendingSlotsFor({ access, actorLineId, slots: existing.approvers });
+    const slot = input.slotId
+      ? mine.find((candidate) => candidate.id === Number(input.slotId))
+      : mine[0];
 
-  // ONE decision row, written under the identity of the person who actually acted, in the same
-  // statement as the status change. Never a second row on behalf of a skipped step or a system
-  // actor — that is what made three NSMs appear to have approved as the CEO on the weekly plans,
-  // and the transition carries a skip on its own.
-  await applyDecisionAtomically({
-    action: input.action,
-    activityId,
-    actorHrId: hrIdForStorage(access.hrId) as string,
-    amendedCost,
-    approvedAt: transition.to === "approved" ? now : null,
-    comment: input.comment ?? null,
-    dmHrIdAtApproval: area?.dmHrId ? hrIdForStorage(area.dmHrId) : null,
-    expectedStatus: existing.status,
-    nextStatus: transition.to,
-    rejectedAt: transition.to === "rejected" ? now : null,
-    repHrIdAtApproval: area?.repHrId ? hrIdForStorage(area.repHrId) : null,
-    returnedAt: transition.to === "returned" ? now : null,
-    stepCode: step,
-  });
+    // Hold and release act on the whole request rather than on one slot, so they do not need one.
+    if (!slot && input.action !== "hold") {
+      throw new MarketAwarenessError("This decision is not yours to make.", 403);
+    }
+
+    const { groupComplete } = await applyGroupDecisionAtomically({
+      action: input.action,
+      activityId,
+      actorHrId: hrIdForStorage(access.hrId) as string,
+      comment: input.comment ?? null,
+      expectedStatus: existing.status,
+      slotId: slot?.id ?? null,
+    });
+
+    movedTo =
+      input.action === "approve"
+        ? groupComplete
+          ? "pending_ceo"
+          : "pending_group"
+        : input.action === "reject"
+          ? "rejected"
+          : input.action === "hold"
+            ? "on_hold"
+            : "returned";
+  } else {
+    const transition = findTransition(existing.status, input.action);
+    if (!transition) {
+      throw new MarketAwarenessError(`Cannot ${input.action} an activity that is ${existing.status}.`);
+    }
+
+    // An amended amount is the CEO's alone. Accepting one at the group step would let the people
+    // below change what the CEO is asked to approve, without his decision recording it.
+    const amendedCost = input.action === "approve" ? input.amendedCost ?? null : null;
+    if (amendedCost !== null && !(amendedCost > 0)) {
+      throw new MarketAwarenessError("An amended amount has to be greater than zero.");
+    }
+
+    // Freeze the seat holders as they are at approval. The screen shows today's holder; this is what
+    // lets it say the original was replaced. Resolved BEFORE the write so a lookup failure cannot
+    // land between the status change and its audit row.
+    const area =
+      transition.to === "approved"
+        ? await findArea(existing.primaryLine.lineCode, existing.areaCode)
+        : null;
+
+    // ONE decision row, written under the identity of the person who actually acted, in the same
+    // statement as the status change. Never a second row on behalf of a skipped step or a system
+    // actor — that is what made three NSMs appear to have approved as the CEO on the weekly plans,
+    // and the transition carries a skip on its own.
+    await applyDecisionAtomically({
+      action: input.action,
+      activityId,
+      actorHrId: hrIdForStorage(access.hrId) as string,
+      amendedCost,
+      approvedAt: transition.to === "approved" ? now : null,
+      comment: input.comment ?? null,
+      dmHrIdAtApproval: area?.dmHrId ? hrIdForStorage(area.dmHrId) : null,
+      expectedStatus: existing.status,
+      nextStatus: transition.to,
+      rejectedAt: transition.to === "rejected" ? now : null,
+      repHrIdAtApproval: area?.repHrId ? hrIdForStorage(area.repHrId) : null,
+      returnedAt: transition.to === "returned" ? now : null,
+      stepCode: step,
+    });
+
+    movedTo = transition.to;
+  }
 
   const decided = await getActivity(access, activityId);
 
@@ -1090,8 +1486,8 @@ export async function decideActivity(
   // notifyActivityApproved swallows and logs, because an undelivered notification must never undo
   // a decision the CEO actually made.
   // Moving on to the CEO is a hand-off like any other: somebody new has to act, so somebody new has
-  // to be told. This is the step the CEO was never notified of.
-  if (transition.to === "pending_ceo") {
+  // to be told. This is the owner's "once the two or three of them approve, the CEO is informed".
+  if (movedTo === "pending_ceo") {
     await notifyDecisionPending({
       activity: decided,
       actionUrl: "/employee-portals/market-awareness/inbox",
@@ -1100,23 +1496,30 @@ export async function decideActivity(
     });
   }
 
+  // Frozen. The requester cannot see a queue, so without this he watches a request stop moving with
+  // no reason given anywhere — the same failure a return with no comment produces.
+  if (movedTo === "on_hold") {
+    await notifyActivityHeld({
+      activity: decided,
+      actionUrl: `/employee-portals/market-awareness?activity=${decided.id}`,
+      holderName: await nameOfHrId(access.hrId),
+      reason: input.comment?.trim() || null,
+    });
+  }
+
   // Sent back or refused: the requester is the only person who can act next, and until now nothing
   // told them their request had stopped moving.
-  if (transition.to === "returned" || transition.to === "rejected") {
-    const actorKey = canonicalHrIdKey(access.hrId);
-    const deciderName = actorKey
-      ? (await loadEmployees([access.hrId])).get(actorKey)?.full_name ?? null
-      : null;
+  if (movedTo === "returned" || movedTo === "rejected") {
     await notifyActivityReturned({
       activity: decided,
       actionUrl: `/employee-portals/market-awareness?activity=${decided.id}`,
       comment: input.comment?.trim() || null,
-      deciderName,
-      rejected: transition.to === "rejected",
+      deciderName: await nameOfHrId(access.hrId),
+      rejected: movedTo === "rejected",
     });
   }
 
-  if (transition.to === "approved") {
+  if (movedTo === "approved") {
     await notifyActivityApproved({
       activity: decided,
       actionUrl: `/employee-portals/market-awareness?activity=${decided.id}`,

@@ -104,10 +104,13 @@ export function canWithdrawActivity(
   access: Pick<AccessContext, "role" | "hrId">,
   activity: { requesterHrId: string; status: MarketAwarenessStatus },
 ): boolean {
+  // `on_hold` is withdrawable: a held request is frozen for the APPROVERS, never for its owner, and
+  // refusing here would leave him holding one he can neither progress nor cancel.
   const withdrawable: MarketAwarenessStatus[] = [
     "draft",
     "returned",
-    "pending_manager",
+    "pending_group",
+    "on_hold",
     "pending_ceo",
   ];
   if (!withdrawable.includes(activity.status)) return false;
