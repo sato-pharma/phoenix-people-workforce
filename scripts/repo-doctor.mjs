@@ -1420,7 +1420,16 @@ let autoloadedIndexBytes = null;
 //
 // Read-only, like every other section here. --snapshot-xlsx is the only flag in this tool that
 // writes outside the repository, and it only ever creates files under the snapshot root.
-{
+//
+// SILENT BY DEFAULT since 2026-09-09, at the owner's instruction. The hourly snapshot job that
+// kept this section honest was retired that night ("Phoenix xlsx Snapshot - Hourly", together with
+// its Telegram alert), so the coverage figure can only ever age from here. A staleness warning
+// about a backup nobody is taking any more is a standing false alarm, and a report that cries wolf
+// on every run is how the sections that DO matter stop being read. It still prints when you ask
+// for it: --snapshot-xlsx, because you are taking a copy and need the verdict, and --deep, which
+// means tell me everything. Nothing about the classifier changed, so re-arming the job restores
+// the old behaviour with no code change.
+if (snapshotXlsx || deep) {
   const snapshotRoot = snapshotRootFor();
   const sourceFiles = readSourceFiles(primaryRoot);
   const destinationExists = fs.existsSync(snapshotRoot);
