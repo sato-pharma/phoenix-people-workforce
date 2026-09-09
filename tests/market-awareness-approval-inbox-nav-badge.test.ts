@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { permissionMatrix } from "@/lib/auth/permissions.ts";
+import { employeePortalNavigationSections } from "@/config/system-navigation.ts";
+import { MARKET_AWARENESS_DECIDER_ROLES } from "@/lib/employee-portal/navigation.ts";
+import {
+  MARKETING_MANAGER_ROLE,
+  NATIONAL_SALES_MANAGER_ROLE,
+} from "@/lib/market-awareness/approvers.ts";
 import {
   isDecisionOverdue,
   summarizeMarketAwarenessDecisionBadge,
@@ -410,5 +417,45 @@ export function runMarketAwarenessApprovalInboxNavBadgeTests() {
       /resource: "market_awareness", action: "read"/,
       "14: the count is gated exactly like the inbox it counts",
     );
+  }
+
+  // ── 15. Every slot holder can reach the queue AND answer it ────────────────
+  //
+  // The parallel group (#3573) made the National Sales Manager an approver on every activity that
+  // touches his line, and three surfaces were left behind: the permission matrix, the portal
+  // sidebar and the seed nav. The result was the worst shape a queue can take — he was routed
+  // decisions, notified about them, counted on the badge he could not see, and refused by the
+  // decision route if he ever reached the page. Owner, 2026-09-09: "the nsm now have a role is
+  // awareness approval but he doesnot have a place to approve like marketing manager."
+  //
+  // Derived from the slot roles rather than hard-coded, so adding a third kind of approver to
+  // MARKET_AWARENESS_APPROVER_ROLES fails here until its seat can both open the inbox and answer.
+  {
+    const slotHolderRoles = [MARKETING_MANAGER_ROLE, NATIONAL_SALES_MANAGER_ROLE] as const;
+
+    for (const role of slotHolderRoles) {
+      const grants = permissionMatrix[role]?.market_awareness ?? [];
+      assert.ok(
+        grants.includes("approve"),
+        `15: ${role} holds a slot in the approval group, so the matrix must grant market_awareness:approve — decideActivity asserts it before canDecideSlot is ever reached`,
+      );
+      assert.ok(
+        MARKET_AWARENESS_DECIDER_ROLES.includes(role),
+        `15: ${role} must be offered the Awareness Approvals inbox — this list is what draws the link in the portal shell`,
+      );
+    }
+
+    // And the seeds, which are a second copy of the same list. They do not draw the portal link,
+    // but a role missing from them is missing from every audit that reads the seeds as the truth.
+    const inboxItem = employeePortalNavigationSections
+      .flatMap((section) => section.items)
+      .find((item) => item.href === "/employee-portals/market-awareness/inbox");
+    assert.ok(inboxItem, "15: the Awareness Approvals nav seed must still exist");
+    for (const role of slotHolderRoles) {
+      assert.ok(
+        inboxItem?.roles?.includes(role),
+        `15: the Awareness Approvals nav seed must list ${role}, in step with MARKET_AWARENESS_DECIDER_ROLES`,
+      );
+    }
   }
 }
