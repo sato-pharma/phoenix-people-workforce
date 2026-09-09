@@ -14,6 +14,7 @@
 // BCC  — Omar Anwar (Super Admin), named explicitly by the owner.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { isSalesNotificationExcluded } from "@/lib/sales/sales-notification-exclusions";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 
 export type ClosingPublishRecipient = { hrId: string; name: string; email: string };
@@ -35,12 +36,11 @@ const FIXED_CC_ROLES = ["CEO", "Marketing Manager", "SFE Manager"] as const;
 const LINE_PRODUCT_MANAGER_ROLES = ["Product Manager", "Group Product Manager"] as const;
 const DM_SEAT_TIERS = new Set(["DM", "ACTING_DM"]);
 
-/**
- * Skip this recipient regardless of employment_status — owner decision, 2026-08-08. NOT an
- * employment-status change: her seat, HR record and vacancy stay untouched, she's simply on long
- * vacation and expected back. Remove her HR_ID here once she returns.
- */
-const MANUALLY_EXCLUDED_HR_IDS = new Set(["B-156"]); // Sara Samir Jacoub Yohana — long vacation, expected back
+// Who is skipped regardless of employment_status now lives in sales-notification-exclusions.ts,
+// shared with the weekly upload notification, because the owner extended the same decision about
+// the same person to that email on 2026-09-09. Behaviour here is unchanged except that the match is
+// now case-insensitive on the canonical HR_ID, which is strictly safer: the literal Set.has this
+// replaced would have stopped excluding her the moment a seat row returned "b-156".
 
 type EmployeeRow = { hr_id: string; full_name: string; work_email: string | null; employment_status: string | null };
 
@@ -105,9 +105,9 @@ export async function resolveClosingPublishRecipients(officialLine: string): Pro
       warnings.push(`"${line}" has no organogram line code — no District Managers or NSM resolved for it.`);
     }
 
-    // Every HR_ID this send could possibly need, fetched once. MANUALLY_EXCLUDED_HR_IDS is filtered
-    // out right here so it applies uniformly to every bucket, not just District Managers.
-    const notManuallyExcluded = (hrId: string) => !MANUALLY_EXCLUDED_HR_IDS.has(hrId);
+    // Every HR_ID this send could possibly need, fetched once. The shared sales exclusion list is
+    // filtered out right here so it applies uniformly to every bucket, not just District Managers.
+    const notManuallyExcluded = (hrId: string) => !isSalesNotificationExcluded(hrId);
     const seatRows = (seatResult.data ?? []) as Array<{ seat_tier: string | null; occupant_hr_id: string | null }>;
     const dmHrIds = seatRows
       .filter((row) => DM_SEAT_TIERS.has(String(row.seat_tier ?? "").trim().toUpperCase()))
