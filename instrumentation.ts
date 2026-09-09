@@ -4,9 +4,11 @@
 
 import type { Instrumentation } from "next";
 
-// Zero-import pure module, chosen so this stays edge-safe (see the note below and the file's own
-// header). It is the reason a Supabase `{ message, code, hint }` throw reaches the error table as
-// its own text rather than as "[object Object]".
+// Both are zero-import pure modules, chosen so this stays edge-safe (see the note below and each
+// file's own header). `describeThrown` is the reason a Supabase `{ message, code, hint }` throw
+// reaches the error table as its own text rather than as "[object Object]";
+// `isBenignClientDisconnect` is the reason an aborted request does not reach it at all.
+import { isBenignClientDisconnect } from "@/lib/error-monitor/benign-disconnect";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 
 // Starts the continuous iReports360 live poller (src/lib/crm/live-poller.ts) exactly once per
@@ -83,13 +85,14 @@ async function forwardServerErrorToIngestion(
 
 // Captures errors thrown in nested React Server Components / route handlers —
 // forwards to our own error table.
-// Benign client-initiated disconnect codes — the server is not at fault.
-// Forwarding these as errors creates false-positive alerts in the error table.
-const IGNORED_CONNECTION_ERROR_CODES = new Set(["ECONNRESET", "ECONNABORTED", "EPIPE"]);
-
+//
+// The disconnect test lives in @/lib/error-monitor/benign-disconnect rather than inline here. It
+// used to be an inline set of errno codes, which stopped covering the case the moment Next 16.3.3
+// began throwing "The destination stream closed early." with no `code` on it — 15 rows in eight
+// hours against a 3-to-7-a-day baseline. Keeping the rule in one pinned, testable module is what
+// makes the next such wording change a one-line edit with a test behind it.
 export async function onRequestError(...args: Parameters<Instrumentation.onRequestError>) {
   const [error, request, context] = args;
-  const code = (error as NodeJS.ErrnoException).code;
-  if (code && IGNORED_CONNECTION_ERROR_CODES.has(code)) return;
+  if (isBenignClientDisconnect(error)) return;
   await forwardServerErrorToIngestion(error, request, context);
 }
