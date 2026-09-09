@@ -244,6 +244,37 @@ const nextConfig: NextConfig = {
     // import sites in app/ or src/ — this project's UI primitives are
     // hand-rolled, not radix wrappers, so it was dead config.
     optimizePackageImports: ["lucide-react", "recharts"],
+    // DEV-ONLY MEMORY SETTINGS, added 2026-09-09. Production config is byte-identical to
+    // what it was before this block: `next build` and `next start` both run with
+    // NODE_ENV=production, so neither flag is ever set for them.
+    //
+    // WHY THIS EXISTS. The owner's machine hard-froze twice on 2026-09-09 (17:34 and 20:36
+    // Cairo). No minidump either time, a GPU watchdog dump instead — the signature of the
+    // desktop compositor being paged out, not a driver fault. The cause was physical RAM:
+    // 16 GB total, and a single `next dev` server on this repo was measured that night at
+    //     peak commit 10,221 MB, peak working set 7,497 MB
+    // after serving TEN admin routes from cold. Free RAM bottomed at 1,025 MB during that
+    // one run, with nothing else heavy open. Two servers at once cannot fit, and that is
+    // exactly the state both freezes were in.
+    //
+    // preloadEntriesOnStart defaults to TRUE, which loads every route entry into memory when
+    // the server starts. This app has 401 pages and 747 API routes — 1,148 entries — so that
+    // default is the single most expensive thing the dev server does here. It is a latency
+    // optimisation for a small app and a memory disaster for a large one.
+    //
+    // webpackMemoryOptimizations is Next's own knob for this; its documented trade is a
+    // smaller max heap for slightly slower compiles, which is the right way round on a box
+    // whose bottleneck is RAM and not CPU (CPU never passed 9% during either freeze).
+    //
+    // Do NOT extend either flag to production without measuring there: preloading entries is
+    // what keeps the first request to each route fast after a deploy, and Railway runs one
+    // replica serving real users.
+    ...(isProduction
+      ? {}
+      : {
+          preloadEntriesOnStart: false,
+          webpackMemoryOptimizations: true,
+        }),
   },
   allowedDevOrigins: [
     "192.168.1.45",
