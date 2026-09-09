@@ -8,6 +8,7 @@
 // so we can reconstruct the real message client-side from a small curated template map.
 
 import { CROSS_ORIGIN_MASKED_DISPLAY, isCrossOriginMaskedMessage } from "@/lib/error-monitor/cross-origin-masked";
+import { describeThirdPartyStack, thirdPartyStackDisplay } from "@/lib/error-monitor/third-party-stack";
 import { isStaleDeployChunkError, isTransientRouterMountError } from "@/lib/utils/stale-deploy-recovery";
 
 // Condensed, admin-facing versions of React's official error templates
@@ -103,6 +104,13 @@ export function decodeErrorMessage(raw: string, stack?: string | null): DecodedM
       display = `Server render failed, fell back to client rendering — ${cause}`;
     }
   }
+
+  // Attribution runs LAST and wraps whatever the chain produced, because it answers a different
+  // question from every branch above: those decode WHAT the message says, this says WHOSE code
+  // said it. A React error can never reach here — its frames are our own `/_next/` chunks — so
+  // the order costs nothing and keeps each decode readable inside the label.
+  const thirdParty = describeThirdPartyStack(stack);
+  if (thirdParty) display = thirdPartyStackDisplay(thirdParty.label, display);
 
   const topComponent = extractTopComponent(stack);
   if (topComponent && !display.includes(`(in ${topComponent})`)) {

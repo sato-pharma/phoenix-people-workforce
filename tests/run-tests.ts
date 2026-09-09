@@ -11,6 +11,7 @@ import { runErrorMonitorNewIssueDiffTests } from "./error-monitor-new-issue-diff
 import { runErrorMonitorDerivedStatusTests } from "./error-monitor-derived-status.test.ts";
 import { runClientErrorCrossOriginNoiseTests } from "./client-error-cross-origin-noise.test.ts";
 import { runErrorMonitorMessageDecodeTests } from "./error-monitor-message-decode.test.ts";
+import { runErrorMonitorThirdPartyAttributionTests } from "./error-monitor-third-party-attribution.test.ts";
 import { runErrorMonitorAiRedactTests } from "./error-monitor-ai-redact.test.ts";
 import { runErrorMonitorRedactRouteTests } from "./error-monitor-redact-route.test.ts";
 import { runErrorMonitorUserAttemptsTests } from "./error-monitor-user-attempts.test.ts";
@@ -1580,6 +1581,10 @@ await runTest("error monitor message decode", runErrorMonitorMessageDecodeTests)
 await runTest(
   "client error noise (1,972 unattributable 'Script error.' rows read as a crash — cap them, keep real ones)",
   runClientErrorCrossOriginNoiseTests,
+);
+await runTest(
+  "error monitor third-party attribution (a Google Maps throw is not an Outstation defect)",
+  runErrorMonitorThirdPartyAttributionTests,
 );
 await runTest("error monitor ai redact", runErrorMonitorAiRedactTests);
 await runTest("error monitor redact route", runErrorMonitorRedactRouteTests);

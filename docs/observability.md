@@ -58,6 +58,53 @@ work, not a solved problem.
     the quick tell on an unfiltered row is `release`, which is `sha-XXXXXXXX` for real
     production traffic and `unknown` for local dev.
 
+## Whose code threw it — attribution on a client row
+
+A minified client message says nothing about where the throw came from, and the Error Monitor
+lists rows by message. Two attribution failures have each sent triage the wrong way, so both are
+now answered at display time. Neither hides a row: the raw message is stored and shown verbatim,
+and the sibling rule in `cross-origin-masked.ts` still holds — suppressing a diagnosable error
+costs far more than keeping a noisy one.
+
+**A third-party script's throw reads exactly like ours.** On 2026-09-09 ten rows on
+`/employee-portals/submit-expense` read `undefined is not an object (evaluating
+'this.rh.get(b).filter')` and `null is not an object (evaluating 'C0[c].indexOf')`, which is the
+shape of an ordinary app bug on the page a rep files a trip claim from. Every frame of every one
+sat inside `maps.googleapis.com/maps-api-v3/.../webgl.js` — Google's vector-map renderer failing
+on iOS Safari. Nobody was blocked; both people submitted their claim 40 seconds and 6 minutes
+later, for 482.70 and 815 EGP. `describeThirdPartyStack()`
+(`src/lib/error-monitor/third-party-stack.ts`) now labels a row whose located frames are ALL
+off-app, and `decodeErrorMessage()` leads the display with that origin.
+
+- It claims only WHERE the frames are, never whose fault the throw is: our own bad argument can
+  make a library throw entirely inside itself.
+- A frame needs its `:line:col`. A React `#418` message carries `visit
+  https://react.dev/errors/418` inside itself, so matching bare URLs would label every hydration
+  error in the table as third-party — the exact inversion of the module. Pinned by
+  `tests/error-monitor-third-party-attribution.test.ts`.
+- One app frame anywhere returns null, and a server throw locates no frames at all (its frames
+  are filesystem paths under `/app/node_modules`).
+- `cross-origin-masked.ts` opens by stating this app loads no third-party scripts. That is no
+  longer true — `src/lib/google-maps/browser.ts` injects the Maps API on every page with a map,
+  and Maps serves CORS headers, so its failures arrive in full rather than masked.
+
+**Hydration `#418` had one cause left standing and no evidence either way.** It concentrates in
+PEOPLE, not pages: one reader produced 63 events across 23 unrelated routes, and sweeping the two
+worst routes' import graphs (154 and 155 files) found no app-code cause. `app/layout.tsx` opted
+out of machine translation on 2026-09-08 (#3487, `translate="no"` plus the `google: notranslate`
+meta) and its own comment named the falsification test. The routes did NOT go quiet:
+`/employee-portals/recruitment-candidates` threw twice on 2026-09-09 on a release containing the
+opt-out, from Samsung Internet, whose translator honours neither signal.
+
+So `report-client-error.ts` now records what rewrote the DOM, through the pure
+`describeDomRewriters()` (`src/lib/error-monitor/dom-rewriter.ts`): the `translated-ltr` /
+`translated-rtl` class Google Translate puts on `<html>`, Microsoft's `_msttexthash` attribute, a
+count of `<font>` elements (the app emits none, and Google Translate wraps every rewritten text
+node in one, which catches the browsers that leave no class behind), and an `<html lang>` that is
+not the `en` the layout serves. A clean page produces an empty array and writes nothing, so an
+ordinary row is unchanged. **Read `domRewriter=` in the client-context block before re-arguing
+the cause of a `#418`.**
+
 ## Staging migration auto-apply
 
 `.github/workflows/staging-migrate.yml` runs `pnpm run migrate:staging` on every push to
