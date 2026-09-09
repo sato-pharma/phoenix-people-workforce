@@ -1733,3 +1733,31 @@ repository holds 200+ entries other sessions rely on.
 **The rule.** There is no reason to stash for a branch move. `git switch -c <branch>` carries
 uncommitted work onto the new branch by itself, touches no shared stack, and the entire failure mode
 does not arise.
+
+## A killed workflow run is recoverable — relocated from `AGENTS.md` §2.1, 2026-09-09
+
+The hook in `AGENTS.md` is one line. This is the account it stands on, moved here under §2.2's
+standing rule that the rules file carries hooks and `docs/` carries the evidence.
+
+**The false conclusion, written down twice.** A workflow run that dies partway leaves a journal, and
+the journal carries no agent *label*. That reads as "a partial verdict cannot be mapped back to the
+finding it judged", and on that reading the only option is to re-run everything. It was concluded
+twice, and it **threw away two runs' work**. It is wrong.
+
+**Why it is wrong.** The journal does carry `agentId`. Each agent's transcript is
+`agent-<agentId>.jsonl`, and that file's first user turn is the prompt the workflow built, which
+names the finding verbatim. So the chain is complete:
+
+```
+journal.result -> agentId -> transcript -> first user turn -> the finding it names
+```
+
+**What it recovered.** 72 of 72 verdicts from one dead run, and 5 findings plus 2 adjudications from
+another.
+
+**Two conditions on using it.** Gate the mapping on controls, and include a NEGATIVE one: a
+fabricated finding title must NOT match anything. Without that, a matcher that matches everything
+looks exactly like a matcher that works. And never let an agent that DIED score as a finding
+REFUTED — an outage read as a judgement once bought 45 needless opus adjudicators.
+
+**Worked example.** `_audit-vault-sos-2026-08-09/recover-run3.mjs`.
