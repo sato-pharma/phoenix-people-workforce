@@ -8,6 +8,7 @@ import { runCrmPortalScopeTests } from "./crm-portal-scope.test.ts";
 import { runEmployee360VisitClassificationTests } from "./employee-360-visit-classification.test.ts";
 import { runEmployee360DoubleVisitCountTests } from "./employee-360-double-visit-count.test.ts";
 import { runErrorMonitorNewIssueDiffTests } from "./error-monitor-new-issue-diff.test.ts";
+import { runOutstationReviewMapRasterTests } from "./outstation-review-map-raster.test.ts";
 import { runErrorMonitorDerivedStatusTests } from "./error-monitor-derived-status.test.ts";
 import { runClientErrorCrossOriginNoiseTests } from "./client-error-cross-origin-noise.test.ts";
 import { runErrorMonitorMessageDecodeTests } from "./error-monitor-message-decode.test.ts";
@@ -1576,6 +1577,10 @@ await runTest(
 );
 await runTest("crm portal scope (exact-match agentHrIds, fail-closed, no ?view= governance panels)", runCrmPortalScopeTests);
 await runTest("error monitor new-issue diff", runErrorMonitorNewIssueDiffTests);
+await runTest(
+  "outstation review map pins the raster renderer (the vector one fails on 159 of 159 rows)",
+  runOutstationReviewMapRasterTests,
+);
 await runTest("error monitor derived status", runErrorMonitorDerivedStatusTests);
 await runTest("error monitor message decode", runErrorMonitorMessageDecodeTests);
 await runTest(
