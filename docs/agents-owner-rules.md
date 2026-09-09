@@ -1082,6 +1082,53 @@ He restated the whole thing as three ordered steps, unprompted:
 | 2 | 201 to 999 | half the local block, half evenly over the rest of the country |
 | 3 | 1,000 and above | flat: every area in play takes an identical share, origin included |
 
+### The Upper Egypt block, added the same day
+
+> the rule will be the same as cairo + qalubeya but for upper egypt, if any city in upper egypt
+> exceed that to be distributed on all upper egypt cities except the others
+
+An El Qema warehouse anywhere in Upper Egypt treats the whole region as its governorate. Two things
+were put to him because his sentence allowed either reading:
+
+**Does it hold at every step, like Cairo + Qalubeya?** No: *"only above 200 packs"*. So the two rules
+have the same shape and differ in exactly one thing, and that difference is invisible in his wording.
+A 150-pack Sohag order stays in Sohag's two areas; a 150-pack Benha order still reaches Cairo.
+
+**Is Beni Suef in the block?** *"follow the organogram but later if we update the organogram the rule
+changes"*. So it is a REGION CODE, resolved per line and per period from the same view the Others
+rule reads. On Pedia the block is seven areas: Minia 1 and 2, Assuit 1 and 2, Sohag 1 and 2, Qena 1.
+`UE9` Beni Suef sits in `GZ` and `UE8` Qena 2 sits in Others, both by the organogram's own filing,
+even though every `UE*` code looks like it belongs. Hard-coding the prefix would look right, be wrong
+about both of them today, and stop tracking him the moment he moves a seat.
+
+### Measured on August 2026
+
+One customer crosses the threshold in Upper Egypt: بدر فارم سوهاج in Sohag 1, with 480 packs of each
+Lacto Advanced, both in step 2.
+
+| Area | Before | After | Change |
+| --- | --- | --- | --- |
+| Sohag 1 | 455.57 | 284.14 | -171.43 |
+| Sohag 2 | 455.57 | 284.14 | -171.43 |
+| Minia 1, Minia 2, Assuit 1, Assuit 2 | 205.28 | 260.14 | +54.86 |
+| Qena 1 | 229.28 | 284.14 | +54.86 |
+| every other area in play | | | +2.29 |
+
+The home half stops being split two ways and starts being split seven ways, so Sohag gives up most
+of it. The national half then divides over 30 areas instead of 35, which is where the +2.29 comes
+from. Beni Suef takes that ordinary national share and nothing more, which is the organogram filing
+visible in the numbers.
+
+### One object, not two sets
+
+The split now takes a single `SplitRegions` from `loadSplitRegions`, carrying both the Others set and
+the region map. That is not tidiness. The Others rule shipped completely inert once because its
+loader looked the line up by display name against a code-keyed view, returned nothing, and an empty
+set is exactly how the split spells "nothing is excluded". A second loose parameter would give every
+call site a fresh chance to pass one half and forget the other, failing the same way: silently, and
+in the direction of the rule not applying. With one object the compiler names every site that has
+not been updated, which is how all seven were found when this landed.
+
 ### The two questions that were put to him, and his answers
 
 Both change the numbers, and his message could be read either way on each, so neither was guessed.

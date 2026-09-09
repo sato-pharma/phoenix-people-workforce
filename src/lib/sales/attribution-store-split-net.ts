@@ -25,7 +25,8 @@
 // The two measures are equal on all 21,066 production rows from 2026-08 today. That is a fact about
 // the current data, not a definition, so they are carried separately.
 
-import { loadOthersAreas } from "@/lib/sales/closing-organogram-regions";
+import { loadSplitRegions } from "@/lib/sales/closing-organogram-regions";
+import type { SplitRegions } from "@/lib/sales/store-sales-city-split";
 import {
   isSplitEligibleLine,
   isStoreCitySplitActive,
@@ -99,7 +100,7 @@ export function buildStoreSplitNetPayload(
   officialLine: string,
   rows: readonly AttributionSplitRow[],
   period: string,
-  othersAreas?: ReadonlySet<string>,
+  regions?: SplitRegions,
 ): StoreSplitNetPayloadRow[] {
   if (!isStoreCitySplitActive(period)) return [];
   if (!isSplitEligibleLine(officialLine)) return [];
@@ -107,11 +108,11 @@ export function buildStoreSplitNetPayload(
   // Both passes take the SAME exclusion set. They already have to move the same rows (asserted
   // below); handing one of them a different set of target areas would put units on one geography
   // and money on another, which is the one shape this function exists to make impossible.
-  const qtyPass = splitStoreSalesAcrossCityAreas(rows, period, othersAreas);
+  const qtyPass = splitStoreSalesAcrossCityAreas(rows, period, regions);
   const effectivePass = splitStoreSalesAcrossCityAreas(
     rows.map((row) => ({ ...row, qty: row.effectiveUnits })),
     period,
-    othersAreas,
+    regions,
   );
 
   // Both passes must have moved the SAME rows — see the header. If they ever diverge the net would
@@ -168,7 +169,7 @@ export async function writeAttributionStoreSplitNet(input: {
    * cannot control that answer either hits production or silently exercises an EMPTY set — which is
    * indistinguishable from the rule not applying at all. Defaults to the real loader.
    */
-  loadOthersAreasForLine?: (line: string, period: string) => Promise<ReadonlySet<string>>;
+  loadSplitRegionsForLine?: (line: string, period: string) => Promise<SplitRegions>;
 }): Promise<AttributionStoreSplitWriteResult> {
   const period = String(input.period ?? "").trim();
   const payload: StoreSplitNetPayloadRow[] = [];
@@ -184,8 +185,8 @@ export async function writeAttributionStoreSplitNet(input: {
       // The organogram's Others set, for THIS line and THIS month — see loadOthersAreas. Loaded
       // per line because the set genuinely differs between them: Qalubeya is Others on Anti
       // Infective and a district of its own on Pedia.
-      const othersAreas = await (input.loadOthersAreasForLine ?? loadOthersAreas)(line, period);
-      const lineRows = buildStoreSplitNetPayload(line, rows, period, othersAreas);
+      const regions = await (input.loadSplitRegionsForLine ?? loadSplitRegions)(line, period);
+      const lineRows = buildStoreSplitNetPayload(line, rows, period, regions);
       if (lineRows.length > 0) linesWithMovement.push(line);
       payload.push(...lineRows);
     }

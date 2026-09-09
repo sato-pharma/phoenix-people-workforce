@@ -37,6 +37,7 @@ import {
   type StoreSplitAreaSummary,
   type StoreSplitCustomerSummary,
   type StoreSplitDetailRow,
+  type SplitRegions,
 } from "@/lib/sales/store-sales-city-split";
 import type { MonthlySourceCoverage, SourceCoverageEntry } from "@/lib/sales/source-coverage";
 
@@ -3202,7 +3203,7 @@ export async function buildMonthlyClosingWorkbook(
      * owner, 2026-09-08. Resolved by the caller because it is live organogram data, per line and
      * per month; omitted, these sheets split across every area exactly as they did before.
      */
-    storeSplitOthersAreas?: ReadonlySet<string>;
+    storeSplitRegions?: SplitRegions;
     /**
      * The two halves of `matrix`, for the channel tabs: `retail` is the same grid before direct is
      * injected (with the identical store split applied), `directCells` the direct money by region
@@ -3331,7 +3332,7 @@ export async function buildMonthlyClosingWorkbook(
       summariseStoreSplitByArea(
         options?.storeSplitRows ?? details.rows,
         matrix.period,
-        options?.storeSplitOthersAreas,
+        options?.storeSplitRegions,
       ),
       options?.storeSplitScopeAreaCodes ?? [],
     );
@@ -3341,8 +3342,8 @@ export async function buildMonthlyClosingWorkbook(
       workbook,
       matrix.line,
       matrix.period,
-      summariseStoreSplitByCustomer(splitSourceRows, matrix.period, options?.storeSplitOthersAreas),
-      detailStoreSplitByCustomer(splitSourceRows, matrix.period, options?.storeSplitOthersAreas),
+      summariseStoreSplitByCustomer(splitSourceRows, matrix.period, options?.storeSplitRegions),
+      detailStoreSplitByCustomer(splitSourceRows, matrix.period, options?.storeSplitRegions),
     );
   }
   writeComparisonSheet(workbook, comparison, ref);
