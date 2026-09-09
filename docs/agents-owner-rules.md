@@ -1259,6 +1259,21 @@ taking two shares; the closing folds them into one row downstream for display on
 pass they land on identical numbers anyway, which is as close as the evening rule gets to the
 morning one.
 
+### 🔴 A display fold corrupted the attribution net, and it was not this rule
+
+Pedia shows Fayoum (`GZ6`) and Beni Suef (`UE9`) as one row, and `loadMonthlyClosingDetails`
+delivers that by rewriting a Beni Suef row's `sheetAreaCode` to `GZ6`. Inside the closing it is
+self-consistent, because the matrix folds the same pair. `au.monthly_attribution_rollup` does NOT
+fold — it keys on the real area — so a net built from folded rows charges Beni Suef's whole book OUT
+of Fayoum while attribution credits Beni Suef its own base. **Fayoum landed at −24.95 units on a
+base of 64** on 2026-09-09.
+
+It predates this rule and merely stayed positive: under the priority ladder Fayoum's net was
+−29.44 against the same base. Fixed with `keepMergedAreasApart`, passed by exactly the two
+attribution-net builders and pinned by `tests/merged-area-attribution.test.ts`. **Any future merged
+pair will do the same thing** — a fold made for a screen must never reach a net keyed on the real
+area.
+
 ### Where the numbers live
 
 `WAREHOUSE_NATIONAL_SPLIT_THRESHOLD_QTY`, `WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY`,

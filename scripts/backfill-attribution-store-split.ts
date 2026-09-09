@@ -67,7 +67,10 @@ async function periodsToBackfill(): Promise<string[]> {
 }
 
 async function rowsForLine(line: string, period: string): Promise<readonly AttributionSplitRow[]> {
+  // The REAL areas, not the "Fayoum - Beni Suef" display fold: this net is added to
+  // au.monthly_attribution_rollup, which keys on the real area. See keepMergedAreasApart.
   const details = await loadMonthlyClosingDetails({
+    keepMergedAreasApart: true,
     access: systemAccessContext,
     line,
     period,
