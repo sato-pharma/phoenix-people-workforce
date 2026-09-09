@@ -537,3 +537,46 @@ decided and when.
 **Owner decision, 2026-09-05: leave them.** Offered with the design in hand and declined. A safety
 classifier had already blocked the migration before it was written, which was the correct call and
 is worth noting: the block is what turned a plausible repair into a decision the owner made.
+
+## New hook — one area, several teams, because a team is named for a region (2026-09-09)
+
+**What happened.** Four active sales reps were found with no `team_id`: Samah Ashraf and Shimaa
+Ibrahim on Anti Infective, Ahmed Farag on Anti Infective, and Ebtissam Alaa, added the same day.
+Every one of their areas already had a team, so the obvious repair was to attach each rep to it.
+The owner was asked first, and asked for correctly named teams to be created instead. That instinct
+was right, and the reason is worth writing down because the obvious repair is silently wrong.
+
+**The model.** `public.teams` is keyed on `area_id`, but `teams.name` holds a REGION and `teams.code`
+is `<area code>_<region slug>` — `d11_delta_1`, `d24_delta_2`, `ab5_alex_bhr`. That was unambiguous
+while an area belonged to exactly one region.
+
+**What broke the assumption.** The Delta (3) migration is line-specific: on Anti Infective the five
+areas moved to Delta (3), and on CNS and Pedia they did not move at all. So one area now sits in two
+different regions depending on the line, and the teams table has no line column to say so. Kafr
+El-Sheikh 1 is the same shape from the other direction — Alex-BHR on Pedia, Delta (1) on Anti
+Infective — and that one predates Delta (3) entirely, so this is not a migration artefact to tidy
+away.
+
+**Why the obvious repair is wrong twice over.** Attaching Samah to the existing `d11_delta_1` files
+an Anti Infective Delta (3) rep under a team named Delta (1). Renaming that team instead is worse:
+it holds a Pedia rep and a CNS rep for whom Delta (1) is correct, so the rename fixes one person by
+breaking two. Neither failure surfaces anywhere — the area matches in both cases, which is exactly
+what makes it read as correct.
+
+**The rule.** Resolve a person's team from their own seat, not from their area. `au.v_org_tree`
+carries `region_name` per seat, and joining an employee's open `au.occupancy_history` span to it
+gives the region that the team name must equal. Where no team exists for that pair, create one on
+the existing `<area>_<region>` convention rather than renaming a sibling.
+
+**What was done, 2026-09-09.** Three teams created — `d11_delta_3` and `d24_delta_3` named
+`Delta (3)`, and `d16_alex_bhr` named `ALEX-BHR` — each carrying a description naming the split.
+Ahmed Farag needed none: his seat sits in Delta (1) and Gharbia 1 already had a correctly named
+Delta (1) team, so he joined it. Verified afterwards that all four team names equal their seat
+region and that no active sales employee is left without a team, down from four. No existing team
+was renamed and no other employee row was touched; the triggers on `public.employees` were read
+first and none fires on `team_id`.
+
+**One measurement worth keeping.** `employees.team_name` and `employees.department_name` are dead
+columns: 0 of 107 active employees have either populated, while 105 carry a `team_id`. They are
+export-only twins that the seat path deliberately leaves null, so an emptiness sweep will flag them
+as a data-quality gap. They are not one. Read `team_id` and join.
