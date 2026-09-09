@@ -46,6 +46,24 @@ import {
 /** The ten areas Pedia parks in Others and that this move does not touch. Aswan is one of them. */
 const OTHERS_STAYERS = ["CA5", "D17", "OT1", "OT2", "OT4", "OT5", "OT7", "OT8", "OT9", "OT10"];
 
+/**
+ * 🔴 A RETIRED AREA NEVER LEAVES `au.f_line_area_map_asof`, AND THE TWO HALVES DISAGREE ABOUT IT.
+ *
+ * OT3 "Aswan (Legacy)" was retired on 2026-07-27 when OT7 Aswan replaced it, and its only row is
+ * closed. The database function has NO where clause — it returns one row per (line, area) whichever
+ * date you ask for — so it still reports OT3 in Others for every date after its own retirement.
+ * `buildOperationalRegionMap` DROPS it instead, because a row whose effective_to has passed is not
+ * in force. So the closing sheet counts 12 areas in Pedia's Others and achievement counts 13.
+ *
+ * The first draft of the migration asserted "August still has 12 in Others" against the database
+ * function and refused to apply. That refusal was CORRECT and is why this fixture exists: an
+ * assertion on a region TOTAL pins this quirk, an assertion on the areas that actually move does not.
+ *
+ * Neither number reaches money. ALL_SPLIT_AREAS does not carry OT3, so the El Qema divisor is 37
+ * either way — which the last assertion in this block proves rather than assumes.
+ */
+const RETIRED_AREA = { area_code: "OT3", operational_region_code: "OT", effective_from: "2026-07-13", effective_to: "2026-07-27" };
+
 /** The eleven areas that move, with the district each one leaves. */
 const MOVERS: ReadonlyArray<readonly [area: string, leaves: string, joins: string]> = [
   ["GZ6", "GZ", "UE-1"], // Fayoum
@@ -74,6 +92,7 @@ const regionNames = () =>
 
 /** The pre-split rows only — the organogram exactly as it stands before the migration runs. */
 const preSplitRows = () => [
+  RETIRED_AREA,
   ...OTHERS_STAYERS.map((area) => ({
     area_code: area,
     operational_region_code: "OT",
@@ -90,6 +109,7 @@ const preSplitRows = () => [
 
 /** The same organogram after the migration: every mover written as a dated PAIR. */
 const withSplitRows = () => [
+  RETIRED_AREA,
   ...OTHERS_STAYERS.map((area) => ({
     area_code: area,
     operational_region_code: "OT",
@@ -187,6 +207,15 @@ export function runPediaUpperEgyptSplitTests() {
   const septemberPlan = qemaLadderPlan(septemberOthers);
   assert.equal(augustPlan?.areas.length, 37, "August divides El Qema's book over 37 areas");
   assert.equal(septemberPlan?.areas.length, 39, "September divides it over 39");
+
+  // ── The retired area, and why neither half's count of Others is the number that matters ────────
+  assert.equal(augustOthers.has("OT3"), false, "a row whose effective_to has passed is not in force here");
+  assert.equal(ALL_SPLIT_AREAS.includes("OT3"), false, "and Aswan (Legacy) is not in the split geography at all");
+  assert.equal(
+    qemaLadderPlan(new Set([...augustOthers, "OT3"]))?.areas.length,
+    augustPlan?.areas.length,
+    "so the divisor is 37 whether or not the retired area is counted in Others — which is why the migration names the two areas that move instead of counting the region",
+  );
   // Fractions of 37 and of 39 do not sum to exactly 1 in binary floating point, and they are not
   // meant to: planShares is what turns them back into whole packs. A tolerance here, an exact total
   // downstream.

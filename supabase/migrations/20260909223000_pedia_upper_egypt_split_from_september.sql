@@ -177,9 +177,21 @@ begin
     raise exception 'Pedia Upper Egypt split: August 2026 resolves to the new districts - the move leaked backwards. Rolled back.';
   end if;
 
+  -- 🔴 NAME THE TWO AREAS, NEVER COUNT THE REGION. The first version of this migration asserted
+  -- "August still has 12 areas in Others" and refused to apply, correctly: the real answer is 13.
+  -- au.f_line_area_map_asof has NO where clause, so it returns one row per (line, area) whether or
+  -- not any row covers the date — and OT3 "Aswan (Legacy)", retired on 2026-07-27, is therefore
+  -- reported in Others for every date after its own retirement, forever. Counting the region pins
+  -- that quirk instead of the rule. The El Qema ladder never sees OT3 because ALL_SPLIT_AREAS does
+  -- not carry it, which is why the divisor is 37 and not 36.
+  --
+  -- The TypeScript half disagrees here, and deliberately: buildOperationalRegionMap DROPS a row
+  -- whose effective_to has passed, so the closing sheet sees 12 in Others where achievement sees 13.
+  -- Neither number reaches El Qema. Do not "reconcile" them by making either one count regions.
   if (select count(*) from au.f_line_area_map_asof(date '2026-08-31')
-       where line_code = 'pedia' and operational_region_code = 'OT') <> 12 then
-    raise exception 'Pedia Upper Egypt split: August 2026 no longer has 12 areas in Others - the El Qema divisor for August moved. Rolled back.';
+       where line_code = 'pedia' and area_code in ('UE8','OT6')
+         and operational_region_code = 'OT') <> 2 then
+    raise exception 'Pedia Upper Egypt split: August 2026 no longer has Qena 2 and Luxor in Others - the El Qema divisor for August moved. Rolled back.';
   end if;
 
   if (select count(*) from au.f_line_area_map_asof(date '2026-09-30')
@@ -190,10 +202,18 @@ begin
   end if;
 
   if (select count(*) from au.f_line_area_map_asof(date '2026-09-30')
-       where line_code = 'pedia' and operational_region_code = 'OT') <> 10 then
-    raise exception 'Pedia Upper Egypt split: September 2026 does not leave 10 areas in Others. Rolled back.';
+       where line_code = 'pedia' and area_code in ('UE8','OT6')
+         and operational_region_code = 'UE-2') <> 2 then
+    raise exception 'Pedia Upper Egypt split: September 2026 does not move Qena 2 and Luxor into Upper Egypt 2. Rolled back.';
   end if;
 
-  raise notice 'Pedia Upper Egypt split applied: 11 rows closed at %, 6 opened on UE-1 and 5 on UE-2. August resolves pre-split with 12 in Others; September resolves the new districts with 10.', v_move_date;
+  -- Aswan was named explicitly and must not move in either direction.
+  if (select count(*) from au.f_line_area_map_asof(date '2026-09-30')
+       where line_code = 'pedia' and area_code = 'OT7'
+         and operational_region_code = 'OT') <> 1 then
+    raise exception 'Pedia Upper Egypt split: Aswan left Others. Rolled back.';
+  end if;
+
+  raise notice 'Pedia Upper Egypt split applied: 11 rows closed at %, 6 opened on UE-1 and 5 on UE-2. August keeps Qena 2 and Luxor in Others; September moves both to Upper Egypt 2 and Aswan stays put.', v_move_date;
 end
 $do$;
