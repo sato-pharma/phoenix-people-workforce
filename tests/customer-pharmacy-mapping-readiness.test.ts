@@ -3,10 +3,14 @@ import assert from "node:assert/strict";
 import {
   DESK_VALIDATION_MARKER,
   INFERRED_HISTORY_MARKER,
+  NO_DISTRIBUTOR_ACCOUNT_LABEL,
+  UNKNOWN_DISTRIBUTOR_LABEL,
   buildCustomerPharmacyReadiness,
+  idFilterChunks,
   isDeskValidated,
   isInferredFromHistory,
   isNotFieldValidated,
+  uniqueDefinedIds,
   type BuildCustomerPharmacyReadinessInput,
   type CustomerPharmacyReadinessRow,
   type CustomerPharmacyValidationStatus,
@@ -39,7 +43,9 @@ function link(
     linkId: id,
     customerId,
     pharmacyId: opts.pharmacyId ?? `ph-${id}`,
-    distributorCodeId: opts.distributorCodeId ?? `dc-${id}`,
+    // `??` would swallow an explicit null, and a link carrying NO distributor code is exactly the
+    // production shape this suite has to cover — so the default applies only when the key is absent.
+    distributorCodeId: opts.distributorCodeId === undefined ? `dc-${id}` : opts.distributorCodeId,
     validationStatus: status,
     validationNotes: opts.validationNotes ?? null,
   };
@@ -163,8 +169,67 @@ export async function runCustomerPharmacyMappingReadinessTests() {
   assert.equal(resolved.distributorPharmacyCode, "DPC-77", "distributor pharmacy code resolved");
   assert.equal(resolved.distributorId, 7, "distributor id resolved");
   assert.equal(fallback.pharmacyName, "Unknown pharmacy", "missing pharmacy falls back");
-  assert.equal(fallback.distributorName, "Unknown distributor", "missing distributor falls back");
+  assert.equal(fallback.distributorName, UNKNOWN_DISTRIBUTOR_LABEL, "missing distributor falls back");
   assert.equal(fallback.distributorId, null, "missing distributor code ⇒ null distributor id");
+
+  // ── A link with NO distributor code at all ───────────────────────────────────
+  // Production carries four of them: a nursery, or any venue with no distributor account, is the
+  // owner's own filing rather than a gap to repair. Two things have to hold. The link still
+  // renders, with a label that does not read like a lookup someone should go and fix; and its null
+  // id never reaches an `.in("id", …)` filter, where a single null fails the WHOLE request with
+  // `22P02 invalid input syntax for type uuid: "null"` and takes every customer off the page.
+  const noAccountInput: BuildCustomerPharmacyReadinessInput = {
+    customers: [customer("c-nursery", "Nursery Customer")],
+    links: [link("n1", "c-nursery", "system_validated", { pharmacyId: "ph-1", distributorCodeId: null })],
+    pharmacies: [{ id: "ph-1", pharmacyCode: "PH001", pharmacyName: "Nile Pharmacy" }],
+    distributorCodes: [{ id: "dc-1", distributorId: 7, distributorPharmacyCode: "DPC-77" }],
+    distributors: [{ id: 7, name: "Ibnsina" }],
+  };
+  const nurseryRow = rowById(buildCustomerPharmacyReadiness(noAccountInput).rows, "c-nursery");
+  const nurseryLink = nurseryRow.links[0];
+  assert.ok(nurseryLink, "a link with no distributor code is still rendered");
+  assert.equal(nurseryLink.distributorCodeId, null, "the null code id is carried through, not defaulted");
+  assert.equal(
+    nurseryLink.distributorName,
+    NO_DISTRIBUTOR_ACCOUNT_LABEL,
+    "no distributor code ⇒ 'no distributor account', never 'unknown distributor'",
+  );
+  assert.equal(nurseryLink.distributorId, null, "no distributor code ⇒ null distributor id");
+  assert.equal(nurseryLink.distributorPharmacyCode, null, "no distributor code ⇒ no distributor pharmacy code");
+  assert.equal(nurseryRow.bucket, "ready", "a validated link still counts when it carries no distributor code");
+
+  assert.deepEqual(
+    uniqueDefinedIds(["a", null, "b", undefined, "a"]),
+    ["a", "b"],
+    "null and undefined ids are dropped and duplicates collapsed",
+  );
+  assert.deepEqual(uniqueDefinedIds([null, undefined]), [], "an all-null id list yields no filter values at all");
+  assert.deepEqual(uniqueDefinedIds([7, null, 7, 9]), [7, 9], "numeric ids are deduped the same way");
+  assert.equal(
+    uniqueDefinedIds(["a", null, undefined]).some((id) => id == null),
+    false,
+    "no nullish value survives into an .in() filter",
+  );
+
+  // ── The other half: a chunk long enough to overflow the headers ──────────────
+  // PostgREST echoes the query string back in Content-Location, so it is the SUCCESSFUL read that
+  // fails once the filter grows — 410 uuids measured 16,140 characters against production, over
+  // the 16KB limit, and surfaced as "TypeError: fetch failed". Chunks are what keep it short.
+  const manyIds = Array.from({ length: 410 }, (_, i) => `7c9f0f4e-0000-4000-8000-${String(i).padStart(12, "0")}`);
+  const chunks = idFilterChunks([...manyIds, null, undefined]);
+  assert.ok(chunks.length > 1, "410 ids are split across several requests, not sent as one filter");
+  assert.equal(
+    chunks.reduce((sum, chunk) => sum + chunk.length, 0),
+    manyIds.length,
+    "chunking loses no id and invents none",
+  );
+  assert.equal(chunks.flat().some((id) => id == null), false, "chunks carry no nullish id");
+  const longestFilter = Math.max(...chunks.map((chunk) => `id=in.(${chunk.join(",")})`.length));
+  assert.ok(
+    longestFilter < 4000,
+    `longest .in() filter must stay far under the 16KB header limit (measured ${longestFilter} chars)`,
+  );
+  assert.deepEqual(idFilterChunks([null, undefined]), [], "an all-null id list produces no request at all");
 
   // ── Summary aggregation + sorting ────────────────────────────────────────────
   const summaryResult = buildCustomerPharmacyReadiness(bucketInput);
