@@ -1496,6 +1496,7 @@ import { runSalesUploadReceiptConfidentialityTests } from "./sales-upload-receip
 import { runRetentionRiskDetectorTests } from "./retention-risk-detector.test.ts";
 import { runRetentionRiskNotifyTests } from "./retention-risk-notify.test.ts";
 import { runCrmAccountSetupTests } from "./crm-account-setup.test.ts";
+import { runPooledBlockRegionFamilyTests } from "./pooled-block-region-family.test.ts";
 import {
   runEmployeeManagementCanEditReachTests,
   runEmployeeManagementCanEditTests,
@@ -4862,6 +4863,10 @@ await runTest(
 await runTest(
   "new hire CRM account setup (the notice carries all seven facts, states a blank instead of dropping it, is email + in-app only, and fires on the CREATE path alone)",
   runCrmAccountSetupTests,
+);
+await runTest(
+  "El Qema's Upper Egypt pool survives a region RENAME (splitting UE into UE-1/UE-2 must leave the pool identical, not empty)",
+  runPooledBlockRegionFamilyTests,
 );
 await runTest(
   "employee master canEdit (every page rendering it passes the grant, found by scanning rather than by a hand-kept list, and the default fails closed)",
