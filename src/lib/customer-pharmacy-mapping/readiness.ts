@@ -36,7 +36,7 @@ export type CustomerPharmacyLinkSummary = {
   pharmacyId: string;
   pharmacyCode: string | null;
   pharmacyName: string;
-  distributorCodeId: string;
+  distributorCodeId: string | null;
   distributorId: number | null;
   distributorName: string;
   distributorPharmacyCode: string | null;
@@ -89,7 +89,7 @@ export type ReadinessLinkInput = {
   linkId: string;
   customerId: string;
   pharmacyId: string;
-  distributorCodeId: string;
+  distributorCodeId: string | null;
   validationStatus: CustomerPharmacyValidationStatus;
   validationNotes: string | null;
 };
@@ -129,6 +129,16 @@ export type BuildCustomerPharmacyReadinessInput = {
  * with a real column is postponed (would require a migration).
  */
 export const INFERRED_HISTORY_MARKER = "not GPS field-validated";
+
+/** A link whose distributor code id resolved to no distributor row — a genuine lookup miss. */
+export const UNKNOWN_DISTRIBUTOR_LABEL = "Unknown distributor";
+
+/**
+ * A link that carries NO distributor code at all. This is a SETTLED state, not a gap: a nursery —
+ * the venue type for any venue with no distributor account — is the owner's own filing, so the
+ * label must not read like a failed lookup that someone should go and repair.
+ */
+export const NO_DISTRIBUTOR_ACCOUNT_LABEL = "No distributor account";
 
 const VALIDATED_STATUSES: ReadonlySet<CustomerPharmacyValidationStatus> = new Set([
   "system_validated",
@@ -204,10 +214,15 @@ export function buildCustomerPharmacyReadiness(
 
     const links: CustomerPharmacyLinkSummary[] = customerLinks.map((link) => {
       const pharmacy = pharmacyById.get(link.pharmacyId);
-      const distributorCode = distributorCodeById.get(link.distributorCodeId);
+      const distributorCode =
+        link.distributorCodeId == null ? undefined : distributorCodeById.get(link.distributorCodeId);
       const distributorId = distributorCode?.distributorId ?? null;
       const distributorName =
-        distributorId != null ? distributorNameById.get(distributorId) ?? "Unknown distributor" : "Unknown distributor";
+        distributorId != null
+          ? distributorNameById.get(distributorId) ?? UNKNOWN_DISTRIBUTOR_LABEL
+          : link.distributorCodeId == null
+            ? NO_DISTRIBUTOR_ACCOUNT_LABEL
+            : UNKNOWN_DISTRIBUTOR_LABEL;
 
       return {
         linkId: link.linkId,
@@ -315,7 +330,7 @@ type MarketingCustomerPharmacyRow = {
   id: string;
   customer_id: string;
   pharmacy_id: string;
-  distributor_code_id: string;
+  distributor_code_id: string | null;
   validation_status: CustomerPharmacyValidationStatus | null;
   validation_notes: string | null;
 };
@@ -338,7 +353,17 @@ type MarketingDistributorRow = {
 };
 
 const PAGE_SIZE = 1000;
-const IN_CHUNK_SIZE = 500;
+/**
+ * Ids per `.in("id", …)` request.
+ *
+ * 500 UUIDs build a request URL of roughly 19KB, and PostgREST echoes the whole query string back
+ * in the `Content-Location` response header — so it is the SUCCESSFUL read that blows undici's
+ * 16KB header limit, arriving as `TypeError: fetch failed` / `UND_ERR_HEADERS_OVERFLOW`. That
+ * reads like a network fault rather than a query that is merely too long to send. Measured against
+ * production: 410 distributor-code ids came to 16,140 characters, over the limit. 50 holds a chunk
+ * near 2KB, and the whole page read then completes in about 1.4s.
+ */
+const IN_CHUNK_SIZE = 50;
 
 /**
  * Range-paginated full read of an active-filtered table. PostgREST caps a single response at
@@ -368,16 +393,44 @@ async function fetchAllActiveRows<T>(
   return out;
 }
 
+/**
+ * Unique, non-null ids for an `.in("id", …)` filter.
+ *
+ * PostgREST serialises a JavaScript `null` into the filter as the literal text `null`, so ONE null
+ * id fails the whole request with `22P02 invalid input syntax for type uuid: "null"` — every
+ * customer disappears behind an opaque "Customer pharmacy mapping failed.", rather than one link
+ * losing its distributor name. That is what took the page down in production:
+ * `marketing_customer_pharmacies.distributor_code_id` is nullable on purpose (a venue with no
+ * distributor account), and four active links carry NULL.
+ */
+export function uniqueDefinedIds(ids: Array<string | number | null | undefined>): Array<string | number> {
+  return Array.from(new Set(ids.filter((id): id is string | number => id != null)));
+}
+
+/**
+ * The id lists to send, one per request: non-null, deduplicated, and short enough that neither the
+ * request URL nor the response header PostgREST builds from it exceeds the 16KB limit.
+ *
+ * Exported so both halves of the failure this page hit in production stay under test — a null id,
+ * and a chunk long enough to overflow the headers.
+ */
+export function idFilterChunks(ids: Array<string | number | null | undefined>): Array<Array<string | number>> {
+  const unique = uniqueDefinedIds(ids);
+  const chunks: Array<Array<string | number>> = [];
+  for (let i = 0; i < unique.length; i += IN_CHUNK_SIZE) {
+    chunks.push(unique.slice(i, i + IN_CHUNK_SIZE));
+  }
+  return chunks;
+}
+
 async function fetchRowsByIds<T>(
   supabase: SupabaseClient,
   table: string,
   columns: string,
-  ids: Array<string | number>,
+  ids: Array<string | number | null | undefined>,
 ): Promise<T[]> {
-  const unique = Array.from(new Set(ids));
   const out: T[] = [];
-  for (let i = 0; i < unique.length; i += IN_CHUNK_SIZE) {
-    const slice = unique.slice(i, i + IN_CHUNK_SIZE);
+  for (const slice of idFilterChunks(ids)) {
     const { data, error } = await supabase.from(table).select(columns).in("id", slice);
     if (error) throw error;
     out.push(...((data ?? []) as T[]));
@@ -473,7 +526,7 @@ export async function getCustomerPharmacyReadiness(
       distributorPharmacyCode: row.distributor_pharmacy_code,
     })),
     distributors: distributorRows
-      .map((row) => ({ id: toNumericId(row.id), name: row.display_name ?? "Unknown distributor" }))
+      .map((row) => ({ id: toNumericId(row.id), name: row.display_name ?? UNKNOWN_DISTRIBUTOR_LABEL }))
       .filter((row): row is ReadinessDistributorInput => row.id != null),
   });
 }
