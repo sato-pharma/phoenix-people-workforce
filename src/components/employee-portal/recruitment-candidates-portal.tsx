@@ -316,7 +316,7 @@ function CandidateCard({
         {candidate.hasMedicalRepExperience ? <Field label="Medical Rep tenure" value={tenureLine} /> : null}
       </div>
 
-      <CandidateCvActions candidateId={candidate.id} initialFiles={files} />
+      <CandidateCvActions candidateId={candidate.id} initialFiles={files} showPhoneNumbers={call.mine} />
 
       <CandidateCallControl
         canAct={canAct}
@@ -516,7 +516,7 @@ function SentCandidateCard({
       </div>
 
       <div className="flex flex-wrap items-start gap-2">
-        <CandidateCvActions candidateId={candidate.id} initialFiles={files} />
+        <CandidateCvActions candidateId={candidate.id} initialFiles={files} showPhoneNumbers={call.mine} />
         {/* The third answer, and the one the owner asked for on 2026-08-30: neither "Interview" nor
             "Not interested" is true of a good CV that simply is not needed this month. Filing writes
             to HIS shelf only - the recruitment team's pool does not move. */}

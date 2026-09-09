@@ -222,6 +222,7 @@ import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.t
 import { runRecruitmentScreeningWorkstationTests } from "./recruitment-screening-workstation.test.ts";
 import { runCandidateFolderTests } from "./candidate-folders.test.ts";
 import { runCandidateCallClaimTests } from "./candidate-call-claims.test.ts";
+import { runCvPhoneRedactionTests } from "./cv-phone-redaction.test.ts";
 import { runCandidatePoolFiledSearchTests } from "./candidate-pool-filed-search.test.ts";
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
 import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
@@ -4936,6 +4937,11 @@ await runTest(
 await runTest(
   "a manager's CV card: the phone is revealed by the \"I will call\" reservation and by nothing else, and the download is blocked in the route",
   runCandidateCallClaimTests,
+);
+
+await runTest(
+  "the phone number PRINTED ON the CV is painted out for every manager but the one who reserved it",
+  runCvPhoneRedactionTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
