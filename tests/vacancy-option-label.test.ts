@@ -84,6 +84,26 @@ export async function runVacancyOptionLabelTests() {
     "an empty vacancy yields an empty label, never stray separators",
   );
 
+  // With the position already chosen in the form, repeating it on every row is what pushed the
+  // option panel into a sideways scroll. Dropped on request, but only as an option -- see
+  // VacancyOptionLabelOptions for the case where the rows do NOT share one position.
+  assert.equal(
+    formatVacancyOptionLabel(districtManagerVacancy, { omitPositionTitle: true }),
+    "Behira 1 (Alex-BHR) - Manager: Hany Saad Mohamed Omar",
+    "omitPositionTitle drops the position and keeps the district and the manager",
+  );
+  assert.ok(
+    formatVacancyOptionLabel(districtManagerVacancy, { omitPositionTitle: true }).includes("Alex-BHR"),
+    "the district must survive the shortening -- it is the whole point of the row",
+  );
+  assert.equal(
+    formatVacancyOptionLabel(
+      { areaName: null, managerName: null, positionTitle: "Medical Representative", regionName: "Alex-BHR" },
+      { omitPositionTitle: true },
+    ),
+    "Alex-BHR",
+    "with nothing else to say the row is the district alone, never a stray separator",
+  );
   // The picker must render through the helper -- an inline template literal in the component is
   // exactly how the region went missing, and a pure-function test alone would not see it come back.
   const componentPath = path.join(
@@ -95,8 +115,18 @@ export async function runVacancyOptionLabelTests() {
   );
   const component = fs.readFileSync(componentPath, "utf8");
   assert.ok(
-    component.includes("formatVacancyOptionLabel(v)"),
+    component.includes("formatVacancyOptionLabel(v, { omitPositionTitle:"),
     "the vacancy picker must build its option text with formatVacancyOptionLabel",
+  );
+  // The flag has to be decided from the rows on screen, never hard-coded true: with a Title typed
+  // and no Job Position picked, the list holds a mix of positions and needs them printed.
+  assert.ok(
+    component.includes("omitPositionTitle: vacancyPositionsAgree"),
+    "the position may only be dropped when the listed vacancies agree on one position",
+  );
+  assert.ok(
+    !component.includes("omitPositionTitle: true"),
+    "omitPositionTitle must not be hard-coded on — a mixed-position list would lose what tells its rows apart",
   );
   assert.ok(
     !/label: v\.managerName/.test(component),
