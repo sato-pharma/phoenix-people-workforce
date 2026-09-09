@@ -1293,6 +1293,7 @@ import { runPortalCanonicalSalesRowsTests } from "./portal-canonical-sales-rows.
 import { runCanonicalDashboardRowsTests } from "./canonical-dashboard-rows.test.ts";
 import { runEmployee360CanonicalSalesTests } from "./employee-360-canonical-sales.test.ts";
 import { runNationalHolidaysObservanceFilterTests } from "./national-holidays-observance-filter.test.ts";
+import { runBenignClientDisconnectTests } from "./benign-client-disconnect.test.ts";
 import { runDescribeThrownTests } from "./describe-thrown.test.ts";
 import { runManagerCascadeFrozenTablesTests } from "./manager-cascade-frozen-tables.test.ts";
 import { runSalesBatchDeleteGuardTests } from "./sales-batch-delete-guard.test.ts";
@@ -4112,6 +4113,10 @@ await runTest(
 await runTest(
   "thrown-error serialization (PostgrestError keeps message/code/hint, never '[object Object]'; instrumentation.ts routes through it)",
   runDescribeThrownTests,
+);
+await runTest(
+  "benign client disconnects never reach the error table (Next 16.3.3's 'The destination stream closed early.' carries no errno and made 15 rows in 8 hours), while a real 'Connection closed.' still does",
+  runBenignClientDisconnectTests,
 );
 await runTest(
   "manager cascade skips frozen tables (no sales_records PATCH — service_role lost UPDATE and it is the only record of what H1 was paid on; sales_targets was dropped 2026-09-06 and must not be PATCHed either)",
