@@ -61,7 +61,7 @@ status, give it its own line.
 - **A red main still builds, ships and serves perfectly** — `a-red-main-ships-and-looks-fine-build-ignores-type-errors`
 - **A migration FILE written is not a migration APPLIED** — `migration-file-written-is-not-migration-applied` · `merged-migration-file-does-not-mean-grants-are-live`
 - **Migration timestamps COLLIDE across parallel branches** — `migration-timestamp-collides-across-parallel-branches` · `migration-ledger-version-never-matches-the-filename`
-- **A PostgREST .in() carrying several hundred ids returns ZERO rows and NO error.** — `postgrest-in-with-hundreds-of-ids-silently-returns-nothing`
+- **A PostgREST .in() fails 3 ways: ZERO rows and NO error; 22P02 on ONE null id; headers over ~16KB.** — `postgrest-in-with-hundreds-of-ids-silently-returns-nothing`
 - **A neq against an ABSENT jsonb key matches ZERO rows** — `postgrest-neq-on-an-absent-jsonb-key-matches-nothing` · `postgrest-unbounded-select-silently-stops-at-1000-rows`
 - **n_live_tup is STALE in production — it reports LIVE tables as empty.** — `n-live-tup-is-stale-use-real-count`
 - **A Supabase client request that times out at 15s STILL COMMITS** — `supabase-client-15s-timeout-commits-anyway-half-applies`
