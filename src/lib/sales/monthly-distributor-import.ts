@@ -3219,21 +3219,40 @@ export async function persistDistributorSalesUpload(
     // Distributor×product rollup — after the fact rollup it reads, same fallback site.
     const distProductRollupRefresh = await supabase.rpc("phx_refresh_sos_distributor_product_rollup", { p_batch_id: batchId });
     if (distProductRollupRefresh.error) throw distProductRollupRefresh.error;
-    // The wholesaler city split net FIRST — au.f_monthly_attribution reads it, so refreshing
-    // before it is written bakes the previous split into the rollup and leaves it there until the
-    // next import. See attribution-store-split-refresh.ts.
+  }
+
+  // 🔴 GATED ON validated, unlike the same tail in normalizer/service.ts. That commit path is
+  // only ever reached by an accepted upload; this one also runs for a REJECTED batch, which
+  // refreshes no rollup at all today and must keep not refreshing one. The gate is the SAME
+  // condition both branches above already test, lifted out so neither branch owns the tail.
+  if (result.status === "validated") {
+    // ── THE SPLIT NET, THEN ATTRIBUTION — ONE SHARED TAIL, OUTSIDE BOTH BRANCHES ────────────
+    //
+    // 🔴 THIS USED TO SIT INSIDE THE FALLBACK ABOVE, and that is the whole defect. The period-known
+    // path calls phx_finalize_sos_batch, which refreshes the attribution rollup INSIDE its own SQL
+    // transaction and knows nothing about au.monthly_store_split_net — so every real upload rebuilt
+    // achievement from fresh sales against the PREVIOUS import's split, with no error anywhere.
+    //
+    // It cannot run BEFORE finalize either: writeStoreSplitNetForBatch resolves the batch's periods
+    // from source_of_sales_fact_rollup, which finalize is what populates. Called earlier it finds no
+    // periods and silently does nothing — the same failure, one step to the left.
+    //
+    // So it lives here, after the whole if/else, where BOTH paths reach it and the fact rows are
+    // current either way: write the net, then refresh attribution on top of it. On the finalize path
+    // that is a second attribution refresh, which is the price of keeping finalize atomic.
     await writeStoreSplitNetForBatch(supabase, batchId);
-    // Sales-vs-target attribution rollup — after the channel rollup, same fallback site.
-    const attributionRollupRefresh = await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
-    if (attributionRollupRefresh.error) throw attributionRollupRefresh.error;
-    // Import summaries — the Source of Sales dashboard's own aggregate. This path just inserted
-    // them from the same parsed rows, so the refresh is a no-op here; it is called anyway to keep
-    // ONE rule with no exceptions — every site that refreshes the rollups also refreshes the
-    // summaries — which is what tests/sos-import-summaries-refresh.test.ts enforces. The exception
-    // list is the thing that let them drift apart in the first place.
-    const summaryRefresh = await supabase.rpc("phx_refresh_sos_import_summaries", { p_batch_id: batchId });
-    if (summaryRefresh.error) throw summaryRefresh.error;
-    invalidateSalesDashboardCache("source of sales multi-period import (fallback refresh)");
+    const attributionAfterNet = await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
+    if (attributionAfterNet.error) throw attributionAfterNet.error;
+    // Import summaries beside it, so "every site that refreshes the rollups also refreshes the
+    // summaries" holds with no exceptions. See tests/sos-import-summaries-refresh.test.ts.
+    const summariesAfterNet = await supabase.rpc("phx_refresh_sos_import_summaries", { p_batch_id: batchId });
+    if (summariesAfterNet.error) throw summariesAfterNet.error;
+    // The cache bust belongs LAST, for the same reason the net does. Both paths busted it too
+    // early: the fallback did it before this tail existed, and the finalize path does it inside
+    // finalizeSosBatchAndAuditSupersede — in both cases before the net is written, so the very next
+    // dashboard read re-cached the attribution the net had not reached yet and held it for the
+    // full TTL. Those earlier busts are harmless and stay; this one is the one that matters.
+    invalidateSalesDashboardCache("source of sales import — split net written, attribution refreshed");
   }
 
   return {

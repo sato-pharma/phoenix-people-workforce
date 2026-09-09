@@ -391,5 +391,71 @@ export function runAttributionStoreSplitNetTests() {
         + "The net must be written first — the rollup reads it.",
       );
     }
+
+    // 🔴 THE HALF THE MARKER ABOVE CANNOT SEE. The main import path does not call
+    // phx_refresh_monthly_attribution from TypeScript at all — it calls
+    // finalizeSosBatchAndAuditSupersede, and the attribution refresh happens inside
+    // phx_finalize_sos_batch, in SQL. So a file can refresh attribution on every upload while
+    // containing none of the string the loop above searches for, and the guard stays silent.
+    //
+    // That is not hypothetical: writeStoreSplitNetForBatch lived ONLY in each file's "defensive
+    // fallback" branch, which fires only when no single period resolves. Every real upload took the
+    // main branch, refreshed attribution from fresh sales against a stale net, and reported nothing.
+    // Measured 2026-09-09 — four imports in one day, the net untouched since the previous evening.
+    //
+    // The net must come AFTER finalize, not before: it resolves the batch's periods from
+    // source_of_sales_fact_rollup, which finalize is what populates.
+    const FINALIZE = "finalizeSosBatchAndAuditSupersede(";
+    // The module that DEFINES it matches the same string and is not a call site.
+    const FINALIZE_DEF = "function finalizeSosBatchAndAuditSupersede(";
+    const finalizeSites = [...walk(join(ROOT, "src")), ...walk(join(ROOT, "app"))]
+      .map((file) => ({ file, body: readFileSync(file, "utf8") }))
+      .filter((entry) => entry.body.includes(FINALIZE) && !entry.body.includes(FINALIZE_DEF));
+
+    assert.ok(
+      finalizeSites.length >= 2,
+      `expected at least the 2 known finalize sites, found ${finalizeSites.length}`,
+    );
+
+    for (const { file, body } of finalizeSites) {
+      const relative = file.slice(ROOT.length + 1).replace(/\\/g, "/");
+      const netCalls = body.split(NET_WRITER).length - 1;
+      const finalizeAt = body.indexOf(FINALIZE);
+      const netAt = body.indexOf(NET_WRITER);
+      assert.equal(
+        netCalls,
+        1,
+        `${relative} calls ${NET_WRITER} ${netCalls}x — expected exactly ONE shared call. More than `
+        + "one means a branch kept its own copy, which is the shape this check exists to stop.",
+      );
+
+      // 🔴 THE QUESTION IS WHICH BRANCH THE CALL SITS IN, and nothing simpler answers it.
+      // "the net writer comes after finalize" PASSES on the known-bad code, because the one call
+      // sat in the period-UNKNOWN fallback branch, which is textually after the finalize call. It
+      // was written that way first and it did pass. Indentation answers it but breaks the moment
+      // the tail is wrapped in a gate, which monthly-distributor-import.ts needs and
+      // normalizer/service.ts does not. So match the braces instead and ask the real question: is
+      // the call inside the else branch, which only an upload with no resolvable period reaches?
+      const elseAt = body.indexOf("} else", finalizeAt);
+      assert.ok(elseAt > finalizeAt, `${relative}: expected an else branch after ${FINALIZE}`);
+      const elseOpen = body.indexOf("{", body.indexOf("else", elseAt) + 4);
+      let depth = 0;
+      let elseClose = -1;
+      for (let i = elseOpen; i < body.length; i += 1) {
+        if (body[i] === "{") depth += 1;
+        else if (body[i] === "}") {
+          depth -= 1;
+          if (depth === 0) { elseClose = i; break; }
+        }
+      }
+      assert.ok(elseClose > elseOpen, `${relative}: could not brace-match the else branch`);
+      assert.ok(
+        netAt > elseClose,
+        `${relative} calls ${NET_WRITER} INSIDE the fallback branch that follows ${FINALIZE}. That `
+        + "branch runs only when no single period resolves, which no real upload does — so the "
+        + "period-known path refreshes the attribution rollup from the PREVIOUS import's split and "
+        + "reports nothing. The call belongs after the whole if/else, where both paths reach it.",
+      );
+    }
   })();
 }
