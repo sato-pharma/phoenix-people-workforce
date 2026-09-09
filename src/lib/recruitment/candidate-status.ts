@@ -117,9 +117,19 @@ export const hiringManagerDecisionStatus: Record<HiringManagerDecision, Candidat
   not_interested: "rejected",
 };
 
+/**
+ * The words on the two buttons.
+ *
+ * `not_interested` reads "Skip" since 2026-09-09, at the owner's instruction — *"have 2 buttons on
+ * every cv, I will call and skip ... if the manager chooses skip then he is skipped normally"*. Only
+ * the label moved: the decision, the status it lands on, the required reason and the route behind it
+ * are all untouched, which is what "normally" means here. The CODE stays `not_interested` on purpose:
+ * it is the wire value the decision route validates against, so renaming it would be an API change
+ * dressed up as a wording change, and every open tab still posting the old word would start failing.
+ */
 export const hiringManagerDecisionLabels: Record<HiringManagerDecision, string> = {
   interview: "I want to interview",
-  not_interested: "Not interested",
+  not_interested: "Skip",
 };
 
 export function isHiringManagerDecision(value: unknown): value is HiringManagerDecision {

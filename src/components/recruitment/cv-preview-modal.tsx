@@ -9,7 +9,23 @@ import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
-type CvDocumentProps = {
+/**
+ * May the reader take a COPY of this document away?
+ *
+ * TRUE everywhere it has always been true — the recruitment workspace, screening, the CV database —
+ * and FALSE on the manager's portal only, where the owner blocked it on 2026-09-09: *"the download
+ * to be blocked of the cv"*. A manager reads the CV on the screen and answers on the screen; he does
+ * not keep the document.
+ *
+ * IT IS NOT WHAT ENFORCES THE BLOCK, and must never be mistaken for it. Hiding a link is UX. The
+ * file route itself refuses to hand a manager anything but the in-page base64 render — see
+ * app/api/recruitment/hiring-manager/candidates/[candidateId]/files/[fileId]/route.ts. This flag
+ * exists so the screen does not offer a control that the server would then refuse, which reads as a
+ * broken button rather than as a decision.
+ */
+type CvDownloadAllowance = { allowDownload?: boolean };
+
+type CvDocumentProps = CvDownloadAllowance & {
   fileName: string;
   mimeType: string | null;
   downloadUrl: string;
@@ -34,7 +50,7 @@ type CvDocumentProps = {
   fitToWidth?: boolean;
 };
 
-type Props = {
+type Props = CvDownloadAllowance & {
   fileName: string;
   mimeType: string | null;
   downloadUrl: string;
@@ -93,7 +109,14 @@ function clampZoom(value: number): number {
  * quirk documented below was learned the hard way and none of it is duplicated: the modal now
  * renders this component too, so both paths cannot drift.
  */
-export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fitToWidth = true }: CvDocumentProps) {
+export function CvDocumentView({
+  allowDownload = true,
+  className,
+  downloadUrl,
+  fileName,
+  mimeType,
+  fitToWidth = true,
+}: CvDocumentProps) {
   const kind = detectCvFileKind(mimeType ?? "", fileName);
   const separator = downloadUrl.includes("?") ? "&" : "?";
   // The Download link needs "attachment" (a real save-file prompt); "inline" is for the
@@ -250,7 +273,11 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
         const sig = bytes.subarray(0, 4);
         const isOoxmlZip = sig[0] === 0x50 && sig[1] === 0x4b && sig[2] === 0x03 && sig[3] === 0x04;
         if (!isOoxmlZip) {
-          throw new Error("This is an older Word (.doc) format that can't be previewed here — use Download to open it.");
+          // What to DO about it is left to the failure notice below, because the answer differs by
+          // caller: a recruiter is told to download it, and a manager — who may not — is told to ask
+          // for a readable copy. Baking one of those two into the thrown message gave the manager an
+          // instruction pointing at a button his screen does not have.
+          throw new Error("This is an older Word (.doc) format that can't be previewed here.");
         }
         // docx-preview relies on browser-only APIs, so it's dynamically imported here rather than
         // at module scope (this component is "use client", but the import still must not run during
@@ -266,7 +293,7 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
         });
       } catch (caught) {
         if (active) {
-          setError(caught instanceof Error ? caught.message : "This document couldn't be previewed — use Download to open it.");
+          setError(caught instanceof Error ? caught.message : "This document couldn't be previewed.");
         }
       } finally {
         if (active) setLoading(false);
@@ -285,18 +312,29 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
   // bare "Failed to fetch" text) — the reader still needs to READ the CV. So the failure notice
   // always carries a direct inline link to the real file, which does not depend on any of the
   // in-page rendering that just failed.
+  //
+  // WHERE DOWNLOADS ARE BLOCKED THERE IS NO ESCAPE HATCH, and there cannot be one: the inline URL IS
+  // the file, so offering it to a manager would hand back in a failure state exactly what the block
+  // takes away in the working one. He is told what to do instead, in words, rather than being left
+  // looking at a red sentence with nothing under it.
   const failureNotice = error ? (
     <div className="p-1 text-sm">
       <p className="text-rose-600">{error}</p>
       <p className="mt-1">
-        <a
-          className="font-semibold text-slate-900 underline underline-offset-2"
-          href={inlineUrl}
-          rel="noreferrer"
-          target="_blank"
-        >
-          Open the CV in a new tab
-        </a>
+        {allowDownload ? (
+          <a
+            className="font-semibold text-slate-900 underline underline-offset-2"
+            href={inlineUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Open the CV in a new tab
+          </a>
+        ) : (
+          <span className="text-slate-500">
+            Ask the recruitment team to send you a readable copy of this CV.
+          </span>
+        )}
       </p>
     </div>
   ) : null;
@@ -329,7 +367,9 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
       </div>
     ) : (
       <p className="p-5 text-sm text-slate-500">
-        Preview isn&apos;t available for this file type — use Download instead.
+        {allowDownload
+          ? "Preview isn't available for this file type — use Download instead."
+          : "Preview isn't available for this file type. Ask the recruitment team to send you a readable copy."}
       </p>
     );
 
@@ -395,12 +435,26 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
   );
 }
 
-export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sidePanel }: Props) {
+export function CvPreviewModal({
+  allowDownload = true,
+  fileName,
+  mimeType,
+  downloadUrl,
+  onClose,
+  sidePanel,
+}: Props) {
   const dialogRef = useDialogA11y({ open: true, onClose });
 
   if (typeof document === "undefined") return null;
 
-  const documentBody = <CvDocumentView downloadUrl={downloadUrl} fileName={fileName} mimeType={mimeType} />;
+  const documentBody = (
+    <CvDocumentView
+      allowDownload={allowDownload}
+      downloadUrl={downloadUrl}
+      fileName={fileName}
+      mimeType={mimeType}
+    />
+  );
 
   const modal = (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#020617]/65 p-4 backdrop-blur-sm">
@@ -416,14 +470,16 @@ export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sideP
         <div className="flex items-center justify-between gap-4 border-b border-phx-line px-5 py-3">
           <p className="break-all text-sm font-semibold text-slate-900">{fileName}</p>
           <div className="flex items-center gap-3">
-            <a
-              className="text-xs font-semibold text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"
-              href={downloadUrl}
-              rel="noreferrer"
-              target="_blank"
-            >
-              Download
-            </a>
+            {allowDownload ? (
+              <a
+                className="text-xs font-semibold text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"
+                href={downloadUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Download
+              </a>
+            ) : null}
             <button
               aria-label="Close"
               className="rounded-md p-1 text-phx-ink-soft transition hover:bg-phx-paper-2 hover:text-slate-900"

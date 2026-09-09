@@ -95,6 +95,22 @@ type DedupedChildTable = {
  * except `ats_candidate_views`, which HAS NO `id` COLUMN AT ALL — its primary key is
  * `(candidate_id, viewer_hr_id)`. Selecting `id` there answers 42703, which is why that table
  * cannot simply be appended to `childTables` above.
+ *
+ * ── ONE CHILD TABLE IS DELIBERATELY IN NONE OF THE THREE LISTS ─────────────────────────────────
+ *
+ * `ats_candidate_call_actions` — the manager's "I will call" / "Skip" — is not registered anywhere
+ * here, and that is a decision rather than an omission. It carries TWO unique indexes, not one:
+ * (candidate_id, manager_hr_id) and a PARTIAL one on (candidate_id) where action = 'will_call',
+ * which is what keeps a reservation single across every manager. This shape models one index per
+ * table, so a survivor claimed by manager A and a duplicate claimed by manager B would move cleanly
+ * past the first index and raise 23505 on the second, HALF WAY THROUGH a merge that has already
+ * moved the other tables.
+ *
+ * So its rows are left to the foreign key, which cascades them away with the duplicate. The loss is
+ * bounded and fails in the safe direction: a claim that disappears leaves the CV unreserved with its
+ * phone number hidden from everybody, which is where every CV starts, and a skip that disappears
+ * puts one CV back in one manager's folder. Both are one press to redo. Reserving the survivor to
+ * the wrong manager, or failing a live merge outright, are the two outcomes this avoids.
  */
 const dedupedChildTables: readonly DedupedChildTable[] = [
   {
