@@ -115,13 +115,18 @@ function measureAutoloaded(file) {
 const footprintParts = [];
 for (const label of ["CLAUDE.md", "AGENTS.md"]) {
   const measured = measureAutoloaded(path.join(projectDir, label));
-  if (measured.present) footprintParts.push({ label, bytes: measured.bytes });
+  // `inRepo` marks the half a required check can enforce. These two are tracked, so CI sees them;
+  // the index below is not. Without the flag the enforced margin reports UNKNOWN rather than
+  // inferring it from a filename.
+  if (measured.present) footprintParts.push({ label, bytes: measured.bytes, inRepo: true });
 }
 // Reuse the index's own figure rather than measuring the file a second time, so the two verdicts in
 // one report can never disagree about `MEMORY.md`. A directory with no readable index contributes a
 // zero here, which `assessAutoloadFootprint` grades as unmeasured — matching the UNKNOWN it makes
 // the index report, instead of quietly totalling a footprint that is missing a file it knows about.
-if (verdict !== null) footprintParts.push({ label: "MEMORY.md", bytes: verdict.bytes });
+// `inRepo: false` — it lives under `~/.claude`, so no required check can ever see it. That is the
+// whole reason the enforced share exists as a separate figure.
+if (verdict !== null) footprintParts.push({ label: "MEMORY.md", bytes: verdict.bytes, inRepo: false });
 
 const footprint = assessAutoloadFootprint(footprintParts);
 

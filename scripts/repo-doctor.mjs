@@ -1521,14 +1521,17 @@ let autoloadedIndexBytes = null;
   const parts = [];
   for (const label of ["CLAUDE.md", "AGENTS.md"]) {
     try {
-      parts.push({ label, bytes: fs.statSync(path.join(primaryRoot, label)).size });
+      // `inRepo` marks the half CI can enforce — these two are tracked, the index is not.
+      parts.push({ label, bytes: fs.statSync(path.join(primaryRoot, label)).size, inRepo: true });
     } catch (err) {
       // ENOENT means this checkout does not have the file, which is silence. Anything else means it
       // has one we could not size, which must poison the total rather than shrink it.
-      if (err?.code !== "ENOENT") parts.push({ label, bytes: null });
+      if (err?.code !== "ENOENT") parts.push({ label, bytes: null, inRepo: true });
     }
   }
-  if (autoloadedIndexBytes !== null) parts.push({ label: "MEMORY.md", bytes: autoloadedIndexBytes });
+  if (autoloadedIndexBytes !== null) {
+    parts.push({ label: "MEMORY.md", bytes: autoloadedIndexBytes, inRepo: false });
+  }
 
   const lines = autoloadFootprintLines(assessAutoloadFootprint(parts));
   if (lines.length === 0) {
