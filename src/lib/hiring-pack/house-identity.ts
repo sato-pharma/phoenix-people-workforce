@@ -127,7 +127,7 @@ export const HOUSE_TYPE = {
  * It REPLACES the 0.7 mm filled bar that used to sit under the masthead.
  *
  * IT MAKES THE INK RULE MORE TRUE, NOT LESS. The bar it replaces was one of only two deliberately
- * filled elements on these papers; the band is drawn with a 0.32 mm stroke and is line, not area,
+ * filled elements on these papers; the band is drawn with a 0.26 mm stroke and is line, not area,
  * so the identity now spends even less toner while reading as more considered at arm's length.
  *
  * WHY A TILED IMAGE AND NOT AN ELEMENT. Emitting a strip of markup would change the bytes
@@ -143,15 +143,19 @@ export const HOUSE_TYPE = {
  * THE COLOUR IS BAKED INTO THE DATA URI. A `var()` cannot be read from inside one — the SVG is
  * parsed as its own document — so the hex is interpolated here at module load. That is also what
  * keeps the print-color-adjust canary in `tests/hr-forms-house-papers.test.ts` seeing it: the
- * encoded `%230A6BA6` leaves the colour matchable on the declaration itself.
+ * encoded `%230A527D` leaves the colour matchable on the declaration itself.
  * ───────────────────────────────────────────────────────────────────────────────────────────── */
 
 /** One period of the band. The tile width, and therefore the repeat distance. */
 export const HOUSE_BAND_WAVELENGTH_MM = 6;
-/** How tall the band stands. Was 0.7 mm as a filled bar. */
-export const HOUSE_BAND_HEIGHT_MM = 2.4;
-/** Stroke of each pass. Comfortably above the 0.5 pt hairline floor declared below. */
-export const HOUSE_BAND_STROKE_MM = 0.32;
+/** How tall the band stands. Owner's call 2026-09-09, down from 2.4 mm; was 0.7 mm as a filled bar. */
+export const HOUSE_BAND_HEIGHT_MM = 1.5;
+/**
+ * Stroke of each pass. Lightened with the height — at 1.5 mm the old 0.32 mm read as a heavy
+ * squiggle rather than engine turning, because what the eye judges is stroke AGAINST band height.
+ * Still comfortably above the 0.5 pt (0.176 mm) hairline floor declared below.
+ */
+export const HOUSE_BAND_STROKE_MM = 0.26;
 
 /**
  * Percent-encodes an SVG so it can sit in a CSS `url(data:image/svg+xml,…)` with NO QUOTES at all.
@@ -185,7 +189,7 @@ function encodeSvgForCssUrl(svg: string): string {
  * Exported so a Sato template that does not use `houseLetterhead()` can still carry the house
  * ornament by name rather than by copying a data URI it will later fail to update.
  */
-export function houseEngineTurnedBand(color: string = HOUSE_COLORS.blue): string {
+export function houseEngineTurnedBand(color: string = HOUSE_COLORS.deep): string {
   const w = HOUSE_BAND_WAVELENGTH_MM;
   const h = HOUSE_BAND_HEIGHT_MM;
   const mid = h / 2;

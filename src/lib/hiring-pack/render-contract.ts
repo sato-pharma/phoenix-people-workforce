@@ -1028,7 +1028,7 @@ export function renderContractHtml(
     align-items: center;
     gap: 4mm;
     margin-bottom: 2.5mm;
-    padding-bottom: 4.2mm;
+    padding-bottom: 3.3mm;
     /* THE BRAND RULE, now the engine-turned band — the one element the house identity puts on every
        document without exception, and what makes a page recognisable at arm's length. Drawn from
        houseBandBackground() rather than re-typed, because this masthead is one of THREE and they

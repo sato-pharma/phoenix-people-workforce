@@ -542,7 +542,7 @@ export function renderHrPaperHtml(
     align-items: center;
     gap: 4mm;
     margin-bottom: 2.5mm;
-    padding-bottom: 4.2mm;
+    padding-bottom: 3.3mm;
     /* The engine-turned band, from houseBandBackground() rather than re-typed — this is one of
        THREE mastheads in the codebase and they drifted apart once already. A bottom-anchored
        background rather than a border, because a border cannot carry a pattern. */
