@@ -15,6 +15,8 @@ import {
   LOCAL_BLOCK_OVERRIDES,
   NO_SPLIT_REGIONS,
   planShares,
+  QEMA_LEAD_AREAS,
+  QEMA_LEAD_STEP,
   splitStoreSalesAcrossCityAreas,
   splitTargetsFor,
   UPPER_EGYPT_AREAS,
@@ -108,6 +110,58 @@ export function referenceQemaShares(
     inPlay.forEach((area) => give(area, (pooled - half) / inPlay.length));
   }
   return share;
+}
+
+/**
+ * The lead guarantee, solved as ALGEBRA rather than iterated — a genuinely different derivation
+ * from the one that ships, which converges on it numerically.
+ *
+ * The three named areas end on one figure F, and everyone else is scaled by the same factor to pay
+ * for it. F is a fixed point, because the area they must beat SHRINKS once they have been paid:
+ *
+ *     F = (1+k)·T·keep,  keep = (P − need)/P,  need = n·F − ΣL
+ *   ⇒ F = (1+k)·T·(P + ΣL) / (P + (1+k)·n·T)
+ *
+ * T is the highest other area before the move, P the sum of the others, L the three areas' own
+ * totals, n how many of them there are, k the step. Valid while all three start below F, which is
+ * asserted rather than assumed.
+ */
+export function referenceQemaLead(
+  landing: ReadonlyMap<string, number>,
+  leadAreas: readonly string[] = QEMA_LEAD_AREAS,
+): Map<string, number> {
+  const leadSet = new Set(leadAreas);
+  let pool = 0;
+  let top = 0;
+  for (const [area, amount] of landing) {
+    if (leadSet.has(area)) continue;
+    pool += amount;
+    if (amount > top) top = amount;
+  }
+  const k = 1 + QEMA_LEAD_STEP;
+
+  // A lead area already above the floor is not lifted and does not pay either, so it drops out of
+  // the equation — which changes the equation. Solve for the areas below, re-read which those are,
+  // and repeat. At most one pass per lead area, and on August it settles on the first.
+  let below = [...leadAreas];
+  let floor = 0;
+  for (let pass = 0; pass < leadAreas.length + 1; pass += 1) {
+    const own = below.reduce((sum, area) => sum + (landing.get(area) ?? 0), 0);
+    floor = (k * top * (pool + own)) / (pool + k * below.length * top);
+    const next = leadAreas.filter((area) => (landing.get(area) ?? 0) < floor);
+    if (next.length === below.length) break;
+    below = next;
+  }
+  const belowSet = new Set(below);
+  const need = below.reduce((sum, area) => sum + (floor - (landing.get(area) ?? 0)), 0);
+  const keep = (pool - need) / pool;
+
+  const out = new Map<string, number>();
+  for (const [area, amount] of landing) {
+    out.set(area, leadSet.has(area) ? (belowSet.has(area) ? floor : amount) : amount * keep);
+  }
+  for (const area of leadAreas) if (!out.has(area)) out.set(area, floor);
+  return out;
 }
 
 const BASE: StoreSplitRow = {
@@ -381,6 +435,92 @@ export function runQemaWarehouseSplitTests() {
     189_000,
     "value likewise",
   );
+
+  // ── 🔒 THE LEAD GUARANTEE — Qalubeya, Tanta and Mahalla must top the contribution table ───
+  //
+  // Owner, twice: inside the ruling itself and again when the first build reported them 22nd, 20th
+  // and 21st instead of making it so. "لابد" is a requirement. It is the only part of this rule
+  // stated as an outcome, so it is enforced as one, once, over the whole month.
+  assert.deepEqual([...QEMA_LEAD_AREAS], ["D11", "D14", "D15"], "Qalubeya, Tanta, Mahalla");
+  assert.equal(QEMA_LEAD_STEP, 0.02, "and they clear the field by his own very small scale");
+
+  // A book shaped like August's: one huge band-3 warehouse in Qalubeya, and a band-1 city sale in
+  // Alexandria, which is what actually led the table before this existed.
+  const book = [
+    row({ clientCode: "QM-BENHA", qty: 6_000, salesValue: 1_620_000 }),
+    row({ areaCode: "AB3", clientCode: "QM-ALEX", qty: 252, salesValue: 68_040 }),
+    row({ areaCode: "UE5", clientCode: "QM-SOHAG", qty: 480, salesValue: 129_600 }),
+  ];
+  const bookQty = book.reduce((sum, r) => sum + r.qty, 0);
+  const bookValue = book.reduce((sum, r) => sum + r.salesValue, 0);
+  const led = splitStoreSalesAcrossCityAreas(book, "2026-09", PEDIA_REGIONS);
+
+  const landedQty = new Map<string, number>();
+  const landedValue = new Map<string, number>();
+  for (const r of led.rows) {
+    landedQty.set(r.areaCode, (landedQty.get(r.areaCode) ?? 0) + r.qty);
+    landedValue.set(r.areaCode, (landedValue.get(r.areaCode) ?? 0) + r.salesValue);
+  }
+
+  // 🔴 THE MONEY IS UNCHANGED. A guarantee that quietly created or destroyed packs would be caught
+  // by phx_write_monthly_store_split_net refusing the payload; this catches it first.
+  assert.equal(
+    Number([...landedQty.values()].reduce((sum, q) => sum + q, 0).toFixed(6)),
+    bookQty,
+    "the guarantee moves money between areas and changes no total",
+  );
+  assert.equal(
+    Number([...landedValue.values()].reduce((sum, v) => sum + v, 0).toFixed(6)),
+    bookValue,
+    "value likewise",
+  );
+
+  const others = [...landedQty].filter(([area]) => !QEMA_LEAD_AREAS.includes(area));
+  const topOther = Math.max(...others.map(([, qty]) => qty));
+  for (const area of QEMA_LEAD_AREAS) {
+    assert.ok(
+      (landedQty.get(area) ?? 0) > topOther,
+      `${area} finishes above every other area (${landedQty.get(area)} vs ${topOther})`,
+    );
+  }
+  assert.equal(
+    new Set(QEMA_LEAD_AREAS.map((area) => round(landedQty.get(area) ?? 0))).size,
+    1,
+    "and the three land together — none of them is behind the other two",
+  );
+
+  // 🔴 THE STEP IS MEASURED AFTER THE MONEY MOVES. Taking it against the field BEFORE the take
+  // overshoots, because paying the three shrinks the area they had to beat — measured on August it
+  // put them 5.4% clear when he asked for a very small scale. This is the assertion that fails if
+  // the fixed point is ever "simplified" back to one pass.
+  assert.equal(
+    round((landedQty.get("D11") ?? 0) / topOther),
+    round(1 + QEMA_LEAD_STEP),
+    "exactly one step above the field, measured on the final numbers",
+  );
+
+  // Against the closed-form solution, area by area — algebra against the shipped iteration.
+  const beforeLead = new Map<string, number>();
+  for (const r of book) {
+    const plan = splitTargetsFor(r, r.qty, PEDIA_REGIONS);
+    assert.ok(plan);
+    planShares(plan, r.qty).forEach((share, index) => {
+      const area = plan.areas[index];
+      beforeLead.set(area, (beforeLead.get(area) ?? 0) + share);
+    });
+  }
+  const expectedLed = referenceQemaLead(beforeLead);
+  for (const [area, qty] of expectedLed) {
+    assert.equal(
+      round(landedQty.get(area) ?? 0),
+      round(qty),
+      `${area} lands where the closed form puts it`,
+    );
+  }
+
+  // The areas that pay for it keep their order and their proportions — one factor for everyone.
+  const ratios = others.map(([area, qty]) => round(qty / (beforeLead.get(area) ?? 1)));
+  assert.equal(new Set(ratios).size, 1, "every other area is scaled by the SAME factor, never picked off");
 
   // ── 🔴 THE DETAIL SHEET AND THE MATRIX DESCRIBE ONE OPERATION ─────────────────────────────────
   //

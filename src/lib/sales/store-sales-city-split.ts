@@ -622,6 +622,105 @@ export function splitTargetsFor(
 }
 
 /**
+ * 🔒 THE LEAD GUARANTEE — Qalubeya, Tanta and Mahalla MUST top the contribution table.
+ *
+ *   "مع الحفاظ على منطقة القليوبية الاولى و الثانية طنطا لابد ان يكونوا اكبر نسبة contribution"
+ *
+ * Owner, 2026-09-09, twice: once inside the ruling that set the three bands, and again when the
+ * first build reported the three ranked 22nd, 20th and 21st instead of making it so. **"لابد" is
+ * a requirement, not a preference**, and it is the one part of this rule that is stated as an
+ * OUTCOME. So it is enforced as an outcome: whatever the bands and the صعيد pass produce, these
+ * three areas finish above every other area, and the size of the step is his own
+ * "exceeding them, but with a very small scale".
+ *
+ * 🔴 IT CANNOT LIVE IN `splitTargetsFor`, AND THE ARITHMETIC IS WHY — not preference. A plan is
+ * one customer's sale; contribution is the MONTH. A per-row floor is infeasible on a small plan:
+ * a 150-pack Alexandria sale divides across three areas, and no three OTHER areas can each hold
+ * more than the largest of three shares of one. So the guarantee runs once over the finished
+ * landing, per line and per product.
+ *
+ * 🔴 PER PRODUCT, NEVER ACROSS PRODUCTS. A unit total is only meaningful for one product, and
+ * leading on every product implies leading on the line: sum a floor that holds product by product
+ * and it still holds over the sum, because Σ max ≥ max Σ.
+ *
+ * ⚠ The Store Split Detail sheet and the import preview describe one customer's sale being
+ * divided, which is the band plus the صعيد pass. They do NOT show this step, because a month-level
+ * adjustment is not a property of any one sale. The Matrix, the attribution net and the closing all
+ * do. That is a real difference between those surfaces and it is stated rather than hidden.
+ */
+export const QEMA_LEAD_AREAS: readonly string[] = [
+  "D11", // Qalubeya
+  "D14", // Gharbia 1 — Tanta
+  "D15", // Gharbia 2 — Mahalla
+];
+
+/** How far above the highest other area the three land. His "very small scale". */
+export const QEMA_LEAD_STEP = 0.02;
+
+/**
+ * The totals each area must end this line and product on, or null when nothing needs to move.
+ *
+ * Pure and exported so a test can derive the answer without a whole split. `totals` is what the
+ * bands and the صعيد pass landed; the returned map covers exactly the same areas plus any lead
+ * area that landed nothing, and sums to the same total.
+ */
+export function qemaLeadTargets(
+  totals: ReadonlyMap<string, number>,
+  leadAreas: readonly string[],
+): Map<string, number> | null {
+  const lead = leadAreas.map(normalizeArea).filter((area) => area.length > 0);
+  if (lead.length === 0) return null;
+  const leadSet = new Set(lead);
+
+  let pool = 0;
+  let topOther = 0;
+  for (const [area, amount] of totals) {
+    if (leadSet.has(area)) continue;
+    pool += amount;
+    if (amount > topOther) topOther = amount;
+  }
+  if (pool <= 0) return null;
+
+  // 🔴 THE STEP IS MEASURED AFTER THE MONEY MOVES, WHICH MAKES THE FLOOR A FIXED POINT.
+  // Lifting the three is paid for by everyone else, so the area they have to beat is SMALLER once
+  // they have been paid. Taking the floor from the figure before the take overshoots — measured on
+  // August, it landed them 5.4% clear when he asked for a very small scale. Twenty passes settle it
+  // to double precision; the sequence is a contraction, so it converges from any start.
+  let floor = topOther * (1 + QEMA_LEAD_STEP);
+  let shortfall = lead.map((area) => Math.max(0, floor - (totals.get(area) ?? 0)));
+  let need = shortfall.reduce((sum, gap) => sum + gap, 0);
+  for (let pass = 0; pass < 20 && need > 0 && need < pool; pass += 1) {
+    const next = topOther * ((pool - need) / pool) * (1 + QEMA_LEAD_STEP);
+    if (Math.abs(next - floor) <= Number.EPSILON * Math.max(1, floor)) break;
+    floor = next;
+    shortfall = lead.map((area) => Math.max(0, floor - (totals.get(area) ?? 0)));
+    need = shortfall.reduce((sum, gap) => sum + gap, 0);
+  }
+  if (need <= 0) return null;
+
+  // Clamped at the pool. It cannot bind on any real month — the three need a few percent of the
+  // book and the rest of the country holds ninety — but a product sold entirely inside one other
+  // city would otherwise ask for money that does not exist. At the clamp the others reach zero,
+  // which satisfies the guarantee by itself.
+  const take = Math.min(need, pool);
+  const keep = (pool - take) / pool;
+
+  const out = new Map<string, number>();
+  for (const [area, amount] of totals) {
+    if (!leadSet.has(area)) out.set(area, amount * keep);
+  }
+  // The last lead area absorbs the rounding, exactly as evenShares and planShares do, so the
+  // adjusted landing sums back to the untouched one bit for bit.
+  let given = 0;
+  lead.forEach((area, index) => {
+    const share = index < lead.length - 1 ? (take * shortfall[index]) / need : take - given;
+    given += share;
+    out.set(area, (totals.get(area) ?? 0) + share);
+  });
+  return out;
+}
+
+/**
  * 🔒 EL QEMA'S UPPER EGYPT REDISTRIBUTION (تقسيم القمه للصعيد) — owner, 2026-09-09 evening.
  *
  *   "هناخد كل البيع اللي محسوب للصعيد و نعيد توزيعوا 50% منه لكل محافظات الصعيد بالتساوى،
@@ -1064,6 +1163,11 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
   // hand, so it is summed ONCE here and every row of that key is judged on the same number.
   const thresholdByKey = warehouseSplitQtyByKey(rows);
 
+  // Every share El Qema's rule landed, kept for the lead guarantee below. Collected here rather
+  // than re-derived from `out` afterwards because an El Qema row that did NOT split is in `out`
+  // too and must not be rescaled — nothing in the row itself tells the two apart.
+  const qemaLanded: QemaLandedShare<T>[] = [];
+
   for (const row of rows) {
     const rowThreshold = thresholdByKey.get(warehouseSplitKey(row));
     const eligible = isSplitEligible(row, period, rowThreshold, regions);
@@ -1114,6 +1218,9 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
     originMovement.outQty += Number(row.qty) || 0;
     originMovement.outValue += Number(row.salesValue) || 0;
 
+    const isQemaRule = WAREHOUSE_THRESHOLD_DISTRIBUTORS.has(normalizeDistributor(row.distributorCode))
+      && WAREHOUSE_THRESHOLD_LINES.has(lineKey(row.officialLine));
+
     const { areas: landing, qtyShares, valueShares } = levelled;
     landing.forEach((areaCode, index) => {
       const received = movementFor(areaCode, city, line, productCode);
@@ -1122,15 +1229,19 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
       // BOTH area fields move to the share's area. A share is a synthetic row that now genuinely
       // belongs to `areaCode`, so leaving `sheetAreaCode` on the origin would make closingAreaOf
       // report every share as still sitting in the area it came from.
-      out.push({
+      const landed = {
         ...row,
         areaCode,
         qty: qtyShares[index],
         salesValue: valueShares[index],
         sheetAreaCode: areaCode,
-      });
+      };
+      out.push(landed);
+      if (isQemaRule) qemaLanded.push({ row: landed, area: areaCode, city, line, product: productCode });
     });
   }
+
+  applyQemaLeadGuarantee(qemaLanded, movementFor, (created) => out.push(created), regions);
 
   return {
     exemptStoreValueByBrick,
@@ -1142,6 +1253,132 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
     ),
     splitRowCount,
   };
+}
+
+/**
+ * 🔒 Lift Qalubeya, Tanta and Mahalla above every other area, once, over the whole month.
+ *
+ * Runs per line and per product over the shares El Qema's rule already landed, and moves money
+ * between areas without changing what any line or product totals. The rows and the movements are
+ * adjusted from ONE target map, so the Matrix and the attribution net cannot disagree.
+ *
+ * 🔴 A LEAD AREA THAT LANDED NOTHING STILL HAS TO END ON TOP, so this creates a share for it by
+ * cloning the largest row of that line and product. That row carries a customer identity, which is
+ * why it is only ever done for El Qema — whose identity is blanked in every closing detail anyway
+ * (`closing-source-mask.ts`). Any other distributor reaching this code would put a real customer's
+ * name on a sale it never made.
+ *
+ * ⚠ An area the organogram parks in Others is dropped from the guarantee rather than lifted.
+ * Others take nothing is his rule too, and it is the older of the two.
+ */
+type QemaLandedShare<T> = {
+  row: T;
+  area: string;
+  city: string;
+  line: string;
+  product: string;
+};
+
+function applyQemaLeadGuarantee<T extends StoreSplitRow>(
+  landed: readonly QemaLandedShare<T>[],
+  movementFor: (areaCode: string, city: string, line: string, productCode: string) => StoreSplitAreaMovement,
+  pushRow: (row: T) => void,
+  regions: SplitRegions | undefined,
+): void {
+  if (landed.length === 0) return;
+
+  const groups = new Map<string, QemaLandedShare<T>[]>();
+  for (const entry of landed) {
+    const key = `${entry.line}|${entry.product}`;
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(entry);
+    else groups.set(key, [entry]);
+  }
+
+  for (const group of groups.values()) {
+    const line = lineKey(group[0].line);
+    const excluded = OTHERS_EXCLUDED_LINES.has(line) ? (regions?.others ?? NO_AREAS) : NO_AREAS;
+    const leadAreas = QEMA_LEAD_AREAS.filter((area) => !excluded.has(area));
+    if (leadAreas.length === 0) continue;
+
+    const rowsByArea = new Map<string, QemaLandedShare<T>[]>();
+    const qtyByArea = new Map<string, number>();
+    const valueByArea = new Map<string, number>();
+    for (const entry of group) {
+      const bucket = rowsByArea.get(entry.area);
+      if (bucket) bucket.push(entry);
+      else rowsByArea.set(entry.area, [entry]);
+      qtyByArea.set(entry.area, (qtyByArea.get(entry.area) ?? 0) + (Number(entry.row.qty) || 0));
+      valueByArea.set(entry.area, (valueByArea.get(entry.area) ?? 0) + (Number(entry.row.salesValue) || 0));
+    }
+
+    // Units and money are targeted separately. They move together on every El Qema row today
+    // because one product carries one price, and they would not on a product priced two ways —
+    // deriving money from the unit ratio would then quietly reprice it.
+    const qtyTargets = qemaLeadTargets(qtyByArea, leadAreas);
+    const valueTargets = qemaLeadTargets(valueByArea, leadAreas);
+    if (!qtyTargets && !valueTargets) continue;
+
+    // The biggest row of the group is the template for a lead area that landed nothing.
+    const template = group.reduce(
+      (biggest, entry) => ((Number(entry.row.qty) || 0) > (Number(biggest.row.qty) || 0) ? entry : biggest),
+      group[0],
+    );
+
+    const areas = new Set<string>([
+      ...rowsByArea.keys(),
+      ...(qtyTargets?.keys() ?? []),
+      ...(valueTargets?.keys() ?? []),
+    ]);
+    for (const area of areas) {
+      const beforeQty = qtyByArea.get(area) ?? 0;
+      const beforeValue = valueByArea.get(area) ?? 0;
+      const afterQty = qtyTargets?.get(area) ?? beforeQty;
+      const afterValue = valueTargets?.get(area) ?? beforeValue;
+      if (afterQty === beforeQty && afterValue === beforeValue) continue;
+
+      let bucket = rowsByArea.get(area);
+      if (!bucket) {
+        // Nothing landed here, so there is no row to scale. Clone the template into this area, at
+        // zero, and let the loop below fill it — one code path for both cases.
+        const created: QemaLandedShare<T> = {
+          ...template,
+          area,
+          row: { ...template.row, areaCode: area, qty: 0, salesValue: 0, sheetAreaCode: area },
+        };
+        pushRow(created.row);
+        bucket = [created];
+        rowsByArea.set(area, bucket);
+      }
+
+      // Scaled by ratio where there is something to scale, and put wholly on the last row where
+      // there is not. The last row absorbs the remainder either way, so the area lands EXACTLY on
+      // its target rather than on the sum of several roundings.
+      let placedQty = 0;
+      let placedValue = 0;
+      bucket.forEach((entry, index) => {
+        const last = index === bucket.length - 1;
+        const qty = last
+          ? afterQty - placedQty
+          : (beforeQty > 0 ? ((Number(entry.row.qty) || 0) * afterQty) / beforeQty : afterQty / bucket.length);
+        const value = last
+          ? afterValue - placedValue
+          : (beforeValue > 0
+            ? ((Number(entry.row.salesValue) || 0) * afterValue) / beforeValue
+            : afterValue / bucket.length);
+        placedQty += qty;
+        placedValue += value;
+        entry.row.qty = qty;
+        entry.row.salesValue = value;
+      });
+
+      // The movement is adjusted by the DELTA, never overwritten: an area+line+product cell can
+      // hold another distributor's split as well, and this rule is El Qema's alone.
+      const movement = movementFor(area, bucket[0].city, bucket[0].line, bucket[0].product);
+      movement.inQty += afterQty - beforeQty;
+      movement.inValue += afterValue - beforeValue;
+    }
+  }
 }
 
 /** Net effect on an area+line: positive means the area gains from the split. */

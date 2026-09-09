@@ -12,7 +12,7 @@ import { othersLookupLineCode, usesOrganogramRegions } from "@/lib/sales/closing
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { ALL_SPLIT_AREAS } from "@/lib/sales/store-sales-city-split";
 
-import { referenceQemaShares } from "./qema-warehouse-split.test.ts";
+import { referenceQemaLead, referenceQemaShares } from "./qema-warehouse-split.test.ts";
 
 /**
  * ATTRIBUTION MUST SEE THE SAME SPLIT THE CLOSING DOES.
@@ -135,8 +135,11 @@ export function runAttributionStoreSplitNetTests() {
   // is that share minus whatever the area sold. Nothing here is passed a regions map, so Others is
   // empty and all 49 areas are in play — which is what makes 49 the count asserted above.
   const NO_OTHERS: ReadonlySet<string> = new Set<string>();
-  const shareOf = (origin: string, code: string, total: number) =>
-    referenceQemaShares(origin, total, total, NO_OTHERS).get(code) ?? 0;
+  // The bands and the صعيد pass divide one sale; the lead guarantee then runs ONCE over the month.
+  // Both are applied here, in that order, because `buildStoreSplitNetPayload` applies both — the
+  // guarantee is what puts Qalubeya, Tanta and Mahalla on top and it moves every other area too.
+  const shareOf = (origin: string, code: string, bandQty: number, total = bandQty) =>
+    referenceQemaLead(referenceQemaShares(origin, bandQty, total, NO_OTHERS)).get(code) ?? 0;
 
   const origin = august.find((row) => row.area_code === "D11");
   assert.ok(origin, "the origin area is in the net");
@@ -156,11 +159,21 @@ export function runAttributionStoreSplitNetTests() {
     Number(netOf("D21").toFixed(9)),
     "the national half is flat outside Upper Egypt",
   );
-  for (const code of ["AB1", "UE7", "OT7", "CA1", "GZ6"]) {
+  for (const code of ["AB1", "UE7", "OT7", "CA1", "GZ6", "D14", "D15"]) {
     assert.ok(
       Math.abs(netOf(code) - shareOf("D11", code, 700)) < 1e-6,
       `${code} receives what his rule gives it, got ${netOf(code)}`,
     );
+  }
+  // 🔒 AND THE THREE HE NAMED FINISH ON TOP, seen through the net attribution actually reads.
+  // Qalubeya SOLD this row, so its net is deeply negative while its LANDING is the highest in the
+  // country. Reading the net alone reports the opposite, which is why the landing is rebuilt here.
+  const landed = (code: string) => netOf(code) + (code === "D11" ? 700 : 0);
+  const topOther = Math.max(
+    ...august.filter((r) => !["D11", "D14", "D15"].includes(r.area_code)).map((r) => landed(r.area_code)),
+  );
+  for (const code of ["D11", "D14", "D15"]) {
+    assert.ok(landed(code) > topOther, `${code} tops the table, got ${landed(code)} against ${topOther}`);
   }
 
   // ── THE PER-LINE GATE. Pedia starts in August; every other line starts in September. ───────────
@@ -224,10 +237,7 @@ export function runAttributionStoreSplitNetTests() {
   // 🔴 The BAND is judged on the invoiced 700 for BOTH passes — only the amount divided changes.
   // Re-banding the effective pass on 630 would put units and money on two different geometries.
   assert.ok(
-    Math.abs(
-      discountedOrigin.net_effective_units
-      - ((referenceQemaShares("D11", 700, 630, NO_OTHERS).get("D11") ?? 0) - 630),
-    ) < 1e-6,
+    Math.abs(discountedOrigin.net_effective_units - (shareOf("D11", "D11", 700, 630) - 630)) < 1e-6,
     "money moves on the effective units, not on the invoiced quantity",
   );
   assert.notEqual(

@@ -1127,7 +1127,7 @@ The Source of Sales dashboard's distributor breakdown and the import batches lis
 this change. The batches list is Super Admin only already; the dashboard breakdown has not been
 checked and may still name El Qema.
 
-## The three bands and the صعيد redistribution — owner ruling, 2026-09-09 evening (CURRENT)
+## The three bands, the صعيد pass and the lead guarantee — owner ruling, 2026-09-09 evening (CURRENT)
 
 This is the live El Qema rule. Every El Qema section below it is history, kept dated and unrewritten.
 
@@ -1181,6 +1181,45 @@ for UE-1 and UE-2, and `upperEgyptAreasFor` widens it with any UE-prefixed regio
 holds, then subtracts Others. **Nine areas in August** (Qena 2 and Luxor are parked in Others),
 **eleven from September**, with no code change on the day. Aswan is not Upper Egypt for this rule.
 
+### 🔒 THE LEAD GUARANTEE — Qalubeya, Tanta and Mahalla top the table
+
+> مع الحفاظ على منطقة القليوبية الاولى و الثانية طنطا لابد ان يكونوا اكبر نسبة contribution
+
+Asked which areas he meant, he chose **Qalubeya (D11), Gharbia 1 / Tanta (D14), Gharbia 2 / Mahalla
+(D15)**.
+
+🔴 **THIS WAS BUILT ONCE AS A REPORT AND HE REJECTED THAT, IN THOSE WORDS.** The first build
+implemented the bands and the صعيد pass, measured the three at ranks 22, 20 and 21, and put the gap
+back to him as a question. His answer was *"didn't I tell the fuck out of you that those three areas
+Tanta, Mahalla and Al-Yubayya should be the biggest contribution in all areas"*. **"لابد" is a
+requirement.** An outcome he states is a rule to enforce, not a finding to report — and he had
+already said it once inside the ruling itself, so it was said twice before it was built.
+
+**How it works.** After the bands and the صعيد pass, the three named areas are lifted to one figure
+and everyone else is scaled down pro rata to pay for it. The step is **2%**, his own *"exceeding
+them, but with a very small scale"*.
+
+🔴 **IT CANNOT LIVE IN `splitTargetsFor`, AND THE ARITHMETIC IS WHY.** A plan is one customer's
+sale; contribution is the month. A per-row floor is infeasible on a small plan — a 150-pack
+Alexandria sale divides across three areas, and no three OTHER areas can each hold more than the
+largest of three shares of one. So the guarantee runs once over the finished landing, per line and
+per product. Per product because a unit total means nothing across products, and leading product by
+product implies leading on the line, since Σ max ≥ max Σ.
+
+🔴 **THE STEP IS A FIXED POINT.** Paying the three shrinks the area they have to beat, so
+taking 2% of the field as it stood BEFORE the move overshoots — measured on August it landed them
+5.4% clear when he asked for a very small scale. The shipping code iterates to the fixed point; the
+test solves the same equation as algebra, which is a genuinely different derivation:
+
+    F = (1+k)·T·(P + ΣL) / (P + (1+k)·n·T)
+
+⚠ **THE DETAIL SHEET AND THE IMPORT PREVIEW DO NOT SHOW IT**, and that is correct rather than a
+bug: both describe one customer's sale being divided, and a month-level adjustment is not a property
+of any one sale. The Matrix, the attribution net and the closing all carry it.
+
+⚠ **A lead area parked in Others is dropped from the guarantee rather than lifted.** Others
+take nothing is his rule too, and it is the older of the two.
+
 ### August 2026, measured
 
 8,768 packs and 2,367,360 EGP over 38 areas, landing exactly, with **no area going negative** — the
@@ -1189,31 +1228,23 @@ Fayoum and Suez negatives the ladder produced are gone. The band mix by packs: *
 
 | | Contribution | Note |
 | --- | --- | --- |
-| Alexandria × 3 | 3.565% | leads — 252 packs sold into a three-area city, band 2 |
-| Cairo × 5 | 3.232% | |
-| Gharbia 1 (Tanta), Gharbia 2 (Mahalla) | 2.675% | ranks 20 and 21 of 38 |
-| Qalubeya | 2.630% | rank **22 of 38** |
-| Upper Egypt × 9 | 2.058% | every one identical, Fayoum and Beni Suef included |
+| **Qalubeya, Tanta, Mahalla** | **3.531%** | ranks 1 to 3, exactly 2% clear of the field |
+| Alexandria × 3 | 3.462% | led at 3.565% before the guarantee |
+| Cairo × 5 | 3.139% | |
+| Sharkia × 2 | 2.856% | |
+| Upper Egypt × 9 | 1.989% | every one identical, Fayoum and Beni Suef included |
 | Ismailia | 0.274% | in Others: keeps its own 24 packs, receives nothing |
 
-### 🔴 HIS CONSTRAINT IS NOT MET, AND NO PART OF THIS RULE CAN MEET IT
+Without the guarantee the same book put Alexandria first at 3.565% and the three named areas at
+ranks 22, 20 and 21 — Qalubeya on 2.630%. **Qalubeya's own 6,644 packs buy it nothing**, because
+every one of them is band 3 and step 3 pays every area the same. That is why the guarantee exists
+and why no weighting inside the bands could have replaced it.
 
-> مع الحفاظ على منطقة القليوبية الاولى و الثانية طنطا لابد ان يكونوا اكبر نسبة contribution
+### ⚠ Why the 75/25 was never the answer to the lead requirement
 
-Asked which areas he meant, he chose **Qalubeya (D11), Gharbia 1 / Tanta (D14), Gharbia 2 / Mahalla
-(D15)**. They rank 22, 20 and 21 of 38.
-
-**This is an outcome he wants, not a mechanism he described**, and the mechanism he DID describe
-cannot produce it. The reason is step 3, in his own words: at 1,000 packs and above the sale spreads
-flat with no governorate advantage at all. Qalubeya's own book is 6,644 of the month's 8,768 packs
-and every pack of it is band 3, so Qalubeya's own volume buys it nothing. Alexandria leads instead,
-on 252 packs, because a three-area city keeps half of a band-2 sale between three reps.
-
-⚠ **The 75/25 would not fix it either.** It only ever applied in bands 1 and 2, and Qalubeya's
-sales are band 3. Re-adding it moves Qalubeya by nothing worth measuring.
-
-**So the only lever that produces his stated outcome is a weighting on the named areas — which is
-exactly what the priority ladder was, and he removed it.** Do not invent one. Put the gap to him.
+It only ever applied in bands 1 and 2, and Qalubeya's sales are band 3, so re-adding it moves
+Qalubeya by nothing worth measuring. Reaching for it when the three are not on top is the obvious
+move and it does not work.
 
 ### What this removed, all of it his, none of it a bug to restore
 
