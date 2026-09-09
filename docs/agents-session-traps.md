@@ -478,6 +478,57 @@ coming undone. Fixed by mapping the whole list in one pass (PR #3541).
   409" and "0 have a stored file"; chunked at 50 the truth was **10**. Chunk every `.in()` at ~50, and
   print the row count of the intermediate fetch — a pool of 409 candidates cannot return 0 extraction
   rows, which is what exposed it. `postgrest-in-with-hundreds-of-ids-silently-returns-nothing`
+
+  **That is the QUIET mode, and it is not the only one.** The same filter also fails LOUDLY, two
+  ways, and neither message says anything about a filter being too long — so a session carrying only
+  the hook above goes hunting for missing data when what it actually has is a hard error. Both were
+  re-measured against production (`ozucdzovmcqvepbozvqf`) on 2026-09-10 while fixing
+  `/admin/customer-pharmacy-mapping` (PR #3627), where they fired one after the other.
+
+  **ONE `null` in the id array fails the WHOLE request.** postgrest-js stringifies each value into
+  the filter, so a JavaScript `null` reaches Postgres as the literal text `null` and the read comes
+  back `22P02 invalid input syntax for type uuid: "null"`. Measured through the real client rather
+  than a hand-built URL — `.in("id", [<four real uuids>, null])` returns exactly that. There is no
+  per-row degradation and no partial answer: the read throws, and on that page every customer
+  vanished behind an opaque "Customer pharmacy mapping failed." **`new Set(ids)` does not save you**
+  — it dedupes the null down to a single entry and then sends it. And the column is nullable **on
+  purpose**: `marketing_customer_pharmacies.distributor_code_id` is empty for a venue with no
+  distributor account, which is the owner's own filing rather than a defect (§4.1, `nursery`), so
+  this is not a data shape that gets cleaned up behind you. Live 2026-09-10: **444** active links,
+  **4** of them NULL, **410** distinct real ids. Drop nullish ids and dedupe in one pass, before the
+  array reaches the filter.
+
+  **Then the read that SUCCEEDS overflows the response headers.** PostgREST echoes the query string
+  back in the `Content-Location` **response** header, so the URL is paid for twice — once going out,
+  once coming back inside a header block Node caps at 16,384 bytes
+  (`require("http").maxHeaderSize`). Past that, `fetch` rejects with `TypeError: fetch failed` and
+  `UND_ERR_HEADERS_OVERFLOW` on its `cause`. **That reads as a network fault**, which is the whole
+  trap: the server did the work and answered correctly, the message names neither the filter nor its
+  length, and the obvious next move is to retry the same query or blame the Atlantic hop.
+
+  **The cliff sits LOWER than the URL length suggests, because the echo is longer than what you
+  sent.** PostgREST percent-encodes on the way back, so `Content-Location` runs a few percent over
+  the request URL — measured on this route, a 1,994-character URL echoed at 2,052 and a
+  14,759-character URL at 15,507. Binary-searched against production the same day, on the page's own
+  `select`: **395 ids succeed and 396 throw**, so the break arrives at a request URL of roughly
+  **14.8KB**, about 1.6KB below the header cap, with the rest of the response headers making up the
+  difference. "My URL is under 16KB" is therefore not a safety argument.
+
+  **Expect them in that order, and do not stop at the first.** With the null still in the array
+  Postgres rejects the request, and a 400 carries no long `Content-Location` — measured, the header
+  is absent entirely — so the overflow stays invisible until the null is fixed. Replaying the exact
+  production shape proves it: `new Set()` over the live column gives **411** entries, 410 real ids
+  plus one null, and one unchunked `.in()` over all 411 returns the `22P02`, never the overflow.
+  Repairing the first failure is what exposes the second, so a session that fixes the null and ships
+  has shipped a page that still cannot load.
+
+  **~50 answers all three modes at once**, which is why a single chunk size is the whole fix: 50
+  uuids build a filter of about 1.9KB, comfortably inside every cap. `IN_CHUNK_SIZE` in
+  `src/lib/customer-pharmacy-mapping/readiness.ts` stood at **500** — a number that looks
+  conservative beside the 409-id incident above and is over the cliff on its own — which PR #3627
+  drops to 50. That PR also pins both loud halves in
+  `tests/customer-pharmacy-mapping-readiness.test.ts`: no nullish id survives into a filter, and the
+  longest filter the chunker emits stays far under 16KB.
 - **Two more PostgREST filters that answer WRONG with no error** (relocated from `MEMORY.md`
   2026-08-28 together with their index line). **A `neq` against a jsonb key that is ABSENT matches
   ZERO rows** — `NULL <> 'true'` is NULL, not true — so an "exclude the flagged rows" filter
