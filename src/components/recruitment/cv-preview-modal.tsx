@@ -42,6 +42,14 @@ type CvDownloadAllowance = {
    * screen decorative, since a manager who wants a number would simply learn to look there.
    */
   redactPhones?: boolean;
+  /**
+   * Called when the reader follows the lock notice back to the CV he owes.
+   *
+   * The modal has to CLOSE for that link to be any use — an anchor to a card behind an open dialog
+   * scrolls a page nobody can see. The modal passes its own onClose; the in-page renderer has no
+   * dialog to close and passes nothing.
+   */
+  onLockedLinkFollowed?: () => void;
 };
 
 type CvDocumentProps = CvDownloadAllowance & {
@@ -134,6 +142,7 @@ export function CvDocumentView({
   downloadUrl,
   fileName,
   mimeType,
+  onLockedLinkFollowed,
   redactPhones = false,
   fitToWidth = true,
 }: CvDocumentProps) {
@@ -152,6 +161,8 @@ export function CvDocumentView({
   const pdfContainerRef = useRef<HTMLDivElement | null>(null);
   const [loading, setLoading] = useState(kind === "docx" || kind === "pdf" || kind === "image");
   const [error, setError] = useState<string | null>(null);
+  /** Set when the FEEDBACK LOCK refused the file — a 423, never a broken document. See the fetch. */
+  const [locked, setLocked] = useState<{ candidateId: string; message: string } | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
 
   // ── Fit to the width we were actually given ────────────────────────────────
@@ -221,7 +232,32 @@ export function CvDocumentView({
     void (async () => {
       try {
         const res = await fetch(bytesUrl);
-        if (!res.ok) throw new Error("Could not load the document.");
+        if (!res.ok) {
+          // ── 423 IS NOT A BROKEN DOCUMENT ────────────────────────────────────────────────────
+          //
+          // The feedback lock answers 423 with the CV the reader still owes. Treating that as an
+          // ordinary load failure is what the owner saw on 2026-09-09: the preview told him the
+          // document could not be read and to ask the recruitment team for a copy, when nothing was
+          // wrong with the file and the only thing he had to do was write a comment. A wrong
+          // explanation is worse than none — it sends him to somebody else with a problem that is
+          // his own to clear, and it makes a working lock look like a broken CV.
+          if (res.status === 423) {
+            const data = (await res.json().catch(() => ({}))) as {
+              message?: string;
+              outstanding?: { candidateId?: string };
+            };
+            if (!active) return;
+            setLocked({
+              candidateId: String(data.outstanding?.candidateId ?? ""),
+              message:
+                typeof data.message === "string" && data.message
+                  ? data.message
+                  : "To view more CVs you must reply on the CV you already opened.",
+            });
+            return;
+          }
+          throw new Error("Could not load the document.");
+        }
         const bytes = base64ToBytes(await res.text());
 
         if (kind === "image") {
@@ -405,6 +441,24 @@ export function CvDocumentView({
   // the file, so offering it to a manager would hand back in a failure state exactly what the block
   // takes away in the working one. He is told what to do instead, in words, rather than being left
   // looking at a red sentence with nothing under it.
+  // THE LOCK SPEAKS FIRST, and it is not an error. It is a step the reader has to take, so it reads
+  // as an instruction with the way out attached, not as a red failure about a document that is
+  // perfectly fine.
+  const lockNotice = locked ? (
+    <div className="border-l-2 border-amber-500 bg-amber-50 p-3 text-sm text-amber-900">
+      <p className="font-semibold">{locked.message}</p>
+      {locked.candidateId ? (
+        <a
+          className="mt-1 inline-block font-semibold text-amber-900 underline underline-offset-2"
+          href={`#candidate-${locked.candidateId}`}
+          onClick={onLockedLinkFollowed}
+        >
+          Go to that CV →
+        </a>
+      ) : null}
+    </div>
+  ) : null;
+
   const failureNotice = error ? (
     <div className="p-1 text-sm">
       <p className="text-rose-600">{error}</p>
@@ -427,8 +481,12 @@ export function CvDocumentView({
     </div>
   ) : null;
 
-  const documentBody =
-    kind === "pdf" ? (
+  // WHEN THE LOCK REFUSED, THE LOCK IS THE WHOLE BODY. There is no document to show and nothing
+  // loading, so a spinner or a red error beside the notice would only muddy an instruction that is
+  // already complete on its own.
+  const documentBody = locked ? (
+    <div className="min-h-full bg-slate-100 p-4">{lockNotice}</div>
+  ) : kind === "pdf" ? (
       <div className="min-h-full bg-slate-100 p-4">
         {loading ? <p className="p-1 text-sm text-slate-500">Loading preview…</p> : null}
         {failureNotice}
@@ -542,6 +600,7 @@ export function CvPreviewModal({
       downloadUrl={downloadUrl}
       fileName={fileName}
       mimeType={mimeType}
+      onLockedLinkFollowed={onClose}
       redactPhones={redactPhones}
     />
   );

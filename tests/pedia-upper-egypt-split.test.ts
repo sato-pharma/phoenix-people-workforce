@@ -4,11 +4,41 @@ import {
   buildOperationalRegionMap,
   closingRegionsAsOfDate,
   othersAreasFrom,
+  splitRegionsFrom,
 } from "../src/lib/sales/closing-organogram-regions.ts";
 import {
   ALL_SPLIT_AREAS,
-  qemaLadderPlan,
+  planShares,
+  splitTargetsFor,
+  type StoreSplitRow,
 } from "../src/lib/sales/store-sales-city-split.ts";
+
+/**
+ * The areas El Qema's book can reach on this line — the divisor this file exists to pin. It is
+ * ALL_SPLIT_AREAS less whatever the organogram parks in Others, and nothing else: the exclusion
+ * keys on operational_region_code alone, never on area_state and never on whether an area carries
+ * a target.
+ */
+const inPlayFor = (others: ReadonlySet<string>) =>
+  ALL_SPLIT_AREAS.filter((area) => !others.has(area));
+
+/** A 6,000-pack Benha order. Band 3, so it reaches every area in play and nothing else varies. */
+const QEMA_ROW: StoreSplitRow = {
+  areaCode: "D11",
+  clientCode: "QM-9001",
+  clientName: "مخزن بنها",
+  distributorCode: "QM",
+  includedInClosing: true,
+  isDirect: false,
+  officialLine: "Pedia",
+  productCode: "LA001",
+  qty: 6_000,
+  salesValue: 1_620_000,
+};
+
+/** El Qema's real plan for that order, read through the same organogram the closing reads. */
+const qemaPlanFor = (map: Parameters<typeof splitRegionsFrom>[0]) =>
+  splitTargetsFor(QEMA_ROW, 6_000, splitRegionsFrom(map));
 
 /**
  * 🔒 THE AUGUST / UPPER EGYPT GOLDEN RULE — owner, 2026-09-09, said three times in one message:
@@ -29,8 +59,8 @@ import {
  * closed. So August reaches only the pre-split rows no matter when August is finally run, and
  * nobody has to remember anything on the 1st.
  *
- * 🔴 THE MONEY IS IN THE DIVISOR. El Qema's priority ladder spreads that distributor's whole Pedia
- * book across every area the line has EXCEPT those parked in Others, and the exclusion keys on
+ * 🔴 THE MONEY IS IN THE DIVISOR. El Qema's rule spreads that distributor's Pedia
+ * book across the areas the line has EXCEPT those parked in Others, and the exclusion keys on
  * operational_region_code = 'OT' alone — never on area_state, never on whether an area carries a
  * target. Qena 2 and Luxor leave Others in this move, so the divisor goes 37 → 39 in September
  * while August stays on 37. An off-by-one-day pair would move a month he has forbidden anyone to
@@ -39,7 +69,7 @@ import {
  *
  * 🔴 LUXOR IS NOT A SEPARATE AREA — "Luxor is with Qena 2 ... not a separate area." It joins Upper
  * Egypt 2 as other_permanent with no rep seat, so it carries no target of its own. It still takes a
- * ladder share, because the ladder counts AREAS and not reps, and no area_state changes that. That
+ * share, because the rule counts AREAS and not reps, and no area_state changes that. That
  * is not a defect: it is the same shape as OT9 Ismailia riding into Delta (3).
  */
 
@@ -190,7 +220,7 @@ export function runPediaUpperEgyptSplitTests() {
   assert.equal([...(august?.regionCodes ?? [])].includes("UE-1"), false, "no Upper Egypt 1 in August");
   assert.equal([...(august?.regionCodes ?? [])].includes("UE-2"), false, "no Upper Egypt 2 in August");
 
-  // ── The Others set, which is what the El Qema ladder actually spends ──────────────────────────
+  // ── The Others set, which is what the El Qema rule actually spends ──────────────────────────
   const augustOthers = othersAreasFrom(august);
   const septemberOthers = othersAreasFrom(september);
 
@@ -203,27 +233,28 @@ export function runPediaUpperEgyptSplitTests() {
 
   // ── The divisor, stated as the numbers he was given ───────────────────────────────────────────
   assert.equal(ALL_SPLIT_AREAS.length, 49, "the split geography holds 49 areas");
-  const augustPlan = qemaLadderPlan(augustOthers);
-  const septemberPlan = qemaLadderPlan(septemberOthers);
-  assert.equal(augustPlan?.areas.length, 37, "August divides El Qema's book over 37 areas");
-  assert.equal(septemberPlan?.areas.length, 39, "September divides it over 39");
+  assert.equal(inPlayFor(augustOthers).length, 37, "August divides El Qema's book over 37 areas");
+  assert.equal(inPlayFor(septemberOthers).length, 39, "September divides it over 39");
 
   // ── The retired area, and why neither half's count of Others is the number that matters ────────
   assert.equal(augustOthers.has("OT3"), false, "a row whose effective_to has passed is not in force here");
   assert.equal(ALL_SPLIT_AREAS.includes("OT3"), false, "and Aswan (Legacy) is not in the split geography at all");
   assert.equal(
-    qemaLadderPlan(new Set([...augustOthers, "OT3"]))?.areas.length,
-    augustPlan?.areas.length,
+    inPlayFor(new Set([...augustOthers, "OT3"])).length,
+    inPlayFor(augustOthers).length,
     "so the divisor is 37 whether or not the retired area is counted in Others — which is why the migration names the two areas that move instead of counting the region",
   );
-  // Fractions of 37 and of 39 do not sum to exactly 1 in binary floating point, and they are not
-  // meant to: planShares is what turns them back into whole packs. A tolerance here, an exact total
-  // downstream.
-  [augustPlan, septemberPlan].forEach((plan, index) => {
-    const total = (plan?.homeWeights ?? []).reduce((sum, weight) => sum + weight, 0);
-    assert.ok(
-      Math.abs(total - 1) < 1e-9,
-      `${index === 0 ? "August" : "September"} weights are fractions of the whole, so no packs are created or lost (got ${total})`,
+  // Through the real rule rather than through a divisor: a 6,000-pack order in each month reaches
+  // exactly that many areas and still hands back every pack. Fractions of 37 and of 39 do not sum
+  // to 1 in binary floating point and are not meant to — planShares is what turns them into packs.
+  ([["August", august, 37], ["September", september, 39]] as const).forEach(([label, map, divisor]) => {
+    const plan = qemaPlanFor(map);
+    assert.ok(plan, `${label} resolves an El Qema plan`);
+    assert.equal(plan.areas.length, divisor, `${label} reaches ${divisor} areas`);
+    assert.equal(
+      planShares(plan, 6_000).reduce((sum, share) => sum + share, 0),
+      6_000,
+      `${label} hands back every pack exactly`,
     );
   });
 
@@ -240,8 +271,8 @@ export function runPediaUpperEgyptSplitTests() {
     "writing the September rows must not move a single area out of August's Others",
   );
   assert.deepEqual(
-    qemaLadderPlan(othersAreasFrom(augustAfterTheMigration)),
-    qemaLadderPlan(othersAreasFrom(augustBeforeTheMigration)),
+    qemaPlanFor(augustAfterTheMigration),
+    qemaPlanFor(augustBeforeTheMigration),
     "August's El Qema distribution is byte-identical before and after the split is written — this is the snapshot he asked for",
   );
   MOVERS.forEach(([area, leaves]) => {

@@ -115,10 +115,21 @@ export function cvOpenRefusal(
   return feedbackBlockMessage(outstanding);
 }
 
-/** The sentence the manager reads, naming the person he owes it on. */
+/**
+ * The sentence the manager reads, in the owner's own words.
+ *
+ * He dictated it on 2026-09-09: *"show them message to be able to open this CV or any other you must
+ * put your feedback to the ones you opened before."* Kept as given rather than improved on — it
+ * states the condition and the remedy in one line, which is everything a blocked manager needs.
+ *
+ * The candidate is NAMED after it. Only one CV can be outstanding at a time, so "the ones you opened
+ * before" resolves to exactly one person, and saying which turns a rule into an errand he can
+ * finish. Without the name he has to go and work out which CV the system means.
+ */
 export function feedbackBlockMessage(outstanding: OutstandingFeedback): string {
-  const who = String(outstanding.candidateName ?? "").trim() || "the CV you opened";
-  return `Write your feedback on ${who} before you open another CV. Say whether you called them and what came of it, so nobody from Sato Pharma calls them a second time.`;
+  const who = String(outstanding.candidateName ?? "").trim();
+  const opener = "To open this CV or any other, you must put your feedback on the ones you opened before.";
+  return who ? `${opener} Start with ${who}.` : opener;
 }
 
 /** Whether this viewer is the one who owes the feedback. Used only to keep the message honest. */
