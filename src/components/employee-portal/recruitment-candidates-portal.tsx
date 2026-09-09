@@ -21,6 +21,7 @@ import { dateOnly } from "@/lib/format/date-only";
 import { APPLIED_FOR_SOURCE_LABEL, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateCallClaim, CandidateCallClaims } from "@/lib/recruitment/candidate-call-claims";
+import type { OutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock";
 import {
   CANDIDATE_STATUS_NOTE_MAX_LENGTH,
   candidateStatusLabel,
@@ -59,6 +60,14 @@ type Props = {
    * without the table answers — is the pre-claim screen and is deliberately not an error state.
    */
   initialCallClaims: CandidateCallClaims;
+  /**
+   * The CV this manager opened and has not yet written about, read on the server with the page.
+   *
+   * The owner, 2026-09-09, on candidates being telephoned twice: he must write what he found before
+   * he may open another CV. Null is the normal state. The server refuses the file regardless; this
+   * is what lets the card say so instead of a preview breaking.
+   */
+  initialOutstandingFeedback: OutstandingFeedback | null;
   /**
    * This manager's own districts, and inside each one a folder per area he holds — every area,
    * including the ones nobody has applied to. Empty for anybody who holds no district seat, which is
@@ -171,6 +180,8 @@ function CandidateCard({
   claim,
   files,
   onChanged,
+  onFeedbackGiven,
+  outstandingFeedback,
   viewerHrId,
 }: {
   application: ApplicationWithContext;
@@ -179,6 +190,10 @@ function CandidateCard({
   /** Loaded with the page, for the same reason as the sent-to-you cards. */
   files: TeamCandidateFile[];
   onChanged: () => void;
+  /** He writes the feedback he owed, so the block lifts without a reload. */
+  onFeedbackGiven: (candidateId: string) => void;
+  /** The CV he owes feedback on, which blocks him opening any other. */
+  outstandingFeedback: OutstandingFeedback | null;
   viewerHrId: string | null;
 }) {
   const candidate = application.candidate!;
@@ -286,7 +301,7 @@ function CandidateCard({
     .join(" · ");
 
   return (
-    <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6">
+    <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6" id={`candidate-${candidate.id}`}>
       <CandidateCallNotice claim={call.claim} viewerHrId={viewerHrId} />
 
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -316,13 +331,29 @@ function CandidateCard({
         {candidate.hasMedicalRepExperience ? <Field label="Medical Rep tenure" value={tenureLine} /> : null}
       </div>
 
-      <CandidateCvActions candidateId={candidate.id} initialFiles={files} showPhoneNumbers={call.mine} />
+      <CandidateCvActions
+        candidateId={candidate.id}
+        initialFiles={files}
+        outstandingFeedback={outstandingFeedback}
+        showPhoneNumbers={call.mine}
+      />
 
       <CandidateCallControl
         canAct={canAct}
         candidateId={candidate.id}
         claim={call.claim}
         onChanged={call.apply}
+        viewerHrId={viewerHrId}
+      />
+
+      {/* ADDED WITH THE FEEDBACK LOCK, and required by it rather than decorative. Opening a CV here
+          creates the same obligation as opening one anywhere else, and this was the one card in the
+          portal with nowhere to write anything — a manager who opened an applicant in his own
+          interview round would have been locked out of every other CV with nothing on the screen in
+          front of him that could release it. */}
+      <CandidateCommentThread
+        candidateId={candidate.id}
+        onCommentAdded={onFeedbackGiven}
         viewerHrId={viewerHrId}
       />
 
@@ -417,7 +448,9 @@ function SentCandidateCard({
   claim: initialClaim,
   filing,
   files,
+  onFeedbackGiven,
   onFilingChanged,
+  outstandingFeedback,
   viewerHrId,
 }: {
   areaOptions: CandidateFolderAreaOption[];
@@ -428,7 +461,11 @@ function SentCandidateCard({
   filing: ManagerFolderFiling | null;
   /** This candidate's files, already loaded with the list — so View CV is there with the card. */
   files: TeamCandidateFile[];
+  /** He writes the feedback he owed, so the block lifts without a reload. */
+  onFeedbackGiven: (candidateId: string) => void;
   onFilingChanged: (candidateId: string, filing: ManagerFolderFiling | null) => void;
+  /** The CV he owes feedback on, which blocks him opening any other. */
+  outstandingFeedback: OutstandingFeedback | null;
   viewerHrId: string | null;
 }) {
   const [candidate, setCandidate] = useState(initial);
@@ -469,7 +506,7 @@ function SentCandidateCard({
   };
 
   return (
-    <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6">
+    <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6" id={`candidate-${candidate.id}`}>
       {/* Who has taken this CV, at the TOP of the card. A manager must know it is somebody else's
           before he reads a word of it, not after he has formed an opinion at the foot of the card. */}
       <CandidateCallNotice claim={call.claim} viewerHrId={viewerHrId} />
@@ -516,7 +553,12 @@ function SentCandidateCard({
       </div>
 
       <div className="flex flex-wrap items-start gap-2">
-        <CandidateCvActions candidateId={candidate.id} initialFiles={files} showPhoneNumbers={call.mine} />
+        <CandidateCvActions
+        candidateId={candidate.id}
+        initialFiles={files}
+        outstandingFeedback={outstandingFeedback}
+        showPhoneNumbers={call.mine}
+      />
         {/* The third answer, and the one the owner asked for on 2026-08-30: neither "Interview" nor
             "Not interested" is true of a good CV that simply is not needed this month. Filing writes
             to HIS shelf only - the recruitment team's pool does not move. */}
@@ -591,7 +633,11 @@ function SentCandidateCard({
           holding the CV actually opens, because that is the only place a comment from above can do
           its job — a National Sales Manager's opinion filed somewhere only he can see is an opinion
           he may as well not have written. */}
-      <CandidateCommentThread candidateId={candidate.id} viewerHrId={viewerHrId} />
+      <CandidateCommentThread
+        candidateId={candidate.id}
+        onCommentAdded={onFeedbackGiven}
+        viewerHrId={viewerHrId}
+      />
     </Card>
   );
 }
@@ -600,6 +646,7 @@ export function RecruitmentCandidatesPortal({
   areaOptions,
   initialApplications,
   initialCallClaims: callClaims,
+  initialOutstandingFeedback,
   initialDistrictBoards,
   initialFilings,
   initialFiles: files,
@@ -608,6 +655,13 @@ export function RecruitmentCandidatesPortal({
   viewerHrId,
 }: Props) {
   const [applications, setApplications] = useState(initialApplications);
+  // Held in state, not read straight from the prop, so writing the feedback lifts the block in place.
+  // The page only re-reads it on a reload, and a manager who has just typed his comment should not
+  // have to reload to be let through.
+  const [outstandingFeedback, setOutstandingFeedback] = useState(initialOutstandingFeedback);
+  const onFeedbackGiven = (candidateId: string) => {
+    setOutstandingFeedback((current) => (current && current.candidateId === candidateId ? null : current));
+  };
   const [filings, setFilings] = useState<ManagerFolderFilings>(initialFilings);
 
   // The manager's own shelf, folded by the RECRUITER's own partition function so a folder means one
@@ -637,7 +691,9 @@ export function RecruitmentCandidatesPortal({
       filing={filings[candidate.id] ?? null}
       files={files[candidate.id] ?? []}
       key={candidate.id}
+      onFeedbackGiven={onFeedbackGiven}
       onFilingChanged={onFilingChanged}
+      outstandingFeedback={outstandingFeedback}
       viewerHrId={viewerHrId}
     />
   );
@@ -754,6 +810,8 @@ export function RecruitmentCandidatesPortal({
         boards={initialDistrictBoards}
         callClaims={callClaims}
         files={files}
+        onFeedbackGiven={onFeedbackGiven}
+        outstandingFeedback={outstandingFeedback}
         ownFolders
         viewerHrId={viewerHrId}
       />
@@ -761,7 +819,12 @@ export function RecruitmentCandidatesPortal({
       {/* After the caller's own CVs, deliberately. The ones sent to HIM are the ones he still owes an
           answer on; his team's are for oversight and carry no obligation, so they must not push his
           own queue below the fold. */}
-      <TeamCandidatesSection managers={initialTeam} viewerHrId={viewerHrId} />
+      <TeamCandidatesSection
+        managers={initialTeam}
+        onFeedbackGiven={onFeedbackGiven}
+        outstandingFeedback={outstandingFeedback}
+        viewerHrId={viewerHrId}
+      />
 
       {applications.length > 0 ? (
         <section className="space-y-4">
@@ -778,6 +841,8 @@ export function RecruitmentCandidatesPortal({
               files={files[application.candidate?.id ?? ""] ?? []}
               key={application.id}
               onChanged={reload}
+              onFeedbackGiven={onFeedbackGiven}
+              outstandingFeedback={outstandingFeedback}
               viewerHrId={viewerHrId}
             />
           ))}

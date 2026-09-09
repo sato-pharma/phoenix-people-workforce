@@ -22,9 +22,19 @@ import { CANDIDATE_COMMENT_MAX_LENGTH, type CandidateComment } from "@/lib/recru
  */
 export function CandidateCommentThread({
   candidateId,
+  onCommentAdded,
   viewerHrId,
 }: {
   candidateId: string;
+  /**
+   * Called after THIS viewer has posted a comment on this CV.
+   *
+   * The feedback lock is read once on the server with the page, so the card would go on blocking
+   * him until a reload even though he has just written the thing it was waiting for. This is what
+   * releases it in place. It fires only on his OWN post, never on the thread loading somebody
+   * else's comment, because another manager's words are not the feedback he owes.
+   */
+  onCommentAdded?: (candidateId: string) => void;
   /** Used only to decide whose comments offer a Delete — the server re-checks it on every delete. */
   viewerHrId: string | null;
 }) {
@@ -68,6 +78,7 @@ export function CandidateCommentThread({
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
       if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Failed to save your comment.");
       setComments((prev) => [data.comment as CandidateComment, ...(prev ?? [])]);
+      onCommentAdded?.(candidateId);
       setDraft("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Failed to save your comment.");

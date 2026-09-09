@@ -39,6 +39,8 @@ import {
   isCandidateWithinViewerTeam,
 } from "@/lib/recruitment/hiring-manager-team";
 import { getFileForDownload, listCandidateFiles, type FileDownload } from "@/lib/recruitment/files";
+import { cvOpenRefusal, type OutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock";
+import { loadOutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock-db";
 import { recordManagerCvOpen } from "@/lib/recruitment/manager-cv-engagement";
 import { isCandidateSentToManager } from "@/lib/recruitment/manager-sends";
 import { getRequisition } from "@/lib/recruitment/requisitions";
@@ -146,6 +148,24 @@ export async function listHiringManagerCandidateFiles(
   return listCandidateFiles(candidateId);
 }
 
+/**
+ * "Write your feedback on the last CV first."
+ *
+ * ITS OWN ERROR TYPE, because the route has to answer differently from every other refusal on this
+ * path. A 403 tells a manager he may not see the CV, which is false and unhelpful; what he needs is
+ * the NAME of the candidate he owes and a way back to that card, so the response carries both and
+ * the card turns them into a link. A plain thrown string could not.
+ */
+export class CvFeedbackRequiredError extends Error {
+  readonly outstanding: OutstandingFeedback;
+
+  constructor(message: string, outstanding: OutstandingFeedback) {
+    super(message);
+    this.name = "CvFeedbackRequiredError";
+    this.outstanding = outstanding;
+  }
+}
+
 export async function downloadHiringManagerCandidateFile(
   access: AccessContext,
   candidateId: string,
@@ -155,6 +175,27 @@ export async function downloadHiringManagerCandidateFile(
   const files = await listCandidateFiles(candidateId);
   if (!files.some((file) => file.id === fileId)) {
     throw new Error("Forbidden: file does not belong to this candidate.");
+  }
+
+  // ── HE OWES FEEDBACK ON THE LAST CV HE OPENED ─────────────────────────────────────────────────
+  //
+  // The owner, 2026-09-09, on candidates being telephoned twice by the same company: *"if you make
+  // it optional, normally no one will put his feedback, and it will keep clashing. So I'm trying to
+  // make them put their feedback by force."*
+  //
+  // ENFORCED HERE BECAUSE THIS IS WHERE THE CV ACTUALLY OPENS. The card can show the message, but the
+  // card is not the boundary — the bytes are, and they are served from this one function whichever
+  // screen asked for them. A lock that lives in the component is a lock a second screen forgets to
+  // apply.
+  //
+  // AFTER the scope check, so a manager is never told he owes feedback on a CV he was not allowed to
+  // see, and BEFORE the file is fetched, so a refusal does not first pull megabytes out of Drive.
+  // Reopening the CV he owes is always allowed — see cvOpenRefusal, without which the lock would trap
+  // him behind a document he cannot re-read.
+  const outstanding = await loadOutstandingFeedback(access.hrId);
+  const refusal = cvOpenRefusal(outstanding, candidateId);
+  if (refusal && outstanding) {
+    throw new CvFeedbackRequiredError(refusal, outstanding);
   }
 
   // SILENT OPEN SIGNAL. This is the one chokepoint every CV open passes through — the in-app preview

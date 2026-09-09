@@ -15,6 +15,7 @@ import {
   revealPhoneToViewer,
 } from "@/lib/recruitment/candidate-call-claims";
 import { loadCallClaims } from "@/lib/recruitment/candidate-call-claims-db";
+import { loadOutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock-db";
 import { listCandidateFolderAreaOptions } from "@/lib/recruitment/candidate-folder-options";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
 import {
@@ -115,6 +116,12 @@ export default async function EmployeePortalRecruitmentCandidatesPage() {
   // their candidates nested two levels down, so they get their own redactor rather than a hand-
   // written map that would eventually cover the cards and miss the folders.
   const callClaims = await loadCallClaims(cardCandidateIds);
+
+  // THE CV HE OPENED AND HAS NOT WRITTEN ABOUT. Owner, 2026-09-09: candidates are being telephoned
+  // twice because nothing records that anyone called, so a manager must write what he found before
+  // he may open another CV. Read once here rather than per card; it fails open on any error, so a
+  // database problem can never lock a manager out of every CV in the company.
+  const outstandingFeedback = await loadOutstandingFeedback(access.hrId);
   const visibleSentToMe = redactCandidateListContact(sentToMe, callClaims, access.hrId);
   const visibleDistrictBoards = redactDistrictBoardsContact(districtBoards, callClaims, access.hrId);
   const visibleApplications = myCandidates.map((application) =>
@@ -139,6 +146,7 @@ export default async function EmployeePortalRecruitmentCandidatesPage() {
         areaOptions={areaOptions}
         initialApplications={visibleApplications}
         initialCallClaims={callClaims}
+        initialOutstandingFeedback={outstandingFeedback}
         initialDistrictBoards={visibleDistrictBoards}
         initialFilings={filings}
         initialFiles={initialFiles}

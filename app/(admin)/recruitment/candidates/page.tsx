@@ -16,6 +16,7 @@ import {
   revealPhoneToViewer,
 } from "@/lib/recruitment/candidate-call-claims";
 import { loadCallClaims } from "@/lib/recruitment/candidate-call-claims-db";
+import { loadOutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock-db";
 import { listCandidateFolderAreaOptions } from "@/lib/recruitment/candidate-folder-options";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
 import {
@@ -104,6 +105,12 @@ async function AdminRecruitmentCandidatesContent() {
   // IDENTICAL component. Loading the claims there and not here would leave one copy of this screen
   // where a reserved CV looks free and the number is printed to somebody who never asked for it.
   const callClaims = await loadCallClaims(cardCandidateIds);
+
+  // THE CV HE OPENED AND HAS NOT WRITTEN ABOUT. Owner, 2026-09-09: candidates are being telephoned
+  // twice because nothing records that anyone called, so a manager must write what he found before
+  // he may open another CV. Read once here rather than per card; it fails open on any error, so a
+  // database problem can never lock a manager out of every CV in the company.
+  const outstandingFeedback = await loadOutstandingFeedback(access.hrId);
   const visibleSentToMe = redactCandidateListContact(sentToMe, callClaims, access.hrId);
   const visibleDistrictBoards = redactDistrictBoardsContact(districtBoards, callClaims, access.hrId);
   const visibleApplications = myCandidates.map((application) =>
@@ -131,6 +138,7 @@ async function AdminRecruitmentCandidatesContent() {
           areaOptions={areaOptions}
           initialApplications={visibleApplications}
           initialCallClaims={callClaims}
+        initialOutstandingFeedback={outstandingFeedback}
           initialDistrictBoards={visibleDistrictBoards}
           initialFilings={filings}
           initialFiles={initialFiles}
