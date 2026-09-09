@@ -306,6 +306,44 @@ export function runQemaWarehouseSplitTests() {
     "no exclusions means the whole country, exactly as before this rule existed",
   );
 
+  // ── 🔴 THE EXCLUSION IS A LINE RULE, NOT A DISTRIBUTOR RULE ─────────────────────────────────
+  //
+  // It first shipped scoped to El Qema alone. Measured on August Pedia the next day, El Qema sent
+  // 0.000 packs into Others while OTHER distributors still sent 79.667 — 44.167 into Down town and
+  // 35.500 into Kafr El-Sheikh 2 — and the owner's answer was "NOT APPLIED EL QEMA RULE". His words
+  // were "the EU organogram of PEDIA LINE": an area in Others receives nothing on this line, whoever
+  // sold it. Narrowing this back to El Qema restores exactly the state he rejected.
+  const otherDistributor = splitTargetsFor(
+    row({ areaCode: "CA2", clientCode: "PS-7001", distributorCode: "PS", qty: 120 }),
+    120,
+    PEDIA_OTHERS,
+  );
+  assert.ok(otherDistributor, "a non-El-Qema Cairo warehouse still splits");
+  assert.deepEqual(
+    [...otherDistributor.homeAreas],
+    ["CA1", "CA2", "CA3", "CA4", "CA6"],
+    "Cairo's FIVE non-Others areas — Down town is skipped for every distributor, not just El Qema",
+  );
+  assert.equal(
+    otherDistributor.awayAreas.length,
+    0,
+    "but it takes no national half: the 200-pack rule is still El Qema's alone, and these are two "
+      + "different rules that merely arrived in the same sentence",
+  );
+
+  // The exclusion is Pedia's. A CNS row ignores the set entirely — he scoped it to the Pedia
+  // organogram, and August Anti Infective is published, so neither of the other lines may move.
+  const cnsRow = splitTargetsFor(
+    row({ areaCode: "CA2", clientCode: "PS-7002", distributorCode: "PS", officialLine: "CNS", qty: 120 }),
+    120,
+    PEDIA_OTHERS,
+  );
+  assert.ok(cnsRow);
+  assert.ok(
+    cnsRow.homeAreas.includes("CA5"),
+    "CNS still spreads across all six Cairo areas — the exclusion is gated on the LINE",
+  );
+
   // An area is excluded from receiving OTHER people's money, never from keeping its own.
   const fromDownTown = splitTargetsFor(row({ areaCode: "CA5", clientCode: "QM-9020" }), 700, PEDIA_OTHERS);
   assert.ok(fromDownTown, "a warehouse sitting IN an Others area still has a plan");

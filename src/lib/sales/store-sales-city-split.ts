@@ -264,6 +264,22 @@ export const WAREHOUSE_THRESHOLD_DISTRIBUTORS: ReadonlySet<string> = new Set(["Q
  */
 export const WAREHOUSE_THRESHOLD_LINES: ReadonlySet<string> = new Set(["pedia"]);
 
+/**
+ * Lines whose split excludes the areas their organogram parks in Others — owner, 2026-09-08:
+ * "you will follow the EU organogram of PEDIA LINE and exclude in distribution the areas in others".
+ *
+ * 🔴 THIS IS A LINE RULE, NOT A DISTRIBUTOR RULE, and the difference is the whole reason this set
+ * exists separately from WAREHOUSE_THRESHOLD_DISTRIBUTORS. It first shipped scoped to El Qema alone,
+ * on the reading that he was talking about El Qema's distribution. He was not: measured on August
+ * Pedia the next day, El Qema sent 0.000 packs into Others while OTHER distributors still sent
+ * 79.667 — 44.167 into Down town and 35.500 into Kafr El-Sheikh 2 — and he replied "NOT APPLIED EL
+ * QEMA RULE". An area in Others receives nothing on this line, whoever sold it.
+ *
+ * The 200-pack national split stays El Qema's alone. These are two different rules that happen to
+ * have arrived in the same sentence: WHO spreads nationwide, and WHERE nobody may receive.
+ */
+export const OTHERS_EXCLUDED_LINES: ReadonlySet<string> = new Set(["pedia"]);
+
 /** Every area the split can reach, in a stable order. AREA_CITY's keys ARE the universe. */
 export const ALL_SPLIT_AREAS: readonly string[] = [...AREA_CITY.keys()].sort();
 
@@ -382,9 +398,12 @@ export function splitTargetsFor(
 
   // The rule is the owner's El Qema rule, on the owner's El Qema line. Anything else falls through
   // to the plain city split it has always had — see WAREHOUSE_THRESHOLD_LINES.
+  const line = lineKey(row.officialLine);
   const ruleApplies = WAREHOUSE_THRESHOLD_DISTRIBUTORS.has(normalizeDistributor(row.distributorCode))
-    && WAREHOUSE_THRESHOLD_LINES.has(lineKey(row.officialLine));
-  const excluded = ruleApplies ? (othersAreas ?? NO_AREAS) : NO_AREAS;
+    && WAREHOUSE_THRESHOLD_LINES.has(line);
+  // The exclusion is keyed on the LINE alone — every warehouse on it, not just El Qema's. The
+  // threshold above is the distributor's rule; this one is the organogram's.
+  const excluded = OTHERS_EXCLUDED_LINES.has(line) ? (othersAreas ?? NO_AREAS) : NO_AREAS;
 
   // The ORIGIN is never excluded from its own sale. An area is barred from receiving a share of
   // somebody else's money, not from keeping what it sold itself — and without this a warehouse

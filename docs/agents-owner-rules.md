@@ -1204,12 +1204,34 @@ The defensive fallback stays anyway: **the origin is never excluded from its own
 barred from receiving a share of somebody else's money, never from keeping what it sold itself —
 without it, a warehouse sitting in an Others area would have a home half with nowhere to go.
 
-### Scope of the exclusion
+### 🔴 Scope of the exclusion — it is a LINE rule, and shipping it narrow was wrong
 
-The El Qema rule only. Every other distributor's wholesaler keeps splitting across its whole
-governorate, Others included. Widening it to every Pedia wholesaler would move other distributors'
-money in a month about to be published, and he asked about El Qema's distribution — so the narrow
-reading is the reversible one. Widen it only if he says so.
+**Every warehouse on Pedia, whoever sold it.** Not El Qema's alone.
+
+It shipped scoped to El Qema first, on the reading that the conversation was about El Qema's
+distribution and that widening it would move other distributors' money in a month about to be
+published. That reading was wrong, and his own words already said so — *"the EU organogram of **pedia
+line**"*.
+
+Measured on August Pedia the next day, through the closing's own code path:
+
+| Source | Packs arriving in Others areas |
+| --- | --- |
+| El Qema | **0.000** |
+| every other distributor | **79.667** — Down town 44.167, Kafr El-Sheikh 2 35.500 |
+
+He replied **"NOT APPLIED EL QEMA RULE"**. The El Qema half was applied perfectly; what he was
+looking at was Down town and Kafr El-Sheikh 2 still holding numbers, put there by EP-PHS, IS-S and
+PS. An area in Others receives nothing on this line, whoever sold it.
+
+**Two rules arrived in one sentence and they have different scopes.** `WAREHOUSE_THRESHOLD_LINES` +
+`WAREHOUSE_THRESHOLD_DISTRIBUTORS` answer *who spreads nationwide* — El Qema, on Pedia.
+`OTHERS_EXCLUDED_LINES` answers *where nobody may receive* — the Pedia line, every distributor.
+Collapsing them back into one predicate restores exactly the state he rejected, so the test asserts a
+**non-El-Qema** Cairo warehouse skipping Down town while taking no national half.
+
+CNS and Anti Infective are untouched: the exclusion is gated on the line, and August Anti Infective
+is published.
 
 ### What holds it
 
