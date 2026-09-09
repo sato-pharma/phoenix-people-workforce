@@ -1127,68 +1127,163 @@ The Source of Sales dashboard's distributor breakdown and the import batches lis
 this change. The batches list is Super Admin only already; the dashboard breakdown has not been
 checked and may still name El Qema.
 
-## The priority ladder — owner ruling, 2026-09-09 (CURRENT, and it replaced everything)
+## The three bands, the صعيد pass and the lead guarantee — owner ruling, 2026-09-09 evening (CURRENT)
 
-This is the live El Qema rule. Every El Qema section below it is history.
+This is the live El Qema rule. Every El Qema section below it is history, kept dated and unrewritten.
 
-> what I want is that the qalubeya be qalubeya, then the Monofiua and the gharbia one and two, okay,
-> then cairo, then any rearrangement after this. But I don't want the areas I mentioned to be far
-> away from the others — I want them to be exceeding them, but with a very small scale.
+He restated the whole thing from scratch, in Arabic, unprompted, and when asked whether to keep any
+of the existing rules alongside it he answered **"remove any current rule and implement those"**,
+then **"start it now"**.
 
-El Qema's whole Pedia book is divided across every area the line has. Four named rungs take one 2%
-step more each, in his order.
+> نظام توزيع القمه الموحد — 3 خطوات بالترتيب
+>
+> الخطوة الأولى: اي مخزن اقل من 200 علبه حتي 200 علبه يقسم علي مندوبي المحافظة
+>
+> الخطوة الثانية: اي مخزن من 201 حتي 999 — 50% يقسم علي مندوبي المحافظة والكلام ده ينطبق علي
+> القليوبية (القليوبية + القاهرة)، 50% الاخري تقسم علي باقي الجمهورية بالتساوي
+>
+> الخطوة الثالثة: اي مخزن من 1000 علبه فما فوق يقسم علي مندوبي الجمهوريه بالتساوي وليس Others
+>
+> بالنسبه لتقسيم القمه للصعيد: هناخد كل البيع اللي محسوب للصعيد و نعيد توزيعوا 50% منه لكل
+> محافظات الصعيد بالتساوى، وال 50% الباقيه يوزع علي الجمهورية مع الحفاظ على منطقة القليوبية
+> الاولى و الثانية طنطا لابد ان يكونوا اكبر نسبة contribution
 
-| Rung | Areas | Weight | August packs each |
-| --- | --- | --- | --- |
-| Qalubeya | 1 | 1.08 | 253.33 |
-| Menoufia 1, Menoufia 2 | 2 | 1.06 | 248.64 |
-| Gharbia 1, Gharbia 2 | 2 | 1.04 | 243.95 |
-| Cairo | 5 | 1.02 | 239.26 |
-| Everyone else | 27 | 1.00 | 234.56 |
+The band is judged on ONE warehouse, ONE product, for the whole month, in the area the closing books
+it in — `warehouseSplitKey`. Not per invoice line, and not per customer across two areas.
 
-The arithmetic is one division. The 37 weights add to 37.38, and 8,768 over 37.38 is 234.56, which
-is one unit of weight. Top to bottom is 18.77 packs, which is what "a very small scale" bought.
+### The صعيد pass, and the two things about it a reader gets wrong
 
-### What it discarded, and why none of it is a bug
+Everything the bands credit to Upper Egypt is pooled. Half returns evenly across the Upper Egypt
+areas, half spreads over the country.
 
-Five rules, all of them his, all made in the two days before it:
+🔴 **It TAKES money out of Upper Egypt.** Nine areas hold the pool before the pass and share half of
+it after, so an Upper Egypt area lands BELOW an ordinary away area. Reading the rule as a top-up for
+Upper Egypt is the misreading to expect, and the test asserts the direction so acting on it fails.
 
-| Rule | Given | Gone because |
+🔴 **"الجمهورية", not "باقي الجمهورية".** He wrote the second half as THE republic, where step 2 says the
+REST of it. An Upper Egypt area is therefore in both halves. Reading it as "the rest" would move
+money out of the region the sentence exists to protect.
+
+🔴 **It runs in EVERY band, including the first.** "كل البيع اللي محسوب للصعيد" — all of it. A
+100-pack Minia warehouse is a step-1 sale that step 1 alone keeps inside Minia; the second rule then
+takes it national. That is his second rule acting on the first rule's output, not a contradiction.
+
+### 🔴 Upper Egypt cannot be read from August's region codes
+
+On Pedia the `UE` operational region holds only Minia 1-2, Assuit 1-2, Sohag 1-2 and Qena 1. **Fayoum
+(GZ6) and Beni Suef (UE9) sit in the GIZA region** until the Upper Egypt split dates in on
+2026-09-01 — and he named both, by name, as Upper Egypt on the same morning
+(*"look fayoum bani suef and all upper egypt regions"*). A region-code read drops exactly the two
+areas he was thinking of, silently.
+
+`UPPER_EGYPT_AREAS` therefore carries the same membership the August / Upper Egypt golden rule pins
+for UE-1 and UE-2, and `upperEgyptAreasFor` widens it with any UE-prefixed region the organogram
+holds, then subtracts Others. **Nine areas in August** (Qena 2 and Luxor are parked in Others),
+**eleven from September**, with no code change on the day. Aswan is not Upper Egypt for this rule.
+
+### 🔒 THE LEAD GUARANTEE — Qalubeya, Tanta and Mahalla top the table
+
+> مع الحفاظ على منطقة القليوبية الاولى و الثانية طنطا لابد ان يكونوا اكبر نسبة contribution
+
+Asked which areas he meant, he chose **Qalubeya (D11), Gharbia 1 / Tanta (D14), Gharbia 2 / Mahalla
+(D15)**.
+
+🔴 **THIS WAS BUILT ONCE AS A REPORT AND HE REJECTED THAT, IN THOSE WORDS.** The first build
+implemented the bands and the صعيد pass, measured the three at ranks 22, 20 and 21, and put the gap
+back to him as a question. His answer was *"didn't I tell the fuck out of you that those three areas
+Tanta, Mahalla and Al-Yubayya should be the biggest contribution in all areas"*. **"لابد" is a
+requirement.** An outcome he states is a rule to enforce, not a finding to report — and he had
+already said it once inside the ruling itself, so it was said twice before it was built.
+
+**How it works.** After the bands and the صعيد pass, the three named areas are lifted to one figure
+and everyone else is scaled down pro rata to pay for it. The step is **2%**, his own *"exceeding
+them, but with a very small scale"*.
+
+🔴 **IT CANNOT LIVE IN `splitTargetsFor`, AND THE ARITHMETIC IS WHY.** A plan is one customer's
+sale; contribution is the month. A per-row floor is infeasible on a small plan — a 150-pack
+Alexandria sale divides across three areas, and no three OTHER areas can each hold more than the
+largest of three shares of one. So the guarantee runs once over the finished landing, per line and
+per product. Per product because a unit total means nothing across products, and leading product by
+product implies leading on the line, since Σ max ≥ max Σ.
+
+🔴 **THE STEP IS A FIXED POINT.** Paying the three shrinks the area they have to beat, so
+taking 2% of the field as it stood BEFORE the move overshoots — measured on August it landed them
+5.4% clear when he asked for a very small scale. The shipping code iterates to the fixed point; the
+test solves the same equation as algebra, which is a genuinely different derivation:
+
+    F = (1+k)·T·(P + ΣL) / (P + (1+k)·n·T)
+
+⚠ **THE DETAIL SHEET AND THE IMPORT PREVIEW DO NOT SHOW IT**, and that is correct rather than a
+bug: both describe one customer's sale being divided, and a month-level adjustment is not a property
+of any one sale. The Matrix, the attribution net and the closing all carry it.
+
+⚠ **A lead area parked in Others is dropped from the guarantee rather than lifted.** Others
+take nothing is his rule too, and it is the older of the two.
+
+### August 2026, measured
+
+8,768 packs and 2,367,360 EGP over 38 areas, landing exactly, with **no area going negative** — the
+Fayoum and Suez negatives the ladder produced are gone. The band mix by packs: **1,164** in step 1,
+**960** in step 2, **6,644** in step 3.
+
+| | Contribution | Note |
 | --- | --- | --- |
-| Up to 200 stays in the governorate | 09-08 | the ladder has no governorate and no threshold |
-| 201–999 splits half and half | 09-08 | same |
-| 1,000 and above spreads flat | 09-09 | same |
-| Upper Egypt pooled with Fayoum - Beni Suef | 09-09 | the ladder levels everything already |
-| Qalubeya + Cairo, weighted 75/25 | 09-07, 09-09 | Cairo is now a rung, not a block |
+| **Qalubeya, Tanta, Mahalla** | **3.531%** | ranks 1 to 3, exactly 2% clear of the field |
+| Alexandria × 3 | 3.462% | led at 3.565% before the guarantee |
+| Cairo × 5 | 3.139% | |
+| Sharkia × 2 | 2.856% | |
+| Upper Egypt × 9 | 1.989% | every one identical, Fayoum and Beni Suef included |
+| Ismailia | 0.274% | in Others: keeps its own 24 packs, receives nothing |
 
-🔴 **A session finding any of these missing is looking at a decision.** They are dense, they
-were each argued for, and each has its own measured account in this file. Restoring one reverses him.
+Without the guarantee the same book put Alexandria first at 3.565% and the three named areas at
+ranks 22, 20 and 21 — Qalubeya on 2.630%. **Qalubeya's own 6,644 packs buy it nothing**, because
+every one of them is band 3 and step 3 pays every area the same. That is why the guarantee exists
+and why no weighting inside the bands could have replaced it.
 
-### The two things a reader disbelieves
+### ⚠ Why the 75/25 was never the answer to the lead requirement
 
-**Where a warehouse sits decides nothing.** Benha sold 6,656 of August's 8,768 packs and takes
-253.33, exactly what it would take if it had sold none. The only reason it leads the table is that
-it is on the top rung. The El Qema test asserts this twice, from two directions, because
-reintroducing an origin preference is the obvious "fix".
+It only ever applied in bands 1 and 2, and Qalubeya's sales are band 3, so re-adding it moves
+Qalubeya by nothing worth measuring. Reaching for it when the three are not on top is the obvious
+move and it does not work.
 
-**Others keep nothing, including their own sales.** Every earlier rule let an area in Others keep
-what it sold itself, because a home half had to land somewhere. There is no home half. On August
-that moves Ismailia's own 24 packs out, and he asked for exactly that: *"neglect others, don't add
-others"*.
+### What this removed, all of it his, none of it a bug to restore
+
+| Rule | Given | Removed by |
+| --- | --- | --- |
+| The priority ladder, four rungs one 2% step apart | 09-09 afternoon | this ruling |
+| Qalubeya + Cairo weighted 60/40, then 75/25 | 09-07, 09-09 | this ruling |
+| The Upper Egypt pool (Fayoum - Beni Suef as one member) | 09-09 morning | #3606, and replaced here by a different shape |
+
+⚠ **Neither the pool nor this pass preserves "fayoum-banisuef one region."** They are two areas
+taking two shares; the closing folds them into one row downstream for display only. Under the صعيد
+pass they land on identical numbers anyway, which is as close as the evening rule gets to the
+morning one.
 
 ### Where the numbers live
 
-`QEMA_PRIORITY_RUNGS` and `QEMA_PRIORITY_STEP` in `src/lib/sales/store-sales-city-split.ts`. The step
-is the only dial: at 2% each rung is 4.69 packs above the next, at 5% about 12. Cairo is listed with
-all six codes and Down town drops out through the Others exclusion, so moving it in the organogram
-rejoins it without a code change.
+`WAREHOUSE_NATIONAL_SPLIT_THRESHOLD_QTY`, `WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY`,
+`WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION`, `LOCAL_BLOCK_OVERRIDES`, `UPPER_EGYPT_AREAS`,
+`UPPER_EGYPT_HOME_FRACTION` and `redistributeUpperEgypt` in
+`src/lib/sales/store-sales-city-split.ts`, pinned by `tests/qema-warehouse-split.test.ts`.
 
-## The unified distribution (نظام توزيع القمه الموحد) — owner ruling, 2026-09-09 (SUPERSEDED the same day)
+🔴 **The صعيد pass is a WEIGHT ON THE PLAN, never a pass over the split loop.** Five surfaces read
+that plan — the Matrix, the attribution net, the Detail sheet, the import preview and
+`isSplitEligible` — and a redistribution applied in the loop would have been invisible to four of
+them. That is the exact shape of the Matrix-versus-Detail disagreement this module's header warns
+about. The Detail sheet also stopped re-deriving the band from a quantity of its own, because once
+the redistribution runs no quantity implies the answer.
 
-🔴 **Replaced by the priority ladder above, hours later.** Kept as a dated record of what the three bands were and why, because the ladder's own documentation refers back to them.
+🔴 **The test derives every expected share TWICE.** `referenceQemaShares` is a second reading of his
+words sharing no code with the engine. Three earlier versions of this rule shipped with tests that
+asserted the engine against itself. Proved red on three mutations: the "rest of the republic"
+misreading, the 75/25 put back, and Upper Egypt read from region codes alone.
 
-This is the live rule. Everything below it in this file is the history that led here, kept dated and
-unrewritten; where the two disagree, this section wins.
+## The unified distribution (نظام توزيع القمه الموحد) — owner ruling, 2026-09-09 morning (the FIRST statement of the bands)
+
+ℹ **Superseded by the priority ladder for one afternoon, then restored, and the restored version is
+the section at the top of this file.** Kept as the dated record of how the bands were first put and
+what was measured then. Where this and the top section disagree, the top section wins — the
+difference is the صعيد pass, which did not exist yet, and the 75/25, which no longer does.
 
 He restated the whole thing as three ordered steps, unprompted:
 
@@ -2096,14 +2191,14 @@ This is the Delta (3) shape — `20260829113500_anti_infective_delta_3_from_sept
 
 ### The one number this moves
 
-El Qema's priority ladder spreads that distributor's whole Pedia book across every area the line has except those parked in Others, and the exclusion keys on `operational_region_code = 'OT'` **alone** — never on `area_state`, never on `carries_target`. Qena 2 and Luxor leave Others here, so:
+El Qema's rule spreads that distributor's Pedia book across the areas the line has except those parked in Others, and the exclusion keys on `operational_region_code = 'OT'` **alone** — never on `area_state`, never on `carries_target`. Qena 2 and Luxor leave Others here, so:
 
 | El Qema divisor, Pedia | Areas |
 | --- | --- |
 | August | 37 |
 | September | 39 |
 
-**Luxor still takes a share even though it carries no target**, because the ladder counts areas and not reps. That is not a defect. It is the same shape OT9 Ismailia rode into Delta (3) with: `other_permanent`, no rep seat, inside a real district.
+**Luxor still takes a share even though it carries no target**, because the rule counts areas and not reps. That is not a defect. It is the same shape OT9 Ismailia rode into Delta (3) with: `other_permanent`, no rep seat, inside a real district.
 
 ### The seat caveat, which cannot be dated away
 
@@ -2113,7 +2208,7 @@ El Qema's priority ladder spreads that distributor's whole Pedia book across eve
 
 ### Two things found on the way, neither fixed
 
-- The `runTest` label for `runQemaWarehouseSplitTests` still describes the 200 and 1,000 pack bands that #3583 deleted. The test itself pins the ladder; only its name is stale.
+- The `runTest` label for `runQemaWarehouseSplitTests` describes the 200 and 1,000 pack bands, which is correct again as of the 2026-09-09 evening ruling.
 - `buildOperationalRegionMap` resolves overlapping rows to the **latest** `effective_from`; `au.f_line_area_map_asof` orders `effective_from asc` and so takes the **earliest**. The TypeScript comment claims the two match. No overlap is written by this migration, so nothing here depends on it, but they disagree and a future overlapping pair would resolve differently in the sheet and in achievement.
 
 ### How it is held
@@ -2122,12 +2217,12 @@ El Qema's priority ladder spreads that distributor's whole Pedia book across eve
 
 ### The Upper Egypt pool was deleted — owner, 2026-09-09
 
-His pooling rule of that morning — *"look fayoum bani suef and all upper egypt regions, you will calculate their total and then redistribute on them the sales evenly, fayoum-banisuef one region"* — was replaced hours later by the priority ladder, which #3583 shipped listing the pool as one of the five rules it discards. The ladder returns before the pool is reached, so it had been unreachable ever since.
+His pooling rule of that morning — *"look fayoum bani suef and all upper egypt regions, you will calculate their total and then redistribute on them the sales evenly, fayoum-banisuef one region"* — was replaced hours later by the priority ladder, which #3583 shipped listing the pool as one of the five rules it discards, and the pool was deleted in #3606. The evening ruling then brought a DIFFERENT Upper Egypt rule back; see the current section at the top of this file.
 
 Deleted on his instruction after the removal was measured and put to him. `POOLED_BLOCK_REGION_CODE`, `POOLED_BLOCK_LABEL`, `isPooledBlockRegion`, `pooledBlockMembers`, `MERGED_POOL_MEMBER_CODE` and `levelAcrossPool` are gone, along with `tests/pooled-block-region-family.test.ts`. `levelAcrossPool` had no callers at all, in source or tests.
 
 Proved a no-op before shipping: 144 cases — nine origins across both halves of the split, Others and Cairo, four quantities spanning the retired 200 and 1,000 bands, two distributors, both months — byte-identical before and after, down to the per-area weights.
 
-⚠ **The ladder does NOT preserve "fayoum-banisuef one region".** Under the pool they were one member taking one share; under the ladder they are two areas taking two. That follows from his later choice and is not an oversight.
+⚠ **Neither the ladder nor the صعيد pass preserves "fayoum-banisuef one region".** Under the pool they were one member taking one share; under both later rules they are two areas taking two. That follows from his later choices and is not an oversight.
 
-⚠ **`LOCAL_BLOCK_OVERRIDES`, the Cairo + Qalubeya rule, is unreachable by exactly the same argument and was deliberately LEFT IN PLACE.** It is a locked owner rule, and deleting it was not what he asked for. If the ladder is ever reversed both come back into play, which is the reason to leave it standing rather than tidy it away.
+⚠ **`LOCAL_BLOCK_OVERRIDES`, the Cairo + Qalubeya rule, was unreachable under the ladder and was deliberately LEFT IN PLACE.** That decision paid off: the 2026-09-09 evening ruling names the block again in step 2, so it is live once more — without its 75/25 weighting.
