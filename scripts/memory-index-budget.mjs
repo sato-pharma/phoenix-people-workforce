@@ -138,6 +138,22 @@ export function memoryIndexBudgetLines(verdict) {
 export const AUTOLOAD_FOOTPRINT_BUDGET = 150_000;
 
 /**
+ * The share of the budget the REPOSITORY's own auto-loaded files may occupy, and the only half of
+ * this arithmetic a required check can enforce.
+ *
+ * `MEMORY.md` lives under `~/.claude` where CI cannot see it, so the gate in
+ * `tests/autoload-footprint-budget.test.ts` grades `CLAUDE.md + AGENTS.md` against what remains once
+ * the index is allowed its FULL cliff — not once it is allowed whatever it happens to weigh today.
+ *
+ * REPORTING ONLY THE TOTAL IS WHAT MISLED A SESSION INTO SHIPPING `main` RED (2026-09-09). It read
+ * the total's slack, which credits the repository with the index's UNUSED headroom, and concluded a
+ * ~900-byte hook fitted. It did not: the two figures disagreed by ~3,300 bytes, and the gate is the
+ * smaller one. Both numbers are correct answers to different questions, and the banner was answering
+ * the question nobody is graded on — so a caller that prints the total must print this beside it.
+ */
+export const AUTOLOAD_REPO_SHARE = AUTOLOAD_FOOTPRINT_BUDGET - MEMORY_INDEX_READ_CEILING;
+
+/**
  * Bytes of an auto-loaded file with CRLF collapsed to LF, so the figure is a property of the
  * CONTENT rather than of the checkout that measured it.
  *
@@ -186,24 +202,54 @@ export function autoloadedFileBytes(contents) {
  * Takes the parts rather than a total so the report can name WHERE the bytes are — a number with no
  * breakdown tells a session it is over without telling it what to move.
  *
- * @param {Array<{ label: string, bytes: number | null }>} parts one entry per auto-loaded file;
- *   a non-positive or non-finite `bytes` means present-but-unmeasurable and poisons the verdict
+ * THIS ANNOTATION IS THE DECLARED TYPE, not a comment. It OVERRIDES inference, so a field added to
+ * the returned object and not added here does not exist as far as every TypeScript caller is
+ * concerned — which is a compile error at the call site and no error at all here. That is exactly
+ * how the repo-share fields first shipped: the runtime returned them, the JSDoc did not, and only
+ * the `typecheck` job could see it, because the test runner strips types rather than checking them.
+ *
+ * @param {Array<{ label: string, bytes: number | null, inRepo?: boolean }>} parts one entry per
+ *   auto-loaded file; a non-positive or non-finite `bytes` means present-but-unmeasurable and
+ *   poisons the verdict, and `inRepo` marks the half a required check can enforce
  * @returns {{
  *   status: "not_applicable" | "unknown" | "ok" | "over_budget",
  *   bytes: number, budget: number, headroomToBudget: number, mustFree: number,
- *   parts: Array<{ label: string, bytes: number | null }>, unmeasured: string[],
+ *   parts: Array<{ label: string, bytes: number | null, inRepo?: boolean }>, unmeasured: string[],
+ *   repoStatus: "not_applicable" | "unknown" | "ok" | "over",
+ *   repoShare: number, repoBytes: number, repoHeadroom: number, repoMustFree: number,
  * }}
  */
 export function assessAutoloadFootprint(parts) {
   const list = Array.isArray(parts) ? parts : [];
-  const base = { budget: AUTOLOAD_FOOTPRINT_BUDGET, parts: list };
+  // The repo-share fields sit on `base` so EVERY branch carries them. Not a typing convenience: a
+  // union where `repoStatus` exists on only the healthy branch is one a caller cannot read without
+  // narrowing first, and the natural way out of that is to stop reading it — which is how the
+  // enforced figure would quietly go back to not being reported. Defaults are the unknown shape, so
+  // a branch that never computes the share cannot present as having one.
+  const base = {
+    budget: AUTOLOAD_FOOTPRINT_BUDGET,
+    parts: list,
+    repoShare: AUTOLOAD_REPO_SHARE,
+    repoStatus: "unknown",
+    repoBytes: 0,
+    repoHeadroom: 0,
+    repoMustFree: 0,
+  };
 
   // NOTHING TO GRADE is not the same as a failed measurement. A checkout with no auto-loaded
   // instruction files (a fresh clone, someone else's machine) should say nothing at all, exactly as
   // the hook already stays silent when there is no memory directory. Reporting "unknown" there
   // would cry wolf on every such session and train the reader to skip the line that matters.
   if (list.length === 0) {
-    return { ...base, status: "not_applicable", bytes: 0, headroomToBudget: 0, mustFree: 0, unmeasured: [] };
+    return {
+      ...base,
+      status: "not_applicable",
+      bytes: 0,
+      headroomToBudget: 0,
+      mustFree: 0,
+      unmeasured: [],
+      repoStatus: "not_applicable",
+    };
   }
 
   const unmeasured = list.filter((p) => !Number.isFinite(p.bytes) || p.bytes <= 0).map((p) => p.label);
@@ -215,6 +261,15 @@ export function assessAutoloadFootprint(parts) {
     return { ...base, status: "unknown", bytes, headroomToBudget: 0, mustFree: 0, unmeasured };
   }
 
+  // THE ENFORCED HALF. Graded separately and REFUSING TO GUESS which files are the repository's:
+  // a caller marks each part `inRepo`, and one part without an explicit boolean makes the repo share
+  // UNKNOWN rather than a plausible number. The failure direction is why. An unmarked repo file
+  // would be left OUT of the sum, so the margin would read LARGER than the gate allows — silent
+  // optimism, in the one figure a session consults before deciding an append is safe. Loud and
+  // unknown is the same discipline `unmeasured` already applies to the total.
+  const unlabelled = list.some((p) => typeof p.inRepo !== "boolean");
+  const repoBytes = list.reduce((sum, p) => sum + (p.inRepo === true ? p.bytes : 0), 0);
+
   return {
     ...base,
     status: bytes > AUTOLOAD_FOOTPRINT_BUDGET ? "over_budget" : "ok",
@@ -222,6 +277,10 @@ export function assessAutoloadFootprint(parts) {
     headroomToBudget: AUTOLOAD_FOOTPRINT_BUDGET - bytes,
     mustFree: Math.max(0, bytes - AUTOLOAD_FOOTPRINT_BUDGET),
     unmeasured: [],
+    repoStatus: unlabelled ? "unknown" : repoBytes > AUTOLOAD_REPO_SHARE ? "over" : "ok",
+    repoBytes: unlabelled ? 0 : repoBytes,
+    repoHeadroom: unlabelled ? 0 : AUTOLOAD_REPO_SHARE - repoBytes,
+    repoMustFree: unlabelled ? 0 : Math.max(0, repoBytes - AUTOLOAD_REPO_SHARE),
   };
 }
 
@@ -257,6 +316,10 @@ export function autoloadFootprintLines(verdict) {
       "  Relocating a hook from MEMORY.md into AGENTS.md does NOT help here — both are already inside",
       "  this number. Move the DETAIL out of the auto-loaded set into docs/, read on demand, leaving a",
       "  one-line hook behind (docs/agents-session-traps.md is the worked example).",
+      // Printed here too: the two are INDEPENDENT. A total over budget with a huge index can still
+      // leave the repo share healthy, and a session told only "over" would not know which of the two
+      // its next edit is actually graded against.
+      ...repoShareLines(verdict),
     ];
   }
 
@@ -264,5 +327,43 @@ export function autoloadFootprintLines(verdict) {
   // `tests/session-start-memory-index-guard.test.ts` asserts a worktree session never sees it — the
   // decoy that assertion exists to catch is an index misread as healthy. Two different figures
   // wearing one sentence is how that check would start passing for the wrong reason.
-  return ["  " + scale + ` — ${verdict.headroomToBudget} bytes of slack`];
+  return ["  " + scale + ` — ${verdict.headroomToBudget} bytes of slack`, ...repoShareLines(verdict)];
+}
+
+/**
+ * The enforced margin, printed under the total.
+ *
+ * It goes LAST and it names the gate, because the reader has just been given a bigger, friendlier
+ * number and needs to know which of the two CI actually fails on. The total's slack credits the
+ * repository with the index's unused headroom; this does not.
+ *
+ * @param {ReturnType<typeof assessAutoloadFootprint>} verdict
+ * @returns {string[]}
+ */
+function repoShareLines(verdict) {
+  if (verdict.repoStatus === "not_applicable") return [];
+
+  if (verdict.repoStatus === "unknown") {
+    return [
+      "  REPO SHARE UNKNOWN — a caller did not mark every part `inRepo`, so the enforced margin",
+      "  could not be computed. Treat it as unknown, never as the slack above.",
+    ];
+  }
+
+  const enforced = `  ENFORCED (what CI grades): CLAUDE.md + AGENTS.md ${verdict.repoBytes} of ${verdict.repoShare} bytes`;
+
+  if (verdict.repoStatus === "over") {
+    return [
+      enforced,
+      `  OVER THE REPO SHARE — free ${verdict.repoMustFree} bytes or the required \`validate\` check fails.`,
+      "  This is the number to budget against; the slack above is larger because it lends you the",
+      "  memory index's unused room, which the gate does not.",
+    ];
+  }
+
+  return [
+    enforced + ` — ${verdict.repoHeadroom} bytes left`,
+    "  Budget against THIS, not the slack above: the gate allows the index its full cliff whatever",
+    "  it weighs today, so the total's slack is always the friendlier of the two figures.",
+  ];
 }

@@ -208,4 +208,83 @@ export function runAutoloadFootprintBudgetTests() {
     /no cliff of its OWN/,
     "the guard's relocation advice must carry the correction: AGENTS.md is inside the footprint budget",
   );
+
+  // 10. THE REPORTED SLACK AND THE ENFORCED MARGIN ARE DIFFERENT NUMBERS, AND ONLY ONE FAILS CI.
+  //
+  // This section exists because of a real incident on 2026-09-09. A session read the banner's
+  // "bytes of slack", added a ~900-byte hook to AGENTS.md that fitted inside it, and shipped `main`
+  // red. Both figures were correct; they answer different questions. The total's slack lends the
+  // repository whatever headroom the index is not using today. The gate does not lend it.
+  const marked = (...entries: Array<[string, number | null, boolean]>) =>
+    entries.map(([label, bytes, inRepo]) => ({ label, bytes, inRepo }));
+
+  // The exact bytes that were live when `main` went red. The total says there is room; the enforced
+  // share says there is not. If these two ever agree on that day's numbers, the banner has gone back
+  // to answering the question nobody is graded on.
+  const incident = assessAutoloadFootprint(
+    marked(["CLAUDE.md", 6_700, true], ["AGENTS.md", 119_126, true], ["MEMORY.md", 20_762, false]),
+  );
+  assert.equal(incident.status, "ok", "the TOTAL was inside budget that day — which is what misled the session");
+  assert.equal(incident.repoStatus, "over", "while the ENFORCED share was already over, and that is what CI failed on");
+  assert.equal(incident.repoBytes, 125_826, "the enforced figure counts the repo files ONLY, never the index");
+  assert.equal(incident.repoShare, AUTOLOAD_FOOTPRINT_BUDGET - MEMORY_INDEX_READ_CEILING);
+  assert.equal(incident.repoMustFree, 226, "and it must name how many bytes to free, not merely that it is over");
+  assert.ok(
+    incident.headroomToBudget > 0 && incident.repoHeadroom < 0,
+    "the two figures must be able to disagree in SIGN — that disagreement is the whole point",
+  );
+  assert.match(text(incident), /OVER THE REPO SHARE/, "and the printed text must say so in the words of the gate");
+
+  // THE SHARE IS THE CEILING, NOT THE INDEX'S ACTUAL SIZE. A smaller index must not buy the
+  // repository a single byte, or the gate becomes a function of a file CI cannot see.
+  const tinyIndex = assessAutoloadFootprint(
+    marked(["CLAUDE.md", 6_700, true], ["AGENTS.md", 119_126, true], ["MEMORY.md", 1_000, false]),
+  );
+  assert.equal(
+    tinyIndex.repoHeadroom,
+    incident.repoHeadroom,
+    "shrinking MEMORY.md by 19KB must not move the enforced margin by one byte",
+  );
+
+  // The healthy case still names the enforced number, and still names it as the one to budget
+  // against. A line printing both figures without saying which is the gate is the status quo.
+  const healthy = assessAutoloadFootprint(
+    marked(["CLAUDE.md", 6_700, true], ["AGENTS.md", 117_299, true], ["MEMORY.md", 20_762, false]),
+  );
+  assert.equal(healthy.repoStatus, "ok");
+  assert.equal(healthy.repoHeadroom, 1_601, "the post-trim margin, measured on origin/main 2026-09-09");
+  assert.ok(
+    healthy.repoHeadroom < healthy.headroomToBudget,
+    "the enforced margin is the smaller of the two whenever the index is under its ceiling",
+  );
+  assert.match(text(healthy), /ENFORCED \(what CI grades\)/, "the printed line must label which figure the gate uses");
+  assert.match(text(healthy), /Budget against THIS/, "and must tell the reader which of the two to trust");
+
+  // REFUSING TO GUESS. An unmarked part must make the enforced margin UNKNOWN rather than a
+  // plausible smaller number: leaving a repo file out of the sum would report MORE room than the
+  // gate allows, which is the one direction that fails silently.
+  const unmarked = assessAutoloadFootprint(parts(["CLAUDE.md", 6_700], ["AGENTS.md", 119_126]));
+  assert.equal(unmarked.repoStatus, "unknown", "a part with no `inRepo` flag makes the enforced share unknowable");
+  assert.equal(unmarked.status, "ok", "without disturbing the total, which does not depend on the flag");
+  assert.match(text(unmarked), /REPO SHARE UNKNOWN/, "and it must say so out loud rather than print a number");
+  assert.doesNotMatch(
+    text(unmarked),
+    /bytes left/,
+    "an unknown share must never borrow the healthy sentence — that is how it would read as fine",
+  );
+
+  // 11. BOTH REPORTERS MUST ACTUALLY MARK THEIR PARTS. Same lesson as #9: the module can grade
+  // correctly forever while every caller feeds it unmarked parts, and then every session and every
+  // doctor run prints UNKNOWN — technically honest, and useless.
+  assert.match(
+    hookSource,
+    /inRepo:\s*true/,
+    "the SessionStart guard must mark CLAUDE.md/AGENTS.md as the repository's half",
+  );
+  assert.match(
+    hookSource,
+    /label:\s*"MEMORY\.md",[^}]*inRepo:\s*false/,
+    "and must mark the index as outside the repo, since no required check can see it",
+  );
+  assert.match(doctorSource, /inRepo:\s*true/, "repo-doctor must mark its parts too, or its report says UNKNOWN");
 }
