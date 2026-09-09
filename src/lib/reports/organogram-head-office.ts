@@ -114,6 +114,9 @@ export type HeadOfficeEmployeeRow = {
   mobile_number?: string | null;
   name_ar?: string | null;
   organogram_visible?: boolean | null;
+  /** The live team link. `team_name` beside it is a denormalized twin nothing writes, so a caller
+   *  that can resolve the link passes `teamNameFor` below and this branch stops showing blanks. */
+  team_id?: number | null;
   team_name?: string | null;
   work_email?: string | null;
 };
@@ -158,6 +161,14 @@ export type BuildHeadOfficeRowsOptions = {
    * unchanged and simply draws no open Head Office seats.
    */
   vacancies?: HeadOfficeVacancyRow[];
+  /**
+   * Resolves an employee's team NAME from their `team_id`, because `employees.team_name` is a
+   * denormalized twin nothing writes — 0 of 107 active employees carried it on 2026-09-09.
+   *
+   * Optional, and the default reads the twin, so every existing caller and test behaves exactly as
+   * before rather than silently changing what this branch emits.
+   */
+  teamNameFor?: (employee: HeadOfficeEmployeeRow) => string | null;
 };
 
 /** A synthetic, stable seat identity. Prefixed so it can never be read as an `au.seats` id. */
@@ -208,7 +219,13 @@ export function buildHeadOfficeOrganogramRows(
   employees: HeadOfficeEmployeeRow[],
   options: BuildHeadOfficeRowsOptions,
 ): OrganogramReportRow[] {
-  const { ceoNodeKey, occupiedHrIds, vacancies = [] } = options;
+  const {
+    ceoNodeKey,
+    occupiedHrIds,
+    vacancies = [],
+    // Default to the twin so an existing caller emits exactly what it emitted before.
+    teamNameFor = (employee) => employee.team_name ?? null,
+  } = options;
   const ceoKey = ceoNodeKey ? canonicalHrIdKey(ceoNodeKey) : null;
 
   // Everyone who could appear here: visible, not already on an AU seat, and never the CEO
@@ -333,7 +350,7 @@ export function buildHeadOfficeOrganogramRows(
       contractType: employee.contract_type ?? null,
       employeeDepartmentName: employee.department_name ?? null,
       employeeJobTitle: title,
-      employeeTeamName: employee.team_name ?? null,
+      employeeTeamName: teamNameFor(employee),
       employmentStatus: employee.employment_status ?? null,
       hasWhatsApp: hasWhatsAppNumber(employee.mobile_number ?? null),
       nameAr: employee.name_ar ?? null,

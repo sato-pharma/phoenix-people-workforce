@@ -66,7 +66,9 @@ function VacancyBody({ row }: { row: OrganogramRow }) {
     { label: "Line", value: row.lineName },
     { label: "Area", value: row.areaName },
     { label: "Region", value: row.regionName },
-    { label: "Team", value: row.teamName },
+    // employeeTeamName resolves from the employee's team LINK; row.teamName is the SEAT's team,
+    // which the seat path leaves null on purpose because it feeds chart classification.
+    { label: "Team", value: row.employeeTeamName ?? row.teamName },
     { label: "Reports to", value: row.managerName },
     { label: "Status", value: row.status },
   ];
@@ -84,7 +86,9 @@ function RowSummary({ row }: { row: OrganogramRow }) {
     { label: "Line", value: row.lineName },
     { label: "Area", value: row.areaName },
     { label: "Region", value: row.regionName },
-    { label: "Team", value: row.teamName },
+    // employeeTeamName resolves from the employee's team LINK; row.teamName is the SEAT's team,
+    // which the seat path leaves null on purpose because it feeds chart classification.
+    { label: "Team", value: row.employeeTeamName ?? row.teamName },
     { label: "Reports to", value: row.managerName },
     { label: "Hire date", value: row.hireDate ? formatHireDate(row.hireDate) : null },
   ];
