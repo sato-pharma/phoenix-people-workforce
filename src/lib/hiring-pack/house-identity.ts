@@ -118,6 +118,91 @@ export const HOUSE_TYPE = {
   mono: "Consolas",
 } as const;
 
+/* ─────────────────────────────────────────────────────────────────────────────────────────────
+ * THE ENGINE-TURNED BAND — the house ornament, chosen by the owner on 2026-09-09 to appear on
+ * every Sato template.
+ *
+ * WHAT IT IS. Two sine passes half a wavelength apart, crossing into a chain of lenses: the curve
+ * a geometric lathe cuts, and the reason banknotes and share certificates look the way they do.
+ * It REPLACES the 0.7 mm filled bar that used to sit under the masthead.
+ *
+ * IT MAKES THE INK RULE MORE TRUE, NOT LESS. The bar it replaces was one of only two deliberately
+ * filled elements on these papers; the band is drawn with a 0.32 mm stroke and is line, not area,
+ * so the identity now spends even less toner while reading as more considered at arm's length.
+ *
+ * WHY A TILED IMAGE AND NOT AN ELEMENT. Emitting a strip of markup would change the bytes
+ * `houseLetterhead()` returns for every existing caller, and `tests/payslip-document.test.ts`
+ * pins those bytes precisely so an addition cannot silently move the contract, both clearances
+ * and the worker data form. Styling the element that is already there reaches all nine house
+ * documents at once and moves no markup at all.
+ *
+ * IT TILES SEAMLESSLY because the tile is exactly ONE wavelength: a sine begins and ends a period
+ * at the same value and the same slope, so the repeat has no visible seam. A tile of any other
+ * width shows a kink at every repeat, once per 6 mm across the page.
+ *
+ * THE COLOUR IS BAKED INTO THE DATA URI. A `var()` cannot be read from inside one — the SVG is
+ * parsed as its own document — so the hex is interpolated here at module load. That is also what
+ * keeps the print-color-adjust canary in `tests/hr-forms-house-papers.test.ts` seeing it: the
+ * encoded `%230A6BA6` leaves the colour matchable on the declaration itself.
+ * ───────────────────────────────────────────────────────────────────────────────────────────── */
+
+/** One period of the band. The tile width, and therefore the repeat distance. */
+export const HOUSE_BAND_WAVELENGTH_MM = 6;
+/** How tall the band stands. Was 0.7 mm as a filled bar. */
+export const HOUSE_BAND_HEIGHT_MM = 2.4;
+/** Stroke of each pass. Comfortably above the 0.5 pt hairline floor declared below. */
+export const HOUSE_BAND_STROKE_MM = 0.32;
+
+/**
+ * Percent-encodes an SVG so it can sit in a CSS `url(data:image/svg+xml,…)` with NO QUOTES at all.
+ *
+ * 🔴 THE QUOTES ARE THE WHOLE POINT. The obvious encoding leaves the SVG's own attribute quotes
+ * alone and wraps the URI in double quotes. That renders perfectly in a stylesheet and then
+ * silently destroys any element that uses it in an inline `style="…"`, because the first `"`
+ * inside `url("data:…")` closes the style attribute and the rest of the declaration is dropped.
+ * Measured 2026-09-09: four demo bands rendered as blank strips, no console error, no warning.
+ * It is the same defect that once deleted the hiring pack's footer via a quoted font stack.
+ *
+ * So every character that could terminate a token — quote, angle bracket, space, hash — is
+ * percent-encoded, and the value is returned unquoted. That form is valid in a stylesheet, in an
+ * inline style attribute, and in a `<style>` block alike.
+ */
+function encodeSvgForCssUrl(svg: string): string {
+  return svg
+    .replace(/\s+/g, " ")
+    .replace(/%/g, "%25") // first, or it would escape the escapes introduced below
+    .replace(/#/g, "%23")
+    .replace(/</g, "%3C")
+    .replace(/>/g, "%3E")
+    .replace(/"/g, "%22")
+    .replace(/'/g, "%27")
+    .replace(/ /g, "%20");
+}
+
+/**
+ * The band as a CSS `url(…)` value, in whatever ink is asked for.
+ *
+ * Exported so a Sato template that does not use `houseLetterhead()` can still carry the house
+ * ornament by name rather than by copying a data URI it will later fail to update.
+ */
+export function houseEngineTurnedBand(color: string = HOUSE_COLORS.blue): string {
+  const w = HOUSE_BAND_WAVELENGTH_MM;
+  const h = HOUSE_BAND_HEIGHT_MM;
+  const mid = h / 2;
+  // A quadratic whose control point sits 4/3 of the amplitude out approximates a sine hump closely
+  // enough that no printed size shows the difference.
+  const amp = (mid - HOUSE_BAND_STROKE_MM) * (4 / 3);
+  // Rounded, because an unrounded 4/3 puts seventeen decimal places into the URI on every document.
+  const n = (v: number) => Number(v.toFixed(3));
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">` +
+    `<g fill="none" stroke="${color}" stroke-width="${HOUSE_BAND_STROKE_MM}">` +
+    `<path d="M0 ${mid}Q${n(w / 4)} ${n(mid - amp)} ${n(w / 2)} ${mid}T${w} ${mid}"/>` +
+    `<path d="M0 ${mid}Q${n(w / 4)} ${n(mid + amp)} ${n(w / 2)} ${mid}T${w} ${mid}"/>` +
+    `</g></svg>`;
+  return `url(data:image/svg+xml,${encodeSvgForCssUrl(svg)})`;
+}
+
 /**
  * The house stylesheet: the letterhead, the type scale, tables, callouts and the signature block.
  *
@@ -191,9 +276,13 @@ export const HOUSE_IDENTITY_CSS = `
   .lh__id { text-align: right; color: var(--phx-doc-muted); font-size: 6.5pt; line-height: 1.5; }
   .lh__id strong { display: block; color: var(--phx-doc-deep); font-size: 8pt; font-weight: 700; }
 
-  /* The one element on every document without exception. 0.7 mm of rule, and it is what makes a
-     page recognisable at arm's length — the job the filled navy band used to do, for ~1% of it. */
-  .lh__rule { height: .7mm; background: var(--phx-doc-blue); margin-top: 2.2mm; }
+  /* The one element on every document without exception — the engine-turned band. It is what makes
+     a page recognisable at arm's length, and it is line rather than area: see the note on
+     houseEngineTurnedBand in this module for why the tile is exactly one wavelength. */
+  .lh__rule {
+    height: ${HOUSE_BAND_HEIGHT_MM}mm; margin-top: 2.2mm;
+    background: ${houseEngineTurnedBand()} center / ${HOUSE_BAND_WAVELENGTH_MM}mm ${HOUSE_BAND_HEIGHT_MM}mm repeat-x;
+  }
 
   .lh__title { text-align: center; padding: 3.3mm 0 2.2mm; }
   .lh__title h1 { margin: 0; color: var(--phx-doc-deep); font-size: 17pt; font-weight: 700; line-height: 1.2; }

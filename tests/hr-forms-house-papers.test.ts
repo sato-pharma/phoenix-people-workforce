@@ -1,7 +1,13 @@
 import { strict as assert } from "node:assert";
 
 import { COMPANY_DETAILS_DEFAULT } from "../src/lib/hiring-pack/company-details.ts";
-import { HOUSE_COLORS } from "../src/lib/hiring-pack/house-identity.ts";
+import {
+  HOUSE_BAND_HEIGHT_MM,
+  HOUSE_BAND_WAVELENGTH_MM,
+  HOUSE_COLORS,
+  HOUSE_IDENTITY_CSS,
+  houseEngineTurnedBand,
+} from "../src/lib/hiring-pack/house-identity.ts";
 
 import { systemContractDefaults } from "../src/config/system-settings.ts";
 import { currentContractTemplate } from "../src/lib/hiring-pack/contract-text.ts";
@@ -1014,7 +1020,82 @@ function testEveryHouseColourSurvivesABrowserPrint(): void {
   );
 }
 
+/**
+ * THE ENGINE-TURNED BAND MUST SURVIVE AN INLINE STYLE ATTRIBUTE.
+ *
+ * The band is a data URI, and the obvious way to write one — leaving the SVG's own attribute
+ * quotes alone and wrapping the URI in double quotes — renders perfectly in a stylesheet and then
+ * silently destroys any element that uses it in `style="…"`, because the first `"` inside
+ * `url("data:…")` closes the attribute. Measured 2026-09-09: four demo strips rendered blank with
+ * no console error. Same shape as the quoted font stack that once deleted the hiring pack footer.
+ *
+ * So this pins the property that prevents it — no quotes and no spaces anywhere inside `url(…)` —
+ * rather than pinning the exact bytes, which would fail on any harmless change to the curve.
+ */
+function testTheBandSurvivesAnInlineStyleAttribute(): void {
+  for (const ink of [HOUSE_COLORS.deep, HOUSE_COLORS.blue, HOUSE_COLORS.light, HOUSE_COLORS.ink]) {
+    const band = houseEngineTurnedBand(ink);
+    const inside = band.slice(band.indexOf("(") + 1, band.lastIndexOf(")"));
+
+    assert.ok(
+      band.startsWith("url(data:image/svg+xml,"),
+      `The band must be an inline SVG data URI — got "${band.slice(0, 40)}…".`,
+    );
+    assert.ok(
+      !/["']/.test(inside),
+      "The band's URI carries a quote. In an inline style attribute that closes the attribute and "
+        + "the element renders blank, with no error anywhere. Percent-encode it.",
+    );
+    assert.ok(
+      !/\s/.test(inside),
+      "The band's URI carries whitespace, which ends the CSS url() token. Percent-encode it.",
+    );
+    assert.ok(
+      !/[<>#]/.test(inside),
+      "The band's URI carries a raw <, > or #. An unescaped # starts a fragment identifier and the "
+        + "browser drops the rest of the image.",
+    );
+    // Decoded, so these assert the SVG itself rather than one particular way of encoding it.
+    const svg = decodeURIComponent(inside.replace(/^data:image\/svg\+xml,/, ""));
+    assert.ok(
+      svg.includes(`stroke="${ink}"`),
+      `The band must be drawn in the ink it was asked for — ${ink} is missing from the SVG.`,
+    );
+    assert.ok(
+      svg.includes('fill="none"'),
+      "The band is line, not area: its paths must not be filled.",
+    );
+    assert.equal(
+      (svg.match(/<path/g) ?? []).length,
+      2,
+      "The band is two passes half a wavelength apart — one pass is a wave, not engine turning.",
+    );
+  }
+}
+
+/**
+ * The band tiles at exactly one wavelength, and the letterhead carries it.
+ *
+ * A tile of any other width shows a kink at every repeat — once per 6 mm across the page — because
+ * a sine only returns to the same value AND the same slope after a whole period.
+ */
+function testTheBandTilesAtOneWavelength(): void {
+  const rule = HOUSE_IDENTITY_CSS.match(/\.lh__rule \{[\s\S]*?\}/)?.[0];
+  assert.ok(rule, "The letterhead rule is the one element on every house document; it is missing.");
+  assert.ok(
+    rule.includes(`${HOUSE_BAND_WAVELENGTH_MM}mm ${HOUSE_BAND_HEIGHT_MM}mm`),
+    `The band must be sized to exactly one wavelength (${HOUSE_BAND_WAVELENGTH_MM}mm) or it seams.`,
+  );
+  assert.ok(rule.includes("repeat-x"), "The band must repeat across the page, not sit once.");
+  assert.ok(
+    !/height:\s*\.7mm/.test(rule),
+    "The 0.7 mm filled bar was replaced by the band; a filled bar here would breach the ink rule.",
+  );
+}
+
 export function runHrFormsHousePapersTests(): void {
+  testTheBandSurvivesAnInlineStyleAttribute();
+  testTheBandTilesAtOneWavelength();
   testTheAbsenceThresholdIsMoreThanTenDays();
   testTheSecondNoticeDeclaresRatherThanAcceptsAResignation();
   testEveryPaperIsRegisteredAndCurrent();
