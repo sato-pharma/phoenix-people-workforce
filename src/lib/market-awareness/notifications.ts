@@ -1,4 +1,5 @@
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import type { MarketAwarenessApproverSlot } from "@/lib/market-awareness/approvers";
 import { loadRegionManagers } from "@/lib/market-awareness/geography";
 import type { MarketAwarenessActivity } from "@/lib/market-awareness/types";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
@@ -80,11 +81,16 @@ export async function resolveApprovalAudience(
  * Who must be told that a step is waiting on them.
  *
  * Split out so it can be asserted without a database, the same reason `resolveConversationAudience`
- * is. It mirrors `canDecideStep` deliberately: the MANAGER step is identity-based and the CEO step
- * is role-based, so at the CEO step the manager is irrelevant — a Group Product Manager has no
- * manager above them and their activity goes straight to the CEO with `managerHrId` null. That is a
- * real production case (2026-09-07), not a hypothetical, and keying the CEO step off the manager
- * would tell nobody at all.
+ * is. It mirrors `canDecideStep` deliberately: the notification must never reach someone the
+ * decision route would then refuse, and it must never miss somebody who can act.
+ *
+ * AT THE GROUP STEP IT IS EVERY MEMBER WHO HAS NOT YET ANSWERED — the whole point of the parallel
+ * rewrite is that two or three people are asked at once, and telling only the first of them
+ * reproduces the sequential chain the owner replaced. Whoever has already approved is left out: a
+ * second notice for a decision he has made reads as his answer not having registered.
+ *
+ * At the CEO step the group is irrelevant, and the step is role-based, so the CEO seat holders are
+ * the whole list.
  *
  * An empty result means the step has no holder. The caller reports the count rather than assuming
  * it landed.
@@ -92,9 +98,18 @@ export async function resolveApprovalAudience(
 export function resolvePendingDecisionRecipients(input: {
   ceoHrIds: Array<string | null | undefined>;
   managerHrId: string | null;
-  step: "manager" | "ceo";
+  approvers?: Array<Pick<MarketAwarenessApproverSlot, "assignedHrId" | "decision">>;
+  step: "group" | "manager" | "ceo";
 }): string[] {
-  const candidates = input.step === "ceo" ? input.ceoHrIds : [input.managerHrId];
+  const candidates =
+    input.step === "ceo"
+      ? input.ceoHrIds
+      : input.step === "group"
+        ? (input.approvers ?? [])
+            .filter((slot) => slot.decision === null)
+            .map((slot) => slot.assignedHrId)
+        : [input.managerHrId];
+
   const seen = new Set<string>();
   const recipientHrIds: string[] = [];
   for (const hrId of candidates) {
@@ -115,22 +130,23 @@ export function resolvePendingDecisionRecipients(input: {
  * submitted at 09:52 and 09:56 Cairo, because nothing told Rasha or the CEO they existed. A queue
  * nobody is sent to is a queue nobody reads.
  *
- * Addressed by IDENTITY at the manager step and by ROLE at the CEO step, matching `canDecideStep`
+ * Addressed by SLOT at the group step and by ROLE at the CEO step, matching `canDecideStep`
  * exactly — the notification must never reach someone the decision route would then refuse, and it
- * must never miss the one person who can act. `recipientHrIds` empty means the step has no holder;
- * the caller reports the count rather than assuming it landed.
+ * must never miss somebody who can act. `recipientHrIds` empty means the step has no holder; the
+ * caller reports the count rather than assuming it landed.
  */
 export async function notifyDecisionPending(input: {
   activity: MarketAwarenessActivity;
   actionUrl: string;
-  /** The CEO seat holders, resolved by the caller from the role directory. Ignored at the manager step. */
+  /** The CEO seat holders, resolved by the caller from the role directory. Ignored at the group step. */
   ceoHrIds: Array<string | null | undefined>;
-  step: "manager" | "ceo";
+  step: "group" | "manager" | "ceo";
 }): Promise<{ notified: number }> {
   const { activity, step } = input;
 
   try {
     const recipientHrIds = resolvePendingDecisionRecipients({
+      approvers: activity.approvers,
       ceoHrIds: input.ceoHrIds,
       managerHrId: activity.managerHrId,
       step,
@@ -233,6 +249,67 @@ export async function notifyActivityReturned(input: {
     logError("Market Awareness return notification failed", {
       labels: {
         event: "market_awareness_return_notify_failed",
+        activity_id: activity.id,
+        activity_code: activity.activityCode,
+      },
+      error,
+    });
+    return { notified: 0 };
+  }
+}
+
+/**
+ * Fired when a member of the group freezes the request — the requester is the only recipient.
+ *
+ * A HOLD IS NOT A RETURN AND MUST NOT READ LIKE ONE. Nothing is being asked of the requester and
+ * there is nothing for him to edit; the request is simply parked, and it will move again when the
+ * person who parked it says so. Without this he watches it stop with no reason given anywhere —
+ * the same failure a return with no comment produces, which is why the reason is required at the
+ * constraint, at the function and here.
+ *
+ * The other approvers are deliberately NOT told. They cannot act on a frozen request, and a notice
+ * about something they are not being asked to do is the noise that makes people stop reading them.
+ */
+export async function notifyActivityHeld(input: {
+  activity: MarketAwarenessActivity;
+  actionUrl: string;
+  holderName: string | null;
+  reason: string | null;
+}): Promise<{ notified: number }> {
+  const { activity } = input;
+
+  try {
+    if (!activity.requesterHrId) return { notified: 0 };
+
+    const holder = input.holderName?.trim() || "One of your approvers";
+    const reason = input.reason?.trim();
+
+    await createSystemNotificationForRecipients(
+      {
+        module: MARKET_AWARENESS_NOTIFICATION_MODULE,
+        eventType: "market_awareness_activity_held",
+        category: "market_awareness",
+        recordId: activity.id,
+        actionUrl: input.actionUrl,
+        title: `${activityLabel(activity)} is on hold`,
+        message:
+          `${holder} put ${activityLabel(activity)} on hold` +
+          (reason ? `: "${reason}".` : ".") +
+          " Nothing is needed from you — it will move again when the hold is lifted.",
+        metadata: {
+          activityCode: activity.activityCode,
+          heldBy: activity.heldByHrId,
+        },
+        telegram: { ctaLabel: "Open the activity", ctaUrl: input.actionUrl },
+      },
+      [activity.requesterHrId],
+    );
+
+    return { notified: 1 };
+  } catch (error) {
+    logError("Market Awareness hold notification failed", {
+      labels: {
+        event: "market_awareness_hold_notify_failed",
         activity_id: activity.id,
         activity_code: activity.activityCode,
       },

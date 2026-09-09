@@ -1,13 +1,23 @@
+import type { MarketAwarenessApproverSlot } from "@/lib/market-awareness/approvers";
 import type { MarketAwarenessLine } from "@/lib/market-awareness/lines";
 
 /**
  * Statuses. `withdrawn` is a terminal state distinct from `rejected` on purpose: a request the PM
  * pulled back is not a request the CEO refused, and putting a rejection on the record for a typing
  * error is what a withdraw path exists to prevent.
+ *
+ * `pending_group` REPLACED `pending_manager` on 2026-09-09 (owner). One person approving in turn
+ * became the Marketing Manager and every targeted line's National Sales Manager approving at the
+ * SAME time, so the status names a group rather than a manager.
+ *
+ * `on_hold` is the owner's fourth decision, beside approve, reject and return. It FREEZES the whole
+ * request: nobody in the group can act and the overdue clock stops until it is released. It is
+ * deliberately not a terminal state — a held request is still alive and still somebody's.
  */
 export const MARKET_AWARENESS_STATUSES = [
   "draft",
-  "pending_manager",
+  "pending_group",
+  "on_hold",
   "pending_ceo",
   "returned",
   "rejected",
@@ -23,6 +33,8 @@ export const MARKET_AWARENESS_DECISION_ACTIONS = [
   "approve",
   "reject",
   "return",
+  "hold",
+  "release",
   "withdraw",
   "execute",
   "close",
@@ -30,7 +42,12 @@ export const MARKET_AWARENESS_DECISION_ACTIONS = [
 
 export type MarketAwarenessDecisionAction = (typeof MARKET_AWARENESS_DECISION_ACTIONS)[number];
 
-export type MarketAwarenessStepCode = "manager" | "ceo";
+/**
+ * `manager` is retired but still spelled here: two production decision rows carry it, written by the
+ * Marketing Manager under the old chain, and that trail is append-only. Reading a historical row
+ * must never fail because the step it names no longer exists.
+ */
+export type MarketAwarenessStepCode = "group" | "ceo" | "manager";
 
 export type MarketAwarenessActivityType = {
   id: number;
@@ -94,8 +111,25 @@ export type MarketAwarenessActivity = {
 
   requesterHrId: string;
   requesterName: string | null;
+  /**
+   * The old single-manager step. Kept because two production rows were routed through it and their
+   * history must still read correctly; nothing written from 2026-09-09 sets it.
+   */
   managerHrId: string | null;
   managerName: string | null;
+
+  /**
+   * The parallel approval group: the Marketing Manager and one National Sales Manager per targeted
+   * line. Empty until the activity is submitted, and rebuilt from scratch on every resubmission
+   * because the lines may have changed in between.
+   */
+  approvers: MarketAwarenessApproverSlot[];
+
+  /** Who froze it, when, and why. All three are cleared on release. */
+  heldByHrId: string | null;
+  heldByName: string | null;
+  heldAt: string | null;
+  holdReason: string | null;
 
   activityType: MarketAwarenessActivityType;
   title: string | null;
