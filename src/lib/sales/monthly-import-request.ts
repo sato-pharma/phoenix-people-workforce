@@ -145,7 +145,7 @@ export async function resolveUploadedSpreadsheet(request: Request): Promise<Reso
 }
 
 export type ResolvedWeeklyUpload =
-  | { ok: true; storagePaths: string[]; distributorCode: string; periodDate: string | null; weekNumber: number | null; cycleMonth: string | null; file: File | null; salesFile: File | null; stockFile: File | null }
+  | { ok: true; storagePaths: string[]; distributorCode: string; periodDate: string | null; weekNumber: number | null; cycleMonth: string | null; notify: boolean; file: File | null; salesFile: File | null; stockFile: File | null }
   | { ok: false; storagePaths: string[]; code: string; error: string; status: number };
 
 const WEEKLY_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -159,6 +159,13 @@ function parseWeekNumber(value: unknown): number | null {
 function parseCycleMonth(value: unknown): string | null {
   const v = String(value ?? "").trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+}
+// "Notify the line managers about this upload" — on unless the wizard explicitly turns it off, so a
+// caller that says nothing (an older client, a script) keeps the owner's asked-for behaviour. Only
+// the literal false / "false" suppresses; anything else, including an absent field, notifies.
+function parseNotifyFlag(value: unknown): boolean {
+  if (value === false) return false;
+  return String(value ?? "").trim().toLowerCase() !== "false";
 }
 
 // Weekly upload transport resolver. Like resolveUploadedSpreadsheet it accepts BOTH transport paths so
@@ -187,6 +194,7 @@ export async function resolveWeeklyUploadRequest(request: Request): Promise<Reso
       periodDate,
       weekNumber: parseWeekNumber(formData.get("weekNumber")),
       cycleMonth: parseCycleMonth(formData.get("cycleMonth")),
+      notify: parseNotifyFlag(formData.get("notify")),
       salesFile: sales instanceof File ? sales : null,
       stockFile: stock instanceof File ? stock : null,
       storagePaths: [],
@@ -201,11 +209,13 @@ export async function resolveWeeklyUploadRequest(request: Request): Promise<Reso
     periodDate?: string;
     weekNumber?: number | string;
     cycleMonth?: string;
+    notify?: boolean | string;
   };
   const distributorCode = String(body?.distributorCode ?? "").trim();
   const periodDate = String(body?.periodDate ?? "").trim() || null;
   const weekNumber = parseWeekNumber(body?.weekNumber);
   const cycleMonth = parseCycleMonth(body?.cycleMonth);
+  const notify = parseNotifyFlag(body?.notify);
 
   const supabase = getSupabaseAdmin();
   const storagePaths: string[] = [];
@@ -228,7 +238,7 @@ export async function resolveWeeklyUploadRequest(request: Request): Promise<Reso
     if (!salesFile || !stockFile) {
       return { code: "invalid_weekly_file", error: "Uploaded workbook was not found in storage. Please re-upload.", ok: false, status: 400, storagePaths };
     }
-    return { distributorCode, file: null, ok: true, periodDate, weekNumber, cycleMonth, salesFile, stockFile, storagePaths };
+    return { distributorCode, file: null, ok: true, periodDate, weekNumber, cycleMonth, notify, salesFile, stockFile, storagePaths };
   }
 
   const path = String(body?.storagePath ?? "").trim();
@@ -240,5 +250,5 @@ export async function resolveWeeklyUploadRequest(request: Request): Promise<Reso
   if (!file) {
     return { code: "invalid_weekly_file", error: "Uploaded workbook was not found in storage. Please re-upload.", ok: false, status: 400, storagePaths };
   }
-  return { distributorCode, file, ok: true, periodDate, weekNumber, cycleMonth, salesFile: null, stockFile: null, storagePaths };
+  return { distributorCode, file, ok: true, periodDate, weekNumber, cycleMonth, notify, salesFile: null, stockFile: null, storagePaths };
 }

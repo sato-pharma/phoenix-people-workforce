@@ -1522,6 +1522,7 @@ import { runDirectOrderVenueGapsTests } from "./direct-order-venue-gaps.test.ts"
 import { runVacancyOptionLabelTests } from "./vacancy-option-label.test.ts";
 import { runOrganogramArabicSearchTests } from "./organogram-arabic-search.test.ts";
 import { runOrganogramTeamLabelTests } from "./organogram-team-label.test.ts";
+import { runWeeklyUploadLineNotificationTests } from "./weekly-upload-line-notification.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4965,6 +4966,11 @@ await runTest(
 await runTest(
   "the organogram team label comes from the LINK, never the denormalized twin (which is empty for every employee)",
   runOrganogramTeamLabelTests,
+);
+
+await runTest(
+  "a weekly upload mails only the lines whose products are in the sheet (Head Office never), with no figures in the body",
+  runWeeklyUploadLineNotificationTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
