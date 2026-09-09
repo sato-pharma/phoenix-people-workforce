@@ -1509,6 +1509,7 @@ import { runOverCapNeverBlocksTests } from "./over-cap-never-blocks.test.ts";
 import { runTargetsUnsavedEditGuardTests } from "./targets-unsaved-edit-guard.test.ts";
 import { runDirectOrderVenueGapsTests } from "./direct-order-venue-gaps.test.ts";
 import { runVacancyOptionLabelTests } from "./vacancy-option-label.test.ts";
+import { runOrganogramArabicSearchTests } from "./organogram-arabic-search.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4907,6 +4908,11 @@ await runTest(
 await runTest(
   "vacancy option label (a district vacancy names its district, not only the leaver own area)",
   runVacancyOptionLabelTests,
+);
+
+await runTest(
+  "organogram Arabic search (nameAr is indexed, and query and row fold to one spelling policy)",
+  runOrganogramArabicSearchTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
