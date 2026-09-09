@@ -6,6 +6,7 @@ import {
   isSameOriginMutationRequest,
   requiresCsrfProtection,
 } from "@/lib/security/csrf";
+import { logStructured } from "@/lib/observability/log";
 import {
   isAllowedPhoenixOrigin,
   normalizeOrigin,
@@ -172,6 +173,27 @@ function securityProxy(request: NextRequest): NextResponse | null {
   }
 
   if (!isSameOriginMutationRequest(request)) {
+    // 🔴 SAY WHICH ORIGIN WAS REFUSED. Before this line the guard returned a bare 403 and recorded
+    // NOTHING, anywhere — not here, not in `app_error_events` (which stores a path and no host),
+    // and not in the database, which has no origin/referer/host column at all. So a person whose
+    // every save was being refused produced no evidence of it: reads worked, the app looked
+    // healthy, and the only way to find out was to ask them what their address bar said. That is
+    // the position this was written from, and it is not one a security control should create.
+    //
+    // A guard that fires silently cannot be diagnosed. WARNING, not ERROR: a genuine cross-site
+    // attempt is this working correctly, so it must not page anybody — it is here to be searchable.
+    logStructured("WARNING", "Cross-site mutation blocked", {
+      labels: { event: "csrf_blocked" },
+      context: {
+        method: request.method,
+        path: request.nextUrl.pathname,
+        // The three headers the decision is actually made from, so the log answers WHY and not
+        // merely THAT. Normalized to an origin, so no path or query string is ever recorded.
+        origin: normalizeOrigin(request.headers.get("origin")) ?? null,
+        referer: normalizeOrigin(request.headers.get("referer")) ?? null,
+        host: request.headers.get("host"),
+      },
+    });
     return NextResponse.json(
       { error: "csrf_blocked", message: "Cross-site mutation request blocked." },
       { status: 403 },
