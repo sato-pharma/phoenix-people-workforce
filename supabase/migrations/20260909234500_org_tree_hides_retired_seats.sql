@@ -24,6 +24,11 @@
 -- Deliberately NOT filtering on effective_from. A seat dated to start in the future would still be
 -- drawn, which is the behaviour every existing seat already relies on, and no seat carries a future
 -- effective_from today. Hiding one is a separate change nobody has asked for.
+--
+-- "Today" is Cairo's, never the server's. Production Postgres runs UTC, so an unzoned current_date
+-- is YESTERDAY between Cairo midnight and 03:00 — a seat retired that morning would keep drawing for
+-- three hours, and one retired the previous day would vanish three hours early. The first draft used
+-- current_date and the migration guard caught it.
 create or replace view au.v_org_tree as
 with recursive tree as (
   select
@@ -40,7 +45,7 @@ with recursive tree as (
   from au.seats s
   where s.parent_seat_id is null
     and s.is_active
-    and (s.effective_to is null or s.effective_to > current_date)
+    and (s.effective_to is null or s.effective_to > (now() at time zone 'Africa/Cairo')::date)
   union all
   select
     c.seat_id,
@@ -56,7 +61,7 @@ with recursive tree as (
   from au.seats c
   join tree t_1 on c.parent_seat_id = t_1.seat_id
   where c.is_active
-    and (c.effective_to is null or c.effective_to > current_date)
+    and (c.effective_to is null or c.effective_to > (now() at time zone 'Africa/Cairo')::date)
 )
 select
   t.seat_id,
@@ -107,7 +112,7 @@ begin
 
   select count(*) into v_total from au_v_org_tree;
   if v_total <> (select count(*) from au.seats
-                  where is_active and (effective_to is null or effective_to > current_date)) then
+                  where is_active and (effective_to is null or effective_to > (now() at time zone 'Africa/Cairo')::date)) then
     raise exception 'org tree row count does not match the live seat count - the recursive walk dropped a subtree.';
   end if;
 
