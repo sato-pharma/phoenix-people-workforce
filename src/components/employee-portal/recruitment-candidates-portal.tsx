@@ -725,6 +725,15 @@ export function RecruitmentCandidatesPortal({
   // they used to be two separate expressions.
   const showGroupHeadings = shouldShowGroupHeadings(positionFolders, unfiledSends);
 
+  // One loader returns both kinds of board — the areas a district manager holds, and the districts a
+  // sales manager above him reads district-manager applications for. They are split HERE rather than
+  // in two server calls because the placement that fills them is one pass over one CV pool; splitting
+  // it would mean sweeping ~600 candidates twice to answer one screen.
+  const areaBoards = initialDistrictBoards.filter((board) => board.intake !== "district_managers");
+  const managerApplicantBoards = initialDistrictBoards.filter(
+    (board) => board.intake === "district_managers",
+  );
+
   const reload = async () => {
     try {
       const data = await getJson("/api/recruitment/hiring-manager/applications");
@@ -823,12 +832,32 @@ export function RecruitmentCandidatesPortal({
           go looking rather than a queue: nobody is waiting on him for anything in here, so it must
           not sit above the list that is. */}
       <DistrictFoldersSection
-        boards={initialDistrictBoards}
+        boards={areaBoards}
         callClaims={callClaims}
         files={files}
         onFeedbackGiven={onFeedbackGiven}
         outstandingFeedback={outstandingFeedback}
         ownFolders
+        viewerHrId={viewerHrId}
+      />
+
+      {/* Applications for a DISTRICT MANAGER post, which only the managers above a district ever
+          see. The owner, 2026-09-09: *"the district managers receive medical reps and the national
+          sales managers receive district managers and medical reps. A district manager never
+          receives district manager."* Its own section rather than more folders in the one above,
+          because these are a different job being applied for and the screening banner over that
+          section says "one of your areas", which is not what these are. Renders nothing at all for a
+          district manager — he holds no board of this kind by construction. */}
+      <DistrictFoldersSection
+        boards={managerApplicantBoards}
+        callClaims={callClaims}
+        files={files}
+        heading="District manager applicants"
+        onFeedbackGiven={onFeedbackGiven}
+        outstandingFeedback={outstandingFeedback}
+        ownFolders
+        rescreenBanner={false}
+        subheading="People applying to run one of the districts under you, filed by the district they asked for. District managers never see these."
         viewerHrId={viewerHrId}
       />
 

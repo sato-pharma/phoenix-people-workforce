@@ -241,6 +241,7 @@ import { runHiringManagerTeamScopeTests } from "./hiring-manager-team-scope.test
 import { runManagerFolderShelfTests } from "./manager-folder-shelf.test.ts";
 import { runBackgroundReviewQueueTests } from "./background-review-queue.test.ts";
 import { runDistrictManagerFolderTests } from "./district-manager-folders.test.ts";
+import { runRecruitmentManagerSeatRankTests } from "./recruitment-manager-seat-rank.test.ts";
 import { runRecruitmentDistrictReturnsTests } from "./recruitment-district-returns.test.ts";
 import { runCandidatePositionFolderTests } from "./candidate-position-folders.test.ts";
 import { runArabicPlaceMatchTests } from "./arabic-place-match.test.ts";
@@ -2011,6 +2012,10 @@ await runTest(
 await runTest(
   "district CV folders (an area belongs to up to THREE district managers, and an area nobody holds is reported rather than guessed)",
   runDistrictManagerFolderTests,
+);
+await runTest(
+  "manager seat rank (a district manager NEVER receives an application for his own job — it goes to the sales manager above him, and to every manager above that)",
+  runRecruitmentManagerSeatRankTests,
 );
 await runTest(
   "district CV returns (a district manager hands a CV back and it leaves HIS folder only — the other two lines that share the area keep it — and the recruiting admin, never the DM, clears the queue)",
