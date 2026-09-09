@@ -100,3 +100,98 @@ export function maskedClosingClientCodes(
   }
   return codes;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// The Source of Sales DASHBOARD
+//
+// 🔴 THE CLOSING DETAIL WAS ONLY HALF THE RULE. The owner's words were "never anyone know that
+// these sales are from Al Qimma", and the closing detail is Super-Admin-adjacent — but the portal
+// SoS dashboard renders a distributor filter and a ranked bar chart BY DISTRIBUTOR, and it is
+// gated on `sales:read`, which THIRTEEN of the nineteen roles hold, Medical Rep and plain Employee
+// among them. Measured against production: `phx_sos_distinct_distributors` returns `QM` for Pedia.
+// So the identity was reaching the one screen almost everybody can open.
+//
+// FOUR FIELDS CARRY IT, not one, and masking a subset is the same defect in a smaller place:
+//   • filters.distributors  — the selectable option list
+//   • byDistributor         — the ranked bars
+//   • topCustomers[].distributor — each customer row names its supplier
+//   • comparison.distributor     — prior-period values KEYED BY distributor code
+//
+// The other distributor-bearing fields on the payload type (`momComparison`, `yoyComparison`,
+// `detailRows`) are admin/BI only and the portal never requests them, so they are out of scope
+// here rather than forgotten — see the comments on those fields.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What a masked distributor is called on a chart that must still add up.
+ *
+ * NOT the real code and NOT a real distributor's name. The owner declined relabelling El Qema as
+ * another supplier, so this says "somebody, not named" and nothing more. The row KEEPS ITS VALUE
+ * on purpose: he asked for the sales to appear in totals, and a dropped bar makes the breakdown
+ * stop reconciling with the total tile above it, which is its own kind of trace.
+ */
+export const MASKED_SOURCE_CODE = "" as const;
+export const MASKED_SOURCE_LABEL = "—" as const;
+
+function isMaskedCode(value: string | null | undefined): boolean {
+  return MASKED_SOURCE_DISTRIBUTORS.has(String(value ?? "").trim().toUpperCase());
+}
+
+/**
+ * Blank El Qema out of a portal SoS dashboard payload, unless this viewer may reveal it.
+ *
+ * 🔴 CALL THIS ON THE WAY OUT, at the single return, AFTER the comparison is computed. The
+ * comparison keys prior values by distributor code; masking before it runs would leave the prior
+ * map holding a code the current rows no longer carry, and every masked row would silently read as
+ * "no comparable prior value" rather than as its real movement.
+ *
+ * The option list DROPS the masked distributor rather than blanking it: an option is identity and
+ * nothing else, so there is no value to preserve, and a blank entry in a filter is an invitation to
+ * click on the thing being hidden.
+ */
+export function maskPortalSosDashboard<
+  T extends {
+    byDistributor?: Array<{ code: string; label?: string; name?: string }> | null;
+    filters?: { distributors?: Array<{ code: string }> | null } | null;
+    topCustomers?: Array<{ distributor?: string | null }> | null;
+  },
+>(
+  data: T,
+  access: Pick<AccessContext, "role" | "scope">,
+): T {
+  if (canRevealClosingSource(access)) return data;
+
+  const byDistributor = data.byDistributor?.map((row) =>
+    isMaskedCode(row.code)
+      ? { ...row, code: MASKED_SOURCE_CODE, ...(row.label === undefined ? {} : { label: MASKED_SOURCE_LABEL }), ...(row.name === undefined ? {} : { name: MASKED_SOURCE_LABEL }) }
+      : row,
+  );
+
+  const distributors = data.filters?.distributors?.filter((option) => !isMaskedCode(option.code));
+
+  const topCustomers = data.topCustomers?.map((row) =>
+    isMaskedCode(row.distributor) ? { ...row, distributor: MASKED_SOURCE_LABEL } : row,
+  );
+
+  return {
+    ...data,
+    ...(byDistributor ? { byDistributor } : {}),
+    ...(data.filters ? { filters: { ...data.filters, ...(distributors ? { distributors } : {}) } } : {}),
+    ...(topCustomers ? { topCustomers } : {}),
+  };
+}
+
+/** Drop every masked distributor's key from a code-keyed map (the comparison's prior values). */
+export function maskCodeKeyedDistributorMap<V>(
+  map: Readonly<Record<string, V>> | null | undefined,
+  access: Pick<AccessContext, "role" | "scope">,
+): Record<string, V> | null | undefined {
+  if (!map || canRevealClosingSource(access)) return map;
+  const kept: Record<string, V> = {};
+  let touched = false;
+  for (const [code, value] of Object.entries(map)) {
+    if (isMaskedCode(code)) { touched = true; continue; }
+    kept[code] = value;
+  }
+  return touched ? kept : map;
+}

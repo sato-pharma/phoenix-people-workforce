@@ -40,6 +40,7 @@ import {
   type SosFilterOptions,
   type SosScopeOverrides,
 } from "@/lib/sales/sos-dashboard";
+import { maskCodeKeyedDistributorMap, maskPortalSosDashboard } from "@/lib/sales/closing-source-mask";
 import { getWeeklyProductScopeCodes } from "@/lib/sales/weekly/access";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -586,5 +587,29 @@ export async function getPortalSosDashboard(
     data.period ? getDistributorUploadStatus(data.period).catch(() => null) : Promise.resolve(null),
   ]);
 
-  return { data: { ...data, filters: trimFilterOptions(data.filters, scope) }, scope, comparison, uploadStatus };
+  // 🔒 THE SOURCE MASK, APPLIED HERE AND NOWHERE EARLIER. Everything above this line — the scope
+  // resolution, the split, the comparison — must see the real distributor or El Qema's own rules
+  // stop applying and the numbers move silently. This is the last thing that happens before the
+  // payload leaves for a screen, which is the only safe place for it. See closing-source-mask.ts.
+  //
+  // The comparison is masked separately because it keys prior values BY distributor code: masking
+  // it before it was computed would leave every masked row reading "no comparable prior value"
+  // instead of its real movement.
+  const masked = maskPortalSosDashboard(
+    { ...data, filters: trimFilterOptions(data.filters, scope) },
+    ctx,
+  );
+  // NESTED, not top level: the map lives at `prevValueByCode.distributor`, one of four dimensions
+  // keyed side by side. `gainers`/`decliners` are built from byProduct and carry no distributor.
+  const maskedComparison = comparison
+    ? {
+      ...comparison,
+      prevValueByCode: {
+        ...comparison.prevValueByCode,
+        distributor: maskCodeKeyedDistributorMap(comparison.prevValueByCode.distributor, ctx) ?? {},
+      },
+    }
+    : comparison;
+
+  return { data: masked, scope, comparison: maskedComparison, uploadStatus };
 }
