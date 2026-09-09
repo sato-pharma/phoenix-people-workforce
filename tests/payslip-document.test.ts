@@ -105,17 +105,37 @@ export function runPayslipDocumentTests() {
   }
 
   // ── the ink rule ───────────────────────────────────────────────────────────────────────────────
-  // Colour is carried by LINES AND TYPE. The only filled areas allowed are the 0.7 mm brand rule in
-  // the letterhead and the 6 % zebra row the owner asked for by name. This counts every painted
-  // background the document declares and names any third one.
+  // Colour is carried by LINES AND TYPE. The only filled area allowed is the 6 % zebra row the owner
+  // asked for by name. This counts every painted background the document declares and names any
+  // other one.
+  //
+  // THE LETTERHEAD RULE IS NO LONGER A FILLED BAR. It was 0.7 mm of solid Brand Blue until
+  // 2026-09-09, when the owner chose the engine-turned band for every Sato template; it is now a
+  // tiled SVG drawn in stroke only. So the allowance is no longer "the brand rule is on the list":
+  // the band is admitted only while it stays LINE and not area, which this decodes and checks. That
+  // is stricter than the name-based pass it replaces — a filled shape smuggled into the URI would
+  // have sailed through the old whitelist and fails here.
   const backgrounds = (PAYSLIP_DOCUMENT_CSS.match(/background:\s*([^;]+);/g) ?? [])
     .map((rule) => rule.replace(/background:\s*/, "").replace(/;$/, "").trim())
     .filter((value) => value !== "#fff" && value !== "#ffffff" && value !== "none" && value !== "transparent");
-  const allowed = new Set(["var(--phx-doc-tint)", "var(--phx-doc-blue)", "#eef2f6"]);
+  const allowed = new Set(["var(--phx-doc-tint)", "#eef2f6"]);
   for (const value of backgrounds) {
+    const inlineSvg = value.match(/url\(data:image\/svg\+xml,([^)]*)\)/);
+    if (inlineSvg) {
+      const svg = decodeURIComponent(inlineSvg[1]);
+      assert.ok(
+        svg.includes('fill="none"'),
+        `A background image here must be drawn in line only — "${value.slice(0, 70)}…" declares no fill="none".`,
+      );
+      assert.ok(
+        !/fill="(?!none)[^"]*"/.test(svg),
+        `The ink rule forbids a filled shape, including inside a background image — found one in "${value.slice(0, 70)}…".`,
+      );
+      continue;
+    }
     assert.ok(
       allowed.has(value),
-      `The ink rule allows the zebra tint, the brand rule and the on-screen ground only — found "${value}".`,
+      `The ink rule allows the zebra tint, the engine-turned band and the on-screen ground only — found "${value}".`,
     );
   }
   assert.ok(

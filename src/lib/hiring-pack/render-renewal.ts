@@ -1,6 +1,10 @@
 import type { CompanyDetails } from "@/lib/hiring-pack/company-details";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
-import { HOUSE_COLORS, HOUSE_MARK_SRC } from "@/lib/hiring-pack/house-identity";
+import {
+  HOUSE_COLORS,
+  HOUSE_MARK_SRC,
+  houseBandBackground,
+} from "@/lib/hiring-pack/house-identity";
 import { insuranceWageFromBase } from "@/lib/hiring-pack/insurance-wage";
 import { renewalObjectiveReasonClause } from "@/lib/hiring-pack/renewal-reasons";
 import { spellEgyptianAmount } from "@/lib/hiring-pack/arabic-amount";
@@ -569,9 +573,11 @@ function renderRenewal(
     align-items: center;
     gap: 4mm;
     margin-bottom: 2.5mm;
-    padding-bottom: 1.5mm;
-    /* THE BRAND RULE — 0.7 mm of Brand Blue, the one element on every house document. */
-    border-bottom: 0.7mm solid ${HOUSE_COLORS.blue};
+    padding-bottom: 3.3mm;
+    /* THE BRAND RULE, now the engine-turned band — the one element on every house document. Taken
+       from houseBandBackground() rather than re-typed: this is the FOURTH masthead in the codebase,
+       and testTheMastheadStillMatchesTheContractItAmends exists because they drift. */
+    background: ${houseBandBackground("left bottom")};
   }
   .doc-mast__side { flex: 0 0 34mm; }
   .doc-mast__id { text-align: right; color: ${HOUSE_COLORS.muted}; font-size: 6.5pt; line-height: 1.5; }
