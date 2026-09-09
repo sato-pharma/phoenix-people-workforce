@@ -1497,6 +1497,7 @@ import { runSalesUploadAnalyzeMatchesCommitTests } from "./sales-upload-analyze-
 import { runSalesUploadReceiptConfidentialityTests } from "./sales-upload-receipt-confidentiality.test.ts";
 import { runRetentionRiskDetectorTests } from "./retention-risk-detector.test.ts";
 import { runRetentionRiskNotifyTests } from "./retention-risk-notify.test.ts";
+import { runRetentionRiskRecipientExclusionTests } from "./retention-risk-recipient-exclusion.test.ts";
 import { runCrmAccountSetupTests } from "./crm-account-setup.test.ts";
 import {
   runEmployeeManagementCanEditReachTests,
@@ -3463,7 +3464,7 @@ await runTest(
   runCityListNewAreaGuardTests,
 );
 await runTest(
-  "El Qema priority ladder (the whole Pedia book divided across every area the line has, with Qalubeya, Menoufia, Gharbia and Cairo one 2% step apart in that order — where a warehouse sits and how much it sold both stopped mattering, and Others take nothing including their own sales)",
+  "El Qema three bands and the صعيد redistribution (200 / 201-999 / 1000+ per warehouse and product, Qalubeya meaning Qalubeya + Cairo evenly, then half of Upper Egypt's credited sales back across Upper Egypt and half over the republic — every share checked against an independent reading of the owner's words)",
   runQemaWarehouseSplitTests,
 );
 await runTest(
@@ -4850,6 +4851,10 @@ await runTest(
 await runTest(
   "retention risk alerts (in-app and Telegram, never email or push; the message reports and never accuses)",
   runRetentionRiskNotifyTests,
+);
+await runTest(
+  "retention risk never tells the CEO — as a rep's line manager or via the role policy, and canonically on both sides",
+  runRetentionRiskRecipientExclusionTests,
 );
 await runTest(
   "SoS Direct channel folds both vintages (uploaded DIRECT + module DirectReq) into one channel, so a module-sourced direct sale is never reported as a distributor",
