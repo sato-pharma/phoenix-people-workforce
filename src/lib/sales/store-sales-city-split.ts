@@ -322,6 +322,69 @@ export const WAREHOUSE_THRESHOLD_LINES: ReadonlySet<string> = new Set(["pedia"])
 export const OTHERS_EXCLUDED_LINES: ReadonlySet<string> = new Set(["pedia"]);
 
 /**
+ * The operational region whose areas form ONE shared local block — owner, 2026-09-09:
+ *
+ *   "the rule will be the same as cairo + qalubeya but for upper egypt, if any city in upper egypt
+ *    exceed that to be distributed on all upper egypt cities except the others"
+ *
+ * So an El Qema warehouse anywhere in Upper Egypt treats the WHOLE region as its governorate once it
+ * passes the 200-pack step, exactly as a Benha warehouse treats Qalubeya plus Cairo.
+ *
+ * 🔴 IT IS GATED ON THE THRESHOLD, AND THE CAIRO ONE IS NOT. Asked directly on 2026-09-09
+ * whether it holds at every step: "only above 200 packs". So a 150-pack Sohag order stays in Sohag's
+ * own two areas, while a 150-pack Benha order still reaches Cairo. The two rules look identical in
+ * his sentence and differ in exactly this, which is why the gate sits here and not in the shared
+ * override map.
+ *
+ * 🔴 READ FROM THE ORGANOGRAM, NEVER FROM THE AREA CODE. Asked whether Beni Suef belongs, he
+ * answered "follow the organogram but later if we update the organogram the rule changes" — so this
+ * is a REGION CODE and the membership is whatever the line's organogram says today. On Pedia that is
+ * seven areas (Minia 1-2, Assuit 1-2, Sohag 1-2, Qena 1): `UE9` Beni Suef sits in `GZ` and `UE8`
+ * Qena 2 sits in Others, both by the organogram's own filing. Hard-coding the `UE*` codes would look
+ * right, would be wrong about both of them today, and would stop tracking him the moment he moves a
+ * seat.
+ */
+export const UPPER_EGYPT_BLOCK_REGION_CODE = "UE";
+
+/** The label the Store Split sheet shows for that block, so a reader sees which rule moved money. */
+export const UPPER_EGYPT_BLOCK_LABEL = "Upper Egypt";
+
+/**
+ * Everything the split needs to know about a line's organogram, in ONE argument.
+ *
+ * 🔴 ONE OBJECT RATHER THAN TWO SETS, deliberately. The Others rule shipped completely INERT
+ * once already: its loader looked the line up by display name against a code-keyed view, found no
+ * rows, and an empty set is exactly how this module spells "nothing is excluded". Nothing errored.
+ * A second loose parameter would give every call site a fresh chance to pass one half and forget the
+ * other, and the failure would again be silent and in the direction of "the rule does not apply".
+ * With one object the compiler names every site that has not been updated.
+ */
+export type SplitRegions = {
+  /** Areas the line parks in Others. They receive nothing, but always keep what they sold. */
+  others: ReadonlySet<string>;
+  /** Operational region code to its areas, for this line and period. */
+  areasByRegion: ReadonlyMap<string, ReadonlySet<string>>;
+};
+
+/** No organogram loaded. Splits exactly as the code did before any of these rules existed. */
+export const NO_SPLIT_REGIONS: SplitRegions = { areasByRegion: new Map(), others: new Set() };
+
+/**
+ * The Upper Egypt block for a warehouse, or undefined when the rule does not reach it.
+ *
+ * Undefined for three separate reasons, and all three must fall back to the plain governorate: the
+ * organogram was not loaded, the region holds no areas, or this warehouse is simply not in it.
+ */
+function upperEgyptBlockFor(
+  origin: string,
+  regions: SplitRegions | undefined,
+): { label: string; areas: readonly string[] } | undefined {
+  const areas = regions?.areasByRegion.get(UPPER_EGYPT_BLOCK_REGION_CODE);
+  if (!areas || areas.size === 0 || !areas.has(origin)) return undefined;
+  return { areas: [...areas].sort(), label: UPPER_EGYPT_BLOCK_LABEL };
+}
+
+/**
  * 🔴 THE CAIRO + QALUBEYA RULE STANDS — it was never replaced, and removing it was an error.
  *
  * Owner 2026-09-07: "سوف يتم تقسيم بيع القليوبية على مندوب القليوبية بالإضافة إلى كل مندوبين القاهرة
@@ -453,7 +516,7 @@ export function warehouseSplitQtyByKey(rows: readonly StoreSplitRow[]): Readonly
 export function splitTargetsFor(
   row: StoreSplitRow,
   thresholdQty?: number,
-  othersAreas?: ReadonlySet<string>,
+  regions?: SplitRegions,
 ): SplitPlan | null {
   const origin = closingAreaOf(row);
   if (!origin) return null;
@@ -469,17 +532,29 @@ export function splitTargetsFor(
   const ruleApplies = WAREHOUSE_THRESHOLD_DISTRIBUTORS.has(distributor)
     && WAREHOUSE_THRESHOLD_LINES.has(line);
 
+  // The quantity decides the band, and from 2026-09-09 it also decides the local BLOCK, so it has to
+  // be resolved before the block rather than after it.
+  const qty = Number.isFinite(thresholdQty) ? Number(thresholdQty) : Number(row.qty) || 0;
+  const overThreshold = qty > WAREHOUSE_NATIONAL_SPLIT_THRESHOLD_QTY;
+
   // What counts as LOCAL for this warehouse: its governorate, unless an owner override widens it.
-  // See LOCAL_BLOCK_OVERRIDES — El Qema's Qalubeya reaches Cairo, and that rule stands alongside the
-  // 200-pack split rather than being replaced by it.
-  const override = ruleApplies ? LOCAL_BLOCK_OVERRIDES.get(`${distributor}|${origin}`) : undefined;
+  //
+  // Two overrides, and they are NOT the same shape. LOCAL_BLOCK_OVERRIDES is unconditional — Benha
+  // reaches Cairo at any quantity, because that map says what Qalubeya's reps ARE. Upper Egypt only
+  // widens once the warehouse passes 200, which is what he answered when asked. Cairo wins where
+  // both could somehow match, so a hand-written owner ruling always outranks a derived one; nothing
+  // matches both today, since Qalubeya is not in the Upper Egypt region on any line.
+  const override = ruleApplies
+    ? LOCAL_BLOCK_OVERRIDES.get(`${distributor}|${origin}`)
+      ?? (overThreshold ? upperEgyptBlockFor(origin, regions) : undefined)
+    : undefined;
   const localBlock = override?.areas ?? cityAreas;
   // The Store Split sheet names the rule that moved the money, so a reader never has to guess why
   // Cairo gained from a Benha warehouse.
   const localLabel = override?.label ?? city;
   // The exclusion is keyed on the LINE alone — every warehouse on it, not just El Qema's. The
   // threshold above is the distributor's rule; this one is the organogram's.
-  const excluded = OTHERS_EXCLUDED_LINES.has(line) ? (othersAreas ?? NO_AREAS) : NO_AREAS;
+  const excluded = OTHERS_EXCLUDED_LINES.has(line) ? (regions?.others ?? NO_AREAS) : NO_AREAS;
 
   // The ORIGIN is never excluded from its own sale. An area is barred from receiving a share of
   // somebody else's money, not from keeping what it sold itself — and without this a warehouse
@@ -498,8 +573,7 @@ export function splitTargetsFor(
 
   if (!ruleApplies) return home;
 
-  const qty = Number.isFinite(thresholdQty) ? Number(thresholdQty) : Number(row.qty) || 0;
-  if (!(qty > WAREHOUSE_NATIONAL_SPLIT_THRESHOLD_QTY)) return home;
+  if (!overThreshold) return home;
 
   // Everything the local block does NOT already hold. Testing the block rather than the city is what
   // stops Cairo being paid twice when it is part of Qalubeya's local block.
@@ -677,7 +751,7 @@ export function isSplitEligible(
   row: StoreSplitRow,
   period?: string | null,
   thresholdQty?: number,
-  othersAreas?: ReadonlySet<string>,
+  regions?: SplitRegions,
 ): boolean {
   if (row.isDirect) return false;
   if (!row.includedInClosing) return false;
@@ -693,7 +767,7 @@ export function isSplitEligible(
   // and the Matrix books by the fact area. Taking a re-booked row's city from its brick would
   // subtract the money from an area that never carried it — the phantom the 441164 case produced.
   // Identical to `areaCode` on every row in production except a hand-apportioned one.
-  const targets = splitTargetsFor(row, thresholdQty, othersAreas);
+  const targets = splitTargetsFor(row, thresholdQty, regions);
   if (!targets) return false;
   // One target splits to itself — nothing moves, so skip the work entirely.
   return targets.areas.length > 1;
@@ -774,7 +848,7 @@ export function evenShares(total: number, parts: number): number[] {
 export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
   rows: readonly T[],
   period?: string | null,
-  othersAreas?: ReadonlySet<string>,
+  regions?: SplitRegions,
 ): StoreSplitResult<T> {
   const out: T[] = [];
 
@@ -810,7 +884,7 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
 
   for (const row of rows) {
     const rowThreshold = thresholdByKey.get(warehouseSplitKey(row));
-    const eligible = isSplitEligible(row, period, rowThreshold, othersAreas);
+    const eligible = isSplitEligible(row, period, rowThreshold, regions);
     if (!eligible || exemptCustomers.has(String(row.clientCode ?? "").trim())) {
       // An exempt row that WOULD otherwise have split is store money sitting on a brick that the
       // matrix never moved. The brick grid has to know, or it debits the brick anyway. Keyed by
@@ -832,7 +906,7 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
     // The area the CLOSING books this row in — see isSplitEligible, which picked the city the same
     // way. Money must leave the area that actually holds it.
     const origin = closingAreaOf(row);
-    const targets = splitTargetsFor(row, rowThreshold, othersAreas);
+    const targets = splitTargetsFor(row, rowThreshold, regions);
     // isSplitEligible already proved this; the guard keeps the types honest.
     if (!targets) {
       out.push(row);
@@ -948,9 +1022,9 @@ export type StoreSplitAreaSummary = {
 export function summariseStoreSplitByArea<T extends StoreSplitRow & { areaName?: string }>(
   rows: readonly T[],
   period?: string | null,
-  othersAreas?: ReadonlySet<string>,
+  regions?: SplitRegions,
 ): StoreSplitAreaSummary[] {
-  const { movements } = splitStoreSalesAcrossCityAreas(rows, period, othersAreas);
+  const { movements } = splitStoreSalesAcrossCityAreas(rows, period, regions);
   if (movements.length === 0) return [];
 
   // The area's current closing position, from the untouched rows.
@@ -1083,7 +1157,7 @@ export function detailStoreSplitByCustomer<
 >(
   rows: readonly T[],
   period?: string | null,
-  othersAreas?: ReadonlySet<string>,
+  regions?: SplitRegions,
 ): StoreSplitDetailRow[] {
   const areaNames = new Map<string, string>();
   for (const row of rows) {
@@ -1107,12 +1181,12 @@ export function detailStoreSplitByCustomer<
   for (const row of rows) {
     const rowThreshold = detailThresholdByKey.get(warehouseSplitKey(row));
     if (
-      !isSplitEligible(row, period, rowThreshold, othersAreas)
+      !isSplitEligible(row, period, rowThreshold, regions)
       || detailExempt.has(String(row.clientCode ?? "").trim())
     ) continue;
     // The same origin the split itself uses, or this sheet would name a different area as the giver.
     const origin = closingAreaOf(row);
-    const targets = splitTargetsFor(row, rowThreshold, othersAreas);
+    const targets = splitTargetsFor(row, rowThreshold, regions);
     if (!targets) continue;
     const city = targets.group;
     const areas = targets.areas;
@@ -1196,10 +1270,10 @@ export function summariseStoreSplitByCustomer<
 >(
   rows: readonly T[],
   period?: string | null,
-  othersAreas?: ReadonlySet<string>,
+  regions?: SplitRegions,
 ): StoreSplitCustomerSummary[] {
   const byStore = new Map<string, StoreSplitCustomerSummary & { productCodes: Set<string> }>();
-  for (const detail of detailStoreSplitByCustomer(rows, period, othersAreas)) {
+  for (const detail of detailStoreSplitByCustomer(rows, period, regions)) {
     const key = `${detail.clientCode}|${detail.clientName}|${detail.originAreaCode}|${detail.line}`;
     const existing = byStore.get(key);
     if (existing) {

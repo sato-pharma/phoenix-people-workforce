@@ -26,6 +26,7 @@ import {
 import {
   netStoreSplitByAreaProduct,
   splitStoreSalesAcrossCityAreas,
+  type SplitRegions,
   type StoreSplitAreaMovement,
 } from "@/lib/sales/store-sales-city-split";
 
@@ -78,11 +79,11 @@ export function prepareClosingStoreSplit(
   monthRows: ClosingDetailsResult,
   scopeAreaCodes: readonly string[],
   shared?: ClosingStoreSplit | null,
-  othersAreas?: ReadonlySet<string>,
+  regions?: SplitRegions,
 ): ClosingStoreSplitExport {
   // Split ONCE. Both write-backs — the matrix's and the channel grids' — read this one result, so
   // the two sheets cannot describe different movements of the same money.
-  const split = shared ?? deriveSplit(monthRows, othersAreas);
+  const split = shared ?? deriveSplit(monthRows, regions);
   return {
     details: narrowClosingDetailsToAreas(monthRows, scopeAreaCodes),
     exemptStoreValueByBrick: split.exemptStoreValueByBrick,
@@ -93,7 +94,7 @@ export function prepareClosingStoreSplit(
 
 function deriveSplit(
   monthRows: ClosingDetailsResult,
-  othersAreas?: ReadonlySet<string>,
+  regions?: SplitRegions,
 ): ClosingStoreSplit {
   // Others take no share of an El Qema split (owner, 2026-09-08). This is the FALLBACK path —
   // the shared result above already carries the exclusion — so it has to be handed the same set,
@@ -101,7 +102,7 @@ function deriveSplit(
   const { exemptStoreValueByBrick, movements } = splitStoreSalesAcrossCityAreas(
     monthRows.rows,
     monthRows.period,
-    othersAreas,
+    regions,
   );
   return { exemptStoreValueByBrick, movements, net: netStoreSplitByAreaProduct(movements) };
 }

@@ -299,14 +299,17 @@ export function runAttributionStoreSplitNetTests() {
     assert.equal(quiet.payloadRows, 0, "and reports nothing moved");
     assert.deepEqual(quiet.linesWithMovement, [], "and names no line");
 
-    // The Others set is INJECTED, not read from the live org chart. Without this the writer reaches
+    // The organogram is INJECTED, not read from the live org chart. Without this the writer reaches
     // into production, and a test that cannot control the answer silently exercises an EMPTY set —
     // which looks exactly like the exclusion rule not existing.
     const live = await writeAttributionStoreSplitNet({
       period: "2026-08",
       supabase,
-      loadRowsForLine: async (line) => (line === "Pedia" ? [qemaRow()] : []),
-      loadOthersAreasForLine: async (line) => (line === "Pedia" ? PEDIA_OTHERS : new Set<string>()),
+      loadRowsForLine: async (line: string) => (line === "Pedia" ? [qemaRow()] : []),
+      loadSplitRegionsForLine: async (line: string) => ({
+        areasByRegion: new Map<string, ReadonlySet<string>>(),
+        others: line === "Pedia" ? PEDIA_OTHERS : new Set<string>(),
+      }),
     });
     assert.equal(
       live.payloadRows,

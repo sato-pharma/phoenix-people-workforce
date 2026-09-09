@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
+import type { SplitRegions } from "@/lib/sales/store-sales-city-split";
 import type {
   MonthlyClosingAggregateCell,
   MonthlyClosingDirectCell,
@@ -746,4 +747,48 @@ export async function loadOthersAreas(
   period: string | null | undefined,
 ): Promise<ReadonlySet<string>> {
   return othersAreasFrom(await loadLineOperationalRegions(othersLookupLineCode(officialLine), period));
+}
+
+/**
+ * Every area of the line's organogram, grouped by its operational region code, upper-cased.
+ *
+ * Pure, same as `othersAreasFrom`, and an EMPTY map for a null input for the same reason: a missing
+ * org chart must never silently change a distribution. An empty map means no regional block matches,
+ * so every warehouse falls back to its own governorate — where the money already was.
+ */
+export function areasByRegionFrom(
+  map: LineOperationalRegionMap | null,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const byRegion = new Map<string, Set<string>>();
+  if (!map) return byRegion;
+  for (const [areaCode, region] of map.regionByArea) {
+    const code = String(region.regionCode ?? "").trim().toUpperCase();
+    const area = String(areaCode).trim().toUpperCase();
+    if (!code || !area) continue;
+    const bucket = byRegion.get(code) ?? new Set<string>();
+    bucket.add(area);
+    byRegion.set(code, bucket);
+  }
+  return byRegion;
+}
+
+/**
+ * Everything the split needs from one organogram read, in the shape the split takes.
+ *
+ * 🔴 THE POINT IS THAT IT IS ONE CALL. Others and the Upper Egypt block come from the same
+ * rows, and both fail SILENTLY and in the same direction when a lookup misses — an empty set reads
+ * as "the rule does not apply", which is precisely how the Others rule shipped inert in production
+ * on 2026-09-08. Two loaders would let a caller update one and not the other, and nothing would
+ * report it. See `SplitRegions` in store-sales-city-split.ts.
+ */
+export function splitRegionsFrom(map: LineOperationalRegionMap | null): SplitRegions {
+  return { areasByRegion: areasByRegionFrom(map), others: othersAreasFrom(map) };
+}
+
+/** `splitRegionsFrom` for a caller holding only a line and a period. One round trip. */
+export async function loadSplitRegions(
+  officialLine: string | null | undefined,
+  period: string | null | undefined,
+): Promise<SplitRegions> {
+  return splitRegionsFrom(await loadLineOperationalRegions(othersLookupLineCode(officialLine), period));
 }
