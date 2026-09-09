@@ -147,6 +147,12 @@ export function runBackgroundReviewQueueTests(): void {
       preferredAreaName: null,
       preferredRegionCode: null,
       preferredRegionName: null,
+      // No job title either, which is the ordinary case in the archive these three stand for: 249
+      // production CVs carry none. It also keeps the question here about the eligibility gate — a
+      // title naming a manager post would route these to the sales manager above the district
+      // instead, which is a different rule and has its own suite.
+      appliedForJobTitle: null,
+      currentJobTitle: null,
     });
 
     // Unreadable and unanswered: reaches nobody. This is the state 167 real CVs are in.

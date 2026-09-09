@@ -33,6 +33,14 @@
 // declared by the applicant. All of them are refused inside the pure rule, where they can be tested
 // without a database, and none of them is refused again here — this file must not grow a second
 // copy of a policy that would then drift from the one the tests pin.
+//
+// ── AND SINCE 2026-09-09, ANYBODY APPLYING FOR THE DISTRICT MANAGER'S OWN JOB ───────────────────
+//
+// The owner: *"a district manager never receives district manager."* Those applications do not
+// vanish; they go UP, onto the manager boards `managerApplicantBoards` builds for the regional and
+// national sales managers above each district. Both kinds of board come back from
+// `listDistrictBoardsForManager`, told apart by `intake`, so one loader still answers "what does
+// this person open" for a district manager and for his manager alike.
 
 import { logError } from "@/lib/observability/log";
 // The skips half of the folder suppression. It imports the PURE district-manager-folders for the key
@@ -44,6 +52,7 @@ import {
   boardsForManager,
   DISTRICT_SEAT_COLUMNS,
   districtManagerBoards,
+  managerApplicantBoards,
   placeCandidatesInDistrictFolders,
   type DistrictManagerBoard,
   type DistrictSeatRow,
@@ -186,7 +195,13 @@ export async function listDistrictBoardsForManager(
   // grows with the applicant pool, so it is the one worth not doing.
   const rows = await loadDistrictSeatRows();
   if (rows.length === 0) return [];
-  if (boardsForManager(districtManagerBoards(rows), managerHrId).length === 0) return [];
+  // BOTH kinds of board, or this pre-check refuses the very people the manager boards were built
+  // for. A national sales manager holds no district seat of his own — that is the whole reason
+  // isCandidateInViewerTeamDistrict had to exist — so asking only for district boards would return
+  // an empty list before the candidate sweep ever ran, and every district-manager applicant would
+  // reach nobody at all.
+  const seatBoards = [...districtManagerBoards(rows), ...managerApplicantBoards(rows)];
+  if (boardsForManager(seatBoards, managerHrId).length === 0) return [];
 
   // His returns are read alongside the CV sweep, not before it: a CV he has handed back to the
   // administrator drops out of his folders here, and stays in every other line's. The report path

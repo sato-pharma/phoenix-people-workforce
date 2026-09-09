@@ -17,6 +17,10 @@ import {
   cleanFolderKey,
   PARAMEDICAL_FOLDER_KEY,
 } from "@/lib/recruitment/candidate-folder";
+import {
+  candidateManagerSeatTier,
+  managerMayBeSentApplication,
+} from "@/lib/recruitment/candidate-seat-rank";
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
 import type { CandidateUnconfirmedCvFacts } from "@/lib/recruitment/candidate-screening-facts";
 import { chunkIds } from "@/lib/recruitment/db-batch";
@@ -1835,6 +1839,32 @@ export async function sendCandidatesToManager(
 
   const manager = (await listHiringManagerOptions()).find((option) => hrIdsMatch(option.hrId, managerHrId));
   if (!manager) throw new Error("That person is not a manager who can be sent candidates.");
+
+  // ── NOBODY IS SENT AN APPLICATION FOR HIS OWN JOB, BY HAND EITHER ─────────────────────────────
+  //
+  // The owner, 2026-09-09: *"a district manager never receives district manager."* The folders stopped
+  // routing these on their own the same day; this is the other door. Same ladder, asked here — see
+  // managerMayBeSentApplication for the two places a person deciding is allowed what a routing rule
+  // is not (a head-office manager off the sales tree, and the CEO).
+  //
+  // REFUSED BEFORE THE NOTIFICATION, and the whole selection is refused rather than the offenders
+  // being dropped quietly: a recruiter who picked five people and saw four arrive, with nothing
+  // saying which is missing, is the failure this module already refuses one line above.
+  //
+  // The message names the people and the seat, never a rule number — the recruiter has to be able to
+  // act on it, and the action is to send them to the manager above instead.
+  const wrongRank = candidates
+    .map((candidate) => ({ candidate, tier: candidateManagerSeatTier(candidate) }))
+    .filter((entry) => entry.tier !== null && !managerMayBeSentApplication(manager.seatTier, entry.tier));
+  if (wrongRank.length > 0) {
+    const names = wrongRank.map((entry) => entry.candidate.fullName);
+    throw new Error(
+      `${names.join(", ")} ${names.length === 1 ? "is applying" : "are applying"} for a job at or above ` +
+        `${manager.name}'s own seat (${manager.jobTitle}), so ${names.length === 1 ? "the CV" : "those CVs"} ` +
+        `cannot be sent to ${manager.name}. Send ${names.length === 1 ? "it" : "them"} to the sales manager above ` +
+        `${manager.name} instead.`,
+    );
+  }
 
   // Resolved BEFORE the notification goes out, not after. If the picked vacancy has been filled
   // since the page loaded, this throws — and it must throw while the only cost is an error message,

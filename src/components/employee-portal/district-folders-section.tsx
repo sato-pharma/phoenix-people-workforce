@@ -44,6 +44,7 @@ export function DistrictFoldersSection({
   subheading = "Every area you hold in the organogram, and the CVs of applicants who asked to work in it or whose CV places them there. Open a folder to read them.",
   viewerHrId,
   ownFolders = false,
+  rescreenBanner,
 }: {
   boards: DistrictManagerBoard<Candidate>[];
   /**
@@ -73,7 +74,18 @@ export function DistrictFoldersSection({
    * which is the thing he needs. The API enforces the same boundary; this keeps the screen honest.
    */
   ownFolders?: boolean;
+  /**
+   * Whether to open with the screening banner instead of a heading. Defaults to `ownFolders`, which
+   * is what it was before it was a prop at all.
+   *
+   * It is separate from `ownFolders` because the district-manager-applicant boards added 2026-09-09
+   * are ALSO the viewer's own — he may return and reserve on them — while the banner's words are
+   * about areas and rep CVs and would be wrong over them. One flag for what he may DO, another for
+   * what the screen SAYS.
+   */
+  rescreenBanner?: boolean;
 }) {
+  const showRescreenBanner = rescreenBanner ?? ownFolders;
   const [open, setOpen] = useState<{ areaName: string; seatId: string } | null>(null);
   // Which CVs the viewer has returned in THIS session, so the card can collapse in place the moment
   // he presses Return — the folders are derived server-side and only refresh on reload, so without
@@ -114,7 +126,7 @@ export function DistrictFoldersSection({
 
   return (
     <section className="space-y-4">
-      {ownFolders ? (
+      {showRescreenBanner ? (
         <RescreenBanner />
       ) : (
         <div>
@@ -138,7 +150,11 @@ export function DistrictFoldersSection({
                 {[board.lineName, board.regionName].filter(Boolean).join(" · ") || board.seatLabel}
               </h3>
               <span className="shrink-0 whitespace-nowrap text-xs font-semibold text-slate-500">
-                {board.folders.length === 1 ? "1 area" : `${board.folders.length} areas`} ·{" "}
+                {/* A manager board's folders are DISTRICTS, not areas — someone applying to run
+                    Delta (1) applied for the district, not for a rep seat inside it. Saying "8
+                    areas" over eight districts is the kind of small wrong word that makes a reader
+                    distrust the number beside it. */}
+                {folderNoun(board.intake, board.folders.length)} ·{" "}
                 {board.candidateCount === 1 ? "1 CV" : `${board.candidateCount} CVs`}
               </span>
             </div>
@@ -206,7 +222,7 @@ export function DistrictFoldersSection({
                     area either, but the ADDRESS on their CV names this one — so they are in the right
                     folder, and the folder still says how they got here. Said once, above the cards,
                     exactly like the note over the catch-all. */}
-                {openFolder.kind === "area" && openFolder.fromCvText.length > 0 ? (
+                {openFolder.kind !== "region" && openFolder.fromCvText.length > 0 ? (
                   <p className="text-phx-xs text-slate-500">
                     {openFolder.fromCvText.length === openFolder.candidates.length
                       ? "These applicants did not say which area they want — the address written on their CV places them here."
@@ -217,7 +233,7 @@ export function DistrictFoldersSection({
                     not the same claim. Those applicants wrote an address; most of these wrote no
                     address at all and are here because their governorate holds exactly one area. A
                     manager deciding who to ring first is entitled to know which he is looking at. */}
-                {openFolder.kind === "area" && openFolder.fromGovernorate.length > 0 ? (
+                {openFolder.kind !== "region" && openFolder.fromGovernorate.length > 0 ? (
                   <p className="text-phx-xs text-slate-500">
                     {openFolder.fromGovernorate.length === openFolder.candidates.length
                       ? "These applicants gave only their governorate — this is the only area in it."
@@ -291,6 +307,15 @@ export function DistrictFoldersSection({
  * as part of the screen rather than a notice bolted onto it. See sales-performance-section.tsx for
  * the same header shape.
  */
+/**
+ * "8 areas" over a district manager's own folders; "8 districts" over the boards on which his
+ * manager reads applications for the district manager post itself.
+ */
+function folderNoun(intake: DistrictManagerBoard<Candidate>["intake"], count: number): string {
+  if (intake === "district_managers") return count === 1 ? "1 district" : `${count} districts`;
+  return count === 1 ? "1 area" : `${count} areas`;
+}
+
 function RescreenBanner() {
   return (
     <Card className="rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-5 shadow-[0_12px_34px_rgba(15,23,42,0.05)] sm:p-6">

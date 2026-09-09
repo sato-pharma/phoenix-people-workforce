@@ -208,13 +208,31 @@ export function TeamCandidatesSection({
               of the same thing — only the heading changes, because it is now somebody else's. */}
           {busy ? null : (
             <DistrictFoldersSection
-              boards={districtBoards}
+              boards={districtBoards.filter((board) => board.intake !== "district_managers")}
               callClaims={callClaims}
               files={files}
               onFeedbackGiven={onFeedbackGiven}
               outstandingFeedback={outstandingFeedback}
               heading={`${managerLabel(selected)}'s areas`}
               subheading={`Every area ${managerLabel(selected)} holds in the organogram, and the CVs of applicants who asked to work in it.`}
+              viewerHrId={viewerHrId}
+            />
+          )}
+
+          {/* The selected manager's own district-manager applicants, when he is a REGIONAL manager
+              with districts under him. Split from his areas above rather than merged, for the same
+              reason they are two sections on the viewer's own page: these people applied for a
+              different job, and one heading cannot describe both truthfully. Renders nothing when
+              the manager picked is a district manager, which is the ordinary case. */}
+          {busy ? null : (
+            <DistrictFoldersSection
+              boards={districtBoards.filter((board) => board.intake === "district_managers")}
+              callClaims={callClaims}
+              files={files}
+              heading={`District manager applicants under ${managerLabel(selected)}`}
+              onFeedbackGiven={onFeedbackGiven}
+              outstandingFeedback={outstandingFeedback}
+              subheading={`People applying to run one of the districts ${managerLabel(selected)} covers, filed by the district they asked for.`}
               viewerHrId={viewerHrId}
             />
           )}

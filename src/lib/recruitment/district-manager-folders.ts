@@ -1,4 +1,6 @@
-// Recruitment / ATS — a folder per district manager, and inside it a folder per area he holds.
+// Recruitment / ATS — a folder per district manager, and inside it a folder per area he holds; plus,
+// since 2026-09-09, a folder per district for the sales manager ABOVE him, holding the people
+// applying for his job.
 //
 // The owner, 2026-08-31: *"you will make a folder per district manager. Okay? You will make a folder
 // per district manager. Each folder has his areas. His areas listed. All his areas in the
@@ -49,6 +51,11 @@ import {
   type CandidateRegionCode,
 } from "@/lib/recruitment/candidate-region";
 import {
+  candidateManagerSeatTier,
+  managerSeatCanReceive,
+  type CandidateManagerSeatTier,
+} from "@/lib/recruitment/candidate-seat-rank";
+import {
   climbToOccupiedSeat,
   MANAGER_SEAT_COLUMNS,
   type ManagerSeatRow,
@@ -91,6 +98,13 @@ export type DistrictFolderCandidate = Pick<
   Candidate,
   | "id"
   | "fullName"
+  // The two title columns, and the resolved answer when a richer loader has already filled it. They
+  // decide WHICH manager may receive this CV, never which folder it lands in — see
+  // candidate-seat-rank.ts. `mapCandidate` fills both columns straight off the row, so the folder
+  // loader pays nothing extra for them.
+  | "appliedForJobTitle"
+  | "currentJobTitle"
+  | "appliedFor"
   | "preferencesDeclaredAt"
   | "preferredAreaName"
   | "status"
@@ -117,8 +131,20 @@ export type DistrictAreaFolder<T = DistrictFolderCandidate> = {
    * rather than another area folder because the two are not equally trustworthy: an area folder
    * holds people who said where they want to work, and this one holds people whose CV mentioned a
    * governorate. Mixing them would launder the second into the first.
+   *
+   * "district" is a WHOLE DISTRICT, and it appears only on the manager boards added 2026-09-09 — the
+   * folders in which a national or regional sales manager reads applications for a district manager
+   * post. A person applying to RUN Delta (1) is not applying for a rep seat inside it, so splitting
+   * those CVs across the district's areas would be a distinction the applicant never made. The
+   * evidence markers below still apply: the area they named is what places them in this district.
    */
-  kind: "area" | "region";
+  kind: "area" | "region" | "district";
+  /**
+   * The district seat this folder stands for. Set on a "district" folder and on nothing else — it is
+   * what lets the placement rule send an applicant for Delta (1) to every manager above Delta (1)
+   * without either side re-deriving which district an area belongs to.
+   */
+  districtSeatId?: string | null;
   candidates: T[];
   /**
    * The ids in `candidates` that got here because their CV's own text named this area, rather than
@@ -174,6 +200,26 @@ export type DistrictManagerBoard<T = DistrictFolderCandidate> = {
   coveringVacantSeat: string | null;
   folders: DistrictAreaFolder<T>[];
   candidateCount: number;
+  /**
+   * WHOSE JOB THE APPLICANTS IN HERE ARE APPLYING FOR — the one field that keeps a district manager
+   * out of his own succession.
+   *
+   * "reps" is every board that existed before 2026-09-09: a district's areas, held by its district
+   * manager, filled with people applying for a rep seat inside it.
+   *
+   * "district_managers" is the board added that day, held by the regional or national sales manager
+   * ABOVE a district and filled with applications for the district manager post itself. The owner:
+   * *"a district manager never receives district manager."* The two are separate boards rather than
+   * one board with a filter because they have different HOLDERS, and the holder is what every scope
+   * check on this data keys on.
+   */
+  intake: "reps" | "district_managers";
+  /**
+   * The org tree's own tier for the seat this board belongs to — "DM"/"ACTING_DM" on a rep board,
+   * "RSM"/"NSM" on a manager board. Carried so the rank comparison happens against the seat rather
+   * than against a job title somebody typed.
+   */
+  seatTier: string | null;
 };
 
 /**
@@ -410,10 +456,12 @@ export function districtManagerBoards<T = DistrictFolderCandidate>(
         },
       ],
       lineName: text(row.line_name) || null,
+      intake: "reps",
       managerHrId: seated ? occupant : (standIn?.hrId ?? null),
       regionName: text(row.region_name) || null,
       seatId,
       seatLabel: text(row.seat_display_label) || seatId,
+      seatTier: text(row.seat_tier).toUpperCase() || null,
     });
   }
 
@@ -421,6 +469,131 @@ export function districtManagerBoards<T = DistrictFolderCandidate>(
     (left, right) =>
       (left.lineName ?? "").localeCompare(right.lineName ?? "") ||
       (left.regionName ?? "").localeCompare(right.regionName ?? ""),
+  );
+}
+
+/**
+ * Every seat id above `seatId`, nearest first. Stops on a cycle rather than looping — an org tree
+ * with one is broken, and a chain invented out of it would be indistinguishable from a real one.
+ */
+function ancestorSeatIds(seatId: string, bySeatId: Map<string, DistrictSeatRow>): string[] {
+  const chain: string[] = [];
+  const visited = new Set<string>([seatId]);
+  let current = text(bySeatId.get(seatId)?.parent_seat_id ?? "");
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    chain.push(current);
+    current = text(bySeatId.get(current)?.parent_seat_id ?? "");
+  }
+  return chain;
+}
+
+/**
+ * The boards on which a regional or national sales manager reads applications for a DISTRICT MANAGER
+ * post — one board per manager, one folder per district beneath him.
+ *
+ * ── WHY THESE EXIST ─────────────────────────────────────────────────────────────────────────────
+ *
+ * The owner, 2026-09-09: *"the district managers receive medical reps and the national sales
+ * managers receive district managers and medical reps. A district manager never receives district
+ * manager."* Until that day a district-manager application landed in the folders of the district
+ * managers whose post it was for — 135 of them in production, on up to three lines at once. Simply
+ * dropping those CVs from the rep boards would have fixed the wrong half: they would then have
+ * reached nobody at all, which is the failure that reads as "no one applied".
+ *
+ * ── ONE BOARD PER MANAGER, NOT ONE PER DISTRICT ─────────────────────────────────────────────────
+ *
+ * The rep boards are per district because a rep applies for an AREA, and an area belongs to exactly
+ * one district per line. A district manager applies for a DISTRICT, so the district is the folder
+ * and the manager above is the board. That also keeps the screen honest: the Anti Infective national
+ * sales manager reads one heading with eight district folders under it, not eight more headings
+ * competing with the district folders he already has.
+ *
+ * ── EVERY DISTRICT BENEATH HIM, NOT ONLY HIS DIRECT REPORTS ─────────────────────────────────────
+ *
+ * Pedia has a regional sales manager holding Alex-BHR, Delta (1) and Delta (2), and the national
+ * sales manager sits above him. Both of them are entitled to an application for one of those three
+ * districts — the standing rule is that scope runs downward, all the way down — so the walk is the
+ * whole ancestor chain rather than the parent link. Reading it as direct reports only would hide
+ * three of Pedia's seven districts from the one person accountable for the whole line.
+ *
+ * A CEO seat never gets a board. He is above every district in the company, so he would otherwise
+ * receive every application there is, and nothing here is ever routed to him.
+ */
+export function managerApplicantBoards<T = DistrictFolderCandidate>(
+  rows: readonly DistrictSeatRow[],
+): DistrictManagerBoard<T>[] {
+  const bySeatId = indexBySeatId(rows);
+  // The districts, taken from the rep boards rather than re-derived: a district with no areas under
+  // it is one nobody can be hired into, and it is excluded there for that reason. Asking the same
+  // builder means the two screens can never disagree about which districts exist.
+  const districts = districtManagerBoards<T>(rows);
+
+  // Which manager seats hold which districts. One pass over the districts rather than one walk per
+  // manager, so this stays linear on a tree of any depth.
+  const districtsByManagerSeat = new Map<string, DistrictManagerBoard<T>[]>();
+  for (const district of districts) {
+    for (const ancestorId of ancestorSeatIds(district.seatId, bySeatId)) {
+      const seat = bySeatId.get(ancestorId);
+      if (!seat) continue;
+      const tier = text(seat.seat_tier).toUpperCase();
+      // Only the tiers that can receive a district manager's application, and never the CEO. A REP
+      // or DM ancestor cannot happen in a well-formed tree and is skipped rather than trusted.
+      if (tier !== "RSM" && tier !== "NSM") continue;
+      // An empty manager seat gets no board: there is nobody to open it, and climbing further would
+      // hand a whole line's succession to somebody the organogram did not put over it.
+      if (!text(seat.occupant_hr_id) || seat.is_vacant === true) continue;
+      const held = districtsByManagerSeat.get(ancestorId);
+      if (held) held.push(district);
+      else districtsByManagerSeat.set(ancestorId, [district]);
+    }
+  }
+
+  const boards: DistrictManagerBoard<T>[] = [];
+  for (const [managerSeatId, held] of districtsByManagerSeat) {
+    const seat = bySeatId.get(managerSeatId);
+    if (!seat) continue;
+
+    // A folder is named for the district's REGION, which is how the company says it out loud —
+    // "Cairo", "Delta (1)", "Upper Egypt 1" — read under the line's own heading. The seat label is
+    // the fallback, and it also settles the (currently impossible) case of two districts under one
+    // manager sharing a region name: a folder that silently absorbed the other district's applicants
+    // would be worse than a long name.
+    const used = new Set<string>();
+    const folders: DistrictAreaFolder<T>[] = held
+      .map((district) => {
+        const preferred = district.regionName ?? district.seatLabel;
+        const areaName = used.has(preferred) ? district.seatLabel : preferred;
+        used.add(areaName);
+        return {
+          areaName,
+          candidates: [] as T[],
+          districtSeatId: district.seatId,
+          fromCvText: [] as string[],
+          fromGovernorate: [] as string[],
+          kind: "district" as const,
+        };
+      })
+      .sort((left, right) => left.areaName.localeCompare(right.areaName));
+
+    boards.push({
+      candidateCount: 0,
+      coveringVacantSeat: null,
+      folders,
+      intake: "district_managers",
+      lineName: text(seat.line_name) || null,
+      managerHrId: text(seat.occupant_hr_id),
+      regionName: text(seat.region_name) || null,
+      seatId: managerSeatId,
+      seatLabel: text(seat.seat_display_label) || managerSeatId,
+      seatTier: text(seat.seat_tier).toUpperCase() || null,
+    });
+  }
+
+  return boards.sort(
+    (left, right) =>
+      (left.lineName ?? "").localeCompare(right.lineName ?? "") ||
+      left.seatLabel.localeCompare(right.seatLabel),
   );
 }
 
@@ -465,6 +638,16 @@ export function districtReturnSuppressionKey(
  * region resolves to every district covering it, and there it lands in that district's "No area
  * named" folder — a weaker answer, labelled as one, and now genuinely the weakest one there is.
  *
+ * ── AND WHOSE JOB THEY ARE APPLYING FOR DECIDES WHICH BOARDS THEY LAND ON ───────────────────────
+ *
+ * The owner, 2026-09-09: *"the district managers receive medical reps and the national sales
+ * managers receive district managers and medical reps. A district manager never receives district
+ * manager."* Everything above resolves WHERE somebody wants to work and is unchanged by that;
+ * `candidateManagerSeatTier` decides WHO gets to read them. An applicant for a district manager post
+ * is filed into that district's folder on every manager board above it — same district, same
+ * evidence, different reader — and never into the district's own area folders. Everyone else, which
+ * is most of the pool and every CV with no readable title, routes exactly as before.
+ *
  * ── WHO IS HELD BACK, AND THE ASYMMETRY IS THE IMPORTANT LINE ───────────────────────────────────
  *
  * Refused on BOTH paths: a rejected CV (`canFileCandidate`, the recruiter's own rule imported
@@ -494,7 +677,12 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
    */
   suppressedReturns?: ReadonlySet<string>;
 }): { boards: DistrictManagerBoard<T>[]; unplaced: UnplacedDeclaration[]; placements: number } {
-  const boards = districtManagerBoards<T>(input.rows);
+  const repBoards = districtManagerBoards<T>(input.rows);
+  // The boards a national or regional sales manager reads district-manager applications on. They
+  // carry NO "area" or "region" folders, which is why every index below can keep asking for those
+  // kinds and stay rep-only without a second filter.
+  const managerBoards = managerApplicantBoards<T>(input.rows);
+  const boards = [...repBoards, ...managerBoards];
   const suppressed = input.suppressedReturns ?? EMPTY_SUPPRESSIONS;
 
   type Target = { board: DistrictManagerBoard<T>; folder: DistrictAreaFolder<T> };
@@ -545,6 +733,57 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
     else catchAllsByRegion.set(key, [{ board, folder }]);
   }
 
+  // ── THE SAME TWO INDEXES AGAIN, FOR THE MANAGERS' BOARDS ─────────────────────────────────────
+  //
+  // A district-manager applicant is placed by exactly the same evidence as a rep — the area he named,
+  // the address on his CV, his governorate, his region — and only the DESTINATION differs: the
+  // district's folder on every manager board above it, rather than the area's folder on the district
+  // itself. So the resolution below is untouched and only these lookups change hands, which is what
+  // keeps the two intakes from drifting into two different rules about where somebody lives.
+  //
+  // Keyed off the DISTRICT boards rather than re-derived: a district folder names its seat, and each
+  // district board already knows which areas and which region it holds.
+  const managerFoldersByDistrictSeat = new Map<string, Target[]>();
+  for (const board of managerBoards) {
+    for (const folder of board.folders) {
+      const seatId = text(folder.districtSeatId);
+      if (!seatId) continue;
+      const list = managerFoldersByDistrictSeat.get(seatId);
+      if (list) list.push({ board, folder });
+      else managerFoldersByDistrictSeat.set(seatId, [{ board, folder }]);
+    }
+  }
+
+  const managerFoldersByArea = new Map<string, Target[]>();
+  const managerFoldersByRegion = new Map<string, Target[]>();
+  // The same district folder can be reached twice — two of a manager's districts holding one area
+  // name, or two spelling the same region family — and a folder listed twice files the applicant
+  // twice and counts him twice. Deduplicated on the Target object, which is created once per
+  // (board, folder) above and shared by every key that reaches it.
+  const addManagerTargets = (index: Map<string, Target[]>, key: string, targets: readonly Target[]): void => {
+    const list = index.get(key);
+    if (!list) {
+      index.set(key, [...targets]);
+      return;
+    }
+    for (const target of targets) if (!list.includes(target)) list.push(target);
+  };
+
+  for (const district of repBoards) {
+    const targets = managerFoldersByDistrictSeat.get(district.seatId) ?? [];
+    if (targets.length === 0) continue;
+
+    for (const folder of district.folders) {
+      if (folder.kind !== "area") continue;
+      const key = areaFolderKey(folder.areaName);
+      if (!key || ambiguousKeys.has(key)) continue;
+      addManagerTargets(managerFoldersByArea, key, targets);
+    }
+
+    const regionKey = regionFamilyKey(district.regionName);
+    if (regionKey) addManagerTargets(managerFoldersByRegion, regionKey, targets);
+  }
+
   const unplaced: UnplacedDeclaration[] = [];
   let placements = 0;
 
@@ -580,9 +819,44 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
     .filter(([key]) => !ambiguousKeys.has(key))
     .map(([, areaName]) => areaName);
 
+  /** True when at least one board on this tree sits high enough to receive this application. */
+  const someoneCanReceive = (tier: CandidateManagerSeatTier): boolean =>
+    managerBoards.some((board) => managerSeatCanReceive(board.seatTier, tier));
+
   for (const candidate of input.candidates) {
     if (!canFileCandidate(candidate)) continue;
     if (candidate.folder?.kind === "paramedical") continue;
+
+    // ── WHOSE POST IS THIS PERSON APPLYING FOR ────────────────────────────────────────────────
+    //
+    // The owner, 2026-09-09: *"a district manager never receives district manager."* Null — nobody
+    // is applying over a district manager's head — is the ordinary case and routes exactly as it
+    // always did. A tier sends the CV up instead: the district's folder on every manager board
+    // above it, which is the same district, resolved from the same evidence, read by the person who
+    // would actually be hiring.
+    const managerTier = candidateManagerSeatTier(candidate);
+    if (managerTier && !someoneCanReceive(managerTier)) {
+      // Nobody on this tree outranks the post they are applying for. A national sales manager's own
+      // application is the whole of this case today: the only seat above him is the CEO, and nothing
+      // here is ever routed to the CEO. He stays with Talent Acquisition, where he already is — and
+      // he is NOT reported as unplaced, because that list is for people whose PLACE could not be
+      // resolved, and his was never the problem.
+      continue;
+    }
+    const areaTargetsFor = (key: string): readonly Target[] => {
+      if (!managerTier) return foldersByKey.get(key) ?? [];
+      return (managerFoldersByArea.get(key) ?? []).filter((target) =>
+        managerSeatCanReceive(target.board.seatTier, managerTier),
+      );
+    };
+    const regionTargetsFor = (regionName: string | null | undefined): readonly Target[] => {
+      const key = regionFamilyKey(regionName);
+      if (!key) return [];
+      if (!managerTier) return catchAllsByRegion.get(key) ?? [];
+      return (managerFoldersByRegion.get(key) ?? []).filter((target) =>
+        managerSeatCanReceive(target.board.seatTier, managerTier),
+      );
+    };
 
     // The STANDING, not the judge's verdict. An admin who has read the CV outranks the parser in
     // both directions: a confirmed-eligible graduate whose faculty string is unreadable routes, and
@@ -597,7 +871,7 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
       : "";
     const areaKey = declaredArea ? areaFolderKey(declaredArea) : "";
     if (declaredArea) {
-      const targets = areaKey && !ambiguousKeys.has(areaKey) ? foldersByKey.get(areaKey) : undefined;
+      const targets = areaKey && !ambiguousKeys.has(areaKey) ? areaTargetsFor(areaKey) : undefined;
       if (targets && targets.length > 0) {
         fileInto(targets, candidate);
         continue;
@@ -636,12 +910,10 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
     // The region they named comes first and wins whenever it names a real district; the legs
     // behind it run only when it names none, which is the difference between a manager and nobody.
     const regionOptions = districtRoutingRegionOptions(candidate);
-    const routableRegion = regionOptions.find(
-      (name) => (catchAllsByRegion.get(regionFamilyKey(name)) ?? []).length > 0,
-    );
+    const routableRegion = regionOptions.find((name) => regionTargetsFor(name).length > 0);
     // No leg found a district: keep the FIRST, so the unplaced row still reports what they said.
     const regionName = routableRegion ?? regionOptions[0] ?? null;
-    const catchAlls = (regionName ? catchAllsByRegion.get(regionFamilyKey(regionName)) : undefined) ?? [];
+    const catchAlls = regionName ? regionTargetsFor(regionName) : [];
 
     // The catch-alls the area folders did not already reach — keyed by SEAT, so a district is never
     // handed the same CV twice, once in an area folder and once in its own "No area named".
@@ -673,7 +945,7 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
     // of the downside here is that a CV stays where it already was.
     if (routableAreaNames.length > 0) {
       const fromCv = areaNamedByCv(candidate, routableAreaNames);
-      const cvTargets = fromCv ? foldersByKey.get(areaFolderKey(fromCv.areaName)) : undefined;
+      const cvTargets = fromCv ? areaTargetsFor(areaFolderKey(fromCv.areaName)) : undefined;
       if (cvTargets && cvTargets.length > 0) {
         fileInto(cvTargets, candidate, "cv-text");
         fileInto(upgrading(cvTargets), candidate);
@@ -695,7 +967,7 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
     // already know, and hides a person in a folder built for people who cannot be placed.
     if (routableAreaNames.length > 0) {
       const governed = areaGovernedByCv(candidate, routableAreaNames);
-      const govTargets = governed ? foldersByKey.get(areaFolderKey(governed.areaName)) : undefined;
+      const govTargets = governed ? areaTargetsFor(areaFolderKey(governed.areaName)) : undefined;
       if (govTargets && govTargets.length > 0) {
         fileInto(govTargets, candidate, "governorate");
         fileInto(upgrading(govTargets), candidate);

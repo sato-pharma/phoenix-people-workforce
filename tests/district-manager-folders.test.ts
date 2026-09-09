@@ -537,7 +537,12 @@ export function runDistrictManagerFolderTests(): void {
 
     // Every district gets exactly one, empty or not — a manager has to be able to SEE that nothing
     // arrived without an area, rather than infer it from a folder that is not on screen.
-    for (const board of boards) {
+    //
+    // DISTRICT boards only. The manager boards added 2026-09-09 — where a national or regional sales
+    // manager reads applications for the district manager post itself — hold one folder per district
+    // and no catch-all at all: somebody applying to RUN a district has named the district, so there
+    // is no "no area named" left over to close. See recruitment-manager-seat-rank.test.ts.
+    for (const board of boards.filter((entry) => entry.intake === "reps")) {
       assert.equal(
         board.folders.filter((folder) => folder.kind === "region").length,
         1,
