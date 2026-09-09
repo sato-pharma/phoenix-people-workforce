@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   candidateManagerSeatTier,
+  managerMayBeSentApplication,
   managerSeatCanReceive,
   seatTierRank,
 } from "../src/lib/recruitment/candidate-seat-rank.ts";
@@ -283,6 +286,55 @@ export function runRecruitmentManagerSeatRankTests(): void {
       pediaRegional?.folders.map((folder) => folder.areaName),
       ["Alex-BHR"],
       "the regional manager's board holds only the districts under HIM — a picker is never wider than its viewer",
+    );
+  }
+
+  // ── AND THE SAME BY HAND: A RECRUITER CANNOT PUSH ONE EITHER ──────────────────────────────────
+  //
+  // The owner closed this door on the same day, after being told it was the one still open. The
+  // folders and the push have to answer identically for the same pair, or the rule is only a
+  // preference about which screen you use.
+  {
+    assert.equal(managerMayBeSentApplication("DM", "DM"), false, "the hand-push obeys the owner's sentence too");
+    assert.equal(managerMayBeSentApplication("ACTING_DM", "DM"), false, "including for the rep standing in as one");
+    assert.equal(managerMayBeSentApplication("RSM", "RSM"), false, "and a regional manager is not handed his own seat's applicants");
+    assert.equal(managerMayBeSentApplication("NSM", "DM"), true, "the national sales manager is exactly who it should go to");
+    assert.equal(managerMayBeSentApplication("DM", "NSM"), false, "and seniority does not run the other way");
+
+    // The two places a PERSON deciding is allowed what a routing rule is not.
+    assert.equal(
+      managerMayBeSentApplication(null, "DM"),
+      true,
+      "a head-office manager holds no seat on the sales tree at all — Finance, HR, Training, the Product Managers — and the owner's rule says nothing about asking one of them for a second opinion",
+    );
+    assert.equal(
+      managerMayBeSentApplication("CEO", "NSM"),
+      true,
+      "the CEO is in that picker on purpose; what he is kept out of is the folders that fill themselves",
+    );
+
+    // ── THE GATE IS WIRED IN, NOT MERELY WRITTEN ────────────────────────────────────────────────
+    //
+    // Pinned by ORDER within the function rather than by a byte window, which false-fails the moment
+    // anything above it shifts. What must stay true is that the refusal happens BEFORE the push: a
+    // manager who has already been alerted cannot be un-alerted, and a gate that runs after the
+    // notification is decoration.
+    const source = readFileSync(
+      fileURLToPath(new URL("../src/lib/recruitment/candidates.ts", import.meta.url)),
+      "utf8",
+    );
+    const sendFn = source.indexOf("export async function sendCandidatesToManager");
+    assert.ok(sendFn > 0, "sendCandidatesToManager must still be the one door every send goes through");
+    // The open paren is load-bearing: the function is NAMED in a comment a few lines above the call
+    // it describes, and matching the bare word passed happily with the gate deleted. Measured — this
+    // pin was written that way first and proved nothing.
+    const gate = source.indexOf("managerMayBeSentApplication(", sendFn);
+    const push = source.indexOf("pushCandidatesToManager({", sendFn);
+    assert.ok(gate > 0, "the rank gate must be applied inside sendCandidatesToManager");
+    assert.ok(push > 0, "and that function must still be the thing that pushes");
+    assert.ok(
+      gate < push,
+      "the refusal must come BEFORE the notification — a manager who has been told cannot be untold",
     );
   }
 }

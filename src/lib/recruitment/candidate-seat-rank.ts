@@ -147,3 +147,32 @@ export function managerSeatCanReceive(
   if (seat >= CEO_TIER_RANK) return false;
   return seat > wanted;
 }
+
+/**
+ * The same rule, asked of a recruiter HANDING a CV to a manager rather than of the folders that fill
+ * themselves.
+ *
+ * The owner closed this door on 2026-09-09 too: the routing above stopped putting these CVs in front
+ * of a district manager, and this stops a person doing it by hand. One ladder, so the two can never
+ * say different things about the same pair.
+ *
+ * TWO PLACES IT DELIBERATELY SAYS YES WHERE THE FOLDERS SAY NO, and both are the difference between
+ * a routing rule firing and a person deciding.
+ *
+ *   • A manager holding NO seat on the sales tree — the eight head-office managers (Finance, HR,
+ *     Marketing, R&D, SFE, Training and the two Product Managers). The owner's rule is about a
+ *     district manager reading applications for his own district. It says nothing about the Training
+ *     Manager being asked for a second opinion, and refusing there would quietly delete a capability
+ *     nobody complained about.
+ *   • The CEO, who is offered in that picker on purpose. What he is kept out of is the folders that
+ *     fill themselves; a recruiter choosing him is a human act with a name against it.
+ */
+export function managerMayBeSentApplication(
+  seatTier: string | null | undefined,
+  candidateTier: CandidateManagerSeatTier,
+): boolean {
+  const seat = seatTierRank(seatTier);
+  if (seat === null) return true;
+  if (seat >= CEO_TIER_RANK) return true;
+  return managerSeatCanReceive(seatTier, candidateTier);
+}
