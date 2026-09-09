@@ -123,4 +123,13 @@ export function runPortalSosSourceMaskTests() {
     /return \{ data: masked, scope, comparison: maskedComparison, uploadStatus \};/,
     "the masked payload must be what is returned — an unmasked `data` here is the whole leak",
   );
+
+  // The comparison's distributor map is NESTED at prevValueByCode.distributor, beside three other
+  // dimensions. Reaching for `comparison.distributor` type-checks nowhere and was the first thing
+  // this got wrong; pinned so the shape is asserted rather than remembered.
+  assert.match(
+    dashboard,
+    /prevValueByCode\.distributor, ctx\)/,
+    "the comparison mask must reach the NESTED prevValueByCode.distributor map",
+  );
 }

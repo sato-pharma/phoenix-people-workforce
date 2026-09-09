@@ -599,8 +599,16 @@ export async function getPortalSosDashboard(
     { ...data, filters: trimFilterOptions(data.filters, scope) },
     ctx,
   );
+  // NESTED, not top level: the map lives at `prevValueByCode.distributor`, one of four dimensions
+  // keyed side by side. `gainers`/`decliners` are built from byProduct and carry no distributor.
   const maskedComparison = comparison
-    ? { ...comparison, distributor: maskCodeKeyedDistributorMap(comparison.distributor, ctx) ?? {} }
+    ? {
+      ...comparison,
+      prevValueByCode: {
+        ...comparison.prevValueByCode,
+        distributor: maskCodeKeyedDistributorMap(comparison.prevValueByCode.distributor, ctx) ?? {},
+      },
+    }
     : comparison;
 
   return { data: masked, scope, comparison: maskedComparison, uploadStatus };
