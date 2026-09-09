@@ -6,6 +6,7 @@ import {
   STORE_OVERRIDE_CUSTOMER_KEYS,
   type CustomerChannel,
 } from "@/lib/sales/customer-channel";
+import { customerChannelSqlRule } from "@/lib/sales/customer-channel-sql-rule";
 import { RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
 import { loadMonthlyTargets, resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -387,6 +388,11 @@ export async function loadMonthlyClosingChannelComparison(
     // customer's channel one way and the Customers tab another — one customer, two answers.
     p_pharmacy_override_codes: [...PHARMACY_OVERRIDE_CLIENT_CODES],
     p_periods: wanted,
+    // And the WHOLE rule, which the two arrays below cannot express: the «م - » prefix is anchored
+    // at the START of a name, the trade phrase pairs two words, and El Qema's whole book is
+    // wholesale by distributor. `p_store_stems` and the override arrays stay because a migration
+    // lands before the deploy that uses it, and the function falls back to them for that window.
+    p_rule: customerChannelSqlRule(),
     p_store_override_codes: [...STORE_OVERRIDE_CUSTOMER_KEYS],
     p_store_stems: STORE_NAME_KEYWORDS.map((keyword) => normalizeCustomerName(keyword.stem)),
   });
@@ -754,6 +760,8 @@ export async function loadMonthlyClosingChannelBreakdown(
     // customer's channel one way and the Customers tab another — one customer, two answers.
     p_pharmacy_override_codes: [...PHARMACY_OVERRIDE_CLIENT_CODES],
     p_period: period,
+    // The whole rule, for the same reason as the totals grid above it.
+    p_rule: customerChannelSqlRule(),
     p_store_override_codes: [...STORE_OVERRIDE_CUSTOMER_KEYS],
     p_store_stems: STORE_NAME_KEYWORDS.map((keyword) => normalizeCustomerName(keyword.stem)),
   });

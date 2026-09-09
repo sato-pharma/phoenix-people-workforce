@@ -31,6 +31,18 @@ const CHANNELS_BY_REP = readFileSync(
   new URL("../src/lib/sales/channels-by-rep.ts", import.meta.url),
   "utf8",
 );
+const CLOSING_COMPARISON = readFileSync(
+  new URL("../src/lib/sales/monthly-closing-channel-comparison.ts", import.meta.url),
+  "utf8",
+);
+/** The two closing grids, each moved onto the shared rule in its own migration. */
+const CLOSING_MIGRATIONS = [
+  "20260907180000_closing_channel_totals_on_the_shared_rule.sql",
+  "20260907180500_closing_channel_breakdown_on_the_shared_rule.sql",
+].map((file) => ({
+  file,
+  sql: readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8"),
+}));
 
 export function runCustomerChannelSqlRuleTests() {
   const rule = customerChannelSqlRule();
@@ -101,6 +113,29 @@ export function runCustomerChannelSqlRuleTests() {
     CHANNELS_BY_REP.includes("p_store_stems: stems.store"),
     "and must keep sending the arrays, which the function falls back to during a deploy",
   );
+
+  // 6. The closing grids ask the same one function, and both call sites send the payload. Three
+  //    surfaces read this rule; a copy that drifts is the whole defect, in any of them.
+  assert.equal(
+    (CLOSING_COMPARISON.match(/p_rule: customerChannelSqlRule\(\)/g) ?? []).length,
+    2,
+    "both closing RPCs — totals and breakdown — must send the rule payload",
+  );
+  for (const { file, sql } of CLOSING_MIGRATIONS) {
+    assert.ok(
+      sql.includes("public.phx_customer_channel("),
+      `${file} must delegate classification instead of carrying its own copy`,
+    );
+
+    //  THE THREE BUCKETS STAY ABOVE THE CLASSIFIER. They answer "we do not know who this is", and
+    //  the classifier would call every one of them a pharmacy — quietly identifying money nobody
+    //  has identified, in a grid the owner reconciles to the penny.
+    const classifierAt = sql.indexOf("public.phx_customer_channel(");
+    for (const bucket of ["direct_unnamed", "unidentified_no_code", "unidentified_no_name"]) {
+      const bucketAt = sql.indexOf(`'${bucket}'`);
+      assert.ok(bucketAt > -1 && bucketAt < classifierAt, `${file} must decide ${bucket} before the channel`);
+    }
+  }
 
   // 6. Naming the trade pair must not have changed what the phrase matches.
   assert.equal(
