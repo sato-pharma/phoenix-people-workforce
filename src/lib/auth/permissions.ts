@@ -1189,7 +1189,14 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "National Sales Manager": {
-    market_awareness: ["read", "export"],
+    // Market Awareness: an APPROVER since the parallel group shipped (2026-09-09). Every activity
+    // waits on the Marketing Manager and on the National Sales Manager of each line it targets, so
+    // this seat holds `approve` for the same reason the Marketing Manager does. It reads far
+    // narrower than it looks: `approve` gates exactly one route, the decision POST, and
+    // `canDecideSlot` then admits him to HIS line's slot only — three people hold this title, one
+    // per line. Without it he was routed a decision the route refused him, which is a queue that
+    // cannot be cleared by the only person allowed to clear it.
+    market_awareness: ["read", "approve", "export"],
     direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],

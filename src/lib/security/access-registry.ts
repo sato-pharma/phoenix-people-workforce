@@ -698,8 +698,9 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/market-awareness/:activityId/tracking", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness/:activityId/submit", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // The approval steps. `approve` is held by the CEO, the Group Product Manager, the Marketing
-  // Manager and Super Admin — and canDecideStep then checks IDENTITY for the manager step, so a
-  // GPM cannot approve an activity routed to somebody else.
+  // Manager, each line's National Sales Manager and Super Admin — and canDecideStep then narrows
+  // further: an NSM answers only his own line's slot, and the retired manager step checks IDENTITY,
+  // so a GPM cannot approve an activity routed to somebody else.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness/:activityId/decision", permission: { resource: "market_awareness", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness/:activityId/withdraw", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness/:activityId/close", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper", csrfRequired: true }),
