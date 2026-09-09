@@ -23,14 +23,10 @@ All commands run from the repo root.
 | Fast editing gate (typecheck only) | `pnpm run check:edit` |
 | Whole gate, by hand — **only when the owner names it** | `pnpm run ci` |
 
-**CI is the gate. Do not run a local full validation.** `check:harden` was retired on 2026-08-18 at
-the owner's instruction, together with the `ask-before-validation` hook. Do not reintroduce them and
-do not invent a replacement — no "quick subset" of lint + typecheck before pushing, no `pnpm run ci`
-as a pre-push ritual. **Push the branch and let the PR's checks answer**; `validate`, `lint`,
-`typecheck` and `secret-scan` are required checks that block the merge. Migrations and production
-deploys are the two things CI never sees — those still get a check immediately before the action.
-Verifying a UI change in the browser is not validation at all — reload and look. Full rule and the
-per-change matrix: [AGENTS.md §7](AGENTS.md).
+**CI is the gate. Do not run a local full validation** — no "quick subset" of lint + typecheck
+before pushing, no `pnpm run ci` as a pre-push ritual. Push the branch and let the PR's four
+required checks answer. Migrations and production deploys are the two things CI never sees. Full
+rule, the retired `check:harden`, and the per-change matrix: [AGENTS.md §7](AGENTS.md).
 
 ## The two rules that apply to every change
 
