@@ -917,6 +917,20 @@ export function EmployeeManagement({
     });
   }, [form.jobTitle, form.lineId, form.positionId, openWorkforceVacancies, selectedPositionTitle]);
 
+  // Every row in the picker repeats the position, which is already chosen two fields above it --
+  // and that repetition is what pushed the option panel into a sideways scroll (708px of row in a
+  // 491px panel, measured 2026-09-09). It is only redundant while the rows AGREE, though: with a
+  // Title typed and no Job Position picked, filteredWorkforceVacancies matches every open vacancy
+  // on the line, and then the position is the half that tells the rows apart. So ask the rows.
+  const vacancyPositionsAgree = React.useMemo(() => {
+    const titles = new Set(
+      filteredWorkforceVacancies
+        .map((vacancy) => normalizeForMatch(vacancy.positionTitle || vacancy.jobTitle))
+        .filter(Boolean),
+    );
+    return titles.size <= 1;
+  }, [filteredWorkforceVacancies]);
+
   const filteredWorkforceLines = React.useMemo(() => {
     if (!selectedPositionRequiresVacancy) return lookups.lines;
 
@@ -2726,7 +2740,7 @@ export function EmployeeManagement({
                       selectedPositionRequiresVacancy
                         ? filteredWorkforceVacancies.length > 0
                           ? filteredWorkforceVacancies.map((v) => ({
-                              label: formatVacancyOptionLabel(v),
+                              label: formatVacancyOptionLabel(v, { omitPositionTitle: vacancyPositionsAgree }),
                               value: String(v.areaId),
                             }))
                           : form.lineId
