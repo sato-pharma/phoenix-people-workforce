@@ -5,6 +5,7 @@
 // never surface as a second, user-visible error on top of the one being reported.
 
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
+import { describeDomRewriters } from "@/lib/error-monitor/dom-rewriter";
 
 export type ReportClientErrorInput = {
   error: unknown;
@@ -76,6 +77,18 @@ function collectClientContext(): string | null {
 
     const [navigationEntry] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
     if (navigationEntry?.type) parts.push(`navType=${navigationEntry.type}`);
+
+    // Whatever rewrote the page's text before React hydrated it — the last standing cause of
+    // hydration error #418 here, and the one the `translate="no"` opt-out in app/layout.tsx
+    // could only ever address for the browsers that honour it. Absent on a clean page, so it
+    // adds nothing to an ordinary row.
+    const domRewriters = describeDomRewriters({
+      fontElementCount: document.getElementsByTagName("font").length,
+      hasMicrosoftTranslateAttribute: document.querySelector("[_msttexthash]") !== null,
+      htmlClassName: typeof document.documentElement.className === "string" ? document.documentElement.className : "",
+      htmlLang: document.documentElement.lang || "",
+    });
+    if (domRewriters.length > 0) parts.push(`domRewriter=${domRewriters.join(",")}`);
 
     const connection = (navigator as Navigator & { connection?: NetworkInformationLike }).connection;
     if (connection) {

@@ -1,0 +1,129 @@
+import assert from "node:assert/strict";
+
+import { describeDomRewriters } from "../src/lib/error-monitor/dom-rewriter.ts";
+import { decodeErrorMessage } from "../src/lib/error-monitor/message-decode.ts";
+import { describeThirdPartyStack } from "../src/lib/error-monitor/third-party-stack.ts";
+
+/**
+ * Two failures of ATTRIBUTION, both of which sent real triage the wrong way.
+ *
+ * Ten rows on /employee-portals/submit-expense on 2026-09-09 read like an app bug in the trip
+ * claim flow. Every frame was Google's map renderer, and both people submitted their claim
+ * anyway. Separately, hydration error #418 kept arriving with no app-code cause anywhere in the
+ * two worst routes' import graphs, and the `translate="no"` opt-out shipped for it did not stop
+ * Samsung Internet.
+ *
+ * The stacks below are production rows, copied verbatim, because the one thing a hand-written
+ * stack cannot pin is the shape a real browser actually emits.
+ */
+export function runErrorMonitorThirdPartyAttributionTests() {
+  // ── The real Google Maps failure, Safari frame form ─────────────────────────
+  const mapsStack = [
+    "— Client context —",
+    "seq=9 readyState=complete visibility=visible unloading=false sinceNavMs=176321 navType=navigate",
+    "",
+    "mq@https://maps.googleapis.com/maps-api-v3/api/js/66/3d/intl/en_gb/webgl.js:1024:450",
+    "@https://maps.googleapis.com/maps-api-v3/api/js/66/3d/intl/en_gb/main.js:475:824",
+    "Xm@https://maps.googleapis.com/maps-api-v3/api/js/66/3d/intl/en_gb/main.js:475:836",
+  ].join("\n");
+
+  const maps = describeThirdPartyStack(mapsStack);
+  assert.ok(maps, "an all-Google stack must be attributed");
+  assert.equal(maps.label, "maps.googleapis.com"); // the FIRST frame — the throw site
+  assert.equal(maps.frameCount, 3);
+
+  // The admin reads the origin before the message, which is the whole point.
+  const mapsRow = decodeErrorMessage("undefined is not an object (evaluating 'this.rh.get(b).filter')", mapsStack);
+  assert.match(mapsRow.display, /^Third-party script \(maps\.googleapis\.com\)/);
+  assert.match(mapsRow.display, /this\.rh\.get\(b\)\.filter/); // the message is kept, never replaced
+  assert.equal(mapsRow.raw, "undefined is not an object (evaluating 'this.rh.get(b).filter')");
+
+  // ── A React error must NEVER be attributed away ─────────────────────────────
+  // #418 carries `visit https://react.dev/errors/418` INSIDE its own message. Matching bare URLs
+  // would read that documentation link as the thrower and label every hydration error in the
+  // table as somebody else's code — the exact inversion this module exists to prevent.
+  const reactMessage =
+    "Minified React error #418; visit https://react.dev/errors/418?args[]=text&args[]= for the full message" +
+    " or use the non-minified dev environment for full errors and additional helpful warnings.";
+  const reactStack = [
+    "— Client context —",
+    "seq=1 readyState=complete visibility=visible unloading=false sinceNavMs=5715 navType=reload",
+    "",
+    `Error: ${reactMessage}`,
+    "    at rJ (https://phoenix-hr.satopharma.com/_next/static/chunks/0xz6-s62g6oj6.js:1:46285)",
+    "    at sh (https://phoenix-hr.satopharma.com/_next/static/chunks/0xz6-s62g6oj6.js:1:146822)",
+  ].join("\n");
+
+  assert.equal(describeThirdPartyStack(reactStack), null);
+  const reactRow = decodeErrorMessage(reactMessage, reactStack);
+  assert.doesNotMatch(reactRow.display, /Third-party/);
+  assert.match(reactRow.display, /Hydration mismatch/); // still decodes as itself
+
+  // Even with every app frame stripped away, the documentation link alone attributes nothing:
+  // a frame needs its `:line:col`, and a link in prose has none.
+  assert.equal(describeThirdPartyStack(`Error: ${reactMessage}`), null);
+
+  // ── One app frame anywhere is enough to keep the row ours ───────────────────
+  // A mixed stack means our code is on the path, so it must not read as somebody else's.
+  const mixedStack = [
+    "mq@https://maps.googleapis.com/maps-api-v3/api/js/66/3d/webgl.js:1024:450",
+    "onMapReady@https://phoenix-hr.satopharma.com/_next/static/chunks/06fa7yadrmwnm.js:1:14209",
+  ].join("\n");
+  assert.equal(describeThirdPartyStack(mixedStack), null);
+
+  // An inline script on one of our own pages carries the PAGE url and no /_next/ — still ours.
+  assert.equal(
+    describeThirdPartyStack("@https://phoenix-hr.satopharma.com/employee-portals/submit-expense:12:3"),
+    null,
+  );
+
+  // ── A server throw locates no frames at all, and must stay unlabelled ───────
+  const serverStack = [
+    "Error: The destination stream closed early.",
+    "    at PassThrough.<anonymous> (/app/node_modules/.pnpm/next@16.3.3/dist/server/render.js:114:23)",
+  ].join("\n");
+  assert.equal(describeThirdPartyStack(serverStack), null);
+  assert.equal(describeThirdPartyStack(null), null);
+  assert.equal(describeThirdPartyStack(""), null);
+
+  // ── Both browser frame dialects, and an extension ───────────────────────────
+  // Chromium writes `at name (url:l:c)`; Safari and Firefox write `name@url:l:c`.
+  const chromium = describeThirdPartyStack("    at Bd (https://cdn.example.com/widget.js:2:99)");
+  assert.equal(chromium?.label, "cdn.example.com");
+  const bareChromium = describeThirdPartyStack("    at https://cdn.example.com/widget.js:2:99");
+  assert.equal(bareChromium?.label, "cdn.example.com");
+
+  // An extension id names nothing a reader can act on, so it is described by what it is.
+  const extension = describeThirdPartyStack("h@chrome-extension://abcdefghijklmnop/inject.js:1:20");
+  assert.equal(extension?.label, "a browser extension");
+
+  // ── The DOM-rewriter probe ──────────────────────────────────────────────────
+  // A clean page writes NOTHING, so an ordinary error row is unchanged.
+  const clean = { fontElementCount: 0, hasMicrosoftTranslateAttribute: false, htmlClassName: "h-full antialiased", htmlLang: "en" };
+  assert.deepEqual(describeDomRewriters(clean), []);
+
+  // Google Translate, which is what Chrome, Chrome iOS and Samsung Internet all invoke.
+  assert.deepEqual(
+    describeDomRewriters({ ...clean, htmlClassName: "h-full antialiased translated-ltr" }),
+    ["google-translate"],
+  );
+  assert.deepEqual(describeDomRewriters({ ...clean, htmlClassName: "translated-rtl" }), ["google-translate"]);
+  // Not a substring match: a class that merely contains the word is not the marker.
+  assert.deepEqual(describeDomRewriters({ ...clean, htmlClassName: "untranslated-ltrx" }), []);
+
+  // `<font>` is the tag Google Translate wraps every rewritten text node in, and the app emits
+  // none — so a count above zero is a foreign rewrite whichever browser did it, including the
+  // ones that leave no class behind.
+  assert.deepEqual(describeDomRewriters({ ...clean, fontElementCount: 47 }), ["fontTags=47"]);
+  assert.deepEqual(describeDomRewriters({ ...clean, hasMicrosoftTranslateAttribute: true }), ["microsoft-translate"]);
+
+  // app/layout.tsx serves lang="en"; anything else means something rewrote the document.
+  assert.deepEqual(describeDomRewriters({ ...clean, htmlLang: "ar" }), ["lang=ar"]);
+  assert.deepEqual(describeDomRewriters({ ...clean, htmlLang: "EN" }), []);
+
+  // A translated page usually trips several at once, and every one is recorded.
+  assert.deepEqual(
+    describeDomRewriters({ fontElementCount: 12, hasMicrosoftTranslateAttribute: false, htmlClassName: "translated-ltr", htmlLang: "ar" }),
+    ["google-translate", "fontTags=12", "lang=ar"],
+  );
+}
