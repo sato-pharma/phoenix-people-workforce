@@ -4,6 +4,7 @@ import {
   isSplitEligibleLine,
   isStoreCitySplitActive,
   isUnlistedArea,
+  planShares,
   splitTargetsFor,
   type StoreSplitRow,
 } from "@/lib/sales/store-sales-city-split";
@@ -215,7 +216,17 @@ export function buildImportSplitPlan(input: {
         widestProduct = plan.areas.length;
         group = plan.group;
       }
-      const home = productUnits * plan.homeFraction;
+      // 🔴 THE SHARES, NEVER `homeFraction` ON ITS OWN. El Qema's صعيد redistribution is a WEIGHT
+      // on the plan, so `homeFraction` describes the band it started from and no longer describes
+      // what each area receives. Reading the fraction here promised a preview the closing would not
+      // perform — the same defect the Store Split Detail sheet carried, and the reason both now read
+      // `planShares`. It reduces to the old arithmetic exactly on every unweighted plan.
+      const shares = planShares(plan, productUnits);
+      const homeSet = new Set(plan.homeAreas);
+      const home = plan.areas.reduce(
+        (sum, area, index) => sum + (homeSet.has(area) ? shares[index] : 0),
+        0,
+      );
       unitsPerHomeArea += home / plan.homeAreas.length;
       if (plan.awayAreas.length > 0) {
         nationalSplit = true;

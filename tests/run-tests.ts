@@ -3463,7 +3463,7 @@ await runTest(
   runCityListNewAreaGuardTests,
 );
 await runTest(
-  "El Qema priority ladder (the whole Pedia book divided across every area the line has, with Qalubeya, Menoufia, Gharbia and Cairo one 2% step apart in that order — where a warehouse sits and how much it sold both stopped mattering, and Others take nothing including their own sales)",
+  "El Qema three bands and the صعيد redistribution (200 / 201-999 / 1000+ per warehouse and product, Qalubeya meaning Qalubeya + Cairo evenly, then half of Upper Egypt's credited sales back across Upper Egypt and half over the republic — every share checked against an independent reading of the owner's words)",
   runQemaWarehouseSplitTests,
 );
 await runTest(
