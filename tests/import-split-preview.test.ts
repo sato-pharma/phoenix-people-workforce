@@ -49,33 +49,39 @@ export function runImportSplitPreviewTests() {
     "and the reason names the period rather than blaming the customer",
   );
 
-  // ── El Qema, Qalubeya, 700 packs: half stays, half crosses the country ───────────────────────
+  // ── El Qema, 700 packs: the priority ladder, owner 2026-09-09 ────────────────────────────────
+  //
+  // 🔴 There is no local half and no national half any more, so `nationalSplit` is false for every
+  // El Qema row and `unitsPerAwayArea` is zero. This block used to assert 350 over a seven-area
+  // Qalubeya + Cairo block and 350 over the other 42; both of those rules are gone.
   const sept = buildImportSplitPlan({ period: "2026-09", rows: [row()] });
   assert.equal(sept.splitActive, true);
   const forsan = sept.customers[0];
   assert.equal(forsan.willSplit, true);
-  assert.equal(forsan.nationalSplit, true, "700 packs of one product is over 200");
+  assert.equal(forsan.nationalSplit, false, "the ladder has no away block to report");
   assert.equal(
     forsan.group,
-    "Qalubeya + Cairo + nationwide",
-    "the city column names BOTH rules — the Cairo block and the national half",
+    "El Qema priority ladder",
+    "and the city column names the rule that moved the money",
   );
   assert.equal(forsan.targetAreas.length, COUNTRY_AREAS, "every area in the country receives something");
-  assert.ok(forsan.targetAreas.includes("D11"), "Qalubeya keeps a share of its own sale");
-  assert.ok(forsan.targetAreas.includes("AB1"), "and Alexandria, which the old Cairo-only rule never reached");
+  assert.ok(forsan.targetAreas.includes("D11"), "Qalubeya takes a share like everyone else");
+  assert.ok(forsan.targetAreas.includes("AB1"), "and so does Alexandria");
   assert.equal(
     Number(forsan.unitsPerArea.toFixed(6)),
-    Number((350 / 7).toFixed(6)),
-    "half of 700 stays in the LOCAL block — Qalubeya plus the six Cairo areas — and divides evenly",
+    Number((700 / COUNTRY_AREAS).toFixed(6)),
+    "the headline is the MEAN per area — one number cannot say more about a ladder",
   );
-  assert.equal(
-    Number(forsan.unitsPerAwayArea.toFixed(6)),
-    Number((350 / 42).toFixed(6)),
-    "the other half divides evenly over the 42 areas outside that block",
-  );
+  assert.equal(forsan.unitsPerAwayArea, 0, "there is no away block, so nothing divides over one");
   assert.equal(sept.widestFanOut, COUNTRY_AREAS, "the headline reports the widest reach in the file");
 
-  // ── Sohag holds two areas, so the home half splits between them ──────────────────────────────
+  // ── 🔴 THE ORIGIN AND THE SIZE BOTH STOPPED MATTERING — owner, 2026-09-09 ────────────────────
+  //
+  // This block used to prove three things that are all now false: that Sohag kept half its own sale
+  // across its two areas, that 120 packs in a one-area governorate stayed whole because there was
+  // nothing to divide across, and that the same customer over 200 behaved differently. The ladder
+  // has no governorate and no threshold, so every El Qema row reaches every area whatever its size
+  // and wherever it was sold.
   const mixed = buildImportSplitPlan({
     period: "2026-09",
     rows: [
@@ -84,37 +90,39 @@ export function runImportSplitPreviewTests() {
     ],
   });
   const sohag = mixed.customers.find((c) => c.clientCode === "3040");
-  assert.equal(sohag?.targetAreas.length, COUNTRY_AREAS, "960 packs is over 200, so it goes national");
-  assert.equal(sohag?.unitsPerArea, 240, "480 of the 960 stays in Sohag, across its two areas");
-  assert.equal(sohag?.group, "Sohag + nationwide");
-
-  // ── Up to 200 in a one-area governorate stays whole, and says why ─────────────────────────────
-  //
-  // This is the half of the rule that is easiest to lose: "وليس له علاقه بتوزيع الجمهورية" — a small
-  // order has NOTHING to do with the national spread. Beni Suef holds one area, so nothing moves.
-  const beniSuef = mixed.customers.find((c) => c.clientCode === "1099");
-  assert.equal(beniSuef?.willSplit, false, "120 packs stays in Beni Suef, which holds one area");
-  assert.equal(beniSuef?.nationalSplit, false, "and it never reaches the national half");
-  assert.match(
-    beniSuef?.reason ?? "",
-    /one area only/,
-    "and the reason says so, because staying whole here is CORRECT and must not read as a fault",
+  assert.equal(sohag?.targetAreas.length, COUNTRY_AREAS, "960 packs reaches every area");
+  assert.equal(
+    Number((sohag?.unitsPerArea ?? 0).toFixed(6)),
+    Number((960 / COUNTRY_AREAS).toFixed(6)),
+    "and the mean per area is simply the quantity over the country",
   );
-  assert.equal(beniSuef?.unitsPerArea, 120, "a customer that stays whole keeps all its units");
+  assert.equal(sohag?.group, "El Qema priority ladder");
 
-  // The SAME customer over the threshold does move — one area at home, the rest of the country away.
+  const beniSuef = mixed.customers.find((c) => c.clientCode === "1099");
+  assert.equal(beniSuef?.willSplit, true, "120 packs now splits too — there is no threshold left");
+  assert.equal(beniSuef?.targetAreas.length, COUNTRY_AREAS, "and it reaches every area as well");
+  assert.equal(beniSuef?.nationalSplit, false, "with no away block to report");
+
+  // The same customer at twice the size behaves identically, in proportion.
   const beniSuefBig = buildImportSplitPlan({
     period: "2026-09",
     rows: [row({ areaCode: "UE9", clientCode: "1099", clientName: "دار الادويه للتوكيلات الطبيه", qty: 240 })],
   });
-  assert.equal(beniSuefBig.customers[0].willSplit, true, "240 packs crosses 200 even in a one-area governorate");
-  assert.equal(beniSuefBig.customers[0].unitsPerArea, 120, "half stays on Beni Suef's single area");
+  assert.equal(beniSuefBig.customers[0].willSplit, true, "240 packs splits the same way");
+  assert.equal(
+    Number(beniSuefBig.customers[0].unitsPerArea.toFixed(6)),
+    Number((240 / COUNTRY_AREAS).toFixed(6)),
+    "twice the quantity, twice the mean, same shape",
+  );
 
-  // ── 🔴 THE THRESHOLD IS PER PRODUCT, NEVER THE BASKET ────────────────────────────────────────
+  // ── THE BASKET AND THE PRODUCT NOW GIVE THE SAME ANSWER ──────────────────────────────────────
   //
-  // Three products of 100 packs each is a 300-pack basket and not one 300-pack product. Judged on the
-  // basket this customer would be reported as reaching the whole country; judged correctly it does
-  // not leave Qalubeya at all, and Qalubeya holds one area, so nothing moves.
+  // This used to be the sharpest assertion in the file: three products of 100 packs is a 300-pack
+  // basket and not one 300-pack product, and reading the basket total would have promised a
+  // nationwide fan-out the closing never performed. The ladder has no threshold, so basket and
+  // product are indistinguishable and the trap has nothing left to catch. Kept as a live check that
+  // per-product accounting still reaches every area rather than deleted, so a future rule with a
+  // threshold has somewhere to reattach.
   const basket = buildImportSplitPlan({
     period: "2026-09",
     rows: [
@@ -124,16 +132,11 @@ export function runImportSplitPreviewTests() {
     ],
   });
   assert.equal(basket.customers[0].units, 300, "the customer bought 300 packs in total");
-  assert.equal(
-    basket.customers[0].nationalSplit,
-    false,
-    "but no single PRODUCT crossed 200, so NOTHING goes national — reading the basket total here "
-      + "would promise a nationwide fan-out the closing never performs",
-  );
+  assert.equal(basket.customers[0].nationalSplit, false, "no away block, whatever the basket holds");
   assert.equal(
     basket.customers[0].targetAreas.length,
-    7,
-    "it still spreads across the local block, Qalubeya plus Cairo — that rule has no threshold",
+    COUNTRY_AREAS,
+    "and every product, at any size, reaches every area",
   );
 
   // ── A pharmacy is reported as a pharmacy, not as an unexplained no ────────────────────────────
@@ -162,10 +165,21 @@ export function runImportSplitPreviewTests() {
   });
   assert.equal(twoAreas.customers.length, 2, "grouped by customer AND origin area");
   const alex = twoAreas.customers.find((c) => c.originArea === "AB2");
-  assert.deepEqual(alex?.targetAreas, ["AB1", "AB2", "AB3"], "the Alexandria leg spreads across Alexandria");
-  assert.equal(alex?.unitsPerArea, 50, "150 / 3 — and it is NOT pooled with the Sohag leg");
+  assert.equal(
+    alex?.targetAreas.length,
+    COUNTRY_AREAS,
+    "each leg reaches every area — the ladder is blind to where the leg was sold",
+  );
+  assert.equal(
+    Number((alex?.unitsPerArea ?? 0).toFixed(6)),
+    Number((150 / COUNTRY_AREAS).toFixed(6)),
+    "and it is still NOT pooled with the Sohag leg — two placements, two plans",
+  );
 
   // ── Rows for one customer, one area and one product are summed before the plan is drawn ───────
+  //
+  // The summing still matters even without a threshold to judge: the preview reports one placement
+  // per customer and area, and two invoice lines must not read as two customers.
   const summed = buildImportSplitPlan({
     period: "2026-09",
     rows: [row({ qty: 350 }), row({ qty: 350 })],
@@ -174,8 +188,8 @@ export function runImportSplitPreviewTests() {
   assert.equal(summed.customers[0].units, 700);
   assert.equal(
     Number(summed.customers[0].unitsPerArea.toFixed(6)),
-    Number((350 / 7).toFixed(6)),
-    "and the 200 rule is judged on the summed 700, then halved across the seven local areas",
+    Number((700 / COUNTRY_AREAS).toFixed(6)),
+    "and the mean is taken on the summed 700, not on either line alone",
   );
 
   // ── Biggest first, so a file of small pharmacies cannot bury the one that moves ───────────────

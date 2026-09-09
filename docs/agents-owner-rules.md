@@ -1060,7 +1060,65 @@ rows "Phoenix is right — I will fix my sheet". The correction is to his file, 
 replaced on 2026-09-08) carries the `CA5` assertion forward, naming it — so removing Down town fails with an explanation rather than
 just going red. Both run in the required CI `validate` job.
 
-## The unified distribution (نظام توزيع القمه الموحد) — owner ruling, 2026-09-09 (CURRENT)
+## The priority ladder — owner ruling, 2026-09-09 (CURRENT, and it replaced everything)
+
+This is the live El Qema rule. Every El Qema section below it is history.
+
+> what I want is that the qalubeya be qalubeya, then the Monofiua and the gharbia one and two, okay,
+> then cairo, then any rearrangement after this. But I don't want the areas I mentioned to be far
+> away from the others — I want them to be exceeding them, but with a very small scale.
+
+El Qema's whole Pedia book is divided across every area the line has. Four named rungs take one 2%
+step more each, in his order.
+
+| Rung | Areas | Weight | August packs each |
+| --- | --- | --- | --- |
+| Qalubeya | 1 | 1.08 | 253.33 |
+| Menoufia 1, Menoufia 2 | 2 | 1.06 | 248.64 |
+| Gharbia 1, Gharbia 2 | 2 | 1.04 | 243.95 |
+| Cairo | 5 | 1.02 | 239.26 |
+| Everyone else | 27 | 1.00 | 234.56 |
+
+The arithmetic is one division. The 37 weights add to 37.38, and 8,768 over 37.38 is 234.56, which
+is one unit of weight. Top to bottom is 18.77 packs, which is what "a very small scale" bought.
+
+### What it discarded, and why none of it is a bug
+
+Five rules, all of them his, all made in the two days before it:
+
+| Rule | Given | Gone because |
+| --- | --- | --- |
+| Up to 200 stays in the governorate | 09-08 | the ladder has no governorate and no threshold |
+| 201–999 splits half and half | 09-08 | same |
+| 1,000 and above spreads flat | 09-09 | same |
+| Upper Egypt pooled with Fayoum - Beni Suef | 09-09 | the ladder levels everything already |
+| Qalubeya + Cairo, weighted 75/25 | 09-07, 09-09 | Cairo is now a rung, not a block |
+
+🔴 **A session finding any of these missing is looking at a decision.** They are dense, they
+were each argued for, and each has its own measured account in this file. Restoring one reverses him.
+
+### The two things a reader disbelieves
+
+**Where a warehouse sits decides nothing.** Benha sold 6,656 of August's 8,768 packs and takes
+253.33, exactly what it would take if it had sold none. The only reason it leads the table is that
+it is on the top rung. The El Qema test asserts this twice, from two directions, because
+reintroducing an origin preference is the obvious "fix".
+
+**Others keep nothing, including their own sales.** Every earlier rule let an area in Others keep
+what it sold itself, because a home half had to land somewhere. There is no home half. On August
+that moves Ismailia's own 24 packs out, and he asked for exactly that: *"neglect others, don't add
+others"*.
+
+### Where the numbers live
+
+`QEMA_PRIORITY_RUNGS` and `QEMA_PRIORITY_STEP` in `src/lib/sales/store-sales-city-split.ts`. The step
+is the only dial: at 2% each rung is 4.69 packs above the next, at 5% about 12. Cairo is listed with
+all six codes and Down town drops out through the Others exclusion, so moving it in the organogram
+rejoins it without a code change.
+
+## The unified distribution (نظام توزيع القمه الموحد) — owner ruling, 2026-09-09 (SUPERSEDED the same day)
+
+🔴 **Replaced by the priority ladder above, hours later.** Kept as a dated record of what the three bands were and why, because the ladder's own documentation refers back to them.
 
 This is the live rule. Everything below it in this file is the history that led here, kept dated and
 unrewritten; where the two disagree, this section wins.
@@ -1082,52 +1140,27 @@ He restated the whole thing as three ordered steps, unprompted:
 | 2 | 201 to 999 | half the local block, half evenly over the rest of the country |
 | 3 | 1,000 and above | flat: every area in play takes an identical share, origin included |
 
-### The Upper Egypt block, added the same day
+### The Upper Egypt block — added and WITHDRAWN the same day, 2026-09-09
 
-> the rule will be the same as cairo + qalubeya but for upper egypt, if any city in upper egypt
-> exceed that to be distributed on all upper egypt cities except the others
+🔴 **DO NOT REBUILD IT.** For a few hours on 2026-09-09 an El Qema warehouse anywhere in the
+organogram's Upper Egypt region treated the whole region as its governorate above 200 packs, the same
+shape as Qalubeya reaching Cairo. He asked for it (*"the rule will be the same as cairo + qalubeya but
+for upper egypt"*), answered the two questions it raised, saw the numbers, and then said to take it
+out. It shipped as PR #3581 and was reverted by PR #3582 the same day.
 
-An El Qema warehouse anywhere in Upper Egypt treats the whole region as its governorate. Two things
-were put to him because his sentence allowed either reading:
+It is written down here for one reason: the request, the two answers and the measured effect are all
+in this file's history, and a session reading them without this paragraph will conclude the rule was
+lost in a bad merge and restore it. It was not lost. It was withdrawn.
 
-**Does it hold at every step, like Cairo + Qalubeya?** No: *"only above 200 packs"*. So the two rules
-have the same shape and differ in exactly one thing, and that difference is invisible in his wording.
-A 150-pack Sohag order stays in Sohag's two areas; a 150-pack Benha order still reaches Cairo.
+What it did while it was live, on August Pedia: Sohag 1 and Sohag 2 gave up 171.43 packs each, the
+other five Upper Egypt areas took 54.86 each, and every remaining area gained 2.29 because the
+national half divided over 30 areas instead of 35. The production split net was backfilled under it
+and backfilled again without it; the pre-images of both are in `sos_backup_20260909`.
 
-**Is Beni Suef in the block?** *"follow the organogram but later if we update the organogram the rule
-changes"*. So it is a REGION CODE, resolved per line and per period from the same view the Others
-rule reads. On Pedia the block is seven areas: Minia 1 and 2, Assuit 1 and 2, Sohag 1 and 2, Qena 1.
-`UE9` Beni Suef sits in `GZ` and `UE8` Qena 2 sits in Others, both by the organogram's own filing,
-even though every `UE*` code looks like it belongs. Hard-coding the prefix would look right, be wrong
-about both of them today, and stop tracking him the moment he moves a seat.
-
-### Measured on August 2026
-
-One customer crosses the threshold in Upper Egypt: بدر فارم سوهاج in Sohag 1, with 480 packs of each
-Lacto Advanced, both in step 2.
-
-| Area | Before | After | Change |
-| --- | --- | --- | --- |
-| Sohag 1 | 455.57 | 284.14 | -171.43 |
-| Sohag 2 | 455.57 | 284.14 | -171.43 |
-| Minia 1, Minia 2, Assuit 1, Assuit 2 | 205.28 | 260.14 | +54.86 |
-| Qena 1 | 229.28 | 284.14 | +54.86 |
-| every other area in play | | | +2.29 |
-
-The home half stops being split two ways and starts being split seven ways, so Sohag gives up most
-of it. The national half then divides over 30 areas instead of 35, which is where the +2.29 comes
-from. Beni Suef takes that ordinary national share and nothing more, which is the organogram filing
-visible in the numbers.
-
-### One object, not two sets
-
-The split now takes a single `SplitRegions` from `loadSplitRegions`, carrying both the Others set and
-the region map. That is not tidiness. The Others rule shipped completely inert once because its
-loader looked the line up by display name against a code-keyed view, returned nothing, and an empty
-set is exactly how the split spells "nothing is excluded". A second loose parameter would give every
-call site a fresh chance to pass one half and forget the other, failing the same way: silently, and
-in the direction of the rule not applying. With one object the compiler names every site that has
-not been updated, which is how all seven were found when this landed.
+His two answers still stand as statements of intent should he ever ask for it again: the block would
+apply **only above 200 packs**, not at every step; and its membership would come from the organogram,
+not from the `UE*` area codes, so Beni Suef would be outside it while Pedia files that area under
+Giza. Neither answer is the reason he removed it.
 
 ### The two questions that were put to him, and his answers
 
