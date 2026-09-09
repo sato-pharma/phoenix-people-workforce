@@ -62,8 +62,20 @@ async function EmployeesContent({ access }: { access: AccessContext }) {
     initialError = employeePageError(error);
   }
 
+  // THE SAME PROP THE ADMIN COPY PASSES, and it was missing here. The page is a mirror of
+  // app/(admin)/employees/page.tsx, which computes this precisely so a reader is not offered Save
+  // buttons the API refuses — and the mirror never got it, so every viewer who reached this page
+  // was handed edit controls whatever their grant.
+  //
+  // Nobody was affected: no role currently holds `employees:read` AND resolves to the portal
+  // shell, so the gate above redirects everyone before they get here (measured 2026-09-09). That
+  // is exactly why it never showed up — it is a hole waiting for the first portal seat to be
+  // granted the employee master, not a live fault.
+  const canEdit = await canAccess(access, "employees", "update");
+
   return (
     <EmployeeManagement
+      canEdit={canEdit}
       initialData={initialData}
       initialError={initialError}
     />

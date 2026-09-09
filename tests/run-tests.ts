@@ -1492,6 +1492,10 @@ import { runSalesUploadReceiptConfidentialityTests } from "./sales-upload-receip
 import { runRetentionRiskDetectorTests } from "./retention-risk-detector.test.ts";
 import { runRetentionRiskNotifyTests } from "./retention-risk-notify.test.ts";
 import { runCrmAccountSetupTests } from "./crm-account-setup.test.ts";
+import {
+  runEmployeeManagementCanEditReachTests,
+  runEmployeeManagementCanEditTests,
+} from "./employee-management-can-edit.test.ts";
 import { runEmployeeCvTests } from "./employee-cv.test.ts";
 import { runHrbpTerritoryManagementAccessTests } from "./hrbp-territory-management-access.test.ts";
 
@@ -4844,6 +4848,14 @@ await runTest(
 await runTest(
   "new hire CRM account setup (the notice carries all seven facts, states a blank instead of dropping it, is email + in-app only, and fires on the CREATE path alone)",
   runCrmAccountSetupTests,
+);
+await runTest(
+  "employee master canEdit (every page rendering it passes the grant, found by scanning rather than by a hand-kept list, and the default fails closed)",
+  runEmployeeManagementCanEditTests,
+);
+await runTest(
+  "employee master canEdit reach (whoever can open the portal copy gets controls matching their own employees:update)",
+  runEmployeeManagementCanEditReachTests,
 );
 await runTest(
   "employee CV on the master record (the SFE Manager can open the link he is sent, the CV is filed BEFORE the notice is composed, and the bucket is private)",
