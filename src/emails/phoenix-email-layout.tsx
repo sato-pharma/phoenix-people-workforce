@@ -120,6 +120,12 @@ export function renderPhoenixMetadataTable(rows: PhoenixEmailMetadataRow[] | und
   // routinely drop <style>, and almost none honor :nth-child), with a matching class so the
   // dark-mode blocks in the document <style> can re-tint the stripes. Wrapped in a rounded,
   // bordered shell for a document-grade look.
+  // NOTE: the cells below MUST write `background-color`, not the `background` shorthand, and
+  // must keep their `bgcolor` attribute. This table reaches most emails as the {{detailsTable}}
+  // token inside a template body, which passes through sanitizeEmailTemplateHtml — and that
+  // allows `background-color` but not `background`, and strips `bgcolor` unless it is on the
+  // element's allow-list. Either mistake removes the striping silently: the table still renders,
+  // just flat. Pinned by tests/email-zebra-survives-sanitizer.test.ts.
   const zebraBase = "#ffffff";
   const zebraAlt = "#f1f5f9";
   return `
@@ -133,8 +139,8 @@ export function renderPhoenixMetadataTable(rows: PhoenixEmailMetadataRow[] | und
           const altClass = isAlt ? " phoenix-metadata-row-alt" : "";
           return `
             <tr class="phoenix-metadata-row${altClass}" bgcolor="${rowBg}">
-              <td class="phoenix-muted phoenix-metadata-cell${altClass}" bgcolor="${rowBg}" style="padding:16px 20px;background:${rowBg};${cellBorder}${mutedTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:800;letter-spacing:0.05em;text-transform:uppercase;line-height:1.5;vertical-align:middle;white-space:nowrap">${escapeAndIsolate(row.label)}</td>
-              <td class="phoenix-text phoenix-metadata-cell${altClass}" bgcolor="${rowBg}" style="padding:16px 20px;background:${rowBg};${cellBorder}${bodyTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:900;line-height:1.5;text-align:right;vertical-align:middle;unicode-bidi:isolate">${escapeAndIsolate(row.value)}</td>
+              <td class="phoenix-muted phoenix-metadata-cell${altClass}" bgcolor="${rowBg}" style="padding:16px 20px;background-color:${rowBg};${cellBorder}${mutedTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:800;letter-spacing:0.05em;text-transform:uppercase;line-height:1.5;vertical-align:middle;white-space:nowrap">${escapeAndIsolate(row.label)}</td>
+              <td class="phoenix-text phoenix-metadata-cell${altClass}" bgcolor="${rowBg}" style="padding:16px 20px;background-color:${rowBg};${cellBorder}${bodyTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:900;line-height:1.5;text-align:right;vertical-align:middle;unicode-bidi:isolate">${escapeAndIsolate(row.value)}</td>
             </tr>`;
         })
         .join("")}

@@ -822,6 +822,7 @@ import { runEmailActivityTests } from "./email-activity.test.ts";
 import { runEmailTemplatesTriggersTests } from "./email-templates-triggers.test.ts";
 import { runEmailTemplateKeyResolutionTests } from "./email-template-key-resolution.test.ts";
 import { runEmailTemplatesForCodeBuiltSendersTests } from "./email-templates-for-code-built-senders.test.ts";
+import { runEmailZebraSurvivesSanitizerTests } from "./email-zebra-survives-sanitizer.test.ts";
 import { runEmailFollowupsTests } from "./email-followups.test.ts";
 import { runReportItAccessTests } from "./report-it-access.test.ts";
 import { runSosInvoiceDateTests } from "./sos-invoice-date.test.ts";
@@ -2925,6 +2926,7 @@ await runTest("email activity (provider/recipient inference)", runEmailActivityT
 await runTest("email templates triggers", runEmailTemplatesTriggersTests);
 await runTest("email template key resolution (retired alias must not shadow)", runEmailTemplateKeyResolutionTests);
 await runTest("email templates for the six code-built senders", runEmailTemplatesForCodeBuiltSendersTests);
+await runTest("email zebra striping survives the sanitizer", runEmailZebraSurvivesSanitizerTests);
 await runTest("email followups", runEmailFollowupsTests);
 await runTest("report-it access", runReportItAccessTests);
 await runTest("sos invoice date", runSosInvoiceDateTests);
