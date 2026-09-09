@@ -373,28 +373,40 @@ function testPediaFoldsFayoumAndBeniSuefIntoOneArea() {
   ];
   const t = buildCoverageFilterTree({ lineNames: foldLineNames, mapRows: rows, regionNames: foldRegionNames, seats });
 
-  // Pedia: one combined option, carrying the surviving GZ6 code and the merged name.
+  // 🔴 THIS PICKER SHOWS TODAY, NOT A CLOSED MONTH — buildCoverageFilterTree deliberately passes no
+  // period, and the owner ended Pedia's Fayoum + Beni Suef merge at 2026-08 on 2026-09-09. So from
+  // September Pedia offers the two areas separately, which is the point: a rep working Beni Suef is
+  // pickable on his own. The merged behaviour is still pinned, dated, in the closing-side tests.
   const pediaAreas = narrowCoverageOptions(t, { line: "pedia" }).areas;
   assert.deepEqual(
-    pediaAreas.map((a) => a.code),
-    ["GZ6"],
-    "Pedia folds Fayoum + Beni Suef into one area option under the surviving GZ6 code",
+    pediaAreas.map((a) => a.code).sort(),
+    ["GZ6", "UE9"],
+    "from September Pedia offers Fayoum and Beni Suef as two area options",
   );
-  assert.equal(pediaAreas[0]?.name, "Fayoum - Beni Suef", "and it is labelled with the combined name");
+  assert.deepEqual(
+    pediaAreas.map((a) => a.name).sort(),
+    ["Beni Suef", "Fayoum"],
+    "each carries its own name — the combined label belongs to the months that still fold",
+  );
 
-  // Anti Infective: the two areas stay separate — the fold is Pedia-only.
+  // Anti Infective: the two areas were always separate there, and still are.
   assert.deepEqual(
     narrowCoverageOptions(t, { line: "anti_infective" }).areas.map((a) => a.name).sort(),
     ["Beni Suef", "Fayoum"],
     "Anti Infective keeps Fayoum and Beni Suef as two areas",
   );
 
-  // Anti-data-loss: selecting the folded Pedia option resolves to BOTH areas' reps. Without the
-  // expansion in cellMatches this returns only the GZ6 rep, dropping Beni Suef entirely.
+  // Each code now stands for itself on Pedia: picking Fayoum returns Fayoum's rep alone, and Beni
+  // Suef's rep is reachable by picking Beni Suef rather than only through the merged option.
   assert.deepEqual(
-    repsMatching(t, { line: "pedia", area: "GZ6" }).map((r) => r.hrId).sort(),
-    ["PED-1", "PED-2"],
-    "the folded GZ6 selection expands back to {GZ6, UE9}, so Beni Suef's rep is never dropped",
+    repsMatching(t, { line: "pedia", area: "GZ6" }).map((r) => r.hrId),
+    ["PED-1"],
+    "Fayoum stands for itself from September",
+  );
+  assert.deepEqual(
+    repsMatching(t, { line: "pedia", area: "UE9" }).map((r) => r.hrId),
+    ["PED-2"],
+    "and Beni Suef's rep answers under his own area, which he could not before",
   );
 
   // Anti Infective's GZ6 does not expand — its Beni Suef is a different, separate area.
@@ -404,11 +416,11 @@ function testPediaFoldsFayoumAndBeniSuefIntoOneArea() {
     "Anti Infective's GZ6 stands only for itself — no accidental cross-line expansion",
   );
 
-  // The on-screen scope line reads the combined name, not the bare Fayoum.
+  // The on-screen scope line reads the area's own name now.
   assert.equal(
     describeCoverageSelection(t, { line: "pedia", area: "GZ6", region: "gz" }),
-    "Giza · Pedia · Fayoum - Beni Suef",
-    "the scope line names the merged Pedia area",
+    "Giza · Pedia · Fayoum",
+    "the scope line names Fayoum alone once the two are separate",
   );
 }
 
