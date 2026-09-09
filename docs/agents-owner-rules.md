@@ -1060,6 +1060,73 @@ rows "Phoenix is right — I will fix my sheet". The correction is to his file, 
 replaced on 2026-09-08) carries the `CA5` assertion forward, naming it — so removing Down town fails with an explanation rather than
 just going red. Both run in the required CI `validate` job.
 
+## The unified distribution (نظام توزيع القمه الموحد) — owner ruling, 2026-09-09 (CURRENT)
+
+This is the live rule. Everything below it in this file is the history that led here, kept dated and
+unrewritten; where the two disagree, this section wins.
+
+He restated the whole thing as three ordered steps, unprompted:
+
+> نظام توزيع القمه الموحد — 3 خطوات بالترتيب
+>
+> الخطوة الأولى: اي مخزن اقل من 200 علبه حتي 200 علبه يقسم علي مندوبي المحافظة
+>
+> الخطوة الثانية: اي مخزن من 201 حتي 999 — 50% يقسم علي مندوبي المحافظة والكلام ده ينطبق علي
+> القليوبية (القليوبية + القاهرة)، 50% الاخري تقسم علي باقي الجمهورية بالتساوي
+>
+> الخطوة الثالثة: اي مخزن من 1000 علبه فما فوق يقسم علي مندوبي الجمهوريه بالتساوي وليس Others
+
+| Band | Quantity, month total per product | Where it goes |
+| --- | --- | --- |
+| 1 | up to 200 | the local block only |
+| 2 | 201 to 999 | half the local block, half evenly over the rest of the country |
+| 3 | 1,000 and above | flat: every area in play takes an identical share, origin included |
+
+### The two questions that were put to him, and his answers
+
+Both change the numbers, and his message could be read either way on each, so neither was guessed.
+
+**Does the origin governorate still take an equal share at band 3?** Answered yes, one equal share
+like everyone. Band 2 says باقي الجمهورية, the REST of the country, against a privileged home half;
+band 3 drops باقي entirely and says مندوبي الجمهوريه بالتساوي. So a 5,600-pack Benha product
+leaves Qalubeya with 151.35 packs, the same as Aswan, not with 2,800.
+
+**Below 201, does Qalubeya still mean Qalubeya + Cairo?** Answered yes, at every step. He named the
+Cairo block only in step 2, but it is a definition of what مندوبي المحافظة means for a Qalubeya
+warehouse, not a band of its own. This is also what the system already did.
+
+### What band 3 does to the August book, measured
+
+Every figure below is Pedia, August 2026, with Pedia's real Others set of 12 areas, so 37 areas are
+in play and the local block for Benha is 6.
+
+| Quantity | Band | Local share each | National share each |
+| --- | --- | --- | --- |
+| 200 | 1 | 33.333 | none |
+| 700 | 2 | 58.333 | 11.290 |
+| 999 | 2 | 83.250 | 16.113 |
+| 1,000 | 3 | 27.027 | 27.027 |
+| 5,600 | 3 | 151.351 | 151.351 |
+
+El Qema's largest August product line is 5,600 packs of Lacto Advanced 1 out of Benha. Under band 2
+Qalubeya kept 466.67 of it; under band 3 it keeps 151.35.
+
+### The trap this rule sets
+
+Band 3 looks like a continuation of band 2, and implementing it that way is silent: the totals still
+reconcile, every sheet still balances, and the only symptom is that the origin governorate holds
+several times what it should. `tests/qema-warehouse-split.test.ts` therefore checks the number of
+DISTINCT shares rather than comparing against expected figures, because a test asserting "the home
+share is X and the away share is Y" passes just as happily on the wrong answer with the right X.
+
+The second trap is that two call sites compute this. `splitTargetsFor` builds the plan the Closing
+Matrix applies, and `storeSplitDetailRows` rebuilds the same arithmetic for the Store Split sheet.
+While the fraction was the constant 0.5 they could each hold their own copy and stay correct, and a
+comment in the detail sheet said reading it off the away-block size was what kept them aligned. That
+stopped being true the moment the fraction began to depend on the QUANTITY. Both now call
+`warehouseHomeFraction`, and the detail sheet judges the band on the same month aggregate the split
+judged, not on its own per-origin subtotal.
+
 ## The warehouse split (تقسيمة المخازن) — owner ruling, 2026-09-08
 
 **This replaces the Qalubeya→Cairo rule of 2026-09-07 outright.** That rule was one day old. He
@@ -1075,7 +1142,9 @@ So, per warehouse, per product, per month: up to 200 packs stays inside the gove
 **nothing to do** with the national spread; above 200, half stays in the governorate and half divides
 evenly across every other area in the country, with the origin governorate excluded from that half.
 
-### What this reverses, and why each reversal is asserted
+### What this reverses, and why each reversal is asserted (TWO ROWS SUPERSEDED)
+
+🔴 **Rows 1 and 3 of the table below were wrong within the day and are kept only as a dated record.** Cairo IS a privileged destination for a Qalubeya warehouse and Qalubeya does NOT hold one area: the 09-07 Cairo block was never retired, and the local block is seven areas (six once Others removes Down town). Read "The unified distribution" below, which is current.
 
 Three properties of the 2026-09-07 rule are now false. Each was load-bearing in the old test, so each
 is asserted in the new one in its inverted form — otherwise a session reading the older account in

@@ -237,8 +237,49 @@ function normalizeArea(value: string | null | undefined): string {
 /** Packs. At or below this, a warehouse's product stays inside its own governorate. */
 export const WAREHOUSE_NATIONAL_SPLIT_THRESHOLD_QTY = 200;
 
-/** The share that stays in the origin governorate once the threshold is crossed. */
+/** The share that stays in the origin governorate in the MIDDLE band, 201 to 999 packs. */
 export const WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION = 0.5;
+
+/**
+ * Packs. At or above this, the local block stops being privileged and the whole quantity spreads
+ * FLAT across every area the line has — owner, 2026-09-09, giving the rule as three ordered steps:
+ *
+ *   1. up to 200            → the governorate's reps only
+ *   2. 201 to 999           → half the governorate, half the rest of the country
+ *   3. 1000 and above       → "يقسم علي مندوبي الجمهوريه بالتساوي وليس Others"
+ *
+ * 🔴 STEP THREE IS NOT A BIGGER STEP TWO. Step two says "باقي الجمهورية", the REST of the
+ * country, against a privileged home half. Step three drops the word باقي: every area takes the
+ * same share and the origin is simply one of them. Asked directly on 2026-09-09 whether the
+ * warehouse's own governorate still takes an equal share, he answered that it does. So a 5,600-pack
+ * Benha product leaves Qalubeya with the same amount as Aswan, not with half the book.
+ *
+ * Reading step three as "half stays, half spreads, but wider" is the mistake this note exists to
+ * stop: it looks like the natural continuation of step two and it silently keeps ~2,800 packs in a
+ * governorate the owner has just said should hold one thirty-seventh of them.
+ */
+export const WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY = 1000;
+
+/**
+ * The fraction of a sale that stays in the local block, for a quantity and a plan's two block sizes.
+ *
+ * 🔴 ONE FUNCTION BECAUSE THERE ARE TWO CALLERS AND THEY MUST NEVER DISAGREE. splitTargetsFor
+ * builds the plan the Matrix applies; storeSplitDetailRows rebuilds the same arithmetic to report
+ * it on the Store Split sheet. Before the third band those two could each hold `0.5` and stay
+ * correct — the detail sheet read the fraction off `awayParts > 0` alone, with a comment saying that
+ * was what kept them from drifting. That stopped being true the moment the fraction began to depend
+ * on the QUANTITY as well as the shape, and a sheet disagreeing with the Matrix about the same
+ * customer is exactly the failure the comment was guarding against.
+ *
+ * Flat is expressed as a fraction rather than as a separate code path so `planShares` needs no
+ * change at all: homeParts / (homeParts + awayParts) hands each block its own headcount's worth, so
+ * every area — home or away — comes out with an identical share.
+ */
+export function warehouseHomeFraction(qty: number, homeParts: number, awayParts: number): number {
+  if (awayParts <= 0) return 1;
+  if (qty >= WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY) return homeParts / (homeParts + awayParts);
+  return WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION;
+}
 
 /**
  * Distributors whose customers are judged by the 200-pack rule — El Qema only, owner 2026-09-08.
@@ -465,12 +506,18 @@ export function splitTargetsFor(
   const awayAreas = ALL_SPLIT_AREAS.filter((area) => !localSet.has(area) && keep(area));
   if (awayAreas.length === 0) return home;
 
+  // Band two keeps half at home; band three keeps only a headcount's worth, which is what makes
+  // every area equal. The label follows, so the Store Split sheet names which step moved the money
+  // rather than leaving a reader to infer it from the numbers.
+  const homeFraction = warehouseHomeFraction(qty, homeAreas.length, awayAreas.length);
+  const flat = qty >= WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY;
+
   return {
     areas: [...homeAreas, ...awayAreas],
     awayAreas,
-    group: `${localLabel} + nationwide`,
+    group: flat ? "nationwide, equal shares" : `${localLabel} + nationwide`,
     homeAreas,
-    homeFraction: WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION,
+    homeFraction,
   };
 }
 
@@ -1054,6 +1101,9 @@ export function detailStoreSplitByCustomer<
   const detailThresholdByKey = warehouseSplitQtyByKey(rows);
 
   const byKey = new Map<string, StoreSplitDetailRow>();
+  // The aggregate each entry's band is judged on. Kept beside the entries rather than on them:
+  // StoreSplitDetailRow is exported and rendered, and nothing downstream needs this number.
+  const bandQtyByKey = new Map<string, number>();
   for (const row of rows) {
     const rowThreshold = detailThresholdByKey.get(warehouseSplitKey(row));
     if (
@@ -1080,6 +1130,7 @@ export function detailStoreSplitByCustomer<
       existing.value += Number(row.salesValue) || 0;
       continue;
     }
+    bandQtyByKey.set(key, Number.isFinite(rowThreshold) ? Number(rowThreshold) : Number(row.qty) || 0);
     byKey.set(key, {
       awayAreaCodes: targets.awayAreas,
       awayShareUnits: 0,
@@ -1104,13 +1155,17 @@ export function detailStoreSplitByCustomer<
 
   // Shares are derived AFTER the products of a store are summed, so they describe the sale as the
   // split actually divides it rather than per invoice line.
-  return [...byKey.values()]
-    .map((entry) => {
+  return [...byKey.entries()]
+    .map(([key, entry]) => {
       const homeParts = entry.homeAreaCodes.length;
       const awayParts = entry.awayAreaCodes.length;
-      // Mirrors planShares exactly: half stays home once the national block exists, all of it
-      // otherwise. Reading the fraction off awayParts keeps the two from drifting apart.
-      const homeFraction = awayParts > 0 ? WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION : 1;
+      // The band is decided by the SAME aggregate the split judged, never by entry.units. The two
+      // agree for a customer trading in one area and diverge for one trading in two, because these
+      // entries are keyed on the origin as well and the threshold is not — so entry.units can sit
+      // below 1000 for a customer whose month total is above it, and this sheet would then report a
+      // 50/50 split of a sale the Matrix had already spread flat.
+      const bandQty = bandQtyByKey.get(key) ?? entry.units;
+      const homeFraction = warehouseHomeFraction(bandQty, homeParts, awayParts);
       const homeValue = entry.value * homeFraction;
       const homeUnits = entry.units * homeFraction;
       const awayValue = entry.value - homeValue;

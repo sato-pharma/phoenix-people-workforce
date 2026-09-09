@@ -13,34 +13,40 @@ import {
   planShares,
   splitStoreSalesAcrossCityAreas,
   splitTargetsFor,
+  WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY,
   WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION,
   WAREHOUSE_NATIONAL_SPLIT_THRESHOLD_QTY,
   WAREHOUSE_THRESHOLD_DISTRIBUTORS,
+  warehouseHomeFraction,
   warehouseSplitQtyByKey,
   type StoreSplitRow,
 } from "../src/lib/sales/store-sales-city-split.ts";
 
 /**
- * THE WAREHOUSE SPLIT (تقسيمة المخازن) — owner, 2026-09-08.
+ * نظام توزيع القمه الموحد — EL QEMA'S UNIFIED DISTRIBUTION, owner 2026-09-09, three ordered steps.
  *
- *   "اي مخزن لحد 200 علبة per product يوزع علي مندوبين المحافظة وليس له علاقه بتوزيع الجمهورية"
- *   "اي مخزن فوق 200 باي كميه يوزع 50 % علي مندوبين المحافظة وباقي ال 50% يوزع علي باقي الجمهورية
- *    بالتساوي ماعدا مندوبين نفس المحافظة اللي اتطبع فيها الاوردر"
+ *   1. "اي مخزن اقل من 200 علبه حتي 200 علبه يقسم علي مندوبي المحافظة"
+ *   2. "اي مخزن من 201 حتي 999 — 50% يقسم علي مندوبي المحافظة والكلام ده ينطبق علي
+ *       القليوبية (القليوبية + القاهرة)، 50% الاخري تقسم علي باقي الجمهورية بالتساوي"
+ *   3. "اي مخزن من 1000 علبه فما فوق يقسم علي مندوبي الجمهوريه بالتساوي وليس Others"
  *
- * This REPLACES the Qalubeya→Cairo rule of 2026-09-07, which he retired the following day. The old
- * rule sent El Qema's Qalubeya money to Cairo and nowhere else, one way; this one sends half of any
- * over-200 warehouse order to the whole country and keeps half at home. Three things in the old
- * test are deliberately reversed here, and each is asserted so the reversal cannot be undone by
- * accident:
+ * 🔴 THE THREE RULES COMPOSE — NONE OF THEM REPLACED ANOTHER. This header used to say the
+ * 200-pack rule "REPLACES the Qalubeya→Cairo rule of 2026-09-07, which he retired the following
+ * day". He had not retired it, and the correction came in his own words: "YOU ARE NOT APPLYING THE
+ * CAIRO AND QALUBEYA RULE + THE NEW RULE". Step 2 above names the Cairo block again, in writing.
+ * Confirmed on 2026-09-09 that it holds at EVERY step, step 1 included, because it defines what
+ * "مندوبي المحافظة" MEANS for a Qalubeya warehouse rather than being a band of its own.
  *
- *   * Cairo is no longer a special destination — it is 6 of 49 areas like anywhere else.
- *   * The rule is no longer one-way. A CAIRO warehouse over 200 now reaches Qalubeya too.
- *   * Qalubeya no longer gives away six sevenths. It keeps half, and half of half of nothing is
- *     still the point: Qalubeya holds ONE area, so the whole home half lands on D11.
+ * 🔴 STEP 3 IS NOT A BIGGER STEP 2. Step 2 keeps a privileged home half and spreads "باقي
+ * الجمهورية", the REST of the country. Step 3 drops باقي: every area takes an identical
+ * share and the origin is one of them, confirmed on 2026-09-09. Reading it as "half stays, but the
+ * away block is wider" looks like the natural continuation and silently leaves a Benha warehouse
+ * holding half its own book instead of one thirty-seventh.
  *
- * WHAT HAS NOT CHANGED, and is re-pinned below because a rewrite is exactly when it gets lost:
- * every El Qema customer is a warehouse, the divisor is AREAS and not reps, and a pharmacy or a
- * hospital never becomes a store just because El Qema invoiced it.
+ * WHAT HAS NOT CHANGED, re-pinned here because a rewrite is exactly when it gets lost: every El Qema
+ * customer is a warehouse, the divisor is AREAS and not reps, Others receive nothing on Pedia, the
+ * origin always keeps its own sale, the threshold is the MONTH TOTAL per product, and a pharmacy or
+ * a hospital never becomes a store just because El Qema invoiced it.
  */
 
 const BASE: StoreSplitRow = {
@@ -63,7 +69,8 @@ const CAIRO = ["CA1", "CA2", "CA3", "CA4", "CA5", "CA6"] as const;
 export function runQemaWarehouseSplitTests() {
   // ── The constants the rule is stated in ──────────────────────────────────────────────────────
   assert.equal(WAREHOUSE_NATIONAL_SPLIT_THRESHOLD_QTY, 200, "the threshold is 200 packs per product");
-  assert.equal(WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION, 0.5, "half stays in the governorate");
+  assert.equal(WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION, 0.5, "half stays in the governorate, 201 to 999");
+  assert.equal(WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY, 1_000, "at 1,000 the split goes flat across the country");
   assert.deepEqual([...WAREHOUSE_THRESHOLD_DISTRIBUTORS], ["QM"], "El Qema only — owner 2026-09-08");
 
   // The universe is AREA_CITY, so the two areas that are not territories stay out of it. Without
@@ -395,6 +402,84 @@ export function runQemaWarehouseSplitTests() {
     fromDownTown.homeAreas.includes("CA5"),
     "the origin keeps its own share — otherwise its home half would have nowhere at all to go",
   );
+
+  // ── STEP 3 — 1,000 PACKS AND ABOVE SPREAD FLAT, owner 2026-09-09 ────────────────────────────
+  //
+  // Every area gets the SAME amount. That is the whole content of the step, and it is checked by
+  // counting DISTINCT shares rather than by comparing against an expected figure: a test that
+  // asserts "the home share is X and the away share is Y" passes just as happily on a 50/50 split
+  // with the right X and Y, which is the exact wrong answer this step replaces.
+  const flat = splitTargetsFor(row(), 5_600, PEDIA_OTHERS);
+  assert.ok(flat, "a 5,600-pack Benha warehouse has a plan");
+  assert.equal(flat.areas.length, REMAINING, "it reaches every area Pedia has, and no Others");
+  const flatShares = planShares(flat, 5_600);
+  const distinct = new Set(flatShares.map((share) => Number(share.toFixed(6))));
+  assert.equal(
+    distinct.size,
+    1,
+    `step 3 pays every area the same, so there is ONE distinct share — found ${distinct.size}: `
+    + [...distinct].join(", "),
+  );
+  assert.equal(
+    Number([...distinct][0].toFixed(6)),
+    Number((5_600 / REMAINING).toFixed(6)),
+    "and that share is the quantity over the number of areas",
+  );
+  assert.equal(flatShares.reduce((sum, share) => sum + share, 0), 5_600, "the shares still sum EXACTLY");
+
+  // The origin is one area among many now, not the keeper of a half. This is the assertion that
+  // fails if step 3 is ever implemented as a wider step 2.
+  const qalubeyaShare = flatShares[flat.areas.indexOf("D11")];
+  assert.equal(
+    Number(qalubeyaShare.toFixed(6)),
+    Number((5_600 / REMAINING).toFixed(6)),
+    "Qalubeya takes one equal share of its own 5,600 packs, not 2,800",
+  );
+  assert.ok(
+    qalubeyaShare < 5_600 * WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION / flat.homeAreas.length,
+    "and strictly less than what step 2 would have left it",
+  );
+
+  // Others stay out at this band too — "وليس Others", in his own words on the same line.
+  for (const area of PEDIA_OTHERS) {
+    assert.equal(
+      flat.areas.includes(area),
+      false,
+      `${area} is in Others, so step 3 does not reach it either`,
+    );
+  }
+
+  // The boundary, both sides of it. 999 is still step 2; 1,000 is already step 3.
+  const lastOfBandTwo = splitTargetsFor(row(), 999, PEDIA_OTHERS);
+  assert.ok(lastOfBandTwo);
+  assert.equal(lastOfBandTwo.homeFraction, 0.5, "999 packs is the last quantity that keeps half at home");
+  const firstOfBandThree = splitTargetsFor(row(), 1_000, PEDIA_OTHERS);
+  assert.ok(firstOfBandThree);
+  assert.equal(
+    new Set(planShares(firstOfBandThree, 1_000).map((share) => Number(share.toFixed(6)))).size,
+    1,
+    "1,000 packs is the first quantity that spreads flat",
+  );
+
+  // A warehouse whose own governorate is bigger does NOT get a bigger share of the country. Alex
+  // holds three areas to Qalubeya's block of six, and both come out at the same per-area figure.
+  const alexFlat = splitTargetsFor(row({ areaCode: "AB1", clientCode: "QM-9030" }), 5_600, PEDIA_OTHERS);
+  assert.ok(alexFlat);
+  const alexShares = planShares(alexFlat, 5_600);
+  assert.equal(
+    Number(alexShares[0].toFixed(6)),
+    Number(flatShares[0].toFixed(6)),
+    "step 3 is blind to the size of the origin's own block — every area, everywhere, the same",
+  );
+
+  // 🔴 THE TWO CALLERS MUST AGREE. splitTargetsFor builds the plan the Matrix applies and
+  // storeSplitDetailRows rebuilds the same arithmetic for the Store Split sheet. They each held
+  // their own `0.5` while the fraction was a constant; now that it depends on the QUANTITY, one
+  // helper answers for both. A second copy here would be a sheet that contradicts the Matrix.
+  assert.equal(warehouseHomeFraction(200, 6, 0), 1, "no away block means everything stays home");
+  assert.equal(warehouseHomeFraction(700, 6, 31), 0.5, "step 2 keeps half");
+  assert.equal(warehouseHomeFraction(1_000, 6, 31), 6 / 37, "step 3 keeps only its headcount's worth");
+  assert.equal(warehouseHomeFraction(1_000, 3, 34), 3 / 37, "which is what makes every area equal");
 
   // ── 🔒 EL QEMA IS PEDIA ONLY — owner golden rule, 2026-09-08, in those words ─────────────────
   //
