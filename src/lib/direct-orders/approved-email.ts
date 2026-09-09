@@ -1,20 +1,21 @@
-// Bespoke "direct order approved" email — fired on FINAL CEO approval of a normal
-// direct order (not a reversal). Sends a polished, branded details table to a fixed
-// recipient, CC'ing the CEO + system admin (Super Admin). Uses the direct send path
-// (sendPhoenixEmail + the shared premium layout), NOT the workflow-participant
-// notification hub or the DB template engine — the established pattern for a fixed,
-// bespoke email (mirrors src/lib/sales/sos-report-delivery.ts).
+// "Direct order approved" email — fired on FINAL CEO approval of a normal direct order
+// (not a reversal). Goes to a fixed recipient, CC'ing the CEO + system admin (Super Admin).
+//
+// The WORDING is admin-editable at /admin/email-templates under "Direct Order Approved"
+// (2026-09-09); before that it was assembled here and could not be changed without a deploy.
+// What stays here is what is generated rather than written: the grouped detail sections and
+// the hero sales figure. Routing also stays here — who receives an approved order is decided
+// by the approval, not by the template's recipient rules — hence replaceRecipients.
 
 import { systemDeployment } from "@/config/system-settings";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import {
-  renderEmailParagraphs,
-  renderPhoenixEmailHtml,
-  renderPhoenixEmailText,
+  renderPhoenixMetadataSections,
+  renderPhoenixMetadataSectionsText,
   type PhoenixEmailMetadataSection,
 } from "@/emails/phoenix-email-layout";
 import { codeNameLabel } from "@/lib/direct-orders/geo-names";
-import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { sendTemplatedEmail } from "@/lib/email-templates/service";
 import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -129,34 +130,27 @@ export async function sendDirectOrderApprovedEmail(row: DirectOrderReportRow): P
     ];
 
     const subject = `Direct Order Approved — ${row.pharmacyName || row.pharmacyCode} · ${row.productName} · ${money(row.salesValue)} EGP`;
-    const bodyText =
-      "A direct order request has received final CEO approval and has been posted to sales " +
-      "(credited to the pharmacy's area rep). The full order details are below.";
-    const action = {
-      href: `${systemDeployment.productionUrl}/admin/direct-orders/report`,
-      label: "Open Direct Orders report",
-    };
-    const heroStat = { badge: dealBadge, label: "Sales value", value: `${money(row.salesValue)} EGP` };
 
-    const html = renderPhoenixEmailHtml({
-      title: "Direct Order Approved",
-      subject,
-      previewText: `Approved: ${row.pharmacyName || row.pharmacyCode} · ${money(row.salesValue)} EGP.`,
-      bodyHtml: renderEmailParagraphs(bodyText),
-      heroStat,
-      metadataSections,
-      action,
-    });
-    const text = renderPhoenixEmailText({ title: "Direct Order Approved", bodyText, heroStat, metadataSections, action });
-
-    const sendResult = await sendPhoenixEmail({
-      to: [DIRECT_ORDER_APPROVED_TO],
-      cc,
-      subject,
-      html,
-      text,
+    // Wording lives in /admin/email-templates under "Direct Order Approved". The grouped detail
+    // sections and the hero figure are generated from the order itself, so they stay here and
+    // reach the template through {{detailsSections}} and the heroStat passthrough.
+    const sendResult = await sendTemplatedEmail({
+      context: {
+        ctaLabel: "Open Direct Orders report",
+        ctaUrl: `${systemDeployment.productionUrl}/admin/direct-orders/report`,
+        detailsSections: renderPhoenixMetadataSections(metadataSections),
+        detailsSectionsText: renderPhoenixMetadataSectionsText(metadataSections),
+        subject,
+        summary:
+          "A direct order request has received final CEO approval and has been posted to sales " +
+          "(credited to the pharmacy's area rep). The full order details are below.",
+      },
+      fallbackTo: [DIRECT_ORDER_APPROVED_TO],
       idempotencyKey: `direct-order-approved:${row.id}`,
+      heroStat: { badge: dealBadge, label: "Sales value", value: `${money(row.salesValue)} EGP` },
       origin: { eventType: "direct_order_approved", module: "direct_orders" },
+      overrides: { cc, replaceRecipients: true, to: [DIRECT_ORDER_APPROVED_TO] },
+      templateKey: "direct_order_approved",
     });
     const outcome = sendResult.skipped ? `skipped (${sendResult.reason})` : `sent (${sendResult.id ?? "ok"})`;
     console.info(`[direct-orders] approved-email for ${row.id} → to=${DIRECT_ORDER_APPROVED_TO} cc=${cc.length}: ${outcome}`);

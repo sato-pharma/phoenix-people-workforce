@@ -66,6 +66,8 @@ export function contextVariables(input: Partial<EmailTemplateContext>, recipient
     // HTML-block tokens' plain-text projection siblings. Not separate TOKEN_REGISTRY entries —
     // they never appear literally as {{xxxText}} in a template body. See TokenDefinition.isHtmlBlock.
     detailsTableText: text(input.detailsTableText),
+    detailsSectionsText: text(input.detailsSectionsText),
+    stepsBlockText: text(input.stepsBlockText),
     planTableText: text(input.planTableText),
     digestTableText: text(input.digestTableText),
     scoreTableText: text(input.scoreTableText),

@@ -12,8 +12,8 @@
 // (admin Matrix, portal tab, or their existing landing page) rather than embedding one link that
 // only works for some of the recipients.
 
-import { escapeEmailHtml, renderPhoenixEmailHtml, renderPhoenixEmailText } from "@/emails/phoenix-email-layout";
-import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { renderPhoenixMetadataTable, renderPhoenixMetadataTableText } from "@/emails/phoenix-email-layout";
+import { sendTemplatedEmail } from "@/lib/email-templates/service";
 import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import { resolveClosingPublishRecipients } from "@/lib/sales/closing-publish-recipients";
 
@@ -58,51 +58,36 @@ export async function notifyClosingPublished(input: {
   const ctaParams = new URLSearchParams({ line: input.line, period: input.period });
   const ctaHref = `${appUrl("/api/sales/monthly-closing/go")}?${ctaParams.toString()}`;
 
-  const lineEsc = escapeEmailHtml(input.line);
-  const bodyHtml =
-    `<p>The <strong>${escapeEmailHtml(label)}</strong> Monthly Closing for <strong>${lineEsc}</strong> has been published and is now live in Phoenix Workforce.</p>` +
-    `<p>District Managers can review their own areas in the employee portal. Admin and product roles can open the full Closing Matrix.</p>`;
-  const bodyText =
-    `The ${label} Monthly Closing for ${input.line} has been published and is now live in Phoenix Workforce.\n\n` +
-    `District Managers can review their own areas in the employee portal. Admin and product roles can open the full Closing Matrix.`;
-
   const metadataRows = [
     { label: "Line", value: input.line },
     { label: "Period", value: label },
     { label: "Published at", value: formatPhoenixDateTime(input.publishedAt) },
   ];
-  const action = { href: ctaHref, label: "Open Phoenix Workforce" };
-  const greeting = `Dear ${input.line} Leaders,`;
 
-  const html = renderPhoenixEmailHtml({
-    action,
-    bodyHtml,
-    closingText: "Please log in to review the details.",
-    greeting,
-    metadataRows,
-    previewText: `${input.line} ${label} Monthly Closing is now published.`,
-    subject,
-    subtitle: `${input.line} · ${label}`,
-    title: "Monthly Closing Published",
-  });
-  const text = renderPhoenixEmailText({
-    action,
-    bodyText,
-    closingText: "Please log in to review the details.",
-    greeting,
-    metadataRows,
-    title: "Monthly Closing Published",
-  });
-
-  const result = await sendPhoenixEmail({
-    bcc: bcc.map((recipient) => recipient.email),
-    cc: cc.map((recipient) => recipient.email),
-    html,
+  // The wording lives in /admin/email-templates under "Monthly Closing Published". Only the
+  // live values are supplied here; routing stays ours (replaceRecipients), because who receives
+  // a closing is decided by the publish itself, not by the template's recipient rules.
+  const result = await sendTemplatedEmail({
+    context: {
+      ctaLabel: "Open Phoenix Workforce",
+      ctaUrl: ctaHref,
+      detailsTable: renderPhoenixMetadataTable(metadataRows),
+      detailsTableText: renderPhoenixMetadataTableText(metadataRows),
+      line: input.line,
+      periodLabel: label,
+      subject,
+      summary: `The ${label} Monthly Closing for ${input.line} has been published.`,
+    },
+    fallbackTo: to.map((recipient) => recipient.email),
     idempotencyKey: `closing-published:${input.line}:${input.period}:${input.publishedAt}`,
     origin: { eventType: "closing_published", module: "sales" },
-    subject,
-    text,
-    to: to.map((recipient) => recipient.email),
+    overrides: {
+      bcc: bcc.map((recipient) => recipient.email),
+      cc: cc.map((recipient) => recipient.email),
+      replaceRecipients: true,
+      to: to.map((recipient) => recipient.email),
+    },
+    templateKey: "monthly_closing_published",
   });
 
   return {
