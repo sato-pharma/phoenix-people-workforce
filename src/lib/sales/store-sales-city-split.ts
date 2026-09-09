@@ -19,7 +19,6 @@
 // untouched. Direct rows carry no area and are already attributed to line+region only, so they
 // are passed through untouched too.
 
-import { expandAreaCodeForLine } from "@/lib/sales/closing-area-merges";
 import { closingAreaOf } from "@/lib/sales/closing-row-area";
 import { isStoreCustomerForPeriod } from "@/lib/sales/customer-channel";
 
@@ -322,156 +321,6 @@ export const WAREHOUSE_THRESHOLD_LINES: ReadonlySet<string> = new Set(["pedia"])
  */
 export const OTHERS_EXCLUDED_LINES: ReadonlySet<string> = new Set(["pedia"]);
 
-/**
- * The operational region pooled with Fayoum - Beni Suef and levelled — owner, 2026-09-09:
- *
- *   "look fayoum bani suef and all upper egypt regions, you will calculate their total and then
- *    redistribute on them the sales evenly, fayoum-banisuef one region"
- *
- * Take everything El Qema's split puts into Upper Egypt and into Fayoum - Beni Suef, add it up, and
- * hand every member an identical amount. Fayoum - Beni Suef is ONE member however many area codes
- * it holds, which he said in the same sentence.
- *
- * 🔴 IT IS NOT THE UPPER EGYPT BLOCK THAT WAS WITHDRAWN EARLIER THE SAME DAY. That one widened
- * the LOCAL block above 200 packs and left the bands intact. This one levels the OUTCOME, at every
- * quantity, and it pulls in an area from Giza. The difference matters most at step 1: a 24-pack
- * Sohag sale used to stay in Sohag, and now joins the pool like everything else. That is what
- * "their total" means, confirmed when he was asked what goes into the pool.
- *
- * 🔴 THE MEMBERS ARE READ, NOT LISTED. Upper Egypt comes from the organogram, so it moves when
- * he moves a seat; Fayoum - Beni Suef comes from CLOSING_AREA_MERGES, the owner table that already
- * says those two are one territory on this line. Writing either as a literal here would be a third
- * copy of a fact that already has an owner, and would stop tracking him.
- */
-export const POOLED_BLOCK_REGION_CODE = "UE";
-
-/**
- * Every region code that IS Upper Egypt — the base code and any district split off it.
- *
- * 🔴 WHY A FAMILY AND NOT ONE STRING. The members are read from the organogram so the pool tracks
- * him when he MOVES a seat. It did not track him when he RENAMES a region, and that is a different
- * operation: splitting Pedia's Upper Egypt into `UE-1` and `UE-2` leaves NO area coded `UE`, so the
- * single-string lookup found nothing, `pooledBlockMembers` returned its empty "no pooling" answer,
- * and El Qema's Upper Egypt block switched itself off with no error anywhere. Measured before this
- * existed: 8 members under `UE`, 0 under `UE-1`/`UE-2`.
- *
- * The base code still matches, so this is a NO-OP until such a split is applied — which is what
- * lets it ship ahead of the migration rather than racing it.
- *
- * A PREFIX, deliberately, rather than a list of `UE-1`/`UE-2`: a list is the third copy of a fact
- * the organogram already owns, and it would go stale the day a `UE-3` appears. Anti Infective
- * already runs `UE-1`/`UE-2` and they are Upper Egypt there too, so the family reads correctly on
- * every line — even though El Qema itself is Pedia only.
- */
-export function isPooledBlockRegion(regionCode: string | null | undefined): boolean {
-  const code = String(regionCode ?? "").trim().toUpperCase();
-  return code === POOLED_BLOCK_REGION_CODE || code.startsWith(`${POOLED_BLOCK_REGION_CODE}-`);
-}
-
-/** The label the Store Split sheet shows for the pool. */
-export const POOLED_BLOCK_LABEL = "Upper Egypt + Fayoum - Beni Suef";
-
-/**
- * The pool's members for a line, each member being the area codes it holds.
- *
- * Returns an EMPTY list when the organogram was not loaded — the safe direction, and the same one
- * every other rule here takes: no members means no pooling, and the money stays where the split
- * already put it.
- */
-export function pooledBlockMembers(
-  officialLine: string,
-  regions: SplitRegions | undefined,
-): readonly (readonly string[])[] {
-  // The UNION of every Upper Egypt region, so a split into districts keeps ONE pool rather than
-  // silently becoming none. Whether he later wants each half to pool only over itself is a
-  // question for him; until he says so, a rename must not change what the rule does.
-  const upperEgypt = new Set<string>();
-  for (const [regionCode, areas] of regions?.areasByRegion ?? []) {
-    if (!isPooledBlockRegion(regionCode)) continue;
-    for (const area of areas) upperEgypt.add(area);
-  }
-  if (upperEgypt.size === 0) return [];
-  const excluded = regions?.others ?? NO_AREAS;
-  const members: string[][] = [];
-
-  // Fayoum - Beni Suef first, as ONE member. expandAreaCodeForLine is the owner merge table, so a
-  // line without that merge simply contributes nothing here rather than needing a special case.
-  const merged = expandAreaCodeForLine(officialLine, MERGED_POOL_MEMBER_CODE)
-    .map((code) => normalizeArea(code))
-    .filter((code) => code && !excluded.has(code));
-  if (merged.length > 0) members.push([...new Set(merged)].sort());
-
-  const alreadyIn = new Set(members.flat());
-  for (const area of [...upperEgypt].sort()) {
-    const code = normalizeArea(area);
-    if (!code || excluded.has(code) || alreadyIn.has(code)) continue;
-    members.push([code]);
-  }
-  return members;
-}
-
-/**
- * The survivor code of the merge that joins the pool. Fayoum on Pedia; a line whose merge table has
- * no entry for it expands to nothing and contributes no member.
- */
-const MERGED_POOL_MEMBER_CODE = "GZ6";
-
-/**
- * Level a row's shares across the pool: everything landing on a member is collected, divided
- * equally between MEMBERS, and each member's amount divided equally between its own codes.
- *
- * 🔴 TWO LEVELS OF evenShares, NOT ONE. A flat division over every pooled area code would give
- * Fayoum - Beni Suef two shares instead of one, which is precisely the thing he ruled on. Both
- * levels use evenShares so the row still sums back to exactly what it started as.
- */
-export function levelAcrossPool(
-  areas: readonly string[],
-  qtyShares: readonly number[],
-  valueShares: readonly number[],
-  members: readonly (readonly string[])[],
-): { areas: string[]; qtyShares: number[]; valueShares: number[] } {
-  if (members.length === 0) {
-    return { areas: [...areas], qtyShares: [...qtyShares], valueShares: [...valueShares] };
-  }
-  const memberOf = new Map<string, number>();
-  members.forEach((codes, index) => codes.forEach((code) => memberOf.set(code, index)));
-
-  const keptAreas: string[] = [];
-  const keptQty: number[] = [];
-  const keptValue: number[] = [];
-  let pooledQty = 0;
-  let pooledValue = 0;
-  let touched = false;
-  areas.forEach((area, index) => {
-    if (memberOf.has(area)) {
-      touched = true;
-      pooledQty += qtyShares[index];
-      pooledValue += valueShares[index];
-      return;
-    }
-    keptAreas.push(area);
-    keptQty.push(qtyShares[index]);
-    keptValue.push(valueShares[index]);
-  });
-  // Nothing of this row reached the pool, so there is nothing to level and no member to invent.
-  if (!touched) {
-    return { areas: [...areas], qtyShares: [...qtyShares], valueShares: [...valueShares] };
-  }
-
-  const memberQty = evenShares(pooledQty, members.length);
-  const memberValue = evenShares(pooledValue, members.length);
-  members.forEach((codes, index) => {
-    const insideQty = evenShares(memberQty[index], codes.length);
-    const insideValue = evenShares(memberValue[index], codes.length);
-    codes.forEach((code, inner) => {
-      keptAreas.push(code);
-      keptQty.push(insideQty[inner]);
-      keptValue.push(insideValue[inner]);
-    });
-  });
-  return { areas: keptAreas, qtyShares: keptQty, valueShares: keptValue };
-}
-
 export type SplitRegions = {
   /** Areas the line parks in Others. They receive nothing, but always keep what they sold. */
   others: ReadonlySet<string>;
@@ -728,7 +577,6 @@ export function splitTargetsFor(
   // The rule is the owner's El Qema rule, on the owner's El Qema line. Anything else falls through
   // to the plain city split it has always had — see WAREHOUSE_THRESHOLD_LINES.
   const line = lineKey(row.officialLine);
-  const lineName = String(row.officialLine ?? "").trim();
   const distributor = normalizeDistributor(row.distributorCode);
   const ruleApplies = WAREHOUSE_THRESHOLD_DISTRIBUTORS.has(distributor)
     && WAREHOUSE_THRESHOLD_LINES.has(line);
@@ -750,24 +598,20 @@ export function splitTargetsFor(
 
   // What counts as LOCAL for this warehouse: its governorate, unless an owner override widens it.
   //
-  // Two overrides, and they are NOT the same shape. LOCAL_BLOCK_OVERRIDES is unconditional — Benha
-  // reaches Cairo at any quantity, because that map says what Qalubeya's reps ARE. Upper Egypt only
-  // widens once the warehouse passes 200, which is what he answered when asked. Cairo wins where
-  // both could somehow match, so a hand-written owner ruling always outranks a derived one; nothing
-  // matches both today, since Qalubeya is not in the Upper Egypt region on any line.
-  // \🔴 A POOL MEMBER'S OWN SALES MUST REACH THE POOL. Without this the rule levels only what
-  // ARRIVES from elsewhere: a warehouse in a one-area governorate like Qena has nowhere to spread
-  // to, so its row is not "eligible" at all, never enters the split, and sits where it was sold.
-  // Measured on August before the fix — Qena 1 stood 36 packs above its peers and Fayoum 264, both
-  // exactly their own unsplit local sales, while the other six members were identical. His rule is
-  // "their total", and that money is part of their total.
-  const poolBlock = ruleApplies ? pooledBlockMembers(lineName, regions) : [];
-  const poolCodes = poolBlock.flat();
-  const originInPool = poolCodes.includes(origin);
-  const override = ruleApplies
-    ? LOCAL_BLOCK_OVERRIDES.get(`${distributor}|${origin}`)
-      ?? (originInPool ? { areas: [...poolCodes].sort(), label: POOLED_BLOCK_LABEL } : undefined)
-    : undefined;
+  // LOCAL_BLOCK_OVERRIDES is unconditional — Benha reaches Cairo at any quantity, because that map
+  // says what Qalubeya's reps ARE. It is the owner's Cairo + Qalubeya rule.
+  //
+  // 🔴 THE UPPER EGYPT POOL USED TO SIT BESIDE IT AND HAS BEEN DELETED — owner, 2026-09-09, after
+  // the removal was measured and put to him. It was his own rule from earlier that same day
+  // ("calculate their total and then redistribute on them the sales evenly, fayoum-banisuef one
+  // region"), and the priority ladder replaced it hours later in #3583, which names it as one of
+  // the five rules it discards. The ladder returns before this line is ever reached, so the pool
+  // had been unreachable from the moment that merged. Deleting it FINISHES that decision and is
+  // not a regression. Do not restore it from git history. Account: docs/agents-owner-rules.md.
+  //
+  // ⚠ The ladder does NOT preserve "fayoum-banisuef one region" — under it Fayoum and Beni Suef are
+  // two areas taking two shares. That is a consequence of his later choice, not an oversight here.
+  const override = ruleApplies ? LOCAL_BLOCK_OVERRIDES.get(`${distributor}|${origin}`) : undefined;
   const localBlock = override?.areas ?? cityAreas;
   // The Store Split sheet names the rule that moved the money, so a reader never has to guess why
   // Cairo gained from a Benha warehouse.
