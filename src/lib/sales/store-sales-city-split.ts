@@ -19,6 +19,7 @@
 // untouched. Direct rows carry no area and are already attributed to line+region only, so they
 // are passed through untouched too.
 
+import { expandAreaCodeForLine } from "@/lib/sales/closing-area-merges";
 import { closingAreaOf } from "@/lib/sales/closing-row-area";
 import { isStoreCustomerForPeriod } from "@/lib/sales/customer-channel";
 
@@ -322,43 +323,125 @@ export const WAREHOUSE_THRESHOLD_LINES: ReadonlySet<string> = new Set(["pedia"])
 export const OTHERS_EXCLUDED_LINES: ReadonlySet<string> = new Set(["pedia"]);
 
 /**
- * The operational region whose areas form ONE shared local block — owner, 2026-09-09:
+ * The operational region pooled with Fayoum - Beni Suef and levelled — owner, 2026-09-09:
  *
- *   "the rule will be the same as cairo + qalubeya but for upper egypt, if any city in upper egypt
- *    exceed that to be distributed on all upper egypt cities except the others"
+ *   "look fayoum bani suef and all upper egypt regions, you will calculate their total and then
+ *    redistribute on them the sales evenly, fayoum-banisuef one region"
  *
- * So an El Qema warehouse anywhere in Upper Egypt treats the WHOLE region as its governorate once it
- * passes the 200-pack step, exactly as a Benha warehouse treats Qalubeya plus Cairo.
+ * Take everything El Qema's split puts into Upper Egypt and into Fayoum - Beni Suef, add it up, and
+ * hand every member an identical amount. Fayoum - Beni Suef is ONE member however many area codes
+ * it holds, which he said in the same sentence.
  *
- * 🔴 IT IS GATED ON THE THRESHOLD, AND THE CAIRO ONE IS NOT. Asked directly on 2026-09-09
- * whether it holds at every step: "only above 200 packs". So a 150-pack Sohag order stays in Sohag's
- * own two areas, while a 150-pack Benha order still reaches Cairo. The two rules look identical in
- * his sentence and differ in exactly this, which is why the gate sits here and not in the shared
- * override map.
+ * 🔴 IT IS NOT THE UPPER EGYPT BLOCK THAT WAS WITHDRAWN EARLIER THE SAME DAY. That one widened
+ * the LOCAL block above 200 packs and left the bands intact. This one levels the OUTCOME, at every
+ * quantity, and it pulls in an area from Giza. The difference matters most at step 1: a 24-pack
+ * Sohag sale used to stay in Sohag, and now joins the pool like everything else. That is what
+ * "their total" means, confirmed when he was asked what goes into the pool.
  *
- * 🔴 READ FROM THE ORGANOGRAM, NEVER FROM THE AREA CODE. Asked whether Beni Suef belongs, he
- * answered "follow the organogram but later if we update the organogram the rule changes" — so this
- * is a REGION CODE and the membership is whatever the line's organogram says today. On Pedia that is
- * seven areas (Minia 1-2, Assuit 1-2, Sohag 1-2, Qena 1): `UE9` Beni Suef sits in `GZ` and `UE8`
- * Qena 2 sits in Others, both by the organogram's own filing. Hard-coding the `UE*` codes would look
- * right, would be wrong about both of them today, and would stop tracking him the moment he moves a
- * seat.
+ * 🔴 THE MEMBERS ARE READ, NOT LISTED. Upper Egypt comes from the organogram, so it moves when
+ * he moves a seat; Fayoum - Beni Suef comes from CLOSING_AREA_MERGES, the owner table that already
+ * says those two are one territory on this line. Writing either as a literal here would be a third
+ * copy of a fact that already has an owner, and would stop tracking him.
  */
-export const UPPER_EGYPT_BLOCK_REGION_CODE = "UE";
+export const POOLED_BLOCK_REGION_CODE = "UE";
 
-/** The label the Store Split sheet shows for that block, so a reader sees which rule moved money. */
-export const UPPER_EGYPT_BLOCK_LABEL = "Upper Egypt";
+/** The label the Store Split sheet shows for the pool. */
+export const POOLED_BLOCK_LABEL = "Upper Egypt + Fayoum - Beni Suef";
 
 /**
- * Everything the split needs to know about a line's organogram, in ONE argument.
+ * The pool's members for a line, each member being the area codes it holds.
  *
- * 🔴 ONE OBJECT RATHER THAN TWO SETS, deliberately. The Others rule shipped completely INERT
- * once already: its loader looked the line up by display name against a code-keyed view, found no
- * rows, and an empty set is exactly how this module spells "nothing is excluded". Nothing errored.
- * A second loose parameter would give every call site a fresh chance to pass one half and forget the
- * other, and the failure would again be silent and in the direction of "the rule does not apply".
- * With one object the compiler names every site that has not been updated.
+ * Returns an EMPTY list when the organogram was not loaded — the safe direction, and the same one
+ * every other rule here takes: no members means no pooling, and the money stays where the split
+ * already put it.
  */
+export function pooledBlockMembers(
+  officialLine: string,
+  regions: SplitRegions | undefined,
+): readonly (readonly string[])[] {
+  const upperEgypt = regions?.areasByRegion.get(POOLED_BLOCK_REGION_CODE);
+  if (!upperEgypt || upperEgypt.size === 0) return [];
+  const excluded = regions?.others ?? NO_AREAS;
+  const members: string[][] = [];
+
+  // Fayoum - Beni Suef first, as ONE member. expandAreaCodeForLine is the owner merge table, so a
+  // line without that merge simply contributes nothing here rather than needing a special case.
+  const merged = expandAreaCodeForLine(officialLine, MERGED_POOL_MEMBER_CODE)
+    .map((code) => normalizeArea(code))
+    .filter((code) => code && !excluded.has(code));
+  if (merged.length > 0) members.push([...new Set(merged)].sort());
+
+  const alreadyIn = new Set(members.flat());
+  for (const area of [...upperEgypt].sort()) {
+    const code = normalizeArea(area);
+    if (!code || excluded.has(code) || alreadyIn.has(code)) continue;
+    members.push([code]);
+  }
+  return members;
+}
+
+/**
+ * The survivor code of the merge that joins the pool. Fayoum on Pedia; a line whose merge table has
+ * no entry for it expands to nothing and contributes no member.
+ */
+const MERGED_POOL_MEMBER_CODE = "GZ6";
+
+/**
+ * Level a row's shares across the pool: everything landing on a member is collected, divided
+ * equally between MEMBERS, and each member's amount divided equally between its own codes.
+ *
+ * 🔴 TWO LEVELS OF evenShares, NOT ONE. A flat division over every pooled area code would give
+ * Fayoum - Beni Suef two shares instead of one, which is precisely the thing he ruled on. Both
+ * levels use evenShares so the row still sums back to exactly what it started as.
+ */
+export function levelAcrossPool(
+  areas: readonly string[],
+  qtyShares: readonly number[],
+  valueShares: readonly number[],
+  members: readonly (readonly string[])[],
+): { areas: string[]; qtyShares: number[]; valueShares: number[] } {
+  if (members.length === 0) {
+    return { areas: [...areas], qtyShares: [...qtyShares], valueShares: [...valueShares] };
+  }
+  const memberOf = new Map<string, number>();
+  members.forEach((codes, index) => codes.forEach((code) => memberOf.set(code, index)));
+
+  const keptAreas: string[] = [];
+  const keptQty: number[] = [];
+  const keptValue: number[] = [];
+  let pooledQty = 0;
+  let pooledValue = 0;
+  let touched = false;
+  areas.forEach((area, index) => {
+    if (memberOf.has(area)) {
+      touched = true;
+      pooledQty += qtyShares[index];
+      pooledValue += valueShares[index];
+      return;
+    }
+    keptAreas.push(area);
+    keptQty.push(qtyShares[index]);
+    keptValue.push(valueShares[index]);
+  });
+  // Nothing of this row reached the pool, so there is nothing to level and no member to invent.
+  if (!touched) {
+    return { areas: [...areas], qtyShares: [...qtyShares], valueShares: [...valueShares] };
+  }
+
+  const memberQty = evenShares(pooledQty, members.length);
+  const memberValue = evenShares(pooledValue, members.length);
+  members.forEach((codes, index) => {
+    const insideQty = evenShares(memberQty[index], codes.length);
+    const insideValue = evenShares(memberValue[index], codes.length);
+    codes.forEach((code, inner) => {
+      keptAreas.push(code);
+      keptQty.push(insideQty[inner]);
+      keptValue.push(insideValue[inner]);
+    });
+  });
+  return { areas: keptAreas, qtyShares: keptQty, valueShares: keptValue };
+}
+
 export type SplitRegions = {
   /** Areas the line parks in Others. They receive nothing, but always keep what they sold. */
   others: ReadonlySet<string>;
@@ -370,19 +453,74 @@ export type SplitRegions = {
 export const NO_SPLIT_REGIONS: SplitRegions = { areasByRegion: new Map(), others: new Set() };
 
 /**
- * The Upper Egypt block for a warehouse, or undefined when the rule does not reach it.
+ * \U0001F512 THE PRIORITY LADDER — owner, 2026-09-09, and it REPLACES everything El Qema had before it.
  *
- * Undefined for three separate reasons, and all three must fall back to the plain governorate: the
- * organogram was not loaded, the region holds no areas, or this warehouse is simply not in it.
+ *   "what I want is that the qalubeya be qalubeya, then the Monofiua and the gharbia one and two,
+ *    okay, then cairo, then any rearrangement after this. But I don't want the areas I mentioned to
+ *    be far away from the others — I want them to be exceeding them, but with a very small scale."
+ *
+ * Every area the line has takes a share of El Qema's whole book. The named areas take slightly more,
+ * in his order, and nothing else decides anything.
+ *
+ * \U0001F534 WHAT THIS THREW AWAY, so a later session does not "restore" any of it as a regression:
+ * the three quantity bands (200 / 1,000), the Upper Egypt pool, the Qalubeya + Cairo local block with
+ * its 75/25 weighting, and the city rule itself for this distributor. WHERE A WAREHOUSE SITS NO
+ * LONGER MATTERS — a Benha sale and an Aswan sale of the same product spread identically. He was
+ * told that in those words before choosing it. Each of those rules is in this file's git history and
+ * in docs/agents-owner-rules.md, and every one of them was HIS, so finding a discarded rule here is
+ * never evidence of a bug.
+ *
+ * \U0001F534 THE ORIGIN IS NO LONGER EXEMPT FROM THE OTHERS EXCLUSION EITHER — "neglect others, don't
+ * add others". Under the old rules an area in Others still kept what it sold itself, because a home
+ * half had to land somewhere; there is no home half now, so a warehouse in Others keeps nothing and
+ * its sales spread like anyone else's. On August that moves Ismailia's own 24 packs out.
  */
-function upperEgyptBlockFor(
-  origin: string,
-  regions: SplitRegions | undefined,
-): { label: string; areas: readonly string[] } | undefined {
-  const areas = regions?.areasByRegion.get(UPPER_EGYPT_BLOCK_REGION_CODE);
-  if (!areas || areas.size === 0 || !areas.has(origin)) return undefined;
-  return { areas: [...areas].sort(), label: UPPER_EGYPT_BLOCK_LABEL };
+export const QEMA_PRIORITY_STEP = 0.02;
+
+/**
+ * The rungs, most-favoured first. An area named nowhere here sits on the bottom rung with everyone
+ * else, which is what "then any rearrangement after this" means.
+ *
+ * Cairo is listed with all six codes on purpose: Down town is one of them and Pedia parks it in
+ * Others, so it drops out through the exclusion rather than through a hand-maintained short list.
+ * Move it out of Others in the organogram and it rejoins the Cairo rung with no code change.
+ */
+export const QEMA_PRIORITY_RUNGS: readonly (readonly string[])[] = [
+  ["D11"],                                      // Qalubeya
+  ["D12", "D13"],                               // Menoufia 1 and 2
+  ["D14", "D15"],                               // Gharbia 1 and 2
+  ["CA1", "CA2", "CA3", "CA4", "CA5", "CA6"],   // Cairo
+];
+
+/** How many steps above the bottom rung this area sits. Zero for every unnamed area. */
+export function qemaPriorityRung(areaCode: string): number {
+  const code = normalizeArea(areaCode);
+  const index = QEMA_PRIORITY_RUNGS.findIndex((rung) => rung.includes(code));
+  return index < 0 ? 0 : QEMA_PRIORITY_RUNGS.length - index;
 }
+
+/**
+ * The ladder plan: every area the line has, weighted by rung.
+ *
+ * Weights are returned as FRACTIONS summing to 1, which is what planShares expects, so the row still
+ * sums back to exactly what it started as. Returns null when the exclusion set leaves nothing to
+ * spread to — a caller then leaves the row where it is, which is the safe direction.
+ */
+export function qemaLadderPlan(excluded: ReadonlySet<string>): SplitPlan | null {
+  const areas = ALL_SPLIT_AREAS.filter((area) => !excluded.has(area));
+  if (areas.length === 0) return null;
+  const raw = areas.map((area) => 1 + qemaPriorityRung(area) * QEMA_PRIORITY_STEP);
+  const total = raw.reduce((sum, weight) => sum + weight, 0);
+  return {
+    areas,
+    awayAreas: [],
+    group: "El Qema priority ladder",
+    homeAreas: areas,
+    homeFraction: 1,
+    homeWeights: raw.map((weight) => weight / total),
+  };
+}
+
 
 /**
  * 🔴 THE CAIRO + QALUBEYA RULE STANDS — it was never replaced, and removing it was an error.
@@ -405,8 +543,35 @@ function upperEgyptBlockFor(
  * Keyed `DISTRIBUTOR|ORIGIN AREA`, so it is El Qema's alone and one-way: there is no `QM|CA*` entry,
  * so a Cairo warehouse still treats Cairo as its own local block and never reaches Qalubeya.
  */
-export const LOCAL_BLOCK_OVERRIDES: ReadonlyMap<string, { label: string; areas: readonly string[] }> = new Map([
-  ["QM|D11", { areas: ["CA1", "CA2", "CA3", "CA4", "CA5", "CA6", "D11"], label: "Qalubeya + Cairo" }],
+export type LocalBlockOverride = {
+  label: string;
+  areas: readonly string[];
+  /**
+   * One area takes this fraction of the local block and the rest share what is left, evenly.
+   *
+   * \🔴 THE REMAINDER IS SPREAD OVER THE SURVIVORS, NOT OVER THE ORIGINAL LIST. Down town is a
+   * Cairo area that Pedia parks in Others, so the Cairo half is divided by FIVE, not six. Writing
+   * the weights as a fixed per-area table would silently lose Down town's eighth of the block the
+   * day the organogram moved it, and nothing downstream would report the shortfall.
+   */
+  primaryArea?: string;
+  primaryFraction?: number;
+};
+
+export const LOCAL_BLOCK_OVERRIDES: ReadonlyMap<string, LocalBlockOverride> = new Map([
+  ["QM|D11", {
+    areas: ["CA1", "CA2", "CA3", "CA4", "CA5", "CA6", "D11"],
+    label: "Qalubeya + Cairo",
+    // Owner, 2026-09-09, twice in one afternoon: "make cairo to qalyebyua 60 40" and then
+    // "qalyubya to cairo 75% 25%, 75 to qalyubeya". Before either, the block divided evenly and
+    // Benha kept a sixth of it. It now keeps 75% and the five live Cairo areas take 5% each.
+    //
+    // Applied in bands 1 and 2 ONLY. Band 3 pays every area the same by his own words, and a
+    // weighted home block there would quietly make Qalubeya bigger than Aswan in the one band
+    // that exists to make them equal.
+    primaryArea: "D11",
+    primaryFraction: 0.75,
+  }],
 ]);
 
 /** Every area the split can reach, in a stable order. AREA_CITY's keys ARE the universe. */
@@ -453,6 +618,11 @@ export type SplitPlan = {
   readonly awayAreas: readonly string[];
   /** Fraction that stays home: 1 below the threshold, 0.5 above it. */
   readonly homeFraction: number;
+  /**
+   * How the home block divides internally, aligned with `homeAreas`. Absent means evenly, which is
+   * every block except El Qema's Qalubeya since 2026-09-09.
+   */
+  readonly homeWeights?: readonly number[];
   /** Every area this row reaches — home first, then away. The flat list callers read. */
   readonly areas: readonly string[];
 };
@@ -528,9 +698,20 @@ export function splitTargetsFor(
   // The rule is the owner's El Qema rule, on the owner's El Qema line. Anything else falls through
   // to the plain city split it has always had — see WAREHOUSE_THRESHOLD_LINES.
   const line = lineKey(row.officialLine);
+  const lineName = String(row.officialLine ?? "").trim();
   const distributor = normalizeDistributor(row.distributorCode);
   const ruleApplies = WAREHOUSE_THRESHOLD_DISTRIBUTORS.has(distributor)
     && WAREHOUSE_THRESHOLD_LINES.has(line);
+
+  // \U0001F512 THE LADDER ANSWERS FIRST AND ANSWERS COMPLETELY. Everything below it — the bands, the
+  // pool, the local block — is now reached only by OTHER distributors' plain city split. Reading the
+  // code below as still applying to El Qema is the mistake to expect here.
+  if (ruleApplies) {
+    const laddered = qemaLadderPlan(
+      OTHERS_EXCLUDED_LINES.has(line) ? (regions?.others ?? NO_AREAS) : NO_AREAS,
+    );
+    if (laddered) return laddered;
+  }
 
   // The quantity decides the band, and from 2026-09-09 it also decides the local BLOCK, so it has to
   // be resolved before the block rather than after it.
@@ -544,9 +725,18 @@ export function splitTargetsFor(
   // widens once the warehouse passes 200, which is what he answered when asked. Cairo wins where
   // both could somehow match, so a hand-written owner ruling always outranks a derived one; nothing
   // matches both today, since Qalubeya is not in the Upper Egypt region on any line.
+  // \🔴 A POOL MEMBER'S OWN SALES MUST REACH THE POOL. Without this the rule levels only what
+  // ARRIVES from elsewhere: a warehouse in a one-area governorate like Qena has nowhere to spread
+  // to, so its row is not "eligible" at all, never enters the split, and sits where it was sold.
+  // Measured on August before the fix — Qena 1 stood 36 packs above its peers and Fayoum 264, both
+  // exactly their own unsplit local sales, while the other six members were identical. His rule is
+  // "their total", and that money is part of their total.
+  const poolBlock = ruleApplies ? pooledBlockMembers(lineName, regions) : [];
+  const poolCodes = poolBlock.flat();
+  const originInPool = poolCodes.includes(origin);
   const override = ruleApplies
     ? LOCAL_BLOCK_OVERRIDES.get(`${distributor}|${origin}`)
-      ?? (overThreshold ? upperEgyptBlockFor(origin, regions) : undefined)
+      ?? (originInPool ? { areas: [...poolCodes].sort(), label: POOLED_BLOCK_LABEL } : undefined)
     : undefined;
   const localBlock = override?.areas ?? cityAreas;
   // The Store Split sheet names the rule that moved the money, so a reader never has to guess why
@@ -563,12 +753,25 @@ export function splitTargetsFor(
   const homeAreas = localBlock.filter(keep);
   const localSet = new Set(localBlock);
 
+  // The weighted split of the home block, when the owner gave one for this block. `undefined`
+  // everywhere else, which planShares reads as "evenly".
+  const weightsFor = (block: readonly string[]): readonly number[] | undefined => {
+    const primary = override?.primaryArea;
+    const fraction = override?.primaryFraction;
+    if (!primary || typeof fraction !== "number" || !block.includes(primary)) return undefined;
+    const others = block.length - 1;
+    if (others <= 0) return undefined;
+    const rest = (1 - fraction) / others;
+    return block.map((area) => (area === primary ? fraction : rest));
+  };
+
   const home: SplitPlan = {
     areas: homeAreas,
     awayAreas: [],
     group: localLabel,
     homeAreas,
     homeFraction: 1,
+    homeWeights: weightsFor(homeAreas),
   };
 
   if (!ruleApplies) return home;
@@ -592,6 +795,9 @@ export function splitTargetsFor(
     group: flat ? "nationwide, equal shares" : `${localLabel} + nationwide`,
     homeAreas,
     homeFraction,
+    // Band 3 pays every area the same by his own words, so the home weighting stops there. Carrying
+    // it in would make Qalubeya larger than Aswan in the one band that exists to make them equal.
+    homeWeights: flat ? undefined : weightsFor(homeAreas),
   };
 }
 
@@ -603,7 +809,24 @@ export function splitTargetsFor(
  * shares sum back to `total` bit-for-bit. `evenShares` gives the same guarantee inside each block.
  */
 export function planShares(plan: SplitPlan, total: number): number[] {
-  if (plan.awayAreas.length === 0) return evenShares(total, plan.homeAreas.length);
+  // The home block divides by weight when the owner gave one. Taken as `total - assigned` on the
+  // last element, exactly as the even path does, so a weighted block still sums back to `total`.
+  const homeShareAt = (index: number, pool: number): number => (
+    plan.homeWeights ? pool * plan.homeWeights[index] : pool / plan.homeAreas.length
+  );
+
+  if (plan.awayAreas.length === 0) {
+    if (!plan.homeWeights) return evenShares(total, plan.homeAreas.length);
+    const shares: number[] = [];
+    let running = 0;
+    for (let index = 0; index < plan.homeAreas.length - 1; index += 1) {
+      const share = homeShareAt(index, total);
+      shares.push(share);
+      running += share;
+    }
+    shares.push(total - running);
+    return shares;
+  }
 
   // ONE running remainder across BOTH blocks, never two independent evenShares calls concatenated.
   // evenShares guarantees its own block sums back exactly only when that block is summed from zero;
@@ -612,14 +835,13 @@ export function planShares(plan: SplitPlan, total: number): number[] {
   // the whole row, exactly as evenShares does for a single block.
   const home = total * plan.homeFraction;
   const away = total - home;
-  const homeShare = home / plan.homeAreas.length;
   const awayShare = away / plan.awayAreas.length;
   const count = plan.homeAreas.length + plan.awayAreas.length;
 
   const shares: number[] = [];
   let assigned = 0;
   for (let index = 0; index < count - 1; index += 1) {
-    const share = index < plan.homeAreas.length ? homeShare : awayShare;
+    const share = index < plan.homeAreas.length ? homeShareAt(index, home) : awayShare;
     shares.push(share);
     assigned += share;
   }
@@ -920,14 +1142,20 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
     const productCode = String(row.productCode ?? "").trim().toUpperCase();
     // planShares, not evenShares: above the threshold the governorate block and the national
     // block carry different weights, and an even division would quietly pay them the same.
-    const valueShares = planShares(targets, Number(row.salesValue) || 0);
-    const qtyShares = planShares(targets, Number(row.qty) || 0);
+    const plannedValue = planShares(targets, Number(row.salesValue) || 0);
+    const plannedQty = planShares(targets, Number(row.qty) || 0);
+
+    // No pooling pass any more: the priority ladder decides El Qema's whole distribution in
+    // splitTargetsFor, and every other distributor takes the plain city split. Levelling here as
+    // well would silently overwrite the ladder for the eight areas the pool used to hold.
+    const levelled = { areas, qtyShares: plannedQty, valueShares: plannedValue };
 
     const originMovement = movementFor(origin, city, line, productCode);
     originMovement.outQty += Number(row.qty) || 0;
     originMovement.outValue += Number(row.salesValue) || 0;
 
-    areas.forEach((areaCode, index) => {
+    const { areas: landing, qtyShares, valueShares } = levelled;
+    landing.forEach((areaCode, index) => {
       const received = movementFor(areaCode, city, line, productCode);
       received.inQty += qtyShares[index];
       received.inValue += valueShares[index];

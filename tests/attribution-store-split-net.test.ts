@@ -10,6 +10,11 @@ import {
 } from "@/lib/sales/attribution-store-split-net";
 import { othersLookupLineCode, usesOrganogramRegions } from "@/lib/sales/closing-organogram-regions";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
+import {
+  ALL_SPLIT_AREAS,
+  QEMA_PRIORITY_STEP,
+  qemaPriorityRung,
+} from "@/lib/sales/store-sales-city-split";
 
 /**
  * ATTRIBUTION MUST SEE THE SAME SPLIT THE CLOSING DOES.
@@ -41,8 +46,6 @@ const PEDIA_OTHERS: ReadonlySet<string> = new Set([
 ]);
 
 /** Qalubeya's LOCAL block is itself plus the six Cairo areas, so the rest of the country is 42. */
-const QALUBEYA_LOCAL_AREAS = 7;
-const QALUBEYA_AWAY_AREAS = COUNTRY_AREAS - QALUBEYA_LOCAL_AREAS;
 
 function qemaRow(overrides: Partial<AttributionSplitRow> = {}): AttributionSplitRow {
   return {
@@ -126,33 +129,35 @@ export function runAttributionStoreSplitNetTests() {
     `net effective units must sum to zero, got ${augustTotals.effective}`,
   );
 
+  // 🔒 THE PRIORITY LADDER — owner, 2026-09-09. This block used to assert a local half, a
+  // Qalubeya + Cairo block and a 60/40 (then 75/25) weighting inside it. All of that is gone: El
+  // Qema's book is now divided across every area the line has, with four named rungs one 2% step
+  // apart. Where the warehouse sits decides nothing, so the ORIGIN is just another area — its net is
+  // its ladder share minus everything it sold.
+  const ladderShare = (code: string, total: number) => {
+    const areas = ALL_SPLIT_AREAS;
+    const weightOf = (area: string) => 1 + qemaPriorityRung(area) * QEMA_PRIORITY_STEP;
+    const sum = areas.reduce((acc, area) => acc + weightOf(area), 0);
+    return total * weightOf(code) / sum;
+  };
+
   const origin = august.find((row) => row.area_code === "D11");
   assert.ok(origin, "the origin area is in the net");
-  // Half stays LOCAL, and the local block is Qalubeya plus Cairo, so Qalubeya keeps one seventh of
-  // that half — 50 of 700 — and Cairo holds the other six sevenths. The 2026-09-07 Cairo rule and the
-  // 2026-09-08 threshold rule BOTH apply; collapsing the block back to [D11] restores 350 here and
-  // leaves Cairo with nothing, which is the state the owner rejected on 2026-09-09.
   assert.ok(
-    Math.abs(origin.net_qty - (350 / QALUBEYA_LOCAL_AREAS - 700)) < 1e-6,
-    `Qalubeya keeps one seventh of the local half, got ${origin.net_qty}`,
+    Math.abs(origin.net_qty - (ladderShare("D11", 700) - 700)) < 1e-6,
+    `Qalubeya takes one ladder share of its own sale and gives up the rest, got ${origin.net_qty}`,
   );
-  // 🔴 CAIRO IS LOCAL, NOT NATIONAL. Each Cairo area takes a LOCAL share (350/7), which is far more
-  // than the national one — that is the Cairo rule. The areas below are outside the local block and
-  // take the national share instead.
-  for (const cairo of ["CA1", "CA3"]) {
-    const local = august.find((row) => row.area_code === cairo);
-    assert.ok(local, `${cairo} is in the local block`);
+
+  // The order, seen through the net rather than through the plan: each named rung sits one step
+  // above the next, and an unnamed area sits below all of them.
+  const netOf = (code: string) => august.find((row) => row.area_code === code)?.net_qty ?? 0;
+  assert.ok(netOf("D12") > netOf("D14"), "Menoufia above Gharbia");
+  assert.ok(netOf("D14") > netOf("CA1"), "Gharbia above Cairo");
+  assert.ok(netOf("CA1") > netOf("AB1"), "Cairo above an unnamed area");
+  for (const code of ["AB1", "UE7", "OT7"]) {
     assert.ok(
-      Math.abs(local.net_qty - 350 / QALUBEYA_LOCAL_AREAS) < 1e-6,
-      `${cairo} takes a LOCAL share, got ${local.net_qty}`,
-    );
-  }
-  for (const areaCode of ["AB1", "UE7", "OT7"]) {
-    const away = august.find((row) => row.area_code === areaCode);
-    assert.ok(away, `${areaCode} receives a share`);
-    assert.ok(
-      Math.abs(away.net_qty - 350 / QALUBEYA_AWAY_AREAS) < 1e-6,
-      `${areaCode} receives an equal part of the national half, got ${away.net_qty}`,
+      Math.abs(netOf(code) - ladderShare(code, 700)) < 1e-6,
+      `${code} receives its ladder share, got ${netOf(code)}`,
     );
   }
 
@@ -211,11 +216,11 @@ export function runAttributionStoreSplitNetTests() {
   const discountedOrigin = discounted.find((row) => row.area_code === "D11");
   assert.ok(discountedOrigin, "the discounted row still has an origin cell");
   assert.ok(
-    Math.abs(discountedOrigin.net_qty - (350 / QALUBEYA_LOCAL_AREAS - 700)) < 1e-6,
+    Math.abs(discountedOrigin.net_qty - (ladderShare("D11", 700) - 700)) < 1e-6,
     "units move on the invoiced quantity",
   );
   assert.ok(
-    Math.abs(discountedOrigin.net_effective_units - (315 / QALUBEYA_LOCAL_AREAS - 630)) < 1e-6,
+    Math.abs(discountedOrigin.net_effective_units - (ladderShare("D11", 630) - 630)) < 1e-6,
     "money moves on the effective units, not on the invoiced quantity",
   );
   assert.notEqual(
@@ -249,8 +254,10 @@ export function runAttributionStoreSplitNetTests() {
     0,
     "a direct row never enters the net",
   );
-  // A one-area governorate has nowhere to split to — as long as the order stays under 200. Fayoum
-  // bought 12 packs in August, which is the real shape of almost every El Qema line.
+  // 🔴 A ONE-AREA GOVERNORATE IS NO LONGER A DEAD END, AND SIZE NO LONGER MATTERS. Under every
+  // earlier rule a 12-pack Fayoum order stayed exactly where it was, because its governorate held one
+  // area and 12 was under the 200 threshold. The ladder has neither a governorate nor a threshold, so
+  // the same 12 packs now spread across the whole country like any other row.
   const fayoum = (qty: number) => qemaRow({
     areaCode: "GZ6",
     brickId: "B191-3",
@@ -260,20 +267,22 @@ export function runAttributionStoreSplitNetTests() {
     qty,
     salesValue: qty * 270,
   });
-  assert.equal(
-    buildStoreSplitNetPayload("Pedia", [fayoum(12)], "2026-08").length,
-    0,
-    "Fayoum is a one-area governorate — under 200 there is nothing to share with, so nothing moves",
-  );
-  // 🔴 Over 200 the same order DOES move, and this is the case the old rule had no answer for: a
-  // one-area governorate used to be a dead end in every direction. Now half of it crosses the country.
-  const fayoumBig = buildStoreSplitNetPayload("Pedia", [fayoum(400)], "2026-08");
-  assert.equal(fayoumBig.length, COUNTRY_AREAS, "400 packs from a one-area governorate still reaches everywhere");
-  const fayoumOrigin = fayoumBig.find((row) => row.area_code === "GZ6");
-  assert.ok(fayoumOrigin, "and Fayoum keeps a cell of its own");
+  const fayoumSmall = buildStoreSplitNetPayload("Pedia", [fayoum(12)], "2026-08");
+  assert.equal(fayoumSmall.length, COUNTRY_AREAS, "12 packs now reaches every area — there is no threshold");
+  const fayoumSmallOrigin = fayoumSmall.find((row) => row.area_code === "GZ6");
+  assert.ok(fayoumSmallOrigin, "Fayoum keeps a cell of its own");
   assert.ok(
-    Math.abs(fayoumOrigin.net_qty - (200 - 400)) < 1e-6,
-    `Fayoum keeps half of its own 400, got ${fayoumOrigin.net_qty}`,
+    Math.abs(fayoumSmallOrigin.net_qty - (ladderShare("GZ6", 12) - 12)) < 1e-6,
+    `Fayoum keeps one ladder share of its 12, got ${fayoumSmallOrigin.net_qty}`,
+  );
+
+  const fayoumBig = buildStoreSplitNetPayload("Pedia", [fayoum(400)], "2026-08");
+  assert.equal(fayoumBig.length, COUNTRY_AREAS, "and 400 packs behaves identically");
+  const fayoumOrigin = fayoumBig.find((row) => row.area_code === "GZ6");
+  assert.ok(fayoumOrigin, "with a cell of its own again");
+  assert.ok(
+    Math.abs(fayoumOrigin.net_qty - (ladderShare("GZ6", 400) - 400)) < 1e-6,
+    `Fayoum keeps one ladder share of its 400, got ${fayoumOrigin.net_qty}`,
   );
 
   // ── THE WRITER ALWAYS CALLS THROUGH, EVEN WITH AN EMPTY PAYLOAD ────────────────────────────────

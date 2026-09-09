@@ -12,45 +12,40 @@ import {
   isSplitEligible,
   NO_SPLIT_REGIONS,
   planShares,
+  QEMA_PRIORITY_RUNGS,
+  QEMA_PRIORITY_STEP,
+  qemaPriorityRung,
   splitStoreSalesAcrossCityAreas,
   splitTargetsFor,
-  WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY,
-  WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION,
-  WAREHOUSE_NATIONAL_SPLIT_THRESHOLD_QTY,
   WAREHOUSE_THRESHOLD_DISTRIBUTORS,
-  UPPER_EGYPT_BLOCK_LABEL,
-  UPPER_EGYPT_BLOCK_REGION_CODE,
-  warehouseHomeFraction,
-  warehouseSplitQtyByKey,
   type SplitRegions,
   type StoreSplitRow,
 } from "../src/lib/sales/store-sales-city-split.ts";
 
 /**
- * نظام توزيع القمه الموحد — EL QEMA'S UNIFIED DISTRIBUTION, owner 2026-09-09, three ordered steps.
+ * 🔒 EL QEMA'S PRIORITY LADDER — owner, 2026-09-09, and it REPLACED everything before it.
  *
- *   1. "اي مخزن اقل من 200 علبه حتي 200 علبه يقسم علي مندوبي المحافظة"
- *   2. "اي مخزن من 201 حتي 999 — 50% يقسم علي مندوبي المحافظة والكلام ده ينطبق علي
- *       القليوبية (القليوبية + القاهرة)، 50% الاخري تقسم علي باقي الجمهورية بالتساوي"
- *   3. "اي مخزن من 1000 علبه فما فوق يقسم علي مندوبي الجمهوريه بالتساوي وليس Others"
+ *   "what I want is that the qalubeya be qalubeya, then the Monofiua and the gharbia one and two,
+ *    okay, then cairo, then any rearrangement after this. But I don't want the areas I mentioned to
+ *    be far away from the others — I want them to be exceeding them, but with a very small scale."
  *
- * 🔴 THE THREE RULES COMPOSE — NONE OF THEM REPLACED ANOTHER. This header used to say the
- * 200-pack rule "REPLACES the Qalubeya→Cairo rule of 2026-09-07, which he retired the following
- * day". He had not retired it, and the correction came in his own words: "YOU ARE NOT APPLYING THE
- * CAIRO AND QALUBEYA RULE + THE NEW RULE". Step 2 above names the Cairo block again, in writing.
- * Confirmed on 2026-09-09 that it holds at EVERY step, step 1 included, because it defines what
- * "مندوبي المحافظة" MEANS for a Qalubeya warehouse rather than being a band of its own.
+ * El Qema's whole Pedia book is divided across every area the line has. The named areas take one
+ * small step more per rung, in his order. Nothing else decides anything.
  *
- * 🔴 STEP 3 IS NOT A BIGGER STEP 2. Step 2 keeps a privileged home half and spreads "باقي
- * الجمهورية", the REST of the country. Step 3 drops باقي: every area takes an identical
- * share and the origin is one of them, confirmed on 2026-09-09. Reading it as "half stays, but the
- * away block is wider" looks like the natural continuation and silently leaves a Benha warehouse
- * holding half its own book instead of one thirty-seventh.
+ * 🔴 THIS FILE USED TO PIN FIVE OTHER RULES, ALL OF THEM HIS, ALL OF THEM NOW GONE: the 200-pack
+ * governorate rule, the 201–999 half-and-half, the 1,000-plus flat band, the Upper Egypt pool, and
+ * the Qalubeya + Cairo local block with its 75/25 weighting. They are in this file's git history and
+ * in docs/agents-owner-rules.md. A session finding one of them missing is looking at a DECISION, not
+ * a regression, and restoring any of it reverses him.
  *
- * WHAT HAS NOT CHANGED, re-pinned here because a rewrite is exactly when it gets lost: every El Qema
- * customer is a warehouse, the divisor is AREAS and not reps, Others receive nothing on Pedia, the
- * origin always keeps its own sale, the threshold is the MONTH TOTAL per product, and a pharmacy or
- * a hospital never becomes a store just because El Qema invoiced it.
+ * 🔴 WHERE A WAREHOUSE SITS NO LONGER MATTERS AT ALL. That is the single biggest change and the one
+ * a reader will disbelieve: a Benha sale and an Aswan sale of the same product now distribute
+ * identically, and Benha keeps no more of its own book than anyone else. Asserted below, twice, so
+ * an "obvious" reintroduction of an origin preference fails immediately.
+ *
+ * 🔴 OTHERS NOW KEEP NOTHING, INCLUDING THEIR OWN SALES — "neglect others, don't add others". Every
+ * earlier rule let an origin in Others keep what it sold itself, because a home half had to land
+ * somewhere. There is no home half now.
  */
 
 const BASE: StoreSplitRow = {
@@ -68,541 +63,185 @@ const BASE: StoreSplitRow = {
 
 const row = (over: Partial<StoreSplitRow> = {}): StoreSplitRow => ({ ...BASE, ...over });
 
-const CAIRO = ["CA1", "CA2", "CA3", "CA4", "CA5", "CA6"] as const;
-
 export function runQemaWarehouseSplitTests() {
-  // ── The constants the rule is stated in ──────────────────────────────────────────────────────
-  assert.equal(WAREHOUSE_NATIONAL_SPLIT_THRESHOLD_QTY, 200, "the threshold is 200 packs per product");
-  assert.equal(WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION, 0.5, "half stays in the governorate, 201 to 999");
-  assert.equal(WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY, 1_000, "at 1,000 the split goes flat across the country");
-  assert.deepEqual([...WAREHOUSE_THRESHOLD_DISTRIBUTORS], ["QM"], "El Qema only — owner 2026-09-08");
+  // ── The ladder, pinned to its literals ───────────────────────────────────────────────────────
+  //
+  // Pinned ONCE here; every arithmetic assertion below reads the constants, so changing the step or
+  // the order is caught by these four lines rather than silently followed by the rest of the file.
+  assert.equal(QEMA_PRIORITY_STEP, 0.02, "one rung is 2% — 'a very small scale'");
+  assert.deepEqual(
+    QEMA_PRIORITY_RUNGS.map((rung) => [...rung]),
+    [
+      ["D11"],
+      ["D12", "D13"],
+      ["D14", "D15"],
+      ["CA1", "CA2", "CA3", "CA4", "CA5", "CA6"],
+    ],
+    "Qalubeya, then Menoufia, then Gharbia, then Cairo — his order, most-favoured first",
+  );
+  assert.deepEqual([...WAREHOUSE_THRESHOLD_DISTRIBUTORS], ["QM"], "El Qema only");
+
+  // Down town is listed on the Cairo rung and removed by the Others exclusion, never by a shorter
+  // hand-kept list — so moving it out of Others in the organogram rejoins it with no code change.
+  assert.ok(QEMA_PRIORITY_RUNGS[3].includes("CA5"), "Down town is on the Cairo rung as written");
+  assert.equal(qemaPriorityRung("D11"), 4, "Qalubeya sits four steps up");
+  assert.equal(qemaPriorityRung("D13"), 3, "Menoufia three");
+  assert.equal(qemaPriorityRung("D15"), 2, "Gharbia two");
+  assert.equal(qemaPriorityRung("CA2"), 1, "Cairo one");
+  assert.equal(qemaPriorityRung("AB1"), 0, "and every unnamed area sits on the bottom rung");
 
   // The universe is AREA_CITY, so the two areas that are not territories stay out of it. Without
-  // this, half of every large order would drain into Main Store, which has no rep, no DM, no target
-  // and no way of ever paying it out to anybody.
+  // this, a share would drain into Main Store, which has no rep, no DM and no target.
   assert.equal(ALL_SPLIT_AREAS.length, AREA_CITY.size, "every area of the city list, and only those");
   for (const excluded of AREAS_DELIBERATELY_NOT_SPLIT.keys()) {
     assert.equal(
       ALL_SPLIT_AREAS.includes(excluded),
       false,
-      `${excluded} is not a territory to spread across, so the national half never reaches it`,
+      `${excluded} is not a territory, so the ladder never reaches it`,
     );
   }
 
-  // ── Above 200: half home, half across the rest of the country ────────────────────────────────
-  const plan = splitTargetsFor(row());
-  assert.ok(plan, "an El Qema Qalubeya warehouse over 200 has a plan");
-  // 🔴 THE LOCAL BLOCK IS QALUBEYA **PLUS CAIRO** — the 2026-09-07 rule, which the 200-pack rule of
-  // 09-08 did NOT replace. Told plainly on 09-09: "YOU ARE NOT APPLYING THE CAIRO AND QALUBEYA RULE
-  // + THE NEW RULE". Benha is on Cairo's edge and supplies it, so Qalubeya's LOCAL catchment is
-  // seven areas; the 200-pack rule then works on that block exactly as on any governorate.
-  // Collapsing this back to ["D11"] leaves Cairo with nothing, which is the state he rejected.
-  assert.deepEqual(
-    [...plan.homeAreas].sort(),
-    ["CA1", "CA2", "CA3", "CA4", "CA5", "CA6", "D11"],
-    "the local block is Qalubeya plus all six Cairo areas",
-  );
-  assert.equal(plan.homeFraction, 0.5, "and half the order stays inside that block");
-  assert.equal(
-    plan.awayAreas.length,
-    ALL_SPLIT_AREAS.length - plan.homeAreas.length,
-    "the away block is every area the LOCAL block does not already hold",
-  );
-  for (const cairo of CAIRO) {
-    assert.equal(
-      plan.awayAreas.includes(cairo),
-      false,
-      `${cairo} is in the local block, so it must not ALSO be paid from the national half`,
-    );
-  }
-  assert.equal(
-    plan.awayAreas.includes("D11"),
-    false,
-    "THE EXCLUSION: the origin governorate is never in its own away block — "
-      + "«ماعدا مندوبين نفس المحافظة اللي اتطبع فيها الاوردر»",
-  );
-  // With NO exclusion set Down town is in the LOCAL block (it is a Cairo area). That is the baseline
-  // and the safe direction: a caller that cannot read the organogram splits as before rather than
-  // silently dropping areas. The Others exclusion is asserted below, where Down town comes OUT.
-  assert.ok(plan.homeAreas.includes("CA5"), "no exclusion set — Down town is in the local block");
-
-  const qema = splitStoreSalesAcrossCityAreas([row()], "2026-09");
-  const shares = qema.rows.filter((r) => r.clientCode === "QM-9001");
-  assert.equal(shares.length, ALL_SPLIT_AREAS.length, "one row becomes one per area in the country");
-
-  const localRows = shares.filter((r) => plan.homeAreas.includes(r.areaCode));
-  assert.equal(localRows.length, 7, "seven local rows — Qalubeya and the six Cairo areas");
-  assert.equal(
-    Number(localRows.reduce((sum, r) => sum + r.qty, 0).toFixed(6)),
-    350,
-    "half of 700 stays in the local block",
-  );
-  for (const share of localRows) {
-    assert.equal(
-      Number(share.qty.toFixed(6)),
-      Number((350 / 7).toFixed(6)),
-      "and it divides evenly inside the block — Qalubeya keeps no more than a Cairo area",
-    );
-  }
-
-  const away = shares.filter((r) => !plan.homeAreas.includes(r.areaCode));
-  assert.equal(away.length, ALL_SPLIT_AREAS.length - 7, "every area outside the local block");
-  const awayQty = 350 / away.length;
-  for (const share of away) {
-    assert.equal(Number(share.qty.toFixed(6)), Number(awayQty.toFixed(6)), "the other half divides evenly");
-  }
-
-  // The invariant the whole change rests on: the split relocates units, it never makes or loses one.
-  assert.equal(
-    Number(shares.reduce((sum, r) => sum + r.qty, 0).toFixed(9)),
-    700,
-    "units are preserved exactly",
-  );
-  assert.equal(
-    Number(shares.reduce((sum, r) => sum + r.salesValue, 0).toFixed(9)),
-    189_000,
-    "and so is value",
-  );
-
-  // ── Up to 200: the governorate only, and nothing to do with the country ──────────────────────
-  //
-  // He drew the line at "لحد 200" — up TO 200 — so 200 exactly is a local sale and 201 is not.
-  // Alexandria is the origin here because Qalubeya carries the Cairo override and would not show the
-  // plain governorate-only behaviour this assertion is about.
-  const atThreshold = splitTargetsFor(row({ areaCode: "AB2", clientCode: "QM-9010", qty: 200 }), 200);
-  assert.ok(atThreshold);
-  assert.deepEqual([...atThreshold.areas], ["AB1", "AB2", "AB3"], "200 exactly stays inside Alexandria");
-  assert.equal(atThreshold.awayAreas.length, 0, "no national half at the threshold itself");
-  assert.equal(atThreshold.group, "Alexandria", "and it is labelled the ordinary city");
-
-  const overThreshold = splitTargetsFor(row({ areaCode: "AB2", clientCode: "QM-9010", qty: 201 }), 201);
-  assert.ok(overThreshold);
-  assert.equal(overThreshold.awayAreas.length, ALL_SPLIT_AREAS.length - 3, "201 crosses it — Alexandria's 3 areas stay home");
-
-  // A Qalubeya order at or below 200 still spreads — across the LOCAL block, which is Qalubeya plus
-  // Cairo. That is the 2026-09-07 rule: it has no threshold of its own, so a small Benha order
-  // reaches Cairo exactly as a large one does. Only the NATIONAL half is gated at 200.
-  const smallQalubeya = splitTargetsFor(row({ qty: 120 }), 120);
-  assert.ok(smallQalubeya);
-  assert.equal(smallQalubeya.awayAreas.length, 0, "120 packs never leaves the local block");
-  assert.deepEqual(
-    [...smallQalubeya.areas].sort(),
-    ["CA1", "CA2", "CA3", "CA4", "CA5", "CA6", "D11"],
-    "but it does reach Cairo — the Cairo rule is not gated on the 200 threshold",
-  );
-  assert.equal(
-    isSplitEligible(row({ qty: 120 }), "2026-09", 120),
-    true,
-    "so a sub-threshold Qalubeya order DOES move",
-  );
-
-  // ── THE ONE-WAY PROPERTY IS GONE, DELIBERATELY ───────────────────────────────────────────────
-  //
-  // Under the old rule a Cairo warehouse could never reach Qalubeya. The new rule is symmetric
-  // across governorates: any El Qema warehouse over 200 reaches everywhere. If this assertion is
-  // ever "fixed" back, the 2026-09-08 ruling has been reverted to the 2026-09-07 one.
-  const cairo = splitTargetsFor(row({ areaCode: "CA3", clientCode: "QM-9002" }));
-  assert.ok(cairo);
-  assert.deepEqual([...cairo.homeAreas].sort(), [...CAIRO].sort(), "Cairo's six areas are its home block");
-  assert.ok(cairo.awayAreas.includes("D11"), "and a Cairo warehouse over 200 NOW reaches Qalubeya");
-  assert.equal(cairo.awayAreas.length, ALL_SPLIT_AREAS.length - 6, "every area outside Cairo");
-
-  // ── EL QEMA ONLY: the same warehouse through another distributor is untouched ─────────────────
-  for (const distributor of ["PS", "IS", "IS-S", "EP-PHS", undefined]) {
-    const other = row({ clientCode: "PS-9003", distributorCode: distributor, qty: 5_000 });
-    const targets = splitTargetsFor(other, 5_000);
-    assert.deepEqual(
-      targets?.areas ? [...targets.areas] : null,
-      ["D11"],
-      `5,000 packs in Qalubeya through ${distributor ?? "no distributor"} still targets ITSELF ALONE`,
-    );
-    assert.equal(
-      isSplitEligible(other, "2026-09", 5_000),
-      false,
-      `so nothing moves through ${distributor ?? "no distributor"} — the threshold is El Qema's alone`,
-    );
-  }
-
-  // ── 🔴 THE THRESHOLD IS THE MONTH'S TOTAL, NOT ONE ROW ───────────────────────────────────────
-  //
-  // The same warehouse and product arriving as three 100-pack rows is a 300-pack month. Judged per
-  // row it is three sub-threshold orders and NOTHING leaves Qalubeya; judged on the aggregate it
-  // crosses 200 and half the money goes national. There is no error either way — the split preserves
-  // the line total, so the publication drift check cannot see the difference. This assertion is the
-  // only thing standing between those two answers.
-  const threeRows = [
-    row({ qty: 100, salesValue: 27_000 }),
-    row({ qty: 100, salesValue: 27_000 }),
-    row({ qty: 100, salesValue: 27_000 }),
-  ];
-  const aggregate = warehouseSplitQtyByKey(threeRows);
-  assert.equal([...aggregate.values()][0], 300, "the three rows are one 300-pack warehouse month");
-
-  const split3 = splitStoreSalesAcrossCityAreas(threeRows, "2026-09");
-  const areas3 = new Set(split3.rows.map((r) => r.areaCode));
-  assert.equal(areas3.size, ALL_SPLIT_AREAS.length, "so all three rows go national together");
-  assert.equal(
-    Number(split3.rows.reduce((sum, r) => sum + r.qty, 0).toFixed(9)),
-    300,
-    "and the month's units are still exactly 300",
-  );
-
-  // A product that genuinely stays under on its own is untouched by a sibling that does not: the key
-  // carries the product, so a big LA001 cannot drag a small LA002 across the country with it.
-  const twoProducts = warehouseSplitQtyByKey([
-    row({ productCode: "LA001", qty: 4_000 }),
-    row({ productCode: "LA002", qty: 40 }),
-  ]);
-  assert.equal(twoProducts.size, 2, "one entry per product");
-  assert.equal([...twoProducts.values()].filter((v) => v === 40).length, 1, "the small product keeps its own total");
-
-  // ── planShares divides exactly, which is what keeps the matrix from drifting ──────────────────
-  for (const total of [700, 189_000, 0.07, 1_000_000 / 3]) {
-    const parts = planShares(plan, total);
-    assert.equal(parts.length, ALL_SPLIT_AREAS.length);
-    assert.equal(parts.reduce((a, b) => a + b, 0), total, `${total} divides and sums back bit-exactly`);
-  }
-
-  // ── The movement label says WHICH rule moved the money ───────────────────────────────────────
-  const movement = qema.movements.find((m) => m.outQty > 0);
-  assert.ok(movement, "the split reports a movement out of the origin");
-  assert.equal(
-    movement.city,
-    "Qalubeya + Cairo + nationwide",
-    "the Store Split sheet names BOTH rules, so a reader is never left guessing why Cairo or Aswan gained",
-  );
-
-  // ── EVERY El Qema customer is a warehouse — owner, 2026-09-07, restated 2026-09-08 ───────────
-  //
-  // "consider el qema distbutor not warehouse and the customers in it vare the warehouses golden
-  // rule". El Qema sells ON to other wholesalers rather than to pharmacies, so the name test has
-  // nothing to add: of their customers the six keywords catch only a third.
-  assert.ok(isWholesaleOnlyDistributor("QM"), "El Qema is a wholesale-only distributor");
-  assert.ok(isWholesaleOnlyDistributor("qm"), "and the check is case-insensitive");
-  assert.equal(WHOLESALE_ONLY_DISTRIBUTORS.size, 1, "El Qema is the ONLY one — adding another is his call");
-
-  for (const name of ["كيان قنا", "دلة الفيوم", "رويال الاسماعيليه", "هانى براعى المنيا", "الدكتور محمد شعير"]) {
-    assert.equal(
-      isStoreCustomerForPeriod(name, null, "QM", "2026-09", "Pedia"),
-      true,
-      `${name} is a warehouse because El Qema sold it, not because of its name`,
-    );
-    assert.equal(
-      isStoreCustomerForPeriod(name, null, "PS", "2026-09", "Pedia"),
-      false,
-      `${name} through Overseas is unchanged — the rule is about the DISTRIBUTOR, not the customer`,
-    );
-  }
-
-  // A hospital or a government depot still does not split, whoever sold it.
-  for (const name of ["مستشفى المنزله العام", "ت.ص.مخازن السيوف", "صيدلية النور"]) {
-    assert.equal(
-      isStoreCustomerForPeriod(name, null, "QM", "2026-09", "Pedia"),
-      false,
-      `${name} does not become a warehouse just because El Qema invoiced it`,
-    );
-  }
-
-  // ── 🔴 OTHERS TAKE NO SHARE — owner, 2026-09-08 ─────────────────────────────────────────────
-  //
-  // "you will follow the EU organogram of pedia line and exclude in distribution the areas in others"
-  //
-  // The Pedia organogram parks 13 areas in the Others territory (`OT`): Down town, Kafr El-Sheikh 2,
-  // Qena 2 and the ten OT areas. Retired OT3 is not in AREA_CITY at all, so twelve of them come out
-  // of a 49-area universe and 37 remain. The set is per LINE and is NOT a geography — on Anti
-  // Infective it holds Qalubeya itself — which is why it is passed in rather than derived here.
+  // ── Pedia's organogram, as production holds it ───────────────────────────────────────────────
   const PEDIA_OTHERS: ReadonlySet<string> = new Set([
     "CA5", "D17", "UE8", "OT1", "OT2", "OT4", "OT5", "OT6", "OT7", "OT8", "OT9", "OT10",
   ]);
-  // The Upper Egypt block, as the PEDIA organogram files it — seven areas. Note what is NOT here:
-  // `UE9` Beni Suef sits in `GZ` and `UE8` Qena 2 sits in Others, both by the organogram's own
-  // filing, even though every `UE*` code looks like it belongs. That is exactly why the rule reads a
-  // REGION rather than an area-code prefix, and why the owner asked for it to follow the organogram.
-  const PEDIA_UPPER_EGYPT: ReadonlySet<string> = new Set([
-    "UE1", "UE2", "UE3", "UE4", "UE5", "UE6", "UE7",
-  ]);
-  const PEDIA_REGIONS: SplitRegions = {
-    areasByRegion: new Map([[UPPER_EGYPT_BLOCK_REGION_CODE, PEDIA_UPPER_EGYPT]]),
-    others: PEDIA_OTHERS,
-  };
-  const REMAINING = ALL_SPLIT_AREAS.length - PEDIA_OTHERS.size;
-  assert.equal(REMAINING, 37, "49 areas less the 12 of Pedia's Others that are on the city list");
+  const PEDIA_REGIONS: SplitRegions = { areasByRegion: new Map(), others: PEDIA_OTHERS };
+  const IN_PLAY = ALL_SPLIT_AREAS.length - PEDIA_OTHERS.size;
+  assert.equal(IN_PLAY, 37, "49 areas less the 12 of Pedia's Others that are on the city list");
 
-  const excluded = splitTargetsFor(row(), 700, PEDIA_REGIONS);
-  assert.ok(excluded, "an El Qema Qalubeya warehouse still has a plan");
-  assert.deepEqual(
-    [...excluded.homeAreas].sort(),
-    ["CA1", "CA2", "CA3", "CA4", "CA6", "D11"],
-    "the local block loses Down town to Others and keeps the other six",
-  );
-  assert.equal(
-    excluded.awayAreas.length,
-    REMAINING - excluded.homeAreas.length,
-    "the national half reaches every remaining area outside the local block",
-  );
+  const plan = splitTargetsFor(row(), 700, PEDIA_REGIONS);
+  assert.ok(plan, "an El Qema Pedia row always has a plan");
+  assert.equal(plan.areas.length, IN_PLAY, "it reaches every area in play, and only those");
+  assert.equal(plan.awayAreas.length, 0, "there is no away block any more — one ladder, no halves");
+  assert.equal(new Set(plan.areas).size, plan.areas.length, "and no area appears twice");
+
   for (const area of PEDIA_OTHERS) {
-    assert.equal(excluded.awayAreas.includes(area), false, `${area} is in Others and receives nothing`);
+    assert.equal(plan.areas.includes(area), false, `${area} is in Others and takes nothing`);
   }
 
-  // 🔴 DOWN TOWN IS OUT, and that reverses the 2026-09-07 ruling ON PURPOSE. He was shown the
-  // reversal in those words on 2026-09-08 — that the Pedia organogram files Down town under Others,
-  // so excluding Others takes it out — and confirmed. The divisor is still AREAS, not reps; there
-  // are simply fewer areas. Re-adding CA5 here would restore a rule he has replaced.
+  // ── The order, and the size of the gaps ──────────────────────────────────────────────────────
+  const shares = planShares(plan, 700);
+  const at = (code: string) => shares[plan.areas.indexOf(code)];
   assert.equal(
-    excluded.awayAreas.includes("CA5"),
-    false,
-    "Down town sits in Others on the Pedia organogram, so it takes no share",
-  );
-
-  // The money still all lands somewhere — fewer areas, bigger shares, identical total.
-  const exSplit = splitStoreSalesAcrossCityAreas([row()], "2026-09", PEDIA_REGIONS);
-  const exShares = exSplit.rows.filter((r) => r.clientCode === "QM-9001");
-  assert.equal(exShares.length, REMAINING, "one row per area that remains");
-  assert.equal(
-    Number(exShares.reduce((sum, r) => sum + r.qty, 0).toFixed(9)),
+    shares.reduce((sum, share) => sum + share, 0),
     700,
-    "and the total is preserved exactly — excluding an area moves money, it never deletes any",
+    "the shares still sum back to the row EXACTLY",
   );
 
-  // 🔴 AN EMPTY SET IS THE SAFE DIRECTION. A caller whose organogram read failed must split as it
-  // always did, never strip areas out of a distribution on an outage.
+  const bottom = at("AB1");
+  const step = bottom * QEMA_PRIORITY_STEP;
+  const expected: ReadonlyArray<readonly [string, number]> = [
+    ["D11", 4], ["D12", 3], ["D13", 3], ["D14", 2], ["D15", 2],
+    ["CA1", 1], ["CA2", 1], ["CA3", 1], ["CA4", 1], ["CA6", 1],
+  ];
+  for (const [code, rungs] of expected) {
+    assert.equal(
+      Number(at(code).toFixed(9)),
+      Number((bottom + rungs * step).toFixed(9)),
+      `${code} sits exactly ${rungs} rung(s) above an unnamed area`,
+    );
+  }
+  assert.ok(at("D11") > at("D12"), "Qalubeya above Menoufia");
+  assert.ok(at("D12") > at("D14"), "Menoufia above Gharbia");
+  assert.ok(at("D14") > at("CA1"), "Gharbia above Cairo");
+  assert.ok(at("CA1") > bottom, "and Cairo above everyone else");
+
+  // 🔴 "EXCEEDING THEM, BUT WITH A VERY SMALL SCALE." The whole country must stay inside a few
+  // percent. Asserted as a RATIO rather than a pack count so it holds at any row size.
+  assert.ok(
+    at("D11") / bottom < 1.10,
+    `the top area is ${(at("D11") / bottom).toFixed(4)}x the bottom — the ladder is a tilt, not a cliff`,
+  );
+
+  // ── 🔴 THE ORIGIN NO LONGER MATTERS. Two assertions, because this is the change a later session
+  // is most likely to "fix" back by reintroducing a home block.
+  const fromAswanCity = splitTargetsFor(
+    row({ areaCode: "AB1", clientCode: "QM-9002" }), 700, PEDIA_REGIONS,
+  );
+  assert.ok(fromAswanCity);
+  assert.deepEqual(
+    [...fromAswanCity.areas],
+    [...plan.areas],
+    "a warehouse in Alexandria reaches exactly the same areas as one in Benha",
+  );
+  assert.deepEqual(
+    planShares(fromAswanCity, 700).map((share) => Number(share.toFixed(9))),
+    shares.map((share) => Number(share.toFixed(9))),
+    "and divides them identically — Benha keeps no more of its own book than Alexandria does",
+  );
+
+  // An origin sitting IN Others keeps nothing at all now.
+  const fromOthers = splitTargetsFor(row({ areaCode: "OT9", clientCode: "QM-9003" }), 700, PEDIA_REGIONS);
+  assert.ok(fromOthers, "a warehouse in an Others area still has a plan");
   assert.equal(
-    splitTargetsFor(row(), 700, NO_SPLIT_REGIONS)?.areas.length,
+    fromOthers.areas.includes("OT9"),
+    false,
+    "but it keeps none of its own sale — 'neglect others, don't add others'",
+  );
+
+  // ── 🔴 QUANTITY NO LONGER MATTERS EITHER. The 200 and 1,000 thresholds are gone; a tiny row and a
+  // huge one distribute in the same proportions.
+  const small = splitTargetsFor(row({ qty: 24 }), 24, PEDIA_REGIONS);
+  const huge = splitTargetsFor(row({ qty: 6_000 }), 6_000, PEDIA_REGIONS);
+  assert.ok(small && huge);
+  const proportions = (p: NonNullable<typeof small>, total: number) =>
+    planShares(p, total).map((share) => Number((share / total).toFixed(9)));
+  assert.deepEqual(
+    proportions(small, 24),
+    proportions(huge, 6_000),
+    "24 packs and 6,000 packs spread the same way — there are no bands left",
+  );
+
+  // ── An organogram that failed to load must not strip areas out of a distribution ─────────────
+  const noOrg = splitTargetsFor(row(), 700, NO_SPLIT_REGIONS);
+  assert.ok(noOrg);
+  assert.equal(
+    noOrg.areas.length,
     ALL_SPLIT_AREAS.length,
-    "no exclusions means the whole country, exactly as before this rule existed",
+    "an empty exclusion set spreads over the whole country rather than dropping anyone",
   );
 
-  // ── 🔴 THE EXCLUSION IS A LINE RULE, NOT A DISTRIBUTOR RULE ─────────────────────────────────
-  //
-  // It first shipped scoped to El Qema alone. Measured on August Pedia the next day, El Qema sent
-  // 0.000 packs into Others while OTHER distributors still sent 79.667 — 44.167 into Down town and
-  // 35.500 into Kafr El-Sheikh 2 — and the owner's answer was "NOT APPLIED EL QEMA RULE". His words
-  // were "the EU organogram of PEDIA LINE": an area in Others receives nothing on this line, whoever
-  // sold it. Narrowing this back to El Qema restores exactly the state he rejected.
-  const otherDistributor = splitTargetsFor(
-    row({ areaCode: "CA2", clientCode: "PS-7001", distributorCode: "PS", qty: 120 }),
-    120,
-    PEDIA_REGIONS,
-  );
-  assert.ok(otherDistributor, "a non-El-Qema Cairo warehouse still splits");
-  assert.deepEqual(
-    [...otherDistributor.homeAreas],
-    ["CA1", "CA2", "CA3", "CA4", "CA6"],
-    "Cairo's FIVE non-Others areas — Down town is skipped for every distributor, not just El Qema",
+  // ── The whole book, through the real entry point, still balances ─────────────────────────────
+  const split = splitStoreSalesAcrossCityAreas([row()], "2026-09", PEDIA_REGIONS);
+  assert.equal(split.splitRowCount, 1, "the row was split");
+  const landed = split.rows.filter((r) => r.clientCode === "QM-9001");
+  assert.equal(landed.length, IN_PLAY, "one synthetic row per area in play");
+  assert.equal(
+    Number(landed.reduce((sum, r) => sum + r.qty, 0).toFixed(6)),
+    700,
+    "and the split moves money without creating or destroying any",
   );
   assert.equal(
-    otherDistributor.awayAreas.length,
-    0,
-    "but it takes no national half: the 200-pack rule is still El Qema's alone, and these are two "
-      + "different rules that merely arrived in the same sentence",
-  );
-
-  // The exclusion is Pedia's. A CNS row ignores the set entirely — he scoped it to the Pedia
-  // organogram, and August Anti Infective is published, so neither of the other lines may move.
-  const cnsRow = splitTargetsFor(
-    row({ areaCode: "CA2", clientCode: "PS-7002", distributorCode: "PS", officialLine: "CNS", qty: 120 }),
-    120,
-    PEDIA_REGIONS,
-  );
-  assert.ok(cnsRow);
-  assert.ok(
-    cnsRow.homeAreas.includes("CA5"),
-    "CNS still spreads across all six Cairo areas — the exclusion is gated on the LINE",
-  );
-
-  // An area is excluded from receiving OTHER people's money, never from keeping its own.
-  const fromDownTown = splitTargetsFor(row({ areaCode: "CA5", clientCode: "QM-9020" }), 700, PEDIA_REGIONS);
-  assert.ok(fromDownTown, "a warehouse sitting IN an Others area still has a plan");
-  assert.ok(
-    fromDownTown.homeAreas.includes("CA5"),
-    "the origin keeps its own share — otherwise its home half would have nowhere at all to go",
-  );
-
-  // ── STEP 3 — 1,000 PACKS AND ABOVE SPREAD FLAT, owner 2026-09-09 ────────────────────────────
-  //
-  // Every area gets the SAME amount. That is the whole content of the step, and it is checked by
-  // counting DISTINCT shares rather than by comparing against an expected figure: a test that
-  // asserts "the home share is X and the away share is Y" passes just as happily on a 50/50 split
-  // with the right X and Y, which is the exact wrong answer this step replaces.
-  const flat = splitTargetsFor(row(), 5_600, PEDIA_REGIONS);
-  assert.ok(flat, "a 5,600-pack Benha warehouse has a plan");
-  assert.equal(flat.areas.length, REMAINING, "it reaches every area Pedia has, and no Others");
-  const flatShares = planShares(flat, 5_600);
-  const distinct = new Set(flatShares.map((share) => Number(share.toFixed(6))));
-  assert.equal(
-    distinct.size,
-    1,
-    `step 3 pays every area the same, so there is ONE distinct share — found ${distinct.size}: `
-    + [...distinct].join(", "),
-  );
-  assert.equal(
-    Number([...distinct][0].toFixed(6)),
-    Number((5_600 / REMAINING).toFixed(6)),
-    "and that share is the quantity over the number of areas",
-  );
-  assert.equal(flatShares.reduce((sum, share) => sum + share, 0), 5_600, "the shares still sum EXACTLY");
-
-  // The origin is one area among many now, not the keeper of a half. This is the assertion that
-  // fails if step 3 is ever implemented as a wider step 2.
-  const qalubeyaShare = flatShares[flat.areas.indexOf("D11")];
-  assert.equal(
-    Number(qalubeyaShare.toFixed(6)),
-    Number((5_600 / REMAINING).toFixed(6)),
-    "Qalubeya takes one equal share of its own 5,600 packs, not 2,800",
-  );
-  assert.ok(
-    qalubeyaShare < 5_600 * WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION / flat.homeAreas.length,
-    "and strictly less than what step 2 would have left it",
-  );
-
-  // Others stay out at this band too — "وليس Others", in his own words on the same line.
-  for (const area of PEDIA_OTHERS) {
-    assert.equal(
-      flat.areas.includes(area),
-      false,
-      `${area} is in Others, so step 3 does not reach it either`,
-    );
-  }
-
-  // The boundary, both sides of it. 999 is still step 2; 1,000 is already step 3.
-  const lastOfBandTwo = splitTargetsFor(row(), 999, PEDIA_REGIONS);
-  assert.ok(lastOfBandTwo);
-  assert.equal(lastOfBandTwo.homeFraction, 0.5, "999 packs is the last quantity that keeps half at home");
-  const firstOfBandThree = splitTargetsFor(row(), 1_000, PEDIA_REGIONS);
-  assert.ok(firstOfBandThree);
-  assert.equal(
-    new Set(planShares(firstOfBandThree, 1_000).map((share) => Number(share.toFixed(6)))).size,
-    1,
-    "1,000 packs is the first quantity that spreads flat",
-  );
-
-  // A warehouse whose own governorate is bigger does NOT get a bigger share of the country. Alex
-  // holds three areas to Qalubeya's block of six, and both come out at the same per-area figure.
-  const alexFlat = splitTargetsFor(row({ areaCode: "AB1", clientCode: "QM-9030" }), 5_600, PEDIA_REGIONS);
-  assert.ok(alexFlat);
-  const alexShares = planShares(alexFlat, 5_600);
-  assert.equal(
-    Number(alexShares[0].toFixed(6)),
-    Number(flatShares[0].toFixed(6)),
-    "step 3 is blind to the size of the origin's own block — every area, everywhere, the same",
-  );
-
-  // 🔴 THE TWO CALLERS MUST AGREE. splitTargetsFor builds the plan the Matrix applies and
-  // storeSplitDetailRows rebuilds the same arithmetic for the Store Split sheet. They each held
-  // their own `0.5` while the fraction was a constant; now that it depends on the QUANTITY, one
-  // helper answers for both. A second copy here would be a sheet that contradicts the Matrix.
-  assert.equal(warehouseHomeFraction(200, 6, 0), 1, "no away block means everything stays home");
-  assert.equal(warehouseHomeFraction(700, 6, 31), 0.5, "step 2 keeps half");
-  assert.equal(warehouseHomeFraction(1_000, 6, 31), 6 / 37, "step 3 keeps only its headcount's worth");
-  assert.equal(warehouseHomeFraction(1_000, 3, 34), 3 / 37, "which is what makes every area equal");
-
-  // ── THE UPPER EGYPT BLOCK — owner 2026-09-09 ────────────────────────────────────────────────
-  //
-  //   "the rule will be the same as cairo + qalubeya but for upper egypt, if any city in upper egypt
-  //    exceed that to be distributed on all upper egypt cities except the others"
-  //
-  // Same SHAPE as Cairo + Qalubeya, one deliberate difference: it is gated on the 200-pack step.
-  // Asked directly whether it holds at every step, he answered "only above 200 packs". So the two
-  // rules read identically in his sentence and behave differently below 201, which is the thing a
-  // later session will most want to "tidy" into one map. It is not a tidy-up; it is his answer.
-  const ueSmall = splitTargetsFor(row({ areaCode: "UE5", clientCode: "QM-9040", qty: 150 }), 150, PEDIA_REGIONS);
-  assert.ok(ueSmall, "a small Sohag warehouse still has a plan");
-  assert.deepEqual(
-    [...ueSmall.homeAreas].sort(),
-    ["UE5", "UE6"],
-    "at 150 packs a Sohag warehouse stays in Sohag's own two areas — the block does NOT widen",
-  );
-  assert.equal(ueSmall.awayAreas.length, 0, "and nothing leaves the governorate");
-
-  const ueBig = splitTargetsFor(row({ areaCode: "UE5", clientCode: "QM-9040", qty: 700 }), 700, PEDIA_REGIONS);
-  assert.ok(ueBig);
-  assert.deepEqual(
-    [...ueBig.homeAreas].sort(),
-    ["UE1", "UE2", "UE3", "UE4", "UE5", "UE6", "UE7"],
-    "at 700 the local block IS Upper Egypt — all seven areas the organogram puts in the region",
-  );
-  assert.equal(ueBig.group, `${UPPER_EGYPT_BLOCK_LABEL} + nationwide`, "and the sheet names the rule");
-  assert.equal(
-    ueBig.awayAreas.length,
-    REMAINING - ueBig.homeAreas.length,
-    "the national half reaches every remaining area outside the block, and none of it twice",
-  );
-  for (const area of ueBig.homeAreas) {
-    assert.equal(ueBig.awayAreas.includes(area), false, `${area} is local, so it is never ALSO paid nationally`);
-  }
-
-  // Half stays across the seven, evenly. Sohag keeps a seventh of the home half, not all of it.
-  const ueShares = planShares(ueBig, 700);
-  assert.equal(ueShares.reduce((sum, share) => sum + share, 0), 700, "the shares sum exactly");
-  const ueHome = ueShares.slice(0, ueBig.homeAreas.length);
-  for (const share of ueHome) {
-    assert.equal(
-      Number(share.toFixed(6)),
-      Number((350 / 7).toFixed(6)),
-      "the home half divides evenly across Upper Egypt — Sohag keeps no more than Minia",
-    );
-  }
-
-  // 🔴 THE BLOCK IS WHATEVER THE ORGANOGRAM SAYS, and these two prove it is not the `UE*` prefix.
-  // Qena 2 carries a UE code and sits in Others, so it takes nothing. Beni Suef carries a UE code
-  // and the organogram files it under Giza, so it is not in the block at all. Hard-coding the codes
-  // would look correct and be wrong about both.
-  assert.equal(ueBig.homeAreas.includes("UE8"), false, "Qena 2 is in Others — no share, home or away");
-  assert.equal(ueBig.awayAreas.includes("UE8"), false, "and not from the national half either");
-  assert.equal(ueBig.homeAreas.includes("UE9"), false, "Beni Suef is filed under Giza, so it is not in the block");
-  assert.ok(ueBig.awayAreas.includes("UE9"), "it takes an ordinary national share like any other area");
-
-  // A warehouse OUTSIDE the region is untouched by this rule.
-  const deltaBig = splitTargetsFor(row({ areaCode: "D14", clientCode: "QM-9041", qty: 700 }), 700, PEDIA_REGIONS);
-  assert.ok(deltaBig);
-  assert.deepEqual(
-    [...deltaBig.homeAreas].sort(),
-    ["D14", "D15"],
-    "Tanta keeps its own governorate — the Upper Egypt block reaches only warehouses inside it",
-  );
-
-  // An organogram that failed to load must split exactly as before, never strip a region out.
-  const ueNoOrg = splitTargetsFor(row({ areaCode: "UE5", clientCode: "QM-9040", qty: 700 }), 700, NO_SPLIT_REGIONS);
-  assert.ok(ueNoOrg);
-  assert.deepEqual(
-    [...ueNoOrg.homeAreas].sort(),
-    ["UE5", "UE6"],
-    "no organogram means no block — the safe direction is the governorate the money was already in",
-  );
-
-  // Band 3 is flat, so the block cannot privilege Upper Egypt there either.
-  const ueFlat = splitTargetsFor(row({ areaCode: "UE5", clientCode: "QM-9040", qty: 5_000 }), 5_000, PEDIA_REGIONS);
-  assert.ok(ueFlat);
-  assert.equal(
-    new Set(planShares(ueFlat, 5_000).map((share) => Number(share.toFixed(6)))).size,
-    1,
-    "at 1,000 and above every area is equal again, Upper Egypt included",
+    Number(landed.reduce((sum, r) => sum + r.salesValue, 0).toFixed(6)),
+    189_000,
+    "value likewise",
   );
 
   // ── 🔒 EL QEMA IS PEDIA ONLY — owner golden rule, 2026-09-08, in those words ─────────────────
   //
   // Their whole book is Lacto Advanced 1 and 2, both Pedia. An El Qema row arriving on another line
-  // falls back to the plain city split rather than taking a rule he scoped to Pedia — which also
-  // means this change can never reach August Anti Infective, a published and announced month.
+  // falls back to the plain city split, which also keeps every one of these rules off the published
+  // August Anti Infective.
   for (const line of ["CNS", "Anti Infective"]) {
     const otherLine = splitTargetsFor(row({ officialLine: line }), 5_000, PEDIA_REGIONS);
     assert.ok(otherLine, `El Qema on ${line} still resolves a plan`);
-    assert.equal(
-      otherLine.awayAreas.length,
-      0,
-      `El Qema on ${line} takes NO national split — the 200-pack rule is Pedia only`,
-    );
     assert.deepEqual(
       [...otherLine.areas],
       ["D11"],
-      `and ${line} falls back to Qalubeya's ordinary one-area city split`,
+      `${line} falls back to Qalubeya's ordinary one-area city split, never the ladder`,
     );
   }
 
-  // And the threshold decides WHERE a store's money goes — it never makes a pharmacy into a store.
+  // ── And none of this makes a pharmacy into a store ───────────────────────────────────────────
   assert.equal(
     isSplitEligible(row({ clientCode: "QM-9005", clientName: "صيدلية النور" }), "2026-09", 5_000),
     false,
     "5,000 packs to a pharmacy is still a pharmacy",
+  );
+  assert.ok(isWholesaleOnlyDistributor("QM"), "every El Qema customer is a warehouse");
+  assert.ok(WHOLESALE_ONLY_DISTRIBUTORS.has("QM"), "and the registry says so");
+  assert.ok(
+    isStoreCustomerForPeriod(BASE.clientName, BASE.clientCode, "QM", "2026-09", "Pedia"),
+    "so an El Qema customer is a store for the split, whatever its name reads like",
   );
 }
