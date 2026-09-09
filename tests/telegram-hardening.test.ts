@@ -4,7 +4,9 @@ import { currentCairoMinutesOfDay, currentCairoTimeHM } from "../src/lib/i18n/fo
 import { defaultTelegramModulePolicies, defaultTelegramPolicyFor } from "../src/lib/notifications/telegram-governance.ts";
 import { GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "../src/lib/notifications/telegram-template-types.ts";
 import { renderTelegramTemplateText } from "../src/lib/notifications/telegram-template-placeholders.ts";
-import { hashTelegramToken, telegramWebhookSecretToken } from "../src/lib/notifications/telegram.ts";
+import { readFileSync } from "node:fs";
+
+import { TELEGRAM_CONNECT_TOKEN_TTL_MINUTES, hashTelegramToken, telegramWebhookSecretToken } from "../src/lib/notifications/telegram.ts";
 
 export function runTelegramHardeningTests() {
   // ── Webhook secret token is always Telegram-safe ([A-Za-z0-9_-], 1-256) ─────────
@@ -107,4 +109,39 @@ export function runTelegramHardeningTests() {
     (error: unknown) => error instanceof TelegramTemplateError,
     "Strict mode (no requiredPlaceholders) must still throw on missing variable",
   );
+
+  // ── Both ways of issuing a connect link share ONE window ───────────────────────
+  //
+  // The portal link used to last 15 minutes while the emailed one lasted 48 hours, and the short
+  // window is what killed adoption: measured on production 2026-09-09, all EIGHT pending rows had
+  // expired unused against two people ever connected, every one carrying the 15-minute stamp.
+  // Fifteen minutes assumes the link is used where it is shown, and it never is — the employee
+  // sees it on a desktop and needs Telegram on his phone.
+  //
+  // Pinned as a FLOOR, not an exact figure, so the window can be tuned without a red test, but
+  // cannot silently collapse back to minutes. The two issuers are asserted to read the SAME
+  // constant, because a second literal is how they drifted apart in the first place.
+  assert.ok(
+    TELEGRAM_CONNECT_TOKEN_TTL_MINUTES >= 60,
+    "a connect link must outlive the walk to a phone — anything under an hour is the bug this replaces",
+  );
+  {
+    const settings = readFileSync("src/lib/notifications/settings.ts", "utf8");
+    const onboarding = readFileSync("src/lib/notifications/telegram-onboarding.ts", "utf8");
+    assert.match(
+      settings,
+      /TELEGRAM_CONNECT_TOKEN_TTL_MINUTES \* 60 \* 1000/,
+      "the in-portal issuer must read the shared window, never its own literal",
+    );
+    assert.doesNotMatch(
+      settings,
+      /15 \* 60 \* 1000/,
+      "the 15-minute literal must be gone from the in-portal issuer, not merely shadowed",
+    );
+    assert.match(
+      onboarding,
+      /const DEFAULT_TTL_MINUTES = TELEGRAM_CONNECT_TOKEN_TTL_MINUTES;/,
+      "the email issuer must read the same constant, so the two windows cannot drift again",
+    );
+  }
 }
