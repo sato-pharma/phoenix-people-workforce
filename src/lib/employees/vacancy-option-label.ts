@@ -20,12 +20,30 @@ export type VacancyOptionLabelInput = {
   regionName?: string | null;
 };
 
+export type VacancyOptionLabelOptions = {
+  /**
+   * Drop the position from the row. The picker only offers vacancies for the
+   * position already chosen two fields above it, so repeating that on every row
+   * buys nothing and costs the width that pushed the panel into a sideways
+   * scroll -- 708px of row inside a 491px panel, measured 2026-09-09.
+   *
+   * It is NOT unconditionally redundant, which is why this is a flag and not a
+   * deletion: with a Title typed and no Job Position picked, the picker's own
+   * filter matches EVERY open vacancy on the line, so the list then holds a mix
+   * of positions and the position is the half that tells the rows apart. The
+   * caller decides, by looking at what it is about to render.
+   */
+  omitPositionTitle?: boolean;
+};
+
 function clean(value: string | null | undefined): string {
   return String(value ?? "").trim();
 }
 
 /**
- * `Behira 1 (Alex-BHR) - District Sales Manager - Manager: Hany Saad Mohamed Omar`
+ * `Behira 1 (Alex-BHR) - District Sales Manager - Manager: Hany Saad Mohamed Omar`,
+ * or `Behira 1 (Alex-BHR) - Manager: Hany Saad Mohamed Omar` under
+ * `omitPositionTitle`.
  *
  * The region is appended only when it says something the area does not: a
  * single-area district ("Cairo" inside region "Cairo") would otherwise print
@@ -33,10 +51,13 @@ function clean(value: string | null | undefined): string {
  * vacancy with no manager yet reads `Behira 1 (Alex-BHR) - District Sales
  * Manager` rather than trailing an empty "Manager:".
  */
-export function formatVacancyOptionLabel(vacancy: VacancyOptionLabelInput): string {
+export function formatVacancyOptionLabel(
+  vacancy: VacancyOptionLabelInput,
+  options: VacancyOptionLabelOptions = {},
+): string {
   const areaName = clean(vacancy.areaName);
   const regionName = clean(vacancy.regionName);
-  const positionTitle = clean(vacancy.positionTitle);
+  const positionTitle = options.omitPositionTitle ? "" : clean(vacancy.positionTitle);
   const managerName = clean(vacancy.managerName);
 
   const sameAsArea = regionName.toLowerCase() === areaName.toLowerCase();
