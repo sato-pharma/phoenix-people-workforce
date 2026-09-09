@@ -35,12 +35,37 @@ export function crmAccountSetupHref(hrId?: string | null): string {
 }
 
 /**
+ * Where the CV downloads from — the same-origin route, gated on the session rather than on a token
+ * in the link (src/lib/employees/employee-cv.ts).
+ *
+ * Spelled out here rather than imported from employee-cv.ts on purpose: this file deliberately
+ * imports nothing but a type, so every assertion about what the notice says runs for real in a
+ * plain node test instead of by reading the source. The two are pinned to each other by
+ * tests/employee-cv.test.ts rather than by a shared import.
+ */
+export function crmAccountSetupCvHref(hrId?: string | null): string {
+  return `/api/employees/${encodeURIComponent(String(hrId ?? "").trim())}/cv`;
+}
+
+export const CRM_ACCOUNT_SETUP_CV_CTA_LABEL = "Download the CV" as const;
+
+/** What the CV row says when there is no CV on file. Stated, never blank — see NOT_RECORDED. */
+export const NO_CV_ON_FILE = "Not attached" as const;
+
+/**
  * The facts about one new hire that the notice carries. Every field the owner named on 2026-09-07 —
  * line, hiring date, region, area, manager, work email, mobile — plus the person's own name and HR
  * id, which is what makes the rest addressable.
+ *
+ * `cvFileName` joined them on 2026-09-09, when the owner asked for the CV to be attachable at hire
+ * and downloadable from this notice. It is the FILENAME rather than a boolean because the reader
+ * decides whether to open it from what it is called — "Ahmed-Hassan-CV.pdf" and "scan_0031.jpg"
+ * are different propositions — and because a name is also the only signal in the notice that the
+ * right document was attached.
  */
 export type CrmAccountSetupSubject = {
   areaName: string | null;
+  cvFileName?: string | null;
   displayName: string;
   hireDate: string | null;
   hrId: string;
@@ -51,6 +76,11 @@ export type CrmAccountSetupSubject = {
   regionName: string | null;
   workEmail: string | null;
 };
+
+/** Whether this notice has a CV to offer. */
+export function hasCvOnFile(subject: CrmAccountSetupSubject): boolean {
+  return String(subject.cvFileName ?? "").trim().length > 0;
+}
 
 /**
  * A missing value prints as this rather than as an empty cell.
@@ -92,14 +122,28 @@ export function crmAccountSetupTitle(subject: CrmAccountSetupSubject): string {
 /**
  * The one-line body. It says what happened, who it is about, and what is being asked for — in that
  * order, because it is read on a phone where the second sentence may not be read at all.
+ *
+ * THE CV IS NAMED HERE, NOT ONLY IN THE DETAIL ROWS, AND THAT IS NOT DUPLICATION. The in-app
+ * renderer caps a notification at its FIRST EIGHT detail rows (notificationDetails in
+ * communication/metrics.ts). This notice already carries nine, so the CV row — which goes last —
+ * never reaches the bell menu at all. The email shows every row and gets a download button; in-app
+ * this sentence is the only thing that tells the reader a CV exists, and the notice's own link
+ * lands him on the screen the download button is on.
  */
 export function crmAccountSetupMessage(subject: CrmAccountSetupSubject): string {
-  return `${subjectLabel(subject)} has been added to the employee master. Open the New Hire CRM Setup tab to record the CRM username and CRM code for this person, or mark that no CRM account is needed.`;
+  const cv = hasCvOnFile(subject)
+    ? ` Their CV (${String(subject.cvFileName).trim()}) is on the record, and the same screen downloads it.`
+    : "";
+  return `${subjectLabel(subject)} has been added to the employee master. Open the New Hire CRM Setup tab to record the CRM username and CRM code for this person, or mark that no CRM account is needed.${cv}`;
 }
 
 /**
  * The detail rows, in the order the owner listed them. Used for the email's metric table and for
- * the in-app notification's metadata, so both carry the same seven facts and can never drift.
+ * the in-app notification's metadata, so both carry the same facts and can never drift.
+ *
+ * The CV row goes LAST and is always present — `Not attached` when there is none. A row that
+ * disappeared when empty would make "this hire has no CV" indistinguishable from "this notice
+ * predates the CV feature", and the first is something HR should go and fix.
  */
 export function crmAccountSetupDetails(subject: CrmAccountSetupSubject): Array<{ label: string; value: string }> {
   return [
@@ -112,12 +156,16 @@ export function crmAccountSetupDetails(subject: CrmAccountSetupSubject): Array<{
     { label: "Manager", value: stated(subject.managerName) },
     { label: "Work email", value: stated(subject.workEmail) },
     { label: "Mobile number", value: stated(subject.mobileNumber) },
+    { label: "CV", value: hasCvOnFile(subject) ? String(subject.cvFileName).trim() : NO_CV_ON_FILE },
   ];
 }
 
 /** The email's opening paragraph — the same facts as the body, addressed to a reader with time. */
 export function crmAccountSetupEmailSummary(subject: CrmAccountSetupSubject): string {
-  return `${subjectLabel(subject)} has just been added to the employee master and has no iReports360 (CRM) account recorded yet. Until the CRM username and CRM code are entered against this employee, their visits and check-ins cannot be matched to them and their field work will read as nothing at all. The details below are everything on the employee record as it stands now.`;
+  const cv = hasCvOnFile(subject)
+    ? ` Their CV is attached to the employee record as ${String(subject.cvFileName).trim()}, and the second button below downloads it.`
+    : "";
+  return `${subjectLabel(subject)} has just been added to the employee master and has no iReports360 (CRM) account recorded yet. Until the CRM username and CRM code are entered against this employee, their visits and check-ins cannot be matched to them and their field work will read as nothing at all.${cv} The details below are everything on the employee record as it stands now.`;
 }
 
 export const CRM_ACCOUNT_SETUP_CTA_LABEL = "Enter the CRM username and code" as const;

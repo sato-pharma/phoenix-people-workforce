@@ -208,6 +208,25 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/deductions/permissions.ts",
   "src/lib/employee-360/access.ts",
   "src/lib/employees/access-provisioning.ts",
+  // Names both seats in `employeeCvReaderRoles`, added 2026-09-09 with the owner's instruction to
+  // let a new hire's CV be attached to the master record and downloaded from the notice. Reviewed
+  // verdict: it GRANTS reach, and it is listed for exactly that reason — it is the string that
+  // decides HR Advisory and HR Operations may open an employee's CV.
+  //
+  // It withholds nothing and takes nothing away. Both seats already hold `employees:read` —
+  // workforce_insight for HR Advisory, people_records for HR Operations — so reading one document
+  // filed on the employee master is inside both job descriptions rather than beside them. The
+  // owner named all four seats himself when asked who should be able to open the link.
+  //
+  // WRITING IS NOT IN THIS SET AND MUST NOT JOIN IT. Attaching, replacing and removing a CV rides
+  // `employees:update`, which people_records holds and workforce_insight deliberately does not
+  // (her boundary is "may not terminate or destroy a record"). So HR Advisory can read this
+  // document and cannot change it, and that split is the composed matrix's, not this file's.
+  //
+  // A named set rather than a permission resource, on the same reasoning as
+  // companyVacationReportReaderRoles: the SFE Manager holds no `employees` grant at all, and a
+  // permission-shaped gate would refuse the one person the notice is addressed to.
+  "src/lib/employees/employee-cv.ts",
   "src/lib/excuses/service.ts",
   "src/lib/hiring-documents/service.ts",
   // Names HR Advisory in resolvePayslipCenterAudience, added 2026-09-01. Reviewed verdict: it

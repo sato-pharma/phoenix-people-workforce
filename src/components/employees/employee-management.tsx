@@ -30,6 +30,7 @@ import {
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import { EmployeeImportReview } from "@/components/employees/employee-import-review";
+import { EmployeeCvManager, EmployeeCvPicker, type StagedCv } from "@/components/employees/employee-cv-controls";
 import { EmployeePhotoManager } from "@/components/employees/employee-photo-manager";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import type { EmployeeImportValidationResult } from "@/lib/imports/employee-import-types";
@@ -94,6 +95,13 @@ type EmployeeSaveResponse = EmployeeDirectoryData & {
       status: "created" | "failed" | "skipped";
     }>;
     skipped: number;
+  };
+  /** What happened to the CV on a CREATE. Absent on an edit, and on a create that carried none. */
+  cvAttachment?: {
+    attached: boolean;
+    fileName: string | null;
+    source: "upload" | "recruitment" | null;
+    warnings: string[];
   };
 };
 
@@ -820,6 +828,9 @@ export function EmployeeManagement({
   const [editingHrId, setEditingHrId] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<EmployeeNotice | null>(null);
   const [isFormOpen, setIsFormOpen] = React.useState(false);
+  // The CV chosen on the Add Employee form. Already uploaded to the staging area by the time this
+  // holds anything — all that travels with the save is the draft id.
+  const [stagedCv, setStagedCv] = React.useState<StagedCv | null>(null);
   // Set when a recruiter arrives from an application to hire someone. Drives the pre-fill below and
   // the way back afterwards, so the new HR_ID does not have to be carried across by hand.
   const searchParams = useSearchParams();
@@ -1306,6 +1317,10 @@ export function EmployeeManagement({
 
   function closeForm() {
     setIsFormOpen(false);
+    // Dropped on close, so re-opening the form for the NEXT hire cannot silently carry the
+    // previous person's CV across. The staged object itself is swept a day later
+    // (purgeStaleStagedCvs) rather than deleted here — a discarded form is often re-opened.
+    setStagedCv(null);
   }
 
   function startResignation(employee: EmployeeDirectoryRow) {
@@ -1433,7 +1448,20 @@ export function EmployeeManagement({
       }
 
       const response = await fetch("/api/employees", {
-        body: JSON.stringify({ employee: formToPayload(form, editingHrId) }),
+        body: JSON.stringify({
+          // Siblings of `employee`, never fields inside it — see the POST handler for why.
+          // Both are sent on a CREATE only: an edit routes through the CV manager, which writes
+          // directly, and sending a stale draft id here would re-attach a file on every save.
+          ...(editingHrId
+            ? {}
+            : {
+              ...(stagedCv ? { cvDraftFileName: stagedCv.fileName, cvDraftId: stagedCv.draftId } : {}),
+              // When the hire started from an application and nothing was chosen by hand, the
+              // server copies the candidate's own CV across.
+              ...(hireApplicationId ? { fromApplicationId: hireApplicationId } : {}),
+            }),
+          employee: formToPayload(form, editingHrId),
+        }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -1453,6 +1481,17 @@ export function EmployeeManagement({
       };
       setData(payload);
       const accessProvisioning = payload.accessProvisioning;
+      // A CV that was chosen and did NOT land has to be said at the moment of the save. HR closes
+      // this dialog and does not come back, so a silent miss is discovered weeks later by the
+      // person who needed the document — which is the whole failure this feature exists to remove.
+      const cv = payload.cvAttachment;
+      const cvNote = !cv
+        ? ""
+        : cv.attached
+          ? ` CV filed: ${cv.fileName}${cv.source === "recruitment" ? " (copied from the candidate record)." : "."}`
+          : cv.warnings.length > 0
+            ? ` The CV was NOT attached — ${cv.warnings.join(" ")}`
+            : "";
       const noticeText = editingHrId
         ? "Employee updated."
         : accessProvisioning && accessProvisioning.created > 0
@@ -1462,13 +1501,14 @@ export function EmployeeManagement({
             : accessProvisioning && accessProvisioning.skipped > 0
               ? "Employee created. Users & Access account was not created because the employee is not active in the directory."
               : "Employee created.";
+      const createdNotice = `${noticeText}${cvNote}`;
 
       setNotice(
         editingHrId
           ? noticeText
           : (
             <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <span>{noticeText}</span>
+              <span>{createdNotice}</span>
               <span className="flex flex-wrap items-center gap-2">
                 {hireApplicationId ? (
                   // The way back. Carries the HR_ID that was just generated, so the last step of a
@@ -2341,6 +2381,11 @@ export function EmployeeManagement({
                 hrId={masterDetailsEmployee.hrId}
                 key={masterDetailsEmployee.hrId}
               />
+              {/* The CV lives beside the photo because they are the same kind of thing: two files
+                  hanging off one master record, both stored privately and both read through a
+                  route rather than a URL. It renders nothing at all for a reader without the
+                  grant — see EmployeeCvManager. */}
+              <EmployeeCvManager hrId={masterDetailsEmployee.hrId} key={`cv-${masterDetailsEmployee.hrId}`} />
               {[
                 {
                   title: "Identity",
@@ -3067,6 +3112,22 @@ export function EmployeeManagement({
                     value={editingHrId ? "Updated on save" : "Created on save"}
                   />
                 </div>
+              </div>
+
+              {/* The CV. Two different controls, because the two cases are different: an existing
+                  record can be read back and replaced, while a record being CREATED has nothing to
+                  read and instead stages the file so the save can attach it before the SFE
+                  Manager's notice is composed (src/lib/employees/employee-cv.ts). */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-phx-ink-soft" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-phx-ink-2">CV</h3>
+                </div>
+                {editingHrId ? (
+                  <EmployeeCvManager hrId={editingHrId} />
+                ) : (
+                  <EmployeeCvPicker onChange={setStagedCv} staged={stagedCv} />
+                )}
               </div>
 
               {/* Payroll Information Note */}

@@ -1492,6 +1492,7 @@ import { runSalesUploadReceiptConfidentialityTests } from "./sales-upload-receip
 import { runRetentionRiskDetectorTests } from "./retention-risk-detector.test.ts";
 import { runRetentionRiskNotifyTests } from "./retention-risk-notify.test.ts";
 import { runCrmAccountSetupTests } from "./crm-account-setup.test.ts";
+import { runEmployeeCvTests } from "./employee-cv.test.ts";
 import { runHrbpTerritoryManagementAccessTests } from "./hrbp-territory-management-access.test.ts";
 
 import { runAgentsLongHooksCiteDocsTests } from "./agents-long-hooks-cite-docs.test.ts";
@@ -4843,6 +4844,10 @@ await runTest(
 await runTest(
   "new hire CRM account setup (the notice carries all seven facts, states a blank instead of dropping it, is email + in-app only, and fires on the CREATE path alone)",
   runCrmAccountSetupTests,
+);
+await runTest(
+  "employee CV on the master record (the SFE Manager can open the link he is sent, the CV is filed BEFORE the notice is composed, and the bucket is private)",
+  runEmployeeCvTests,
 );
 await runTest(
   "attendance deduction cancels (full-day leave, CRM leave and a CRM field visit cancel the charge; a half-day vacation is judged on the worked half, never waived)",

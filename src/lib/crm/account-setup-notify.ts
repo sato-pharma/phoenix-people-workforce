@@ -17,6 +17,7 @@
  */
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { getEmployeeCvFileNames } from "@/lib/employees/employee-cv";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { logError } from "@/lib/observability/log";
 import { resolveNotificationPersonRecipients } from "@/lib/notifications/role-recipients";
@@ -31,6 +32,9 @@ import {
   CRM_ACCOUNT_SETUP_AUDIENCE,
   CRM_ACCOUNT_SETUP_CHANNELS,
   CRM_ACCOUNT_SETUP_CTA_LABEL,
+  CRM_ACCOUNT_SETUP_CV_CTA_LABEL,
+  crmAccountSetupCvHref,
+  hasCvOnFile,
   CRM_ACCOUNT_SETUP_EVENT_TYPE,
   CRM_ACCOUNT_SETUP_MODULE,
   crmAccountSetupDetails,
@@ -115,7 +119,12 @@ export async function openAndAnnounceCrmAccountSetup(input: {
   });
   warnings.push(...opened.warnings);
 
-  const subjects: CrmAccountSetupSubject[] = inScope.map((row) => subjectFromEmployee(row));
+  // The CV filenames for this batch, in one query. Read HERE rather than inside subjectFromEmployee
+  // so the notice, the queue and the screen all show the same name from the same source.
+  const cvNames = await getEmployeeCvFileNames(inScope.map((row) => row.hrId));
+  const subjects: CrmAccountSetupSubject[] = inScope.map((row) =>
+    subjectFromEmployee(row, cvNames.get(canonicalHrIdKey(row.hrId) ?? "") ?? null),
+  );
 
   const audience = await resolveNotificationPersonRecipients(
     CRM_ACCOUNT_SETUP_AUDIENCE,
@@ -145,6 +154,9 @@ export async function openAndAnnounceCrmAccountSetup(input: {
   for (const subject of subjects) {
     const details = crmAccountSetupDetails(subject);
     const href = crmAccountSetupHref(subject.hrId);
+    // Owner instruction 2026-09-09: the notice carries a link the CV downloads from. Offered ONLY
+    // when there is one — a button that answers 404 teaches the reader to stop trusting the button.
+    const cvHref = hasCvOnFile(subject) ? crmAccountSetupCvHref(subject.hrId) : null;
 
     try {
       // createSystemNotificationForRecipients, NOT a loop over createSystemNotification: looping
@@ -164,6 +176,11 @@ export async function openAndAnnounceCrmAccountSetup(input: {
             ctaLabel: CRM_ACCOUNT_SETUP_CTA_LABEL,
             metrics: details.map((detail) => ({ label: detail.label, value: detail.value })),
             notificationType: "general",
+            // The SECOND button, beside "Enter the CRM username and code". The primary stays the
+            // thing being asked for; the CV is offered alongside it, which is why it renders in
+            // the quieter "secondary" tone (see secondaryActionFor in notifications/email.ts).
+            secondaryCtaHref: cvHref,
+            secondaryCtaLabel: cvHref ? CRM_ACCOUNT_SETUP_CV_CTA_LABEL : null,
             subject: `New employee added — CRM account needed for ${subjectLabel(subject)}`,
             summary: crmAccountSetupEmailSummary(subject),
             title: crmAccountSetupTitle(subject),
