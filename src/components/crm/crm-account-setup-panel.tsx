@@ -2,10 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Loader2, Search, UserPlus } from "lucide-react";
+import { CheckCircle2, Download, Loader2, Search, UserPlus } from "lucide-react";
 
 import {
+  CRM_ACCOUNT_SETUP_CV_CTA_LABEL,
+  crmAccountSetupCvHref,
   crmAccountSetupDetails,
+  hasCvOnFile,
   NOT_RECORDED,
   type CrmAccountSetupSubject,
 } from "@/lib/crm/account-setup-messages";
@@ -54,6 +57,33 @@ function DetailGrid({ subject }: { subject: CrmAccountSetupSubject }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+/**
+ * The CV, when there is one — the same download the notice's second button opens.
+ *
+ * A plain anchor, not a fetch: the route answers with a Content-Disposition, so the browser saves
+ * the file and this component never has to hold several megabytes in memory to hand them straight
+ * back. `download` is not set on purpose — the server names the file, including when the name is
+ * Arabic, and letting the attribute override it would flatten that.
+ *
+ * Renders NOTHING when no CV is on file. The DetailGrid above already says "CV — Not attached", so
+ * an empty, disabled button here would say it twice and offer an action that cannot be taken.
+ */
+function CvDownload({ subject }: { subject: CrmAccountSetupSubject }) {
+  if (!hasCvOnFile(subject)) return null;
+  return (
+    <a
+      className="mt-4 inline-flex h-9 items-center gap-2 border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+      href={crmAccountSetupCvHref(subject.hrId)}
+      rel="noreferrer"
+    >
+      <Download aria-hidden="true" className="h-3.5 w-3.5" />
+      {/* The filename is shown, never truncated — it wraps. The owner's ellipsis ban is absolute,
+          and the name is how the reader knows which document this is before opening it. */}
+      <span className="break-all text-left">{`${CRM_ACCOUNT_SETUP_CV_CTA_LABEL} — ${String(subject.cvFileName).trim()}`}</span>
+    </a>
   );
 }
 
@@ -135,6 +165,7 @@ function PendingCard({
 
       <div className="mt-4 border-t border-slate-100 pt-4">
         <DetailGrid subject={task.subject} />
+        <CvDownload subject={task.subject} />
       </div>
 
       <div className="mt-4 border-t border-slate-100 pt-4">

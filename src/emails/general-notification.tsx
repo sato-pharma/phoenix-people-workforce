@@ -9,6 +9,8 @@ import {
 
 export type GeneralNotificationEmailProps = {
   action?: PhoenixEmailAction;
+  /** A second button beside the first. See PhoenixEmailLayoutProps.secondaryAction. */
+  secondaryAction?: PhoenixEmailAction;
   closingText?: string;
   greeting?: string;
   metadataRows?: PhoenixEmailMetadataRow[];
@@ -35,6 +37,7 @@ export function GeneralNotificationEmail(props: GeneralNotificationEmailProps) {
 export function renderGeneralNotificationEmailHtml(props: GeneralNotificationEmailProps) {
   return renderPhoenixEmailHtml({
     action: props.action,
+    secondaryAction: props.secondaryAction,
     bodyHtml: bodyHtml(props),
     metadataRows: props.metadataRows,
     previewText: props.previewText ?? props.summary,
@@ -47,6 +50,7 @@ export function renderGeneralNotificationEmailHtml(props: GeneralNotificationEma
 export function renderGeneralNotificationEmailText(props: GeneralNotificationEmailProps) {
   return renderPhoenixEmailText({
     action: props.action,
+    secondaryAction: props.secondaryAction,
     bodyText: [props.greeting, props.bodyText ?? props.summary, props.closingText].filter(Boolean).join("\n\n"),
     metadataRows: props.metadataRows,
     signatureName: props.signatureName,

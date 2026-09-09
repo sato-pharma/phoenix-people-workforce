@@ -1596,6 +1596,11 @@ async function buildChannelEmailInput(
     cc: input.email?.cc,
     ctaHref,
     ctaLabel: input.email?.ctaLabel ?? "Open in Phoenix",
+    // Passed straight through, NOT run through notificationHrefForViewerRole like the primary
+    // above. That helper rewrites a CTA to the surface a given ROLE should land on; a secondary
+    // action is a direct link to one thing (today: a file download) and has no per-role variant.
+    secondaryCtaHref: input.email?.secondaryCtaHref ?? null,
+    secondaryCtaLabel: input.email?.secondaryCtaLabel ?? null,
     employeeHrId: identity.employeeHrId,
     eventType: input.eventType,
     includeHrInbox: input.email?.includeHrInbox,

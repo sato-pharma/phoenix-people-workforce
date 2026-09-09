@@ -24,6 +24,7 @@ import {
   setEmployeeCrmIdentity,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
+import { getEmployeeCvFileNames } from "@/lib/employees/employee-cv";
 import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-compliance/eligibility";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -124,9 +125,23 @@ export function needsCrmAccount(employee: Pick<EmployeeDirectoryRow, "jobTitle" 
 }
 
 /** The subject shape the notice and the board both render, built from the employee's own row. */
-export function subjectFromEmployee(employee: EmployeeDirectoryRow): CrmAccountSetupSubject {
+/**
+ * `cvFileName` is passed IN rather than read off the directory row, because the employee directory
+ * does not carry it — the CV lives on `employees` but the directory's select list is a curated set
+ * of columns and widening it would touch every one of its four row builders. Both callers load the
+ * names for their whole set in one query (getEmployeeCvFileNames) and hand each subject its own.
+ *
+ * Optional, so a caller that has no CV information produces a subject that reads "Not attached"
+ * rather than one missing the row entirely — see crmAccountSetupDetails on why the row is always
+ * present.
+ */
+export function subjectFromEmployee(
+  employee: EmployeeDirectoryRow,
+  cvFileName?: string | null,
+): CrmAccountSetupSubject {
   return {
     areaName: employee.areaName,
+    cvFileName: cvFileName ?? null,
     displayName: employee.displayName || employee.fullName,
     hireDate: employee.hireDate,
     hrId: employee.hrId,
@@ -140,9 +155,10 @@ export function subjectFromEmployee(employee: EmployeeDirectoryRow): CrmAccountS
 }
 
 /** A placeholder subject for a task whose employee row has since gone — the board still shows it. */
-function subjectFromHrIdAlone(hrId: string): CrmAccountSetupSubject {
+function subjectFromHrIdAlone(hrId: string, cvFileName?: string | null): CrmAccountSetupSubject {
   return {
     areaName: null,
+    cvFileName: cvFileName ?? null,
     displayName: hrId,
     hireDate: null,
     hrId,
@@ -239,9 +255,13 @@ export async function getCrmAccountSetupQueue(): Promise<CrmAccountSetupQueue> {
   }
 
   const byKey = await employeesByKey();
+  // One query for every CV filename on the board, rather than one per card. The queue holds up to
+  // 500 rows, so this is the difference between one round trip and five hundred.
+  const cvNames = await getEmployeeCvFileNames(rows.map((row) => String(row.employee_hr_id ?? "").trim()));
   const mapped: CrmAccountSetupTaskRow[] = rows.map((row) => {
     const hrId = String(row.employee_hr_id ?? "").trim();
     const employee = byKey.get(canonicalHrIdKey(hrId) ?? "");
+    const cvFileName = cvNames.get(canonicalHrIdKey(hrId) ?? "") ?? null;
     return {
       crmId: employee?.crmId ?? null,
       crmUsername: employee?.crmUsername ?? null,
@@ -254,7 +274,7 @@ export async function getCrmAccountSetupQueue(): Promise<CrmAccountSetupQueue> {
       resolvedByHrId: row.resolved_by_hr_id ?? null,
       source: sourceOf(row.source),
       status: statusOf(row.status),
-      subject: employee ? subjectFromEmployee(employee) : subjectFromHrIdAlone(hrId),
+      subject: employee ? subjectFromEmployee(employee, cvFileName) : subjectFromHrIdAlone(hrId, cvFileName),
     };
   });
 
