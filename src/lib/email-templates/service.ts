@@ -7,6 +7,7 @@ import {
   renderPhoenixEmailText,
   renderPhoenixMetadataTable,
   renderPhoenixMetadataTableText,
+  type PhoenixEmailHeroStat,
 } from "@/emails/phoenix-email-layout";
 import { systemEmail } from "@/config/system-settings";
 import { summarizeEmailTemplateReadiness } from "@/lib/communication/metrics";
@@ -21,7 +22,7 @@ import {
 } from "./key-resolution";
 import { TOKEN_REGISTRY } from "./token-registry";
 import { buildDvDigestSummaryEmail } from "@/lib/double-visit-analytics/weekly-digest";
-import { sendPhoenixEmail, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
+import { sendPhoenixEmail, type SendPhoenixEmailAttachment, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
 import type { NotificationOrigin } from "@/lib/notifications/confidence-gate";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -71,6 +72,12 @@ export const EMAIL_TEMPLATE_KEYS = {
   RESIGNATION_WORKFLOW: "resignation_workflow",
   USER_CREATED: "user_created",
   WEEKLY_PLANS: "weekly_plans",
+  DIRECT_ORDER_APPROVED: "direct_order_approved",
+  DIRECT_ORDER_PROBATION_REPORT: "direct_order_probation_report",
+  MONTHLY_CLOSING_PUBLISHED: "monthly_closing_published",
+  SOS_EXECUTIVE_REPORT: "sos_executive_report",
+  CV_INTAKE_DIGEST: "cv_intake_digest",
+  TELEGRAM_CONNECT: "telegram_connect",
 } as const satisfies Record<string, EmailTemplateKey>;
 
 export const emailTemplateRecipientRoleOptions = [
@@ -143,9 +150,27 @@ export type EmailTemplateContext = {
    * e.g. leave_manager_step_decision's Type/Period/Manager/Decision block. Sanitized, not
    * escaped, in bodyHtml.
    */
+  /** The reporting period this email is about, already formatted (e.g. "August 2026"). */
+  periodLabel?: string | null;
   detailsTable?: string | null;
   /** Plain-text projection used wherever {{detailsTable}} appears in text fields. */
   detailsTableText?: string | null;
+  /**
+   * Pre-rendered grouped detail sections (renderPhoenixMetadataSections) — the sectioned
+   * equivalent of detailsTable, for senders whose data is naturally grouped under headings
+   * (e.g. a direct order's "Order & requester" / "Product & deal" / "Pharmacy & geography").
+   * Raw HTML in bodyHtml; text fields get detailsSectionsText.
+   */
+  detailsSections?: string | null;
+  /** Plain-text projection used wherever {{detailsSections}} appears in text fields. */
+  detailsSectionsText?: string | null;
+  /**
+   * Pre-rendered numbered how-to steps (the Telegram connect walkthrough). Structured HTML
+   * rather than wording, so it stays in code while the prose around it becomes editable.
+   */
+  stepsBlock?: string | null;
+  /** Plain-text projection used wherever {{stepsBlock}} appears in text fields. */
+  stepsBlockText?: string | null;
   /** Pre-rendered HTML table (e.g. submitted plan rows); sanitized, not escaped, in bodyHtml. */
   planTable?: string | null;
   /** Plain-text projection used wherever {{planTable}} appears in text fields. */
@@ -266,6 +291,7 @@ export type EmailTemplateCategory =
   | "Birthdays"
   | "Coaching"
   | "Contracts"
+  | "Direct Orders"
   | "Excuses"
   | "General"
   | "Leave Management"
@@ -275,6 +301,7 @@ export type EmailTemplateCategory =
   | "Probation"
   | "Recruitment"
   | "Resignations"
+  | "Sales"
   | "Weekly & Monthly Plans";
 
 export type EmailTemplatePublicationState = "draft_changes" | "draft_unpublished" | "inactive" | "published";
@@ -297,6 +324,25 @@ export type SendTemplatedEmailInput = {
    *  SendPhoenixEmailInput.origin in send-phoenix-email.ts. Falls back to deriving `module`
    *  from the template's category when the caller doesn't supply one. */
   origin?: NotificationOrigin | null;
+  /**
+   * Overrides the derived idempotency key. Several senders dedupe on something MEANINGFUL —
+   * one report per period, one per order, one per day — and the derived key is a hash of the
+   * rendered subject, recipients and context, so a run whose data shifted slightly would hash
+   * differently and send a second copy. Pass the sender's own key to keep that guarantee.
+   */
+  idempotencyKey?: string | null;
+  /**
+   * Files to attach. Deliberately NOT admin-editable: an attachment is generated content
+   * (the SoS executive workbook, for instance), not wording. Without this a sender with an
+   * attachment could not move onto a template at all — it would silently lose the file.
+   */
+  attachments?: SendPhoenixEmailAttachment[];
+  /**
+   * The layout's hero statistic block. Like attachments this is generated content rather than
+   * wording, so it rides beside the template instead of inside it — the admin edits the prose,
+   * the sender supplies the live number.
+   */
+  heroStat?: PhoenixEmailHeroStat | null;
   overrides?: {
     bcc?: string[] | null;
     cc?: string[] | null;
@@ -399,6 +445,12 @@ const allowedPlaceholderSet = new Set<string>(placeholderHints);
 
 const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   birthday: emptyRules(["employee"], ["direct_manager", "district_manager"]),
+  direct_order_approved: emptyRules(["admin"], ["finance"]),
+  direct_order_probation_report: emptyRules(["admin"], []),
+  monthly_closing_published: emptyRules(["admin"], []),
+  sos_executive_report: emptyRules(["admin"], ["ceo"]),
+  cv_intake_digest: emptyRules(["hiring_manager"], ["recruiter"]),
+  telegram_connect: emptyRules(["employee"], []),
   contract_renewal: emptyRules(["manager_chain"], ["hr"]),
   general: emptyRules(["admin"], ["hr"]),
   marketing_request: emptyRules(["admin"], ["hr"]),
@@ -583,6 +635,82 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     subject: "{{subject}}",
     templateKey: "payroll_update",
     templateName: "Payroll Update",
+  },
+  // ── The six that used to build their body in code (2026-09-09) ────────────────────
+  // Each of these emails was assembled inline by its own module and could not be edited from
+  // /admin/email-templates at all. The prose now lives here; the generated parts — the tables,
+  // the hero figure, the attached workbook — stay in code and reach the body through tokens.
+  direct_order_approved: {
+    bodyHtml: "<p>{{summary}}</p>{{detailsSections}}",
+    bodyText: "{{summary}}\n\n{{detailsSections}}",
+    closingText: "Open the Direct Orders report for the full picture.",
+    description: "Tells the direct-order desk and finance that a request cleared final CEO approval and has been posted to sales.",
+    greeting: "Dear Team,",
+    isActive: true,
+    previewText: "A direct order has been approved and posted to sales.",
+    subject: "{{subject}}",
+    templateKey: "direct_order_approved",
+    templateName: "Direct Order Approved",
+  },
+  direct_order_probation_report: {
+    bodyHtml: "<p>{{summary}}</p><p>A pharmacy that received real stock leaves a trace: it appears in a distributor sheet, or its collection is paid. These left neither, so the stock they were approved for cannot be accounted for.</p><p>Total value of the direct orders involved: <strong>{{amount}}</strong>.</p>{{detailsTable}}",
+    bodyText: "{{summary}}\n\nA pharmacy that received real stock leaves a trace: it appears in a distributor sheet, or its collection is paid. These left neither, so the stock they were approved for cannot be accounted for.\n\nTotal value of the direct orders involved: {{amount}}.\n\n{{detailsTable}}",
+    closingText: "Each pharmacy above has been moved out of the trusted list automatically and needs a decision.",
+    description: "Report of pharmacies removed from the trusted list after failing their probation window.",
+    greeting: "Dear Team,",
+    isActive: true,
+    previewText: "Pharmacies with no distributor sales and no payment after probation.",
+    subject: "{{subject}}",
+    templateKey: "direct_order_probation_report",
+    templateName: "Direct Order Probation Report",
+  },
+  monthly_closing_published: {
+    bodyHtml: "<p>The <strong>{{periodLabel}}</strong> Monthly Closing for <strong>{{line}}</strong> has been published and is now live in Phoenix Workforce.</p><p>District Managers can review their own areas in the employee portal. Admin and product roles can open the full Closing Matrix.</p>{{detailsTable}}",
+    bodyText: "The {{periodLabel}} Monthly Closing for {{line}} has been published and is now live in Phoenix Workforce.\n\nDistrict Managers can review their own areas in the employee portal. Admin and product roles can open the full Closing Matrix.\n\n{{detailsTable}}",
+    closingText: "Please log in to review the details.",
+    description: "Tells sales and product managers that a line's monthly closing has been published.",
+    greeting: "Dear {{line}} Leaders,",
+    isActive: true,
+    previewText: "{{line}} {{periodLabel}} Monthly Closing is now published.",
+    subject: "{{subject}}",
+    templateKey: "monthly_closing_published",
+    templateName: "Monthly Closing Published",
+  },
+  sos_executive_report: {
+    bodyHtml: "<p>Attached is the {{periodLabel}} Source-of-Sales executive BI workbook — full company scope, including confidential products, month-over-month and year-over-year momentum, Pareto rankings and territory coverage. This report mirrors the live sales dashboard for this period.</p>{{detailsTable}}",
+    bodyText: "Attached is the {{periodLabel}} Source-of-Sales executive BI workbook — full company scope, including confidential products, month-over-month and year-over-year momentum, Pareto rankings and territory coverage. This report mirrors the live sales dashboard for this period.\n\n{{detailsTable}}",
+    closingText: "",
+    description: "Delivers the Source of Sales executive report workbook for a closed period.",
+    greeting: "Dear Team,",
+    isActive: true,
+    previewText: "{{periodLabel}} Source-of-Sales BI report attached.",
+    subject: "{{subject}}",
+    templateKey: "sos_executive_report",
+    templateName: "Source of Sales Executive Report",
+  },
+  cv_intake_digest: {
+    bodyHtml: "<p>{{summary}}</p>",
+    bodyText: "{{summary}}",
+    closingText: "Open Phoenix Workforce to review the candidates.",
+    description: "Periodic digest of newly received candidate CVs, sent to the hiring manager.",
+    greeting: "Dear {{honorific}}{{recipientName}},",
+    isActive: true,
+    previewText: "New candidate CVs are waiting for your review.",
+    subject: "{{subject}}",
+    templateKey: "cv_intake_digest",
+    templateName: "CV Intake Digest",
+  },
+  telegram_connect: {
+    bodyHtml: "<p>Phoenix Workforce can now deliver your HR notifications straight to Telegram — a fast, secure notifications center in your pocket. Connect once and stay informed wherever you are.</p>{{stepsBlock}}<p>{{expiryText}}</p>",
+    bodyText: "Phoenix Workforce can now deliver your HR notifications straight to Telegram — a fast, secure notifications center in your pocket. Connect once and stay informed wherever you are.\n\n{{stepsBlock}}\n\n{{expiryText}}",
+    closingText: "",
+    description: "Invites an employee to connect Telegram so their notifications arrive instantly.",
+    greeting: "Dear {{honorific}}{{recipientName}},",
+    isActive: true,
+    previewText: "Connect Telegram to receive your notifications instantly.",
+    subject: "{{subject}}",
+    templateKey: "telegram_connect",
+    templateName: "Telegram Connect Invitation",
   },
   general: {
     bodyHtml: "<p>{{summary}}</p><p>{{status}}</p>",
@@ -990,6 +1118,12 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   user_created: "Account Access",
   vacation_balance_settlement: "Leave Management",
   weekly_plans: "Weekly & Monthly Plans",
+  direct_order_approved: "Direct Orders",
+  direct_order_probation_report: "Direct Orders",
+  monthly_closing_published: "Sales",
+  sos_executive_report: "Sales",
+  cv_intake_digest: "Recruitment",
+  telegram_connect: "Account Access",
 };
 
 export const emailTemplateCategories = [
@@ -1008,6 +1142,8 @@ export const emailTemplateCategories = [
   "Coaching",
   "Payroll",
   "Birthdays",
+  "Direct Orders",
+  "Sales",
   "General",
 ] as const;
 
@@ -2047,6 +2183,10 @@ export function renderEmailTemplate(
   context: Partial<EmailTemplateContext> = {},
   recipients: Recipient[] = [],
   customVariables: Record<string, string> = {},
+  // Generated layout content that is NOT wording, so it is not a token the admin can move or
+  // edit — the sender supplies the live figure and the layout places it. Preview and Send Test
+  // pass a sample so what they show still matches the shape of a real send.
+  options: { heroStat?: PhoenixEmailHeroStat | null } = {},
 ) {
   // Admin-defined custom tokens are spread FIRST so a built-in of the same name always wins.
   // A custom token can therefore never shadow/hijack a system token (e.g. redefining
@@ -2093,6 +2233,7 @@ export function renderEmailTemplate(
       bodyHtml: bodyHtml.trim() ? bodyHtml : renderEmailParagraphs(bodyText),
       closingText,
       greeting,
+      heroStat: options.heroStat ?? undefined,
       previewText,
       subject,
       subtitle,
@@ -2105,6 +2246,7 @@ export function renderEmailTemplate(
       bodyText,
       closingText,
       greeting,
+      heroStat: options.heroStat ?? undefined,
       title: subject,
     }),
   };
@@ -2449,7 +2591,7 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
   // recipient's) — the email is about that person, so a custom token must describe them
   // even when it lands in a manager's or HR's inbox.
   const customVariables = await resolveEmailCustomVariables(context.employeeHrId);
-  const rendered = renderEmailTemplate(template, context, to, customVariables);
+  const rendered = renderEmailTemplate(template, context, to, customVariables, { heroStat: input.heroStat });
   const requestId = crypto
     .createHash("sha256")
     .update(JSON.stringify({ key, subject: rendered.subject, to: to.map((recipient) => recipient.email), context }))
@@ -2490,6 +2632,7 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
   });
 
   const result = await sendPhoenixEmail({
+    attachments: input.attachments,
     bcc: bcc.length > 0 ? bcc.map((recipient) => recipient.email) : undefined,
     cc: cc.length > 0 ? cc.map((recipient) => recipient.email) : undefined,
     // A template resolving the "candidate" recipient role addresses someone with no employee
@@ -2508,7 +2651,7 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
     replyTo: input.replyTo ?? undefined,
     headers: unsubscribeHeaders,
     html: rendered.html,
-    idempotencyKey: `template-${key}-${requestId}`,
+    idempotencyKey: input.idempotencyKey?.trim() || `template-${key}-${requestId}`,
     // Fall back to the template's own category (e.g. "Attendance") as `module` when the
     // caller didn't supply origin — every one of the ~30 template keys has a category, so
     // this send is never bucketed as fully unknown on the confidence dashboard.

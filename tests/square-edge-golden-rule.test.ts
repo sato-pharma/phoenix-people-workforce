@@ -302,7 +302,7 @@ const REMAINING_ROUNDING: Record<string, number> = {
   // The counts stay pinned so the settled state cannot drift: a NEW corner in one of these files
   // still fails, because "email may be round" is not "email is unmeasured".
   "src/emails/phoenix-email-layout.tsx": 11,
-  "src/emails/telegram-connect.tsx": 1,
+  "src/emails/telegram-connect.ts": 1,
   "templates/phoenix-google-style-email.html": 4,
   // The seeded templates in supabase/20260517_seed_email_templates.sql (5 more) fall under the same
   // answer. They are outside this scan's roots, and the live copies are DATABASE rows in any case —

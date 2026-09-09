@@ -11,11 +11,10 @@ import { systemDeployment } from "@/config/system-settings";
 import { systemAccessContext } from "@/lib/auth/permissions";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import {
-  renderEmailParagraphs,
-  renderPhoenixEmailHtml,
-  renderPhoenixEmailText,
+  renderPhoenixMetadataTable,
+  renderPhoenixMetadataTableText,
 } from "@/emails/phoenix-email-layout";
-import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { sendTemplatedEmail } from "@/lib/email-templates/service";
 import { closingPeriodGateMessage, isClosingPeriodComplete } from "@/lib/sales/closing-period-gate";
 import { listAllPublishedClosings, normalizeClosingLine } from "@/lib/sales/monthly-closing-publication";
 import { listMonthlyClosingLines } from "@/lib/sales/monthly-distributor-import";
@@ -125,29 +124,9 @@ export async function buildAndEmailSosBiReport(input: {
     { label: "Distributors", value: data.summary.distributorCount },
     { label: "Products", value: data.summary.productCount },
   ];
-  const action = { href: `${systemDeployment.productionUrl}/sales`, label: "Open live dashboard" };
-  const bodyText =
-    `Attached is the ${periodLabel} Source-of-Sales executive BI workbook — full company scope, ` +
-    "including confidential products, month-over-month and year-over-year momentum, Pareto rankings " +
-    "and territory coverage. This report mirrors the live /sales dashboard for this period.";
-
-  const html = renderPhoenixEmailHtml({
-    bodyHtml: renderEmailParagraphs(bodyText),
-    action,
-    metadataRows,
-    previewText: `${periodLabel} Source-of-Sales BI report attached.`,
-    subject,
-    title: "Source of Sales — Executive BI Report",
-  });
-  const text = renderPhoenixEmailText({
-    action,
-    bodyText,
-    metadataRows,
-    title: "Source of Sales — Executive BI Report",
-  });
-
-  const result = await sendPhoenixEmail({
-    origin: { eventType: "sos_monthly_closing_report", module: "sales" },
+  // Wording lives in /admin/email-templates under "Source of Sales Executive Report". The
+  // workbook rides beside the template as an attachment: generated content, never wording.
+  const result = await sendTemplatedEmail({
     attachments: [
       {
         content: buffer.toString("base64"),
@@ -155,12 +134,20 @@ export async function buildAndEmailSosBiReport(input: {
         filename: `phoenix-sos-dashboard_${period}.xlsx`,
       },
     ],
-    fanoutToBcc: true,
-    html,
+    context: {
+      ctaLabel: "Open live dashboard",
+      ctaUrl: `${systemDeployment.productionUrl}/sales`,
+      detailsTable: renderPhoenixMetadataTable(metadataRows),
+      detailsTableText: renderPhoenixMetadataTableText(metadataRows),
+      periodLabel,
+      subject,
+      summary: `The ${periodLabel} Source-of-Sales executive BI workbook is attached.`,
+    },
+    fallbackTo: recipients,
     idempotencyKey: `sos-bi-report:${period}`,
-    subject,
-    text,
-    to: recipients,
+    origin: { eventType: "sos_monthly_closing_report", module: "sales" },
+    overrides: { replaceRecipients: true, to: recipients },
+    templateKey: "sos_executive_report",
   });
 
   if (result.skipped) {

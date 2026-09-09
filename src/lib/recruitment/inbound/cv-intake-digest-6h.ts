@@ -20,10 +20,8 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
-  renderGeneralNotificationEmailHtml,
-  renderGeneralNotificationEmailText,
 } from "@/emails/general-notification";
-import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { sendTemplatedEmail } from "@/lib/email-templates/service";
 import { logError, logInfo } from "@/lib/observability/log";
 
 const LOOKBACK_HOURS = 6;
@@ -281,38 +279,28 @@ export async function sendCvIntakeDigest6h(now: Date = new Date()): Promise<{
       }
       const cc = buildCcList(profile.role, managerEmail);
 
-      const html = renderGeneralNotificationEmailHtml({
-        subject: title,
-        title,
-        summary: body,
-        bodyText: body,
-        greeting: `Hi ${profile.name},`,
-        action: { label: "Review Candidates", href: appUrl(CANDIDATES_PATH) },
-      });
-      const text = renderGeneralNotificationEmailText({
-        subject: title,
-        title,
-        summary: body,
-        bodyText: body,
-        greeting: `Hi ${profile.name},`,
-        action: { label: "Review Candidates", href: appUrl(CANDIDATES_PATH) },
-      });
-
       const idempotencyKey = `cv-intake-digest-6h:${profile.hrId}:${windowKey}`;
 
-      await sendPhoenixEmail({
-        cc,
-        externalRecipients: cc.filter((addr) => addr !== profile.email),
-        html,
+      // Wording lives in /admin/email-templates under "CV Intake Digest". Routing stays here:
+      // the digest is addressed to one manager and their CC list, resolved per batch.
+      await sendTemplatedEmail({
+        context: {
+          ctaLabel: "Review Candidates",
+          ctaUrl: appUrl(CANDIDATES_PATH),
+          recipientName: profile.name,
+          subject: title,
+          summary: body,
+        },
+        employeeHrId: profile.hrId,
+        fallbackTo: [profile.email],
         idempotencyKey,
         origin: {
           eventType: "recruitment_cv_intake_digest_6h",
           module: "recruitment",
           recipientHrId: profile.hrId,
         },
-        subject: title,
-        text,
-        to: [profile.email],
+        overrides: { cc, replaceRecipients: true, to: [profile.email] },
+        templateKey: "cv_intake_digest",
       });
       sent++;
     } catch (error) {

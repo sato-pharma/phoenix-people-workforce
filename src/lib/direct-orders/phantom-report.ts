@@ -1,11 +1,10 @@
 import { systemDeployment } from "@/config/system-settings";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import {
-  renderEmailParagraphs,
-  renderPhoenixEmailHtml,
-  renderPhoenixEmailText,
+  renderPhoenixMetadataTable,
+  renderPhoenixMetadataTableText,
 } from "@/emails/phoenix-email-layout";
-import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { sendTemplatedEmail } from "@/lib/email-templates/service";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -93,14 +92,9 @@ export async function sendDirectOrderPhantomReport(rows: PhantomReportRow[]): Pr
     const nameByHr = await resolveNames(rows.map((r) => r.requesterHrId ?? "").filter(Boolean));
     const totalValue = rows.reduce((sum, r) => sum + r.salesValue, 0);
 
-    const bodyText =
+    const summary =
       `${rows.length} pharmac${rows.length === 1 ? "y" : "ies"} completed the 90-day probation window ` +
-      "with no distributor sales and no payment recorded against them.\n\n" +
-      "A pharmacy that received real stock leaves a trace: it appears in a distributor sheet, or its " +
-      "collection is paid. These left neither, so the stock they were approved for cannot be " +
-      "accounted for.\n\n" +
-      `Total value of the direct orders involved: ${money(totalValue)}.\n\n` +
-      "Each pharmacy below has been moved out of the trusted list automatically and needs a decision.";
+      "with no distributor sales and no payment recorded against them.";
 
     const metadataRows = rows.map((r) => ({
       label: r.phoenixPharmacyCode,
@@ -110,30 +104,23 @@ export async function sendDirectOrderPhantomReport(rows: PhantomReportRow[]): Pr
         `${r.daysOnProbation} days on probation`,
     }));
 
-    const subject = `Direct Orders: ${rows.length} pharmac${rows.length === 1 ? "y" : "ies"} failed probation`;
-    const action = {
-      href: `${systemDeployment.productionUrl}/admin/direct-orders/pharmacies`,
-      label: "Open Pharmacy Registry",
-    };
-
-    const html = renderPhoenixEmailHtml({
-      title: "Pharmacies That Failed Probation",
-      subject,
-      previewText: `${rows.length} pharmacies show no distributor sales and no payment after 90 days.`,
-      bodyHtml: renderEmailParagraphs(bodyText),
-      metadataRows,
-      action,
-    });
-    const text = renderPhoenixEmailText({ title: "Pharmacies That Failed Probation", bodyText, metadataRows, action });
-
-    await sendPhoenixEmail({
-      to: recipients,
-      subject,
-      html,
-      text,
+    // Wording lives in /admin/email-templates under "Direct Order Probation Report".
+    await sendTemplatedEmail({
+      context: {
+        amount: money(totalValue),
+        ctaLabel: "Open Pharmacy Registry",
+        ctaUrl: `${systemDeployment.productionUrl}/admin/direct-orders/pharmacies`,
+        detailsTable: renderPhoenixMetadataTable(metadataRows),
+        detailsTableText: renderPhoenixMetadataTableText(metadataRows),
+        subject: `Direct Orders: ${rows.length} pharmac${rows.length === 1 ? "y" : "ies"} failed probation`,
+        summary,
+      },
+      fallbackTo: recipients,
       // One report per day at most, whatever the sweep retries.
       idempotencyKey: `direct-orders-phantom-report:${new Date().toISOString().slice(0, 10)}`,
       origin: { eventType: "direct_order_phantom_report", module: "direct_orders" },
+      overrides: { replaceRecipients: true, to: recipients },
+      templateKey: "direct_order_probation_report",
     });
   } catch (error) {
     logError("Phantom report email failed; the findings are still in the audit log", {

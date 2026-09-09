@@ -44,6 +44,12 @@ export const emailTemplateKeys = [
   "payroll_update",
   "attendance_workflow",
   "general",
+  "direct_order_approved",
+  "direct_order_probation_report",
+  "monthly_closing_published",
+  "sos_executive_report",
+  "cv_intake_digest",
+  "telegram_connect",
 ] as const;
 
 export type EmailTemplateKey = (typeof emailTemplateKeys)[number];

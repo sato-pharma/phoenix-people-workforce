@@ -62,19 +62,14 @@ export function runEmailNotificationTests() {
   assert.match(notificationTestRouteSource, /renderPhoenixEmailText/);
   assert.doesNotMatch(notificationTestRouteSource, /const html = `<div/);
 
+  // The authoritative list of modules still building their own email body and calling the
+  // sender directly. Six came OFF this list on 2026-09-09 — direct orders (approved + probation
+  // report), the monthly closing publish, the SoS executive report, the CV intake digest and the
+  // Telegram connect invitation — and now render from an admin-editable template. What remains
+  // is what genuinely cannot: see tests/email-templates-for-code-built-senders.test.ts.
   assert.deepEqual(directSendPhoenixEmailFiles(), [
     "app/api/admin/email-reply/send/route.ts",
     "app/api/notifications/test/route.ts",
-    // Direct orders send a bespoke premium "approved" details table to a fixed recipient
-    // (CEO + system admin CC'd) on final CEO approval — a fixed renderer, not the DB
-    // template engine. See src/lib/direct-orders/approved-email.ts.
-    "src/lib/direct-orders/approved-email.ts",
-    // The probation sweep's phantom report (spec A3): written by the system, to a fixed audience
-    // — the owner and the CEO — when a pharmacy completes 90 days with no distributor sales and
-    // no payment. Direct send for the same reasons as approved-email.ts: a bespoke premium table
-    // rather than a DB template, and an alert that must not depend on the recipient having a
-    // notification preference configured.
-    "src/lib/direct-orders/phantom-report.ts",
     "src/lib/email-templates/service.ts",
     "src/lib/email/send-phoenix-email.ts",
     // A Super Admin's manual approval of a held item re-sends the EXACT held content,
@@ -82,7 +77,6 @@ export function runEmailNotificationTests() {
     // in src/lib/notifications/confidence-gate.ts.
     "src/lib/notifications/confidence-gate.ts",
     "src/lib/notifications/email.ts",
-    "src/lib/notifications/telegram-onboarding.ts",
     // An offer of employment goes to a candidate who has no Phoenix account, so there is no
     // notification preference to resolve and nothing for the dispatcher to hold. It is also the
     // one send in the system that must NOT carry Phoenix's identity — the owner's rule is that an
@@ -90,25 +84,14 @@ export function runEmailNotificationTests() {
     // Its body is built from the letter design HR edits in the module itself, not from a DB email
     // template. See src/lib/offers/send.ts.
     "src/lib/offers/send.ts",
-    // The 6-hourly CV intake digest emails each hiring manager who received candidate
-    // pushes, with the recipient's manager in CC (except NSM) and omar.anwar always in CC.
-    // Direct send for the same reason as closing-publish-notification.ts: a bespoke
-    // recipient list with role-dependent CC logic, not the DB template engine.
-    "src/lib/recruitment/inbound/cv-intake-digest-6h.ts",
-    // A Monthly Closing publish notifies that line's leadership (District Managers + a fixed
-    // Cc/Bcc roster) — a system-triggered domain announcement built directly against the shared
-    // Phoenix layout, same reasoning as approved-email.ts/phantom-report.ts above: a bespoke
-    // recipient list resolved live from the organogram, not the DB template engine. See
-    // src/lib/sales/closing-publish-notification.ts.
-    "src/lib/sales/closing-publish-notification.ts",
-    "src/lib/sales/sos-report-delivery.ts",
     // A confirmed weekly sales upload tells each tracked line's District Managers and NSM which of
     // THEIR products the sheet carried — one mail per line, recipients resolved live from the
-    // organogram, product names only and never a figure. Direct send for the same reason as
-    // closing-publish-notification.ts directly above: a system-triggered domain announcement with a
-    // per-line recipient list, not an HR-editable DB template. See
-    // src/lib/sales/weekly/upload-notification.ts.
+    // organogram, product names only and never a figure. Added on main while the six conversions
+    // below were in flight; it is the same shape as those and a candidate for the same treatment.
+    // See src/lib/sales/weekly/upload-notification.ts.
     "src/lib/sales/weekly/upload-notification.ts",
+    // The five leave fallback bodies, which fire ONLY when the matching template has been
+    // deactivated — so they deliberately cannot themselves be templates.
     "src/lib/vacation/email.ts",
   ]);
   assert.match(emailTemplateServiceSource, /renderPhoenixEmailHtml/);
@@ -116,8 +99,11 @@ export function runEmailNotificationTests() {
   assert.match(source, /renderGeneralNotificationEmailHtml/);
   assert.match(source, /renderGeneralNotificationEmailText/);
   assert.match(manualHrRouteSource, /buildPhoenixHrReplyEmail/);
-  assert.match(telegramOnboardingSource, /renderTelegramConnectEmailHtml/);
-  assert.match(telegramOnboardingSource, /renderTelegramConnectEmailText/);
+  // The invitation's wording moved into the template module; what stays in code is the
+  // numbered walkthrough, which reaches the body as {{stepsBlock}}.
+  assert.match(telegramOnboardingSource, /telegramConnectStepsHtml/);
+  assert.match(telegramOnboardingSource, /telegramConnectStepsText/);
+  assert.match(telegramOnboardingSource, /templateKey: "telegram_connect"/);
   assert.match(vacationEmailSource, /renderPhoenixEmailHtml/);
   assert.match(vacationEmailSource, /renderPhoenixEmailText/);
 

@@ -3,8 +3,8 @@ import crypto from "crypto";
 import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { systemIdentity } from "@/config/system-settings";
-import { renderTelegramConnectEmailHtml, renderTelegramConnectEmailText } from "@/emails/telegram-connect";
-import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { telegramConnectStepsHtml, telegramConnectStepsText } from "@/emails/telegram-connect";
+import { sendTemplatedEmail } from "@/lib/email-templates/service";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { TELEGRAM_CONNECT_TOKEN_TTL_MINUTES, buildTelegramDeepLinkFromToken, hashTelegramToken, resolveTelegramBotUsername } from "@/lib/notifications/telegram";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -145,17 +145,29 @@ export async function sendTelegramConnectInvite(input: {
   if (created.skipped) return { detail: created.reason, email, status: "skipped", userId: input.userId };
 
   const expiresLabel = expiresLabelFor(created.expiresAt);
-  const html = renderTelegramConnectEmailHtml({ connectUrl: created.link, expiresLabel, name: input.name ?? null });
-  const text = renderTelegramConnectEmailText({ connectUrl: created.link, expiresLabel, name: input.name ?? null });
+  const expiryText = expiresLabel
+    ? `For your security this is a personal, single-use link that expires on ${expiresLabel}. If it expires, you can reconnect any time from your Phoenix portal under Notification Settings.`
+    : "This is your personal, single-use connection link. You can also connect any time from your Phoenix portal under Notification Settings.";
 
   try {
-    const sendResult = await sendPhoenixEmail({
-      html,
+    // Wording lives in /admin/email-templates under "Telegram Connect Invitation"; the numbered
+    // walkthrough stays in code and arrives as {{stepsBlock}}.
+    const sendResult = await sendTemplatedEmail({
+      context: {
+        ctaLabel: "Open Telegram & connect",
+        ctaUrl: created.link,
+        expiryText,
+        recipientName: input.name ?? "",
+        stepsBlock: telegramConnectStepsHtml(),
+        stepsBlockText: telegramConnectStepsText(),
+        subject: `Connect Telegram to ${systemIdentity.appName} notifications`,
+      },
+      employeeHrId: input.hrId ?? null,
+      fallbackTo: [email],
       idempotencyKey: `telegram-onboard:${input.userId}:${created.token.slice(0, 12)}`,
       origin: { eventType: "telegram_onboarding_link", module: "telegram", recipientHrId: input.hrId ?? null },
-      subject: `Connect Telegram to ${systemIdentity.appName} notifications`,
-      text,
-      to: [email],
+      overrides: { replaceRecipients: true, to: [email] },
+      templateKey: "telegram_connect",
     });
     if ("skipped" in sendResult && sendResult.skipped) {
       return { detail: sendResult.reason, email, status: "skipped", userId: input.userId };

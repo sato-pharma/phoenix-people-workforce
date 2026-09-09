@@ -128,8 +128,13 @@ export async function runCvIntakeDigest6hTests() {
   );
 
   // --- source code contract: the service sends email, not in-app/telegram/push ---
+  // The channel assertion is what matters here and is unchanged. The MECHANISM moved on
+  // 2026-09-09: the digest's wording became admin-editable, so it now dispatches through
+  // sendTemplatedEmail on the cv_intake_digest key instead of building its own body and
+  // calling sendPhoenixEmail. Pinning the old call would pin the email back into code.
   const serviceSource = read("src/lib/recruitment/inbound/cv-intake-digest-6h.ts");
-  assert.match(serviceSource, /sendPhoenixEmail/, "service sends via sendPhoenixEmail (email channel)");
+  assert.match(serviceSource, /sendTemplatedEmail/, "service sends via sendTemplatedEmail (email channel)");
+  assert.match(serviceSource, /templateKey: "cv_intake_digest"/, "service renders the admin-editable CV Intake Digest template");
   assert.ok(!serviceSource.includes("createSystemNotification"), "service does NOT use the in-app notification system");
 
   // --- source code contract: the recipient is the manager who received the CV push ---
