@@ -8,19 +8,25 @@
 // CC  — that line's own National Sales Manager, resolved the same way.
 //
 // Nobody's address is baked in here. Everything resolves live against the organogram and the HR
-// record, so a seat change or a leaver updates the audience with no code change.
+// record, so a seat change or a leaver updates the audience with no code change. The one exception
+// is the shared sales exclusion list (sales-notification-exclusions.ts): people the owner has asked
+// not to be mailed about sales while they are away, whatever their seat and status say.
 //
-// WHY THIS DOES NOT SHARE CODE WITH closing-publish-recipients.ts
+// WHY THIS STILL DOES NOT SHARE ITS RECIPIENT LOGIC WITH closing-publish-recipients.ts
 // That module answers a DIFFERENT question: it also resolves a fixed Cc roster (CEO, Marketing
-// Manager, SFE Manager), two owner-NAMED individuals, a Bcc, and one manually excluded person —
-// every one of them an owner decision attached to the monthly closing announcement, not to a
-// weekly file landing. Folding the two together would mean either exporting those decisions into
-// an audience the owner never asked for them in, or parameterising a live email path whose
-// recipient list is itself an owner ruling. The seat lookup below is the only genuinely shared
-// part, and it is a dozen lines.
+// Manager, SFE Manager), two owner-NAMED individuals and a Bcc — every one an owner decision
+// attached to the monthly closing announcement, not to a weekly file landing. Folding the two
+// together would mean either exporting those decisions into an audience the owner never asked for
+// them in, or parameterising a live email path whose recipient list is itself an owner ruling.
+//
+// The EXCLUSION list is the one thing genuinely shared, and it is shared, because it is a decision
+// about a PERSON rather than about an email: the owner made it for the closing on 2026-08-08 and
+// extended it here on 2026-09-09. Two copies of that would drift, and the stale copy would keep
+// mailing somebody he asked to leave alone.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { isSalesNotificationExcluded } from "@/lib/sales/sales-notification-exclusions";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 
 export type WeeklyUploadRecipient = { hrId: string; name: string; email: string };
@@ -82,11 +88,14 @@ export async function resolveWeeklyUploadLineRecipients(officialLine: string): P
     if (seatResult.error) throw seatResult.error;
 
     const seatRows = (seatResult.data ?? []) as Array<{ seat_tier: string | null; occupant_hr_id: string | null }>;
+    // Applied to the seat list rather than per bucket, so the shared sales exclusion covers the NSM
+    // exactly as it covers a District Manager — one filter, no bucket that can be forgotten.
     const occupantsOfTier = (matches: (tier: string) => boolean) =>
       seatRows
         .filter((row) => matches(String(row.seat_tier ?? "").trim().toUpperCase()))
         .map((row) => String(row.occupant_hr_id ?? "").trim())
-        .filter(Boolean);
+        .filter(Boolean)
+        .filter((hrId) => !isSalesNotificationExcluded(hrId));
 
     const dmHrIds = occupantsOfTier((tier) => DM_SEAT_TIERS.has(tier));
     const nsmHrIds = occupantsOfTier((tier) => tier === NSM_SEAT_TIER);
