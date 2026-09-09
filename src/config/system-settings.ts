@@ -353,8 +353,11 @@ export const systemNotificationEmailText = {
   openAppCtaLabel: `Open ${systemIdentity.appName}`,
   openInAppCtaLabel: `Open in ${systemIdentity.appName}`,
   sourceMetricValue: systemIdentity.appName,
-  teamGreeting: `Dear ${systemIdentity.brandName} Team,`,
-  teamRecipientName: `${systemIdentity.brandName} Team`,
+  // Owner rule 2026-09-10: never "Dear Team" — say who is being addressed. These two are the
+  // LAST resort, reached only when no recipient name resolved at all, so they address the reader
+  // rather than an unnamed group. Every path that knows a name uses it before reaching here.
+  teamGreeting: "Dear Colleague,",
+  teamRecipientName: "Colleague",
   userGreeting: `Dear ${systemIdentity.brandName} User,`,
   userRecipientName: `${systemIdentity.brandName} User`,
 } as const;
