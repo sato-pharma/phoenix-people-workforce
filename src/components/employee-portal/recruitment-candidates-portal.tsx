@@ -469,7 +469,6 @@ function SentCandidateCard({
   viewerHrId: string | null;
 }) {
   const [candidate, setCandidate] = useState(initial);
-  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const call = useCandidateCall(initial, initialClaim, viewerHrId);
@@ -480,9 +479,30 @@ function SentCandidateCard({
   // "Not interested" on somebody already rejected writes a new event and tells nobody anything.
   const awaitingAnswer = isUnreviewedCandidateStatus(candidate.status) || candidate.status === "sent_to_manager";
 
-  const answer = async (decision: HiringManagerDecision) => {
-    if (decision === "not_interested" && !note.trim()) {
-      setError("Add a short reason so the recruitment team knows why.");
+  /**
+   * The manager's answer, taking its note from the ONE box the card now has.
+   *
+   * The note used to come from a second textarea of the card's own; the owner asked for the two to
+   * be merged, so the text arrives from the comment composer and `clearDraft` empties it once the
+   * answer has been recorded. Skip still refuses without a reason — that requirement is unchanged,
+   * only where the words are typed has moved.
+   */
+  const answer = async (decision: HiringManagerDecision, draft: string, clearDraft: () => void) => {
+    const note = draft.trim();
+    if (decision === "not_interested" && !note) {
+      setError("Say why before you skip, so the recruitment team knows.");
+      return;
+    }
+    // ONE BOX, TWO LIMITS. The shared box takes a 2,000-character comment; the status note the
+    // decision route stores is capped at 300. Sending a long one would come back as a bare "keep the
+    // note under 300 characters" from the server, which reads as the screen having lost his words.
+    // He is told here instead, and pointed at the option that takes the whole thing — posting it as
+    // a comment, which clears the lock just the same.
+    if (note.length > CANDIDATE_STATUS_NOTE_MAX_LENGTH) {
+      setError(
+        `Skip takes a short reason, under ${CANDIDATE_STATUS_NOTE_MAX_LENGTH} characters. `
+          + "Shorten it, or press Add comment to keep the whole note.",
+      );
       return;
     }
     setBusy(true);
@@ -490,9 +510,14 @@ function SentCandidateCard({
     try {
       const data = await sendJson(`/api/recruitment/hiring-manager/candidates/${candidate.id}/decision`, "PATCH", {
         decision,
-        note: note.trim() || undefined,
+        note: note || undefined,
       });
       if (data.candidate) setCandidate(data.candidate as Candidate);
+      clearDraft();
+      // A Skip carries its reason, and that reason IS the feedback the lock was waiting for, so the
+      // block must lift here as well as after a comment. Without this he answers, is released by the
+      // server, and the card he is looking at goes on refusing until he reloads.
+      onFeedbackGiven(candidate.id);
       // Skipping releases his reservation on the server, so the card has to follow: without this the
       // number stays printed on a CV he has just passed on, until he happens to reload. The route
       // answers with whatever claim now stands — null after his own Skip, unchanged when somebody
@@ -572,62 +597,19 @@ function SentCandidateCard({
 
       {error ? <p className="text-xs text-rose-600">{error}</p> : null}
 
-      {awaitingAnswer ? (
-        <div className="space-y-2 border-t border-slate-100 pt-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Your answer</p>
-
-          <textarea
-            className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
-            maxLength={CANDIDATE_STATUS_NOTE_MAX_LENGTH}
-            onChange={(event) => setNote(event.target.value)}
-            placeholder="A short note for the recruitment team (required if you skip)"
-            rows={2}
-            value={note}
-          />
-
-          {/* THE OWNER'S TWO BUTTONS, IN ONE ROW. "I will call" comes from the control and Skip is
-              passed into it, because he asked for a pair and a pair separated by a text box does not
-              read as one. "I will call" is not a verdict — owner, 2026-09-09: it "only reserves; he
-              answers after the call" — so it moves no status and the recruiter's screens do not
-              change. What it does is reveal the phone number, to him alone. */}
-          <CandidateCallControl
-            canAct
-            candidateId={candidate.id}
-            claim={call.claim}
-            onChanged={call.apply}
-            viewerHrId={viewerHrId}
-          >
-            {/* THE ANSWER AFTER THE CALL, and it appears once he has taken it. Two buttons at every
-                moment, which is what was asked for: "I will call" and "Skip" before, "I want to
-                interview" and "Skip" after. Showing all three at once would put the verdict in front
-                of a manager who has not yet spoken to anybody — the exact step this feature inserts.
-
-                `call.unavailable` is the safety valve. If a reservation cannot be recorded at all
-                (the table not applied yet, a dropped connection) the answer would otherwise be
-                unreachable and the recruiter would simply stop hearing back, silently. So a press
-                that fails opens this instead — degrading towards MORE ability, never less. */}
-            {call.mine || call.unavailable ? (
-              <Button disabled={busy} onClick={() => void answer("interview")} size="sm">
-                {hiringManagerDecisionLabels.interview}
-              </Button>
-            ) : null}
-            {/* THE SECOND OF THE TWO. Deliberately the SAME decision route "Not interested" always
-                took — owner: "if the manager chooses skip then he is skipped normally" — so the
-                candidate is answered, the recruitment team gets the reason it asked for, and only
-                the word on the button has changed. */}
-            <Button disabled={busy} onClick={() => void answer("not_interested")} size="sm" variant="destructive">
-              {hiringManagerDecisionLabels.not_interested}
-            </Button>
-          </CandidateCallControl>
-        </div>
-      ) : (
+      {/* ONE FIELD, NOT TWO. The owner, 2026-09-09: *"I have two fields for your answer and your
+          comments — merge them into one field, no need two fields."* After the feedback lock there
+          is only one thing to type on a CV, which is what he found, so the answer buttons moved DOWN
+          into the comment box rather than the box being duplicated above them. Skip sends whatever
+          is in that box as the reason it has always required. */}
+      {!awaitingAnswer ? (
         <div className="border-t border-slate-100 pt-3">
           <p className="text-xs text-slate-500">
             You answered: {candidateStatusLabel(candidate.status)}
             {candidate.statusNote?.trim() ? ` — ${candidate.statusNote}` : ""}
           </p>
         </div>
-      )}
+      ) : null}
 
       {/* The same thread the managers above this one write into. It is HERE, on the card the manager
           holding the CV actually opens, because that is the only place a comment from above can do
@@ -635,6 +617,40 @@ function SentCandidateCard({
           he may as well not have written. */}
       <CandidateCommentThread
         candidateId={candidate.id}
+        composerActions={
+          awaitingAnswer
+            ? (draft, clearDraft) => (
+                <CandidateCallControl
+                  canAct
+                  candidateId={candidate.id}
+                  claim={call.claim}
+                  onChanged={call.apply}
+                  viewerHrId={viewerHrId}
+                >
+                  {/* The answer after the call, once he holds the reservation. The unavailable flag
+                      is the safety valve: if a reservation cannot be recorded at all, this answer
+                      would otherwise be unreachable and the recruiter would simply stop hearing
+                      back — degrading towards MORE ability, never less. */}
+                  {call.mine || call.unavailable ? (
+                    <Button disabled={busy} onClick={() => void answer("interview", draft, clearDraft)} size="sm">
+                      {hiringManagerDecisionLabels.interview}
+                    </Button>
+                  ) : null}
+                  {/* The SAME decision route "Not interested" always took — owner: "if the manager
+                      chooses skip then he is skipped normally". It now takes its required reason from
+                      the one shared box instead of a second one of its own. */}
+                  <Button
+                    disabled={busy}
+                    onClick={() => void answer("not_interested", draft, clearDraft)}
+                    size="sm"
+                    variant="destructive"
+                  >
+                    {hiringManagerDecisionLabels.not_interested}
+                  </Button>
+                </CandidateCallControl>
+              )
+            : undefined
+        }
         onCommentAdded={onFeedbackGiven}
         viewerHrId={viewerHrId}
       />
