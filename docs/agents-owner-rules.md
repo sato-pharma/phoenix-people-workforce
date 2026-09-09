@@ -2063,3 +2063,15 @@ El Qema's priority ladder spreads that distributor's whole Pedia book across eve
 ### How it is held
 
 `tests/pedia-upper-egypt-split.test.ts`, in the required CI `validate` job. Its headline assertion is the golden rule itself: August's El Qema distribution built **with** the September rows present is `deepEqual` to August's built **without** them. Proved red by dating the pair to 2026-08-01, the real failure mode.
+
+### The Upper Egypt pool was deleted — owner, 2026-09-09
+
+His pooling rule of that morning — *"look fayoum bani suef and all upper egypt regions, you will calculate their total and then redistribute on them the sales evenly, fayoum-banisuef one region"* — was replaced hours later by the priority ladder, which #3583 shipped listing the pool as one of the five rules it discards. The ladder returns before the pool is reached, so it had been unreachable ever since.
+
+Deleted on his instruction after the removal was measured and put to him. `POOLED_BLOCK_REGION_CODE`, `POOLED_BLOCK_LABEL`, `isPooledBlockRegion`, `pooledBlockMembers`, `MERGED_POOL_MEMBER_CODE` and `levelAcrossPool` are gone, along with `tests/pooled-block-region-family.test.ts`. `levelAcrossPool` had no callers at all, in source or tests.
+
+Proved a no-op before shipping: 144 cases — nine origins across both halves of the split, Others and Cairo, four quantities spanning the retired 200 and 1,000 bands, two distributors, both months — byte-identical before and after, down to the per-area weights.
+
+⚠ **The ladder does NOT preserve "fayoum-banisuef one region".** Under the pool they were one member taking one share; under the ladder they are two areas taking two. That follows from his later choice and is not an oversight.
+
+⚠ **`LOCAL_BLOCK_OVERRIDES`, the Cairo + Qalubeya rule, is unreachable by exactly the same argument and was deliberately LEFT IN PLACE.** It is a locked owner rule, and deleting it was not what he asked for. If the ladder is ever reversed both come back into play, which is the reason to leave it standing rather than tidy it away.
