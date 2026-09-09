@@ -533,18 +533,35 @@ export async function persistNormalizedBatch(input: {
     // Distributor×product rollup — after the fact rollup it reads, same fallback site.
     const distProductRollupRefresh = await supabase.rpc("phx_refresh_sos_distributor_product_rollup", { p_batch_id: batchId });
     if (distProductRollupRefresh.error) throw distProductRollupRefresh.error;
-    // The wholesaler city split net FIRST — au.f_monthly_attribution reads it.
-    await writeStoreSplitNetForBatch(supabase, batchId);
-    // Sales-vs-target attribution rollup — after the channel rollup, same fallback site.
-    const attributionRollupRefresh = await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
-    if (attributionRollupRefresh.error) throw attributionRollupRefresh.error;
-    // Import summaries — the Source of Sales dashboard's own aggregate. A no-op on this path (the
-    // summaries were just built from the same rows), called anyway so the rule holds everywhere
-    // without exceptions. See tests/sos-import-summaries-refresh.test.ts.
-    const summaryRefresh = await supabase.rpc("phx_refresh_sos_import_summaries", { p_batch_id: batchId });
-    if (summaryRefresh.error) throw summaryRefresh.error;
-    invalidateSalesDashboardCache("source of sales multi-period import (fallback refresh)");
   }
+
+  // ── THE SPLIT NET, THEN ATTRIBUTION — ONE SHARED TAIL, OUTSIDE BOTH BRANCHES ────────────
+  //
+  // 🔴 THIS USED TO SIT INSIDE THE FALLBACK ABOVE, and that is the whole defect. The period-known
+  // path calls phx_finalize_sos_batch, which refreshes the attribution rollup INSIDE its own SQL
+  // transaction and knows nothing about au.monthly_store_split_net — so every real upload rebuilt
+  // achievement from fresh sales against the PREVIOUS import's split, with no error anywhere.
+  //
+  // It cannot run BEFORE finalize either: writeStoreSplitNetForBatch resolves the batch's periods
+  // from source_of_sales_fact_rollup, which finalize is what populates. Called earlier it finds no
+  // periods and silently does nothing — the same failure, one step to the left.
+  //
+  // So it lives here, after the whole if/else, where BOTH paths reach it and the fact rows are
+  // current either way: write the net, then refresh attribution on top of it. On the finalize path
+  // that is a second attribution refresh, which is the price of keeping finalize atomic.
+  await writeStoreSplitNetForBatch(supabase, batchId);
+  const attributionAfterNet = await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
+  if (attributionAfterNet.error) throw attributionAfterNet.error;
+  // Import summaries beside it, so "every site that refreshes the rollups also refreshes the
+  // summaries" holds with no exceptions. See tests/sos-import-summaries-refresh.test.ts.
+  const summariesAfterNet = await supabase.rpc("phx_refresh_sos_import_summaries", { p_batch_id: batchId });
+  if (summariesAfterNet.error) throw summariesAfterNet.error;
+  // The cache bust belongs LAST, for the same reason the net does. Both paths busted it too
+  // early: the fallback did it before this tail existed, and the finalize path does it inside
+  // finalizeSosBatchAndAuditSupersede — in both cases before the net is written, so the very next
+  // dashboard read re-cached the attribution the net had not reached yet and held it for the
+  // full TTL. Those earlier busts are harmless and stay; this one is the one that matters.
+  invalidateSalesDashboardCache("source of sales import — split net written, attribution refreshed");
 
   // Self-heal the customer->brick crosswalk from what this CONFIRMED import's sheet itself resolved
   // (see engine.ts's customerBrickCorrections) — only after the batch is validated, never on a preview.
