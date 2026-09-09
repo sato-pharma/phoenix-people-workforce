@@ -149,7 +149,7 @@ export async function listHiringManagerCandidateFiles(
 }
 
 /**
- * "Write your feedback on the last CV first."
+ * "To open this CV or any other, you must put your feedback on the ones you opened before."
  *
  * ITS OWN ERROR TYPE, because the route has to answer differently from every other refusal on this
  * path. A 403 tells a manager he may not see the CV, which is false and unhelpful; what he needs is

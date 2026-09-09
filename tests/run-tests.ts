@@ -1497,6 +1497,7 @@ import { runSalesUploadAnalyzeMatchesCommitTests } from "./sales-upload-analyze-
 import { runSalesUploadReceiptConfidentialityTests } from "./sales-upload-receipt-confidentiality.test.ts";
 import { runRetentionRiskDetectorTests } from "./retention-risk-detector.test.ts";
 import { runRetentionRiskNotifyTests } from "./retention-risk-notify.test.ts";
+import { runRetentionRiskRecipientExclusionTests } from "./retention-risk-recipient-exclusion.test.ts";
 import { runCrmAccountSetupTests } from "./crm-account-setup.test.ts";
 import { runPortalSosSourceMaskTests } from "./portal-sos-source-mask.test.ts";
 import {
@@ -4851,6 +4852,10 @@ await runTest(
 await runTest(
   "retention risk alerts (in-app and Telegram, never email or push; the message reports and never accuses)",
   runRetentionRiskNotifyTests,
+);
+await runTest(
+  "retention risk never tells the CEO — as a rep's line manager or via the role policy, and canonically on both sides",
+  runRetentionRiskRecipientExclusionTests,
 );
 await runTest(
   "SoS Direct channel folds both vintages (uploaded DIRECT + module DirectReq) into one channel, so a module-sourced direct sale is never reported as a distributor",
