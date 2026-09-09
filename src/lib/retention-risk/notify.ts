@@ -7,8 +7,11 @@
 
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
-import { resolveNotificationPersonRecipients } from "@/lib/notifications/role-recipients";
-import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
+import { resolveHrIdsForRole, resolveNotificationPersonRecipients } from "@/lib/notifications/role-recipients";
+import {
+  RETENTION_RISK_EXCLUDED_ROLE,
+  planRetentionRiskRecipients,
+} from "@/lib/retention-risk/recipients";
 import { getRetentionRiskView, cairoDateIso } from "@/lib/retention-risk/service";
 import { retentionRiskSignalKey } from "@/lib/retention-risk/detector";
 import {
@@ -68,19 +71,32 @@ export async function runRetentionRiskSweep(): Promise<RetentionRiskNotifyResult
     });
   }
 
+  // THE CEO NEVER RECEIVES THIS ALERT — owner, 2026-09-09. Resolved ONCE per sweep rather than per
+  // signal: it is one query whose answer cannot change mid-run, and the sweep already reads enough.
+  // See ./recipients.ts for why it is the role and not an HR id, and why it filters the whole
+  // audience rather than only the manager path.
+  const excludedRole = await resolveHrIdsForRole(
+    RETENTION_RISK_EXCLUDED_ROLE,
+    `Retention risk — ${RETENTION_RISK_EXCLUDED_ROLE} exclusion`,
+  );
+  warnings.push(...excludedRole.warnings);
+
   let announced = 0;
   let notified = 0;
   let skipped = 0;
+  const excludedSeen = new Set<string>();
 
   for (const signal of view.signals) {
     const key = retentionRiskSignalKey(signal);
     // The person's own line manager, on top of the standing audience — owner's choice 2026-09-06.
     // Deduped against it so someone who is both (an NSM who is also on the audience) is told once.
-    const managerKey = canonicalHrIdKey(signal.managerHrId);
-    const recipients = [...audience.recipients];
-    if (managerKey && !recipients.some((one) => canonicalHrIdKey(one.hrId) === managerKey)) {
-      recipients.push({ hrId: canonicalHrIdForDisplay(signal.managerHrId) ?? String(signal.managerHrId), userId: null });
-    }
+    const plan = planRetentionRiskRecipients({
+      audience: audience.recipients,
+      managerHrId: signal.managerHrId,
+      excludedHrIds: excludedRole.hrIds,
+    });
+    const recipients = plan.recipients;
+    for (const one of plan.excluded) excludedSeen.add(one);
 
     let anyAttempt = false;
     for (const recipient of recipients) {
@@ -118,6 +134,16 @@ export async function runRetentionRiskSweep(): Promise<RetentionRiskNotifyResult
       }
     }
     if (anyAttempt) announced += 1;
+  }
+
+  // Say it when the exclusion actually removed somebody. On every normal run this is empty, because
+  // the CEO holds none of the four roles and no rep reports to him — so a line here means either an
+  // admin added the role to the policy or the CEO became a rep's direct manager, and both are
+  // things whoever reads this run should be told rather than left to discover.
+  if (excludedSeen.size > 0) {
+    warnings.push(
+      `${RETENTION_RISK_EXCLUDED_ROLE} is never a recipient of this alert (owner, 2026-09-09) — removed ${Array.from(excludedSeen).join(", ")}.`,
+    );
   }
 
   return { announced, notified, signals: view.signals.length, skipped, warnings };

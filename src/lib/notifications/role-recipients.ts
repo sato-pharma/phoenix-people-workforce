@@ -413,6 +413,42 @@ async function loadDeliveryBindings(hrIds: string[], warnings: string[]): Promis
  * guard of their own — and reports why a list came back short through `warnings`, which every caller
  * writes into its audit log.
  */
+/**
+ * Everyone holding one app role right now, as HR ids in display form.
+ *
+ * Added 2026-09-09 for the retention-risk CEO exclusion, which has to name an OFFICE rather than a
+ * person: hard-coding an HR id would pin whoever sits in the chair today. Kept here beside the
+ * other resolvers because `app_auth_users` is this module's table, not the calling domain's.
+ *
+ * FAILS OPEN, like every resolver in this file, and that direction is deliberate even though this
+ * one feeds an EXCLUSION: an empty list means the exclusion does nothing and the alert still
+ * reaches its audience. The opposite choice - treating an unreadable table as "exclude everybody" -
+ * would silence a retention alert on a transient database error, which is the failure nobody sees.
+ * The caller is handed the warning so the run says what it could not read.
+ */
+export async function resolveHrIdsForRole(
+  role: PhoenixRole,
+  warningLabel: string,
+): Promise<{ hrIds: string[]; warnings: string[] }> {
+  const warnings: string[] = [];
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("app_auth_users")
+      .select("hr_id")
+      .eq("role", role)
+      .eq("is_active", true);
+    if (error) throw error;
+    const rows = (data ?? []) as Array<{ hr_id?: string | null }>;
+    const hrIds = rows.map((row) => String(row.hr_id ?? "").trim().toUpperCase()).filter(Boolean);
+    return { hrIds: Array.from(new Set(hrIds)), warnings };
+  } catch (error) {
+    warnings.push(
+      `${warningLabel} unavailable: ${error instanceof Error ? error.message : "unknown error"}`.slice(0, 160),
+    );
+    return { hrIds: [], warnings };
+  }
+}
+
 export async function resolveNotificationPersonRecipients(
   key: NotificationRoleKey,
   warningLabel: string,
