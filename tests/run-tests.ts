@@ -1508,6 +1508,7 @@ import { runNotificationHeldAgeingTests } from "./notification-held-ageing.test.
 import { runOverCapNeverBlocksTests } from "./over-cap-never-blocks.test.ts";
 import { runTargetsUnsavedEditGuardTests } from "./targets-unsaved-edit-guard.test.ts";
 import { runDirectOrderVenueGapsTests } from "./direct-order-venue-gaps.test.ts";
+import { runVacancyOptionLabelTests } from "./vacancy-option-label.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4901,6 +4902,11 @@ await runTest(
 await runTest(
   "direct-order venue gaps: a BLANK pharmacist counts as missing, and each chip's count equals what its filter shows",
   runDirectOrderVenueGapsTests,
+);
+
+await runTest(
+  "vacancy option label (a district vacancy names its district, not only the leaver own area)",
+  runVacancyOptionLabelTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
