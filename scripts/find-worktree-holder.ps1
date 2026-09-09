@@ -10,8 +10,9 @@
 #
 # A folder whose `rmdir` fails with exit 32 is held by one of the processes printed.
 # Close that session. If it will not die -- mostly-kernel CPU with zero threads in
-# Terminated state -- it is stuck inside a kernel call and only a restart frees the
-# folder. See AGENTS.md 2.1 (Worktrees) before spending time on one.
+# Terminated state -- it is stuck inside a kernel call: Stop-Process and Task Manager
+# cannot unwind it, but ARCHIVING the owning session does end it, with no reboot.
+# Restart only if that fails. See AGENTS.md 2.1 (Worktrees) before spending time on one.
 
 param([string]$Path, [switch]$Json)
 

@@ -1322,6 +1322,34 @@ sample which returned **blank on both reads** and scored itself *the folder is q
 comparing equal. The folder had in fact been removed by another session seconds earlier. Verify
 with a positive control (bytes read, rows found), never with a clean-looking blank.
 
+## An unkillable holder dies when its SESSION is archived — no reboot — 2026-09-07
+
+Correction to the conclusion of the section above, whose 2026-09-05 account otherwise stands:
+*only the restart cleared it* was true of the levers tried that night, not of the problem. There
+is a second lever, and it is the cheap one.
+
+`.claude/worktrees/quirky-golick-444b9a` was held by **PID 16692 `claude.exe`** at **13,771 s of
+kernel CPU**, which `find-worktree-holder.ps1` flagged `KERNEL-STUCK?` — the same signature as PID
+23316 above, and read the same way: a reboot is the only way out. It was not. The process belonged
+to the session *"Fix conversation threads that email only their first message"* (PR #3411, merged),
+and **archiving that session ended it.** The next PEB sweep read *no process is sitting in any
+worktree*, and a plain non-recursive `rmdir` took the husk with exit 0 on the first attempt.
+
+**So the order is: archive the owning session, THEN consider a restart.** `Stop-Process` and Task
+Manager still cannot unwind a thread inside a kernel call — that half is unchanged — but the app
+tears its own session down by a route neither of those uses. `archive_session` stops the process
+and releases the worktree, and it refuses a session that is mid-turn, pinned, or on screen, so a
+refusal is informative rather than destructive.
+
+Found while archiving 26 merged sessions in one sweep: 31 `claude.exe` down to 21, **2.8 GB of
+commit charge** returned, and free RAM essentially unmoved — 2,139 to 2,206 MB. Windows does not
+hand working sets back eagerly, so **judge what archiving bought by commit charge, never by free
+RAM.** The same sweep took `.claude/worktrees/` from 9 worktrees plus 2 husks to empty.
+
+**The cost lesson above is untouched.** That husk was still priced at `0 empty path entries
+reclaimable`. It was worth clearing only because archiving the session was wanted anyway — never
+chase a zero-priced husk on its own.
+
 ### Why `list_sessions` cannot answer "is anyone in that folder" — 2026-09-08
 
 Relocated from the AGENTS.md hook so the hook could stay a hook (§2.2). Two fields there are
