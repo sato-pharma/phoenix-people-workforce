@@ -10,6 +10,7 @@ import {
   type GoogleMarkerHandle,
   type GooglePolylineHandle,
 } from "@/lib/google-maps/browser";
+import { buildReviewMapOptions, hasConfiguredMapId } from "@/lib/outstation/review-map-options";
 import type { OutstationExpenseRequest, OutstationRouteAlternative } from "@/lib/outstation/types";
 
 type GoogleMapsNamespace = GoogleMapsApi;
@@ -173,7 +174,7 @@ export function OutstationReviewMap({
         if (cancelled) return;
 
         const MapCtor = mapsLibrary?.Map as GoogleMapsNamespace["Map"];
-        const useAdvancedMarkers = Boolean(mapId.trim().length > 0);
+        const useAdvancedMarkers = hasConfiguredMapId(mapId);
         const MarkerCtor = useAdvancedMarkers
           ? markerLibrary?.AdvancedMarkerElement as GoogleMapsNamespace["Marker"] ?? googleMaps.marker?.AdvancedMarkerElement
           : markerLibrary?.Marker as GoogleMapsNamespace["Marker"] ?? googleMaps.Marker;
@@ -200,16 +201,17 @@ export function OutstationReviewMap({
         polylinesRef.current.forEach((polyline) => polyline.setMap?.(null));
         polylinesRef.current = [];
 
-        const map = new MapCtor(mapElement, {
-          center: {
-            lat: (currentRequest.residenceLatitude! + currentRequest.capturedLatitude) / 2,
-            lng: (currentRequest.residenceLongitude! + currentRequest.capturedLongitude) / 2,
-          },
-          ...(useAdvancedMarkers ? { mapId } : {}),
-          mapTypeControl: false,
-          streetViewControl: false,
-          zoom: 8,
-        });
+        const map = new MapCtor(
+          mapElement,
+          buildReviewMapOptions({
+            center: {
+              lat: (currentRequest.residenceLatitude! + currentRequest.capturedLatitude) / 2,
+              lng: (currentRequest.residenceLongitude! + currentRequest.capturedLongitude) / 2,
+            },
+            mapId,
+            zoom: 8,
+          }),
+        );
 
         if (MarkerCtor) {
           const residenceMarker = new MarkerCtor({
