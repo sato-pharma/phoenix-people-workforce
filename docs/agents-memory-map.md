@@ -166,6 +166,7 @@ status, give it its own line.
 - **The public Territory Management preview link must NEVER display or offer the line** — `territory-preview-link-must-never-show-the-line` · `organogram-chart-source-is-au-seat-model-not-directory` · `whatsapp-button-on-leadership-rows-is-an-owner-decision`
 - **The CEO is NOT a district, and a picker is never wider than its viewer.** — `the-ceo-is-not-a-district-and-a-picker-is-not-wider-than-its-viewer` **(inline — load-bearing)**
 - **SCOPE RUNS DOWNWARD ONLY — an employee never sees his own manager, nor anyone at or above his own RANK.** — `scope-runs-downward-only-never-your-own-manager` **(inline — load-bearing)**
+- **Recruitment too: a DM never receives a DM CV — the automatic folders and the hand-push alike.** — `a-dm-never-receives-a-dm-cv` **(inline — load-bearing)**
 - **An NSM's outstation expense is NEVER held** — `nsm-outstation-expense-is-never-held` **(inline — load-bearing)**
 - **THE SYSTEM NEVER AUTO-APPROVES A PLAN — a DM's weekly plan is submit → NSM (or RSM if applicable) → HR acknowledge, with NO CEO stage.** — `the-system-never-auto-approves-a-plan` **(inline — load-bearing)**
 - **The mailbox-monitor app-password entry is `imap` (was ___ until 2026-09-07), never "Phoenix".** — `mailbox-monitor-app-password-entry-is-three-underscores-never-phoenix` **(inline — load-bearing)**
