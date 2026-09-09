@@ -61,6 +61,7 @@ import {
   missingEmployeeRecordSummary,
 } from "@/lib/employees/employee-record-health";
 import type { SeatTransferOptions } from "@/lib/employees/seat-transfer";
+import { formatVacancyOptionLabel } from "@/lib/employees/vacancy-option-label";
 import { deriveSalaryFromNet } from "@/lib/payroll/salary-autofill";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -2675,9 +2676,7 @@ export function EmployeeManagement({
                       selectedPositionRequiresVacancy
                         ? filteredWorkforceVacancies.length > 0
                           ? filteredWorkforceVacancies.map((v) => ({
-                              label: v.managerName
-                                ? `${v.areaName} - ${v.positionTitle} - Manager: ${v.managerName}`
-                                : `${v.areaName} - ${v.positionTitle}`,
+                              label: formatVacancyOptionLabel(v),
                               value: String(v.areaId),
                             }))
                           : form.lineId
