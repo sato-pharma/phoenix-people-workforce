@@ -7,6 +7,7 @@ import { Minus, Plus, X } from "lucide-react";
 
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
+import { hasPhoneLike, maskPhoneLike } from "@/lib/recruitment/cv-phone-redaction";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 /**
@@ -23,7 +24,25 @@ import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
  * exists so the screen does not offer a control that the server would then refuse, which reads as a
  * broken button rather than as a decision.
  */
-type CvDownloadAllowance = { allowDownload?: boolean };
+type CvDownloadAllowance = {
+  allowDownload?: boolean;
+  /**
+   * Paint out every phone number PRINTED ON THE DOCUMENT.
+   *
+   * TRUE on a manager's portal for any CV he has not reserved, FALSE everywhere else. Hiding the
+   * database field was never the whole job: a CV prints its own contact details, usually beside a
+   * telephone icon in 14pt, so the number the screen had just taken away was back the instant he
+   * pressed View CV. The owner, 2026-09-09, on seeing exactly that: *"when I press on view the CV
+   * the number is clearly showing"*.
+   *
+   * It covers what CAN be covered. A PDF and a Word file carry their text as text, so the runs are
+   * found and painted over. A PHOTOGRAPHED CV is pixels, with nothing to find without optical
+   * character recognition, so it is not shown at all until he takes the call — 41 of the 1,188 CVs
+   * on record, measured 2026-09-09. Showing those anyway would make every other redaction on this
+   * screen decorative, since a manager who wants a number would simply learn to look there.
+   */
+  redactPhones?: boolean;
+};
 
 type CvDocumentProps = CvDownloadAllowance & {
   fileName: string;
@@ -115,6 +134,7 @@ export function CvDocumentView({
   downloadUrl,
   fileName,
   mimeType,
+  redactPhones = false,
   fitToWidth = true,
 }: CvDocumentProps) {
   const kind = detectCvFileKind(mimeType ?? "", fileName);
@@ -205,6 +225,15 @@ export function CvDocumentView({
         const bytes = base64ToBytes(await res.text());
 
         if (kind === "image") {
+          // A PHOTOGRAPHED CV CANNOT BE REDACTED, so where redaction is required it is not shown.
+          // There is no text to find in a photograph, and every other number on this screen is
+          // hidden — leaving this one window open would just teach a manager where to look.
+          if (redactPhones) {
+            throw new Error(
+              "This CV is a photograph, so the phone number printed on it cannot be covered. "
+                + "Press \"I will call\" to take this candidate, and it opens.",
+            );
+          }
           // Same reasoning as the PDF path below: the bytes are already in hand, so the <img>
           // never issues a second request that a download-manager extension could intercept.
           // Photographed CVs arrive this way over WhatsApp, so this is a real intake path.
@@ -259,6 +288,47 @@ export function CvDocumentView({
             canvas.className = "mx-auto mb-3 block bg-white shadow-sm";
             await page.render({ canvas, viewport }).promise;
             if (!active) return;
+
+            // ── PAINT OUT THE PHONE NUMBERS PRINTED ON THE PAGE ──────────────────────────────
+            //
+            // AFTER the render, onto the same canvas, so what the reader sees and what any copy of
+            // it would contain are the one image. There is no text layer over this canvas and no
+            // second copy of the page anywhere: pdf.js draws pixels, and the covered pixels are
+            // simply never drawn back.
+            //
+            // The whole TEXT ITEM is covered rather than the matching characters inside it. An item
+            // is one run in the PDF's own layout, which for a contact line is the number by itself,
+            // and measuring a sub-span means re-deriving glyph advances from a font this code has
+            // not loaded. Covering the run errs towards hiding, which is the safe direction here.
+            if (redactPhones) {
+              const context = canvas.getContext("2d");
+              const content = await page.getTextContent();
+              if (context) {
+                context.fillStyle = "#0f172a";
+                for (const item of content.items) {
+                  const textItem = item as { str?: string; transform?: number[]; width?: number; height?: number };
+                  if (!textItem.str || !hasPhoneLike(textItem.str) || !textItem.transform) continue;
+                  // The item's own matrix through the viewport's gives its box in canvas pixels.
+                  // transform[4]/[5] are the baseline origin, so the box starts one height above it.
+                  const placed = pdfjsLib.Util.transform(viewport.transform, textItem.transform);
+                  const height = (textItem.height ?? 0) * viewport.scale || Math.abs(placed[3]) || 12;
+                  const width = (textItem.width ?? 0) * viewport.scale;
+                  if (width <= 0) continue;
+                  // ROUNDED OUTWARD, then bled. Both halves matter and both were measured.
+                  //
+                  // A text item lands on fractional device pixels, so filling at those coordinates
+                  // anti-aliases the edge and can leave a readable sliver of a digit along it —
+                  // caught on 2026-09-09 by counting light pixels inside the box against a version
+                  // that rounded first, where the same box left none. Flooring the origin and
+                  // ceiling the size guarantees whole pixels; the bleed then covers ink that sits
+                  // outside its own reported box, which is ordinary for a glyph with a descender.
+                  const left = Math.floor(placed[4]) - 3;
+                  const top = Math.floor(placed[5] - height) - 3;
+                  context.fillRect(left, top, Math.ceil(width) + 6, Math.ceil(height) + 6);
+                }
+              }
+            }
+
             container.appendChild(canvas);
           }
           return;
@@ -291,6 +361,21 @@ export function CvDocumentView({
           ignoreWidth: false,
           ignoreHeight: false,
         });
+
+        // The Word half of the same rule. docx-preview paints real DOM, so the numbers are text
+        // nodes and are rewritten in place — masked to the SAME LENGTH, so the page keeps the
+        // layout the applicant gave it and the reader can see where something was taken out. Done
+        // after renderAsync rather than on the source, because the source is a zip of XML and the
+        // thing that has to be clean is what ends up on the screen.
+        if (redactPhones) {
+          const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+          const nodes: Text[] = [];
+          for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node as Text);
+          for (const node of nodes) {
+            const masked = maskPhoneLike(node.nodeValue ?? "");
+            if (masked !== node.nodeValue) node.nodeValue = masked;
+          }
+        }
       } catch (caught) {
         if (active) {
           setError(caught instanceof Error ? caught.message : "This document couldn't be previewed.");
@@ -303,7 +388,10 @@ export function CvDocumentView({
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [kind, bytesUrl, mimeType]);
+    // redactPhones is a dependency because it changes what gets PAINTED, not just what is read: a
+    // manager who reserves the CV while the preview is open must see the page redrawn with the
+    // number, and one who releases it must see it painted out again, without a reload.
+  }, [kind, bytesUrl, mimeType, redactPhones]);
 
 
   // A failed in-page render must never be a dead end. Whatever went wrong — a document the
@@ -441,6 +529,7 @@ export function CvPreviewModal({
   mimeType,
   downloadUrl,
   onClose,
+  redactPhones = false,
   sidePanel,
 }: Props) {
   const dialogRef = useDialogA11y({ open: true, onClose });
@@ -453,6 +542,7 @@ export function CvPreviewModal({
       downloadUrl={downloadUrl}
       fileName={fileName}
       mimeType={mimeType}
+      redactPhones={redactPhones}
     />
   );
 

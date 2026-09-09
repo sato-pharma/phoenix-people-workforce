@@ -132,7 +132,7 @@ export function CandidateReadCard({
         <Field label="Their answer" value={candidate.statusNote?.trim() ? candidate.statusNote : null} />
       </div>
 
-      <CandidateCvActions candidateId={candidate.id} initialFiles={files} />
+      <CandidateCvActions candidateId={candidate.id} initialFiles={files} showPhoneNumbers={call.mine} />
 
       {/* The owner's two buttons, on the folder screen where several managers see one CV. `skip`
           here is his OWN pass — it clears the card from his folder and leaves the candidate in front

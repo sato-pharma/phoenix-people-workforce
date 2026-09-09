@@ -30,8 +30,18 @@ type CandidateFileSummary = { id: string; fileName: string; kind: string; mimeTy
 export function CandidateCvActions({
   candidateId,
   initialFiles,
+  showPhoneNumbers = false,
 }: {
   candidateId: string;
+  /**
+   * TRUE only for the manager holding the reservation on this candidate.
+   *
+   * HIDING THE FIELD WAS NEVER THE WHOLE JOB. A CV prints its own contact details, so the number
+   * the card had just taken away was back in 14pt the moment anyone pressed View CV. The owner saw
+   * exactly that on 2026-09-09. This is the same rule as the Phone field beside it, applied to the
+   * document: one manager may read the number, and until somebody takes the call, nobody may.
+   */
+  showPhoneNumbers?: boolean;
   /**
    * The candidate's files, when the caller already has them.
    *
@@ -120,6 +130,7 @@ export function CandidateCvActions({
           fileName={cvFile.fileName}
           mimeType={cvFile.mimeType}
           onClose={() => setPreviewOpen(false)}
+          redactPhones={!showPhoneNumbers}
         />
       ) : null}
     </>
