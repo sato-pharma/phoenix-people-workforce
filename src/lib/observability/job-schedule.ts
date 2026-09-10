@@ -52,6 +52,13 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   { slug: "phoenix-marketing-field-capture-nudge", kind: "cron", schedule: "50 6 * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-marketing-invoice-overdue-nudge", kind: "cron", schedule: "5 7 * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-distributor-upload-overdue-nudge", kind: "cron", schedule: "20 7 * * *", graceSeconds: 1 * HOUR },
+  // Every quarter hour, not daily, and that is the point. A held mapping change means the map is
+  // refusing that write until somebody decides, so the gap between the hold and the message is a
+  // window in which an import quietly under-applies. The sweep is one indexed query that usually
+  // returns nothing, so the cost of running it 96 times a day is far below the cost of a held
+  // change nobody hears about until tomorrow. Grace is an hour: a couple of missed runs are not
+  // worth waking anyone for, a whole hour of silence is.
+  { slug: "phoenix-mapping-guard-notify", kind: "cron", schedule: "*/15 * * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-retention-risk-sweep", kind: "cron", schedule: "40 7 * * *", graceSeconds: 1 * HOUR },
   // Day 25 only. The pre-payroll half of the same feature: Part 1 pays at the start of the month,
   // so the 25th leaves several working days to check on someone before any money moves. The other
