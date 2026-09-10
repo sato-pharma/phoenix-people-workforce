@@ -178,3 +178,25 @@ export function selectableWindows(
   }
   return out;
 }
+
+/**
+ * Why a spotlight cannot be run right now, in words, or null when it can.
+ *
+ * 🔴 A DISABLED BUTTON AND A BROKEN BUTTON LOOK THE SAME. This exists because they were the same
+ * thing: the workspace disabled "Show me" whenever no period was selected and said nothing about
+ * it, and the first person to pick Year — where the list is legitimately empty until January 2027 —
+ * reported the button as doing nothing. He was right. It did nothing, for a good reason nobody
+ * could see.
+ *
+ * Pure and here rather than in the component, so the wording is testable and so the rule that
+ * decides it lives beside the gate that causes it.
+ */
+export function blockedReason(kind: SpotlightWindowKind, hasSelectableWindow: boolean): string | null {
+  if (hasSelectableWindow) return null;
+  if (kind === "year") {
+    return "No calendar year has finished within the sales data, which starts in January 2026."
+      + " The first will be 2026, from 1 January 2027. Choose Month, Quarter or Half year.";
+  }
+  const noun = kind === "semester" ? "half year" : kind;
+  return `No ${noun} has finished yet, so there is nothing to spotlight. Choose a different period type.`;
+}
