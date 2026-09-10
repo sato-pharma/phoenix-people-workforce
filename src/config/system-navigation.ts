@@ -2613,6 +2613,17 @@ export const salesAnalyticsPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "sales" }],
     roles: ["Super Admin", "CEO", "SFE Manager"],
   },
+  {
+    href: "/admin/field-sales/mapping-guard",
+    icon: ShieldAlert,
+    label: "Mapping Guard",
+    description: "Customer, brick and area re-mappings stopped for review.",
+    permissions: [{ resource: "sales" }],
+    // Super Admin alone, matching the page's own server-side gate. Releasing a hold is an owner
+    // decision by construction: the guard fires precisely when somebody else's change was about to
+    // replace one of his. This list is UX only; the gate inside the page is the security boundary.
+    roles: ["Super Admin"],
+  },
 ] as const satisfies readonly AdminToolsPageItem[];
 
 // ── Master Data hub (app/(admin)/admin/master-data/page.tsx) ────────────────────

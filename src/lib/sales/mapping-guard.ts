@@ -282,3 +282,114 @@ export async function runMappingGuardNotify(options?: { limit?: number }): Promi
 
   return { batches: batches.length, held: holds.length, notified, skipped, warnings };
 }
+
+// ── The review screen ─────────────────────────────────────────────────────────────────────────
+
+export type HeldMappingChange = {
+  id: number;
+  /** "customer mapping" | "brick" | "area", never a table name. */
+  kind: string;
+  /** The pharmacy, brick or area this is about, named the way he reads it. */
+  subject: string;
+  /** Where it sits today, and where the change wanted to put it. */
+  from: string;
+  to: string;
+  reasons: string[];
+  writer: string;
+  createdAt: string;
+  notified: boolean;
+};
+
+/**
+ * Turn one held row into something a person can decide from.
+ *
+ * Codes are resolved to names here rather than in the component, because the standing rule is that
+ * a screen shows human-readable names and a component that receives a code has already lost.
+ */
+function describeSide(
+  tableName: string,
+  side: Record<string, unknown>,
+  areaNames: ReadonlyMap<string, string>,
+  brickNames: ReadonlyMap<string, string>,
+): string {
+  const text = (key: string) => String(side[key] ?? "").trim();
+  if (tableName === "source_of_sales_customer_map") {
+    const area = text("area_code");
+    const brick = text("brick_id");
+    if (!area && !brick) return "not mapped";
+    // `||` rather than `??` throughout: a name recorded as an empty string has to fall through to
+    // the code, and `??` would keep the blank and print a row that names nothing.
+    const areaName = areaNames.get(area.toUpperCase()) || area;
+    const brickName = brickNames.get(brick.toUpperCase()) || brick;
+    return brickName ? `${areaName} · ${brickName}` : areaName;
+  }
+  if (tableName === "source_of_sales_bricks") {
+    const area = text("area_code");
+    return areaNames.get(area.toUpperCase()) || area || "—";
+  }
+  const region = text("region_code");
+  return region || "—";
+}
+
+export async function listHeldMappingChanges(limit = 200): Promise<HeldMappingChange[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("sos_map_change_holds")
+    .select("id,table_name,entity_key,reasons,db_role,app_actor,created_at,notified_at,before_json,after_json")
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(Math.min(Math.max(limit, 1), 500));
+  if (error) throw error;
+
+  const rows = (data ?? []) as unknown as Array<HoldRow & { notified_at: string | null }>;
+  if (rows.length === 0) return [];
+
+  const [areas, bricks] = await Promise.all([
+    supabase.from("source_of_sales_areas").select("area_code,area_name"),
+    supabase.from("source_of_sales_bricks").select("brick_id,brick_name"),
+  ]);
+  const areaNames = new Map<string, string>();
+  for (const row of (areas.data ?? []) as Array<{ area_code: string; area_name: string | null }>) {
+    areaNames.set(String(row.area_code).trim().toUpperCase(), String(row.area_name ?? "").trim());
+  }
+  const brickNames = new Map<string, string>();
+  for (const row of (bricks.data ?? []) as Array<{ brick_id: string; brick_name: string | null }>) {
+    brickNames.set(String(row.brick_id).trim().toUpperCase(), String(row.brick_name ?? "").trim());
+  }
+
+  return rows.map((row) => ({
+    createdAt: row.created_at,
+    from: describeSide(row.table_name, row.before_json ?? {}, areaNames, brickNames),
+    id: row.id,
+    kind: TABLE_LABEL[row.table_name] ?? row.table_name,
+    notified: row.notified_at !== null,
+    reasons: row.reasons ?? [],
+    subject: row.entity_key,
+    to: describeSide(row.table_name, row.after_json ?? {}, areaNames, brickNames),
+    writer: row.app_actor ?? `${row.db_role} (direct database access)`,
+  }));
+}
+
+export type MappingHoldDecision = "approved" | "rejected";
+
+/**
+ * Release or refuse one held change.
+ *
+ * The apply is done INSIDE the database function, because that function is the only thing permitted
+ * to set the bypass. Doing the update from here would either be blocked by the guard or require
+ * handing the application a way to switch the guard off, which is the same as not having one.
+ */
+export async function decideMappingHold(input: {
+  holdId: number;
+  decision: MappingHoldDecision;
+  actor: string;
+}): Promise<{ ok: boolean; reason?: string }> {
+  const { data, error } = await getSupabaseAdmin().rpc("sos_map_guard_decide", {
+    p_actor: input.actor,
+    p_decision: input.decision,
+    p_hold_id: input.holdId,
+  });
+  if (error) throw error;
+  const result = (data ?? {}) as { ok?: boolean; reason?: string };
+  return { ok: result.ok === true, reason: result.reason };
+}

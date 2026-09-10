@@ -351,7 +351,29 @@ begin
 end;
 $$;
 
+-- EXECUTE on a function is granted to PUBLIC by default, and service_role inherits it that way, so
+-- revoking from PUBLIC takes it from the application too. The grant below has to be explicit or the
+-- review screen can hold changes and never release one.
 revoke all on function public.sos_map_guard_decide(bigint, text, text) from public, anon, authenticated;
+grant execute on function public.sos_map_guard_decide(bigint, text, text) to service_role;
 
 comment on function public.sos_map_guard_decide(bigint, text, text) is
   'Approve or reject one held mapping change. Approving is the ONLY path that sets phoenix.map_guard_bypass, which is what separates "he approved it" from "the writer said it was his".';
+
+-- ── Who may see the holds ─────────────────────────────────────────────────────────────────────
+--
+-- RLS on with no policy, which is the norm in this database, plus an explicit service_role grant.
+-- Visibility in this app is application-scoped: the page gate restricts the screen to Super Admin,
+-- and these rows never travel to a browser role. `before_json` carries whole customer rows, so a
+-- stray `authenticated` grant here would expose the mapping table through a side door.
+
+alter table public.sos_map_change_log   enable row level security;
+alter table public.sos_map_change_holds enable row level security;
+
+revoke all on public.sos_map_change_log   from anon, authenticated;
+revoke all on public.sos_map_change_holds from anon, authenticated;
+
+grant select                        on public.sos_map_change_log   to service_role;
+grant select, update                on public.sos_map_change_holds to service_role;
+grant usage, select on sequence public.sos_map_change_log_id_seq   to service_role;
+grant usage, select on sequence public.sos_map_change_holds_id_seq to service_role;

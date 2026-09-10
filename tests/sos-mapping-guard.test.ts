@@ -176,7 +176,50 @@ function theMigrationKeepsItsLoadBearingClauses() {
   assert.match(sql, /if not v_moves then/, "a change that moves nothing is not a mapping change");
 }
 
+/**
+ * The review screen is where a hold is released, so its gate is the guard's own security boundary.
+ * Server-side, on the page AND on the route: a hidden sidebar link is UX only.
+ */
+function theReviewScreenIsGatedOnTheServer() {
+  const page = readFileSync(join(ROOT, "app/(admin)/admin/field-sales/mapping-guard/page.tsx"), "utf8");
+  assert.match(page, /await assertPermission\(accessContext, "sales", "import"\)/);
+  assert.match(page, /accessContext\.role !== "Super Admin" && accessContext\.scope !== "system"/);
+
+  const route = readFileSync(join(ROOT, "app/api/sales/mapping-guard/decide/route.ts"), "utf8");
+  const gates = route.match(/access\.role !== "Super Admin" && access\.scope !== "system"/g) ?? [];
+  assert.equal(gates.length, 2, "BOTH the read and the decide must narrow to Super Admin, not just one");
+  const permissions = route.match(/await assertPermission\(access, "sales", "import"\)/g) ?? [];
+  assert.equal(permissions.length, 2, "every handler asserts before it acts");
+}
+
+/** Owner's square-edge golden rule. tokens.css still defaults --phx-radius to 4px, so this is measured. */
+function theScreenHasNoRoundedCorners() {
+  const component = readFileSync(join(ROOT, "src/components/sales/mapping-guard-review.tsx"), "utf8");
+  assert.doesNotMatch(component, /\brounded(-|\b)/, "no radius anywhere, including inherited from a sibling");
+}
+
+/** Owner's fits-the-screen golden rule: never a horizontal scroll, at desktop and at 375px. */
+function theScreenFitsByConstruction() {
+  const component = readFileSync(join(ROOT, "src/components/sales/mapping-guard-review.tsx"), "utf8");
+  assert.match(component, /<table className="w-full table-fixed/, "a fixed table over percentages, not a scroller");
+  assert.match(component, /<colgroup>/);
+  assert.doesNotMatch(component, /overflow-x-auto|min-w-\[/, "overflow-x-auto over a min-width floor IS the bug, not the fix");
+  assert.match(component, /md:hidden/, "mobile gets cards");
+  assert.match(component, /hidden [^"]*md:block/, "the table is desktop only");
+}
+
+function theSidebarLinkMatchesTheGate() {
+  const nav = readFileSync(join(ROOT, "src/config/system-navigation.ts"), "utf8");
+  const entry = nav.slice(nav.indexOf('href: "/admin/field-sales/mapping-guard"'));
+  assert.ok(entry.length > 0, "the screen must be reachable — a page nobody can navigate to is a page nobody uses");
+  assert.match(entry.slice(0, 700), /roles: \["Super Admin"\]/, "the link must not offer the screen to somebody the page will redirect");
+}
+
 export async function runSosMappingGuardTests() {
+  theReviewScreenIsGatedOnTheServer();
+  theScreenHasNoRoundedCorners();
+  theScreenFitsByConstruction();
+  theSidebarLinkMatchesTheGate();
   batchingGroupsOneRunIntoOneMessage();
   twoWritersNeverShareAMessage();
   aGapWiderThanTheWindowSplitsTheBatch();
