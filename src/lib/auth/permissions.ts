@@ -75,6 +75,11 @@ export type PermissionAction =
   | "import";
 
 export type PermissionResource =
+  // Spotlight: the recognition export. Super Admin and CEO ONLY, by the owner's instruction when
+  // the module was specified. It reads every rep, district and line in the company with no scope
+  // narrowing of any kind, and it produces a shareable sheet with people's names and achievement
+  // on it — so a narrower role holding it would be both a scope leak and a publishing right.
+  | "spotlight"
   | "employees"
   | "employee_profile"
   | "employee_documents"
@@ -842,8 +847,11 @@ const defaultPermissionMatrix: PermissionMap = {
     // tightly held. Widen via role_permission_overrides if ever needed.
     user_activity: ["read", "export"],
     synthetic_journeys: ["read"],
+    spotlight: ["read", "export"],
   },
   CEO: {
+    // Spotlight: read and export. The owner named him and the Super Admin as the only two holders.
+    spotlight: ["read", "export"],
     // Market Awareness: he is the second and final approval on every activity — no cost
     // threshold skips him (owner answer 36). `approve` here is HIS action; nothing in this module
     // may ever write a decision row on his behalf.
