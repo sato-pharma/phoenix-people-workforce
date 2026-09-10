@@ -2,6 +2,7 @@ import { classifyOrganogramStructureLevel } from "@/lib/reports/organogram-safet
 import type {
   VacationActionAvailability,
   VacationApprovalStepState,
+  VacationApprovalStepStatus,
   VacationDecision,
   VacationGenericStepName,
   VacationRequestStatus,
@@ -167,6 +168,121 @@ export function evaluateStepAction(input: {
   return { allowed: true, reason: null, nextStatus: "approved", isFinal: true };
 }
 
+/**
+ * The stalled-approver override (owner instruction, 2026-09-10).
+ *
+ * A management approver who has not answered for this many days can have their step decided by a
+ * Super Admin instead. Counted in FLAT CALENDAR DAYS at the owner's explicit choice — weekends and
+ * public holidays included — not in the business days the SLA reminder uses. The two clocks are
+ * deliberately different and must not be merged: the SLA one nags the approver, this one takes the
+ * decision away from them, so the owner wanted the second to be the one nobody has to compute.
+ */
+export const ADMIN_OVERRIDE_STALL_DAYS = 2;
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** A step as the override rule needs to see it — `createdAt` is what the SLA status never carries. */
+export type VacationOverrideStep = {
+  createdAt: string | null;
+  decidedAt: string | null;
+  order: number;
+  status: VacationApprovalStepStatus;
+  stepKey: VacationWorkflowStepKey;
+};
+
+export type AdminOverrideEvaluation = {
+  available: boolean;
+  availableAt: string | null;
+  daysPending: number;
+  reason: string | null;
+  step: VacationOverrideStep | null;
+};
+
+/**
+ * When the active step actually became its approver's to answer.
+ *
+ * NOT the request's creation time. On a two-management-step chain the second approver's wait
+ * starts when the FIRST one approved, so keying the clock off the request would hand step 2 an
+ * already-expired timer the moment step 1 cleared — an override available against someone who has
+ * had the request for ten seconds. (This is exactly how the SLA `stageStart` behaves, which is why
+ * this rule does not reuse it.) Falls back to the step row's own creation time for step 1.
+ */
+export function resolveStepActivatedAt(input: {
+  activeStep: Pick<VacationOverrideStep, "createdAt" | "order">;
+  steps: VacationOverrideStep[];
+}): string | null {
+  const priorDecisions = input.steps
+    .filter((step) => step.order < input.activeStep.order && step.decidedAt)
+    .map((step) => step.decidedAt as string)
+    .sort();
+  return priorDecisions.at(-1) ?? input.activeStep.createdAt ?? null;
+}
+
+function unavailable(reason: string, extra?: Partial<AdminOverrideEvaluation>): AdminOverrideEvaluation {
+  return { available: false, availableAt: null, daysPending: 0, reason, step: null, ...extra };
+}
+
+/**
+ * Whether a Super Admin may decide the currently active MANAGEMENT step in its approver's place.
+ *
+ * Management steps only. The HR step is never overridable — HR is the Super Admin, so an override
+ * there would be a self-override, and the sequencing in evaluateStepAction already holds it until
+ * management is done. Never on the actor's own request.
+ */
+export function evaluateAdminOverride(input: {
+  isAdminActor: boolean;
+  isOwnRequest: boolean;
+  now: Date;
+  status: VacationRequestStatus;
+  steps: VacationOverrideStep[];
+}): AdminOverrideEvaluation {
+  if (!input.isAdminActor) return unavailable("Only a Super Admin can override a stalled approver.");
+  if (input.isOwnRequest) return unavailable("You cannot override an approver on your own request.");
+  if (input.status === "pending_hr") {
+    return unavailable("Management has already decided — this request is waiting on HR acknowledgement.");
+  }
+  if (input.status !== "pending_manager") {
+    return unavailable("This request has no stalled management approver.");
+  }
+
+  const active = resolveActiveStep(
+    input.steps.map((step) => ({ order: step.order, status: step.status, stepKey: step.stepKey })),
+  );
+  if (!active || !isManagementStep(active.stepKey)) {
+    return unavailable("This request has no stalled management approver.");
+  }
+  const activeStep = input.steps.find(
+    (step) => step.order === active.order && step.stepKey === active.stepKey,
+  );
+  if (!activeStep) return unavailable("This request has no stalled management approver.");
+
+  const activatedAt = resolveStepActivatedAt({ activeStep, steps: input.steps });
+  const activatedMs = activatedAt ? Date.parse(activatedAt) : Number.NaN;
+  if (!Number.isFinite(activatedMs)) {
+    // Fail CLOSED. An unreadable start time means the wait cannot be measured, and an override
+    // offered on an unmeasured wait is the one outcome worse than no override at all.
+    return unavailable("This approver's start time is unreadable, so the wait cannot be measured.", {
+      step: activeStep,
+    });
+  }
+
+  const availableAt = new Date(activatedMs + ADMIN_OVERRIDE_STALL_DAYS * MS_PER_DAY).toISOString();
+  const daysPending = Math.max(0, (input.now.getTime() - activatedMs) / MS_PER_DAY);
+  const rounded = Math.round(daysPending * 100) / 100;
+
+  if (input.now.getTime() < activatedMs + ADMIN_OVERRIDE_STALL_DAYS * MS_PER_DAY) {
+    return {
+      available: false,
+      availableAt,
+      daysPending: rounded,
+      reason: `The assigned approver has had this for ${rounded} of the ${ADMIN_OVERRIDE_STALL_DAYS} days that unlock an override.`,
+      step: activeStep,
+    };
+  }
+
+  return { available: true, availableAt, daysPending: rounded, reason: null, step: activeStep };
+}
+
 const HR_ACKNOWLEDGEMENT_LABEL = "HR Acknowledgement";
 
 export function genericStepLabel(stepKey: VacationWorkflowStepKey, approverTitle?: string | null): string {
@@ -232,12 +348,36 @@ export function resolveActionAvailability(input: {
   steps: VacationApprovalStepState[];
   actorStep: { stepKey: VacationWorkflowStepKey; order: number } | null;
   isHrActor: boolean;
+  /** Server verdict from evaluateAdminOverride. Omitted means "not offered". */
+  override?: AdminOverrideEvaluation | null;
 }): VacationActionAvailability {
+  // The override flags are merged at the single exit rather than written into each of the four
+  // literals below. An exhaustive Record does NOT gate this build (next.config ignoreBuildErrors),
+  // so a branch that forgot a key would compile, deploy, and silently drop the button on exactly
+  // the terminal/returned paths nobody tests. One merge point cannot forget.
+  const override = input.override ?? null;
+  const overrideFlag = override?.available
+    ? { enabled: true, disabledReason: null }
+    : { enabled: false, disabledReason: override?.reason ?? DISABLED_NO_OVERRIDE };
+  const base = resolveBaseActionAvailability(input);
+  return { ...base, overrideApprove: overrideFlag, overrideReject: overrideFlag };
+}
+
+const DISABLED_NO_OVERRIDE = "Only a Super Admin can override a stalled approver.";
+
+type BaseActionAvailability = Omit<VacationActionAvailability, "overrideApprove" | "overrideReject">;
+
+function resolveBaseActionAvailability(input: {
+  status: VacationRequestStatus;
+  steps: VacationApprovalStepState[];
+  actorStep: { stepKey: VacationWorkflowStepKey; order: number } | null;
+  isHrActor: boolean;
+}): BaseActionAvailability {
   const terminal = input.status === "approved" || input.status === "rejected" || input.status === "returned";
   const disabledTerminal = { enabled: false, disabledReason: "This request is already closed." };
   const disabledReturned = { enabled: false, disabledReason: "Waiting for the employee to resubmit." };
 
-  const availability: VacationActionAvailability = {
+  const availability: BaseActionAvailability = {
     approve: { enabled: false, disabledReason: DISABLED_NOT_ASSIGNED },
     reject: { enabled: false, disabledReason: DISABLED_NOT_ASSIGNED },
     acknowledge: { enabled: false, disabledReason: DISABLED_NOT_ASSIGNED },

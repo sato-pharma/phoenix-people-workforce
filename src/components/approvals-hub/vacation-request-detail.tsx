@@ -112,7 +112,20 @@ export function VacationRequestDetail({ detail, backHref }: Props) {
               commentField="decisionComment"
               actions={detail.actions}
               backHref={backHref}
+              overrideApproverName={detail.adminOverride?.approverName ?? null}
+              overrideNotice={
+                detail.adminOverride?.approverName
+                  ? `${detail.adminOverride.approverName} has not responded for ${detail.adminOverride.daysPending} days. Deciding here records the decision as yours, not theirs, and tells them it happened. The request then carries on to the next approver as normal.`
+                  : null
+              }
             />
+          ) : null}
+          {detail.adminOverride && !detail.adminOverride.available && detail.adminOverride.reason && detail.adminOverride.availableAt ? (
+            // The wait, visible before it unlocks. Without this the button simply is not there and
+            // HR cannot tell a request that is merely young from one the rule refuses to touch.
+            <p className="border border-phx-line bg-white px-4 py-3 text-phx-xs font-semibold text-slate-600">
+              {detail.adminOverride.reason}
+            </p>
           ) : null}
         </div>
       </div>

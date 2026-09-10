@@ -10,39 +10,77 @@ export type DecisionActionsProps = {
   // Field name for the reason/comment ("decisionComment" for leave, "comment" for excuse).
   commentField: "decisionComment" | "comment";
   // Which buttons are enabled for this viewer/step.
-  actions: { approve?: boolean; reject?: boolean; return?: boolean; acknowledge?: boolean };
+  actions: {
+    approve?: boolean;
+    reject?: boolean;
+    return?: boolean;
+    acknowledge?: boolean;
+    overrideApprove?: boolean;
+    overrideReject?: boolean;
+  };
   // Where to return after a successful decision.
   backHref: string;
+  /** Name of the approver an override would decide for. Shown on the button and in the confirm. */
+  overrideApproverName?: string | null;
+  /** One line telling the admin what the override does before they commit to it. */
+  overrideNotice?: string | null;
   /** Extra fields merged into the request body. Early Birds sends the candidate id so the server
    * can detect a stale tab and refuse, instead of deciding whichever rep happens to be current. */
   extraPayload?: Record<string, unknown>;
 };
 
-type Pending = "approve" | "reject" | "return" | "acknowledge" | null;
+type Pending = "approve" | "reject" | "return" | "acknowledge" | "overrideApprove" | "overrideReject" | null;
+type Action = Exclude<Pending, null>;
 
-const LABEL: Record<Exclude<Pending, null>, string> = {
+const LABEL: Record<Action, string> = {
   approve: "Approve",
   reject: "Reject",
   return: "Return with comment",
   acknowledge: "Acknowledge (HR)",
+  overrideApprove: "Override & approve",
+  overrideReject: "Override & reject",
 };
 
-const REASON_REQUIRED: Record<Exclude<Pending, null>, boolean> = {
+const REASON_REQUIRED: Record<Action, boolean> = {
   approve: false,
   reject: true,
   return: true,
   acknowledge: false,
+  // Approve stays one click by design — the server writes the override sentence itself. A
+  // rejection still has to say why, because the employee reads it.
+  overrideApprove: false,
+  overrideReject: true,
 };
 
 // The API decision token for each action (acknowledge is an HR approve).
-const DECISION_TOKEN: Record<Exclude<Pending, null>, string> = {
+const DECISION_TOKEN: Record<Action, string> = {
   approve: "approve",
   reject: "reject",
   return: "return",
   acknowledge: "approve",
+  overrideApprove: "approve",
+  overrideReject: "reject",
 };
 
-export function DecisionActions({ endpoint, commentField, actions, backHref, extraPayload }: DecisionActionsProps) {
+// The two that decide a stalled approver's step instead of the caller's own.
+const IS_OVERRIDE: Record<Action, boolean> = {
+  approve: false,
+  reject: false,
+  return: false,
+  acknowledge: false,
+  overrideApprove: true,
+  overrideReject: true,
+};
+
+export function DecisionActions({
+  endpoint,
+  commentField,
+  actions,
+  backHref,
+  extraPayload,
+  overrideApproverName,
+  overrideNotice,
+}: DecisionActionsProps) {
   const router = useRouter();
   const [pending, setPending] = useState<Pending>(null);
   const [reason, setReason] = useState("");
@@ -60,16 +98,25 @@ export function DecisionActions({ endpoint, commentField, actions, backHref, ext
     setMounted(true);
   }, []);
 
+  // Overrides sit last: they are the exception, and the ordinary buttons must stay where the
+  // muscle memory expects them.
   const available = (
     [
       ["approve", actions.approve],
       ["acknowledge", actions.acknowledge],
       ["return", actions.return],
       ["reject", actions.reject],
-    ] as Array<[Exclude<Pending, null>, boolean | undefined]>
+      ["overrideApprove", actions.overrideApprove],
+      ["overrideReject", actions.overrideReject],
+    ] as Array<[Action, boolean | undefined]>
   ).filter(([, on]) => on);
 
   if (available.length === 0) return null;
+
+  const labelFor = (action: Action) =>
+    IS_OVERRIDE[action] && overrideApproverName
+      ? `${LABEL[action]} for ${overrideApproverName}`
+      : LABEL[action];
 
   function start(action: Exclude<Pending, null>) {
     setError(null);
@@ -95,6 +142,9 @@ export function DecisionActions({ endpoint, commentField, actions, backHref, ext
         body: JSON.stringify({
           ...extraPayload,
           decision: DECISION_TOKEN[pending],
+          // Only ever sent by the two override buttons. The server re-checks Super Admin and the
+          // elapsed wait, so this flag asks for the override — it does not grant it.
+          ...(IS_OVERRIDE[pending] ? { override: true } : {}),
           [commentField]: reason.trim() || null,
         }),
       });
@@ -113,11 +163,14 @@ export function DecisionActions({ endpoint, commentField, actions, backHref, ext
     }
   }
 
-  const toneClass: Record<Exclude<Pending, null>, string> = {
+  const toneClass: Record<Action, string> = {
     approve: "bg-emerald-600 hover:bg-emerald-700 text-white",
     acknowledge: "bg-slate-900 hover:bg-black text-white",
     return: "border border-amber-500 text-amber-700 hover:bg-amber-50",
     reject: "border border-rose-500 text-rose-700 hover:bg-rose-50",
+    // Outlined, not filled: an override must never be the button a tired thumb reaches for first.
+    overrideApprove: "border border-slate-900 text-slate-900 hover:bg-slate-100",
+    overrideReject: "border border-slate-400 text-slate-600 hover:bg-slate-100",
   };
 
   return (
@@ -139,17 +192,22 @@ export function DecisionActions({ endpoint, commentField, actions, backHref, ext
                 // moves, reached after eight sections of evidence, often on a phone.
                 className={`h-11 flex-1 px-4 text-sm font-bold transition-colors md:flex-none ${toneClass[action]}`}
               >
-                {LABEL[action]}
+                {labelFor(action)}
               </button>
             ))}
           </div>
         ) : (
           <div className="space-y-3">
             <p className="text-sm font-bold text-slate-900">
-              {pending === "approve" || pending === "acknowledge"
-                ? `Confirm: ${LABEL[pending]} this request?`
-                : `${LABEL[pending]} — provide a reason`}
+              {REASON_REQUIRED[pending]
+                ? `${labelFor(pending)} — provide a reason`
+                : `Confirm: ${labelFor(pending)} this request?`}
             </p>
+            {IS_OVERRIDE[pending] && overrideNotice ? (
+              <p className="border border-slate-900 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900">
+                {overrideNotice}
+              </p>
+            ) : null}
             {REASON_REQUIRED[pending] ? (
               <textarea
                 value={reason}
@@ -208,7 +266,7 @@ export function DecisionActions({ endpoint, commentField, actions, backHref, ext
                 onClick={() => start(action)}
                 className={`h-12 flex-1 text-sm font-bold transition-colors ${toneClass[action]}`}
               >
-                {LABEL[action]}
+                {labelFor(action)}
               </button>
             ))}
           </div>,

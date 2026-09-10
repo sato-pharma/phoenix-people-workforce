@@ -32,6 +32,7 @@ import { isDistrictManagerPlanTitle, resolvePlanCeoDecision } from "@/lib/weekly
 import type {
   VacationActionAvailability,
   VacationActionCenterRow,
+  VacationAdminOverrideState,
   VacationRequestRecord,
   VacationRequestStatus,
 } from "@/lib/vacation/types";
@@ -143,13 +144,30 @@ export type ApprovalActionFlags = {
   reject: boolean;
   return: boolean;
   acknowledge: boolean;
+  overrideApprove: boolean;
+  overrideReject: boolean;
 };
 
-const NO_ACTIONS: ApprovalActionFlags = { approve: false, reject: false, return: false, acknowledge: false };
+const NO_ACTIONS: ApprovalActionFlags = {
+  approve: false,
+  reject: false,
+  return: false,
+  acknowledge: false,
+  overrideApprove: false,
+  overrideReject: false,
+};
 
 function anyActionEnabled(a: VacationActionAvailability): boolean {
   return Boolean(
-    a.approve?.enabled || a.reject?.enabled || a.return?.enabled || a.acknowledge?.enabled || a.assign?.enabled,
+    a.approve?.enabled ||
+      a.reject?.enabled ||
+      a.return?.enabled ||
+      a.acknowledge?.enabled ||
+      a.assign?.enabled ||
+      // Without these two a row whose ONLY live action is the override would be classed
+      // read-only, and the button would be computed and then thrown away.
+      a.overrideApprove?.enabled ||
+      a.overrideReject?.enabled,
   );
 }
 
@@ -159,6 +177,8 @@ function toActionFlags(a: VacationActionAvailability): ApprovalActionFlags {
     reject: Boolean(a.reject?.enabled),
     return: Boolean(a.return?.enabled),
     acknowledge: Boolean(a.acknowledge?.enabled),
+    overrideApprove: Boolean(a.overrideApprove?.enabled),
+    overrideReject: Boolean(a.overrideReject?.enabled),
   };
 }
 
@@ -486,6 +506,7 @@ export type VacationApprovalDetail = {
   typeLabel: string;
   steps: ApprovalTimelineStep[];
   actions: ApprovalActionFlags;
+  adminOverride: VacationAdminOverrideState | null;
   stageLabel: string | null;
   slaAgeDays: number;
   readOnly: boolean;
@@ -548,6 +569,7 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
         decisionComment: step.decisionComment,
       })),
       actions: actionable && !own ? toActionFlags(row.actionAvailability) : NO_ACTIONS,
+      adminOverride: own ? null : row.adminOverride,
       stageLabel: row.stageLabel ?? null,
       slaAgeDays: row.slaAgeDays,
       readOnly: !actionable || own,
@@ -571,6 +593,7 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
       typeLabel: "",
       steps: [],
       actions: NO_ACTIONS,
+      adminOverride: null,
       stageLabel: null,
       slaAgeDays: 0,
       readOnly: true,
@@ -586,6 +609,7 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
     typeLabel: vacationTypeLabel(record.vacationType),
     steps: await fetchVacationStepsDirect(id),
     actions: NO_ACTIONS,
+    adminOverride: null,
     stageLabel: record.stageLabel ?? null,
     slaAgeDays: record.slaStatus?.businessDaysPending ?? 0,
     readOnly: true,
