@@ -249,7 +249,32 @@ export function freezeFirstPart(input: FreezeFirstPartInput): number {
   const leaverDeduction = Math.max(0, roundCurrency((input.leaverDeduction ?? 0) + medicalForLeaverNetting));
   if (leaverDeduction === 0) return firstAfterFp;
 
-  const provisionalSecond = Math.max(0, roundCurrency(effNet - firstAfterFp));
+  // HOW MUCH SECOND PART THIS LEAVER ACTUALLY HAS, measured from the Part-1 ANCHOR — not from the
+  // anchor after his own Part-1 deductions have already come off it.
+  //
+  // This was `effNet - firstAfterFp`, and firstAfterFp has already had fingerprint, the Part-1
+  // other-deduction tabs and (one-part only) medical insurance subtracted. So the remainder it
+  // measured WAS those deductions, counted as though they were spare Second Part still available to
+  // absorb the leaver's final CRM and vacation charge. The shortfall came out too small, too little
+  // was taken off the frozen First Part, and the leaver was paid more than the month owes.
+  //
+  // Worked, a one-part leaver on 12,000 net with 400 fingerprint, 600 loan, 300 medical and 1,500
+  // of final CRM/vacation. A one-part employee has NO second part at all:
+  //
+  //   before:  firstAfterFp 10,700; provisionalSecond 12,000 - 10,700 = 1,300 (which is exactly the
+  //            400 + 600 + 300 already deducted); shortfall 1,500 - 1,300 = 200; frozen 10,500.
+  //   after:   provisionalSecond 12,000 - 12,000 = 0; shortfall 1,500; frozen 9,200.
+  //
+  // The month owes 12,000 - 400 - 600 - 300 - 1,500 = 9,200. The old answer overpaid by 1,300.
+  //
+  // The overpayment did not even show up as one: assembleParts clamps Second Part to 0 and books the
+  // excess as an overpaidResidual to recover next month — from a leaver who has no next month. So it
+  // read as a recoverable debt and was neither recoverable nor a debt.
+  //
+  // For a two-part leaver whose Second Part is genuinely large enough, both forms give the same
+  // answer; this only bites where the settlement has collapsed, which is exactly the case the
+  // spill-into-First-Part rule exists for.
+  const provisionalSecond = Math.max(0, roundCurrency(effNet - firstBeforeFp));
   const shortfall = Math.max(0, roundCurrency(leaverDeduction - provisionalSecond));
   return roundCurrency(Math.max(0, firstAfterFp - shortfall));
 }

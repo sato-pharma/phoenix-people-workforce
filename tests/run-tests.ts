@@ -1060,6 +1060,7 @@ import { runAutomatedPayrollResignationCrmTests } from "./automated-payroll-resi
 import { runAutomatedPayrollLeaverBasisTests } from "./automated-payroll-leaver-basis.test.ts";
 import { runAutomatedPayrollThursdayHalfDayChargeTests } from "./automated-payroll-thursday-half-day-charge.test.ts";
 import { runAutomatedPayrollCibSheetTests } from "./automated-payroll-cib-sheet.test.ts";
+import { runAutomatedPayrollLeaverOverpaymentTests } from "./automated-payroll-leaver-overpayment.test.ts";
 import { runAutomatedPayrollGuardsThatGuardTests } from "./automated-payroll-guards-that-guard.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
 import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
@@ -1760,6 +1761,10 @@ await runTest("automated payroll Resignations CRM deduction (unified month-days 
 await runTest("automated payroll leaver basis (ONE confirmed days-worked + ONE net day rate, shared by the Resignations and Resignations CRM tabs)", runAutomatedPayrollLeaverBasisTests);
 await runTest("automated payroll Thursday half-day reaches the CHARGE (owner rule 2026-08-02; the wizard multiplied a day rate by the flagged-date count)", runAutomatedPayrollThursdayHalfDayChargeTests);
 await runTest("automated payroll CIB bank-transfer sheet (schema + filtering + styling)", runAutomatedPayrollCibSheetTests);
+await runTest(
+  "automated payroll: a leaver's frozen first instalment is not inflated by his own deductions",
+  runAutomatedPayrollLeaverOverpaymentTests,
+);
 await runTest(
   "automated payroll: the guards that did not guard",
   runAutomatedPayrollGuardsThatGuardTests,
