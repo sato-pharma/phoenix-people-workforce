@@ -91,18 +91,29 @@ overrides:
   # SSRF bypass back into the production graph.
   ip-address: ^10.3.1
   "@hono/node-server": ^2.0.5
-  # DELIBERATELY NOT BUMPED YET. GHSA-8j4g-w8fx-2239 (ReDoS in the CORS middleware via a crafted
-  # Access-Control-Request-Headers) covers `<4.12.34`, and this floor resolves 4.12.32 — so the
-  # advisory is open. The fix is NOT applied because 4.12.34 was published 2026-08-03 02:36 UTC,
-  # inside pnpm 11's release-age cooling-off window, and installing it makes pnpm write a
-  # `minimumReleaseAgeExclude: [hono@4.12.34]` entry — punching a hole in the supply-chain guard
-  # for a day-old package. Not worth it here: hono is DEV-ONLY since shadcn moved to
-  # devDependencies in #1681 (`pnpm why hono --prod` returns nothing), it is reached only via
-  # shadcn > @modelcontextprotocol/sdk, and this repo never invokes that CORS middleware.
-  # ACTION: bump to ^4.12.34 on or after ~2026-08-10, once the cooling-off has elapsed and no
-  # exclusion entry is needed. Owner decision, 2026-08-04.
-  hono: ^4.12.31
-  js-yaml: ^4.3.0
+  # Bumped 2026-09-10 for three advisories that all patch at 4.13.5: GHSA-gqvv-2mrq-wpjv
+  # (`toSSG()` still writes files outside the output directory — the incomplete fix for
+  # CVE-2026-39408), GHSA-g6gw-c38x-mqfc (unbounded dot-notation nesting in `parseBody()`
+  # exhausts memory) and GHSA-crvj-82cr-hjcx (the query parser reads parameters after the URL
+  # fragment, so a cache key and a proxy can disagree). The graph had resolved 4.12.34, which
+  # already cleared the CORS ReDoS the previous note tracked (GHSA-8j4g-w8fx-2239) — that one is
+  # CLOSED and this floor supersedes it, so the 2026-08-04 ACTION line is discharged.
+  # Still DEV-ONLY: reached via shadcn > @modelcontextprotocol/sdk > @hono/node-server, and
+  # `pnpm why hono --prod` returns nothing. No hono server is ever started in this repo, so none
+  # of the three paths is reachable here; pinned anyway because the floor costs nothing.
+  # The cooling-off trap from 2026-08-04 does NOT bite. The floor names 4.13.5 (published
+  # 2026-08-26) but the caret resolved 4.13.7 (2026-09-04), and pnpm wrote NO
+  # `minimumReleaseAgeExclude` entry for it — checked in this repo's manifests after the install,
+  # which is the only way to tell. That hole is what the 2026-08-04 note refused, and it is still
+  # refused: if a future bump cannot install without one, hold the floor instead.
+  hono: ^4.13.5
+  # Bumped 2026-09-10 for GHSA-2883-xcg3-v3hh (high): `maxTotalMergeKeys` caps the number of merge
+  # keys but not the CPU spent on empty merge sources, so a crafted document still stalls the
+  # parser. Advisory covers `>=4.0.0 <4.3.2`; the graph had resolved 4.3.1. DEV-ONLY and reached
+  # twice — eslint > @eslint/eslintrc, and cosmiconfig — both of which parse only this repo's own
+  # config files, so no untrusted YAML reaches either. The floor stays on the 4.x line on purpose:
+  # js-yaml 5.x is a different API and eslintrc has not moved to it.
+  js-yaml: ^4.3.2
   # Added 2026-08-13 for GHSA-2v37-7h3g-55p8 (high): a custom generator loops indefinitely when
   # size is zero. Advisory covers `<3.3.18`; the graph had resolved 3.3.17, published 2026-08-03.
   # The advisory landed mid-afternoon Cairo on 2026-08-13 and `pnpm audit` reads the registry live,
