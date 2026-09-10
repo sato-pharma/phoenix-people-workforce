@@ -539,6 +539,16 @@ export function resolveEmployeePortalNavVisibility(
     // NOT list "Manager", because that file cannot express an HR_ID, so adding the role there
     // would fail tests/organogram-nav-link-exists-for-every-role-that-can-open-it.test.ts as a
     // dead link for the other two. The cost is that the command palette cannot offer it to her.
+    //
+    // Training Manager added 2026-09-10 (owner: A-7 reported the organogram missing). This is the
+    // SAME hole the 2026-08-25 fix was written for, one layer further in, and it stayed open
+    // because that fix landed in the wrong file for this shell: system-navigation.ts's portal
+    // Organogram entry lists him, but that seed drives the command palette, NOT the portal
+    // sidebar. The rail in employee-portal-layout.tsx is built from these flags alone, so the
+    // entry there was true and the link still never rendered. He is company-scoped in
+    // canAccessCompanyOrganogram and holds organogram:read, so the page has served him the whole
+    // chart on request the entire time — exactly the "granted on paper, unreachable in the
+    // product" shape, and the third time this page has paid for it.
     showOrganogramTab:
       isA3Account ||
       showMedRepsPerformanceTab ||
@@ -547,6 +557,7 @@ export function resolveEmployeePortalNavVisibility(
       isProductManager ||
       isGroupProductManager ||
       isMarketingManager ||
+      isTrainingManager ||
       isPortalHrOfficeStaff,
     // Talent Acquisition keeps the read-only Planning Calendar (HO-scoped) but not the
     // Weekly/Monthly Plan submission page — owner-requested removal, 2026-07-25.
