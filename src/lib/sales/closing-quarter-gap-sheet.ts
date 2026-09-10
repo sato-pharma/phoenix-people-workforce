@@ -24,8 +24,34 @@
 // the columns "still to sell" instead would have read as a lie on every area that is ahead.
 
 import { closingSheetMonthLabel, type ReviewSheet, type ReviewSheetRowKind } from "@/lib/sales/closing-review-sheets";
+import type { AccessContext } from "@/lib/auth/permissions";
 import type { ClosingQuarterGap } from "@/lib/sales/closing-quarter-gap";
 import type { EngineValue } from "@/lib/sales/closing-engine-fill";
+
+/**
+ * 🔒 SUPER ADMIN ONLY — owner, 2026-09-10: "make it only in super admin export."
+ *
+ * The premium workbook goes to a wider room than this tab does. Its route admits everyone whose
+ * sales scope is company-wide: Super Admin, the CEO, the SFE Manager, the Finance Manager and the
+ * Marketing Manager. A quarter's gap is a forward-looking number about what a line still owes, and
+ * he wants it in his own file and nobody else's, so the tab is built for him and is simply ABSENT
+ * from every other copy of the same workbook.
+ *
+ * ⚠ IT ASKS THE ROLE, AND ONLY THE ROLE — no `scope` clause, unlike `canRevealClosingSource` one
+ * module over. That is not an oversight and it is not a second gate either: `systemAccessContext`
+ * already carries the Super Admin ROLE, so anything running as system passes this too. Adding a
+ * scope clause would therefore change nothing today and would only read as a second rule to keep in
+ * step. What actually holds the line is that ONE file builds this tab, and the sweep in
+ * `closing-quarter-gap.test.ts` names it: a future automated build of this workbook would inherit
+ * the tab, and it has to be reviewed into that list before it can.
+ *
+ * The contents page lists only the tabs a workbook actually carries, so a copy without it has
+ * nothing dangling: no heading over nothing, and no link to a page that is not there. Measured on
+ * real workbooks — Super Admin gets eighteen tabs, the CEO and the Finance Manager seventeen.
+ */
+export function canSeeQuarterGapTab(access: Pick<AccessContext, "role">): boolean {
+  return access.role === "Super Admin";
+}
 
 /** The tab's name, and the key its colour and geometry are looked up by in the executive look. */
 export const QUARTER_GAP_SHEET = "Gap to Quarter Target";

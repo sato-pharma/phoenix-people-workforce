@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import JSZip from "jszip";
 
@@ -17,6 +19,7 @@ import {
   QUARTER_GAP_SHEET,
   QUARTER_GAP_WIDTHS,
   buildQuarterGapSheet,
+  canSeeQuarterGapTab,
 } from "../src/lib/sales/closing-quarter-gap-sheet.ts";
 import type {
   MonthlyClosingAreaRow,
@@ -162,6 +165,55 @@ function rowTag(sheetXml: string, rowNumber: number): string {
 export async function runClosingQuarterGapTests() {
   assert.equal(closingQuarterLabel("2026-08"), "Q3 2026");
   assert.equal(closingQuarterLabel("2026-01"), "Q1 2026", "January opens the first quarter, not the fourth");
+
+  // ── SUPER ADMIN ONLY ────────────────────────────────────────────────────────────────────────
+  // Owner, 2026-09-10. The premium workbook goes to everyone whose sales scope is company-wide, and
+  // every one of those callers gets the same file — so a gate that is not asked is a gate that does
+  // not exist, and the tab reaches four more readers with nothing to show for it. There is no error
+  // to notice either way: the file simply has the tab or it does not.
+  assert.equal(canSeeQuarterGapTab({ role: "Super Admin" }), true);
+  for (const role of ["CEO", "SFE Manager", "Finance Manager", "Marketing Manager"] as const) {
+    assert.equal(canSeeQuarterGapTab({ role }), false, `${role} receives the same workbook and must not get this tab`);
+  }
+
+  // 🔴 AND THE HALF THAT DECAYS: a predicate nobody asks is not a gate. Every file that can put this
+  // tab into a workbook is listed by name, so adding one has to be a deliberate act reviewed here —
+  // a second builder that forgets the check ships the tab to four more readers with no error
+  // anywhere, because a workbook with an extra tab is a perfectly valid workbook.
+  const ROOT = resolve(import.meta.dirname, "..");
+  const walk = (dir: string): string[] => {
+    const out: string[] = [];
+    for (const entry of readdirSync(dir)) {
+      if (entry === "node_modules" || entry.startsWith(".")) continue;
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) out.push(...walk(full));
+      else if (/\.tsx?$/.test(full)) out.push(full);
+    }
+    return out;
+  };
+  const sources = [...walk(join(ROOT, "src")), ...walk(join(ROOT, "app")), ...walk(join(ROOT, "scripts"))]
+    .map((file) => ({ body: readFileSync(file, "utf8"), file: file.slice(ROOT.length + 1).replace(/\\/g, "/") }));
+
+  const builders = sources
+    .filter((entry) => entry.body.includes("buildQuarterGapSheet"))
+    .map((entry) => entry.file)
+    .sort();
+  assert.deepEqual(
+    builders,
+    [
+      "app/api/sales/monthly-closing/premium-export/route.ts",
+      "src/lib/sales/closing-quarter-gap-sheet.ts",
+    ],
+    "somewhere else can now build this tab — it is Super Admin's alone, so that place needs the gate too",
+  );
+
+  const route = sources.find((entry) => entry.file === "app/api/sales/monthly-closing/premium-export/route.ts");
+  assert.ok(route, "the premium export route has moved and this sweep is no longer looking at it");
+  assert.match(
+    route!.body,
+    /canSeeQuarterGapTab\(access\)/,
+    "the route builds the tab without asking who is downloading it",
+  );
 
   // ── 0. THE TWO MONTH LISTS ARE DIFFERENT LISTS ──────────────────────────────────────────────
   // Everything else on this sheet rests on it. One list runs the target and one runs the sold
