@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 
 import type { AssembledRow } from "../assemble.ts";
 import type { NonEmployeePayrollRow } from "../types.ts";
+import { resolveBankRoute } from "./bank-coverage.ts";
 
 /**
  * CIB (Commercial International Bank) bulk-credit template. Schema AND
@@ -51,7 +52,10 @@ export function formatCibAmount(amount: number): string {
 export function cibRowsForScope(rows: AssembledRow[], scope: "part1" | "part2"): CibSheetRow[] {
   return rows
     .filter((entry) => !entry.onHold)
-    .filter((entry) => (entry.bankName ?? "").trim().toUpperCase() === "CIB")
+    // One routing definition, shared with fab-sheet.ts and bank-coverage.ts. Same decision as the
+    // literal string test it replaces; the difference is that an unrouted row is now named rather
+    // than silently dropped.
+    .filter((entry) => resolveBankRoute({ bankName: entry.bankName, bankAccount: entry.bankAccount }).route === "CIB")
     .map((entry) => ({
       fullName: entry.row.fullName,
       bankAccount: (entry.bankAccount ?? "").trim(),
@@ -77,7 +81,7 @@ export function cibRowsForNonEmployees(
   const part = scope === "part1" ? "first" : "second";
   return nonEmployees
     .filter((entry) => entry.part === part)
-    .filter((entry) => (entry.bankName ?? "").trim().toUpperCase() === "CIB")
+    .filter((entry) => resolveBankRoute({ bankName: entry.bankName, bankAccount: entry.bankAccount }).route === "CIB")
     .map((entry) => ({
       fullName: entry.fullNameEn,
       bankAccount: (entry.bankAccount ?? "").trim(),

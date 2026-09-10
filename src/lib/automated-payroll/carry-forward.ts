@@ -17,10 +17,29 @@ import type { AssembledRow } from "./assemble.ts";
  *   1. Run N's Part 2 is confirmed  -> recorded here (amount > 0, unapplied).
  *   2. A LATER run assembles        -> the amount is added to that employee's
  *                                      deductions (visible, not silent).
- *   3. That later run's Part 2 is confirmed -> marked applied to it.
+ *   3. That later run is PUBLISHED  -> marked applied to it.
  *
  * A run never consumes its own residual (that would be circular) — see the
  * `source_run_id <> currentRunId` filter in `outstandingCarryForwardFor`.
+ *
+ * STEP 3 MOVED FROM PART-2 CONFIRM TO PUBLISH on 2026-09-10, because settling a debt at confirm
+ * marked it collected from money that had not been written yet, and in three of the four places
+ * that build a payable artifact it was never collected at all:
+ *
+ *   - confirmPart2 assembled WITH the balance, deducted it, then marked it applied;
+ *   - the finance sheet, the FAB file and the CIB file each re-assembled WITHOUT it, so none of
+ *     the three artifacts finance actually executes carried the deduction;
+ *   - publish then re-assembled a third time, and by then `outstandingCarryForwardFor` could no
+ *     longer see the balance (it filters `applied_run_id is null`), so the published salary record
+ *     did not carry it either.
+ *
+ * Net effect: the ledger read settled, the bank transfer and the payslip both paid the
+ * un-recovered amount, and the money was never taken back. Nothing has been lost in production —
+ * the ledger is empty against two published months — so this is armed rather than fired, and it
+ * arms the first time any employee's Part-2 deductions exceed their first instalment.
+ *
+ * Marking at publish also makes CANCELLATION simpler and safer: a run cancelled before publish now
+ * has nothing to un-settle, because it never settled anything.
  */
 
 const TABLE = "automated_payroll_carry_forward";
@@ -72,6 +91,46 @@ export async function outstandingCarryForwardFor(currentRunId: string): Promise<
     .select("employee_hr_id_compact,amount,source_run_id")
     .is("applied_run_id", null)
     .neq("source_run_id", currentRunId);
+  if (error) {
+    if (isMissingTableError(error)) return totals;
+    throw error;
+  }
+  for (const row of (data ?? []) as Row[]) {
+    const compact = String(row.employee_hr_id_compact ?? "");
+    if (!compact) continue;
+    totals.set(compact, roundCurrency((totals.get(compact) ?? 0) + Number(row.amount ?? 0)));
+  }
+  return totals;
+}
+
+/**
+ * The balances a given run must assemble against — the ONE loader every payable artifact uses.
+ *
+ * Two states, and the distinction is the whole point:
+ *
+ *   - Before publish, the run has settled nothing, so the answer is the outstanding balances
+ *     (`outstandingCarryForwardFor`). Every artifact built in this window — the grid, the finance
+ *     sheet, both bank files, the pre-flight — sees the same deduction.
+ *   - After publish, those balances read as applied TO THIS RUN, so `outstandingCarryForwardFor`
+ *     would return nothing and a re-downloaded sheet would silently lose a deduction that a real
+ *     payslip carries. So a published run assembles against what it itself applied.
+ *
+ * Without the second half, the same run answers two different numbers either side of publish, and
+ * only one of them matches the money. That is the shape of the defect this whole module now guards.
+ */
+export async function carryForwardForRunAssembly(runId: string): Promise<Map<string, number>> {
+  const applied = await carryForwardAppliedByRun(runId);
+  if (applied.size > 0) return applied;
+  return outstandingCarryForwardFor(runId);
+}
+
+/** Balances this run has already settled, keyed by compact HR id. Empty before publish. */
+async function carryForwardAppliedByRun(runId: string): Promise<Map<string, number>> {
+  const totals = new Map<string, number>();
+  const { data, error } = await getSupabaseAdmin()
+    .from(TABLE)
+    .select("employee_hr_id_compact,amount")
+    .eq("applied_run_id", runId);
   if (error) {
     if (isMissingTableError(error)) return totals;
     throw error;

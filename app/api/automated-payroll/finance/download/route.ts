@@ -15,8 +15,10 @@ export async function GET(request: Request) {
       return jsonError(new Error("Validation: month and year are required."));
     }
     const scope = url.searchParams.get("scope") === "part1" ? "part1" : "full";
-    const { buffer, fileName } = await buildFinanceSheet(access, { month, year }, scope);
-    return xlsxResponse(buffer, fileName);
+    const { buffer, coverage, fileName } = await buildFinanceSheet(access, { month, year }, scope);
+    // Coverage travels with the download: this workbook's TOTALS row counts money the bank files
+    // may not carry, so the answer has to arrive with the file rather than be looked for.
+    return xlsxResponse(buffer, fileName, coverage);
   } catch (error) {
     return jsonError(error, "Failed to download the finance sheet.");
   }

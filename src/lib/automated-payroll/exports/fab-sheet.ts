@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 
 import type { AssembledRow } from "../assemble.ts";
 import type { NonEmployeePayrollRow, PayrollPeriod } from "../types.ts";
+import { resolveBankRoute } from "./bank-coverage.ts";
 
 /**
  * FAB (First Abu Dhabi Bank / FABMISR) bulk salary-transfer upload file.
@@ -44,13 +45,17 @@ export function defaultFabValueDate(period: PayrollPeriod): Date {
 export function fabRowsForScope(rows: AssembledRow[], scope: "part1" | "part2"): FabSheetRow[] {
   return rows
     .filter((entry) => !entry.onHold)
-    .filter((entry) => (entry.bankName ?? "").trim().toUpperCase() === "FAB")
+    // One routing definition, shared with cib-sheet.ts and the coverage report in
+    // bank-coverage.ts. The decision is identical to the `trim().toUpperCase() === "FAB"` plus
+    // non-empty-account test this replaces, so the file's contents do not move. What changes is
+    // that whoever is NOT routed is now named by buildBankCoverage instead of vanishing.
+    .filter((entry) => resolveBankRoute({ bankName: entry.bankName, bankAccount: entry.bankAccount }).route === "FAB")
     .map((entry) => ({
       fullName: entry.row.fullName,
       bankAccount: (entry.bankAccount ?? "").trim(),
       salary: scope === "part1" ? entry.row.firstPart : entry.row.secondPart,
     }))
-    .filter((entry) => entry.salary > 0 && entry.bankAccount.length > 0);
+    .filter((entry) => entry.salary > 0);
 }
 
 /**
@@ -72,13 +77,13 @@ export function fabRowsForNonEmployees(
   const part = scope === "part1" ? "first" : "second";
   return nonEmployees
     .filter((entry) => entry.part === part)
-    .filter((entry) => (entry.bankName ?? "").trim().toUpperCase() === "FAB")
+    .filter((entry) => resolveBankRoute({ bankName: entry.bankName, bankAccount: entry.bankAccount }).route === "FAB")
     .map((entry) => ({
       fullName: entry.fullNameEn,
       bankAccount: (entry.bankAccount ?? "").trim(),
       salary: entry.totalSalary,
     }))
-    .filter((entry) => entry.salary > 0 && entry.bankAccount.length > 0);
+    .filter((entry) => entry.salary > 0);
 }
 
 /**

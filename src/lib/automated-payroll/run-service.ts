@@ -19,11 +19,13 @@ import { diffStepUpload, parseStepWorkbook } from "./imports/step-parser.ts";
 import { assertHoldReasonsPresent, holdCandidatesFromStepRows } from "./hold-reason.ts";
 import { buildHoldReview, type HoldReview } from "./hold-review.ts";
 import {
+  carryForwardForRunAssembly,
   markCarryForwardApplied,
   outstandingCarryForwardFor,
   recordOverpaidCarryForward,
   releaseCarryForwardForCancelledRun,
 } from "./carry-forward.ts";
+import { buildBankCoverage, describeBankCoverage, type BankCoverage } from "./exports/bank-coverage.ts";
 import { getNonEmployeePayrollRows } from "./non-employees.ts";
 import { seedRunFromRecurring } from "./non-employee-recurring.ts";
 import {
@@ -819,11 +821,16 @@ export async function confirmPart2(
   // record is ever written while the debt already reads as settled.
   //
   // AssembledRow.carriedForwardApplied is set by assembleRows for exactly this purpose.
-  const recoveredCompacts = rows
-    .filter((entry) => entry.carriedForwardApplied > 0 && !entry.onHold)
-    .map((entry) => entry.compact)
-    .filter((compact): compact is string => Boolean(compact));
-  const carryForwardRecovered = await markCarryForwardApplied({ runId, appliedCompacts: recoveredCompacts });
+  //
+  // NOTHING IS SETTLED HERE ANY MORE (2026-09-10). A balance is marked recovered at PUBLISH, from
+  // the rows actually published — see carry-forward.ts for the full account. Settling at confirm
+  // marked a debt collected against money that had not been written yet, and the finance sheet,
+  // the FAB file and the CIB file each re-assembled without the ledger, so none of the three
+  // artifacts finance executes carried the deduction. This count is reported so the audit still
+  // says what the run intends to recover; it is a statement of intent, not of settlement.
+  const carryForwardPendingRecovery = rows.filter(
+    (entry) => entry.carriedForwardApplied > 0 && !entry.onHold && Boolean(entry.compact),
+  ).length;
   const carryForwardRecorded = await recordOverpaidCarryForward({
     runId,
     rows,
@@ -845,7 +852,8 @@ export async function confirmPart2(
       // overpayment acknowledgment is a money decision and must be auditable.
       overpaidAcknowledged: totals.overpaid.length,
       overpaidTotal: roundCurrency(totals.overpaid.reduce((sum, row) => sum + row.residual, 0)),
-      carryForwardRecovered,
+      // Intent, not settlement — the ledger is marked at publish now.
+      carryForwardPendingRecovery,
       carryForwardRecorded,
     },
   });
@@ -866,7 +874,11 @@ async function assembleForRun(run: MonthlySalaryRun): Promise<{
     // Overpayments from PREVIOUS runs that this run recovers (owner rule
     // 2026-07-25). Loaded on every assemble so the figure HR reviews, the
     // figure on the sheet, and the figure that gets published are the same one.
-    outstandingCarryForwardFor(run.id),
+    //
+    // `carryForwardForRunAssembly`, not `outstandingCarryForwardFor`: a published run has to
+    // assemble against the balances it ITSELF applied, or a sheet re-downloaded after publish
+    // quietly loses a deduction that the real payslip carries.
+    carryForwardForRunAssembly(run.id),
   ]);
   const rows = assembleRows({
     members,
@@ -1093,11 +1105,58 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
   }
 
   const { rows } = await assembleForRun(run);
-  const heldExcluded = rows.filter((entry) => entry.onHold).length;
+  const heldRows = rows.filter((entry) => entry.onHold);
+  const heldExcluded = heldRows.length;
   const publishRows = rows.filter((entry) => !entry.onHold).map((entry) => entry.row);
   if (publishRows.length === 0) {
     throw new Error("Conflict: no publishable employees (all rows are held or empty).");
   }
+
+  // WHAT EACH HELD PERSON WAS OWED, recorded permanently at the moment they are dropped.
+  //
+  // Publishing filters held rows out, so no salary_record is written for them and the payslip
+  // screens show nothing. Until now the only trace was a COUNT in this run's audit row plus a
+  // free-text reason on a staging row that the next run overwrites — so a month later there was
+  // no way to answer "who was held in August, for how much, and why". Production carried 20 such
+  // people in August holding EGP 260,904 of already-paid first instalment, 18 of them with a hold
+  // reason of a single dash.
+  //
+  // This is the whole roster, with money, captured from the same assembled rows publish itself
+  // used — so it can never disagree with what was published. It is a record of a decision, not a
+  // payment: nothing here pays anybody, and a held person is still settled outside the system.
+  const heldRecord = heldRows
+    .map((entry) => ({
+      hrId: entry.row.hrId,
+      name: entry.row.fullName,
+      // assembleRows already puts a held row's hold reason in payrollComment, falling back to an
+      // explicit "no reason given" marker — so this is the same string the sheet shows.
+      reason: (entry.row.payrollComment ?? "").trim() || null,
+      // The first instalment is money that has ALREADY left the company; the second is what this
+      // publish would have paid and did not. Both are needed to settle the person by hand.
+      firstPartAlreadyPaid: roundCurrency(entry.row.firstPart),
+      secondPartWithheld: roundCurrency(entry.row.secondPart),
+      monthTotal: roundCurrency(entry.row.monthSalary),
+    }))
+    .sort((a, b) => b.secondPartWithheld - a.secondPartWithheld);
+  const heldSecondPartTotal = roundCurrency(
+    heldRecord.reduce((sum, entry) => sum + entry.secondPartWithheld, 0),
+  );
+  const heldFirstPartTotal = roundCurrency(
+    heldRecord.reduce((sum, entry) => sum + entry.firstPartAlreadyPaid, 0),
+  );
+  // Counted, not corrected. A reason of "-" satisfies every existing check and answers nothing;
+  // production carried 18 of them in one month. Naming the count here makes it visible without
+  // this publish inventing a policy about what a good reason looks like.
+  const heldWithoutMeaningfulReason = heldRecord.filter(
+    (entry) => !entry.reason || /^[\s\-–—.]*$/.test(entry.reason),
+  ).length;
+
+  // Who the bank files carry and who they do not, for both instalments, captured at the one
+  // moment the month becomes final. See exports/bank-coverage.ts.
+  const nonEmployeesForCoverage = await getNonEmployeePayrollRows(run.id);
+  const bankCoverage = (["part1", "part2"] as const).map((scope) =>
+    buildBankCoverage({ rows, nonEmployees: nonEmployeesForCoverage, scope }),
+  );
 
   const ownFileName = `automated-payroll:${runId}`;
   const existing = await findSalaryBatchForPeriod(run.month, run.year);
@@ -1125,6 +1184,18 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
     await finalizeApproved(batchId, actorId(access));
   }
 
+  // SETTLE THE CARRY-FORWARD LEDGER HERE, from the rows that were actually published. Held rows
+  // are excluded because no salary record was written for them, so their debt was collected from
+  // nobody. This used to happen at Part-2 confirm, which marked balances recovered against money
+  // that had not been written yet — see carry-forward.ts.
+  const carryForwardRecovered = await markCarryForwardApplied({
+    runId,
+    appliedCompacts: rows
+      .filter((entry) => entry.carriedForwardApplied > 0 && !entry.onHold)
+      .map((entry) => entry.compact)
+      .filter((compact): compact is string => Boolean(compact)),
+  });
+
   const updated = await updateRun(runId, {
     phase: "published",
     publishedBatchId: batchId,
@@ -1135,7 +1206,29 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
     runId,
     actorHrId: actorId(access),
     action: "published",
-    detail: { batchId, publishedCount: publishRows.length, heldExcluded },
+    detail: {
+      batchId,
+      publishedCount: publishRows.length,
+      heldExcluded,
+      carryForwardRecovered,
+      // The permanent answer to "who was held this month, for how much, and why".
+      held: heldRecord,
+      heldFirstPartTotal,
+      heldSecondPartTotal,
+      heldWithoutMeaningfulReason,
+      // The permanent answer to "did the bank files carry everybody".
+      bankCoverage: bankCoverage.map((entry) => ({
+        scope: entry.scope,
+        covered: entry.covered,
+        fabRows: entry.fab.rows,
+        fabTotal: entry.fab.total,
+        cibRows: entry.cib.rows,
+        cibTotal: entry.cib.total,
+        unroutable: entry.unroutable,
+        unroutableTotal: entry.unroutableTotal,
+        summary: describeBankCoverage(entry),
+      })),
+    },
   });
   await notifyPublished(updated);
 
@@ -1336,7 +1429,7 @@ export async function buildFinanceSheet(
   access: AccessContext,
   period: PayrollPeriod,
   scope: "part1" | "full",
-): Promise<{ buffer: Buffer; fileName: string }> {
+): Promise<{ buffer: Buffer; coverage: BankCoverage[]; fileName: string }> {
   assertAutomatedPayrollFinanceActor(access);
   const run = (await findActiveRun(period.month, period.year)) ?? (await findLatestRun(period.month, period.year));
   if (!run) throw new Error("Not found: no Automated Payroll run for this period.");
@@ -1348,15 +1441,9 @@ export async function buildFinanceSheet(
     throw new Error("Conflict: the full sheet is not ready — Part 2 has not been confirmed yet.");
   }
 
-  const period2: PayrollPeriod = { month: run.month, year: run.year };
-  const { members, sources, draftRows } = await loadRunContext(period2, run.id);
-  const rows = assembleRows({
-    members,
-    sources,
-    draftRows,
-    period: period2,
-    part1Confirmed: run.part1ConfirmedAt != null,
-  });
+  // ONE assembly path — see buildFabSheet. The finance sheet is the document the month is executed
+  // from, and it used to re-assemble without the carry-forward ledger.
+  const { rows } = await assembleForRun(run);
   const buffer = await buildFinanceSheetWorkbook({
     run,
     rows,
@@ -1365,8 +1452,18 @@ export async function buildFinanceSheet(
     // entries, the full scope shows the month's whole picture.
     nonEmployees: await getNonEmployeePayrollRows(run.id, scope === "part1" ? "first" : undefined),
   });
+  // Coverage is per instalment, because the bank files are. The Part 1 scope answers for Part 1
+  // only; the full sheet answers for both, so a Part 2 gap cannot hide behind a covered Part 1.
+  const allNonEmployees = await getNonEmployeePayrollRows(run.id);
+  const coverage =
+    scope === "part1"
+      ? [buildBankCoverage({ rows, nonEmployees: allNonEmployees, scope: "part1" })]
+      : [
+          buildBankCoverage({ rows, nonEmployees: allNonEmployees, scope: "part1" }),
+          buildBankCoverage({ rows, nonEmployees: allNonEmployees, scope: "part2" }),
+        ];
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
-  return { buffer, fileName: `Automated-Payroll-${label}-${scope}-finance.xlsx` };
+  return { buffer, coverage, fileName: `Automated-Payroll-${label}-${scope}-finance.xlsx` };
 }
 
 /** Which finance scopes are available for a period (drives the finance dropdown). */
@@ -1414,7 +1511,7 @@ export async function buildFabSheet(
   period: PayrollPeriod,
   scope: "part1" | "part2",
   valueDateIso?: string,
-): Promise<{ buffer: Buffer; fileName: string }> {
+): Promise<{ buffer: Buffer; coverage: BankCoverage; fileName: string }> {
   assertAutomatedPayrollFinanceActor(access);
   const run = (await findActiveRun(period.month, period.year)) ?? (await findLatestRun(period.month, period.year));
   if (!run) throw new Error("Not found: no Automated Payroll run for this period.");
@@ -1427,23 +1524,19 @@ export async function buildFabSheet(
   }
 
   const period2: PayrollPeriod = { month: run.month, year: run.year };
-  const { members, sources, draftRows } = await loadRunContext(period2, run.id);
-  const rows = assembleRows({
-    members,
-    sources,
-    draftRows,
-    period: period2,
-    part1Confirmed: run.part1ConfirmedAt != null,
-  });
+  // ONE assembly path — the same call publish makes. This used to re-assemble by hand WITHOUT the
+  // carry-forward ledger, so a recovery that the payslip carried reached neither bank file.
+  const { rows } = await assembleForRun(run);
+  const nonEmployees = await getNonEmployeePayrollRows(run.id);
   // Non-Employees Payroll (people paid a monthly salary with no HR_ID record)
   // is a separate data source from AssembledRow — fabRowsForScope never sees
   // them, so they'd silently be missing from the real bank file without this
   // (owner-reported 2026-07-26). Which scope carries an entry is its own `part`
   // (owner request 2026-08-03) — fabRowsForNonEmployees does that filtering.
-  const fabRows = [
-    ...fabRowsForScope(rows, scope),
-    ...fabRowsForNonEmployees(await getNonEmployeePayrollRows(run.id), scope),
-  ];
+  const fabRows = [...fabRowsForScope(rows, scope), ...fabRowsForNonEmployees(nonEmployees, scope)];
+  // Who this file does NOT carry. The only check here used to be "is it completely empty", so a
+  // file missing a fifth of the payable population downloaded clean and said nothing.
+  const coverage = buildBankCoverage({ rows, nonEmployees, scope });
   if (fabRows.length === 0) {
     throw new Error("Conflict: no FAB-bank employees with a payable amount for this part.");
   }
@@ -1455,7 +1548,7 @@ export async function buildFabSheet(
     salaryColumnLabel: scope === "part2" ? "Expense" : "Salary",
   });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
-  return { buffer, fileName: `FAB-Salary-Transfer-${label}-${scope}.xlsx` };
+  return { buffer, coverage, fileName: `FAB-Salary-Transfer-${label}-${scope}.xlsx` };
 }
 
 /**
@@ -1469,7 +1562,7 @@ export async function buildCibSheet(
   access: AccessContext,
   period: PayrollPeriod,
   scope: "part1" | "part2",
-): Promise<{ buffer: Buffer; fileName: string }> {
+): Promise<{ buffer: Buffer; coverage: BankCoverage; fileName: string }> {
   assertAutomatedPayrollFinanceActor(access);
   const run = (await findActiveRun(period.month, period.year)) ?? (await findLatestRun(period.month, period.year));
   if (!run) throw new Error("Not found: no Automated Payroll run for this period.");
@@ -1481,26 +1574,18 @@ export async function buildCibSheet(
     throw new Error("Conflict: the Part 2 sheet is not ready — Part 2 has not been confirmed yet.");
   }
 
-  const period2: PayrollPeriod = { month: run.month, year: run.year };
-  const { members, sources, draftRows } = await loadRunContext(period2, run.id);
-  const rows = assembleRows({
-    members,
-    sources,
-    draftRows,
-    period: period2,
-    part1Confirmed: run.part1ConfirmedAt != null,
-  });
+  // ONE assembly path — see buildFabSheet. Carry-forward recoveries reached neither bank file.
+  const { rows } = await assembleForRun(run);
+  const nonEmployees = await getNonEmployeePayrollRows(run.id);
   // See buildFabSheet's own comment: Non-Employees Payroll is a separate data
   // source that cibRowsForScope never sees on its own.
-  const cibRows = [
-    ...cibRowsForScope(rows, scope),
-    ...cibRowsForNonEmployees(await getNonEmployeePayrollRows(run.id), scope),
-  ];
+  const cibRows = [...cibRowsForScope(rows, scope), ...cibRowsForNonEmployees(nonEmployees, scope)];
+  const coverage = buildBankCoverage({ rows, nonEmployees, scope });
   if (cibRows.length === 0) {
     throw new Error("Conflict: no CIB-bank employees with a payable amount for this part.");
   }
 
   const buffer = await buildCibSheetWorkbook({ rows: cibRows });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
-  return { buffer, fileName: `CIB-Salary-Transfer-${label}-${scope}.xlsx` };
+  return { buffer, coverage, fileName: `CIB-Salary-Transfer-${label}-${scope}.xlsx` };
 }
