@@ -1060,6 +1060,7 @@ import { runAutomatedPayrollResignationCrmTests } from "./automated-payroll-resi
 import { runAutomatedPayrollLeaverBasisTests } from "./automated-payroll-leaver-basis.test.ts";
 import { runAutomatedPayrollThursdayHalfDayChargeTests } from "./automated-payroll-thursday-half-day-charge.test.ts";
 import { runAutomatedPayrollCibSheetTests } from "./automated-payroll-cib-sheet.test.ts";
+import { runAutomatedPayrollHeldTabTests } from "./automated-payroll-held-tab.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
 import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
 import { runAutomatedPayrollExecutiveSummaryTests } from "./automated-payroll-executive-summary.test.ts";
@@ -1756,6 +1757,10 @@ await runTest("automated payroll Resignations CRM deduction (unified month-days 
 await runTest("automated payroll leaver basis (ONE confirmed days-worked + ONE net day rate, shared by the Resignations and Resignations CRM tabs)", runAutomatedPayrollLeaverBasisTests);
 await runTest("automated payroll Thursday half-day reaches the CHARGE (owner rule 2026-08-02; the wizard multiplied a day rate by the flagged-date count)", runAutomatedPayrollThursdayHalfDayChargeTests);
 await runTest("automated payroll CIB bank-transfer sheet (schema + filtering + styling)", runAutomatedPayrollCibSheetTests);
+await runTest(
+  "automated payroll: the Held tab, and what was settled outside payroll",
+  runAutomatedPayrollHeldTabTests,
+);
 await runTest(
   "automated payroll: every payable row reaches a bank file or is named",
   runAutomatedPayrollBankCoverageTests,

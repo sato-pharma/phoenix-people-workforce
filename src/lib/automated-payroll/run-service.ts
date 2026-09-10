@@ -26,6 +26,7 @@ import {
   releaseCarryForwardForCancelledRun,
 } from "./carry-forward.ts";
 import { buildBankCoverage, describeBankCoverage, type BankCoverage } from "./exports/bank-coverage.ts";
+import { getHeldSettlements, loadHeldBalances } from "./held-settlements.ts";
 import { getNonEmployeePayrollRows } from "./non-employees.ts";
 import { seedRunFromRecurring } from "./non-employee-recurring.ts";
 import {
@@ -1363,6 +1364,14 @@ export async function buildRunSheet(
   const run = await requireRun(runId);
   const { rows } = await assembleForRun(run);
   const period: PayrollPeriod = { month: run.month, year: run.year };
+  // The Held tab needs both halves: what was settled by hand against THIS run, and what is still
+  // outstanding from earlier months. The second is what stops the same held amount being worked up
+  // and paid a second time next month (owner rule 2026-09-10).
+  const [heldSettlements, priorHeld] = await Promise.all([
+    getHeldSettlements(runId),
+    loadHeldBalances({ excludeRunId: runId }),
+  ]);
+  const priorHeldBalances = priorHeld.filter((balance) => balance.outstanding > 0);
   const buffer =
     variant === "part1"
       ? await buildPart1SheetWorkbook({
@@ -1373,6 +1382,8 @@ export async function buildRunSheet(
           // executes for Part 1, and a Part 2 non-employee is not paid then.
           nonEmployees: await getNonEmployeePayrollRows(runId, "first"),
           previousSummary: await previousMonthSummary(period, "first_part"),
+          heldSettlements,
+          priorHeldBalances,
         })
       : await buildFullSheetWorkbook({
           run,
@@ -1381,6 +1392,8 @@ export async function buildRunSheet(
           // BOTH parts: the full sheet is the month's complete picture, and
           // their amount lands under Month Salary either way.
           nonEmployees: await getNonEmployeePayrollRows(runId),
+          heldSettlements,
+          priorHeldBalances,
         });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
   return { buffer, fileName: `Automated-Payroll-${label}-${variant}.xlsx` };
