@@ -620,10 +620,19 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
    * missing sources" outranks "one person, one month, every product", and displacing it keeps the
    * line short enough to be read rather than run off the card.
    */
-  // The Rep Card's deck keeps its own tagline. The terse form of the completeness note used to
-  // displace it, which was the same line in shorter words -- removed with the rest of it on the
-  // owner's instruction of 2026-09-09.
-  const deck = (subtitle: string) => [subtitle, filterNote].filter(Boolean).join(SEP);
+  // 🔴 THE REP CARD HAS NO DECK LINE. Owner, 2026-09-10: "in rep card in row 2 their is
+  // irrelevnt txt behind the buttons". The line was "one person, one month, every product", written
+  // to A2 and painted over by the navigation buttons anchored from that same row, so it had never
+  // been readable on any export — which is exactly why he called it irrelevant.
+  //
+  // ⚠ IT CANNOT SIMPLY MOVE DOWN A ROW, and that was tried before this. Row 3 is the WARNING
+  // strip: `paintExecutiveBands` paints any row 3 carrying text in the amber incomplete-month fill,
+  // so the tagline came out as a warning about nothing. Row 1 has no room either — the card is
+  // eight columns and 798px wide with the emblem anchored at 689px.
+  //
+  // So the line is gone, which is what he asked for. What it carried that MATTERS is the filter
+  // note, and that moves up into A1 below rather than being lost with it: a Rep Card exported for
+  // one region has to say so, or a filtered card reads as the whole line.
 
   const areas = buildAreas(input);
   const salesData = buildSalesData(input, areas);
@@ -917,6 +926,17 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
   // they stop agreeing, and a reader who adds up this sheet and gets a different number from the
   // Overview has no way to tell which one to believe. So the sheet says it itself, at the top,
   // where it is frozen and actually read — not at the bottom of fourteen thousand rows.
+  //
+  // 🔴 THE FIGURES STAY, THE EXPLANATION MOVES. Owner, 2026-09-10: "starting from details no
+  // logo their". The logo was there — 2,313px along the sheet, because this caption ran to 285
+  // characters and `clearTitleEmblem` slides the emblem clear of whatever the caption measures. No
+  // reader ever sees 2,313px of an eighteen-column sheet, so the mark had effectively gone.
+  //
+  // The 150-character clause explaining WHY the two totals differ is what came out. It now sits on
+  // the contents page beside this sheet's own name (`INDEX_SECTIONS` in closing-engine-fill.ts),
+  // which is the page a reader passes through on the way here. The NUMBERS stay on the sheet, where
+  // someone adding up a column needs them: at 139 characters the emblem lands at 1,042px, in line
+  // with Watch List's 1,256 and Rep Ranking's 1,115, both of which read fine.
   const detailValue = detailRows.reduce((sum, row) => sum + row.salesValue, 0);
   const detailSubtitle = detailRows.length
     ? [
@@ -925,9 +945,7 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
           : `${formatInt(groups.length)} rows${SEP}${formatInt(detailRows.length)} invoice lines`,
         Math.round(detailValue) === Math.round(headlineSales)
           ? null
-          : `${formatInt(detailValue)} EGP as invoiced against the ${formatInt(headlineSales)} EGP headline`
-            + `${SEP}Office and store sales are credited to the areas that earned them, so within one`
-            + " region the two differ and across the whole line they agree",
+          : `${formatInt(detailValue)} EGP as invoiced against the ${formatInt(headlineSales)} EGP headline`,
       ]
         .filter((part): part is string => part !== null)
         .join(SEP)
@@ -986,8 +1004,9 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
       },
       "Rep Card": {
         cells: {
-          A1: headline("Rep Card"),
-          A3: deck("one person, one month, every product"),
+          // The filter note rides on A1 here, where every other sheet's `title` puts it. The card
+          // has room: its caption is 30 characters against the ~80 that reach the emblem.
+          A1: [headline("Rep Card"), filterNote].filter(Boolean).join(SEP),
           B5: areaBook.length ? String(areaBook[0]![0] ?? "") : "",
           B14: `EGP, ${month.label}`,
           // The card's own prior-month sentence reads its month name from here, so the formula

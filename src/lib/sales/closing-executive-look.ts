@@ -38,12 +38,17 @@ import { CLOSING_ENGINE_EMBLEM_ON_DARK_PNG_BASE64 } from "./closing-engine-emble
  * reads as a gap under the command row rather than as air. It is 8pt now on the eleven sheets where
  * it is blank.
  *
- * 🔴 FOUR SHEETS KEEP A TALLER ROW 3, AND SHRINKING THEM WOULD CLIP REAL CONTENT. Contents carries
- * the month and line beneath its masthead. The Rep Card's deck moved down to row 3 to get out from
- * behind the navigation buttons (closing-engine-data.ts). District Managers, Area by Month and
- * Product by Month are authored by `addReviewSheets`, which puts the "Contents" back-link on row 3
- * — those three write their own heights, so the numbers here must agree with that author or the
- * table is describing a sheet it does not control.
+ * 🔴 FOUR SHEETS KEEP A TALLER ROW 3, AND SHRINKING THEM WOULD CLIP REAL CONTENT. Contents
+ * carries the month and line beneath its masthead. District Managers, Area by Month and Product by
+ * Month are authored by `addReviewSheets`, which puts the "Contents" back-link on row 3 — those
+ * three write their own heights, so the numbers here must agree with that author or the table is
+ * describing a sheet it does not control.
+ *
+ * ⚠ NOTHING MAY BE PUT ON ROW 3 TO FILL IT. Row 3 is the WARNING strip: `paintExecutiveBands`
+ * paints any row 3 that carries text in the amber incomplete-month fill, whatever that text says.
+ * The Rep Card's tagline was moved here once and came out looking like a warning about nothing.
+ * The completeness note that used to live there was removed by the owner on 2026-09-09, which is
+ * why every one of these rows is empty and why 8pt is the right height for it.
  */
 export const EXECUTIVE_GEOMETRY: Record<string, { body: number | null; cols: Record<number, number>; head: Record<number, number> }> = {
   "Area by Month": {
@@ -53,7 +58,13 @@ export const EXECUTIVE_GEOMETRY: Record<string, { body: number | null; cols: Rec
   },
   "Area x Product": {
     body: 18,
-    cols: { 1: 20, 2: 24, 3: 26, 4: 16, 5: 16, 6: 12 },
+    // ⚠ COLUMNS 7 TO 10 CARRY NO DATA AND ARE HERE ON PURPOSE. The band's width and the A1
+    // merge both come from the largest key in this map, and a merged cell CANNOT overflow: with the
+    // map stopping at F the sheet's caption was cut at 744px and the emblem sat 101px past the end
+    // of its own navy. Six columns is the SHEET; ten is the MASTHEAD it needs — measured on Anti
+    // Infective, whose name is the longest of the three lines and takes the caption to 933px with
+    // the mark on the end of it. Pedia and CNS are shorter and sit inside the same band.
+    cols: { 1: 20, 2: 24, 3: 26, 4: 16, 5: 16, 6: 12, 7: 12, 8: 12, 9: 12, 10: 12 },
     head: { 1: 34, 2: 34, 3: 8, 4: 26, 5: 27, 6: 8, 7: 23 },
   },
   "Closing Matrix": {
@@ -104,7 +115,7 @@ export const EXECUTIVE_GEOMETRY: Record<string, { body: number | null; cols: Rec
     body: 19,
     cols: { 1: 3, 2: 24, 3: 13, 4: 14, 5: 16, 6: 16, 7: 14, 8: 4, 9: 3, 10: 3, 11: 3, 12: 3, 13: 3, 14: 2 },
     head: {
-      1: 42, 2: 36, 3: 20, 4: 28, 5: 28, 6: 6.95, 7: 14.1, 8: 30, 9: 14.1, 10: 18, 11: 9, 12: 17.1,
+      1: 42, 2: 36, 3: 8, 4: 28, 5: 28, 6: 6.95, 7: 14.1, 8: 30, 9: 14.1, 10: 18, 11: 9, 12: 17.1,
       13: 27, 14: 15.95, 15: 9.95, 16: 28, 17: 16.5, 18: 16.5, 19: 21,
     },
   },
@@ -441,6 +452,88 @@ const INDEX_SHEET_NAME = "Contents";
 const SLICER_SHEETS = new Set(["Closing Matrix", "Units Matrix"]);
 
 /**
+ * The tab strip, coloured by the CONTENTS PAGE'S OWN SECTIONS.
+ *
+ * Owner, 2026-09-10: "enhnace colors ... premium polish ... every single tab". Seventeen identical
+ * grey tabs are a list; the reader has to read all seventeen to find the one they want, and the
+ * contents page's five headings — Start here, By area, By product family, Behind the numbers,
+ * Performance review — are the grouping he already asked for on the page itself.
+ *
+ * TWO TONES, ALTERNATING BY SECTION, not five colours. A strip carrying five hues is a chart, and
+ * the sections are not categories that mean anything to each other — they are reading order. What
+ * the strip has to show is WHERE ONE GROUP ENDS, and alternating the two navies does that with the
+ * eye rather than with a legend. Contents takes the accent blue on its own: it is the way back, and
+ * it is the only tab that is not a report. Data takes the muted grey, because it is the only tab
+ * with no reader.
+ *
+ * ⚠ `accentCyan` IS DELIBERATELY NOT USED HERE. It is spent on exactly one control in this
+ * workbook — the Rep Card's Export PDF — and a tab wearing it would stop that button being the one
+ * loud thing on the page. Every colour below is one of the approved seven.
+ */
+export const EXECUTIVE_TAB_COLOURS: ReadonlyMap<string, string> = new Map([
+  [INDEX_SHEET_NAME, EXECUTIVE_PALETTE.corporateBlue],
+  // Start here
+  ["Overview", EXECUTIVE_PALETTE.primaryNavy],
+  ["Rep Ranking", EXECUTIVE_PALETTE.primaryNavy],
+  ["Rep Card", EXECUTIVE_PALETTE.primaryNavy],
+  ["Top Achievers", EXECUTIVE_PALETTE.primaryNavy],
+  // By area
+  ["Closing Matrix", EXECUTIVE_PALETTE.secondaryNavy],
+  ["Units Matrix", EXECUTIVE_PALETTE.secondaryNavy],
+  ["Area x Product", EXECUTIVE_PALETTE.secondaryNavy],
+  // By product family
+  ["Family Performance", EXECUTIVE_PALETTE.primaryNavy],
+  ["Family by Month", EXECUTIVE_PALETTE.primaryNavy],
+  // Behind the numbers
+  ["Watch List", EXECUTIVE_PALETTE.secondaryNavy],
+  ["Top Customers", EXECUTIVE_PALETTE.secondaryNavy],
+  ["Details", EXECUTIVE_PALETTE.secondaryNavy],
+  // Performance review
+  ["District Managers", EXECUTIVE_PALETTE.primaryNavy],
+  ["Area by Month", EXECUTIVE_PALETTE.primaryNavy],
+  ["Product by Month", EXECUTIVE_PALETTE.primaryNavy],
+  // The engine's own working sheet.
+  ["Data", EXECUTIVE_PALETTE.mutedText],
+]);
+
+/**
+ * Colour the tab strip.
+ *
+ * `tabColor` is the FIRST child of `CT_SheetPr`, and `sheetPr` the first child of the worksheet —
+ * put anywhere else it is a schema violation, which Excel answers by repairing the workbook and
+ * dropping whatever it could not read. Every sheet in this package already carries a `sheetPr`, in
+ * both the paired and the self-closing form, so both are handled rather than assumed.
+ *
+ * A sheet that already carries a colour is left alone: the owner setting one by hand in a template
+ * outranks this table.
+ */
+export async function applyTabColours(zip: JSZip, sheetParts: Map<string, string>): Promise<string[]> {
+  const coloured: string[] = [];
+  for (const [sheetName, part] of sheetParts) {
+    const argb = EXECUTIVE_TAB_COLOURS.get(sheetName);
+    const file = argb ? zip.file(part) : null;
+    if (!argb || !file) continue;
+    const xml = await file.async("string");
+    if (/<tabColor\b/.test(xml)) continue;
+    const tab = `<tabColor rgb="${argb}"/>`;
+
+    // The self-closing form FIRST: `<sheetPr[^>]*>` matches it too, and would then leave the slash
+    // inside the tag with an orphan `</sheetPr>` after it.
+    const empty = /<sheetPr\b([^>]*?)\/>/.exec(xml);
+    const paired = /<sheetPr\b[^>]*>/.exec(xml);
+    const out = empty
+      ? xml.replace(empty[0], `<sheetPr${empty[1]}>${tab}</sheetPr>`)
+      : paired
+        ? xml.replace(paired[0], `${paired[0]}${tab}`)
+        : xml.replace(/<worksheet\b[^>]*>/, (open) => `${open}<sheetPr>${tab}</sheetPr>`);
+    if (out === xml) continue;
+    zip.file(part, out);
+    coloured.push(sheetName);
+  }
+  return coloured;
+}
+
+/**
  * Keep the navigation band inside its own row.
  *
  * The owner's brief is explicit that the incomplete-data warning must never sit under the buttons,
@@ -492,6 +585,19 @@ const PALETTE_SUBSTITUTIONS: ReadonlyArray<readonly [string, string]> = [
   // Body type and captions.
   ["FF0F1E2B", EXECUTIVE_PALETTE.mainText],
   ["FF7A93A3", EXECUTIVE_PALETTE.mutedText],
+];
+
+/**
+ * The zebra's background, in every spelling the package can be carrying it.
+ *
+ * `applyExecutivePalette` swaps the template's own colours for the approved ones, and it runs LATE
+ * — after the review sheets are authored. So a pass that has to FIND the stripe cannot look for the
+ * approved value alone: before the swap the package still says what the owner's source workbook
+ * said. Derived from the substitution table rather than typed out twice, so the two cannot drift.
+ */
+export const EXECUTIVE_ZEBRA_FILLS: readonly string[] = [
+  EXECUTIVE_PALETTE.veryLight,
+  ...PALETTE_SUBSTITUTIONS.filter(([, to]) => to === EXECUTIVE_PALETTE.veryLight).map(([from]) => from),
 ];
 
 /**
