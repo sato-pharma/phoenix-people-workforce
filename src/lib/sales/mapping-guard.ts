@@ -297,8 +297,38 @@ export type HeldMappingChange = {
   reasons: string[];
   writer: string;
   createdAt: string;
+  /**
+   * Already formatted, Africa/Cairo, because the SERVER must decide how this reads.
+   *
+   * A client component asking the reader's own ICU build for a short month name renders "Sep" on
+   * one browser and "Sept" on another — CLDR 42 changed it — and React throws away the server HTML
+   * over that one character. That is hydration error #418, it was live on the visits page until
+   * 2026-09-08, and it only ever appears in September. The month comes from a table that ships with
+   * this code rather than from whichever ICU build the reader is holding.
+   */
+  when: string;
   notified: boolean;
 };
+
+const MONTH_ABBREVIATIONS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Africa/Cairo always, never raw UTC. Standing owner rule. */
+function formatCairo(iso: string): string {
+  const parsed = Date.parse(iso);
+  if (!Number.isFinite(parsed)) return "—";
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    month: "numeric",
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+  }).formatToParts(new Date(parsed));
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  const month = MONTH_ABBREVIATIONS[Number(get("month")) - 1] ?? get("month");
+  return `${get("day")} ${month} ${get("hour")}:${get("minute")}`;
+}
 
 /**
  * Turn one held row into something a person can decide from.
@@ -366,6 +396,7 @@ export async function listHeldMappingChanges(limit = 200): Promise<HeldMappingCh
     reasons: row.reasons ?? [],
     subject: row.entity_key,
     to: describeSide(row.table_name, row.after_json ?? {}, areaNames, brickNames),
+    when: formatCairo(row.created_at),
     writer: row.app_actor ?? `${row.db_role} (direct database access)`,
   }));
 }

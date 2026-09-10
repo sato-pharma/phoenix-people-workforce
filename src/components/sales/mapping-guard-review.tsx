@@ -28,19 +28,12 @@ const headBase =
 const headCell = `${headBase} text-left`;
 const bodyCell = "px-2 py-2 align-top text-sm text-slate-700 break-words";
 
-const CAIRO = new Intl.DateTimeFormat("en-GB", {
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  month: "short",
-  timeZone: "Africa/Cairo",
-});
-
-/** Africa/Cairo always, never raw UTC. Standing owner rule. */
-function when(iso: string): string {
-  const parsed = Date.parse(iso);
-  return Number.isFinite(parsed) ? CAIRO.format(new Date(parsed)) : "—";
-}
+// THE TIME IS FORMATTED ON THE SERVER, in `listHeldMappingChanges`, and printed here verbatim.
+//
+// Asking the reader's own ICU build for a short month name renders "Sep" on one browser and "Sept"
+// on another, because CLDR 42 changed it, and React discards the server HTML over that one
+// character — hydration error #418. It was live on the visits page until 2026-09-08 and it only
+// ever shows up in September, which is now.
 
 function Movement({ from, to }: { from: string; to: string }) {
   return (
@@ -180,7 +173,7 @@ export function MappingGuardReview({ initialHolds }: { initialHolds: HeldMapping
                 </td>
                 <td className={bodyCell}>
                   {hold.writer}
-                  <div className="mt-1 text-phx-2xs text-slate-400">{when(hold.createdAt)}</div>
+                  <div className="mt-1 text-phx-2xs text-slate-400">{hold.when}</div>
                 </td>
                 <td className={bodyCell}>
                   <Decide busy={busyId === hold.id} onDecide={(decision) => decide(hold.id, decision)} />
@@ -206,7 +199,7 @@ export function MappingGuardReview({ initialHolds }: { initialHolds: HeldMapping
               ))}
             </ul>
             <p className="mt-2 text-phx-2xs text-slate-400">
-              {hold.writer} · {when(hold.createdAt)}
+              {hold.writer} · {hold.when}
             </p>
             <div className="mt-3">
               <Decide busy={busyId === hold.id} onDecide={(decision) => decide(hold.id, decision)} />

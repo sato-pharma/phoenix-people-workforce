@@ -4412,6 +4412,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
         hrefs: [
           "/sales/mapping-database",
           "/sales/database-mapping",
+          "/sales/mapping-guard",
           "/sales/territory-management",
           "/sales/distributor-profiles",
         ],
