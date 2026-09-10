@@ -24,6 +24,8 @@ import { HELD_ROW_NOTE } from "@/lib/payroll/payroll-sheet-style";
 
 import type { AssembledRow } from "../assemble.ts";
 import { HELD_NO_REASON_COMMENT, normalizeHoldReason } from "../hold-reason.ts";
+import type { HeldBalance, HeldSettlement } from "../held-settlements.ts";
+import { addHeldSheet } from "./held-sheet.ts";
 import { monthLabel } from "../notify.ts";
 import type { MonthlySalaryRun, NonEmployeePayrollRow } from "../types.ts";
 import { sortForExport, unlistedExportHrIds } from "./export-order.ts";
@@ -432,6 +434,10 @@ export async function buildFullSheetWorkbook(input: {
    * became possible. They still never reach salary_records.
    */
   nonEmployees?: NonEmployeePayrollRow[];
+  /** Settlements recorded against this run — drives the Held tab's "settled outside payroll" columns. */
+  heldSettlements?: Map<string, HeldSettlement>;
+  /** Unsettled held money from earlier published months, for the Held tab's second section. */
+  priorHeldBalances?: HeldBalance[];
 }): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   buildCoverSheet(workbook, {
@@ -466,6 +472,14 @@ export async function buildFullSheetWorkbook(input: {
     extraColumns: bankExtraColumns(),
     nonEmployees: input.nonEmployees ?? [],
     nonEmployeeValueHeader: "Month Salary",
+  });
+  // Owner request 2026-09-10: held people get their own tab. The cover still names them, but a
+  // held person is a row of figures and twenty of them do not fit in a cover's key/value list.
+  addHeldSheet(workbook, {
+    run: input.run,
+    rows: input.rows,
+    settlements: input.heldSettlements,
+    priorBalances: input.priorHeldBalances,
   });
   return toBuffer(workbook);
 }
@@ -650,6 +664,10 @@ export async function buildPart1SheetWorkbook(input: {
   nonEmployees?: NonEmployeePayrollRow[];
   /** Headcount + total First Part from the previous month's published run, if any. */
   previousSummary?: PeriodSummary | null;
+  /** Settlements recorded against this run — drives the Held tab's "settled outside payroll" columns. */
+  heldSettlements?: Map<string, HeldSettlement>;
+  /** Unsettled held money from earlier published months, for the Held tab's second section. */
+  priorHeldBalances?: HeldBalance[];
 }): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   buildCoverSheet(workbook, {
@@ -685,6 +703,12 @@ export async function buildPart1SheetWorkbook(input: {
     run: input.run,
     rows: input.rows,
     previousNetByHrIdCompact: input.previousNetByHrIdCompact ?? new Map(),
+  });
+  addHeldSheet(workbook, {
+    run: input.run,
+    rows: input.rows,
+    settlements: input.heldSettlements,
+    priorBalances: input.priorHeldBalances,
   });
   return toBuffer(workbook);
 }
