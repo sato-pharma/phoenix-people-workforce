@@ -1320,8 +1320,19 @@ He restated the whole thing as three ordered steps, unprompted:
 | Band | Quantity, month total per product | Where it goes |
 | --- | --- | --- |
 | 1 | up to 200 | the local block only |
-| 2 | 201 to 999 | half the local block, half evenly over the rest of the country |
-| 3 | 1,000 and above | flat: every area in play takes an identical share, origin included |
+| 2 | **201 to 699** | half the local block, half evenly over the rest of the country |
+| 3 | **700 and above** | flat: every area in play takes an identical share, origin included |
+
+⚠ **THE THIRD BOUNDARY MOVED FROM 1,000 TO 700 ON 2026-09-10**, in his own words: *"201 to 699
+… 700 and above"*. Only the boundary moved — the three steps, the Qalubeya + Cairo block, the صعيد
+pass and the lead ladder are all untouched. **His Arabic above still reads 999 and 1000 and is left
+that way on purpose**: it is a dated quote of the 2026-09-09 ruling, and this file keeps his words
+rather than a tidied version of them. The constants are the live rule.
+
+🔴 **ON AUGUST 2026 IT CHANGES NOTHING, MEASURED.** No warehouse-and-product month total lands
+between 700 and 999 — the book's key quantities are 4,532, 1,056, 1,056, 480, 480 and then nothing
+above 120 — so the band mix stays 1,164 / 960 / 6,644 packs and every area lands where it did. The
+move bites from September onward. Do not re-run August's backfill expecting a difference.
 
 ### The Upper Egypt block — added and WITHDRAWN the same day, 2026-09-09
 

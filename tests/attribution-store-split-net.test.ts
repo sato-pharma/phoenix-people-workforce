@@ -58,9 +58,9 @@ function qemaRow(overrides: Partial<AttributionSplitRow> = {}): AttributionSplit
     isDirect: false,
     officialLine: "Pedia",
     productCode: "LA001",
-    qty: 700,
-    effectiveUnits: 700,
-    salesValue: 189000,
+    qty: 600,
+    effectiveUnits: 600,
+    salesValue: 162000,
     ...overrides,
   };
 }
@@ -109,7 +109,7 @@ export function runAttributionStoreSplitNetTests() {
   // ── The El Qema Qalubeya case, on the month it actually applies to ─────────────────────────────
   const august = buildStoreSplitNetPayload("Pedia", [qemaRow()], "2026-08");
 
-  assert.equal(august.length, COUNTRY_AREAS, "700 packs is over 200, so the net reaches every area");
+  assert.equal(august.length, COUNTRY_AREAS, "600 packs is over 200, so the net reaches every area");
   assert.ok(
     august.some((row) => row.area_code === "D11"),
     "Qalubeya is in the net — it keeps half of its own sale, it is not emptied out",
@@ -138,7 +138,7 @@ export function runAttributionStoreSplitNetTests() {
   const netOf = (code: string) => august.find((row) => row.area_code === code)?.net_qty ?? 0;
   // Qalubeya SOLD this row, so its net is deeply negative while its LANDING is the highest in the
   // country. Every assertion about rank below is on the landing; reading the net alone inverts it.
-  const landed = (code: string) => netOf(code) + (code === "D11" ? 700 : 0);
+  const landed = (code: string) => netOf(code) + (code === "D11" ? 600 : 0);
 
   const origin = august.find((row) => row.area_code === "D11");
   assert.ok(origin, "the origin area is in the net");
@@ -160,7 +160,7 @@ export function runAttributionStoreSplitNetTests() {
   // so the bands and the صعيد pass still decide how the rest of the country divides among itself.
   // That is what this file can check without restating the ladder's own arithmetic: the shape the
   // owner's three steps produce survives, and only its scale moves.
-  const banded = referenceQemaShares("D11", 700, 700, NO_OTHERS);
+  const banded = referenceQemaShares("D11", 600, 600, NO_OTHERS);
   const ratio = (code: string) => landed(code) / (banded.get(code) ?? Number.NaN);
   for (const code of ["AB1", "UE7", "OT7", "CA1", "GZ6", "D21"]) {
     assert.equal(
@@ -225,7 +225,7 @@ export function runAttributionStoreSplitNetTests() {
   // this row is discounted so they differ, and the net has to move each on its own measure.
   const discounted = buildStoreSplitNetPayload(
     "Pedia",
-    [qemaRow({ qty: 700, effectiveUnits: 630, salesValue: 170100 })],
+    [qemaRow({ qty: 600, effectiveUnits: 540, salesValue: 145800 })],
     "2026-08",
   );
   const discountedOrigin = discounted.find((row) => row.area_code === "D11");
@@ -234,12 +234,12 @@ export function runAttributionStoreSplitNetTests() {
     Math.abs(discountedOrigin.net_qty - origin.net_qty) < 1e-9,
     "units move on the invoiced quantity, which this row shares with the one above",
   );
-  // 🔴 The BAND is judged on the invoiced 700 for BOTH passes — only the amount divided changes.
-  // Re-banding the effective pass on 630 would put units and money on two different geometries.
-  // Every step of the rule is homogeneous, the ladder included, so 630 lands at exactly 90% of what
-  // 700 lands — which is the check, and it needs no second copy of the arithmetic.
+  // 🔴 The BAND is judged on the invoiced 600 for BOTH passes — only the amount divided changes.
+  // Re-banding the effective pass on 540 would put units and money on two different geometries.
+  // Every step of the rule is homogeneous, the ladder included, so 540 lands at exactly 90% of what
+  // 600 lands — which is the check, and it needs no second copy of the arithmetic.
   assert.ok(
-    Math.abs(discountedOrigin.net_effective_units - ((landed("D11") * 630) / 700 - 630)) < 1e-6,
+    Math.abs(discountedOrigin.net_effective_units - ((landed("D11") * 540) / 600 - 540)) < 1e-6,
     "money moves on the effective units, not on the invoiced quantity",
   );
   assert.notEqual(

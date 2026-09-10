@@ -237,7 +237,7 @@ function normalizeArea(value: string | null | undefined): string {
 /** Packs. At or below this, a warehouse's product stays inside its own governorate. */
 export const WAREHOUSE_NATIONAL_SPLIT_THRESHOLD_QTY = 200;
 
-/** The share that stays in the origin governorate in the MIDDLE band, 201 to 999 packs. */
+/** The share that stays in the origin governorate in the MIDDLE band, 201 to 699 packs. */
 export const WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION = 0.5;
 
 /**
@@ -245,8 +245,14 @@ export const WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION = 0.5;
  * FLAT across every area the line has — owner, 2026-09-09, giving the rule as three ordered steps:
  *
  *   1. up to 200            → the governorate's reps only
- *   2. 201 to 999           → half the governorate, half the rest of the country
- *   3. 1000 and above       → "يقسم علي مندوبي الجمهوريه بالتساوي وليس Others"
+ *   2. 201 to 699           → half the governorate, half the rest of the country
+ *   3. 700 and above        → "يقسم علي مندوبي الجمهوريه بالتساوي وليس Others"
+ *
+ * ⚠ HE FIRST SET THIS BOUNDARY AT 1,000 AND MOVED IT TO 700 ON 2026-09-10 — his words that evening
+ * were "201 to 699 ... 700 and above". Only the boundary moved; all three steps are otherwise
+ * unchanged, and his original Arabic still reads 999 and 1000 because it is a dated quote. On
+ * August 2026 the change is a NO-OP, measured: no warehouse-and-product total lands between 700 and
+ * 999, so the band mix stays 1,164 / 960 / 6,644 packs. It bites from September onward.
  *
  * 🔴 STEP THREE IS NOT A BIGGER STEP TWO. Step two says "باقي الجمهورية", the REST of the
  * country, against a privileged home half. Step three drops the word باقي: every area takes the
@@ -258,7 +264,7 @@ export const WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION = 0.5;
  * stop: it looks like the natural continuation of step two and it silently keeps ~2,800 packs in a
  * governorate the owner has just said should hold one thirty-seventh of them.
  */
-export const WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY = 1000;
+export const WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY = 700;
 
 /**
  * The fraction of a sale that stays in the local block, for a quantity and a plan's two block sizes.

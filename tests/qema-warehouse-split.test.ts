@@ -42,6 +42,10 @@ import {
  *      (القليوبية + القاهرة)، و 50% الاخري تقسم علي باقي الجمهورية بالتساوي
  *   3. اي مخزن من 1000 علبه فما فوق يقسم علي مندوبي الجمهوريه بالتساوي وليس Others
  *
+ * ⚠ THE THIRD BOUNDARY MOVED TO 700 ON 2026-09-10 — "201 to 699 ... 700 and above". His Arabic
+ * above is left exactly as he wrote it on 2026-09-09, because it is a dated quote and the file
+ * keeps his words rather than a tidied version of them. The constants below are the live rule.
+ *
  *   تقسيم القمه للصعيد — هناخد كل البيع اللي محسوب للصعيد و نعيد توزيعوا 50% منه لكل محافظات
  *   الصعيد بالتساوى، وال 50% الباقيه يوزع علي الجمهورية
  *
@@ -84,13 +88,14 @@ export function referenceQemaShares(
   const share = new Map<string, number>();
   const give = (area: string, amount: number) => share.set(area, (share.get(area) ?? 0) + amount);
 
-  if (bandQty <= 200 || away.length === 0) {
+  if (bandQty <= WAREHOUSE_NATIONAL_SPLIT_THRESHOLD_QTY || away.length === 0) {
     home.forEach((area) => give(area, total / home.length));           // step 1
-  } else if (bandQty >= 1_000) {
+  } else if (bandQty >= WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY) {
     inPlay.forEach((area) => give(area, total / inPlay.length));       // step 3
   } else {
-    home.forEach((area) => give(area, (total * 0.5) / home.length));   // step 2
-    away.forEach((area) => give(area, (total * 0.5) / away.length));
+    const half = WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION;               // step 2
+    home.forEach((area) => give(area, (total * half) / home.length));
+    away.forEach((area) => give(area, (total * (1 - half)) / away.length));
   }
 
   // تقسيم القمه للصعيد, on whatever the three steps produced.
@@ -179,8 +184,8 @@ const BASE: StoreSplitRow = {
   isDirect: false,
   officialLine: "Pedia",
   productCode: "LA001",
-  qty: 700,
-  salesValue: 189_000,
+  qty: 600,
+  salesValue: 162_000,
 };
 
 const row = (over: Partial<StoreSplitRow> = {}): StoreSplitRow => ({ ...BASE, ...over });
@@ -217,7 +222,7 @@ export function runQemaWarehouseSplitTests() {
   // caught by these lines rather than silently followed by the rest of the file.
   assert.equal(WAREHOUSE_NATIONAL_SPLIT_THRESHOLD_QTY, 200, "step 1 runs up to and including 200");
   assert.equal(WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION, 0.5, "step 2 keeps half at home");
-  assert.equal(WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY, 1_000, "step 3 starts at 1,000");
+  assert.equal(WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY, 700, "step 3 starts at 700, moved from 1,000 on 2026-09-10");
   assert.equal(UPPER_EGYPT_HOME_FRACTION, 0.5, "half of Upper Egypt's take returns to Upper Egypt");
   assert.deepEqual([...WAREHOUSE_THRESHOLD_DISTRIBUTORS], ["QM"], "El Qema only");
 
@@ -309,7 +314,7 @@ export function runQemaWarehouseSplitTests() {
   assert.equal(atThreshold.areas.length, IN_PLAY, "one pack over 200 and the whole country is in");
 
   // ── STEP 2 — 201 to 999, half home and half over the rest of the country ─────────────────────
-  const plan = splitTargetsFor(row(), 700, PEDIA_REGIONS);
+  const plan = splitTargetsFor(row(), 600, PEDIA_REGIONS);
   assert.ok(plan, "an El Qema Pedia row always has a plan");
   assert.equal(plan.areas.length, IN_PLAY, "it reaches every area in play, and only those");
   assert.equal(new Set(plan.areas).size, plan.areas.length, "and no area appears twice");
@@ -317,15 +322,15 @@ export function runQemaWarehouseSplitTests() {
     assert.equal(plan.areas.includes(area), false, `${area} is in Others and takes nothing`);
   }
 
-  const shares = planShares(plan, 700);
+  const shares = planShares(plan, 600);
   assert.equal(
     shares.reduce((sum, share) => sum + share, 0),
-    700,
+    600,
     "the shares sum back to the row EXACTLY",
   );
 
   // 🔴 Against the independent derivation, area by area — the whole rule in one assertion.
-  const expected = referenceQemaShares("D11", 700, 700, PEDIA_OTHERS);
+  const expected = referenceQemaShares("D11", 600, 600, PEDIA_OTHERS);
   assert.equal(plan.areas.length, expected.size, "the engine reaches the areas his words reach");
   plan.areas.forEach((area, index) => {
     assert.equal(
@@ -352,7 +357,35 @@ export function runQemaWarehouseSplitTests() {
   assert.equal(round(at("UE1")), round(at("GZ6")), "and every Upper Egypt area lands on the same number");
   assert.equal(round(at("UE9")), round(at("UE7")), "Beni Suef included, though August files it under Giza");
 
-  // ── STEP 3 — 1,000 and above spreads flat, and NOT over Others ────────────────────────────────
+  // 🔴 THE BOUNDARY ITSELF, ONE PACK EITHER SIDE. He moved it from 1,000 to 700 on 2026-09-10,
+  // and a boundary is the one thing a constant change can get wrong in a way no other assertion
+  // sees: every fixture above sits comfortably inside a band, so all of them would still pass with
+  // the boundary a hundred packs out. These two do not.
+  const justUnder = splitTargetsFor(
+    row({ qty: WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY - 1 }),
+    WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY - 1,
+    PEDIA_REGIONS,
+  );
+  const justOver = splitTargetsFor(
+    row({ qty: WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY }),
+    WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY,
+    PEDIA_REGIONS,
+  );
+  assert.ok(justUnder && justOver);
+  const shareAt = (plan: NonNullable<typeof justUnder>, code: string, total: number) =>
+    round(planShares(plan, total)[plan.areas.indexOf(code)]);
+  assert.notEqual(
+    shareAt(justUnder, "D11", 999) / shareAt(justUnder, "AB1", 999),
+    1,
+    "one pack under the boundary, Qalubeya still keeps a governorate half",
+  );
+  assert.equal(
+    shareAt(justOver, "D11", 999),
+    shareAt(justOver, "AB1", 999),
+    "and at the boundary exactly, Qalubeya and Alexandria draw level",
+  );
+
+  // ── STEP 3 — 700 and above spreads flat, and NOT over Others ─────────────────────────────────
   const flat = splitTargetsFor(row({ qty: 6_000 }), 6_000, PEDIA_REGIONS);
   assert.ok(flat);
   const flatShares = planShares(flat, 6_000);
@@ -361,7 +394,7 @@ export function runQemaWarehouseSplitTests() {
   assert.equal(
     round(flatAt("D11")),
     round(flatAt("AB1")),
-    "Qalubeya and Alexandria take the same share: the origin's governorate stops mattering at 1,000",
+    "Qalubeya and Alexandria take the same share: the origin's governorate stops mattering at 700",
   );
   assert.equal(
     new Set(flat.areas.filter((a) => !augustUpperEgypt.has(a)).map((a) => round(flatAt(a)))).size,
@@ -418,7 +451,7 @@ export function runQemaWarehouseSplitTests() {
   );
 
   // ── An organogram that failed to load must not strip areas out of a distribution ─────────────
-  const noOrg = splitTargetsFor(row(), 700, NO_SPLIT_REGIONS);
+  const noOrg = splitTargetsFor(row(), 600, NO_SPLIT_REGIONS);
   assert.ok(noOrg);
   assert.equal(
     noOrg.areas.length,
@@ -433,12 +466,12 @@ export function runQemaWarehouseSplitTests() {
   assert.equal(landed.length, IN_PLAY, "one synthetic row per area in play");
   assert.equal(
     Number(landed.reduce((sum, r) => sum + r.qty, 0).toFixed(6)),
-    700,
+    600,
     "and the split moves money without creating or destroying any",
   );
   assert.equal(
     Number(landed.reduce((sum, r) => sum + r.salesValue, 0).toFixed(6)),
-    189_000,
+    162_000,
     "value likewise",
   );
 
@@ -572,7 +605,7 @@ export function runQemaWarehouseSplitTests() {
   );
   assert.equal(
     entry.originKeepsValue,
-    Number(((189_000 * (expected.get("D11") ?? 0)) / 700).toFixed(2)),
+    Number(((162_000 * (expected.get("D11") ?? 0)) / 600).toFixed(2)),
     "and what it says Qalubeya keeps is what Qalubeya actually keeps",
   );
 

@@ -3488,7 +3488,7 @@ await runTest(
   runCityListNewAreaGuardTests,
 );
 await runTest(
-  "El Qema three bands and the صعيد redistribution (200 / 201-999 / 1000+ per warehouse and product, Qalubeya meaning Qalubeya + Cairo evenly, then half of Upper Egypt's credited sales back across Upper Egypt and half over the republic — every share checked against an independent reading of the owner's words)",
+  "El Qema three bands and the صعيد redistribution (200 / 201-699 / 700+ per warehouse and product, Qalubeya meaning Qalubeya + Cairo evenly, then half of Upper Egypt's credited sales back across Upper Egypt and half over the republic — every share checked against an independent reading of the owner's words)",
   runQemaWarehouseSplitTests,
 );
 await runTest(

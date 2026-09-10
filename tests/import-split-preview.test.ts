@@ -62,7 +62,7 @@ const base: SplitPlanSourceRow = {
   isDirect: false,
   officialLine: "Pedia",
   productCode: "LA001",
-  qty: 700,
+  qty: 600,
 };
 
 const row = (over: Partial<SplitPlanSourceRow> = {}): SplitPlanSourceRow => ({ ...base, ...over });
@@ -79,16 +79,16 @@ export function runImportSplitPreviewTests() {
     "and the reason names the period rather than blaming the customer",
   );
 
-  // ── El Qema, 700 packs from Benha: step 2, then the صعيد pass ─────────────────────────────
+  // ── El Qema, 600 packs from Benha: step 2, then the صعيد pass ─────────────────────────────
   //
   // Half stays with Qalubeya + Cairo, half crosses the country, and the redistribution then takes
   // Upper Egypt's share of that half back out again. The preview must report the shares AFTER that.
   const sept = buildImportSplitPlan({ period: "2026-09", rows: [row()] });
   assert.equal(sept.splitActive, true);
   const forsan = sept.customers[0];
-  const forsanMeans = blockMeans("D11", 700);
+  const forsanMeans = blockMeans("D11", 600);
   assert.equal(forsan.willSplit, true);
-  assert.equal(forsan.nationalSplit, true, "700 packs is over 200, so there IS an away block");
+  assert.equal(forsan.nationalSplit, true, "600 packs is over 200, so there IS an away block");
   assert.equal(
     forsan.group,
     "Qalubeya + Cairo + nationwide, Upper Egypt redistributed",
@@ -109,12 +109,12 @@ export function runImportSplitPreviewTests() {
     forsan.unitsPerArea > forsan.unitsPerAwayArea,
     "and the governorate half is real — home beats away",
   );
-  // 🔴 THE ASSERTION THAT CATCHES A PREVIEW READING `homeFraction` ALONE. Half of 700 over the
+  // 🔴 THE ASSERTION THAT CATCHES A PREVIEW READING `homeFraction` ALONE. Half of 600 over the
   // seven-area block is exactly 50; the صعيد pass then adds the national top-up, so anything that
   // reports a flat 50 here has skipped the redistribution the closing will perform.
   assert.notEqual(
     Number(forsan.unitsPerArea.toFixed(6)),
-    Number((350 / QALUBEYA_BLOCK.length).toFixed(6)),
+    Number((300 / QALUBEYA_BLOCK.length).toFixed(6)),
     "the preview reports the plan's shares, not the band's fraction",
   );
   assert.equal(sept.widestFanOut, COUNTRY_AREAS, "the headline reports the widest reach in the file");
@@ -238,17 +238,17 @@ export function runImportSplitPreviewTests() {
 
   // ── Rows for one customer, one area and one product are summed before the plan is drawn ───────
   //
-  // Two 350-packs lines are ONE 700-pack product, which is step 2. Judged line by line each would
+  // Two 300-pack lines are ONE 600-pack product, which is step 2. Judged line by line each would
   // be step 1 and the preview would report a sale that never leaves Qalubeya + Cairo.
   const summed = buildImportSplitPlan({
     period: "2026-09",
-    rows: [row({ qty: 350 }), row({ qty: 350 })],
+    rows: [row({ qty: 300 }), row({ qty: 300 })],
   });
   assert.equal(summed.customers.length, 1, "two invoice lines, one customer, one placement");
-  assert.equal(summed.customers[0].units, 700);
+  assert.equal(summed.customers[0].units, 600);
   assert.ok(
     near(summed.customers[0].unitsPerArea, forsanMeans.home),
-    "and the band is judged on the summed 700, not on either 350 line alone",
+    "and the band is judged on the summed 600, not on either 300 line alone",
   );
 
   // ── Biggest first, so a file of small pharmacies cannot bury the one that moves ───────────────
