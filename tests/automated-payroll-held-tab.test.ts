@@ -98,6 +98,10 @@ function buildHeldRow(overrides: {
     compact: overrides.hrId.toLowerCase(),
     onHold: true,
     overpaidResidual: 0,
+    // What the locked engine says the month owes, carried alongside the split so reconcile can
+    // check one against the other. Nothing is overpaid in these fixtures, so it is the two
+    // instalments added.
+    totalPayable: overrides.firstPart + overrides.secondPart,
     carriedForwardApplied: 0,
     lifecycle: "regular",
     bankName: "CIB",
