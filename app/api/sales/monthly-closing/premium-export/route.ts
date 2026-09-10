@@ -12,6 +12,8 @@ import {
 import { fillClosingEngine } from "@/lib/sales/closing-engine-fill";
 import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
 import { loadClosingExportPayload } from "@/lib/sales/closing-export-payload";
+import { loadClosingQuarterGap } from "@/lib/sales/closing-quarter-gap";
+import { buildQuarterGapSheet, canSeeQuarterGapTab } from "@/lib/sales/closing-quarter-gap-sheet";
 import { buildReviewSheets } from "@/lib/sales/closing-review-sheets";
 import { isClosingPdfSheet } from "@/lib/sales/closing-report-pdf";
 import { resolvePortalClosingScope } from "@/lib/sales/monthly-closing-portal";
@@ -96,18 +98,23 @@ export async function POST(request: Request) {
       }
     }
 
+    // Read ONCE and shared. The quarter tab below narrows its own months with this same object, and
+    // a second reading of the same body is where a filtered workbook ends up with one tab narrowed
+    // and another not -- which reads as a disagreement between the numbers rather than as a filter.
+    const filter = {
+      areaCodes: Array.isArray(body.areaCodes) ? body.areaCodes : [],
+      productCodes: Array.isArray(body.productCodes) ? body.productCodes : [],
+      regionCodes: Array.isArray(body.regionCodes) ? body.regionCodes : [],
+      search: typeof body.search === "string" ? body.search : "",
+    };
+
     // Loaded by the shared module, not inline. The PDF renderer is the third reader of this same
     // month, and every branch of the load is a wrong NUMBER rather than an error when it is got
     // wrong -- a prior matrix for the wrong month, a details loader silently handed no line. Three
     // copies is where those drift; see `closing-export-payload.ts` for the traps it carries.
     const payload = await loadClosingExportPayload({
       access,
-      filter: {
-        areaCodes: Array.isArray(body.areaCodes) ? body.areaCodes : [],
-        productCodes: Array.isArray(body.productCodes) ? body.productCodes : [],
-        regionCodes: Array.isArray(body.regionCodes) ? body.regionCodes : [],
-        search: typeof body.search === "string" ? body.search : "",
-      },
+      filter,
       line: body.line ?? marketingOversight?.line ?? null,
       period: body.period ?? null,
     });
@@ -171,9 +178,32 @@ export async function POST(request: Request) {
     // Rep Ranking and Family Performance would collide with the sheets of those names already here.
     const reviewSheets = buildReviewSheets(payload.review, { line: payload.line, period: payload.period });
 
+    // The quarter behind the month, for the OWNER'S copy of this workbook only -- owner,
+    // 2026-09-10, "make it only in super admin export". The gate is asked here, before the read,
+    // so a caller who will not receive the tab does not pay for the two extra months either.
+    //
+    // Loaded HERE and not in `closing-export-payload.ts`, which exists so the three readers of one
+    // MONTH cannot drift: this is a quarter, it has exactly one reader, and the PDF renderer shares
+    // that payload and would pay for a read it never renders.
+    //
+    // `payload.matrix` goes in so the selected month is not read a second time, and so this sheet's
+    // figure for it is the identical object every other tab in the workbook was built from. A month
+    // with no targets, a line that carries none, or a failed targets read all return null, and the
+    // tab is then simply absent rather than showing a gap measured against a target that is missing.
+    const quarterGap = canSeeQuarterGapTab(access)
+      ? await loadClosingQuarterGap({
+        filter,
+        line: payload.line,
+        period: payload.period,
+        selectedMonth: payload.matrix,
+      })
+      : null;
+    const quarterGapSheet = buildQuarterGapSheet(quarterGap, { line: payload.line, period: payload.period });
+    const appendedSheets = quarterGapSheet ? [...reviewSheets, quarterGapSheet] : reviewSheets;
+
     const buffer = await fillClosingEngine(payload.fill, {
       macroFree: !macros,
-      reviewSheets,
+      reviewSheets: appendedSheets,
       ...(macros ? {} : { pdfLink, repCardPdfBase }),
     });
     const fileName = closingFileName({

@@ -1184,6 +1184,7 @@ import { runSalesTruthNoMismatchTests } from "./sales-truth-no-mismatch.test.ts"
 import { runClosingManagerAsOfTests, runClosingPerformanceReviewTests } from "./closing-performance-review.test.ts";
 import { runMonthlyClosingPeriodMergeTests } from "./monthly-closing-period-merge.test.ts";
 import { runClosingReviewFilterTests } from "./closing-review-filters.test.ts";
+import { runClosingQuarterGapTests } from "./closing-quarter-gap.test.ts";
 import { runCeoMarketingApprovalInboxTests } from "./ceo-marketing-approval-inbox.test.ts";
 import { runMarketAwarenessApprovalInboxNavBadgeTests } from "./market-awareness-approval-inbox-nav-badge.test.ts";
 import { runMarketingApprovalInboxNavBadgeTests } from "./marketing-approval-inbox-nav-badge.test.ts";
@@ -3560,6 +3561,11 @@ await runTest(
 await runTest(
   "a Performance Review filter narrows the rows but never the pickers, and a filtered or multi-month workbook says so (Delta stays offerable after filtering to Cairo, a real area carrying direct money stays in the area picker while the synthetic company row does not, three months are labelled as a span instead of as September, and an array body parses the same as a comma query)",
   runClosingReviewFilterTests,
+);
+
+await runTest(
+  "the premium workbook's Gap to Quarter Target tab (the target spans all three months of the calendar quarter INCLUDING the one with no closing yet, sales stop at the month on the cover, an area row carries value only because units are never added across products, a missing target stays blank rather than becoming a zero gap at 0%, each month's targets fold by that month's own area-merge rules, and the emitted tab is registered, coloured, listed under its own contents band and formatted as a percentage where it says Achievement)",
+  runClosingQuarterGapTests,
 );
 
 await runTest(
