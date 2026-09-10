@@ -8,6 +8,7 @@ import {
   MASKED_SOURCE_DISTRIBUTORS,
   withoutMaskedSourceRows,
 } from "@/lib/sales/closing-source-mask";
+import { MAIN_STORES_LABEL, wholeUnitShares } from "@/lib/sales/closing-main-stores";
 
 /**
  * 🔒 EL QEMA LEAVES NO TRACE IN ANY CLOSING DETAIL — owner, 2026-09-09.
@@ -83,6 +84,55 @@ export function runClosingSourceMaskTests() {
     "and the same array back when the page holds no El Qema row at all",
   );
 
+  // ── Main Stores: whole units that still add back ─────────────────────────────────────────────
+  //
+  // Owner, 2026-09-10: "make the fraction to the nearest full unit … 234.59 is 235", on a sheet
+  // whose total has to keep matching the closing.
+  //
+  // 🔴 ROUNDING EACH AREA ON ITS OWN IS THE BUG THIS GUARDS. Thirty-eight areas each rounding
+  // a half unit upward manufactures about nineteen units nobody sold. Largest remainder is the only
+  // rounding whose parts add back, and the property — not the arithmetic — is what is asserted.
+  assert.equal(MAIN_STORES_LABEL, "Main Stores", "his own words for it, 2026-09-10");
+
+  const shares = [
+    { row: "D11", units: 234.590610755986 },
+    { row: "D14", units: 229.99 },
+    { row: "D15", units: 229.99 },
+    { row: "AB1", units: 225.48 },
+  ];
+  const exact = wholeUnitShares(shares);
+  assert.equal(
+    exact.reduce((sum, share) => sum + share.units, 0),
+    Math.round(shares.reduce((sum, share) => sum + share.units, 0)),
+    "the whole units add back to the fractional total — that is the invariant, not the rounding",
+  );
+  assert.ok(exact.every((share) => Number.isInteger(share.units)), "and every one of them is whole");
+  assert.equal(
+    exact.find((share) => share.row === "D11")?.units,
+    235,
+    "234.59 reads as 235 — his own example",
+  );
+  for (const share of exact) {
+    const before = shares.find((one) => one.row === share.row)!.units;
+    assert.ok(
+      Math.abs(share.units - before) < 1,
+      `${share.row} moved ${Math.abs(share.units - before)} of a unit — no area may move a whole one`,
+    );
+  }
+
+  // A pathological case the naive rounder gets wrong: three thirds of one unit. Rounding each on
+  // its own gives 0+0+0 and loses the unit; largest remainder gives 1+0+0 and keeps it.
+  const thirds = wholeUnitShares([
+    { row: "a", units: 1 / 3 },
+    { row: "b", units: 1 / 3 },
+    { row: "c", units: 1 / 3 },
+  ]);
+  assert.equal(
+    thirds.reduce((sum, share) => sum + share.units, 0),
+    1,
+    "a unit split three ways is still one unit — naive rounding loses it entirely",
+  );
+
   // ── The client-code set the Store Split sheets are masked by ─────────────────────────────────
   const codes = maskedClosingClientCodes(rows, viewer);
   assert.deepEqual([...codes], ["3743"], "only El Qema's customers");
@@ -146,29 +196,29 @@ export function runClosingSourceMaskTests() {
   const loader = sources.find((entry) => entry.file === "src/lib/sales/monthly-closing-details.ts");
   assert.ok(loader, "the closing detail loader is still where it was");
   assert.ok(
-    loader.body.includes("input.revealSource === true")
-      && loader.body.includes("withoutMaskedSourceRows(relabelled, access)"),
-    "the loader must drop unless revealSource is explicitly true — defaulting the other way turns "
-    + "every screen into a leak with nothing failing",
+    loader.body.includes("input.revealSource !== true && !canRevealClosingSource(access)"),
+    "the loader must substitute unless the caller asked for the real rows OR the viewer may reveal "
+    + "— testing only the flag hands a Super Admin El Qema's rows AND a full set of Main Stores "
+    + "rows on top of them, which is the month counted twice with nothing to show it",
   );
 
-  // 🔴 AND IT MUST DROP ABOVE THE OPTIONS, NOT BELOW THE PAGING. This is the ordering bug the
-  // first implementation shipped: `buildFilterOptions` runs on the pre-filter rows, so a removal
-  // applied to the paged rows left `QM` sitting in the tab's own DISTRIBUTOR DROPDOWN — measured
-  // live on Pedia — and left `filteredRowCount` and every figure in `totals` counting rows the
-  // reader cannot see. Both are traces, and neither is visible from the rows.
-  const seam = loader.body.indexOf("withoutMaskedSourceRows(relabelled, access)");
+  // 🔴 THE ORDER IS THE WHOLE RULE, AND TWO SEPARATE BUGS LIVE IN IT.
+  //
+  // The removal must run ABOVE `buildFilterOptions`: that builder reads the PRE-FILTER rows, so a
+  // removal applied further down — against the paged rows, where it first shipped — left `QM` in
+  // the tab's own DISTRIBUTOR DROPDOWN with nothing in the rows to show for it. Measured on Pedia.
+  //
+  // The Main Stores substitution must run ABOVE `applyDetailScope`, because a share is a fraction
+  // of a NATIONAL pool. Built after the scope, a regional manager's four areas would divide El
+  // Qema's warehouses among themselves and each take about nine times what the closing credits — a
+  // number that is wrong, large, and looks entirely plausible on the page.
+  const removalAt = loader.body.indexOf("withoutMaskedSourceRows(merged, access)");
+  const buildAt = loader.body.indexOf("buildMainStoresRows(merged, {");
+  const scopeAt = loader.body.indexOf("applyDetailScope(");
   const optionsAt = loader.body.indexOf("buildFilterOptions(");
-  const filtersAt = loader.body.indexOf("applyDetailFilters(relabelled");
-  assert.ok(seam > 0 && optionsAt > 0, "both the removal and the option builder are still there");
-  assert.ok(
-    seam < optionsAt,
-    "the removal has to run BEFORE buildFilterOptions, or the distributor dropdown names El Qema",
-  );
-  assert.equal(
-    filtersAt,
-    -1,
-    "and the filters must read the survivors, never `relabelled` — filtering the unmasked rows puts "
-    + "the count and the totals out of step with what is on the page",
-  );
+  assert.ok(removalAt > 0, "the loader still removes the masked rows, from the whole month");
+  assert.ok(buildAt > 0, "and still builds Main Stores from the whole month, never a scoped slice");
+  assert.ok(scopeAt > 0 && optionsAt > 0, "the scope gate and the option builder are still there");
+  assert.ok(buildAt < scopeAt, "Main Stores is built BEFORE the access scope narrows the month");
+  assert.ok(removalAt < optionsAt, "and the removal runs before the distributor dropdown is built");
 }

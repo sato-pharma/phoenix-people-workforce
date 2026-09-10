@@ -36,6 +36,7 @@
 
 import { closingAreaOf } from "./closing-row-area";
 import { countsInClosingHeadline } from "./closing-headline";
+import { MAIN_STORES_LABEL } from "./closing-main-stores";
 import { PERFORMANCE_REVIEW_FIRST_PERIOD } from "./closing-performance-review";
 import type { ClosingEngineFill, EngineValue } from "./closing-engine-fill";
 import type { ClosingPerformanceReview } from "./closing-performance-review";
@@ -439,7 +440,12 @@ function buildDetailGroups(rows: ClosingDetailRow[], areaBook: Map<string, AreaB
     // house rule forbids: human names, never raw codes. Every other sheet in this workbook already
     // reads the name off the matrix, so this reads it off the same place and the columns agree.
     const seat = areaBook.get(areaCode.trim().toUpperCase());
-    const key = `${areaCode}\u0000${row.clientCode}\u0000${row.productCode}\u0000${channel}`;
+    // A Main Stores row carries no client CODE, so keying on the code alone would let it merge
+    // with a genuinely unnamed row in the same area, product and channel — and whichever of the
+    // two the map reached first would name the other. Keyed on the LABEL here, which no real
+    // customer can carry, so the two can never become one group. No other row's grouping moves.
+    const clientKey = row.clientName === MAIN_STORES_LABEL ? MAIN_STORES_LABEL : row.clientCode;
+    const key = `${areaCode}\u0000${clientKey}\u0000${row.productCode}\u0000${channel}`;
     let group = groups.get(key);
     if (!group) {
       group = {
@@ -491,6 +497,7 @@ function buildDetailGroups(rows: ClosingDetailRow[], areaBook: Map<string, AreaB
  * the sale belongs to the area that made it.
  */
 function buildCustomers(groups: DetailGroup[]): {
+  mainStoresValue: number;
   namedValue: number;
   rows: CustomerRow[];
   unnamedCount: number;
@@ -499,8 +506,27 @@ function buildCustomers(groups: DetailGroup[]): {
   const customers = new Map<string, CustomerRow>();
   let unnamedCount = 0;
   let unnamedValue = 0;
+  let mainStoresValue = 0;
 
   for (const group of groups) {
+    // 🔴 MAIN STORES IS NOT AN UNNAMED CUSTOMER, AND THIS BRANCH IS WHY IT NEEDS SAYING.
+    //
+    // A Main Stores row carries no client CODE, because a share of a warehouse has no single buyer.
+    // Falling through to the branch below therefore counted all 76 of them as rows whose buyer the
+    // distributor failed to name, and the footnote then published the exact figure this whole rule
+    // exists to hide: "76 rows worth 2,367,360 EGP carry no client code". It shipped that way for
+    // one build, on the very change that was supposed to close that leak.
+    //
+    // It is also simply untrue. These rows ARE named — the name is Main Stores, and the owner chose
+    // it. What they are not is a CUSTOMER, so they stay out of a customer ranking rather than
+    // standing at the top of one as a 2.4 million EGP buyer that does not exist.
+    // Keyed on the NAME, never on the code being empty: by the time a row becomes a group its
+    // empty code has already been replaced by the `NO_CLIENT_CODE` sentinel, so a test for a
+    // blank code here is never true. That is exactly how this branch shipped inert once.
+    if (group.clientName === MAIN_STORES_LABEL) {
+      mainStoresValue += group.salesValue;
+      continue;
+    }
     if (group.clientCode === NO_CLIENT_CODE) {
       unnamedCount += group.invoiceLines;
       unnamedValue += group.salesValue;
@@ -522,6 +548,7 @@ function buildCustomers(groups: DetailGroup[]): {
   }
   const rows = [...customers.values()].sort((a, b) => b.salesValue - a.salesValue);
   return {
+    mainStoresValue,
     namedValue: rows.reduce((sum, row) => sum + row.salesValue, 0),
     rows,
     unnamedCount,
@@ -908,11 +935,20 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
       : `${count(targeted.length, "area")} on this line ${agree(targeted.length, "carries", "carry")} a target and can be ranked; ${formatInt(untargeted)} ${agree(untargeted, "carries", "carry")} none and ${agree(untargeted, "is", "are")} excluded entirely, not scored as zero.`,
   ];
 
+  // ⚠ THE SECOND NOTE HAS THREE STATES, NOT TWO, AND THE MIDDLE ONE IS THE POINT.
+  //
+  // With Main Stores on the sheet, "every row names its buyer" is false and "N rows carry no client
+  // code" is both false and a published figure for money the owner is hiding the source of. The
+  // middle branch says the true thing: warehouse sales reach an AREA rather than an outlet, so they
+  // are counted everywhere and ranked nowhere. It names no distributor and sizes nothing.
   const customerNotes = [
     `Share is against the ${formatInt(customers.namedValue)} EGP that reached a named customer, not against the whole line.`,
-    customers.unnamedCount === 0
-      ? "Every row in scope names its buyer, so nothing is left out of this ranking."
-      : `${count(customers.unnamedCount, "row")} worth ${formatInt(customers.unnamedValue)} EGP ${agree(customers.unnamedCount, "carries", "carry")} no client code — the distributor reported the sale without naming the buyer.`,
+    customers.mainStoresValue > 0
+      ? "Main Stores rows are counted in every total on this workbook and listed on Details. They are"
+        + " left out of this ranking because a warehouse share reaches an area, not one outlet."
+      : customers.unnamedCount === 0
+        ? "Every row in scope names its buyer, so nothing is left out of this ranking."
+        : `${count(customers.unnamedCount, "row")} worth ${formatInt(customers.unnamedValue)} EGP ${agree(customers.unnamedCount, "carries", "carry")} no client code — the distributor reported the sale without naming the buyer.`,
     customers.unnamedCount === 0
       ? "A customer buying in two areas appears once per area, because the sale belongs to the area that made it."
       : `${agree(customers.unnamedCount, "That row is", "Those rows are")} counted in every total on this workbook and ${agree(customers.unnamedCount, "is", "are")} listed on Details; ${agree(customers.unnamedCount, "it is", "they are")} only left out of this ranking, because ${agree(customers.unnamedCount, "it names", "they name")} no customer to rank.`,

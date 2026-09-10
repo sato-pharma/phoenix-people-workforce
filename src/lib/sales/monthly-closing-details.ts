@@ -8,10 +8,11 @@ import {
   normalizeLineKey,
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
-import { withoutMaskedSourceRows } from "@/lib/sales/closing-source-mask";
+import { buildMainStoresRows } from "@/lib/sales/closing-main-stores";
+import { canRevealClosingSource, withoutMaskedSourceRows } from "@/lib/sales/closing-source-mask";
 import { applyClosingAreaMergesToDetails } from "@/lib/sales/closing-area-merges";
 import { countsInClosingHeadline } from "@/lib/sales/closing-headline";
-import { loadOperationalRegionResolver } from "@/lib/sales/closing-organogram-regions";
+import { loadOperationalRegionResolver, loadSplitRegions } from "@/lib/sales/closing-organogram-regions";
 import { closingAreaOf, isRebookedRow } from "@/lib/sales/closing-row-area";
 import { evenSplitKey, loadEvenSplitCustomerKeys } from "@/lib/sales/even-split-registry";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
@@ -737,12 +738,46 @@ export async function loadMonthlyClosingDetails(
     ? mapped
     : applyClosingAreaMergesToDetails(resolveTargetLineCode(line), mapped, period);
 
-  const scoped = applyDetailScope(merged, {
-    allowedRegionCodes,
-    allowedAreaCodes: scope.allowedAreaCodes,
-    allowedProductCodes: scope.allowedProductCodes,
-    dropConfidential: !confidentialIncluded,
-  });
+  // 🔒 MAIN STORES, AND IT HAS TO BE BUILT HERE — BEFORE THE ACCESS SCOPE.
+  //
+  // A share is a fraction of a NATIONAL pool. Built after the scope, a regional manager's four
+  // areas would divide El Qema's warehouses among themselves and each take about nine times what
+  // the closing credits — a number that is wrong, large, and looks perfectly plausible. `merged` is
+  // still the whole month here; `applyDetailScope` below drops the areas this viewer may not see,
+  // which is the correct order and the only one that gives every viewer the same figure.
+  //
+  // TWO CONDITIONS, NOT ONE. `revealSource` is the export route asking for the real rows so it can
+  // compute from them, and `canRevealClosingSource` is Super Admin and every `system` computation.
+  // Testing only the flag would hand a Super Admin El Qema's real rows AND a full set of Main
+  // Stores rows on top of them — the month counted twice, with nothing to show it.
+  const substituteMainStores = input.revealSource !== true && !canRevealClosingSource(access);
+  const mainStores = substituteMainStores
+    ? buildMainStoresRows(merged, {
+      areaNameOf: (areaCode) => {
+        const area = areaByCode.get(areaCode.toUpperCase());
+        if (!area) return null;
+        const regionCode = text(area.regionCode).toUpperCase();
+        return {
+          areaName: text(area.areaName) || areaCode,
+          regionCode,
+          regionName: regionNameByCode.get(regionCode) ?? text(area.regionName),
+        };
+      },
+      line,
+      period,
+      regions: (await loadSplitRegions(line, period)) ?? undefined,
+    })
+    : [];
+
+  const scoped = applyDetailScope(
+    substituteMainStores ? [...withoutMaskedSourceRows(merged, access), ...mainStores] : merged,
+    {
+      allowedRegionCodes,
+      allowedAreaCodes: scope.allowedAreaCodes,
+      allowedProductCodes: scope.allowedProductCodes,
+      dropConfidential: !confidentialIncluded,
+    },
+  );
 
   // ── Organogram regions, applied AFTER the access scope, deliberately ────────────────────────
   //
@@ -771,38 +806,27 @@ export async function loadMonthlyClosingDetails(
       })
     : scoped;
 
-  // 🔒 THE SOURCE REMOVAL, AND IT HAS TO SIT ABOVE THE OPTIONS RATHER THAN BELOW THE PAGING.
+  // The substitution above is what makes all of this consistent: by the time the rows reach here,
+  // El Qema's are gone and Main Stores stands in their place, so the dropdown, the row count, the
+  // totals and the rows on the page all describe one population.
   //
-  // It used to run on the last line of this function, against the already-paged rows, and blank
-  // four columns on them. That left two things behind that the owner's rule does not allow, and
-  // neither was visible from the rows themselves:
+  // 🔴 THE ORDER IS LOAD-BEARING AND IT IS NOT OBVIOUS. `buildFilterOptions` runs on the
+  // PRE-FILTER rows, so a removal applied further down — against the paged rows, where it used to
+  // sit — left `QM` sitting in the tab's own DISTRIBUTOR DROPDOWN with nothing in the rows to show
+  // for it. Measured live on Pedia. A Main Stores row carries a BLANK distributor for the same
+  // reason: the option builder skips a blank, and a "Main Stores" entry in a distributor filter
+  // would be a fourth name for the same thing.
   //
-  //   • `buildFilterOptions` runs on `relabelled`, so the tab's DISTRIBUTOR DROPDOWN offered `QM`
-  //     to every viewer. Measured live on Pedia. The rows said nothing and the filter named it.
-  //   • `filteredRowCount` and every figure in `totals` counted rows the reader could not see, so
-  //     the tab reported a total its own rows do not add up to — which is a question mark, and a
-  //     question mark is a trace.
-  //
-  // Removing here instead makes the whole result consistent: the dropdown, the count, the totals
-  // and the rows all describe the same population.
-  //
-  // 🔴 WHAT MUST NOT MOVE ABOVE THIS LINE IS THE STORE SPLIT, and it does not: the split is
-  // computed upstream in `loadMonthlyClosingPartsWithStoreSplit`, long before these rows arrive, so
-  // El Qema's own warehouse rule has already been applied to the numbers that survive. Everything
-  // between there and here — the access scope, the organogram relabelling — is display.
-  //
-  // The export route is the one caller that computes FROM these rows (the comparison, the store
-  // split sheets), which is why it sets the reveal flag and drops them itself afterwards. The
-  // flag is deliberately not spelled out here: the pinning test greps for it by name.
-  const visible = input.revealSource === true
-    ? relabelled
-    : [...withoutMaskedSourceRows(relabelled, access)];
+  // 🔴 WHAT MUST NOT MOVE ABOVE THE SUBSTITUTION IS THE STORE SPLIT THE MATRIX READS, and it
+  // does not: that one is computed upstream in `loadMonthlyClosingPartsWithStoreSplit`, long before
+  // these rows arrive. The split run inside `buildMainStoresRows` is a second, read-only pass over
+  // the same rows with the same rule, which is what makes the two agree.
 
   // Options come from everything in scope (pre-filter) so choosing one area never removes the
   // other areas from the dropdown.
-  const options = buildFilterOptions(visible);
+  const options = buildFilterOptions(relabelled);
 
-  const filtered = applyDetailFilters(visible, input.filters);
+  const filtered = applyDetailFilters(relabelled, input.filters);
   const start = (page - 1) * pageSize;
   const shown = input.unpaged ? filtered : filtered.slice(start, start + pageSize);
 
