@@ -354,7 +354,19 @@ $$;
 -- EXECUTE on a function is granted to PUBLIC by default, and service_role inherits it that way, so
 -- revoking from PUBLIC takes it from the application too. The grant below has to be explicit or the
 -- review screen can hold changes and never release one.
-revoke all on function public.sos_map_guard_decide(bigint, text, text) from public, anon, authenticated;
+--
+-- ALL FOUR functions here are SECURITY DEFINER, including the three trigger bodies, and all four
+-- are revoked. A trigger function needs no EXECUTE privilege at fire time — the check happens when
+-- the trigger is CREATED, which is above — so revoking here costs the guard nothing and closes a
+-- surface that would otherwise be callable by anyone holding the anon key. This repository has had
+-- exactly that leak once already.
+revoke execute on function public.sos_map_guard_decide(bigint, text, text) from public, anon, authenticated;
+revoke execute on function public.sos_map_guard_customer() from public, anon, authenticated;
+revoke execute on function public.sos_map_guard_brick() from public, anon, authenticated;
+revoke execute on function public.sos_map_guard_area() from public, anon, authenticated;
+revoke execute on function public.sos_map_region_of_area(text) from public, anon, authenticated;
+
+-- Only the decide function is ever called by the application; the rest are reached by the triggers.
 grant execute on function public.sos_map_guard_decide(bigint, text, text) to service_role;
 
 comment on function public.sos_map_guard_decide(bigint, text, text) is
