@@ -244,12 +244,49 @@ export function runSpotlightRankingTests() {
     assert.equal(dec.allowed, true);
   }
 
+  // ── 10b. The YEAR window ───────────────────────────────────────────────────
+  {
+    assert.deepEqual(windowPeriods({ kind: "year", key: "2026" }), [
+      "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06",
+      "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12",
+    ]);
+    assert.equal(windowLabel({ kind: "year", key: "2026" }), "2026");
+
+    // Refused mid-year, and the refusal names the day it lifts — NOT silently shortened to the
+    // months that have finished, which would print "2026" over eight of them.
+    const running = gateWindow({ kind: "year", key: "2026" }, { year: 2026, month: 9 });
+    assert.equal(running.allowed, false);
+    assert.ok(running.allowed === false && running.reason.includes("1 January 2027"));
+
+    // Allowed the moment it closes.
+    assert.equal(gateWindow({ kind: "year", key: "2026" }, { year: 2027, month: 1 }).allowed, true);
+
+    // 2025 is refused for a DIFFERENT reason — the engine holds nothing before 2026-01 — and the
+    // message says so rather than claiming the year has not finished.
+    const early = gateWindow({ kind: "year", key: "2025" }, { year: 2027, month: 1 });
+    assert.equal(early.allowed, false);
+    assert.ok(early.allowed === false && early.reason.includes("2026-01"),
+      "a year below the data floor is refused on the floor, not on completeness");
+
+    // 🔴 THE CONSEQUENCE, PINNED. Through 2026 the year picker is legitimately EMPTY: 2026 has not
+    // finished and 2025 is below the data floor. That is the gate working, not a broken picker,
+    // and the UI says so in those words. From January 2027 it offers exactly 2026.
+    assert.deepEqual(selectableWindows("year", { year: 2026, month: 9 }, 4), [],
+      "no calendar year is selectable while 2026 is still running");
+    assert.deepEqual(
+      selectableWindows("year", { year: 2027, month: 1 }, 4).map((w) => w.key),
+      ["2026"],
+      "the first selectable year is 2026, from January 2027",
+    );
+  }
+
   // ── 11. The picker can never offer what the export would refuse ────────────
   {
     const today = { year: 2026, month: 9 };
-    for (const kind of ["month", "quarter", "semester"] as const) {
+    for (const kind of ["month", "quarter", "semester", "year"] as const) {
       const offered = selectableWindows(kind, today, 6);
-      assert.ok(offered.length > 0, `${kind} picker offers something`);
+      // Year is legitimately empty until 2027, so only the others must be non-empty.
+      if (kind !== "year") assert.ok(offered.length > 0, `${kind} picker offers something`);
       for (const window of offered) {
         assert.equal(gateWindow(window, today).allowed, true,
           `${kind} picker offered ${window.key}, which the gate refuses`);

@@ -43,6 +43,7 @@ const WINDOW_KINDS: { value: SpotlightWindowKind; label: string }[] = [
   { value: "month", label: "Month" },
   { value: "quarter", label: "Quarter" },
   { value: "semester", label: "Half year" },
+  { value: "year", label: "Year" },
 ];
 
 const LAYOUTS: { value: SpotlightLayout; label: string; hint: string }[] = [
@@ -52,6 +53,7 @@ const LAYOUTS: { value: SpotlightLayout; label: string; hint: string }[] = [
 ];
 
 function windowText(window: SpotlightWindow): string {
+  if (window.kind === "year") return window.key;
   if (window.kind === "quarter") return `${window.key.slice(5)} ${window.key.slice(0, 4)}`;
   if (window.kind === "semester") return `H${window.key.slice(6)} ${window.key.slice(0, 4)}`;
   const [year, month] = window.key.split("-");
@@ -222,7 +224,11 @@ export function SpotlightWorkspace({ canExport, facets, windows }: Props) {
                 ))}
               </select>
               {availableWindows.length === 0 ? (
-                <p className="mt-2 text-[12px] text-slate-500">No {windowKind} has finished yet.</p>
+                <p className="mt-2 text-[12px] leading-relaxed text-slate-500">
+                  {windowKind === "year"
+                    ? "No calendar year has finished within the sales data, which starts in January 2026. The first will be 2026, available from 1 January 2027."
+                    : `No ${windowKind} has finished yet.`}
+                </p>
               ) : null}
             </div>
             <div>

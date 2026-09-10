@@ -44,6 +44,7 @@ const WINDOW_NOUN: Record<SpotlightWindowKind, string> = {
   month: "Month",
   quarter: "Quarter",
   semester: "Half",
+  year: "Year",
 };
 
 /** "CNS", "CNS and Pedia", "CNS, Pedia and Anti Infective". Never a trailing comma, never an ellipsis. */
