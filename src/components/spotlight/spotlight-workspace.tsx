@@ -85,6 +85,9 @@ export function SpotlightWorkspace({ canExport, facets, windows }: Props) {
   const [regions, setRegions] = useState<string[]>([]);
   const [areas, setAreas] = useState<string[]>([]);
   const [hrIds, setHrIds] = useState<string[]>([]);
+  // Ticked by default: a sheet with somebody's name on it is the common case, and the first
+  // top-ten ever exported put a vacant territory in 8th place with nobody to congratulate.
+  const [excludeVacant, setExcludeVacant] = useState(true);
   const [peopleQuery, setPeopleQuery] = useState("");
   const [rankBy, setRankBy] = useState<SpotlightRankBy>("achievement");
   const [direction, setDirection] = useState<SpotlightRankDirection>("top");
@@ -105,14 +108,14 @@ export function SpotlightWorkspace({ canExport, facets, windows }: Props) {
   const selection = useMemo(() => ({
     window: { kind: windowKind, key: windowKey },
     subject,
-    filters: { lines, regions, areas, hrIds },
+    filters: { lines, regions, areas, hrIds, excludeVacant },
     rankBy,
     direction,
     limit: limitText.trim() === "" ? null : Number(limitText),
     layout,
     headline: headline.trim() || null,
     subheadline: subheadline.trim() || null,
-  }), [windowKind, windowKey, subject, lines, regions, areas, hrIds, rankBy, direction, limitText, layout, headline, subheadline]);
+  }), [windowKind, windowKey, subject, lines, regions, areas, hrIds, excludeVacant, rankBy, direction, limitText, layout, headline, subheadline]);
 
   const toggle = (list: string[], set: (next: string[]) => void, value: string) => {
     set(list.includes(value) ? list.filter((entry) => entry !== value) : [...list, value]);
@@ -259,6 +262,23 @@ export function SpotlightWorkspace({ canExport, facets, windows }: Props) {
                 <option value="top">Top — the best</option>
                 <option value="bottom">Bottom — those behind</option>
               </select>
+            </div>
+            <div>
+              <label className="flex items-start gap-2 text-[13px] text-slate-800">
+                <input
+                  checked={excludeVacant}
+                  className="mt-1"
+                  onChange={(event) => setExcludeVacant(event.target.checked)}
+                  type="checkbox"
+                />
+                <span className="min-w-0">
+                  Only people
+                  <span className="block text-[11px] leading-relaxed text-slate-500">
+                    Leaves out territories with no one in the seat. Their sales are real, so untick
+                    this to see them.
+                  </span>
+                </span>
+              </label>
             </div>
             <div>
               <label className={LABEL} htmlFor="sl-limit">How many (blank for everyone)</label>

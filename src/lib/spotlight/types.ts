@@ -91,6 +91,19 @@ export type SpotlightFilters = {
   hrIds?: string[];
   /** Named seats, when the owner picks a specific chair rather than a person. */
   seatIds?: string[];
+  /**
+   * Drop subjects whose seat has no occupant.
+   *
+   * WHY IT EXISTS. 43 of 111 rep seats are empty and they still sell, so a vacant territory can
+   * out-achieve real people — Port Said and Domiat took 8th place on the first top-ten sheet that
+   * was ever exported, at 130.7%, with nobody to congratulate. On a RECOGNITION sheet that is a
+   * slot taken from a person; on a performance read it is real money that must not disappear.
+   *
+   * Both are legitimate, so this is a switch rather than a rule, and it DEFAULTS TO FALSE here —
+   * a filter's absence must mean "no restriction", never a silent exclusion of real sales. The UI
+   * ships with it ticked, because a sheet with somebody's name on it is the common case.
+   */
+  excludeVacant?: boolean;
 };
 
 export type SpotlightSelection = {

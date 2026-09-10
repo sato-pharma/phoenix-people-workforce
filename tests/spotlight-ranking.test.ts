@@ -145,6 +145,33 @@ export function runSpotlightRankingTests() {
     assert.ok(!rows[0]!.title.includes("Fatma"), "and never borrows a neighbour's name");
   }
 
+  // ── 3b. Vacant seats can be excluded, and are KEPT by default ──────────────
+  //
+  // Reported live on the first top-ten ever exported: Port Said and Domiat took 8th place at
+  // 130.7% with nobody in the seat. Both readings are legitimate — a recognition sheet wants
+  // people, a performance read must not lose real money — so it is a switch, and its ABSENCE
+  // means no restriction rather than a silent exclusion.
+  {
+    const rows = [
+      row({ period: "2026-08", actualValue: 500, targetValue: 400, hasTarget: true }),
+      row({ period: "2026-08", repSeatId: "SEAT-CNS-REP-GZ1", repHrId: null, areaCode: "GZ1", actualValue: 900, targetValue: 400, hasTarget: true }),
+    ];
+
+    const kept = build(rows, "rep");
+    assert.equal(kept.length, 2, "by default a vacant seat keeps its place — its money is real");
+    assert.equal(kept.filter((r) => r.isVacant).length, 1);
+
+    const peopleOnly = build(rows, "rep", { excludeVacant: true });
+    assert.equal(peopleOnly.length, 1, "excludeVacant drops the empty seat");
+    assert.equal(peopleOnly[0]!.isVacant, false);
+    assert.equal(peopleOnly[0]!.title, "Fatma Gharib Mohamed Ibrahim");
+
+    // 🔴 AND IT MUST NOT FIRE ON A SEATED PERSON. The vacant seat here is the HIGHER achiever, so
+    // a filter with the condition inverted would silently keep it and drop the real rep — which
+    // looks like a working filter until you read the name.
+    assert.ok(!peopleOnly.some((r) => r.title.includes("vacant")), "and never the other way round");
+  }
+
   // ── 4. HR ids are compared case-insensitively ──────────────────────────────
   {
     assert.equal(hrKey("B-136"), hrKey("b-136"));
