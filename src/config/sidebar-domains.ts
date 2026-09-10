@@ -189,7 +189,7 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
       { heading: "Sales Integrity", sectionIds: ["sales-sos-integrity"] },
       {
         heading: "Targets & Closing",
-        sectionIds: ["sales-vs-target-module", "sales-targets-module", "monthly-closing", "pm-product-master"],
+        sectionIds: ["sales-vs-target-module", "sales-targets-module", "monthly-closing", "sales-spotlight-module", "pm-product-master"],
       },
       { heading: "Weekly Sales", sectionIds: ["sales-weekly-module"] },
     ],
