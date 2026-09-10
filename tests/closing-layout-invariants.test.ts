@@ -28,6 +28,11 @@ import type { MonthlyClosingCell, MonthlyClosingMatrix } from "../src/lib/sales/
 //   2. No two buttons on a sheet overlap each other.     <- the Rep Card's navigation bar
 //   3. No shape reaches the warning strip's row.         <- the unreadable incomplete-month note
 //   4. Every slicer is wide enough for its longest caption. <- "Ale...", "Delt...", "Upp..."
+//   5. The mark sits ON its own navy band and ON the first screen. <- "starting from details no
+//      logo their": the mark was 2,313px along an eighteen-column sheet, and 101px off the end of
+//      Area x Product's band, floating on white.
+//   6. Every tab carries a colour, and the strip is not one flat tone. <- seventeen identical grey
+//      tabs, which is a list rather than a workbook.
 //
 // The unit throughout is the EMU, and column geometry is resolved the way Excel resolves it: a
 // later `<col>` entry wins over an earlier one covering the same column. Reading it the other way
@@ -36,6 +41,16 @@ import type { MonthlyClosingCell, MonthlyClosingMatrix } from "../src/lib/sales/
 
 const EMU_PER_PIXEL = 9525;
 const DEFAULT_COLUMN_WIDTH = 9.140625;
+/**
+ * What a maximised Excel shows on a 1366-wide screen, in EMU. The mark has to be inside it.
+ *
+ * Written out here rather than imported from the module that enforces it — a test reading the
+ * implementation's own constant asserts only that the file equals itself.
+ */
+const FIRST_SCREEN_EMU = 1_300 * EMU_PER_PIXEL;
+
+/** The tab colours this workbook is allowed to use: two navies, the accent, and the muted grey. */
+const TAB_COLOURS = ["FF0A1F33", "FF103A5C", "FF0B78B7", "FF6B8296"] as const;
 
 /** Column index (0-based) to its left edge in EMU, honouring later `<col>` entries over earlier. */
 function columnEdges(sheetXml: string): (index: number) => number {
@@ -241,6 +256,7 @@ export async function runClosingLayoutInvariantTests() {
   let sheetsChecked = 0;
   let shapesChecked = 0;
   let slicersChecked = 0;
+  let marksChecked = 0;
 
   for (const tag of workbook.match(/<sheet\b[^>]*\/?>/g) ?? []) {
     const name = /\bname="([^"]*)"/.exec(tag)?.[1];
@@ -322,6 +338,46 @@ export async function runClosingLayoutInvariantTests() {
           `${name}: "${box.name}" reaches into the warning strip — "Warning must NEVER overlap buttons"`,
         );
       }
+    }
+
+    // ── 5. The mark is on the navy, and on the first screen ─────────────────────────────────────
+    //
+    // 🔴 BOTH HALVES SHIPPED. The template anchors each emblem near the right edge of its OWN
+    // sheet, which is invisible on an eighteen-column one: Details carried its mark at 2,313px and
+    // the owner reported that tab, and every tab after it, as having no logo at all. Separately,
+    // Area x Product's mark sat 101px PAST the end of its navy band, on white — the band's width
+    // comes from `EXECUTIVE_GEOMETRY`, the mark's position from the measured caption, and nothing
+    // made the two agree.
+    //
+    // Neither is visible to any other check here. The file is valid, every reference resolves, and
+    // the logo is simply not where anybody looks.
+    const emblemAnchor = (drawingXml.match(/<xdr:twoCellAnchor\b[\s\S]*?<\/xdr:twoCellAnchor>/g) ?? [])
+      .find((one) => one.includes("<xdr:pic"));
+    const emblemBox = emblemAnchor ? shapeBoxes(emblemAnchor, edgeOf, rowTop)[0] : null;
+    if (emblemBox) {
+      // The band is the A1 merge where there is one, and every cell row 1 carries where there is
+      // not — the three review sheets are painted across row 1 without being merged.
+      const merged = /<mergeCell ref="A1:([A-Z]+)1"\s*\/>/.exec(sheetXml)?.[1];
+      const row1 = /<row\b[^>]*?\br="1"[^>]*?>([\s\S]*?)<\/row>/.exec(sheetXml)?.[1] ?? "";
+      const columns = merged
+        ? [merged]
+        : [...row1.matchAll(/<c r="([A-Z]+)1"/g)].map((one) => one[1]!);
+      const lastColumn = Math.max(
+        0,
+        ...columns.map((letters) => [...letters].reduce((total, ch) => total * 26 + (ch.charCodeAt(0) - 64), 0)),
+      );
+      const bandRight = edgeOf(lastColumn);
+      marksChecked += 1;
+      assert.ok(
+        emblemBox.right <= bandRight + EMU_PER_PIXEL,
+        `${name}: the mark ends at ${Math.round(emblemBox.right / EMU_PER_PIXEL)}px and its navy band `
+          + `ends at ${Math.round(bandRight / EMU_PER_PIXEL)}px — a mark past the band floats on white`,
+      );
+      assert.ok(
+        emblemBox.right <= FIRST_SCREEN_EMU + EMU_PER_PIXEL,
+        `${name}: the mark ends at ${Math.round(emblemBox.right / EMU_PER_PIXEL)}px, past the `
+          + `${FIRST_SCREEN_EMU / EMU_PER_PIXEL}px a maximised Excel shows — nobody scrolls sideways to find a logo`,
+      );
     }
 
     // ── 4. A slicer is wide enough for its longest caption ──────────────────────────────────────
@@ -410,6 +466,114 @@ export async function runClosingLayoutInvariantTests() {
     assert.ok(visible >= 12, `only ${visible} visible tabs — this is not an empty sweep`);
   }
 
+  // ── 6. THE TAB STRIP IS COLOURED, AND NOT ALL ONE COLOUR ────────────────────────────────────
+  //
+  // Owner, 2026-09-10: "enhnace colors ... premium polish ... every single tab". Seventeen tabs in
+  // Excel's default grey are a list — a reader has to read all seventeen to find one. The colours
+  // follow the contents page's own five sections, alternating between the two navies so the eye
+  // sees where each group ends; Contents takes the accent on its own and Data the muted grey.
+  //
+  // The values are typed out above rather than imported, so this asserts the owner's palette and
+  // not merely that the workbook agrees with itself.
+  {
+    const seen = new Map<string, string>();
+    for (const tag of workbook.match(/<sheet\b[^>]*\/?>/g) ?? []) {
+      const sheetName = /\bname="([^"]*)"/.exec(tag)?.[1];
+      const rid = /\br:id="([^"]*)"/.exec(tag)?.[1];
+      if (!sheetName || !rid) continue;
+      const raw = target.get(rid);
+      const sheetFile = raw ? zip.file(raw.startsWith("xl/") ? raw : `xl/${raw}`) : null;
+      if (!sheetFile) continue;
+      const sheetXml = await sheetFile.async("string");
+      const colour = /<tabColor rgb="([0-9A-Fa-f]{8})"/.exec(sheetXml)?.[1]?.toUpperCase() ?? "";
+      assert.ok(colour, `${sheetName} has no tab colour — the strip is coloured on every tab, not most of them`);
+      assert.ok(
+        (TAB_COLOURS as readonly string[]).includes(colour),
+        `${sheetName} wears ${colour}, which is not one of the approved four`,
+      );
+      // `tabColor` is the FIRST child of `CT_SheetPr`; anywhere else Excel repairs the workbook and
+      // drops what it could not read, which is a file that opens with a warning and no colours.
+      assert.match(
+        sheetXml,
+        /<sheetPr\b[^>]*><tabColor\b/,
+        `${sheetName} puts tabColor somewhere other than the head of sheetPr — Excel repairs that`,
+      );
+      seen.set(sheetName, colour);
+
+      // 🔴 AND IT CARRIES THE MARK AT ALL. The three review sheets are authored from scratch
+      // by `addReviewSheets`, so they shipped with no drawing in them — no emblem, and nothing for
+      // the passes that place one to find. That is the other half of "starting from details no logo
+      // their", and rule 5 above cannot see it: a sheet with no drawing is skipped by the loop that
+      // measures marks, so its absence reads as nothing to check.
+      //
+      // `Data` is excluded because it has no masthead and no reader; it is the pivot source.
+      if (sheetName === "Data") continue;
+      const relsForSheet = zip.file((raw!.startsWith("xl/") ? raw! : `xl/${raw!}`).replace(/worksheets\/([^/]+)$/, "worksheets/_rels/$1.rels"));
+      assert.ok(relsForSheet, `${sheetName} has no relationships at all, so it cannot be carrying the mark`);
+      const drawingFor = /Target="\.\.\/(drawings\/drawing\d+\.xml)"/.exec(await relsForSheet!.async("string"))?.[1];
+      assert.ok(drawingFor, `${sheetName} points at no drawing — every tab but Data wears the emblem`);
+      assert.match(
+        await zip.file(`xl/${drawingFor}`)!.async("string"),
+        /<xdr:pic\b/,
+        `${sheetName} has a drawing with no picture in it — the emblem is what makes it a masthead`,
+      );
+    }
+    assert.ok(seen.size >= 15, `only ${seen.size} tabs were read — this is not an empty sweep`);
+    assert.ok(new Set(seen.values()).size >= 3, "the strip is one flat tone — the sections are meant to be visible");
+    assert.equal(seen.get("Contents"), "FF0B78B7", "Contents wears the accent — it is the way back, and the only tab that is not a report");
+    assert.equal(
+      [...seen.entries()].filter(([, colour]) => colour === "FF0B78B7").length,
+      1,
+      "and it wears it alone, or it stops standing out",
+    );
+  }
+
+  // ── 7. THE REVIEW SHEETS WEAR THE SAME LOOK AS EVERY OTHER TAB ──────────────────────────────
+  //
+  // They are the only three sheets in the workbook written from scratch rather than filled into the
+  // owner's engine, so every convention the template carries has to be put on them by hand — and
+  // two were missing. There was no zebra at all, and the pane froze after row 2, which keeps the
+  // title and the subtitle on screen and lets the COLUMN HEADINGS scroll away: a column of numbers
+  // with no way to tell which month it is.
+  //
+  // The stripe is checked by the FILL it resolves to, never by its dxf id. An id is a position in
+  // `styles.xml` and moves whenever the engine is rebuilt from a fresh source workbook; a wrong one
+  // is not an error, it is a second row wearing the red "under target" fill.
+  {
+    const styles = await zip.file("xl/styles.xml")!.async("string");
+    const dxfs = [...(/<dxfs count="\d+"[^>]*>([\s\S]*?)<\/dxfs>/.exec(styles)?.[1] ?? "").matchAll(/<dxf>[\s\S]*?<\/dxf>/g)]
+      .map((one) => one[0]);
+    let reviewed = 0;
+    for (const tag of workbook.match(/<sheet\b[^>]*\/?>/g) ?? []) {
+      const sheetName = /\bname="([^"]*)"/.exec(tag)?.[1] ?? "";
+      if (!["Area by Month", "District Managers", "Product by Month"].includes(sheetName)) continue;
+      const rid = /\br:id="([^"]*)"/.exec(tag)?.[1];
+      const raw = rid ? target.get(rid) : null;
+      const sheetFile = raw ? zip.file(raw.startsWith("xl/") ? raw : `xl/${raw}`) : null;
+      if (!sheetFile) continue;
+      const sheetXml = await sheetFile.async("string");
+      reviewed += 1;
+
+      const rule = /<conditionalFormatting sqref="([^"]*)">[\s\S]*?dxfId="(\d+)"[\s\S]*?<formula>([\s\S]*?)<\/formula>/.exec(sheetXml);
+      assert.ok(rule, `${sheetName} carries no zebra — every other sheet with rows has one`);
+      assert.match(rule![3]!, /MOD\(ROW\(\)-5,2\)=1/, `${sheetName}'s stripe has to start at the first data row`);
+      assert.match(
+        dxfs[Number(rule![2])] ?? "",
+        /<(?:bg|fg)Color rgb="FFF3F8FC"/i,
+        `${sheetName}'s stripe points at a format that is not the workbook's own pale blue`,
+      );
+      assert.match(rule![1]!, /^A5:/, `${sheetName}'s stripe has to cover the rows, not the masthead`);
+
+      // The heading row is row 4 on all three, so the split goes below it.
+      assert.match(
+        sheetXml,
+        /<pane ySplit="4" topLeftCell="A5"/,
+        `${sheetName} freezes above its own column headings — they scroll away and the numbers lose their labels`,
+      );
+    }
+    assert.equal(reviewed, 3, `${reviewed} review sheets were checked, not 3 — this is not an empty sweep`);
+  }
+
   // ── The positive control ──────────────────────────────────────────────────────────────────────
   // Every assertion above passes on a workbook with no shapes at all. These counts are what the
   // build this test was written against actually carries, so a sweep that quietly found nothing
@@ -417,4 +581,5 @@ export async function runClosingLayoutInvariantTests() {
   assert.ok(sheetsChecked >= 10, `only ${sheetsChecked} sheets carried a drawing — this is not an empty sweep`);
   assert.ok(shapesChecked >= 30, `only ${shapesChecked} shapes were measured — this is not an empty sweep`);
   assert.ok(slicersChecked >= 2, `only ${slicersChecked} slicers were measured — both matrix sheets carry one`);
+  assert.ok(marksChecked >= 12, `only ${marksChecked} sheets were measured for their mark — every tab but Data carries one`);
 }

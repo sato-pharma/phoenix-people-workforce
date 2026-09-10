@@ -67,7 +67,13 @@ export function buildReviewSheets(
   const stamp = [input.period ? monthLabel(input.period) : null, input.line]
     .filter(Boolean)
     .join("   ");
-  const title = (name: string, tail: string) => `${name}   ${stamp}   ·   ${tail}`;
+  //
+  // ⚠ THE MASTHEAD IS THE NAME, THE MONTH AND THE LINE — NOTHING ELSE, and that is what makes
+  // room for the emblem. These sheets are five or six columns, about 750px, and the descriptive
+  // tail that used to run along here took the caption to 640px of it: there was nowhere left to put
+  // the mark, which is why these three tabs carried no logo at all. The tail also said the same
+  // thing as `subtitle` one row below it, word for word.
+  const title = (name: string) => `${name}   ${stamp}`;
   const sheets: ReviewSheet[] = [];
 
   // ── District managers ───────────────────────────────────────────────────────────────────────
@@ -84,7 +90,7 @@ export function buildReviewSheets(
         ratio(manager.achievement),
       ]),
       subtitle: "Every district manager's areas rolled up, by value against their own targets.",
-      title: title("District Managers", "each manager's areas rolled into one row"),
+      title: title("District Managers"),
       what: "Every district manager's areas rolled into one row — the rollup the engine has nowhere else.",
       widths: [30, 18, 9, 16, 16, 14],
     });
@@ -100,7 +106,6 @@ export function buildReviewSheets(
     name: string,
     firstHeading: string,
     secondHeading: string,
-    tail: string,
     what: string,
   ): ReviewSheet | null => {
     if (rows.length === 0 || months.length === 0) return null;
@@ -116,7 +121,7 @@ export function buildReviewSheets(
       subtitle:
         `${months.length === 1 ? "One month" : `${months.length} months`}, oldest first. `
         + "By value, never units — a row spanning more than one product code cannot have its units summed.",
-      title: title(name, tail),
+      title: title(name),
       what,
       widths: [26, 20, ...months.map(() => 14), 20],
     };
@@ -127,7 +132,6 @@ export function buildReviewSheets(
     "Area by Month",
     "Area",
     "Region",
-    "value per area, month by month",
     "Each area's value month by month, with the newest month against the one before it.",
   );
   if (areaSeries) sheets.push(areaSeries);
@@ -137,7 +141,6 @@ export function buildReviewSheets(
     "Product by Month",
     "Product",
     "Family",
-    "value per product, month by month",
     "Each product's value month by month — value, because units cannot be summed across products.",
   );
   if (productSeries) sheets.push(productSeries);

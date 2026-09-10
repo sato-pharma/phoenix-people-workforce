@@ -7,7 +7,7 @@ import {
 } from "./closing-engine-template-generated";
 import { ACHIEVEMENT_ARROW_AT } from "./closing-engine-data";
 import { CLOSING_ENGINE_EMBLEM_ON_DARK_PNG_BASE64 } from "./closing-engine-emblem-on-dark";
-import { applyExecutiveGeometry, applyExecutivePalette, applyOnDarkEmblem, ensureAccentButtonStyle, fitFrozenPanesForPhone, fitNavigationBand, paintExecutiveBands, resolveSheetParts } from "./closing-executive-look";
+import { applyExecutiveGeometry, applyExecutivePalette, applyOnDarkEmblem, applyTabColours, ensureAccentButtonStyle, EXECUTIVE_GEOMETRY, EXECUTIVE_ZEBRA_FILLS, fitFrozenPanesForPhone, fitNavigationBand, paintExecutiveBands, resolveSheetParts } from "./closing-executive-look";
 import { PIVOT_GRID_SPECS, buildPivotGrid, type GridCellKind } from "./closing-pivot-grid";
 
 /**
@@ -326,6 +326,9 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   await clearTitleEmblem(zip, fill);
   await hideEmblemFromPrint(zip);
   const reviewAdded = options.reviewSheets ? await addReviewSheets(zip, options.reviewSheets) : [];
+  // The mark on the three sheets that were authored without a drawing to put it in. After they
+  // exist and before the palette work, which walks the drawings it finds.
+  await addReviewEmblems(zip, reviewAdded);
   await addIndexSheet(zip, fill, reviewAdded);
   // Contents does not exist until the line above has authored it, so it gets its own pass. Scoped
   // to that one sheet on purpose: a second blanket pass here would run AFTER `sizeMatrixColumns`
@@ -361,6 +364,9 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   // mark, which is the correct one for it.
   await applyOnDarkEmblem(zip, finalParts, banded);
   await fitNavigationBand(zip, finalParts);
+  // The tab strip, last of the look passes and independent of every other: it writes one element
+  // into each sheet's `sheetPr` and touches nothing a reader of columns, rows or drawings needs.
+  await applyTabColours(zip, finalParts);
   // LAST of the layout passes: it measures the columns as they finally stand, and every earlier pass
   // is still free to change them. A pane frozen wider than a phone hides the data it labels.
   await fitFrozenPanesForPhone(zip, finalParts);
@@ -1561,6 +1567,12 @@ const REP_CARD_BRAND = "FF0868A8";
 const REP_CARD_STAR = "★";
 const REP_CARD_ROW_HEIGHT = { deck: 18, eyebrow: 14.1, hero: 30, tileLabel: 14.1, tileValue: 18 };
 
+/**
+ * ⚠ `deck` IS NO LONGER PLACED ON A CELL, and it is kept anyway. The Rep Card's tagline was
+ * removed on 2026-09-10 and nothing writes this format now; dropping it would renumber `hero` and
+ * `badge`, which are derived from this list's own length, for no gain a reader can see. It costs
+ * one unused font and one unused cellXf in the emitted package.
+ */
 type RepCardStyles = { headline: number; plain: number; deck: number; hero: number; badge: number };
 
 /**
@@ -1712,12 +1724,13 @@ async function polishRepCard(zip: JSZip, fill: ClosingEngineFill): Promise<void>
       .replace(/(<c r="[B-H]1"[^>]*?)\bs="\d+"/g, `$1s="${styles.plain}"`),
   );
 
-  // 2 — the deck line, and the rule, on a row the template left empty apart from `$N$2`.
+  // 2 — the rule alone. The tagline that used to sit here was removed by the owner on 2026-09-10
+  // ("irrelevnt txt behind the buttons"); see closing-engine-data.ts for why it did not move down a
+  // row instead. `$N$2` stays — it is the area code every product row on the card SUMIFS on.
   written.set(
     2,
-    `${open(2, REP_CARD_ROW_HEIGHT.deck)}`
-      + `${cellXml("A2", styles.deck, String(fill.sheets[REP_CARD]?.cells?.A2 ?? ""))}`
-      + `${blanks(2, "B", "H", ruled)}${cellAt(rowAt(2), "N2")}</row>`,
+    `${open(2, REP_CARD_ROW_HEIGHT.deck)}${blanks(2, "A", "H", ruled)}`
+      + `${cellAt(rowAt(2), "N2")}</row>`,
   );
 
   // 4 — the picker's caption. It read "Medical rep or area", which now sits three rows above a band
@@ -1800,6 +1813,19 @@ async function polishRepCard(zip: JSZip, fill: ClosingEngineFill): Promise<void>
 const TITLE_EMU_PER_UNIT = 91_500;
 /** Clear air demanded between the end of the title and the emblem. */
 const TITLE_GAP = 150_000;
+/**
+ * How far from column A the emblem may sit and still be seen, in EMU — 1,300px.
+ *
+ * 🔴 THIS IS WHY "STARTING FROM DETAILS NO LOGO THEIR". The mark was ON the Details sheet the
+ * whole time, 2,313px along it, because the template anchors each emblem near the right edge of its
+ * own sheet and Details is eighteen columns and 3,628px wide. Nobody scrolls a sheet of invoice
+ * lines sideways to look at a logo, so on the widest tabs it had simply stopped existing.
+ *
+ * 1,300px is what a maximised Excel shows on a 1366-wide screen, so the mark is on the first screen
+ * of both the sizes this workbook is read at. It is a CEILING, never a target: a sheet narrower
+ * than that keeps the corner the owner's own template gave it.
+ */
+const EMBLEM_FIRST_SCREEN = 12_382_500;
 const ANY_ANCHOR = /<xdr:(twoCellAnchor|oneCellAnchor)\b[\s\S]*?<\/xdr:\1>/g;
 
 /**
@@ -1811,9 +1837,14 @@ const ANY_ANCHOR = /<xdr:(twoCellAnchor|oneCellAnchor)\b[\s\S]*?<\/xdr:\1>/g;
  * Matrix shipped reading "sales value against t" with the rest behind the wordmark, and Area x
  * Product lost "at a time". Nothing about the sheet is wrong; the line name simply grew.
  *
- * So the emblem is placed against the measured title rather than left at a fixed column. It only
- * ever moves right, and only when the title actually reaches it — a sheet with room to spare keeps
- * the layout the owner arranged.
+ * So the emblem is placed against the measured title rather than left at a fixed column.
+ *
+ * ⚠ IT MOVES BOTH WAYS, since 2026-09-10, and the second direction is a different fault with
+ * the same symptom. The template anchors each emblem near the right edge of its OWN sheet, which is
+ * fine on a nine-column page and invisible on an eighteen-column one: Details carried its mark at
+ * 2,313px, past the edge of any screen anyone reads it on, and the owner reported the sheet as
+ * having no logo at all. `EMBLEM_FIRST_SCREEN` is the ceiling that brings it back. A sheet that
+ * already sits inside that ceiling keeps the corner the owner arranged.
  */
 async function clearTitleEmblem(zip: JSZip, fill: ClosingEngineFill): Promise<void> {
   for (const [sheetName, content] of Object.entries(fill.sheets)) {
@@ -1830,7 +1861,6 @@ async function clearTitleEmblem(zip: JSZip, fill: ClosingEngineFill): Promise<vo
     const widthOf = columnWidthReader(found.sheetXml);
     const left = anchorX(widthOf, from);
     const needed = Math.round(captionUnits(title) * TITLE_EMU_PER_UNIT) + TITLE_GAP;
-    if (left >= needed) continue;
 
     const to = ANCHOR_TO.exec(emblem)?.[0];
     // A one-cell anchor carries its own size and only the corner moves; a two-cell one is defined
@@ -1856,9 +1886,29 @@ async function clearTitleEmblem(zip: JSZip, fill: ClosingEngineFill): Promise<vo
     const cached = Number(/<a:ext\b[^>]*\bcx="(\d+)"/.exec(emblem)?.[1] ?? Number.NaN);
     const span = Number.isFinite(cached) && cached > 0 ? cached : to ? anchorX(widthOf, to) - left : 0;
     if (to && span <= 0) continue;
+
+    // WHERE IT GOES. Right of the title if the title has reached it; back onto the first screen if
+    // the template parked it past the edge of one and the title leaves room. Both directions, and
+    // the cap yields to the title rather than the other way round — a logo sitting on top of the
+    // month and the line is worse than a logo one screen along.
+    //
+    // THE BAND IS THE OTHER CEILING. The masthead is a filled navy strip as wide as the sheet's own
+    // geometry, and a mark past the end of it floats on white — measured 101px off the end of Area
+    // x Product. `EXECUTIVE_GEOMETRY` is what decides that width, so it is what decides this.
+    const band = EXECUTIVE_GEOMETRY[sheetName];
+    let bandWidth = 0;
+    if (band) {
+      const last = Math.max(...Object.keys(band.cols).map(Number), 1);
+      for (let index = 0; index < last; index += 1) bandWidth += widthOf(index);
+    }
+    const ceiling = bandWidth > 0 ? Math.min(EMBLEM_FIRST_SCREEN, bandWidth) : EMBLEM_FIRST_SCREEN;
+    const room = ceiling - span;
+    const target = left < needed ? needed : left > room && room >= needed ? room : left;
+    if (target === left) continue;
+
     const moved = to
-      ? moveAnchor(widthOf, emblem, needed, span)
-      : emblem.replace(from, writeAnchorX(from, locateColumn(widthOf, needed)));
+      ? moveAnchor(widthOf, emblem, target, span)
+      : emblem.replace(from, writeAnchorX(from, locateColumn(widthOf, target)));
     zip.file(found.name, found.xml.replace(emblem, moved));
   }
 }
@@ -2564,7 +2614,10 @@ const INDEX_SECTIONS: ReadonlyArray<{ band: string; entries: ReadonlyArray<{ she
     entries: [
       { sheet: "Watch List", what: "Every area and product still short of target, largest shortfall first." },
       { sheet: "Top Customers", what: "Every named customer, largest first, with each one's share and the running share." },
-      { sheet: "Details", what: "Every invoice row behind the month — the workings for all of the above." },
+      // The second half used to run along the Details masthead itself, where it made the caption
+      // 285 characters and pushed the emblem 2,313px down the sheet. It reads better here anyway:
+      // it is the thing to know BEFORE opening a sheet of invoice lines, not after.
+      { sheet: "Details", what: "Every invoice row behind the month, as invoiced — Office and store sales are credited where they were earned." },
     ],
   },
 ];
@@ -2615,6 +2668,8 @@ const INDEX_SHEET = "Contents";
  * apart: change the scale and the band grows with it.
  */
 const INDEX_MARK_SCALE = 1.7;
+/** Clear air between a right-aligned mark and the end of its band, in EMU — 8px, the siblings'. */
+const EMBLEM_EDGE_GAP = 76_200;
 
 
 /**
@@ -2796,7 +2851,7 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   // <drawing> already in place.
   zip.file(
     indexPart,
-    await addIndexEmblem(zip, indexPart, sheetXml, { columnIndex: 0, rowHeightsPt: bannerRowsPt }),
+    await addSheetEmblem(zip, indexPart, sheetXml, { columnIndex: 0, rowHeightsPt: bannerRowsPt }),
   );
 
   zip.file(
@@ -2885,6 +2940,65 @@ function reviewColumnStyle(heading: string): string {
  * navigation bar — the bar is built by cloning a button that exists on a sheet, and there is none
  * here to clone. One link back is the honest substitute.
  */
+/**
+ * The index of the workbook's own zebra stripe, found by its FILL and never by its position.
+ *
+ * Every striped sheet in the template points at a `<dxf>` holding one thing: a background in the
+ * palest blue of the approved palette. That is the stripe. Reading it back rather than naming an
+ * index is the same rule `addRepCardStyles` and the contents page already follow — an index is
+ * wherever the owner's source workbook happened to put it, and it moves when the engine is rebuilt.
+ *
+ * Returns null when the template carries no such dxf, in which case the sheet ships unstriped. A
+ * missing stripe is a plainer sheet; a wrong dxf id is a sheet wearing a red "under target" fill on
+ * every second row.
+ */
+async function zebraDxf(zip: JSZip): Promise<number | null> {
+  const xml = await zip.file("xl/styles.xml")?.async("string");
+  const block = xml ? /<dxfs count="\d+"[^>]*>([\s\S]*?)<\/dxfs>/.exec(xml)?.[1] : null;
+  if (!block) return null;
+  const all = [...block.matchAll(/<dxf>[\s\S]*?<\/dxf>/g)].map((one) => one[0]);
+  const wanted = new RegExp(`<(?:bg|fg)Color rgb="(?:${EXECUTIVE_ZEBRA_FILLS.join("|")})"`, "i");
+  const at = all.findIndex((one) => wanted.test(one) && !/<font\b/.test(one) && !/<border\b/.test(one));
+  return at >= 0 ? at : null;
+}
+
+/**
+ * Put the workbook's mark on the sheets that were built without one.
+ *
+ * `addReviewSheets` authors its three sheets from scratch, so they carry no drawing at all — no
+ * emblem, and nothing for `clearTitleEmblem` or `applyOnDarkEmblem` to find. Every sheet that came
+ * out of the owner's own engine has the mark in its masthead; these three simply never did, which
+ * is the second half of "starting from details no logo their".
+ *
+ * `addSheetEmblem` does the work, right-aligned against the end of the last column, on the one row
+ * the band occupies. It is the same call the contents page makes, with a different corner.
+ */
+async function addReviewEmblems(zip: JSZip, sheets: ReviewSheet[]): Promise<string[]> {
+  if (sheets.length === 0) return [];
+  const parts = await resolveSheetParts(zip);
+  const done: string[] = [];
+  for (const sheet of sheets) {
+    const part = parts.get(sheet.name);
+    const file = part ? zip.file(part) : null;
+    if (!part || !file) continue;
+    const sheetXml = await file.async("string");
+    if (/<drawing\b/.test(sheetXml)) continue;
+    const placed = await addSheetEmblem(zip, part, sheetXml, {
+      align: "right",
+      columnIndex: sheet.headers.length - 1,
+      rowHeightsPt: [REVIEW_BAND_PT],
+      scale: 1,
+    });
+    if (placed === sheetXml) continue;
+    zip.file(part, placed);
+    done.push(sheet.name);
+  }
+  return done;
+}
+
+/** The height of the review sheets' own masthead row, in points. Written by `addReviewSheets`. */
+const REVIEW_BAND_PT = 33.95;
+
 async function addReviewSheets(zip: JSZip, sheets: ReviewSheet[]): Promise<ReviewSheet[]> {
   if (sheets.length === 0) return [];
 
@@ -2900,6 +3014,7 @@ async function addReviewSheets(zip: JSZip, sheets: ReviewSheet[]): Promise<Revie
   // Next free part number, read from the package rather than assumed — the template numbers its
   // worksheets by file name and the contents page has already taken one.
   let nextPart = Number(/sheet(\d+)\.xml$/.exec(nextWorksheetPart(zip))?.[1] ?? 1);
+  const zebra = await zebraDxf(zip);
   let nextRel = Math.max(0, ...[...rels.matchAll(/Id="rId(\d+)"/g)].map((m) => Number(m[1]))) + 1;
   let nextSheetId = Math.max(0, ...[...workbook.matchAll(/sheetId="(\d+)"/g)].map((m) => Number(m[1]))) + 1;
 
@@ -2956,10 +3071,29 @@ async function addReviewSheets(zip: JSZip, sheets: ReviewSheet[]): Promise<Revie
       .map((_heading, index) => `<col min="${index + 1}" max="${index + 1}" width="${sheet.widths[index] ?? 16}" customWidth="1"/>`)
       .join("");
 
+    // 🔴 THE ZEBRA, AND THE FREEZE UNDER THE HEADER — the two things every other sheet in this
+    // workbook has and these three did not. Owner, 2026-09-10: "zebra tabled borders premium polish
+    // ... every single tab".
+    //
+    // The stripe is the workbook's OWN, found by its fill rather than by an index: `zebraDxf` looks
+    // for the palest solid the template already carries. A dxf id is a position, and positions move
+    // whenever the engine is rebuilt from a fresh source workbook — a wrong one is not an error,
+    // it is a differently coloured row nobody notices.
+    //
+    // The pane used to split after row 2, which froze the title and the subtitle and let the COLUMN
+    // HEADINGS scroll away. On a fifty-row rollup that means reading a column of numbers with no
+    // idea which month it is. Row 4 is the heading row on all three, so the split goes below it —
+    // which is where every sibling in the template puts it.
+    const stripe = zebra === null
+      ? ""
+      : `<conditionalFormatting sqref="A5:${columnLetters(columns)}${Math.max(lastRow, 5)}">`
+        + `<cfRule type="expression" dxfId="${zebra}" priority="1"><formula>MOD(ROW()-5,2)=1</formula></cfRule>`
+        + "</conditionalFormatting>";
+
     zip.file(
       part,
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${columnLetters(columns)}${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="2" topLeftCell="A3" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A3" sqref="A3"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>${cols}</cols><sheetData>${rows.join("")}</sheetData><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`,
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${columnLetters(columns)}${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A5" sqref="A5"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>${cols}</cols><sheetData>${rows.join("")}</sheetData>${stripe}<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`,
     );
 
     types = types.replace(
@@ -3049,11 +3183,11 @@ function appendCellXf(stylesXml: string, xf: string): { index: number; xml: stri
  * is returned exactly as it came in. A contents page with no logo is a small loss; a contents page
  * Excel refuses to open is not.
  */
-async function addIndexEmblem(
+async function addSheetEmblem(
   zip: JSZip,
   indexPart: string,
   sheetXml: string,
-  masthead: { columnIndex: number; rowHeightsPt: number[] },
+  masthead: { align?: "centre" | "right"; columnIndex: number; rowHeightsPt: number[]; scale?: number },
 ): Promise<string> {
   const drawingNames = Object.keys(zip.files)
     .filter((name) => /^xl\/drawings\/drawing\d+\.xml$/.test(name))
@@ -3098,8 +3232,9 @@ async function addIndexEmblem(
   // BIGGER THAN THE SIBLINGS'. Their emblem sits in the corner of a working sheet and only has to
   // be present; this one is the mark ON the cover and has to carry it. Scaled from the template's
   // own dimensions rather than typed in, so the aspect ratio is the owner's and cannot drift.
-  const width = Math.round(Number(size[1]) * INDEX_MARK_SCALE);
-  const height = Math.round(Number(size[2]) * INDEX_MARK_SCALE);
+  const scale = masthead.scale ?? INDEX_MARK_SCALE;
+  const width = Math.round(Number(size[1]) * scale);
+  const height = Math.round(Number(size[2]) * scale);
 
   // BESIDE THE TITLE — the mark FIRST, then the words, the way a letterhead reads.
   //
@@ -3112,10 +3247,30 @@ async function addIndexEmblem(
   // It is CENTRED ON THE WHITE PANEL at the left of the banner — the only ground this mark is
   // legible on, and a panel that exists for the mark alone, so an off-centre placement in it would
   // read as a mistake in a way an off-centre mark in a wide masthead does not.
+  //
+  // OR RIGHT-ALIGNED AGAINST THE END OF THE BAND, which is what every sheet out of the owner's own
+  // engine does and what the three review sheets asked for. The corner is computed from the sheet's
+  // own columns rather than copied from a sibling: these sheets are five and six columns wide where
+  // the ones the anchor would be copied from are ten and eighteen.
   const widthOf = columnWidthReader(sheetXml);
-  const panelWidth = widthOf(masthead.columnIndex);
-  if (width >= panelWidth) return sheetXml;
-  const at = { col: masthead.columnIndex, colOff: Math.round((panelWidth - width) / 2) };
+  let at: { col: number; colOff: number };
+  if (masthead.align === "right") {
+    let bandWidth = 0;
+    for (let index = 0; index <= masthead.columnIndex; index += 1) bandWidth += widthOf(index);
+    const x = bandWidth - width - EMBLEM_EDGE_GAP;
+    if (x <= 0) return sheetXml;
+    at = locateColumn(widthOf, x);
+  } else {
+    const panelWidth = widthOf(masthead.columnIndex);
+    if (width >= panelWidth) return sheetXml;
+    at = { col: masthead.columnIndex, colOff: Math.round((panelWidth - width) / 2) };
+  }
+  // The far corner as a (column, offset) pair rather than one column with an offset that runs past
+  // its own width. Same absolute position either way; this form is the one the schema describes,
+  // and it is the one that survives a right-aligned mark whose end falls in the next column.
+  let absoluteLeft = 0;
+  for (let index = 0; index < at.col; index += 1) absoluteLeft += widthOf(index);
+  const far = locateColumn(widthOf, absoluteLeft + at.colOff + width);
 
   // The vertical centre of the WHOLE band, resolved back to the row it lands in. A rowOff is an
   // offset INTO its own row, so one offset measured from the top of the band would overflow the
@@ -3167,7 +3322,7 @@ async function addIndexEmblem(
     '<xdr:twoCellAnchor editAs="twoCell">'
     + `<xdr:from><xdr:col>${at.col}</xdr:col><xdr:colOff>${at.colOff}</xdr:colOff>`
     + `<xdr:row>${anchorRow}</xdr:row><xdr:rowOff>${drop}</xdr:rowOff></xdr:from>`
-    + `<xdr:to><xdr:col>${at.col}</xdr:col><xdr:colOff>${at.colOff + width}</xdr:colOff>`
+    + `<xdr:to><xdr:col>${far.col}</xdr:col><xdr:colOff>${far.colOff}</xdr:colOff>`
     + `<xdr:row>${to.row}</xdr:row><xdr:rowOff>${to.rowOff}</xdr:rowOff></xdr:to>`
     + sized
     // Not printed, matching the emblem on every other sheet.

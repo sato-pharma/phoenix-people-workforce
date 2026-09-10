@@ -590,22 +590,33 @@ export async function runClosingEngineExportTests() {
   const formulaAt = (ref: string): string =>
     new RegExp(`<c r="${ref}"[^>]*>\\s*<f[^>]*>([\\s\\S]*?)</f>`).exec(repCardXml)?.[1] ?? "";
 
-  // 1. The masthead is two lines, and the second one is why the first can never reach the emblem.
+  // 1. The masthead is ONE line, and every row under it is silent.
   //
   // The card is eight columns and 798px wide, and the logo is anchored at 689px with 16px of slack
-  // — so `clearTitleEmblem`, which answers this everywhere else by sliding the emblem right, has
-  // nowhere to slide it. Splitting the caption is the only fix that holds, and it holds for a
-  // longer line name than Anti Infective too.
+  // — so `clearTitleEmblem`, which answers a long caption everywhere else by sliding the emblem
+  // right, has nowhere to slide it here. The caption is therefore the sheet's name, its month and
+  // its line, and nothing else.
+  //
+  // 🔴 THE TAGLINE IS GONE, owner 2026-09-10: "in rep card in row 2 their is irrelevnt txt
+  // behind the buttons". "one person, one month, every product" was written to A2, which is the
+  // command row on every sheet in this workbook, so the navigation shapes painted over it and it
+  // had never been readable on any export.
+  //
+  // ⚠ ROW 3 IS ASSERTED WITH IT, and that pairing is the point. Moving the line down a row
+  // is the obvious repair and it is wrong: row 3 is the WARNING strip, and `paintExecutiveBands`
+  // paints any row 3 carrying text in the amber incomplete-month fill. It shipped that way for one
+  // build. Pinning both rows closes both routes.
   const masthead = readRow(repCardXml, 1).A ?? "";
-  const deckLine = readRow(repCardXml, 2).A ?? "";
   assert.match(masthead, /^Rep Card\b/, "the masthead still opens with the sheet's own name");
   assert.match(masthead, /Anti Infective|CNS/, "and still says which line and month it is");
-  assert.doesNotMatch(
-    masthead,
-    /one person, one month/,
-    "the descriptive half belongs on row 2 — on row 1 it runs under the SATO PHARMA emblem",
-  );
-  assert.match(deckLine, /one person, one month, every product/, "and row 2 is where it went");
+  for (const row of [2, 3]) {
+    assert.equal(
+      (readRow(repCardXml, row).A ?? "").trim(),
+      "",
+      `row ${row} says nothing — row 2 prints behind the buttons and row 3 is the warning strip`,
+    );
+  }
+  assert.doesNotMatch(masthead, /one person, one month/, "and the tagline is not back on row 1 either");
 
   // Measured, not assumed: the caption's own advance width against the emblem's own anchor, both in
   // EMU, read out of the produced file. A future caption that grows past the logo fails here rather
@@ -925,6 +936,22 @@ export async function runClosingEngineExportTests() {
     return readRow(sheet, 1).A ?? "";
   };
 
+  /** Every string on the contents page, which is the sheet carrying the cover's own wordmark. */
+  const contentsTextOf = async (rows: ClosingDetailRow[]) => {
+    const zipped = await JSZip.loadAsync(
+      await fillClosingEngine(
+        buildClosingEngineFill({ details: rows, matrix: july, priorMatrix: june, review }),
+        { macroFree: true },
+      ),
+    );
+    for (const file of zipped.file(/^xl\/worksheets\/sheet\d+\.xml$/)) {
+      const xml = await file.async("string");
+      if (!xml.includes("MONTHLY CLOSING")) continue;
+      return [...xml.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((one) => one[1]!).join(" ");
+    }
+    return "";
+  };
+
   // A filtered export, where the rows on the sheet are NOT the month the headline describes.
   const narrowed = await detailsTitleOf([detail(lineTotal / 4, 1), detail(lineTotal / 4, 2)]);
   assert.match(narrowed, /EGP as invoiced against the/, "the sheet says its own total and the headline");
@@ -932,7 +959,30 @@ export async function runClosingEngineExportTests() {
     narrowed.includes(formatInt(lineTotal / 2)) && narrowed.includes(formatInt(lineTotal)),
     `both numbers appear, so neither has to be taken on trust: ${narrowed}`,
   );
-  assert.match(narrowed, /credited to the areas that earned them/, "and it says WHY they differ");
+  // 🔴 THE REASON IS ON THE CONTENTS PAGE, NOT IN THE MASTHEAD. Owner, 2026-09-10: "starting
+  // from details no logo their". The 150-character clause that used to finish this caption took it
+  // to 285 characters, and `clearTitleEmblem` answers a caption that long by sliding the emblem
+  // clear of it — 2,313px along an eighteen-column sheet, where nobody was ever going to see it.
+  // The figures stay here, where someone adding up a column needs them; the explanation moved to
+  // the line that names this sheet on the contents page, which is read on the way in.
+  assert.doesNotMatch(
+    narrowed,
+    /credited to the areas that earned them/,
+    "the caption keeps its figures and gives up its paragraph — the paragraph is what hid the emblem",
+  );
+  assert.match(
+    await contentsTextOf([detail(lineTotal / 4, 1), detail(lineTotal / 4, 2)]),
+    /credited where they were earned/,
+    "and the contents page is where it says WHY the two totals differ",
+  );
+
+  // Measured, because the length is the whole point. The emblem's own ceiling is 1,300px, so a
+  // caption that runs past about 1,150 leaves it nowhere to sit that is both clear of the words and
+  // on the first screen. A future caption that grows fails here rather than in the owner's hands.
+  assert.ok(
+    narrowed.length * 91_500 < 11_000_000,
+    `the Details caption has to leave the emblem somewhere to sit — ${Math.round((narrowed.length * 91_500) / 9525)}px of a 1,300px screen`,
+  );
 
   // A whole-line export, where they agree. Saying it here would be noise on every workbook.
   const whole = await detailsTitleOf([detail(lineTotal / 2, 1), detail(lineTotal / 2, 2)]);
@@ -1119,23 +1169,37 @@ export async function runClosingEngineExportTests() {
   // nothing on the page tells the two apart. He was told and asked for it anyway. Do NOT reinstate
   // the line on the reasoning that its absence looks like a defect.
   const warnedNote = readRow(warnedOverview, 3).A ?? "";
-  const warnedDeck = readRow(warnedCard, 2).A ?? "";
 
   assert.doesNotMatch(warnedNote, /INCOMPLETE/, "no sheet announces an incomplete month any more");
   assert.doesNotMatch(readRow(warnedOverview, 1).A ?? "", /INCOMPLETE/, "and not in the masthead either");
   assert.doesNotMatch(warnedNote, /understated/, "nor the consequence the note used to state");
-  assert.doesNotMatch(warnedDeck, /INCOMPLETE/, "and the Rep Card's deck is clear of it too");
+
+  // 🔴 THE CARD'S ROWS 2 AND 3 ARE BOTH SILENT. Owner, 2026-09-10: "in rep card in row 2 their
+  // is irrelevnt txt behind the buttons" — the tagline "one person, one month, every product",
+  // written under a navigation bar that painted straight over it.
+  //
+  // Row 3 is pinned with it because row 3 is the WARNING strip, and moving the line down a row is
+  // the obvious fix that puts it back on screen wearing the amber incomplete-month fill. Both rows
+  // are asserted so neither route reopens.
+  for (const row of [2, 3]) {
+    assert.equal(
+      (readRow(warnedCard, row).A ?? "").trim(),
+      "",
+      `the Rep Card says nothing on row ${row} — the owner removed the tagline, and row 3 is the warning strip`,
+    );
+  }
   assert.match(
-    warnedDeck,
-    /one person, one month, every product/,
-    "the card keeps its own tagline — the note used to displace it, and with the note gone the tagline comes back",
+    readRow(warnedCard, 1).A ?? "",
+    /^Rep Card/,
+    "the card still names itself in its masthead",
   );
 
-  const deckWidth = warnedDeck.length * 91_500;
+  // The card is the one sheet most likely to be sent on its own, so a filtered export has to say so
+  // ON it. That note used to ride on the tagline line; with the tagline gone it moves to A1.
   const cardWidth = [0, 1, 2, 3, 4, 5, 6, 7].reduce((sum, index) => sum + columnEmu(index), 0);
   assert.ok(
-    deckWidth < cardWidth,
-    `the warning has to fit the card it is warning about — ${Math.round(deckWidth / 9525)}px against ${Math.round(cardWidth / 9525)}px`,
+    (readRow(warnedCard, 1).A ?? "").length * 91_500 < cardWidth,
+    `the card's masthead has to fit the card — ${Math.round(((readRow(warnedCard, 1).A ?? "").length * 91_500) / 9525)}px against ${Math.round(cardWidth / 9525)}px`,
   );
 
   // The emblem stays on the sheet it belongs to.
@@ -1221,12 +1285,8 @@ export async function runClosingEngineExportTests() {
     const quietNote = readRow(await book.file("xl/worksheets/sheet1.xml")!.async("string"), 3).A ?? "";
     const quietCard = await book.file(CLOSING_ENGINE_TEMPLATE_MANIFEST.sheets["Rep Card"]!.file)!.async("string");
     assert.doesNotMatch(quietNote, /INCOMPLETE/, `${what} says nothing in the masthead`);
-    assert.doesNotMatch(readRow(quietCard, 2).A ?? "", /INCOMPLETE/, `${what} says nothing on the card either`);
-    assert.match(
-      readRow(quietCard, 2).A ?? "",
-      /one person, one month, every product/,
-      `${what} keeps the card's own tagline`,
-    );
+    assert.equal((readRow(quietCard, 2).A ?? "").trim(), "", `${what} leaves the card's button row empty`);
+    assert.equal((readRow(quietCard, 3).A ?? "").trim(), "", `${what} leaves the card's warning row empty`);
   }
 
   // ── The file the owner receives is named for a month, a line and a scope ─────────────────────
