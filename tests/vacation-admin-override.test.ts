@@ -202,6 +202,59 @@ export function runVacationAdminOverrideTests() {
     );
   }
 
+  // ── The four buttons, as one set (owner, 2026-09-10) ──────────────────────
+  // On a request still waiting on a manager, the HR viewer sees all four: Reject as HR live,
+  // Acknowledge as HR greyed with its reason, and both System Administrator buttons live.
+  // The greyed one is the point — it must carry a reason, or it is just a dead control.
+  const hrOnStalled = resolveActionAvailability({
+    status: "pending_manager",
+    steps: [
+      { order: 1, status: "pending", stepKey: "direct_manager" },
+      { order: 2, status: "pending", stepKey: "manager_of_manager" },
+      { order: 3, status: "pending", stepKey: "hr" },
+    ],
+    actorStep: { stepKey: "hr", order: 3 },
+    isHrActor: true,
+    override: { available: true, availableAt: iso(2 * DAY), daysPending: 2.5, reason: null, step: null },
+  });
+  assert.equal(hrOnStalled.reject.enabled, true, "HR may reject at any stage");
+  assert.equal(hrOnStalled.acknowledge.enabled, false, "HR acknowledgement still waits for management");
+  assert.ok(
+    hrOnStalled.acknowledge.disabledReason && hrOnStalled.acknowledge.disabledReason.length > 0,
+    "the greyed Acknowledge button must say why it is off",
+  );
+  assert.equal(hrOnStalled.overrideApprove.enabled, true);
+  assert.equal(hrOnStalled.overrideReject.enabled, true);
+
+  // Acknowledging becomes live the moment management is done, and the transfer then retires.
+  const hrAfterManagement = resolveActionAvailability({
+    status: "pending_hr",
+    steps: [
+      { order: 1, status: "approved", stepKey: "direct_manager" },
+      { order: 2, status: "approved", stepKey: "manager_of_manager" },
+      { order: 3, status: "pending", stepKey: "hr" },
+    ],
+    actorStep: { stepKey: "hr", order: 3 },
+    isHrActor: true,
+    override: evaluate({ now: at(30 * DAY), status: "pending_hr", steps: managementDone }),
+  });
+  assert.equal(hrAfterManagement.acknowledge.enabled, true, "Acknowledge as HR goes live at HR's turn");
+  assert.equal(hrAfterManagement.overrideApprove.enabled, false, "and the transfer is no longer offered");
+
+  const DETAIL = readFileSync(
+    fileURLToPath(new URL("../src/components/approvals-hub/vacation-request-detail.tsx", import.meta.url)),
+    "utf8",
+  );
+  assert.ok(
+    DETAIL.includes('acknowledge: "Acknowledge as HR"') && DETAIL.includes('reject: "Reject as HR"'),
+    "the HR buttons name the HR seat, so the four read as one set",
+  );
+  // A manager deciding a vacation is NOT HR — the naming must never leak to their screen.
+  assert.ok(
+    DETAIL.includes('detail.viewerStepKind === "hr"'),
+    "the \"as HR\" naming and the greyed set are gated on the viewer actually being HR",
+  );
+
   // The server, not the button, is the boundary.
   const SERVICE = readFileSync(
     fileURLToPath(new URL("../src/lib/vacation/service.ts", import.meta.url)),

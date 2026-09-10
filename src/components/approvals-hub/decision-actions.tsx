@@ -18,6 +18,18 @@ export type DecisionActionsProps = {
     overrideApprove?: boolean;
     overrideReject?: boolean;
   };
+  /**
+   * Per-action label overrides. The vacation screen names the HR seat explicitly ("Reject as HR")
+   * so the four buttons read as one set; excuses and weekly plans keep the plain verbs, because
+   * their approvers are managers, not HR.
+   */
+  labelOverrides?: Partial<Record<Action, string>>;
+  /**
+   * Actions to keep VISIBLE while disabled, with the reason to print under them. The owner asked
+   * to see all four vacation buttons at once (2026-09-10) rather than have one appear later:
+   * an action with a reason here renders greyed instead of vanishing.
+   */
+  disabledReasons?: Partial<Record<Action, string | null>>;
   // Where to return after a successful decision.
   backHref: string;
   /** One line telling the admin what responding here does, before they commit to it. */
@@ -78,6 +90,8 @@ export function DecisionActions({
   actions,
   backHref,
   extraPayload,
+  labelOverrides,
+  disabledReasons,
   overrideNotice,
 }: DecisionActionsProps) {
   const router = useRouter();
@@ -99,18 +113,25 @@ export function DecisionActions({
 
   // Overrides sit last: they are the exception, and the ordinary buttons must stay where the
   // muscle memory expects them.
-  const available = (
-    [
-      ["approve", actions.approve],
-      ["acknowledge", actions.acknowledge],
-      ["return", actions.return],
-      ["reject", actions.reject],
-      ["overrideApprove", actions.overrideApprove],
-      ["overrideReject", actions.overrideReject],
-    ] as Array<[Action, boolean | undefined]>
-  ).filter(([, on]) => on);
+  const ordered = [
+    ["approve", actions.approve],
+    ["acknowledge", actions.acknowledge],
+    ["return", actions.return],
+    ["reject", actions.reject],
+    ["overrideApprove", actions.overrideApprove],
+    ["overrideReject", actions.overrideReject],
+  ] as Array<[Action, boolean | undefined]>;
 
-  if (available.length === 0) return null;
+  const available = ordered.filter(([, on]) => on);
+  // Shown but not clickable: the caller supplied a reason for an action that is off. Nothing is
+  // greyed unless the caller asked for it, so excuses and weekly plans are untouched.
+  const shownDisabled = ordered
+    .filter(([action, on]) => !on && Boolean(disabledReasons?.[action]))
+    .map(([action]) => [action, String(disabledReasons?.[action])] as [Action, string]);
+
+  if (available.length === 0 && shownDisabled.length === 0) return null;
+
+  const labelFor = (action: Action) => labelOverrides?.[action] ?? LABEL[action];
 
   function start(action: Exclude<Pending, null>) {
     setError(null);
@@ -186,20 +207,34 @@ export function DecisionActions({
                 // moves, reached after eight sections of evidence, often on a phone.
                 className={`h-11 flex-1 px-4 text-sm font-bold transition-colors md:flex-none ${toneClass[action]}`}
               >
-                {LABEL[action]}
+                {labelFor(action)}
               </button>
+            ))}
+            {shownDisabled.map(([action, reason]) => (
+              // Present, obviously off, and saying why. `title` is not enough — this is read on a
+              // phone, where there is no hover.
+              <div key={`off-${action}`} className="w-full md:w-auto">
+                <button
+                  type="button"
+                  disabled
+                  className="h-11 w-full cursor-not-allowed border border-slate-300 px-4 text-sm font-bold text-slate-400 md:w-auto"
+                >
+                  {labelFor(action)}
+                </button>
+                <p className="mt-1 text-phx-xs font-semibold text-slate-500">{reason}</p>
+              </div>
             ))}
           </div>
         ) : (
           <div className="space-y-3">
             <p className="text-sm font-bold text-slate-900">
               {REASON_REQUIRED[pending]
-                ? `${LABEL[pending]} — provide a reason`
+                ? `${labelFor(pending)} — provide a reason`
                 : IS_OVERRIDE[pending]
                   // "Approve as System Administrator this request?" does not parse — the label
                   // already carries the object, so the override heading drops the trailing noun.
-                  ? `Confirm: ${LABEL[pending]}?`
-                  : `Confirm: ${LABEL[pending]} this request?`}
+                  ? `Confirm: ${labelFor(pending)}?`
+                  : `Confirm: ${labelFor(pending)} this request?`}
             </p>
             {IS_OVERRIDE[pending] && overrideNotice ? (
               <p className="border border-slate-900 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900">
@@ -254,7 +289,10 @@ export function DecisionActions({
     {mounted && pending === null
       ? createPortal(
           <div
-            className="fixed inset-x-0 z-30 flex gap-2 border-t border-slate-200 bg-white/95 px-4 pb-3 pt-3 backdrop-blur md:hidden"
+            // flex-wrap, not a squashed single row: "Approve as System Administrator" beside two
+            // more labels cannot fit 375px on one line, and the golden rule says WRAP rather than
+            // shrink the type or let it scroll sideways. basis-[48%] puts them two per row.
+            className="fixed inset-x-0 z-30 flex flex-wrap gap-2 border-t border-slate-200 bg-white/95 px-4 pb-3 pt-3 backdrop-blur md:hidden"
             style={{ bottom: "env(safe-area-inset-bottom)" }}
           >
             {available.map(([action]) => (
@@ -262,9 +300,9 @@ export function DecisionActions({
                 key={`bar-${action}`}
                 type="button"
                 onClick={() => start(action)}
-                className={`h-12 flex-1 text-sm font-bold transition-colors ${toneClass[action]}`}
+                className={`h-12 min-w-0 flex-1 basis-[48%] px-2 text-sm font-bold transition-colors ${toneClass[action]}`}
               >
-                {LABEL[action]}
+                {labelFor(action)}
               </button>
             ))}
           </div>,

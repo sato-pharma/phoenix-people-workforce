@@ -112,6 +112,14 @@ export function VacationRequestDetail({ detail, backHref }: Props) {
               commentField="decisionComment"
               actions={detail.actions}
               backHref={backHref}
+              // The four the owner asked for, as one set (2026-09-10). Only an HR viewer gets the
+              // "as HR" naming — a manager deciding a vacation is not HR and must not read as it.
+              labelOverrides={
+                detail.viewerStepKind === "hr"
+                  ? { acknowledge: "Acknowledge as HR", reject: "Reject as HR" }
+                  : undefined
+              }
+              disabledReasons={detail.viewerStepKind === "hr" ? detail.actionReasons : undefined}
               overrideNotice={
                 detail.adminOverride?.available
                   // Whole days on screen. The exact fraction is what the rule measures and what

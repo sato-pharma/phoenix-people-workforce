@@ -31,6 +31,7 @@ import type { EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning
 import { isDistrictManagerPlanTitle, resolvePlanCeoDecision } from "@/lib/weekly-planning/plan-v1";
 import type {
   VacationActionAvailability,
+  VacationActionButton,
   VacationActionCenterRow,
   VacationAdminOverrideState,
   VacationRequestRecord,
@@ -169,6 +170,22 @@ function anyActionEnabled(a: VacationActionAvailability): boolean {
       a.overrideApprove?.enabled ||
       a.overrideReject?.enabled,
   );
+}
+
+/**
+ * Why each button is off, for the ones we still want SHOWN while off.
+ *
+ * `ApprovalActionFlags` is a plain boolean per action, shared with excuses and weekly plans, so it
+ * cannot carry a reason. The owner asked to see all four vacation buttons at once (2026-09-10) —
+ * a greyed button with no explanation is worse than no button, so the reasons travel beside them.
+ */
+function toActionReasons(a: VacationActionAvailability): Partial<Record<VacationActionButton, string | null>> {
+  return {
+    acknowledge: a.acknowledge?.disabledReason ?? null,
+    overrideApprove: a.overrideApprove?.disabledReason ?? null,
+    overrideReject: a.overrideReject?.disabledReason ?? null,
+    reject: a.reject?.disabledReason ?? null,
+  };
 }
 
 function toActionFlags(a: VacationActionAvailability): ApprovalActionFlags {
@@ -515,7 +532,11 @@ export type VacationApprovalDetail = {
   typeLabel: string;
   steps: ApprovalTimelineStep[];
   actions: ApprovalActionFlags;
+  /** Disabled reasons for the buttons that stay visible while off. */
+  actionReasons: Partial<Record<VacationActionButton, string | null>>;
   adminOverride: VacationAdminOverrideState | null;
+  /** Which seat the viewer occupies on this request — decides whether buttons read "as HR". */
+  viewerStepKind: "management" | "hr" | "none";
   stageLabel: string | null;
   slaAgeDays: number;
   readOnly: boolean;
@@ -578,7 +599,9 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
         decisionComment: step.decisionComment,
       })),
       actions: actionable && !own ? toActionFlags(row.actionAvailability) : NO_ACTIONS,
+      actionReasons: own ? {} : toActionReasons(row.actionAvailability),
       adminOverride: own ? null : row.adminOverride,
+      viewerStepKind: own ? "none" : row.viewerStepKind,
       stageLabel: row.stageLabel ?? null,
       slaAgeDays: row.slaAgeDays,
       readOnly: !actionable || own,
@@ -602,7 +625,9 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
       typeLabel: "",
       steps: [],
       actions: NO_ACTIONS,
+      actionReasons: {},
       adminOverride: null,
+      viewerStepKind: "none",
       stageLabel: null,
       slaAgeDays: 0,
       readOnly: true,
@@ -618,7 +643,9 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
     typeLabel: vacationTypeLabel(record.vacationType),
     steps: await fetchVacationStepsDirect(id),
     actions: NO_ACTIONS,
+    actionReasons: {},
     adminOverride: null,
+    viewerStepKind: "none",
     stageLabel: record.stageLabel ?? null,
     slaAgeDays: record.slaStatus?.businessDaysPending ?? 0,
     readOnly: true,
