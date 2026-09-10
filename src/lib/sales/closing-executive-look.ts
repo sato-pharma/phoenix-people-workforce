@@ -32,21 +32,34 @@ import { CLOSING_ENGINE_EMBLEM_ON_DARK_PNG_BASE64 } from "./closing-engine-emble
  * declares 4-5 at 15.71 and then 4 at 16 and 5 at 17 -- which contradict each other read as a list
  * and resolve cleanly walked in order, later winning, which is what Excel does with them.
  */
+/**
+ * ⚠ ROW 3 IS A GUTTER WHEREVER IT IS EMPTY — owner, 2026-09-10: "row 3 in every tab needs to be
+ * narrower". It held 34pt on the two matrices and 26-30pt elsewhere while carrying nothing, which
+ * reads as a gap under the command row rather than as air. It is 8pt now on the eleven sheets where
+ * it is blank.
+ *
+ * 🔴 FOUR SHEETS KEEP A TALLER ROW 3, AND SHRINKING THEM WOULD CLIP REAL CONTENT. Contents carries
+ * the month and line beneath its masthead. The Rep Card's deck moved down to row 3 to get out from
+ * behind the navigation buttons (closing-engine-data.ts). District Managers, Area by Month and
+ * Product by Month are authored by `addReviewSheets`, which puts the "Contents" back-link on row 3
+ * — those three write their own heights, so the numbers here must agree with that author or the
+ * table is describing a sheet it does not control.
+ */
 export const EXECUTIVE_GEOMETRY: Record<string, { body: number | null; cols: Record<number, number>; head: Record<number, number> }> = {
   "Area by Month": {
     body: 20,
     cols: { 1: 28, 2: 18, 3: 15, 4: 15, 5: 15, 6: 22 },
-    head: { 1: 34, 2: 25, 3: 22, 4: 26 },
+    head: { 1: 34, 2: 25, 3: 18, 4: 26 },
   },
   "Area x Product": {
     body: 18,
-    cols: { 1: 20, 2: 24, 3: 16, 4: 16, 5: 16, 6: 14 },
-    head: { 1: 34, 2: 34, 3: 34, 4: 26, 5: 27, 6: 8, 7: 23 },
+    cols: { 1: 20, 2: 24, 3: 26, 4: 16, 5: 16, 6: 12 },
+    head: { 1: 34, 2: 34, 3: 8, 4: 26, 5: 27, 6: 8, 7: 23 },
   },
   "Closing Matrix": {
     body: 18,
-    cols: { 1: 22, 2: 16, 3: 16, 4: 14, 5: 14, 6: 14, 7: 14, 8: 14, 9: 14, 10: 14, 11: 14 },
-    head: { 1: 34, 2: 34, 3: 34, 4: 26, 5: 27, 6: 8, 7: 22, 8: 22, 9: 22 },
+    cols: { 1: 22, 2: 18, 3: 13, 4: 14, 5: 11, 6: 13, 7: 14, 8: 11, 9: 13, 10: 14, 11: 11, 12: 13, 13: 14, 14: 11, 15: 13, 16: 14, 17: 11 },
+    head: { 1: 34, 2: 34, 3: 8, 4: 26, 5: 27, 6: 8, 7: 22, 8: 22, 9: 22 },
   },
   // CONTENTS IS DELIBERATELY ABSENT, and this is the entry that must not come back.
   //
@@ -63,42 +76,42 @@ export const EXECUTIVE_GEOMETRY: Record<string, { body: number | null; cols: Rec
   Details: {
     body: 20,
     cols: { 1: 16, 2: 16, 3: 18, 4: 18, 5: 18, 6: 16, 7: 16, 8: 16, 9: 16, 10: 16, 11: 16, 12: 16, 13: 16, 14: 16, 15: 16, 16: 16, 17: 16, 18: 16 },
-    head: { 1: 34, 2: 36, 3: 27, 4: 26 },
+    head: { 1: 34, 2: 36, 3: 8, 4: 26 },
   },
   "District Managers": {
     body: 20,
     cols: { 1: 30, 2: 18, 3: 9, 4: 16, 5: 16, 6: 14 },
-    head: { 1: 34, 2: 24, 3: 22, 4: 26 },
+    head: { 1: 34, 2: 24, 3: 18, 4: 26 },
   },
   "Family by Month": {
     // 18.95 is the reference's own body height here; the extractor could not infer it because the
     // sheet is short enough that its trailing run is the two 27pt footnote rows.
     body: 18.95,
     cols: { 1: 3, 2: 22, 3: 18, 4: 16, 5: 18, 6: 20, 7: 4, 8: 17 },
-    head: { 1: 34, 2: 36, 3: 26, 4: 21.95 },
+    head: { 1: 34, 2: 36, 3: 8, 4: 21.95 },
   },
   "Family Performance": {
     body: 18.95,
     cols: { 1: 3, 2: 22, 3: 11, 4: 16, 5: 16, 6: 14, 7: 4, 8: 14 },
-    head: { 1: 34, 2: 36, 3: 26, 4: 21.95 },
+    head: { 1: 34, 2: 36, 3: 8, 4: 21.95 },
   },
   "Product by Month": {
     body: 20,
     cols: { 1: 24, 2: 22, 3: 16, 4: 16, 5: 16, 6: 22 },
-    head: { 1: 34, 2: 25, 3: 22, 4: 26 },
+    head: { 1: 34, 2: 25, 3: 18, 4: 26 },
   },
   "Rep Card": {
     body: 19,
     cols: { 1: 3, 2: 24, 3: 13, 4: 14, 5: 16, 6: 16, 7: 14, 8: 4, 9: 3, 10: 3, 11: 3, 12: 3, 13: 3, 14: 2 },
     head: {
-      1: 42, 2: 36, 3: 26, 4: 28, 5: 28, 6: 6.95, 7: 14.1, 8: 30, 9: 14.1, 10: 18, 11: 9, 12: 17.1,
+      1: 42, 2: 36, 3: 20, 4: 28, 5: 28, 6: 6.95, 7: 14.1, 8: 30, 9: 14.1, 10: 18, 11: 9, 12: 17.1,
       13: 27, 14: 15.95, 15: 9.95, 16: 28, 17: 16.5, 18: 16.5, 19: 21,
     },
   },
   "Rep Ranking": {
     body: 22,
     cols: { 1: 5, 2: 25, 3: 25, 4: 18, 5: 24, 6: 16, 7: 16, 8: 14, 9: 4, 10: 16 },
-    head: { 1: 42, 2: 36, 3: 30, 4: 28 },
+    head: { 1: 42, 2: 36, 3: 8, 4: 28 },
   },
   "Top Achievers": {
     // 23 is the ranking block's height. The trailing 19s are two footnote rows, so the extractor's
@@ -106,28 +119,37 @@ export const EXECUTIVE_GEOMETRY: Record<string, { body: number | null; cols: Rec
     // of, which is what a longer or shorter top-ten has to keep.
     body: 23,
     cols: { 1: 3, 2: 5, 3: 24, 4: 25, 5: 18, 6: 16, 7: 16, 8: 14, 9: 4 },
-    head: { 1: 42, 2: 36, 3: 30, 4: 26, 5: 26, 6: 26, 7: 9.95, 8: 28 },
+    head: { 1: 42, 2: 36, 3: 8, 4: 26, 5: 26, 6: 26, 7: 9.95, 8: 28 },
   },
   "Top Customers": {
     body: 19,
     cols: { 1: 5, 2: 30, 3: 22, 4: 16, 5: 16, 6: 14, 7: 14, 8: 14 },
-    head: { 1: 34, 2: 36, 3: 27, 4: 26 },
+    head: { 1: 34, 2: 36, 3: 8, 4: 26 },
   },
+  // 🔴 A MATRIX'S `cols` MUST REACH ITS LAST COLUMN, and the title band is why.
+  //
+  // `paintExecutiveBands` takes the band's width from `Math.max` of these keys, and the masthead's
+  // A1 merge follows it. Units Matrix stopped at 8 while the sheet runs to N, and Closing Matrix at
+  // 11 while it runs to Q — so the navy band ended mid-page and the title was cut off inside its own
+  // merge, which cannot overflow. Owner, 2026-09-10, pointing at column N.
+  //
+  // The trailing columns are the repeating Units / Target Units / Ach triple, one per product. The
+  // Ach column was inheriting the template's 8 and clipping both its heading and its percentage.
   "Units Matrix": {
     body: 18,
-    cols: { 1: 22, 2: 16, 3: 14, 4: 14, 5: 14, 6: 14, 7: 14, 8: 14 },
-    head: { 1: 34, 2: 34, 3: 34, 4: 26, 5: 27, 6: 8, 7: 22, 8: 22, 9: 22 },
+    cols: { 1: 22, 2: 18, 3: 13, 4: 14, 5: 11, 6: 13, 7: 14, 8: 11, 9: 13, 10: 14, 11: 11, 12: 13, 13: 14, 14: 11 },
+    head: { 1: 34, 2: 34, 3: 8, 4: 26, 5: 27, 6: 8, 7: 22, 8: 22, 9: 22 },
   },
   "Watch List": {
     body: 19,
     cols: { 1: 18, 2: 22, 3: 22, 4: 18, 5: 16, 6: 16, 7: 14, 8: 14, 9: 14, 10: 14, 11: 14, 12: 14 },
-    head: { 1: 34, 2: 36, 3: 27, 4: 26 },
+    head: { 1: 34, 2: 36, 3: 8, 4: 26 },
   },
   Overview: {
     body: 20,
     cols: { 1: 3.5, 2: 25, 3: 9, 4: 16, 5: 17, 6: 14, 7: 4, 8: 16, 9: 15, 10: 12 },
     head: {
-      1: 44, 2: 37, 3: 30, 4: 24, 5: 24, 6: 24, 7: 8, 8: 28, 9: 24, 10: 24, 11: 24, 12: 24, 13: 24,
+      1: 44, 2: 37, 3: 8, 4: 24, 5: 24, 6: 24, 7: 8, 8: 28, 9: 24, 10: 24, 11: 24, 12: 24, 13: 24,
       14: 24, 15: 24, 16: 24, 17: 24,
     },
   },

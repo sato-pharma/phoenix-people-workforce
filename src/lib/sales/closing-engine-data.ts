@@ -987,7 +987,7 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
       "Rep Card": {
         cells: {
           A1: headline("Rep Card"),
-          A2: deck("one person, one month, every product"),
+          A3: deck("one person, one month, every product"),
           B5: areaBook.length ? String(areaBook[0]![0] ?? "") : "",
           B14: `EGP, ${month.label}`,
           // The card's own prior-month sentence reads its month name from here, so the formula

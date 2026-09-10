@@ -597,15 +597,24 @@ export async function runClosingEngineExportTests() {
   // nowhere to slide it. Splitting the caption is the only fix that holds, and it holds for a
   // longer line name than Anti Infective too.
   const masthead = readRow(repCardXml, 1).A ?? "";
-  const deckLine = readRow(repCardXml, 2).A ?? "";
+  const deckLine = readRow(repCardXml, 3).A ?? "";
   assert.match(masthead, /^Rep Card\b/, "the masthead still opens with the sheet's own name");
   assert.match(masthead, /Anti Infective|CNS/, "and still says which line and month it is");
   assert.doesNotMatch(
     masthead,
     /one person, one month/,
-    "the descriptive half belongs on row 2 — on row 1 it runs under the SATO PHARMA emblem",
+    "the descriptive half stays off row 1 — on row 1 it runs under the SATO PHARMA emblem",
   );
-  assert.match(deckLine, /one person, one month, every product/, "and row 2 is where it went");
+  // ⚠ ROW 3, NOT ROW 2, SINCE 2026-09-10. It sat on row 2 until the owner saw it there:
+  // "in rep card in row 2 their is irrelevnt txt behind the buttons". Row 2 is the command row on
+  // every sheet, so the deck printed underneath the navigation shapes and read as a stray line
+  // poking out from behind them. Row 3 is the sheet's own gutter and the deck has it alone.
+  assert.match(deckLine, /one person, one month, every product/, "and row 3 is where it went");
+  assert.equal(
+    readRow(repCardXml, 2).A ?? "",
+    "",
+    "row 2 carries the buttons and nothing else — text there prints behind them",
+  );
 
   // Measured, not assumed: the caption's own advance width against the emblem's own anchor, both in
   // EMU, read out of the produced file. A future caption that grows past the logo fails here rather
@@ -1119,7 +1128,7 @@ export async function runClosingEngineExportTests() {
   // nothing on the page tells the two apart. He was told and asked for it anyway. Do NOT reinstate
   // the line on the reasoning that its absence looks like a defect.
   const warnedNote = readRow(warnedOverview, 3).A ?? "";
-  const warnedDeck = readRow(warnedCard, 2).A ?? "";
+  const warnedDeck = readRow(warnedCard, 3).A ?? "";   // row 3 since 2026-09-10, see above
 
   assert.doesNotMatch(warnedNote, /INCOMPLETE/, "no sheet announces an incomplete month any more");
   assert.doesNotMatch(readRow(warnedOverview, 1).A ?? "", /INCOMPLETE/, "and not in the masthead either");
@@ -1221,9 +1230,9 @@ export async function runClosingEngineExportTests() {
     const quietNote = readRow(await book.file("xl/worksheets/sheet1.xml")!.async("string"), 3).A ?? "";
     const quietCard = await book.file(CLOSING_ENGINE_TEMPLATE_MANIFEST.sheets["Rep Card"]!.file)!.async("string");
     assert.doesNotMatch(quietNote, /INCOMPLETE/, `${what} says nothing in the masthead`);
-    assert.doesNotMatch(readRow(quietCard, 2).A ?? "", /INCOMPLETE/, `${what} says nothing on the card either`);
+    assert.doesNotMatch(readRow(quietCard, 3).A ?? "", /INCOMPLETE/, `${what} says nothing on the card either`);
     assert.match(
-      readRow(quietCard, 2).A ?? "",
+      readRow(quietCard, 3).A ?? "",
       /one person, one month, every product/,
       `${what} keeps the card's own tagline`,
     );
