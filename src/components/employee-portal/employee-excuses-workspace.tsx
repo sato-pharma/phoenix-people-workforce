@@ -405,6 +405,7 @@ function ExcuseHistoryCard({
           <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
             {formatDate(request.excuseDate)} · {request.durationHours}h
           </p>
+          <p className="mt-0.5 font-mono text-phx-2xs font-bold text-slate-400">{request.requestCode}</p>
         </div>
         <Badge variant={statusBadgeVariant(request.status)}>
           {statusLabel(request.status)}
@@ -524,6 +525,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
     const q = historySearch.toLowerCase().trim();
     return workspace.requests.filter((r) => {
       const searchable = [
+        r.requestCode,
         r.excuseDate,
         typeLabel(r.excuseType),
         statusLabel(r.status),
@@ -980,7 +982,10 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                   <tbody className="divide-y divide-slate-100">
                     {filteredRequests.map((request) => (
                       <tr key={request.id} className="bg-white transition hover:bg-orange-50/30">
-                        <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700 whitespace-nowrap">{formatDate(request.excuseDate)}</td>
+                        <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700 whitespace-nowrap">
+                          {formatDate(request.excuseDate)}
+                          <span className="mt-0.5 block font-mono text-phx-2xs font-bold text-slate-400">{request.requestCode}</span>
+                        </td>
                         <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-800">{typeLabel(request.excuseType)}</td>
                         <td className="border-r border-slate-100 px-3 py-2.5 text-center font-bold text-slate-900">{request.durationHours}h</td>
                         <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{request.managerName ?? "-"}</td>

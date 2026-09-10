@@ -1540,6 +1540,8 @@ import { runOrganogramTeamLabelTests } from "./organogram-team-label.test.ts";
 import { runWeeklyUploadLineNotificationTests } from "./weekly-upload-line-notification.test.ts";
 import { runSalesNotificationExclusionsTests } from "./sales-notification-exclusions.test.ts";
 
+import { runLeaveRequestCodesTests } from "./leave-request-codes.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -5046,6 +5048,8 @@ await runTest(
   "one shared list decides who is left out of a sales announcement, read by both senders, matched case-insensitively",
   runSalesNotificationExclusionsTests,
 );
+
+await runTest("leave request codes (EXC-/VAC- stored, unique, backfilled, immutable)", runLeaveRequestCodesTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
