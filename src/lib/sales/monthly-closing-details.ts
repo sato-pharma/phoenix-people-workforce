@@ -8,7 +8,7 @@ import {
   normalizeLineKey,
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
-import { buildMainStoresRows } from "@/lib/sales/closing-main-stores";
+import { applyCreditedAreaView, buildMainStoresRows } from "@/lib/sales/closing-main-stores";
 import { canRevealClosingSource, withoutMaskedSourceRows } from "@/lib/sales/closing-source-mask";
 import { applyClosingAreaMergesToDetails } from "@/lib/sales/closing-area-merges";
 import { countsInClosingHeadline } from "@/lib/sales/closing-headline";
@@ -751,26 +751,35 @@ export async function loadMonthlyClosingDetails(
   // Testing only the flag would hand a Super Admin El Qema's real rows AND a full set of Main
   // Stores rows on top of them — the month counted twice, with nothing to show it.
   const substituteMainStores = input.revealSource !== true && !canRevealClosingSource(access);
+  const areaLabelOf = (areaCode: string) => {
+    const area = areaByCode.get(areaCode.toUpperCase());
+    if (!area) return null;
+    const regionCode = text(area.regionCode).toUpperCase();
+    return {
+      areaName: text(area.areaName) || areaCode,
+      regionCode,
+      regionName: regionNameByCode.get(regionCode) ?? text(area.regionName),
+    };
+  };
+  const splitRegions = substituteMainStores ? (await loadSplitRegions(line, period)) ?? undefined : undefined;
+
   const mainStores = substituteMainStores
-    ? buildMainStoresRows(merged, {
-      areaNameOf: (areaCode) => {
-        const area = areaByCode.get(areaCode.toUpperCase());
-        if (!area) return null;
-        const regionCode = text(area.regionCode).toUpperCase();
-        return {
-          areaName: text(area.areaName) || areaCode,
-          regionCode,
-          regionName: regionNameByCode.get(regionCode) ?? text(area.regionName),
-        };
-      },
-      line,
-      period,
-      regions: (await loadSplitRegions(line, period)) ?? undefined,
-    })
+    ? buildMainStoresRows(merged, { areaNameOf: areaLabelOf, line, period, regions: splitRegions })
     : [];
 
+  // 🔴 BOTH PASSES READ `merged`, THE WHOLE MONTH, AND NEITHER READS THE OTHER'S OUTPUT.
+  //
+  // The city split is a pool: which areas share a wholesaler's sell-in depends on who else is in
+  // that city. Running the credited view over rows El Qema had already been removed from would ask
+  // the split a different question from the one the Closing Matrix asked, and the answer would
+  // differ by an amount nothing on the page could explain. So the view is built over everything,
+  // and El Qema's shares are dropped from the RESULT — after the arithmetic, never before it.
+  const credited = substituteMainStores
+    ? applyCreditedAreaView(merged, { areaLabelOf, line, period, regions: splitRegions })
+    : merged;
+
   const scoped = applyDetailScope(
-    substituteMainStores ? [...withoutMaskedSourceRows(merged, access), ...mainStores] : merged,
+    substituteMainStores ? [...withoutMaskedSourceRows(credited, access), ...mainStores] : merged,
     {
       allowedRegionCodes,
       allowedAreaCodes: scope.allowedAreaCodes,
