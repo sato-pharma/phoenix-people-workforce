@@ -92,19 +92,36 @@ export function runMoneyPathSilentFailureTests() {
   );
 
   // ── 3. Carry-forward debt must only be settled for rows actually deducted ──
+  //
+  // Rewritten 2026-09-10 when the settlement MOVED from confirmPart2 to publishToPayslips. This
+  // used to pin a local variable called `recoveredCompacts` inside confirmPart2, which made it a
+  // test of where the code sat rather than of what it does — and it went red on a change that
+  // strengthened the very rule it exists to protect. Settling at confirm marked a debt collected
+  // against money not yet written, and the three artifacts finance executes rebuilt themselves
+  // without the ledger, so the recovery reached nobody. The rule below is the durable one, stated
+  // without reference to a variable name or a function: whatever settles the ledger must derive
+  // its list from assembled rows that actually carried the deduction and were actually published.
+  const settlementAt = runServiceSource.search(/markCarryForwardApplied\(/);
+  assert.ok(
+    settlementAt >= 0,
+    "something must settle the carry-forward ledger, or every recovered debt is written off",
+  );
+  const settlementCall = runServiceSource.slice(settlementAt, settlementAt + 600);
   assert.match(
-    runServiceSource,
-    /const recoveredCompacts = rows\s*\n?\s*\.filter\(\(entry\) => entry\.carriedForwardApplied > 0 && !entry\.onHold\)/,
+    settlementCall,
+    /entry\.carriedForwardApplied > 0/,
     "recovered carry-forward must be derived from the assembled rows that actually carried the deduction",
   );
   assert.doesNotMatch(
     runServiceSource,
-    /const recoveredCompacts = Array\.from\(carryForwardByCompact\.keys\(\)\)/,
+    /Array\.from\(carryForwardByCompact\.keys\(\)\)/,
     "carry-forward must never be settled straight from the ledger map — that writes off debt for employees the run excluded, held, or never paid",
   );
   // Held rows assemble but are dropped by publishToPayslips, so they must be excluded too.
+  // Asserted inside the settlement call, not anywhere in the file: `!entry.onHold` appears in
+  // several unrelated filters, so a file-wide match would pass with the exclusion deleted.
   assert.match(
-    runServiceSource,
+    settlementCall,
     /!entry\.onHold/,
     "a held row is never published to payslips, so its debt must not be marked recovered",
   );

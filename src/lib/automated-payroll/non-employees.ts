@@ -80,7 +80,11 @@ function resolvePart(value: NonEmployeePart | undefined | null): NonEmployeePart
   return isNonEmployeePart(value) ? value : "first";
 }
 
-function validateInput(input: NonEmployeePayrollInput): void {
+/**
+ * Exported so the rule that decides whether a payable row can reach a bank file is assertable
+ * without a database — the same reasoning as expense-gate.ts, which keeps every money gate pure.
+ */
+export function validateNonEmployeePayrollInput(input: NonEmployeePayrollInput): void {
   if (!input.fullNameAr?.trim()) throw new Error("Validation: Arabic name is required.");
   if (!input.fullNameEn?.trim()) throw new Error("Validation: English name is required.");
   if (!Number.isFinite(input.totalSalary) || input.totalSalary < 0) {
@@ -88,6 +92,23 @@ function validateInput(input: NonEmployeePayrollInput): void {
   }
   if (input.part !== undefined && !isNonEmployeePart(input.part)) {
     throw new Error("Validation: part must be either first or second.");
+  }
+  // A payable entry must say WHERE the money goes. Neither field was required before, and the
+  // bank files match on the exact words "FAB" and "CIB" — so a blank bank or a blank account
+  // produced a row that every screen and every total counted as paid while no file carried it.
+  //
+  // Deliberately NOT restricted to FAB and CIB. Three people on the live standing roster are paid
+  // every month through routes this system does not model ("QNB", "Instapay"), and rejecting their
+  // bank name would break entries for people who are genuinely owed money. They are named instead,
+  // by the coverage report in exports/bank-coverage.ts, which is the honest answer: the money is
+  // real, the bank file cannot carry it, and somebody has to know that.
+  if (input.totalSalary > 0) {
+    if (!input.bankName?.trim()) {
+      throw new Error("Validation: a bank is required for a paid entry — it decides which transfer file carries them.");
+    }
+    if (!input.bankAccount?.trim()) {
+      throw new Error("Validation: an account number is required for a paid entry.");
+    }
   }
 }
 
@@ -206,7 +227,7 @@ export async function addNonEmployeePayrollEntry(
   input: NonEmployeePayrollInput,
 ): Promise<NonEmployeePayrollRow> {
   assertAutomatedPayrollHrActor(access);
-  validateInput(input);
+  validateNonEmployeePayrollInput(input);
   const part = resolvePart(input.part);
   await requireEditableRun(runId, part);
 
@@ -241,7 +262,7 @@ export async function updateNonEmployeePayrollEntry(
   input: NonEmployeePayrollInput,
 ): Promise<NonEmployeePayrollRow> {
   assertAutomatedPayrollHrActor(access);
-  validateInput(input);
+  validateNonEmployeePayrollInput(input);
 
   // Gate on the part it is stored under AND the part it would become, so an edit
   // can never move an entry into an installment that is already closed, nor out

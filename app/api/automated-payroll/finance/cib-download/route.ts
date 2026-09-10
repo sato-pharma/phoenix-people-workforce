@@ -15,8 +15,8 @@ export async function GET(request: Request) {
       return jsonError(new Error("Validation: month and year are required."));
     }
     const scope = url.searchParams.get("scope") === "part2" ? "part2" : "part1";
-    const { buffer, fileName } = await buildCibSheet(access, { month, year }, scope);
-    return xlsxResponse(buffer, fileName);
+    const { buffer, coverage, fileName } = await buildCibSheet(access, { month, year }, scope);
+    return xlsxResponse(buffer, fileName, [coverage]);
   } catch (error) {
     return jsonError(error, "Failed to download the CIB sheet.");
   }
