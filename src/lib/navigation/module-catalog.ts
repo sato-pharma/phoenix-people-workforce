@@ -39,6 +39,7 @@ export const MODULE_LABELS: Record<PermissionResource, string> = {
   account_activation: "Account Activation",
   admin: "Administration",
   admin_access: "Users & Access",
+  spotlight: "Spotlight",
   attendance: "Attendance",
   candidates: "Candidates",
   coaching: "Coaching",

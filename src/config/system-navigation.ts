@@ -1297,6 +1297,20 @@ export const adminNavigationSectionSeeds = [
     ],
     label: "Targets",
   },
+  // Spotlight: the recognition export. SUPER ADMIN AND CEO ONLY, by the owner's instruction when
+  // the module was specified — it reads every rep, district and line with no scope narrowing and
+  // produces a shareable sheet carrying other people's names and achievement, which is a
+  // publishing right rather than a reading one.
+  //
+  // ⚠ THIS ENTRY IS UX, NOT THE GATE. `/api/spotlight/{options,preview,export}` each assert
+  // `spotlight` themselves; hiding the card here protects nothing on its own.
+  {
+    id: "sales-spotlight-module",
+    items: [
+      { href: "/spotlight", icon: Trophy, label: "Spotlight", permissions: [{ action: "read", resource: "spotlight" }], roles: ["Super Admin", "CEO"] },
+    ],
+    label: "Spotlight",
+  },
   // Ruling 1 (owner): Sales is five blocks, with Monthly Closing alone and Targets alone. This is
   // the "Monthly Closing alone" block. It was `finance-monthly-closing`, filed under the finance
   // tier and holding the Finance Manager's export row only; moving it up here was the first half of
