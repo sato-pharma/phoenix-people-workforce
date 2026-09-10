@@ -124,6 +124,23 @@ function theAudienceIsRegisteredAndIsSuperAdminAlone() {
   assert.equal(policy.enabled, true);
 }
 
+/**
+ * Adding an audience key means filling in every exhaustive Record built on it, and CI caught two
+ * this branch had missed. `ignoreBuildErrors` lets a missing key compile, build and DEPLOY, so the
+ * type is not the only guard worth having — this reads the registry at runtime.
+ */
+function everyAudienceKeyIsFullyRegistered() {
+  const control = readFileSync(join(ROOT, "src/lib/notifications/email-control-center.ts"), "utf8");
+  const modules = control.slice(control.indexOf("const ROLE_RECIPIENTS_MODULE"));
+  for (const key of notificationRoleKeys) {
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(DEFAULT_NOTIFICATION_ROLE_POLICIES, key),
+      `${key} has no default policy, so it would resolve to nobody`,
+    );
+    assert.match(modules.slice(0, 2000), new RegExp(`\\b${key}:`), `${key} is missing from the notification module map`);
+  }
+}
+
 function theLinkGoesToTheScreenThatCanReleaseAHold() {
   assert.equal(MAPPING_GUARD_URL, "/admin/field-sales/mapping-guard");
   assert.equal(MAPPING_GUARD_EVENT_TYPE, "sos_mapping_guard_held");
@@ -220,6 +237,7 @@ export async function runSosMappingGuardTests() {
   theScreenHasNoRoundedCorners();
   theScreenFitsByConstruction();
   theSidebarLinkMatchesTheGate();
+  everyAudienceKeyIsFullyRegistered();
   batchingGroupsOneRunIntoOneMessage();
   twoWritersNeverShareAMessage();
   aGapWiderThanTheWindowSplitsTheBatch();

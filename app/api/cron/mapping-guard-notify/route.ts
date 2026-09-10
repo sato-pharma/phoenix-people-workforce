@@ -45,6 +45,9 @@ export async function GET(request: Request) {
       labels: { event: "cron_failed", job: "mapping-guard-notify" },
       error,
     });
-    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error) }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: clientSafeErrorMessage(error, "Mapping guard notify failed.") },
+      { status: 500 },
+    );
   }
 }
