@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { isForbiddenError } from "@/lib/auth/server";
 import { logError } from "@/lib/observability/log";
 
+import { describeBankCoverage, type BankCoverage } from "./exports/bank-coverage.ts";
+
 /**
  * Shared route helpers for the Automated Payroll API. Maps the service layer's
  * prefixed Error messages ("Forbidden:", "Not found:", "Conflict:", "Validation:")
@@ -35,13 +37,32 @@ export function jsonError(error: unknown, fallback = "Automated Payroll request 
   return NextResponse.json({ success: false, error: clientMessage }, { status });
 }
 
-export function xlsxResponse(buffer: Buffer, fileName: string): NextResponse {
-  return new NextResponse(buffer as unknown as BodyInit, {
-    status: 200,
-    headers: {
-      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="${fileName}"`,
-      "Cache-Control": "no-store",
-    },
-  });
+/**
+ * The xlsx download, plus — since 2026-09-10 — an explicit answer to "does this file carry
+ * everybody it should".
+ *
+ * A bank file missing people used to download completely cleanly: the only check anywhere was
+ * whether the file came out EMPTY, so three non-employees paid through QNB and Instapay were
+ * absent from both transfer files for two months with nothing saying so. These headers travel with
+ * every download, so a caller, a script, or a browser network tab gets the answer without opening
+ * the workbook.
+ *
+ * The summary is percent-encoded because it names people and the names here are routinely Arabic:
+ * a raw non-Latin-1 header value throws rather than degrading.
+ */
+export function xlsxResponse(
+  buffer: Buffer,
+  fileName: string,
+  bankCoverage?: readonly BankCoverage[],
+): NextResponse {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "Content-Disposition": `attachment; filename="${fileName}"`,
+    "Cache-Control": "no-store",
+  };
+  if (bankCoverage && bankCoverage.length > 0) {
+    headers["X-Bank-Coverage-Complete"] = String(bankCoverage.every((entry) => entry.covered));
+    headers["X-Bank-Coverage"] = encodeURIComponent(bankCoverage.map(describeBankCoverage).join(" | "));
+  }
+  return new NextResponse(buffer as unknown as BodyInit, { status: 200, headers });
 }
