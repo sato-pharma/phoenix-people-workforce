@@ -205,7 +205,11 @@ repo-level check could see, because one side of the move is not in the repo at a
 
 **The same arithmetic applies inside `AGENTS.md`, one level down, with nothing to enforce it.**
 The 2026-09-01 consolidation trimmed §2.1 to **19,059 bytes** by moving its accounts into
-`docs/agents-session-traps.md`. Measured again on 2026-09-04 it was **23,493** — back over the
+`docs/agents-session-traps.md`. Before it, §2.1 and §4 had grown to **26KB and 24KB** of essays,
+and moving the memory slugs out to `docs/agents-memory-map.md` in the same pass took a further
+**6,921 bytes** off every request. (Those three figures lived in `AGENTS.md`'s own preamble until
+2026-09-11, when the enforced footprint gate had 56 bytes left and they were moved here as
+accounts, which is what that preamble tells you to do.) Measured again on 2026-09-04 it was **23,493** — back over the
 floor in three days, about **2,300 bytes a day**, and the growth was not new rules: it was
 measurements, dates and diagnosis narrative creeping back in behind the hooks that legitimately
 arrived with them.
