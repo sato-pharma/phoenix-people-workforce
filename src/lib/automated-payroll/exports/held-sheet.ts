@@ -1,17 +1,16 @@
 import type ExcelJS from "exceljs";
 
-import {
-  HELD_ROW_NOTE,
-  payrollBodyCell,
-  payrollHeaderCell,
-  payrollTotalsCell,
-  writePayrollSheetMasthead,
-} from "@/lib/payroll/payroll-sheet-style";
+import { HELD_ROW_NOTE } from "@/lib/payroll/payroll-sheet-style";
+import { BLACK, SLATE, VALUE_FMT, WHITE, ZEBRA } from "@/lib/sales/sales-workbook-kit";
 
 import type { AssembledRow } from "../assemble.ts";
 import { HELD_NO_REASON_COMMENT, normalizeHoldReason } from "../hold-reason.ts";
 import type { HeldBalance, HeldSettlement } from "../held-settlements.ts";
 import type { MonthlySalaryRun } from "../types.ts";
+
+/** The Phoenix held treatment, matching exports/sheet.ts exactly — red type on a pale red ground. */
+const HELD_FILL = "FFFEE2E2";
+const HELD_TEXT = "FF991B1B";
 
 /**
  * The "Held" tab — owner request 2026-09-10: "I want to make an extra tab in the exported payroll
@@ -33,15 +32,21 @@ import type { MonthlySalaryRun } from "../types.ts";
  *      payroll they should not be added": open this month's sheet and last month's unsettled holds
  *      are on it, by name, with the amount.
  *
- * Every colour, rule and font here comes from the shared payroll style helpers, never from a
- * literal. This tab therefore wears whatever identity its sibling sheets wear and cannot drift from
- * them — which matters, because that identity is owner-locked and pinned by its own test.
+ * THE PHOENIX LOOK, NOT THE HOUSE ONE. Calibri, a filled black header band, the Phoenix zebra, and
+ * the red held treatment — the same inline styling every other sheet in this workbook uses, from
+ * `sales-workbook-kit`. The automated payroll exports are exempt from the house document identity
+ * (owner, 2026-09-08) and `tests/payroll-phoenix-look.test.ts` fails on ANY house colour or typeface
+ * anywhere in these workbooks.
+ *
+ * This file first shipped using the house-styled helpers in `payroll-sheet-style.ts` — which look
+ * like the obvious "shared payroll style" and are not: they carry the house palette and masthead.
+ * That lock test caught it before it reached the owner, which is exactly what it exists for.
  */
 
 type HeldColumn = {
   header: string;
   width: number;
-  numeric?: boolean;
+  money?: boolean;
 };
 
 const COLUMNS: HeldColumn[] = [
@@ -50,15 +55,14 @@ const COLUMNS: HeldColumn[] = [
   { header: "Job Title", width: 26 },
   { header: "Line", width: 16 },
   { header: "Reason held", width: 46 },
-  { header: "Part 1 already paid", width: 17, numeric: true },
-  { header: "Part 2 owed", width: 14, numeric: true },
-  { header: "Settled outside payroll", width: 18, numeric: true },
+  { header: "Part 1 already paid", width: 17, money: true },
+  { header: "Part 2 owed", width: 14, money: true },
+  { header: "Settled outside payroll", width: 18, money: true },
   { header: "Settled on", width: 13 },
   { header: "Method / reference", width: 30 },
-  { header: "Still outstanding", width: 16, numeric: true },
+  { header: "Still outstanding", width: 16, money: true },
 ];
 
-/** A held person as this tab needs them, from either source. */
 type HeldTabRow = {
   hrId: string;
   name: string;
@@ -82,8 +86,8 @@ function fromAssembled(entry: AssembledRow, settled: HeldSettlement | null): Hel
     name: entry.row.fullName,
     jobTitle: entry.row.jobTitle ?? "",
     line: entry.row.line ?? "",
-    // The same reason the cover and the payroll row show, resolved through the same helper, so a
-    // reason that says nothing announces itself here too instead of rendering as an empty cell.
+    // The same reason the cover and the payroll row show, through the same helper, so a reason that
+    // says nothing announces itself here too instead of rendering as an empty cell.
     reason: normalizeHoldReason(entry.row.payrollComment) ?? HELD_NO_REASON_COMMENT,
     firstPartAlreadyPaid: round(entry.row.firstPart),
     secondPartOwed: owed,
@@ -108,8 +112,7 @@ function fromBalance(balance: HeldBalance): HeldTabRow {
 
 function methodAndReference(settled: HeldSettlement | null): string {
   if (!settled) return "";
-  const parts = [settled.method, settled.reference].map((part) => (part ?? "").trim()).filter(Boolean);
-  return parts.join(" · ");
+  return [settled.method, settled.reference].map((part) => (part ?? "").trim()).filter(Boolean).join(" · ");
 }
 
 const MONTH_NAMES = [
@@ -124,10 +127,10 @@ function periodLabel(month: number, year: number): string {
 /**
  * Append the Held tab.
  *
- * The sheet is written even when nobody is held. An empty tab that says "nobody was held this
- * month" is a different statement from a missing tab, and on a payroll pack the difference matters:
- * a reader who cannot find the tab does not conclude that nothing was withheld, they conclude the
- * export is incomplete.
+ * Written even when nobody is held. An empty tab that says "nobody was held this month" is a
+ * different statement from a missing tab, and on a payroll pack the difference matters: a reader
+ * who cannot find the tab does not conclude that nothing was withheld, they conclude the export is
+ * incomplete.
  */
 export function addHeldSheet(
   workbook: ExcelJS.Workbook,
@@ -141,6 +144,7 @@ export function addHeldSheet(
   },
 ): ExcelJS.Worksheet {
   const sheet = workbook.addWorksheet("Held");
+  sheet.views = [{ showGridLines: false }];
   const settlements = input.settlements ?? new Map<string, HeldSettlement>();
   const priorBalances = (input.priorBalances ?? []).filter((balance) => balance.outstanding > 0);
 
@@ -149,54 +153,61 @@ export function addHeldSheet(
     .map((entry) => fromAssembled(entry, settlements.get(entry.compact) ?? null))
     .sort((a, b) => b.outstanding - a.outstanding);
 
-  writePayrollSheetMasthead(workbook, sheet, {
-    columns: COLUMNS.length,
-    title: "Held — not paid by this run",
-    subtitle: `${periodLabel(input.run.month, input.run.year)} · ${thisMonth.length} held this month`,
-  });
-
   COLUMNS.forEach((column, index) => {
     sheet.getColumn(index + 1).width = column.width;
   });
 
-  let row = (sheet.lastRow?.number ?? 1) + 2;
+  // ── Title band: filled black, Calibri, white type — the Phoenix masthead ──────────────────────
+  const titleCell = sheet.getCell(1, 1);
+  titleCell.value = `Held — not paid by this run · ${periodLabel(input.run.month, input.run.year)}`;
+  sheet.mergeCells(1, 1, 1, COLUMNS.length);
+  titleCell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 12 };
+  titleCell.alignment = { horizontal: "left", vertical: "middle" };
+  for (let column = 1; column <= COLUMNS.length; column += 1) {
+    sheet.getCell(1, column).fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+  }
+  sheet.getRow(1).height = 22;
 
-  const writeExplainer = () => {
-    const cell = sheet.getCell(row, 1);
-    cell.value =
-      "A held row is dropped at publish: no payslip is written, and the money is paid outside this " +
-      "system or not at all. Part 1 was already transferred, so only Part 2 is owed — paying the " +
-      "full net would pay Part 1 twice. Record a transfer against the person so the next month " +
-      "does not work the same amount up again; anything with a figure under Still outstanding has " +
-      "no such record.";
-    sheet.mergeCells(row, 1, row, COLUMNS.length);
-    cell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
-    sheet.getRow(row).height = 42;
-    row += 2;
-  };
-  writeExplainer();
+  const explain = sheet.getCell(2, 1);
+  explain.value =
+    "A held row is dropped at publish: no payslip is written, and the money is paid outside this " +
+    "system or not at all. Part 1 was already transferred, so only Part 2 is owed — paying the full " +
+    "net would pay Part 1 twice. Record a transfer against the person so the next month does not " +
+    "work the same amount up again; anything with a figure under Still outstanding has no such record.";
+  sheet.mergeCells(2, 1, 2, COLUMNS.length);
+  explain.font = { color: { argb: SLATE }, name: "Calibri", size: 9 };
+  explain.alignment = { horizontal: "left", vertical: "top", wrapText: true };
+  sheet.getRow(2).height = 42;
+
+  let row = 4;
 
   const writeSection = (title: string, entries: HeldTabRow[], emptyMessage: string) => {
-    const titleCell = sheet.getCell(row, 1);
-    titleCell.value = title;
-    payrollHeaderCell(titleCell);
+    const heading = sheet.getCell(row, 1);
+    heading.value = title;
     sheet.mergeCells(row, 1, row, COLUMNS.length);
+    heading.font = { bold: true, color: { argb: BLACK }, name: "Calibri", size: 10.5 };
+    heading.alignment = { horizontal: "left", vertical: "middle" };
     row += 1;
 
     if (entries.length === 0) {
       const cell = sheet.getCell(row, 1);
       cell.value = emptyMessage;
       sheet.mergeCells(row, 1, row, COLUMNS.length);
+      cell.font = { color: { argb: SLATE }, name: "Calibri", size: 10 };
       cell.alignment = { horizontal: "left", vertical: "middle" };
       row += 2;
       return;
     }
 
+    // Header band: filled black, white Calibri — the same bar every payroll sheet uses.
     COLUMNS.forEach((column, index) => {
       const cell = sheet.getCell(row, index + 1);
       cell.value = column.header;
-      payrollHeaderCell(cell, { numeric: column.numeric });
+      cell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 10.5 };
+      cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+      cell.alignment = { horizontal: column.money ? "right" : "left", vertical: "middle", wrapText: true };
     });
+    sheet.getRow(row).height = 26;
     row += 1;
 
     entries.forEach((entry, entryIndex) => {
@@ -213,39 +224,46 @@ export function addHeldSheet(
         methodAndReference(entry.settled),
         entry.outstanding,
       ];
+      const zebra = entryIndex % 2 === 1;
       values.forEach((value, index) => {
+        const column = COLUMNS[index];
         const cell = sheet.getCell(row, index + 1);
         cell.value = value;
-        payrollBodyCell(cell, {
-          zebra: entryIndex % 2 === 1,
-          numeric: COLUMNS[index]?.numeric,
-          // Every row on this tab is held by definition, so the held treatment is the row's
-          // baseline here rather than an exception to it.
-          held: true,
-          leading: index === 0,
-        });
+        // Every row on this tab is held by definition, so the red held treatment is the baseline
+        // here rather than an exception to it.
+        cell.font = { bold: true, color: { argb: HELD_TEXT }, name: "Calibri", size: 10 };
+        cell.alignment = { horizontal: column?.money ? "right" : "left", vertical: "middle" };
+        cell.fill = {
+          fgColor: { argb: zebra ? ZEBRA : HELD_FILL },
+          pattern: "solid",
+          type: "pattern",
+        };
+        if (column?.money && typeof value === "number") cell.numFmt = VALUE_FMT;
       });
       // The note travels with the row, so the meaning of "held" cannot be lost by copying a range
-      // out of this tab — the one held signal that survives both greyscale and a paste.
+      // out of this tab — the one held signal that survives greyscale and a paste.
       sheet.getCell(row, 1).note = HELD_ROW_NOTE;
       row += 1;
     });
 
     // Totals, because the reason this is a tab and not prose is that the figures have to add up.
-    const totals: Array<[number, number]> = [
+    const totals = new Map<number, number>([
       [6, entries.reduce((sum, entry) => sum + entry.firstPartAlreadyPaid, 0)],
       [7, entries.reduce((sum, entry) => sum + entry.secondPartOwed, 0)],
       [8, entries.reduce((sum, entry) => sum + (entry.settled?.amount ?? 0), 0)],
       [11, entries.reduce((sum, entry) => sum + entry.outstanding, 0)],
-    ];
-    const labelCell = sheet.getCell(row, 1);
-    labelCell.value = "TOTAL";
-    payrollTotalsCell(labelCell);
-    for (let column = 2; column <= COLUMNS.length; column += 1) {
+    ]);
+    for (let column = 1; column <= COLUMNS.length; column += 1) {
       const cell = sheet.getCell(row, column);
-      const total = totals.find(([index]) => index === column);
-      if (total) cell.value = round(total[1]);
-      payrollTotalsCell(cell, { numeric: Boolean(total) || Boolean(COLUMNS[column - 1]?.numeric) });
+      if (column === 1) cell.value = "TOTAL";
+      const total = totals.get(column);
+      if (total !== undefined) {
+        cell.value = round(total);
+        cell.numFmt = VALUE_FMT;
+      }
+      cell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 10.5 };
+      cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+      cell.alignment = { horizontal: totals.has(column) ? "right" : "left", vertical: "middle" };
     }
     row += 2;
   };
@@ -256,9 +274,7 @@ export function addHeldSheet(
     "Nobody is held this month. Every employee on the payroll sheet is paid by this run.",
   );
 
-  const priorRows = priorBalances
-    .map(fromBalance)
-    .sort((a, b) => b.outstanding - a.outstanding);
+  const priorRows = priorBalances.map(fromBalance).sort((a, b) => b.outstanding - a.outstanding);
   writeSection(
     "Still owed from earlier months — never recorded as transferred",
     priorRows,
@@ -269,11 +285,11 @@ export function addHeldSheet(
   if (priorRows.length > 0) {
     const cell = sheet.getCell(row, 1);
     cell.value =
-      "Earlier months are listed from the record written when each run was published, and are " +
-      "removed from this list only when someone records the transfer against that person. " +
-      "Months: " +
+      "Earlier months are listed from the record written when each run was published, and drop off " +
+      "this list only when someone records the transfer against that person. Months: " +
       Array.from(new Set(priorBalances.map((balance) => periodLabel(balance.month, balance.year)))).join(", ");
     sheet.mergeCells(row, 1, row, COLUMNS.length);
+    cell.font = { color: { argb: SLATE }, name: "Calibri", size: 9 };
     cell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
     sheet.getRow(row).height = 28;
   }
