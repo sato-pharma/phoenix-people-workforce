@@ -3,6 +3,11 @@ import { roundCurrency } from "@/lib/payroll/money";
 import { normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import type { SalaryValidationRow } from "@/lib/payroll/salary-import";
 import type { PayrollSalarySource } from "@/lib/payroll/salary-source-model.ts";
+import {
+  statutoryFromInsuranceWage,
+  type InsuranceWageMap,
+} from "@/lib/payroll/statutory/insurance-wages.ts";
+import type { StatutoryConfig } from "@/lib/payroll/statutory/types.ts";
 
 import { HELD_NO_REASON_COMMENT, normalizeHoldReason } from "./hold-reason.ts";
 import type { PopulationMember } from "./recommend.ts";
@@ -30,10 +35,20 @@ import type { DraftRow, PayrollPeriod, RowLifecycle, RowSettlementBasis } from "
  * stored first_part/second_part/month_salary and only fall back to
  * calculatePayrollParts when those are NULL, which they never are here.
  *
- * SI/Tax are carried from the master (matching the existing Copilot's
- * owner-confirmed scope). Held employees keep their computed amounts (rendered
- * red + flagged); they are dropped from the published batch by the publish step,
- * never here.
+ * SOCIAL INSURANCE is computed from the employee's own `social_insurance_wage`, which is the
+ * column that ALONE decides the statutory filing. It used to be copied raw off
+ * `employees.social_insurance`, and on production's August 2026 run 94 of 100 records carried
+ * exactly that raw figure while NONE carried 11% of the person's clamped wage — so the Copilot and
+ * this engine filed the same person at two different amounts depending on which one built the
+ * month. Income tax is still carried from the master; that is a separate figure and a separate fix.
+ *
+ * NEITHER STATUTORY FIGURE REDUCES TAKE-HOME PAY. Both are reported as `governmentalDeductions`
+ * and neither appears in `totalDeductions` or in what `assembleParts` is handed, because the
+ * company absorbs them. So this change moves the filing and the sheet's Gross column, and moves
+ * nobody's money.
+ *
+ * Held employees keep their computed amounts (rendered red + flagged); they are dropped from the
+ * published batch by the publish step, never here.
  */
 
 export type AssembledRow = {
@@ -243,6 +258,15 @@ export function assembleRows(input: {
    * an omitting caller keeps the pre-2026-08-04 preview behaviour.
    */
   part1Confirmed?: boolean;
+  /**
+   * The statutory parameters plus every employee's insurance wage, keyed by compact HR id.
+   *
+   * Optional so a caller that only needs this month's payable figures — none of which depend on a
+   * statutory amount — does not have to load it. Omitted, each row carries the master's raw
+   * `social_insurance` column exactly as it did before, which is the honest fallback: no wage, no
+   * derived figure, and nothing invented in between.
+   */
+  statutory?: { config: StatutoryConfig; insuranceWages: InsuranceWageMap };
 }): AssembledRow[] {
   const drafts = draftByCompact(input.draftRows);
   const results: AssembledRow[] = [];
@@ -344,7 +368,19 @@ export function assembleRows(input: {
       },
     });
 
-    const socialInsurance = roundCurrency(num(source?.socialInsurance));
+    // The insurance wage decides the filing, so it decides this figure. Falling back to the
+    // master's raw column when no wage is on file is deliberate: the alternative is to publish a
+    // zero, and a confident zero on a statutory line is worse than a stale number that at least
+    // came from somewhere. The Data Quality step names anyone in that state.
+    const filed = input.statutory
+      ? statutoryFromInsuranceWage(
+          input.statutory.insuranceWages.get(member.compact),
+          input.statutory.config,
+        )
+      : null;
+    const socialInsurance = filed
+      ? roundCurrency(filed.employee)
+      : roundCurrency(num(source?.socialInsurance));
     const employmentIncomeTax = roundCurrency(num(source?.employmentIncomeTax));
     // Gross is derived from the CONTRACT base, so the locked policy identity
     // Gross = Base + SI + Tax still reads true across the row now that Base
