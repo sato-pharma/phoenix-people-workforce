@@ -264,6 +264,10 @@ export async function getVacationApprovalsForResponder(access: AccessContext): P
 
 /** Shape a legacy sick-leave record into the Action-Center row form (single-step, best-effort). */
 function sickRecordAsActionRow(record: VacationRequestRecord, actionable: boolean): VacationActionCenterRow {
+  // Sick leave is the one type still on the LEGACY PARALLEL flow — it has no ordered approval
+  // steps, so the stalled-approver override (which decides "the active management step") has
+  // nothing to point at. Off on both branches, deliberately.
+  const noOverride = { enabled: false, disabledReason: "Sick leave does not use the stepped approval flow." };
   const availability: VacationActionAvailability = actionable
     ? {
         approve: { enabled: true, disabledReason: null },
@@ -271,6 +275,8 @@ function sickRecordAsActionRow(record: VacationRequestRecord, actionable: boolea
         acknowledge: { enabled: false, disabledReason: null },
         assign: { enabled: false, disabledReason: null },
         return: { enabled: true, disabledReason: null },
+        overrideApprove: noOverride,
+        overrideReject: noOverride,
       }
     : {
         approve: { enabled: false, disabledReason: "Not your turn." },
@@ -278,6 +284,8 @@ function sickRecordAsActionRow(record: VacationRequestRecord, actionable: boolea
         acknowledge: { enabled: false, disabledReason: "Not your turn." },
         assign: { enabled: false, disabledReason: "Not your turn." },
         return: { enabled: false, disabledReason: "Not your turn." },
+        overrideApprove: noOverride,
+        overrideReject: noOverride,
       };
   return {
     ...record,
@@ -285,6 +293,7 @@ function sickRecordAsActionRow(record: VacationRequestRecord, actionable: boolea
     assignedActorName: record.managerName,
     assignedActorTitle: null,
     actionAvailability: availability,
+    adminOverride: null,
     slaAgeDays: record.slaStatus?.businessDaysPending ?? 0,
     viewerStepKind: "management",
   };
@@ -1851,10 +1860,11 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
   const canRequestVisitDetails = status === "submitted" && !own && isAssignedManager && hasFieldItems;
   const actionable = Boolean(decisionStage) || canAcknowledge || isEditRequestDecision;
 
+  // The override is a vacation-only capability; weekly plans share the flag shape, not the rule.
   const actions: ApprovalActionFlags = decisionStage
-    ? { approve: true, reject: true, return: true, acknowledge: false }
+    ? { approve: true, reject: true, return: true, acknowledge: false, overrideApprove: false, overrideReject: false }
     : canAcknowledge
-      ? { approve: false, reject: false, return: false, acknowledge: true }
+      ? { approve: false, reject: false, return: false, acknowledge: true, overrideApprove: false, overrideReject: false }
       : NO_ACTIONS;
 
   const items = mapPlanItemsToCalendar(rawItems);

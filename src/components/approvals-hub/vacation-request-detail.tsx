@@ -112,10 +112,11 @@ export function VacationRequestDetail({ detail, backHref }: Props) {
               commentField="decisionComment"
               actions={detail.actions}
               backHref={backHref}
-              overrideApproverName={detail.adminOverride?.approverName ?? null}
               overrideNotice={
-                detail.adminOverride?.approverName
-                  ? `${detail.adminOverride.approverName} has not responded for ${detail.adminOverride.daysPending} days. Deciding here records the decision as yours, not theirs, and tells them it happened. The request then carries on to the next approver as normal.`
+                detail.adminOverride?.available
+                  // Whole days on screen. The exact fraction is what the rule measures and what
+                  // the audit event keeps; "2.48 days" in a sentence just reads like a machine.
+                  ? `This request has not been responded to for ${Math.floor(detail.adminOverride.daysPending)} days, so its approval has transferred to you as System Administrator. The record will show you as the responder. The request then continues to the next approver as normal.`
                   : null
               }
             />

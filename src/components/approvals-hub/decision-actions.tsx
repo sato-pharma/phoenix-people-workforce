@@ -20,9 +20,7 @@ export type DecisionActionsProps = {
   };
   // Where to return after a successful decision.
   backHref: string;
-  /** Name of the approver an override would decide for. Shown on the button and in the confirm. */
-  overrideApproverName?: string | null;
-  /** One line telling the admin what the override does before they commit to it. */
+  /** One line telling the admin what responding here does, before they commit to it. */
   overrideNotice?: string | null;
   /** Extra fields merged into the request body. Early Birds sends the candidate id so the server
    * can detect a stale tab and refuse, instead of deciding whichever rep happens to be current. */
@@ -37,8 +35,10 @@ const LABEL: Record<Action, string> = {
   reject: "Reject",
   return: "Return with comment",
   acknowledge: "Acknowledge (HR)",
-  overrideApprove: "Override & approve",
-  overrideReject: "Override & reject",
+  // The owner's wording, 2026-09-10: no button ever says "override", and none names the approver
+  // who has not replied. The approval TRANSFERS; the System Administrator answers.
+  overrideApprove: "Approve as System Administrator",
+  overrideReject: "Reject as System Administrator",
 };
 
 const REASON_REQUIRED: Record<Action, boolean> = {
@@ -78,7 +78,6 @@ export function DecisionActions({
   actions,
   backHref,
   extraPayload,
-  overrideApproverName,
   overrideNotice,
 }: DecisionActionsProps) {
   const router = useRouter();
@@ -112,11 +111,6 @@ export function DecisionActions({
   ).filter(([, on]) => on);
 
   if (available.length === 0) return null;
-
-  const labelFor = (action: Action) =>
-    IS_OVERRIDE[action] && overrideApproverName
-      ? `${LABEL[action]} for ${overrideApproverName}`
-      : LABEL[action];
 
   function start(action: Exclude<Pending, null>) {
     setError(null);
@@ -192,7 +186,7 @@ export function DecisionActions({
                 // moves, reached after eight sections of evidence, often on a phone.
                 className={`h-11 flex-1 px-4 text-sm font-bold transition-colors md:flex-none ${toneClass[action]}`}
               >
-                {labelFor(action)}
+                {LABEL[action]}
               </button>
             ))}
           </div>
@@ -200,8 +194,12 @@ export function DecisionActions({
           <div className="space-y-3">
             <p className="text-sm font-bold text-slate-900">
               {REASON_REQUIRED[pending]
-                ? `${labelFor(pending)} — provide a reason`
-                : `Confirm: ${labelFor(pending)} this request?`}
+                ? `${LABEL[pending]} — provide a reason`
+                : IS_OVERRIDE[pending]
+                  // "Approve as System Administrator this request?" does not parse — the label
+                  // already carries the object, so the override heading drops the trailing noun.
+                  ? `Confirm: ${LABEL[pending]}?`
+                  : `Confirm: ${LABEL[pending]} this request?`}
             </p>
             {IS_OVERRIDE[pending] && overrideNotice ? (
               <p className="border border-slate-900 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900">
@@ -266,7 +264,7 @@ export function DecisionActions({
                 onClick={() => start(action)}
                 className={`h-12 flex-1 text-sm font-bold transition-colors ${toneClass[action]}`}
               >
-                {labelFor(action)}
+                {LABEL[action]}
               </button>
             ))}
           </div>,

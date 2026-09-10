@@ -236,32 +236,36 @@ export function evaluateAdminOverride(input: {
   status: VacationRequestStatus;
   steps: VacationOverrideStep[];
 }): AdminOverrideEvaluation {
-  if (!input.isAdminActor) return unavailable("Only a Super Admin can override a stalled approver.");
-  if (input.isOwnRequest) return unavailable("You cannot override an approver on your own request.");
+  if (!input.isAdminActor) {
+    return unavailable("Only the System Administrator can respond on an unanswered request.");
+  }
+  if (input.isOwnRequest) {
+    return unavailable("The approval cannot transfer to you on your own request.");
+  }
   if (input.status === "pending_hr") {
-    return unavailable("Management has already decided — this request is waiting on HR acknowledgement.");
+    return unavailable("Management has already responded — this request is waiting on HR acknowledgement.");
   }
   if (input.status !== "pending_manager") {
-    return unavailable("This request has no stalled management approver.");
+    return unavailable("This request is not waiting on a management response.");
   }
 
   const active = resolveActiveStep(
     input.steps.map((step) => ({ order: step.order, status: step.status, stepKey: step.stepKey })),
   );
   if (!active || !isManagementStep(active.stepKey)) {
-    return unavailable("This request has no stalled management approver.");
+    return unavailable("This request is not waiting on a management response.");
   }
   const activeStep = input.steps.find(
     (step) => step.order === active.order && step.stepKey === active.stepKey,
   );
-  if (!activeStep) return unavailable("This request has no stalled management approver.");
+  if (!activeStep) return unavailable("This request is not waiting on a management response.");
 
   const activatedAt = resolveStepActivatedAt({ activeStep, steps: input.steps });
   const activatedMs = activatedAt ? Date.parse(activatedAt) : Number.NaN;
   if (!Number.isFinite(activatedMs)) {
     // Fail CLOSED. An unreadable start time means the wait cannot be measured, and an override
     // offered on an unmeasured wait is the one outcome worse than no override at all.
-    return unavailable("This approver's start time is unreadable, so the wait cannot be measured.", {
+    return unavailable("The start of this wait is unreadable, so its length cannot be measured.", {
       step: activeStep,
     });
   }
@@ -275,7 +279,7 @@ export function evaluateAdminOverride(input: {
       available: false,
       availableAt,
       daysPending: rounded,
-      reason: `The assigned approver has had this for ${rounded} of the ${ADMIN_OVERRIDE_STALL_DAYS} days that unlock an override.`,
+      reason: `Awaiting a response for ${rounded} of the ${ADMIN_OVERRIDE_STALL_DAYS} days after which the approval transfers to the System Administrator.`,
       step: activeStep,
     };
   }
@@ -358,12 +362,12 @@ export function resolveActionAvailability(input: {
   const override = input.override ?? null;
   const overrideFlag = override?.available
     ? { enabled: true, disabledReason: null }
-    : { enabled: false, disabledReason: override?.reason ?? DISABLED_NO_OVERRIDE };
+    : { enabled: false, disabledReason: override?.reason ?? DISABLED_NO_TRANSFER };
   const base = resolveBaseActionAvailability(input);
   return { ...base, overrideApprove: overrideFlag, overrideReject: overrideFlag };
 }
 
-const DISABLED_NO_OVERRIDE = "Only a Super Admin can override a stalled approver.";
+const DISABLED_NO_TRANSFER = "Only the System Administrator can respond on an unanswered request.";
 
 type BaseActionAvailability = Omit<VacationActionAvailability, "overrideApprove" | "overrideReject">;
 

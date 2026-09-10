@@ -217,12 +217,12 @@ export function runVacationAdminOverrideTests() {
     "the route must pass the override intent through, strictly",
   );
   assert.ok(
-    SERVICE.includes("only a Super Admin can override a stalled approver"),
+    SERVICE.includes("only the System Administrator can respond on an unanswered request"),
     "the service re-checks Super Admin: the button is UX, the service is the boundary",
   );
   assert.ok(
-    SERVICE.includes("an override can approve or reject the stalled step, not return it"),
-    "an override cannot return the request to the employee",
+    SERVICE.includes("a transferred approval can approve or reject, not return the request"),
+    "a transferred approval cannot return the request to the employee",
   );
   assert.ok(
     SERVICE.includes("overriddenByHrId: overrideContext ? input.actorHrId : null"),
@@ -232,16 +232,52 @@ export function runVacationAdminOverrideTests() {
     SERVICE.includes('eventType: "approval_admin_override"'),
     "an override must be findable by event type, not by parsing a comment",
   );
-  assert.ok(SERVICE.includes("[OVERRIDE]"), "the stored decision comment must name the override");
+  // ── The owner's wording, 2026-09-10 ───────────────────────────────────────
+  // He rejected the first draft ("X overrode Rasha Sabry"): no blame, no naming the approver who
+  // did not reply, and the System Administrator must be shown as the one who responded.
+  assert.ok(
+    SERVICE.includes("so its approval was transferred to the System Administrator"),
+    "the stored comment states the transfer, politely",
+  );
+  assert.ok(
+    SERVICE.includes("by ${adminName}, System Administrator."),
+    "and names the System Administrator as the responder",
+  );
+  for (const blunt of ["[OVERRIDE]", "overrode", "in place of", "in your place", "was overridden"]) {
+    assert.ok(
+      !SERVICE.includes(blunt),
+      `no user-facing string may say "${blunt}" — the owner asked for courteous wording`,
+    );
+  }
+  // The approver who did not reply is named ONCE, in the audit metadata, and never in prose.
+  assert.equal(
+    SERVICE.split("overrideContext.approverName").length - 1,
+    1,
+    "the unresponsive approver is recorded for audit but never named in a message",
+  );
+
+  const BUTTONS = readFileSync(
+    fileURLToPath(new URL("../src/components/approvals-hub/decision-actions.tsx", import.meta.url)),
+    "utf8",
+  );
+  assert.ok(
+    BUTTONS.includes('overrideApprove: "Approve as System Administrator"') &&
+      BUTTONS.includes('overrideReject: "Reject as System Administrator"'),
+    "the buttons read as the System Administrator responding, not as an override",
+  );
+  assert.ok(
+    !/Override & (approve|reject)/.test(BUTTONS),
+    "no button says Override",
+  );
 
   // The notice to the overridden approver must never become an email. This is an internal
   // workflow correction, and explicit channels only ever remove (AGENTS.md, never-fire-bulk).
-  const noticeStart = SERVICE.indexOf('title: "Your vacation approval was overridden"');
-  assert.ok(noticeStart > 0, "the overridden approver is notified at all");
+  const noticeStart = SERVICE.indexOf('title: "Approval transferred to the System Administrator"');
+  assert.ok(noticeStart > 0, "the assigned approver is still told where the request went");
   assert.ok(
     SERVICE.slice(Math.max(0, noticeStart - 1400), noticeStart).includes(
       'channels: ["in_app", "telegram", "push"]',
     ),
-    "the overridden approver is told in-app, never by email",
+    "the assigned approver is told in-app, never by email",
   );
 }

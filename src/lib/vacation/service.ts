@@ -3351,10 +3351,10 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
   let overrideContext: { approverHrId: string; approverName: string; daysPending: number } | null = null;
   if (input.override) {
     if (!input.access || !isAllVacationVisibility(input.access)) {
-      throw new Error("Forbidden: only a Super Admin can override a stalled approver.");
+      throw new Error("Forbidden: only the System Administrator can respond on an unanswered request.");
     }
     if (input.decision === "return") {
-      throw new Error("Forbidden: an override can approve or reject the stalled step, not return it to the employee.");
+      throw new Error("Forbidden: a transferred approval can approve or reject, not return the request to the employee.");
     }
     const evaluation = evaluateAdminOverride({
       isAdminActor: true,
@@ -3364,14 +3364,14 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
       steps: steps.map(toOverrideStep),
     });
     if (!evaluation.available || !evaluation.step) {
-      throw new Error(`Forbidden: ${evaluation.reason ?? "This request has no stalled management approver."}`);
+      throw new Error(`Forbidden: ${evaluation.reason ?? "This request is not waiting on a management response."}`);
     }
     const stalled = steps.find(
       (candidate) =>
         candidate.stepOrder === evaluation.step?.order && candidate.stepKey === evaluation.step?.stepKey,
     );
     if (!stalled) {
-      throw new Error("Forbidden: the stalled approval step could not be resolved.");
+      throw new Error("Forbidden: the unanswered approval step could not be resolved.");
     }
     step = stalled;
     overrideContext = {
@@ -3545,13 +3545,16 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
 
   const decisionValue = input.decision === "approve" ? "approved" : "rejected";
 
-  // An override's reason is never allowed to be blank. A rejection already demands one above; an
-  // override APPROVE is one click by the owner's design, so the system writes the sentence itself
-  // rather than making him type it. Either way the stored comment names the override, the admin
-  // and the approver who did not answer — a bare "approved" on someone else's step is the exact
-  // ambiguity this feature must not create.
+  // The wording is the owner's own (2026-09-10): state that the request went unanswered and that
+  // the approval TRANSFERRED to the System Administrator, and name him as the responder. It never
+  // says anyone was "overridden" and never names the approver who did not reply — the employee
+  // reads this comment, and so does that approver. Neutral about why, explicit about who answered.
+  //
+  // A rejection already demands a typed reason above. An approve stays one click by the owner's
+  // design, so the system writes the sentence itself rather than making him type it.
+  const adminName = findEmployeeByHrId(directory, input.actorHrId)?.displayName ?? input.actorHrId ?? "the System Administrator";
   const effectiveDecisionComment = overrideContext
-    ? `[OVERRIDE] ${findEmployeeByHrId(directory, input.actorHrId)?.displayName ?? input.actorHrId ?? "A Super Admin"} decided this step in place of ${overrideContext.approverName}, who had not responded for ${overrideContext.daysPending} days (threshold ${ADMIN_OVERRIDE_STALL_DAYS}).${text(input.decisionComment) ? ` Reason: ${text(input.decisionComment)}` : ""}`
+    ? `This request was not responded to within ${ADMIN_OVERRIDE_STALL_DAYS} days, so its approval was transferred to the System Administrator. ${input.decision === "approve" ? "Approved" : "Rejected"} by ${adminName}, System Administrator.${text(input.decisionComment) ? ` ${text(input.decisionComment)}` : ""}`
     : input.decisionComment ?? null;
 
   await recordVacationApprovalStepDecision({
@@ -3719,7 +3722,7 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
       actorHrId: input.actorHrId,
       actorLoginId: input.actorLoginId,
       eventType: "approval_admin_override",
-      message: `Super Admin overrode ${overrideContext.approverName} and ${decisionValue} this step after ${overrideContext.daysPending} days with no response.`,
+      message: `Not responded to within ${ADMIN_OVERRIDE_STALL_DAYS} days, so the approval transferred to the System Administrator and was ${decisionValue} by ${adminName}.`,
       metadata: {
         daysPending: overrideContext.daysPending,
         decision: decisionValue,
@@ -3731,17 +3734,18 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
       },
       requestId: updated.id,
     });
-    // Tell the approver their turn was taken. Explicit channels — no email: this is an internal
-    // workflow correction, and resolveBasePolicyChannels only ever REMOVES from an explicit list,
-    // so naming three non-email channels cannot reach anyone's inbox.
+    // Let the assigned approver know where the request went. Courteous by the owner's instruction:
+    // it reports the transfer, not a failing. Explicit channels — no email: this is an internal
+    // workflow notice, and resolveBasePolicyChannels only ever REMOVES from an explicit list, so
+    // naming three non-email channels cannot reach anyone's inbox.
     void notifyRecipients({
       channels: ["in_app", "telegram", "push"],
       href: `/admin/approvals/vacation/${encodeURIComponent(updated.id)}`,
-      message: `${updated.employeeName}'s ${vacationTypeLabel(updated.vacationType)} request (${updated.startDate} → ${updated.endDate}) had been waiting ${overrideContext.daysPending} days, so a Super Admin ${decisionValue} it in your place.`,
+      message: `${updated.employeeName}'s ${vacationTypeLabel(updated.vacationType)} request (${updated.startDate} → ${updated.endDate}) was not responded to within ${ADMIN_OVERRIDE_STALL_DAYS} days, so its approval was transferred to the System Administrator and ${adminName} has ${decisionValue} it. No action is needed from you.`,
       metadata: { override: true, requestId: updated.id, status: updated.status },
       recipients: [overrideContext.approverHrId],
       requestId: updated.id,
-      title: "Your vacation approval was overridden",
+      title: "Approval transferred to the System Administrator",
       type: "admin_override",
     }).catch(async (error) => {
       await insertVacationEvent({
