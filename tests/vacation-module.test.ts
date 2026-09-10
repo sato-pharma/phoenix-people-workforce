@@ -428,7 +428,12 @@ export function runVacationModuleTests() {
   assert.match(vacationReportSource, /Request ID/);
   assert.match(vacationReportSource, /formatDateTime/);
   assert.match(vacationReportSource, /Submitted/);
-  assert.match(vacationReportSource, /vacationRequestDisplayId\(row\.id\)/);
+  assert.match(vacationReportSource, /{row.requestCode}/);
+  assert.doesNotMatch(
+    vacationReportSource,
+    /vacationRequestDisplayId/,
+    "The report must read the stored request_code, never the uuid-derived VR- code: it collapsed 547 live vacations onto 414 values, so 239 of them shared an id with another request.",
+  );
   assert.match(vacationReportSource, />HR ID</);
   assert.match(vacationReportSource, />From</);
   assert.match(vacationReportSource, />To</);

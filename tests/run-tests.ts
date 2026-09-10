@@ -1060,6 +1060,8 @@ import { runAutomatedPayrollResignationCrmTests } from "./automated-payroll-resi
 import { runAutomatedPayrollLeaverBasisTests } from "./automated-payroll-leaver-basis.test.ts";
 import { runAutomatedPayrollThursdayHalfDayChargeTests } from "./automated-payroll-thursday-half-day-charge.test.ts";
 import { runAutomatedPayrollCibSheetTests } from "./automated-payroll-cib-sheet.test.ts";
+import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
+import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
 import { runAutomatedPayrollExecutiveSummaryTests } from "./automated-payroll-executive-summary.test.ts";
 import { runAutomatedPayrollAssembleTests } from "./automated-payroll-assemble.test.ts";
 import { runAutomatedPayrollSettlementSummaryTests } from "./automated-payroll-settlement-summary.test.ts";
@@ -1539,6 +1541,8 @@ import { runWeeklyUploadLineNotificationTests } from "./weekly-upload-line-notif
 import { runSalesNotificationExclusionsTests } from "./sales-notification-exclusions.test.ts";
 import { runVacationAdminOverrideTests } from "./vacation-admin-override.test.ts";
 
+import { runLeaveRequestCodesTests } from "./leave-request-codes.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -1755,6 +1759,14 @@ await runTest("automated payroll Resignations CRM deduction (unified month-days 
 await runTest("automated payroll leaver basis (ONE confirmed days-worked + ONE net day rate, shared by the Resignations and Resignations CRM tabs)", runAutomatedPayrollLeaverBasisTests);
 await runTest("automated payroll Thursday half-day reaches the CHARGE (owner rule 2026-08-02; the wizard multiplied a day rate by the flagged-date count)", runAutomatedPayrollThursdayHalfDayChargeTests);
 await runTest("automated payroll CIB bank-transfer sheet (schema + filtering + styling)", runAutomatedPayrollCibSheetTests);
+await runTest(
+  "automated payroll: every payable row reaches a bank file or is named",
+  runAutomatedPayrollBankCoverageTests,
+);
+await runTest(
+  "automated payroll: carry-forward settles at publish, and a held person leaves a record",
+  runAutomatedPayrollSettlementAndHeldRecordTests,
+);
 await runTest("automated payroll Executive Summary Dashboard (headcount + value vs last month)", runAutomatedPayrollExecutiveSummaryTests);
 await runTest("automated payroll assembleRows + reconcile (each deduction counted exactly once)", runAutomatedPayrollAssembleTests);
 await runTest("automated payroll settlement summary (the four figures reconcile with what is actually paid, and follow the edit)", runAutomatedPayrollSettlementSummaryTests);
@@ -5042,6 +5054,8 @@ await runTest(
   "a Super Admin can decide a management step only after its approver has held it two calendar days, and the row records who overrode it",
   runVacationAdminOverrideTests,
 );
+
+await runTest("leave request codes (EXC-/VAC- stored, unique, backfilled, immutable)", runLeaveRequestCodesTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

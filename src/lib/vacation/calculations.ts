@@ -110,13 +110,6 @@ export function vacationDayPartLabel(value: string | null | undefined) {
   return VACATION_DAY_PARTS.find((option) => option.value === value)?.label ?? "Full day";
 }
 
-export function vacationRequestDisplayId(value: string | null | undefined) {
-  const hex = String(value ?? "").replace(/[^a-fA-F0-9]/g, "");
-  const seed = Number.parseInt(hex.slice(-6) || hex.slice(0, 6) || "0", 16);
-  const numericCode = Number.isFinite(seed) ? (seed % 900) + 100 : 100;
-  return `VR-${String(numericCode).padStart(3, "0")}`;
-}
-
 export function calculateVacationDurationDays(input: {
   dayPart: VacationDayPart;
   endDate: string;
