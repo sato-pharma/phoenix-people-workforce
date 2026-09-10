@@ -112,7 +112,29 @@ export function VacationRequestDetail({ detail, backHref }: Props) {
               commentField="decisionComment"
               actions={detail.actions}
               backHref={backHref}
+              // The four the owner asked for, as one set (2026-09-10). Only an HR viewer gets the
+              // "as HR" naming — a manager deciding a vacation is not HR and must not read as it.
+              labelOverrides={
+                detail.viewerStepKind === "hr"
+                  ? { acknowledge: "Acknowledge as HR", reject: "Reject as HR" }
+                  : undefined
+              }
+              disabledReasons={detail.viewerStepKind === "hr" ? detail.actionReasons : undefined}
+              overrideNotice={
+                detail.adminOverride?.available
+                  // Whole days on screen. The exact fraction is what the rule measures and what
+                  // the audit event keeps; "2.48 days" in a sentence just reads like a machine.
+                  ? `This request has not been responded to for ${Math.floor(detail.adminOverride.daysPending)} days, so its approval has transferred to you as System Administrator. The record will show you as the responder. The request then continues to the next approver as normal.`
+                  : null
+              }
             />
+          ) : null}
+          {detail.adminOverride && !detail.adminOverride.available && detail.adminOverride.reason && detail.adminOverride.availableAt ? (
+            // The wait, visible before it unlocks. Without this the button simply is not there and
+            // HR cannot tell a request that is merely young from one the rule refuses to touch.
+            <p className="border border-phx-line bg-white px-4 py-3 text-phx-xs font-semibold text-slate-600">
+              {detail.adminOverride.reason}
+            </p>
           ) : null}
         </div>
       </div>

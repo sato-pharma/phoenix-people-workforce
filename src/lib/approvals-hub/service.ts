@@ -31,7 +31,9 @@ import type { EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning
 import { isDistrictManagerPlanTitle, resolvePlanCeoDecision } from "@/lib/weekly-planning/plan-v1";
 import type {
   VacationActionAvailability,
+  VacationActionButton,
   VacationActionCenterRow,
+  VacationAdminOverrideState,
   VacationRequestRecord,
   VacationRequestStatus,
 } from "@/lib/vacation/types";
@@ -143,14 +145,47 @@ export type ApprovalActionFlags = {
   reject: boolean;
   return: boolean;
   acknowledge: boolean;
+  overrideApprove: boolean;
+  overrideReject: boolean;
 };
 
-const NO_ACTIONS: ApprovalActionFlags = { approve: false, reject: false, return: false, acknowledge: false };
+const NO_ACTIONS: ApprovalActionFlags = {
+  approve: false,
+  reject: false,
+  return: false,
+  acknowledge: false,
+  overrideApprove: false,
+  overrideReject: false,
+};
 
 function anyActionEnabled(a: VacationActionAvailability): boolean {
   return Boolean(
-    a.approve?.enabled || a.reject?.enabled || a.return?.enabled || a.acknowledge?.enabled || a.assign?.enabled,
+    a.approve?.enabled ||
+      a.reject?.enabled ||
+      a.return?.enabled ||
+      a.acknowledge?.enabled ||
+      a.assign?.enabled ||
+      // Without these two a row whose ONLY live action is the override would be classed
+      // read-only, and the button would be computed and then thrown away.
+      a.overrideApprove?.enabled ||
+      a.overrideReject?.enabled,
   );
+}
+
+/**
+ * Why each button is off, for the ones we still want SHOWN while off.
+ *
+ * `ApprovalActionFlags` is a plain boolean per action, shared with excuses and weekly plans, so it
+ * cannot carry a reason. The owner asked to see all four vacation buttons at once (2026-09-10) —
+ * a greyed button with no explanation is worse than no button, so the reasons travel beside them.
+ */
+function toActionReasons(a: VacationActionAvailability): Partial<Record<VacationActionButton, string | null>> {
+  return {
+    acknowledge: a.acknowledge?.disabledReason ?? null,
+    overrideApprove: a.overrideApprove?.disabledReason ?? null,
+    overrideReject: a.overrideReject?.disabledReason ?? null,
+    reject: a.reject?.disabledReason ?? null,
+  };
 }
 
 function toActionFlags(a: VacationActionAvailability): ApprovalActionFlags {
@@ -159,6 +194,8 @@ function toActionFlags(a: VacationActionAvailability): ApprovalActionFlags {
     reject: Boolean(a.reject?.enabled),
     return: Boolean(a.return?.enabled),
     acknowledge: Boolean(a.acknowledge?.enabled),
+    overrideApprove: Boolean(a.overrideApprove?.enabled),
+    overrideReject: Boolean(a.overrideReject?.enabled),
   };
 }
 
@@ -244,6 +281,10 @@ export async function getVacationApprovalsForResponder(access: AccessContext): P
 
 /** Shape a legacy sick-leave record into the Action-Center row form (single-step, best-effort). */
 function sickRecordAsActionRow(record: VacationRequestRecord, actionable: boolean): VacationActionCenterRow {
+  // Sick leave is the one type still on the LEGACY PARALLEL flow — it has no ordered approval
+  // steps, so the stalled-approver override (which decides "the active management step") has
+  // nothing to point at. Off on both branches, deliberately.
+  const noOverride = { enabled: false, disabledReason: "Sick leave does not use the stepped approval flow." };
   const availability: VacationActionAvailability = actionable
     ? {
         approve: { enabled: true, disabledReason: null },
@@ -251,6 +292,8 @@ function sickRecordAsActionRow(record: VacationRequestRecord, actionable: boolea
         acknowledge: { enabled: false, disabledReason: null },
         assign: { enabled: false, disabledReason: null },
         return: { enabled: true, disabledReason: null },
+        overrideApprove: noOverride,
+        overrideReject: noOverride,
       }
     : {
         approve: { enabled: false, disabledReason: "Not your turn." },
@@ -258,6 +301,8 @@ function sickRecordAsActionRow(record: VacationRequestRecord, actionable: boolea
         acknowledge: { enabled: false, disabledReason: "Not your turn." },
         assign: { enabled: false, disabledReason: "Not your turn." },
         return: { enabled: false, disabledReason: "Not your turn." },
+        overrideApprove: noOverride,
+        overrideReject: noOverride,
       };
   return {
     ...record,
@@ -265,6 +310,7 @@ function sickRecordAsActionRow(record: VacationRequestRecord, actionable: boolea
     assignedActorName: record.managerName,
     assignedActorTitle: null,
     actionAvailability: availability,
+    adminOverride: null,
     slaAgeDays: record.slaStatus?.businessDaysPending ?? 0,
     viewerStepKind: "management",
   };
@@ -486,6 +532,11 @@ export type VacationApprovalDetail = {
   typeLabel: string;
   steps: ApprovalTimelineStep[];
   actions: ApprovalActionFlags;
+  /** Disabled reasons for the buttons that stay visible while off. */
+  actionReasons: Partial<Record<VacationActionButton, string | null>>;
+  adminOverride: VacationAdminOverrideState | null;
+  /** Which seat the viewer occupies on this request — decides whether buttons read "as HR". */
+  viewerStepKind: "management" | "hr" | "none";
   stageLabel: string | null;
   slaAgeDays: number;
   readOnly: boolean;
@@ -548,6 +599,9 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
         decisionComment: step.decisionComment,
       })),
       actions: actionable && !own ? toActionFlags(row.actionAvailability) : NO_ACTIONS,
+      actionReasons: own ? {} : toActionReasons(row.actionAvailability),
+      adminOverride: own ? null : row.adminOverride,
+      viewerStepKind: own ? "none" : row.viewerStepKind,
       stageLabel: row.stageLabel ?? null,
       slaAgeDays: row.slaAgeDays,
       readOnly: !actionable || own,
@@ -571,6 +625,9 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
       typeLabel: "",
       steps: [],
       actions: NO_ACTIONS,
+      actionReasons: {},
+      adminOverride: null,
+      viewerStepKind: "none",
       stageLabel: null,
       slaAgeDays: 0,
       readOnly: true,
@@ -586,6 +643,9 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
     typeLabel: vacationTypeLabel(record.vacationType),
     steps: await fetchVacationStepsDirect(id),
     actions: NO_ACTIONS,
+    actionReasons: {},
+    adminOverride: null,
+    viewerStepKind: "none",
     stageLabel: record.stageLabel ?? null,
     slaAgeDays: record.slaStatus?.businessDaysPending ?? 0,
     readOnly: true,
@@ -1827,10 +1887,11 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
   const canRequestVisitDetails = status === "submitted" && !own && isAssignedManager && hasFieldItems;
   const actionable = Boolean(decisionStage) || canAcknowledge || isEditRequestDecision;
 
+  // The override is a vacation-only capability; weekly plans share the flag shape, not the rule.
   const actions: ApprovalActionFlags = decisionStage
-    ? { approve: true, reject: true, return: true, acknowledge: false }
+    ? { approve: true, reject: true, return: true, acknowledge: false, overrideApprove: false, overrideReject: false }
     : canAcknowledge
-      ? { approve: false, reject: false, return: false, acknowledge: true }
+      ? { approve: false, reject: false, return: false, acknowledge: true, overrideApprove: false, overrideReject: false }
       : NO_ACTIONS;
 
   const items = mapPlanItemsToCalendar(rawItems);
