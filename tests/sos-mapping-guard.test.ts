@@ -142,7 +142,7 @@ function everyAudienceKeyIsFullyRegistered() {
 }
 
 function theLinkGoesToTheScreenThatCanReleaseAHold() {
-  assert.equal(MAPPING_GUARD_URL, "/admin/field-sales/mapping-guard");
+  assert.equal(MAPPING_GUARD_URL, "/sales/mapping-guard");
   assert.equal(MAPPING_GUARD_EVENT_TYPE, "sos_mapping_guard_held");
 }
 
@@ -198,7 +198,7 @@ function theMigrationKeepsItsLoadBearingClauses() {
  * Server-side, on the page AND on the route: a hidden sidebar link is UX only.
  */
 function theReviewScreenIsGatedOnTheServer() {
-  const page = readFileSync(join(ROOT, "app/(admin)/admin/field-sales/mapping-guard/page.tsx"), "utf8");
+  const page = readFileSync(join(ROOT, "app/(admin)/sales/mapping-guard/page.tsx"), "utf8");
   assert.match(page, /await assertPermission\(accessContext, "sales", "import"\)/);
   assert.match(page, /accessContext\.role !== "Super Admin" && accessContext\.scope !== "system"/);
 
@@ -227,9 +227,28 @@ function theScreenFitsByConstruction() {
 
 function theSidebarLinkMatchesTheGate() {
   const nav = readFileSync(join(ROOT, "src/config/system-navigation.ts"), "utf8");
-  const entry = nav.slice(nav.indexOf('href: "/admin/field-sales/mapping-guard"'));
+  const entry = nav.slice(nav.indexOf('href: "/sales/mapping-guard"'));
   assert.ok(entry.length > 0, "the screen must be reachable — a page nobody can navigate to is a page nobody uses");
-  assert.match(entry.slice(0, 700), /roles: \["Super Admin"\]/, "the link must not offer the screen to somebody the page will redirect");
+
+  /*
+   * It has to sit in the array the Source of Sales hub actually renders.
+   *
+   * The first attempt put it in `salesAnalyticsPageItems`, which Ruling 11 deliberately unwired, so
+   * the link existed and appeared nowhere. CI caught it, and nothing else would have: the page
+   * answered fine by URL. Anchoring on the neighbouring entry is what makes this assertion about
+   * being REACHABLE rather than merely about being written down somewhere.
+   */
+  const hub = nav.slice(nav.indexOf("export const sourceOfSalesPageItems"));
+  const hubEnd = hub.indexOf("] as const satisfies");
+  assert.ok(
+    hub.slice(0, hubEnd).includes('href: "/sales/mapping-guard"'),
+    "the entry must live in sourceOfSalesPageItems — salesAnalyticsPageItems is unwired by Ruling 11 and renders nowhere",
+  );
+  assert.match(
+    entry.slice(0, 900),
+    /excludedRoles: \["SFE Manager"\]/,
+    "the link must not offer the screen to somebody the page will redirect",
+  );
 }
 
 export async function runSosMappingGuardTests() {

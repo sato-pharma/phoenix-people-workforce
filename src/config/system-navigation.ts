@@ -2516,6 +2516,19 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     excludedRoles: ["SFE Manager"],
     permissions: [{ action: "read", resource: "sales" }],
   },
+  {
+    href: "/sales/mapping-guard",
+    icon: ShieldAlert,
+    label: "Mapping Guard",
+    description: "Customer, brick and area re-mappings stopped for review.",
+    // Same Super-Admin/system-scope-only boundary as Mapping Database above, and for a stronger
+    // reason: releasing a hold is an owner decision by construction, since the guard fires
+    // precisely when somebody else's change was about to replace one of his. `sales:import` is held
+    // by Super Admin and SFE Manager, so excluding SFE Manager leaves exactly Super Admin. The page
+    // enforces the same boundary itself — this list is UX, that gate is the security boundary.
+    excludedRoles: ["SFE Manager"],
+    permissions: [{ action: "import", resource: "sales" }],
+  },
 ] as const satisfies readonly AdminToolsPageItem[];
 
 // ── Sales Analytics cards — RETIRED, DELIBERATELY UNWIRED ──────────────────────────
@@ -2612,17 +2625,6 @@ export const salesAnalyticsPageItems: readonly AdminToolsPageItem[] = [
     description: "Company-scope Med-Rep performance dashboard.",
     permissions: [{ resource: "sales" }],
     roles: ["Super Admin", "CEO", "SFE Manager"],
-  },
-  {
-    href: "/admin/field-sales/mapping-guard",
-    icon: ShieldAlert,
-    label: "Mapping Guard",
-    description: "Customer, brick and area re-mappings stopped for review.",
-    permissions: [{ resource: "sales" }],
-    // Super Admin alone, matching the page's own server-side gate. Releasing a hold is an owner
-    // decision by construction: the guard fires precisely when somebody else's change was about to
-    // replace one of his. This list is UX only; the gate inside the page is the security boundary.
-    roles: ["Super Admin"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 

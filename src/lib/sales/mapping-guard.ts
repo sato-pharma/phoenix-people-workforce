@@ -34,7 +34,7 @@ export const MAPPING_GUARD_AUDIENCE = "sos_mapping_guard_alert" as const;
  * Deliberately NOT the Mapping Database editor. That screen shows what the map says now, which for
  * a held change is precisely the thing that did not happen.
  */
-export const MAPPING_GUARD_URL = "/admin/field-sales/mapping-guard";
+export const MAPPING_GUARD_URL = "/sales/mapping-guard";
 
 /**
  * How wide a batch is.
