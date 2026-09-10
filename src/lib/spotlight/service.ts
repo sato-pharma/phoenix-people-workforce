@@ -41,6 +41,7 @@ function normaliseSelection(selection: SpotlightSelection): SpotlightSelection {
     ...selection,
     filters: {
       ...selection.filters,
+      excludeVacant: selection.filters.excludeVacant === true,
       // An empty line filter means the three tracked lines, never "everything the data holds".
       // Head Office carries no target and ~90% of weekly value; unfiltered it would win every
       // value ranking and distort every achievement denominator it touched.

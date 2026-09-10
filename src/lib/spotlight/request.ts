@@ -98,6 +98,7 @@ export function parseSelection(body: unknown): SpotlightSelection {
       areas: stringList(filtersInput.areas, "filters.areas"),
       hrIds: stringList(filtersInput.hrIds, "filters.hrIds"),
       seatIds: stringList(filtersInput.seatIds, "filters.seatIds"),
+      excludeVacant: filtersInput.excludeVacant === true,
     },
     rankBy: oneOf(input.rankBy, RANK_BY, "rankBy", "achievement"),
     direction: oneOf(input.direction, DIRECTIONS, "direction", "top"),

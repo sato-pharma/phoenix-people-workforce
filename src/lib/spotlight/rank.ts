@@ -344,6 +344,9 @@ export function rowsFromBuckets(buckets: Map<string, Bucket>, options: BuildOpti
     const described = describe(bucket, kind, org, lineNames, regionNames, areaNames);
     if (seatIds && !seatIds.has(bucket.key.toLowerCase())) continue;
     if (hrIds && !(described.hrId && hrIds.has(hrKey(described.hrId)))) continue;
+    // Checked HERE, not on the row: a row does not know whether the seat it climbs to is occupied
+    // until the tree has been walked and the occupant looked up.
+    if (filters.excludeVacant && described.isVacant) continue;
 
     const summary = summariseMonths(bucket.months);
     out.push({
