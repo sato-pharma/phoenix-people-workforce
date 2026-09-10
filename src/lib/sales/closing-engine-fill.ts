@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 
-import type { ReviewSheet } from "./closing-review-sheets";
+import type { ReviewSheet, ReviewSheetRowKind } from "./closing-review-sheets";
 import {
   CLOSING_ENGINE_TEMPLATE_MANIFEST,
   closingEngineTemplateBytes,
@@ -2642,6 +2642,22 @@ const INDEX_SECTIONS: ReadonlyArray<{ band: string; entries: ReadonlyArray<{ she
 const INDEX_FOOTNOTE =
   "The three matrix pages are pivot tables: on a phone they open flat, without the Region slicer or the fold.";
 
+/** The band an appended sheet is listed under when it names none of its own. */
+const DEFAULT_APPENDED_BAND = "Performance review";
+
+/** Group the appended sheets into contents-page sections, in the order their bands first appear. */
+function appendedSections(
+  sheets: ReviewSheet[],
+): Array<{ band: string; entries: Array<{ sheet: string; what: string }> }> {
+  const bands = new Map<string, Array<{ sheet: string; what: string }>>();
+  for (const sheet of sheets) {
+    const band = sheet.band ?? DEFAULT_APPENDED_BAND;
+    if (!bands.has(band)) bands.set(band, []);
+    bands.get(band)?.push({ sheet: sheet.name, what: sheet.what });
+  }
+  return [...bands.entries()].map(([band, entries]) => ({ band, entries }));
+}
+
 /**
  * The next free `xl/worksheets/sheetN.xml`, read from the package.
  *
@@ -2717,16 +2733,16 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   );
   const sections = [
     ...INDEX_SECTIONS,
-    // The Performance Review's sheets are built at export time from the month's own data, so they
-    // cannot sit in the literal above. They get their OWN band rather than being appended to
-    // "Behind the numbers": they answer a different question, and when the review is not included
-    // the band disappears with them instead of leaving a heading over nothing.
-    ...(extra.length > 0
-      ? [{
-          band: "Performance review",
-          entries: extra.map((sheet) => ({ sheet: sheet.name, what: sheet.what })),
-        }]
-      : []),
+    // The appended sheets are built at export time from the month's own data, so they cannot sit in
+    // the literal above. They get their OWN bands rather than being added to "Behind the numbers":
+    // they answer different questions, and when one is not included its heading disappears with it
+    // instead of standing over nothing.
+    //
+    // Grouped by the band each sheet names, in the order the bands first appear, so a caller that
+    // appends a second kind of sheet does not have to file it under the review's heading. A sheet
+    // that names none is the review's, which is where every sheet this mechanism was built for
+    // belongs.
+    ...appendedSections(extra),
   ]
     .map((section) => ({ ...section, entries: section.entries.filter((entry) => present.has(entry.sheet)) }))
     .filter((section) => section.entries.length > 0);
@@ -2999,6 +3015,92 @@ async function addReviewEmblems(zip: JSZip, sheets: ReviewSheet[]): Promise<stri
 /** The height of the review sheets' own masthead row, in points. Written by `addReviewSheets`. */
 const REVIEW_BAND_PT = 33.95;
 
+/**
+ * The bar style for a `group` or `total` row, in the three formats a row needs.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * THE FONT, THE FILL AND THE BORDER ARE THE OWNER'S — only the COMBINATION is written here. Every
+ * id below is read off `REVIEW_STYLE.header`, the blue column band the template already draws, so a
+ * bar wears the same blue as the headings above it and follows any restyle of the template for
+ * free. `applyExecutivePalette` substitutes colours by rgb VALUE later, so these move with it too.
+ *
+ * The combination cannot be borrowed, and that is the whole reason this exists: the header xf
+ * carries `numFmtId="0"`, so a value cell pointed at it prints 10595778 with no separators and a
+ * ratio prints 0.28. The three formats here are the header's font, fill and border with the money
+ * and percentage formats read off `REVIEW_STYLE.money` and `REVIEW_STYLE.percent` — the same two
+ * the detail rows use, so a bar and the rows under it read as one column of numbers.
+ *
+ * Null when the template's own styles cannot be found, in which case the bars fall back to the
+ * ordinary detail styling: a flatter sheet, never a broken one.
+ */
+type ReviewBarStyles = { money: string; percent: string; text: string };
+
+async function addReviewBarStyles(zip: JSZip): Promise<ReviewBarStyles | null> {
+  const file = zip.file("xl/styles.xml");
+  if (!file) return null;
+  let xml = await file.async("string");
+
+  const block = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(xml)?.[1];
+  if (!block) return null;
+  const all = [...block.matchAll(/<xf\b[^>]*?\/>|<xf\b[^>]*?>[\s\S]*?<\/xf>/g)].map((one) => one[0]);
+  const header = all[Number(REVIEW_STYLE.header)];
+  const money = all[Number(REVIEW_STYLE.money)];
+  const percent = all[Number(REVIEW_STYLE.percent)];
+  if (!header || !money || !percent) return null;
+
+  const attr = (xf: string, name: string): string => new RegExp(`\\b${name}="([^"]*)"`).exec(xf)?.[1] ?? "0";
+  const fontId = attr(header, "fontId");
+  const fillId = attr(header, "fillId");
+  const borderId = attr(header, "borderId");
+
+  const bar = (numFmtId: string, horizontal: string) =>
+    `<xf numFmtId="${numFmtId}" fontId="${fontId}" fillId="${fillId}" borderId="${borderId}" xfId="0"`
+    + ` applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">`
+    + `<alignment horizontal="${horizontal}" vertical="center"/></xf>`;
+
+  const written: string[] = [];
+  for (const [numFmtId, horizontal] of [
+    ["0", "left"],
+    [attr(money, "numFmtId"), "right"],
+    [attr(percent, "numFmtId"), "right"],
+  ] as const) {
+    const added = appendCellXf(xml, bar(numFmtId, horizontal));
+    if (added.index <= 0) return null;
+    xml = added.xml;
+    written.push(String(added.index));
+  }
+
+  zip.file("xl/styles.xml", xml);
+  return { money: written[1]!, percent: written[2]!, text: written[0]! };
+}
+
+/**
+ * The rows a zebra stripe may cover, as contiguous `A5:K9`-style ranges.
+ *
+ * A bar carries its own solid fill, and a conditional format BEATS a cell's own fill — so a stripe
+ * whose range runs over the bars paints every second one pale blue and the sheet's blocks stop
+ * reading as blocks. Excel takes a space-separated list of ranges in one `sqref`, so the stripe is
+ * pointed at the detail rows only rather than at everything between the first and the last.
+ *
+ * Returns an empty list when nothing is striped, and the caller then writes no rule at all: an
+ * empty `sqref` is a schema violation, and Excel answers one by offering to repair the file.
+ */
+function stripeRanges(kinds: ReviewSheetRowKind[], firstRow: number, lastColumn: string): string[] {
+  const ranges: string[] = [];
+  let start: number | null = null;
+  kinds.forEach((kind, index) => {
+    const row = firstRow + index;
+    if (kind === "detail") {
+      if (start === null) start = row;
+      return;
+    }
+    if (start !== null) ranges.push(`A${start}:${lastColumn}${row - 1}`);
+    start = null;
+  });
+  if (start !== null) ranges.push(`A${start}:${lastColumn}${firstRow + kinds.length - 1}`);
+  return ranges;
+}
+
 async function addReviewSheets(zip: JSZip, sheets: ReviewSheet[]): Promise<ReviewSheet[]> {
   if (sheets.length === 0) return [];
 
@@ -3015,6 +3117,11 @@ async function addReviewSheets(zip: JSZip, sheets: ReviewSheet[]): Promise<Revie
   // worksheets by file name and the contents page has already taken one.
   let nextPart = Number(/sheet(\d+)\.xml$/.exec(nextWorksheetPart(zip))?.[1] ?? 1);
   const zebra = await zebraDxf(zip);
+  // Once for the whole run, not once per sheet: each call appends to `styles.xml`, so asking per
+  // sheet would write three identical formats and leave two of them referenced by nothing.
+  const bar = sheets.some((sheet) => (sheet.rowKinds ?? []).some((kind) => kind !== "detail"))
+    ? await addReviewBarStyles(zip)
+    : null;
   let nextRel = Math.max(0, ...[...rels.matchAll(/Id="rId(\d+)"/g)].map((m) => Number(m[1]))) + 1;
   let nextSheetId = Math.max(0, ...[...workbook.matchAll(/sheetId="(\d+)"/g)].map((m) => Number(m[1]))) + 1;
 
@@ -3050,20 +3157,37 @@ async function addReviewSheets(zip: JSZip, sheets: ReviewSheet[]): Promise<Revie
         + "</row>",
     );
 
+    // What each row IS. A sheet that says nothing is all detail, which is the review's own three.
+    const kinds: ReviewSheetRowKind[] = sheet.rows.map((_row, index) => sheet.rowKinds?.[index] ?? "detail");
+    const hasBars = bar !== null && kinds.some((kind) => kind !== "detail");
+    // Only where there is something to fold. `outlineLevel` on every row of a sheet with no bars
+    // gives the reader a fold control that collapses the whole table into nothing.
+    const folds = hasBars && sheet.grouped === true;
+
     sheet.rows.forEach((record, index) => {
       const rowNumber = 5 + index;
+      const kind = kinds[index]!;
+      const isBar = hasBars && kind !== "detail";
       const cells = sheet.headers.map((heading, column) => {
         const ref = `${columnLetters(column + 1)}${rowNumber}`;
         const value = record[column] ?? null;
-        if (value === null || value === "") return `<c r="${ref}" s="${REVIEW_STYLE.text}"/>`;
+        const plain = isBar ? bar!.text : REVIEW_STYLE.text;
+        if (value === null || value === "") return `<c r="${ref}" s="${plain}"/>`;
         if (typeof value === "number") {
-          return Number.isFinite(value)
-            ? `<c r="${ref}" s="${reviewColumnStyle(heading)}"><v>${value}</v></c>`
-            : `<c r="${ref}" s="${REVIEW_STYLE.text}"/>`;
+          if (!Number.isFinite(value)) return `<c r="${ref}" s="${plain}"/>`;
+          // A bar's numbers keep the DETAIL row's format and take only the bar's font, fill and
+          // border. Pointing them at the bar's text style instead prints 10595778 unseparated and a
+          // ratio as 0.28, directly under a column of figures that are formatted properly.
+          const numeric = reviewColumnStyle(heading);
+          const barNumeric = numeric === REVIEW_STYLE.percent ? bar?.percent : bar?.money;
+          return `<c r="${ref}" s="${isBar ? barNumeric ?? numeric : numeric}"><v>${value}</v></c>`;
         }
-        return inline(ref, REVIEW_STYLE.text, String(value));
+        return inline(ref, plain, String(value));
       });
-      rows.push(`<row r="${rowNumber}">${cells.join("")}</row>`);
+      // The margin's fold controls belong to the DETAIL rows; the bar above them stays at level 0,
+      // which is what makes it the summary rather than part of what it summarises.
+      const outline = folds && kind === "detail" ? ' outlineLevel="1"' : "";
+      rows.push(`<row r="${rowNumber}"${outline}>${cells.join("")}</row>`);
     });
 
     const lastRow = 4 + sheet.rows.length;
@@ -3084,16 +3208,35 @@ async function addReviewSheets(zip: JSZip, sheets: ReviewSheet[]): Promise<Revie
     // HEADINGS scroll away. On a fifty-row rollup that means reading a column of numbers with no
     // idea which month it is. Row 4 is the heading row on all three, so the split goes below it —
     // which is where every sibling in the template puts it.
-    const stripe = zebra === null
+    //
+    // ⚠ A BAR IS NEVER STRIPED. A conditional format wins over a cell's own fill, so a range that
+    // ran from the first row to the last would paint every second bar pale blue and the blocks stop
+    // reading as blocks. `stripeRanges` hands back the detail runs only, space-separated, which is
+    // one `sqref` as far as Excel is concerned.
+    const striped = hasBars
+      ? stripeRanges(kinds, 5, columnLetters(columns))
+      : [`A5:${columnLetters(columns)}${Math.max(lastRow, 5)}`];
+    const stripe = zebra === null || striped.length === 0
       ? ""
-      : `<conditionalFormatting sqref="A5:${columnLetters(columns)}${Math.max(lastRow, 5)}">`
+      : `<conditionalFormatting sqref="${striped.join(" ")}">`
         + `<cfRule type="expression" dxfId="${zebra}" priority="1"><formula>MOD(ROW()-5,2)=1</formula></cfRule>`
         + "</conditionalFormatting>";
+
+    // THE ORDER INSIDE `sheetPr` IS FIXED BY THE SCHEMA — tabColor, then outlinePr, then
+    // pageSetUpPr — and `applyTabColours` inserts its `tabColor` immediately after the open tag
+    // later on, which lands it in front of both of these. Emitting `outlinePr` after `pageSetUpPr`
+    // here is a schema violation, and Excel answers one by offering to repair the file.
+    //
+    // `summaryBelow="0"` is the load-bearing attribute: Excel's default puts a block's summary row
+    // BELOW its detail, and the bars here sit above. Left at the default, every minus sign in the
+    // margin points at the block after the one it collapses.
+    const outlinePr = folds ? `<outlinePr summaryBelow="0" summaryRight="0"/>` : "";
+    const outlineLevel = folds ? ` outlineLevelRow="1"` : "";
 
     zip.file(
       part,
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${columnLetters(columns)}${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A5" sqref="A5"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>${cols}</cols><sheetData>${rows.join("")}</sheetData>${stripe}<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`,
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr>${outlinePr}<pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${columnLetters(columns)}${lastRow}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A5" sqref="A5"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"${outlineLevel}/><cols>${cols}</cols><sheetData>${rows.join("")}</sheetData>${stripe}<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`,
     );
 
     types = types.replace(
