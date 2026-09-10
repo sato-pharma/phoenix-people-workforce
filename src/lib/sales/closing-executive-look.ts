@@ -492,6 +492,9 @@ export const EXECUTIVE_TAB_COLOURS: ReadonlyMap<string, string> = new Map([
   ["District Managers", EXECUTIVE_PALETTE.primaryNavy],
   ["Area by Month", EXECUTIVE_PALETTE.primaryNavy],
   ["Product by Month", EXECUTIVE_PALETTE.primaryNavy],
+  // Against the quarter — the last section, so it takes the alternate navy and the strip still
+  // shows where the review ends.
+  ["Gap to Quarter Target", EXECUTIVE_PALETTE.secondaryNavy],
   // The engine's own working sheet.
   ["Data", EXECUTIVE_PALETTE.mutedText],
 ]);

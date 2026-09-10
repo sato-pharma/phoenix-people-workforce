@@ -2642,6 +2642,22 @@ const INDEX_SECTIONS: ReadonlyArray<{ band: string; entries: ReadonlyArray<{ she
 const INDEX_FOOTNOTE =
   "The three matrix pages are pivot tables: on a phone they open flat, without the Region slicer or the fold.";
 
+/** The band an appended sheet is listed under when it names none of its own. */
+const DEFAULT_APPENDED_BAND = "Performance review";
+
+/** Group the appended sheets into contents-page sections, in the order their bands first appear. */
+function appendedSections(
+  sheets: ReviewSheet[],
+): Array<{ band: string; entries: Array<{ sheet: string; what: string }> }> {
+  const bands = new Map<string, Array<{ sheet: string; what: string }>>();
+  for (const sheet of sheets) {
+    const band = sheet.band ?? DEFAULT_APPENDED_BAND;
+    if (!bands.has(band)) bands.set(band, []);
+    bands.get(band)?.push({ sheet: sheet.name, what: sheet.what });
+  }
+  return [...bands.entries()].map(([band, entries]) => ({ band, entries }));
+}
+
 /**
  * The next free `xl/worksheets/sheetN.xml`, read from the package.
  *
@@ -2717,16 +2733,16 @@ async function addIndexSheet(zip: JSZip, fill: ClosingEngineFill, extra: ReviewS
   );
   const sections = [
     ...INDEX_SECTIONS,
-    // The Performance Review's sheets are built at export time from the month's own data, so they
-    // cannot sit in the literal above. They get their OWN band rather than being appended to
-    // "Behind the numbers": they answer a different question, and when the review is not included
-    // the band disappears with them instead of leaving a heading over nothing.
-    ...(extra.length > 0
-      ? [{
-          band: "Performance review",
-          entries: extra.map((sheet) => ({ sheet: sheet.name, what: sheet.what })),
-        }]
-      : []),
+    // The appended sheets are built at export time from the month's own data, so they cannot sit in
+    // the literal above. They get their OWN bands rather than being added to "Behind the numbers":
+    // they answer different questions, and when one is not included its heading disappears with it
+    // instead of standing over nothing.
+    //
+    // Grouped by the band each sheet names, in the order the bands first appear, so a caller that
+    // appends a second kind of sheet does not have to file it under the review's heading. A sheet
+    // that names none is the review's, which is where every sheet this mechanism was built for
+    // belongs.
+    ...appendedSections(extra),
   ]
     .map((section) => ({ ...section, entries: section.entries.filter((entry) => present.has(entry.sheet)) }))
     .filter((section) => section.entries.length > 0);

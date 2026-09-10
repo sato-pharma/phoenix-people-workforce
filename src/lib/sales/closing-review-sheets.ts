@@ -22,6 +22,16 @@ import type { EngineValue } from "./closing-engine-fill";
 
 /** A sheet this module asks the filler to create, declaratively — no OOXML in here. */
 export type ReviewSheet = {
+  /**
+   * The contents page heading this sheet is listed under. Absent means "Performance review", which
+   * is where every sheet built here belongs.
+   *
+   * It exists because the appended-sheet mechanism is no longer the review's alone — the quarter
+   * gap tab rides it too, and listing that under "Performance review" would file it under a heading
+   * that describes a different question. A band with no sheets is never printed, so a sheet that
+   * names its own band takes its heading with it when it is absent.
+   */
+  band?: string;
   /** Tab name. Must not collide with a sheet the engine template already has. */
   name: string;
   /** A1, in the engine's own "Title   Month   Line   ·   what it is" shape. */
@@ -45,8 +55,14 @@ const money = (value: number | null | undefined): EngineValue =>
 const ratio = (value: number | null | undefined): EngineValue =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
-/** `2026-08` as `Aug 2026`, the way the engine's own month columns read. */
-function monthLabel(period: string): string {
+/**
+ * `2026-08` as `Aug 2026`, the way the engine's own month columns read.
+ *
+ * Exported because the quarter gap tab sits beside these three and its masthead has to read
+ * identically — two spellings of the same month on adjacent tabs is the kind of difference a reader
+ * stops to work out.
+ */
+export function closingSheetMonthLabel(period: string): string {
   const [year, month] = period.split("-");
   const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const index = Number(month) - 1;
@@ -64,7 +80,7 @@ export function buildReviewSheets(
   review: ClosingPerformanceReview,
   input: { line: string | null; period: string | null },
 ): ReviewSheet[] {
-  const stamp = [input.period ? monthLabel(input.period) : null, input.line]
+  const stamp = [input.period ? closingSheetMonthLabel(input.period) : null, input.line]
     .filter(Boolean)
     .join("   ");
   //
@@ -110,7 +126,7 @@ export function buildReviewSheets(
   ): ReviewSheet | null => {
     if (rows.length === 0 || months.length === 0) return null;
     return {
-      headers: [firstHeading, secondHeading, ...months.map(monthLabel), "Against the month before"],
+      headers: [firstHeading, secondHeading, ...months.map(closingSheetMonthLabel), "Against the month before"],
       name,
       rows: rows.map((row) => [
         row.label,
