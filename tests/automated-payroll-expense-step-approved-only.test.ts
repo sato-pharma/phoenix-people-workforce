@@ -39,7 +39,6 @@ function member(hrId: string, fullName: string): PopulationMember {
     lifecycle: "regular",
     lastWorkingDate: null,
     noticeLastWorkingDate: null,
-    unpaidDaysInSpan: 0,
   };
 }
 

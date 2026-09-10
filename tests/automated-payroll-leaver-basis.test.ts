@@ -56,7 +56,6 @@ export async function runAutomatedPayrollLeaverBasisTests() {
     source: source(),
     lastWorkingDate: "2026-08-28",
     period: PERIOD,
-    unpaidDaysInSpan: 0,
     draft: undefined,
   });
   assert.ok(fresh, "sanity: a parseable last working date resolves");
@@ -73,7 +72,6 @@ export async function runAutomatedPayrollLeaverBasisTests() {
     source: source(),
     lastWorkingDate: "2026-08-28",
     period: PERIOD,
-    unpaidDaysInSpan: 0,
     draft: draft({ daysWorked: 12 }),
   });
   assert.ok(confirmed);
@@ -100,7 +98,6 @@ export async function runAutomatedPayrollLeaverBasisTests() {
     source: source({ baseSalary: 15500, netSalary: 18000 }),
     lastWorkingDate: "2026-08-09",
     period: PERIOD,
-    unpaidDaysInSpan: 0,
     draft: draft({ daysWorked: 0.5 }),
   });
   assert.ok(halfDay);
@@ -114,7 +111,6 @@ export async function runAutomatedPayrollLeaverBasisTests() {
     source: source(),
     lastWorkingDate: "2026-08-09",
     period: PERIOD,
-    unpaidDaysInSpan: 0,
     draft: draft({ daysWorked: 44 }),
   });
   assert.ok(stale);
@@ -177,7 +173,6 @@ export async function runAutomatedPayrollLeaverBasisTests() {
     source: source({ baseSalary: null, extraCostOfLiving: 0, fuelAllowance: 0, netSalary: null }),
     lastWorkingDate: "2026-08-09",
     period: PERIOD,
-    unpaidDaysInSpan: 0,
     draft: undefined,
   });
   assert.ok(noSalary);
@@ -191,7 +186,6 @@ export async function runAutomatedPayrollLeaverBasisTests() {
       source: source(),
       lastWorkingDate: "not-a-date",
       period: PERIOD,
-      unpaidDaysInSpan: 0,
       draft: undefined,
     }),
     null,

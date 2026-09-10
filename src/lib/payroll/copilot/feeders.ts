@@ -66,24 +66,6 @@ function periodBounds(period: CopilotPeriod): { start: string; end: string } {
   return { start, end };
 }
 
-function isoDateOnly(value: string): string {
-  return value.slice(0, 10);
-}
-
-function daysBetweenInclusive(startIso: string, endIso: string): number {
-  const start = Date.parse(`${isoDateOnly(startIso)}T00:00:00Z`);
-  const end = Date.parse(`${isoDateOnly(endIso)}T00:00:00Z`);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 0;
-  return Math.round((end - start) / 86400000) + 1;
-}
-
-/** Inclusive-day overlap between [aStart, aEnd] and [bStart, bEnd] (ISO date strings). */
-function overlapDays(aStart: string, aEnd: string, bStart: string, bEnd: string): number {
-  const start = aStart > bStart ? aStart : bStart;
-  const end = aEnd < bEnd ? aEnd : bEnd;
-  return daysBetweenInclusive(start, end);
-}
-
 async function safeRows(
   context: string,
   run: () => PromiseLike<{ data: unknown; error: unknown }>,
@@ -113,7 +95,6 @@ function ensure(map: Map<string, EmployeeFeederState>, key: string): EmployeeFee
     state = {
       unpaidLeaveDays: 0,
       leaverLastWorkingDate: null,
-      unpaidDaysBeforeLastWorkingDate: 0,
     };
     map.set(key, state);
   }
@@ -140,19 +121,11 @@ export async function buildFeederStates(
       .lte("start_date", end)
       .gte("end_date", start),
   );
-  type UnpaidLeaveRow = { key: string; startDate: string; endDate: string; days: number };
-  const unpaidLeaveRows: UnpaidLeaveRow[] = [];
   for (const row of unpaidLeave) {
     const key = compactHrKey(String(row.employee_hr_id ?? ""));
     if (!key) continue;
     const days = Number(row.duration_days ?? 0);
-    const state = ensure(states, key);
-    state.unpaidLeaveDays += Number.isFinite(days) ? days : 0;
-    const startDate = row.start_date ? isoDateOnly(String(row.start_date)) : "";
-    const endDate = row.end_date ? isoDateOnly(String(row.end_date)) : "";
-    if (startDate && endDate) {
-      unpaidLeaveRows.push({ key, startDate, endDate, days: Number.isFinite(days) ? days : 0 });
-    }
+    ensure(states, key).unpaidLeaveDays += Number.isFinite(days) ? days : 0;
   }
 
   // Leavers whose last working day falls in the period.
@@ -170,20 +143,21 @@ export async function buildFeederStates(
     ensure(states, key).leaverLastWorkingDate = String(row.last_working_date ?? "") || null;
   }
 
-  // Resignation Rule 1 needs unpaid-leave days clipped to [period start, last
-  // working date] specifically — not the whole-month total above. Prorate each
-  // unpaid-leave row's duration_days by how much of its own span overlaps that
-  // narrower window, in case only part of a leave request falls before exit.
-  for (const row of unpaidLeaveRows) {
-    const state = states.get(row.key);
-    const lastWorkingDate = state?.leaverLastWorkingDate;
-    if (!state || !lastWorkingDate) continue;
-    const spanDays = daysBetweenInclusive(row.startDate, row.endDate);
-    if (spanDays <= 0) continue;
-    const clip = overlapDays(row.startDate, row.endDate, start, lastWorkingDate);
-    if (clip <= 0) continue;
-    state.unpaidDaysBeforeLastWorkingDate += row.days * (clip / spanDays);
-  }
+  // REMOVED 2026-09-11: the unpaid-leave days clipped to [period start, last working date].
+  //
+  // This existed for exactly one consumer — computeResignationSettlement subtracted it from a
+  // leaver's days worked — and that subtraction charged the same approved leave TWICE. The
+  // Deductions module raises an unpaid-vacation candidate from the very same `v2_vacation_requests`
+  // rows, and payroll charges it on the Unpaid Vacation tab. The days came off the pay, and the
+  // money came off again.
+  //
+  // Unified on the figure a human actually edits (owner, 2026-09-11: "we must unify... what really
+  // wins, admin edit outputs"). The deduction is reviewable and correctable; this was invisible
+  // arithmetic, and it also moved the Days Worked figure the admin is asked to correct by hand.
+  //
+  // Deleted rather than left computed-but-unread: a field still being calculated is a second
+  // opinion waiting to be re-wired, which is the thing being unified away. `state.unpaidLeaveDays`
+  // above still carries the whole-month unpaid total for the callers that legitimately want it.
 
   return states;
 }

@@ -412,9 +412,19 @@ export function runAutomatedPayrollPart1ScopeTests() {
     new URL("../src/lib/automated-payroll/recommend.ts", import.meta.url),
     "utf8",
   );
-  const populationPush = recommendSource.slice(
-    recommendSource.indexOf("members.push({"),
-    recommendSource.indexOf("unpaidDaysInSpan: feeder?.unpaidDaysBeforeLastWorkingDate"),
+  // Sliced to the push block's own closing brace, not to a field that happens to follow it. It used
+  // to end at `unpaidDaysInSpan: feeder?...`, and when that line was removed on 2026-09-11 indexOf
+  // returned -1, so `slice(start, -1)` silently widened to the whole rest of the file — the exact
+  // shape where a source-pinning test starts passing on text it was never meant to read. The bounds
+  // are asserted below so a future rename fails loudly instead of widening again.
+  const pushStart = recommendSource.indexOf("members.push({");
+  assert.ok(pushStart >= 0, "recommend.ts must still build the population with members.push({");
+  const pushEnd = recommendSource.indexOf("\n    });", pushStart);
+  assert.ok(pushEnd > pushStart, "could not find the end of the members.push block");
+  const populationPush = recommendSource.slice(pushStart, pushEnd);
+  assert.ok(
+    populationPush.length < 800,
+    "the population-push slice must stay small — a slice that widens to the file passes on anything",
   );
   assert.ok(
     populationPush.includes("lastWorkingDate: leaverLastWorkingDate"),

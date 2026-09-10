@@ -84,7 +84,6 @@ function member(
     lifecycle: opts.lifecycle ?? "regular",
     lastWorkingDate: opts.lastWorkingDate ?? null,
     noticeLastWorkingDate: null,
-    unpaidDaysInSpan: 0,
   };
 }
 

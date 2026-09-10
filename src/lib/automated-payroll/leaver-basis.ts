@@ -113,7 +113,6 @@ export function resolveLeaverBasis(input: {
   source: PayrollSalarySource | null | undefined;
   lastWorkingDate: string;
   period: PayrollPeriod;
-  unpaidDaysInSpan: number;
   draft: DraftRow | undefined;
 }): LeaverBasis | null {
   const baseSalary = positive(input.source?.baseSalary);
@@ -126,7 +125,6 @@ export function resolveLeaverBasis(input: {
     fuelAllowance,
     lastWorkingDate: input.lastWorkingDate,
     period: input.period,
-    unpaidDaysInSpan: input.unpaidDaysInSpan,
     otherAdditions: 0,
     otherDeductions: 0,
   });

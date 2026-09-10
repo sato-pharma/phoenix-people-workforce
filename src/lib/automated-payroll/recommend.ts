@@ -98,7 +98,6 @@ export type PopulationMember = {
    */
   noticeLastWorkingDate: string | null;
   /** Leaver only — unpaid-leave days inside the settlement span (resignation Rule 1). */
-  unpaidDaysInSpan: number;
 };
 
 /**
@@ -292,7 +291,6 @@ export async function resolvePayrollPopulationAndSources(period: PayrollPeriod):
       lastWorkingDate: leaverLastWorkingDate,
       // Display-only. Never feeds proration — see the field's doc comment.
       noticeLastWorkingDate: stillActiveThroughFutureExit ? employee.lastWorkingDate : null,
-      unpaidDaysInSpan: feeder?.unpaidDaysBeforeLastWorkingDate ?? 0,
     });
 
     const source = buildSalarySource(employee, period);
@@ -733,7 +731,6 @@ async function recommendResignations(
       source,
       lastWorkingDate: member.lastWorkingDate,
       period,
-      unpaidDaysInSpan: member.unpaidDaysInSpan,
       draft,
     });
     if (!basis) continue;
@@ -1733,7 +1730,6 @@ function recommendResignationCrm(
       source,
       lastWorkingDate: member.lastWorkingDate,
       period,
-      unpaidDaysInSpan: member.unpaidDaysInSpan,
       draft,
     });
     if (!basis) continue;

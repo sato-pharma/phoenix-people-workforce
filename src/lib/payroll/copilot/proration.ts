@@ -64,7 +64,6 @@ export type ResignationSettlementInput = {
   fuelAllowance: number;
   lastWorkingDate: string;
   period: CopilotPeriod;
-  unpaidDaysInSpan: number;
   otherAdditions: number;
   otherDeductions: number;
 };
@@ -122,7 +121,23 @@ export function computeResignationSettlement(
   const netAdjustment = input.otherAdditions - input.otherDeductions;
 
   if (day <= 25) {
-    const daysWorked = Math.max(0, day - input.unpaidDaysInSpan);
+    // DAYS WORKED IS THE CALENDAR COUNT TO THE LAST WORKING DAY. Nothing is netted out of it here.
+    //
+    // This used to be `day - unpaidDaysInSpan`, which charged a leaver's approved unpaid leave a
+    // SECOND time: the Deductions module already raises an unpaid-vacation candidate from the very
+    // same `v2_vacation_requests` rows, and payroll charges it on the Unpaid Vacation tab. Both
+    // sides read the same approved requests, so the days came off the pay and the money came off
+    // again as a deduction.
+    //
+    // Unified on the admin-facing figure (owner, 2026-09-11: "we must unify... what really wins,
+    // admin edit outputs"). The deduction is the one a human sees, reviews and can change; the
+    // subtraction here was invisible arithmetic that also silently moved the Days Worked figure the
+    // admin is asked to correct by hand.
+    //
+    // It also ENDS a disagreement that already existed. Of the four callers of this function, two —
+    // the Ready sheet and the resignations service — already passed 0 and never subtracted, so the
+    // same leaver's days worked differed depending on which surface asked. Now all four agree.
+    const daysWorked = day;
     const totalDays = calendarDaysInMonth(input.period);
     const workedShare = totalDays > 0 ? daysWorked / totalDays : 0;
     // Each component is rounded separately, matching computeJoinerPay: a row's

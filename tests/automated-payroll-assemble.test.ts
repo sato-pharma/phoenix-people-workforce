@@ -53,7 +53,6 @@ function member(hrId: string, opts: { lifecycle?: RowLifecycle; medicalInsurance
     lifecycle: opts.lifecycle ?? "regular",
     lastWorkingDate: null,
     noticeLastWorkingDate: null,
-    unpaidDaysInSpan: 0,
   };
 }
 

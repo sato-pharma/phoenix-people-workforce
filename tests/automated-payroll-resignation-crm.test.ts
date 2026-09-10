@@ -68,7 +68,6 @@ export async function runAutomatedPayrollResignationCrmTests() {
     fuelAllowance: 500,
     lastWorkingDate: "2026-07-09",
     period,
-    unpaidDaysInSpan: 0,
     otherAdditions: 0,
     otherDeductions: 0,
   });

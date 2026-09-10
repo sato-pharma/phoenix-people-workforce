@@ -113,7 +113,6 @@ export function runAutomatedPayrollSplitTests() {
     // equality boundary would have left those cases passing while no longer
     // testing the shape they are named for.
     lastWorkingDate: "2026-06-18", // 18 days
-    unpaidDaysInSpan: 0,
   });
   assert.equal(leaverEarly.base, 18000); // 1000/day × 18
   assert.equal(leaverEarly.ecol, 600, "ECoL prorates with the base now — it is no longer withheld"); // 1000 × 18/30
@@ -130,7 +129,6 @@ export function runAutomatedPayrollSplitTests() {
     period: JUNE,
     lifecycle: "leaver",
     lastWorkingDate: "2026-06-28",
-    unpaidDaysInSpan: 0,
   });
   // Paid the FULL month under Rule 1 — and he was here 28 of June's 30 days,
   // which is what the count reports. That pair is the whole point of the column:

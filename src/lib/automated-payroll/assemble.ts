@@ -116,7 +116,6 @@ function buildEffective(
     lifecycle: member.lifecycle,
     hireDate: member.employee.hireDate,
     lastWorkingDate: member.lastWorkingDate,
-    unpaidDaysInSpan: member.unpaidDaysInSpan,
     overrideBase: draft?.baseForMonth ?? null,
     overrideEcol: draft?.ecolPaid ?? null,
     overrideFuel: draft?.fuelPaid ?? null,

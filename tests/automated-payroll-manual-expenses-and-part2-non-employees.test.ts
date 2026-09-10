@@ -47,7 +47,6 @@ function member(hrId: string, fullName: string, lifecycle: RowLifecycle = "regul
     lifecycle,
     lastWorkingDate: null,
     noticeLastWorkingDate: null,
-    unpaidDaysInSpan: 0,
   };
 }
 

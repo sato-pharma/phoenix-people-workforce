@@ -288,7 +288,6 @@ export function runPayrollCopilotTests() {
         feeder: {
           unpaidLeaveDays: 3,
           leaverLastWorkingDate: null,
-          unpaidDaysBeforeLastWorkingDate: 0,
         },
       }),
     ).includes("unpaid_leave"),

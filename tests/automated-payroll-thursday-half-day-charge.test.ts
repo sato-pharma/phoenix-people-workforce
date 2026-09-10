@@ -196,7 +196,6 @@ export async function runAutomatedPayrollThursdayHalfDayChargeTests() {
     } as PayrollSalarySource,
     lastWorkingDate: "2026-08-09",
     period: PERIOD,
-    unpaidDaysInSpan: 0,
     draft: undefined,
   });
   assert.ok(basis);

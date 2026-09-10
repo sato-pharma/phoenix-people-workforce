@@ -343,7 +343,6 @@ export function resolveReadyLifecycleSettlement(input: {
       otherAdditions: 0,
       otherDeductions: 0,
       period: { month, year },
-      unpaidDaysInSpan: 0,
     });
 
     if (settlement) {

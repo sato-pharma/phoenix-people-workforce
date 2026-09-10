@@ -230,7 +230,6 @@ export async function assembleDraft(
       resignation: feeder?.leaverLastWorkingDate
         ? {
             lastWorkingDate: feeder.leaverLastWorkingDate,
-            unpaidDaysInSpan: feeder.unpaidDaysBeforeLastWorkingDate,
           }
         : null,
       settledUnpaidVacationSalaryDeduction: settledVacationSalaryDeductions.get(compact),
