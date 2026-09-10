@@ -58,7 +58,12 @@ const HEADER_NAVY = "FF103A5C";
 const ACCENT_BLUE = "FF0B78B7";
 
 /** The three heights that carry the layout: title, navigation, warning strip. */
-const OVERVIEW_BAND = { nav: 37, title: 44, warning: 30 } as const;
+// ⚠ `warning` was 30pt and is 8pt from 2026-09-10 — owner: "row 3 in every tab needs to be
+// narrower". The strip was carrying nothing on any sheet, so it read as a gap under the command
+// row rather than as air. Changed here on purpose: this pin exists to catch DRIFT, and a number
+// the owner moved himself is not drift. Rep Card and Contents keep a taller row 3 because text
+// lives there.
+const OVERVIEW_BAND = { nav: 37, title: 44, warning: 8 } as const;
 
 const PRODUCTS = [
   { family: "Royafloxacin", productCode: "RY001", productName: "Royafloxacin 500mg" },
