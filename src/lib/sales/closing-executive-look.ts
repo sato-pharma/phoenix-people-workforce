@@ -106,6 +106,19 @@ export const EXECUTIVE_GEOMETRY: Record<string, { body: number | null; cols: Rec
     cols: { 1: 3, 2: 22, 3: 11, 4: 16, 5: 16, 6: 14, 7: 4, 8: 14 },
     head: { 1: 34, 2: 36, 3: 8, 4: 21.95 },
   },
+  // ⚠ THIS ENTRY IS THE TAB'S MASTHEAD, NOT ITS LAYOUT. Like the three review sheets above it, the
+  // quarter gap is authored by `addReviewSheets` AFTER `applyExecutiveGeometry` has run, so nothing
+  // here ever sets one of its rows or columns — `addReviewSheets` writes both. What it IS read for
+  // is `paintExecutiveBands`, which draws the navy title band to the width of the LAST column named
+  // here and hands the sheet to `applyOnDarkEmblem` for the white mark. Stop this map at nine and
+  // the band stops at nine, with the mark sitting past the end of its own colour and two bare white
+  // columns beside it. The numbers below are the ones the author actually writes, so the table
+  // describes the sheet rather than a sheet it does not control.
+  "Gap to Quarter Target": {
+    body: 20,
+    cols: { 1: 26, 2: 18, 3: 22, 4: 16, 5: 13, 6: 15, 7: 13, 8: 15, 9: 13, 10: 15, 11: 12 },
+    head: { 1: 33.95, 2: 18, 3: 18, 4: 21.95 },
+  },
   "Product by Month": {
     body: 20,
     cols: { 1: 24, 2: 22, 3: 16, 4: 16, 5: 16, 6: 22 },

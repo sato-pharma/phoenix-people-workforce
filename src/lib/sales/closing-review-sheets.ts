@@ -20,6 +20,14 @@
 import type { ClosingPerformanceReview } from "./closing-performance-review";
 import type { EngineValue } from "./closing-engine-fill";
 
+/**
+ * What a row IS, which decides how it is dressed and whether it folds.
+ *
+ * `detail` is an ordinary row and the default for every sheet that says nothing. `group` is a bar
+ * that opens a block and summarises the detail rows beneath it. `total` closes the sheet.
+ */
+export type ReviewSheetRowKind = "detail" | "group" | "total";
+
 /** A sheet this module asks the filler to create, declaratively — no OOXML in here. */
 export type ReviewSheet = {
   /**
@@ -44,6 +52,21 @@ export type ReviewSheet = {
   widths: number[];
   /** Data rows, positional against `headers`. */
   rows: EngineValue[][];
+  /**
+   * Fold each block's `detail` rows under the `group` bar ABOVE them.
+   *
+   * The summary sits above its detail, which is not Excel's default and has to be said in the
+   * sheet's own `outlinePr`: left at the default the margin's minus signs point at the block BELOW
+   * the one they collapse, and every control on the sheet is then off by a block.
+   *
+   * Ignored on a sheet with no `group` rows — there would be nothing to fold under.
+   */
+  grouped?: boolean;
+  /**
+   * What each row is, positional against `rows`. Absent means every row is a plain detail row,
+   * which is what the review's own three sheets are.
+   */
+  rowKinds?: ReviewSheetRowKind[];
   /** The line the contents page prints beside this sheet's name. */
   what: string;
 };

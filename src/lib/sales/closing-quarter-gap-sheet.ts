@@ -5,6 +5,10 @@
 // is separate from the review: the arithmetic that decides what a gap is has no business knowing
 // about column widths, and the sheet has no business reaching a database.
 //
+// GROUPED BY PRODUCT, and the rows arrive in that order already — a product bar, then its areas,
+// then the next product. This file's job is to say which rows are BARS, so the filler can style
+// them and fold the areas under them; it never re-orders anything.
+//
 // TWO THINGS ABOUT THE COLUMN HEADINGS ARE LOAD-BEARING, not cosmetic.
 //
 //  - The filler picks each column's NUMBER FORMAT from its heading (`reviewColumnStyle`), and the
@@ -12,22 +16,31 @@
 //    last column is called Achievement and nothing else, or a ratio of 0.86 prints as "1" beside a
 //    sibling sheet reading 86.3%.
 //  - Every other numeric column takes the money format, `#,##0;-#,##0;"—"`. That em dash is why a
-//    unit cell on an AREA row is written as null rather than as 0: null prints the dash, which says
-//    "not a figure this row can carry", while a 0 would say "sold none".
+//    unit cell on the LINE TOTAL row is written as null rather than as 0: null prints the dash,
+//    which says "not a figure this row can carry", while a 0 would say "sold none".
 //
 // THE GAP'S SIGN IS STATED ON THE SHEET, in the subtitle, because it is the one thing a reader
 // cannot infer from a number: positive is still to sell, negative is already past target. Naming
 // the columns "still to sell" instead would have read as a lie on every area that is ahead.
 
-import { closingSheetMonthLabel, type ReviewSheet } from "@/lib/sales/closing-review-sheets";
+import { closingSheetMonthLabel, type ReviewSheet, type ReviewSheetRowKind } from "@/lib/sales/closing-review-sheets";
 import type { ClosingQuarterGap } from "@/lib/sales/closing-quarter-gap";
 import type { EngineValue } from "@/lib/sales/closing-engine-fill";
 
-/** The tab's name, and the key its colour is looked up by in the executive palette. */
+/** The tab's name, and the key its colour and geometry are looked up by in the executive look. */
 export const QUARTER_GAP_SHEET = "Gap to Quarter Target";
 
 /** The contents-page heading this tab is listed under — its own, not the review's. */
 export const QUARTER_GAP_BAND = "Against the quarter";
+
+/**
+ * The column widths, in Excel's own units.
+ *
+ * Exported because `EXECUTIVE_GEOMETRY` has to describe the same eleven columns: the navy masthead
+ * band is drawn to the width of the LAST column in that table, so a table that stops short paints a
+ * band that stops short, and the mark then sits past the end of its own colour.
+ */
+export const QUARTER_GAP_WIDTHS = [26, 18, 22, 16, 13, 15, 13, 15, 13, 15, 12];
 
 /** Money and unit columns alike: the format prints no decimals, so a rounded value loses nothing. */
 const figure = (value: number | null | undefined): EngineValue =>
@@ -78,15 +91,20 @@ export function buildQuarterGapSheet(
     `${gap.quarterLabel} (${span(gap.months)}). Sold is the quarter to date through `
     + `${closingSheetMonthLabel(gap.through)}; the target is all ${gap.months.length} months of the quarter. `
     + "Gap is target minus sold, so a positive number is still to sell and a negative one is past target. "
-    + "An area row carries value only — units are never added across products."
+    + "One product per block — press the minus in the margin to fold its areas away. "
+    + "Only the line total spans products, which is why it alone carries no units."
     + missing;
 
   return {
     band: QUARTER_GAP_BAND,
+    // The areas fold under the product bar above them, which is where the bars have to sit for the
+    // margin's own controls to point at the right block.
+    grouped: true,
     headers: [
+      "Product",
+      "Family",
       "Area",
       "Region",
-      "Product",
       "Sold units",
       "Sold value",
       "Target units",
@@ -96,10 +114,14 @@ export function buildQuarterGapSheet(
       "Achievement",
     ],
     name: QUARTER_GAP_SHEET,
+    rowKinds: gap.rows.map((row): ReviewSheetRowKind =>
+      row.kind === "area" ? "detail" : row.kind === "product" ? "group" : "total",
+    ),
     rows: gap.rows.map((row) => [
+      row.productName,
+      row.family,
       row.areaName,
       row.regionName,
-      row.productName,
       figure(row.salesUnits),
       figure(row.salesValue),
       figure(row.targetUnits),
@@ -111,8 +133,8 @@ export function buildQuarterGapSheet(
     subtitle,
     title,
     what:
-      "Each area against its whole-quarter target, product by product — sold so far in units and value,"
+      "Every product against its whole-quarter target, area by area — sold so far in units and value,"
       + " and what is left to sell.",
-    widths: [24, 17, 26, 13, 16, 13, 16, 13, 16, 13],
+    widths: QUARTER_GAP_WIDTHS,
   };
 }

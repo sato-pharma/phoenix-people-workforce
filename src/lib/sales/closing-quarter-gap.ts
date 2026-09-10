@@ -4,7 +4,7 @@
 // WHAT IT ANSWERS. The workbook is a MONTH. Targets are set a QUARTER at a time and paid
 // semesterly, so the question a reader carries out of a monthly closing is the one the monthly
 // closing cannot answer: how much of this quarter's target is already sold, and how much is left.
-// This sheet is that arithmetic, per area, per product, in units and in value.
+// This sheet is that arithmetic, product by product, area by area, in units and in value.
 //
 // THREE DECISIONS SHAPE EVERY NUMBER ON IT, and each of them is a different figure if got wrong.
 //
@@ -22,11 +22,13 @@
 //     an unclosed month exist — they are set a quarter ahead — and they are read straight from
 //     `au.monthly_targets`, the same source the closing matrix's own target columns come from.
 //
-//  3. UNITS ARE NEVER SUMMED ACROSS PRODUCTS. The owner's standing rule. A product row spans one
-//     product code across three months, which is the same pack counted three times over and is a
-//     real quantity; an AREA row spans seventeen products at several concentrations, which is a
-//     category error. So every area row here carries VALUE only and leaves its unit cells blank.
-//     Blank, not zero — a zero in a unit column would read as "sold none".
+//  3. UNITS ARE NEVER SUMMED ACROSS PRODUCTS. The owner's standing rule, and the reason the sheet
+//     is GROUPED BY PRODUCT rather than by area (his instruction, 2026-09-10). A block is one
+//     product code from its bar to its last area, so every unit on it is the same pack counted over
+//     areas and months, which is a real quantity. The ONE row that spans products is the line total
+//     at the foot, and its unit cells are blank. Blank, not zero — a zero in a unit column would
+//     read as "sold none". Group the other way round and the unit columns become illegal again,
+//     silently, because an area's own row would then span seventeen concentrations.
 //
 // WHY THE TARGETS ARE READ AGAIN RATHER THAN SUMMED OFF THE MATRICES. The merged quarter matrix
 // already carries a target per cell, and using it would be one source instead of two — but only
@@ -58,15 +60,22 @@ export type ClosingQuarterGapFilter = {
 };
 
 /**
- * One line of the sheet.
+ * One line of the sheet, in a sheet GROUPED BY PRODUCT — owner, 2026-09-10.
  *
- * `kind` is what decides whether the unit columns may be read: an `area` row spans products, so its
- * `salesUnits` / `targetUnits` / `gapUnits` are all null by construction and not merely absent.
+ * A `product` row opens each block and carries that product across every area; the `area` rows
+ * under it are the same product, one area at a time. `lineTotal` closes the sheet.
+ *
+ * ⚠ GROUPING BY PRODUCT IS WHAT MAKES THE UNIT COLUMNS LEGAL, and reversing the two would quietly
+ * make them illegal again. Every row except the last is exactly ONE product code, so its units are
+ * the same pack counted over areas and months, which is a real quantity. Only `lineTotal` spans
+ * products, and it is the one row whose unit cells are null.
  */
 export type ClosingQuarterGapRow = {
   achievement: number | null;
   areaCode: string;
   areaName: string;
+  /** The product's family, as the closing's own column order groups them. Empty on `lineTotal`. */
+  family: string;
   gapUnits: number | null;
   gapValue: number | null;
   kind: "area" | "product" | "lineTotal";
@@ -193,28 +202,39 @@ export function foldQuarterTargets(
 /**
  * The sheet's rows, from a merged quarter-to-date matrix and the quarter's folded targets.
  *
+ * GROUPED BY PRODUCT — owner, 2026-09-10. Each product opens a block that carries it across every
+ * area, and the areas follow underneath in the closing's own order. That ordering is not a
+ * presentation choice: it is what keeps every unit column on the sheet legal, because a block is one
+ * product code from top to bottom. Grouping the other way round puts products inside an area, and
+ * the area's own row then spans several of them with nothing to sum.
+ *
  * Pure, and separated from the loader for the usual reason: the arithmetic that decides what a gap
  * IS can then be tested against a matrix built by hand, with no database anywhere near it.
  *
- * An area with neither a sale nor a target anywhere in the quarter is left out entirely — a row of
- * dashes is not a finding. An area WITH a target and no sales is exactly the row a reader is
- * looking for, and always survives.
+ * A pair with neither a sale nor a target anywhere in the quarter is left out — a row of dashes is
+ * not a finding. A pair WITH a target and no sales is exactly the row a reader is looking for, and
+ * always survives, as does the product block around it.
  */
 export function buildClosingQuarterGapRows(
   matrix: MonthlyClosingMatrix,
   targets: ReadonlyMap<string, QuarterTarget>,
 ): ClosingQuarterGapRow[] {
   const rows: ClosingQuarterGapRow[] = [];
+  // The closing's own area order: region rank first, then area code, exactly as the matrix lays it
+  // out. Re-sorting here would put this tab's areas in a different order from every other tab.
+  const areaRows = matrix.regions.flatMap((region) => region.areas);
+
   let lineSales = 0;
   let lineTarget: number | null = null;
 
-  const areaRows = matrix.regions.flatMap((region) => region.areas);
-  for (const area of areaRows) {
-    const products: ClosingQuarterGapRow[] = [];
-    let areaSales = 0;
-    let areaTarget: number | null = null;
+  matrix.columns.forEach((column, index) => {
+    const areas: ClosingQuarterGapRow[] = [];
+    let productSalesUnits = 0;
+    let productSalesValue = 0;
+    let productTargetUnits: number | null = null;
+    let productTargetValue: number | null = null;
 
-    matrix.columns.forEach((column, index) => {
+    for (const area of areaRows) {
       const cell: MonthlyClosingCell | undefined = area.cells[index];
       const salesUnits = cell?.salesUnits ?? 0;
       const salesValue = cell?.salesValue ?? 0;
@@ -222,19 +242,22 @@ export function buildClosingQuarterGapRows(
       const targetUnits = target?.targetUnits ?? null;
       const targetValue = target?.targetValue ?? null;
 
-      areaSales += salesValue;
-      areaTarget = addTarget(areaTarget, targetValue);
+      productSalesUnits += salesUnits;
+      productSalesValue += salesValue;
+      productTargetUnits = addTarget(productTargetUnits, targetUnits);
+      productTargetValue = addTarget(productTargetValue, targetValue);
 
       // Nothing sold and nothing owed — the pair carries no question.
-      if (salesValue === 0 && salesUnits === 0 && targetUnits === null && targetValue === null) return;
+      if (salesValue === 0 && salesUnits === 0 && targetUnits === null && targetValue === null) continue;
 
-      products.push({
+      areas.push({
         achievement: achievementOf(salesValue, targetValue),
         areaCode: area.areaCode,
         areaName: area.areaName,
+        family: column.family,
         gapUnits: targetUnits === null ? null : targetUnits - salesUnits,
         gapValue: gapOf(salesValue, targetValue),
-        kind: "product",
+        kind: "area",
         productCode: column.productCode,
         productName: column.productName,
         regionName: area.regionName,
@@ -243,39 +266,44 @@ export function buildClosingQuarterGapRows(
         targetUnits,
         targetValue,
       });
-    });
+    }
 
-    if (products.length === 0) continue;
+    if (areas.length === 0) return;
 
-    lineSales += areaSales;
-    lineTarget = addTarget(lineTarget, areaTarget);
+    lineSales += productSalesValue;
+    lineTarget = addTarget(lineTarget, productTargetValue);
 
-    // The area first, then its products under it. Units stay null on this row — see rule 3 in the
-    // header: seventeen products at several concentrations do not add up to a quantity.
+    // The product bar, then its areas. Its unit cells are REAL: one product code summed over areas
+    // and months is the same pack counted, not a total across concentrations.
     rows.push({
-      achievement: achievementOf(areaSales, areaTarget),
-      areaCode: area.areaCode,
-      areaName: area.areaName,
-      gapUnits: null,
-      gapValue: gapOf(areaSales, areaTarget),
-      kind: "area",
-      productCode: "",
-      productName: "All products",
-      regionName: area.regionName,
-      salesUnits: null,
-      salesValue: areaSales,
-      targetUnits: null,
-      targetValue: areaTarget,
+      achievement: achievementOf(productSalesValue, productTargetValue),
+      areaCode: "",
+      areaName: "All areas",
+      family: column.family,
+      gapUnits: productTargetUnits === null ? null : productTargetUnits - productSalesUnits,
+      gapValue: gapOf(productSalesValue, productTargetValue),
+      kind: "product",
+      productCode: column.productCode,
+      productName: column.productName,
+      regionName: "",
+      salesUnits: productSalesUnits,
+      salesValue: productSalesValue,
+      targetUnits: productTargetUnits,
+      targetValue: productTargetValue,
     });
-    rows.push(...products);
-  }
+    rows.push(...areas);
+  });
 
   if (rows.length === 0) return rows;
 
+  // The ONE row on the sheet that spans products, and therefore the one with no units. Seventeen
+  // products at several concentrations do not add up to a quantity, so its unit cells are null and
+  // print an em dash rather than a zero that would read as "sold none".
   rows.push({
     achievement: achievementOf(lineSales, lineTarget),
     areaCode: "",
     areaName: "All areas",
+    family: "",
     gapUnits: null,
     gapValue: gapOf(lineSales, lineTarget),
     kind: "lineTotal",

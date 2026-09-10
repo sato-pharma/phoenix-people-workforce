@@ -4,7 +4,7 @@ import JSZip from "jszip";
 
 import { buildClosingEngineFill } from "../src/lib/sales/closing-engine-data.ts";
 import { fillClosingEngine } from "../src/lib/sales/closing-engine-fill.ts";
-import { EXECUTIVE_TAB_COLOURS } from "../src/lib/sales/closing-executive-look.ts";
+import { EXECUTIVE_GEOMETRY, EXECUTIVE_TAB_COLOURS } from "../src/lib/sales/closing-executive-look.ts";
 import { buildClosingPerformanceReview } from "../src/lib/sales/closing-performance-review.ts";
 import {
   buildClosingQuarterGapRows,
@@ -15,6 +15,7 @@ import {
 import {
   QUARTER_GAP_BAND,
   QUARTER_GAP_SHEET,
+  QUARTER_GAP_WIDTHS,
   buildQuarterGapSheet,
 } from "../src/lib/sales/closing-quarter-gap-sheet.ts";
 import type {
@@ -34,22 +35,25 @@ import type {
 //      the target cells already sitting on the merged quarter matrix — one source instead of two,
 //      and correct-looking. But an unclosed month has NO matrix, so its target silently becomes
 //      zero and the gap comes out short by a third of a quarter. Nothing about the sheet looks
-//      wrong; it just under-states what is left to sell. Assertion 2.
+//      wrong; it just under-states what is left to sell.
 //
 //   2. SALES THAT RUN PAST THE MONTH ON THE COVER. The mirror mistake: folding in every uploaded
 //      month of the quarter, so a July workbook shows August's sales in its "sold so far" column
-//      while every other tab says July. Assertion 3.
+//      while every other tab says July.
 //
-//   3. UNITS SUMMED ACROSS PRODUCTS on the area rows — the owner's standing rule, and the one that
-//      reads as a perfectly ordinary number. An area row's unit cells are null, and null so they
-//      print an em dash rather than a zero, which would say "sold none". Assertion 1.
+//   3. THE GROUPING TURNED BACK ROUND. The sheet is grouped BY PRODUCT (owner, 2026-09-10), and
+//      that is what makes its unit columns legal: a block is one product code from its bar to its
+//      last area, so the units are the same pack counted over areas and months. Group by area
+//      instead and the summary row spans seventeen concentrations, which is not a quantity. The
+//      line total is the only row that spans products and the only one with no units.
 //
 //   4. A MISSING TARGET TREATED AS ZERO, which turns "nobody asked this of them" into a gap equal
-//      to the whole sale and an achievement of 0%. Assertion 4.
+//      to the whole sale and an achievement of 0%.
 //
 // The second half verifies the EMITTED WORKBOOK rather than the builder's return value, because a
-// sheet can be built perfectly and still reach the reader unregistered, unlinked, grey-tabbed, or
-// with its percentage column formatted as money — every one of which is invisible from the source.
+// sheet can be built perfectly and still reach the reader unregistered, unlinked, grey-tabbed, on a
+// bare white masthead, with its bars striped over, or with its percentage column formatted as
+// money — every one of which is invisible from the source.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 const COLUMNS: MonthlyClosingColumn[] = [
@@ -120,9 +124,13 @@ function targetRow(areaCode: string, productCode: string, units: number, value: 
   return { areaCode, lineCode: "cns", productCode, targetUnits: units, targetValue: value };
 }
 
-function findRow(sheetRows: ReturnType<typeof buildClosingQuarterGapRows>, area: string, product: string) {
-  const found = sheetRows.find((row) => row.areaName === area && row.productName === product);
-  assert.ok(found, `no row for ${area} / ${product} — the fixture and the assertion disagree`);
+function findRow(
+  sheetRows: ReturnType<typeof buildClosingQuarterGapRows>,
+  product: string,
+  area: string,
+) {
+  const found = sheetRows.find((row) => row.productName === product && row.areaName === area);
+  assert.ok(found, `no row for ${product} / ${area} — the fixture and the assertion disagree`);
   return found!;
 }
 
@@ -144,6 +152,11 @@ function readRow(sheetXml: string, rowNumber: number): Record<string, { style: s
     };
   }
   return out;
+}
+
+/** The `<row>` open tag, so its outline level can be read. */
+function rowTag(sheetXml: string, rowNumber: number): string {
+  return new RegExp(`<row\\b[^>]*?\\br="${rowNumber}"[^>]*?>`).exec(sheetXml)?.[0] ?? "";
 }
 
 export async function runClosingQuarterGapTests() {
@@ -206,34 +219,50 @@ export async function runClosingQuarterGapTests() {
 
   const rows = buildClosingQuarterGapRows(quarterToDate, targets);
 
-  // ── 1. AN AREA ROW CARRIES VALUE ONLY ───────────────────────────────────────────────────────
-  // Tebofortin 40mg and 80mg are different packs at different concentrations. Their unit counts do
-  // not add up to a quantity, so the area row has none — and null rather than 0, because the
-  // engine's money format prints null as an em dash and 0 as "0", which reads as "sold none".
-  const cairoOne = findRow(rows, "Cairo 1", "All products");
-  assert.equal(cairoOne.kind, "area");
-  assert.equal(cairoOne.salesValue, 18_000, "the area's value is the sum of its products");
-  assert.equal(cairoOne.salesUnits, null, "units are never added across products — the owner's rule");
-  assert.equal(cairoOne.targetUnits, null, "and neither are target units");
-  assert.equal(cairoOne.gapUnits, null, "so there is no unit gap to state either");
+  // ── 1. THE SHEET IS GROUPED BY PRODUCT, BAR THEN AREAS ──────────────────────────────────────
+  assert.deepEqual(
+    rows.map((row) => `${row.kind}:${row.productName}:${row.areaName}`),
+    [
+      "product:Tebofortin 40mg:All areas",
+      "area:Tebofortin 40mg:Cairo 1",
+      "area:Tebofortin 40mg:Cairo 2",
+      "product:Tebofortin 80mg:All areas",
+      "area:Tebofortin 80mg:Cairo 1",
+      "lineTotal:All products:All areas",
+    ],
+    "a product opens its own block and its areas follow it — grouping by area instead makes every summary row span concentrations",
+  );
+
+  // ── 2. UNITS ARE REAL ON EVERY ROW BUT THE LAST ─────────────────────────────────────────────
+  // A block is one product code, so its units are the same pack counted over areas and months. The
+  // line total is the one row that spans products, and its unit cells are blank rather than 0 —
+  // the engine's money format prints null as an em dash and 0 as "0", which reads as "sold none".
+  const product40 = findRow(rows, "Tebofortin 40mg", "All areas");
+  assert.equal(product40.kind, "product");
+  assert.equal(product40.salesUnits, 220, "one product code summed over its areas IS a quantity");
+  assert.equal(product40.targetUnits, 330, "and so is its target — Cairo 1's 300 plus Cairo 2's 30");
+  assert.equal(product40.gapUnits, 110, "so the bar can state a unit gap");
+  assert.equal(product40.family, "Tebofortin", "the bar carries the family the closing groups it under");
 
   const lineTotal = rows.at(-1)!;
   assert.equal(lineTotal.kind, "lineTotal");
-  assert.equal(lineTotal.areaName, "All areas");
-  assert.equal(lineTotal.salesUnits, null, "the line total spans products too");
-  assert.equal(lineTotal.salesValue, 18_000, "and is the sum of the area rows, counted once each");
+  assert.equal(lineTotal.salesUnits, null, "the line total spans products — units are never added across them");
+  assert.equal(lineTotal.targetUnits, null, "and neither are target units");
+  assert.equal(lineTotal.gapUnits, null, "so there is no unit gap to state either");
+  assert.equal(lineTotal.salesValue, 18_000, "value spans concentrations safely, and is each block counted once");
+  assert.equal(lineTotal.gapValue, -1_500, "a negative gap is a line already past its quarter target");
 
-  // ── 2. THE TARGET IS THE WHOLE QUARTER, INCLUDING THE MONTH WITH NO CLOSING ──────────────────
+  // ── 3. THE TARGET IS THE WHOLE QUARTER, INCLUDING THE MONTH WITH NO CLOSING ──────────────────
   // Three months at 5,000 each. Summing only the two months that HAVE a matrix gives 10,000 and a
   // gap of −1,000, which reads as "already past target" on an area that is 4,000 short.
-  const cairoOneProduct = findRow(rows, "Cairo 1", "Tebofortin 40mg");
-  assert.equal(cairoOneProduct.targetValue, 15_000, "all three months of the quarter are targeted");
-  assert.equal(cairoOneProduct.targetUnits, 300, "one product code, so its units DO sum across months");
-  assert.equal(cairoOneProduct.salesValue, 11_000, "July plus August");
-  assert.equal(cairoOneProduct.gapValue, 4_000, "gap is target minus sold — positive is still to sell");
-  assert.equal(cairoOneProduct.gapUnits, 80, "and the same in units, because this row is one product");
+  const cairoOne = findRow(rows, "Tebofortin 40mg", "Cairo 1");
+  assert.equal(cairoOne.targetValue, 15_000, "all three months of the quarter are targeted");
+  assert.equal(cairoOne.targetUnits, 300, "in units too");
+  assert.equal(cairoOne.salesValue, 11_000, "July plus August");
+  assert.equal(cairoOne.gapValue, 4_000, "gap is target minus sold — positive is still to sell");
+  assert.equal(cairoOne.gapUnits, 80);
   assert.equal(
-    Number(cairoOneProduct.achievement!.toFixed(4)),
+    Number(cairoOne.achievement!.toFixed(4)),
     Number((11_000 / 15_000).toFixed(4)),
     "achievement is sold over the WHOLE quarter's target",
   );
@@ -244,17 +273,17 @@ export async function runClosingQuarterGapTests() {
     "a target row from another line was counted — the read returns every line at once",
   );
 
-  // ── 3. AN AREA WITH A TARGET AND NO SALES IS EXACTLY THE ROW A READER WANTS ──────────────────
-  const cairoTwo = findRow(rows, "Cairo 2", "Tebofortin 40mg");
+  // ── 4. AN AREA WITH A TARGET AND NO SALES IS EXACTLY THE ROW A READER WANTS ──────────────────
+  const cairoTwo = findRow(rows, "Tebofortin 40mg", "Cairo 2");
   assert.equal(cairoTwo.salesValue, 0);
   assert.equal(cairoTwo.targetValue, 1_500, "three months at 500");
   assert.equal(cairoTwo.gapValue, 1_500, "the whole quarter is still to sell");
   assert.equal(cairoTwo.achievement, 0, "sold nothing against a real target is 0%, which is true");
 
-  // ── 4. NO TARGET IS NOT A ZERO TARGET ───────────────────────────────────────────────────────
+  // ── 5. NO TARGET IS NOT A ZERO TARGET ───────────────────────────────────────────────────────
   // Tebofortin 80mg is sold and untargeted. A zero here would state a gap of −7,000 and an
   // achievement of some number, both of which accuse or credit against something nobody asked.
-  const untargeted = findRow(rows, "Cairo 1", "Tebofortin 80mg");
+  const untargeted = findRow(rows, "Tebofortin 80mg", "Cairo 1");
   assert.equal(untargeted.salesValue, 7_000);
   assert.equal(untargeted.targetValue, null, "no target row means no target, never 0");
   assert.equal(untargeted.gapValue, null, "and so there is no gap to state");
@@ -262,12 +291,12 @@ export async function runClosingQuarterGapTests() {
 
   // A pair with neither a sale nor a target is not a finding and is left off entirely.
   assert.equal(
-    rows.some((row) => row.areaName === "Cairo 2" && row.productName === "Tebofortin 80mg"),
+    rows.some((row) => row.productName === "Tebofortin 80mg" && row.areaName === "Cairo 2"),
     false,
-    "a product with nothing sold and nothing owed puts a row of dashes on the sheet",
+    "a product with nothing sold and nothing owed in an area puts a row of dashes on the sheet",
   );
 
-  // ── 5. EACH MONTH'S TARGETS FOLD BY THAT MONTH'S OWN MERGE RULES ────────────────────────────
+  // ── 6. EACH MONTH'S TARGETS FOLD BY THAT MONTH'S OWN MERGE RULES ────────────────────────────
   // Pedia folds Fayoum (GZ6) and Beni Suef (UE9) into one row UP TO August and separates them from
   // September. Folding the whole quarter by one month's rules either invents a merged row September
   // does not have, or splits an August one that was published merged.
@@ -289,7 +318,7 @@ export async function runClosingQuarterGapTests() {
     "and September's stays on Beni Suef's own row, which the closing shows separately from then",
   );
 
-  // ── 6. THE SHEET ITSELF ─────────────────────────────────────────────────────────────────────
+  // ── 7. THE SHEET ITSELF ─────────────────────────────────────────────────────────────────────
   const sheet = buildQuarterGapSheet(
     {
       months: ["2026-07", "2026-08", "2026-09"],
@@ -303,11 +332,29 @@ export async function runClosingQuarterGapTests() {
   );
   assert.ok(sheet, "the tab must be built when there are rows for it");
   assert.equal(sheet!.name, QUARTER_GAP_SHEET);
-  assert.equal(sheet!.headers.length, 10);
+  assert.equal(sheet!.headers.length, 11);
+  assert.equal(sheet!.headers[0], "Product", "product is the outer grouping, so it leads");
   assert.equal(sheet!.headers.at(-1), "Achievement", "the filler picks the percent format off this word alone");
+  assert.equal(sheet!.grouped, true, "the areas fold under their product bar");
+  assert.deepEqual(
+    sheet!.rowKinds,
+    ["group", "detail", "detail", "group", "detail", "total"],
+    "the bars have to be declared, or the filler dresses and folds the wrong rows",
+  );
   assert.notEqual(sheet!.band, "Performance review", "the quarter is not part of the review's band");
   assert.match(sheet!.subtitle, /positive number is still to sell/, "the gap's sign has to be stated, not inferred");
   assert.match(sheet!.subtitle, /through Aug 2026/, "and which month the sold columns count through");
+
+  // The masthead band is drawn to the width of the LAST column named in the geometry table. A table
+  // that stops short of the sheet paints a band that stops short, with the mark past the end of its
+  // own colour — so the two lists are the same list.
+  const geometry = EXECUTIVE_GEOMETRY[QUARTER_GAP_SHEET];
+  assert.ok(geometry, "the tab has no geometry entry, so it gets no navy masthead and no white mark");
+  assert.deepEqual(
+    Object.keys(geometry!.cols).map((key) => geometry!.cols[Number(key)]),
+    QUARTER_GAP_WIDTHS,
+    "the geometry table and the sheet's own widths have drifted apart",
+  );
 
   assert.equal(
     buildQuarterGapSheet(null, { line: "CNS", period: "2026-08" }),
@@ -332,9 +379,9 @@ export async function runClosingQuarterGapTests() {
     "a quarter to date short a month must say so — the sold column is otherwise silently low",
   );
 
-  // ── 7. THE EMITTED WORKBOOK ─────────────────────────────────────────────────────────────────
-  // Everything above passes on a sheet that never reaches the reader. These are the four ways it
-  // can be built correctly and still arrive wrong, none of which is visible from the source.
+  // ── 8. THE EMITTED WORKBOOK ─────────────────────────────────────────────────────────────────
+  // Everything above passes on a sheet that never reaches the reader. These are the ways it can be
+  // built correctly and still arrive wrong, none of which is visible from the source.
   const review = buildClosingPerformanceReview({
     availableLines: ["CNS"],
     availablePeriods: ["2026-07", "2026-08"],
@@ -366,17 +413,63 @@ export async function runClosingQuarterGapTests() {
   const sheetXml = await part!.async("string");
 
   const headings = readRow(sheetXml, 4);
-  assert.equal(headings.A?.text, "Area", "the tab is showing another sheet's headings");
-  assert.equal(headings.J?.text, "Achievement");
+  assert.equal(headings.A?.text, "Product", "the tab is showing another sheet's headings");
+  assert.equal(headings.K?.text, "Achievement");
 
-  // The formats, read off the CELLS. The filler chooses them from the heading text, so a column
-  // renamed for readability quietly reprints a ratio of 0.73 as "1".
-  const firstDataRow = readRow(sheetXml, 5);
-  assert.equal(firstDataRow.E?.style, MONEY_STYLE, "the value column must carry the engine's money format");
-  assert.equal(firstDataRow.J?.style, PERCENT_STYLE, "and achievement the percentage — 0.73 prints as 1 otherwise");
-  assert.equal(firstDataRow.D?.text, "", "an area row's unit cell is empty, so it prints a dash and not a zero");
+  // THE MASTHEAD. `addReviewSheets` writes A1 alone; `paintExecutiveBands` is what fills the row out
+  // to the full width in the approved navy. One cell on row 1 means the tab shipped on bare white
+  // while every sibling wore the band.
+  const masthead = readRow(sheetXml, 1);
+  assert.equal(
+    Object.keys(masthead).length,
+    QUARTER_GAP_WIDTHS.length,
+    "row 1 was never painted out to the width of the sheet — the tab is on a bare white masthead",
+  );
+  assert.equal(
+    new Set(Object.values(masthead).map((one) => one.style)).size,
+    1,
+    "and the band is one fill from end to end, or it reads as a navy block beside a white one",
+  );
 
-  // The tab strip. An unmatched name is not an error — it is a grey tab among seventeen coloured
+  // THE BARS AND THE ROWS UNDER THEM. Row 5 is the first product bar, row 6 the first area under it.
+  const bar = readRow(sheetXml, 5);
+  const detail = readRow(sheetXml, 6);
+  assert.equal(bar.A?.text, "Tebofortin 40mg");
+  assert.equal(detail.C?.text, "Cairo 1");
+  assert.equal(detail.F?.style, MONEY_STYLE, "a detail row's value column must carry the engine's money format");
+  assert.equal(detail.K?.style, PERCENT_STYLE, "and achievement the percentage — 0.73 prints as 1 otherwise");
+  assert.notEqual(
+    bar.F?.style,
+    detail.F?.style,
+    "the product bar is dressed exactly like the rows it summarises — the blocks do not read as blocks",
+  );
+  assert.notEqual(
+    bar.K?.style,
+    bar.A?.style,
+    "the bar's achievement is on its text format, so a ratio prints as 0.67 instead of 66.7%",
+  );
+
+  // THE FOLD. Areas carry the outline level; the bar above them stays at level 0, which is what
+  // makes it the summary rather than part of what it summarises.
+  assert.match(rowTag(sheetXml, 6), /outlineLevel="1"/, "the area rows do not fold under their product");
+  assert.doesNotMatch(rowTag(sheetXml, 5), /outlineLevel=/, "the bar folded itself away with its own areas");
+  assert.match(
+    sheetXml,
+    /<outlinePr[^>]*summaryBelow="0"/,
+    "without this every minus sign in the margin collapses the block AFTER the one it points at",
+  );
+
+  // THE ZEBRA. A conditional format beats a cell's own fill, so a range covering the bars paints
+  // every second one pale blue.
+  const stripe = /<conditionalFormatting sqref="([^"]*)">/.exec(sheetXml)?.[1] ?? "";
+  assert.ok(stripe, "the tab carries no zebra — every other sheet with rows has one");
+  assert.deepEqual(
+    stripe.split(" "),
+    ["A6:K7", "A9:K9"],
+    "the stripe has to skip the bars and the total, or the blocks stop reading as blocks",
+  );
+
+  // The tab strip. An unmatched name is not an error — it is a grey tab among eighteen coloured
   // ones, which is exactly what the strip exists to prevent.
   assert.ok(
     EXECUTIVE_TAB_COLOURS.has(QUARTER_GAP_SHEET),
@@ -384,15 +477,14 @@ export async function runClosingQuarterGapTests() {
   );
   assert.match(sheetXml, /<sheetPr[^>]*><tabColor rgb="FF[0-9A-F]{6}"\/>/, "and the colour has to reach the sheet");
 
-  // The contents page: its own band, and reachable from it.
+  // The contents page: its own band, and reachable from it. The page prints its band headings
+  // upper-cased, so the comparison is too.
   const contentsTag = (workbook.match(/<sheet\b[^>]*\/?>/g) ?? []).find((one) => one.includes('name="Contents"'));
   const contentsRel = /\br:id="([^"]*)"/.exec(contentsTag ?? "")?.[1];
   const contentsTarget = new RegExp(`Id="${contentsRel}"[^>]*Target="([^"]*)"`).exec(relationships)?.[1];
   const contents = await zip
     .file(contentsTarget!.startsWith("xl/") ? contentsTarget! : `xl/${contentsTarget}`)!
     .async("string");
-  // The page prints its band headings upper-cased, so the comparison is too — matching the literal
-  // would pass only by accident of casing and fail the day the page's own styling changes.
   assert.ok(
     contents.toUpperCase().includes(QUARTER_GAP_BAND.toUpperCase()),
     "the contents page must carry the quarter's own heading",
