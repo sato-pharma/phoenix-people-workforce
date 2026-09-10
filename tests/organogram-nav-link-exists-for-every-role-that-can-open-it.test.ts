@@ -13,6 +13,7 @@ import {
   type NavigationMode,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
+import { resolveEmployeePortalNavVisibility } from "../src/lib/employee-portal/navigation.ts";
 import { canAccessCompanyOrganogram, isLineScopedOrganogramRole } from "../src/lib/reports/organogram.ts";
 
 /**
@@ -44,14 +45,23 @@ import { canAccessCompanyOrganogram, isLineScopedOrganogramRole } from "../src/l
  *
  * ## What this asserts
  *
- * For EVERY role, in its OWN navigation mode, using the real production filter
- * (`getSections`, the same call the sidebar and the command palette make):
+ * For EVERY role, in its OWN navigation mode, on BOTH surfaces that can offer the link:
  *
  *   grant + page gates say the role can open the organogram  <->  a link to it is rendered
  *
  * Both directions. The forward direction is the bug above. The reverse catches a dead link —
  * an entry offered to a role the page then bounces, which is the failure
  * tests/sfe-manager-nav-dead-links.test.ts exists for on other pages.
+ *
+ * ## Why "both surfaces" — the 2026-09-10 repeat
+ *
+ * This file originally asserted `getSections(getNavigationSections(mode), …)` alone, describing it
+ * as "the same call the sidebar and the command palette make". That is true in the ADMIN shell and
+ * false in the PORTAL one, where `employee-portal-layout.tsx` builds its rail from
+ * `resolveEmployeePortalNavVisibility`'s flags and the seed reaches only Cmd+K. So the 2026-08-25
+ * fix for the Training Manager edited the seed, this test went green on the seed, and his sidebar
+ * row still did not exist — the owner reported the same missing organogram again sixteen days
+ * later. A test that measures the wrong surface does not merely miss a bug; it certifies it.
  */
 
 /** Where the organogram lives in each shell. The admin page redirects portal-mode roles here. */
@@ -79,6 +89,24 @@ function permissionLookupFor(role: PhoenixRole): PermissionLookup {
 function organogramLinkIsOffered(role: PhoenixRole, mode: NavigationMode): boolean {
   const sections = getSections(getNavigationSections(mode), mode, permissionLookupFor(role), role);
   return sections.some((section) => section.items.some((item) => item.href === ORGANOGRAM_HREF[mode]));
+}
+
+/**
+ * The SECOND surface, and the one the owner actually looks at.
+ *
+ * `getSections` above reads `system-navigation.ts`. In the ADMIN shell that seed is the sidebar.
+ * In the PORTAL shell it is not: `employee-portal-layout.tsx` builds its own rail out of the
+ * boolean flags `resolveEmployeePortalNavVisibility` returns, and the seed feeds only the command
+ * palette. So a portal role can be listed on the seed's Organogram entry, pass both page gates,
+ * and still have no row in the sidebar — which is precisely what happened to the Training Manager
+ * between 2026-08-25 and 2026-09-10. The 2026-08-25 fix added him to the seed, this file went
+ * green, and the link he was missing was never the one being asserted.
+ *
+ * `viewerHrId` is deliberately a neutral id: `showOrganogramTab` also fires for the A-3 account
+ * pin, and passing A-3 here would make every role look offered.
+ */
+function portalRailOffersOrganogram(role: PhoenixRole): boolean {
+  return resolveEmployeePortalNavVisibility(role, role, null, null, "T-1").showOrganogramTab === true;
 }
 
 export async function runOrganogramNavLinkExistsTests() {
@@ -117,11 +145,26 @@ export async function runOrganogramNavLinkExistsTests() {
         `canAccessCompanyOrganogram, so ${ORGANOGRAM_HREF[mode]} renders the whole chart on request — but with ` +
         "no sidebar entry there is no way to reach it. This is exactly what the owner hit on 2026-08-25.",
     );
+    if (mode === "employee-portal") {
+      assert.equal(
+        portalRailOffersOrganogram(role),
+        true,
+        `${role} is a PORTAL role, so the assert above is not the surface he uses. The portal sidebar is ` +
+          "built from resolveEmployeePortalNavVisibility's flags, and showOrganogramTab is what puts the row " +
+          "in it. This is what the owner hit on 2026-09-10 for A-7: seed entry present, both page gates open, " +
+          "sidebar row absent.",
+      );
+    }
   }
 
   // ── 2. The general invariant, across every role and both shells ──────────────────────
   const stranded: string[] = [];
   const dead: string[] = [];
+  // The same two directions again, on the portal RAIL rather than the seed — see
+  // portalRailOffersOrganogram. Tracked apart so a failure names which surface is wrong; the two
+  // disagreeing IS the bug, and folding them into one boolean would hide exactly that.
+  const railStranded: string[] = [];
+  const railDead: string[] = [];
   for (const role of phoenixRoles) {
     const access = createAccessContext({ hrId: "T-1", role });
     const mode = resolveNavigationMode(access);
@@ -132,6 +175,12 @@ export async function runOrganogramNavLinkExistsTests() {
 
     if (canOpen && !offered) stranded.push(`${role} (${mode})`);
     if (!canOpen && offered) dead.push(`${role} (${mode})`);
+
+    if (mode === "employee-portal") {
+      const onRail = portalRailOffersOrganogram(role);
+      if (canOpen && !onRail) railStranded.push(role);
+      if (!canOpen && onRail) railDead.push(role);
+    }
   }
   assert.deepEqual(
     stranded,
@@ -143,6 +192,17 @@ export async function runOrganogramNavLinkExistsTests() {
     dead,
     [],
     "these roles are offered an Organogram link the page will bounce them from: " + dead.join(", "),
+  );
+  assert.deepEqual(
+    railStranded,
+    [],
+    "these portal roles can open the organogram but get no row in the portal sidebar (showOrganogramTab is " +
+      "false for them), whatever system-navigation.ts says: " + railStranded.join(", "),
+  );
+  assert.deepEqual(
+    railDead,
+    [],
+    "these portal roles get a sidebar Organogram row the page will bounce them from: " + railDead.join(", "),
   );
 
   // ── 3. Controls: the roles that must NOT be offered it ───────────────────────────────
@@ -157,11 +217,19 @@ export async function runOrganogramNavLinkExistsTests() {
       false,
       `${role} holds no organogram grant and must not be offered the link`,
     );
+    assert.equal(
+      portalRailOffersOrganogram(role),
+      false,
+      `${role} holds no organogram grant and must get no portal sidebar row either — this is what fails if ` +
+        "showOrganogramTab is widened by deleting its role list rather than by adding one role to it",
+    );
   }
 
   // ── 4. Marketing Manager is the untouched control ────────────────────────────────────
   // He was already listed on the portal entry, which is why he was never stranded. If a
   // refactor of that entry breaks him, this says so rather than letting the two roles above
-  // look like the whole story.
+  // look like the whole story. He is the control on BOTH surfaces: he was on the seed AND on the
+  // rail throughout, which is the difference between him and the Training Manager beside him.
   assert.equal(organogramLinkIsOffered("Marketing Manager", "employee-portal"), true);
+  assert.equal(portalRailOffersOrganogram("Marketing Manager"), true);
 }
