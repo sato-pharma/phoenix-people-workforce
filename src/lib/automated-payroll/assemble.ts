@@ -42,6 +42,14 @@ export type AssembledRow = {
   onHold: boolean;
   overpaidResidual: number;
   /**
+   * What the LOCKED engine says this month owes, before the split decides which instalment pays it.
+   *
+   * Carried through so reconcile() can compare the split against something it did not derive from
+   * the split. `monthSalary` is literally `firstPart + secondPart` (see assembleParts), so a check
+   * of one against the other can never fail — which is what the pre-Part-2 gate was doing.
+   */
+  totalPayable: number;
+  /**
    * Amount recovered THIS run from a previous run's overpayment (owner rule
    * 2026-07-25). Already included in the row's deduction totals; surfaced
    * separately so the sheet and UI can show it as its own line rather than
@@ -411,6 +419,7 @@ export function assembleRows(input: {
       compact: member.compact,
       onHold,
       overpaidResidual: parts.overpaidResidual,
+      totalPayable: parts.totalPayable,
       carriedForwardApplied,
       lifecycle: member.lifecycle,
       bankName: employee.bankName ?? null,
