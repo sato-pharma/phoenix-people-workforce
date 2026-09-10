@@ -212,13 +212,33 @@ export function runClosingSourceMaskTests() {
   // of a NATIONAL pool. Built after the scope, a regional manager's four areas would divide El
   // Qema's warehouses among themselves and each take about nine times what the closing credits — a
   // number that is wrong, large, and looks entirely plausible on the page.
-  const removalAt = loader.body.indexOf("withoutMaskedSourceRows(merged, access)");
+  const removalAt = loader.body.indexOf("withoutMaskedSourceRows(credited, access)");
   const buildAt = loader.body.indexOf("buildMainStoresRows(merged, {");
+  const creditAt = loader.body.indexOf("applyCreditedAreaView(merged, {");
   const scopeAt = loader.body.indexOf("applyDetailScope(");
   const optionsAt = loader.body.indexOf("buildFilterOptions(");
-  assert.ok(removalAt > 0, "the loader still removes the masked rows, from the whole month");
+  assert.ok(removalAt > 0, "the loader still removes the masked rows");
   assert.ok(buildAt > 0, "and still builds Main Stores from the whole month, never a scoped slice");
+  assert.ok(creditAt > 0, "and still builds the credited view from the whole month too");
   assert.ok(scopeAt > 0 && optionsAt > 0, "the scope gate and the option builder are still there");
   assert.ok(buildAt < scopeAt, "Main Stores is built BEFORE the access scope narrows the month");
+  assert.ok(creditAt < scopeAt, "and so is the credited view, for the same reason");
   assert.ok(removalAt < optionsAt, "and the removal runs before the distributor dropdown is built");
+
+  // 🔴 BOTH PASSES READ `merged`, AND THE REMOVAL READS THEIR OUTPUT — never the reverse.
+  //
+  // The city split is a POOL: which areas share a wholesaler's sell-in depends on who else is in
+  // that city. Handing either pass a population El Qema had already been removed from asks the
+  // split a different question from the one the Closing Matrix asked, and the answer then differs
+  // by an amount nothing on the page can explain. Every area ties today; that is what would break.
+  assert.ok(
+    creditAt < removalAt,
+    "the credited view runs over the whole month and the masked rows are dropped from its RESULT — "
+    + "removing them first changes the city pool and every area stops tying to its closing",
+  );
+  assert.equal(
+    loader.body.indexOf("applyCreditedAreaView(withoutMaskedSourceRows"),
+    -1,
+    "and the two are never nested the other way round",
+  );
 }

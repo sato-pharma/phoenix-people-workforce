@@ -106,6 +106,79 @@ export function wholeUnitShares<T>(shares: readonly { row: T; units: number }[])
   return floored.map((share) => ({ row: share.row, units: share.units }));
 }
 
+/** An area's own label, for a row the split has just moved into it. */
+export type AreaLabel = { areaName: string; regionCode: string; regionName: string };
+
+/**
+ * 🔒 THE CREDITED VIEW — every wholesaler's rows where the CLOSING books them.
+ *
+ * Owner, 2026-09-10, having seen Main Stores work on El Qema and asked for the rest: "yes do the
+ * same for the rest."
+ *
+ * WHAT IT FIXES. This sheet listed rows AS INVOICED while the closing pays on where the goods were
+ * earned, so the two disagreed for every area a wholesaler's city split touched. Measured on August
+ * Pedia before this: 17 of 46 areas tied to their own closing, and of the 29 that did not, 29 had
+ * other wholesalers' store movement and NONE carried Office money. So the city split was the whole
+ * of the remaining difference.
+ *
+ * WHAT MOVES AND WHAT DOES NOT. Only rows the split actually relocates. Everything else — every
+ * pharmacy, every direct order, every wholesaler whose city has one area — passes through
+ * byte-for-byte. A moved row keeps its CUSTOMER: the split never changes who bought, only which
+ * area is credited, so naming the same wholesaler on each share is the closing's own belief rather
+ * than an invention. El Qema is the one exception, and it becomes Main Stores.
+ *
+ * 🔴 A MOVED ROW MUST BE RELABELLED, AND THE SPLIT DOES NOT DO IT. `splitStoreSalesAcrossCityAreas`
+ * rewrites area CODES and leaves `areaName`/`regionName` on the ORIGIN's, so a share that landed in
+ * Qalubeya still called itself Sohag 1 — measured, and invisible from the codes alone. Which rows
+ * moved is worked out by tagging each input row with the area it came from and comparing after,
+ * rather than by re-deriving the split's own eligibility rule, which would then have two copies.
+ *
+ * ⚠ UNITS ON A MOVED ROW STAY FRACTIONAL, and that is deliberate. Its quantity and its value
+ * are scaled by the SAME fraction, so value divided by units still equals the ex-factory price on
+ * the row — round the units alone and the row stops multiplying out. Main Stores can be rounded
+ * precisely because it carries no price (see `buildMainStoresRows`).
+ */
+export function applyCreditedAreaView<T extends ShareableRow & StoreSplitRow>(
+  rows: readonly T[],
+  input: {
+    areaLabelOf: (areaCode: string) => AreaLabel | null;
+    line: string | null | undefined;
+    period: string | null | undefined;
+    regions?: SplitRegions;
+  },
+): T[] {
+  const period = String(input.period ?? "").trim();
+  const line = String(input.line ?? "").trim();
+  if (!isStoreCitySplitActive(period) || !isSplitEligibleLine(line)) return [...rows];
+
+  const ORIGIN = "__creditedViewOriginArea" as const;
+  const tagged = rows.map((row) => ({
+    ...row,
+    [ORIGIN]: String(closingAreaOf(row) ?? "").trim().toUpperCase(),
+  })) as (T & Record<typeof ORIGIN, string>)[];
+
+  const out: T[] = [];
+  for (const row of splitStoreSalesAcrossCityAreas(tagged, period, input.regions).rows) {
+    const origin = row[ORIGIN];
+    const landed = String(closingAreaOf(row) ?? "").trim().toUpperCase();
+    const { [ORIGIN]: _dropped, ...bare } = row;
+    const clean = bare as unknown as T;
+    if (!landed || landed === origin) {
+      out.push(clean);
+      continue;
+    }
+    const place = input.areaLabelOf(landed);
+    out.push({
+      ...clean,
+      areaName: place?.areaName ?? landed,
+      sheetAreaName: place?.areaName ?? landed,
+      regionCode: place?.regionCode ?? clean.regionCode ?? "",
+      regionName: place?.regionName ?? clean.regionName ?? "",
+    });
+  }
+  return out;
+}
+
 /**
  * One Main Stores row per area and product, standing in for the masked distributor's warehouses.
  *
