@@ -112,8 +112,6 @@ export type EmailTemplateRecipientRole = (typeof emailTemplateRecipientRoleOptio
 export type EmailTemplateContext = {
   amount?: string | null;
   area?: string | null;
-  /** Human-readable leave identity, EXC-0001 / VAC-0001 — never the uuid. */
-  requestCode?: string | null;
   /** Pre-rendered HTML/text summary table used by digest-style templates (e.g. dv_planner_weekly). */
   digestTable?: string | null;
   digestTableText?: string | null;
@@ -210,6 +208,7 @@ export type EmailTemplateContext = {
   /** Pre-rendered HTML product rows for marketing emails; sanitized, not escaped, in bodyHtml. */
   productsTable?: string | null;
   productsTableText?: string | null;
+  /** Human-readable request identity: MKT-REQ-… for marketing, EXC-0001 / VAC-0001 for leave. Never a uuid. */
   requestCode?: string | null;
   requesterName?: string | null;
   requiredRoi?: string | null;

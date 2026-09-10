@@ -174,9 +174,10 @@ export function runLeaveRequestCodesTests() {
 
   // A context key absent from TOKEN_REGISTRY is silently dropped by contextVariables, so the
   // token would render as an empty string with nothing to show it happened.
-  has(tokenRegistrySource, "token: BQUOTErequestCodeBQUOTE".split("BQUOTE").join(String.fromCharCode(34)),
-    "requestCode must be a registered token or every {{requestCode}} renders blank");
-  has(templateManagerSource, "token: BQUOTErequestCodeBQUOTE".split("BQUOTE").join(String.fromCharCode(34)),
+  has(tokenRegistrySource,
+    "token: \"requestCode\", allowedTemplateTypes: [] }",
+    "requestCode must be registered AND unscoped: the entry existed but was limited to marketing_request, so the template editor never offered it on a leave or excuse template");
+  has(templateManagerSource, "token: \"requestCode\"",
     "the template editor carries its own copy of the token list; a token missing there cannot be inserted by whoever edits a template");
 
   // Functional, not a source assertion: render it and read the output back.
@@ -187,9 +188,9 @@ export function runLeaveRequestCodesTests() {
 
   // Every approval email passes it. The vacation templates render {{detailsTable}}, so the row
   // is what surfaces there; the excuse ones use metrics.
-  const rowCount = vacationEmailSource.split("{ label: BQUOTERequest codeBQUOTE, value: input.request.requestCode }".split("BQUOTE").join(String.fromCharCode(34))).length - 1;
+  const rowCount = vacationEmailSource.split("{ label: \"Request code\", value: input.request.requestCode }").length - 1;
   assert.equal(rowCount, 3, "all three vacation approval emails (request, decision, manager step) must carry the code row");
-  const metricCount = excuseServiceSource.split("label: BQUOTERequest codeBQUOTE".split("BQUOTE").join(String.fromCharCode(34))).length - 1;
+  const metricCount = excuseServiceSource.split("label: \"Request code\"").length - 1;
   assert.equal(metricCount, 2, "both excuse emails (manager request, employee decision) must carry the code metric");
 
   // These two bodies render a fixed field list rather than {{detailsTable}}, so a metric row
@@ -198,6 +199,6 @@ export function runLeaveRequestCodesTests() {
     "the excuse_decision and leave_returned bodies must name the code explicitly");
 
   // The rejection email used to hand the employee the raw uuid as the request identity.
-  lacks(vacationEmailSource, "input.request.id ?? " + String.fromCharCode(34) + String.fromCharCode(8212) + String.fromCharCode(34),
+  lacks(vacationEmailSource, "input.request.id ?? \"—\"",
     "the rejection email must identify the request by its code, never by the uuid");
 }
