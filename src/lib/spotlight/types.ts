@@ -17,18 +17,18 @@ export type PeriodKey = string;
 /**
  * The window a spotlight covers.
  *
- * A month, a calendar quarter, or a calendar half — the three the owner named, and the three the
- * rest of the codebase already speaks: quarters come from the business review's `quartersInWindow`
- * and halves from `src/lib/incentives/semester.ts`, which is where the payout curve gets its own
- * window. A fourth, free-form range was deliberately NOT added: an award over "March to some other
- * month" has no meaning anyone could defend, and every extra window shape is another denominator
- * to get wrong.
+ * A month, a calendar quarter, a calendar half, or a calendar year — all four the owner named, and
+ * all four ones the rest of the codebase already speaks: quarters come from the business review's
+ * `quartersInWindow` and halves from `src/lib/incentives/semester.ts`, which is where the payout
+ * curve gets its own window. A free-form range is deliberately NOT offered: an award over "March to
+ * some other month" has no meaning anyone could defend, and every extra window shape is another
+ * denominator to get wrong.
  */
-export type SpotlightWindowKind = "month" | "quarter" | "semester";
+export type SpotlightWindowKind = "month" | "quarter" | "semester" | "year";
 
 export type SpotlightWindow = {
   kind: SpotlightWindowKind;
-  /** `2026-08` for a month, `2026-Q3` for a quarter, `2026-S2` for a half. */
+  /** `2026-08` for a month, `2026-Q3` for a quarter, `2026-S2` for a half, `2026` for a year. */
   key: string;
 };
 

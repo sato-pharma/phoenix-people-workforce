@@ -25,6 +25,7 @@ import type { PeriodKey, SpotlightWindow, SpotlightWindowKind } from "./types";
 const PERIOD_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])$/;
 const QUARTER_PATTERN = /^(\d{4})-Q([1-4])$/;
 const SEMESTER_PATTERN = /^(\d{4})-S([12])$/;
+const YEAR_PATTERN = /^(\d{4})$/;
 
 /** The earliest month the sales engine holds. Below this a window is empty, not merely thin. */
 export const SPOTLIGHT_FLOOR: PeriodKey = "2026-01";
@@ -44,6 +45,7 @@ export function isValidWindow(window: SpotlightWindow | null | undefined): windo
   if (window.kind === "month") return PERIOD_PATTERN.test(window.key);
   if (window.kind === "quarter") return QUARTER_PATTERN.test(window.key);
   if (window.kind === "semester") return SEMESTER_PATTERN.test(window.key);
+  if (window.kind === "year") return YEAR_PATTERN.test(window.key);
   return false;
 }
 
@@ -58,6 +60,7 @@ export function windowPeriods(window: SpotlightWindow): PeriodKey[] {
       return `${year}-${String(month).padStart(2, "0")}`;
     });
 
+  if (window.kind === "year") return build(Number(window.key), 1, 12);
   if (window.kind === "quarter") {
     const [, yearText, quarterText] = QUARTER_PATTERN.exec(window.key)!;
     return build(Number(yearText), (Number(quarterText) - 1) * 3 + 1, 3);
@@ -66,9 +69,10 @@ export function windowPeriods(window: SpotlightWindow): PeriodKey[] {
   return build(Number(yearText), halfText === "2" ? 7 : 1, 6);
 }
 
-/** "August 2026" / "Q3 2026" / "H2 2026". */
+/** "August 2026" / "Q3 2026" / "H2 2026" / "2026". */
 export function windowLabel(window: SpotlightWindow): string {
   if (!isValidWindow(window)) return "";
+  if (window.kind === "year") return window.key;
   if (window.kind === "quarter") return `${window.key.slice(5)} ${window.key.slice(0, 4)}`;
   if (window.kind === "semester") return `H${window.key.slice(6)} ${window.key.slice(0, 4)}`;
   const [, year, month] = PERIOD_PATTERN.exec(window.key)!;
@@ -151,7 +155,7 @@ export function selectableWindows(
   count = 18,
 ): SpotlightWindow[] {
   const out: SpotlightWindow[] = [];
-  const step = kind === "month" ? 1 : kind === "quarter" ? 3 : 6;
+  const step = kind === "month" ? 1 : kind === "quarter" ? 3 : kind === "semester" ? 6 : 12;
 
   // Walk back from the month before the current one — the newest month that can possibly be
   // complete — and keep the windows whose own gate passes. Deriving the list from the SAME gate
@@ -166,7 +170,8 @@ export function selectableWindows(
     let window: SpotlightWindow;
     if (kind === "month") window = { kind, key: period };
     else if (kind === "quarter") window = { kind, key: `${year}-Q${Math.floor((month - 1) / 3) + 1}` };
-    else window = { kind, key: `${year}-S${month <= 6 ? 1 : 2}` };
+    else if (kind === "semester") window = { kind, key: `${year}-S${month <= 6 ? 1 : 2}` };
+    else window = { kind, key: String(year) };
 
     if (out.some((existing) => existing.key === window.key)) continue;
     if (gateWindow(window, today).allowed) out.push(window);

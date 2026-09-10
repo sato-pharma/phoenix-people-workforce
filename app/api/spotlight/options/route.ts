@@ -28,6 +28,7 @@ export async function GET(request: Request) {
           month: selectableWindows("month", undefined, 18),
           quarter: selectableWindows("quarter", undefined, 8),
           semester: selectableWindows("semester", undefined, 4),
+          year: selectableWindows("year", undefined, 4),
         },
         facets: facetsFrom(index),
       },

@@ -17,7 +17,7 @@ import type {
 } from "./types";
 
 const SUBJECTS: SpotlightSubjectKind[] = ["rep", "dm", "rsm", "nsm", "area", "region", "line"];
-const WINDOW_KINDS: SpotlightWindowKind[] = ["month", "quarter", "semester"];
+const WINDOW_KINDS: SpotlightWindowKind[] = ["month", "quarter", "semester", "year"];
 const RANK_BY: SpotlightRankBy[] = ["achievement", "value"];
 const DIRECTIONS: SpotlightRankDirection[] = ["top", "bottom"];
 const LAYOUTS: SpotlightLayout[] = ["leaderboard", "heroes", "both"];
@@ -71,7 +71,7 @@ export function parseSelection(body: unknown): SpotlightSelection {
   // `never` — the message is built from the raw values above rather than from the narrowed object.
   if (!isValidWindow(window)) {
     throw new SpotlightRequestError(
-      `"${windowKey}" is not a valid ${windowKind}. Expected a form like 2026-08, 2026-Q3 or 2026-S2.`,
+      `"${windowKey}" is not a valid ${windowKind}. Expected a form like 2026-08, 2026-Q3, 2026-S2 or 2026.`,
     );
   }
 
