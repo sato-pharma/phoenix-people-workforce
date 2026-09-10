@@ -40,6 +40,9 @@ export async function POST(
     const result = await decideVacationRequest(access, {
       decision,
       decisionComment: body.decisionComment,
+      // Stalled-approver override. Strict === true so a truthy string from a hand-rolled client
+      // cannot switch it on; the service re-checks Super Admin and the elapsed wait regardless.
+      override: body.override === true,
       requestId: id,
     });
 

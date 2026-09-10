@@ -1139,14 +1139,25 @@ export function runDirectOrdersApprovalDetailNamesTests() {
 
     // A requester must NEVER see Approve on their own request. Both decision panels bail out
     // when no action is available — that is what keeps this page read-only for them.
+    //
+    // The bail-out gained a second clause on 2026-09-10, when the vacation screen started showing
+    // its Acknowledge-as-HR button greyed rather than absent. That set is OPT-IN: `shownDisabled`
+    // is empty unless the caller passes `disabledReasons`, and direct orders never does — so this
+    // page is as read-only as before. Both halves are asserted, because dropping the opt-in gate
+    // is what would silently put dead buttons in front of a requester on their own order.
     for (const path of [
       "../src/components/approvals-hub/decision-actions.tsx",
     ]) {
       const source = readFileSync(new URL(path, import.meta.url), "utf8");
       assert.match(
         source,
-        /if \(available\.length === 0\) return null;/,
+        /if \(available\.length === 0 && shownDisabled\.length === 0\) return null;/,
         `${path} must render nothing when the viewer has no available action`,
+      );
+      assert.match(
+        source,
+        /Boolean\(disabledReasons\?\.\[action\]\)/,
+        `${path} must only ever grey an action the caller explicitly supplied a reason for`,
       );
     }
   }

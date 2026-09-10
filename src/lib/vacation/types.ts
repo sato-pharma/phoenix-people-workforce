@@ -54,6 +54,7 @@ export type VacationTimelineEventType =
   | "admin_created"
   | "admin_deleted"
   | "admin_updated"
+  | "approval_admin_override"
   | "evidence_reviewed"
   | "evidence_uploaded"
   | "hr_approved"
@@ -83,7 +84,17 @@ export type VacationApprovalStepState = {
   stepKey: VacationWorkflowStepKey;
 };
 
-export type VacationActionButton = "approve" | "reject" | "acknowledge" | "assign" | "return";
+export type VacationActionButton =
+  | "approve"
+  | "reject"
+  | "acknowledge"
+  | "assign"
+  | "return"
+  // Super Admin only, and only once the active management approver has sat on the step for
+  // ADMIN_OVERRIDE_STALL_DAYS. Decides that approver's step in their place; the chain then
+  // carries on normally and the next approver starts a fresh clock (owner decision 2026-09-10).
+  | "overrideApprove"
+  | "overrideReject";
 export type VacationActionAvailability = Record<
   VacationActionButton,
   { enabled: boolean; disabledReason: string | null }
@@ -300,8 +311,23 @@ export type VacationActionCenterRow = VacationRequestRecord & {
   assignedActorName: string | null;
   assignedActorTitle: string | null;
   actionAvailability: VacationActionAvailability;
+  adminOverride: VacationAdminOverrideState | null;
   slaAgeDays: number;
   viewerStepKind: "management" | "hr" | "none";
+};
+
+/**
+ * The stalled-approver override, as the viewer sees it. `available` is the server's verdict and
+ * the only thing that decides whether the button renders; `reason` explains a false. Present on
+ * every pending row so HR can see the wait building, not just once it unlocks.
+ */
+export type VacationAdminOverrideState = {
+  approverHrId: string | null;
+  approverName: string | null;
+  available: boolean;
+  availableAt: string | null;
+  daysPending: number;
+  reason: string | null;
 };
 
 export type VacationActionCenterData = {

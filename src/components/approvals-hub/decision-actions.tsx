@@ -10,39 +10,90 @@ export type DecisionActionsProps = {
   // Field name for the reason/comment ("decisionComment" for leave, "comment" for excuse).
   commentField: "decisionComment" | "comment";
   // Which buttons are enabled for this viewer/step.
-  actions: { approve?: boolean; reject?: boolean; return?: boolean; acknowledge?: boolean };
+  actions: {
+    approve?: boolean;
+    reject?: boolean;
+    return?: boolean;
+    acknowledge?: boolean;
+    overrideApprove?: boolean;
+    overrideReject?: boolean;
+  };
+  /**
+   * Per-action label overrides. The vacation screen names the HR seat explicitly ("Reject as HR")
+   * so the four buttons read as one set; excuses and weekly plans keep the plain verbs, because
+   * their approvers are managers, not HR.
+   */
+  labelOverrides?: Partial<Record<Action, string>>;
+  /**
+   * Actions to keep VISIBLE while disabled, with the reason to print under them. The owner asked
+   * to see all four vacation buttons at once (2026-09-10) rather than have one appear later:
+   * an action with a reason here renders greyed instead of vanishing.
+   */
+  disabledReasons?: Partial<Record<Action, string | null>>;
   // Where to return after a successful decision.
   backHref: string;
+  /** One line telling the admin what responding here does, before they commit to it. */
+  overrideNotice?: string | null;
   /** Extra fields merged into the request body. Early Birds sends the candidate id so the server
    * can detect a stale tab and refuse, instead of deciding whichever rep happens to be current. */
   extraPayload?: Record<string, unknown>;
 };
 
-type Pending = "approve" | "reject" | "return" | "acknowledge" | null;
+type Pending = "approve" | "reject" | "return" | "acknowledge" | "overrideApprove" | "overrideReject" | null;
+type Action = Exclude<Pending, null>;
 
-const LABEL: Record<Exclude<Pending, null>, string> = {
+const LABEL: Record<Action, string> = {
   approve: "Approve",
   reject: "Reject",
   return: "Return with comment",
   acknowledge: "Acknowledge (HR)",
+  // The owner's wording, 2026-09-10: no button ever says "override", and none names the approver
+  // who has not replied. The approval TRANSFERS; the System Administrator answers.
+  overrideApprove: "Approve as System Administrator",
+  overrideReject: "Reject as System Administrator",
 };
 
-const REASON_REQUIRED: Record<Exclude<Pending, null>, boolean> = {
+const REASON_REQUIRED: Record<Action, boolean> = {
   approve: false,
   reject: true,
   return: true,
   acknowledge: false,
+  // Approve stays one click by design — the server writes the override sentence itself. A
+  // rejection still has to say why, because the employee reads it.
+  overrideApprove: false,
+  overrideReject: true,
 };
 
 // The API decision token for each action (acknowledge is an HR approve).
-const DECISION_TOKEN: Record<Exclude<Pending, null>, string> = {
+const DECISION_TOKEN: Record<Action, string> = {
   approve: "approve",
   reject: "reject",
   return: "return",
   acknowledge: "approve",
+  overrideApprove: "approve",
+  overrideReject: "reject",
 };
 
-export function DecisionActions({ endpoint, commentField, actions, backHref, extraPayload }: DecisionActionsProps) {
+// The two that decide a stalled approver's step instead of the caller's own.
+const IS_OVERRIDE: Record<Action, boolean> = {
+  approve: false,
+  reject: false,
+  return: false,
+  acknowledge: false,
+  overrideApprove: true,
+  overrideReject: true,
+};
+
+export function DecisionActions({
+  endpoint,
+  commentField,
+  actions,
+  backHref,
+  extraPayload,
+  labelOverrides,
+  disabledReasons,
+  overrideNotice,
+}: DecisionActionsProps) {
   const router = useRouter();
   const [pending, setPending] = useState<Pending>(null);
   const [reason, setReason] = useState("");
@@ -60,16 +111,27 @@ export function DecisionActions({ endpoint, commentField, actions, backHref, ext
     setMounted(true);
   }, []);
 
-  const available = (
-    [
-      ["approve", actions.approve],
-      ["acknowledge", actions.acknowledge],
-      ["return", actions.return],
-      ["reject", actions.reject],
-    ] as Array<[Exclude<Pending, null>, boolean | undefined]>
-  ).filter(([, on]) => on);
+  // Overrides sit last: they are the exception, and the ordinary buttons must stay where the
+  // muscle memory expects them.
+  const ordered = [
+    ["approve", actions.approve],
+    ["acknowledge", actions.acknowledge],
+    ["return", actions.return],
+    ["reject", actions.reject],
+    ["overrideApprove", actions.overrideApprove],
+    ["overrideReject", actions.overrideReject],
+  ] as Array<[Action, boolean | undefined]>;
 
-  if (available.length === 0) return null;
+  const available = ordered.filter(([, on]) => on);
+  // Shown but not clickable: the caller supplied a reason for an action that is off. Nothing is
+  // greyed unless the caller asked for it, so excuses and weekly plans are untouched.
+  const shownDisabled = ordered
+    .filter(([action, on]) => !on && Boolean(disabledReasons?.[action]))
+    .map(([action]) => [action, String(disabledReasons?.[action])] as [Action, string]);
+
+  if (available.length === 0 && shownDisabled.length === 0) return null;
+
+  const labelFor = (action: Action) => labelOverrides?.[action] ?? LABEL[action];
 
   function start(action: Exclude<Pending, null>) {
     setError(null);
@@ -95,6 +157,9 @@ export function DecisionActions({ endpoint, commentField, actions, backHref, ext
         body: JSON.stringify({
           ...extraPayload,
           decision: DECISION_TOKEN[pending],
+          // Only ever sent by the two override buttons. The server re-checks Super Admin and the
+          // elapsed wait, so this flag asks for the override — it does not grant it.
+          ...(IS_OVERRIDE[pending] ? { override: true } : {}),
           [commentField]: reason.trim() || null,
         }),
       });
@@ -113,11 +178,14 @@ export function DecisionActions({ endpoint, commentField, actions, backHref, ext
     }
   }
 
-  const toneClass: Record<Exclude<Pending, null>, string> = {
+  const toneClass: Record<Action, string> = {
     approve: "bg-emerald-600 hover:bg-emerald-700 text-white",
     acknowledge: "bg-slate-900 hover:bg-black text-white",
     return: "border border-amber-500 text-amber-700 hover:bg-amber-50",
     reject: "border border-rose-500 text-rose-700 hover:bg-rose-50",
+    // Outlined, not filled: an override must never be the button a tired thumb reaches for first.
+    overrideApprove: "border border-slate-900 text-slate-900 hover:bg-slate-100",
+    overrideReject: "border border-slate-400 text-slate-600 hover:bg-slate-100",
   };
 
   return (
@@ -139,17 +207,40 @@ export function DecisionActions({ endpoint, commentField, actions, backHref, ext
                 // moves, reached after eight sections of evidence, often on a phone.
                 className={`h-11 flex-1 px-4 text-sm font-bold transition-colors md:flex-none ${toneClass[action]}`}
               >
-                {LABEL[action]}
+                {labelFor(action)}
               </button>
+            ))}
+            {shownDisabled.map(([action, reason]) => (
+              // Present, obviously off, and saying why. `title` is not enough — this is read on a
+              // phone, where there is no hover.
+              <div key={`off-${action}`} className="w-full md:w-auto">
+                <button
+                  type="button"
+                  disabled
+                  className="h-11 w-full cursor-not-allowed border border-slate-300 px-4 text-sm font-bold text-slate-400 md:w-auto"
+                >
+                  {labelFor(action)}
+                </button>
+                <p className="mt-1 text-phx-xs font-semibold text-slate-500">{reason}</p>
+              </div>
             ))}
           </div>
         ) : (
           <div className="space-y-3">
             <p className="text-sm font-bold text-slate-900">
-              {pending === "approve" || pending === "acknowledge"
-                ? `Confirm: ${LABEL[pending]} this request?`
-                : `${LABEL[pending]} — provide a reason`}
+              {REASON_REQUIRED[pending]
+                ? `${labelFor(pending)} — provide a reason`
+                : IS_OVERRIDE[pending]
+                  // "Approve as System Administrator this request?" does not parse — the label
+                  // already carries the object, so the override heading drops the trailing noun.
+                  ? `Confirm: ${labelFor(pending)}?`
+                  : `Confirm: ${labelFor(pending)} this request?`}
             </p>
+            {IS_OVERRIDE[pending] && overrideNotice ? (
+              <p className="border border-slate-900 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900">
+                {overrideNotice}
+              </p>
+            ) : null}
             {REASON_REQUIRED[pending] ? (
               <textarea
                 value={reason}
@@ -198,7 +289,10 @@ export function DecisionActions({ endpoint, commentField, actions, backHref, ext
     {mounted && pending === null
       ? createPortal(
           <div
-            className="fixed inset-x-0 z-30 flex gap-2 border-t border-slate-200 bg-white/95 px-4 pb-3 pt-3 backdrop-blur md:hidden"
+            // flex-wrap, not a squashed single row: "Approve as System Administrator" beside two
+            // more labels cannot fit 375px on one line, and the golden rule says WRAP rather than
+            // shrink the type or let it scroll sideways. basis-[48%] puts them two per row.
+            className="fixed inset-x-0 z-30 flex flex-wrap gap-2 border-t border-slate-200 bg-white/95 px-4 pb-3 pt-3 backdrop-blur md:hidden"
             style={{ bottom: "env(safe-area-inset-bottom)" }}
           >
             {available.map(([action]) => (
@@ -206,9 +300,15 @@ export function DecisionActions({ endpoint, commentField, actions, backHref, ext
                 key={`bar-${action}`}
                 type="button"
                 onClick={() => start(action)}
-                className={`h-12 flex-1 text-sm font-bold transition-colors ${toneClass[action]}`}
+                // Wrapping is driven by min-width, NOT flex-basis. `basis-*` and `flex-1` set the
+                // same shorthand, so which one wins depends on Tailwind's rule order rather than
+                // on anything written here — and the repo build need not order them like the CDN
+                // one this was measured against. A min-width cannot conflict: two buttons fit a
+                // 375px row, three cannot, so they wrap. It also keeps `h-12 flex-1` contiguous,
+                // which tests/direct-orders-approval-window-mobile.test.ts pins as the thumb size.
+                className={`h-12 flex-1 min-w-[9rem] px-2 text-sm font-bold transition-colors ${toneClass[action]}`}
               >
-                {LABEL[action]}
+                {labelFor(action)}
               </button>
             ))}
           </div>,

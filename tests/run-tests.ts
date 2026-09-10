@@ -1539,6 +1539,7 @@ import { runOrganogramArabicSearchTests } from "./organogram-arabic-search.test.
 import { runOrganogramTeamLabelTests } from "./organogram-team-label.test.ts";
 import { runWeeklyUploadLineNotificationTests } from "./weekly-upload-line-notification.test.ts";
 import { runSalesNotificationExclusionsTests } from "./sales-notification-exclusions.test.ts";
+import { runVacationAdminOverrideTests } from "./vacation-admin-override.test.ts";
 
 import { runLeaveRequestCodesTests } from "./leave-request-codes.test.ts";
 
@@ -5047,6 +5048,11 @@ await runTest(
 await runTest(
   "one shared list decides who is left out of a sales announcement, read by both senders, matched case-insensitively",
   runSalesNotificationExclusionsTests,
+);
+
+await runTest(
+  "a Super Admin can decide a management step only after its approver has held it two calendar days, and the row records who overrode it",
+  runVacationAdminOverrideTests,
 );
 
 await runTest("leave request codes (EXC-/VAC- stored, unique, backfilled, immutable)", runLeaveRequestCodesTests);
