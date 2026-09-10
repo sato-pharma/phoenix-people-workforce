@@ -162,6 +162,7 @@ const fallbackVariables: DesignerVariable[] = [
   { allowedTemplateTypes: [], category: "Employee", label: "Employee HR ID", sampleValue: "PHX-1024", token: "employeeHrId" },
   { allowedTemplateTypes: [], category: "Manager", label: "Manager Name", sampleValue: "Omar Nabil", token: "managerName" },
   { allowedTemplateTypes: [], category: "Candidate", label: "Candidate Name", sampleValue: "Ahmed Hassan", token: "candidateName" },
+  { allowedTemplateTypes: [], category: "Company", label: "Request Code", sampleValue: "VAC-0042", token: "requestCode" },
   { allowedTemplateTypes: [], category: "Company", label: "Summary", sampleValue: "A workflow update needs review.", token: "summary" },
   { allowedTemplateTypes: [], category: "Company", label: "Status", sampleValue: "Pending", token: "status" },
 ];

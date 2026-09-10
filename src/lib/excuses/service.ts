@@ -469,6 +469,7 @@ async function notifyManagerOfExcuse(input: {
       employeeHrId: input.request.employeeHrId,
       includeHrInbox: true,
       metrics: [
+        { label: "Request code", value: input.request.requestCode },
         { label: "Employee", value: `${input.employee.displayName} (${input.request.employeeHrId})` },
         { label: "Job Title", value: input.employee.jobTitle ?? "—" },
         { label: "Line", value: input.request.lineName ?? input.employee.lineName ?? "—" },
@@ -487,6 +488,7 @@ async function notifyManagerOfExcuse(input: {
         area: input.employee.areaName ?? "—",
         duration: `${input.request.durationHours} hours`,
         jobTitle: input.employee.jobTitle ?? "—",
+        requestCode: input.request.requestCode,
         line: input.request.lineName ?? input.employee.lineName ?? "—",
       },
       title,
@@ -551,6 +553,7 @@ async function notifyDecisionRecipients(input: {
         employeeHrId: input.request.employeeHrId,
         includeHrInbox: true,
         metrics: [
+          { label: "Request code", value: input.request.requestCode },
           { label: "Excuse type", value: excuseTypeLabel },
           { label: "Date", value: input.request.excuseDate },
           { label: "Status", value: requestStatusLabel },
@@ -569,6 +572,7 @@ async function notifyDecisionRecipients(input: {
           excuseDate: input.request.excuseDate,
           excuseType: excuseTypeLabel,
           line: input.request.lineName ?? "—",
+          requestCode: input.request.requestCode,
           status: requestStatusLabel,
         },
         title,

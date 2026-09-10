@@ -208,6 +208,7 @@ export type EmailTemplateContext = {
   /** Pre-rendered HTML product rows for marketing emails; sanitized, not escaped, in bodyHtml. */
   productsTable?: string | null;
   productsTableText?: string | null;
+  /** Human-readable request identity: MKT-REQ-… for marketing, EXC-0001 / VAC-0001 for leave. Never a uuid. */
   requestCode?: string | null;
   requesterName?: string | null;
   requiredRoi?: string | null;
@@ -575,12 +576,13 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
   excuse_decision: {
     bodyHtml:
       "<p>{{summary}}</p>" +
+      "<p><strong>Request code:</strong> {{requestCode}}</p>" +
       "<p><strong>Excuse type:</strong> {{excuseType}}</p>" +
       "<p><strong>Date:</strong> {{excuseDate}}</p>" +
       "<p><strong>Duration:</strong> {{duration}}</p>" +
       "<p><strong>Decision:</strong> {{status}}</p>",
     bodyText:
-      "{{summary}}\n\nExcuse type: {{excuseType}}\nDate: {{excuseDate}}\nDuration: {{duration}}\nDecision: {{status}}",
+      "{{summary}}\n\nRequest code: {{requestCode}}\nExcuse type: {{excuseType}}\nDate: {{excuseDate}}\nDuration: {{duration}}\nDecision: {{status}}",
     closingText: "Open Phoenix Workforce to review your excuse history.",
     description:
       "Excuse decision result sent to the employee after their manager approves or rejects an excuse (late arrival / early leave) request.",
@@ -862,8 +864,8 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "Leave Resubmit Confirmation",
   },
   leave_returned: {
-    bodyHtml: "<p>{{managerName}} returned your {{vacationType}} request for revision.</p><p><strong>Period:</strong> {{startDate}} to {{endDate}}</p><p><strong>Returned by:</strong> {{managerName}}</p><p><strong>Reason:</strong> {{summary}}</p><p>Please review the reason and resubmit your request through Phoenix Workforce.</p>",
-    bodyText: "{{managerName}} returned your {{vacationType}} request for revision.\n\nPeriod: {{startDate}} to {{endDate}}\nReturned by: {{managerName}}\nReason: {{summary}}\n\nPlease review the reason and resubmit your request.",
+    bodyHtml: "<p>{{managerName}} returned your {{vacationType}} request for revision.</p><p><strong>Request code:</strong> {{requestCode}}</p><p><strong>Period:</strong> {{startDate}} to {{endDate}}</p><p><strong>Returned by:</strong> {{managerName}}</p><p><strong>Reason:</strong> {{summary}}</p><p>Please review the reason and resubmit your request through Phoenix Workforce.</p>",
+    bodyText: "{{managerName}} returned your {{vacationType}} request for revision.\n\nRequest code: {{requestCode}}\nPeriod: {{startDate}} to {{endDate}}\nReturned by: {{managerName}}\nReason: {{summary}}\n\nPlease review the reason and resubmit your request.",
     closingText: "Log in to Phoenix Workforce, review the feedback, update your request, and resubmit.",
     description: "Notifies the employee (CC: HR) when a manager returns their leave request for revision.",
     greeting: "Dear {{honorific}}{{recipientName}},",

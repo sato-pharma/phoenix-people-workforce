@@ -116,6 +116,7 @@ export async function sendVacationManagerDecisionEmail(input: VacationManagerEma
     : "This vacation request requires manager review and HR final review.";
 
   const detailsRows: PhoenixEmailMetadataRow[] = [
+    { label: "Request code", value: input.request.requestCode },
     { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
     { label: "Hiring date", value: hireDate },
     { label: "Available balance", value: formatDays(input.request.balanceBeforeDays) },
@@ -130,6 +131,7 @@ export async function sendVacationManagerDecisionEmail(input: VacationManagerEma
       ctaUrl: input.reviewUrl,
       // The leave_request template renders the hiring date via {{date}}.
       date: hireDate,
+      requestCode: input.request.requestCode,
       detailsTable: renderPhoenixMetadataTable(detailsRows),
       detailsTableText: renderPhoenixMetadataTableText(detailsRows),
       duration,
@@ -184,6 +186,7 @@ export async function sendVacationDecisionResultEmail(input: VacationDecisionEma
     ? "Your vacation request has been approved by the vacation approval workflow."
     : `Your vacation request has been rejected by the vacation approval workflow.${input.request.hrDecisionComment ? ` Reason: ${input.request.hrDecisionComment}` : ""}`;
   const detailsRows: PhoenixEmailMetadataRow[] = [
+    { label: "Request code", value: input.request.requestCode },
     { label: "Leave type", value: vacationTypeLabel(input.request.vacationType) },
     { label: "Period", value: `${formatDate(input.request.startDate)} to ${formatDate(input.request.endDate)}` },
     { label: "Duration", value: formatDays(input.request.durationDays) },
@@ -205,7 +208,10 @@ export async function sendVacationDecisionResultEmail(input: VacationDecisionEma
       managerName: input.request.managerName || "your manager",
       recipientName: input.employeeDisplayName ?? input.request.employeeName,
       startDate: formatDate(input.request.startDate),
-      status: approved ? statusLine : (input.request.id ?? "—"),
+      requestCode: input.request.requestCode,
+      // {{status}} carries the request identity on the rejection template. It used to pass the
+      // raw uuid, which is precisely the thing nobody can read back to you over the phone.
+      status: approved ? statusLine : input.request.requestCode,
       subject: `Vacation request ${approved ? "approved" : "rejected"}`,
       summary: approved ? statusLine : (input.request.hrDecisionComment ?? "—"),
       vacationType: vacationTypeLabel(input.request.vacationType),
@@ -265,6 +271,7 @@ export async function sendVacationManagerStepResultEmail(
     ? `${input.managerName} approved your ${vacationTypeLabel(input.request.vacationType)} request. ${input.nextStep}`
     : `${input.managerName} rejected your ${vacationTypeLabel(input.request.vacationType)} request.${input.managerDecisionComment ? ` Reason: ${input.managerDecisionComment}` : ""}`;
   const detailsRows: PhoenixEmailMetadataRow[] = [
+    { label: "Request code", value: input.request.requestCode },
     { label: "Type", value: vacationTypeLabel(input.request.vacationType) },
     { label: "Period", value: `${formatDate(input.request.startDate)} to ${formatDate(input.request.endDate)}` },
     { label: "Manager", value: input.managerName },
@@ -283,6 +290,7 @@ export async function sendVacationManagerStepResultEmail(
       endDate: formatDate(input.request.endDate),
       managerName: input.managerName,
       nextStep: approved ? input.nextStep : "",
+      requestCode: input.request.requestCode,
       recipientName: input.employeeDisplayName ?? input.request.employeeName,
       startDate: formatDate(input.request.startDate),
       status: approved ? "Approved" : `Rejected${input.managerDecisionComment ? ` — ${input.managerDecisionComment}` : ""}`,
@@ -426,6 +434,7 @@ export async function sendVacationReturnedEmail(
       managerName: input.managerName,
       recipientName: input.employeeDisplayName ?? input.request.employeeName,
       startDate: formatDate(input.request.startDate),
+      requestCode: input.request.requestCode,
       status: "Returned for revision",
       subject: "Vacation request returned for revision",
       summary: input.decisionComment ?? "No reason provided",
@@ -441,6 +450,7 @@ export async function sendVacationReturnedEmail(
   const fallback = buildFallbackEmail({
     heading,
     rows: [
+      ["Request code", input.request.requestCode],
       ["Type", vacationTypeLabel(input.request.vacationType)],
       ["Period", `${formatDate(input.request.startDate)} to ${formatDate(input.request.endDate)}`],
       ["Returned by", input.managerName],
