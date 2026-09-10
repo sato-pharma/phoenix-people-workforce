@@ -18,6 +18,43 @@ import {
 
 const ROOT = process.cwd();
 const MIGRATION = join(ROOT, "supabase/migrations/20260910230000_sos_mapping_guard.sql");
+const PERMIT_FIX = join(ROOT, "supabase/migrations/20260911013000_sos_mapping_guard_permit_not_a_flag.sql");
+
+/**
+ * The hole that was live on production for twenty minutes on 2026-09-11.
+ *
+ * The first design gated its bypass on `phoenix.map_guard_bypass`, a SESSION SETTING, and claimed in
+ * its own comment that only the release function could set it. That was an assumption, never an
+ * enforcement: a GUC is something the caller asserts about ITSELF, so any connection able to write
+ * the mapping table could switch the guard off for its own transaction. One did, moving 24 customers
+ * straight through. All 24 crossed a region and three overwrote a mapping decision of the owner's,
+ * so every one would have been held. The log then recorded each as "you approved it", asserting an
+ * approval that never happened.
+ *
+ * Permission is now a PERMIT ROW naming this transaction, this table, this entity and the hold it
+ * came from, in a table no role holds a grant on. These assertions exist so the flag cannot return,
+ * in the trigger or in the log wording.
+ */
+function theBypassIsNotSomethingAWriterCanAssertAboutItself() {
+  const fix = readFileSync(PERMIT_FIX, "utf8");
+
+  assert.match(fix, /create table if not exists public\.sos_map_guard_permits/,
+    "the release path must issue a permit row, not set a flag");
+  assert.match(fix, /revoke all on public\.sos_map_guard_permits from service_role/,
+    "service_role must be named explicitly — revoking PUBLIC alone leaves the point unmade");
+  assert.match(fix, /where p\.txid = txid_current\(\) and p\.table_name = p_table and p\.entity_key = p_entity/,
+    "a permit must be scoped to one transaction AND one entity, or it releases more than it was issued for");
+
+  assert.doesNotMatch(fix, /current_setting\('phoenix\.map_guard_bypass'/,
+    "reading the bypass flag is the defect; it must not appear in the replacement");
+  assert.doesNotMatch(fix, /'you approved it'/,
+    "the log said 'you approved it' for 24 changes nobody approved — it now names the hold instead");
+  assert.match(fix, /format\('released by hold %s', v_permit\)/,
+    "an applied change must name the hold that released it, so a forged release is visible afterwards");
+
+  assert.match(fix, /It does not defend against the table owner, and nothing can/,
+    "the migration must state what this does NOT buy, or the next reader over-trusts it again");
+}
 
 function hold(overrides: Partial<MappingGuardHold> & { createdAt: string; writer: string }): MappingGuardHold {
   return {
@@ -266,4 +303,5 @@ export async function runSosMappingGuardTests() {
   theAudienceIsRegisteredAndIsSuperAdminAlone();
   theLinkGoesToTheScreenThatCanReleaseAHold();
   theMigrationKeepsItsLoadBearingClauses();
+  theBypassIsNotSomethingAWriterCanAssertAboutItself();
 }
