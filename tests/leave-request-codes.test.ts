@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { contextVariables, interpolate } from "../src/lib/email-templates/render-core.ts";
+
 const migrationSource = readFileSync(
   new URL("../supabase/migrations/20260910223000_leave_request_codes.sql", import.meta.url),
   "utf8",
@@ -15,6 +17,22 @@ const vacationServiceSource = readFileSync(
 );
 const vacationTypesSource = readFileSync(
   new URL("../src/lib/vacation/types.ts", import.meta.url),
+  "utf8",
+);
+const vacationEmailSource = readFileSync(
+  new URL("../src/lib/vacation/email.ts", import.meta.url),
+  "utf8",
+);
+const emailTemplatesSource = readFileSync(
+  new URL("../src/lib/email-templates/service.ts", import.meta.url),
+  "utf8",
+);
+const tokenRegistrySource = readFileSync(
+  new URL("../src/lib/email-templates/token-registry.ts", import.meta.url),
+  "utf8",
+);
+const templateManagerSource = readFileSync(
+  new URL("../src/components/admin/email-template-manager.tsx", import.meta.url),
   "utf8",
 );
 const vacationCalculationsSource = readFileSync(
@@ -151,4 +169,36 @@ export function runLeaveRequestCodesTests() {
     "vacationRequestDisplayId",
     "the uuid-derived VR- display id must stay retired: it collapsed 547 vacations onto 414 values",
   );
+
+  // ── The code has to reach the emails, which is where a manager decides ──
+
+  // A context key absent from TOKEN_REGISTRY is silently dropped by contextVariables, so the
+  // token would render as an empty string with nothing to show it happened.
+  has(tokenRegistrySource,
+    "token: \"requestCode\", allowedTemplateTypes: [] }",
+    "requestCode must be registered AND unscoped: the entry existed but was limited to marketing_request, so the template editor never offered it on a leave or excuse template");
+  has(templateManagerSource, "token: \"requestCode\"",
+    "the template editor carries its own copy of the token list; a token missing there cannot be inserted by whoever edits a template");
+
+  // Functional, not a source assertion: render it and read the output back.
+  const vars = contextVariables({ requestCode: "VAC-0042" }, "Team");
+  assert.equal(vars.requestCode, "VAC-0042", "contextVariables must resolve requestCode to its value");
+  const rendered = interpolate("code {{requestCode}}", vars, true);
+  assert.equal(rendered, "code VAC-0042", "the rendered email body must carry the code, not the token");
+
+  // Every approval email passes it. The vacation templates render {{detailsTable}}, so the row
+  // is what surfaces there; the excuse ones use metrics.
+  const rowCount = vacationEmailSource.split("{ label: \"Request code\", value: input.request.requestCode }").length - 1;
+  assert.equal(rowCount, 3, "all three vacation approval emails (request, decision, manager step) must carry the code row");
+  const metricCount = excuseServiceSource.split("label: \"Request code\"").length - 1;
+  assert.equal(metricCount, 2, "both excuse emails (manager request, employee decision) must carry the code metric");
+
+  // These two bodies render a fixed field list rather than {{detailsTable}}, so a metric row
+  // cannot reach them and the token must be written into the body itself.
+  has(emailTemplatesSource, "<strong>Request code:</strong> {{requestCode}}",
+    "the excuse_decision and leave_returned bodies must name the code explicitly");
+
+  // The rejection email used to hand the employee the raw uuid as the request identity.
+  lacks(vacationEmailSource, "input.request.id ?? \"—\"",
+    "the rejection email must identify the request by its code, never by the uuid");
 }

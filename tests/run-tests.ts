@@ -916,6 +916,7 @@ import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-bric
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
+import { runSpotlightRankingTests } from "./spotlight-ranking.test.ts";
 import { runOfficeReceiptExplainsItsRowCountTests } from "./office-receipt-explains-its-row-count.test.ts";
 import { runOfficeNegativeUnitsAreReturnsTests } from "./office-negative-units-are-returns.test.ts";
 import { runOutboxRowRecordsItsOriginTests } from "./outbox-row-records-its-origin.test.ts";
@@ -1379,6 +1380,7 @@ import { runMarketingFinanceHoldTests } from "./marketing-finance-hold.test.ts";
 import { runMarketingFinanceHoldUiTests } from "./marketing-finance-hold-ui.test.ts";
 import { runDistributorUploadNudgeTests } from "./distributor-upload-nudge.test.ts";
 import { runMarketingInvoiceOverdueNudgeTests } from "./marketing-invoice-overdue-nudge.test.ts";
+import { runSosMappingGuardTests } from "./sos-mapping-guard.test.ts";
 
 import { runLeaverRosterExclusionTests } from "./leaver-roster-exclusion.test.ts";
 import { runCompanyActivityReportPostExitDaysTests } from "./company-activity-report-post-exit-days.test.ts";
@@ -3188,6 +3190,7 @@ await runTest("SoS backfill matches the empty-string brick sentinel, not just NU
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
+await runTest('SPOTLIGHT (achievement summed never averaged, targeted months only, completed-window gate)', runSpotlightRankingTests);
 await runTest('the Office receipt explains what its Rows Read number is', runOfficeReceiptExplainsItsRowCountTests);
 await runTest('an Office return reduces Office instead of vanishing', runOfficeNegativeUnitsAreReturnsTests);
 await runTest('an outbox row records which runtime enqueued it', runOutboxRowRecordsItsOriginTests);
@@ -5066,6 +5069,11 @@ await runTest(
 );
 
 await runTest("leave request codes (EXC-/VAC- stored, unique, backfilled, immutable)", runLeaveRequestCodesTests);
+
+await runTest(
+  "the mapping guard holds a re-mapping that overwrites his decision or crosses a region, and tells him once per batch",
+  runSosMappingGuardTests,
+);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
