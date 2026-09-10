@@ -191,10 +191,60 @@ export const PHARMACY_OVERRIDE_CLIENT_CODES: ReadonlySet<string> = new Set([
  * of the STORE_NAME_KEYWORDS. Comparing its Jul-2026 Menoufia sales against the frontend closing
  * workbook showed the four other Menoufia wholesalers already split correctly on their names
  * (فرندز فارم, مخزن القادسية, جي زد فارما, بدر فارما); this one just never had a matching word.
+ *
+ * 🔴 AN ENTRY HERE IS NOT PERIOD-GATED, AND IT DOES NOT NEED TO BE — the SPLIT is gated instead.
+ * `isStoreOverride` is consulted by BOTH `isStoreCustomer` and `legacyIsStoreCustomer`, so adding a
+ * key re-answers "is this a warehouse" for every period on record at once. What stops that from
+ * restating a published month is `STORE_CITY_SPLIT_FROM_PERIOD` in store-sales-city-split.ts: no
+ * month before 2026-08 divides a warehouse's sales at all, so an override added today cannot move a
+ * single area figure in July or earlier. Before adding a key, list the customer's periods and check
+ * that the ones at or after that gate are the only ones you mean to change. What DOES change in
+ * every period is the channel LABEL the Stores tab and the channel comparison print for it — a
+ * breakdown, never an area or an achievement.
+ *
+ * عامر قطب (client code 402837, distributor IS) — owner ruling 2026-09-10, asked with the evidence
+ * below and answered "yes عامر قطب is a warehouse too, split it".
+ *
+ * WHAT MADE IT A QUESTION RATHER THAN A GUESS. The name carries none of the six store words and
+ * states no business at all, so both the old rule and the trade phrase call it a pharmacy, and Ibn
+ * Sina's address for it reads «6 جمعية احمد عرابى محل 8 عقار 265 ش» — محل 8 is a SHOP number. Every
+ * signal the rule can read says pharmacy.
+ *
+ * WHAT DECIDED IT. Its entire August 2026 CNS month is one invoice line that is identical to one of
+ * ميدل ايست فارما's (446025, a warehouse on فارما, in the SAME brick B12-12): 1,300 units of TE001
+ * Tebofotin drops, 78,975.00 EGP, both dated 2026-08-31. Its July was 2,409.75. Two accounts in one
+ * brick taking the same 1,300 units of the same product on the same day is the evidence shape
+ * AGENTS.md §2.3 accepts for identity — byte-identical order lines in one brick — and it is the only
+ * reason this was put to the owner instead of left alone. It was NOT decided on the name, on the
+ * August jump, or on a session's inference about the address.
+ *
+ * WHAT IT MOVES: August 2026 CNS only. 78,975.00 EGP stops sitting whole on Cairo East 2 (CA4) and
+ * becomes 13,162.50 on each of the six Cairo areas, so CA4 gives up 65,812.50 and CA1/CA2/CA3/CA5/CA6
+ * each gain 13,162.50. Nothing leaves CNS and nothing leaves Cairo. Its other periods on record
+ * (2026-01 12,116.25, 2026-02 1,316.25, 2026-07 2,409.75, all CNS) are all before
+ * STORE_CITY_SPLIT_FROM_PERIOD and keep the numbers they were published with. August CNS was neither
+ * published nor locked when this shipped; August Anti Infective was, and carries no row for it.
+ *
+ * ITS SIBLING AT ELGOMHOURIA IS HERE TOO, and only because the owner was asked. «عامر قطب - جمعيه
+ * احمد عرابى» (33995, EG) records the same shop at the same building and the same shop number — two
+ * distributors independently writing عقار 265 / محل 8, which is the one address-based identity signal
+ * AGENTS.md §2.3 accepts. It was deliberately left out of the first pass and put to him instead;
+ * owner, 2026-09-10: "yes add it too".
+ *
+ * ⚠ IT MOVES NOTHING TODAY, AND THAT IS THE POINT OF RECORDING IT. Its only periods on production are
+ * 2026-01 (1,670.63), 2026-06 (1,620.00) and 2026-07 (810.00), all CNS on CA4, all before
+ * STORE_CITY_SPLIT_FROM_PERIOD — so every figure stays exactly where it is. The key decides how the
+ * account is treated the FIRST time it sells at or after August, which is precisely when nobody will
+ * be looking at it. A future session measuring this key and finding 0.00 is reading the CORRECT
+ * state, not a broken override.
  */
 export const STORE_OVERRIDE_CUSTOMER_KEYS: ReadonlySet<string> = new Set([
   // ابن خلدون — a wholesaler despite carrying no store keyword.
   "IS-S|446299",
+  // عامر قطب at Ibn Sina — a wholesaler despite a shop address and no store keyword. Owner 2026-09-10.
+  "IS|402837",
+  // عامر قطب - جمعيه احمد عرابى at Elgomhouria — the SAME shop, second distributor. Owner 2026-09-10.
+  "EG|33995",
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
