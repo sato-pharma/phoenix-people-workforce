@@ -111,6 +111,10 @@ const variables = [
     { railway: "SHEET_REFRESH_WEBHOOK_SECRET", github: ["SHEET_REFRESH_WEBHOOK_SECRET"], required: false },
     { railway: "SHEET_REFRESH_WEBHOOK_URL", github: ["SHEET_REFRESH_WEBHOOK_URL"], required: false },
     { railway: "WHATSAPP_PHONE_NUMBER_ID", github: ["WHATSAPP_PHONE_NUMBER_ID"], required: false },
+    // Added 2026-09-11: every phone number id the intake health check probes, comma separated.
+    // whatsapp-health.ts falls back to the singular above when this is unset, so a second line is
+    // invisible to the silence alert until it is listed here.
+    { railway: "WHATSAPP_PHONE_NUMBER_IDS", github: ["WHATSAPP_PHONE_NUMBER_IDS"], required: false },
     { railway: "WHATSAPP_WEBHOOK_VERIFY_TOKEN", github: ["WHATSAPP_WEBHOOK_VERIFY_TOKEN"], required: true },
 
     // Added 2026-08-08: the owner created a fresh token and both Railway and GitHub now hold
