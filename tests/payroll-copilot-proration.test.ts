@@ -54,7 +54,7 @@ export function runPayrollCopilotProrationTests() {
   assert.equal(dailyRate(31000, JULY), 1000);
 
   // --- resignation Rule 1: last working day <= 25th -> NET proration, every
-  // component at the same day share, minus unpaid-leave days inside the span --
+  // component at the same day share ------------------------------------------
   //
   // CHANGED 2026-08-29 on the owner's instruction ("in the resignations, prorate
   // the full net salary, not the base"). This branch used to pay ECOL and Fuel
@@ -62,24 +62,41 @@ export function runPayrollCopilotProrationTests() {
   // leaver on the 20th took 18/30 of base and nothing else. Restoring the zeros
   // would cut an affected leaver's pay, silently, so both figures are asserted
   // as exact values rather than "greater than zero".
+  //
+  // CHANGED AGAIN 2026-09-11, and this block used to assert the opposite. It ran with
+  // `  // That subtraction charged the same approved leave TWICE: the Deductions module raises an
+  // unpaid-vacation candidate from the very same `v2_vacation_requests` rows, and payroll charges
+  // it on the Unpaid Vacation tab. The days came off the pay and the money came off again.
+  //
+  // The owner's ruling was to unify on the figure a human actually edits: "we must unify... what
+  // really wins, admin edit outputs". The deduction is reviewable and correctable; the subtraction
+  // here was invisible, and it also moved the Days Worked figure the admin is asked to correct by
+  // hand. Two of this function's four callers — the Ready sheet and the resignations service — never
+  // subtracted anyway, so the same leaver's days differed by which surface asked. Now all four agree.
+  //
+  // Days worked is therefore the calendar count to the last working day, full stop.
   const before25 = computeResignationSettlement({
     baseSalary: 30000,
     extraCostOfLiving: 1000,
     fuelAllowance: 500,
     lastWorkingDate: "2026-06-20",
     period: JUNE,
-    unpaidDaysInSpan: 2,
     otherAdditions: 0,
     otherDeductions: 0,
   });
   assert.ok(before25);
   assert.equal(before25.branch, "on_or_before_25");
-  assert.equal(before25.daysWorked, 18); // 20 - 2 unpaid days
-  assert.equal(before25.baseForMonth, 18000); // 1000/day * 18
-  assert.equal(before25.ecolPaid, 600, "ECOL prorates with the base now — it is no longer withheld"); // 1000 * 18/30
-  assert.equal(before25.fuelPaid, 300, "Fuel prorates with the base now — it is no longer withheld"); // 500 * 18/30
-  assert.equal(before25.netForMonth, 18900); // = 31,500 net * 18/30
-  assert.equal(before25.total, 18900);
+  assert.equal(
+    before25.daysWorked,
+    20,
+    "days worked is the calendar count to the last working day — approved unpaid leave is charged " +
+      "ONCE, by the deduction the admin reviews, not a second time by shortening the days here",
+  );
+  assert.equal(before25.baseForMonth, 20000); // 1000/day * 20
+  assert.equal(before25.ecolPaid, 666.67, "ECOL prorates with the base — it is no longer withheld"); // 1000 * 20/30
+  assert.equal(before25.fuelPaid, 333.33, "Fuel prorates with the base — it is no longer withheld"); // 500 * 20/30
+  assert.equal(before25.netForMonth, 21000); // = 31,500 net * 20/30
+  assert.equal(before25.total, 21000);
 
   // exact boundary: day 25 itself takes the "on or before" branch
   const boundary25 = computeResignationSettlement({
@@ -88,7 +105,6 @@ export function runPayrollCopilotProrationTests() {
     fuelAllowance: 500,
     lastWorkingDate: "2026-06-25",
     period: JUNE,
-    unpaidDaysInSpan: 0,
     otherAdditions: 0,
     otherDeductions: 0,
   });
@@ -107,7 +123,6 @@ export function runPayrollCopilotProrationTests() {
     fuelAllowance: 500,
     lastWorkingDate: "2026-06-26",
     period: JUNE,
-    unpaidDaysInSpan: 0,
     otherAdditions: 0,
     otherDeductions: 0,
   });
@@ -127,7 +142,6 @@ export function runPayrollCopilotProrationTests() {
     fuelAllowance: 500,
     lastWorkingDate: "2026-06-28",
     period: JUNE,
-    unpaidDaysInSpan: 0,
     otherAdditions: 2000,
     otherDeductions: 500,
   });
@@ -221,7 +235,7 @@ export function runPayrollCopilotProrationTests() {
     adjustments: [],
     period: JUNE,
     index: 1,
-    resignation: { lastWorkingDate: "2026-06-20", unpaidDaysInSpan: 2 },
+    resignation: { lastWorkingDate: "2026-06-20" },
   });
   assert.ok(resignRow);
   // OWNER RULE 2026-09-04, and the reason these four numbers changed: the salary
@@ -233,20 +247,27 @@ export function runPayrollCopilotProrationTests() {
   assert.equal(resignRow.extraCostOfLiving, 1000, "the row shows the FULL contract ECOL");
   assert.equal(resignRow.fuelAllowance, 500, "the row shows the FULL contract Fuel");
   assert.equal(resignRow.netSalary, 31500, "the row shows a full month's net: 30000 + 1000 + 500");
-  // 20 days to the last working day, less 2 unpaid days inside the span.
-  assert.equal(resignRow.workingDays, 18, "Working Days is what makes the full salary above readable");
+  // 20 days to the last working day. It read 18 until 2026-09-11 — the same 20 less 2 approved
+  // unpaid days — until that subtraction was removed because it charged the same approved leave
+  // twice: the Deductions module raises an unpaid-vacation candidate from the very same requests
+  // and payroll charges it on the Unpaid Vacation tab. Unified on the figure the admin edits.
+  assert.equal(resignRow.workingDays, 20, "Working Days is what makes the full salary above readable");
   assert.equal(resignRow.calendarDays, 30, "June");
   assert.equal(resignRow.medicalInsurance, 300, "F: medical insurance still applies in full on a resignation row");
-  // THE MONEY, UNCHANGED. This is the assertion that proves the display change
-  // above is only a display change: payable is still built from the SETTLEMENT
-  // net of 18,900, never from the 31,500 now shown in the Net Salary column. If
-  // showing the full salary ever started paying the full salary, these three
+  // THE MONEY. This is the assertion that proves the display change above is only a display
+  // change: payable is still built from the SETTLEMENT net, never from the 31,500 shown in the Net
+  // Salary column. If showing the full salary ever started paying the full salary, these three
   // lines are what goes red.
-  // total payable = 18900 - 300 medical insurance = 18600; basic anchor = 30000*0.7=21000
-  // 18600 < 21000 -> Part1 absorbs everything, paid once
-  assert.equal(resignRow.firstPart, 18600);
+  //
+  // The settlement net moved from 18,900 to 21,000 on 2026-09-11: it is now 20/30 of 31,500 rather
+  // than 18/30, because the two approved unpaid days are no longer subtracted here. They are
+  // charged once, by the unpaid-vacation deduction the admin reviews, instead of twice.
+  //
+  // total payable = 21000 - 300 medical insurance = 20700; basic anchor = 30000*0.7 = 21000
+  // 20700 < 21000 -> Part 1 absorbs everything, paid once
+  assert.equal(resignRow.firstPart, 20700);
   assert.equal(resignRow.secondPart, 0);
-  assert.equal(resignRow.monthSalary, 18600);
+  assert.equal(resignRow.monthSalary, 20700);
 
   // --- D': leaver with an approved expense — the reimbursement must be PAID in
   // the settlement, not just displayed. Regression for the bug where
@@ -260,15 +281,16 @@ export function runPayrollCopilotProrationTests() {
     adjustments: [],
     period: JUNE,
     index: 1,
-    resignation: { lastWorkingDate: "2026-06-20", unpaidDaysInSpan: 2 },
+    resignation: { lastWorkingDate: "2026-06-20" },
     approvedExpenses: 800,
   });
   assert.ok(resignWithExpense);
   assert.equal(resignWithExpense.expenses, 800, "the approved expense shows on the leaver's row");
-  // total payable = 18900 net + 800 expense - 300 medical = 19400; basic anchor 21000 -> Part1 absorbs all
-  assert.equal(resignWithExpense.monthSalary, 19400, "leaver's expense is actually PAID, not dropped from the settlement");
-  assert.equal(resignWithExpense.firstPart, 19400);
-  assert.equal(resignWithExpense.secondPart, 0);
+  // total payable = 21000 net + 800 expense - 300 medical = 21500; basic anchor 21000, so the
+  // 500 above it lands in Part 2. The net moved from 18,900 on 2026-09-11 — see the block above.
+  assert.equal(resignWithExpense.monthSalary, 21500, "leaver's expense is actually PAID, not dropped from the settlement");
+  assert.equal(resignWithExpense.firstPart, 21000);
+  assert.equal(resignWithExpense.secondPart, 500);
 
   // --- D full integration: resignation, after_25 branch, one_part mode -------
   const resignOnePart = buildRowForEmployee({
@@ -278,7 +300,7 @@ export function runPayrollCopilotProrationTests() {
     adjustments: [],
     period: JUNE,
     index: 1,
-    resignation: { lastWorkingDate: "2026-06-28", unpaidDaysInSpan: 0 },
+    resignation: { lastWorkingDate: "2026-06-28" },
   });
   assert.ok(resignOnePart);
   assert.equal(resignOnePart.baseSalary, 30000);

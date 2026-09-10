@@ -64,7 +64,6 @@ function member(hrId: string, overrides: Partial<EmployeeDirectoryRow> = {}): Po
     lifecycle: "regular",
     lastWorkingDate: null,
     noticeLastWorkingDate: null,
-    unpaidDaysInSpan: 0,
   };
 }
 

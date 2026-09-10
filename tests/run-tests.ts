@@ -1062,6 +1062,7 @@ import { runAutomatedPayrollLeaverBasisTests } from "./automated-payroll-leaver-
 import { runAutomatedPayrollThursdayHalfDayChargeTests } from "./automated-payroll-thursday-half-day-charge.test.ts";
 import { runAutomatedPayrollCibSheetTests } from "./automated-payroll-cib-sheet.test.ts";
 import { runAutomatedPayrollHeldTabTests } from "./automated-payroll-held-tab.test.ts";
+import { runAutomatedPayrollLeaverOverpaymentTests } from "./automated-payroll-leaver-overpayment.test.ts";
 import { runAutomatedPayrollGuardsThatGuardTests } from "./automated-payroll-guards-that-guard.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
 import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
@@ -1766,6 +1767,10 @@ await runTest("automated payroll CIB bank-transfer sheet (schema + filtering + s
 await runTest(
   "automated payroll: the Held tab, and what was settled outside payroll",
   runAutomatedPayrollHeldTabTests,
+);
+await runTest(
+  "automated payroll: leaver money — no inflated freeze, and unpaid leave charged once",
+  runAutomatedPayrollLeaverOverpaymentTests,
 );
 await runTest(
   "automated payroll: the guards that did not guard",
