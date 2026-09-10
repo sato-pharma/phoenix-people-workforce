@@ -277,6 +277,7 @@ import { runWhatsAppOutboundLogTests } from "./whatsapp-outbound-log.test.ts";
 import { runWhatsAppRepliesPanelTests } from "./whatsapp-replies-panel.test.ts";
 import { runWhatsAppTextOnlyApplicantTests } from "./whatsapp-text-only-applicant.test.ts";
 import { runWhatsAppUnreadableCvTests } from "./whatsapp-unreadable-cv.test.ts";
+import { runWhatsAppManualReplyTests } from "./whatsapp-manual-reply.test.ts";
 import { runWhatsAppEmbeddedSignupExtrasTests } from "./whatsapp-embedded-signup-extras.test.ts";
 import {
   runRecruitmentWhatsAppHealthTests,
@@ -2142,6 +2143,10 @@ await runTest("whatsapp reply answers what they asked", runWhatsAppReplyAnswersT
 await runTest("whatsapp outbound message log", runWhatsAppOutboundLogTests);
 await runTest("whatsapp replies panel", runWhatsAppRepliesPanelTests);
 await runTest("whatsapp unreadable CV recovery", runWhatsAppUnreadableCvTests);
+await runTest(
+  "whatsapp manual reply (24-hour window and the permission it really runs under)",
+  runWhatsAppManualReplyTests,
+);
 await runTest(
   "whatsapp embedded signup extras (the v4 flag coexistence needs)",
   runWhatsAppEmbeddedSignupExtrasTests,
