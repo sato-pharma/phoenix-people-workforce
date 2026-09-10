@@ -36,7 +36,6 @@ import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary
 import { PageContainer } from "@/components/layout/page-container";
 import {
   vacationDayPartLabel,
-  vacationRequestDisplayId,
   vacationTypeLabel,
   vacationUnpaidReasonLabel,
 } from "@/lib/vacation/calculations";
@@ -295,7 +294,7 @@ function exportEntitlementsCSV(data: VacationEmployeeEligibilityRow[]) {
 function exportRequestsCSV(data: VacationRequestRecord[]) {
   const header = ["Request ID", "HR ID", "Employee", "Department", "Line", "Type", "Day Part", "Start", "End", "Duration", "Balance Before", "Balance After", "Status", "Payment", "Paid Days", "Unpaid Days", "Submitted", "Manager"];
   const rows = data.map((r) => [
-    csvEscape(vacationRequestDisplayId(r.id)), csvEscape(r.employeeHrId), csvEscape(r.employeeName),
+    csvEscape(r.requestCode), csvEscape(r.employeeHrId), csvEscape(r.employeeName),
     csvEscape(r.departmentName), csvEscape(r.lineName), csvEscape(vacationTypeLabel(r.vacationType)),
     csvEscape(vacationDayPartLabel(r.dayPart)), csvEscape(r.startDate), csvEscape(r.endDate),
     csvEscape(r.durationDays), csvEscape(r.balanceBeforeDays), csvEscape(r.balanceAfterDays),
@@ -895,7 +894,7 @@ function RequestCard({
         <div className="min-w-0 flex-1">
           <p className="text-phx-md font-bold text-slate-900">{row.employeeName}</p>
           <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
-            {row.employeeHrId} · {vacationRequestDisplayId(row.id)}
+            {row.employeeHrId} · {row.requestCode}
           </p>
           <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
             {[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}
@@ -1513,7 +1512,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               </h3>
               <p className="mt-2 text-phx-md font-medium leading-5 text-slate-600">
                 {pendingAction.kind === "delete"
-                  ? `This removes ${vacationRequestDisplayId(pendingAction.row.id)} from the master report. The admin audit log keeps the deleted record context.`
+                  ? `This removes ${pendingAction.row.requestCode} from the master report. The admin audit log keeps the deleted record context.`
                   : "This records the workflow decision and notifies the next responsible people."}
               </p>
               {pendingAction.kind === "decision" && pendingAction.decision === "reject" ? (
@@ -2101,7 +2100,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     {paginatedRequests.map((row) => (
                       <tr key={row.id} className="bg-white transition hover:bg-orange-50/30">
                         <td className="border-r border-slate-100 px-3 py-2.5">
-                          <span className="font-mono text-phx-xs font-bold text-slate-800" title={row.id}>{vacationRequestDisplayId(row.id)}</span>
+                          <span className="font-mono text-phx-xs font-bold text-slate-800" title={row.id}>{row.requestCode}</span>
                           <p className="mt-0.5 text-phx-2xs font-medium text-slate-400">{row.employeeHrId}</p>
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
@@ -2268,7 +2267,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
             <div className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
               <div>
                 <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">Request review</p>
-                <h3 className="mt-1 text-lg font-black text-slate-900">{vacationRequestDisplayId(selectedRequest.id)}</h3>
+                <h3 className="mt-1 font-mono text-lg font-black text-slate-900">{selectedRequest.requestCode}</h3>
                 <p className="text-phx-sm font-semibold text-slate-500">{selectedRequest.employeeName} / {dynamicStatusLabel(selectedRequest)}</p>
               </div>
               <button className="rounded-sm p-2 text-slate-500 hover:bg-slate-100" onClick={() => setSelectedRequest(null)} type="button">

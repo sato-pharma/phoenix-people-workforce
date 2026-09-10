@@ -89,14 +89,21 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   // two values. He named ONE recipient, and one is the point: an audience of two on a per-hire
   // notice is how both learn to assume the other one did it.
   crm_account_setup_alert: { roles: ["SFE Manager"], enabled: true },
+  // Owner instruction 2026-09-10, after being shown that the mapping audit only ever saw the
+  // application: 144 customer rows were re-pointed by direct SQL that evening with no audit row at
+  // all, and 15 of them silently overwrote mapping decisions of his from August. Super Admin ALONE,
+  // and the narrowness is the point rather than an oversight — a held change is released from
+  // /sales/mapping-guard, and releasing one is his decision by construction, since the guard fires
+  // precisely when somebody else's change was about to replace one of his.
+  sos_mapping_guard_alert: { roles: ["Super Admin"], enabled: true },
 };
 
 export function runNotificationRoleRecipientsTests() {
-  assert.equal(notificationRoleKeys.length, 20, "expected exactly the 20 confirmed notification-role keys");
+  assert.equal(notificationRoleKeys.length, 21, "expected exactly the 21 confirmed notification-role keys");
   assert.deepEqual(
     [...notificationRoleKeys].sort(),
     Object.keys(EXPECTED).sort(),
-    "notificationRoleKeys set does not match the confirmed 20 keys",
+    "notificationRoleKeys set does not match the confirmed 21 keys",
   );
 
   for (const key of notificationRoleKeys) {

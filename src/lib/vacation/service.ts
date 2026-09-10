@@ -50,7 +50,6 @@ import {
   normalizeVacationDayPart,
   normalizeVacationPaymentStatus,
   normalizeVacationType,
-  vacationRequestDisplayId,
   vacationTypeLabel,
 } from "@/lib/vacation/calculations";
 import { summarizeVacationRequests } from "@/lib/vacation/metrics";
@@ -59,6 +58,8 @@ import {
   vacationDecisionAction,
 } from "@/lib/vacation/workflow";
 import {
+  ADMIN_OVERRIDE_STALL_DAYS,
+  evaluateAdminOverride,
   evaluateStepAction,
   genericStepName,
   isSequentialWorkflowType,
@@ -75,9 +76,11 @@ import {
   sendVacationReturnedEmail,
 } from "@/lib/vacation/email";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
+import type { AdminOverrideEvaluation, VacationOverrideStep } from "@/lib/vacation/approval-flow";
 import type {
   VacationActionAvailability,
   VacationActionCenterData,
+  VacationAdminOverrideState,
   VacationActionCenterRow,
   VacationApprovalStepState,
   VacationBalanceSnapshot,
@@ -210,6 +213,7 @@ type VacationRequestDbRow = {
   paid_duration_days?: number | string | null;
   period_end: string | null;
   period_start: string | null;
+  request_code: string;
   sick_attachment_bucket?: string | null;
   sick_attachment_content_type?: string | null;
   sick_attachment_object_path?: string | null;
@@ -232,9 +236,12 @@ type VacationApprovalStepStatus = "pending" | "approved" | "rejected";
 type VacationApprovalStepRow = {
   approver_hr_id: string | null;
   approver_user_id: string | null;
+  created_at?: string | null;
   decided_at: string | null;
   decision_comment: string | null;
   id: string;
+  overridden_at?: string | null;
+  overridden_by_hr_id?: string | null;
   request_id: string | null;
   status: string | null;
   step_key: string | null;
@@ -1190,6 +1197,7 @@ function mapVacationRow(row: VacationRequestDbRow, canDecide = false): VacationR
     managerName: row.manager_name,
     managerOfManagerHrId: row.manager_of_manager_hr_id,
     managerOfManagerName: row.manager_of_manager_name,
+    requestCode: text(row.request_code),
     employeeNote: row.employee_note ?? null,
     notes: row.notes ?? null,
     paymentStatus: normalizeVacationPaymentStatus(row.payment_status) ?? "unpaid",
@@ -1604,9 +1612,12 @@ function mapVacationApprovalStep(row: VacationApprovalStepRow) {
   return {
     approverHrId: text(row.approver_hr_id),
     approverUserId: text(row.approver_user_id) || null,
+    createdAt: row.created_at ?? null,
     decidedAt: row.decided_at,
     decisionComment: row.decision_comment,
     id: row.id,
+    overriddenAt: row.overridden_at ?? null,
+    overriddenByHrId: row.overridden_by_hr_id ?? null,
     requestId: text(row.request_id),
     status: approvalStatus(row.status),
     stepKey,
@@ -1720,7 +1731,7 @@ async function createVacationApprovalSteps(input: {
 async function fetchVacationApprovalStepsForRequest(requestId: string) {
   const { data, error } = await getSupabaseAdmin()
     .from(vacationApprovalStepsTable)
-    .select("id,request_id,step_key,step_order,approver_hr_id,approver_user_id,status,decision_comment,decided_at")
+    .select("id,request_id,step_key,step_order,approver_hr_id,approver_user_id,status,decision_comment,decided_at,created_at,overridden_by_hr_id,overridden_at")
     .eq("request_id", requestId);
   if (error) throwVacationDatabaseError(error);
   return ((data ?? []) as VacationApprovalStepRow[]).map(mapVacationApprovalStep);
@@ -1732,7 +1743,7 @@ async function fetchVacationApprovalStepsForRequests(requestIds: string[]) {
   for (const batch of chunk(requestIds)) {
     const { data, error } = await getSupabaseAdmin()
       .from(vacationApprovalStepsTable)
-      .select("id,request_id,step_key,step_order,approver_hr_id,approver_user_id,status,decision_comment,decided_at")
+      .select("id,request_id,step_key,step_order,approver_hr_id,approver_user_id,status,decision_comment,decided_at,created_at,overridden_by_hr_id,overridden_at")
       .in("request_id", batch);
     if (error) {
       if (isVacationSchemaMissingError(error)) return byRequestId;
@@ -1802,24 +1813,45 @@ async function getPendingVacationApprovalStepForActor(input: {
   return { step: step ?? null, steps };
 }
 
+/** Narrow a fetched approval step to the fields the override rule reads. */
+function toOverrideStep(
+  step: Awaited<ReturnType<typeof fetchVacationApprovalStepsForRequest>>[number],
+): VacationOverrideStep {
+  return {
+    createdAt: step.createdAt,
+    decidedAt: step.decidedAt,
+    order: step.stepOrder,
+    status: step.status,
+    stepKey: step.stepKey,
+  };
+}
+
 async function recordVacationApprovalStepDecision(input: {
   decision: VacationDecision;
   decisionComment?: string | null;
+  /** Set ONLY on the stalled-approver override — the Super Admin who decided in their place. */
+  overriddenByHrId?: string | null;
   stepId: string;
 }) {
   const now = new Date().toISOString();
   const status = input.decision === "approve" ? "approved" : "rejected";
+  // The row keeps approver_hr_id pointing at the assigned approver, because that IS who the step
+  // belonged to. Without these two columns the decided row would read as if that person answered
+  // it — the one thing an override must never be able to look like.
+  const overriddenByHrId = canonicalHrId(input.overriddenByHrId) || null;
   const { data, error } = await getSupabaseAdmin()
     .from(vacationApprovalStepsTable)
     .update({
       decided_at: now,
       decision_comment: nullableText(input.decisionComment),
+      overridden_at: overriddenByHrId ? now : null,
+      overridden_by_hr_id: overriddenByHrId,
       status,
       updated_at: now,
     })
     .eq("id", input.stepId)
     .eq("status", "pending")
-    .select("id,request_id,step_key,step_order,approver_hr_id,approver_user_id,status,decision_comment,decided_at")
+    .select("id,request_id,step_key,step_order,approver_hr_id,approver_user_id,status,decision_comment,decided_at,created_at,overridden_by_hr_id,overridden_at")
     .maybeSingle();
   if (error) throwVacationDatabaseError(error);
   if (!data) throw new Error("This vacation approval step was already decided.");
@@ -3275,6 +3307,7 @@ type ApplyVacationDecisionInput = {
   actorLoginId?: string | null;
   decision: VacationDecision;
   decisionComment?: string | null;
+  override?: boolean;
   request: VacationRequestRecord;
 };
 
@@ -3303,12 +3336,52 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
   }
 
   const directory = await getEmployeeDirectory();
-  const { step, steps } = await getPendingVacationApprovalStepForActor({
+  const resolved = await getPendingVacationApprovalStepForActor({
     access: input.access,
     actorHrId: input.actorHrId,
     actorLoginId: input.actorLoginId,
     request: input.request,
   });
+  const steps = resolved.steps;
+  let step = resolved.step;
+
+  // Stalled-approver override (owner instruction 2026-09-10). Re-binds the actor from their own
+  // step to the STALLED MANAGEMENT step so the rest of this function runs unchanged — including
+  // evaluateStepAction, which still enforces the sequencing. The override widens WHO may decide
+  // the active step, never WHICH step may be decided or in what order.
+  let overrideContext: { approverHrId: string; approverName: string; daysPending: number } | null = null;
+  if (input.override) {
+    if (!input.access || !isAllVacationVisibility(input.access)) {
+      throw new Error("Forbidden: only the System Administrator can respond on an unanswered request.");
+    }
+    if (input.decision === "return") {
+      throw new Error("Forbidden: a transferred approval can approve or reject, not return the request to the employee.");
+    }
+    const evaluation = evaluateAdminOverride({
+      isAdminActor: true,
+      isOwnRequest: hrIdsMatch(input.actorHrId, input.request.employeeHrId),
+      now: new Date(),
+      status: input.request.status,
+      steps: steps.map(toOverrideStep),
+    });
+    if (!evaluation.available || !evaluation.step) {
+      throw new Error(`Forbidden: ${evaluation.reason ?? "This request is not waiting on a management response."}`);
+    }
+    const stalled = steps.find(
+      (candidate) =>
+        candidate.stepOrder === evaluation.step?.order && candidate.stepKey === evaluation.step?.stepKey,
+    );
+    if (!stalled) {
+      throw new Error("Forbidden: the unanswered approval step could not be resolved.");
+    }
+    step = stalled;
+    overrideContext = {
+      approverHrId: stalled.approverHrId,
+      approverName: findEmployeeByHrId(directory, stalled.approverHrId)?.displayName ?? stalled.approverHrId,
+      daysPending: evaluation.daysPending,
+    };
+  }
+
   if (!step) {
     throw new Error("Forbidden: only assigned pending vacation approvers can decide this request.");
   }
@@ -3472,9 +3545,23 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
   }
 
   const decisionValue = input.decision === "approve" ? "approved" : "rejected";
+
+  // The wording is the owner's own (2026-09-10): state that the request went unanswered and that
+  // the approval TRANSFERRED to the System Administrator, and name him as the responder. It never
+  // says anyone was "overridden" and never names the approver who did not reply — the employee
+  // reads this comment, and so does that approver. Neutral about why, explicit about who answered.
+  //
+  // A rejection already demands a typed reason above. An approve stays one click by the owner's
+  // design, so the system writes the sentence itself rather than making him type it.
+  const adminName = findEmployeeByHrId(directory, input.actorHrId)?.displayName ?? input.actorHrId ?? "the System Administrator";
+  const effectiveDecisionComment = overrideContext
+    ? `This request was not responded to within ${ADMIN_OVERRIDE_STALL_DAYS} days, so its approval was transferred to the System Administrator. ${input.decision === "approve" ? "Approved" : "Rejected"} by ${adminName}, System Administrator.${text(input.decisionComment) ? ` ${text(input.decisionComment)}` : ""}`
+    : input.decisionComment ?? null;
+
   await recordVacationApprovalStepDecision({
     decision: input.decision,
-    decisionComment: input.decisionComment,
+    decisionComment: effectiveDecisionComment,
+    overriddenByHrId: overrideContext ? input.actorHrId : null,
     stepId: step.id,
   });
   if (step.stepKey === "hr") {
@@ -3529,7 +3616,7 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
       p_next_status: nextStatus,
       p_step: step.stepKey === "hr" ? "hr" : "manager",
       p_decision_by_hr_id: input.actorHrId,
-      p_decision_comment: nullableText(input.decisionComment),
+      p_decision_comment: nullableText(effectiveDecisionComment),
       p_now: now,
       p_entitlement_days: balance.entitlementDays,
       p_period_start: balance.periodStart,
@@ -3549,12 +3636,12 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
       updatePayload.hr_decision = decisionValue;
       updatePayload.hr_decision_at = now;
       updatePayload.hr_decision_by_hr_id = input.actorHrId;
-      updatePayload.hr_decision_comment = nullableText(input.decisionComment);
+      updatePayload.hr_decision_comment = nullableText(effectiveDecisionComment);
     } else {
       updatePayload.manager_decision = decisionValue;
       updatePayload.manager_decision_at = now;
       updatePayload.manager_decision_by_hr_id = input.actorHrId;
-      updatePayload.manager_decision_comment = nullableText(input.decisionComment);
+      updatePayload.manager_decision_comment = nullableText(effectiveDecisionComment);
     }
     if (allApproved) {
       Object.assign(updatePayload, {
@@ -3597,7 +3684,7 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
     eventType: `approval_${step.stepKey}_${decisionValue}`,
     message: eventMessage,
     metadata: {
-      decisionComment: input.decisionComment ?? null,
+      decisionComment: effectiveDecisionComment,
       genericStep,
       paymentStatus: updated.paymentStatus,
       stepKey: step.stepKey,
@@ -3611,7 +3698,7 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
     entityId: updated.id,
     entityType: "vacation_request",
     newValues: {
-      decisionComment: input.decisionComment ?? null,
+      decisionComment: effectiveDecisionComment,
       genericStep,
       hrDecision: updated.hrDecision,
       managerDecision: updated.managerDecision,
@@ -3627,6 +3714,50 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
     },
     summary: eventMessage,
   });
+
+  if (overrideContext) {
+    // A second, dedicated event. The generic approval_* event above already carries the admin as
+    // actorHrId, but it reads exactly like a normal decision — the override has to be findable on
+    // its own, by type, without parsing a comment string.
+    await insertVacationEvent({
+      actorHrId: input.actorHrId,
+      actorLoginId: input.actorLoginId,
+      eventType: "approval_admin_override",
+      message: `Not responded to within ${ADMIN_OVERRIDE_STALL_DAYS} days, so the approval transferred to the System Administrator and was ${decisionValue} by ${adminName}.`,
+      metadata: {
+        daysPending: overrideContext.daysPending,
+        decision: decisionValue,
+        genericStep,
+        overriddenApproverHrId: overrideContext.approverHrId,
+        overriddenApproverName: overrideContext.approverName,
+        stallThresholdDays: ADMIN_OVERRIDE_STALL_DAYS,
+        stepKey: step.stepKey,
+      },
+      requestId: updated.id,
+    });
+    // Let the assigned approver know where the request went. Courteous by the owner's instruction:
+    // it reports the transfer, not a failing. Explicit channels — no email: this is an internal
+    // workflow notice, and resolveBasePolicyChannels only ever REMOVES from an explicit list, so
+    // naming three non-email channels cannot reach anyone's inbox.
+    void notifyRecipients({
+      channels: ["in_app", "telegram", "push"],
+      href: `/admin/approvals/vacation/${encodeURIComponent(updated.id)}`,
+      message: `${updated.employeeName}'s ${vacationTypeLabel(updated.vacationType)} request (${updated.startDate} → ${updated.endDate}) was not responded to within ${ADMIN_OVERRIDE_STALL_DAYS} days, so its approval was transferred to the System Administrator and ${adminName} has ${decisionValue} it. No action is needed from you.`,
+      metadata: { override: true, requestId: updated.id, status: updated.status },
+      recipients: [overrideContext.approverHrId],
+      requestId: updated.id,
+      title: "Approval transferred to the System Administrator",
+      type: "admin_override",
+    }).catch(async (error) => {
+      await insertVacationEvent({
+        actorHrId: input.actorHrId,
+        actorLoginId: input.actorLoginId,
+        eventType: "notification_failed",
+        message: vacationErrorMessage(error),
+        requestId: updated.id,
+      }).catch(() => undefined);
+    });
+  }
 
   if (isFinal) {
     void dispatchVacationDecision({ decision: input.decision, directory, request: updated }).catch(async (error) => {
@@ -3897,6 +4028,13 @@ async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
 export async function decideVacationRequest(access: AccessContext, input: {
   decision: VacationDecision;
   decisionComment?: string | null;
+  /**
+   * Stalled-approver override. Deliberately an EXPLICIT flag rather than a silent fallback: the
+   * Super Admin is normally the assigned approver of the pending HR step, so a "try the override
+   * when nothing else matched" rule would never fire for them — they would just hit the ordinary
+   * HR gate and be told to wait. The button asks for the override; nothing else does.
+   */
+  override?: boolean;
   requestId: string;
 }) {
   await assertPermission(access, "leave", "approve");
@@ -3909,6 +4047,7 @@ export async function decideVacationRequest(access: AccessContext, input: {
     actorLoginId: access.loginId,
     decision: input.decision,
     decisionComment: input.decisionComment,
+    override: input.override === true,
     request,
   });
 }
@@ -4171,6 +4310,10 @@ export async function getVacationActionCenterData(access: AccessContext): Promis
   }
 
   const stepsByRequest = await fetchVacationApprovalStepsForRequests(candidateRows.map((row) => row.id));
+  // One clock for the whole page. Reading new Date() per row would let two rows a millisecond
+  // apart disagree about whether the threshold has passed.
+  const overrideNow = new Date();
+  const viewerHrId = resolveEmployeeIdentityId(access);
 
   const titleOf = (hrId: string | null) => {
     const employee = findEmployeeByHrId(directory, hrId);
@@ -4209,11 +4352,39 @@ export async function getVacationActionCenterData(access: AccessContext): Promis
     const activeStep = resolveActiveStep(stepStates);
     const activeRawStep = activeStep ? rawSteps.find((step) => step.stepKey === activeStep.stepKey) ?? null : null;
 
+    const overrideEvaluation: AdminOverrideEvaluation = evaluateAdminOverride({
+      isAdminActor: isHrActor,
+      isOwnRequest: hrIdsMatch(viewerHrId, row.employeeHrId),
+      now: overrideNow,
+      status: row.status,
+      steps: rawSteps.map(toOverrideStep),
+    });
+    const overrideApproverHrId = overrideEvaluation.step
+      ? rawSteps.find(
+          (candidate) =>
+            candidate.stepOrder === overrideEvaluation.step?.order &&
+            candidate.stepKey === overrideEvaluation.step?.stepKey,
+        )?.approverHrId ?? null
+      : null;
+    const adminOverride: VacationAdminOverrideState | null = isHrActor
+      ? {
+          approverHrId: overrideApproverHrId,
+          approverName: overrideApproverHrId
+            ? findEmployeeByHrId(directory, overrideApproverHrId)?.displayName ?? overrideApproverHrId
+            : null,
+          available: overrideEvaluation.available,
+          availableAt: overrideEvaluation.availableAt,
+          daysPending: overrideEvaluation.daysPending,
+          reason: overrideEvaluation.reason,
+        }
+      : null;
+
     const actionAvailability: VacationActionAvailability = resolveActionAvailability({
       status: row.status,
       steps: stepStates,
       actorStep: actorRawStep ? { stepKey: actorRawStep.stepKey, order: actorRawStep.stepOrder } : null,
       isHrActor,
+      override: overrideEvaluation,
     });
 
     rows.push({
@@ -4237,6 +4408,7 @@ export async function getVacationActionCenterData(access: AccessContext): Promis
         : null,
       assignedActorTitle: activeRawStep ? titleOf(activeRawStep.approverHrId) : null,
       actionAvailability,
+      adminOverride,
       slaAgeDays: row.slaStatus.businessDaysPending,
       viewerStepKind: actorRawStep
         ? actorRawStep.stepKey === "hr"
@@ -4945,7 +5117,7 @@ export async function generateVacationAuditExportWorkbook(access: AccessContext,
 
   addWorksheetRows(workbook, "Requests", report.rows.map((row) => ({
     requestId: row.id,
-    displayId: vacationRequestDisplayId(row.id),
+    displayId: row.requestCode,
     employeeHrId: row.employeeHrId,
     employeeName: row.employeeName,
     department: row.departmentName,

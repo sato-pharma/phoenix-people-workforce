@@ -8,16 +8,10 @@ import {
   getEmergencyVacationBalancePeriod,
   getVacationBalancePeriod,
   getVacationPolicyToday,
-  vacationRequestDisplayId,
   validateVacationRequestPolicy,
 } from "../src/lib/vacation/calculations.ts";
 
 export function runVacationCalculationTests() {
-  assert.match(
-    vacationRequestDisplayId("e9c4c1ce-8568-4a30-b14c-4365b876754e"),
-    /^VR-\d{3}$/,
-    "Vacation report should expose a compact spreadsheet-friendly request ID.",
-  );
 
   assert.equal(
     calculateVacationDurationDays({

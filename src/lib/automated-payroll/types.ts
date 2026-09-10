@@ -591,8 +591,22 @@ export type ReconciliationTotals = {
   totalNet: number;
   totalAdditions: number;
   totalDeductions: number;
-  /** Rows where firstPart + secondPart !== monthSalary (must always be empty). */
-  splitMismatches: { hrId: string; firstPart: number; secondPart: number; monthSalary: number }[];
+  /**
+   * Rows where the SPLIT disagrees with what the locked engine says the month owes — i.e.
+   * `firstPart + secondPart - overpaidResidual !== totalPayable`. Must always be empty.
+   *
+   * This used to compare `firstPart + secondPart` against `monthSalary`, which assembleParts
+   * defines AS `firstPart + secondPart`. That comparison could not fail, so the one hard gate
+   * before Part 2 passed unconditionally on every run this module has ever done.
+   */
+  splitMismatches: {
+    hrId: string;
+    firstPart: number;
+    secondPart: number;
+    monthSalary: number;
+    overpaidResidual: number;
+    totalPayable: number;
+  }[];
   /** Rows flagged part1_overpaid (Part-2 deductions exceeded the frozen first installment). */
   overpaid: { hrId: string; residual: number }[];
 };

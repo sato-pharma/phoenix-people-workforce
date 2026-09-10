@@ -1532,6 +1532,13 @@ nearly ran a destructive command on a third session's branch because of it.
 two worktrees from checking out one branch. So the primary checkout is normally on something else
 entirely, and `git checkout main` there aborts:
 
+**A tool reading `PRIMARY main` proves nothing later.** `new-session.mjs --status` prints which
+branch each folder held at the instant it ran, so that pairing is true for that moment only — any
+session may move the primary off `main`, or onto it, a minute afterwards. Re-read
+`git branch --show-current` at the moment you act rather than trusting an earlier status line.
+(This paragraph lived in §2.1 until 2026-09-11, when the enforced footprint gate had 56 bytes left
+and the account was moved here.)
+
 ```
 fatal: 'main' is already used by worktree at 'F:/Phoenix Workforce/_wt-dashboard-follow-closing'
 ```
@@ -1689,6 +1696,12 @@ Related: [[a-missing-table-answers-pgrst205-not-42p01]]
 
 §2.1 already warned that a shell sitting in a deregistered worktree resolves git against the
 PRIMARY checkout. Its advice on how to detect that was wrong in a way that made it worse.
+
+**`cd` cannot get you out of one.** The shell resets its working directory back inside the
+deregistered folder after every command, so a `cd` to the real repository looks like it worked and
+the next command runs in the wrong place again. Address the real repository explicitly with
+`git -C <path>`. (This sentence lived in §2.1 until 2026-09-11, when the enforced footprint gate
+had 56 bytes left and the account was moved here.)
 
 The old wording said path-filtered reads there "come back EMPTY for a file that exists", and told
 you to "verify with a POSITIVE CONTROL (bytes read, fields found), never a clean-looking blank".

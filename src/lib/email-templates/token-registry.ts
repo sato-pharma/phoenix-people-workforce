@@ -91,7 +91,7 @@ export const TOKEN_REGISTRY: readonly TokenDefinition[] = [
   { category: "Payroll", label: "Pay Date", sampleValue: "2026-06-30", token: "payDate", allowedTemplateTypes: ["marketing_request"] },
   { category: "Company", label: "Customer Name", sampleValue: "El Ezaby Pharmacy", token: "customerName", allowedTemplateTypes: ["marketing_request"] },
   { category: "Company", label: "Current Step", sampleValue: "Regional Manager review", token: "currentStep", allowedTemplateTypes: ["marketing_request"] },
-  { category: "Company", label: "Request Code", sampleValue: "REQ-0208", token: "requestCode", allowedTemplateTypes: ["marketing_request"] },
+  { category: "Company", label: "Request Code", sampleValue: "REQ-0208", token: "requestCode", allowedTemplateTypes: [] },
   { category: "Company", label: "Requester Name", sampleValue: "Youssef Ahmed", token: "requesterName", allowedTemplateTypes: ["marketing_request"] },
   { category: "Company", label: "Products Table", sampleValue: "(the requested products/financials table)", token: "productsTable", allowedTemplateTypes: ["marketing_request"], isHtmlBlock: true },
   { category: "Company", label: "Return Callout", sampleValue: "(the return/rejection reason callout)", token: "returnCallout", allowedTemplateTypes: ["marketing_request"], isHtmlBlock: true },

@@ -41,6 +41,7 @@ export type EmployeeExcuseRequest = {
   managerDecisionComment: string | null;
   managerHrId: string | null;
   managerName: string | null;
+  requestCode: string;
   status: EmployeeExcuseStatus;
 };
 
@@ -81,6 +82,7 @@ type ExcuseRequestRow = {
   manager_decision_by_hr_id?: string | null;
   manager_hr_id: string | null;
   manager_name: string | null;
+  request_code: string;
   status: EmployeeExcuseStatus;
 };
 
@@ -97,6 +99,14 @@ const monthlyAllowance = Math.max(
   Number.parseInt(process.env.PHOENIX_MONTHLY_EXCUSE_ALLOWANCE ?? "2", 10) || 2,
 );
 const excuseAuditEntityType = ["excuse", "request"].join("_") as AuditEntityType;
+
+// The read column list used to be repeated verbatim at every call site. It is a constant now
+// because request_code exposed the failure mode: a column added to seven of eight selects reaches
+// most screens and is quietly undefined on the eighth, with nothing to show that it happened.
+const excuseColumns =
+  "id,request_code,employee_hr_id,employee_name,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at";
+const excuseColumnsWithEmail =
+  "id,request_code,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at";
 
 function cleanText(value: string | null | undefined) {
   const text = String(value ?? "").trim();
@@ -267,6 +277,7 @@ function mapExcuseRequestRow(row: ExcuseRequestRow): EmployeeExcuseRequest {
     managerDecisionComment: row.manager_decision_comment,
     managerHrId: row.manager_hr_id,
     managerName: row.manager_name,
+    requestCode: row.request_code,
     status: row.status,
   };
 }
@@ -295,7 +306,7 @@ async function fetchEmployeeExcuseRequests(employeeHrId: string) {
 
   const { data, error } = await getSupabaseAdmin()
     .from("v2_excuse_requests")
-    .select("id,employee_hr_id,employee_name,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
+    .select(excuseColumns)
     .in("employee_hr_id", employeeHrKeys)
     .order("excuse_date", { ascending: false })
     .order("created_at", { ascending: false })
@@ -458,6 +469,7 @@ async function notifyManagerOfExcuse(input: {
       employeeHrId: input.request.employeeHrId,
       includeHrInbox: true,
       metrics: [
+        { label: "Request code", value: input.request.requestCode },
         { label: "Employee", value: `${input.employee.displayName} (${input.request.employeeHrId})` },
         { label: "Job Title", value: input.employee.jobTitle ?? "—" },
         { label: "Line", value: input.request.lineName ?? input.employee.lineName ?? "—" },
@@ -476,6 +488,7 @@ async function notifyManagerOfExcuse(input: {
         area: input.employee.areaName ?? "—",
         duration: `${input.request.durationHours} hours`,
         jobTitle: input.employee.jobTitle ?? "—",
+        requestCode: input.request.requestCode,
         line: input.request.lineName ?? input.employee.lineName ?? "—",
       },
       title,
@@ -540,6 +553,7 @@ async function notifyDecisionRecipients(input: {
         employeeHrId: input.request.employeeHrId,
         includeHrInbox: true,
         metrics: [
+          { label: "Request code", value: input.request.requestCode },
           { label: "Excuse type", value: excuseTypeLabel },
           { label: "Date", value: input.request.excuseDate },
           { label: "Status", value: requestStatusLabel },
@@ -558,6 +572,7 @@ async function notifyDecisionRecipients(input: {
           excuseDate: input.request.excuseDate,
           excuseType: excuseTypeLabel,
           line: input.request.lineName ?? "—",
+          requestCode: input.request.requestCode,
           status: requestStatusLabel,
         },
         title,
@@ -653,7 +668,7 @@ export async function createExcuseRequest(
       submitted_by_hr_id: submittedByHrId,
       submitted_by_login_id: access.loginId ?? null,
     })
-    .select("id,employee_hr_id,employee_name,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
+    .select(excuseColumns)
     .single();
 
   if (error) throw error;
@@ -682,7 +697,7 @@ export async function createExcuseRequest(
 async function fetchRequestById(requestId: string) {
   const { data, error } = await getSupabaseAdmin()
     .from("v2_excuse_requests")
-    .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
+    .select(excuseColumnsWithEmail)
     .eq("id", requestId)
     .maybeSingle();
 
@@ -744,7 +759,7 @@ export async function decideExcuseRequestByToken(input: {
     })
     .eq("id", input.requestId)
     .eq("status", "pending_manager")
-    .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
+    .select(excuseColumnsWithEmail)
     .maybeSingle();
 
   if (updateError) throw updateError;
@@ -783,7 +798,7 @@ export async function getManagerPendingExcuses(access: AccessContext): Promise<E
 
   let query = supabase
     .from("v2_excuse_requests")
-    .select("id,employee_hr_id,employee_name,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
+    .select(excuseColumns)
     .eq("status", "pending_manager")
     .order("created_at", { ascending: true });
 
@@ -845,7 +860,7 @@ export async function decideExcuseRequestAsManager(
     })
     .eq("id", input.requestId)
     .eq("status", "pending_manager")
-    .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
+    .select(excuseColumnsWithEmail)
     .maybeSingle();
 
   if (updateError) throw updateError;
@@ -944,7 +959,7 @@ export async function reassignExcuseManager(
     })
     .eq("id", input.requestId)
     .eq("status", "pending_manager")
-    .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
+    .select(excuseColumnsWithEmail)
     .maybeSingle();
 
   if (updateError) throw updateError;
@@ -1041,7 +1056,7 @@ export async function resubmitExcuseRequest(
     })
     .eq("id", input.requestId)
     .eq("status", "returned_to_employee")
-    .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
+    .select(excuseColumnsWithEmail)
     .maybeSingle();
 
   if (updateError) throw updateError;

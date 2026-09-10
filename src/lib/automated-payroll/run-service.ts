@@ -254,6 +254,27 @@ export async function startOrResumeRun(
   const existing = await findActiveRun(period.month, period.year);
   if (existing) return existing;
 
+  // A MONTH THAT IS ALREADY PUBLISHED IS FINISHED. `findActiveRun` only sees part1/part2/ready, and
+  // the database's one-run-per-month index deliberately excludes published and cancelled runs — so
+  // without this, pressing Start on a paid month silently creates a SECOND run for it.
+  //
+  // That is not hypothetical. On 2026-09-10 a second August run was created this way on production,
+  // ninety seconds after which two steps had been confirmed against it. It becomes the run every
+  // finance screen answers with, so the PAID month's sheet and bank files stop being reachable;
+  // confirming its Part 1 would emit a real bank transfer file for a month already paid, and
+  // confirming its Part 2 would mark previous months' genuine debts recovered.
+  //
+  // Refused here rather than at publish, which is where the collision used to surface — a month of
+  // work later, and only if someone got that far.
+  const published = await findPublishedRun(period.month, period.year);
+  if (published) {
+    throw new Error(
+      `Conflict: ${period.month}/${period.year} has already been published (run ${published.id}). ` +
+        "A published month is finished — starting another run for it would create a second, shadow run " +
+        "that every finance screen would answer with instead of the paid one.",
+    );
+  }
+
   // Mutual exclusion: do not start while a Payroll Copilot run is active for the
   // same period (both write the shared expense/vacation decision tables).
   const { data: copilotRuns } = await getSupabaseAdmin()
@@ -647,6 +668,33 @@ export async function confirmPart1(
     draftRows,
     acknowledged: options.acknowledgeDataIssues === true,
   });
+
+  // THE SAME HARD VALIDATION PART 2 WILL RUN, run here, BEFORE money is frozen.
+  //
+  // Part 1's data-quality gate above is acknowledgeable by design: a missing hire date or payment
+  // mode is a judgement call HR can accept on the record. But the pre-flight validator at Part 2
+  // confirm is NOT acknowledgeable, and it refuses some of the same people — an employee with no
+  // salary at all fails `missing_gross_salary` there with no flag to get past it.
+  //
+  // So Part 1 was waving through exactly what Part 2 would later refuse. Walked end to end on
+  // staging 2026-09-10: three employees with no salary were acknowledged at Part 1, frozen into the
+  // first instalment at 0.00, and then Part 2 refused outright over those same three. The month was
+  // stuck, and the only ways out both damaged a Part 1 that had already been confirmed as money —
+  // change their salary (moving the basis of a frozen instalment) or exclude them (erasing people
+  // whose Part 1 was already executed).
+  //
+  // Running it here makes the Part 1 acknowledgement honest: what it lets through, Part 2 accepts.
+  const { rows: preflightRows } = await assembleForRun(run);
+  const { preflightValidate: preflightAtPart1 } = await import("./validate.ts");
+  const part1Preflight = preflightAtPart1(preflightRows);
+  if (!part1Preflight.ok) {
+    const sample = part1Preflight.issues.slice(0, 6).map((issue) => `${issue.hrId ?? "?"}: ${issue.message}`);
+    throw new Error(
+      `Validation: fix ${part1Preflight.errorCount} issue(s) before confirming Part 1. ${sample.join("; ")} ` +
+        "(These cannot be acknowledged past: Part 2 refuses them outright, so confirming Part 1 now would " +
+        "freeze money for people the month can never be completed with.)",
+    );
+  }
 
   const frozen = computeFrozenFirstParts({ members, sources, draftRows, period });
 
@@ -1072,13 +1120,47 @@ export async function includeEmployeeInRun(access: AccessContext, runId: string,
 
 // ---- Publish (separate, Super-Admin-only) -----------------------------------
 
-async function finalizeApproved(batchId: string, actorHrId: string): Promise<void> {
-  const { error } = await getSupabaseAdmin()
+/**
+ * Move the batch to `approved`, and PROVE it happened.
+ *
+ * The `.eq("status", "uploaded")` is a real concurrency guard and stays. What was missing is that a
+ * zero-row match returns no error: if anything moved the batch between the create and this update —
+ * a second publisher, the old payroll module's workflow — the update quietly changed nothing and
+ * publish went on to mark the run published anyway. Payslips are only visible for an approved
+ * batch, so the month would then exist with no payslips, and re-publishing returns early forever
+ * because the run already reads as published. The month becomes permanently unpublishable.
+ *
+ * Returns the batch's status as it now stands, so the caller can refuse rather than assume.
+ */
+async function finalizeApproved(batchId: string, actorHrId: string): Promise<string | null> {
+  const { data, error } = await getSupabaseAdmin()
     .from("salary_batches")
     .update({ status: "approved", approved_at: nowIso(), approved_by: actorHrId })
     .eq("id", batchId)
-    .eq("status", "uploaded");
+    .eq("status", "uploaded")
+    .select("status");
   if (error) throw error;
+  if ((data ?? []).length > 0) return "approved";
+
+  // Nothing matched. Read what the batch actually is now — it may already be approved (a retry of
+  // an interrupted publish, which is fine) or something else entirely (which is not).
+  const { data: current, error: readError } = await getSupabaseAdmin()
+    .from("salary_batches")
+    .select("status")
+    .eq("id", batchId)
+    .maybeSingle();
+  if (readError) throw readError;
+  return (current as { status?: string } | null)?.status ?? null;
+}
+
+/** Refuse to call a run published over a batch that is not approved. */
+function assertBatchApproved(status: string | null, batchId: string): void {
+  if (status === "approved" || status === "locked") return;
+  throw new Error(
+    `Conflict: the salary batch ${batchId} is "${status ?? "missing"}", not approved, so no payslip would be ` +
+      "visible. Publishing was stopped rather than marking the run published over it — a run that reads " +
+      "as published can never be published again.",
+  );
 }
 
 export type PublishResult = {
@@ -1171,7 +1253,14 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
     }
     // Our own batch from a previous partial publish — finalize it.
     batchId = existing.id;
-    if (existing.status === "uploaded") await finalizeApproved(batchId, actorId(access));
+    // Any non-approved leftover is finalised, not just an "uploaded" one, and the result is
+    // checked. Skipping this for every other status is what let a run be marked published over a
+    // batch nobody could see.
+    const status =
+      existing.status === "approved" || existing.status === "locked"
+        ? existing.status
+        : await finalizeApproved(batchId, actorId(access));
+    assertBatchApproved(status, batchId);
   } else {
     const created = await createSalaryBatch({
       records: publishRows,
@@ -1182,7 +1271,7 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
       validationWarnings: [],
     });
     batchId = created.batch.id;
-    await finalizeApproved(batchId, actorId(access));
+    assertBatchApproved(await finalizeApproved(batchId, actorId(access)), batchId);
   }
 
   // SETTLE THE CARRY-FORWARD LEDGER HERE, from the rows that were actually published. Held rows
