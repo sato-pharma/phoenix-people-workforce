@@ -8,7 +8,7 @@ import {
   normalizeLineKey,
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
-import { maskClosingSourceRows } from "@/lib/sales/closing-source-mask";
+import { withoutMaskedSourceRows } from "@/lib/sales/closing-source-mask";
 import { applyClosingAreaMergesToDetails } from "@/lib/sales/closing-area-merges";
 import { countsInClosingHeadline } from "@/lib/sales/closing-headline";
 import { loadOperationalRegionResolver } from "@/lib/sales/closing-organogram-regions";
@@ -771,19 +771,40 @@ export async function loadMonthlyClosingDetails(
       })
     : scoped;
 
+  // 🔒 THE SOURCE REMOVAL, AND IT HAS TO SIT ABOVE THE OPTIONS RATHER THAN BELOW THE PAGING.
+  //
+  // It used to run on the last line of this function, against the already-paged rows, and blank
+  // four columns on them. That left two things behind that the owner's rule does not allow, and
+  // neither was visible from the rows themselves:
+  //
+  //   • `buildFilterOptions` runs on `relabelled`, so the tab's DISTRIBUTOR DROPDOWN offered `QM`
+  //     to every viewer. Measured live on Pedia. The rows said nothing and the filter named it.
+  //   • `filteredRowCount` and every figure in `totals` counted rows the reader could not see, so
+  //     the tab reported a total its own rows do not add up to — which is a question mark, and a
+  //     question mark is a trace.
+  //
+  // Removing here instead makes the whole result consistent: the dropdown, the count, the totals
+  // and the rows all describe the same population.
+  //
+  // 🔴 WHAT MUST NOT MOVE ABOVE THIS LINE IS THE STORE SPLIT, and it does not: the split is
+  // computed upstream in `loadMonthlyClosingPartsWithStoreSplit`, long before these rows arrive, so
+  // El Qema's own warehouse rule has already been applied to the numbers that survive. Everything
+  // between there and here — the access scope, the organogram relabelling — is display.
+  //
+  // The export route is the one caller that computes FROM these rows (the comparison, the store
+  // split sheets), which is why it sets the reveal flag and drops them itself afterwards. The
+  // flag is deliberately not spelled out here: the pinning test greps for it by name.
+  const visible = input.revealSource === true
+    ? relabelled
+    : [...withoutMaskedSourceRows(relabelled, access)];
+
   // Options come from everything in scope (pre-filter) so choosing one area never removes the
   // other areas from the dropdown.
-  const options = buildFilterOptions(relabelled);
+  const options = buildFilterOptions(visible);
 
-  const filtered = applyDetailFilters(relabelled, input.filters);
+  const filtered = applyDetailFilters(visible, input.filters);
   const start = (page - 1) * pageSize;
-  const paged = input.unpaged ? filtered : filtered.slice(start, start + pageSize);
-
-  // 🔒 The source mask, applied LAST and defaulting ON. Everything above this line — the scope,
-  // the relabelling, the filters, every total — has already been computed from the real rows, so
-  // masking here changes what is SHOWN and nothing that is COUNTED. See closing-source-mask.ts for
-  // the owner's words and for why the reveal is granted by scope rather than per call site.
-  const shown = input.revealSource === true ? paged : maskClosingSourceRows(paged, access);
+  const shown = input.unpaged ? filtered : filtered.slice(start, start + pageSize);
 
   return {
     line,
