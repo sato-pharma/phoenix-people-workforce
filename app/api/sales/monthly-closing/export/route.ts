@@ -12,7 +12,7 @@ import {
   loadMonthlyClosingChannelComparison,
 } from "@/lib/sales/monthly-closing-channel-comparison";
 import { type ClosingDetailsFilters, loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
-import { maskClosingSourceRows, maskedClosingClientCodes } from "@/lib/sales/closing-source-mask";
+import { maskedClosingClientCodes, withoutMaskedSourceRows } from "@/lib/sales/closing-source-mask";
 import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
 import {
   buildClosingDetailsWorkbook,
@@ -519,7 +519,7 @@ export async function POST(request: Request) {
       // 🔒 Everything that computes from the real rows is finished by here — the split, the
       // comparison, both matrix rebuilds. The workbook only writes them out, so this is where
       // the source mask belongs. See closing-source-mask.ts.
-      const shownMatrixDetails = { ...details, rows: [...maskClosingSourceRows(details.rows, access)] };
+      const shownMatrixDetails = { ...details, rows: [...withoutMaskedSourceRows(details.rows, access)] };
       const buffer = await buildMonthlyClosingWorkbook(workbookMatrix, comparison, shownMatrixDetails, {
         channelBreakdown,
         channelComparison: await channelComparisonPromise,
@@ -635,7 +635,7 @@ export async function POST(request: Request) {
     const scopedMatrix = scopedPortal?.matrix ?? null;
     // 🔒 EVERYTHING ABOVE THIS LINE HAS FINISHED COMPUTING. From here the rows are only written
     // into a workbook, so this is where the source mask belongs. See closing-source-mask.ts.
-    const shownDetails = { ...details, rows: [...maskClosingSourceRows(details.rows, access)] };
+    const shownDetails = { ...details, rows: [...withoutMaskedSourceRows(details.rows, access)] };
     const buffer = scopedMatrix
       ? await buildPortalClosingWorkbook(
           scopedMatrix,
