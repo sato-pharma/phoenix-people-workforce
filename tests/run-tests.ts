@@ -671,6 +671,7 @@ import { runExpenseReadsAreNotCappedAt1000Tests } from "./expense-reads-are-not-
 import { runExpenseApprovalDecisionsSurviveTheSaveTests } from "./expense-approval-decisions-survive-the-save.test.ts";
 import { runExpenseApprovalsOneListTests } from "./expense-approvals-one-list.test.ts";
 import { runOutstationImportIsAdditiveTests } from "./outstation-import-is-additive.test.ts";
+import { runOutstationImportRefusesWizardMonthsTests } from "./outstation-import-refuses-wizard-months.test.ts";
 import { runExpenseImportSheetHrIdWinsTests } from "./expense-import-sheet-hr-id-wins.test.ts";
 import { runSalaryRecordsUniqueBatchHrTests } from "./salary-records-unique-batch-hr.test.ts";
 import { runOutstationPolicyClassificationTests } from "./outstation-policy-classification.test.ts";
@@ -2661,6 +2662,10 @@ await runTest(
   runExpenseApprovalsOneListTests,
 );
 await runTest("outstation import is additive and hr_id-scoped", runOutstationImportIsAdditiveTests);
+await runTest(
+  "outstation import refuses a month Automated Payroll paid",
+  runOutstationImportRefusesWizardMonthsTests,
+);
 await runTest(
   "expense import: an HR ID in the sheet beats a name match (leavers)",
   runExpenseImportSheetHrIdWinsTests,
