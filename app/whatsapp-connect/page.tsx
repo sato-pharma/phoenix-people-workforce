@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   WHATSAPP_EMBEDDED_SIGNUP_APP_ID,
   WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID,
-  WHATSAPP_EMBEDDED_SIGNUP_FEATURE_TYPE,
+  WHATSAPP_EMBEDDED_SIGNUP_EXTRAS,
   WHATSAPP_EMBEDDED_SIGNUP_SDK_VERSION,
 } from "@/lib/recruitment/inbound/whatsapp-embedded-signup";
 
@@ -23,9 +23,9 @@ type FacebookLoginOptions = {
   response_type: "code";
   override_default_response_type: boolean;
   extras: {
-    setup: Record<string, never>;
     featureType: string;
     sessionInfoVersion: string;
+    version: string;
   };
 };
 
@@ -160,11 +160,7 @@ export default function WhatsAppConnectPage() {
         config_id: WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID,
         response_type: "code",
         override_default_response_type: true,
-        extras: {
-          setup: {},
-          featureType: WHATSAPP_EMBEDDED_SIGNUP_FEATURE_TYPE,
-          sessionInfoVersion: "3",
-        },
+        extras: WHATSAPP_EMBEDDED_SIGNUP_EXTRAS,
       },
     );
   }, [exchange]);

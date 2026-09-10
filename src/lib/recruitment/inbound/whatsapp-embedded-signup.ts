@@ -28,6 +28,29 @@ export const WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID = "2089438105259208";
 // Meta retired the older value "coexistence"; this is the current, required value.
 export const WHATSAPP_EMBEDDED_SIGNUP_FEATURE_TYPE = "whatsapp_business_app_onboarding";
 
+// Embedded Signup flow version. THIS IS LOAD-BEARING AND ITS ABSENCE IS SILENT: without it Meta
+// serves the v2 dialog, which has no coexistence step at all, so the only choices offered are
+// "create a new number" (the MIGRATION path, which signs WhatsApp out of the handset) and a virtual
+// number. The featureType above is accepted without complaint and simply ignored — there is no
+// error, no warning, and the dialog looks like a normal signup. Diagnosed 2026-09-11 by reading the
+// onboarding link Meta itself generates for this app on its Tech Provider page: same app id, same
+// config id, and this one extra parameter. Meta retires Embedded Signup v2 on 2026-10-08.
+export const WHATSAPP_EMBEDDED_SIGNUP_VERSION = "v4";
+
+// The exact `extras` payload handed to FB.login, exported as a value rather than assembled inline in
+// the page so a test can assert on what is actually sent. A wrong extras payload has no visible
+// failure mode — Meta silently serves a different flow — so the source is not the artefact worth
+// checking; this object is. Mirrors the link Meta generates, field for field.
+export const WHATSAPP_EMBEDDED_SIGNUP_EXTRAS: {
+  featureType: string;
+  sessionInfoVersion: string;
+  version: string;
+} = {
+  featureType: WHATSAPP_EMBEDDED_SIGNUP_FEATURE_TYPE,
+  sessionInfoVersion: "3",
+  version: WHATSAPP_EMBEDDED_SIGNUP_VERSION,
+};
+
 // Graph API version the Facebook JS SDK initialises with (FB.init) on the client. A fixed public
 // constant; the server-side code exchange picks its Graph version the same way the rest of the
 // integration does (WHATSAPP_GRAPH_API_VERSION, default v23.0 — see the exchange route).
