@@ -89,6 +89,9 @@ function buildAssembledRow(overrides: {
     compact: (overrides.hrId ?? "B-1").toLowerCase(),
     onHold: overrides.onHold ?? false,
     overpaidResidual: 0,
+    // The engine's own answer for what the month owes. reconcile() compares the split against
+    // THIS rather than against monthSalary, which is defined as the split itself.
+    totalPayable: (overrides.firstPart ?? 5000) + (overrides.secondPart ?? 5000),
     carriedForwardApplied: 0,
     lifecycle: "regular",
     bankName: overrides.bankName === undefined ? "FAB" : overrides.bankName,
