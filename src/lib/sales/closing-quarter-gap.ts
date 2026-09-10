@@ -320,35 +320,37 @@ export async function loadClosingQuarterGap(input: {
   // between the two lists is the sheet.
   const { months, salesMonths } = closingQuarterGapMonths(period);
 
-  let targetMonths: QuarterTargetMonth[];
-  try {
-    targetMonths = await Promise.all(
-      months.map(async (month) => ({ period: month, rows: await loadMonthlyTargets(month) })),
-    );
-  } catch {
-    return null;
-  }
+  // ONE wave, not two. The targets and the months answer different questions and neither needs the
+  // other's result, so awaiting the targets first would put a whole extra round trip on an export
+  // the reader is already waiting on. The cost of firing both is a month read that goes unused when
+  // there are no targets at all — a case the line-code check above has already taken.
+  const [targetMonths, loaded] = await Promise.all([
+    Promise.all(months.map(async (month) => ({ period: month, rows: await loadMonthlyTargets(month) })))
+      // Null, never a short target. A gap measured against a target that failed to load is a wrong
+      // number wearing the right heading, and nothing downstream could tell.
+      .catch(() => null as QuarterTargetMonth[] | null),
+    Promise.all(
+      salesMonths.map(async (month) => {
+        if (input.selectedMonth && input.selectedMonth.period === month) {
+          return { matrix: input.selectedMonth, period: month };
+        }
+        try {
+          const parts = await loadMonthlyClosingPartsWithStoreSplit({ line: input.line, period: month });
+          // The loader FALLS BACK to its newest month when the one asked for has nothing, so a month
+          // that was never uploaded would otherwise be folded in as a copy of another one — the same
+          // guard the multi-month loader and the review's own series already carry.
+          if (parts.combined.period !== month) return { matrix: null, period: month };
+          return { matrix: filterMonthlyClosingMatrix(parts.combined, input.filter), period: month };
+        } catch {
+          return { matrix: null, period: month };
+        }
+      }),
+    ),
+  ]);
 
+  if (!targetMonths) return null;
   const targets = foldQuarterTargets(targetMonths, targetLineCode);
   if (targets.size === 0) return null;
-
-  const loaded = await Promise.all(
-    salesMonths.map(async (month) => {
-      if (input.selectedMonth && input.selectedMonth.period === month) {
-        return { matrix: input.selectedMonth, period: month };
-      }
-      try {
-        const parts = await loadMonthlyClosingPartsWithStoreSplit({ line: input.line, period: month });
-        // The loader FALLS BACK to its newest month when the one asked for has nothing, so a month
-        // that was never uploaded would otherwise be folded in as a copy of another one — the same
-        // guard the multi-month loader and the review's own series already carry.
-        if (parts.combined.period !== month) return { matrix: null, period: month };
-        return { matrix: filterMonthlyClosingMatrix(parts.combined, input.filter), period: month };
-      } catch {
-        return { matrix: null, period: month };
-      }
-    }),
-  );
 
   const usable = loaded.filter(
     (entry): entry is { matrix: MonthlyClosingMatrix; period: string } => entry.matrix !== null,
