@@ -11,6 +11,7 @@ import {
   type SpotlightOrg,
 } from "../src/lib/spotlight/rank.ts";
 import {
+  blockedReason,
   gateWindow,
   selectableWindows,
   windowLabel,
@@ -296,5 +297,31 @@ export function runSpotlightRankingTests() {
     }
     assert.equal(selectableWindows("month", today, 3)[0]!.key, "2026-08", "newest complete month first");
     assert.equal(selectableWindows("quarter", today, 3)[0]!.key, "2026-Q2");
+  }
+
+  // ── 12. A disabled control ALWAYS carries its reason ───────────────────────
+  //
+  // Reported live: "the show me button does nothing". It was disabled, correctly, because Year has
+  // no selectable period until 2027 — and it said nothing, so a working guard was indistinguishable
+  // from a broken page. The reason and the disabling now come from ONE value, so they cannot drift.
+  {
+    assert.equal(blockedReason("month", true), null, "a selectable period blocks nothing");
+    assert.equal(blockedReason("year", true), null);
+
+    const year = blockedReason("year", false);
+    assert.ok(year, "an empty year picker MUST explain itself");
+    assert.ok(year!.includes("1 January 2027"), "and name the date it becomes available");
+    assert.ok(year!.includes("Month, Quarter or Half year"), "and say what to do instead");
+
+    const month = blockedReason("month", false);
+    assert.ok(month && month.includes("month"), "every kind gets a reason, not just year");
+    assert.ok(blockedReason("semester", false)!.includes("half year"),
+      "and it reads as English — 'half year', never the internal word 'semester'");
+
+    // Every window kind must produce a reason. A kind added later with no wording would fall back
+    // to a silent disable, which is exactly the defect this test exists to prevent.
+    for (const kind of ["month", "quarter", "semester", "year"] as const) {
+      assert.ok(blockedReason(kind, false), `${kind} explains why it is blocked`);
+    }
   }
 }

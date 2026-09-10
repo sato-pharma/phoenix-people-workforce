@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 
+import { blockedReason } from "@/lib/spotlight/period";
 import type { SpotlightFacets } from "@/lib/spotlight/org";
 import type {
   SpotlightLayout,
@@ -97,6 +98,9 @@ export function SpotlightWorkspace({ canExport, facets, windows }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const availableWindows = windows[windowKind] ?? [];
+  // The SAME value disables the buttons and prints the reason, so the two can never disagree —
+  // which is the whole defect this replaces: disabled with nothing said.
+  const blocked = blockedReason(windowKind, Boolean(windowKey));
 
   const selection = useMemo(() => ({
     window: { kind: windowKind, key: windowKey },
@@ -223,12 +227,8 @@ export function SpotlightWorkspace({ canExport, facets, windows }: Props) {
                   <option key={window.key} value={window.key}>{windowText(window)}</option>
                 ))}
               </select>
-              {availableWindows.length === 0 ? (
-                <p className="mt-2 text-[12px] leading-relaxed text-slate-500">
-                  {windowKind === "year"
-                    ? "No calendar year has finished within the sales data, which starts in January 2026. The first will be 2026, available from 1 January 2027."
-                    : `No ${windowKind} has finished yet.`}
-                </p>
+              {blocked ? (
+                <p className="mt-2 text-[12px] leading-relaxed text-slate-500">{blocked}</p>
               ) : null}
             </div>
             <div>
@@ -361,24 +361,31 @@ export function SpotlightWorkspace({ canExport, facets, windows }: Props) {
         </div>
       </section>
 
-      <div className="mt-5 flex flex-wrap gap-3">
-        <button
-          className="rounded-none bg-sky-800 px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
-          disabled={busy !== null || !windowKey}
-          onClick={preview}
-          type="button"
-        >
-          {busy === "preview" ? "Loading…" : "Show me"}
-        </button>
-        {canExport ? (
+      <div className="mt-5">
+        <div className="flex flex-wrap items-center gap-3">
           <button
-            className="rounded-none border border-sky-800 px-5 py-2.5 text-[13px] font-semibold text-sky-800 disabled:opacity-50"
-            disabled={busy !== null || !windowKey}
-            onClick={exportPdf}
+            className="rounded-none bg-sky-800 px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
+            disabled={busy !== null || blocked !== null}
+            onClick={preview}
             type="button"
           >
-            {busy === "export" ? "Building the PDF…" : "Export PDF"}
+            {busy === "preview" ? "Loading…" : "Show me"}
           </button>
+          {canExport ? (
+            <button
+              className="rounded-none border border-sky-800 px-5 py-2.5 text-[13px] font-semibold text-sky-800 disabled:opacity-50"
+              disabled={busy !== null || blocked !== null}
+              onClick={exportPdf}
+              type="button"
+            >
+              {busy === "export" ? "Building the PDF…" : "Export PDF"}
+            </button>
+          ) : null}
+        </div>
+        {/* Beside the button, not only up in the picker — a greyed control with its explanation
+            three sections away is indistinguishable from a broken one. */}
+        {blocked ? (
+          <p className="mt-3 max-w-2xl text-[12px] leading-relaxed text-slate-600">{blocked}</p>
         ) : null}
       </div>
 
