@@ -60,6 +60,7 @@ export const TOKEN_REGISTRY: readonly TokenDefinition[] = [
   { category: "Contract", label: "Expiry Text", sampleValue: "24 hours", token: "expiryText", allowedTemplateTypes: ["password_setup", "password_reset", "user_created"] },
   { category: "Payroll", label: "Vacation Balance", sampleValue: "12 days", token: "vacationBalance", allowedTemplateTypes: ["leave_request", "leave_approval", "leave_rejection"] },
   { category: "Company", label: "Approval Flow", sampleValue: "Manager then HR", token: "approvalFlow", allowedTemplateTypes: [] },
+  { category: "Company", label: "Request Code", sampleValue: "VAC-0042", token: "requestCode", allowedTemplateTypes: [] },
   { category: "Company", label: "Status", sampleValue: "Pending manager approval", token: "status", allowedTemplateTypes: [] },
   { category: "Company", label: "Date", sampleValue: "2026-05-31", token: "date", allowedTemplateTypes: [] },
   { category: "Company", label: "Duration", sampleValue: "5 days", token: "duration", allowedTemplateTypes: [] },
