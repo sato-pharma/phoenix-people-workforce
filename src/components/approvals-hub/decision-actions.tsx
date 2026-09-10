@@ -300,7 +300,13 @@ export function DecisionActions({
                 key={`bar-${action}`}
                 type="button"
                 onClick={() => start(action)}
-                className={`h-12 min-w-0 flex-1 basis-[48%] px-2 text-sm font-bold transition-colors ${toneClass[action]}`}
+                // Wrapping is driven by min-width, NOT flex-basis. `basis-*` and `flex-1` set the
+                // same shorthand, so which one wins depends on Tailwind's rule order rather than
+                // on anything written here — and the repo build need not order them like the CDN
+                // one this was measured against. A min-width cannot conflict: two buttons fit a
+                // 375px row, three cannot, so they wrap. It also keeps `h-12 flex-1` contiguous,
+                // which tests/direct-orders-approval-window-mobile.test.ts pins as the thumb size.
+                className={`h-12 flex-1 min-w-[9rem] px-2 text-sm font-bold transition-colors ${toneClass[action]}`}
               >
                 {labelFor(action)}
               </button>
