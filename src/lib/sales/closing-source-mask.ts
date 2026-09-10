@@ -50,29 +50,45 @@ export type MaskableSourceRow = {
 };
 
 /**
- * Blank the source columns on every masked distributor's rows, unless this viewer may reveal them.
+ * Take every masked distributor's rows OUT of a detail surface, unless this viewer may reveal them.
  *
- * Returns the SAME array when nothing is masked, so the common path allocates nothing and a caller
+ * 🔒 IT REMOVES THE ROW; IT DOES NOT BLANK IT. Owner, 2026-09-10, asked and answered —
+ * "hide all customers related to el qema from the details sheet make them never reachable and hide
+ * them from everywhere never anyone can reach except system admin", then "yes remove them
+ * completely from details".
+ *
+ * ⚠ BLANKING WAS THE FIRST IMPLEMENTATION AND IT ANNOUNCED ITSELF. The row stayed on the
+ * sheet with four empty columns and its area, product, quantity and value intact, so the reader
+ * could see how much money had no owner even though they could not see whose it was. Worse, three
+ * surfaces then DESCRIBED that money: the customer ranking footnoted "64 rows worth 2,367,360 EGP
+ * carry no client code — the distributor reported the sale without naming the buyer", which both
+ * sized the hidden total and invented an explanation the owner had already declined; and the
+ * detail tab's own distributor dropdown still offered `QM` as a filter, because the option list is
+ * built before the mask. An absent row is the only version of this rule with nothing left to read.
+ *
+ * Returns the SAME array when nothing is dropped, so the common path allocates nothing and a caller
  * can apply it unconditionally.
  *
- * 🔴 APPLY THIS LAST, AFTER EVERY COMPUTATION. The split keys on `distributorCode` and the customer
- * aggregation keys on `clientCode`; masking before either of those runs does not throw, it quietly
- * produces a different distribution. That is why the loader reveals for `system` and why the export
- * masks only on the way into the workbook.
+ * 🔴 APPLY THIS AFTER EVERY COMPUTATION THAT NEEDS THE REAL ROWS. The store split keys on
+ * `distributorCode` and the customer aggregation keys on `clientCode`; removing these rows before
+ * either runs does not throw, it quietly produces a different distribution. That is why the export
+ * route asks for the real rows with its reveal flag, computes, and only then drops — and why
+ * anything running as `system` is revealed by scope rather than by remembering to pass one.
+ *
+ * ⚠ DO NOT SPELL THAT FLAG OUT IN PROSE ANYWHERE IN src/, app/ OR scripts/. `closing-source-mask
+ * .test.ts` builds the list of surfaces allowed to see El Qema by grepping every file for the
+ * literal `revealSource: true`, so a COMMENT mentioning it adds its own file to that list. This
+ * paragraph was written that way once and put this module on it.
  */
-export function maskClosingSourceRows<T extends MaskableSourceRow>(
+export function withoutMaskedSourceRows<T extends MaskableSourceRow>(
   rows: readonly T[],
   access: Pick<AccessContext, "role" | "scope">,
 ): readonly T[] {
   if (canRevealClosingSource(access)) return rows;
-  let touched = false;
-  const masked = rows.map((row) => {
-    const code = String(row.distributorCode ?? "").trim().toUpperCase();
-    if (!MASKED_SOURCE_DISTRIBUTORS.has(code)) return row;
-    touched = true;
-    return { ...row, distributorCode: "", clientCode: "", clientName: "", clientAddress: "" };
-  });
-  return touched ? masked : rows;
+  const kept = rows.filter(
+    (row) => !MASKED_SOURCE_DISTRIBUTORS.has(String(row.distributorCode ?? "").trim().toUpperCase()),
+  );
+  return kept.length === rows.length ? rows : kept;
 }
 
 /**
