@@ -36,6 +36,7 @@ export const notificationRoleKeys = [
   "distributor_upload_overdue_alert",
   "retention_risk_alert",
   "crm_account_setup_alert",
+  "sos_mapping_guard_alert",
 ] as const;
 
 export type NotificationRoleKey = (typeof notificationRoleKeys)[number];
@@ -188,6 +189,14 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     description:
       "Who is told when a distributor's file for the month just closed is later than that same distributor's file was last month. Defaults to Super Admin and SFE Manager — the two roles holding sales:import, which is what /sales/upload requires, so every recipient can actually perform the upload the message is asking for rather than landing on a redirect.",
     roles: ["Super Admin", "SFE Manager"],
+    enabled: true,
+  },
+  sos_mapping_guard_alert: {
+    key: "sos_mapping_guard_alert",
+    label: "Mapping change held for review",
+    description:
+      "Who is told when a customer, brick or area re-mapping is stopped because it overwrites a mapping decision of the owner's or moves a customer to another region. Defaults to Super Admin ALONE, deliberately: the held change is released from /admin/field-sales/mapping-guard, and releasing one is an owner decision by construction — the whole point of the hold is that somebody else's change was about to replace his. Widening this list hands that decision to whoever is listed, which is the opposite of what the guard is for.",
+    roles: ["Super Admin"],
     enabled: true,
   },
   retention_risk_alert: {

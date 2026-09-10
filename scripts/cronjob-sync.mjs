@@ -100,6 +100,24 @@ const JOBS = {
     // what the rest of the account sets; the platform still cuts at 30 regardless (see header).
     requestTimeout: 300,
   },
+  "mapping-guard-notify": {
+    title: "Phoenix — mapping guard notify",
+    path: "/api/cron/mapping-guard-notify",
+    // Every 15 minutes, around the clock, matching docs/observability.md and JOB_SCHEDULES.
+    //
+    // On the :05 offsets rather than the :00 quarters the heartbeat sweep already occupies, so a red
+    // execution is unambiguous about which job produced it — the same reasoning the morning block
+    // uses, applied to a job that fires 96 times a day.
+    //
+    // Frequent BECAUSE a held change means the map is refusing that write until somebody decides.
+    // The gap between the hold and the message is a window in which an import quietly under-applies,
+    // so a daily cadence would mean learning tomorrow that today's import was incomplete.
+    schedule: { hours: [-1], minutes: [5, 20, 35, 50], mdays: [-1], months: [-1], wdays: [-1] },
+    // One indexed read of pending, un-notified holds — empty on almost every fire — then at most one
+    // notification write per batch, to a single recipient. Nowhere near the 30s platform cut. 300
+    // matches the rest of the account; the platform still cuts at 30 regardless (see header).
+    requestTimeout: 300,
+  },
   "job-heartbeat-sweep": {
     title: "Phoenix — job heartbeat sweep",
     path: "/api/cron/job-heartbeat-sweep",
