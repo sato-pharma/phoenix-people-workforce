@@ -1762,7 +1762,7 @@ await runTest("automated payroll leaver basis (ONE confirmed days-worked + ONE n
 await runTest("automated payroll Thursday half-day reaches the CHARGE (owner rule 2026-08-02; the wizard multiplied a day rate by the flagged-date count)", runAutomatedPayrollThursdayHalfDayChargeTests);
 await runTest("automated payroll CIB bank-transfer sheet (schema + filtering + styling)", runAutomatedPayrollCibSheetTests);
 await runTest(
-  "automated payroll: a leaver's frozen first instalment is not inflated by his own deductions",
+  "automated payroll: leaver money — no inflated freeze, and unpaid leave charged once",
   runAutomatedPayrollLeaverOverpaymentTests,
 );
 await runTest(

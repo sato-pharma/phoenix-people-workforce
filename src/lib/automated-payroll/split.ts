@@ -66,8 +66,6 @@ export type EffectiveSalaryInput = {
   hireDate?: string | null;
   /** Required when lifecycle === "leaver". */
   lastWorkingDate?: string | null;
-  /** Unpaid-leave days inside the leaver's settlement span (resignation Rule 1). */
-  unpaidDaysInSpan?: number;
   /** HR settlement overrides (from step 1/2 edits); when set they win over the computed proration. */
   overrideBase?: number | null;
   overrideEcol?: number | null;
@@ -99,7 +97,6 @@ export function effectiveSalary(input: EffectiveSalaryInput): EffectiveSalary {
       fuelAllowance: fuel,
       lastWorkingDate: input.lastWorkingDate,
       period: input.period,
-      unpaidDaysInSpan: Math.max(0, input.unpaidDaysInSpan ?? 0),
       otherAdditions: 0,
       otherDeductions: 0,
     });

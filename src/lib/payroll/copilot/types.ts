@@ -123,7 +123,6 @@ export type EmployeeFeederState = {
   unpaidLeaveDays: number;
   leaverLastWorkingDate: string | null;
   /** Unpaid-leave days overlapping [period start, leaverLastWorkingDate] only — resignation Rule 1. */
-  unpaidDaysBeforeLastWorkingDate: number;
 };
 
 /** Minimal prior-period snapshot used for change/anomaly detection. */

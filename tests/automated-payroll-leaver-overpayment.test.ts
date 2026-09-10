@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 
 import { assembleParts, freezeFirstPart, type EffectiveSalary } from "../src/lib/automated-payroll/split.ts";
+import { computeResignationSettlement } from "../src/lib/payroll/copilot/proration.ts";
 
 /**
  * A leaver's frozen first instalment was inflated by his own Part-1 deductions, and he was overpaid.
@@ -178,4 +180,73 @@ export function runAutomatedPayrollLeaverOverpaymentTests() {
     "a continuing employee's leaverDeduction is ignored entirely — he has a next month, and the " +
       "spill rule is a leaver rule",
   );
+
+  // ---- ONE MECHANISM CHARGES A LEAVER'S UNPAID LEAVE, NOT TWO --------------------------------
+  //
+  // `computeResignationSettlement` used to subtract approved unpaid-leave days from the days a
+  // leaver is paid for. The Deductions module raises an unpaid-vacation candidate from the very
+  // same `v2_vacation_requests` rows, and payroll charges it on the Unpaid Vacation tab — so the
+  // days came off the pay and the money came off again.
+  //
+  // Unified on the admin-edited figure (owner, 2026-09-11: "we must unify... what really wins,
+  // admin edit outputs"). Days worked is now the calendar count to the last working day, and the
+  // reviewable deduction is the single charge.
+  const june = { month: 6, year: 2026 };
+  const settlement = computeResignationSettlement({
+    baseSalary: 30000,
+    extraCostOfLiving: 0,
+    fuelAllowance: 0,
+    lastWorkingDate: "2026-06-20",
+    period: june,
+    otherAdditions: 0,
+    otherDeductions: 0,
+  });
+  assert.ok(settlement);
+  assert.equal(
+    settlement.daysWorked,
+    20,
+    "days worked is the calendar count to the last working day — nothing is netted out of it here, " +
+      "because the deduction the admin reviews is what charges unpaid leave",
+  );
+
+  // THE UNIFICATION ITSELF. The second opinion is not merely unused, it is gone: no payroll source
+  // file may carry `unpaidDaysInSpan` as code again, or the two mechanisms drift apart a second
+  // time. Comments naming the retired field are allowed — they are the record of why it went.
+  const roots = [
+    "src/lib/automated-payroll",
+    "src/lib/payroll/copilot",
+    "src/lib/payroll/ready-proration.ts",
+    "src/lib/resignations",
+  ];
+  const offenders: string[] = [];
+  for (const root of roots) {
+    for (const file of walkTypeScript(root)) {
+      const code = readFileSync(file, "utf8")
+        .split("\n")
+        .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
+        .join("\n");
+      if (code.includes("unpaidDaysInSpan")) offenders.push(file);
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    "a leaver's unpaid leave must be charged in ONE place. `unpaidDaysInSpan` was the second " +
+      "opinion — it subtracted days from the settlement while the Deductions module charged the " +
+      "same approved requests as money. Reintroducing it re-creates the double charge",
+  );
+}
+
+/** Every .ts file under a path (or the file itself), for the source sweep above. */
+function walkTypeScript(target: string): string[] {
+  const stats = statSync(target, { throwIfNoEntry: false });
+  if (!stats) return [];
+  if (stats.isFile()) return target.endsWith(".ts") ? [target] : [];
+  const out: string[] = [];
+  for (const entry of readdirSync(target, { withFileTypes: true })) {
+    const next = `${target}/${entry.name}`;
+    if (entry.isDirectory()) out.push(...walkTypeScript(next));
+    else if (entry.name.endsWith(".ts")) out.push(next);
+  }
+  return out;
 }
