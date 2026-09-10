@@ -168,6 +168,7 @@ export type PermissionResource =
  */
 export const permissionResources: PermissionResource[] = [
   "admin",
+  "spotlight",
   "overview",
   "admin_access",
   "system_cleanup",
