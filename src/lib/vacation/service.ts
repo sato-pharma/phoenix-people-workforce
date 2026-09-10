@@ -50,7 +50,6 @@ import {
   normalizeVacationDayPart,
   normalizeVacationPaymentStatus,
   normalizeVacationType,
-  vacationRequestDisplayId,
   vacationTypeLabel,
 } from "@/lib/vacation/calculations";
 import { summarizeVacationRequests } from "@/lib/vacation/metrics";
@@ -210,6 +209,7 @@ type VacationRequestDbRow = {
   paid_duration_days?: number | string | null;
   period_end: string | null;
   period_start: string | null;
+  request_code: string;
   sick_attachment_bucket?: string | null;
   sick_attachment_content_type?: string | null;
   sick_attachment_object_path?: string | null;
@@ -1190,6 +1190,7 @@ function mapVacationRow(row: VacationRequestDbRow, canDecide = false): VacationR
     managerName: row.manager_name,
     managerOfManagerHrId: row.manager_of_manager_hr_id,
     managerOfManagerName: row.manager_of_manager_name,
+    requestCode: text(row.request_code),
     employeeNote: row.employee_note ?? null,
     notes: row.notes ?? null,
     paymentStatus: normalizeVacationPaymentStatus(row.payment_status) ?? "unpaid",
@@ -4945,7 +4946,7 @@ export async function generateVacationAuditExportWorkbook(access: AccessContext,
 
   addWorksheetRows(workbook, "Requests", report.rows.map((row) => ({
     requestId: row.id,
-    displayId: vacationRequestDisplayId(row.id),
+    displayId: row.requestCode,
     employeeHrId: row.employeeHrId,
     employeeName: row.employeeName,
     department: row.departmentName,

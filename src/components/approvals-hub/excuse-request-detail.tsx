@@ -41,6 +41,7 @@ export function ExcuseRequestDetail({ detail, backHref }: Props) {
 
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-phx-line pb-3">
         <div>
+          <p className="font-mono text-phx-xs font-bold tracking-wide text-slate-500">{req.requestCode}</p>
           <h2 className="text-lg font-black text-slate-900">{req.employeeName}</h2>
           <p className="text-sm text-slate-600">
             {req.excuseType === "morning" ? "Morning" : "Afternoon"} excuse · {req.excuseDate}
@@ -63,6 +64,7 @@ export function ExcuseRequestDetail({ detail, backHref }: Props) {
             <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Request details</h3>
           </header>
           <dl className="px-4 py-2">
+            <Row label="Code" value={req.requestCode} />
             <Row label="Employee" value={`${req.employeeName} (${req.employeeHrId})`} />
             <Row label="Excuse type" value={req.excuseType === "morning" ? "Morning" : "Afternoon"} />
             <Row label="Date" value={req.excuseDate} />
