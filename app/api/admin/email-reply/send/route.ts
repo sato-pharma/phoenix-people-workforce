@@ -30,6 +30,7 @@ async function sendEmail({
   cc,
   html,
   idempotencyKey,
+  replyTo,
   subject,
   text,
   to,
@@ -38,6 +39,7 @@ async function sendEmail({
   cc: string[];
   html: string;
   idempotencyKey: string;
+  replyTo: string | null;
   subject: string;
   text: string;
   to: string[];
@@ -60,6 +62,11 @@ async function sendEmail({
     from,
     html,
     idempotencyKey,
+    // A distribution list can name its own reply address — the HR Team list answers to the HR
+    // Business Partner. Reply-To only: `from` above stays on the verified sending subdomain,
+    // because sending as an apex-domain mailbox is rejected or filed as spam. Null falls through
+    // to NOTIFICATION_REPLY_TO, then systemEmail.defaultReplyTo, exactly as before.
+    replyTo: replyTo ?? undefined,
     subject,
     text,
     to,
@@ -162,6 +169,7 @@ export async function POST(request: Request) {
       cc,
       html: generated.html,
       idempotencyKey,
+      replyTo: resolved.replyTo,
       subject,
       text: generated.plainText,
       to,

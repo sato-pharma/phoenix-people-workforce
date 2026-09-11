@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { canManageDistributionList, canManageDistributionLists } from "@/lib/distribution-lists/access";
 import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -39,8 +39,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ li
     if (csrf) return csrf;
 
     const access = await resolveAccessContext(request);
-    if (!canAccessSystemAdministratorWorkspace(access)) {
-      return NextResponse.json({ message: "Forbidden: Super Admin only." }, { status: 403 });
+    if (!canManageDistributionLists(access)) {
+      return NextResponse.json({ message: "Forbidden." }, { status: 403 });
     }
 
     await assertApiRateLimit({
@@ -51,6 +51,13 @@ export async function POST(request: NextRequest, context: { params: Promise<{ li
     });
 
     const { listKey } = await context.params;
+    // 🔴 THE PER-LIST CHECK, not just the screen's. The HR Business Partner reaches this route, and
+    // hiding a row on the page does nothing about a hand-made request naming `closing_fixed_cc` —
+    // the list that decides who is Cc'd on every Monthly Closing publish. Owner, 2026-09-11:
+    // "HR lists only, she shouldn't touch the closing cc."
+    if (!canManageDistributionList(access, listKey)) {
+      return NextResponse.json({ message: "Forbidden: that list is not yours to edit." }, { status: 403 });
+    }
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const update: DistributionListUpdate = {};
 

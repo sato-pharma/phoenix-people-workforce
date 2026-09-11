@@ -25,6 +25,14 @@ export type DistributionListSpec = {
   excludedHrIds: string[];
   externalEmails: string[];
   enabled: boolean;
+  /**
+   * Reply-To for a send addressed through this list; NULL uses the system default.
+   *
+   * Deliberately NOT a From address. From must stay on the verified sending subdomain
+   * (`phoenix@send.satopharma.com`) — sending as an apex-domain mailbox is rejected or filed as
+   * spam unless that domain is itself verified. Reply-To is what decides where a reply lands.
+   */
+  replyTo: string | null;
 };
 
 /** Minimal projection of an employee the matcher needs. Kept narrow so a directory shape change
@@ -61,6 +69,8 @@ export type ResolvedDistributionList = {
   /** Named on the list but unreachable — no work email, or excluded. Surfaced, never silent:
    *  a recipient who quietly falls out of an audience is the failure nobody sees. */
   skipped: Array<{ hrId: string; displayName: string; reason: "no_work_email" | "excluded" }>;
+  /** The list's Reply-To, carried through so a caller does not re-read the spec to find it. */
+  replyTo: string | null;
   /** Set when the list was refused outright rather than resolved. Non-null always means zero
    *  members, and the caller must report it — a refusal and a genuinely empty audience are
    *  different facts that look identical once they are both an empty array. */
@@ -161,6 +171,7 @@ export function resolveDistributionList(
     listKey: spec.listKey,
     members: [],
     refusedReason,
+    replyTo: spec.replyTo,
     skipped: [],
   });
 
@@ -213,6 +224,7 @@ export function resolveDistributionList(
     listKey: spec.listKey,
     members,
     refusedReason: null,
+    replyTo: spec.replyTo,
     skipped,
   };
 }

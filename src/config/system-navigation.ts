@@ -2724,7 +2724,10 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     icon: Users,
     label: "Distribution Lists",
     description: "Named recipient groups resolved from the live directory, and the register of company email aliases on Turbify.",
-    roles: ["Super Admin"],
+    // The HR Business Partner sees only the HR-owned lists — that narrowing lives in
+    // @/lib/distribution-lists/access, not here. A nav entry decides whether the link is offered,
+    // never what is behind it.
+    roles: ["Super Admin", "HR Advisory"],
   },
   {
     href: "/admin/email-control-center",

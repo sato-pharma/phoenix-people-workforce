@@ -3,8 +3,8 @@ import { redirect } from "next/navigation";
 
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { DistributionListsCenter } from "@/components/admin/distribution-lists-center";
-import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canManageDistributionLists, distributionListScopeFor } from "@/lib/distribution-lists/access";
 import {
   getCompanyEmailAliasesWithDrift,
   getDistributionListSpecs,
@@ -14,8 +14,10 @@ import {
 // Distribution Lists — one named audience Phoenix resolves from the live directory at send time,
 // beside a register of the company aliases that live on Turbify.
 //
-// Super Admin only, matching /admin/notification-recipients: editing a list changes who receives
-// company mail, which is routing plumbing rather than something the CEO has an oversight story for.
+// Super Admin, plus the HR Business Partner scoped to the HR-owned lists — see
+// @/lib/distribution-lists/access, which is the boundary. The filtering below is presentation on
+// top of it: every API route narrows through the same scope, because a screen that hides a row is
+// not a boundary when /api/admin/distribution-lists/[listKey] can be called by hand.
 //
 // This screen sends NOTHING. It decides who an existing email would reach and, for an alias, what
 // somebody must change by hand in a control panel Phoenix cannot reach.
@@ -25,9 +27,11 @@ export const dynamic = "force-dynamic";
 export default async function DistributionListsPage() {
   const access = await resolveAccessContextFromPage();
 
-  if (!canAccessSystemAdministratorWorkspace(access)) {
+  if (!canManageDistributionLists(access)) {
     redirect("/admin");
   }
+  const scope = distributionListScopeFor(access);
+  const inScope = (listKey: string | null) => scope === "all" || (listKey != null && scope.has(listKey));
 
   // The deploy reaches production before the migration does, and a missing table answers PGRST205
   // rather than 42P01 — so a page that let this throw would 500 for the whole window. Empty state
@@ -43,9 +47,11 @@ export default async function DistributionListsPage() {
       resolveAllDistributionLists(),
       getCompanyEmailAliasesWithDrift(),
     ]);
-    specs = loadedSpecs;
-    lists = loadedLists;
-    aliases = loadedAliases.aliases;
+    specs = loadedSpecs.filter((spec) => inScope(spec.listKey));
+    lists = loadedLists.filter((list) => inScope(list.listKey));
+    // An alias with NO list is Super-Admin-only: nothing says it is hers, and the fail-closed
+    // direction is the one that cannot leak a sales or finance alias onto an HR screen.
+    aliases = loadedAliases.aliases.filter((alias) => inScope(alias.distributionListKey));
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Distribution lists could not be loaded.";
   }
