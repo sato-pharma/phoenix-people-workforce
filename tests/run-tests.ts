@@ -1083,6 +1083,7 @@ import { runAutomatedPayrollModuleDriftTests } from "./automated-payroll-module-
 import { runAutomatedPayrollDayCollisionTests } from "./automated-payroll-day-collisions.test.ts";
 import { runAutomatedPayrollNonEmployeeSeedingTests } from "./automated-payroll-non-employee-seeding.test.ts";
 import { runAutomatedPayrollFailClosedReadTests } from "./automated-payroll-fail-closed-reads.test.ts";
+import { runAutomatedPayrollPartSplitStampTests } from "./automated-payroll-part-split-stamp.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
 import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
 import { runAutomatedPayrollExecutiveSummaryTests } from "./automated-payroll-executive-summary.test.ts";
@@ -1827,6 +1828,10 @@ await runTest(
 await runTest(
   "automated payroll: a failed read does not look like a quiet month",
   runAutomatedPayrollFailClosedReadTests,
+);
+await runTest(
+  "automated payroll: one deduction is charged in one instalment, whatever the payment mode becomes",
+  runAutomatedPayrollPartSplitStampTests,
 );
 await runTest(
   "automated payroll: every payable row reaches a bank file or is named",

@@ -27,6 +27,10 @@ import {
 } from "./day-collisions.ts";
 import { loadConfirmedDeductions } from "./deductions-source.ts";
 import {
+  describePartSplitConflicts,
+  findPartSplitConflicts,
+} from "./part-split-conflict.ts";
+import {
   describeModuleDrift,
   detectModuleDrift,
   mergeModuleDrift,
@@ -82,11 +86,13 @@ import { assertRealSessionForDecision } from "@/lib/auth/preview-session-guard";
 import {
   computeVacationDeductionTotals,
   filterExcludedMembers,
+  isSettledInPart1,
   loadStepContext,
   recommendStep,
   settleCrmLeaveBalanceForPeriod,
   type PopulationMember,
 } from "./recommend.ts";
+import { lookupSource } from "@/lib/payroll/copilot/assemble.ts";
 import { reconcile } from "./reconcile.ts";
 import type { PayrollSalarySource } from "@/lib/payroll/salary-source.ts";
 import { stepDefinition } from "./step-definitions.ts";
@@ -787,9 +793,22 @@ export async function confirmPart1(
 
   const frozen = computeFrozenFirstParts({ members, sources, draftRows, period });
 
+  // THE PART 1 / PART 2 DEDUCTION ROUTING IS FROZEN HERE TOO, in the same write.
+  //
+  // `isSettledInPart1` reads the employee's payment mode and lifecycle live, and both move: a mode
+  // gets corrected, somebody resigns mid-month. The columns it routes money into do not move. So a
+  // correction between the two confirms left a loan in the Part 1 column from before AND offered it
+  // again on the Part 2 step — charged twice — while the mirror correction took it out of both and
+  // never charged it at all. Nothing detected either, because the double-deduction warning is off on
+  // every Part 1 deduction step.
+  //
+  // Freezing it at the same moment as the money is what makes the two populations stay disjoint for
+  // the rest of the run. Before this line the live rule still answers, which is correct: nothing has
+  // been routed anywhere yet.
   const patches: DraftRowPatch[] = members.map((member) => ({
     employeeHrId: member.employee.hrId,
     firstPartFrozen: frozen.get(member.compact) ?? 0,
+    settledInPart1: isSettledInPart1(member, lookupSource(sources, member.employee.hrId)),
     editedBy: actorId(access),
   }));
   await upsertDraftRows(runId, patches);
@@ -846,6 +865,10 @@ export async function unconfirmPart1(access: AccessContext, runId: string): Prom
   const patches: DraftRowPatch[] = draftRows.map((row) => ({
     employeeHrId: row.employeeHrId,
     firstPartFrozen: null,
+    // Cleared with the money it was frozen beside. Reopening exists so HR can correct the very
+    // source data this decision was read from, and re-confirming freezes both again from current
+    // truth. A stamp surviving the reopen would pin the run to the answer HR just corrected.
+    settledInPart1: null,
     editedBy: actorId(access),
   }));
   await upsertDraftRows(runId, patches);
@@ -923,6 +946,21 @@ export async function confirmPart2(
   });
   if (dayCollisions.length > 0) {
     throw new Error(`Conflict: ${describePayrollDayCollisions(dayCollisions)}`);
+  }
+
+  // ONE DEDUCTION, IN ONE INSTALMENT.
+  //
+  // `isSettledInPart1` keeps the Part 1 and Part 2 deduction populations disjoint, and from
+  // `confirmPart1` onward its answer is stamped on the row rather than re-read. That closes the way
+  // this state was created: a payment mode corrected between the two confirms used to leave a loan
+  // in the Part 1 column from before and offer it again on the Part 2 step.
+  //
+  // This is the backstop for rows that predate the stamp, and for whatever other route into the
+  // same state nobody has found yet. Not acknowledgeable: which instalment should keep the charge
+  // is a decision about this employee, not something a payroll run may pick.
+  const partSplitConflicts = findPartSplitConflicts(await listDraftRows(runId));
+  if (partSplitConflicts.length > 0) {
+    throw new Error(`Conflict: ${describePartSplitConflicts(partSplitConflicts)}`);
   }
 
   // The accuracy nets ENFORCE here — before this they were advisory, computed by
