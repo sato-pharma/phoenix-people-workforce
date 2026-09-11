@@ -245,6 +245,14 @@ export const accessRegistry = [
   // silence or retarget the stranded-drain alert.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/notification-recipients", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/notification-recipients/*", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Distribution lists (named recipient groups) and the Turbify alias register: Super Admin only
+  // end-to-end, same reasoning as notification-recipients above — editing one changes who
+  // receives company mail, which is routing plumbing rather than an oversight surface. Neither
+  // route sends anything; the alias half cannot even reach a mailbox, because Turbify has no API
+  // and its output is a worklist somebody applies by hand.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/distribution-lists", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/distribution-lists/*", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/email-aliases", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Email Control Center: a read-only rollup over the 3 systems above plus email-templates —
   // view = CEO + Super Admin, edit = Super Admin only (matches
   // notification-recipients), since every write here dispatches straight into those systems'

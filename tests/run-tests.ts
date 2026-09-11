@@ -761,6 +761,7 @@ import { runPayrollMutationAuditTests } from "./payroll-mutation-audit.test.ts";
 import { runVacationRetentionPurgeAuditTests } from "./vacation-retention-purge-audit.test.ts";
 import { runCronControlRegistryTests } from "./cron-control-registry.test.ts";
 import { runNotificationRoleRecipientsTests } from "./notification-role-recipients.test.ts";
+import { runDistributionListsTests } from "./distribution-lists.test.ts";
 import { runEmailControlCenterTests } from "./email-control-center.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
 import { runWorkflowRegistryEnforcementTests } from "./workflow-registry-enforcement.test.ts";
@@ -5088,6 +5089,11 @@ await runTest("leave request codes (EXC-/VAC- stored, unique, backfilled, immuta
 await runTest(
   "the mapping guard holds a re-mapping that overwrites his decision or crosses a region, and tells him once per batch",
   runSosMappingGuardTests,
+);
+
+await runTest(
+  "a distribution list ANDs its rule dimensions, treats a blank dimension as no constraint but NO rule as nobody, and lets an exclusion beat a hand-added name",
+  runDistributionListsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

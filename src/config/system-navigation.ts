@@ -75,6 +75,7 @@ import {
   Undo2,
   Unlink,
   UserCog,
+  Users,
   UsersRound,
   Waypoints,
   Wrench,
@@ -2719,6 +2720,13 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin"],
   },
   {
+    href: "/admin/distribution-lists",
+    icon: Users,
+    label: "Distribution Lists",
+    description: "Named recipient groups resolved from the live directory, and the register of company email aliases on Turbify.",
+    roles: ["Super Admin"],
+  },
+  {
     href: "/admin/email-control-center",
     icon: SlidersHorizontal,
     label: "Email Control Center",
@@ -4582,6 +4590,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
         hrefs: [
           "/admin/email-control-center",
           "/admin/notification-recipients",
+          "/admin/distribution-lists",
           "/admin/notification-confidence",
           "/admin/notifications/email",
           "/admin/notifications/email-tracking",
