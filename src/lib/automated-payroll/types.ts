@@ -707,6 +707,21 @@ export type RecurringSeedResult = {
   inserted: number;
   /** Active entries already present on the run (matched by recurring_id), left untouched. */
   skipped: number;
+  /**
+   * People already on the run for that same part under a DIFFERENT provenance — typed in by hand,
+   * or seeded from a roster entry that has since been replaced. Named, because the alternative is
+   * paying them twice: both rows reach the bank file.
+   *
+   * Scoped to the part on purpose. One person legitimately appears once in each part when their
+   * salary is split across the two instalments, and production carries exactly that case.
+   */
+  skippedAsDuplicate: string[];
+  /**
+   * People the sync refused to add because the money for their part has already been executed.
+   * Adding to a confirmed Part 1 puts money on an instalment finance has paid, onto a row that can
+   * then never be edited or removed.
+   */
+  heldBackPartClosed: string[];
 };
 
 /**
