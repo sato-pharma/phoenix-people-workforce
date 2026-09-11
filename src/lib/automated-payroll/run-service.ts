@@ -322,7 +322,7 @@ export async function startOrResumeRun(
   // HR can re-run it from the panel, so a failure here costs a button press
   // rather than a missed payment.
   try {
-    await seedRunFromRecurring({ runId: run.id, actorHrId: actorId(access) });
+    await seedRunFromRecurring({ runId: run.id, actorHrId: actorId(access), phase: run.phase });
   } catch (error) {
     logError("Automated payroll: seeding the recurring non-employee roster failed", {
       labels: { event: "automated_payroll_recurring_seed_failed", runId: run.id },
