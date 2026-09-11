@@ -68,6 +68,24 @@ All environment variables are listed in `.env.example` at the repository root. C
 | ATTENDANCE_DEFAULT_DEVICE_ID | Default ZKTeco device ID | 1 |
 | ATTENDANCE_REPORT_TIME_ZONE | Timezone for attendance reports | Africa/Cairo |
 
+## Action1 (Optional — device custody register)
+
+Lets **Device Custody** pull the fleet straight from Action1 instead of anybody typing a serial
+number. Create the key in Action1 under **Configuration → Users & API Credentials**. Without these
+the button is still there and answers with the two variable names, so nothing breaks when it is
+unset — the feature is simply not connected.
+
+The pull **registers** devices and never issues one to anybody: Action1 knows which account last
+logged into a machine, which is not who signed the custody receipt for it. Re-running it only adds
+machines the register does not already hold.
+
+| Variable | Description | Default |
+|---|---|---|
+| ACTION1_CLIENT_ID | API key client id | |
+| ACTION1_CLIENT_SECRET | API key client secret. A fleet-wide read credential — server-only, never exposed to a browser | |
+| ACTION1_API_BASE_URL | Tenant API root. EU tenants are `https://app.eu.action1.com/api/3.0` | https://app.action1.com/api/3.0 |
+| ACTION1_ORG_ID | Which organization's endpoints to read. Only needed when the account has more than one — with several and none set, the pull refuses and names them rather than guessing | |
+
 ## Observability
 
 `COMMIT_SHA` / `NEXT_PUBLIC_COMMIT_SHA` are the release identifier for the self-hosted
