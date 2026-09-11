@@ -4,6 +4,7 @@ import { type AccessContext, normalizeHrIdForAccess, resolveEmployeeIdentityId }
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { indexByCanonicalHrId, isAboveViewer, managementChainOf } from "@/lib/workforce/downward-scope";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { getProbationRows } from "@/lib/probation/service";
 import {
@@ -278,8 +279,15 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
     viewer &&
     (viewer.lineId != null || viewer.lineName)
   ) {
+    // 🔴 THE LINE IS NOT A LICENCE TO SEE UPWARD. Owner 2026-09-04: "Never an employee sees his
+    // direct manager." Adding every line member put a PM's own manager into his scope — in
+    // production B-155 had A-8 here while she was correctly hidden from him on every CRM board.
+    // The climb is over EVERY employee including inactive ones, or it stops at a manager who has
+    // left and misses every ancestor above them, which fails in the exposing direction.
+    const chain = managementChainOf(viewerKey ?? "", indexByCanonicalHrId(employees));
     for (const employee of employees) {
       if (!sameWorkforceLine(viewer, employee)) continue;
+      if (isAboveViewer(employee, viewerKey ?? "", chain)) continue;
       const key = normalizedHrKey(employee.hrId);
       if (key) allowedHrIds.add(key);
       // Keep any non-null line label too, so line-tagged rows with no mapped employee
@@ -925,10 +933,29 @@ function resolveDvRole(employee: EmployeeDirectoryRow | null): { role: string; r
   return null;
 }
 
+/**
+ * 🔴 THE BOARD IS BUILT FROM ROW VISITORS, NOT FROM THE SCOPED EMPLOYEE LIST — which is why
+ * narrowing the scope alone can never remove a name from it, and why two earlier attempts at the
+ * downward rule failed here.
+ *
+ * A double visit is manager -> Medical Rep. The manager's reps are LEGITIMATELY inside a Product
+ * Manager's scope, so her rows are admitted on the REP, and the loop below then turns her into a
+ * summary row with her name, her role and her visit count. Cutting her out of `allowedHrIds`
+ * changes none of that. Only manager-to-manager rows are caught by a row filter, and three other
+ * filters already drop those — so a test written on that shape passes while proving nothing.
+ *
+ * Hence `excludeVisitorKeys`: the cut has to happen where the row is turned into a person.
+ *
+ * Keys are in the `canonicalHrIdKey` domain, matching `rowsByVisitor` below. This file runs TWO
+ * normalisation domains and they are not interchangeable — a key built with `normalizedHrKey`
+ * would silently never match here, and the board would look fixed while showing everybody.
+ * Omitted means exclude nobody, so every existing caller is unchanged.
+ */
 export function buildManagerSummariesDetailed(
   rows: DoubleVisitDbRow[],
   employees: EmployeeDirectoryRow[],
   asOfDate: string,
+  excludeVisitorKeys?: ReadonlySet<string>,
 ): { summaries: DoubleVisitManagerSummary[]; visitedKeysByManager: Map<string, Set<string>> } {
   const employeesByHrId = new Map(
     employees
@@ -963,6 +990,11 @@ export function buildManagerSummariesDetailed(
   for (const row of rows) {
     const key = canonicalHrIdKey(row.double_visitor_hr_id);
     if (!key) continue;
+    // The viewer's own management chain never becomes a row on his board. Applied here rather than
+    // to `rows`, because the visit itself still counts: her visits to reps the viewer legitimately
+    // oversees remain in those reps' coverage and scores, exactly as before. What is withheld is
+    // HER as a named, ranked line on a performance table she outranks him on.
+    if (excludeVisitorKeys?.has(key)) continue;
     rowsByVisitor.set(key, [...(rowsByVisitor.get(key) ?? []), row]);
   }
 
@@ -1404,7 +1436,33 @@ export async function getDoubleVisitDashboardData(input: {
   const mrScores = buildMrScores(filteredRows, scopedEmployees, dateTo);
   const executiveReports = buildExecutiveReports(mrScores, scopedEmployees, filteredRows);
   const kpisValue = buildKpis(filteredRows);
-  const { summaries: managerSummaries, visitedKeysByManager } = buildManagerSummariesDetailed(filteredRows, scopedEmployees, dateTo);
+  // The viewer's own management chain, in the canonical domain the visitor map uses. Built from
+  // the FULL directory (inactive included) so the climb cannot stop at a manager who has left, and
+  // translated per-person rather than by re-normalising a key — the two domains in this file are
+  // not convertible, and a mismatched key fails silently by matching nobody.
+  const viewerChainKeys = (() => {
+    const viewerAccessKey = normalizedHrKey(
+      resolveEmployeeIdentityId(input.access) ?? input.access.hrId ?? input.access.loginId,
+    );
+    if (!viewerAccessKey) return undefined;
+    const chain = managementChainOf(viewerAccessKey, indexByCanonicalHrId(employees));
+    if (chain.size === 0) return undefined;
+    const keys = new Set<string>();
+    for (const employee of employees) {
+      const accessKey = normalizedHrKey(employee.hrId);
+      if (!accessKey || !chain.has(accessKey)) continue;
+      const canonical = canonicalHrIdKey(employee.hrId);
+      if (canonical) keys.add(canonical);
+    }
+    return keys;
+  })();
+
+  const { summaries: managerSummaries, visitedKeysByManager } = buildManagerSummariesDetailed(
+    filteredRows,
+    scopedEmployees,
+    dateTo,
+    viewerChainKeys,
+  );
   const executiveSummary = buildExecutiveSummary(managerSummaries, mrScores, kpisValue, scopedEmployees, visitedKeysByManager);
   const activeScopeEmployees = scopedEmployees.filter(isActiveEmployee);
   const areaBuckets = Array.from(new Set(activeScopeEmployees.map((employee) => nullableText(employee.areaName)).filter((value): value is string => Boolean(value)))).sort();

@@ -765,6 +765,7 @@ import { runCronControlRegistryTests } from "./cron-control-registry.test.ts";
 import { runNotificationRoleRecipientsTests } from "./notification-role-recipients.test.ts";
 import { runDistributionListsTests } from "./distribution-lists.test.ts";
 import { runDistributionListsAccessTests } from "./distribution-lists-access.test.ts";
+import { runDoubleVisitDownwardScopeTests } from "./double-visit-downward-scope.test.ts";
 import { runClosingFixedCcListTests } from "./closing-fixed-cc-list.test.ts";
 import { runComposerGroupListsTests } from "./composer-group-lists.test.ts";
 import { runEmailControlCenterTests } from "./email-control-center.test.ts";
@@ -5154,6 +5155,11 @@ await runTest(
 await runTest(
   "the HR Business Partner reaches the distribution lists but holds only the HR-owned ones, enforced in the routes and fail-closed on a list nobody granted her",
   runDistributionListsAccessTests,
+);
+
+await runTest(
+  "double-visit analytics never shows a viewer his own manager, cut where the board is built from row VISITORS rather than in a row filter that cannot reach her",
+  runDoubleVisitDownwardScopeTests,
 );
 
 await runTest(
