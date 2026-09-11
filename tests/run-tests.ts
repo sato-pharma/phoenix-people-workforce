@@ -1579,6 +1579,7 @@ import { runLeaveRequestCodesTests } from "./leave-request-codes.test.ts";
 
 import { runManagerAreaRegionGuardTests } from "./manager-area-region-guard.test.ts";
 import { runDataBackupWorkbookTests } from "./data-backup-workbook.test.ts";
+import { runPhoenixOfficialLogoTests } from "./phoenix-official-logo.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5222,6 +5223,11 @@ await runTest(
 await runTest(
   "the custody receipt prices each item and totals only the rows handed over, where a blank is never a zero and a settled record cannot be re-priced",
   runCustodyItemValuesTests,
+);
+
+await runTest(
+  "every Phoenix mark the system draws — browser and app icons, app shell, notification, email signature, Excel exports — is the owner's ringed emblem, and the retired drawings stay gone",
+  runPhoenixOfficialLogoTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
