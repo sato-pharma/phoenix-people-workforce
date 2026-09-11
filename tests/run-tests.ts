@@ -1079,6 +1079,7 @@ import { runAutomatedPayrollInsuranceWageTests } from "./automated-payroll-insur
 import { runAutomatedPayrollVacationReconfirmTests } from "./automated-payroll-vacation-reconfirm.test.ts";
 import { runAutomatedPayrollModuleDriftTests } from "./automated-payroll-module-drift.test.ts";
 import { runAutomatedPayrollDayCollisionTests } from "./automated-payroll-day-collisions.test.ts";
+import { runAutomatedPayrollNonEmployeeSeedingTests } from "./automated-payroll-non-employee-seeding.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
 import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
 import { runAutomatedPayrollExecutiveSummaryTests } from "./automated-payroll-executive-summary.test.ts";
@@ -1813,6 +1814,10 @@ await runTest(
 await runTest(
   "automated payroll: one absence day is charged once, on the path that pays people",
   runAutomatedPayrollDayCollisionTests,
+);
+await runTest(
+  "automated payroll: the standing roster never pays twice, nor adds to an instalment already paid",
+  runAutomatedPayrollNonEmployeeSeedingTests,
 );
 await runTest(
   "automated payroll: every payable row reaches a bank file or is named",
