@@ -183,6 +183,7 @@ function deviceFixture(
   return {
     assetTag: "PHX-LAP-0007",
     category: "laptop",
+    itemValuesEgp: null,
     manufacturer: "Dell",
     model: "Latitude 5440",
     serialNumber: "7XKQ2V3",

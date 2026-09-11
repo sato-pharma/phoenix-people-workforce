@@ -54,10 +54,17 @@ import type { HiringPackData } from "@/lib/hiring-pack/types";
 // arrives has no device allocated yet, and refusing to print — or printing a guess — would both be
 // worse than a rule.
 //
-// THE ITEM TABLE, THE VALUES AND THE HANDOVER DATE STAY RULED IN EVERY CASE, and that is not an
-// omission. They are counted and agreed at the desk with the boxes open, and البند (1) has the
-// holder accepting the goods «بحالتها المدونة بهذا الإقرار» — a pre-printed condition is a
-// condition nobody inspected.
+// THE ITEM TABLE AND THE HANDOVER DATE STAY RULED IN EVERY CASE, and that is not an omission. The
+// model, serial, count, condition and damage notes are OBSERVATIONS, made at the desk with the
+// boxes open, and البند (1) has the holder accepting the goods «بحالتها المدونة بهذا الإقرار» — a
+// pre-printed condition is a condition nobody inspected.
+//
+// THE VALUE COLUMN IS THE ONE EXCEPTION, since the owner asked for it on 2026-09-11, and the
+// exception is principled rather than a carve-out. A value is not an observation: البند (9) calls
+// it «قيمة تقديرية متفق عليها» — an agreed estimate — and البند (10) caps any wage deduction at it.
+// It is decided before the handover, not discovered during it, which is exactly the kind of fact a
+// register should carry and a pen should not. An item nobody priced still prints an empty box, so
+// the form keeps saying "write it here" wherever the register has nothing to say.
 
 /** Every blank this document can fill, resolved once. */
 export function buildCustodyValues(data: HiringPackData): Partial<Record<CustodyToken, string>> {
@@ -187,24 +194,59 @@ function sectionHeading(text: string): string {
   return `<h2 class="sec">${escapeHtml(text)}</h2>`;
 }
 
-/** The item table — every cell after the item name is a blank, completed with the device present. */
-function itemTable(template: CustodyTemplate): string {
+/** Egyptian pounds as the form shows money: grouped, no decimals unless the figure has them. */
+function egp(amount: number): string {
+  return amount.toLocaleString("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+  });
+}
+
+/**
+ * The item table. Every cell after the item name is a blank completed with the device present,
+ * EXCEPT the value column, which is filled from the custody record when the items have been priced.
+ *
+ * WHY ONLY THAT COLUMN. البند (9) is about the value beside each item — «القيمة المدونة قرين كل
+ * صنف» — and البند (10) caps any wage deduction at those figures, so they are the cells where a
+ * handwritten number costs somebody money if it is wrong. The model, serial, count, condition and
+ * damage notes stay open on purpose: they are observations made while looking at the object, and a
+ * register cannot make them.
+ *
+ * AN UNPRICED ROW STAYS AN EMPTY BOX rather than printing a zero. `itemNoteAr` strikes the row of
+ * any item not actually handed over and excludes it from the total, so a blank is the form's own
+ * way of saying "not supplied". A zero would assert the item WAS handed over and is worth nothing.
+ */
+export function renderCustodyItemTable(
+  template: CustodyTemplate,
+  itemValues: Record<string, number> | null,
+): string {
   const head = template.itemColumnsAr
     .map((column) => `<th>${escapeHtml(column)}</th>`)
     .join("");
 
   const body = template.itemRows
     .map((row) => {
-      // Four open cells per row: model, serial, count, condition, notes, value. They are rendered as
+      // Open cells per row: model, serial, count, condition, notes, value. They are rendered as
       // empty bordered boxes rather than dotted rules — inside a ruled table a row of dots reads as
       // a struck-through line, which on this form means "this item was not handed over".
       const open = template.itemColumnsAr.length - 2;
-      const cells = Array.from({ length: open }, () => `<td class="open"></td>`).join("");
+      const priced = itemValues?.[row.number];
+      const cells = Array.from({ length: open }, (_unused, index) =>
+        // The value column is the LAST one, so it is the last open cell of the row.
+        index === open - 1 && typeof priced === "number"
+          ? `<td class="open val-cell" dir="ltr">${escapeHtml(egp(priced))}</td>`
+          : `<td class="open"></td>`,
+      ).join("");
       return `<tr><td class="num">${escapeHtml(row.number)}</td><td class="item">${escapeHtml(
         row.itemAr,
       )}</td>${cells}</tr>`;
     })
     .join("");
+
+  // Summed from the rows PRESENT, which is what the label itself promises: «لا تُحتسب قيمة صنف لم
+  // يُسلَّم فعليًا». Null when nothing is priced, so the cell stays the blank it has always been.
+  const amounts = Object.values(itemValues ?? {}).filter((amount) => Number.isFinite(amount));
+  const total = amounts.length > 0 ? amounts.reduce((sum, amount) => sum + amount, 0) : null;
 
   return `<table class="items">
       <thead><tr>${head}</tr></thead>
@@ -213,7 +255,11 @@ function itemTable(template: CustodyTemplate): string {
         <td class="total" colspan="${template.itemColumnsAr.length - 1}">${escapeHtml(
           template.itemTotalLabelAr,
         )}</td>
-        <td class="open"></td>
+        ${
+          total === null
+            ? `<td class="open"></td>`
+            : `<td class="open val-cell val-cell--total" dir="ltr">${escapeHtml(egp(total))}</td>`
+        }
       </tr></tfoot>
     </table>`;
 }
@@ -298,6 +344,7 @@ function returnProtocol(template: CustodyTemplate): string {
 function renderCopy(
   template: CustodyTemplate,
   values: Partial<Record<CustodyToken, string>>,
+  itemValues: Record<string, number> | null,
   // The letterhead names the company in both languages, and only one of those is a document
   // TOKEN — so the resolved record is passed rather than read from the module, which is what
   // makes the masthead follow an edited company name instead of the compiled one.
@@ -355,7 +402,7 @@ function renderCopy(
       .join("")}</div>
 
     ${sectionHeading(template.itemsHeadingAr)}
-    ${itemTable(template)}
+    ${renderCustodyItemTable(template, itemValues)}
     <p class="note">${escapeHtml(template.itemNoteAr)}</p>
 
     ${sectionHeading(template.technicalHeadingAr)}
@@ -397,7 +444,7 @@ function renderCustody(
   const values = buildCustodyValues(data);
   const total = Math.max(1, copies);
   const body = Array.from({ length: total }, () =>
-    renderCopy(template, values, data.company),
+    renderCopy(template, values, data.custodyDevice?.itemValuesEgp ?? null, data.company),
   ).join("\n");
   const employeeName = data.employee.nameAr ?? data.employee.fullName;
 
@@ -480,6 +527,10 @@ function renderCustody(
   .items .num { width: 7mm; text-align: center; color: #5a6b7c; }
   .items .item { width: 34mm; font-weight: 700; color: ${HOUSE_COLORS.deep}; }
   .items .open { background: #fff; }
+  /* A printed amount, not a blank. Right-aligned and tabular so a column of figures lines up on
+     the decimal, which is how somebody checks a total by eye without adding it up. */
+  .items .val-cell { text-align: right; font-weight: 700; color: ${HOUSE_COLORS.deep}; font-variant-numeric: tabular-nums; }
+  .items .val-cell--total { background: ${HOUSE_COLORS.tint}; }
   .items .total { background: ${HOUSE_COLORS.tint}; font-weight: 700; color: ${HOUSE_COLORS.deep}; text-align: start; }
 
   .note { margin: 1.5mm 0 0; color: #5a6b7c; font-size: 7pt; line-height: 1.45; }

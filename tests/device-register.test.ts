@@ -44,6 +44,7 @@ function deviceFixture(overrides: Partial<CompanyDevice> = {}): CompanyDevice {
   return {
     id: "11111111-1111-1111-1111-111111111111",
     assetTag: "PHX-LAP-0001",
+    itemValuesEgp: null,
     category: "laptop",
     manufacturer: "Dell",
     model: "Latitude 5440",
