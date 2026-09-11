@@ -24,6 +24,32 @@ async function assertTelegramAdmin(request: Request, action: "read" | "update") 
   return access;
 }
 
+/**
+ * 🔴 THE ACTIONS THAT CAN DEGRADE THE ALARM CHANNEL ARE SUPER ADMIN ONLY.
+ *
+ * Telegram is where the outbox drain's dead-man's-switch alarm goes, deliberately never email,
+ * because it fires exactly when the email pipeline is the broken thing. Super Admin was the only
+ * holder of `communication: update` until 2026-09-11, so every one of these was Super-Admin-only by
+ * ACCIDENT; a second holder makes the accident load-bearing.
+ *
+ * The first pass gated the company-wide switch and the 250-recipient campaign and stopped there.
+ * Review found three siblings on this same handler that reach the same outcome by another door:
+ *
+ *   module_policy     - both alarms run as module "system" with a telegram channel, so one save of
+ *                       {module:"system", enabled:false} drops the Telegram leg. The switch again,
+ *                       one field narrower. It can also flip `genericOnly` off `probation` and
+ *                       `coaching`, which are generic-only because they carry names and scores.
+ *   disable_user      - writes telegram_enabled false for any user id.
+ *   disconnect_user   - nulls their chat id, so recovery needs the victim to re-run /start.
+ *
+ * The last two are the global switch applied one person at a time, and the people who matter are
+ * the alarm's own audience. Gating them takes nothing away that existed before this branch.
+ */
+function refuseUnlessSuperAdmin(role: string | null | undefined, what: string) {
+  if (role === "Super Admin") return null;
+  return NextResponse.json({ error: "forbidden", message: `${what} is Super Admin only.` }, { status: 403 });
+}
+
 export async function GET(request: Request) {
   try {
     const access = await assertTelegramAdmin(request, "read");
@@ -55,6 +81,9 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ data: await getTelegramAdminControlCenter(access), success: true });
     }
     if (body?.type === "module_policy") {
+      // Reaches the same alarm the company-wide switch above protects, one field narrower.
+      const refused = refuseUnlessSuperAdmin(access.role, "Changing a module's Telegram policy");
+      if (refused) return refused;
       await updateTelegramPolicy(access, {
         enabled: body.enabled === true,
         genericOnly: body.genericOnly === true,
@@ -78,10 +107,17 @@ export async function POST(request: Request) {
     const body = await request.json();
     const userId = String(body?.userId ?? "").trim();
     if (body?.action === "disable_user" && userId) {
+      // The company-wide switch, one person at a time — and the people who matter are the alarm's
+      // own audience.
+      const refused = refuseUnlessSuperAdmin(access.role, "Switching off a person's Telegram");
+      if (refused) return refused;
       await adminDisableTelegram(access, userId);
       return NextResponse.json({ data: await getTelegramAdminControlCenter(access), success: true });
     }
     if (body?.action === "disconnect_user" && userId) {
+      // Worse than disable: this nulls the chat id, so recovery needs the victim to re-run /start.
+      const refused = refuseUnlessSuperAdmin(access.role, "Disconnecting a person's Telegram");
+      if (refused) return refused;
       await adminDisconnectTelegram(access, userId);
       return NextResponse.json({ data: await getTelegramAdminControlCenter(access), success: true });
     }

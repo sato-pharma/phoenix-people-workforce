@@ -10,8 +10,20 @@ import { canAccessSystemAdministratorWorkspace, type AccessContext } from "@/lib
  *
  * WHY A BY-NAME SEAT CHECK RATHER THAN A PERMISSION. The natural resource would be
  * `communication`, but that gates the whole email composer, the email templates and the Telegram
- * templates (`access-registry.ts`), and no HR function grants it today — routing through it would
- * hand her three surfaces she was not given. A new `PermissionResource` is the textbook answer and
+ * console (`access-registry.ts`) — scoping THIS screen through it would hand her the lists she was
+ * given plus everything else that resource opens, with no way to separate them.
+ *
+ * ⚠ CORRECTED 2026-09-11. An earlier version of this paragraph ended "and no HR function grants it
+ * today". That stopped being true in this same branch: `hr_communication` was added to the HR
+ * Advisory bundle so she could reach the composer the owner asked for, and it grants exactly
+ * `communication`. The sentence survived the change and told the next reader the opposite of what
+ * the code does — in a repository that uses these notes instead of a permission matrix to record
+ * what a seat was given. What it says now: she DOES hold `communication`, which is why the two
+ * dangerous actions behind it carry their own Super-Admin checks (the Telegram route) and why the
+ * fields that decide where a template's mail goes carry theirs (`privileged-fields.ts`). The list
+ * scope stays a by-name check because `communication` cannot express "these lists and not those".
+ *
+ * A new `PermissionResource` is the textbook answer and
  * is worth doing the moment a second seat needs this; for one seat and one screen it would touch
  * the matrix for every role to express a single grant. The cost is that the permission matrix
  * cannot see this gate — which is exactly what Rule 10 of `tests/hr-function-governance.test.ts`

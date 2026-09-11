@@ -7,6 +7,7 @@ import {
   canManageDistributionLists,
   distributionListScopeFor,
 } from "../src/lib/distribution-lists/access.ts";
+import { refusePrivilegedTemplateChange } from "../src/lib/email-templates/privileged-fields.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
 
 /**
@@ -47,6 +48,10 @@ const ROUTE_SEND = readFileSync(
 );
 const ROUTE_TELEGRAM = readFileSync(
   fileURLToPath(new URL("../app/api/admin/notifications/telegram/route.ts", import.meta.url)),
+  "utf8",
+);
+const ROUTE_TEMPLATE = readFileSync(
+  fileURLToPath(new URL("../app/api/admin/email-templates/[templateKey]/route.ts", import.meta.url)),
   "utf8",
 );
 const SETTINGS = readFileSync(
@@ -188,23 +193,117 @@ export function runDistributionListsAccessTests() {
   // the window contained global_switch's check and the assertion passed with the real campaign gate
   // deleted. Proven by breaking it; a source pin that can match its own prose proves nothing.
   const telegram = code(ROUTE_TELEGRAM);
+  // 🔴 FIVE ACTIONS, NOT TWO. The first pass gated the campaign and the company-wide switch and
+  // stopped there. Review found three siblings on the same handler reaching the SAME outcome the
+  // switch gate exists to protect - the outbox drain's dead-man's-switch alarm, which goes to
+  // Telegram and deliberately never to email. `module_policy` drops the Telegram leg by naming
+  // module "system"; `disable_user` and `disconnect_user` are that switch applied one person at a
+  // time, against the alarm's own audience. A gate covering two of five doors is one nobody has to
+  // walk past.
   for (const [guard, what] of [
     ['body?.action === "send_invitations"', "the 250-recipient onboarding campaign"],
     ['body?.type === "global_switch"', "the company-wide Telegram switch"],
+    ['body?.type === "module_policy"', "a module's Telegram policy"],
+    ['body?.action === "disable_user"', "switching off one person's Telegram"],
+    ['body?.action === "disconnect_user"', "disconnecting one person's Telegram"],
   ] as const) {
     const idx = telegram.indexOf(guard);
     assert.ok(idx > 0, `${what} must still be handled on the telegram route`);
     const block = telegram.slice(idx, idx + 700);
-    assert.match(
-      block,
-      /access\.role !== "Super Admin"[\s\S]{0,160}status: 403/,
+    const inline = /access\.role !== "Super Admin"[\s\S]{0,160}status: 403/.test(block);
+    const viaHelper = /refuseUnlessSuperAdmin\(\s*access\.role/.test(block);
+    assert.ok(
+      inline || viaHelper,
       `${what} must refuse anyone but Super Admin - the \`communication: update\` gate above it stopped being Super-Admin-only the moment a second seat held that resource`,
     );
   }
+  // And the shared helper must really refuse, not merely be named. Without this, the three guards
+  // above are satisfied by a function that returns null for everybody.
+  assert.match(
+    telegram,
+    /function refuseUnlessSuperAdmin[\s\S]{0,260}role === "Super Admin"[\s\S]{0,260}status: 403/,
+    "refuseUnlessSuperAdmin must pass Super Admin through and answer 403 to everyone else",
+  );
 
   assert.match(
     ROUTE_SEND,
     /const from = process\.env\.HR_REPLY_EMAIL_FROM \|\| process\.env\.NOTIFICATION_EMAIL_FROM/,
     "and From must still be resolved from the env vars - without this positive pin, reassigning `from` higher up slips past the negative one",
   );
+
+  // ── 🔴 WHERE A TEMPLATE'S MAIL GOES IS NOT THE SAME PRIVILEGE AS WHAT IT SAYS ────────────────
+  // `communication: update` is the only gate on saving an email template, and a template carries
+  // static To/Cc/Bcc addresses that are appended to EVERY send of it. One save putting a personal
+  // address into bccStaticEmails on the offer letter copies every future offer, resignation notice
+  // and contract, indefinitely. Three controls that look like they would catch that do not: the
+  // Recipient Assurance Guard is handed these addresses as legitimate ON PURPOSE, an off-domain
+  // static address is a -10 health warning and never a refusal, and the confidence gate never holds
+  // a send this small. `isActive` is the mirror image - switching password_reset off ends every
+  // password-reset mail company-wide, and `action: "save"` demands no change reason.
+  const storedTemplate = {
+    isActive: true,
+    rules: { bccStaticEmails: ["hr@satopharma.com"], ccStaticEmails: [], toStaticEmails: [] },
+  };
+  const hrbpRole = "HR Advisory";
+
+  assert.equal(
+    refusePrivilegedTemplateChange({ payload: { subject: "A new subject" }, role: hrbpRole, stored: storedTemplate }),
+    null,
+    "editing what the mail SAYS is the whole point of the grant and must never be refused",
+  );
+  // 🔴 THE CHECK IS ON THE CHANGE, NOT ON THE FIELD BEING PRESENT. The designer posts the whole
+  // rules object back on an ordinary content save, so refusing any payload that merely MENTIONS
+  // these fields would block every legitimate edit and read as a broken screen rather than a rule.
+  assert.equal(
+    refusePrivilegedTemplateChange({
+      payload: { isActive: true, rules: storedTemplate.rules },
+      role: hrbpRole,
+      stored: storedTemplate,
+    }),
+    null,
+    "resending the stored values unchanged is not a change - without this, every content save is refused",
+  );
+  assert.ok(
+    refusePrivilegedTemplateChange({
+      payload: { rules: { bccStaticEmails: ["hr@satopharma.com", "her.personal@gmail.com"] } },
+      role: hrbpRole,
+      stored: storedTemplate,
+    }),
+    "🔴 adding a fixed Bcc must be refused - it is a permanent extra recipient on every send of this template",
+  );
+  assert.ok(
+    refusePrivilegedTemplateChange({ payload: { rules: { bccStaticEmails: [] } }, role: hrbpRole, stored: storedTemplate }),
+    "REMOVING a fixed address is refused too - dropping a compliance Bcc changes who is copied just as much as adding one",
+  );
+  assert.ok(
+    refusePrivilegedTemplateChange({ payload: { isActive: false }, role: hrbpRole, stored: storedTemplate }),
+    "🔴 switching a template off must be refused - deactivating password_reset ends every password-reset mail company-wide",
+  );
+  assert.equal(
+    refusePrivilegedTemplateChange({
+      payload: { isActive: false, rules: { bccStaticEmails: ["anything@example.com"] } },
+      role: "Super Admin",
+      stored: storedTemplate,
+    }),
+    null,
+    "Super Admin still changes both",
+  );
+  // Case and order are NOT a change. The designer may normalise either, and a false refusal here
+  // would be read as the screen being broken rather than as a boundary.
+  assert.equal(
+    refusePrivilegedTemplateChange({
+      payload: { rules: { bccStaticEmails: ["HR@Satopharma.com"] } },
+      role: hrbpRole,
+      stored: storedTemplate,
+    }),
+    null,
+    "the same address in a different case is the same address",
+  );
+  // And the ROUTE must call it BEFORE saving. A pure guard nobody invokes protects nothing, and one
+  // invoked after the write protects nothing either.
+  const templateRoute = code(ROUTE_TEMPLATE);
+  const guardAt = templateRoute.indexOf("refusePrivilegedTemplateChange(");
+  const saveAt = templateRoute.indexOf("saveEmailTemplate(templateKey");
+  assert.ok(guardAt > 0, "the template route must call the privileged-field guard");
+  assert.ok(saveAt > guardAt, "and it must call it BEFORE saving, or the write has already happened");
 }

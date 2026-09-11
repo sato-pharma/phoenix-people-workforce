@@ -217,8 +217,16 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // deductions, organogram, user_admin, permission_admin or report_it.
   //
   // Why by name rather than a permission: the fitting resource, `communication`, also gates the
-  // email composer, the email templates and the Telegram templates, and no HR function grants it —
-  // routing through it would have handed her three surfaces she was not given.
+  // email composer, the email templates and the Telegram console, so scoping THIS screen through it
+  // could not have expressed "these lists and not those".
+  //
+  // ⚠ CORRECTED 2026-09-11. This note used to end "and no HR function grants it". That stopped
+  // being true in the same branch that added this file: `hr_communication` grants `communication`
+  // to the HR Advisory bundle. THIS IS THE FILE THAT EXISTS TO ANSWER "what was this seat given",
+  // and it was answering the opposite. She holds `communication`, and what that opened is fenced
+  // in three places rather than left to the accident that Super Admin used to be its only holder:
+  // the Telegram route's five Super-Admin checks, `privileged-fields.ts` on the template fields
+  // that decide where mail goes, and the list allowlist here.
   "src/lib/distribution-lists/access.ts",
   // Names HR Operations in isDeductionsReadActor, added 2026-09-03 with the page above. Reviewed
   // verdict: it GRANTS reach, and it is the wider half of the two — the page is a door, this is the
