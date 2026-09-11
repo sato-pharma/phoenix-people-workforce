@@ -1073,6 +1073,7 @@ import { runAutomatedPayrollDismissalSettlementTests } from "./automated-payroll
 import { runAutomatedPayrollInsuranceWageTests } from "./automated-payroll-insurance-wage.test.ts";
 import { runAutomatedPayrollVacationReconfirmTests } from "./automated-payroll-vacation-reconfirm.test.ts";
 import { runAutomatedPayrollModuleDriftTests } from "./automated-payroll-module-drift.test.ts";
+import { runAutomatedPayrollDayCollisionTests } from "./automated-payroll-day-collisions.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
 import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
 import { runAutomatedPayrollExecutiveSummaryTests } from "./automated-payroll-executive-summary.test.ts";
@@ -1800,6 +1801,10 @@ await runTest(
 await runTest(
   "automated payroll: a confirmed deduction the Deductions module has since changed is surfaced",
   runAutomatedPayrollModuleDriftTests,
+);
+await runTest(
+  "automated payroll: one absence day is charged once, on the path that pays people",
+  runAutomatedPayrollDayCollisionTests,
 );
 await runTest(
   "automated payroll: every payable row reaches a bank file or is named",

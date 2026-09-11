@@ -807,6 +807,9 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/runs/:runId/population-diff", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/runs/:runId/hold-review", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/runs/:runId/data-quality", permission: null, guard: "domain-helper" }),
+  // Employee-days this run would charge twice. Names people and salary figures, so the same
+  // domain-helper gate as the wizard itself.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/runs/:runId/day-collisions", permission: null, guard: "domain-helper" }),
   // Which confirmed figures the Deductions module no longer agrees with. Names people and
   // salary figures, so the same domain-helper gate as the wizard itself.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/runs/:runId/module-drift", permission: null, guard: "domain-helper" }),

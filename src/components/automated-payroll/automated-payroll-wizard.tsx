@@ -29,6 +29,7 @@ import {
   type PayrollDataIssue,
   type PayrollDataQualityReport,
 } from "@/lib/automated-payroll/data-quality";
+import type { PayrollDayCollision } from "@/lib/automated-payroll/day-collisions";
 import type { ModuleDriftReport } from "@/lib/automated-payroll/module-drift";
 import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import { cn } from "@/lib/utils";
@@ -112,6 +113,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
   /** The names behind the data-quality banner — collapsed by default so the
    * headline stays a one-liner instead of a nine-name wall of red. */
   const [dataQualityOpen, setDataQualityOpen] = useState(false);
+  const [dayCollisions, setDayCollisions] = useState<PayrollDayCollision[]>([]);
   const [moduleDrift, setModuleDrift] = useState<ModuleDriftReport | null>(null);
   const [moduleDriftOpen, setModuleDriftOpen] = useState(false);
   /** The employee, if any, HR is about to exclude from this run entirely — a
@@ -233,6 +235,18 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           .then((response) => response.json())
           .then((qualityData) => {
             if (qualityData?.success) setDataQuality(qualityData.report as PayrollDataQualityReport);
+          })
+          .catch(() => {
+            /* a safety net, never block the wizard on it */
+          });
+
+        // An absence day claimed by two detectors would be charged twice. Part 2 confirm refuses
+        // it outright, so it is shown from the moment the run opens rather than sprung at the last
+        // step — see day-collisions.ts.
+        void fetch(`/api/automated-payroll/runs/${runId}/day-collisions`)
+          .then((response) => response.json())
+          .then((collisionData) => {
+            if (collisionData?.success) setDayCollisions((collisionData.collisions ?? []) as PayrollDayCollision[]);
           })
           .catch(() => {
             /* a safety net, never block the wizard on it */
@@ -805,6 +819,30 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 </div>
               </div>
             ) : null}
+          </div>
+        </AdminCallout>
+      ) : null}
+
+      {/* One absence day claimed by two detectors. DANGER, and stated as a block rather than a
+          warning, because Part 2 confirm refuses it: the Deductions module already treats an
+          overlap as something a human clears, and payroll cannot judge which of the two claims is
+          the wrong one. */}
+      {dayCollisions.length > 0 ? (
+        <AdminCallout tone="danger">
+          <div className="min-w-0 flex-1">
+            <div className="font-black">
+              {people(dayCollisions.length)} would be charged twice for the same day
+            </div>
+            <ul className="mt-1 flex flex-col gap-0.5 text-xs">
+              {dayCollisions.map((collision) => (
+                <li key={`${collision.hrId}:${collision.date}`} className="opacity-80">
+                  {collision.fullName} on {collision.date} — claimed by {collision.categories.join(" + ")}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-xs opacity-80">
+              Clear the wrong claim in the Deductions module. Part 2 cannot be confirmed until this is resolved.
+            </p>
           </div>
         </AdminCallout>
       ) : null}
