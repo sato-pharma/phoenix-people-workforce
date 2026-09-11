@@ -186,11 +186,19 @@ export async function sendClassifyMenu(input: {
   );
 }
 
-/** Sends a plain text message (the closing confirmation). Same window rules, same free pricing. */
+/**
+ * Sends a plain text message (the closing confirmation). Same window rules, same free pricing.
+ *
+ * `event` names the row this write leaves in the outbound log, and defaults to the classify
+ * confirmation so existing callers are unchanged. A human's own reply passes its own name: the log
+ * is read to answer "what did we say to this person", and an answer that cannot tell a recruiter's
+ * sentence from an automated one does not answer it.
+ */
 export async function sendWhatsAppText(input: {
   toWaId: string;
   phoneNumberId: string | null;
   text: string;
+  event?: string;
   logContext?: OutboundLogContext | null;
 }): Promise<WhatsAppSendResult> {
   const credentials = resolveCredentials(input.phoneNumberId);
@@ -206,7 +214,7 @@ export async function sendWhatsAppText(input: {
       to: input.toWaId,
       type: "text",
     },
-    "whatsapp_classify_text_send",
+    input.event?.trim() || "whatsapp_classify_text_send",
     input.logContext,
   );
 }
