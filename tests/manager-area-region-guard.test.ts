@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   type AreaRow,
   type ManagerRow,
+  type TeamRow,
   describeManagerAreaDrift,
   detectManagerAreaDrift,
   indexRegionShapedAreas,
@@ -36,6 +37,13 @@ const AREAS: AreaRow[] = [
   { areaId: 1149, areaName: "Upper Egypt 1" },
 ];
 
+/** Teams: the region team sits ON the region area and takes its name; rep teams hang off rep areas. */
+const TEAMS: TeamRow[] = [
+  { teamId: 24, teamName: "Delta (1)", areaId: 29 },
+  { teamId: 80, teamName: "Delta (1)", areaId: 1101 },
+  { teamId: 125, teamName: "Upper Egypt 1", areaId: 1149 },
+];
+
 function manager(over: Partial<ManagerRow> = {}): ManagerRow {
   return {
     hrId: "B-1",
@@ -44,6 +52,10 @@ function manager(over: Partial<ManagerRow> = {}): ManagerRow {
     regionName: "Delta (1)",
     areaId: 29,
     areaName: "Delta (1)",
+    teamId: 24,
+    teamName: "Delta (1)",
+    teamAreaId: 29,
+    teamAreaName: "Delta (1)",
     ...over,
   };
 }
@@ -149,4 +161,86 @@ export async function runManagerAreaRegionGuardTests() {
   const summary = describeManagerAreaDrift([...drifted, ...missing]);
   assert.match(String(summary), /1 manager\(s\)/);
   assert.match(String(summary), /1 region\(s\)/);
+
+  // ---------------------------------------------------------------------------------------
+  // The same drift, one table over: the TEAM.
+  //
+  // This half is nastier than the area half, because the team's NAME can be perfectly correct
+  // while the team itself hangs off a rep area — which is exactly what five managers carried on
+  // 2026-09-11, three of them on a "Delta (1)" team attached to Menoufia 1. Nothing on screen
+  // looks wrong, so only a check that compares the team's AREA can see it.
+  // ---------------------------------------------------------------------------------------
+  const teamDrift = detectManagerAreaDrift(
+    [manager({ hrId: "B-12", teamId: 80, teamName: "Delta (1)", teamAreaId: 1101, teamAreaName: "Menoufia 1" })],
+    AREAS,
+    TEAMS,
+  );
+  assert.equal(teamDrift.length, 1, "a manager on a rep-area team must be reported");
+  assert.equal(teamDrift[0].kind, "manager_team_is_not_region");
+  assert.equal(
+    teamDrift[0].kind === "manager_team_is_not_region" ? teamDrift[0].expectedTeamId : null,
+    24,
+    "the finding must name the team on the region's own area",
+  );
+  assert.match(
+    teamDrift[0].detail,
+    /Menoufia 1/,
+    "the detail must name the area the team wrongly hangs off",
+  );
+
+  // The team NAME matching is not enough on its own — this is the trap the check exists for.
+  assert.equal(
+    teamDrift[0].kind === "manager_team_is_not_region" ? teamDrift[0].teamName : null,
+    "Delta (1)",
+    "the wrong team carries the RIGHT name, which is why the screen shows nothing amiss",
+  );
+
+  // A manager already on his region's team is clean.
+  assert.deepEqual(detectManagerAreaDrift([manager()], AREAS, TEAMS), [], "the region team is correct");
+
+  // A region with no team on its own area is reported once, naming who is stranded.
+  const noTeam = detectManagerAreaDrift(
+    [
+      manager({ hrId: "PD-1", regionName: "Cairo", areaId: 1, areaName: "Cairo", teamId: null, teamName: null, teamAreaId: null, teamAreaName: null }),
+      manager({ hrId: "AI-1", regionName: "Cairo", areaId: 1, areaName: "Cairo", teamId: null, teamName: null, teamAreaId: null, teamAreaName: null }),
+    ],
+    AREAS,
+    TEAMS,
+  );
+  assert.equal(noTeam.length, 1, "a region with no team of its own is one finding, not one per manager");
+  assert.equal(noTeam[0].kind, "region_has_no_team_row");
+  assert.deepEqual(
+    noTeam[0].kind === "region_has_no_team_row" ? noTeam[0].managers : [],
+    ["AI-1", "PD-1"],
+  );
+
+  // OMITTING teams is not the same as passing none. A caller that cannot read teams must omit, or
+  // it would report every manager in the company as teamless — the check crying wolf about itself.
+  assert.deepEqual(
+    detectManagerAreaDrift([manager({ teamId: null, teamName: null, teamAreaId: null, teamAreaName: null })], AREAS),
+    [],
+    "omitted teams means area-only, never a team finding",
+  );
+  assert.equal(
+    detectManagerAreaDrift([manager({ teamId: null, teamName: null, teamAreaId: null, teamAreaName: null })], AREAS, []).length,
+    1,
+    "an empty team list DOES mean no team exists, and is a finding",
+  );
+
+  // Both halves are independent: a manager can be right on one and wrong on the other, and the
+  // area verdict must not swallow the team check.
+  const both = detectManagerAreaDrift(
+    [manager({ hrId: "B-99", areaId: 1101, areaName: "Menoufia 1", teamId: 80, teamAreaId: 1101, teamAreaName: "Menoufia 1" })],
+    AREAS,
+    TEAMS,
+  );
+  assert.equal(both.length, 2, "a manager wrong on both area and team produces both findings");
+  assert.deepEqual(
+    both.map((f) => f.kind).sort(),
+    ["manager_area_is_not_region", "manager_team_is_not_region"],
+  );
+
+  const bothSummary = String(describeManagerAreaDrift(both));
+  assert.match(bothSummary, /recorded against a rep area/);
+  assert.match(bothSummary, /team that hangs off a rep area/);
 }
