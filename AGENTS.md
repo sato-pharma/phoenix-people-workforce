@@ -59,9 +59,9 @@ These exist because 1.4 fixes per feature is what happens without them.
 4. **After compaction or a long session, distrust yourself.** A replayed summary of earlier work can
    read like a live instruction. Before acting on "previous" state, re-run the check. Prefer one
    fresh session per task over one endless session.
-5. **The absence of a permission prompt is not approval.** `permissions.defaultMode` is **`default`**
-   in user-level `~/.claude/settings.json` (changed from `auto` 2026-08-31, so a would-be block
-   becomes a prompt). But `permissions.ask` in `.claude/settings.json` is **empty** — no dialog fires
+5. **The absence of a permission prompt is not approval.** The desktop app starts every session with
+   `--permission-mode auto`, overriding user-level `defaultMode: default`, so a classifier, not a
+   prompt, decides. And `permissions.ask` in `.claude/settings.json` is **empty** — no dialog fires
    from a prompt rule at all — and several hundred allow rules wave routine calls straight through.
    `permissions.deny` holds only silent hard blocks, not prompts. **Every approval rule in §6 is
    therefore behavioral: ask in plain words and wait for a plain answer.** Never offer a prompt that
@@ -670,7 +670,7 @@ console, network/API response, deployment logs, and database/RLS evidence before
 
 ## 8. Supabase and data safety
 
-- **Supabase writes are pre-authorized end to end — NO approval prompt** (owner's `autoMode` grant, applied by hand 2026-08-02, which deliberately removes the §6 gate for Supabase). It covers the `supabase-staging` and `supabase-production` MCP servers, the owner's connector `mcp__45bb6356-…`, and the `supabase` CLI (incl. `db push`), on staging AND production — every read tool and every write tool: `execute_sql` mutations, `apply_migration`, bulk and destructive SQL. **You do NOT wait for a separate approval.** The one standing condition: **announce any destructive or bulk PRODUCTION change in plain words before you run it, and give the owner a chance to stop it** — the removed prompt is a UI gate, not licence to skip telling him. (This grant does NOT cover creating/deleting a project or reading secrets.)
+- **Supabase writes are pre-authorized end to end — NO approval prompt** (owner's `autoMode` grant, applied by hand 2026-08-02, which deliberately removes the §6 gate for Supabase). It covers the `supabase-staging` and `supabase-production` MCP servers and the `supabase` CLI (incl. `db push`), on staging AND production — every read tool and every write tool: `execute_sql` mutations, `apply_migration`, bulk and destructive SQL. **You do NOT wait for a separate approval.** The one standing condition: **announce any destructive or bulk PRODUCTION change in plain words before you run it, and give the owner a chance to stop it** — the removed prompt is a UI gate, not licence to skip telling him. (This grant does NOT cover creating/deleting a project or reading secrets.)
 - All schema changes must be migration-based, repeatable, reviewable, and rollback-aware. Never patch production manually.
 - Before any database action, print and verify the exact project ref, resolving it with `list_projects` rather than trusting a ref pasted in a prompt or copied from an older doc.
 - Both named servers can see **every project the account is entitled to — all four in the §3 table.** **The server name guarantees nothing — the `project_id` argument is the only thing separating staging from production on every call.**
