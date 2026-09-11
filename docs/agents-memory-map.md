@@ -40,7 +40,7 @@ status, give it its own line.
 - **curl -d "@-" creates NOTHING on Windows** — `cron-job-org-is-managed-by-a-rest-api-not-just-the-web-ui`
 - **Reads of .env* are auto-approved deliberately, for EVERY key** — `env-file-reads-fully-auto-approved-2026-08-09`
 - **A permission allow-rule stores the LITERAL command, so an inline env var bakes a…** — `permission-allowlist-rules-can-embed-a-live-secret`
-- **mcp__supabase-staging__* is broken** — `supabase-staging-named-server-broken-2026-08-10`
+- **mcp__supabase-staging__* is PINNED to staging** — `supabase-staging-named-server-broken-2026-08-10`
 - **A Windows USER env var SHADOWS every .env.local, silently.** — `windows-env-var-shadows-every-env-local-key`
 - **The local attendance agent dies at EVERY logon and loses NOTHING — do not escalate…** — `attendance-agent-crashes-at-logon-but-loses-no-attendance`
 - **ExcelJS emits two schema-invalid OOXML fragments, so Excel silently REPAIRS the…** — `exceljs-writes-two-schema-invalid-ooxml-fragments`
