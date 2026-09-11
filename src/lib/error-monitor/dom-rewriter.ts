@@ -7,16 +7,18 @@
  * across 23 unrelated routes — and an exhaustive sweep of the two worst routes' import graphs
  * (154 and 155 files) found no app-code cause at all.
  *
- * `app/layout.tsx` already opts out, with `translate="no"` and the `google: notranslate` meta,
- * shipped 2026-09-08 in #3487. Its own comment names the falsification test: if the routes go
- * quiet the diagnosis was right, and if they keep erroring it was not the cause. They did not go
- * quiet — /employee-portals/recruitment-candidates threw twice on 2026-09-09, on a release that
- * contains the opt-out, from Samsung Internet, whose translator is Samsung's own and honours
- * neither signal.
+ * `app/layout.tsx` USED to opt out, with `translate="no"` and the `google: notranslate` meta,
+ * shipped 2026-09-08 in #3487 and REMOVED 2026-09-11 at the owner's instruction. Its own comment
+ * named the falsification test: if the routes went quiet the diagnosis was right, and if they kept
+ * erroring it was not the cause. They did not go quiet — /employee-portals/recruitment-candidates
+ * kept throwing from Samsung Internet, whose translator is Samsung's own and honours neither
+ * signal, so the opt-out was costing every Arabic-speaking reader the translate offer and buying
+ * nothing measurable.
  *
- * That is why this exists. The opt-out was a fix applied to a plausible cause; this makes the
- * next occurrence SAY whether the DOM was rewritten, so the question is settled by evidence
- * rather than re-argued. It changes nothing a user sees and costs a handful of bytes on a row
+ * That is why this exists, and why it now carries the whole weight. The opt-out was a fix applied
+ * to a plausible cause; this makes the next occurrence SAY whether the DOM was rewritten, so the
+ * question is settled by evidence rather than re-argued. Read `domRewriter=` in the stack before
+ * anybody proposes putting the attribute back. It changes nothing a user sees and costs a handful of bytes on a row
  * that is only written when something already went wrong.
  *
  * PURE, and separate from the reporter, so it is testable without a DOM — the reporter reads the

@@ -79,9 +79,10 @@ function collectClientContext(): string | null {
     if (navigationEntry?.type) parts.push(`navType=${navigationEntry.type}`);
 
     // Whatever rewrote the page's text before React hydrated it — the last standing cause of
-    // hydration error #418 here, and the one the `translate="no"` opt-out in app/layout.tsx
-    // could only ever address for the browsers that honour it. Absent on a clean page, so it
-    // adds nothing to an ordinary row.
+    // hydration error #418 here. The `translate="no"` opt-out that used to sit in app/layout.tsx
+    // could only ever address the browsers that honour it, and was removed on 2026-09-11 for
+    // exactly that reason, so this probe is now the only thing that answers the question. Absent
+    // on a clean page, so it adds nothing to an ordinary row.
     const domRewriters = describeDomRewriters({
       fontElementCount: document.getElementsByTagName("font").length,
       hasMicrosoftTranslateAttribute: document.querySelector("[_msttexthash]") !== null,
