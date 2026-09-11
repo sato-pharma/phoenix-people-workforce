@@ -24,7 +24,9 @@ import type { MonthlySalaryRun, StepKey, StepRow } from "../types.ts";
 const RECOMMENDED_FILL = "FFF1F5F9";
 const EDIT_FILL = AMBER;
 
-export function stepTemplateColumns(stepKey: StepKey): { label: string; editable: boolean; money: boolean }[] {
+type TemplateColumn = { label: string; editable: boolean; money: boolean };
+
+export function stepTemplateColumns(stepKey: StepKey): TemplateColumn[] {
   const definition = stepDefinition(stepKey);
   const columns: { label: string; editable: boolean; money: boolean }[] = [
     { label: "#", editable: false, money: false },
@@ -33,9 +35,13 @@ export function stepTemplateColumns(stepKey: StepKey): { label: string; editable
   ];
   for (const context of definition.contextColumns) {
     // Honour the column's own `money` flag so the sheet formats a salary the way
-    // the screen does — an export must match the screen. Still read-only either
-    // way: context columns are never parsed back on re-upload (step-parser.ts
-    // matches editable `field.label`s only).
+    // the screen does — an export must match the screen.
+    //
+    // READ-ONLY ONLY WHILE ITS HEADING IS UNIQUE. This comment used to say context columns "are
+    // never parsed back on re-upload", and that belief is what let finding 33 ship: step-parser's
+    // `pickCell` matches on the normalised HEADING TEXT and returns the FIRST column that matches,
+    // so a context column sharing a heading with an editable field IS what gets read — and its
+    // value is then written into that field. The rule is enforced below rather than assumed here.
     columns.push({ label: context.label, editable: false, money: context.money ?? false });
   }
   if (definition.isHoldStep) {
@@ -60,7 +66,40 @@ export function stepTemplateColumns(stepKey: StepKey): { label: string; editable
     columns.push({ label: definition.fieldsTotal.label, editable: false, money: true });
   }
   if (definition.hasReason) columns.push({ label: "Reason", editable: true, money: false });
+  assertHeadingsAreUnique(stepKey, columns);
   return columns;
+}
+
+/**
+ * TWO COLUMNS MAY NEVER SHARE A HEADING.
+ *
+ * `pickCell` in step-parser.ts finds a column by its normalised heading text and returns the FIRST
+ * match, and `sheet_to_json` renames a duplicate header rather than dropping it. So a template with
+ * two identical headings does not merely look untidy — it reads the wrong column on re-upload and
+ * writes that value into the other one's field. On the Part 1 Unpaid Vacation step that replaced a
+ * leaver's balance-aware settlement with a flat Base/30 day rate and silently discarded the figure
+ * HR had actually typed.
+ *
+ * Refusing the download is the right failure: a template with colliding headings is already a
+ * booby-trapped file, and handing it over to be filled in and re-uploaded is worse than not
+ * handing it over at all. Unreachable today — `tests/automated-payroll-template-headings.test.ts`
+ * checks every step at CI time — so this only ever catches a definition built after that test.
+ */
+function assertHeadingsAreUnique(stepKey: StepKey, columns: TemplateColumn[]): void {
+  const seen = new Map<string, string>();
+  for (const column of columns) {
+    const normalized = column.label.toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const first = seen.get(normalized);
+    if (first !== undefined) {
+      throw new Error(
+        `The ${stepKey} step template has two columns reading as the same heading ` +
+          `("${first}" and "${column.label}"). A re-upload would read the first and write it into ` +
+          "the other's field, so the template is not safe to hand out. Give one of them a " +
+          "distinct heading.",
+      );
+    }
+    seen.set(normalized, column.label);
+  }
 }
 
 function cellValueForColumn(stepKey: StepKey, row: StepRow, label: string): string | number {

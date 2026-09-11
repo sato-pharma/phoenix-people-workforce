@@ -278,7 +278,14 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },
       { key: "Last Working Date", label: "Last Working Date" },
-      { key: "Unpaid Vacation Days", label: "Unpaid Vacation Days" },
+      // LABELLED DISTINCTLY FROM THE EDITABLE FIELD BELOW, which carried the identical heading.
+      // The xlsx template emits both columns, and `pickCell` in step-parser.ts matches the FIRST
+      // header whose normalised text matches — the context column, emitted first. So a re-upload
+      // read this read-only reference and wrote it into `p1odVacationDays`, which auto-calculates
+      // the money as Base/30 x days. For a leaver that replaced a balance-aware settlement with a
+      // flat day rate, and the edit HR actually typed was discarded. The key is unchanged because
+      // recommend.ts writes `row.context["Unpaid Vacation Days"]`; only the HEADING moves.
+      { key: "Unpaid Vacation Days", label: "Unpaid Vacation Days (reference)" },
     ],
     fields: [
       { key: "p1odVacationDays", label: "Unpaid Vacation Days", kind: "days", autoCalcMoneyKey: "p1odVacationValue" },
