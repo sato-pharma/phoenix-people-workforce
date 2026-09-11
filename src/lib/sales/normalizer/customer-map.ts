@@ -249,6 +249,47 @@ export function classifyCustomerMapRow(
   };
 }
 
+/** What the crosswalk already holds for a key, for deciding whether an upload is a real re-mapping. */
+export type ExistingCustomerMapping = { areaCode: string; brickId: string; source: string };
+
+/**
+ * AN UPLOAD THAT MOVES NOTHING MUST NOT RELABEL WHERE THE MAPPING CAME FROM.
+ *
+ * `classifyCustomerMapRow` stamps every payload `admin-import`, which is right for a row this upload
+ * actually maps. It was wrong for a row it merely re-states: the export → fix in Excel → re-upload
+ * loop carries back every row the operator did not touch, so one upload rewrote the provenance of
+ * thousands of rows that had not moved an inch — an owner ruling, a sheet-verified decision or a
+ * geo-validated normalizer match, all reading "Admin import" afterwards in the Master Map's "Where
+ * this came from" column.
+ *
+ * NOTHING CAUGHT IT. The bulk path writes ONE summary audit row (counts only, no before/after), and
+ * `sos_map_guard_customer` deliberately ignores a write that leaves `brick_id` and `area_code`
+ * alone — correctly, since 3,633 of 3,702 edits in a normal day are exactly that. So the erasure was
+ * invisible at every layer. Its fingerprints are still in production: 121 rows carry a `confidence`
+ * this path never writes and 32 name another writer in `mapped_by`, both left by whoever mapped the
+ * row before the label was overwritten.
+ *
+ * So the rule is the guard's own rule: **if the mapping did not move, the provenance does not
+ * change.** A row whose brick or area DOES change is a real re-mapping and is stamped `admin-import`
+ * honestly — and if that overwrites a decision of his, the guard holds it for him to see.
+ *
+ * Name and address still update either way; correcting a spelling is not a re-mapping.
+ */
+export function customerMapUpsertPayload(
+  payload: Record<string, unknown>,
+  existing: ExistingCustomerMapping | undefined,
+): Record<string, unknown> {
+  if (!existing) return payload;
+  const sameBrick = normalizeCodeKey(existing.brickId) === normalizeCodeKey(String(payload.brick_id ?? ""));
+  const sameArea = normalizeCodeKey(existing.areaCode) === normalizeCodeKey(String(payload.area_code ?? ""));
+  if (!sameBrick || !sameArea) return payload;
+  // Drop `source` entirely rather than echoing the old value back: the column is NOT NULL, and an
+  // upsert leaves a column it was not given alone. Callers must therefore keep these rows in their
+  // own batch — PostgREST needs one consistent key set per request.
+  const { source: _dropped, ...keepsItsProvenance } = payload;
+  return keepsItsProvenance;
+}
+
 const HEADER_ALIASES: Record<string, string> = {
   // distributor_code
   "distrub id": "distributor_code", "distributor": "distributor_code", "distributor id": "distributor_code", "distributor_code": "distributor_code", "distrib id": "distributor_code",
@@ -286,20 +327,32 @@ function locateCustomerMapSheet(
   return null;
 }
 
-async function loadExistingCustomerKeys(supabase: ReturnType<typeof getSupabaseAdmin>): Promise<Set<string>> {
-  const keys = new Set<string>();
+async function loadExistingCustomerMappings(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+): Promise<Map<string, ExistingCustomerMapping>> {
+  const keys = new Map<string, ExistingCustomerMapping>();
   const pageSize = 1000;
   let from = 0;
   for (;;) {
     const result = await supabase
       .from("source_of_sales_customer_map")
-      .select("distributor_code,customer_code")
+      // brick_id/area_code/source come back too: customerMapUpsertPayload needs the CURRENT mapping
+      // to tell a real re-mapping from a row the upload merely carried back unchanged.
+      .select("distributor_code,customer_code,brick_id,area_code,source")
       // ORDER BY id: offset pages must be stably ordered or rows silently vanish (#1446).
       .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
     if (result.error) break;
-    const page = (result.data ?? []) as Array<{ customer_code?: string; distributor_code?: string }>;
-    for (const r of page) keys.add(`${normalizeCodeKey(r.distributor_code)}${KEY_SEP}${String(r.customer_code ?? "").trim()}`);
+    const page = (result.data ?? []) as Array<{
+      area_code?: string; brick_id?: string; customer_code?: string; distributor_code?: string; source?: string;
+    }>;
+    for (const r of page) {
+      keys.set(`${normalizeCodeKey(r.distributor_code)}${KEY_SEP}${String(r.customer_code ?? "").trim()}`, {
+        areaCode: String(r.area_code ?? ""),
+        brickId: String(r.brick_id ?? ""),
+        source: String(r.source ?? ""),
+      });
+    }
     if (page.length < pageSize) break;
     from += pageSize;
   }
@@ -340,7 +393,7 @@ export async function importCustomerMap(input: { actorLoginId: string; file: Fil
   const distributorCodes = new Set(refs.distributors.map((d) => normalizeCodeKey(d.code)));
 
   const supabase = getSupabaseAdmin();
-  const existing = await loadExistingCustomerKeys(supabase);
+  const existing = await loadExistingCustomerMappings(supabase);
   const ctx: CustomerMapClassifyContext = { brickById, distributorCodes, seen: new Set() };
 
   const blockedRows: CustomerMapImportBlockedRow[] = [];
@@ -369,25 +422,38 @@ export async function importCustomerMap(input: { actorLoginId: string; file: Fil
     totalRead += 1;
     if (result.kind === "skipped") { skipped += 1; continue; }
     if (result.kind === "blocked") { blockedRows.push({ key: result.key, reason: result.reason, row: rowNumber }); continue; }
-    upserts.push({ isUpdate: existing.has(result.key), payload: result.payload, row: rowNumber });
+    upserts.push({
+      isUpdate: existing.has(result.key),
+      payload: customerMapUpsertPayload(result.payload, existing.get(result.key)),
+      row: rowNumber,
+    });
   }
 
   let inserted = 0;
   let updated = 0;
   const countOk = (entry: { isUpdate: boolean }) => { if (entry.isUpdate) updated += 1; else inserted += 1; };
-  for (let index = 0; index < upserts.length; index += IMPORT_CHUNK) {
-    const chunk = upserts.slice(index, index + IMPORT_CHUNK);
-    const stamp = new Date().toISOString();
-    const { error } = await supabase
-      .from("source_of_sales_customer_map")
-      .upsert(chunk.map((c) => ({ ...c.payload, updated_at: stamp })), { onConflict: "distributor_code,customer_code" });
-    if (!error) { chunk.forEach(countOk); continue; }
-    for (const entry of chunk) {
-      const result = await supabase
+
+  // TWO BATCHES, NOT ONE. Rows that keep their provenance carry no `source` key, and PostgREST needs
+  // one consistent key set per request — mixing the two shapes in a single call writes a null source
+  // onto half of them, which the NOT NULL column would reject only if it noticed.
+  const stamped = upserts.filter((entry) => "source" in entry.payload);
+  const keepsProvenance = upserts.filter((entry) => !("source" in entry.payload));
+
+  for (const batch of [stamped, keepsProvenance]) {
+    for (let index = 0; index < batch.length; index += IMPORT_CHUNK) {
+      const chunk = batch.slice(index, index + IMPORT_CHUNK);
+      const stamp = new Date().toISOString();
+      const { error } = await supabase
         .from("source_of_sales_customer_map")
-        .upsert({ ...entry.payload, updated_at: new Date().toISOString() }, { onConflict: "distributor_code,customer_code" });
-      if (result.error) blockedRows.push({ key: String(entry.payload.distributor_code), reason: result.error.message, row: entry.row });
-      else countOk(entry);
+        .upsert(chunk.map((c) => ({ ...c.payload, updated_at: stamp })), { onConflict: "distributor_code,customer_code" });
+      if (!error) { chunk.forEach(countOk); continue; }
+      for (const entry of chunk) {
+        const result = await supabase
+          .from("source_of_sales_customer_map")
+          .upsert({ ...entry.payload, updated_at: new Date().toISOString() }, { onConflict: "distributor_code,customer_code" });
+        if (result.error) blockedRows.push({ key: String(entry.payload.distributor_code), reason: result.error.message, row: entry.row });
+        else countOk(entry);
+      }
     }
   }
 
