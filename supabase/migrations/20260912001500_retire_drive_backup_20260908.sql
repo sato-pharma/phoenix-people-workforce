@@ -1,0 +1,64 @@
+-- Retire the 2026-09-08 CV Drive mirror pre-image. Owner's decision, 2026-09-11, asked and
+-- answered after being shown exactly what the undo contained.
+--
+-- ── WHAT IS BEING DESTROYED, MEASURED RATHER THAN ASSUMED ──────────────────────────────────────
+--
+-- `drive_backup_20260908.drive_mirror_preimage_20260908` held 1,172 rows across 888 candidates,
+-- all captured in one instant at 2026-09-08 18:13:40 UTC. It mirrored three columns of
+-- `public.ats_files`: drive_mirror_file_id, drive_mirror_path, drive_mirror_error.
+--
+-- Checked against live production on 2026-09-11, before dropping:
+--
+--   · all 1,172 rows still exist in ats_files — the 09-08 work deleted nothing
+--   ·   870 rows are byte-identical to live, so they carry no undo at all
+--   ·   302 rows differ, and are the entire informational content of this pre-image
+--   ·     1 of those is a drive_mirror_file_id; 301 are drive_mirror_path
+--   ·     1 went from NULL to set; 301 were set and changed
+--   ·     0 rows differ on drive_mirror_error
+--
+-- The 09-08 work was a Drive folder reorganisation, not a data repair. Paths moved from working
+-- folders into the cabinet, e.g. `From the CV (not confirmed)/Upper Egypt` became
+-- `Phoenix CV Cabinet/Human Resources/Upper Egypt`. The paths name departments and regions; none
+-- of them carries a candidate's name, which is why the rescue copy below is a plain workbook.
+--
+-- ── WHY THE 09-09 PRE-IMAGE IS NOT A SUBSTITUTE, THOUGH IT LOOKS LIKE ONE ──────────────────────
+--
+-- `recruitment_backup_20260909.ats_files_mirror_pre` holds 1,175 rows and shares all 1,172 ids, so
+-- it reads as a newer copy of the same thing. It is not. It was taken AFTER the 09-08 change:
+-- it differs from this pre-image on 266 rows and agrees with LIVE on 1,122 of 1,172. Retiring
+-- 09-08 on the assumption that 09-09 covers it would have destroyed the only record of those 302
+-- original paths. Do not treat two pre-images of one table as interchangeable because their ids
+-- line up — compare their VALUES against live and see which side each one sits on.
+--
+-- ── THE RECOVERY PATH, SUCH AS IT IS ───────────────────────────────────────────────────────────
+--
+-- Production has no PITR. The 7 daily physical backups restore the WHOLE database at one-day
+-- granularity, so they are not a way to get these 302 rows back.
+--
+-- Before dropping, the 302 rows that carry the undo were exported with their before AND after
+-- paths to `xlsx/drive-mirror-path-preimage-20260908.xlsx` (302 rows, 6 columns, verified by
+-- reading the emitted file back). That workbook is the only surviving copy, it is gitignored like
+-- everything in `xlsx/`, and that folder has no automatic backup since the hourly copy was retired
+-- on 2026-09-09. Anyone restoring from it updates ats_files by id from the BEFORE column.
+--
+-- The other 870 rows were identical to live at the moment of the drop and were not exported; live
+-- ats_files is their copy, for as long as nothing else moves them.
+--
+-- ── WHY DROP THE SCHEMA TOO ────────────────────────────────────────────────────────────────────
+--
+-- `drive_backup_20260908` held nothing else. An empty dated backup schema left behind eventually
+-- trips check-schema-shape.ts's `stale_snapshot_schema` warning, which is noise about a thing that
+-- no longer exists. Same shape as retire_hr_backup_20260905 and retire_eight_spent_backup_schemas.
+--
+-- Guarded, so staging and a database rebuilt from this folder — where 20260911235500 created the
+-- schema empty and moved nothing into it — drop an empty schema and are otherwise untouched.
+
+-- SAFE: a spent rollback pre-image the owner retired on 2026-09-11, not application data. All
+-- 1,172 rows still exist in public.ats_files; 870 were byte-identical to live at the drop and 302
+-- carried the undo, exported first to xlsx/drive-mirror-path-preimage-20260908.xlsx with their
+-- before and after paths. Measurements and the recovery route are in the header above.
+drop table if exists drive_backup_20260908.drive_mirror_preimage_20260908;
+
+-- RESTRICT, never CASCADE: if anything else has been put in this schema since 20260911235500
+-- created it, this must fail loudly rather than take that with it.
+drop schema if exists drive_backup_20260908 restrict;
