@@ -25,6 +25,15 @@ export type DistributionListSpec = {
   excludedHrIds: string[];
   externalEmails: string[];
   enabled: boolean;
+  /**
+   * The ONLY way to address the whole company.
+   *
+   * A list with no rule resolves to NOBODY (see matchesDistributionRule) precisely so a
+   * half-finished list can never quietly mail everyone. That guard would also make a legitimate
+   * all-company list impossible, so this flag exists: reaching every employee has to be something
+   * somebody TURNED ON, never something a blank form did on its own.
+   */
+  allEmployees: boolean;
 };
 
 /** Minimal projection of an employee the matcher needs. Kept narrow so a directory shape change
@@ -38,7 +47,14 @@ export type DistributionCandidate = {
   areaId: number | null;
   departmentId: number | null;
   positionId: number | null;
+  /**
+   * BOTH region fields, because neither alone is populated for everyone. Measured in production
+   * 2026-09-11: 13 field employees carry a region_name with NO region_code, and every one of them
+   * is a District Manager — so a region rule matched on the code alone silently produced an EMPTY
+   * list for every region's DM while the reps' lists looked fine.
+   */
   regionCode: string | null;
+  regionName: string | null;
 };
 
 export type DistributionMember = {
@@ -95,6 +111,7 @@ export function sanitizeRoles(value: unknown): PhoenixRole[] {
 /** Whether this list states a rule at all. */
 export function hasRuleDimension(spec: DistributionListSpec): boolean {
   return (
+    spec.allEmployees ||
     spec.roles.length > 0 ||
     spec.lineIds.length > 0 ||
     spec.areaIds.length > 0 ||
@@ -124,6 +141,9 @@ export function isEmptySpec(spec: DistributionListSpec): boolean {
  */
 export function matchesDistributionRule(candidate: DistributionCandidate, spec: DistributionListSpec): boolean {
   if (!hasRuleDimension(spec)) return false;
+  // Explicitly everyone. Every other dimension is ignored: an all-company list plus a line filter
+  // is a contradiction, and widening beats narrowing here only because somebody had to switch it on.
+  if (spec.allEmployees) return true;
   if (spec.roles.length > 0 && !candidate.roles.some((role) => spec.roles.includes(role))) return false;
   if (spec.lineIds.length > 0 && (candidate.lineId === null || !spec.lineIds.includes(candidate.lineId))) return false;
   if (spec.areaIds.length > 0 && (candidate.areaId === null || !spec.areaIds.includes(candidate.areaId))) return false;
@@ -134,8 +154,13 @@ export function matchesDistributionRule(candidate: DistributionCandidate, spec: 
     return false;
   }
   if (spec.regionCodes.length > 0) {
-    const region = String(candidate.regionCode ?? "").trim().toUpperCase();
-    if (!region || !spec.regionCodes.map((code) => code.trim().toUpperCase()).includes(region)) return false;
+    // Matched against the CODE or the NAME. Neither field is populated for everyone: 13 District
+    // Managers carry a region_name and no region_code, so a code-only match emptied every
+    // region-DM list while leaving the reps' lists looking correct.
+    const wanted = spec.regionCodes.map((code) => code.trim().toUpperCase()).filter(Boolean);
+    const code = String(candidate.regionCode ?? "").trim().toUpperCase();
+    const name = String(candidate.regionName ?? "").trim().toUpperCase();
+    if (!wanted.includes(code) && !wanted.includes(name)) return false;
   }
   return true;
 }

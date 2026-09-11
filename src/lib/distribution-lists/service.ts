@@ -43,6 +43,7 @@ type DistributionListRow = {
   excluded_hr_ids: unknown;
   external_emails: unknown;
   enabled: boolean | null;
+  all_employees: boolean | null;
 };
 
 export type CompanyEmailAlias = {
@@ -59,7 +60,7 @@ export type CompanyEmailAlias = {
 };
 
 const listSelect =
-  "list_key,label,description,roles,line_ids,area_ids,department_ids,position_ids,region_codes,included_hr_ids,excluded_hr_ids,external_emails,enabled";
+  "list_key,label,description,roles,line_ids,area_ids,department_ids,position_ids,region_codes,included_hr_ids,excluded_hr_ids,external_emails,enabled,all_employees";
 const aliasSelect =
   "alias_address,label,purpose,provider,distribution_list_key,recorded_member_emails,recorded_at,recorded_by,is_active,notes";
 
@@ -75,6 +76,7 @@ function numberArray(value: unknown): number[] {
 
 function rowToSpec(row: DistributionListRow): DistributionListSpec {
   return {
+    allEmployees: row.all_employees === true,
     areaIds: numberArray(row.area_ids),
     departmentIds: numberArray(row.department_ids),
     description: row.description ?? "",
@@ -150,6 +152,7 @@ export async function loadDistributionCandidates(): Promise<{ candidates: Distri
     lineId: employee.lineId,
     positionId: employee.positionId,
     regionCode: employee.regionCode ?? null,
+    regionName: employee.regionName ?? null,
     roles: rolesByPerson.get(canonicalHrIdKey(employee.hrId) ?? "") ?? [],
     workEmail: employee.workEmail,
   }));

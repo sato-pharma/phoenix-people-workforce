@@ -34,6 +34,7 @@ import {
  */
 
 const BASE_SPEC: DistributionListSpec = {
+  allEmployees: false,
   areaIds: [],
   departmentIds: [],
   description: "",
@@ -61,6 +62,7 @@ function person(overrides: Partial<DistributionCandidate> & Pick<DistributionCan
     lineId: null,
     positionId: null,
     regionCode: null,
+    regionName: null,
     roles: [],
     workEmail: `${overrides.hrId.toLowerCase()}@satopharma.com`,
     ...overrides,
@@ -282,4 +284,57 @@ export function runDistributionListsTests() {
     recordedEmails: ["amr@satopharma.com"],
   });
   assert.equal(clean.inSync, true, "casing alone is never drift — otherwise every alias reads as permanently wrong");
+
+  // ── 🔴 A REGION MATCHES ON NAME **OR** CODE, and the reason is not tidiness ──────────────────
+  // Measured in production 2026-09-11: 13 field employees carry a region_name with NO region_code,
+  // and every single one of them is a District Manager. Matching the code alone would therefore
+  // produce 20 silently EMPTY district-manager lists while the rep lists beside them looked
+  // perfectly correct — the exact failure shape this module exists to make visible.
+  const byCode = person({ hrId: "R-1", regionCode: "D1", regionName: null, roles: ["Medical Rep"] });
+  const byName = person({ hrId: "R-2", regionCode: null, regionName: "Delta (1)", roles: ["Medical Rep"] });
+  const elsewhere = person({ hrId: "R-3", regionCode: "D2", regionName: "Delta (2)", roles: ["Medical Rep"] });
+  const deltaOne = spec({ regionCodes: ["Delta (1)", "D1"], roles: ["Medical Rep"] });
+
+  assert.equal(matchesDistributionRule(byCode, deltaOne), true, "somebody carrying only the code is in");
+  assert.equal(
+    matchesDistributionRule(byName, deltaOne),
+    true,
+    "🔴 and somebody carrying only the NAME is in — code-only matching emptied every region DM list",
+  );
+  assert.equal(matchesDistributionRule(elsewhere, deltaOne), false, "another region stays out");
+  assert.equal(
+    matchesDistributionRule(person({ hrId: "R-4", regionCode: null, regionName: null, roles: ["Medical Rep"] }), deltaOne),
+    false,
+    "somebody with no region at all is out, not swept in by the widened match",
+  );
+
+  // ── 🔴 THE ONLY WAY TO ADDRESS THE WHOLE COMPANY IS TO SAY SO ────────────────────────────────
+  const everyone = [
+    person({ hrId: "B-10", roles: ["Medical Rep"], lineId: 1 }),
+    person({ hrId: "C-1", roles: ["CEO"], lineId: 4 }),
+    person({ hrId: "O-1", lineId: 4 }),
+  ];
+  const family = resolveDistributionList(spec({ allEmployees: true }), everyone);
+  assert.equal(family.refusedReason, null, "an all-company list is not refused — it stated its rule");
+  assert.deepEqual(
+    family.members.map((member) => member.hrId).sort(),
+    ["B-10", "C-1", "O-1"],
+    "it reaches everyone, including seats no role or line rule would have caught",
+  );
+  assert.equal(
+    isEmptySpec(spec({ allEmployees: true })),
+    false,
+    "the flag is a rule — without this an all-company list would be refused as a half-finished edit",
+  );
+  // And the guard it had to coexist with is untouched: blank STILL means nobody.
+  assert.deepEqual(
+    resolveDistributionList(spec(), everyone).members,
+    [],
+    "🔴 a blank list still reaches NOBODY — the flag must be the only route to everyone, never something a blank form falls into",
+  );
+  assert.equal(
+    matchesDistributionRule(everyone[0], spec({ allEmployees: true, lineIds: [99], roles: ["CEO"] })),
+    true,
+    "all-employees ignores every other dimension — an all-company list plus a filter is a contradiction, and the explicit flag wins",
+  );
 }
