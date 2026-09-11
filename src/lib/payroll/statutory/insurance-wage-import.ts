@@ -2,6 +2,8 @@ import ExcelJS from "exceljs";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import type { StatutoryConfig } from "./types.ts";
+
 /**
  * Bulk import for employees.social_insurance_wage (the per-employee insurance /
  * subject wage the statutory engine uses). Parses an xlsx of HR_ID + wage, then
@@ -17,6 +19,21 @@ export type WageParseResult = {
   issues: WageImportIssue[];
   detected: { hrIdColumn: string | null; wageColumn: string | null };
 };
+
+/**
+ * The statutory monthly band a stored insurance wage must sit inside: the same two figures
+ * `clampInsuranceWage` applies, read from the effective-dated `payroll_statutory_config` row.
+ *
+ * The import used to refuse only a negative number (audit finding 41). A stray extra zero (167,000)
+ * or a part-timer's 1,200 parsed cleanly, counted as matched, and was written to the one column that
+ * alone decides the statutory filing. The calculator then clamped it quietly, so the stored wage and
+ * the filed wage disagreed with no error anywhere. A zero is outside the band too: stored, it reads as
+ * "no wage on file" (`usableInsuranceWage`) and takes the person out of the filing without a word.
+ * A wage outside the band is now a row issue and is never written.
+ *
+ * Required rather than defaulted, so a caller cannot parse without saying which band applies.
+ */
+export type InsuranceWageBand = Pick<StatutoryConfig, "effectiveFrom" | "siMinMonthlyWage" | "siMaxMonthlyWage">;
 
 const HR_ID_ALIASES = ["hr_id", "hr id", "hrid", "employee code", "employee_code", "code", "id"];
 const WAGE_ALIASES = [
@@ -54,7 +71,30 @@ function parseAmount(text: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
-export async function parseInsuranceWageWorkbook(buffer: ArrayBuffer): Promise<WageParseResult> {
+function formatWage(value: number): string {
+  return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+/** A date-only value: read at UTC midnight and rendered in UTC, so the calendar day never shifts. */
+function formatEffectiveFrom(isoDate: string): string {
+  const date = new Date(`${isoDate.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return isoDate;
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+}
+
+function outsideBandMessage(hrId: string, wage: number, band: InsuranceWageBand): string {
+  const side = wage < band.siMinMonthlyWage ? "below the legal minimum" : "above the legal maximum";
+  return (
+    `Insurance wage ${formatWage(wage)} for ${hrId} is ${side}. The legal band from ` +
+    `${formatEffectiveFrom(band.effectiveFrom)} is ${formatWage(band.siMinMonthlyWage)} to ` +
+    `${formatWage(band.siMaxMonthlyWage)}, so this row was not imported.`
+  );
+}
+
+export async function parseInsuranceWageWorkbook(
+  buffer: ArrayBuffer,
+  band: InsuranceWageBand,
+): Promise<WageParseResult> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
   const sheet = workbook.worksheets[0];
@@ -125,8 +165,13 @@ export async function parseInsuranceWageWorkbook(buffer: ArrayBuffer): Promise<W
       issues.push({ row: r, message: `Insurance wage cannot be negative for ${hrId}.` });
       continue;
     }
+    const rounded = Math.round(wage * 100) / 100;
+    if (rounded < band.siMinMonthlyWage || rounded > band.siMaxMonthlyWage) {
+      issues.push({ row: r, message: outsideBandMessage(hrId, rounded, band) });
+      continue;
+    }
     seen.add(key);
-    rows.push({ hrId: hrId.trim(), wage: Math.round(wage * 100) / 100, row: r });
+    rows.push({ hrId: hrId.trim(), wage: rounded, row: r });
   }
 
   return { rows, issues, detected };

@@ -24,6 +24,7 @@ import {
 } from "./additions-reason.ts";
 import { assertHoldReasonsPresent, holdCandidatesFromStepRows } from "./hold-reason.ts";
 import { buildHoldReview, type HoldReview } from "./hold-review.ts";
+import { exclusionRefusal } from "./exclusion-guard.ts";
 import {
   describePayrollDayCollisions,
   detectPayrollDayCollisions,
@@ -1403,6 +1404,10 @@ export async function getPayrollDataQuality(
  *
  * A reason is required so the decision is on the record, same convention as
  * `manualReason`/`holdReason`.
+ *
+ * Refused once Part 1 has frozen a first instalment above zero for this person
+ * (audit finding 39): that money is already being paid, and excluding them would
+ * erase it from every output of the month. See `exclusionRefusal`.
  */
 export async function excludeEmployeeFromRun(
   access: AccessContext,
@@ -1418,6 +1423,12 @@ export async function excludeEmployeeFromRun(
   if (!compact) throw new Error("Validation: a valid HR ID is required.");
   const trimmedReason = reason.trim();
   if (!trimmedReason) throw new Error("Validation: a reason is required to exclude an employee from this run.");
+
+  if (run.part1ConfirmedAt) {
+    const draft = (await listDraftRows(runId)).find((row) => row.employeeHrIdCompact === compact);
+    const refusal = exclusionRefusal({ part1ConfirmedAt: run.part1ConfirmedAt, firstPartFrozen: draft?.firstPartFrozen });
+    if (refusal) throw new Error(refusal);
+  }
 
   await upsertDraftRows(runId, [
     { employeeHrId: hrId, excluded: true, excludedReason: trimmedReason, editedBy: actorId(access) },
