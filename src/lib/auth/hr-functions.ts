@@ -45,6 +45,7 @@ export type HrFunctionKey =
   | "engagement_retention"
   | "performance_probation"
   | "workforce_insight"
+  | "hr_communication"
   | "people_records"
   | "time_attendance"
   | "payroll_inputs"
@@ -140,6 +141,46 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // No `delete`. A retention conversation is the evidence behind a turnover theme, and
       // removing one silently changes a company-wide number the CEO reads.
       retention: MAINTAIN,
+    },
+  },
+  {
+    key: "hr_communication",
+    label: "HR Communication",
+    summary:
+      "Composing and sending HR email by hand, and the templates behind it.",
+    jdSections: ["hrbp 2 — Employee Engagement & Field-HQ Partnership"],
+    // Added 2026-09-11. The owner asked that the HR Business Partner's mail answer to
+    // HRBP@satopharma.com, and review found she had no way to send anything at all: the reply
+    // address sat on a route only Super Admin could reach, so it could never fire. Told that making
+    // it real meant granting `communication`, he chose to give her the composer.
+    //
+    // 🔴 `communication` IS MUCH WIDER THAN "SEND AN EMAIL", and there is no narrower resource.
+    // The first version of this comment named only the composer and the templates; review found
+    // that incomplete, and the owner had already approved the grant on that description. The full
+    // picture, so the next reader does not have to rediscover it:
+    //
+    //   * the manual email composer and its send route (`communication: update`) — the point of it
+    //   * the email TEMPLATES, including `isActive`. Deactivating one silently stops that whole
+    //     class of email: setting `password_reset` inactive ends every password-reset mail
+    //     company-wide, with a log line and nothing else
+    //   * a template's static Cc/Bcc addresses, which are declared EXTERNAL to the Recipient
+    //     Assurance Guard — so the control that normally blocks an unrecognised address is told
+    //     that this one is deliberate
+    //   * the Telegram admin console
+    //   * /admin/notifications/email-tracking, a COMPANY-WIDE email activity log carrying the
+    //     subject and recipient of payroll, resignation and offer mail. This seat holds no payroll
+    //     grant and still sees that metadata
+    //
+    // TWO DOORS WERE CLOSED rather than accepted (owner, 2026-09-11): the 250-recipient Telegram
+    // onboarding CAMPAIGN and the company-wide Telegram switch are now Super-Admin-only in
+    // app/api/admin/notifications/telegram/route.ts. Both were Super-Admin-only by ACCIDENT until
+    // this function existed — Super Admin was the sole holder of `communication` — and a bulk-send
+    // button behind an HR seat is the standing never-fire-bulk-email rule, not a nuance.
+    //
+    // NOT `create`, `delete`, `approve` or `import`: nothing in the composer path asks for them,
+    // and the narrower set is the one that still does the job.
+    grants: {
+      communication: ["read", "update"],
     },
   },
   {
@@ -405,6 +446,9 @@ export const HR_ROLE_BUNDLES = {
   "HR Advisory": [
     "recruiting",
     "engagement_retention",
+    // HR Advisory ONLY - HR Operations is not a sender, and adding it to a shared function such as
+    // hr_governance would have handed her the composer as a side effect.
+    "hr_communication",
     "performance_probation",
     "workforce_insight",
     "hr_governance",

@@ -27,6 +27,13 @@ type TelegramAdminData = {
 
 type Props = {
   canUpdate: boolean;
+  /**
+   * Super Admin. A STRICTER gate than canUpdate, for the five actions that can degrade the channel
+   * the outbox drain's dead-man's-switch alarm depends on. Without it the HR Business Partner is
+   * shown a live-looking company-wide kill switch and a mass-email button that both 403 — and a 403
+   * from a control the app itself offered reads as a broken deploy, not as a permission boundary.
+   */
+  canGovern: boolean;
   initialData: TelegramAdminData;
 };
 
@@ -72,7 +79,7 @@ function healthBadge(ok: boolean | null, readyLabel = "Ready", blockedLabel = "N
   );
 }
 
-export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
+export function TelegramAdminControlCenter({ canGovern, canUpdate, initialData }: Props) {
   const [data, setData] = useState(initialData);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -336,7 +343,7 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
           </button>
           <button
             className="inline-flex items-center gap-2 rounded border border-orange-200 bg-orange-600 px-3.5 py-2 text-sm font-bold text-white disabled:opacity-50"
-            disabled={!canUpdate || Boolean(busy)}
+            disabled={!canGovern || Boolean(busy)}
             onClick={requestInviteConfirm}
             type="button"
           >
@@ -354,7 +361,7 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 className="inline-flex items-center gap-2 rounded border border-orange-200 bg-orange-600 px-3.5 py-2 text-sm font-bold text-white disabled:opacity-50"
-                disabled={!canUpdate || Boolean(busy) || inviteConfirm.count === 0}
+                disabled={!canGovern || Boolean(busy) || inviteConfirm.count === 0}
                 onClick={confirmSendInvitations}
                 type="button"
               >
@@ -401,7 +408,7 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
           </div>
           <button
             className="mt-4 inline-flex items-center gap-2 rounded border border-slate-200 bg-slate-950 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
-            disabled={!canUpdate || Boolean(busy)}
+            disabled={!canGovern || Boolean(busy)}
             onClick={() => request("PATCH", { enabled: !data.globalEnabled, type: "global_switch" }, "Global Telegram switch updated.")}
             type="button"
           >
@@ -436,7 +443,7 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
                   <input
                     checked={policy.enabled}
                     className="h-4 w-4 accent-orange-600"
-                    disabled={!canUpdate || Boolean(busy)}
+                    disabled={!canGovern || Boolean(busy)}
                     onChange={(event) => updatePolicy(policy, { enabled: event.target.checked })}
                     type="checkbox"
                     title="Enable Telegram for this module"
@@ -446,7 +453,7 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
                   <input
                     checked={policy.genericOnly}
                     className="h-4 w-4 accent-orange-600"
-                    disabled={!canUpdate || Boolean(busy)}
+                    disabled={!canGovern || Boolean(busy)}
                     onChange={(event) => updatePolicy(policy, { genericOnly: event.target.checked })}
                     type="checkbox"
                   />
@@ -510,8 +517,8 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
                   <td className="adm-col-hide-xl px-3 py-3 text-xs font-semibold text-slate-600">{connection.maskedChatId ?? "Not stored"}</td>
                   <td className="px-3 py-3">
                       <div className="flex flex-wrap gap-2">
-                      <button className="rounded border border-amber-200 px-2 py-1 text-xs font-bold text-amber-700 disabled:opacity-50" disabled={!canUpdate || Boolean(busy)} onClick={() => request("POST", { action: "disable_user", userId: connection.userId }, "Telegram disabled for user.")} type="button"><PlugZap className="inline h-3 w-3" /> Disable</button>
-                      <button className="rounded border border-rose-200 px-2 py-1 text-xs font-bold text-rose-700 disabled:opacity-50" disabled={!canUpdate || Boolean(busy)} onClick={() => request("POST", { action: "disconnect_user", userId: connection.userId }, "Telegram disconnected for user.")} type="button"><Unplug className="inline h-3 w-3" /> Disconnect</button>
+                      <button className="rounded border border-amber-200 px-2 py-1 text-xs font-bold text-amber-700 disabled:opacity-50" disabled={!canGovern || Boolean(busy)} onClick={() => request("POST", { action: "disable_user", userId: connection.userId }, "Telegram disabled for user.")} type="button"><PlugZap className="inline h-3 w-3" /> Disable</button>
+                      <button className="rounded border border-rose-200 px-2 py-1 text-xs font-bold text-rose-700 disabled:opacity-50" disabled={!canGovern || Boolean(busy)} onClick={() => request("POST", { action: "disconnect_user", userId: connection.userId }, "Telegram disconnected for user.")} type="button"><Unplug className="inline h-3 w-3" /> Disconnect</button>
                     </div>
                   </td>
                 </tr>

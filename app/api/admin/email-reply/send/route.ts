@@ -21,6 +21,7 @@ import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { buildPhoenixHrReplyEmail } from "@/lib/email/phoenix-hr-reply-template";
 import { emailNotificationsEnabled } from "@/lib/notifications/email";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { systemEmail } from "@/config/system-settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,7 @@ async function sendEmail({
   cc,
   html,
   idempotencyKey,
+  replyTo,
   subject,
   text,
   to,
@@ -38,6 +40,7 @@ async function sendEmail({
   cc: string[];
   html: string;
   idempotencyKey: string;
+  replyTo: string | undefined;
   subject: string;
   text: string;
   to: string[];
@@ -60,6 +63,11 @@ async function sendEmail({
     from,
     html,
     idempotencyKey,
+    // The sender's own seat decides where replies land - the HR Business Partner's mail answers
+    // to her, not to the generic phoenix inbox. Reply-To ONLY: `from` above stays on the verified
+    // sending subdomain, because an apex-domain From is rejected or filed as spam. Undefined falls
+    // through to NOTIFICATION_REPLY_TO, then systemEmail.defaultReplyTo, exactly as before.
+    replyTo,
     subject,
     text,
     to,
@@ -162,6 +170,7 @@ export async function POST(request: Request) {
       cc,
       html: generated.html,
       idempotencyKey,
+      replyTo: systemEmail.seatReplyTo[access.role],
       subject,
       text: generated.plainText,
       to,

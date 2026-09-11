@@ -19,6 +19,12 @@ export default async function AdminTelegramNotificationsPage() {
 
   const data = await getTelegramAdminControlCenter(access);
   const canUpdate = await canAccess(access, "communication", "update");
+  // Stricter than canUpdate. `communication: update` stopped meaning Super Admin on 2026-09-11, and
+  // five actions on this screen still are: the company-wide switch, the 250-recipient campaign, a
+  // module's Telegram policy, and disabling or disconnecting one person. The route refuses all five
+  // regardless — this only stops the screen offering a control that would 403, which reads as a
+  // broken deploy rather than as a boundary.
+  const canGovern = access.role === "Super Admin";
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-950 sm:px-6 lg:px-8">
@@ -42,6 +48,12 @@ export default async function AdminTelegramNotificationsPage() {
           <Card className="rounded border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
             You can review Telegram status, but this account cannot change Telegram settings.
           </Card>
+        ) : !canGovern ? (
+          <Card className="rounded border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
+            You can send a test, provision the bot and retry a delivery. Switching Telegram on or off
+            for the company, emailing connect invitations, changing a module&apos;s policy, and
+            disabling or disconnecting a person are Super Admin only.
+          </Card>
         ) : null}
 
         <div className="flex flex-wrap gap-2">
@@ -50,7 +62,7 @@ export default async function AdminTelegramNotificationsPage() {
           </Link>
         </div>
 
-        <TelegramAdminControlCenter canUpdate={canUpdate} initialData={data} />
+        <TelegramAdminControlCenter canGovern={canGovern} canUpdate={canUpdate} initialData={data} />
       </div>
     </main>
   );
