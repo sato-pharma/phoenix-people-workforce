@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { classifyCustomerMapRow, parseReconciliationPreviewRow, type CustomerMapClassifyContext } from "../src/lib/sales/normalizer/customer-map.ts";
+import { classifyCustomerMapRow, customerMapUpsertPayload, parseReconciliationPreviewRow, type CustomerMapClassifyContext } from "../src/lib/sales/normalizer/customer-map.ts";
 
 function makeCtx(): CustomerMapClassifyContext {
   return {
@@ -110,5 +110,46 @@ export function runCustomerMapImportTests() {
     assert.equal(p.affectedRows, 0);
     assert.deepEqual(p.affectedBatchIds, []);
     assert.equal(p.targetBrickId, null);
+  }
+
+  // ── An upload that moves nothing must not relabel where the mapping came from ──────────────────
+  //
+  // The export → fix in Excel → re-upload loop carries back every row the operator did not touch. A
+  // ruling of his that comes back on the same brick must still read as his ruling afterwards.
+  const ruling = { areaCode: "CA1", brickId: "B1-2", source: "owner-ruling-heliopolis-2026-08-10" };
+  const payload = () => ({ area_code: "CA1", brick_id: "B1-2", customer_code: "100", distributor_code: "EG", region_code: "CA", source: "admin-import" });
+
+  // Same brick AND same area → the row keeps its provenance, so `source` is not written at all.
+  {
+    const p = customerMapUpsertPayload(payload(), ruling);
+    assert.equal("source" in p, false, "an unchanged row must not carry a source key at all");
+    assert.equal(p.brick_id, "B1-2");
+    assert.equal(p.customer_code, "100", "name/address/brick still update — only provenance is held");
+  }
+
+  // Casing and padding are not a move: the key comparison is normalized, as the importer's is.
+  {
+    const p = customerMapUpsertPayload(payload(), { areaCode: " ca1 ", brickId: " b1-2 ", source: "sheet-verified" });
+    assert.equal("source" in p, false);
+  }
+
+  // A different brick IS a real re-mapping → stamped admin-import honestly, and the database guard
+  // then holds it because it overwrites a decision.
+  {
+    const p = customerMapUpsertPayload(payload(), { ...ruling, brickId: "B135-4" });
+    assert.equal(p.source, "admin-import");
+  }
+
+  // Same brick but a different area (the pair disagreed before) → still a move, still stamped.
+  {
+    const p = customerMapUpsertPayload(payload(), { ...ruling, areaCode: "UE4" });
+    assert.equal(p.source, "admin-import");
+  }
+
+  // A customer the crosswalk has never seen has no provenance to keep → stamped, and the INSERT
+  // branch needs the NOT NULL column filled.
+  {
+    const p = customerMapUpsertPayload(payload(), undefined);
+    assert.equal(p.source, "admin-import");
   }
 }
