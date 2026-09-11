@@ -1085,6 +1085,7 @@ import { runAutomatedPayrollDayCollisionTests } from "./automated-payroll-day-co
 import { runAutomatedPayrollNonEmployeeSeedingTests } from "./automated-payroll-non-employee-seeding.test.ts";
 import { runAutomatedPayrollFailClosedReadTests } from "./automated-payroll-fail-closed-reads.test.ts";
 import { runPayrollAuditTrailAppendOnlyTests } from "./payroll-audit-trail-append-only.test.ts";
+import { runAutomatedPayrollRunIntegrityTests } from "./automated-payroll-run-integrity.test.ts";
 import { runAutomatedPayrollPartSplitStampTests } from "./automated-payroll-part-split-stamp.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
 import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
@@ -1834,6 +1835,10 @@ await runTest(
 await runTest(
   "automated payroll: the decision trail cannot be edited, deleted or truncated",
   runPayrollAuditTrailAppendOnlyTests,
+);
+await runTest(
+  "automated payroll: a confirmed run stops moving, and reopening one re-derives it",
+  runAutomatedPayrollRunIntegrityTests,
 );
 await runTest(
   "automated payroll: one deduction is charged in one instalment, whatever the payment mode becomes",
