@@ -134,6 +134,13 @@ export type DeductionLine = {
   amount: number;
   reason: string;
   status: string;
+  /**
+   * Which detector produced this, carried so the module's own collision rule can be applied to
+   * exactly what payroll is about to charge. `findDayCollisions` skips `manual_hr`, whose "date"
+   * is a placeholder rather than a day anybody was absent — without the source system here, a
+   * manual entry would read as a second claim on a real day. Production carries one such row.
+   */
+  sourceSystem: string;
 };
 
 export type EmployeeDeductions = {
@@ -303,6 +310,7 @@ export function buildDeductionBuckets(
       amount,
       reason: candidate.reason ?? "",
       status: candidate.decision?.decisionStatus ?? "Pending",
+      sourceSystem: candidate.sourceSystem ?? "",
     };
 
     if (confirmed) {

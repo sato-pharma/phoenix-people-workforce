@@ -21,6 +21,12 @@ import { diffStepUpload, parseStepWorkbook } from "./imports/step-parser.ts";
 import { assertHoldReasonsPresent, holdCandidatesFromStepRows } from "./hold-reason.ts";
 import { buildHoldReview, type HoldReview } from "./hold-review.ts";
 import {
+  describePayrollDayCollisions,
+  detectPayrollDayCollisions,
+  type PayrollDayCollision,
+} from "./day-collisions.ts";
+import { loadConfirmedDeductions } from "./deductions-source.ts";
+import {
   describeModuleDrift,
   detectModuleDrift,
   mergeModuleDrift,
@@ -677,6 +683,27 @@ export async function getModuleDrift(access: AccessContext, runId: string): Prom
   return mergeModuleDrift(reports);
 }
 
+/**
+ * Employee-days this run would charge twice.
+ *
+ * Surfaced from the moment the run opens so the Part 2 gate below is never the first anybody hears
+ * of it — a block at the last step, on a month somebody has already worked through, is the shape
+ * of check that gets resented rather than read.
+ */
+export async function getPayrollDayCollisions(
+  access: AccessContext,
+  runId: string,
+): Promise<PayrollDayCollision[]> {
+  assertAutomatedPayrollHrActor(access);
+  const run = await requireRun(runId);
+  const period: PayrollPeriod = { month: run.month, year: run.year };
+  const [{ members }, deductions] = await Promise.all([
+    loadRunContext(period, runId),
+    loadConfirmedDeductions(period),
+  ]);
+  return detectPayrollDayCollisions({ members, deductions });
+}
+
 function summarizeStep(stepKey: StepKey, rows: StepRow[]): Record<string, unknown> {
   if (stepKey === "p1_holds" || stepKey === "p2_holds") {
     return { employees: rows.length, held: rows.filter((row) => row.onHold).length };
@@ -871,12 +898,31 @@ export async function confirmPart2(
     });
   }
 
-  const { rows } = await assembleForRun(run);
+  const { rows, members: assembledMembers } = await assembleForRun(run);
   const { preflightValidate } = await import("./validate.ts");
   const preflight = preflightValidate(rows);
   if (!preflight.ok) {
     const sample = preflight.issues.slice(0, 6).map((issue) => `${issue.hrId ?? "?"}: ${issue.message}`);
     throw new Error(`Validation: fix ${preflight.errorCount} issue(s) before confirming Part 2. ${sample.join("; ")}`);
+  }
+
+  // ONE ABSENCE DAY, CHARGED ONCE.
+  //
+  // The Deductions module refuses to publish a month where two detectors claim the same
+  // employee-day, and payroll reads that module's approved candidates without ever running its
+  // publish step — so for the money that reaches a payslip the rule was never enforced. Enforced
+  // here, at the same strength the module uses and at the same moment as the other accuracy nets.
+  //
+  // NOT acknowledgeable, deliberately. Waving this through means charging somebody twice for one
+  // day, and the module already treats it as something a human must clear rather than accept.
+  // Which of the two claims is wrong is a judgement about what the person was doing that day, so
+  // payroll cannot decide it — see day-collisions.ts.
+  const dayCollisions = detectPayrollDayCollisions({
+    members: assembledMembers,
+    deductions: await loadConfirmedDeductions({ month: run.month, year: run.year }),
+  });
+  if (dayCollisions.length > 0) {
+    throw new Error(`Conflict: ${describePayrollDayCollisions(dayCollisions)}`);
   }
 
   // The accuracy nets ENFORCE here — before this they were advisory, computed by
