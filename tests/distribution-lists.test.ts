@@ -337,4 +337,27 @@ export function runDistributionListsTests() {
     true,
     "all-employees ignores every other dimension — an all-company list plus a filter is a contradiction, and the explicit flag wins",
   );
+
+  // 🔴 `enabled: false` IS THE ONLY THING BETWEEN THIS ROW AND THE WHOLE COMPANY, so it is pinned.
+  // Review found the flag could be made to bypass the switched-off refusal and every assertion
+  // still passed. Sato Pharma Family ships disabled; this is what keeps that meaningful.
+  const familyOff = resolveDistributionList(spec({ allEmployees: true, enabled: false }), everyone);
+  assert.deepEqual(familyOff.members, [], "a switched-off all-company list reaches NOBODY");
+  assert.match(
+    String(familyOff.refusedReason),
+    /switched off/,
+    "and it says why — a company-wide audience that silently resolved to nobody would read as working",
+  );
+
+  // 🔴 THE CASE THE MATCHER'S OWN GUARD ACTUALLY PROTECTS. A list with no rule dimension but one
+  // hand-added name passes isEmptySpec, so it reaches the matcher for EVERY candidate — and only
+  // `hasRuleDimension` returning false stops it resolving to the whole directory. The blank-list
+  // assertion above never reaches the matcher at all (isEmptySpec refuses first), so without this
+  // one that guard is untested on the only path that can reach it.
+  const namedOnly = resolveDistributionList(spec({ includedHrIds: ["C-1"] }), everyone);
+  assert.deepEqual(
+    namedOnly.members.map((member) => member.hrId),
+    ["C-1"],
+    "a list with a name and no rule reaches exactly that name — never everyone the matcher was asked about",
+  );
 }
