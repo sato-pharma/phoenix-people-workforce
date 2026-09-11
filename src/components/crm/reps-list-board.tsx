@@ -233,7 +233,6 @@ export function RepsListBoardView({ basePath, board }: { basePath: string; board
                 activityMonthLabel={board.activityMonthLabel}
                 groups={list.groups}
                 repName={selected.name}
-                syncedAt={syncedAt}
               />
             </>
           )}

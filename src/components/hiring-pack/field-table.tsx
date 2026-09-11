@@ -39,7 +39,7 @@
 
 import { AlertTriangle, Check, Eye, EyeOff, History, MapPin, Plus, RotateCcw, Search, Trash2, X } from "lucide-react";
 import type { KeyboardEvent } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { DocumentFieldInventoryEntry } from "@/lib/hiring-pack/document-inventory";
@@ -396,10 +396,13 @@ export function FieldTable({
   /** A field is "changed by you" if you rewrote its rule OR took it off the paper. Both are edits to
    *  the template, and a filter that showed one and swallowed the other would hide the more drastic
    *  of the two. */
-  const changedByOperator = (key: string) => {
-    const override = overrides.get(key) ?? null;
-    return currentRule(override) !== null || (override?.hidden ?? false);
-  };
+  const changedByOperator = useCallback(
+    (key: string) => {
+      const override = overrides.get(key) ?? null;
+      return currentRule(override) !== null || (override?.hidden ?? false);
+    },
+    [overrides],
+  );
   const hidden = useMemo(() => rows.filter((row) => row.hidden).length, [rows]);
 
   /**
@@ -409,8 +412,11 @@ export function FieldTable({
    * ADDED FIELDS ARE NEVER DROPPED BY `changedOnly` — every one of them IS a change, by definition.
    */
   const needle = search.trim().toLowerCase();
-  const matches = (...parts: (string | null)[]) =>
-    needle === "" || parts.some((part) => (part ?? "").toLowerCase().includes(needle));
+  const matches = useCallback(
+    (...parts: (string | null)[]) =>
+      needle === "" || parts.some((part) => (part ?? "").toLowerCase().includes(needle)),
+    [needle],
+  );
 
   const visibleEntries = useMemo(
     () =>
@@ -418,8 +424,7 @@ export function FieldTable({
         if (changedOnly && !changedByOperator(entry.key)) return false;
         return matches(entry.labelEn, entry.key, humaniseKey(entry.key), entry.value);
       }),
-    // `matches` closes over `needle`, which is what actually changes between renders.
-    [changedOnly, entries, needle, overrides],
+    [changedOnly, entries, changedByOperator, matches],
   );
 
   const visibleAdded = useMemo(
@@ -430,7 +435,7 @@ export function FieldTable({
           row.source.kind === "value" ? row.source.key : null,
         ),
       ),
-    [added, needle],
+    [added, matches],
   );
 
   /**

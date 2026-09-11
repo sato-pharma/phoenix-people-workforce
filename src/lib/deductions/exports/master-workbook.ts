@@ -47,7 +47,7 @@ import {
   type DeductionsOrgInfo,
 } from "../org-filter.ts";
 import { summarizeEmployeeMonthCandidates, type EmployeeMonthDeductionSummary } from "../service.ts";
-import { deductionsCategories, type DeductionsCandidateWithDecision, type DeductionsCategory } from "../types.ts";
+import { deductionsCategories, type DeductionsCandidateWithDecision } from "../types.ts";
 
 /** The per-employee org enrichment the Detailed sheet's extra columns need.
  *  Shared with the filter module so the columns and the narrowing can never

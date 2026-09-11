@@ -223,16 +223,6 @@ async function nameOfHrId(hrId: string | null | undefined): Promise<string | nul
   return (await loadEmployees([hrId])).get(key)?.full_name ?? null;
 }
 
-/** Is this HR id the CEO — i.e. is there no approval step above them? */
-async function isCeo(hrId: string | null): Promise<boolean> {
-  if (!hrId) return false;
-  const map = await loadEmployees([hrId]);
-  const key = canonicalHrIdKey(hrId);
-  const row = key ? map.get(key) : undefined;
-  if (!row) return false;
-  return !row.manager_hr_id?.trim();
-}
-
 type ActivityRow = Record<string, unknown>;
 
 async function hydrate(
