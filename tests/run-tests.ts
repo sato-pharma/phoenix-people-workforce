@@ -763,6 +763,7 @@ import { runCronControlRegistryTests } from "./cron-control-registry.test.ts";
 import { runNotificationRoleRecipientsTests } from "./notification-role-recipients.test.ts";
 import { runDistributionListsTests } from "./distribution-lists.test.ts";
 import { runClosingFixedCcListTests } from "./closing-fixed-cc-list.test.ts";
+import { runComposerGroupListsTests } from "./composer-group-lists.test.ts";
 import { runEmailControlCenterTests } from "./email-control-center.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
 import { runWorkflowRegistryEnforcementTests } from "./workflow-registry-enforcement.test.ts";
@@ -5110,6 +5111,11 @@ await runTest(
 await runTest(
   "the closing's fixed Cc roles come from a list whose seed and code fallback cannot drift, while the per-line District Managers, NSM and PM stay on the organogram",
   runClosingFixedCcListTests,
+);
+
+await runTest(
+  "the composer's HR and Finance groups read editable lists that preserve today's membership, while Managers stays on the organogram relationship no list can express",
+  runComposerGroupListsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
