@@ -2,7 +2,7 @@ import type ExcelJS from "exceljs";
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
-import { writeMappingAudit } from "@/lib/sales/mapping-audit";
+import { writeMappingAudit, writeMappingAuditBatch, type MappingAuditEntry } from "@/lib/sales/mapping-audit";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { BACKFILL_MAX_MAPPINGS, backfillCustomerRows } from "@/lib/sales/normalizer/mapping";
@@ -172,6 +172,8 @@ const IMPORT_CHUNK = 500;
 
 export type CustomerMapImportBlockedRow = { key: string; reason: string; row: number };
 export type CustomerMapImportResult = {
+  /** How many of the landed rows reached the per-row mapping history. */
+  audited: number;
   blockedRows: CustomerMapImportBlockedRow[];
   inserted: number;
   skipped: number;
@@ -250,7 +252,13 @@ export function classifyCustomerMapRow(
 }
 
 /** What the crosswalk already holds for a key, for deciding whether an upload is a real re-mapping. */
-export type ExistingCustomerMapping = { areaCode: string; brickId: string; source: string };
+export type ExistingCustomerMapping = {
+  address: string;
+  areaCode: string;
+  brickId: string;
+  customerName: string;
+  source: string;
+};
 
 /**
  * AN UPLOAD THAT MOVES NOTHING MUST NOT RELABEL WHERE THE MAPPING CAME FROM.
@@ -288,6 +296,59 @@ export function customerMapUpsertPayload(
   // own batch — PostgREST needs one consistent key set per request.
   const { source: _dropped, ...keepsItsProvenance } = payload;
   return keepsItsProvenance;
+}
+
+const asText = (value: unknown) => String(value ?? "").trim();
+
+/**
+ * One audit row per mapping the upload actually changed — or null for a row it merely carried back.
+ *
+ * THE BULK PATH HAD NO PER-ROW HISTORY AT ALL. It wrote a single summary line of counts, so an
+ * upload that re-pointed 2,000 pharmacies left nothing saying WHICH 2,000 or what they were before.
+ * Every by-hand edit beside it has been fully audited since C1. The database guard added on
+ * 2026-09-10 closed part of this from below — it records every write that MOVES a customer, from any
+ * writer — but it cannot name the person, because `phoenix.actor` is a session setting and this
+ * application reaches Postgres over pooled HTTP requests that cannot carry one. So the two halves are
+ * complementary and both are needed: the trigger says what moved, this says who uploaded it.
+ *
+ * SILENCE IS THE POINT FOR AN UNCHANGED ROW. The export → fix → re-upload loop returns every
+ * untouched row, so auditing all of them would bury the handful that matter under fifteen thousand
+ * that did not change — the same reasoning that makes the guard ignore a non-move.
+ *
+ * A NAME OR ADDRESS CORRECTION IS AUDITED THOUGH IT IS NOT A RE-MAPPING. It is still an edit someone
+ * made to a row, it is still worth being able to see, and the guard deliberately never records it.
+ */
+export function customerMapAuditEntry(
+  payload: Record<string, unknown>,
+  existing: ExistingCustomerMapping | undefined,
+  actor: string,
+): MappingAuditEntry | null {
+  const after = {
+    address: asText(payload.address),
+    area_code: asText(payload.area_code),
+    brick_id: asText(payload.brick_id),
+    customer_name: asText(payload.customer_name),
+  };
+  const entityKey = asText(payload.customer_code);
+  const distributorCode = asText(payload.distributor_code);
+
+  if (!existing) {
+    return { action: "add", actor, after, distributorCode, entityKey, entityType: "customer_map" };
+  }
+
+  const before = {
+    address: asText(existing.address),
+    area_code: asText(existing.areaCode),
+    brick_id: asText(existing.brickId),
+    customer_name: asText(existing.customerName),
+  };
+  const unchanged = before.address === after.address
+    && normalizeCodeKey(before.area_code) === normalizeCodeKey(after.area_code)
+    && normalizeCodeKey(before.brick_id) === normalizeCodeKey(after.brick_id)
+    && before.customer_name === after.customer_name;
+  if (unchanged) return null;
+
+  return { action: "edit", actor, after, before, distributorCode, entityKey, entityType: "customer_map" };
 }
 
 const HEADER_ALIASES: Record<string, string> = {
@@ -336,20 +397,24 @@ async function loadExistingCustomerMappings(
   for (;;) {
     const result = await supabase
       .from("source_of_sales_customer_map")
-      // brick_id/area_code/source come back too: customerMapUpsertPayload needs the CURRENT mapping
-      // to tell a real re-mapping from a row the upload merely carried back unchanged.
-      .select("distributor_code,customer_code,brick_id,area_code,source")
+      // The CURRENT row comes back too, not just its key: customerMapUpsertPayload needs the mapping
+      // to tell a real re-mapping from a row the upload merely carried back, and customerMapAuditEntry
+      // needs the name and address to write a before/after worth reading.
+      .select("distributor_code,customer_code,brick_id,area_code,source,customer_name,address")
       // ORDER BY id: offset pages must be stably ordered or rows silently vanish (#1446).
       .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
     if (result.error) break;
     const page = (result.data ?? []) as Array<{
-      area_code?: string; brick_id?: string; customer_code?: string; distributor_code?: string; source?: string;
+      address?: string; area_code?: string; brick_id?: string; customer_code?: string;
+      customer_name?: string; distributor_code?: string; source?: string;
     }>;
     for (const r of page) {
       keys.set(`${normalizeCodeKey(r.distributor_code)}${KEY_SEP}${String(r.customer_code ?? "").trim()}`, {
+        address: String(r.address ?? ""),
         areaCode: String(r.area_code ?? ""),
         brickId: String(r.brick_id ?? ""),
+        customerName: String(r.customer_name ?? ""),
         source: String(r.source ?? ""),
       });
     }
@@ -397,7 +462,7 @@ export async function importCustomerMap(input: { actorLoginId: string; file: Fil
   const ctx: CustomerMapClassifyContext = { brickById, distributorCodes, seen: new Set() };
 
   const blockedRows: CustomerMapImportBlockedRow[] = [];
-  const upserts: { isUpdate: boolean; payload: Record<string, unknown>; row: number }[] = [];
+  const upserts: { audit: MappingAuditEntry | null; isUpdate: boolean; payload: Record<string, unknown>; row: number }[] = [];
   let totalRead = 0;
   let skipped = 0;
 
@@ -422,16 +487,25 @@ export async function importCustomerMap(input: { actorLoginId: string; file: Fil
     totalRead += 1;
     if (result.kind === "skipped") { skipped += 1; continue; }
     if (result.kind === "blocked") { blockedRows.push({ key: result.key, reason: result.reason, row: rowNumber }); continue; }
+    const before = existing.get(result.key);
     upserts.push({
+      // Built from the CLASSIFIER's payload, before customerMapUpsertPayload strips `source` from an
+      // unchanged row — the audit describes what the upload asked for, not the request shape.
+      audit: customerMapAuditEntry(result.payload, before, input.actorLoginId),
       isUpdate: existing.has(result.key),
-      payload: customerMapUpsertPayload(result.payload, existing.get(result.key)),
+      payload: customerMapUpsertPayload(result.payload, before),
       row: rowNumber,
     });
   }
 
   let inserted = 0;
   let updated = 0;
-  const countOk = (entry: { isUpdate: boolean }) => { if (entry.isUpdate) updated += 1; else inserted += 1; };
+  // Only rows that actually LANDED get a history entry. A row the database rejected did not happen.
+  const auditEntries: MappingAuditEntry[] = [];
+  const countOk = (entry: { audit: MappingAuditEntry | null; isUpdate: boolean }) => {
+    if (entry.isUpdate) updated += 1; else inserted += 1;
+    if (entry.audit) auditEntries.push(entry.audit);
+  };
 
   // TWO BATCHES, NOT ONE. Rows that keep their provenance carry no `source` key, and PostgREST needs
   // one consistent key set per request — mixing the two shapes in a single call writes a null source
@@ -469,15 +543,19 @@ export async function importCustomerMap(input: { actorLoginId: string; file: Fil
     );
   }
 
+  // The per-row history, written AFTER the upserts so nothing is recorded that did not land. The
+  // summary row below stays: it is the batch header this trail hangs from.
+  const audited = await writeMappingAuditBatch(auditEntries);
+
   await writeAuditLog({
     actorLoginId: input.actorLoginId,
     entityId: "source_of_sales_customer_map",
     entityType: "sales_import_batch",
-    newValues: { backfilled, blocked: blockedRows.length, inserted, skipped, source: "customer_map_import", totalRead, updated },
-    summary: `Customer map import — ${inserted} added, ${updated} updated, ${skipped} skipped, ${blockedRows.length} blocked${backfilled ? `, ${backfilled} historical rows healed` : ""}.`,
+    newValues: { audited, backfilled, blocked: blockedRows.length, inserted, skipped, source: "customer_map_import", totalRead, updated },
+    summary: `Customer map import — ${inserted} added, ${updated} updated, ${skipped} skipped, ${blockedRows.length} blocked${backfilled ? `, ${backfilled} historical rows healed` : ""}, ${audited} recorded in the mapping history.`,
   });
 
-  return { backfillSkipped, backfilled, blockedRows, inserted, skipped, totalRead, updated };
+  return { audited, backfillSkipped, backfilled, blockedRows, inserted, skipped, totalRead, updated };
 }
 
 // Add/update ONE customer->brick mapping from the inline "add by field" form (vs the bulk upload).
