@@ -106,8 +106,10 @@ function ensure(map: Map<string, EmployeeFeederState>, key: string): EmployeeFee
  */
 export async function buildFeederStates(
   period: CopilotPeriod,
+  /** Injected only by the test — production always uses the admin client. */
+  client: Pick<ReturnType<typeof getSupabaseAdmin>, "from"> = getSupabaseAdmin(),
 ): Promise<Map<string, EmployeeFeederState>> {
-  const supabase = getSupabaseAdmin();
+  const supabase = client;
   const { start, end } = periodBounds(period);
   const states = new Map<string, EmployeeFeederState>();
 
@@ -129,14 +131,41 @@ export async function buildFeederStates(
   }
 
   // Leavers whose last working day falls in the period.
-  const leavers = await safeRows("leavers", () =>
-    supabase
-      .from("employee_resignations")
-      .select("employee_hr_id,last_working_date,exit_status")
-      .gte("last_working_date", start)
-      .lte("last_working_date", end)
-      .in("exit_status", ["submitted", "approved", "completed"]),
-  );
+  //
+  // THIS ONE FAILS CLOSED, unlike every other read in this function.
+  //
+  // An empty leaver set does not merely lose a signal, it REMOVES PEOPLE FROM THE RUN. The
+  // population rule in recommend.ts keeps a payroll-ineligible employee only when they are a
+  // leaver this month or are serving notice into a later one; `employment_status` flips to a
+  // terminal value the moment a resignation is approved, so with no leaver rows every one of them
+  // is ineligible, not a leaver, not on notice — and is skipped. Their final month disappears from
+  // every step and every sheet, with no error and no empty state to notice it by.
+  //
+  // Measured on production: every leaver since June carries a terminal status, so all of them
+  // would go. August 2026 alone is 30 people and 579,000 EGP of monthly net salary.
+  //
+  // A payroll run that cannot read its leavers must stop and say so. That is strictly better than
+  // producing a sheet which looks complete and is missing thirty people.
+  const leaverQuery = await supabase
+    .from("employee_resignations")
+    .select("employee_hr_id,last_working_date,exit_status")
+    .gte("last_working_date", start)
+    .lte("last_working_date", end)
+    .in("exit_status", ["submitted", "approved", "completed"]);
+  if (leaverQuery.error) {
+    logError("Payroll copilot feeder query failed: leavers", {
+      labels: { event: "feeders_query_failed", feeder: "leavers" },
+      error: leaverQuery.error,
+    });
+    throw new Error(
+      "Could not read this month's leavers, so the payroll population cannot be built. " +
+        "Every already-resigned employee would be dropped from the run and their final month lost. " +
+        `Retry once the database is reachable. (${leaverQuery.error.message ?? "unknown error"})`,
+    );
+  }
+  const leavers = Array.isArray(leaverQuery.data)
+    ? (leaverQuery.data as Array<Record<string, unknown>>)
+    : [];
   for (const row of leavers) {
     const key = compactHrKey(String(row.employee_hr_id ?? ""));
     if (!key) continue;

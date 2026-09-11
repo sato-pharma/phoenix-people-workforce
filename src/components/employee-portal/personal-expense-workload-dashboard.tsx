@@ -50,6 +50,7 @@ import { canonicalizeTransport, resolveGovernorate } from "@/lib/geo/egypt-locat
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ExtraTicketRowEditor } from "@/components/outstation/extra-ticket-manager";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 
 /** Inline relative-date helper for the pending-approval chip ("yesterday", "5 days ago"). */
@@ -178,7 +179,7 @@ function spendColorForValue(value: number, max: number) {
 /* ------------------------------------------------------------------ */
 
 function formatMoney(value: number) {
-  return new Intl.NumberFormat("en-US", {
+  return stableCurrencyFormatter("en-US", {
     currency: "EGP",
     maximumFractionDigits: 0,
     style: "currency",

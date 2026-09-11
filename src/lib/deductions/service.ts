@@ -672,6 +672,36 @@ export async function reconcileCandidateDrafts(input: {
       ? live.filter((candidate) => input.scope.sourceSystems!.includes(candidate.sourceSystem))
       : live;
 
+    // A SOURCE THAT PRODUCED NOTHING DOES NOT GET TO RETIRE EVERYTHING.
+    //
+    // Retirement is driven by absence: a live candidate whose key is not in the fresh set is
+    // treated as retracted. That is right when the source ran and genuinely no longer supports a
+    // row. It is catastrophic when the source ran and produced nothing at all, because then EVERY
+    // live candidate in scope is absent, and one collection run silently wipes the month's
+    // deductions.
+    //
+    // An outright empty draft set is far more likely to mean the source failed than that a month
+    // is genuinely clean — and when a month IS genuinely clean there are no live candidates to
+    // retire either, so this guard costs nothing in the honest case. It only bites when the source
+    // says "nothing" while the ledger holds live rows, which is precisely the suspicious shape.
+    //
+    // The connector's own read errors already throw, and collect.ts turns those into a warning
+    // without reconciling. This is the backstop for a read that returns empty WITHOUT throwing.
+    if (input.drafts.length === 0 && scoped.length > 0) {
+      warnings.push(
+        `${input.sourceLabel}: produced no candidates at all while ${scoped.length} live one(s) exist for ` +
+          `${input.scope.category} ${input.scope.monthKey}. Nothing was retired — a source that returns ` +
+          "nothing is treated as a failed read, not as a retraction of the whole month. Re-run the " +
+          "collection once the source is healthy.",
+      );
+      return {
+        created: insertResult.created,
+        skippedExisting: insertResult.skippedExisting,
+        insertedByIdentity: insertResult.insertedByIdentity,
+        warnings,
+      };
+    }
+
     for (const candidate of scoped) {
       if (freshKeys.has(candidate.candidateKey)) continue;
       // Published numbers are immutable by design — never silently retract one.

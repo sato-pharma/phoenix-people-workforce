@@ -596,7 +596,17 @@ async function collectContinuingEmployeeCrmCandidates(input: {
   // silently weight those Saturdays to zero, under-deducting.
   const titleByHrIdKey = new Map<string, string | null>();
   {
-    const { data } = await getSupabaseAdmin().from("employees").select("hr_id,job_title");
+    // FAILS CLOSED. The error used to be discarded, and the comment above says exactly what that
+    // costs: with no titles every job title reads as null, a null title reads as "Saturday off",
+    // and every Saturday is weighted to zero. A failed read therefore under-charged the whole
+    // month's CRM deductions and looked like an ordinary result while doing it.
+    const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,job_title");
+    if (error) {
+      throw new Error(
+        `Failed to load job titles for the CRM day weighting: ${error.message}. ` +
+          "Without them every Saturday weights to zero and the month under-charges.",
+      );
+    }
     for (const row of (data ?? []) as Array<{ hr_id: string; job_title: string | null }>) {
       const key = canonicalHrIdKey(row.hr_id);
       if (key) titleByHrIdKey.set(key, row.job_title);

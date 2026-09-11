@@ -548,6 +548,7 @@ import { runDistributorDetectionHeaderRowTests } from "./distributor-detection-h
 import { runDistributorHeaderNormalizationTests } from "./sales-header-normalize.test.ts";
 import { runBrickSuggestionsTests } from "./brick-suggestions.test.ts";
 import { runMappingLookupTests } from "./mapping-lookup.test.ts";
+import { runOfflineLookupWorkbookTests } from "./offline-lookup-workbook.test.ts";
 import { runImportCoverageTests } from "./import-coverage.test.ts";
 import { runCoverageMappingHealthTests } from "./coverage-mapping-health.test.ts";
 import { runOfficePivotTests } from "./office-pivot.test.ts";
@@ -764,6 +765,7 @@ import { runVacationRetentionPurgeAuditTests } from "./vacation-retention-purge-
 import { runCronControlRegistryTests } from "./cron-control-registry.test.ts";
 import { runNotificationRoleRecipientsTests } from "./notification-role-recipients.test.ts";
 import { runDistributionListsTests } from "./distribution-lists.test.ts";
+import { runDistributionListsAccessTests } from "./distribution-lists-access.test.ts";
 import { runClosingFixedCcListTests } from "./closing-fixed-cc-list.test.ts";
 import { runComposerGroupListsTests } from "./composer-group-lists.test.ts";
 import { runEmailControlCenterTests } from "./email-control-center.test.ts";
@@ -1080,6 +1082,8 @@ import { runAutomatedPayrollInsuranceWageTests } from "./automated-payroll-insur
 import { runAutomatedPayrollVacationReconfirmTests } from "./automated-payroll-vacation-reconfirm.test.ts";
 import { runAutomatedPayrollModuleDriftTests } from "./automated-payroll-module-drift.test.ts";
 import { runAutomatedPayrollDayCollisionTests } from "./automated-payroll-day-collisions.test.ts";
+import { runAutomatedPayrollNonEmployeeSeedingTests } from "./automated-payroll-non-employee-seeding.test.ts";
+import { runAutomatedPayrollFailClosedReadTests } from "./automated-payroll-fail-closed-reads.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
 import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
 import { runAutomatedPayrollExecutiveSummaryTests } from "./automated-payroll-executive-summary.test.ts";
@@ -1398,6 +1402,7 @@ import { runMarketingFinanceHoldUiTests } from "./marketing-finance-hold-ui.test
 import { runDistributorUploadNudgeTests } from "./distributor-upload-nudge.test.ts";
 import { runMarketingInvoiceOverdueNudgeTests } from "./marketing-invoice-overdue-nudge.test.ts";
 import { runSosMappingGuardTests } from "./sos-mapping-guard.test.ts";
+import { runAttributionFreshnessSweepTests } from "./attribution-freshness-sweep.test.ts";
 
 import { runLeaverRosterExclusionTests } from "./leaver-roster-exclusion.test.ts";
 import { runCompanyActivityReportPostExitDaysTests } from "./company-activity-report-post-exit-days.test.ts";
@@ -1505,6 +1510,7 @@ import { runEmployeeJobTitleCasingHintTests } from "./employee-job-title-casing-
 
 import { runPayrollHoldConfirmStepReasonTests } from "./payroll-hold-confirm-step-reason.test.ts";
 
+import { runCairoZoneOffsetTests } from "./cairo-zone-offset.test.ts";
 import { runReact418HydrationSafeTextTests } from "./react-418-hydration-safe-text.test.ts";
 import { runPayrollHoldReviewTests } from "./payroll-hold-review.test.ts";
 import { runPmCallRateBandTests } from "./pm-call-rate-band.test.ts";
@@ -1565,6 +1571,7 @@ import { runVacationAdminOverrideTests } from "./vacation-admin-override.test.ts
 import { runLeaveRequestCodesTests } from "./leave-request-codes.test.ts";
 
 import { runManagerAreaRegionGuardTests } from "./manager-area-region-guard.test.ts";
+import { runDataBackupWorkbookTests } from "./data-backup-workbook.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1813,6 +1820,14 @@ await runTest(
 await runTest(
   "automated payroll: one absence day is charged once, on the path that pays people",
   runAutomatedPayrollDayCollisionTests,
+);
+await runTest(
+  "automated payroll: the standing roster never pays twice, nor adds to an instalment already paid",
+  runAutomatedPayrollNonEmployeeSeedingTests,
+);
+await runTest(
+  "automated payroll: a failed read does not look like a quiet month",
+  runAutomatedPayrollFailClosedReadTests,
 );
 await runTest(
   "automated payroll: every payable row reaches a bank file or is named",
@@ -2571,6 +2586,7 @@ await runTest("detect distributor header-row pick (EG-BR regression)", runDistri
 await runTest("shared header normalization (Arabic + deep scan + all sheets)", runDistributorHeaderNormalizationTests);
 await runTest("brick suggestions", runBrickSuggestionsTests);
 await runTest("mapping lookup (paste a code, paste a territory)", runMappingLookupTests);
+await runTest("offline lookup workbook (the emitted xlsx, not its source)", runOfflineLookupWorkbookTests);
 await runTest("import coverage aggregation", runImportCoverageTests);
 await runTest("coverage tab mapping health (drift and unmapped products are measured, not hardcoded 0)", runCoverageMappingHealthTests);
 await runTest("sos header detection", runSosHeaderDetectionTests);
@@ -4880,6 +4896,7 @@ await runTest(
 );
 
 await runTest("hydration-safe Cairo text: engine-independent month names and a server-formatted password-setup expiry (React #418)", runReact418HydrationSafeTextTests);
+await runTest("Cairo zone data ships with the code: Egypt DST, and money that does not depend on the browser build (React #418)", runCairoZoneOffsetTests);
 
 await runTest(
   "the pre-publish held-employee review names who is not being paid and why (unexplained holds sort first; a carried-forward reason stays labelled after it is saved)",
@@ -5132,8 +5149,18 @@ await runTest(
 );
 
 await runTest(
+  "a mapping change heals the attribution rollup on the mapping clock, and the sweep cannot reach a published month",
+  runAttributionFreshnessSweepTests,
+);
+
+await runTest(
   "a distribution list ANDs its rule dimensions, treats a blank dimension as no constraint but NO rule as nobody, and lets an exclusion beat a hand-added name",
   runDistributionListsTests,
+);
+
+await runTest(
+  "the HR Business Partner reaches the distribution lists but holds only the HR-owned ones, enforced in the routes and fail-closed on a list nobody granted her",
+  runDistributionListsAccessTests,
 );
 
 await runTest(
@@ -5149,6 +5176,11 @@ await runTest(
 await runTest(
   "a sales manager is recorded against his region, never one of his own rep areas, and a region with no area row is reported before a manager is pinned to one",
   runManagerAreaRegionGuardTests,
+);
+
+await runTest(
+  "the admin data backup streams its workbook row by row, so a 300k-row table cannot overflow the in-memory XML writer",
+  runDataBackupWorkbookTests,
 );
 
 await runTest(

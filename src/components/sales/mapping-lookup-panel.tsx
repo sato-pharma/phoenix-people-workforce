@@ -10,7 +10,7 @@
 // When that happens this panel shows both candidates and makes a person choose.
 
 import { useCallback, useState } from "react";
-import { Loader2, Search } from "lucide-react";
+import { Download, Loader2, Search } from "lucide-react";
 
 import type { CodeLookupResult, TerritoryLookupResult } from "@/lib/sales/mapping-lookup";
 import { cn } from "@/lib/utils";
@@ -164,10 +164,26 @@ export function MappingLookupPanel() {
 
   return (
     <section className={cn(panel, "p-4")}>
-      <h2 className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">Look it up</h2>
-      <p className="mt-1 text-xs font-medium text-phx-ink-soft">
-        Paste what you have. A customer code finds its distributor; a district or brick name finds its
-        territory. Either can answer that it does not know, which is the honest answer rather than a guess.
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          <h2 className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">Look it up</h2>
+          <p className="mt-1 text-xs font-medium text-phx-ink-soft">
+            Paste what you have. A customer code finds its distributor; a district or brick name finds its
+            territory. Either can answer that it does not know, which is the honest answer rather than a guess.
+          </p>
+        </div>
+        {/* The same two answers, in a workbook that needs no login and no internet. Built fresh on
+            every click, never a stored file: a mapping snapshot goes wrong silently the moment
+            someone edits a mapping here, and nothing on its face would say so. */}
+        <a
+          className="inline-flex h-9 shrink-0 items-center gap-1.5 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink-2 transition hover:border-phx-accent-line"
+          href="/api/sales/mapping-database/offline-workbook"
+        >
+          <Download className="h-4 w-4" /> Offline copy (.xlsx)
+        </a>
+      </div>
+      <p className="mt-2 text-phx-2xs font-semibold text-phx-ink-faint">
+        The offline copy is a snapshot of this moment. Download it again whenever the answer matters.
       </p>
 
       <div className="mt-3 grid gap-4 md:grid-cols-2">

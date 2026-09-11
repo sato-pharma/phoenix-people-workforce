@@ -188,8 +188,46 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // scopeForRole misleads anyone auditing user_access_profiles — keeping the two in step is for
   // legibility, not enforcement. SFE Manager already sits that way (scope "self", mirror
   // COMPANY_READ), which is why this is a per-seat note and not a general invariant.
+  // Names HR Advisory in systemEmail.seatReplyTo, added 2026-09-11. Reviewed verdict: it GRANTS
+  // NOTHING. The value is a Reply-To address chosen by the SENDER's seat when that seat composes a
+  // mail by hand — it opens no page, widens no query, and reads no record on her behalf. It is
+  // listed because the string is a seat name, which is what Rule 10 pins, and because a reply
+  // address is a CLAIM about who answers: if the HR Business Partner seat is ever retired or
+  // renamed, this line starts routing replies to a mailbox nobody watches.
+  //
+  // Deliberately not a From address — From stays on the verified sending subdomain, and
+  // tests/distribution-lists-access.test.ts pins both directions of that.
+  "src/config/system-settings.ts",
   "src/lib/auth/supabase-identity.ts",
   "src/lib/contracts/service.ts",
+  // Names HR Advisory in canManageDistributionLists, added 2026-09-11 when the owner asked that the
+  // HR Business Partner reach /admin/distribution-lists. Reviewed verdict: it GRANTS reach, and the
+  // grant is bounded by a fail-CLOSED allowlist in the same file.
+  //
+  // What it opens: the named recipient groups and the Turbify alias register, narrowed by
+  // distributionListScopeFor to HR_OWNED_LIST_KEYS — `hr_team` alone today. A list absent from that
+  // set is invisible to her, so one added later is private until somebody decides it is hers. Asked
+  // whether "use all of it" included the Monthly Closing Cc, the owner answered "HR lists only, she
+  // shouldn't touch the closing cc" — so `closing_fixed_cc` and `finance_team` stay out, enforced in
+  // the [listKey] route and in both alias actions rather than merely hidden on the screen.
+  //
+  // What it cannot do: originate an email. A list decides who an EXISTING send reaches, and the
+  // alias register cannot touch a mailbox at all because Turbify has no API — its output is a
+  // worklist a human applies by hand. No HR_ROLE_BOUNDARIES entry is crossed: this is not payroll,
+  // deductions, organogram, user_admin, permission_admin or report_it.
+  //
+  // Why by name rather than a permission: the fitting resource, `communication`, also gates the
+  // email composer, the email templates and the Telegram console, so scoping THIS screen through it
+  // could not have expressed "these lists and not those".
+  //
+  // ⚠ CORRECTED 2026-09-11. This note used to end "and no HR function grants it". That stopped
+  // being true in the same branch that added this file: `hr_communication` grants `communication`
+  // to the HR Advisory bundle. THIS IS THE FILE THAT EXISTS TO ANSWER "what was this seat given",
+  // and it was answering the opposite. She holds `communication`, and what that opened is fenced
+  // in three places rather than left to the accident that Super Admin used to be its only holder:
+  // the Telegram route's five Super-Admin checks, `privileged-fields.ts` on the template fields
+  // that decide where mail goes, and the list allowlist here.
+  "src/lib/distribution-lists/access.ts",
   // Names HR Operations in isDeductionsReadActor, added 2026-09-03 with the page above. Reviewed
   // verdict: it GRANTS reach, and it is the wider half of the two — the page is a door, this is the
   // data. Every company-wide deductions read route asserts this gate ON TOP of the matrix, so

@@ -1,4 +1,6 @@
 import ExcelJS from "exceljs";
+import { once } from "node:events";
+import { PassThrough } from "node:stream";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -210,21 +212,55 @@ export async function loadDataBackup(scope: DataBackupScope, generatedBy: string
 // ─── XLSX builder ─────────────────────────────────────────────────────────────
 
 export async function buildBackupWorkbook(payload: DataBackupPayload): Promise<ArrayBuffer> {
-  const workbook = new ExcelJS.Workbook();
+  // STREAMED, and that is not an optimisation — the in-memory writer CANNOT produce this workbook.
+  //
+  // `workbook.xlsx.writeBuffer()` renders a whole sheet into one `XmlStream`, whose `_xml` is a
+  // plain JS array holding ~15 string tokens per cell. V8 caps an array at 2^27 = 134,217,728
+  // entries, so a 28-column sheet dies at ~312,861 rows with a bare `RangeError: Invalid array
+  // length` thrown from `Array.push` inside `XmlStream.openNode`. `source_of_sales_import_rows`
+  // was past that line already (317,801 rows on staging, 2026-09-11), which took out `sales` AND
+  // the default `all` scope while `weekly` and `marketing` kept working. Raising the heap does not
+  // help: the cap is on the array, not on memory. The same sheet's XML is ~532MB, so the `join('')`
+  // that follows is itself within a rounding error of V8's 536,870,888-char string limit.
+  //
+  // The streaming writer serialises each row on its own and flushes it into the zip, so neither
+  // limit is ever approached: the full staging `sales` scope (10.08M cells) builds in ~60s at
+  // ~900MB RSS. Its cost is that sheets commit in order and cannot be revisited — hence columns
+  // and views are set before the first row, and the Contents sheet is still written first.
+  const chunks: Buffer[] = [];
+  const sink = new PassThrough();
+  sink.on("data", (chunk: Buffer) => chunks.push(chunk));
+  // Attached before anything is written so the listener cannot miss the event: `workbook.commit()`
+  // resolves on the writable side finishing, which is not proof the readable side has been drained.
+  const drained = once(sink, "end");
+
+  const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
+    stream: sink,
+    useSharedStrings: false,
+    useStyles: true,
+  });
   workbook.creator = "Phoenix Workforce";
   workbook.created = new Date(payload.generatedAt);
 
   const usedSheetNames = new Set<string>();
 
   // Summary sheet
-  const summary = workbook.addWorksheet(makeUniqueSheetName("Contents", usedSheetNames));
-  summary.properties.tabColor = { argb: "FF1E293B" };
+  const summary = workbook.addWorksheet(makeUniqueSheetName("Contents", usedSheetNames), {
+    properties: { tabColor: { argb: "FF1E293B" } },
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
 
   summary.columns = [
     { header: "Module", key: "module", width: 22 },
     { header: "Table", key: "table", width: 42 },
     { header: "Row Count", key: "rows", width: 14 },
   ];
+
+  // Setting `columns` writes the header text into row 1; style it before it is committed away.
+  const summaryHeader = summary.getRow(1);
+  summaryHeader.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  summaryHeader.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
+  summaryHeader.commit();
 
   // Metadata rows
   const metaRows = [
@@ -235,9 +271,10 @@ export async function buildBackupWorkbook(payload: DataBackupPayload): Promise<A
   for (const meta of metaRows) {
     const r = summary.addRow(meta);
     r.font = { italic: true, color: { argb: "FF64748B" } };
+    r.commit();
   }
 
-  summary.addRow([]);
+  summary.addRow([]).commit();
 
   // Group by module
   let lastModule = "";
@@ -247,14 +284,13 @@ export async function buildBackupWorkbook(payload: DataBackupPayload): Promise<A
       const labelRow = summary.addRow({ module: meta?.label ?? dataset.module, table: "", rows: "" });
       labelRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
       labelRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${meta?.headerFill ?? "334155"}` } };
+      labelRow.commit();
       lastModule = dataset.module;
     }
-    summary.addRow({ module: dataset.module, table: dataset.name, rows: dataset.rows.length });
+    summary.addRow({ module: dataset.module, table: dataset.name, rows: dataset.rows.length }).commit();
   }
 
-  summary.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
-  summary.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
-  summary.views = [{ state: "frozen", ySplit: 1 }];
+  summary.commit();
 
   // Data sheets — one per table
   for (const dataset of payload.datasets) {
@@ -263,37 +299,47 @@ export async function buildBackupWorkbook(payload: DataBackupPayload): Promise<A
     const tabColor = meta?.tabColor ?? "334155";
 
     const headers = collectHeaders(dataset.rows);
-    const sheet = workbook.addWorksheet(makeUniqueSheetName(dataset.name, usedSheetNames));
-    sheet.properties.tabColor = { argb: `FF${tabColor}` };
+    const sheet = workbook.addWorksheet(makeUniqueSheetName(dataset.name, usedSheetNames), {
+      properties: { tabColor: { argb: `FF${tabColor}` } },
+      // A placeholder sheet has no header row to freeze, matching the pre-streaming output.
+      ...(headers.length === 0 ? {} : { views: [{ state: "frozen" as const, ySplit: 1 }] }),
+    });
 
     if (headers.length === 0) {
-      sheet.addRow(["No rows"]);
+      sheet.addRow(["No rows"]).commit();
+      sheet.commit();
       continue;
     }
 
-    // Header row
-    sheet.addRow(headers);
-    const headerRow = sheet.getRow(1);
-    headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${headerFill}` } };
-    headerRow.alignment = { vertical: "middle" };
-
-    // Data rows
-    for (const row of dataset.rows) {
-      sheet.addRow(headers.map((h) => row[h] ?? ""));
-    }
-
-    sheet.views = [{ state: "frozen", ySplit: 1 }];
-    sheet.autoFilter = {
-      from: { column: 1, row: 1 },
-      to: { column: headers.length, row: Math.max(1, dataset.rows.length + 1) },
-    };
     sheet.columns = headers.map((header) => ({
       key: header,
       header,
       width: Math.max(12, Math.min(70, header.length + 4)),
     }));
+
+    // Header row
+    const headerRow = sheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${headerFill}` } };
+    headerRow.alignment = { vertical: "middle" };
+    headerRow.commit();
+
+    // Data rows — committed one at a time so the sheet never holds more than the row being written.
+    for (const row of dataset.rows) {
+      sheet.addRow(headers.map((h) => row[h] ?? "")).commit();
+    }
+
+    sheet.autoFilter = {
+      from: { column: 1, row: 1 },
+      to: { column: headers.length, row: Math.max(1, dataset.rows.length + 1) },
+    };
+    sheet.commit();
   }
 
-  return await workbook.xlsx.writeBuffer();
+  await workbook.commit();
+  await drained;
+
+  // A Node Buffer, exactly as `writeBuffer()` returned before: both callers hand it straight to a
+  // NextResponse body or to Supabase Storage, which take it as-is.
+  return Buffer.concat(chunks) as unknown as ArrayBuffer;
 }

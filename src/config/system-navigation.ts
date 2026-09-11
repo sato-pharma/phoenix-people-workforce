@@ -1975,6 +1975,15 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/retention", icon: HeartPulse, label: "Retention Register", permissions: [{ resource: "retention" }] },
       { href: "/hr/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
       { href: "/hr/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }] },
+      // 🔴 THE HR SHELL'S OWN ROW, and the only one that reaches her. Adding "HR Advisory" to the
+      // adminToolsPageItems entry looks equivalent and is inert: that array is read by the Admin
+      // Tools hub (Super-Admin-only) and by the command palette in ADMIN mode, while an HR seat
+      // renders the `hr` shell and app-shell.tsx redirects a bare /admin/… address into /hr/admin/….
+      // Without this line she could reach the page only by typing the URL. Same shape as the
+      // WhatsApp Templates row below, and caught by review 2026-09-11 rather than by a test —
+      // navigation-granted-but-unreachable derives her mode from resolveNavigationMode, which never
+      // returns "hr", so it believes she is offered the admin card.
+      { href: "/hr/admin/distribution-lists", icon: Users, label: "Distribution Lists", roles: ["HR Advisory"] },
     ],
     label: "People",
   },
@@ -2724,7 +2733,10 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     icon: Users,
     label: "Distribution Lists",
     description: "Named recipient groups resolved from the live directory, and the register of company email aliases on Turbify.",
-    roles: ["Super Admin"],
+    // The HR Business Partner sees only the HR-owned lists — that narrowing lives in
+    // @/lib/distribution-lists/access, not here. A nav entry decides whether the link is offered,
+    // never what is behind it.
+    roles: ["Super Admin", "HR Advisory"],
   },
   {
     href: "/admin/email-control-center",
@@ -2807,7 +2819,13 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     icon: MousePointerClick,
     label: "Email Activity",
     description: "Each email's exact situation — sent, delivered, opened, clicked (Resend + Brevo).",
+    // Owner 2026-09-11: Super Admin only. This is a COMPANY-WIDE log naming the subject and the
+    // recipient of every mail the system sends, payroll and resignation and offer mail included.
+    // It was Super-Admin-only by ACCIDENT until `hr_communication` gave a second seat
+    // `communication`. The PAGE carries the same check — this row only stops the sidebar offering
+    // a link that redirects. `roles` ANDs with `permissions` in the gate, so this narrows.
     permissions: [{ resource: "communication" }],
+    roles: ["Super Admin"],
   },
   {
     href: "/admin/dev-preview",

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { refusePrivilegedTemplateChange } from "@/lib/email-templates/privileged-fields";
 import {
   EmailTemplateValidationError,
   getEmailTemplate,
@@ -45,6 +46,17 @@ export async function PATCH(request: Request, context: RouteContext) {
       action?: "draft" | "publish" | "save";
       changeReason?: string;
     };
+    // WHERE THE MAIL GOES IS A DIFFERENT PRIVILEGE FROM WHAT IT SAYS. `communication: update` used
+    // to mean Super Admin and now also means the HR Business Partner, so the fields that add a
+    // permanent recipient to every send - and the switch that stops a template sending at all -
+    // need their own check. It compares against the STORED row rather than refusing any payload
+    // that mentions them, because the designer posts the whole rules object on an ordinary content
+    // save. See src/lib/email-templates/privileged-fields.ts for what each field does.
+    const stored = await getEmailTemplate(templateKey);
+    const refusal = refusePrivilegedTemplateChange({ payload: body, role: access.role, stored });
+    if (refusal) {
+      return NextResponse.json({ error: "forbidden", message: refusal }, { status: 403 });
+    }
     const template = await saveEmailTemplate(templateKey, body, access.loginId ?? access.hrId, {
       action: body.action ?? (body.isActive ? "publish" : "draft"),
       reason: body.changeReason,
