@@ -25,11 +25,11 @@ export const EGYPT_GOVERNORATES: ReadonlyArray<{ readonly canonical: string; rea
   { aliases: ["giza", "el giza", "al giza", "الجيزة", "الجيزه"], canonical: "Giza" },
   { aliases: ["alexandria", "alex", "الاسكندرية", "الإسكندرية"], canonical: "Alexandria" },
   { aliases: ["qalyubia", "qalubia", "qaliobia", "kalyoubia", "القليوبية"], canonical: "Qalyubia" },
-  { aliases: ["sharqia", "al sharqia", "el sharkia", "sharkia", "الشرقية"], canonical: "Sharqia" },
+  { aliases: ["sharqia", "sharqiya", "al sharqia", "el sharkia", "sharkia", "الشرقية"], canonical: "Sharqia" },
   { aliases: ["dakahlia", "el dakahlia", "daqahlia", "الدقهلية"], canonical: "Dakahlia" },
   { aliases: ["gharbia", "el gharbia", "الغربية"], canonical: "Gharbia" },
   { aliases: ["monufia", "menoufia", "menofia", "المنوفية"], canonical: "Monufia" },
-  { aliases: ["beheira", "el beheira", "behera", "البحيرة"], canonical: "Beheira" },
+  { aliases: ["beheira", "el beheira", "behera", "behira", "al buhayrah", "albuhayra", "البحيرة"], canonical: "Beheira" },
   { aliases: ["kafr el sheikh", "kafr elsheikh", "kafrelsheikh", "كفر الشيخ"], canonical: "Kafr El Sheikh" },
   { aliases: ["damietta", "dumyat", "دمياط"], canonical: "Damietta" },
   { aliases: ["port said", "portsaid", "بورسعيد", "بور سعيد"], canonical: "Port Said" },
@@ -111,7 +111,7 @@ export const EGYPT_DISTRICTS: ReadonlyArray<{ readonly governorate: string; read
     governorate: "Monufia",
   },
   {
-    aliases: ["damanhour", "دمنهور", "kafr el dawar", "كفر الدوار", "rashid", "رشيد", "edku", "إدكو"],
+    aliases: ["damanhour", "damanhur", "دمنهور", "kafr el dawar", "كفر الدوار", "rashid", "رشيد", "edku", "إدكو"],
     governorate: "Beheira",
   },
   { aliases: ["borg el arab", "برج العرب", "agami", "العجمي", "montaza", "المنتزه", "smouha", "سموحة"], governorate: "Alexandria" },
@@ -344,6 +344,21 @@ export const PHARMA_EMPLOYER_KEYWORDS: readonly string[] = [
   "sandoz", "mash premiere", "marcyrl", "chemipharm", "global napi", "sedico", "adwia",
   "multipharma", "pharco", "borg pharmaceutical", "delta pharma", "andalous", "aventis",
   "صيدلة", "أدوية", "دوائية",
+];
+
+/**
+ * Words marking a work-history entry as an INTERNSHIP, student rotation, or training placement —
+ * time that does not count toward years of professional experience.
+ *
+ * Deliberately phrase-level for "training" rather than the bare word: a real job title like
+ * "Training Manager" or "Training Coordinator" must not be caught by this list, only a CV's own
+ * description of having BEEN trained (a vacation/summer/clinical/practical placement).
+ */
+export const INTERNSHIP_KEYWORDS: readonly string[] = [
+  "internship", "intern", "trainee", "traineeship", "extern", "externship",
+  "vacation training", "summer training", "clinical training", "practical training",
+  "on-the-job training", "apprentice", "apprenticeship",
+  "تدريب صيفي", "تدريب عملي", "متدرب",
 ];
 
 /** Words whose presence makes a line a RESPONSIBILITY bullet rather than a heading or a title. */

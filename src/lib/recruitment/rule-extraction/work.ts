@@ -18,6 +18,7 @@
 // for. The rule layer's job is to be RIGHT about what it does emit and to mark the rest low.
 
 import {
+  INTERNSHIP_KEYWORDS,
   JOB_TITLE_KEYWORDS,
   MEDICAL_REP_TITLE_KEYWORDS,
   PHARMA_EMPLOYER_KEYWORDS,
@@ -164,26 +165,37 @@ export function currentRoleResponsibilitiesField(entries: readonly WorkEntry[]):
 /**
  * The candidate's current or most recent job title.
  *
- * Prefers a title printed under the NAME at the top of the CV — that is the candidate's own
- * statement of what they are, it is what a modern CV puts there, and it is not entangled with any
- * date parsing. The first work entry is the fallback.
+ * A real WORK-HISTORY entry — an actual employer and dates the person listed — is the only thing
+ * that can confirm someone has HELD a job, so it is trusted first, at high confidence. The line
+ * printed under the NAME at the top of the CV ("Chemist", "Medical Sales Representative") is the
+ * candidate's own headline, not proof of employment: a fresh graduate routinely headlines the role
+ * they are chasing, not one they have worked. Falling back to it is still useful when no work
+ * history was parsed at all, but only at LOW confidence, so it reaches a reviewer instead of being
+ * auto-applied to the record as a fact.
  */
 export function currentJobTitleField(
   headerLines: readonly string[],
   entries: readonly WorkEntry[],
 ): ExtractedField<string> | null {
+  const current = entries.find((entry) => entry.isCurrent) ?? entries[0];
+  if (current?.jobTitle) return high(current.jobTitle);
+
   const headline = headerLines
     .slice(0, 6)
     .map((line) => line.trim())
     .find((line) => line.length >= 6 && line.length <= 70 && !/[@]/.test(line) && !/\d{4}/.test(line) && looksLikeJobTitle(line));
-  if (headline) return high(headline);
-
-  const current = entries.find((entry) => entry.isCurrent) ?? entries[0];
-  return current?.jobTitle ? low(current.jobTitle) : null;
+  return headline ? low(headline) : null;
 }
 
 const YEARS_PHRASE = /(\d{1,2})\s*\+?\s*(?:years?|yrs?)(?:\s+of)?(?:\s+\w+){0,3}?\s+experience/i;
 const YEARS_PHRASE_ARABIC = /(\d{1,2})\s*(?:\+)?\s*(?:سنوات|سنة)\s+(?:من\s+)?(?:الخبرة|خبرة)/;
+
+/** Whether a work-history entry is an internship, student rotation, or training placement. */
+function isInternshipEntry(entry: WorkEntry): boolean {
+  const title = entry.jobTitle ?? "";
+  const responsibilities = entry.responsibilities ?? "";
+  return INTERNSHIP_KEYWORDS.some((keyword) => containsPhrase(title, keyword) || containsPhrase(responsibilities, keyword));
+}
 
 /**
  * Total years of experience.
@@ -196,6 +208,10 @@ const YEARS_PHRASE_ARABIC = /(\d{1,2})\s*(?:\+)?\s*(?:سنوات|سنة)\s+(?:م
  * implementation and it inflates: a candidate who held a part-time role alongside a full-time one
  * would be credited with both, and someone with three concurrent entries could pass ten years of
  * experience before the age of thirty.
+ *
+ * An INTERNSHIP or training placement never contributes months here — it is time spent LEARNING a
+ * job, not doing one, and counting it is how a fresh graduate whose CV lists only a vet internship
+ * or a summer training rotation ends up reading as someone with years of professional experience.
  */
 export function yearsExperienceField(text: string, entries: readonly WorkEntry[]): ExtractedField<number> | null {
   const stated = YEARS_PHRASE.exec(text) ?? YEARS_PHRASE_ARABIC.exec(text);
@@ -205,7 +221,7 @@ export function yearsExperienceField(text: string, entries: readonly WorkEntry[]
   }
 
   const periods = entries
-    .filter((entry) => entry.from)
+    .filter((entry) => entry.from && !isInternshipEntry(entry))
     .map((entry) => ({
       end: entry.to ? monthIndex(entry.to) : monthIndex(new Date().toISOString().slice(0, 10)),
       start: monthIndex(entry.from!),
