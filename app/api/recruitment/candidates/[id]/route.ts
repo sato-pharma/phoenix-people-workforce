@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { deleteCandidate, getCandidateProfile, updateCandidate } from "@/lib/recruitment/candidates";
 import { getLatestCvExtraction, recordAppliedExtractionFields } from "@/lib/recruitment/cv-extraction";
 import { listJsonbCvFields, listWritableCvFields } from "@/lib/recruitment/cv-field-storage";
+import { listScreeningQuestionLabels } from "@/lib/recruitment/screening-question-labels";
 import type { UpdateCandidateInput } from "@/lib/recruitment/types";
 import {
   assertSameOriginMutation,
@@ -29,8 +30,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     // module's own record, not part of a candidate. Automated intake writes one per inbound CV
     // and nothing else ever read it back, so the fields the AI already found stayed invisible —
     // the UI now opens the review board on this instead of paying for a second extraction.
-    const latestCvExtraction = await getLatestCvExtraction(id).catch(() => null);
-    return NextResponse.json({ latestCvExtraction, profile, success: true });
+    const [latestCvExtraction, screeningQuestions] = await Promise.all([
+      getLatestCvExtraction(id).catch(() => null),
+      // The wording of the admin-defined WhatsApp questions, so each answer on the record can be
+      // printed under the question it answers. Null — never a failed profile — when it cannot be read:
+      // the answers still show, under a label that says their question could not be loaded.
+      listScreeningQuestionLabels().catch(() => null),
+    ]);
+    return NextResponse.json({ latestCvExtraction, profile, screeningQuestions, success: true });
   } catch (error) {
     return recruitmentApiError(error, "Failed to load candidate profile.");
   }
