@@ -32,6 +32,44 @@ export async function writeMappingAudit(entry: MappingAuditEntry): Promise<void>
   } catch { /* audit is best-effort — never block the mutation */ }
 }
 
+/** How many audit rows go in one insert. A bulk upload can carry five figures of them. */
+const AUDIT_CHUNK = 500;
+
+/**
+ * The same trail, for a writer that changes thousands of rows in one action.
+ *
+ * `writeMappingAudit` is one HTTP round trip per row, which is right for the by-hand forms and
+ * hopeless for the bulk upload — the reason that path had no per-row history at all and recorded
+ * only a summary line of counts. Chunked so a 15,000-row upload costs thirty requests, not fifteen
+ * thousand.
+ *
+ * BEST-EFFORT, LIKE ITS SIBLING, AND PER CHUNK. One rejected chunk must not cost the other
+ * twenty-nine their history, and no failure here may break the upload it is recording.
+ */
+export async function writeMappingAuditBatch(entries: readonly MappingAuditEntry[]): Promise<number> {
+  if (entries.length === 0) return 0;
+  const supabase = getSupabaseAdmin();
+  let written = 0;
+  for (let index = 0; index < entries.length; index += AUDIT_CHUNK) {
+    const chunk = entries.slice(index, index + AUDIT_CHUNK);
+    try {
+      const { error } = await supabase.from("source_of_sales_mapping_audit").insert(
+        chunk.map((entry) => ({
+          entity_type: entry.entityType,
+          distributor_code: entry.distributorCode ?? null,
+          entity_key: entry.entityKey,
+          action: entry.action,
+          before_json: entry.before ?? null,
+          after_json: entry.after ?? null,
+          actor: entry.actor,
+        })),
+      );
+      if (!error) written += chunk.length;
+    } catch { /* keep going: a lost chunk beats a lost upload */ }
+  }
+  return written;
+}
+
 export type MappingAuditRecord = {
   id: string;
   entityType: string;
