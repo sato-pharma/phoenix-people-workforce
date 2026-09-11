@@ -51,3 +51,13 @@ export async function listCandidateFolderAreaOptions(): Promise<CandidateFolderA
   }
   return options;
 }
+
+/**
+ * Just the names, for the one thing that needs nothing else: validating a medical-rep folder key
+ * against the live area list. See `resolveCanonicalMedicalRepArea` in candidate-folder.ts, which
+ * is PURE and cannot read this table itself — both the propose-time suggestion and the file-time
+ * write call this to get the list that function checks against.
+ */
+export async function listCanonicalMedicalRepAreaNames(): Promise<string[]> {
+  return (await listCandidateFolderAreaOptions()).map((option) => option.name);
+}

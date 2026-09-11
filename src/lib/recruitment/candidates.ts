@@ -19,7 +19,9 @@ import {
   isStorableFolderKind,
   cleanFolderKey,
   PARAMEDICAL_FOLDER_KEY,
+  resolveCanonicalMedicalRepArea,
 } from "@/lib/recruitment/candidate-folder";
+import { listCanonicalMedicalRepAreaNames } from "@/lib/recruitment/candidate-folder-options";
 import {
   candidateManagerSeatTier,
   managerMayBeSentApplication,
@@ -1076,12 +1078,26 @@ export async function fileCandidateToFolder(
   // effectively lost. Normalised here rather than in the route so that every caller is covered by
   // one rule: the recruiter's picker, and confirmCandidateBackground below it.
   // The duplicate shelf holds ONE folder for the same reason and by the same mechanism.
-  const folderKey =
-    kind === "paramedical"
-      ? PARAMEDICAL_FOLDER_KEY
-      : kind === DUPLICATE_FOLDER_KIND
-        ? DUPLICATE_FOLDER_KEY
-        : cleanKey;
+  //
+  // THE MEDICAL-REP AREA IS VALIDATED HERE TOO, FILE-TIME — not just where a suggestion is proposed.
+  // The picker's own dropdown already only offers a live area, but this function is the one place
+  // every write actually lands (the picker, the bulk "file the declared CVs" button, and any future
+  // caller), so it is the one place a typo, a stale tab, or a hand-made request gets refused instead
+  // of quietly opening a folder nobody else will ever open. Measured against production 2026-09-11:
+  // seven CVs had already been filed this way — see resolveCanonicalMedicalRepArea.
+  let folderKey: string;
+  if (kind === "paramedical") {
+    folderKey = PARAMEDICAL_FOLDER_KEY;
+  } else if (kind === DUPLICATE_FOLDER_KIND) {
+    folderKey = DUPLICATE_FOLDER_KEY;
+  } else if (kind === "medical_rep") {
+    const canonicalAreas = await listCanonicalMedicalRepAreaNames();
+    const resolved = resolveCanonicalMedicalRepArea(cleanKey, canonicalAreas);
+    if (resolved.area === null) throw new Error(resolved.refusal);
+    folderKey = resolved.area;
+  } else {
+    folderKey = cleanKey;
+  }
 
   const existing = await getCandidate(id);
   if (!existing) throw new Error("Candidate not found.");

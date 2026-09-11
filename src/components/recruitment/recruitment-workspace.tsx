@@ -1141,7 +1141,11 @@ export function RecruitmentWorkspace(props: Props) {
         // Handed the WHOLE candidate array, not the filed half. The shelf screen and the pool run
         // the same partition over the same input, which is what makes "in exactly one of the two"
         // true by construction rather than by two filters agreeing.
-        <CandidateFoldersTab candidates={props.candidates} onOpenCandidate={openCandidateFromFolder} />
+        <CandidateFoldersTab
+          areaOptions={props.areaOptions}
+          candidates={props.candidates}
+          onOpenCandidate={openCandidateFromFolder}
+        />
       ) : tab === "pipeline" ? (
         <PipelineTab
           applications={applications}
