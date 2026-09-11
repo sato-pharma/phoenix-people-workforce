@@ -112,6 +112,7 @@ function mapDraftRow(row: RunRow): DraftRow {
     specialAdditionValue: numeric(row.special_addition_value),
     specialSituationPart: (row.special_situation_part as "first" | "second" | null) ?? null,
     firstPartFrozen: numeric(row.first_part_frozen),
+    settledInPart1: row.settled_in_part1 == null ? null : Boolean(row.settled_in_part1),
     onHold: Boolean(row.on_hold),
     holdReason: (row.hold_reason as string | null) ?? null,
     excluded: Boolean(row.excluded),
@@ -344,6 +345,7 @@ function draftPatchToDb(runId: string, patch: DraftRowPatch): Record<string, unk
   num("specialAdditionDays", "special_addition_days");
   num("specialAdditionValue", "special_addition_value");
   num("firstPartFrozen", "first_part_frozen");
+  if (patch.settledInPart1 !== undefined) db.settled_in_part1 = patch.settledInPart1;
   if (patch.expensesNote !== undefined) db.expenses_note = patch.expensesNote;
   if (patch.manualReason !== undefined) db.manual_reason = patch.manualReason;
   if (patch.p1odCrmReason !== undefined) db.p1od_crm_reason = patch.p1odCrmReason;

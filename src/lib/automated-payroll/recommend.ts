@@ -1382,7 +1382,7 @@ function recommendVacation(
     const source = lookupSource(sources, member.employee.hrId);
     // Leavers AND one-part employees are settled in Part 1 — never here, to avoid
     // double-deducting the same days. See isSettledInPart1.
-    if (isSettledInPart1(member, source)) continue;
+    if (isSettledInPart1(member, source, drafts.get(member.compact)?.settledInPart1)) continue;
     const lines = linesFor(deductions, member.compact, "unpaidVacation");
     const amount = roundCurrency(deductions.get(member.compact)?.buckets.unpaidVacation ?? 0);
     const draft = drafts.get(member.compact);
@@ -1458,7 +1458,7 @@ function recommendCrm(
   const rows: StepRow[] = [];
   for (const member of members) {
     const source = lookupSource(sources, member.employee.hrId);
-    if (isSettledInPart1(member, source)) continue;
+    if (isSettledInPart1(member, source, drafts.get(member.compact)?.settledInPart1)) continue;
     const lines = linesFor(deductions, member.compact, "crm");
     const value = roundCurrency(deductions.get(member.compact)?.buckets.crm ?? 0);
     const draft = drafts.get(member.compact);
@@ -1524,7 +1524,7 @@ function recommendManualDeductions(
     const row = baseRow(member);
     const source = lookupSource(sources, member.employee.hrId);
     // Settled-in-Part-1 employees take their loan/other on the Part 1 tab.
-    const settledInPart1 = isSettledInPart1(member, source);
+    const settledInPart1 = isSettledInPart1(member, source, draft?.settledInPart1);
     const lines = settledInPart1
       ? []
       : [...linesFor(deductions, member.compact, "loan"), ...linesFor(deductions, member.compact, "other")];
@@ -1583,11 +1583,21 @@ function recommendManualDeductions(
  * recommendVacation / recommendCrm (Part 2) skip exactly those same employees.
  * Guarded by tests/automated-payroll-part1-scope.test.ts — if you change this,
  * change both call sites or you reintroduce a double-deduction.
+ *
+ * ONCE PART 1 IS CONFIRMED THE ANSWER IS READ, NOT RECOMPUTED. Both inputs move:
+ * a payment mode is corrected, somebody resigns mid-month. The columns this
+ * routes money into do not move, so re-deciding after the fact charged a loan in
+ * Part 1 and offered it again in Part 2, or moved it out of both and never took
+ * it at all. `confirmPart1` stamps the answer onto the draft row beside the
+ * frozen First Part; from that moment this returns the stamp. A null stamp means
+ * Part 1 is not confirmed yet — and the live rule is then the right answer.
  */
 export function isSettledInPart1(
   member: Pick<PopulationMember, "lifecycle">,
   source: Pick<PayrollSalarySource, "paymentMode"> | undefined,
+  frozen?: boolean | null,
 ): boolean {
+  if (frozen != null) return frozen;
   return member.lifecycle === "leaver" || source?.paymentMode === "one_part";
 }
 
@@ -1632,7 +1642,7 @@ function recommendP1Crm(
   const rows: StepRow[] = [];
   for (const member of members) {
     const source = lookupSource(sources, member.employee.hrId);
-    if (!isSettledInPart1(member, source)) continue;
+    if (!isSettledInPart1(member, source, drafts.get(member.compact)?.settledInPart1)) continue;
     // This month's resignations moved to their own dedicated Resignations CRM
     // tab (owner request 2026-07-26 — see recommendResignationCrm), because a
     // leaver's CRM rules differ: the Working/Non-Working split caps at his DAYS
@@ -1864,7 +1874,7 @@ function recommendP1UnpaidVacation(
   const rows: StepRow[] = [];
   for (const member of members) {
     const source = lookupSource(sources, member.employee.hrId);
-    if (!isSettledInPart1(member, source)) continue;
+    if (!isSettledInPart1(member, source, drafts.get(member.compact)?.settledInPart1)) continue;
     const draft = drafts.get(member.compact);
     const row = part1ManualDeductionBaseRow(member, source);
 
@@ -1899,7 +1909,7 @@ function recommendP1NoRecord(
   const rows: StepRow[] = [];
   for (const member of members) {
     const source = lookupSource(sources, member.employee.hrId);
-    if (!isSettledInPart1(member, source)) continue;
+    if (!isSettledInPart1(member, source, drafts.get(member.compact)?.settledInPart1)) continue;
     const draft = drafts.get(member.compact);
     const row = part1ManualDeductionBaseRow(member, source);
     row.recommended = { p1odNoRecordDays: 0, p1odNoRecordValue: 0 };
@@ -1922,7 +1932,7 @@ function recommendP1OtherDeductions(
   const rows: StepRow[] = [];
   for (const member of members) {
     const source = lookupSource(sources, member.employee.hrId);
-    if (!isSettledInPart1(member, source)) continue;
+    if (!isSettledInPart1(member, source, drafts.get(member.compact)?.settledInPart1)) continue;
     const draft = drafts.get(member.compact);
     const row = part1ManualDeductionBaseRow(member, source);
     // Confirmed loan / other deductions from the Deductions module land here for
