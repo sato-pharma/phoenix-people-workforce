@@ -138,9 +138,10 @@ export function runWorkflowControlTests() {
   const addToPayrollStep = getWorkflowSubflow("expenses-outstation", "payroll-queue")?.steps.find((s) => s.id === "add_to_payroll");
   assert.notEqual(addToPayrollStep?.notificationGap, true, "add-to-payroll is intentionally silent (not a gap)");
   assert.equal(domainHasNotificationGap(getWorkflowDomain("expenses-outstation")!), false, "expenses-outstation has no unimplemented notification gaps");
-  // The payslip publish notification is WIRED: notifyEmployeesPayslipAvailable
-  // (app/api/payroll/[id]/workflow/route.ts) fires on the "approve" transition — the moment payslips
-  // become visible — one notification per employee in the batch. The register went on declaring it
+  // The payslip publish notification is WIRED: notifyPayslipAvailable
+  // (src/lib/payroll/notify-payslip-available.ts) sends one notification per employee in the batch
+  // at the moment payslips become visible, from BOTH the old module's "approve" transition and
+  // Automated Payroll's publish. The register went on declaring it
   // unimplemented long after it shipped, which is the failure mode these assertions now guard: a
   // stale "not built" badge sends the owner rebuilding something that already runs. The producer
   // itself is pinned by tests/payroll-workflow.test.ts.
