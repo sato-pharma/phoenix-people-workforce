@@ -1590,6 +1590,7 @@ import { runManagerAreaRegionGuardTests } from "./manager-area-region-guard.test
 import { runDataBackupWorkbookTests } from "./data-backup-workbook.test.ts";
 import { runBackgroundFolderFilingGateTests } from "./background-folder-filing-gate.test.ts";
 import { runPhoenixOfficialLogoTests } from "./phoenix-official-logo.test.ts";
+import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending-backfill-completed-only.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5278,6 +5279,11 @@ await runTest(
 await runTest(
   "every Phoenix mark the system draws — browser and app icons, app shell, notification, email signature, Excel exports — is the owner's ringed emblem, and the retired drawings stay gone",
   runPhoenixOfficialLogoTests,
+);
+
+await runTest(
+  "a WhatsApp applicant's pending-classification and pending-extra-answers backfills only ever apply a session whose completed_at is set, never a snapshot of one still mid-conversation",
+  runWhatsAppPendingBackfillCompletedOnlyTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
