@@ -6,6 +6,7 @@ import { Download, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
 import { AdminCallout } from "@/components/admin/admin-design-system";
 import { MappingCombobox } from "@/components/sales/source-of-sales-mapping-tab";
 import { DistributorWorkspaceShell } from "@/components/sales/distributor-workspace-shell";
+import { MappingLookupPanel } from "@/components/sales/mapping-lookup-panel";
 import { WeeklyBranchMappingManager } from "@/components/sales/weekly/weekly-branch-mapping-manager";
 import { WeeklyProductMappingManager } from "@/components/sales/weekly/weekly-product-mapping-manager";
 import { Button } from "@/components/ui/button";
@@ -400,6 +401,7 @@ export function MappingDatabaseWorkspace({ distributors, products, bricks }: Pro
           instantly.
         </p>
       </header>
+      <MappingLookupPanel />
       <DistributorWorkspaceShell distributors={distributors}>
         {(selected) => <DistributorMapping bricks={bricks} products={products} selected={selected} />}
       </DistributorWorkspaceShell>
