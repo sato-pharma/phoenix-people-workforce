@@ -29,6 +29,7 @@ import {
   type PayrollDataIssue,
   type PayrollDataQualityReport,
 } from "@/lib/automated-payroll/data-quality";
+import type { ModuleDriftReport } from "@/lib/automated-payroll/module-drift";
 import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import { cn } from "@/lib/utils";
 
@@ -111,6 +112,8 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
   /** The names behind the data-quality banner — collapsed by default so the
    * headline stays a one-liner instead of a nine-name wall of red. */
   const [dataQualityOpen, setDataQualityOpen] = useState(false);
+  const [moduleDrift, setModuleDrift] = useState<ModuleDriftReport | null>(null);
+  const [moduleDriftOpen, setModuleDriftOpen] = useState(false);
   /** The employee, if any, HR is about to exclude from this run entirely — a
    * separate decision point (with a required reason) from the data-quality
    * acknowledgment above, since exclusion removes them from the sheet rather
@@ -230,6 +233,19 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           .then((response) => response.json())
           .then((qualityData) => {
             if (qualityData?.success) setDataQuality(qualityData.report as PayrollDataQualityReport);
+          })
+          .catch(() => {
+            /* a safety net, never block the wizard on it */
+          });
+
+        // And whether the Deductions module has changed its mind since a step was confirmed.
+        // Confirming copies the module's figure onto the run's own row and the engine reads that
+        // row from then on, so a candidate withdrawn afterwards keeps being charged with nothing
+        // to show for it. See module-drift.ts.
+        void fetch(`/api/automated-payroll/runs/${runId}/module-drift`)
+          .then((response) => response.json())
+          .then((driftData) => {
+            if (driftData?.success) setModuleDrift(driftData.report as ModuleDriftReport);
           })
           .catch(() => {
             /* a safety net, never block the wizard on it */
@@ -743,6 +759,49 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 ))}
                 <div className="opacity-80">
                   Fix them on the employee record; confirming with these open needs your acknowledgment.
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </AdminCallout>
+      ) : null}
+
+      {/* The Deductions module has moved since a step was confirmed.
+          Warning, never danger, and never a gate: a stale figure is a decision to
+          revisit, not proof of an error — the module may have been corrected for a
+          good reason, and the run may be right to keep what it has. Re-open the step
+          and re-enter the figure to take the new one. */}
+      {moduleDrift && moduleDrift.rows.length > 0 ? (
+        <AdminCallout tone="warning">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+              <div className="font-black">
+                {moduleDrift.staleCharges > 0
+                  ? `${people(moduleDrift.staleCharges)} carrying a deduction the Deductions module no longer proposes`
+                  : `${people(moduleDrift.overriddenButMoved)} whose module figure moved after you confirmed`}
+              </div>
+              <button
+                type="button"
+                onClick={() => setModuleDriftOpen((open) => !open)}
+                className="shrink-0 text-xs font-semibold underline underline-offset-2"
+              >
+                {moduleDriftOpen ? "Hide who" : "Show who"}
+              </button>
+            </div>
+            {moduleDriftOpen ? (
+              <div className="mt-2 flex flex-col gap-1 text-xs">
+                {moduleDrift.rows.map((row) => (
+                  <div key={`${row.stepKey}:${row.hrId}:${row.field}`} className="opacity-80">
+                    {row.fullName} ({row.hrId}) — confirmed at {row.proposedAtConfirm.toFixed(2)}, the module now
+                    says {row.proposedNow.toFixed(2)}
+                    {row.overridden
+                      ? `; this run charges ${row.charged.toFixed(2)}, which someone entered by hand and still stands`
+                      : `; this run still charges ${row.charged.toFixed(2)}`}
+                  </div>
+                ))}
+                <div className="opacity-80">
+                  Nothing here is wrong on its own. Re-open the step and re-enter a figure to take the module&apos;s
+                  new one.
                 </div>
               </div>
             ) : null}

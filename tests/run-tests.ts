@@ -1072,6 +1072,7 @@ import { runAutomatedPayrollGuardsThatGuardTests } from "./automated-payroll-gua
 import { runAutomatedPayrollDismissalSettlementTests } from "./automated-payroll-dismissal-settlement.test.ts";
 import { runAutomatedPayrollInsuranceWageTests } from "./automated-payroll-insurance-wage.test.ts";
 import { runAutomatedPayrollVacationReconfirmTests } from "./automated-payroll-vacation-reconfirm.test.ts";
+import { runAutomatedPayrollModuleDriftTests } from "./automated-payroll-module-drift.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
 import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
 import { runAutomatedPayrollExecutiveSummaryTests } from "./automated-payroll-executive-summary.test.ts";
@@ -1795,6 +1796,10 @@ await runTest(
 await runTest(
   "automated payroll: confirming the vacation step twice reaches the same answer twice",
   runAutomatedPayrollVacationReconfirmTests,
+);
+await runTest(
+  "automated payroll: a confirmed deduction the Deductions module has since changed is surfaced",
+  runAutomatedPayrollModuleDriftTests,
 );
 await runTest(
   "automated payroll: every payable row reaches a bank file or is named",
