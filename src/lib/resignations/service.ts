@@ -6,6 +6,7 @@ import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation"
 import { getEmployeeDirectory, getEmployeeDirectoryRows, invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
+import { DECLINE_OFFER_WINDOW_DAYS, isDeclineOfferEligible } from "@/lib/resignations/decline-offer-eligibility";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { resolveNotificationPersonRecipients, resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
@@ -25,6 +26,7 @@ import { generateShortVacancyCode } from "@/lib/workforce/vacancy-code";
 
 import type {
   CreateResignationInput,
+  DeclineOfferInput,
   ResignationDashboardData,
   EmployeeResignationInput,
   PayrollResignationCandidateRecord,
@@ -47,6 +49,10 @@ const terminalEmployeeStatuses = [
   "terminated",
   "Terminated",
   "TERMINATED",
+  // "declined offer / did not join" (declineOfferAndOpenVacancy) — the pay branch reuses
+  // "terminated" above and is already covered; this covers the no-pay branch, which is
+  // the only employment_status value unique to that workflow.
+  "declined_offer",
 ];
 
 type ResignationRow = {
@@ -102,6 +108,7 @@ type PayrollResignationCandidateRow = {
 type HistoricalResignedEmployeeRow = {
   created_at: string | null;
   employment_status: string | null;
+  exit_category?: string | null;
   exit_reason?: string | null;
   exit_status?: string | null;
   full_name: string;
@@ -265,6 +272,7 @@ function mapResignation(row: ResignationRow): ResignationRecord {
     createdBy: row.created_by ?? null,
     // Both filled by getResignationsDashboardData, the only read path that resolves them.
     createdByName: null,
+    exitCategory: null,
     hireDate: null,
     settlement: null,
     outstandingDevices: [],
@@ -327,6 +335,7 @@ function mapLegacyResignationEmployee(row: HistoricalResignedEmployeeRow): Resig
     createdAt,
     createdBy: null,
     createdByName: null,
+    exitCategory: row.exit_category ?? null,
     hireDate: null,
     settlement: null,
     outstandingDevices: [],
@@ -358,7 +367,7 @@ async function loadHistoricalResignedEmployees(supabase: SupabaseClient) {
   const joinedResult = await supabase
     .from("employees")
     .select(
-      "hr_id,full_name,nickname,job_title,employment_status,resignation_date,last_working_date,exit_reason,exit_status,created_at,updated_at,lines(name),positions(title)",
+      "hr_id,full_name,nickname,job_title,employment_status,resignation_date,last_working_date,exit_category,exit_reason,exit_status,created_at,updated_at,lines(name),positions(title)",
     )
     .in("employment_status", terminalEmployeeStatuses)
     .order("updated_at", { ascending: false });
@@ -1723,6 +1732,184 @@ export async function resignEmployeeAndOpenVacancy(
     employeeStatus: result.employee_status ?? employeeStatus,
     resignationId: result.resignation_id ?? "",
     usedFallback: result.used_fallback ?? false,
+    vacancyCode: result.vacancy_code ?? vacancyCode,
+  };
+}
+
+function isMissingDeclineOfferRpc(error: unknown) {
+  const message = lowerErrorMessage(error);
+  return (
+    message.includes("phx_decline_offer_and_open_vacancy") ||
+    message.includes("could not find the function") ||
+    (message.includes("function") && message.includes("does not exist")) ||
+    message.includes("pgrst202")
+  );
+}
+
+/**
+ * The "declined offer / did not join" shortcut (owner rule, 2026-09-11): an employee
+ * who backed out within DECLINE_OFFER_WINDOW_DAYS of hiring — got a better offer, never
+ * really started, or worked only a few days. Distinct from resignEmployeeAndOpenVacancy
+ * above: no resignation framing, and HR chooses per case whether the person is entered
+ * into that month's payroll for the days they did work.
+ *
+ * `input.includeInPayroll` resolves to the employment_status the RPC receives:
+ *   - true  -> "terminated". Already inside Ready Payroll's terminalPayrollStatuses
+ *     (app/api/payroll/template/route.ts), so it is picked up automatically for that
+ *     month at base-only pay (no allowances, no >25th waiver — the same leaver_non_resignation
+ *     rule any non-resignation departure gets, per the owner's 2026-08-14 ruling).
+ *   - false -> "declined_offer" (new value, not in that Set), so Ready Payroll never
+ *     includes the row at all. Zero payroll footprint.
+ * Neither branch writes an employee_resignations row (see the migration's header for
+ * why), so the automated payroll engine — which keys leavers off that table alone —
+ * never sees either case, and the two payroll engines can never disagree about this
+ * employee's pay.
+ */
+export async function declineOfferAndOpenVacancy(
+  hrId: string,
+  input: DeclineOfferInput,
+  actor: string,
+  access?: AccessContext,
+) {
+  const employeeHrId = String(hrId || input.employeeHrId || "").trim();
+  if (!employeeHrId) {
+    throw new Error("Employee HR ID is required.");
+  }
+
+  const directory = await getEmployeeDirectory();
+  const employee = directory.employees.find((item) => hrIdsMatch(item.hrId, employeeHrId));
+  if (!employee) {
+    throw new Error("Employee was not found in the directory.");
+  }
+
+  const today = todayDate();
+  if (!isDeclineOfferEligible({ employmentStatus: employee.employmentStatus, hireDate: employee.hireDate }, today)) {
+    throw new Error(
+      `This employee is not eligible for the declined-offer shortcut (hired more than ${DECLINE_OFFER_WINDOW_DAYS} days ago, or already exited). Use the standard resignation workflow instead.`,
+    );
+  }
+
+  const supabase = getSupabaseAdmin();
+  const submittedDate = normalizeDate(input.submittedDate) || today;
+  const lastWorkingDate = normalizeDate(input.lastWorkingDate) || today;
+  if (lastWorkingDate < (dateOnly(employee.hireDate) ?? lastWorkingDate)) {
+    throw new Error("Last working date cannot be before the hire date.");
+  }
+  if (lastWorkingDate > today) {
+    throw new Error("Last working date cannot be in the future.");
+  }
+
+  const employeeStatus = input.includeInPayroll ? "terminated" : "declined_offer";
+  const directoryForActor = await getEmployeeDirectory();
+  const submittedByHrId = resolveSubmittedByHrId(actor, directoryForActor);
+  const vacancyCode = vacancyCodeFromEmployee(employeeHrId, lastWorkingDate);
+  const note = cleanText(input.note) ?? "Declined offer after hire";
+
+  await assertResignationWorkflowTransition({
+    access,
+    action: "submit",
+    expectedNextStatus: "resignation_submitted",
+    status: "new",
+  });
+
+  const scopedAccess = access ?? systemAccessContext;
+  if (!canSeeEmployee(scopedAccess, employee)) {
+    throw new Error(`Forbidden: ${scopedAccess.role} cannot access employee ${employee.hrId}.`);
+  }
+
+  const rpcResult = await supabase.rpc("phx_decline_offer_and_open_vacancy", {
+    p_actor: actor,
+    p_employee_hr_id: employeeHrId,
+    p_employee_status: employeeStatus,
+    p_last_working_date: lastWorkingDate,
+    p_note: note,
+    p_submitted_by_hr_id: submittedByHrId,
+    p_submitted_date: submittedDate,
+    p_vacancy_code: vacancyCode,
+  });
+
+  if (rpcResult.error) {
+    if (isMissingSchemaMessage(rpcResult.error)) {
+      throw schemaReadinessError("calling phx_decline_offer_and_open_vacancy", rpcResult.error);
+    }
+    if (isMissingDeclineOfferRpc(rpcResult.error)) {
+      throw schemaReadinessError(
+        "calling phx_decline_offer_and_open_vacancy — the migration adding this function has not run yet",
+        rpcResult.error,
+      );
+    }
+    throw new Error(rpcResult.error.message);
+  }
+
+  const result = (rpcResult.data ?? {}) as {
+    employee_hr_id?: string;
+    employee_status?: string;
+    vacancy_code?: string;
+  };
+
+  // Telegram deactivation is an external API call and cannot run inside the RPC's SQL
+  // transaction — same reasoning as resignEmployeeAndOpenVacancy above. The "declined_offer"
+  // status has no notice-period grace (it is not in DEPARTED_EMPLOYMENT_STATUSES), so
+  // isEmploymentAccessRevoked returns true unconditionally for it; "terminated" goes
+  // through the same last-working-date grace check a real termination gets.
+  if (
+    isEmploymentAccessRevoked({
+      employmentStatus: result.employee_status ?? employeeStatus,
+      lastWorkingDate,
+      todayCairo: today,
+    })
+  ) {
+    await disableTelegramForIdentity({
+      actorLoginId: "system",
+      hrId: employeeHrId,
+      reason: "Employee declined the offer / did not join after hire.",
+    });
+  }
+  await openMailboxRevocationTaskBestEffort(employeeHrId);
+
+  await writeRequiredAuditLog({
+    actorLoginId: actor,
+    entityId: employeeHrId,
+    entityType: "employee_decline_offer",
+    newValues: {
+      employeeStatus: result.employee_status ?? employeeStatus,
+      exitCategory: "declined_offer",
+      includeInPayroll: input.includeInPayroll,
+      organogramVisible: false,
+      payrollEligible: false,
+      vacancyCode: result.vacancy_code ?? vacancyCode,
+    },
+    oldValues: {
+      employeeStatus: employee.employmentStatus,
+      organogramVisible: employee.organogramVisible,
+      payrollEligible: employee.payrollEligible,
+    },
+    summary: "Employee declined the offer / did not join shortly after hiring; vacancy was opened.",
+  });
+
+  await notifyResignationWorkflow(
+    {
+      effectiveDate: lastWorkingDate,
+      employeeHrId: employee.hrId,
+      employeeName: employee.displayName,
+      status: "declined_offer",
+    },
+    "Declined Offer Recorded",
+    "warning",
+  );
+
+  invalidateEmployeeDirectoryCache();
+  invalidateExecutiveDashboardCache("employee declined offer and vacancy opened", [
+    "resignations",
+    "employees",
+    "vacancies",
+    "payroll",
+  ]);
+
+  return {
+    employeeHrId: result.employee_hr_id ?? employeeHrId,
+    employeeStatus: result.employee_status ?? employeeStatus,
+    includeInPayroll: input.includeInPayroll,
     vacancyCode: result.vacancy_code ?? vacancyCode,
   };
 }
