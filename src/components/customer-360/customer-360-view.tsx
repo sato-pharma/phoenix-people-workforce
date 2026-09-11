@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Ban, Building2, Eye, Info, Landmark, MapPin, Receipt, ShoppingCart, Sparkles, User } from "lucide-react";
 
 import { validationStatusLabel, venueTypeLabel } from "@/lib/customer-360/labels";

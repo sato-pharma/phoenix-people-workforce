@@ -32,7 +32,6 @@ import {
   describeSharing,
   NEIGHBOUR_M,
   type ConfidenceBand,
-  type LocationConfidence,
 } from "@/lib/crm/location-confidence";
 import type { PhoenixInsight } from "@/lib/crm/phoenix-insights";
 import type { ContactSeenAt, RepsListContact, RepsListGroup } from "@/lib/crm/reps-list";
@@ -1019,7 +1018,6 @@ export function RepsListContacts({
   activityMonthLabel,
   groups,
   repName,
-  syncedAt,
 }: {
   /** False when the month's plan and visits could not be read. The chip, the filter and the export
    * columns all disappear together — a half-present column is worse than an absent one. */
@@ -1029,7 +1027,6 @@ export function RepsListContacts({
   activityMonthLabel: string;
   groups: RepsListGroup[];
   repName: string;
-  syncedAt: string | null;
 }) {
   // Five filters, all client-side: brick, list, grade, specialty and free text. The owner asked for
   // them on 2026-09-01 — "filter by grade, or by specialty, or by AM or PM or pharmacist, or by
