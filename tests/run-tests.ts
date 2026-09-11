@@ -228,6 +228,7 @@ import { runCvPhoneRedactionTests } from "./cv-phone-redaction.test.ts";
 import { runCvFeedbackLockTests } from "./cv-feedback-lock.test.ts";
 import { runCandidatePoolFiledSearchTests } from "./candidate-pool-filed-search.test.ts";
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
+import { runCandidateFolderCanonicalAreaTests } from "./candidate-folder-canonical-area.test.ts";
 import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
 import {
   runDriveCabinetFolderTests,
@@ -2098,6 +2099,10 @@ await runTest(
 await runTest(
   "recruitment declared filing (only a TAPPED answer files a CV — 64 of production's 82 job titles are extractor output)",
   runCandidateFolderSuggestionTests,
+);
+await runTest(
+  "medical rep folder area is canonical (7 production folders — kafrelsheikh, Qena north, a curly-quoted \"Haram\" — matched no real area; now refused rather than filed)",
+  runCandidateFolderCanonicalAreaTests,
 );
 await runTest(
   "recruitment Drive mirror (region then area, and Delta (3) files where recruitment says, not where sales does)",

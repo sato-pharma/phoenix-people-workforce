@@ -32,6 +32,7 @@ import {
   candidateFolderRefusal,
   cleanFolderKey,
   isFiledCandidate,
+  resolveCanonicalMedicalRepArea,
   type CandidateFolderKind,
 } from "@/lib/recruitment/candidate-folder";
 import {
@@ -224,9 +225,16 @@ export function readDeclaredRegionFreeText(typed: string): DeclaredRegionFreeTex
  * The order of the gates is deliberate: already-filed, then never-answered, then rejected, then the
  * per-shelf requirements. Each returns the most specific true sentence available, because a screen
  * listing "12 cannot be filed" with no reasons is a screen that gets ignored.
+ *
+ * `canonicalMedicalRepAreas` is the live `au.canonical_areas` list (via
+ * `listCanonicalMedicalRepAreaNames`), required rather than defaulted so a caller cannot forget it
+ * and silently let a free-typed area back in — see `resolveCanonicalMedicalRepArea` for why a
+ * candidate's own typed area must match one of these exactly or be refused. It has no bearing on
+ * the district-manager or "other" shelves, which are unaffected.
  */
 export function suggestFolderFromDeclaredAnswers(
   candidate: DeclaringCandidate | null | undefined,
+  canonicalMedicalRepAreas: readonly string[],
 ): CandidateFolderSuggestionResult {
   if (!candidate) return { refusal: "Candidate not found.", suggestion: null };
 
@@ -261,7 +269,18 @@ export function suggestFolderFromDeclaredAnswers(
         suggestion: null,
       };
     }
-    return { refusal: null, suggestion: buildSuggestion("medical_rep", area) };
+    // The area is FREE TEXT — the applicant either tapped a live area or typed one because theirs
+    // was "not listed". A typed answer must match one of the current areas exactly (case and
+    // whitespace aside) or it is refused rather than opening a stray folder. See
+    // resolveCanonicalMedicalRepArea for why this never guesses between two real areas.
+    const resolved = resolveCanonicalMedicalRepArea(area, canonicalMedicalRepAreas);
+    if (resolved.area === null) {
+      return {
+        refusal: `Applied as a medical rep, but ${resolved.refusal}`,
+        suggestion: null,
+      };
+    }
+    return { refusal: null, suggestion: buildSuggestion("medical_rep", resolved.area) };
   }
 
   if (family === "district_manager") {
@@ -350,6 +369,10 @@ export type SkippedFiling = {
  * a quiet way to lose a good CV, so a screen that shows only the confident half invites the owner to
  * believe the rest were handled. `skipped` is what stops that.
  *
+ * `canonicalMedicalRepAreas` is threaded straight through to `suggestFolderFromDeclaredAnswers` —
+ * see there for why a medical rep's typed area is refused rather than guessed when it does not
+ * exactly match a live area.
+ *
  * REJECTION IS COUNTED, NOT NARRATED. Measured against production 2026-09-11: 40 of the 60 rows this
  * screen called "answered but cannot be placed" were REJECTED — a settled decision, not an open one —
  * and burying 25 genuinely actionable rows under them is worse than the silence `skipped` exists to
@@ -359,7 +382,10 @@ export type SkippedFiling = {
  * `rejectedCount` keeps the transparency this module insists on everywhere else: the number is still
  * on screen, it is just not 40 rows of the same unchangeable sentence.
  */
-export function collectSuggestedFilings(candidates: readonly Candidate[]): {
+export function collectSuggestedFilings(
+  candidates: readonly Candidate[],
+  canonicalMedicalRepAreas: readonly string[],
+): {
   filings: SuggestedFiling[];
   skipped: SkippedFiling[];
   rejectedCount: number;
@@ -417,7 +443,7 @@ export function collectSuggestedFilings(candidates: readonly Candidate[]): {
       continue;
     }
 
-    const result = suggestFolderFromDeclaredAnswers(candidate);
+    const result = suggestFolderFromDeclaredAnswers(candidate, canonicalMedicalRepAreas);
     if (result.suggestion) {
       filings.push({
         candidateId: candidate.id,

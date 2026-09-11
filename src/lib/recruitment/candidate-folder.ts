@@ -186,6 +186,67 @@ export function candidateFolderKey(kind: CandidateFolderKind, key: string | null
 }
 
 /**
+ * Curly ("smart") quotes folded to their straight ASCII form.
+ *
+ * A copy-pasted WhatsApp answer can carry them — one production folder is literally the two
+ * characters `“` and `”` wrapped around "Haram", filed as its own folder distinct from
+ * both "Haram" and the real area "Haram - Faisal". `cleanFolderKey` does not touch this; nothing
+ * else in this module needs to.
+ */
+function foldSmartQuotes(value: string): string {
+  return value.replace(/[‘’‛]/g, "'").replace(/[“”‟]/g, '"');
+}
+
+/**
+ * A free-typed area name reduced to a key comparable against the canonical list: cleaned, smart
+ * quotes folded, case folded. Exported so the propose-time suggestion and the file-time write
+ * compare a typed answer against `au.canonical_areas` the SAME way — two normalisations that
+ * drift apart is how a real area would start being refused by one path and not the other.
+ */
+export function normalizedAreaMatchKey(value: string | null | undefined): string {
+  const cleaned = cleanFolderKey(value);
+  return cleaned ? foldSmartQuotes(cleaned).toLowerCase() : "";
+}
+
+/**
+ * The canonical area name a free-typed answer names, or a refusal — never a guess.
+ *
+ * WHY THIS EXISTS. Measured against production 2026-09-11: seven CVs had been filed onto the
+ * Medical Representative shelf under a folder key identical to the applicant's free-typed
+ * `preferred_area_name` — "kafrelsheikh", "Qena north", "Minia Government", a curly-quoted
+ * "Haram" — and NONE of the seven matched any of the ~50 live areas. Each one silently opened its
+ * own one-CV folder beside the real area folders, so a recruiter screening the real "Kafr
+ * El-Sheikh 1" folder never saw the CV sitting one letter away in "kafrelsheikh".
+ *
+ * EXACT MATCH ONLY, modulo case/whitespace/smart-quotes. This deliberately does NOT fuzzy-match
+ * or fall back to a region-level guess: "Kafr El-Sheikh 1" and "Kafr El-Sheikh 2" are different
+ * territories with different vacancies, and a typed "kafrelsheikh" does not say which one. The
+ * owner's standing rule across this app is that territory is never inferred from free text — an
+ * address does not set an area, and neither does a typed answer that merely resembles one. An
+ * unrecognised or ambiguous typed area is refused, with a reason a screen can show, rather than
+ * silently opening a new folder or being guessed onto an existing one.
+ *
+ * `canonicalAreaNames` is handed in rather than read here, so this stays PURE like the rest of
+ * this module — the live list comes from `au.canonical_areas` via
+ * `listCandidateFolderAreaOptions`/`listCanonicalMedicalRepAreaNames` in candidate-folder-options.ts,
+ * which both the propose-time suggestion and the file-time write already have to reach separately.
+ */
+export function resolveCanonicalMedicalRepArea(
+  raw: string | null | undefined,
+  canonicalAreaNames: readonly string[],
+): { area: string; refusal: null } | { area: null; refusal: string } {
+  const cleaned = cleanFolderKey(raw);
+  if (!cleaned) return { area: null, refusal: "No area was given." };
+  const key = normalizedAreaMatchKey(cleaned);
+  const match = canonicalAreaNames.find((name) => normalizedAreaMatchKey(name) === key);
+  if (match) return { area: match, refusal: null };
+  return {
+    area: null,
+    refusal: `"${cleaned}" is not one of the current areas — file this CV manually once the area is confirmed.`,
+  };
+}
+
+/**
  * The folder as a person reads it.
  *
  * The region shelf is the only one that translates: it stores "D3" and shows "Delta (3)", because
