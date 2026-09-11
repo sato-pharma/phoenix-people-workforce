@@ -105,10 +105,14 @@ file holding the full account, under
   for `TOKEN=`/`KEY=`/`SECRET=`/`PASSWORD=` before copying, merging, sharing or committing it, merge
   `allow`/`deny`/`ask` bucket by bucket (a flattened union promotes a `deny` into `allow`), and prefer
   a wildcard rule over an inline-secret one. `permission-allowlist-rules-can-embed-a-live-secret`
-- **`mcp__supabase-staging__*` is broken — empty `list_projects`, permission error on `get_project`.**
-  That is the SERVER's own auth, not the staging database, which was healthy. Route staging work
-  through `mcp__supabase-production__*` passing the staging `project_id` (§8: the `project_id`
-  argument is the only thing separating the two). `supabase-staging-named-server-broken-2026-08-10`
+- **`mcp__supabase-staging__*` was broken until 2026-09-12 — its token belonged to a DIFFERENT
+  Supabase account, one holding no projects**, so `list_projects` came back empty and every call
+  answered `-32600`; the staging database was healthy throughout. Fixed by running the server on
+  `SUPABASE_PROD_TOKEN` pinned with `?project_ref=cifwmndunmlxjhyjugxa`, measured live: 20 tools
+  instead of 29, no `list_projects`/`create_project`, `execute_sql` takes no `project_id`, and passing
+  one is refused (`unrecognized_keys`) — so this server has no path to production. A session started
+  before its checkout pulled the change still runs the old server: route staging work there through
+  `mcp__supabase-production__*` with the staging `project_id`. `supabase-staging-named-server-broken-2026-08-10`
 - **The Supabase MCP returns ONLY the last result set of a multi-statement `execute_sql` — every
   earlier one vanishes with no error.** Measured on production 2026-08-29: three `select`s in one
   call, separated by semicolons, returned exactly one row, the third. Nothing anywhere reports that
