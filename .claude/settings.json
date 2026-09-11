@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
@@ -82,13 +82,6 @@
       "Bash(gh pr list *)",
       "Bash(gh pr view *)",
       "Bash(gh pr checks *)",
-      "Bash(gcloud run services describe *)",
-      "Bash(gcloud run revisions list *)",
-      "Bash(gcloud run revisions describe *)",
-      "Bash(gcloud logging read *)",
-      "Bash(gcloud scheduler jobs describe *)",
-      "Bash(gcloud scheduler jobs list *)",
-      "Bash(gcloud compute ssl-certificates describe *)",
       "Bash(tasklist *)",
       "Bash(wait)",
       "mcp__Claude_Browser__navigate",
