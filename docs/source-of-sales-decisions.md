@@ -1,8 +1,9 @@
 # Source of Sales — decisions of record
 
-Rulings the owner made during the 2026-07-31 → 2026-08-01 remediation. They are business decisions,
-not implementation details: the code follows them, so changing the code without changing this file
-means one of the two is now lying. Pinned by `tests/sos-latent-guards.test.ts`.
+Rulings the owner made during the 2026-07-31 → 2026-08-01 remediation, plus the later ones recorded
+here since. They are business decisions, not implementation details: the code follows them, so
+changing the code without changing this file means one of the two is now lying. Sections 1 to 4 are
+pinned by `tests/sos-latent-guards.test.ts`; section 5 settles data, and has no code to pin.
 
 ## 1. Confidential products (2026-07-31)
 
@@ -64,6 +65,54 @@ manager's region (0 rows), and Weekly Sales already scopes by seat areas. The re
 **16 of 17 District Managers have a blank `employees.region_code`** (55 of 131 active employees).
 Because the seat bound is populated and correct, the fix is to use it rather than to backfill 16
 region labels — so this phase needs re-scoping, not execution.
+
+## 5. The 14 uncovered bricks (2026-09-11)
+
+**Every one of the fourteen bricks the 674→668 reallocation never covered is now settled. The
+mappings they produced are the owner's decisions, not defects, and must not be re-opened.**
+
+When the reallocation went live on 2026-07-24 it rebuilt the brick and block master and left the
+49,712 customer rows alone. Fourteen live bricks appeared nowhere in the plan. Twelve were classed
+"direct reallocation" purely because the old brick's name matched a brick in the new master, and the
+remap of 2026-07-28 applied all of them. **895 pharmacies changed AREA on a name match, with no
+address evidence recorded for any of them.** The owner asked at the time to decide them one at a
+time, and only two were ever confirmed.
+
+| Decided | Brick | Ruling |
+|---|---|---|
+| 2026-07-24 | `B110-63` → `B149-16` سابا باشا | Alex East, target ID corrected from a wrong relay |
+| 2026-07-24 | `B106-79` → `B5-64` شارع صلاح الدين | **Heliopolis, not Alexandria** — owner overrode the address-text reading, twice |
+| 2026-09-11 | Ten bricks | Keep the pharmacies in the area the July match put them in |
+| 2026-09-11 | `B28-47` → `B17-28` باب الشعرية | **Put it back** — Bab El Sharia belongs to Down town, not Cairo East 1 |
+
+The eleven open ones were put to him as one dropdown sheet, one row per brick rather than one per
+pharmacy, so eleven answers settled 890 shops.
+
+**What was applied on 2026-09-11.** Brick `B28-47` was created under block B28, which already sits
+in Down town, because a brick's area is inherited from its block and cannot be set; `B17-28` stays
+active in Cairo East 1 with its own 20 customers, since retiring a brick that carries closed-month
+history lights up a data-quality warning on months that cannot be restated. Seventeen pharmacies
+moved onto the new brick and the five Bab El Sharia aliases followed it, without which the next
+import would have re-resolved the town by name and quietly rebuilt the problem. Across the ten kept
+bricks, 57 pharmacies that had drifted elsewhere since July were aligned with the brick he kept,
+each sent to the brick its own siblings use rather than to the brick the July file named — four of
+those target IDs no longer exist, because the master was replaced again on 2026-07-27.
+
+Fifty-one of those writes were parked by the mapping guard, 45 because the row carried an earlier
+decision of his and two because they crossed a region, and each was released against his answer
+through `sos_map_guard_decide`. Pre-images: `bab_elsheria_backup_20260911`,
+`keep_bricks_backup_20260911`, `kes_alias_backup_20260911`.
+
+**No closed month moved, by design.** Each import row carries the area it was stamped with at
+import, so a crosswalk repair reaches the next import and never restates history. July and August
+are locked on all three lines and both matched a live recompute at zero cells before and after.
+
+> A fresh audit re-derives these 895 as customers sitting in the wrong area every single time — this
+> one did exactly that before the history was known. Read this section before proposing to fix them.
+
+Two aliases were repaired in the same pass, unrelated to the sheet: `بيلا` and `حامول` still pointed
+at bricks retired in the 2026-08-06 Kafr El-Sheikh realignment, so those two town names resolved to
+nothing on import. Their 225 pharmacies were already in Kafr El-Sheikh 2 and did not move.
 
 ## Deliberately not fixed
 
