@@ -10,6 +10,7 @@ import {
   DEGREE_KEYWORDS,
   EGYPT_UNIVERSITIES,
   FACULTY_KEYWORDS,
+  FACULTY_KEYWORDS_WEAK,
   GRADE_KEYWORDS,
   LANGUAGE_KEYWORDS,
   LANGUAGE_PROFICIENCY,
@@ -44,11 +45,23 @@ export function findUniversity(sections: readonly CvSection[]): ExtractedField<s
   return line && line.length <= 90 ? low(line.trim()) : null;
 }
 
+/**
+ * The faculty named in the education section.
+ *
+ * "Faculty of Pharmacy" is unambiguous and is trusted outright. A bare "Pharmacy" is not — it is an
+ * ordinary word that can turn up in an education section for reasons that have nothing to do with
+ * the candidate's own faculty, so it is only offered at LOW confidence: enough to show a reviewer,
+ * never enough to overwrite a candidate's real faculty gone unwritten. See FACULTY_KEYWORDS_WEAK in
+ * dictionaries.ts for the incident this split fixes.
+ */
 export function findFaculty(sections: readonly CvSection[]): ExtractedField<string> | null {
   const text = textOfKind(sections, "education");
   if (!text) return null;
   for (const name of [...FACULTY_KEYWORDS].sort((a, b) => b.length - a.length)) {
     if (containsPhrase(text, name)) return high(titleCase(name));
+  }
+  for (const name of [...FACULTY_KEYWORDS_WEAK].sort((a, b) => b.length - a.length)) {
+    if (containsPhrase(text, name)) return low(titleCase(name));
   }
   return null;
 }
