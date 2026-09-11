@@ -18,6 +18,34 @@ export const dynamic = "force-dynamic";
 const MAX_REPLY_LENGTH = 4096;
 
 /**
+ * Can this candidate be answered, and from which line?
+ *
+ * The box is not drawn until this says yes, because the alternative is a recruiter typing a
+ * paragraph into a field that was never going to send it. Gated identically to the POST rather than
+ * on candidates:read — only someone who may send needs to know whether sending is possible, and a
+ * reply window is a fact about a conversation with a member of the public.
+ */
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    await requireRecruitmentAccess(request, "recruitment", "update");
+    const { id } = await params;
+    const target = await resolveCandidateReplyTarget(id);
+    if (!target) {
+      return NextResponse.json({ canReply: false, reason: "no_conversation" });
+    }
+    return NextResponse.json({
+      canReply: target.windowOpen,
+      lastInboundAt: target.lastInboundAt,
+      lineNumber: target.lineNumber,
+      minutesLeft: target.minutesLeft,
+      reason: target.windowOpen ? null : "window_closed",
+    });
+  } catch (error) {
+    return recruitmentApiError(error, "Failed to check the WhatsApp reply window.");
+  }
+}
+
+/**
  * Answer an applicant on WhatsApp, in a recruiter's own words, from inside Phoenix.
  *
  * Until now the only "send" in this codebase PREPARED a wa.me link for a human to press in their

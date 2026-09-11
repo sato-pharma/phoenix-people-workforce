@@ -871,7 +871,7 @@ export const accessRegistry = [
   // of the public in the company's name, which is the same authority as putting their CV in front
   // of a manager (recruitment:update). Left to the catch-all, a widening of read access would
   // silently hand out the ability to message applicants.
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/candidates/*/whatsapp-reply", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/candidates/*/whatsapp-reply", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/candidates/**", permission: { resource: "candidates", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/interviews/**", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: allMethods, pattern: "/api/recruitment/files/**", permission: { resource: "candidates", action: "read" }, csrfRequired: true }),
