@@ -580,3 +580,48 @@ first and none fires on `team_id`.
 columns: 0 of 107 active employees have either populated, while 105 carry a `team_id`. They are
 export-only twins that the seat path deliberately leaves null, so an emptiness sweep will flag them
 as a data-quality gap. They are not one. Read `team_id` and join.
+
+## New hook — a held re-mapping is dropped with no error (2026-09-11)
+
+`sos_map_guard_customer` (PR #3647) is a `BEFORE INSERT OR UPDATE OR DELETE` trigger on
+`public.source_of_sales_customer_map`. It holds a move when either of two things is true: the row's
+existing `source` matches `^(owner-|final-new-)` or equals `sheet-verified`, or
+`sos_map_region_of_area` resolves the old and new areas to different regions. A held row is written
+to `sos_map_change_log` with `outcome = 'held'` and queued in `sos_map_change_holds`, and the
+trigger **returns `null`**.
+
+**Returning `null` is the whole trap.** The statement does not fail, nothing is raised, and no
+notice is emitted. The only visible effect is that `UPDATE ... RETURNING` yields fewer rows than the
+target list, which a session reads as a count and reports as success.
+
+Measured on production this morning. A 111-row batch built from the distributors' own territory
+columns ran as one guarded `UPDATE` and reported `asked 111, changed 99`. Every one of the 12
+missing rows passed every guard written into the statement itself — still active, still not carrying
+a ruling of the owner's, target brick still active, area still different — so the statement's own
+predicates could not explain the gap. All 12 crossed a region boundary. `sos_map_change_holds` held
+them as ids 189 to 200, and `sos_map_change_log` for the same window read 99 applied and 12 held.
+
+**Read the log, never the row count.** `sos_map_change_log.outcome` is the authority on what a write
+actually did, and `sos_map_change_holds` names each held row with its reasons in plain words.
+
+### Releasing a hold
+
+`sos_map_guard_decide(p_hold_id bigint, p_decision text, p_actor text)` is the only sanctioned path.
+`p_decision` must be `approved` or `rejected`; anything else raises. On approval it inserts a permit
+into `sos_map_guard_permits` scoped to `txid_current()`, the table and the entity key, applies the
+change from the hold's `after_json`, marks the hold, then deletes the permit. `sos_map_guard_permit_for`
+is what the trigger consults, and it matches only within the same transaction.
+
+The design intent is written into the function itself: the permit **names the hold it came from**,
+so a writer cannot assert an approval that never happened. A session that inserts its own permit row
+to push its own change through defeats the guard exactly as the comment warns. Do not do it; put the
+hold to the owner and release it on his word, passing his words as `p_actor`.
+
+⚠ **`sos_map_guard_decide` writes `brick_id`, `area_code`, `region_code`, `source` and `active` — and
+nothing else.** `mapped_by` and `confidence` keep their pre-hold values, so a batch released through
+it ends up stamped differently from the rows that went through directly. Bring them into line with a
+follow-up update; because it touches neither brick nor area, the trigger's `v_moves` check is false
+and it passes without a new hold.
+
+The batch that produced this entry finished at 111 of 111, with a pre-image of every changed row in
+`sos_backup_20260911.customer_map_pre_territory`.
