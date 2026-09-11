@@ -325,6 +325,18 @@ at the owner's instruction so that a would-be block becomes a prompt instead. Se
 rules still wave routine calls through. **So nothing except the agent's own compliance now stands
 between a request and an edit to a protected file.**
 
+**Correction, 2026-09-12: that setting does not govern a desktop-app session at all.** The Claude
+desktop app launches every engine with `--permission-mode auto` on its own command line (read from
+the process list that day), and a command-line mode beats `defaultMode`. So inside the desktop app
+the auto-mode classifier decides — a would-be block is blocked or waved through, and never becomes a
+prompt. `defaultMode: default` still applies to a `claude` started from a terminal without that flag.
+The conclusion above is unchanged, only stronger: a prompt was never what stood between a request and
+a protected edit.
+
+**Same day, same audit: §8 had listed `mcp__45bb6356-…` as covered by the Supabase write grant** while
+its own bullet four lines below — and both settings files — deny it. The deny is the owner's decision
+(2026-08-23) and stands; the stale mention was removed from the grant.
+
 **Never read the absence of a prompt as approval** — that was already the rule while the entries
 existed, and it is the entire story now that they are gone. Ask the owner in plain words and wait for
 a plain answer.

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// PreToolUse(Bash) guard — deterministic, zero-cost.
+// PreToolUse(Bash|PowerShell) guard — deterministic, zero-cost.
 // Blocks the commands the memory documents as silent traps in THIS repo:
 //   C1  recursive grep  — ~346k path entries make `grep -r` hang 10-40s+. Use rg / git grep.
 //
@@ -34,7 +34,9 @@ function deny(reason) {
 
 try {
   const input = JSON.parse(readFileSync(0, 'utf8') || '{}');
-  if (input.tool_name !== 'Bash') process.exit(0);
+  // PowerShell too: a `Bash` matcher never fires for the PowerShell tool, so until 2026-09-12 the
+  // C5 `rmdir`/`remove-item` branch below — PowerShell-shaped from the start — could never run.
+  if (input.tool_name !== 'Bash' && input.tool_name !== 'PowerShell') process.exit(0);
   const cmd = String(input?.tool_input?.command ?? '');
   if (!cmd) process.exit(0);
 
@@ -58,7 +60,9 @@ try {
   //
   // The regex is only a cheap pre-filter so the common command pays nothing; the guard itself
   // decides whether a real registered worktree is actually targeted.
-  const removalShaped = /worktree\s+remove|\brmdir\b|\bremove-item\b|(?:^|[\s|&;(])rm\s+-[a-zA-Z]*r/i;
+  // `rd`/`ri`/`del`/`erase` are PowerShell's Remove-Item aliases (and cmd's own verbs).
+  const removalShaped =
+    /worktree\s+remove|\brmdir\b|\bremove-item\b|(?:^|[\s|&;(])(?:rd|ri|del|erase)\s|(?:^|[\s|&;(])rm\s+-[a-zA-Z]*r/i;
   if (removalShaped.test(cmd)) {
     try {
       const guard = fileURLToPath(new URL('./worktree-exit-guard.mjs', import.meta.url));

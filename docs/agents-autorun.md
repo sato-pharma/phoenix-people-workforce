@@ -31,6 +31,12 @@ the trigger is a word the owner types, which is unambiguously observable.
 Two things that survive a bypass anyway, and are worth knowing before anyone tries it: the two
 UUID-connector `deny` entries (§8), and `.claude/hooks/bash-guard.mjs`, which denies `grep -r` as a
 `PreToolUse` hook. Hooks run independently of the permission mode; a hook denial is not a prompt.
+Since 2026-09-12 that hook covers the PowerShell tool as well as Bash — its matcher was `Bash` alone
+before, which never fires for PowerShell, so a PowerShell-tool command passed it untouched.
+
+(Also measured 2026-09-12: the permission mode is not even what the table above says for a desktop
+session. The desktop app launches every engine with `--permission-mode auto`, which overrides the
+`defaultMode` column — see [agents-incident-history.md](agents-incident-history.md).)
 
 ## What was put to him, and what he decided
 
