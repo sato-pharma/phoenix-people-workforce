@@ -470,6 +470,179 @@ above current free RAM fired the floor branch; disabling only the floor fired *"
 lowering `STOP_AT` to 2 fired the runaway branch. The floor branch also fired for real, unprompted,
 at 975 MB free while these tests were running.
 
+## The watchdog reaches BUSY node jobs, and a gate refuses to start one — 2026-09-09 and 2026-09-11
+
+**What went stale.** Until 2026-09-11 §5's physical-RAM hook ended its floor sentence with:
+
+> under **1,800 MB** you are already in it, and the watchdog reclaims NOTHING unless an IDLE dev
+> server exists.
+
+It was true when written — it is the 2026-09-04 reading above, *"no IDLE dev server to reclaim"* —
+and two changes to `~/.claude/scripts/mem-watchdog.ps1` plus one new hook have made it false since. A
+session that believed it would treat the floor as a place where nothing intervenes, when the watchdog
+now reaps busy dev servers and, under a lower floor, any node job. The hook now reads:
+
+> Under **2,600 MB** a dev server or cold typecheck crosses `mem-watchdog.ps1`'s floor and
+> `~/.claude/hooks/heavy-job-gate.mjs` refuses to START one; under **1,800 MB** the watchdog reaps
+> IDLE dev servers, then all but the most recently active, and under **500 MB** ANY node job, most
+> RAM first.
+
+The list is deliberately **not exclusive** — it never says "only" — so rules added later (rules 8
+and 9 below) extend it without making it false again.
+
+### 2026-09-09 — rule 5: concurrent dev servers, all of them BUSY
+
+**Two hard freezes, 17:34 and 20:36 Cairo.** Neither left a minidump; both left a GPU watchdog dump
+(`WATCHDOG-20260909-1734.dmp`, `-2038.dmp`, video timeouts 0x117 and 0x141). In the hour before the
+second, available RAM swung between 10 MB and 1.5 GB against the 1,800 MB floor, node held
+5.1–8.6 GB across four to seven processes, and the last line the watchdog wrote was 20:35:54 at
+**164 MB**. Every PRESSURE line that day ended "no idle dev server": the servers were all busy, each
+legitimately compiling and each under the 8 GB per-process ceiling, together larger than the box.
+Every earlier rule keyed on ONE process being wrong; nothing looked at the COUNT.
+
+**Rule 5 is §5's "one dev server at a time, ever", made mechanical under pressure and only there.**
+
+| Property | Value |
+| --- | --- |
+| When it runs | only from rule 4's "nothing idle to reclaim" branch — RAM under `$LowRamMB` (1,800) for 3 polls, rule 0 already trimmed |
+| What counts as a server | a `next dev` match of at least `$MultiNextMinGB` (1.0 GB); below that it is the cheap parent |
+| What it does | keeps the most recently active server, reclaims every other one in the same pass |
+| Then | leaves the survivor alone for `$MultiNextCooldownSec` (900 s), counted only from a kill that succeeded |
+| Proof | a 5-case decision self-test and a dry-run live test; as of 23:57 Cairo on 2026-09-11 the log holds **no `MULTI` line**, so it has never fired for real |
+
+Killing a BUSY server is safe here where the 2026-09-03 sawtooth was not: that sawtooth killed the
+ONLY server, relieving nothing. This fires only when there is more than one, under the floor.
+
+### 2026-09-11 — two bluescreens in 18 minutes, and rule 7
+
+Commit charge sat at **33–35%** the whole evening, so rules 1, 2 and 6 (per-process 8 GB, commit 92%
+or 7.5 GB, the kernel job cap) were never near firing. **These were bugchecks with minidumps — a
+different signature from §2.1's no-dump freeze**, and `nvlddmkm` is again the symptom: starved of
+physical RAM, the graphics driver cannot page its own allocations back in and times out. Cairo time,
+from `mem-watchdog.log`, `heavy-job-gate.log` and the System event log:
+
+| Time | Event |
+| --- | --- |
+| 22:05:04 | rule 4 KILL pid 25416, node 5.52 GB, at 1,030 MB available |
+| 22:13:48–22:19:50 | rule 0 trims; available reaches **168 MB** at 22:19:50 |
+| 22:21:04 | PRESSURE 921 MB — "node x3 5169MB, msedge x36 2928MB, claude x39 2876MB", no idle dev server |
+| 22:24:07 | PRESSURE 1,571 MB — the last watchdog line before crash 1 |
+| **crash 1** | bugcheck **0x9F** DRIVER_POWER_STATE_FAILURE, minidump `091126-19468-01.dmp` (Event 1001 at 22:33:15, Kernel-Power 41 at 22:32:59) |
+| 22:33:34 | watchdog START pid 6828 — every session came back and restarted its node jobs together |
+| 22:37:13 | PRESSURE 206 MB — "node x3 7725MB, claude x23 3655MB" |
+| 22:37:57 | trim from **43 MB** available |
+| 22:40:54 | PRESSURE 1,107 MB — the last watchdog line before crash 2 |
+| 22:47:45 | GPU engine timeout, LiveKernelEvent 0x141 |
+| **crash 2** | bugcheck **0x116** VIDEO_TDR_FAILURE, argument `0xffffffffc000009a` (STATUS_INSUFFICIENT_RESOURCES), minidump `091126-28640-01.dmp`; Event 1019 names `nvlddmkm.sys` (Event 1001 at 22:51:38, Kernel-Power 41 at 22:51:11) |
+| 22:53:28 | watchdog START pid 11616 |
+| 23:23:42 | rule 1 KILL pid 16932, `next` start-server.js at 8.00 GB |
+| 23:24:01–23:24:11 | the gate's first refusals (below) |
+| 23:27:04 | rule 7 live test on a dummy process: killed pid 23096 (37 MB), OK |
+| 23:27:07 | rule 7 live test, dry run on the real box: would kill pid 18852, 3,938 MB RAM, 4.11 GB commit |
+| 23:28:46 | watchdog START pid 4076, `critRamMB=500` — rule 7 live |
+
+**Read the crash moment from the watchdog's last line and the Event 1001 record, never from Event
+6008.** Its "previous shutdown" time is the last event-log write before the crash, which reads as a
+precise timestamp and is not one. The watchdog's own header rounds the two crashes to ~22:30 and
+~22:50.
+
+**Rule 7 — the critical floor.** Rules 4 and 5 can only ever reach a NEXT DEV SERVER, and both times
+the memory sat in node jobs neither recognises.
+
+| Constant | Value | Meaning |
+| --- | --- | --- |
+| `$CritRamMB` | 500 | available physical RAM floor |
+| `$CritRamConsecutive` | 3 | polls in a row under it — a spike is not an emergency |
+| `$CritKillMinGB` | 1.0 | smallest node job it will take |
+| `$CritCooldownSec` | 90 | wait for the freed pages to land before judging again |
+
+It takes ONE process per pass, `node.exe` only, the one holding the most PHYSICAL RAM because RAM is
+what is missing; sessions, browsers and editors stay out of reach. It is the last move, not the
+first: rules 0, 4 and 5 always act first. **Its stated cost:** the 09-11 daytime log also dipped to
+187–400 MB and the box survived, so it can reclaim a job during a dip that would have passed — one
+re-run, against a bluescreen costing everything open. **If it proves too eager, raise
+`$CritRamConsecutive` before lowering `$CritRamMB`** — both bluescreens were preceded by MINUTES
+under the floor. Proved by a 6-case self-test and the two live-test lines above.
+
+### 2026-09-11, the same night — rules 8 and 9, written but NOT yet running
+
+**Observed at 23:50:29 Cairo**, while this section was being written: another session added rules 8
+and 9 to `mem-watchdog.ps1`. **The running watchdog is pid 4076, START 23:28:46, which predates
+both** — its START line prints only `critRamMB=500`, and a new instance cannot take over while it
+holds the mutex (the keepalive's probes log `EXIT - another watchdog instance holds the mutex`). The
+script's header had not yet been updated to list them. So read the following as what the file says,
+not as what the machine is doing; a restarted watchdog's START line printing `batchMinGB` and
+`deprioMinGB` is the proof that they are live.
+
+- **Rule 8 — concurrent heavy BATCH jobs.** Same trigger as rule 4 (under 1,800 MB for 3 polls).
+  When two or more non-dev-server `node.exe` jobs each hold at least `$BatchMinGB` (1.0 GB), it keeps
+  the OLDEST and reclaims the YOUNGEST, one per pass — on a start-time tie the larger — then waits
+  `$BatchCooldownSec` (120 s), and stands down in any poll where an earlier rule already killed
+  something. The case it closes happened at **23:24–23:28**: two sessions ran `tsc --noEmit`
+  together (4.2 GB and 2.7 GB commit) at 543–613 MB available, both opened before the gate existed,
+  so nothing refused them and no rule recognised them. 6-case self-test.
+- **Rule 9 — deprioritize, non-destructive.** Every poll, healthy RAM included, a `node.exe` of at
+  least `$DeprioMinGB` (1.0 GB) is set once to BelowNormal CPU priority and LOW memory priority. The
+  reason is the second bluescreen: the graphics driver failed to recover for lack of resources, so
+  batch work should lose that contest before the compositor does. It kills nothing.
+- **Poll order in the file:** rule 4, then 5, then 8, then 9, then 7.
+
+The §5 hook stays true once they run: it lists what the watchdog reaps without claiming the list is
+complete, and rule 9 reaps nothing.
+
+### The heavy-job gate — prevention, where the watchdog is the cure
+
+`~/.claude/hooks/heavy-job-gate.mjs` is a user-level **PreToolUse** hook (matcher `Bash|PowerShell`,
+timeout 15 s). It refuses a Bash or PowerShell call that would START a dev server, typecheck, build,
+lint or test run the machine cannot hold. The admission rule lives in
+`~/.claude/hooks/heavy-jobs-lib.mjs`, shared with the queue so the two can never disagree, and it
+decides under a lock file:
+
+1. available physical RAM is at least `MIN_AVAIL_MB` (**2,600**);
+2. no other `node.exe` already holds `HEAVY_MB` (**1,200**) of private memory;
+3. no other heavy job was started in the last `STAGGER_SEC` (**90 s**) — a job does not reach its
+   real size at once.
+
+A refused command is pointed at `~/.claude/scripts/heavy-queue.mjs`, which waits for a safe moment and
+runs the command unchanged — up to `--max-wait-min` (default 20), then exits **75** having run
+nothing. The refusal text also says not to retry or re-spell the command, to stop your own idle dev
+server by port, and that for typecheck, lint or tests the PR's CI is usually the better answer (§7).
+
+- **It FAILS OPEN**, always: any error, timeout or unreadable reading allows the command, because a
+  gate that can wedge every shell call is worse than the crash. A non-heavy command returns before
+  anything is spawned — measured 306 ms median against 233 ms for bare node.
+- **It binds only sessions started after it was installed**, because hooks load at session start.
+  The 23:24 two-typecheck case above is exactly that gap.
+- **Its first refusals, 23:24 Cairo:** `pnpm run typecheck` at 1,986 MB and again at 2,215 MB with
+  one heavy job running, and `next dev` at 2,853 MB — above the RAM line, refused because four heavy
+  jobs were already running. No ALLOW or QUEUE line had been logged by 23:57.
+- **Proof:** a 31-case classifier self-test (`node heavy-job-gate.mjs --selftest`), and a live probe
+  — **any** Bash or PowerShell command containing the probe marker named in the hook's header is
+  refused, starting nothing. That includes a commit message or `gh --body` argument that merely
+  quotes the marker, so write such text to a file and pass it with `-F` / `--body-file`.
+- **The off switch (`PHX_HEAVY_GATE_OFF`) is the owner's**, not a session's.
+
+### Keep the thresholds in step
+
+Three tools read the same machine and must agree, or one fires where another stays silent:
+
+| Threshold | Where it lives |
+| --- | --- |
+| **2,600 MB** | `mem-watchdog.ps1` `$TrimWarnMB` · `session-census.mjs` `RAM_WARN_MB` · `heavy-jobs-lib.mjs` `MIN_AVAIL_MB` |
+| **1,800 MB** | `mem-watchdog.ps1` `$LowRamMB` · `session-census.mjs` `RAM_FLOOR_MB` |
+| **500 MB** | `mem-watchdog.ps1` `$CritRamMB` — no counterpart; nothing warns, it only reclaims |
+| **1.0 GB** | `mem-watchdog.ps1` `$MultiNextMinGB` · `$CritKillMinGB` · `$BatchMinGB` · `$DeprioMinGB` |
+
+### What the hook edit cost
+
+Words replaced, no bullet added. `AGENTS.md` **119,072 → 119,064 bytes (−8)**; with `CLAUDE.md` at
+6,332 the enforced total is **125,396 of 125,600**. The paragraph also dropped the census's
+"10–12 sessions" detail (the constants table above keeps it) to pay for naming the gate.
+`node scripts/memory-index-reachability.mjs` read identically before and after — **1,002 memory
+files, 961 linked from an index, 41 reachable only via `AGENTS.md`, 0 reachable from neither** — and
+the paragraph names no memory slug; `commit-limit-not-ram-is-the-freeze-ceiling-pagefile-now-16gb`
+is carried by [agents-memory-map.md](agents-memory-map.md) and the archive index.
+
 ## Section 5 was trimmed to its floor, and §2.1's `--fix` hook was wrong — 2026-09-01
 
 **What was done.** §5 went from **5,838 → 5,696 bytes, −142 B (2.4%)**. `AGENTS.md` as a whole went
