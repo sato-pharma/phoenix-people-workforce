@@ -65,11 +65,22 @@ export type ManagerRow = {
   regionName: string | null;
   areaId: number | null;
   areaName: string | null;
+  /** His team, and the area that team hangs off — the same drift, one table over. */
+  teamId: number | null;
+  teamName: string | null;
+  teamAreaId: number | null;
+  teamAreaName: string | null;
 };
 
 export type AreaRow = {
   areaId: number;
   areaName: string;
+};
+
+export type TeamRow = {
+  teamId: number;
+  teamName: string;
+  areaId: number | null;
 };
 
 export type ManagerAreaFinding =
@@ -87,6 +98,22 @@ export type ManagerAreaFinding =
     areaName: string | null;
     expectedAreaId: number;
     expectedAreaName: string;
+    detail: string;
+  }
+  | {
+    kind: "region_has_no_team_row";
+    regionName: string;
+    managers: string[];
+    detail: string;
+  }
+  | {
+    kind: "manager_team_is_not_region";
+    hrId: string;
+    fullName: string | null;
+    regionName: string;
+    teamName: string | null;
+    teamAreaName: string | null;
+    expectedTeamId: number;
     detail: string;
   };
 
@@ -122,13 +149,41 @@ export function indexRegionShapedAreas(areas: readonly AreaRow[]): Map<string, A
  * Returns findings rather than throwing: this runs inside the nightly re-stamp, and a geography
  * problem must never take down a job whose actual work is unrelated.
  */
+export function indexRegionTeams(
+  teams: readonly TeamRow[],
+  regionAreas: ReadonlyMap<string, AreaRow>,
+): Map<string, TeamRow> {
+  const index = new Map<string, TeamRow>();
+  for (const team of teams) {
+    const name = key(team.teamName);
+    if (!name) continue;
+    const regionArea = regionAreas.get(name);
+    // A region's team is the one NAMED for the region AND sitting on the region's own area. Both
+    // halves are load-bearing: several rep-area teams carry a region's name (`ue9_upper_egypt_1`
+    // hangs off Beni Suef), and matching on the name alone would accept one of those and call the
+    // drift clean.
+    if (!regionArea || team.areaId !== regionArea.areaId) continue;
+    const existing = index.get(name);
+    if (!existing || team.teamId < existing.teamId) index.set(name, team);
+  }
+  return index;
+}
+
 export function detectManagerAreaDrift(
   managers: readonly ManagerRow[],
   areas: readonly AreaRow[],
+  /**
+   * Omit to check areas only. Passing an empty array is NOT the same thing: it means "no teams
+   * exist", which is a finding. A caller that cannot read teams must omit rather than pass [], or
+   * it reports every manager as teamless.
+   */
+  teams?: readonly TeamRow[],
 ): ManagerAreaFinding[] {
   const regionAreas = indexRegionShapedAreas(areas);
+  const regionTeams = teams === undefined ? null : indexRegionTeams(teams, regionAreas);
   const findings: ManagerAreaFinding[] = [];
   const regionsMissingAnArea = new Map<string, { regionName: string; managers: string[] }>();
+  const regionsMissingATeam = new Map<string, { regionName: string; managers: string[] }>();
 
   for (const manager of managers) {
     if (!isRegionOwningTitle(manager.jobTitle)) continue;
@@ -142,23 +197,52 @@ export function detectManagerAreaDrift(
       const bucket = regionsMissingAnArea.get(regionKey) ?? { regionName, managers: [] };
       bucket.managers.push(manager.hrId);
       regionsMissingAnArea.set(regionKey, bucket);
+      // No area row means no region team either, and one finding per region is enough to act on.
       continue;
     }
 
-    if (manager.areaId === expected.areaId) continue;
+    if (manager.areaId !== expected.areaId) {
+      findings.push({
+        kind: "manager_area_is_not_region",
+        hrId: manager.hrId,
+        fullName: manager.fullName,
+        regionName,
+        areaName: manager.areaName,
+        expectedAreaId: expected.areaId,
+        expectedAreaName: expected.areaName,
+        detail:
+          `${manager.fullName ?? manager.hrId} runs ${regionName} but is recorded against `
+          + `${manager.areaName ?? "(no area)"}. A manager owns a region; that area belongs to a rep, `
+          + `and every screen that groups by area now shows him occupying it.`,
+      });
+    }
+
+    // The same drift, one table over. Checked independently of the area verdict: the two columns
+    // are written by different paths and one was found correct while the other was not.
+    if (regionTeams === null) continue;
+    const expectedTeam = regionTeams.get(regionKey);
+    if (!expectedTeam) {
+      const bucket = regionsMissingATeam.get(regionKey) ?? { regionName, managers: [] };
+      bucket.managers.push(manager.hrId);
+      regionsMissingATeam.set(regionKey, bucket);
+      continue;
+    }
+
+    if (manager.teamId === expectedTeam.teamId) continue;
 
     findings.push({
-      kind: "manager_area_is_not_region",
+      kind: "manager_team_is_not_region",
       hrId: manager.hrId,
       fullName: manager.fullName,
       regionName,
-      areaName: manager.areaName,
-      expectedAreaId: expected.areaId,
-      expectedAreaName: expected.areaName,
+      teamName: manager.teamName,
+      teamAreaName: manager.teamAreaName,
+      expectedTeamId: expectedTeam.teamId,
       detail:
-        `${manager.fullName ?? manager.hrId} runs ${regionName} but is recorded against `
-        + `${manager.areaName ?? "(no area)"}. A manager owns a region; that area belongs to a rep, `
-        + `and every screen that groups by area now shows him occupying it.`,
+        `${manager.fullName ?? manager.hrId} runs ${regionName} but sits on team `
+        + `${manager.teamName ?? "(no team)"}, which hangs off ${manager.teamAreaName ?? "no area"}. `
+        + `A manager's team belongs on his region's own area. The team NAME can read correctly while `
+        + `this is wrong, so the screen shows nothing amiss.`,
     });
   }
 
@@ -174,16 +258,32 @@ export function detectManagerAreaDrift(
     });
   }
 
+  for (const bucket of regionsMissingATeam.values()) {
+    findings.push({
+      kind: "region_has_no_team_row",
+      regionName: bucket.regionName,
+      managers: bucket.managers.slice().sort(),
+      detail:
+        `${bucket.regionName} has no team on its own area, so a manager there will be put on a `
+        + `rep-area team instead. Create a team named "${bucket.regionName}" on that region's area.`,
+    });
+  }
+
   return findings;
 }
 
 /** One line for the audit row and the log, or null when the geography is clean. */
 export function describeManagerAreaDrift(findings: readonly ManagerAreaFinding[]): string | null {
   if (findings.length === 0) return null;
-  const missing = findings.filter((f) => f.kind === "region_has_no_area_row").length;
-  const drifted = findings.length - missing;
+  const count = (kind: ManagerAreaFinding["kind"]) => findings.filter((f) => f.kind === kind).length;
+  const areaDrift = count("manager_area_is_not_region");
+  const teamDrift = count("manager_team_is_not_region");
+  const missingArea = count("region_has_no_area_row");
+  const missingTeam = count("region_has_no_team_row");
   const parts: string[] = [];
-  if (drifted > 0) parts.push(`${drifted} manager(s) recorded against a rep area instead of their region`);
-  if (missing > 0) parts.push(`${missing} region(s) with no area row to point at`);
+  if (areaDrift > 0) parts.push(`${areaDrift} manager(s) recorded against a rep area instead of their region`);
+  if (teamDrift > 0) parts.push(`${teamDrift} manager(s) on a team that hangs off a rep area`);
+  if (missingArea > 0) parts.push(`${missingArea} region(s) with no area row to point at`);
+  if (missingTeam > 0) parts.push(`${missingTeam} region(s) with no team on their own area`);
   return `Manager geography: ${parts.join("; ")}.`;
 }
