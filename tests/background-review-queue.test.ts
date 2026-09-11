@@ -113,7 +113,7 @@ export function runBackgroundReviewQueueTests(): void {
       needsBackgroundReview(
         person("mr1", {
           faculty: "Faculty of Education",
-          folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, key: "Behira 1", kind: "medical_rep" },
+          folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, filedByName: null, key: "Behira 1", kind: "medical_rep" },
         }),
       ),
       true,
@@ -123,7 +123,7 @@ export function runBackgroundReviewQueueTests(): void {
       needsBackgroundReview(
         person("dm1", {
           faculty: "Faculty of Commerce",
-          folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, key: "D3", kind: "district_manager" },
+          folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, filedByName: null, key: "D3", kind: "district_manager" },
         }),
       ),
       true,
@@ -133,7 +133,7 @@ export function runBackgroundReviewQueueTests(): void {
       needsBackgroundReview(
         person("mr2", {
           faculty: "Faculty of Pharmacy",
-          folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, key: "Behira 1", kind: "medical_rep" },
+          folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, filedByName: null, key: "Behira 1", kind: "medical_rep" },
         }),
       ),
       false,
@@ -143,7 +143,7 @@ export function runBackgroundReviewQueueTests(): void {
       needsBackgroundReview(
         person("other1", {
           faculty: "Faculty of Commerce",
-          folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, key: "Regulatory Affairs Specialist", kind: "other" },
+          folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, filedByName: null, key: "Regulatory Affairs Specialist", kind: "other" },
         }),
       ),
       false,
@@ -153,7 +153,7 @@ export function runBackgroundReviewQueueTests(): void {
       needsBackgroundReview(
         person("dup1", {
           faculty: "Faculty of Commerce",
-          folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, key: "Duplicate", kind: "duplicate" },
+          folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, filedByName: null, key: "Duplicate", kind: "duplicate" },
         }),
       ),
       false,
@@ -175,7 +175,7 @@ export function runBackgroundReviewQueueTests(): void {
       // land in `paramedical` beside the never-filed rows, not vanish because a folder is set.
       person("habiba", {
         faculty: "Faculty of Education",
-        folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, key: "Behira 1", kind: "medical_rep" },
+        folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, filedByName: null, key: "Behira 1", kind: "medical_rep" },
       }),
     ]);
 
@@ -185,7 +185,7 @@ export function runBackgroundReviewQueueTests(): void {
     assert.equal(queue.withoutEvidence, 2, "u2 and u3 have nothing on screen to read but the document itself");
     assert.deepEqual(
       queue.paramedical[2]?.candidate.folder,
-      { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, key: "Behira 1", kind: "medical_rep" },
+      { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, filedByName: null, key: "Behira 1", kind: "medical_rep" },
       "the row carries its folder so the screen can show an admin which shelf this CV is already sitting on",
     );
 
