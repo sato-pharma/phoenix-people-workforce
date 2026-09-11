@@ -100,6 +100,13 @@ export type MonthlySalaryRun = {
   publishedBatchId: string | null;
   publishedAt: string | null;
   publishedBy: string | null;
+  /**
+   * One transition at a time (audit finding 50). Set while a phase change holds the run and
+   * cleared by the phase write itself; a claim older than TRANSITION_CLAIM_LAPSE_MINUTES was left
+   * behind by a request that died and no longer holds anything.
+   */
+  transitionAction?: string | null;
+  transitionStartedAt?: string | null;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;

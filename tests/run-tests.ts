@@ -1133,6 +1133,7 @@ import { runAutomatedPayrollExpenseStepApprovedOnlyTests } from "./automated-pay
 import { runAutomatedPayrollExpenseResyncTests } from "./automated-payroll-expense-resync.test.ts";
 import { runAutomatedPayrollExpenseGapsTests } from "./automated-payroll-expense-gaps.test.ts";
 import { runAutomatedPayrollHeldInReportsTests } from "./automated-payroll-held-in-reports.test.ts";
+import { runAutomatedPayrollRunTransitionClaimTests } from "./automated-payroll-run-transition-claim.test.ts";
 import { runAutomatedPayrollReadsDeductionsModuleTests } from "./automated-payroll-reads-deductions-module.test.ts";
 import { runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests } from "./automated-payroll-manual-expenses-and-part2-non-employees.test.ts";
 import { runAutomatedPayrollRecurringNonEmployeesTests } from "./automated-payroll-recurring-non-employees.test.ts";
@@ -3506,6 +3507,10 @@ await runTest(
 await runTest(
   "automated payroll: a held person is not absent from the filing, the population baseline or last month's total",
   runAutomatedPayrollHeldInReportsTests,
+);
+await runTest(
+  "automated payroll: one transition at a time, and a Part 2 that asks about people who vanished",
+  runAutomatedPayrollRunTransitionClaimTests,
 );
 await runTest("automated payroll reads the Deductions module (only what HR confirmed reaches the sheet; unknown statuses fail closed)", runAutomatedPayrollReadsDeductionsModuleTests);
 await runTest("automated payroll manual expenses + Part 2 non-employees (a hand-added employee survives reload; a Part 2 non-employee reaches the bank file)", runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests);
