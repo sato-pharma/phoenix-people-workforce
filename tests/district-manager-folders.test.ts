@@ -254,6 +254,7 @@ export function runDistrictManagerFolderTests(): void {
           folder: {
             filedAt: "2026-08-31T09:00:00.000Z",
             filedByHrId: "HR-001",
+            filedByName: null,
             key: "Paramedical",
             kind: "paramedical",
           },

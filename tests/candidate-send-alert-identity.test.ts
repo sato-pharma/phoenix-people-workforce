@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 
 import { candidateAlertIdempotencyKey } from "../src/lib/recruitment/candidate-alert-key.ts";
 import { managerSendStamp, type ManagerSend } from "../src/lib/recruitment/manager-sends.ts";
+import { UNNAMED_MANAGER_LABEL } from "../src/lib/recruitment/person-labels.ts";
 
 /**
  * EVERY CANDIDATE SENT TO A MANAGER IS ITS OWN ALERT, AND EVERY MANAGER SENT A CV KEEPS IT.
@@ -261,12 +262,13 @@ export function runCandidateSendAlertIdentityTests() {
   // ── 8. A send whose manager could not be named still renders a person, never a blank ──────────
   //
   // Standing rule: no raw code on a screen — but a missing name must not produce an empty card
-  // either. The id is the last resort, not the normal case.
+  // either. Words are the fallback, never the id: an id is exactly the code the standing rule bans,
+  // and "Unnamed manager" is what every other recruitment surface now says in this situation.
   const unnamed = managerSendStamp({ ...toSalim, managerName: null });
   assert.equal(
     unnamed.managerNotified.name,
-    "b-76",
-    "a send recorded without a resolvable manager name falls back to the id rather than rendering nothing",
+    UNNAMED_MANAGER_LABEL,
+    "a send recorded without a resolvable manager name falls back to words, never to the raw id",
   );
 
   // ── 9. A send made before positions existed is unfiled, not filed under an invented seat ──────

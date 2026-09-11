@@ -223,6 +223,7 @@ import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.t
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
 import { runRecruitmentScreeningWorkstationTests } from "./recruitment-screening-workstation.test.ts";
 import { runCandidateFolderTests } from "./candidate-folders.test.ts";
+import { runCandidateFolderFilerNameTests } from "./candidate-folder-filer-name.test.ts";
 import { runCandidateCallClaimTests } from "./candidate-call-claims.test.ts";
 import { runCvPhoneRedactionTests } from "./cv-phone-redaction.test.ts";
 import { runCvFeedbackLockTests } from "./cv-feedback-lock.test.ts";
@@ -2091,6 +2092,10 @@ await runTest(
 await runTest(
   "recruitment CV folders (a filed CV leaves the pool, the region shelf is EIGHT, and a rejection cannot be shelved)",
   runCandidateFolderTests,
+);
+await runTest(
+  "recruitment folder filer name (a filed CV names WHO filed it, never the raw HR id)",
+  runCandidateFolderFilerNameTests,
 );
 await runTest(
   "recruitment filed-CV search (a filed CV stays OFF the pool and stays FINDABLE — 150 of 734 were neither)",

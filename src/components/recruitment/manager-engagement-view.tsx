@@ -31,6 +31,7 @@ import {
   groupEngagementCandidatesByArea,
   managerInactiveText,
 } from "@/lib/recruitment/manager-engagement-presentation";
+import { managerLabel } from "@/lib/recruitment/person-labels";
 
 /** One row of the report's own file-list response — the CV file is the one whose kind is "cv". */
 type CandidateFileSummary = { id: string; fileName: string; kind: string; mimeType: string | null };
@@ -377,7 +378,8 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
                   >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold text-slate-900">{row.managerName || row.managerHrId}</span>
+                        {/* The name, or words — never the HR id, which is what this fell back to. */}
+                        <span className="text-sm font-semibold text-slate-900">{managerLabel(row.managerName)}</span>
                         {row.inactive ? (
                           <InactiveBadge label={row.employmentStatusLabel} lastWorkingDate={row.lastWorkingDate} />
                         ) : null}
@@ -419,7 +421,7 @@ function FragmentRow({ row, isOpen, onToggle }: { row: ManagerCvEngagementRow; i
       >
         <td className="px-4 py-3">
           <div className="flex items-center gap-2">
-            <span className="font-medium text-slate-800">{row.managerName || row.managerHrId}</span>
+            <span className="font-medium text-slate-800">{managerLabel(row.managerName)}</span>
             {row.inactive ? <InactiveBadge label={row.employmentStatusLabel} lastWorkingDate={row.lastWorkingDate} /> : null}
           </div>
           {row.managerJobTitle ? <div className="text-xs text-slate-500">{row.managerJobTitle}</div> : null}
