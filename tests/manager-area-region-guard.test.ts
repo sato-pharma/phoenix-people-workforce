@@ -131,7 +131,42 @@ export async function runManagerAreaRegionGuardTests() {
   assert.equal(isRegionOwningTitle("Medical Representative"), false);
   assert.equal(isRegionOwningTitle("Product Manager"), false, "a product manager owns no region");
   assert.equal(isRegionOwningTitle("District Sales Manager"), true);
-  assert.equal(isRegionOwningTitle("national sales manager"), true, "matching is case-insensitive");
+  assert.equal(isRegionOwningTitle("district manager"), true, "matching is case-insensitive");
+
+  // ---------------------------------------------------------------------------------------
+  // A REGIONAL manager owns SEVERAL regions, so the premise of this whole check does not hold
+  // for him and he must never be flagged.
+  //
+  // This is not hypothetical. The first version of the list included him, and on 2026-09-11 it
+  // reported Pedia's Regional Sales Manager as a defect: he manages three district managers across
+  // Alex-BHR, Delta (1) and Delta (2), his region field reads Alex-BHR as an approximation, and his
+  // team is named Alex-Delta because that is his actual span. A check that cries wolf about the one
+  // row it does not understand is a check people learn to ignore.
+  // ---------------------------------------------------------------------------------------
+  assert.equal(isRegionOwningTitle("Regional Sales Manager"), false, "a regional manager owns several regions");
+  assert.equal(isRegionOwningTitle("Regional Manager"), false);
+  assert.equal(isRegionOwningTitle("National Sales Manager"), false, "a national manager owns a line, not a region");
+
+  assert.deepEqual(
+    detectManagerAreaDrift(
+      [manager({
+        hrId: "PD-0001",
+        fullName: "A Regional Manager",
+        jobTitle: "Regional Sales Manager",
+        regionName: "Delta (1)",
+        areaId: 1101,
+        areaName: "Menoufia 1",
+        teamId: 80,
+        teamName: "Alex-Delta",
+        teamAreaId: 1101,
+        teamAreaName: "Menoufia 1",
+      })],
+      AREAS,
+      TEAMS,
+    ),
+    [],
+    "a regional manager is out of scope on BOTH halves, area and team",
+  );
 
   // ---------------------------------------------------------------------------------------
   // `Others` is the pseudo-district: sales, no target, no seat anyone holds, and legitimately no

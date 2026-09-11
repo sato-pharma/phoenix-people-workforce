@@ -40,13 +40,30 @@
 // decides. A rule that must always hold is worth more as a function that can be tested against
 // invented data than as a query nobody re-reads.
 
-/** Job titles that own a REGION rather than an area. Matched case-insensitively as substrings. */
+/**
+ * Job titles that own EXACTLY ONE region. Matched case-insensitively as substrings.
+ *
+ * DISTRICT LEVEL ONLY, AND THAT IS THE WHOLE POINT. The invariant this module enforces is "one
+ * manager, one region, so his area and his team are that region's". Only a district manager
+ * satisfies the premise.
+ *
+ * A REGIONAL manager does not, and the first version of this list wrongly included him. Measured on
+ * production 2026-09-11: PD-0001 is Pedia's Regional Sales Manager and manages three district
+ * managers across Alex-BHR, Delta (1) and Delta (2). His `region_name` reads Alex-BHR, which is an
+ * approximation rather than a territory, and his team is named Alex-Delta, which describes his real
+ * span more honestly than any single region name could. Checking him against "his" region reports a
+ * defect that is not one.
+ *
+ * A NATIONAL manager is excluded for the same reason one rank higher: he owns a line, not a region.
+ * He happens to pass today because his region reads Egypt and both an Egypt area and an Egypt team
+ * exist, but that is a coincidence of the data and not the rule holding.
+ *
+ * DO NOT WIDEN THIS LIST on the reasoning that a regional manager also owns a region. He owns
+ * several, and the check has no way to say which.
+ */
 export const MANAGER_TITLE_PATTERNS = [
   "district sales manager",
   "district manager",
-  "regional sales manager",
-  "regional manager",
-  "national sales manager",
 ] as const;
 
 /**
