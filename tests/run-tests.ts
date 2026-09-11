@@ -731,6 +731,7 @@ import { runDeviceRegisterTests } from "./device-register.test.ts";
 import { runDeviceRegisterFitsTheScreenTests } from "./device-register-fits-the-screen.test.ts";
 import { runDeviceBulkImportTests } from "./device-bulk-import.test.ts";
 import { runDeviceAction1SyncTests } from "./device-action1-sync.test.ts";
+import { runCustodyItemValuesTests } from "./custody-item-values.test.ts";
 import { runDeviceImportAttemptLogTests } from "./device-import-attempt-log.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
 import { runHrTodayTasksTests } from "./hr-today-tasks.test.ts";
@@ -5211,6 +5212,11 @@ await runTest(
 await runTest(
   "an Action1 pull maps an endpoint onto a register row, never names a holder, and reports an already-registered serial as a skip rather than writing it twice",
   runDeviceAction1SyncTests,
+);
+
+await runTest(
+  "the custody receipt prices each item and totals only the rows handed over, where a blank is never a zero and a settled record cannot be re-priced",
+  runCustodyItemValuesTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

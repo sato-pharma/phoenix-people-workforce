@@ -77,6 +77,13 @@ export type CompanyDevice = {
   issuedOn: string | null;
   /** Frozen at issue — البند (9). Not the device's current value. */
   agreedValueEgp: number | null;
+  /**
+   * The breakdown behind `agreedValueEgp`, keyed by the custody template's item number.
+   *
+   * Not a replacement for it: البند (10) caps recovery at the signed total, and nothing recomputes
+   * that total from these parts. An absent key means the item was not handed over.
+   */
+  itemValuesEgp: Record<string, number> | null;
   declarationNo: string | null;
 
   /**
@@ -108,6 +115,8 @@ export type DeviceAssignment = {
   issuedOn: string;
   issuedBy: string | null;
   issuedByName: string | null;
+  /** Per-item values as signed for at THIS handover, keyed by template item number. */
+  itemValuesEgp: Record<string, number> | null;
   agreedValueEgp: number | null;
   status: AssignmentStatus;
   returnedOn: string | null;
@@ -204,6 +213,21 @@ export type IssueDeviceInput = {
   declarationNo?: string | null;
   handoverPlace?: string | null;
   issuedOn?: string | null;
+  /**
+   * Keyed by the custody template's item number. An absent key means the item was not handed over.
+   *
+   * Values are `unknown` because this crosses the wire: the browser sends what was typed into a box,
+   * and `normalizeItemValues` is the thing that decides whether it is a price. Narrowing here would
+   * only move the lie earlier.
+   */
+  itemValuesEgp?: Record<string, unknown> | null;
+};
+
+/** Re-pricing an outstanding handover, for the case where the figures arrive after the press. */
+export type SetAssignmentItemValuesInput = {
+  assignmentId: string;
+  /** Raw, as typed. `normalizeItemValues` validates it — see `IssueDeviceInput.itemValuesEgp`. */
+  itemValuesEgp: Record<string, unknown> | null;
 };
 
 export type ReturnDeviceInput = {
@@ -249,4 +273,13 @@ export type CustodyDeviceFacts = {
   windowsProductId: string | null;
   simNumber: string | null;
   lineNumber: string | null;
+  /**
+   * The per-item values from the OUTSTANDING assignment, or null when nobody holds this device.
+   *
+   * Read from the assignment rather than the device because البند (9) prices what was agreed at
+   * THIS handover. Reprinting last year's receipt must show last year's figures, and a device
+   * reissued to somebody else at a different value must not rewrite the paper the first holder
+   * signed.
+   */
+  itemValuesEgp: Record<string, number> | null;
 };

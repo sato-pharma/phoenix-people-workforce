@@ -15,6 +15,7 @@ import {
   markDevice,
   parseAmount,
   returnDevice,
+  setAssignmentItemValues,
   writeOffDevice,
 } from "@/lib/devices/service";
 import { isDevelopment } from "@/lib/env";
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
 
     const access = await resolveAccessContext(request);
     const payload = (await request.json()) as {
-      action?: "register" | "issue" | "return" | "mark" | "write_off";
+      action?: "register" | "issue" | "price_items" | "return" | "mark" | "write_off";
       device?: Record<string, unknown>;
       deviceId?: string;
       assignmentId?: string;
@@ -86,6 +87,8 @@ export async function POST(request: Request) {
       status?: string;
       reason?: string | null;
       note?: string | null;
+      /** Keyed by the custody template's item number. A blank or absent key means not handed over. */
+      itemValuesEgp?: Record<string, unknown> | null;
     };
 
     const actor =
@@ -141,6 +144,28 @@ export async function POST(request: Request) {
           declarationNo: payload.declarationNo ?? null,
           handoverPlace: payload.handoverPlace ?? null,
           issuedOn: payload.issuedOn ?? null,
+          itemValuesEgp: payload.itemValuesEgp ?? null,
+        },
+        actor,
+      );
+      return NextResponse.json(await getDeviceRegisterData());
+    }
+
+    // Pricing the items on a handover that is already open. Gated on `update`, the same permission
+    // as issuing, because it writes the figures البند (10) caps a wage deduction at — it is the
+    // money on the custody record, not a note about it.
+    if (payload.action === "price_items") {
+      await assertPermission(access, "company_devices", "update");
+      if (!payload.assignmentId) {
+        return NextResponse.json(
+          { error: "missing_assignment", message: "A custody record is required to price its items." },
+          { status: 400 },
+        );
+      }
+      await setAssignmentItemValues(
+        {
+          assignmentId: payload.assignmentId,
+          itemValuesEgp: payload.itemValuesEgp ?? null,
         },
         actor,
       );

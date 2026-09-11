@@ -52,6 +52,7 @@ import { useCallback, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import { PremiumHero } from "@/components/ui/premium-hero";
+import { CUSTODY_LAPTOP_V1, CUSTODY_MOBILE_V1 } from "@/lib/hiring-pack/custody-text";
 import type {
   DeviceImportPreview,
   DeviceImportResult,
@@ -1198,6 +1199,7 @@ export function DeviceRegisterWorkspace({
                         onClose={closeDraft}
                         onOpen={openDraft}
                         onSubmit={() => void submitDraft(device)}
+                        post={post}
                         setDraft={setDraft}
                       />
                     ) : (
@@ -1267,6 +1269,7 @@ export function DeviceRegisterWorkspace({
                   onClose={closeDraft}
                   onOpen={openDraft}
                   onSubmit={() => void submitDraft(device)}
+                  post={post}
                   setDraft={setDraft}
                 />
               </div>
@@ -1290,6 +1293,125 @@ export function DeviceRegisterWorkspace({
  * anything not in stock and `phx_device_mark` refuses putting a signed-out device back in stock —
  * a screen offering a button the database refuses is worse than one that hides it.
  */
+/**
+ * The per-item prices that print in the receipt's «القيمة التقديرية» column.
+ *
+ * THE ROWS COME FROM THE TEMPLATE, not from a list typed here. A laptop signs for four items and a
+ * phone for seven, and those rows are fixed positions on the printed Arabic form — so the same
+ * constant the renderer reads is the one that draws these boxes, and a row added to the paper
+ * cannot be forgotten here.
+ *
+ * A BLANK BOX IS NOT A ZERO, which is the whole reason the empty string is sent as nothing rather
+ * than as 0. The form strikes the row of any item not actually handed over and leaves it out of the
+ * total; a zero would assert the item was handed over and is worth nothing. Somebody who hands over
+ * a laptop with no bag leaves the bag blank.
+ */
+function ItemPricing({
+  busy,
+  device,
+  post,
+}: {
+  busy: boolean;
+  device: CompanyDevice;
+  post: (payload: Record<string, unknown>) => Promise<unknown>;
+}) {
+  const template = device.category === "laptop" ? CUSTODY_LAPTOP_V1 : CUSTODY_MOBILE_V1;
+  const [open, setOpen] = useState(false);
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      template.itemRows.map((row) => {
+        const stored = device.itemValuesEgp?.[row.number];
+        return [row.number, typeof stored === "number" ? String(stored) : ""];
+      }),
+    ),
+  );
+
+  // Summed from what is actually typed, the same rule the paper's total label states. A box left
+  // blank contributes nothing rather than counting as zero.
+  const total = Object.values(values).reduce((sum, raw) => {
+    const amount = Number(String(raw).trim());
+    return raw.trim() !== "" && Number.isFinite(amount) ? sum + amount : sum;
+  }, 0);
+  const pricedCount = Object.values(values).filter((raw) => raw.trim() !== "").length;
+
+  if (!open) {
+    return (
+      <button
+        className="self-start border border-slate-300 bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+        disabled={busy}
+        onClick={() => setOpen(true)}
+        type="button"
+      >
+        {device.itemValuesEgp
+          ? `Prices — ${total.toLocaleString("en-US")} EGP`
+          : "Price the items"}
+      </button>
+    );
+  }
+
+  return (
+    <div className="min-w-0 border border-slate-300 bg-slate-50 px-2.5 py-2">
+      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-600">
+        Value of each item, in EGP
+      </p>
+      <p className="mt-1 text-[11px] font-semibold leading-relaxed text-slate-500">
+        These print beside each item on the receipt, and clause 10 caps any recovery at them. Leave
+        an item blank if it was not handed over: the form strikes that row and leaves it out of the
+        total.
+      </p>
+      <div className="mt-2 flex flex-col gap-1.5">
+        {template.itemRows.map((row) => (
+          <label className="flex min-w-0 items-center gap-2" key={row.number}>
+            <span className="w-4 shrink-0 text-[11px] font-black text-slate-500">{row.number}</span>
+            <span className="min-w-0 flex-1 break-words text-[11px] font-semibold text-slate-700" dir="auto">
+              {row.itemAr}
+            </span>
+            <input
+              className={`${INPUT_CLASS} w-24 shrink-0 text-right`}
+              inputMode="decimal"
+              min="0"
+              onChange={(event) => setValues({ ...values, [row.number]: event.target.value })}
+              placeholder="—"
+              type="number"
+              value={values[row.number] ?? ""}
+            />
+          </label>
+        ))}
+      </div>
+      <p className="mt-2 border-t border-slate-200 pt-1.5 text-[11px] font-black text-slate-700">
+        Total {total.toLocaleString("en-US")} EGP over {pricedCount} item
+        {pricedCount === 1 ? "" : "s"}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <button
+          className="border border-slate-900 bg-slate-900 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-white hover:bg-slate-800 disabled:opacity-50"
+          disabled={busy}
+          onClick={() => {
+            void post({
+              action: "price_items",
+              assignmentId: device.assignmentId,
+              itemValuesEgp: values,
+            }).then((done) => {
+              if (done) setOpen(false);
+            });
+          }}
+          type="button"
+        >
+          Save prices
+        </button>
+        <button
+          className="border border-slate-300 bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+          disabled={busy}
+          onClick={() => setOpen(false)}
+          type="button"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function DeviceActions({
   assignable,
   busy,
@@ -1298,6 +1420,7 @@ function DeviceActions({
   onClose,
   onOpen,
   onSubmit,
+  post,
   setDraft,
 }: {
   assignable: DeviceRegisterData["assignable"];
@@ -1307,6 +1430,7 @@ function DeviceActions({
   onClose: () => void;
   onOpen: (deviceId: string, kind: Exclude<DraftKind, null>) => void;
   onSubmit: () => void;
+  post: (payload: Record<string, unknown>) => Promise<unknown>;
   setDraft: (draft: Draft) => void;
 }) {
   const open = draft.deviceId === device.id ? draft.kind : null;
@@ -1318,7 +1442,8 @@ function DeviceActions({
 
   if (open === null) {
     return (
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-col gap-1.5">
+        <div className="flex flex-wrap gap-1.5">
         {canIssue ? (
           <button className={buttonClass} disabled={busy} onClick={() => onOpen(device.id, "issue")} type="button">
             Hand over
@@ -1355,6 +1480,14 @@ function DeviceActions({
             Print receipt
           </a>
         ) : null}
+        </div>
+        {/*
+          Pricing sits beside the receipt button, not behind "Change state", because it is part of
+          preparing the paper rather than a change to the device's condition. Offered only while a
+          handover is open: البند (9) prices what somebody signs for at THIS handover, so a device
+          in stock has no handover to price.
+        */}
+        {device.assignmentId ? <ItemPricing busy={busy} device={device} post={post} /> : null}
       </div>
     );
   }

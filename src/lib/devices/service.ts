@@ -47,6 +47,7 @@ import type {
   MarkableDeviceStatus,
   ReturnCondition,
   ReturnDeviceInput,
+  SetAssignmentItemValuesInput,
   WriteOffDeviceInput,
 } from "./types";
 
@@ -88,6 +89,7 @@ type AssignmentRow = {
   issued_on: string;
   issued_by: string | null;
   agreed_value_egp: number | string | null;
+  item_values_egp: Record<string, number | string> | null;
   status: AssignmentStatus;
   returned_on: string | null;
   returned_by: string | null;
@@ -102,7 +104,7 @@ const DEVICE_COLUMNS =
   "id,asset_tag,category,manufacturer,model,serial_number,imei,device_name,processor,installed_ram,system_type,windows_device_id,windows_product_id,sim_number,line_number,estimated_value_egp,purchased_on,status,status_reason,status_changed_at,note";
 
 const ASSIGNMENT_COLUMNS =
-  "id,device_id,employee_hr_id,employee_name,job_title,declaration_no,handover_place,issued_on,issued_by,agreed_value_egp,status,returned_on,returned_by,return_condition,shortfall_note,settlement_egp,reason,note";
+  "id,device_id,employee_hr_id,employee_name,job_title,declaration_no,handover_place,issued_on,issued_by,agreed_value_egp,item_values_egp,status,returned_on,returned_by,return_condition,shortfall_note,settlement_egp,reason,note";
 
 /**
  * True when the register has not reached this environment.
@@ -145,6 +147,76 @@ function toAmount(value: number | string | null): number | null {
   if (value === null || value === undefined) return null;
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * A stored per-item value map, read back.
+ *
+ * Numeric jsonb comes back as a number, but a value written as a string by any other route would
+ * come back as one, so both are coerced through `toAmount` and anything unreadable is DROPPED
+ * rather than rendered. A garbled amount on a custody receipt is worse than a blank: the blank says
+ * "write it here" and a wrong number says "you agreed to this".
+ */
+export function readItemValues(
+  raw: Record<string, number | string> | null | undefined,
+): Record<string, number> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const amount = toAmount(value as number | string | null);
+    if (amount === null || amount < 0) continue;
+    out[key] = amount;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/**
+ * The readable version of `device_assignments_item_values_shape`.
+ *
+ * The CHECK constraint is the real guard; this exists so somebody who typed a letter into a price
+ * box gets a sentence instead of a constraint-violation string — the same split the register
+ * already uses for `company_devices_identifiable`.
+ *
+ * AN ABSENT KEY AND A ZERO ARE DIFFERENT THINGS, and this is where that distinction is kept. The
+ * form's own note strikes the row of any item not actually handed over and excludes it from the
+ * total, so "not handed over" is expressed by leaving the key out. A zero asserts the item WAS
+ * handed over and is worth nothing, which is a statement somebody signs. Blank input therefore
+ * drops the key; an explicit 0 is kept.
+ */
+export function normalizeItemValues(
+  input: Record<string, unknown> | null | undefined,
+): Record<string, number> | null {
+  if (!input || typeof input !== "object") return null;
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (value === null || value === undefined || String(value).trim() === "") continue;
+    if (!/^[1-9][0-9]?$/.test(key)) {
+      throw new Error(`"${key}" is not a custody item number.`);
+    }
+    const amount = typeof value === "number" ? value : Number(String(value).trim());
+    if (!Number.isFinite(amount)) {
+      throw new Error(`The value for item ${key} is not a number.`);
+    }
+    if (amount < 0) {
+      throw new Error(`The value for item ${key} cannot be negative.`);
+    }
+    out[key] = amount;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/**
+ * The total of what was priced.
+ *
+ * Sums only the keys PRESENT, which is the form's rule — «ولا تُحتسب قيمته ضمن الإجمالي» for any
+ * item not handed over. Returns null when nothing is priced, so the total cell prints a blank
+ * rather than a zero.
+ */
+export function totalItemValues(values: Record<string, number> | null | undefined): number | null {
+  if (!values) return null;
+  const amounts = Object.values(values).filter((amount) => Number.isFinite(amount));
+  if (amounts.length === 0) return null;
+  return amounts.reduce((sum, amount) => sum + amount, 0);
 }
 
 /** Whole days between an ISO date and today in Cairo. Negative and unknown both collapse to 0. */
@@ -331,6 +403,7 @@ function mapDevice(
     holderJobTitle: assignment?.job_title ?? holder?.jobTitle ?? null,
     issuedOn: assignment?.issued_on ?? null,
     agreedValueEgp: assignment ? toAmount(assignment.agreed_value_egp) : null,
+    itemValuesEgp: assignment ? readItemValues(assignment.item_values_egp) : null,
     declarationNo: assignment?.declaration_no ?? null,
 
     holderState: assignment ? holderState : "active",
@@ -506,6 +579,7 @@ export async function getDeviceHistory(deviceId: string): Promise<DeviceAssignme
     issuedBy: row.issued_by,
     issuedByName: actors.get(String(row.issued_by ?? "").toLowerCase())?.name ?? null,
     agreedValueEgp: toAmount(row.agreed_value_egp),
+    itemValuesEgp: readItemValues(row.item_values_egp),
     status: row.status,
     returnedOn: row.returned_on,
     returnedBy: row.returned_by,
@@ -689,6 +763,15 @@ export async function getCustodyDeviceFacts(deviceId: string | null | undefined)
   if (error || !data) return null;
 
   const row = data as DeviceRow;
+
+  const { data: liveRow } = await supabase
+    .from("device_assignments")
+    .select("item_values_egp,status")
+    .eq("device_id", deviceId)
+    .eq("status", "outstanding")
+    .maybeSingle();
+  const live = (liveRow as Pick<AssignmentRow, "item_values_egp"> | null) ?? null;
+
   return {
     assetTag: row.asset_tag,
     category: row.category,
@@ -704,6 +787,10 @@ export async function getCustodyDeviceFacts(deviceId: string | null | undefined)
     windowsProductId: row.windows_product_id,
     simNumber: row.sim_number,
     lineNumber: row.line_number,
+    // From the OUTSTANDING assignment, never from the device. البند (9) prices what was agreed at
+    // THIS handover, so a device reissued later at different figures must not rewrite the paper the
+    // previous holder signed. Null when nobody holds it, which prints the blanks it always printed.
+    itemValuesEgp: readItemValues(live?.item_values_egp ?? null),
   };
 }
 
@@ -792,7 +879,65 @@ export async function issueDevice(input: IssueDeviceInput, actor: string): Promi
       handoverPlace: trimmed(input.handoverPlace),
     },
   });
+
+  // Priced in a SECOND statement rather than through `phx_device_issue`, deliberately. Widening
+  // that function's signature would mean replacing a production RPC to carry a field the handover
+  // itself does not depend on, and the failure this leaves is the benign one: an assignment with
+  // no prices, which is exactly what every assignment written before this column existed looks
+  // like, and what the form prints as ruled blanks. It is visible on the page and fixable by
+  // pricing again. The opposite arrangement fails by refusing a handover over a price.
+  const values = normalizeItemValues(input.itemValuesEgp ?? null);
+  if (values) await setAssignmentItemValues({ assignmentId, itemValuesEgp: values }, actor);
+
   return assignmentId;
+}
+
+/**
+ * Price the items on an OUTSTANDING handover.
+ *
+ * REFUSED ONCE THE ASSIGNMENT IS CLOSED, and that is where البند (9)'s freeze actually bites. A
+ * returned or written-off custody record has been settled: البند (10) priced any shortfall against
+ * the figures on the signed paper, so re-pricing it afterwards would change what somebody already
+ * answered for, in the direction of owing more. While it is outstanding the paper may not even be
+ * printed yet, and correcting a price there is the ordinary case, not a rewrite of history.
+ */
+export async function setAssignmentItemValues(
+  input: SetAssignmentItemValuesInput,
+  actor: string,
+): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const values = normalizeItemValues(input.itemValuesEgp ?? null);
+
+  const { data: before, error: readError } = await supabase
+    .from("device_assignments")
+    .select(ASSIGNMENT_COLUMNS)
+    .eq("id", input.assignmentId)
+    .maybeSingle();
+  if (readError) throw new Error(deviceErrorMessage(readError));
+  if (!before) throw new Error("That custody record no longer exists.");
+
+  const row = before as AssignmentRow;
+  if (row.status !== "outstanding") {
+    throw new Error(
+      "That custody record is closed, so its values cannot be changed. البند (9) fixes the figures " +
+        "somebody signed for, and البند (10) has already priced any shortfall against them.",
+    );
+  }
+
+  await writeRequiredAuditLog({
+    actorLoginId: actor,
+    entityType: "device_assignment",
+    entityId: input.assignmentId,
+    summary: `Priced the custody items for ${row.employee_name}`,
+    oldValues: { itemValuesEgp: readItemValues(row.item_values_egp) },
+    newValues: { itemValuesEgp: values, totalEgp: totalItemValues(values) },
+  });
+
+  const { error } = await supabase
+    .from("device_assignments")
+    .update({ item_values_egp: values, updated_at: new Date().toISOString() })
+    .eq("id", input.assignmentId);
+  if (error) throw new Error(deviceErrorMessage(error));
 }
 
 export async function returnDevice(input: ReturnDeviceInput, actor: string): Promise<string> {
