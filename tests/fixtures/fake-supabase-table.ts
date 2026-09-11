@@ -1,6 +1,6 @@
 /**
  * A minimal, in-memory stand-in for a Supabase/PostgREST query builder — NOT a mock that just
- * records calls, an actual tiny query engine. `.eq`/`.is`/`.gte`/`.lte`/`.in` apply as real
+ * records calls, an actual tiny query engine. `.eq`/`.neq`/`.is`/`.gte`/`.lt`/`.lte`/`.in` apply as real
  * predicates against a shared, mutable row array; `.update` and `.insert` really mutate it. That
  * matters here specifically: the payroll copilot's "defer" mechanisms are money-safety code
  * (whether an outstation expense or a vacation settlement gets paid out this run), and this
@@ -71,6 +71,16 @@ class FakeQueryBuilder {
 
   in(column: string, values: unknown[]) {
     this.filters.push((row) => values.includes(row[column]));
+    return this;
+  }
+
+  neq(column: string, value: unknown) {
+    this.filters.push((row) => row[column] !== value);
+    return this;
+  }
+
+  lt(column: string, value: unknown) {
+    this.filters.push((row) => String(row[column] ?? "") < String(value));
     return this;
   }
 

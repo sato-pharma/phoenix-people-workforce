@@ -2369,16 +2369,37 @@ async function resolveManagerEmail(directory: EmployeeDirectoryData, managerHrId
  * exist yet on every environment; a missing-relation error is treated as
  * zero rather than breaking every vacation balance calculation.
  */
-async function balanceSettledDaysInPeriod(input: {
+/**
+ * Balance days already spent in this period, from the settlement ledger.
+ *
+ * Exported for its test: it carries the exclusion rule below, and that rule is the difference
+ * between a payroll step that can be confirmed twice safely and one that gives leave days back.
+ */
+export async function balanceSettledDaysInPeriod(input: {
   employeeHrId: string;
   periodStart: string;
   periodEnd: string;
-}): Promise<number> {
+  /**
+   * Ignore settlements written by THIS payroll run.
+   *
+   * A payroll run that is about to re-decide how much balance it consumes must not read back its
+   * OWN previous answer as though somebody else had spent those days. Without this, confirming the
+   * Part 2 vacation step a second time sees a balance already drawn down by the first confirm,
+   * concludes the balance covers nothing, and supersedes the row that consumed it — handing the
+   * days back while the payroll deduction stays where it was. A third confirm sees the restored
+   * balance and consumes it again. The figure oscillates, and each swing is a real change to
+   * somebody's leave entitlement.
+   */
+  excludeSettlementRunId?: string | null;
+},
+  /** Injected only by the test — production always uses the admin client. */
+  client: Pick<ReturnType<typeof getSupabaseAdmin>, "from"> = getSupabaseAdmin(),
+): Promise<number> {
   const compactHrId = input.employeeHrId.toLowerCase().replace(/[^a-z0-9]+/g, "");
   if (!compactHrId) return 0;
 
   try {
-    const { data, error } = await getSupabaseAdmin()
+    let query = client
       .from("payroll_copilot_vacation_settlements")
       .select("balance_days_consumed")
       .eq("employee_hr_id_compact", compactHrId)
@@ -2386,6 +2407,8 @@ async function balanceSettledDaysInPeriod(input: {
       .is("superseded_at", null)
       .gte("start_date", input.periodStart)
       .lt("start_date", input.periodEnd);
+    if (input.excludeSettlementRunId) query = query.neq("run_id", input.excludeSettlementRunId);
+    const { data, error } = await query;
 
     if (error) {
       const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
@@ -2462,6 +2485,8 @@ async function pendingPaidDaysInPeriod(input: {
 async function approvedPaidDaysInPeriod(input: {
   employeeHrId: string;
   excludeRequestId?: string;
+  /** Passed straight to balanceSettledDaysInPeriod — see the note there. */
+  excludeSettlementRunId?: string | null;
   periodEnd: string | null;
   periodStart: string | null;
   vacationType: VacationType;
@@ -2500,6 +2525,7 @@ async function approvedPaidDaysInPeriod(input: {
 
   const settledDays = await balanceSettledDaysInPeriod({
     employeeHrId: input.employeeHrId,
+    excludeSettlementRunId: input.excludeSettlementRunId,
     periodEnd: input.periodEnd,
     periodStart: input.periodStart,
   });
@@ -2551,6 +2577,13 @@ export async function calculatePaymentForRequest(input: {
   durationDays: number;
   employeeHrId: string;
   excludeRequestId?: string;
+  /**
+   * Ignore balance settlements written by this payroll run when reading the balance.
+   *
+   * Only a payroll run re-deciding its own settlement passes this. Everything else leaves it unset
+   * and sees every live settlement, which is what a balance check should normally do.
+   */
+  excludeSettlementRunId?: string | null;
   hireDate: string | null;
   startDate: string;
   vacationType: VacationType;
@@ -2574,6 +2607,7 @@ export async function calculatePaymentForRequest(input: {
   const usedPaidDays = await approvedPaidDaysInPeriod({
     employeeHrId: input.employeeHrId,
     excludeRequestId: input.excludeRequestId,
+    excludeSettlementRunId: input.excludeSettlementRunId,
     periodEnd: period?.periodEnd ?? null,
     periodStart: period?.periodStart ?? null,
     vacationType: input.vacationType,

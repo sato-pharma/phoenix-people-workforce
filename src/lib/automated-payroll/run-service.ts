@@ -599,7 +599,10 @@ export async function confirmStep(
   // becomes real: settle it into the same ledger a formal request settlement uses, so future
   // balance checks see it consumed, not just this month's payroll-sheet number.
   if (stepKey === "p2_vacation") {
-    const { crmLeaveSettlements } = await computeVacationDeductionTotals(members, sources, period);
+    // Pass the run so its own earlier settlement is excluded from the balance it re-reads.
+    // Confirming this step is not a one-way door: HR re-confirms after correcting a row, and
+    // before this the second confirm gave the leave days back while the deduction stayed.
+    const { crmLeaveSettlements } = await computeVacationDeductionTotals(members, sources, period, runId);
     const { settled } = await settleCrmLeaveBalanceForPeriod({
       actorHrId: actorId(access),
       crmLeaveSettlements,
