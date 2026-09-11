@@ -1497,6 +1497,7 @@ function recommendAdditions(members: PopulationMember[], drafts: Map<string, Dra
       bonus: pick(draft?.bonus, 0),
       overtime: pick(draft?.overtime, 0),
     };
+    row.reason = draft?.additionsReason ?? null;
     return row;
   });
 }

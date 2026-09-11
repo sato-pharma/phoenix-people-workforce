@@ -91,6 +91,7 @@ function mapDraftRow(row: RunRow): DraftRow {
     crm: numeric(row.crm),
     manualOtherDeductions: numeric(row.manual_other_deductions),
     manualReason: (row.manual_reason as string | null) ?? null,
+    additionsReason: (row.additions_reason as string | null) ?? null,
     p1odCrmDays: numeric(row.p1od_crm_days),
     p1odCrmValue: numeric(row.p1od_crm_value),
     p1odCrmReason: (row.p1od_crm_reason as string | null) ?? null,
@@ -348,6 +349,7 @@ function draftPatchToDb(runId: string, patch: DraftRowPatch): Record<string, unk
   if (patch.settledInPart1 !== undefined) db.settled_in_part1 = patch.settledInPart1;
   if (patch.expensesNote !== undefined) db.expenses_note = patch.expensesNote;
   if (patch.manualReason !== undefined) db.manual_reason = patch.manualReason;
+  if (patch.additionsReason !== undefined) db.additions_reason = patch.additionsReason;
   if (patch.p1odCrmReason !== undefined) db.p1od_crm_reason = patch.p1odCrmReason;
   if (patch.p1odVacationReason !== undefined) db.p1od_vacation_reason = patch.p1odVacationReason;
   if (patch.p1odNoRecordReason !== undefined) db.p1od_no_record_reason = patch.p1odNoRecordReason;

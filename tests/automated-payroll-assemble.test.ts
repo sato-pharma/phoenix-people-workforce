@@ -96,6 +96,7 @@ function draft(hrId: string, patch: Partial<DraftRow>): DraftRow {
     crm: null,
     manualOtherDeductions: null,
     manualReason: null,
+    additionsReason: null,
     resignationCrmDays: null,
     p1odCrmDays: null,
     p1odCrmValue: null,
