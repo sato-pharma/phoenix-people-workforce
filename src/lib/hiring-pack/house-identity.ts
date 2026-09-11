@@ -72,6 +72,92 @@ export const HOUSE_MARK_SRC = "/brand/sato-pharma-logo-on-light.svg";
 /** Standard width of the mark on a letterhead. Below 24 mm the PHARMA counters fill in. */
 export const HOUSE_MARK_WIDTH_MM = 34;
 
+/* ─────────────────────────────────────────────────────────────────────────────────────────────
+ * THE COMPANY SEAL ON THE SIGNATURE LINE — owner's instruction, 2026-09-11.
+ *
+ * 🔴 WHAT THIS COSTS, recorded because it is the reason to think twice before extending it. A
+ * document that arrives pre-stamped is a document NOBODY STAMPED. The clearance certificate refuses
+ * itself unless the form is stamped بختم الشركة; printing the seal automatically turns that clause
+ * from a control into decoration. The owner was shown this and chose it anyway — so it is his
+ * decision on the record, not an oversight, and it is not to be quietly reversed. Equally it is not
+ * licence to widen: a NEW paper does not get the seal because its neighbours have one.
+ *
+ * GOVERNMENT FORMS NEVER GET IT. Form 1, Form 6 and the labour exit form are Authority facsimiles
+ * and do not read this module at all — the same exemption the ink rule and the band carry.
+ *
+ * WHY THE STYLE IS INLINE RATHER THAN A CLASS. Seven renderers draw a signature block and they do
+ * NOT share a stylesheet — the contract and the HR papers carry their own CSS, the clearance and
+ * custody receipts use HOUSE_IDENTITY_CSS, the worker data form has a third. A class would have to
+ * be added to each of those sheets and would be silently missing from whichever was forgotten. An
+ * inline style depends on nothing.
+ * ───────────────────────────────────────────────────────────────────────────────────────────── */
+
+/** The seal, as a path under `public/`. Allow-listed in `paper-artwork.ts` so PDFs inline it. */
+export const HOUSE_SEAL_SRC = "/brand/sato-hr-seal.svg";
+
+/**
+ * Whether a signature column belongs to the COMPANY rather than the employee.
+ *
+ * 🔴 THE COMPANY SIDE IS NOT ALWAYS CALLED الشركة, and that is the whole reason this predicate
+ * exists instead of a string test at each of the seven call sites. The contract heads its column
+ * الطرف الأول — الشركة, the absence warning heads the very same column إدارة الموارد البشرية, and
+ * the custody receipt says عن الشركة. Matching only الشركة leaves papers unsealed — measured on the
+ * preview set, where two of nine came back with no seal and nothing said so.
+ *
+ * The employee test is deliberately SEPARATE and wins: a column naming العامل or الموظف is the
+ * person, whatever else it says, so a heading like "أقر باستلام هذا الإنذار — العامل" can never be
+ * mistaken for the issuing side.
+ */
+export function isCompanySignatory(headingAr: string): boolean {
+  const heading = headingAr.trim();
+  if (/العامل|الموظف|الطرف الثاني/.test(heading)) return false;
+  return /الشركة|الموارد البشرية|الطرف الأول|الإدارة/.test(heading);
+}
+
+/**
+ * Which signature party carries the seal, or -1 when none does.
+ *
+ * 🔴 A PAPER TAKES ONE IMPRESSION, NOT ONE PER COMPANY COLUMN. The employee clearance has THREE
+ * parties — الموظف, مدير الموارد البشرية, and الاعتماد وخاتم الشركة — and two of them are the
+ * company side, so sealing every company column stamped that document twice. Measured on the first
+ * render of all thirteen papers: the clearance and both custody receipts came back with two.
+ *
+ * THE DOCUMENT ITSELF SAYS WHERE THE STAMP GOES, and that is the better rule than "the first
+ * company column". A column named خاتم is the seal's own column and wins outright; the HR manager's
+ * column beside it is a SIGNATURE, and putting the stamp there would cover a name someone has to
+ * sign. Only when no column names the seal does the first company-side party take it.
+ */
+export function sealPartyIndex(headingsAr: readonly string[]): number {
+  const named = headingsAr.findIndex((heading) => /خاتم|ختم/.test(heading));
+  if (named >= 0) return named;
+  return headingsAr.findIndex((heading) => isCompanySignatory(heading));
+}
+
+/**
+ * The seal as an `<img>`, absolutely positioned over its signature cell.
+ *
+ * The parent must be positioned; `houseSealedAttrs()` below is what every call site uses so that
+ * requirement cannot be forgotten on one of the seven.
+ */
+export function houseSealImg({ sizeMm = 40, dyMm = 2, rotateDeg = -6 } = {}): string {
+  const style = [
+    "position:absolute",
+    "left:50%",
+    "top:50%",
+    `width:${sizeMm}mm`,
+    `height:${sizeMm}mm`,
+    `transform:translate(-50%,calc(-50% + ${dyMm}mm)) rotate(${rotateDeg}deg)`,
+    // A real impression is never perfectly opaque, and never perfectly square to the page.
+    "opacity:.86",
+    "pointer-events:none",
+    "z-index:5",
+  ].join(";");
+  return `<img class="phx-seal" src="${HOUSE_SEAL_SRC}" alt="" style="${style}">`;
+}
+
+/** The attributes a cell needs before a seal can sit on it. Positioned, and clipping nothing. */
+export const HOUSE_SEALED_ATTRS = ' style="position:relative"';
+
 /**
  * The house typeface — WORKBOOKS ONLY, and the "only" is the whole point of this note.
  *

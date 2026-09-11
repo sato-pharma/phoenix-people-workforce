@@ -4,6 +4,9 @@ import {
   HOUSE_COLORS,
   HOUSE_MARK_SRC,
   houseBandBackground,
+  HOUSE_SEALED_ATTRS,
+  houseSealImg,
+  sealPartyIndex,
 } from "@/lib/hiring-pack/house-identity";
 import { insuranceWageFromBase } from "@/lib/hiring-pack/insurance-wage";
 import { renewalObjectiveReasonClause } from "@/lib/hiring-pack/renewal-reasons";
@@ -345,11 +348,20 @@ function signatureTable(columns: readonly RenewalSignatureColumn[]): string {
   const head = first.fieldsAr
     .map((label) => `<th class="doc-sig__head">${escapeHtml(label)}</th>`)
     .join("");
+  const sealAt = sealPartyIndex(columns.map((column) => column.headingAr));
   const body = columns
     .map(
-      (column) =>
+      (column, partyIndex) =>
         `<tr><th class="doc-sig__party">${escapeHtml(column.headingAr)}</th>` +
-        column.fieldsAr.map(() => `<td class="doc-sig__cell"></td>`).join("") +
+        // The seal lands on the COMPANY's own التوقيع والختم cell — column index 1 of
+        // الاسم / التوقيع والختم / التاريخ. Which party that is comes from one shared predicate.
+        column.fieldsAr
+          .map((_label, index) =>
+            partyIndex === sealAt && index === 1
+              ? `<td class="doc-sig__cell"${HOUSE_SEALED_ATTRS}>${houseSealImg({ sizeMm: 34 })}</td>`
+              : `<td class="doc-sig__cell"></td>`,
+          )
+          .join("") +
         "</tr>",
     )
     .join("");

@@ -3,6 +3,9 @@ import {
   houseLetterhead,
   HOUSE_COLORS,
   HOUSE_IDENTITY_CSS,
+  HOUSE_SEALED_ATTRS,
+  houseSealImg,
+  sealPartyIndex,
 } from "@/lib/hiring-pack/house-identity";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
@@ -177,11 +180,16 @@ function renderBlock(
 }
 
 function signatureBlock(template: ClearanceTemplate): string {
+  // One impression per paper. The clearance names its own seal column الاعتماد وخاتم الشركة, and
+  // the HR manager's column beside it is a signature — see sealPartyIndex.
+  const sealAt = sealPartyIndex(template.signatureColumns.map((column) => column.headingAr));
   const cells = template.signatureColumns
     .map(
-      (column) => `<div class="sig">
+      (column, index) => `<div class="sig">
         <p class="sig__head">${escapeHtml(column.headingAr)}</p>
-        <div class="sig__body">
+        <div class="sig__body"${index === sealAt ? HOUSE_SEALED_ATTRS : ""}>${
+          index === sealAt ? houseSealImg({ sizeMm: 32, dyMm: 0 }) : ""
+        }
           <p class="sig__line">الاسم: <span class="rule-line">........................</span></p>
           <p class="sig__line">التوقيع: <span class="rule-line">......................</span></p>
           <p class="sig__line">التاريخ: <span class="rule-line">......................</span></p>
