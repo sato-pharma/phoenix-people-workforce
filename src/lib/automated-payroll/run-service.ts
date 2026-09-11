@@ -21,6 +21,16 @@ import { diffStepUpload, parseStepWorkbook } from "./imports/step-parser.ts";
 import { assertHoldReasonsPresent, holdCandidatesFromStepRows } from "./hold-reason.ts";
 import { buildHoldReview, type HoldReview } from "./hold-review.ts";
 import {
+  describeModuleDrift,
+  detectModuleDrift,
+  mergeModuleDrift,
+  MODULE_SOURCED_STEP_KEYS,
+  RECOMMENDED_AT_CONFIRM_KEY,
+  snapshotFromSummary,
+  snapshotRecommendations,
+  type ModuleDriftReport,
+} from "./module-drift.ts";
+import {
   carryForwardForRunAssembly,
   markCarryForwardApplied,
   outstandingCarryForwardFor,
@@ -584,6 +594,22 @@ export async function confirmStep(
   await upsertDraftRows(runId, patches);
 
   const summary = summarizeStep(stepKey, rows);
+  // WHAT THE MODULE WAS PROPOSING AT THIS MOMENT, for the steps it feeds.
+  //
+  // Confirming copies the module's figure onto the run's own row, and the engine reads that row
+  // from here on. Without a record of what was proposed at the time, a later check cannot tell a
+  // figure somebody deliberately overrode from one the module has since changed — see
+  // module-drift.ts. Stored in the step state's existing jsonb summary, so it costs no schema.
+  if (MODULE_SOURCED_STEP_KEYS.includes(stepKey)) {
+    summary[RECOMMENDED_AT_CONFIRM_KEY] = snapshotRecommendations(rows);
+  }
+  // WHAT THE MODULE WAS PROPOSING AT THIS MOMENT, for the steps it feeds.
+  //
+  // Confirming copies the module's figure onto the run's own row, and the engine reads that row
+  // from here on. Without a record of what was proposed at the time, a later check cannot tell a
+  // figure somebody deliberately overrode from one the module has since changed — see
+  // module-drift.ts. Stored in the step state's existing jsonb summary, so it costs no schema.
+
   const state = await upsertStepState({
     runId,
     stepKey,
@@ -619,6 +645,36 @@ export async function confirmStep(
     detail: summary,
   });
   return state;
+}
+
+/**
+ * Which confirmed figures the Deductions module no longer agrees with.
+ *
+ * Recomputes only the steps the module feeds, and only the ones already confirmed — an unconfirmed
+ * step is still showing live figures, so there is nothing for it to have drifted from.
+ */
+export async function getModuleDrift(access: AccessContext, runId: string): Promise<ModuleDriftReport> {
+  assertAutomatedPayrollHrActor(access);
+  const run = await requireRun(runId);
+  const period: PayrollPeriod = { month: run.month, year: run.year };
+  const [{ members, sources, draftRows }, states] = await Promise.all([
+    loadRunContext(period, runId),
+    listStepStates(runId),
+  ]);
+  const confirmed = new Map(
+    states.filter((state) => state.status === "confirmed").map((state) => [state.stepKey, state]),
+  );
+
+  const reports: ModuleDriftReport[] = [];
+  for (const stepKey of MODULE_SOURCED_STEP_KEYS) {
+    const state = confirmed.get(stepKey);
+    if (!state) continue;
+    const snapshot = snapshotFromSummary(state.summary);
+    if (!snapshot) continue;
+    const rows = await recommendStep({ access, period, stepKey, members, sources, draftRows });
+    reports.push(detectModuleDrift({ stepKey, rows, snapshot }));
+  }
+  return mergeModuleDrift(reports);
 }
 
 function summarizeStep(stepKey: StepKey, rows: StepRow[]): Record<string, unknown> {
