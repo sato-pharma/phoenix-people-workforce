@@ -96,7 +96,7 @@ export function runBackgroundReviewQueueTests(): void {
       "asking again is what storing the answer was for",
     );
     assert.equal(
-      needsBackgroundReview(person("s3", { folder: { filedAt: "2026-08-31T09:00:00.000Z", filedByHrId: null, key: "Paramedical", kind: "paramedical" } })),
+      needsBackgroundReview(person("s3", { folder: { filedAt: "2026-08-31T09:00:00.000Z", filedByHrId: null, filedByName: null, key: "Paramedical", kind: "paramedical" } })),
       false,
       "already on the shelf",
     );

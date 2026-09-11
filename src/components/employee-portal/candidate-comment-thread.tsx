@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
+import { personLabel, UNNAMED_AUTHOR_LABEL } from "@/lib/recruitment/person-labels";
 import { CANDIDATE_COMMENT_MAX_LENGTH, type CandidateComment } from "@/lib/recruitment/types";
 
 /**
@@ -138,10 +139,15 @@ export function CandidateCommentThread({
             <li className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2" key={comment.id}>
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 {/* The name AS AT the moment of writing, never re-resolved — HR_IDs are reused when a
-                    seat is refilled, so a join here would eventually credit a successor. Falls back
-                    to the HR_ID rather than to "System", which would be a claim about who spoke. */}
+                    seat is refilled, so a join here would eventually credit a successor.
+                    When no name was snapshotted, this said the HR_ID. That kept the important
+                    property — never claiming "System" said it, which would be a claim about who
+                    spoke — but paid for it with a raw code, which the owner's rule forbids and which
+                    no reader can act on anyway. "Unnamed author" keeps the property and drops the
+                    code: it is the same wording the workstation's history strip already uses for an
+                    unattributed note. */}
                 <span className="whitespace-nowrap text-xs font-semibold text-slate-700">
-                  {comment.authorName ?? comment.authorHrId ?? "Not recorded"}
+                  {personLabel(comment.authorName, UNNAMED_AUTHOR_LABEL)}
                   {comment.authorJobTitle ? ` · ${comment.authorJobTitle}` : ""}
                 </span>
                 <span className="whitespace-nowrap text-phx-xs text-slate-400">{cairoDateTime(comment.createdAt)}</span>

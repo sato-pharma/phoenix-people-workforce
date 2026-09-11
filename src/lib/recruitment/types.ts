@@ -350,6 +350,12 @@ export type Candidate = {
     key: string;
     filedAt: string;
     filedByHrId: string | null;
+    // The filer's display name, resolved from `filedByHrId` against `employees`. The shelf prints
+    // THIS and never the id — the owner's rule is names, never raw codes. Null on two different
+    // paths and the screen must read the same on both: a loader that did not run the lookup (every
+    // single-candidate mapCandidate call), and an id that matched no employee. Both render as words
+    // via UNNAMED_FILER_LABEL rather than falling back to the id. Filled by listCandidates.
+    filedByName: string | null;
   } | null;
   createdBy: string | null;
   createdAt: string;
