@@ -16,6 +16,7 @@ import {
   expenseDecisionsThatChanged,
   resyncPayrollExpenseStep,
   type ExpenseDecisionSnapshot,
+  type ExpenseResyncOutcome,
 } from "@/lib/automated-payroll/expense-resync";
 import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixture-hygiene";
 import { resolveOutstationCapturedLocation } from "@/lib/outstation/captured-location";
@@ -1033,7 +1034,10 @@ export async function savePayrollExpenseApprovals(input: {
     reportId?: string | null;
   }>;
   reportId?: string | null;
-}, accessContext: AccessContext) {
+}, accessContext: AccessContext, options?: {
+  /** Receives what the payroll resync did, so the save can say when a decision did NOT reach payroll (audit finding 47). */
+  onPayrollResync?: (outcomes: ExpenseResyncOutcome[]) => void;
+}) {
   // WHO APPROVED IT - and this column does NOT hold only people.
   //
   // `outstation_expenses.approved_by` feeds `expense_claims.decided_by_hr_id` through
@@ -1255,10 +1259,11 @@ export async function savePayrollExpenseApprovals(input: {
 
   // A confirmed payroll Expenses step is a frozen snapshot and will otherwise keep paying the
   // figures it was confirmed with — see expense-resync.ts for the July 2026 run this cost.
-  await resyncPayrollExpenseStepForRows(
+  const payrollResync = await resyncPayrollExpenseStepForRows(
     before,
     written.map((row) => toExpenseDecisionSnapshot(row)),
   );
+  options?.onPayrollResync?.(payrollResync);
 
   invalidateExecutiveDashboardCache("expense approvals saved", ["expenses", "payroll"]);
   return saved;
@@ -1350,15 +1355,18 @@ async function readExistingExpenseRows(
 async function resyncPayrollExpenseStepForRows(
   before: ExpenseDecisionSnapshot[],
   after: ExpenseDecisionSnapshot[],
-): Promise<void> {
+): Promise<ExpenseResyncOutcome[]> {
   try {
     const target = expenseDecisionsThatChanged(before, after);
-    await resyncPayrollExpenseStep(target);
+    // Returned, not discarded: a skip because Part 2 is already confirmed means the decision did not
+    // reach payroll, and only the caller can say so to the person saving (audit finding 47).
+    return await resyncPayrollExpenseStep(target);
   } catch (error) {
     logError("Outstation: payroll expense resync could not run after an approval save", {
       labels: { event: "outstation_expense_resync_dispatch_failed" },
       error,
     });
+    return [];
   }
 }
 
@@ -1369,8 +1377,8 @@ async function resyncPayrollExpenseStepForRows(
  */
 export async function resyncPayrollExpenseStepForRemovedTrips(
   removed: Array<Record<string, unknown>>,
-): Promise<void> {
-  await resyncPayrollExpenseStepForRows(removed.map(toExpenseDecisionSnapshot), []);
+): Promise<ExpenseResyncOutcome[]> {
+  return resyncPayrollExpenseStepForRows(removed.map(toExpenseDecisionSnapshot), []);
 }
 
 /** Columns a caller must select before deleting, so the removed rows can still be resynced. */

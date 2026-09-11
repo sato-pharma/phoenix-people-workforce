@@ -55,7 +55,9 @@ export function stepTemplateColumns(stepKey: StepKey): TemplateColumn[] {
     if (field.kind === "money" || field.kind === "days") {
       columns.push({ label: `Recommended ${field.label}`, editable: false, money: field.kind === "money" });
     }
-    columns.push({ label: field.label, editable: true, money: field.kind === "money" });
+    // A field with nowhere to be saved ships read-only (audit finding 31): an editable column the
+    // commit cannot store is a promise the sheet breaks, and the parser skips it for the same reason.
+    columns.push({ label: field.label, editable: field.notPersisted !== true, money: field.kind === "money" });
   }
   // The step's live total sits after the fields it sums, mirroring the card.
   // Read-only: step-parser.ts matches editable `field.label`s only, so this

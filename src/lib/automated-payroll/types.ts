@@ -176,9 +176,12 @@ export type DraftRow = {
   additionsReason: string | null;
   /**
    * Resignations-step-only: the editable day count behind `crm` (CRM no-activity
-   * days for the leaver's final settlement). Auto-calculates `crm` via Base/30 ×
-   * days when edited — safe because the leaver's system-recommended `crm` value
-   * already uses that exact formula (calculateDeductionAmountFromBaseSalary).
+   * days for the leaver's final settlement). Auto-calculates `crm` when edited, at
+   * the leaver's NET ÷ the month's actual calendar days × days (owner rule
+   * 2026-08-30; `resignationCrmDays` in step-definitions.ts carries the three
+   * context keys). This comment used to say Base/30 and cite
+   * calculateDeductionAmountFromBaseSalary; both went stale, the rate on
+   * 2026-08-30 and that function's divisor (real calendar days) on 2026-08-01.
    * There is deliberately NO equivalent for `unpaidVacations`: that figure is a
    * composite of a balance-aware Phoenix-vacation amount plus a day-rate CRM-leave
    * amount, not a flat day-rate — auto-calculating it from a single day count
@@ -494,9 +497,11 @@ export type StepFieldSpec = {
    * Editing either field clamps it to [0, total] and sets the OTHER to
    * (total - value). The total is read from `complementTotalContextKey`.
    *
-   * Deliberately a SEPARATE field from `autoCalcDivisorContextKey`: the money
-   * formula's divisor must stay a fixed 30 regardless of the actual month
-   * length (calculateDeductionAmountFromBaseSalary is hardcoded to /30), while
+   * Deliberately a SEPARATE field from `autoCalcDivisorContextKey`: on the Part 1
+   * CRM tab the money divisor stays a flat 30 regardless of the actual month
+   * length (the owner's 2026-07-25 rate, the one calculateFlat30DeductionAmount
+   * applies; NOT calculateDeductionAmountFromBaseSalary, which this comment used
+   * to cite and which has divided by real calendar days since 2026-08-01), while
    * the complement CAP must be the real calendar day count (28–31) — conflating
    * the two would silently change the deduction amount in any 31-day month.
    */
@@ -505,6 +510,17 @@ export type StepFieldSpec = {
   complementTotalContextKey?: string;
   /** For a "select" field: the dropdown's choices. */
   options?: { value: string; label: string }[];
+  /**
+   * True for a field with no draft column of its own: a day count shown so HR can type a figure
+   * the grid turns into money, or the derived complement of one that IS stored. The grid still
+   * edits it; the xlsx template ships it READ-ONLY and the re-upload parser never reads it back.
+   *
+   * Audit finding 31: five such day columns shipped editable, so a sheet changing one from 2 to 6
+   * previewed "2 to 6 (changed)" and then saved nothing, because `stepEditToPatch` has no column to
+   * put it in. Kept in step with run-service.ts's NUMERIC_FIELDS by a drift test, so a field cannot
+   * be both unflagged and unstored, or flagged and stored.
+   */
+  notPersisted?: boolean;
 };
 
 export type StepDefinition = {
