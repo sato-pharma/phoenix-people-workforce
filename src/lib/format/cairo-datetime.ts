@@ -8,6 +8,8 @@
 // Client-safe: no database, no server-only import. That matters — it is called from "use client"
 // components, and a formatter that reached for anything server-side would drag it into the bundle.
 
+import { cairoWallClock, isCairoZone } from "@/lib/format/cairo-zone";
+
 /**
  * The month names, written out rather than asked for, because the ANSWER IS NOT THE SAME ON EVERY
  * ENGINE and these strings get hydrated.
@@ -36,8 +38,17 @@ const CAIRO_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "S
 
 /**
  * Every field NUMERIC, so the parts themselves carry no locale opinion — digits are digits on every
- * ICU version. The zone stays pinned to Cairo (the owner reads Cairo, never UTC) and the month name
- * is applied afterwards from the table above.
+ * ICU version. The month name is applied afterwards from the table above.
+ *
+ * THE ZONE IS "UTC" AND THAT IS THE CAIRO FIX, not a regression of it. Asking an engine for
+ * `timeZone: "Africa/Cairo"` gets Egypt's offset out of whatever timezone data that engine was
+ * built with, and Egypt REINTRODUCED daylight saving in 2023 — so a browser older than that renders
+ * every Cairo timestamp an hour early for half the year, while the server renders it correctly.
+ * In a `"use client"` component both sides render the same text and React compares them: one digit
+ * apart is hydration error #418. It was the whole of the platform's remaining #418 in
+ * September 2026. So `cairoWallClock` moves the instant using a table that ships with the code,
+ * and the digits are then read off in UTC — the one zone with no rules for two engines to disagree
+ * about. See src/lib/format/cairo-zone.ts.
  *
  * `hourCycle: "h23"` rather than `hour12: false`: with `hour: "2-digit"` some ICU builds render
  * midnight as "24:00", which is a valid time string and the WRONG DAY beside a date that has
@@ -49,7 +60,7 @@ const CAIRO_PARTS = new Intl.DateTimeFormat("en-GB", {
   hourCycle: "h23",
   minute: "2-digit",
   month: "2-digit",
-  timeZone: "Africa/Cairo",
+  timeZone: "UTC",
   year: "numeric",
 });
 
@@ -57,7 +68,7 @@ type CairoParts = { day: string; hour: string; minute: string; month: string; ye
 
 function cairoParts(value: Date): CairoParts {
   const parts: Record<string, string> = {};
-  for (const part of CAIRO_PARTS.formatToParts(value)) {
+  for (const part of CAIRO_PARTS.formatToParts(cairoWallClock(value))) {
     if (part.type !== "literal") parts[part.type] = part.value;
   }
   return parts as CairoParts;
@@ -195,12 +206,21 @@ function applyStableMonth(parts: readonly Intl.DateTimeFormatPart[], monthIndex:
  * that builds its formatter once still builds it once.
  */
 export function stableEnGbFormatter(options: Intl.DateTimeFormatOptions): { format(value: Date): string } {
-  const display = new Intl.DateTimeFormat("en-GB", options);
+  // A CAIRO request is served from the shipped offset table and rendered in UTC, for the reason in
+  // CAIRO_PARTS above: Egypt's 2023 return to daylight saving is absent from any engine built
+  // before it, and this helper's whole job is bytes two engines agree on. Every other zone is
+  // passed through untouched — most of this helper's ~69 call sites are correctly zoned already
+  // (a `date` column pinned to UTC, a vendor wall-clock that is Cairo but tagged UTC), and the
+  // zone was never the axis this module changes.
+  const cairo = isCairoZone(options.timeZone);
+  const resolved = cairo ? { ...options, timeZone: "UTC" } : options;
+  const display = new Intl.DateTimeFormat("en-GB", resolved);
   // Numeric month in the SAME zone as the caller asked for; digits are identical on every ICU.
-  const month = new Intl.DateTimeFormat("en-GB", { month: "2-digit", timeZone: options.timeZone });
+  const month = new Intl.DateTimeFormat("en-GB", { month: "2-digit", timeZone: resolved.timeZone });
   return {
     format(value: Date): string {
-      return applyStableMonth(display.formatToParts(value), Number(month.format(value)) - 1);
+      const at = cairo ? cairoWallClock(value) : value;
+      return applyStableMonth(display.formatToParts(at), Number(month.format(at)) - 1);
     },
   };
 }

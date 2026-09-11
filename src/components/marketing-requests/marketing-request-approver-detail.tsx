@@ -9,6 +9,7 @@ import type { MarketingApproverRequestDetail } from "@/lib/marketing-requests/ap
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 /* ------------------------------------------------------------------------------------------- */
 /* Formatters                                                                                    */
@@ -16,7 +17,7 @@ import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 function egp(value: number | null) {
   if (value === null || !Number.isFinite(value)) return null;
-  return new Intl.NumberFormat("en-US", {
+  return stableCurrencyFormatter("en-US", {
     currency: "EGP",
     maximumFractionDigits: 0,
     style: "currency",
