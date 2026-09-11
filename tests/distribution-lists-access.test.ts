@@ -54,6 +54,10 @@ const ROUTE_TEMPLATE = readFileSync(
   fileURLToPath(new URL("../app/api/admin/email-templates/[templateKey]/route.ts", import.meta.url)),
   "utf8",
 );
+const ROUTE_ROLLBACK = readFileSync(
+  fileURLToPath(new URL("../app/api/admin/email-templates/[templateKey]/rollback/route.ts", import.meta.url)),
+  "utf8",
+);
 const SETTINGS = readFileSync(
   fileURLToPath(new URL("../src/config/system-settings.ts", import.meta.url)),
   "utf8",
@@ -306,4 +310,28 @@ export function runDistributionListsAccessTests() {
   const saveAt = templateRoute.indexOf("saveEmailTemplate(templateKey");
   assert.ok(guardAt > 0, "the template route must call the privileged-field guard");
   assert.ok(saveAt > guardAt, "and it must call it BEFORE saving, or the write has already happened");
+
+  // 🔴 AND ROLLBACK IS THE SAME WRITE UNDER ANOTHER NAME. `rollbackEmailTemplate` feeds
+  // saveEmailTemplate the chosen version's `rulesSnapshot` and spreads its `templateSnapshot`,
+  // which carries `isActive` - so restoring an old version restores that version's fixed To/Cc/Bcc
+  // addresses and its on/off state. Guarding only the save route leaves the fence decorative:
+  // somebody who cannot ADD a Bcc could still reinstate one any earlier version carried, filed as
+  // a rollback with a reason on it, looking like housekeeping. Found by auditing every surface the
+  // `communication` grant opens rather than only the one the first review named.
+  const rollbackRoute = code(ROUTE_ROLLBACK);
+  const rollbackGuardAt = rollbackRoute.indexOf("refusePrivilegedTemplateChange(");
+  const rollbackCallAt = rollbackRoute.indexOf("rollbackEmailTemplate(");
+  assert.ok(rollbackGuardAt > 0, "🔴 the ROLLBACK route must check the privileged fields too - it writes the same two things the save route refuses");
+  assert.ok(
+    rollbackCallAt > rollbackGuardAt,
+    "and before the rollback runs, not after - a guard downstream of the write protects nothing",
+  );
+  // It must judge the VERSION BEING RESTORED, not the request body. The body carries only a version
+  // number and a reason, so a guard reading `body` would compare two fields that are never there,
+  // find no difference, and pass every rollback.
+  assert.match(
+    rollbackRoute,
+    /payload:\s*\{\s*isActive:\s*target\.templateSnapshot\.isActive,\s*rules:\s*target\.rulesSnapshot\s*\}/,
+    "the rollback guard must read the snapshot it is about to restore - reading the request body would pass every rollback silently",
+  );
 }
