@@ -471,14 +471,14 @@ time locally — parallel validation belongs to CI.
 idle against ~3.5 GB for a dev server, build or cold typecheck, so the real limit is ~5 concurrent
 HEAVY jobs.
 
-🔴 **COMMIT headroom and PHYSICAL RAM are two different ceilings, and the one above stays GREEN while
-the machine dies. Read FREE RAM, never the session count** — a session is ~269 MB while ONE
-`next dev` held 3,454 MB, more than eleven sessions together. Under **2,600 MB** a dev server or cold
-typecheck crosses `mem-watchdog.ps1`'s floor; under **1,800 MB** you are already in it, and the
-watchdog reclaims NOTHING unless an IDLE dev server exists. **Stop a dev server before closing a
-session, and kill it by PORT.** Enforced at SessionStart by `~/.claude/hooks/session-census.mjs`,
-deliberately SILENT at 10–12 sessions and speaking only at 13/16 — **a count on the statusline is not
-a guard.** Measurements and both incidents:
+🔴 **COMMIT headroom and PHYSICAL RAM are two ceilings; the one above stays GREEN while the machine
+dies. Read FREE RAM, never the session count** — a session is ~269 MB while ONE `next dev` held
+3,454 MB, more than eleven sessions. Under **2,600 MB** a dev server or cold typecheck crosses
+`mem-watchdog.ps1`'s floor and `~/.claude/hooks/heavy-job-gate.mjs` refuses to START one; under
+**1,800 MB** the watchdog reaps IDLE dev servers, then all but the most recently active, and under
+**500 MB** ANY node job, most RAM first. **Stop a dev server before closing a session, and kill it
+by PORT.** `~/.claude/hooks/session-census.mjs` is deliberately SILENT until 13/16 sessions — **a
+statusline count is not a guard.** Account:
 [docs/agents-worktree-and-machine-limits.md](docs/agents-worktree-and-machine-limits.md).
 
 Route work by tier:
