@@ -38,7 +38,7 @@
 
 import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { isWithinManagerHierarchy, sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
-import { isAboveViewer, managementChainOf, seatRank } from "@/lib/workforce/downward-scope";
+import { isAboveViewer, isStrictlyBelowViewer, managementChainOf, seatRank } from "@/lib/workforce/downward-scope";
 import {
   doctorCoverageScopeBasisForRole,
   type DoctorCoverageScope,
@@ -163,12 +163,8 @@ export function resolveDoctorCoverageScope(input: {
     // chain-only behaviour instead of to an empty board; runDoctorCoverageScopeTests asserts every
     // LINE_ROLE is ranked, because an unranked one would otherwise fail silently right here.
     const viewerRank = seatRank(input.role) ?? seatRank(viewer.jobTitle);
-    const strictlyBelowTheViewer = (employee: DoctorCoverageScopeEmployee) => {
-      if (viewerRank == null) return true;
-      if (normalizeHrIdForAccess(employee.hrId) === viewerKey) return true; // you always see yourself
-      const rank = seatRank(employee.jobTitle);
-      return rank != null && rank < viewerRank;
-    };
+    const strictlyBelowTheViewer = (employee: DoctorCoverageScopeEmployee) =>
+      isStrictlyBelowViewer(employee, { canonicalHrId: viewerKey, rank: viewerRank });
 
     const agentHrIds = input.employees
       .filter((employee) => isActiveLifecycleStatus(employee.employmentStatus))

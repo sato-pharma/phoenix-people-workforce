@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   filterEmployeesForDoubleVisitAccess,
+  filterRowsForAccess,
   resolveDoubleVisitAccessScope,
 } from "../src/lib/double-visit-analytics/service.ts";
 import { normalizeHrIdForAccess } from "../src/lib/hr-id.ts";
@@ -34,6 +37,18 @@ import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directo
  * while resolveDoubleVisitAccessScope still returns a correctly cut allowedHrIds. The scope looks
  * right and the board is wrong.
  */
+
+const SERVICE_SOURCE = readFileSync(
+  fileURLToPath(new URL("../src/lib/double-visit-analytics/service.ts", import.meta.url)),
+  "utf8",
+);
+
+/** Source with comments stripped, so a rule described in prose cannot satisfy a check. */
+function code(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+}
 
 function employee(input: Partial<EmployeeDirectoryRow>): EmployeeDirectoryRow {
   return {
@@ -142,4 +157,91 @@ export function runDoubleVisitDownwardScopeTests() {
   if (dsmScope.all !== false) return;
   assert.equal(dsmScope.allowedLines.size, 0, "a DSM never gets the line widening, so the label set stays empty");
   assert.ok(!dsmScope.allowedHrIds.has(k("M-1")), "and he sees only his own subtree, not the line");
+
+  // ── 🔴 A ROW between two cut people must not survive on the line LABEL ───────────────────────
+  // The Manager Performance table is built from row VISITORS, not from the scoped employee list,
+  // so cutting somebody from the scope alone never removes their name from it. Before this guard
+  // an NSM→DSM row — both parties cut — still reached the PM's board carrying their names.
+  const row = (visitor: string, visited: string, lineName: string | null, over: Record<string, unknown> = {}) =>
+    ({
+      area_name: null,
+      double_visitor_hr_id: visitor,
+      double_visitor_name: visitor,
+      line_name: lineName,
+      visited_employee_hr_id: visited,
+      visited_employee_name: visited,
+      ...over,
+    }) as unknown as Parameters<typeof filterRowsForAccess>[0][number];
+
+  const pmAccess = accessFor("B-155", "Product Manager");
+  const kept = filterRowsForAccess(
+    [
+      row("N-1", "D-9", "Pedia"), // both cut — must NOT survive
+      row("A-8", "P-2", "Pedia"), // the PM's own manager visiting a peer — must NOT survive
+      row("D-1", "M-1", "Pedia"), // his own DSM visiting a rep — must survive
+      row("GHOST-1", "GHOST-2", "Pedia"), // neither party in the directory — the label's real job
+    ],
+    pmAccess,
+    people,
+  ).map((r) => `${r.double_visitor_hr_id}->${r.visited_employee_hr_id}`);
+
+  assert.ok(
+    !kept.includes("N-1->D-9"),
+    "a row between two people the cut removed must not return through the line label — the Manager Performance table reads row visitors, so this is how a cut manager keeps her name on a PM's board",
+  );
+  assert.ok(!kept.includes("A-8->P-2"), "nor a row whose visitor is the viewer's own manager");
+  assert.ok(kept.includes("D-1->M-1"), "his own DSM's visit to a rep still counts");
+  assert.ok(
+    kept.includes("GHOST-1->GHOST-2"),
+    "a line-tagged row whose people are NOT in the directory is still captured — that is what allowedLines is for, and narrowing it to nothing would lose resigned and vacant territories",
+  );
+
+  // ── 🔴 A manager-link CYCLE must not smuggle an ancestor back in ─────────────────────────────
+  // descendantHrIds seeds allowedHrIds before the cut and the cut gates only the line widening, so
+  // without the chain guard a cycle re-admits the exact person the rule removes. Production has 0
+  // cycles today (measured 2026-09-11); this pins the guard rather than the data.
+  const cyclic = pediaLine().map((person) =>
+    person.hrId === "A-8" ? ({ ...person, managerHrId: "B-155" } as typeof person) : person,
+  );
+  const cyclicScope = resolveDoubleVisitAccessScope(accessFor("B-155", "Product Manager"), cyclic);
+  assert.equal(cyclicScope.all, false, "still not org-wide");
+  if (cyclicScope.all !== false) return;
+  assert.ok(
+    !cyclicScope.allowedHrIds.has(k("A-8")),
+    "a cycle that puts the viewer's own manager inside his subtree must still not expose her — the descendant seed is chain-filtered for exactly this",
+  );
+  assert.ok(cyclicScope.allowedHrIds.has(k("B-155")), "and the viewer is never deleted from his own scope by that guard");
+
+  // ── The ladder reads positionTitle FIRST, then jobTitle ─────────────────────────────────────
+  // A directory row with a null job_title and a populated position_title is a real shape, and the
+  // rest of this module resolves a role that way. Ranking on jobTitle alone leaves such a rep
+  // UNRANKED, and an unranked seat is excluded — so he vanishes from the board meant to show him.
+  const withPositionOnly = [
+    ...pediaLine(),
+    employee({ fullName: "Rep by position title", hrId: "M-9", jobTitle: null, positionTitle: "Medical Representative" }),
+  ];
+  const positionScope = resolveDoubleVisitAccessScope(accessFor("B-155", "Product Manager"), withPositionOnly);
+  assert.equal(positionScope.all, false, "still not org-wide");
+  if (positionScope.all !== false) return;
+  assert.ok(
+    positionScope.allowedHrIds.has(k("M-9")),
+    "a rep carrying only a position title is ranked and stays in scope — ranking on jobTitle alone would silently drop him",
+  );
+
+  // ── 🔴 AN EXCLUSION MUST NEVER BE DERIVED FROM A SCOPE ───────────────────────────────────────
+  // `managerHrIdKeys` drops manager-to-manager rows. Whether somebody IS a manager is a property of
+  // that person, not of who is looking. Building it from `scopedEmployees` couples the exclusion to
+  // the viewer, so the downward cut removes people from the exclusion set too and their rows are
+  // recounted as ordinary visits — inflating totalVisits and counting a DSM inside mrCoverageCount
+  // as a covered MR. That is a REGRESSION the cut introduces, not a pre-existing hole, and it lives
+  // several layers inside an IO function, so it is pinned at the source instead.
+  const service = code(SERVICE_SOURCE);
+  const builders = service.match(/managerHrIdKeys\s*=\s*new Set\(\s*(\w+)/g) ?? [];
+  assert.ok(builders.length >= 4, `expected every managerHrIdKeys builder to be found, saw ${builders.length}`);
+  for (const builder of builders) {
+    assert.ok(
+      !/scopedEmployees/.test(builder),
+      "every managerHrIdKeys set must be built from the whole directory, never from scopedEmployees — deriving an exclusion from a scope is what let the downward cut inflate a PM's KPIs",
+    );
+  }
 }

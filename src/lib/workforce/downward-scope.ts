@@ -34,10 +34,20 @@ import { normalizeHrIdForAccess } from "@/lib/hr-id";
  * is not strictly below himself, and without the guard the ladder empties his own board.
  */
 
-/** The fields the rule reads. Kept narrow so a directory change cannot quietly alter who is cut. */
+/**
+ * The fields the rule reads. Kept narrow so a directory change cannot quietly alter who is cut.
+ *
+ * `positionTitle` is optional and, where present, is read FIRST. This repo carries a seat in two
+ * columns and they disagree: double-visit analytics resolves a person's role as "positionTitle,
+ * then jobTitle" everywhere else (resolveDvRole), and a directory row with a null `job_title` and a
+ * populated `position_title` is a real shape. Ranking on `jobTitle` alone would leave such a person
+ * UNRANKED, and an unranked seat is excluded — so a medical rep would silently vanish from the
+ * board that exists to show him. Callers that carry only one of the two are unaffected.
+ */
 export type DownwardScopePerson = {
   hrId: string;
   jobTitle: string | null;
+  positionTitle?: string | null;
   managerHrId: string | null;
   pendingManagerReplacementForHrId: string | null;
 };
@@ -130,13 +140,18 @@ export function isAboveViewer(
  * pre-rule scope.
  */
 export function isStrictlyBelowViewer(
-  person: Pick<DownwardScopePerson, "hrId" | "jobTitle">,
+  person: Pick<DownwardScopePerson, "hrId" | "jobTitle" | "positionTitle">,
   viewer: { canonicalHrId: string; rank: number | null },
 ): boolean {
   if (viewer.rank == null) return true;
   if (normalizeHrIdForAccess(person.hrId) === viewer.canonicalHrId) return true; // you always see yourself
-  const rank = seatRank(person.jobTitle);
+  const rank = rankOfSeat(person);
   return rank != null && rank < viewer.rank;
+}
+
+/** A person's rank: position title first, job title second — see DownwardScopePerson. */
+export function rankOfSeat(person: Pick<DownwardScopePerson, "jobTitle" | "positionTitle">): number | null {
+  return seatRank(person.positionTitle) ?? seatRank(person.jobTitle);
 }
 
 /**

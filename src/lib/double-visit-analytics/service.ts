@@ -15,7 +15,13 @@ import type { DvProgress } from "@/lib/probation/intelligence/report-metrics";
 import type { ProbationRow } from "@/lib/probation/types";
 import { buildReportSummaryMetrics, formatActiveFilters } from "@/lib/double-visit-analytics/report-filters";
 import { normalizeRegionLabel, regionsWithinManagerHierarchy, sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
-import { downwardOnlyFilter, seatRank } from "@/lib/workforce/downward-scope";
+import {
+  downwardOnlyFilter,
+  indexByCanonicalHrId,
+  managementChainOf,
+  rankOfSeat,
+  seatRank,
+} from "@/lib/workforce/downward-scope";
 import { getDoubleVisitRows } from "@/lib/crm/reads";
 import { getCrmIdentityResolutions } from "@/lib/crm/identity";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
@@ -245,6 +251,19 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
   const allowedAreas = new Set<string>();
   const allowedLines = new Set<string>();
 
+  // Defence in depth against a manager-link CYCLE. An ancestor is never inside your own subtree,
+  // so on a sound directory this deletes nothing — but a cycle makes descendantHrIds return one,
+  // and the downward cut below would never see it because it gates only what the LINE widening
+  // adds. The CRM resolver carries the same guard for the same reason. Production currently has 0
+  // cycles and 0 self-managed rows (measured 2026-09-11), so this is a latent hole, not a live one.
+  // The viewer is never removed: in a cycle he can appear in his own chain, and deleting him would
+  // empty his board.
+  if (viewerKey) {
+    for (const ancestor of managementChainOf(viewerKey, indexByCanonicalHrId(employees))) {
+      if (ancestor !== viewerKey) allowedHrIds.delete(ancestor);
+    }
+  }
+
   if (access.role === "Regional Manager" && viewer && viewerKey) {
     // Owner rule (2026-07-18): a Regional Manager owns exactly ONE product line across a specific
     // set of regions — their scope is Medical Reps on the RM's own line whose region is one their
@@ -294,7 +313,7 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
     const keepDownward = downwardOnlyFilter({
       people: employees,
       viewerCanonicalHrId: viewerKey,
-      viewerRank: seatRank(access.role) ?? seatRank(viewer.jobTitle),
+      viewerRank: seatRank(access.role) ?? rankOfSeat(viewer),
     });
 
     for (const employee of employees) {
@@ -323,13 +342,30 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
 export function filterRowsForAccess(rows: DoubleVisitDbRow[], access: AccessContext, employees: EmployeeDirectoryRow[]) {
   const scope = resolveDoubleVisitAccessScope(access, employees);
   if (scope.all) return rows;
+  // Who the directory knows at all. The line-label fallback below is for rows whose people are
+  // NOT in here; a row naming somebody the directory does know has already been judged on that
+  // person, and must not get a second chance on the label.
+  const knownToDirectory = new Set(
+    employees.map((employee) => normalizedHrKey(employee.hrId)).filter((key): key is string => Boolean(key)),
+  );
   return rows.filter((row) => {
     const doubleVisitorKey = normalizedHrKey(row.double_visitor_hr_id);
     const visitedKey = normalizedHrKey(row.visited_employee_hr_id);
     if (doubleVisitorKey && scope.allowedHrIds.has(doubleVisitorKey)) return true;
     if (visitedKey && scope.allowedHrIds.has(visitedKey)) return true;
     if (row.area_name && scope.allowedAreas.has(normalizeLabelKey(row.area_name))) return true;
-    if (row.line_name && scope.allowedLines.has(normalizeLabelKey(row.line_name))) return true;
+
+    // 🔴 THE LINE LABEL IS A LAST RESORT, NOT A SECOND ROUTE IN. It exists so a line-tagged row
+    // whose people cannot be resolved — a resigned rep, a vacant territory — is still counted.
+    // Applied unconditionally it re-admits the very rows the downward cut removed: a PM's own
+    // manager reappears by name on the Manager Performance table, which is built from row
+    // VISITORS rather than from the scoped employee list, so cutting her from the scope alone
+    // never removed her. Caught by review 2026-09-11.
+    const eitherPartyIsKnown =
+      (doubleVisitorKey != null && knownToDirectory.has(doubleVisitorKey)) ||
+      (visitedKey != null && knownToDirectory.has(visitedKey));
+    if (!eitherPartyIsKnown && row.line_name && scope.allowedLines.has(normalizeLabelKey(row.line_name))) return true;
+
     return false;
   });
 }
@@ -1419,11 +1455,19 @@ export async function getDoubleVisitDashboardData(input: {
   );
   // Build a set of manager HR ID keys (DSM/RM/NSM/PM/GPM/TM) to exclude manager-to-manager
   // rows — defense-in-depth alongside the row-level classification in dbRowFromMirrorVisit.
+  //
+  // 🔴 FROM THE WHOLE DIRECTORY, NEVER FROM `scopedEmployees`. Whether somebody IS a manager is a
+  // property of that person, not of who is looking — and the two other builders of this set (see
+  // the mirror loader and the coverage rollup) already read `employees` for exactly that reason.
+  // Deriving it from the scoped subset couples an EXCLUSION to a SCOPE, so anyone the viewer
+  // cannot see stops being recognised as a manager and their rows are counted as ordinary visits:
+  // the downward cut then inflates totalVisits and counts a DSM inside mrCoverageCount as a
+  // covered MR. Caught by review 2026-09-11 before it shipped.
   const managerHrIdKeys = new Set(
-    scopedEmployees
-      .filter((e) => resolveDvRole(e) !== null)
-      .map((e) => canonicalHrIdKey(e.hrId))
-      .filter((k): k is string => Boolean(k)),
+    employees
+      .filter((employee) => resolveDvRole(employee) !== null)
+      .map((employee) => canonicalHrIdKey(employee.hrId))
+      .filter((key): key is string => Boolean(key)),
   );
   const filteredRows = filterRowsByAllowedDoubleVisitor(scopedRows, scopedEmployeesByHrId).filter((row) => {
     if (!row.visited_employee_hr_id) return true;
@@ -1891,8 +1935,11 @@ export async function getDoubleVisitReportData(input: {
       regionByAreaKey.set(areaKey, employee.regionName);
     }
   }
+  // From the WHOLE directory, never `scopedEmployees` — see the note on the identical set in
+  // getDoubleVisitDashboardData. Coupling this exclusion to the viewer's scope lets the downward
+  // cut silently reclassify a manager as an ordinary visited rep.
   const managerHrIdKeys = new Set(
-    scopedEmployees
+    employees
       .filter((employee) => resolveDvRole(employee) !== null)
       .map((employee) => canonicalHrIdKey(employee.hrId))
       .filter((key): key is string => Boolean(key)),
