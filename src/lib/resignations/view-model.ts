@@ -134,6 +134,17 @@ export function isTerminatedResignation(record: Pick<ResignationRecord, "employe
 }
 
 /**
+ * The "declined offer / did not join" shortcut marks itself independently of
+ * employeeStatus (which is "terminated" or "declined_offer" depending on whether HR
+ * chose to pay for the days worked — see declineOfferAndOpenVacancy). Check this
+ * BEFORE isTerminatedResignation when choosing a badge: the pay branch would otherwise
+ * read as an ordinary termination.
+ */
+export function isDeclinedOfferResignation(record: Pick<ResignationRecord, "exitCategory">) {
+  return String(record.exitCategory ?? "").toLowerCase() === "declined_offer";
+}
+
+/**
  * Who created the record, as a person. Owner rule: surfaces show human names, never raw codes.
  * Falls back to the stored id only when the directory cannot name the actor.
  */

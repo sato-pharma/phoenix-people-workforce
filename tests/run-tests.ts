@@ -785,6 +785,10 @@ import { runContractNonRenewalTerminalTests } from "./contract-non-renewal-termi
 import { runContractNonRenewalMigrationReadinessTests } from "./contract-non-renewal-migration-readiness.test.ts";
 import { runResignationScopeCheckTests } from "./resignation-scope-check.test.ts";
 import { runResignationWorkflowScopeCheckTests } from "./resignation-workflow-scope-check.test.ts";
+import { runDeclineOfferEligibilityTests } from "./decline-offer-eligibility.test.ts";
+import { runDeclineOfferServiceTests } from "./decline-offer-service.test.ts";
+import { runDeclineOfferPayrollRoutingTests } from "./decline-offer-payroll-routing.test.ts";
+import { runDeclineOfferFindabilityTests } from "./decline-offer-findability.test.ts";
 import { runContractRenewalWorkflowScopeCheckTests } from "./contract-renewal-workflow-scope-check.test.ts";
 import { runCustomerPharmacyMappingReadinessTests } from "./customer-pharmacy-mapping-readiness.test.ts";
 import { runCustomerPharmacyMappingActionsTests } from "./customer-pharmacy-mapping-actions.test.ts";
@@ -2963,6 +2967,10 @@ await runTest("contract non-renewal terminal lifecycle", runContractNonRenewalTe
 await runTest("contract non-renewal migration readiness", runContractNonRenewalMigrationReadinessTests);
 await runTest("resignation employee scope check", runResignationScopeCheckTests);
 await runTest("resignation workflow scope check", runResignationWorkflowScopeCheckTests);
+await runTest("decline offer eligibility", runDeclineOfferEligibilityTests);
+await runTest("decline offer service wiring", runDeclineOfferServiceTests);
+await runTest("decline offer payroll routing", runDeclineOfferPayrollRoutingTests);
+await runTest("decline offer findability", runDeclineOfferFindabilityTests);
 await runTest("contract renewal workflow scope check", runContractRenewalWorkflowScopeCheckTests);
 await runTest("customer pharmacy mapping readiness", runCustomerPharmacyMappingReadinessTests);
 await runTest("customer pharmacy mapping actions (approve/reject)", runCustomerPharmacyMappingActionsTests);

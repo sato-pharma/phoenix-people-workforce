@@ -104,6 +104,12 @@ export type ResignationRecord = {
   completedBy: string | null;
   cancelledAt: string | null;
   cancelledBy: string | null;
+  /**
+   * Exit sub-classification independent of employeeStatus/reason — currently only
+   * "declined_offer" (see src/lib/resignations/decline-offer-eligibility.ts). Null for
+   * every ordinary resignation/termination.
+   */
+  exitCategory: string | null;
 };
 
 export type PayrollResignationCandidateRecord = {
@@ -160,6 +166,22 @@ export type CreateResignationInput = {
 
 export type EmployeeResignationInput = CreateResignationInput & {
   employeeStatus?: string | null;
+};
+
+/**
+ * The "declined offer / did not join" shortcut — an employee who backed out within
+ * DECLINE_OFFER_WINDOW_DAYS of hiring. Distinct from CreateResignationInput: HR
+ * chooses per case whether the person is entered into payroll for the days worked
+ * (`includeInPayroll`), and the service resolves that to the employment_status the RPC
+ * receives ("terminated" when true, "declined_offer" when false) — callers never pass
+ * a raw status string.
+ */
+export type DeclineOfferInput = {
+  employeeHrId: string;
+  lastWorkingDate: string;
+  note?: string | null;
+  includeInPayroll: boolean;
+  submittedDate?: string | null;
 };
 
 export type UpdateResignationDatesInput = Partial<
