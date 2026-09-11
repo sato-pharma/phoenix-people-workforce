@@ -99,9 +99,12 @@ export async function runPayrollAuditTrailAppendOnlyTests() {
           `${name} disables the ${table}_${verb} guard`,
         );
       }
+      // A single GRANT statement, which cannot contain a semicolon, handing a write back on this
+      // table. `[^;]` already spans newlines, so the dotAll flag is both unnecessary and a
+      // typecheck failure under this repo's target.
+      const regrant = new RegExp("grant[^;]*(update|delete|truncate)[^;]*" + table + "[^;]*authenticated");
       assert.ok(
-        !/grant[^;]*\b(update|delete|truncate)\b[^;]*audit[^;]*to\s+authenticated/s.test(body) ||
-          !body.includes(table),
+        !regrant.test(body),
         `${name} hands the write back to authenticated on ${table}`,
       );
     }
