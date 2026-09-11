@@ -231,7 +231,13 @@ function emptySources(): HrCommandSources {
  * Functions that contribute no tiles on purpose. Written down rather than inferred, so dropping a
  * group by accident fails instead of quietly shrinking somebody's dashboard.
  */
-const FUNCTIONS_WITH_NO_TILES = new Set(["hr_governance"]);
+// `hr_communication` added 2026-09-11 with the function itself. Reason: it is a CAPABILITY, not a
+// data source - it grants composing and sending HR mail by hand, plus the templates behind it. A
+// send path has no backlog to report and no population to plot, so there is no honest figure for a
+// tile to carry. The alternative, a tile counting mail sent, would be exactly the ambitious-but-
+// empty dashboard this page was built to avoid: a number nobody acts on, linking to a screen that
+// is already one click away on her rail.
+const FUNCTIONS_WITH_NO_TILES = new Set(["hr_governance", "hr_communication"]);
 
 export async function runHrCommandCenterTests() {
   // ── The gate the page gates on ────────────────────────────────────────────────────────────────
