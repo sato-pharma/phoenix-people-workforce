@@ -1155,6 +1155,12 @@ export async function computeVacationDeductionTotals(
   members: PopulationMember[],
   sources: Map<string, PayrollSalarySource>,
   period: PayrollPeriod,
+  /**
+   * The run asking. Its own balance settlements are excluded from the balance read, so confirming
+   * this step twice reaches the same answer twice — see the note on `balanceSettledDaysInPeriod`.
+   * Left unset by the preview paths, which only display and never settle.
+   */
+  excludeSettlementRunId?: string | null,
 ): Promise<{
   totals: Map<string, VacationDeductionTotal>;
   crmLeaveSettlements: CrmLeaveBalanceSettlement[];
@@ -1224,6 +1230,11 @@ export async function computeVacationDeductionTotals(
       const snapshot = await calculatePaymentForRequest({
         durationDays: crmOnly.length,
         employeeHrId: member.employee.hrId,
+        // THIS RUN'S OWN prior settlement must not count against the balance it is re-deciding.
+        // Reading it back made the second confirm see a balance already spent, drop its coverage
+        // to zero, and supersede the row that had consumed the days — restoring the entitlement
+        // while the deduction stayed. See the full account on balanceSettledDaysInPeriod.
+        excludeSettlementRunId,
         hireDate: member.employee.hireDate,
         startDate: crmOnly[0],
         vacationType: "annual",
