@@ -999,6 +999,28 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                           Unconfirm Part 1
                         </Button>
                       ) : null}
+                      {run.phase === "ready" ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-red-300 text-red-700 hover:bg-red-50"
+                          disabled={busy}
+                          onClick={() => {
+                            if (
+                              !window.confirm(
+                                "Reopen Part 2? Every step is locked while Part 2 is confirmed, because finance may already have executed this month's bank files. Reopening is the only way to change a figure, and it undoes this run's carry-forward entries until you confirm again.",
+                              )
+                            )
+                              return;
+                            void post(
+                              `/api/automated-payroll/runs/${run.id}/part2/unconfirm`,
+                              "Part 2 reopened. Steps are editable again; confirm Part 2 to re-lock the sheet.",
+                            );
+                          }}
+                        >
+                          Reopen Part 2
+                        </Button>
+                      ) : null}
                       <Button
                         size="sm"
                         className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"

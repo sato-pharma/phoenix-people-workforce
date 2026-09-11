@@ -27,6 +27,14 @@ import {
 } from "./day-collisions.ts";
 import { loadConfirmedDeductions } from "./deductions-source.ts";
 import {
+  compareConfirmedTotals,
+  describeTotalsDrift,
+  PART2_TOTALS_KEY,
+  part2Totals,
+  readConfirmedTotals,
+  type ConfirmedTotals,
+} from "./publish-guard.ts";
+import {
   describePartSplitConflicts,
   findPartSplitConflicts,
 } from "./part-split-conflict.ts";
@@ -466,6 +474,26 @@ export async function getStepRecommendation(
 
 function assertStepPhaseAllowed(run: MonthlySalaryRun, stepKey: StepKey): void {
   assertActiveRun(run);
+
+  // ONCE PART 2 IS CONFIRMED THE SHEET IS THE PAYABLE TRUTH, AND FINANCE MAY ALREADY HOLD IT.
+  //
+  // `ready` means Part 2 is confirmed: the finance sheet and both bank files are downloadable and
+  // are, in practice, downloaded and executed from that moment. Every step stayed writable anyway —
+  // the lock HR sees is a browser-side property, never a server rule — so a stale tab, a retry or a
+  // direct call could still change a figure after the money had left, and publish would then write
+  // the CHANGED row to the payslip. The employee's payslip and their bank transfer would disagree,
+  // with nothing anywhere recording that they ever differed.
+  //
+  // Reopening Part 2 is the way back, and it is deliberate rather than accidental: it undoes this
+  // run's effect on the carry-forward ledger and puts the run back where the gates run again.
+  if (run.phase === "ready") {
+    throw new Error(
+      "Conflict: Part 2 is confirmed for this run, and finance may already have executed its bank " +
+        "files. Reopen Part 2 before changing any step — editing now would publish a payslip that " +
+        "disagrees with the transfer that was already sent.",
+    );
+  }
+
   const phase = stepPhase(stepKey);
   if (phase === "part2" && run.phase === "part1") {
     throw new Error("Conflict: confirm Part 1 before editing Part 2 steps.");
@@ -862,6 +890,29 @@ export async function unconfirmPart1(access: AccessContext, runId: string): Prom
   }
 
   const draftRows = await listDraftRows(runId);
+
+  // EVERYTHING CONFIRMING PART 1 STAMPED IS CLEARED, not only the frozen figure.
+  //
+  // Reopening exists for exactly one purpose: a wrong base salary was found and the first
+  // instalment has to be refrozen off the corrected record. But confirming the Joiners and
+  // Resignations steps also STAMPS each of those people's Base, allowance, fuel and days worked
+  // onto their draft row — and `buildEffective` treats a stored figure as an OVERRIDE that beats
+  // the employee record. So the frozen number was cleared while the numbers it is derived FROM
+  // survived, and re-confirming refroze the identical wrong answer. A rep hired on 10 August at
+  // 5,000 instead of 8,000 stayed on the 5,000 after the record was fixed, the run reported
+  // success, and the sheet showed the corrected salary beside an instalment computed from the old.
+  //
+  // Clearing is safe in the way finding 19's near-miss was not: `effectiveSalary` reads these
+  // through `overrideBase != null`, so an absent figure RECOMPUTES. It does not read as zero.
+  //
+  // A figure HR typed by hand on those steps is cleared too, and that is the intended behaviour
+  // rather than a cost worth avoiding: the reopen is a request to re-derive from the record, and a
+  // typed value silently outliving it is the defect. The audit row names how many were cleared.
+  const stampedCleared = draftRows.filter(
+    (row) =>
+      row.baseForMonth != null || row.ecolPaid != null || row.fuelPaid != null || row.daysWorked != null,
+  ).length;
+
   const patches: DraftRowPatch[] = draftRows.map((row) => ({
     employeeHrId: row.employeeHrId,
     firstPartFrozen: null,
@@ -869,6 +920,11 @@ export async function unconfirmPart1(access: AccessContext, runId: string): Prom
     // source data this decision was read from, and re-confirming freezes both again from current
     // truth. A stamp surviving the reopen would pin the run to the answer HR just corrected.
     settledInPart1: null,
+    // The joiner / leaver basis, re-derived on the next confirm.
+    baseForMonth: null,
+    ecolPaid: null,
+    fuelPaid: null,
+    daysWorked: null,
     editedBy: actorId(access),
   }));
   await upsertDraftRows(runId, patches);
@@ -882,9 +938,80 @@ export async function unconfirmPart1(access: AccessContext, runId: string): Prom
     runId,
     actorHrId: actorId(access),
     action: "part1_unconfirmed",
-    detail: { unfrozenEmployees: patches.length },
+    detail: { unfrozenEmployees: patches.length, stampedBasisCleared: stampedCleared },
   });
   return updated;
+}
+
+/**
+ * Reopen a Part-2-confirmed run back to Part 2 — THE WAY BACK, without which refusing step writes
+ * in `ready` would trap the month.
+ *
+ * `ready` is the state in which the finance sheet and both bank files are downloadable, so the
+ * honest assumption is that finance has them. Every step is refused in that state; this is the one
+ * deliberate action that reopens it, and unlike a stale browser tab it says so on the record.
+ *
+ * IT UNDOES THIS RUN'S EFFECT ON THE CARRY-FORWARD LEDGER, for the same reason cancelling does.
+ * Confirming Part 2 records this run's overpayments and consumes previous months' balances; a run
+ * that is no longer confirmed has collected nothing, so leaving those marks would forgive real
+ * money. Re-confirming records them again — `recordOverpaidCarryForward` is idempotent per run and
+ * employee — and only UNAPPLIED balances are touched, so a later run's genuine recovery stands.
+ *
+ * Part 2 step confirmations are left intact, exactly as `unconfirmPart1` leaves Part 1's: they
+ * recompute from current data on the next confirm, and HR should not have to click through every
+ * tab again to correct one figure.
+ */
+export async function unconfirmPart2(access: AccessContext, runId: string): Promise<MonthlySalaryRun> {
+  assertRealSessionForDecision(access, "reopen Part 2 of a payroll run");
+  assertAutomatedPayrollHrActor(access);
+  const run = await requireRun(runId);
+  assertActiveRun(run);
+  if (run.phase !== "ready") {
+    throw new Error(
+      "Conflict: Part 2 is not currently confirmed, so there is nothing to reopen.",
+    );
+  }
+
+  const ledger = await releaseCarryForwardForCancelledRun(runId);
+
+  const updated = await updateRun(runId, {
+    phase: "part2",
+    part2ConfirmedAt: null,
+    part2ConfirmedBy: null,
+  });
+  await writeAutomatedPayrollAudit({
+    runId,
+    actorHrId: actorId(access),
+    action: "part2_unconfirmed",
+    detail: { carryForwardReleased: ledger.released, carryForwardDiscarded: ledger.discarded },
+  });
+  return updated;
+}
+
+/**
+ * The money totals stamped by the most recent Part 2 confirm on this run.
+ *
+ * FAILS CLOSED. A read error here is not "nothing to compare against" — it is not knowing whether
+ * the month moved, and carrying on would silently disable the one check that catches it. A run
+ * with no stamp at all is a different thing and is allowed through: it predates the stamp, and the
+ * publish audit row records that the comparison could not be made.
+ */
+async function readPart2ConfirmedTotals(runId: string): Promise<ConfirmedTotals | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("automated_payroll_audit")
+    .select("detail,created_at")
+    .eq("run_id", runId)
+    .eq("action", "part2_confirmed")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (error) {
+    throw new Error(
+      "Could not read what this run confirmed at Part 2, so publishing cannot prove it is writing " +
+        `the same month finance was given. Nothing was published. (${error.message})`,
+    );
+  }
+  const newest = (data ?? [])[0] as { detail?: unknown } | undefined;
+  return newest ? readConfirmedTotals(newest.detail) : null;
 }
 
 /** Confirm Part 2: assemble the full sheet, run the pre-flight gate, notify. */
@@ -1050,6 +1177,10 @@ export async function confirmPart2(
       // Intent, not settlement — the ledger is marked at publish now.
       carryForwardPendingRecovery,
       carryForwardRecorded,
+      // THE SHEET FINANCE IS ABOUT TO EXECUTE, recorded so publish can prove it is writing the
+      // same month. Publish re-assembles from CURRENT data rather than from anything stored, so
+      // without a stamp there is nothing for it to disagree with. See publishToPayslips.
+      [PART2_TOTALS_KEY]: part2Totals(rows.length, totals),
     },
   });
   await notifyPart2Ready(updated);
@@ -1351,6 +1482,44 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
     throw new Error("Conflict: no publishable employees (all rows are held or empty).");
   }
 
+  // THE GATES RUN AGAIN, HERE, AGAINST THE ROWS ABOUT TO BE WRITTEN.
+  //
+  // Publish re-assembles every row live from current employee, deduction and expense data, and
+  // until now checked nothing but the run's phase. So anything that moved between Part 2 confirm
+  // and this click — a corrected salary, a new deduction, an expense approved this morning — was
+  // written to the payslip while finance had already executed bank files built from the older
+  // figures. The employee's payslip and their transfer disagreed, and nothing recorded it.
+  const { preflightValidate: preflightAtPublish } = await import("./validate.ts");
+  const publishPreflight = preflightAtPublish(rows);
+  if (!publishPreflight.ok) {
+    const sample = publishPreflight.issues
+      .slice(0, 6)
+      .map((issue) => `${issue.hrId ?? "?"}: ${issue.message}`);
+    throw new Error(
+      `Validation: ${publishPreflight.errorCount} issue(s) in the rows about to be published. ` +
+        `${sample.join("; ")} (These passed at Part 2 confirm, so something has changed since.)`,
+    );
+  }
+
+  const publishTotals = reconcile(rows);
+  if (publishTotals.splitMismatches.length > 0) {
+    const sample = publishTotals.splitMismatches
+      .slice(0, 5)
+      .map((one) => `${one.hrId}: ${one.firstPart} + ${one.secondPart} != ${one.monthSalary}`);
+    throw new Error(
+      `Conflict: the split does not reconcile for ${publishTotals.splitMismatches.length} row(s) ` +
+        `about to be published. ${sample.join("; ")}`,
+    );
+  }
+
+  const confirmedTotals = await readPart2ConfirmedTotals(runId);
+  const totalsDrift = confirmedTotals
+    ? compareConfirmedTotals(confirmedTotals, part2Totals(rows.length, publishTotals))
+    : [];
+  if (totalsDrift.length > 0) {
+    throw new Error(`Conflict: ${describeTotalsDrift(totalsDrift)}`);
+  }
+
   // WHAT EACH HELD PERSON WAS OWED, recorded permanently at the moment they are dropped.
   //
   // Publishing filters held rows out, so no salary_record is written for them and the payslip
@@ -1457,6 +1626,10 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
       publishedCount: publishRows.length,
       heldExcluded,
       carryForwardRecovered,
+      // Whether publish could prove it wrote the month Part 2 confirmed. False means the run
+      // predates the stamp, not that the check failed — a failed READ throws instead, because
+      // "could not compare" must never read as "compared and matched".
+      totalsComparedToConfirm: confirmedTotals != null,
       // The permanent answer to "who was held this month, for how much, and why".
       held: heldRecord,
       heldFirstPartTotal,
