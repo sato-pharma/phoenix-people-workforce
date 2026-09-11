@@ -245,15 +245,37 @@ export function chargedDeductionDays(candidate: DeductionsCandidateWithDecision)
  * fingerprint/attendance day, an unpaid vacation day, or a loan instalment, and halving one of
  * those would invent a discount nobody granted. Widen this only on an explicit owner rule.
  *
- * An explicitly stated `appliedValue` still wins, unweighted: that is a number a human typed after
- * looking at the row, and second-guessing it is how a reviewer's correction gets silently halved.
+ * A stated `appliedValue` wins UNWEIGHTED only when it is a number a reviewer actually typed —
+ * second-guessing a real correction is how it gets silently halved. Telling the two apart is the
+ * whole difficulty, and the Deductions module's own review screen answers it: the day box is
+ * PRE-FILLED with the count of ticked dates and sent on every save, so a value EQUAL to that count
+ * is the default coming back, not a correction. `deductions-workspace.tsx` draws the same
+ * distinction for its own "manual quantity" flag — `appliedValue !== appliedDates.length`.
+ *
+ * Without that test the weighting was thrown away the moment anybody opened a CRM candidate and
+ * saved it, changed or not: `applied_value` was stamped with the raw date count and this function
+ * then honoured it as a human's figure. Measured on production, August 2026: five approved CRM
+ * candidates carrying a Thursday were stamped at the flagged count — a half-day too much each on
+ * the day columns. Ayman El Salhy's two days, one of them a Thursday, read 2 where the module
+ * priced 1.5.
+ *
+ * THE MONEY SURVIVED IT, AND THAT IS LUCK RATHER THAN DESIGN. `candidateAmount` prefers the
+ * decision's own `appliedAmount`, which is scaled from an `estimatedAmount` the CRM connector had
+ * already weighted — so all five were charged correctly on the August payslips. The day columns
+ * feed `autoCalcMoneyKey`, so the wrong count becomes the wrong money the moment anyone edits that
+ * row in the wizard. It was one click away from being real.
+ *
+ * A reviewer who types exactly the number the box already held is recorded as accepting it. The
+ * two are indistinguishable, and accepting is the more honest reading of that click.
  */
 export function chargeableDeductionDays(candidate: DeductionsCandidateWithDecision): number {
+  const kept = resolveAppliedDeductionDates(candidate);
   const stated = candidate.decision?.appliedValue;
-  if (stated != null && Number.isFinite(stated)) return stated;
+  const typedByAReviewer =
+    stated != null && Number.isFinite(stated) && !(kept.length > 0 && stated === kept.length);
+  if (typedByAReviewer) return stated;
   if (candidate.category !== "crm") return chargedDeductionDays(candidate);
 
-  const kept = resolveAppliedDeductionDates(candidate);
   // No dates to weigh — a candidate carrying a day count but no calendar (hand-entered, or a
   // connector that reports a total). Fall back rather than returning a confident 0.
   if (kept.length === 0) return chargedDeductionDays(candidate);
