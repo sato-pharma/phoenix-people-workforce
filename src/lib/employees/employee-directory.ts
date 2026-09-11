@@ -26,7 +26,7 @@ import { resolveEmployeeDisplayName } from "./display-name";
 const hrIdPattern = /^[A-Z0-9][A-Z0-9_-]*$/;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const activeLifecycleStatuses = new Set(["active", "on_leave"]);
-const statusOptions = ["active", "inactive", "on_leave", "terminated", "resigned"];
+const statusOptions = ["active", "inactive", "on_leave", "terminated", "resigned", "declined_offer"];
 const employeeSalaryDetailCategories = new Set([
   "earning",
   "deduction",
@@ -1807,6 +1807,9 @@ async function employeePayload(
 
   if (employmentStatus === "resigned" || employmentStatus === "terminated") {
     throw new Error("Use the resignation workflow for resigned or terminated employees.");
+  }
+  if (employmentStatus === "declined_offer") {
+    throw new Error("Use the decline-offer workflow for an employee who declined the offer after hire.");
   }
 
   if (hrId && !hrIdPattern.test(hrId)) {

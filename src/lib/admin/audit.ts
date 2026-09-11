@@ -110,6 +110,7 @@ export type AuditEntityType =
   | "direct_order_request"
   | "doctor_coverage_config"
   | "double_visit_import"
+  | "employee_decline_offer"
   | "employee_resignation"
   | "excuse_request"
   | "field_workforce_compliance_import"

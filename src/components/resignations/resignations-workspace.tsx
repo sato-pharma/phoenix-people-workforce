@@ -37,6 +37,7 @@ import {
   formatPayoutMonth,
   formatPayrollCandidateSystemId,
   formatResignationDate,
+  isDeclinedOfferResignation,
   isTerminatedResignation,
   payrollCandidateExportColumns,
   recordSearchText,
@@ -543,15 +544,18 @@ export function ResignationsWorkspace({ initialData, initialError, surface = "ad
         ) : (
           <RgTable
             cards={slice(tab === "action" ? open : history).map((record) => {
+              const declinedOffer = isDeclinedOfferResignation(record);
               const terminated = isTerminatedResignation(record);
               return (
                 <PortalRecordCard
                   accent={
-                    terminated || record.status === "rejected"
-                      ? "rose"
-                      : record.status === "approved"
-                        ? "emerald"
-                        : "slate"
+                    declinedOffer
+                      ? "amber"
+                      : terminated || record.status === "rejected"
+                        ? "rose"
+                        : record.status === "approved"
+                          ? "emerald"
+                          : "slate"
                   }
                   actions={recordControls(record, busy === record.id)}
                   key={record.id}
@@ -563,7 +567,7 @@ export function ResignationsWorkspace({ initialData, initialError, surface = "ad
                   }
                   status={
                     <RgBadge>
-                      {terminated ? "Terminated" : resignationStatusLabel(record.status)}
+                      {declinedOffer ? "Declined Offer" : terminated ? "Terminated" : resignationStatusLabel(record.status)}
                     </RgBadge>
                   }
                   title={record.employeeName}
@@ -607,12 +611,19 @@ export function ResignationsWorkspace({ initialData, initialError, surface = "ad
             }
           >
             {slice(tab === "action" ? open : history).map((record) => {
+              const declinedOffer = isDeclinedOfferResignation(record);
               const terminated = isTerminatedResignation(record);
               const rowBusy = busy === record.id;
 
               return (
                 <tr
-                  className={terminated ? "bg-rose-50/60 hover:bg-rose-50" : "bg-white hover:bg-slate-50"}
+                  className={
+                    declinedOffer
+                      ? "bg-amber-50/60 hover:bg-amber-50"
+                      : terminated
+                        ? "bg-rose-50/60 hover:bg-rose-50"
+                        : "bg-white hover:bg-slate-50"
+                  }
                   key={record.id}
                 >
                   {/* The status column is gone — the whole employee cell carries it: light green
@@ -631,7 +642,7 @@ export function ResignationsWorkspace({ initialData, initialError, surface = "ad
                       meta={[
                         record.lineName,
                         record.hireDate ? `Hired ${formatResignationDate(record.hireDate)}` : null,
-                        terminated ? "Terminated" : resignationStatusLabel(record.status),
+                        declinedOffer ? "Declined Offer" : terminated ? "Terminated" : resignationStatusLabel(record.status),
                       ]}
                       name={record.employeeName}
                     />

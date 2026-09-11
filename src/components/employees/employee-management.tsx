@@ -15,6 +15,7 @@ import {
   Search,
   Upload,
   UserCheck2,
+  UserMinus,
   UserPlus,
   UserX,
   X,
@@ -64,6 +65,8 @@ import {
 import type { SeatTransferOptions } from "@/lib/employees/seat-transfer";
 import { formatVacancyOptionLabel } from "@/lib/employees/vacancy-option-label";
 import { deriveSalaryFromNet } from "@/lib/payroll/salary-autofill";
+import { todayInCairo } from "@/lib/date-only";
+import { DECLINE_OFFER_WINDOW_DAYS, isDeclineOfferEligible } from "@/lib/resignations/decline-offer-eligibility";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
@@ -111,6 +114,13 @@ type ResignationFormState = {
   reason: string;
   submittedDate: string;
   workflowNotes: string;
+};
+
+type DeclineOfferFormState = {
+  lastWorkingDate: string;
+  note: string;
+  /** "yes" or "no" — kept as a SelectField-friendly string, resolved to a boolean at submit. */
+  includeInPayroll: string;
 };
 
 /**
@@ -306,6 +316,17 @@ const emptyResignationForm: ResignationFormState = {
   reason: "",
   submittedDate: new Date().toISOString().slice(0, 10),
   workflowNotes: "",
+};
+
+const declineOfferPayrollOptions = [
+  { label: "No — exclude from payroll entirely", value: "no" },
+  { label: "Yes — prorate base pay for days worked (no allowances)", value: "yes" },
+];
+
+const emptyDeclineOfferForm: DeclineOfferFormState = {
+  lastWorkingDate: "",
+  note: "",
+  includeInPayroll: "no",
 };
 
 const panelClassName =
@@ -862,6 +883,11 @@ export function EmployeeManagement({
   const [isTransferring, setIsTransferring] = React.useState(false);
   const [transferError, setTransferError] = React.useState<string | null>(null);
   const [resignationForm, setResignationForm] = React.useState<ResignationFormState>(emptyResignationForm);
+  const [isDeclineOfferOpen, setIsDeclineOfferOpen] = React.useState(false);
+  const [decliningEmployee, setDecliningEmployee] = React.useState<EmployeeDirectoryRow | null>(null);
+  const [declineOfferForm, setDeclineOfferForm] = React.useState<DeclineOfferFormState>(emptyDeclineOfferForm);
+  const [isDecliningOffer, setIsDecliningOffer] = React.useState(false);
+  const [declineOfferError, setDeclineOfferError] = React.useState<string | null>(null);
   const templateInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const employees = React.useMemo(() => data?.employees ?? [], [data?.employees]);
@@ -1382,6 +1408,28 @@ export function EmployeeManagement({
     setResignationForm((current) => ({ ...current, [key]: value }));
   }
 
+  function startDeclineOffer(employee: EmployeeDirectoryRow) {
+    setDecliningEmployee(employee);
+    setDeclineOfferForm({
+      ...emptyDeclineOfferForm,
+      lastWorkingDate: employee.hireDate ? employee.hireDate.slice(0, 10) : todayInCairo(),
+    });
+    setNotice(null);
+    setError(null);
+    setDeclineOfferError(null);
+    setIsDeclineOfferOpen(true);
+  }
+
+  function closeDeclineOffer() {
+    setIsDeclineOfferOpen(false);
+    setDecliningEmployee(null);
+    setDeclineOfferError(null);
+  }
+
+  function updateDeclineOfferForm(key: keyof DeclineOfferFormState, value: string) {
+    setDeclineOfferForm((current) => ({ ...current, [key]: value }));
+  }
+
   function startSeatTransfer(employee: EmployeeDirectoryRow) {
     setTransferEmployee(employee);
     setTransferOptions(null);
@@ -1761,6 +1809,53 @@ export function EmployeeManagement({
     }
   }
 
+  async function submitDeclineOffer() {
+    if (!decliningEmployee) return;
+    setIsDecliningOffer(true);
+    setError(null);
+    setNotice(null);
+    setDeclineOfferError(null);
+
+    try {
+      const includeInPayroll = declineOfferForm.includeInPayroll === "yes";
+      const response = await fetch(`/api/employees/${encodeURIComponent(decliningEmployee.hrId)}/decline-offer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          declineOffer: {
+            employeeHrId: decliningEmployee.hrId,
+            lastWorkingDate: declineOfferForm.lastWorkingDate,
+            note: declineOfferForm.note,
+            includeInPayroll,
+          },
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setDeclineOfferError(payload.message ?? payload.error ?? "employee_decline_offer_failed");
+        return;
+      }
+
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              employees: current.employees.filter((employee) => employee.hrId !== decliningEmployee.hrId),
+            }
+          : current,
+      );
+      setNotice(
+        `Declined offer recorded for ${decliningEmployee.displayName}. Vacancy ${payload.data?.vacancyCode ?? "opened"} created${includeInPayroll ? " and the employee was entered into this month's payroll for days worked." : "; no payroll entry was created."}`,
+      );
+      closeDeclineOffer();
+    } catch {
+      setDeclineOfferError("Unable to process the declined offer.");
+    } finally {
+      setIsDecliningOffer(false);
+    }
+  }
+
   return (
     <EmployeePageShell>
     <div className="space-y-6">
@@ -2100,6 +2195,17 @@ export function EmployeeManagement({
                             Seat
                           </Button>
                           ) : null}
+                          {canEdit && isDeclineOfferEligible(employee, todayInCairo()) ? (
+                          <Button
+                            className="h-9 flex-1 gap-1.5 rounded-xl border-amber-200 bg-amber-50 text-xs font-bold text-amber-800 hover:bg-amber-100"
+                            onClick={() => startDeclineOffer(employee)}
+                            title={`Declined offer / did not join — available within ${DECLINE_OFFER_WINDOW_DAYS} days of hiring`}
+                            variant="outline"
+                          >
+                            <UserMinus className="h-3.5 w-3.5" />
+                            Declined
+                          </Button>
+                          ) : null}
                           {canEdit ? (
                           <Button
                             className="h-9 flex-1 gap-1.5 rounded-xl border-rose-200 bg-rose-50 text-xs font-bold text-rose-700 hover:bg-rose-100"
@@ -2354,6 +2460,16 @@ export function EmployeeManagement({
                           >
                             <ArrowLeftRight className="h-4 w-4" />
                           </Button>
+                          {isDeclineOfferEligible(employee, todayInCairo()) ? (
+                          <Button
+                            className="h-8 w-8 rounded-xl p-0 text-phx-ink-soft hover:bg-amber-50 hover:text-amber-700 hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
+                            onClick={() => startDeclineOffer(employee)}
+                            title={`Declined offer / did not join — available within ${DECLINE_OFFER_WINDOW_DAYS} days of hiring`}
+                            variant="ghost"
+                          >
+                            <UserMinus className="h-4 w-4" />
+                          </Button>
+                          ) : null}
                           <Button
                             className="h-8 w-8 rounded-xl p-0 text-phx-ink-soft hover:bg-rose-50 hover:text-rose-600 hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
                             onClick={() => startResignation(employee)}
@@ -3292,6 +3408,97 @@ export function EmployeeManagement({
               >
                 {isResigning ? <LoadingSpinner /> : <UserX className="h-4 w-4" />}
                 Confirm Resignation
+              </Button>
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {isDeclineOfferOpen && decliningEmployee ? (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-phx-ink/60 px-4 py-6 backdrop-blur-md"
+          onClick={closeDeclineOffer}
+        >
+          <Card
+            className={`${panelClassName} w-full max-w-3xl overflow-hidden`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <AdminSectionHeader
+              action={
+                <Button
+                  className="h-9 rounded-xl px-3 text-xs"
+                  onClick={closeDeclineOffer}
+                  variant="secondary"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              }
+              description={`For an employee who accepted the offer but backed out shortly after — usable up to ${DECLINE_OFFER_WINDOW_DAYS} days from their hire date. Reopens the vacancy the same way a resignation would; you choose separately whether they're entered into payroll.`}
+              title="Declined Offer / Did Not Join"
+            />
+
+            <div className="grid gap-4 p-5 md:grid-cols-2">
+              {declineOfferError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 md:col-span-2">
+                  <div className="flex gap-3">
+                    <AlertCircle className="mt-0.5 h-5 w-5 text-danger" />
+                    <div>
+                      <h3 className="text-sm font-semibold text-text">Unable to record this exit</h3>
+                      <p className="mt-1 text-sm text-text-secondary">{declineOfferError}</p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 md:col-span-2">
+                <p className="font-semibold text-amber-900">{decliningEmployee.displayName}</p>
+                <p className="mt-1 text-sm text-amber-800">
+                  {decliningEmployee.hrId} · {emptyText(decliningEmployee.positionTitle ?? decliningEmployee.jobTitle)} · {emptyText(decliningEmployee.areaName)}
+                  {decliningEmployee.hireDate ? ` · Hired ${decliningEmployee.hireDate.slice(0, 10)}` : ""}
+                </p>
+              </div>
+
+              <TextField
+                label="last_day_worked"
+                onChange={(value) => updateDeclineOfferForm("lastWorkingDate", value)}
+                type="date"
+                value={declineOfferForm.lastWorkingDate}
+              />
+              <SelectField
+                label="enter_into_payroll"
+                onChange={(value) => updateDeclineOfferForm("includeInPayroll", value)}
+                options={declineOfferPayrollOptions}
+                tone="orange"
+                value={declineOfferForm.includeInPayroll}
+              />
+              <label className="block md:col-span-2">
+                <span className="mb-1.5 block text-xs font-medium text-text-secondary">
+                  note (optional)
+                </span>
+                <textarea
+                  className="min-h-20 w-full rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 py-2 text-sm text-text shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  onChange={(event) => updateDeclineOfferForm("note", event.target.value)}
+                  placeholder="Why the offer was declined (optional)."
+                  value={declineOfferForm.note}
+                />
+              </label>
+              <p className="text-xs text-text-secondary md:col-span-2">
+                {declineOfferForm.includeInPayroll === "yes"
+                  ? "Prorates base pay for the days worked and adds them to this month's Ready-Payroll sheet (no cost-of-living or fuel allowance)."
+                  : "No payroll entry will be created for this exit."}
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3 p-5">
+              <Button onClick={closeDeclineOffer} variant="secondary">
+                Cancel
+              </Button>
+              <Button
+                className="gap-2 rounded-2xl bg-amber-600 text-white hover:bg-amber-600/90"
+                disabled={isDecliningOffer || !declineOfferForm.lastWorkingDate}
+                onClick={() => void submitDeclineOffer()}
+              >
+                {isDecliningOffer ? <LoadingSpinner /> : <UserMinus className="h-4 w-4" />}
+                Confirm Declined Offer
               </Button>
             </div>
           </Card>
