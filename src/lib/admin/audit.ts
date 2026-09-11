@@ -54,6 +54,20 @@ export type AuditEntityType =
   // Best-effort (`writeAuditLog`), unlike the two above: a diagnostic that can fail the import it
   // was only meant to observe is worse than the blindness it replaces.
   | "device_import"
+  // Email routing. `distribution_list` is an edit to a named recipient group — who a future email
+  // reaches. `company_email_alias` is the Turbify register beside it.
+  //
+  // TWO ENTITY TYPES, and the second is a weaker claim than the first. A distribution-list row
+  // records something Phoenix DID: the rule changed, and the next send obeys it. An alias row
+  // records something a person SAID — Turbify has no API, so nothing can verify who is really on
+  // an alias, and "recorded 12 members" means somebody read a control panel and typed what they
+  // saw. Folding them into one type would let a future reader treat the attestation as an
+  // observation, which is the whole failure mode the register exists to make visible.
+  //
+  // Both are REQUIRED audit: an edit that silently widens who receives company mail, or a
+  // membership claim nobody can be held to, is exactly what an audit trail is for.
+  | "distribution_list"
+  | "company_email_alias"
   // Minting or revoking a bearer link to the live CV-lifecycle Google Sheet. The link outlives the
   // session that created it and copies candidate names and phone numbers out of Phoenix, so who
   // made one — and who killed it — is recorded. The token itself is never written here: an audit
