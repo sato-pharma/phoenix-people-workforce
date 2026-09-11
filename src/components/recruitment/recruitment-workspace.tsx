@@ -139,6 +139,7 @@ import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { BulkCvExtractionPanel } from "@/components/recruitment/bulk-cv-extraction-panel";
 import { CandidateFieldsPanel } from "@/components/recruitment/candidate-fields-panel";
+import { WhatsAppReplyBox } from "@/components/recruitment/whatsapp-reply-box";
 import { CvExtractionPanel } from "@/components/recruitment/cv-extraction-panel";
 import { CvExtractionReviewBoard } from "@/components/recruitment/cv-extraction-review-board";
 import { CandidateFactsSummary } from "@/components/recruitment/candidate-facts-summary";
@@ -4847,6 +4848,15 @@ function CandidatesTab({
               <p className="text-xs text-slate-500">
                 {profile.candidate.email ?? "—"} · {profile.candidate.phone ?? "—"} · Source: {profile.candidate.source ?? "—"}
               </p>
+              {/* Answering them on WhatsApp, directly under the number it would be sent to. Gated on
+                  canManage, the same recruitment:update the route enforces, so a reader is not shown
+                  a box that would refuse them. It draws only a small button until opened, and checks
+                  the 24-hour window before offering to type — see whatsapp-reply-box.tsx. */}
+              {canManage ? (
+                <div className="mt-2">
+                  <WhatsAppReplyBox candidateId={profile.candidate.id} />
+                </div>
+              ) : null}
             </div>
             <Button variant="ghost" onClick={returnToPool}>
               Close

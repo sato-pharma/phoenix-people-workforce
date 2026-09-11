@@ -531,7 +531,6 @@ function stylePayrollHeaderRow(row: ExcelJS.Row) {
 
 function stylePayrollDataCell(cell: ExcelJS.Cell) {
   const column = Number(cell.col);
-  const section = uploadSectionForColumn(column);
   const isTotalColumn =
     column === col("Total Additions") ||
     column === col("Governmental Deductions") ||

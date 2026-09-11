@@ -17,7 +17,6 @@ import {
 
 import {
   pageHeaderDescriptionClassName,
-  pageHeaderKickerClassName,
   pageHeaderRailClassName,
   pageHeaderRuleClassName,
   pageHeaderTitleClassName,

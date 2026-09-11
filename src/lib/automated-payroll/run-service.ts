@@ -6,6 +6,8 @@ import {
   createSalaryBatch,
   findSalaryBatchForPeriod,
 } from "@/lib/payroll/service";
+import { getStatutoryConfigForPeriod } from "@/lib/payroll/statutory/config";
+import { loadInsuranceWages } from "@/lib/payroll/statutory/insurance-wages.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { assembleRows, computeFrozenFirstParts, type AssembledRow } from "./assemble.ts";
@@ -32,6 +34,7 @@ import { seedRunFromRecurring } from "./non-employee-recurring.ts";
 import {
   auditPayrollDataQuality,
   describePayrollDataQuality,
+  payAffectingIssues,
   type PayrollDataQualityReport,
 } from "./data-quality.ts";
 import {
@@ -918,23 +921,29 @@ async function assembleForRun(run: MonthlySalaryRun): Promise<{
   carryForwardByCompact: Map<string, number>;
 }> {
   const period: PayrollPeriod = { month: run.month, year: run.year };
-  const [{ members, sources, draftRows }, carryForwardByCompact] = await Promise.all([
-    loadRunContext(period, run.id),
-    // Overpayments from PREVIOUS runs that this run recovers (owner rule
-    // 2026-07-25). Loaded on every assemble so the figure HR reviews, the
-    // figure on the sheet, and the figure that gets published are the same one.
-    //
-    // `carryForwardForRunAssembly`, not `outstandingCarryForwardFor`: a published run has to
-    // assemble against the balances it ITSELF applied, or a sheet re-downloaded after publish
-    // quietly loses a deduction that the real payslip carries.
-    carryForwardForRunAssembly(run.id),
-  ]);
+  const [{ members, sources, draftRows }, carryForwardByCompact, statutoryConfig, insuranceWages] =
+    await Promise.all([
+      loadRunContext(period, run.id),
+      // Overpayments from PREVIOUS runs that this run recovers (owner rule
+      // 2026-07-25). Loaded on every assemble so the figure HR reviews, the
+      // figure on the sheet, and the figure that gets published are the same one.
+      //
+      // `carryForwardForRunAssembly`, not `outstandingCarryForwardFor`: a published run has to
+      // assemble against the balances it ITSELF applied, or a sheet re-downloaded after publish
+      // quietly loses a deduction that the real payslip carries.
+      carryForwardForRunAssembly(run.id),
+      // The rates and caps as they stood in the month being run, not as they stand today — the
+      // ceiling is revised most years and a re-assembled old month must file at its own.
+      getStatutoryConfigForPeriod(period),
+      loadInsuranceWages(),
+    ]);
   const rows = assembleRows({
     members,
     sources,
     draftRows,
     period,
     carryForwardByCompact,
+    statutory: { config: statutoryConfig, insuranceWages },
     // Once Part 1 is executed money, an employee with no frozen first part
     // joined the run after the freeze — they must not have one recomputed for
     // them, because that silently moves a total finance already paid.
@@ -1051,12 +1060,16 @@ export async function getPayrollDataQuality(
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   const period: PayrollPeriod = { month: run.month, year: run.year };
-  const { members, sources, draftRows } = await loadRunContext(period, runId);
+  const [{ members, sources, draftRows }, insuranceWages] = await Promise.all([
+    loadRunContext(period, runId),
+    loadInsuranceWages(),
+  ]);
   return auditPayrollDataQuality({
     members,
     sources,
     draftRows,
     part1Confirmed: run.part1ConfirmedAt != null,
+    insuranceWages,
   });
 }
 
@@ -1369,12 +1382,16 @@ async function assertPayrollDataAcknowledged(input: {
   draftRows: DraftRow[];
   acknowledged: boolean;
 }): Promise<void> {
-  const report = auditPayrollDataQuality({
-    members: input.members,
-    sources: input.sources,
-    draftRows: input.draftRows,
-    part1Confirmed: input.run.part1ConfirmedAt != null,
-  });
+  // The gate deliberately asks only for the issues that change what somebody is PAID — see
+  // PAYROLL_DATA_ISSUE_AFFECTS_PAY. The wizard banner shows the full report, filing gaps included.
+  const report = payAffectingIssues(
+    auditPayrollDataQuality({
+      members: input.members,
+      sources: input.sources,
+      draftRows: input.draftRows,
+      part1Confirmed: input.run.part1ConfirmedAt != null,
+    }),
+  );
   if (report.total === 0) return;
   if (!input.acknowledged) {
     throw new Error(`Conflict: ${DATA_QUALITY_ACK_REQUIRED} ${describePayrollDataQuality(report)}`);

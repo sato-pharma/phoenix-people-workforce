@@ -277,6 +277,7 @@ import { runWhatsAppOutboundLogTests } from "./whatsapp-outbound-log.test.ts";
 import { runWhatsAppRepliesPanelTests } from "./whatsapp-replies-panel.test.ts";
 import { runWhatsAppTextOnlyApplicantTests } from "./whatsapp-text-only-applicant.test.ts";
 import { runWhatsAppUnreadableCvTests } from "./whatsapp-unreadable-cv.test.ts";
+import { runWhatsAppManualReplyTests } from "./whatsapp-manual-reply.test.ts";
 import { runWhatsAppEmbeddedSignupExtrasTests } from "./whatsapp-embedded-signup-extras.test.ts";
 import {
   runRecruitmentWhatsAppHealthTests,
@@ -760,6 +761,7 @@ import { runPayrollMutationAuditTests } from "./payroll-mutation-audit.test.ts";
 import { runVacationRetentionPurgeAuditTests } from "./vacation-retention-purge-audit.test.ts";
 import { runCronControlRegistryTests } from "./cron-control-registry.test.ts";
 import { runNotificationRoleRecipientsTests } from "./notification-role-recipients.test.ts";
+import { runDistributionListsTests } from "./distribution-lists.test.ts";
 import { runEmailControlCenterTests } from "./email-control-center.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
 import { runWorkflowRegistryEnforcementTests } from "./workflow-registry-enforcement.test.ts";
@@ -1066,6 +1068,7 @@ import { runAutomatedPayrollHeldTabTests } from "./automated-payroll-held-tab.te
 import { runAutomatedPayrollLeaverOverpaymentTests } from "./automated-payroll-leaver-overpayment.test.ts";
 import { runAutomatedPayrollGuardsThatGuardTests } from "./automated-payroll-guards-that-guard.test.ts";
 import { runAutomatedPayrollDismissalSettlementTests } from "./automated-payroll-dismissal-settlement.test.ts";
+import { runAutomatedPayrollInsuranceWageTests } from "./automated-payroll-insurance-wage.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
 import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
 import { runAutomatedPayrollExecutiveSummaryTests } from "./automated-payroll-executive-summary.test.ts";
@@ -1783,6 +1786,10 @@ await runTest(
   runAutomatedPayrollDismissalSettlementTests,
 );
 await runTest(
+  "automated payroll: the statutory filing comes from the insurance wage, not the stored column",
+  runAutomatedPayrollInsuranceWageTests,
+);
+await runTest(
   "automated payroll: every payable row reaches a bank file or is named",
   runAutomatedPayrollBankCoverageTests,
 );
@@ -2147,6 +2154,10 @@ await runTest("whatsapp reply answers what they asked", runWhatsAppReplyAnswersT
 await runTest("whatsapp outbound message log", runWhatsAppOutboundLogTests);
 await runTest("whatsapp replies panel", runWhatsAppRepliesPanelTests);
 await runTest("whatsapp unreadable CV recovery", runWhatsAppUnreadableCvTests);
+await runTest(
+  "whatsapp manual reply (24-hour window and the permission it really runs under)",
+  runWhatsAppManualReplyTests,
+);
 await runTest(
   "whatsapp embedded signup extras (the v4 flag coexistence needs)",
   runWhatsAppEmbeddedSignupExtrasTests,
@@ -5088,6 +5099,11 @@ await runTest("leave request codes (EXC-/VAC- stored, unique, backfilled, immuta
 await runTest(
   "the mapping guard holds a re-mapping that overwrites his decision or crosses a region, and tells him once per batch",
   runSosMappingGuardTests,
+);
+
+await runTest(
+  "a distribution list ANDs its rule dimensions, treats a blank dimension as no constraint but NO rule as nobody, and lets an exclusion beat a hand-added name",
+  runDistributionListsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

@@ -245,6 +245,14 @@ export const accessRegistry = [
   // silence or retarget the stranded-drain alert.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/notification-recipients", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/notification-recipients/*", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Distribution lists (named recipient groups) and the Turbify alias register: Super Admin only
+  // end-to-end, same reasoning as notification-recipients above — editing one changes who
+  // receives company mail, which is routing plumbing rather than an oversight surface. Neither
+  // route sends anything; the alias half cannot even reach a mailbox, because Turbify has no API
+  // and its output is a worklist somebody applies by hand.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/distribution-lists", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/distribution-lists/*", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/email-aliases", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Email Control Center: a read-only rollup over the 3 systems above plus email-templates —
   // view = CEO + Super Admin, edit = Super Admin only (matches
   // notification-recipients), since every write here dispatches straight into those systems'
@@ -857,6 +865,13 @@ export const accessRegistry = [
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/job-post-channels/**", permission: { resource: "recruitment", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/applications/**", permission: { resource: "recruitment", action: "read" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/candidates/template", permission: { resource: "candidates", action: "read" } }),
+  // Answering an applicant on WhatsApp in a recruiter's own words. Listed ABOVE the candidates
+  // catch-all, and on a different permission from it, because the catch-all's candidates:read is
+  // the authority to LOOK at someone's record — this is the authority to send a message to a member
+  // of the public in the company's name, which is the same authority as putting their CV in front
+  // of a manager (recruitment:update). Left to the catch-all, a widening of read access would
+  // silently hand out the ability to message applicants.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/candidates/*/whatsapp-reply", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/candidates/**", permission: { resource: "candidates", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/interviews/**", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: allMethods, pattern: "/api/recruitment/files/**", permission: { resource: "candidates", action: "read" }, csrfRequired: true }),
