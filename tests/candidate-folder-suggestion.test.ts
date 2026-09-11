@@ -181,6 +181,7 @@ export async function runCandidateFolderSuggestionTests() {
   );
   const dmMinya = suggestFolderFromDeclaredAnswers(
     declared("dmMinya", { title: "District Manager", regionName: "Minya" }),
+    CANONICAL_AREAS,
   );
   assert.equal(dmMinya.suggestion?.kind, "district_manager");
   assert.equal(dmMinya.suggestion?.key, "UE", "a typed governorate resolves to its company region");
@@ -197,6 +198,7 @@ export async function runCandidateFolderSuggestionTests() {
   assert.deepEqual(spanning.kind === "spans_regions" ? [...spanning.codes].sort() : [], ["AB", "D1"]);
   const dmSpans = suggestFolderFromDeclaredAnswers(
     declared("dmSpans", { title: "District Manager", regionName: "Behira, Alex, Kafr El-Sheikh" }),
+    CANONICAL_AREAS,
   );
   assert.equal(dmSpans.suggestion, null, "a spanning answer must never resolve to either half of it");
   assert.match(
@@ -222,6 +224,7 @@ export async function runCandidateFolderSuggestionTests() {
 
   const dmUpperSplit = suggestFolderFromDeclaredAnswers(
     declared("dmUpperSplit", { title: "District Manager", regionName: "UE ( 1 )" }),
+    CANONICAL_AREAS,
   );
   assert.equal(dmUpperSplit.suggestion?.kind, "district_manager");
   assert.equal(dmUpperSplit.suggestion?.key, "UE", "a numbered Upper Egypt half files into the one UE folder");
@@ -230,6 +233,7 @@ export async function runCandidateFolderSuggestionTests() {
   assert.deepEqual(readDeclaredRegionFreeText("somewhere near my hometown"), { kind: "unrecognized" });
   const dmGibberish = suggestFolderFromDeclaredAnswers(
     declared("dmGibberish", { title: "District Manager", regionName: "somewhere near my hometown" }),
+    CANONICAL_AREAS,
   );
   assert.equal(dmGibberish.suggestion, null);
   assert.match(String(dmGibberish.refusal), /somewhere near my hometown/);
