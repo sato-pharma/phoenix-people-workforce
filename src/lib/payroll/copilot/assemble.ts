@@ -276,6 +276,8 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
       lastWorkingDate: input.resignation.lastWorkingDate,
       isResignation: input.resignation.isResignation,
       period,
+      // Same-month joiner who also left: settle from the hire date, not from the 1st.
+      hireDate: employee.hireDate,
       otherAdditions: settlementAdditions,
       otherDeductions: settlementDeductions,
     });

@@ -117,6 +117,11 @@ export function effectiveSalary(input: EffectiveSalaryInput): EffectiveSalary {
       lastWorkingDate: input.lastWorkingDate,
       isResignation: input.isResignation,
       period: input.period,
+      // A JOINER WHO ALSO LEFT THIS MONTH IS STILL A LEAVER HERE — this branch returns before the
+      // joiner branch below is ever reached — so without the hire date the settlement counted from
+      // the 1st and paid for days before the person was hired. The date was already in scope and
+      // simply discarded. Ignored when the hire is in an earlier month, which is every other leaver.
+      hireDate: input.hireDate,
       otherAdditions: 0,
       otherDeductions: 0,
     });

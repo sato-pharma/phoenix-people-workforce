@@ -737,6 +737,9 @@ async function recommendResignations(
       // The exit workflow records dismissals as well as resignations, so only the employee's own
       // status can say which this is — and a dismissal keeps neither allowance.
       isResignation: isResignationEmploymentStatus(member.employee.employmentStatus),
+      // Somebody who joined AND left this month is a leaver here, so without the hire date their
+      // settlement counts from the 1st and pays for days before they started.
+      hireDate: member.employee.hireDate,
     });
     if (!basis) continue;
     const { settlement } = basis;
@@ -1761,6 +1764,9 @@ function recommendResignationCrm(
       // The exit workflow records dismissals as well as resignations, so only the employee's own
       // status can say which this is — and a dismissal keeps neither allowance.
       isResignation: isResignationEmploymentStatus(member.employee.employmentStatus),
+      // Somebody who joined AND left this month is a leaver here, so without the hire date their
+      // settlement counts from the 1st and pays for days before they started.
+      hireDate: member.employee.hireDate,
     });
     if (!basis) continue;
     const daysWorked = basis.daysWorked;

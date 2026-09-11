@@ -607,6 +607,12 @@ function buildResignationSettlementPreview(
    * dismissal keeps neither allowance and gets no >25th waiver.
    */
   employmentStatus: string | null,
+  /**
+   * The employee's hire date. Somebody who joined AND left in the same month is a leaver on every
+   * surface, so without this the preview counts from the 1st and shows dues for days before they
+   * started. Null for every leaver hired in an earlier month, where the span starts on the 1st.
+   */
+  hireDate: string | null,
 ): ResignationSettlementPreview | null {
   if (!salary) return null;
 
@@ -625,6 +631,7 @@ function buildResignationSettlementPreview(
     fuelAllowance: Number(salary.fuel_allowance ?? 0),
     lastWorkingDate,
     isResignation: isResignationEmploymentStatus(employmentStatus),
+    hireDate,
     otherAdditions: 0,
     otherDeductions: 0,
     period: { month, year },
@@ -750,6 +757,7 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
         salaryByHrId.get(normalizeHrId(record.employeeHrId) ?? "") ?? null,
         record.effectiveDate,
         employeesByHrId.get(normalizeHrId(record.employeeHrId))?.employmentStatus ?? record.employeeStatus ?? null,
+        hireDateByHrId.get(normalizeHrId(record.employeeHrId) ?? "") ?? null,
       ),
       // Beside the settlement, because the custody receipt says final dues follow the return.
       outstandingDevices:

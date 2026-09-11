@@ -116,6 +116,12 @@ export function resolveLeaverBasis(input: {
   draft: DraftRow | undefined;
   /** True only for a genuine resignation — a dismissal keeps neither allowance and gets no waiver. */
   isResignation: boolean;
+  /**
+   * The hire date, so somebody who joined AND left in the same month is settled from the day they
+   * started rather than from the 1st. Absent for every leaver hired in an earlier month, which is
+   * almost all of them, and the span then starts on the 1st as before.
+   */
+  hireDate?: string | null;
 }): LeaverBasis | null {
   const baseSalary = positive(input.source?.baseSalary);
   const extraCostOfLiving = positive(input.source?.extraCostOfLiving);
@@ -128,6 +134,7 @@ export function resolveLeaverBasis(input: {
     lastWorkingDate: input.lastWorkingDate,
     isResignation: input.isResignation,
     period: input.period,
+    hireDate: input.hireDate,
     otherAdditions: 0,
     otherDeductions: 0,
   });
