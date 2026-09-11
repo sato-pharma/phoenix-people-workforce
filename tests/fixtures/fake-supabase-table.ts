@@ -15,14 +15,17 @@ type FakeRow = Record<string, unknown>;
 
 class FakeQueryBuilder {
   private rows: FakeRow[];
+  /** When set, every await of this builder answers with this error and no data. */
+  private failure: { message: string } | null = null;
   private filters: Array<(row: FakeRow) => boolean> = [];
   private mode: "select" | "update" | "insert" = "select";
   private updatePayload: FakeRow | null = null;
   private insertPayload: FakeRow[] | null = null;
   private wantsSingle = false;
 
-  constructor(rows: FakeRow[]) {
+  constructor(rows: FakeRow[], failure: { message: string } | null = null) {
     this.rows = rows;
+    this.failure = failure;
   }
 
   select(_columns?: string) {
@@ -94,9 +97,15 @@ class FakeQueryBuilder {
 
   // Makes the builder awaitable, exactly like the real supabase-js chain — `await` calls `.then`.
   then(
-    resolve: (result: { data: unknown; error: null }) => void,
+    resolve: (result: { data: unknown; error: { message: string } | null }) => void,
     _reject?: (reason: unknown) => void,
   ) {
+    // A read that FAILS is a first-class case here. Several payroll paths are only correct because
+    // they refuse to carry on after one, and a fixture that can only succeed cannot show that.
+    if (this.failure) {
+      resolve({ data: null, error: this.failure });
+      return;
+    }
     if (this.mode === "update") {
       for (const index of this.matchIndexes()) {
         Object.assign(this.rows[index], this.updatePayload);
@@ -122,15 +131,21 @@ class FakeQueryBuilder {
 /**
  * A fake client exposing only `.from(table)`. Seed it with `{ tableName: [...rows] }`; read the
  * live state back afterwards with `.rows("tableName")` to assert on what a write actually did
- * (e.g. that exactly one row is left with `superseded_at: null`).
+ * (e.g. that exactly one row is left with `superseded_at: null`). Pass `failOn` to make one
+ * table's reads answer with an error, which is how a fail-closed guard is shown to hold.
  */
-export function fakeSupabaseClient(seed: Record<string, FakeRow[]> = {}) {
+export function fakeSupabaseClient(
+  seed: Record<string, FakeRow[]> = {},
+  options: { failOn?: Record<string, string> } = {},
+) {
   const tables = new Map<string, FakeRow[]>(Object.entries(seed).map(([name, rows]) => [name, [...rows]]));
+  const failures = options.failOn ?? {};
 
   return {
     from(name: string) {
       if (!tables.has(name)) tables.set(name, []);
-      return new FakeQueryBuilder(tables.get(name) as FakeRow[]);
+      const failure = failures[name] ? { message: failures[name] } : null;
+      return new FakeQueryBuilder(tables.get(name) as FakeRow[], failure);
     },
     rows(name: string): FakeRow[] {
       return tables.get(name) ?? [];
