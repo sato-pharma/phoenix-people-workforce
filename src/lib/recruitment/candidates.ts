@@ -1090,7 +1090,7 @@ export async function fileCandidateToFolder(
   } else if (kind === "medical_rep") {
     const canonicalAreas = await listCanonicalMedicalRepAreaNames();
     const resolved = resolveCanonicalMedicalRepArea(cleanKey, canonicalAreas);
-    if (resolved.refusal) throw new Error(resolved.refusal);
+    if (resolved.area === null) throw new Error(resolved.refusal);
     folderKey = resolved.area;
   } else {
     folderKey = cleanKey;

@@ -183,7 +183,7 @@ export function suggestFolderFromDeclaredAnswers(
     // whitespace aside) or it is refused rather than opening a stray folder. See
     // resolveCanonicalMedicalRepArea for why this never guesses between two real areas.
     const resolved = resolveCanonicalMedicalRepArea(area, canonicalMedicalRepAreas);
-    if (resolved.refusal) {
+    if (resolved.area === null) {
       return {
         refusal: `Applied as a medical rep, but ${resolved.refusal}`,
         suggestion: null,
