@@ -1088,6 +1088,7 @@ import { runAutomatedPayrollFailClosedReadTests } from "./automated-payroll-fail
 import { runPayrollPayslipNoticeTests } from "./payroll-payslip-notice.test.ts";
 import { runPayrollAuditTrailAppendOnlyTests } from "./payroll-audit-trail-append-only.test.ts";
 import { runAutomatedPayrollRunIntegrityTests } from "./automated-payroll-run-integrity.test.ts";
+import { runAutomatedPayrollTemplateHeadingTests } from "./automated-payroll-template-headings.test.ts";
 import { runAutomatedPayrollPartSplitStampTests } from "./automated-payroll-part-split-stamp.test.ts";
 import { runAutomatedPayrollAdditionsRecordTests } from "./automated-payroll-additions-record.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
@@ -1846,6 +1847,10 @@ await runTest(
 await runTest(
   "automated payroll: a confirmed run stops moving, and reopening one re-derives it",
   runAutomatedPayrollRunIntegrityTests,
+);
+await runTest(
+  "automated payroll: no two step-template columns read as the same heading",
+  runAutomatedPayrollTemplateHeadingTests,
 );
 await runTest(
   "automated payroll: one deduction is charged in one instalment, whatever the payment mode becomes",
