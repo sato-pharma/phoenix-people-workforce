@@ -1085,6 +1085,7 @@ import { runAutomatedPayrollDayCollisionTests } from "./automated-payroll-day-co
 import { runAutomatedPayrollNonEmployeeSeedingTests } from "./automated-payroll-non-employee-seeding.test.ts";
 import { runAutomatedPayrollFailClosedReadTests } from "./automated-payroll-fail-closed-reads.test.ts";
 import { runPayrollPayslipNoticeTests } from "./payroll-payslip-notice.test.ts";
+import { runPayrollSameMonthJoinerLeaverTests } from "./payroll-same-month-joiner-leaver.test.ts";
 import { runPayrollAuditTrailAppendOnlyTests } from "./payroll-audit-trail-append-only.test.ts";
 import { runAutomatedPayrollRunIntegrityTests } from "./automated-payroll-run-integrity.test.ts";
 import { runAutomatedPayrollPartSplitStampTests } from "./automated-payroll-part-split-stamp.test.ts";
@@ -1837,6 +1838,10 @@ await runTest(
 await runTest(
   "payroll: every employee on a published batch is told their payslip is ready",
   runPayrollPayslipNoticeTests,
+);
+await runTest(
+  "payroll: somebody hired and gone in the same month is paid from their hire date",
+  runPayrollSameMonthJoinerLeaverTests,
 );
 await runTest(
   "automated payroll: the decision trail cannot be edited, deleted or truncated",

@@ -77,6 +77,22 @@ export type ResignationSettlementInput = {
    * at, in the open.
    */
   isResignation: boolean;
+  /**
+   * The employee's hire date, when the settlement should start later than the 1st.
+   *
+   * A PERSON CAN JOIN AND LEAVE IN THE SAME MONTH, and five have on production. They are
+   * classified as a leaver only — the leaver branch returns before the joiner branch is reached —
+   * and this calculation counted days from the 1st, so it paid for days before they were hired.
+   * Somebody hired on 20 August on 18,000 and resigning on the 24th was recommended 18,000 x 24/31
+   * = 13,935.48 for five days of work instead of 2,903.23.
+   *
+   * Optional because most leavers were hired in an earlier month, where it is simply absent and
+   * the span already starts on the 1st. A date outside this period is ignored for the same reason.
+   *
+   * NOTHING HAS BEEN OVERPAID: all three August cases were excluded from the run by hand, which
+   * looks like HR working around exactly this.
+   */
+  hireDate?: string | null;
 };
 
 export type ResignationSettlement = {
@@ -142,15 +158,25 @@ export function computeResignationSettlement(
   const netAdjustment = input.otherAdditions - input.otherDeductions;
   const totalDaysInMonth = calendarDaysInMonth(input.period);
 
+  // THE SPAN STARTS AT THE HIRE DATE WHEN THE HIRE IS THIS MONTH, exactly as the Ready sheet's
+  // `prorationStartDay` does. 1 otherwise, which is every ordinary leaver.
+  const startDay =
+    input.hireDate && isInPeriod(input.hireDate, input.period)
+      ? (dayOfMonth(input.hireDate) ?? 1)
+      : 1;
+  /** Calendar days actually on payroll this month: hire date to last working day, inclusive. */
+  const spanFrom = (endDay: number) => Math.max(0, Math.min(totalDaysInMonth, endDay) - startDay + 1);
+
   // A company-ended departure: Base prorated to the days actually worked, NEITHER allowance, and
   // no >25th waiver — the treatment every leaver got before Rule 1 existed, now scoped to the
   // departures Rule 1 was never meant to cover.
   if (!input.isResignation) {
-    const share = totalDaysInMonth > 0 ? day / totalDaysInMonth : 0;
+    const daysWorked = spanFrom(day);
+    const share = totalDaysInMonth > 0 ? daysWorked / totalDaysInMonth : 0;
     const baseForMonth = roundCurrency(input.baseSalary * share);
     return {
       branch: "non_resignation",
-      daysWorked: day,
+      daysWorked,
       baseForMonth,
       ecolPaid: 0,
       fuelPaid: 0,
@@ -176,7 +202,7 @@ export function computeResignationSettlement(
     // It also ENDS a disagreement that already existed. Of the four callers of this function, two —
     // the Ready sheet and the resignations service — already passed 0 and never subtracted, so the
     // same leaver's days worked differed depending on which surface asked. Now all four agree.
-    const daysWorked = day;
+    const daysWorked = spanFrom(day);
     const workedShare = totalDaysInMonth > 0 ? daysWorked / totalDaysInMonth : 0;
     // Each component is rounded separately, matching computeJoinerPay: a row's
     // three parts must always add up to the row's own total, because every
@@ -196,13 +222,21 @@ export function computeResignationSettlement(
     };
   }
 
-  const baseForMonth = roundCurrency(input.baseSalary);
-  const ecolPaid = roundCurrency(input.extraCostOfLiving);
-  const fuelPaid = roundCurrency(input.fuelAllowance);
+  // THE >25th WAIVER WAIVES THE LEAVING END, NEVER THE JOINING ONE. Somebody who resigned after
+  // the 25th is paid to month end; somebody HIRED this month still pays for the days before they
+  // were hired. Same rule the Ready sheet states in as many words ("a same-month hire still pays
+  // for its own unworked start-of-month days"), so the two surfaces cannot disagree. With no
+  // same-month hire `startDay` is 1, `eligibleShare` is exactly 1, and this is the full month it
+  // has always been.
+  const eligibleDays = Math.max(0, totalDaysInMonth - startDay + 1);
+  const eligibleShare = totalDaysInMonth > 0 ? eligibleDays / totalDaysInMonth : 0;
+  const baseForMonth = roundCurrency(input.baseSalary * eligibleShare);
+  const ecolPaid = roundCurrency(input.extraCostOfLiving * eligibleShare);
+  const fuelPaid = roundCurrency(input.fuelAllowance * eligibleShare);
   const netForMonth = roundCurrency(baseForMonth + ecolPaid + fuelPaid);
   return {
     branch: "after_25",
-    daysWorked: day,
+    daysWorked: spanFrom(day),
     baseForMonth,
     ecolPaid,
     fuelPaid,
