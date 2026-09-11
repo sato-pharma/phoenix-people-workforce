@@ -803,7 +803,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             notificationRecipients: n("Each employee in the batch"),
             emailRecipients: [],
             sideEffects:
-              "notifyEmployeesPayslipAvailable (app/api/payroll/[id]/workflow/route.ts) fires on the \"approve\" transition — the moment payslips become visible — sending one notification per employee in the batch under a per-employee idempotency key. Best-effort by design: a delivery failure never blocks the payroll workflow response.",
+              "notifyPayslipAvailable (src/lib/payroll/notify-payslip-available.ts) sends one notification per employee in the batch, under a per-employee idempotency key, at the moment payslips become visible. TWO callers: the old payroll module's \"approve\" transition, and Automated Payroll's publish. It used to be a helper private to the workflow route, which is exactly why Automated Payroll could not reach it and 205 employees across two published months were never told. Best-effort by design — a delivery failure never blocks payroll — but the counts are returned and recorded in the run's audit row, so a month that told nobody is readable as one.",
             fallbackEscalation:
               "Owner rule: a payslip is NEVER emailed. Delivery is in-app + generic Telegram only (policy row payroll.payslip_available), and payslip-channel-guard strips the email channel as a hard backstop at four further layers. The absence of a payslip email type is the rule, not a gap.",
           },

@@ -39,32 +39,47 @@ export function runPayrollWorkflowTests() {
   // Regression for audit finding M10: "payroll.payslip_available" was defined in
   // notifications/policy.ts but no code path ever fired it, so employees had no signal their
   // payslip was ready. "approve" is confirmed above as the transition that first enters the
-  // published-payslip status set ("under_review" -> "approved") — the workflow route must fire
-  // one payslip-available notification per employee in the batch on exactly that transition, and
-  // it must never block the response if notification delivery fails.
+  // published-payslip status set ("under_review" -> "approved").
+  //
+  // THE SENDER MOVED OUT OF THIS ROUTE (finding 15). It was a helper private to this file, which
+  // is precisely why Automated Payroll — the live payroll path — could not reach it and silently
+  // went without one for 205 people. It now lives in `@/lib/payroll/notify-payslip-available` and
+  // both paths call the same copy, so the four properties this test has always guarded are checked
+  // where they now live rather than dropped.
   const workflowRouteSource = readFileSync("app/api/payroll/[id]/workflow/route.ts", "utf8");
   assert.match(
     workflowRouteSource,
-    /if \(action === "approve"\) \{\s*await notifyEmployeesPayslipAvailable\(updated\.id\);\s*\}/,
+    /if \(action === "approve"\) \{\s*await notifyPayslipAvailable\(\{ batchId: updated\.id \}\);\s*\}/,
     "the payslip-available notification fires on the approve transition, and only that transition",
   );
   assert.match(
     workflowRouteSource,
+    /import \{ notifyPayslipAvailable \} from "@\/lib\/payroll\/notify-payslip-available"/,
+    "and it uses the shared sender rather than a copy private to this route",
+  );
+
+  const payslipSenderSource = readFileSync("src/lib/payroll/notify-payslip-available.ts", "utf8");
+  assert.match(
+    payslipSenderSource,
     /eventType: "payslip_available"/,
     "the notification uses the payroll.payslip_available policy key (module: \"payroll\" + eventType: \"payslip_available\")",
   );
+  assert.match(payslipSenderSource, /module: "payroll"/);
   assert.match(
-    workflowRouteSource,
-    /module: "payroll"/,
-  );
-  assert.match(
-    workflowRouteSource,
+    payslipSenderSource,
     /recipientHrId: hrId,[\s\S]*?subjectHrId: hrId,/,
     "the notification targets the explicit-recipient path with recipientHrId === subjectHrId, satisfying explicitRecipientAllowed for a sensitive payroll notification",
   );
   assert.match(
-    workflowRouteSource,
-    /catch \(error\) \{\s*console\.error\("\[payroll-workflow\] failed to send payslip-available notifications", error\);\s*\}/,
+    payslipSenderSource,
+    /catch \(error\) \{\s*logError\("Payroll: could not tell one employee their payslip is ready"/,
     "a notification-send failure is caught and logged, never thrown back into the workflow response",
+  );
+  // Stronger than before: the failure is now COUNTED as well as caught, so a month that told
+  // nobody is readable afterwards instead of merely quiet.
+  assert.match(
+    payslipSenderSource,
+    /failed: outcomes\.filter\(\(sent\) => !sent\)\.length/,
+    "and the count of failures is returned to the caller",
   );
 }

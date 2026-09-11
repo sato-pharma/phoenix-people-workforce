@@ -1084,6 +1084,7 @@ import { runAutomatedPayrollModuleDriftTests } from "./automated-payroll-module-
 import { runAutomatedPayrollDayCollisionTests } from "./automated-payroll-day-collisions.test.ts";
 import { runAutomatedPayrollNonEmployeeSeedingTests } from "./automated-payroll-non-employee-seeding.test.ts";
 import { runAutomatedPayrollFailClosedReadTests } from "./automated-payroll-fail-closed-reads.test.ts";
+import { runPayrollPayslipNoticeTests } from "./payroll-payslip-notice.test.ts";
 import { runPayrollAuditTrailAppendOnlyTests } from "./payroll-audit-trail-append-only.test.ts";
 import { runAutomatedPayrollRunIntegrityTests } from "./automated-payroll-run-integrity.test.ts";
 import { runAutomatedPayrollPartSplitStampTests } from "./automated-payroll-part-split-stamp.test.ts";
@@ -1832,6 +1833,10 @@ await runTest(
 await runTest(
   "automated payroll: a failed read does not look like a quiet month",
   runAutomatedPayrollFailClosedReadTests,
+);
+await runTest(
+  "payroll: every employee on a published batch is told their payslip is ready",
+  runPayrollPayslipNoticeTests,
 );
 await runTest(
   "automated payroll: the decision trail cannot be edited, deleted or truncated",

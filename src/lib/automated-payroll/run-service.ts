@@ -30,6 +30,7 @@ import {
   type PayrollDayCollision,
 } from "./day-collisions.ts";
 import { loadConfirmedDeductions } from "./deductions-source.ts";
+import { notifyPayslipAvailable } from "@/lib/payroll/notify-payslip-available";
 import {
   compareConfirmedTotals,
   describeTotalsDrift,
@@ -1661,6 +1662,18 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
     publishedAt: nowIso(),
     publishedBy: actorId(access),
   });
+
+  // TELL THE EMPLOYEES. This is the notification the whole company receives, and this path never
+  // sent it: it was a helper private to the OLD payroll module's route file, and Automated Payroll
+  // approves its batch with a direct database write. Production's count says it plainly — 123
+  // records, all dated 13 July 2026, the last time the old module approved a batch, and none since,
+  // while the two automated publishes covered 205 people between them.
+  //
+  // After the run is marked published on purpose. Money and payslips already exist by here, so a
+  // notification outage must not throw back through a completed payroll and present it as failed.
+  // It cannot throw, and it reports what happened so a month that told nobody reads as one.
+  const payslipNotice = await notifyPayslipAvailable({ batchId });
+
   await writeAutomatedPayrollAudit({
     runId,
     actorHrId: actorId(access),
@@ -1669,6 +1682,11 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
       batchId,
       publishedCount: publishRows.length,
       heldExcluded,
+      // Who was actually told. `payslipNoticeFailed` above zero, or an error, means people hold a
+      // payslip nobody announced — recoverable, but only if it is visible.
+      payslipNoticeSent: payslipNotice.notified,
+      payslipNoticeFailed: payslipNotice.failed,
+      payslipNoticeError: payslipNotice.error,
       carryForwardRecovered,
       // Whether publish could prove it wrote the month Part 2 confirmed. False means the run
       // predates the stamp, not that the check failed — a failed READ throws instead, because
