@@ -30,9 +30,10 @@ function strings(value: unknown): string[] | null {
   return Array.from(new Set((value as string[]).map((item) => item.trim()).filter(Boolean)));
 }
 
-// Super Admin only. Editing a list changes who receives company mail, which is why this both
-// audits (in updateDistributionList) and returns the list's NEW membership: the caller sees who
-// it now resolves to before anything is sent, rather than discovering it from a send.
+// Super Admin, plus the HR Business Partner narrowed to the HR-owned lists. Editing a list changes
+// who receives company mail, which is why this both audits (in updateDistributionList) and returns
+// the list's NEW membership: the caller sees who it now resolves to before anything is sent, rather
+// than discovering it from a send.
 export async function POST(request: NextRequest, context: { params: Promise<{ listKey: string }> }) {
   try {
     const csrf = assertSameOriginMutation(request);

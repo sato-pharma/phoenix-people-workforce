@@ -92,6 +92,16 @@ export function runDistributionListsAccessTests() {
     false,
     "a role outside the gate holds no list, even one inside the HR set",
   );
+  // 🔴 AND THE SCOPE ITSELF ANSWERS EMPTY, not merely the gate above it. Asserting only through
+  // canManageDistributionList hides this: that helper short-circuits on the gate, so the scope
+  // function could hand the HR allowlist to every role in the company and every test would stay
+  // green. A future caller that reads the scope without the gate must get nothing.
+  for (const role of ["Medical Rep", "HR Operations", "Finance Manager", "CEO"]) {
+    const scope = distributionListScopeFor(as(role));
+    assert.notEqual(scope, "all", `${role} must not be unscoped`);
+    if (scope === "all") continue;
+    assert.equal(scope.size, 0, `${role} holds NO list - the scope must answer empty, not rely on the gate being checked first`);
+  }
 
   // ── The ROUTES enforce it, not just the screen ───────────────────────────────────────────────
   assert.match(
@@ -138,7 +148,10 @@ export function runDistributionListsAccessTests() {
   // From is phoenix@send.satopharma.com - the subdomain Resend authenticates. An apex-domain From
   // is rejected or filed as spam. The negative pin alone was evadable: the send site writes `from,`
   // as property shorthand, so `const from = replyTo ?? ...` higher up would never match it. The
-  // positive pin below closes that by requiring `from` to keep coming from the env vars.
+  // positive pin below narrows that by requiring the env-var line to survive. It does not CLOSE it:
+  // routing through an intermediate (`const sender = replyTo || from`) still evades both. What
+  // actually holds the property is send-phoenix-email.ts, which derives `from` from input.from and
+  // never from replyTo.
   const fromUsesTheReplyAddress = /from:\s*(systemEmail\.seatReplyTo|replyTo)/.test(ROUTE_SEND);
   assert.equal(
     fromUsesTheReplyAddress,

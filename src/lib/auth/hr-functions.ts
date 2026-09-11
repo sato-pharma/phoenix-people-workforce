@@ -45,6 +45,7 @@ export type HrFunctionKey =
   | "engagement_retention"
   | "performance_probation"
   | "workforce_insight"
+  | "hr_communication"
   | "people_records"
   | "time_attendance"
   | "payroll_inputs"
@@ -140,6 +141,28 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // No `delete`. A retention conversation is the evidence behind a turnover theme, and
       // removing one silently changes a company-wide number the CEO reads.
       retention: MAINTAIN,
+    },
+  },
+  {
+    key: "hr_communication",
+    label: "HR Communication",
+    summary:
+      "Composing and sending HR email by hand, and the templates behind it.",
+    jdSections: ["hrbp 2 — Employee Engagement & Field-HQ Partnership"],
+    // Added 2026-09-11. The owner asked that the HR Business Partner's mail answer to
+    // HRBP@satopharma.com, and review found she had no way to send anything at all: the reply
+    // address sat on a route only Super Admin could reach, so it could never fire. Told that making
+    // it real meant granting `communication`, he chose to give her the composer.
+    //
+    // ⚠ `communication` IS WIDER THAN "SEND AN EMAIL", and there is no narrower resource to use.
+    // Per access-registry.ts it also gates the email TEMPLATES and the Telegram templates, and the
+    // send route needs `update`, so read-only is not an option — she can therefore edit those
+    // templates too. Stated here rather than discovered later.
+    //
+    // NOT `create`, `delete`, `approve` or `import`: nothing in the composer path asks for them,
+    // and the narrower set is the one that still does the job.
+    grants: {
+      communication: ["read", "update"],
     },
   },
   {
@@ -405,6 +428,9 @@ export const HR_ROLE_BUNDLES = {
   "HR Advisory": [
     "recruiting",
     "engagement_retention",
+    // HR Advisory ONLY - HR Operations is not a sender, and adding it to a shared function such as
+    // hr_governance would have handed her the composer as a side effect.
+    "hr_communication",
     "performance_probation",
     "workforce_insight",
     "hr_governance",

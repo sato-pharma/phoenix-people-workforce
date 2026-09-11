@@ -246,6 +246,10 @@ const SOURCES_BY_FUNCTION: Record<HrFunctionKey, readonly SourceKey[]> = {
   // and nothing else — neither is a queue, and there is no figure in the product that counts
   // "governance". A tile here could only be invented, and an invented tile is the false promise
   // the owner's rule for this page type forbids. See TILES_BY_FUNCTION.hr_governance.
+  // NONE. hr_communication is a CAPABILITY - compose and send HR mail by hand - not a data
+  // source, so it contributes no tile and no chart. The dashboard reports work waiting; a send
+  // path has no backlog to show.
+  hr_communication: [],
   hr_governance: [],
   payroll_inputs: ["deductions"],
   // `contracts` belongs HERE and not under hr_governance, which is where it was first written.
@@ -545,6 +549,7 @@ const TILES_BY_FUNCTION: Record<
    * anything back: a tile under a shared function is offered to a seat that may not hold the
    * grant its link needs.
    */
+  hr_communication: () => [],
   hr_governance: () => [],
 };
 
@@ -725,6 +730,9 @@ const CHARTS_BY_FUNCTION: Record<
   (loaded: HrCommandSources) => HrCommandChart[]
 > = {
   engagement_retention: () => [],
+  // No chart. A send path has no population to plot - see the note above about not completing the
+  // set with a chart of a number that means nothing.
+  hr_communication: () => [],
   hr_governance: () => [],
 
   /**

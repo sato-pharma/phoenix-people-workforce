@@ -41,7 +41,10 @@ const HR_OWNED_LIST_KEYS: ReadonlySet<string> = new Set(["hr_team"]);
  *
  * Returned as a SCOPE rather than applied by the screen, because a screen that merely hides a row
  * is not a boundary — `/api/admin/distribution-lists/[listKey]` is reachable by hand. Every reader
- * and every writer must narrow through this, and the route tests pin that they do.
+ * and every writer must narrow through this. The route tests pin that each narrows - they check the
+ * call is PRESENT, not that its verdict is obeyed, which is this repo's convention for route gates
+ * and is weaker than it reads: a one-token mutation (dropping a `!`, or flipping `scope !== "all"`)
+ * survives them. The behavioural assertions below the source pins are the ones that bite.
  */
 export function distributionListScopeFor(access: AccessContext): "all" | ReadonlySet<string> {
   if (canAccessSystemAdministratorWorkspace(access)) return "all";

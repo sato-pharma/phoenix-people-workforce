@@ -11,7 +11,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * The Turbify alias register. Super Admin only.
+ * The Turbify alias register. Super Admin, plus the HR Business Partner for aliases driven by
+ * an HR-owned list.
  *
  * Two actions, deliberately separate. `register` says an alias exists and what drives it;
  * `record` says who was on it when a human last looked. Folding them together would let
