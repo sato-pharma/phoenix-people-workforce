@@ -146,14 +146,19 @@ export function placementFor(
   const suggestion: CandidateFolderSuggestion | null =
     filedKind && filedKey
       ? { key: filedKey, kind: filedKind, label: candidateFolderLabel(filedKind, filedKey) }
-      : suggestFolderFromDeclaredAnswers({
-          appliedForJobTitle: row.applied_for_job_title,
-          folder: null,
-          preferencesDeclaredAt: row.preferences_declared_at,
-          preferredAreaName: row.preferred_area_name,
-          preferredRegionCode: row.preferred_region_code,
-          status: row.status ?? "",
-        }).suggestion;
+      : suggestFolderFromDeclaredAnswers(
+          {
+            appliedForJobTitle: row.applied_for_job_title,
+            folder: null,
+            preferencesDeclaredAt: row.preferences_declared_at,
+            preferredAreaName: row.preferred_area_name,
+            preferredRegionCode: row.preferred_region_code,
+            status: row.status ?? "",
+          },
+          // areaRegions is already keyed by every live area name — the same list
+          // listCanonicalMedicalRepAreaNames would return, with no second read.
+          Object.keys(areaRegions),
+        ).suggestion;
 
   const fileName = driveFileNameFor({
     candidateName: row.full_name,

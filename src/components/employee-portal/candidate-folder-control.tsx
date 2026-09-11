@@ -59,7 +59,10 @@ export function CandidateFolderControl({
   // A shelf this manager cannot see is not a starting point either: a <select> whose value matches
   // none of its options renders blank and files nothing, so the suggestion has to pass the same list
   // the options come from rather than be trusted because it happens not to produce one today.
-  const declared = suggestFolderFromDeclaredAnswers({ ...candidate, folder: null }).suggestion;
+  const declared = suggestFolderFromDeclaredAnswers(
+    { ...candidate, folder: null },
+    areaOptions.map((option) => option.name),
+  ).suggestion;
   const suggested = declared && managerFolderKinds.includes(declared.kind) ? declared : null;
   const [kind, setKind] = useState<CandidateFolderKind>(suggested?.kind ?? "medical_rep");
   const [key, setKey] = useState(suggested?.key ?? "");
