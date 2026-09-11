@@ -3,6 +3,9 @@ import {
   HOUSE_COLORS,
   HOUSE_MARK_SRC,
   houseBandBackground,
+  HOUSE_SEALED_ATTRS,
+  houseSealImg,
+  isCompanySignatory,
 } from "@/lib/hiring-pack/house-identity";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import { spellEgyptianAmount } from "@/lib/hiring-pack/arabic-amount";
@@ -596,7 +599,14 @@ function documentSignatureTable(
           const filled = field === undefined ? "" : fillContractTokens(field, values);
           const html =
             field === undefined || PEN_BLANK.test(filled) ? "" : fillMarkedHtml(field, values);
-          return `<td class="doc-sig__cell">${html}</td>`;
+          // The seal sits on the COMPANY's own التوقيع والختم cell, beside whatever is typed
+          // there. Which party that is comes from one shared predicate, because the heading is
+          // not always الشركة — see isCompanySignatory.
+          const sealed =
+            isCompanySignatory(column.headingAr) && /التوقيع/.test(label)
+              ? `${HOUSE_SEALED_ATTRS}>${html}${houseSealImg({ sizeMm: 34 })}`
+              : `>${html}`;
+          return `<td class="doc-sig__cell"${sealed}</td>`;
         })
         .join("");
       return `<tr><th class="doc-sig__party">${escapeHtml(column.headingAr)}</th>${cells}</tr>`;

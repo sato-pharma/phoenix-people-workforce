@@ -45,12 +45,17 @@ const LOGO_PUBLIC_PATH = "/brand/sato-pharma-logo-on-light.png";
  * somebody signs by hand. Both are plainer than intended but neither is WRONG, and an offer that
  * failed to render at all would be worse than either.
  */
+function svgDataUri(bytes: Buffer): string {
+  return `data:image/svg+xml;base64,${bytes.toString("base64")}`;
+}
+
 function pngDataUri(bytes: Buffer): string {
   return `data:image/png;base64,${bytes.toString("base64")}`;
 }
 
 let logoCache: string | null | undefined;
 let signatureCache: string | null | undefined;
+let sealCache: string | null | undefined;
 
 /**
  * The Sato mark as a `data:` URI, for the PDF. Null when it cannot be read.
@@ -71,6 +76,27 @@ export function satoLogoDataUri(): string | null {
     }
   }
   return logoCache;
+}
+
+/**
+ * The company seal as a `data:` URI — owner's instruction, 2026-09-11.
+ *
+ * A SEPARATE READER FROM THE HIRING PACK'S, on purpose. `paper-artwork.ts` rewrites `/brand/...`
+ * paths at PDF time; the offer letters inline their assets at RENDER time instead, so a path here
+ * would reach the PDF unresolved. Same file on disk, two mechanisms, and this is the offers' one.
+ *
+ * The literal `join` is load-bearing exactly as it is above: a variadic helper here once made ONE
+ * route trace 6,034 files.
+ */
+export function satoSealDataUri(): string | null {
+  if (sealCache === undefined) {
+    try {
+      sealCache = svgDataUri(readFileSync(join(process.cwd(), "public", "brand", "sato-hr-seal.svg")));
+    } catch {
+      sealCache = null;
+    }
+  }
+  return sealCache;
 }
 
 /** The same mark as an absolute URL, for email clients that refuse `data:` images. */

@@ -17,6 +17,7 @@
  * four drifting mastheads in the hiring pack the same week. Everything else here stays frozen.
  * ───────────────────────────────────────────────────────────────────────────────────────────── */
 import { houseEngineTurnedBand } from "@/lib/hiring-pack/house-identity";
+import { satoSealDataUri } from "@/lib/offers/brand";
 import { OFFER_DEFAULT_FONT, OFFER_DEFAULT_FONT_SIZE_PT, OFFER_DEFAULT_THEME } from "@/lib/offers/default-template";
 import { deriveOfferPay, formatOfferAmount } from "@/lib/offers/pay";
 import { systemLegalEntity } from "@/config/system-settings";
@@ -321,9 +322,20 @@ export function renderOfferBlock(
       // gets the same room to sign in, which a 17px gap never really gave them anyway.
       const ink = signatureInk(p.leftSignature, options.signatureUrl);
       const row = `sigrow${ink ? " signed" : ""}`;
-      const sigRow = (signature: string) =>
+      // THE SEAL GOES ON THE COMPANY'S RULE ONLY — the left column is the authorised signatory's,
+      // the right is the candidate's date. Stamping the candidate's side would be the company
+      // certifying the other party's own signature.
+      const seal = satoSealDataUri();
+      const sealImg = seal
+        ? `<img class="offer-seal" src="${seal}" alt="">`
+        : "";
+      // `sealed` IS THE COMPANY SIDE ONLY. This builder draws BOTH parties' rules — the left is the
+      // authorised signatory's, the right is the candidate's — so sealing inside it unconditionally
+      // stamped the candidate's signature line too, which is the company certifying the other
+      // party's own signature. Measured: two impressions per letter.
+      const sigRow = (signature: string, sealed = false) =>
         `<div class="${row}">` +
-        `<div><div class="sigink-box">${signature}</div><div class="sigline"></div>` +
+        `<div class="sigcell">${sealed ? sealImg : ""}<div class="sigink-box">${signature}</div><div class="sigline"></div>` +
         '<div class="siglabel">Signature</div></div>' +
         '<div><div class="sigink-box"></div><div class="sigline"></div>' +
         '<div class="siglabel">Date</div></div></div>';
@@ -331,7 +343,7 @@ export function renderOfferBlock(
       return (
         `<div class="accept keep"><div class="accept-h"><div class="micro micro-wide">${f(p.title)}</div></div>` +
         `<div class="accept-b"><div><div class="micro k">${f(p.leftK)}</div>` +
-        `<div class="party">${f(p.leftName)}</div><div class="sub">${f(p.leftSub)}</div>${sigRow(ink)}</div>` +
+        `<div class="party">${f(p.leftName)}</div><div class="sub">${f(p.leftSub)}</div>${sigRow(ink, true)}</div>` +
         `<div><div class="micro k">${f(p.rightK)}</div><div class="party">${f(p.rightName)}</div>` +
         `<div class="sub">${f(p.rightSub)}</div>${sigRow("")}</div></div></div>`
       );
@@ -495,6 +507,9 @@ table{width:100%;border-collapse:collapse}
    change guaranteed to make it look worse — a bigger signature needs a bigger scan, not more CSS. */
 .sigink{max-height:35px;max-width:62%;width:auto;display:block;margin-left:5px}
 .sigline{margin-top:17px;border-bottom:1px solid var(--ink);height:1px}
+.sigcell{position:relative}
+/* The impression: sized in mm because it is a physical object, not a layout element. */
+.offer-seal{position:absolute;left:6mm;top:50%;width:30mm;height:30mm;transform:translateY(-46%) rotate(-7deg);opacity:.84;pointer-events:none;z-index:4}
 .siglabel{margin-top:5px;color:var(--faint);font-size:8pt;letter-spacing:1.2px;text-transform:uppercase;font-weight:700}
 .sigrow{display:flex;gap:16px}
 .sigrow > div:first-child{flex:1}
