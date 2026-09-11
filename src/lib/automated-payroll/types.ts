@@ -166,6 +166,15 @@ export type DraftRow = {
   manualOtherDeductions: number | null;
   manualReason: string | null;
   /**
+   * Why this employee is being paid an incentive, bonus or overtime this month.
+   *
+   * Additions is the ONLY step that adds money to a payslip, and it had no feeder, no source, no
+   * reason and no limit — a typed figure reached the payslip with nothing recording who asked for
+   * it. Deliberately NOT `manualReason`, which belongs to the Part 2 Manual Deductions step: one
+   * shared column would let a deduction's reason read as an addition's.
+   */
+  additionsReason: string | null;
+  /**
    * Resignations-step-only: the editable day count behind `crm` (CRM no-activity
    * days for the leaver's final settlement). Auto-calculates `crm` via Base/30 ×
    * days when edited — safe because the leaver's system-recommended `crm` value

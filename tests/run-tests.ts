@@ -1086,6 +1086,7 @@ import { runAutomatedPayrollNonEmployeeSeedingTests } from "./automated-payroll-
 import { runAutomatedPayrollFailClosedReadTests } from "./automated-payroll-fail-closed-reads.test.ts";
 import { runPayrollAuditTrailAppendOnlyTests } from "./payroll-audit-trail-append-only.test.ts";
 import { runAutomatedPayrollPartSplitStampTests } from "./automated-payroll-part-split-stamp.test.ts";
+import { runAutomatedPayrollAdditionsRecordTests } from "./automated-payroll-additions-record.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
 import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
 import { runAutomatedPayrollExecutiveSummaryTests } from "./automated-payroll-executive-summary.test.ts";
@@ -1838,6 +1839,10 @@ await runTest(
 await runTest(
   "automated payroll: one deduction is charged in one instalment, whatever the payment mode becomes",
   runAutomatedPayrollPartSplitStampTests,
+);
+await runTest(
+  "automated payroll: money added to a payslip says why, and the record names every field",
+  runAutomatedPayrollAdditionsRecordTests,
 );
 await runTest(
   "automated payroll: every payable row reaches a bank file or is named",

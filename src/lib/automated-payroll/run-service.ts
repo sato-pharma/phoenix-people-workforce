@@ -18,6 +18,10 @@ import { buildFabSheetWorkbook, defaultFabValueDate, fabRowsForNonEmployees, fab
 import { buildFullSheetWorkbook, buildPart1SheetWorkbook, type PeriodSummary } from "./exports/sheet.ts";
 import { buildStepTemplateWorkbook } from "./exports/step-template.ts";
 import { diffStepUpload, parseStepWorkbook } from "./imports/step-parser.ts";
+import {
+  additionsCandidatesFromStepRows,
+  assertAdditionsReasonsPresent,
+} from "./additions-reason.ts";
 import { assertHoldReasonsPresent, holdCandidatesFromStepRows } from "./hold-reason.ts";
 import { buildHoldReview, type HoldReview } from "./hold-review.ts";
 import {
@@ -224,6 +228,11 @@ function stepEditToPatch(stepKey: StepKey, edit: StepEditInput, isLeaverEmployee
   }
   if (stepKey === "p2_manual_deductions" && edit.reason !== undefined) {
     patch.manualReason = edit.reason;
+  }
+  // Its OWN column, never manual_reason: one shared field would let a deduction's reason read as
+  // an addition's, and nothing downstream could tell which decision the sentence describes.
+  if (stepKey === "p2_additions" && edit.reason !== undefined) {
+    patch.additionsReason = edit.reason;
   }
   if (edit.reasons) {
     for (const [key, field] of Object.entries(TEXT_FIELDS)) {
@@ -591,6 +600,14 @@ export async function confirmStep(
     assertHoldReasonsPresent(holdCandidatesFromStepRows(rows));
   }
 
+  // MONEY ADDED TO A PAYSLIP SAYS WHY. Additions is the only step that adds money and the only one
+  // with no feeder behind it, so the reason is the only thing that will ever explain the figure.
+  // Enforced here rather than at save because confirming is what locks the step, and Part 2 confirm
+  // refuses unless every step is confirmed — so no published addition bypasses this.
+  if (stepKey === "p2_additions") {
+    assertAdditionsReasonsPresent(additionsCandidatesFromStepRows(rows));
+  }
+
   // Informational rows never persist. A notice-period employee is shown on the
   // Resignations step so HR can see the resignation, but their settlement
   // belongs to the month they actually leave — writing anything here risks
@@ -710,15 +727,42 @@ export async function getPayrollDayCollisions(
   return detectPayrollDayCollisions({ members, deductions });
 }
 
-function summarizeStep(stepKey: StepKey, rows: StepRow[]): Record<string, unknown> {
+/**
+ * What the audit row records about a confirmed step.
+ *
+ * IT USED TO TOTAL ONE FIELD — the first one it found — and silently ignored every other. On the
+ * Additions step that first field is Incentive, so bonus and overtime left no trace in any audit
+ * entry at all: the August run's audit recorded an incentive total of 5,442 across 120 employees
+ * while the same rows carried 2,258.00 of bonus and 1,000.00 of overtime that nothing mentioned.
+ * The step that adds money to a payslip was the least auditable one in the wizard.
+ *
+ * Every numeric field is now totalled and named. `primaryField` and `total` are kept exactly as
+ * they were so nothing reading an older audit row has to change its mind about what they mean.
+ */
+export function summarizeStep(stepKey: StepKey, rows: StepRow[]): Record<string, unknown> {
   if (stepKey === "p1_holds" || stepKey === "p2_holds") {
     return { employees: rows.length, held: rows.filter((row) => row.onHold).length };
   }
+  const fieldTotals: Record<string, number> = {};
+  for (const row of rows) {
+    for (const [field, value] of Object.entries(row.values ?? {})) {
+      const amount = Number(value ?? 0);
+      if (!Number.isFinite(amount)) continue;
+      fieldTotals[field] = (fieldTotals[field] ?? 0) + amount;
+    }
+  }
+  for (const field of Object.keys(fieldTotals)) {
+    fieldTotals[field] = Math.round((fieldTotals[field] ?? 0) * 100) / 100;
+  }
   const primaryField = Object.keys(rows[0]?.values ?? {})[0];
-  const total = primaryField
-    ? Math.round(rows.reduce((sum, row) => sum + (row.values[primaryField] ?? 0), 0) * 100) / 100
-    : 0;
-  return { employees: rows.length, primaryField: primaryField ?? null, total };
+  return {
+    employees: rows.length,
+    primaryField: primaryField ?? null,
+    total: primaryField ? (fieldTotals[primaryField] ?? 0) : 0,
+    // Every field this step writes, so no figure that reaches a payslip is absent from the record
+    // of the click that put it there.
+    fieldTotals,
+  };
 }
 
 // ---- Part confirmations -----------------------------------------------------

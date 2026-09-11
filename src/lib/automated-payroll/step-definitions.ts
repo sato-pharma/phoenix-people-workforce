@@ -468,7 +468,9 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       { key: "bonus", label: "Bonus", kind: "money" },
       { key: "overtime", label: "Overtime", kind: "money" },
     ],
-    hasReason: false,
+    // The only step that ADDS money, so the only one whose figures have no feeder behind them to
+    // explain themselves. Required whenever any of the three is non-zero — see confirmStep.
+    hasReason: true,
     isHoldStep: false,
   },
   p2_manual_deductions: {
