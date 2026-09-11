@@ -66,6 +66,7 @@ import type { EmployeePortalShellData, MedicalRepPortalData } from "@/lib/employ
 import { canonicalHrIdKey, formatHrIdForDisplay } from "@/lib/hr-id";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 
 export { PayrollPayslipsSection } from "@/components/employee-portal/dashboard/payroll-payslips-section";
@@ -89,7 +90,7 @@ type ContributionRow = {
 };
 
 function egp(value: number) {
-  return new Intl.NumberFormat("en-US", {
+  return stableCurrencyFormatter("en-US", {
     currency: "EGP",
     maximumFractionDigits: 0,
     style: "currency",

@@ -16,6 +16,7 @@ import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-con
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import type { DsmTeamMemberData, DsmTeamMemberProductData } from "@/lib/employee-portal/service";
 import { formatEmployeeDisplayName } from "@/lib/utils";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 const LEADERBOARD_PAGE_SIZE = 25;
 
@@ -37,7 +38,7 @@ type SalesVsTargetChartDatum = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function egp(value: number) {
-  return new Intl.NumberFormat("en-US", {
+  return stableCurrencyFormatter("en-US", {
     currency: "EGP",
     maximumFractionDigits: 0,
     style: "currency",
@@ -49,7 +50,7 @@ function pct(value: number) {
 }
 
 function compactEgp(value: number) {
-  return new Intl.NumberFormat("en-US", {
+  return stableCurrencyFormatter("en-US", {
     compactDisplay: "short",
     currency: "EGP",
     maximumFractionDigits: 1,

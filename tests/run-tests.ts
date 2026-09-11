@@ -1497,6 +1497,7 @@ import { runEmployeeJobTitleCasingHintTests } from "./employee-job-title-casing-
 
 import { runPayrollHoldConfirmStepReasonTests } from "./payroll-hold-confirm-step-reason.test.ts";
 
+import { runCairoZoneOffsetTests } from "./cairo-zone-offset.test.ts";
 import { runReact418HydrationSafeTextTests } from "./react-418-hydration-safe-text.test.ts";
 import { runPayrollHoldReviewTests } from "./payroll-hold-review.test.ts";
 import { runPmCallRateBandTests } from "./pm-call-rate-band.test.ts";
@@ -4857,6 +4858,7 @@ await runTest(
 );
 
 await runTest("hydration-safe Cairo text: engine-independent month names and a server-formatted password-setup expiry (React #418)", runReact418HydrationSafeTextTests);
+await runTest("Cairo zone data ships with the code: Egypt DST, and money that does not depend on the browser build (React #418)", runCairoZoneOffsetTests);
 
 await runTest(
   "the pre-publish held-employee review names who is not being paid and why (unexplained holds sort first; a carried-forward reason stays labelled after it is saved)",
