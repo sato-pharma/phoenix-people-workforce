@@ -153,6 +153,14 @@ const securityHeaders = [
 // For uploads > 4 MB, use the signed-URL pattern (see src/lib/uploads/ and the
 // sales-imports Supabase bucket).
 const nextConfig: NextConfig = {
+  // `next dev` (16+) auto-writes a generic "This is NOT the Next.js you know..." block into
+  // AGENTS.md every time it starts (node_modules/next/dist/server/lib/generate-agent-files.js),
+  // gated on this flag defaulting to true. This repo's AGENTS.md is the hand-maintained,
+  // byte-budgeted operating-rules doc referenced by CLAUDE.md (see docs/memory-index-budget.md)
+  // — not a throwaway file — so every local dev session was getting a silent uncommitted diff
+  // there. Disable Next's own AGENTS.md/CLAUDE.md generation instead of relying on everyone to
+  // notice and revert it.
+  agentRules: false,
   // `typecheck` already runs as a required, separate step ahead of `build` in both
   // the `pnpm run ci` script and the required `typecheck` CI job. Next.js 16
   // has no built-in ESLint-during-build integration anymore (no `eslint` NextConfig
