@@ -197,6 +197,7 @@ export function runAutomatedPayrollLeaverOverpaymentTests() {
     extraCostOfLiving: 0,
     fuelAllowance: 0,
     lastWorkingDate: "2026-06-20",
+    isResignation: true, // every case in this file is a genuine resignation
     period: june,
     otherAdditions: 0,
     otherDeductions: 0,

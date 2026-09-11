@@ -1068,6 +1068,7 @@ import { runAutomatedPayrollCibSheetTests } from "./automated-payroll-cib-sheet.
 import { runAutomatedPayrollHeldTabTests } from "./automated-payroll-held-tab.test.ts";
 import { runAutomatedPayrollLeaverOverpaymentTests } from "./automated-payroll-leaver-overpayment.test.ts";
 import { runAutomatedPayrollGuardsThatGuardTests } from "./automated-payroll-guards-that-guard.test.ts";
+import { runAutomatedPayrollDismissalSettlementTests } from "./automated-payroll-dismissal-settlement.test.ts";
 import { runAutomatedPayrollInsuranceWageTests } from "./automated-payroll-insurance-wage.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
 import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
@@ -1780,6 +1781,10 @@ await runTest(
 await runTest(
   "automated payroll: the guards that did not guard",
   runAutomatedPayrollGuardsThatGuardTests,
+);
+await runTest(
+  "automated payroll: a dismissal is settled as a dismissal, not as a resignation",
+  runAutomatedPayrollDismissalSettlementTests,
 );
 await runTest(
   "automated payroll: the statutory filing comes from the insurance wage, not the stored column",

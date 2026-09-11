@@ -14,6 +14,7 @@ import { getOutstandingDevicesByEmployee } from "@/lib/devices/service";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { openMailboxOffboardingTask } from "@/lib/mailbox-offboarding/service";
 import { logError } from "@/lib/observability/log";
+import { isResignationEmploymentStatus } from "@/lib/payroll/leaver-kind";
 import { computeResignationSettlement } from "@/lib/payroll/copilot/proration";
 // Read-only use of the owner-locked payroll policy: the Part-1 anchor and payment-mode
 // normalisation. This module never modifies policy.ts.
@@ -591,6 +592,12 @@ type EmployeeSalaryRow = {
 function buildResignationSettlementPreview(
   salary: EmployeeSalaryRow | null,
   effectiveDate: string,
+  /**
+   * The employee's own employment status. The exit workflow this preview sits on records dismissals
+   * as well as resignations, so the record itself cannot say which kind of departure it is — and a
+   * dismissal keeps neither allowance and gets no >25th waiver.
+   */
+  employmentStatus: string | null,
 ): ResignationSettlementPreview | null {
   if (!salary) return null;
 
@@ -608,6 +615,7 @@ function buildResignationSettlementPreview(
     extraCostOfLiving: Number(salary.extra_cost_of_living ?? 0),
     fuelAllowance: Number(salary.fuel_allowance ?? 0),
     lastWorkingDate,
+    isResignation: isResignationEmploymentStatus(employmentStatus),
     otherAdditions: 0,
     otherDeductions: 0,
     period: { month, year },
@@ -732,6 +740,7 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
       settlement: buildResignationSettlementPreview(
         salaryByHrId.get(normalizeHrId(record.employeeHrId) ?? "") ?? null,
         record.effectiveDate,
+        employeesByHrId.get(normalizeHrId(record.employeeHrId))?.employmentStatus ?? record.employeeStatus ?? null,
       ),
       // Beside the settlement, because the custody receipt says final dues follow the return.
       outstandingDevices:

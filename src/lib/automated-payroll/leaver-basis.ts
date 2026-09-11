@@ -114,6 +114,8 @@ export function resolveLeaverBasis(input: {
   lastWorkingDate: string;
   period: PayrollPeriod;
   draft: DraftRow | undefined;
+  /** True only for a genuine resignation — a dismissal keeps neither allowance and gets no waiver. */
+  isResignation: boolean;
 }): LeaverBasis | null {
   const baseSalary = positive(input.source?.baseSalary);
   const extraCostOfLiving = positive(input.source?.extraCostOfLiving);
@@ -124,6 +126,7 @@ export function resolveLeaverBasis(input: {
     extraCostOfLiving,
     fuelAllowance,
     lastWorkingDate: input.lastWorkingDate,
+    isResignation: input.isResignation,
     period: input.period,
     otherAdditions: 0,
     otherDeductions: 0,

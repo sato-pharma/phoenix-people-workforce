@@ -42,6 +42,9 @@ function employee(hrId: string, medicalInsurance: number): EmployeeDirectoryRow 
     medicalInsurance,
     bankName: "NBE",
     bankAccount: "123456",
+    // Resignation Rule 1's generosity is scoped to genuine resignations; a dismissal keeps neither
+    // allowance. Every fixture in this file models someone who chose to leave.
+    employmentStatus: "resigned",
     lastWorkingDate: null,
   } as unknown as EmployeeDirectoryRow;
 }

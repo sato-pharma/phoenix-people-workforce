@@ -67,6 +67,7 @@ export async function runAutomatedPayrollResignationCrmTests() {
     extraCostOfLiving: 2000,
     fuelAllowance: 500,
     lastWorkingDate: "2026-07-09",
+    isResignation: true, // every case in this file is a genuine resignation
     period,
     otherAdditions: 0,
     otherDeductions: 0,

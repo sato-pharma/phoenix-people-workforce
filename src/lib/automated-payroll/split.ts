@@ -70,6 +70,17 @@ export type EffectiveSalaryInput = {
   overrideBase?: number | null;
   overrideEcol?: number | null;
   overrideFuel?: number | null;
+  /**
+   * True only for a genuine resignation — see `isResignationEmploymentStatus`.
+   *
+   * Optional in the TYPE and mandatory in PRACTICE: a leaver without it throws (below). Requiring
+   * it outright would force a meaningless answer onto every regular and joiner row, and a field
+   * that is noise four times out of five stops being read. Defaulting it would be worse still —
+   * the default would have to be "resignation", which is exactly the bug: a dismissal settled as a
+   * resignation with nothing to notice it by. So: absent is fine unless it matters, and when it
+   * matters, absent is an error.
+   */
+  isResignation?: boolean;
 };
 
 /**
@@ -91,11 +102,20 @@ export function effectiveSalary(input: EffectiveSalaryInput): EffectiveSalary {
   let workingDays = calendarDays;
 
   if (input.lifecycle === "leaver" && input.lastWorkingDate) {
+    if (input.isResignation === undefined) {
+      throw new Error(
+        "effectiveSalary: a leaver needs isResignation. The exit workflow records dismissals too, " +
+          "so the last working date cannot say which kind of departure this is — only the " +
+          "employee's own employment status can, and a dismissal keeps neither allowance and gets " +
+          "no >25th waiver.",
+      );
+    }
     const settlement = computeResignationSettlement({
       baseSalary: base,
       extraCostOfLiving: ecol,
       fuelAllowance: fuel,
       lastWorkingDate: input.lastWorkingDate,
+      isResignation: input.isResignation,
       period: input.period,
       otherAdditions: 0,
       otherDeductions: 0,

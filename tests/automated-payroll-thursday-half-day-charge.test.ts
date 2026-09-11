@@ -195,6 +195,7 @@ export async function runAutomatedPayrollThursdayHalfDayChargeTests() {
       socialInsurance: null,
     } as PayrollSalarySource,
     lastWorkingDate: "2026-08-09",
+    isResignation: true, // every case in this file is a genuine resignation
     period: PERIOD,
     draft: undefined,
   });

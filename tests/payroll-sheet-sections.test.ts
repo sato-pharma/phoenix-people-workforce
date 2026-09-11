@@ -147,6 +147,8 @@ export async function runPayrollSheetSectionsTests() {
     period,
     lifecycle: "leaver",
     lastWorkingDate: "2026-08-28",
+    // The assertion below is Rule 1's >25th waiver, which belongs to genuine resignations only.
+    isResignation: true,
   });
   assert.equal(
     lateLeaver.net,

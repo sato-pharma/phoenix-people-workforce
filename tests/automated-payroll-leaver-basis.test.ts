@@ -55,6 +55,7 @@ export async function runAutomatedPayrollLeaverBasisTests() {
   const fresh = resolveLeaverBasis({
     source: source(),
     lastWorkingDate: "2026-08-28",
+    isResignation: true, // every case in this file is a genuine resignation
     period: PERIOD,
     draft: undefined,
   });
@@ -71,6 +72,7 @@ export async function runAutomatedPayrollLeaverBasisTests() {
   const confirmed = resolveLeaverBasis({
     source: source(),
     lastWorkingDate: "2026-08-28",
+    isResignation: true, // every case in this file is a genuine resignation
     period: PERIOD,
     draft: draft({ daysWorked: 12 }),
   });
@@ -97,6 +99,7 @@ export async function runAutomatedPayrollLeaverBasisTests() {
   const halfDay = resolveLeaverBasis({
     source: source({ baseSalary: 15500, netSalary: 18000 }),
     lastWorkingDate: "2026-08-09",
+    isResignation: true, // every case in this file is a genuine resignation
     period: PERIOD,
     draft: draft({ daysWorked: 0.5 }),
   });
@@ -110,6 +113,7 @@ export async function runAutomatedPayrollLeaverBasisTests() {
   const stale = resolveLeaverBasis({
     source: source(),
     lastWorkingDate: "2026-08-09",
+    isResignation: true, // every case in this file is a genuine resignation
     period: PERIOD,
     draft: draft({ daysWorked: 44 }),
   });
@@ -172,6 +176,7 @@ export async function runAutomatedPayrollLeaverBasisTests() {
   const noSalary = resolveLeaverBasis({
     source: source({ baseSalary: null, extraCostOfLiving: 0, fuelAllowance: 0, netSalary: null }),
     lastWorkingDate: "2026-08-09",
+    isResignation: true, // every case in this file is a genuine resignation
     period: PERIOD,
     draft: undefined,
   });
@@ -185,6 +190,7 @@ export async function runAutomatedPayrollLeaverBasisTests() {
     resolveLeaverBasis({
       source: source(),
       lastWorkingDate: "not-a-date",
+      isResignation: true, // every case in this file is a genuine resignation
       period: PERIOD,
       draft: undefined,
     }),
