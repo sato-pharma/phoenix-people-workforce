@@ -59,8 +59,10 @@ export async function buildFinanceSheetWorkbook(input: {
       // already, so the one download finance executes a whole month from was the
       // only one with no account numbers on it.
       ...bankExtraColumns(),
-      { label: "Finance Edit", kind: "money" },
-      { label: "Finance Edit Reason", kind: "text" },
+      // The ONLY two editable columns. The cover promises exactly these, and the bank details above
+      // stay locked with everything else (audit finding 40).
+      { label: "Finance Edit", kind: "money", editable: true },
+      { label: "Finance Edit Reason", kind: "text", editable: true },
     ],
     protect: true,
     nonEmployees: input.nonEmployees ?? [],

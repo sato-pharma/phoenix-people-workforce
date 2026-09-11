@@ -245,4 +245,70 @@ export async function runAutomatedPayrollRecurringNonEmployeesTests() {
     "007111110009",
     "the Part 1 finance sheet must still carry the account number",
   );
+
+  // ── 6. Locked means locked: only the two Finance Edit columns open ─────────
+  // Audit finding 40. The cover says "All cells locked except Finance Edit / Finance Edit Reason",
+  // yet every appended column was unlocked, the bank details included, because they are appended in
+  // the same list. So the account number finance wires money to was editable on a protected sheet.
+  // Read back from the written file, on an employee row AND a non-employee row, because the two are
+  // written by separate loops and each carried its own copy of the unlock.
+  for (const [scope, buffer, sheetName] of [
+    ["full", fullBuffer, "Payroll (Finance)"],
+    ["part1", part1Buffer, "Part 1 (Finance)"],
+  ] as const) {
+    const locks = await readCellLocks(buffer, sheetName);
+    assert.equal(locks.protectedSheet, true, `the ${scope} finance sheet must actually be protected`);
+    for (const who of ["Real Employee", "Standing Roster Person"]) {
+      // The positive control: if the reader could not see protection at all, these fail rather
+      // than every "locked" assertion below passing on an absent value.
+      assert.equal(locks.locked(who, "Finance Edit"), false, `${scope}: Finance Edit must stay editable for ${who}`);
+      assert.equal(locks.locked(who, "Finance Edit Reason"), false, `${scope}: Finance Edit Reason must stay editable for ${who}`);
+      assert.equal(locks.locked(who, "Bank Name"), true, `${scope}: Bank Name must be locked for ${who}`);
+      assert.equal(
+        locks.locked(who, "Bank Account"),
+        true,
+        `${scope}: Bank Account must be locked for ${who}, it is the number the money is wired to`,
+      );
+      assert.equal(locks.locked(who, "Full Name"), true, `${scope}: an ordinary payroll cell must stay locked for ${who}`);
+    }
+  }
+}
+
+/**
+ * Reads back, from the written file, whether the sheet is protected and whether a given person's
+ * cell under a given header is locked. A cell carrying no protection of its own is LOCKED in Excel,
+ * so only an explicit `locked: false` reads as editable.
+ */
+async function readCellLocks(buffer: Buffer, sheetName: string) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+  const sheet = workbook.getWorksheet(sheetName);
+  assert.ok(sheet, `${sheetName} sheet must exist`);
+
+  let headerRowNumber = -1;
+  const columnOf = new Map<string, number>();
+  for (let rowNumber = 1; rowNumber <= sheet!.rowCount && headerRowNumber < 0; rowNumber += 1) {
+    const texts = Array.from(sheet!.getRow(rowNumber).values as unknown[]);
+    if (!texts.some((value) => value === "Full Name")) continue;
+    headerRowNumber = rowNumber;
+    texts.forEach((value, index) => {
+      if (value) columnOf.set(String(value), index);
+    });
+  }
+  assert.ok(headerRowNumber > 0, "a header row containing Full Name must exist");
+  const fullNameColumn = columnOf.get("Full Name")!;
+
+  return {
+    protectedSheet: Boolean((sheet as unknown as { sheetProtection?: { sheet?: boolean } }).sheetProtection?.sheet),
+    locked(fullName: string, header: string): boolean {
+      const column = columnOf.get(header);
+      assert.ok(column, `${sheetName} must have a ${header} column`);
+      for (let rowNumber = headerRowNumber + 1; rowNumber <= sheet!.rowCount; rowNumber += 1) {
+        const row = sheet!.getRow(rowNumber);
+        if (row.getCell(fullNameColumn).value !== fullName) continue;
+        return row.getCell(column!).protection?.locked !== false;
+      }
+      assert.fail(`${fullName} must have a row on ${sheetName}`);
+    },
+  };
 }

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 import { assertCopilotAccess, copilotErrorResponse } from "@/lib/payroll/copilot/access";
+import { getStatutoryConfigForPeriod } from "@/lib/payroll/statutory/config";
 import {
   applyInsuranceWages,
   parseInsuranceWageWorkbook,
@@ -47,7 +49,11 @@ export async function POST(request: Request) {
     }
 
     const buffer = await file.arrayBuffer();
-    const parsed = await parseInsuranceWageWorkbook(buffer);
+    // The legal band in force this month, Cairo time: the same effective-dated row the statutory
+    // engine reads, so an import can never store a wage the filing would quietly clamp (audit finding 41).
+    const { year, month } = currentCairoDateParts();
+    const band = await getStatutoryConfigForPeriod({ month, year });
+    const parsed = await parseInsuranceWageWorkbook(buffer, band);
     const preview = await previewInsuranceWages(parsed.rows);
 
     if (!commit) {

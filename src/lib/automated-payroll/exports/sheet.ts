@@ -75,6 +75,17 @@ export type ExtraColumn = {
   label: string;
   kind: "money" | "text";
   value?: (entry: AssembledRow) => string | number | null;
+  /**
+   * Whether this column's cells open for typing on a protected sheet. Off unless the column says so.
+   *
+   * Every appended column used to be unlocked, on the reasoning that appended meant Finance Edit. But
+   * the finance workbook appends the bank details in the same list, so on the one sheet that promises
+   * finance "all cells locked except Finance Edit / Finance Edit Reason", in three places, the account
+   * number money is wired to was editable, and a paste landing one column left overwrote it with
+   * nothing to stop it (audit finding 40). Locked is the default so a column that forgets to declare
+   * itself fails shut.
+   */
+  editable?: boolean;
 };
 
 /** Bank details for wire execution — not part of the canonical SalaryValidationRow, computed per row. */
@@ -145,8 +156,8 @@ function nonEmployeeMoneyColumns(
 /**
  * Writes one branded payroll worksheet: brand band, bold header, zebra body,
  * money formatting, held rows in red, and a totals row. When `protect` is set,
- * every cell is locked except the appended `extraColumns` (the finance-edit
- * columns) — the finance-download variant.
+ * every cell is locked except appended columns marked `editable` (the Finance
+ * Edit columns) — the finance-download variant.
  *
  * Non-Employees Payroll (owner rule 2026-07-26): people paid a monthly salary
  * with no employee/HR_ID record are rendered as ADDITIONAL ROWS in this SAME
@@ -257,8 +268,8 @@ export async function writePayrollWorksheet(
       cell.alignment = { horizontal: column.kind === "money" ? "right" : "left", vertical: "middle" };
       if (entry.onHold) cell.fill = { fgColor: { argb: HELD_FILL }, pattern: "solid", type: "pattern" };
       else if (zebra) cell.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
-      // Finance-edit columns stay editable even on a protected sheet.
-      if (options.protect) cell.protection = { locked: false };
+      // Only a column that declares itself editable opens on a protected sheet (see ExtraColumn.editable).
+      if (options.protect) cell.protection = { locked: column.editable !== true };
     });
 
     rowNumber += 1;
@@ -307,7 +318,7 @@ export async function writePayrollWorksheet(
       cell.border = gridBorder();
       cell.alignment = { horizontal: column.kind === "money" ? "right" : "left", vertical: "middle" };
       if (zebra) cell.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
-      if (options.protect) cell.protection = { locked: false };
+      if (options.protect) cell.protection = { locked: column.editable !== true };
     });
 
     rowNumber += 1;
