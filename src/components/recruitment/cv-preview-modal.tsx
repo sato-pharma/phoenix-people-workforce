@@ -641,9 +641,28 @@ export function CvPreviewModal({
         </div>
 
         {sidePanel ? (
-          <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
-            <div className="flex-1 overflow-auto bg-slate-50 lg:border-r lg:border-phx-line">{documentBody}</div>
-            <div className="w-full shrink-0 overflow-auto p-5 lg:w-[360px]">{sidePanel}</div>
+          // Below `lg` this stacks instead of splitting into columns — and deliberately does NOT
+          // give the document pane `flex-1` + `overflow-auto` together there. Per the flexbox spec,
+          // a flex item's automatic minimum size is its content size UNLESS the item's own overflow
+          // is something other than "visible" — in which case it resolves to 0. That is exactly what
+          // was happening: on a phone-width screen the record panel below it (36 fields, unbounded
+          // height) forced the flex line to shrink, and the document pane — the only sibling allowed
+          // to shrink below its flex-basis — was squeezed to `clientHeight: 0`, so the pdfjs canvas
+          // never had a box to paint into. The fix is to let the document pane keep its natural,
+          // content-driven height on mobile (no forced overflow there) and let the OUTER container
+          // scroll instead of each column independently. The side-by-side, independently-scrolling
+          // columns return unchanged at `lg` and above.
+          //
+          // `shrink-0` on BOTH stacked panes is load-bearing, and `min-h-[60vh]` alone is not
+          // enough — it is a floor, not a size. Without it the document pane is still a shrinkable
+          // flex item: measured at 375x812, it shrank to the 487px floor while its content needed
+          // 527px, and because it carries no overflow of its own on mobile the extra 40px painted
+          // straight over the "On record" panel below it.
+          <div className="flex flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+            <div className="min-h-[60vh] shrink-0 bg-slate-50 lg:min-h-0 lg:flex-1 lg:overflow-auto lg:border-r lg:border-phx-line">
+              {documentBody}
+            </div>
+            <div className="w-full shrink-0 p-5 lg:w-[360px] lg:overflow-auto">{sidePanel}</div>
           </div>
         ) : (
           <div className="flex-1 overflow-auto bg-slate-50">{documentBody}</div>
