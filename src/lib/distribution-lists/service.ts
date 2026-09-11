@@ -7,6 +7,7 @@ import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import {
   computeAliasDrift,
   resolveDistributionList,
+  rolesWereDropped,
   sanitizeRoles,
   type AliasDrift,
   type DistributionCandidate,
@@ -90,6 +91,7 @@ function rowToSpec(row: DistributionListRow): DistributionListSpec {
     positionIds: numberArray(row.position_ids),
     regionCodes: textArray(row.region_codes),
     roles: sanitizeRoles(row.roles),
+    rolesDropped: rolesWereDropped(row.roles),
   };
 }
 

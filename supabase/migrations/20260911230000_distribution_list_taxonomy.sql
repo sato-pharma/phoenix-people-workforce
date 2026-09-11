@@ -14,7 +14,7 @@
 --
 -- REGIONS ARE MATCHED ON NAME **AND** CODE. Measured on production: 13 field employees carry a
 -- region_name with no region_code, and every one of them is a District Manager. Keying the region
--- rules on the code alone would have produced 20 silently EMPTY district-manager lists while the
+-- rules on the code alone would have produced 14 silently EMPTY district-manager lists while the
 -- rep lists beside them looked perfectly correct.
 --
 -- HEAD OFFICE IS KEYED ON DEPARTMENT, NOT ON LINE 4. `line_id = 4` was the obvious rule and is the
@@ -23,6 +23,13 @@
 -- line_id is "not a mistake to be corrected". Measured: department Sales holds 91 people, all of
 -- them field force; every other department is head office. So the department test captures all 18
 -- including the three brand managers, and sweeps in no rep.
+--
+-- "OTHERS" (OT) IS A REGION LIKE ANY OTHER AND GETS LISTS LIKE ANY OTHER. All three lines carry an
+-- Others region with a seat on it, vacant today. It is easy to skip because nobody is in it and its
+-- name reads like a leftover bucket - but area CA5 "Down town" resolves to OT on Pedia, and there is
+-- an OPEN Pedia rep vacancy on it named for Cairo Downtown. Without these six lists that hire would
+-- be missing from the Pedia Cairo list while the vacancy itself says Cairo, and the only symptom
+-- would be a member count nobody knows is short. Owner asked for these on 2026-09-11.
 --
 -- PEDIA DOES HAVE A CAIRO REGION. An earlier draft of this file omitted the two Pedia/Cairo lists
 -- and said Pedia had no Cairo region. That was wrong: the areas exist and the REP SEATS ARE VACANT,
@@ -156,6 +163,18 @@ insert into public.distribution_lists
    array['Medical Rep']::text[], array[3]::integer[], array['Upper Egypt', 'UE']::text[], '{}'::integer[], false, true),
   ('cns_upper_egypt_district_managers', 'CNS - Upper Egypt - District Managers', 'District Managers on the CNS line in Upper Egypt. Matched on region NAME and CODE together, because 13 district managers carry a name and no code.',
    array['District Manager']::text[], array[3]::integer[], array['Upper Egypt', 'UE']::text[], '{}'::integer[], false, true),
+  ('anti_infective_others_medical_reps', 'Anti Infective - Others - Medical Reps', 'Medical Reps on the Anti Infective line in Others. Matched on region NAME and CODE together, because 13 district managers carry a name and no code.',
+   array['Medical Rep']::text[], array[1]::integer[], array['Others', 'OT']::text[], '{}'::integer[], false, true),
+  ('anti_infective_others_district_managers', 'Anti Infective - Others - District Managers', 'District Managers on the Anti Infective line in Others. Matched on region NAME and CODE together, because 13 district managers carry a name and no code.',
+   array['District Manager']::text[], array[1]::integer[], array['Others', 'OT']::text[], '{}'::integer[], false, true),
+  ('pedia_others_medical_reps', 'Pedia - Others - Medical Reps', 'Medical Reps on the Pedia line in Others. Matched on region NAME and CODE together, because 13 district managers carry a name and no code.',
+   array['Medical Rep']::text[], array[2]::integer[], array['Others', 'OT']::text[], '{}'::integer[], false, true),
+  ('pedia_others_district_managers', 'Pedia - Others - District Managers', 'District Managers on the Pedia line in Others. Matched on region NAME and CODE together, because 13 district managers carry a name and no code.',
+   array['District Manager']::text[], array[2]::integer[], array['Others', 'OT']::text[], '{}'::integer[], false, true),
+  ('cns_others_medical_reps', 'CNS - Others - Medical Reps', 'Medical Reps on the CNS line in Others. Matched on region NAME and CODE together, because 13 district managers carry a name and no code.',
+   array['Medical Rep']::text[], array[3]::integer[], array['Others', 'OT']::text[], '{}'::integer[], false, true),
+  ('cns_others_district_managers', 'CNS - Others - District Managers', 'District Managers on the CNS line in Others. Matched on region NAME and CODE together, because 13 district managers carry a name and no code.',
+   array['District Manager']::text[], array[3]::integer[], array['Others', 'OT']::text[], '{}'::integer[], false, true),
   ('head_office', 'Head Office', 'Everyone outside the field force - Marketing, Finance, HR, Admins, Executive, QPPV, R&D, SFE and Supply Chain. Keyed on DEPARTMENT, not on the Head Office line: three head-office people sit on a sales line because they own that line''s brands, and their line_id is deliberate rather than a mistake to correct.',
    '{}'::text[], '{}'::integer[], '{}'::text[], array[2, 40, 41, 42, 43, 44, 45, 46, 47]::integer[], false, true)
 on conflict (list_key) do nothing;

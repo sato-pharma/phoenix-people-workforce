@@ -5,6 +5,7 @@ import {
   isEmptySpec,
   matchesDistributionRule,
   resolveDistributionList,
+  rolesWereDropped,
   sanitizeRoles,
   type DistributionCandidate,
   type DistributionListSpec,
@@ -48,6 +49,7 @@ const BASE_SPEC: DistributionListSpec = {
   positionIds: [],
   regionCodes: [],
   roles: [],
+  rolesDropped: false,
 };
 
 function spec(overrides: Partial<DistributionListSpec> = {}): DistributionListSpec {
@@ -359,5 +361,70 @@ export function runDistributionListsTests() {
     namedOnly.members.map((member) => member.hrId),
     ["C-1"],
     "a list with a name and no rule reaches exactly that name — never everyone the matcher was asked about",
+  );
+
+  // ── 🔴 A RETIRED ROLE NAME MUST NARROW A LIST, NEVER WIDEN IT ────────────────────────────────
+  // sanitizeRoles drops a role that no longer exists in phoenixRoles, which is correct. What was
+  // NOT correct is what happened next: `roles` became empty, an empty dimension means "no
+  // constraint", and the list kept its line and region rules while quietly losing its role filter.
+  // Measured against the live directory before this fix: retiring "Medical Rep" widened 23 lists by
+  // 48 people, so every regional reps list silently gained its District Manager. Two role names
+  // have already been retired in this repo, so this is a live trigger and not a thought experiment.
+  assert.equal(
+    rolesWereDropped(["Medical Rep"]),
+    false,
+    "a live role is not a dropped role",
+  );
+  assert.equal(
+    rolesWereDropped(["A Role Retired Last Year"]),
+    true,
+    "a list naming only a role that no longer exists has had its roles dropped",
+  );
+  assert.equal(
+    rolesWereDropped(["Medical Rep", "A Role Retired Last Year"]),
+    false,
+    "one surviving role still constrains the list — only losing them ALL is the dangerous case",
+  );
+  assert.equal(rolesWereDropped([]), false, "a list that never named a role has dropped nothing");
+  assert.equal(rolesWereDropped(null), false, "a missing value is not a dropped role");
+
+  // The matcher must refuse it OUTRIGHT rather than fall through to the remaining dimensions.
+  // 🔴 LINE 4 IS LOAD-BEARING HERE, NOT AN ARBITRARY NUMBER. It is the line `everyone` actually
+  // holds two people on, and NEITHER is a Medical Rep — a CEO and a seat with no role at all. So
+  // "Medical Reps on line 4" resolving without its role filter picks up exactly the wrong people,
+  // which is the widening this pins. Written first against line 3, which nobody in the fixture is
+  // on: the assertion passed with the guard deleted, because `some` over no candidates is false.
+  // A control that cannot fire proves nothing.
+  const widenedByRename = spec({ lineIds: [4], roles: [], rolesDropped: true });
+  assert.deepEqual(
+    everyone.filter((candidate) => matchesDistributionRule(candidate, widenedByRename)).map((c) => c.hrId),
+    [],
+    "🔴 a list whose every named role was retired must match NOBODY — without the guard this returns C-1 and O-1, who are not Medical Reps at all",
+  );
+  // The control for the line above: the same two people ARE reachable when the rule is intact, so
+  // the empty result above is the guard working rather than a fixture that matches nothing.
+  assert.deepEqual(
+    everyone.filter((candidate) => matchesDistributionRule(candidate, spec({ lineIds: [4] }))).map((c) => c.hrId).sort(),
+    ["C-1", "O-1"],
+    "the fixture really does hold two people on line 4 — otherwise the assertion above is vacuous",
+  );
+
+  // And the whole list is refused WITH A REASON, because an empty result that says nothing reads to
+  // a programmatic sender exactly like a list that legitimately has no members today.
+  const renamed = resolveDistributionList(spec({ lineIds: [4], roles: [], rolesDropped: true }), everyone);
+  assert.deepEqual(renamed.members, [], "a list broken by a role rename reaches nobody");
+  assert.match(
+    String(renamed.refusedReason),
+    /no longer exists/,
+    "and it says so — silence here would read as 'nobody qualifies today' rather than 'this list is broken'",
+  );
+
+  // 🔴 THE ALL-COMPANY FLAG DOES NOT RESCUE IT. rolesDropped is checked ABOVE the allEmployees
+  // branch deliberately: a spec carrying both a dead role and the company-wide flag is incoherent,
+  // and resolving that to every employee is the worst available reading of it.
+  assert.equal(
+    matchesDistributionRule(everyone[0], spec({ allEmployees: true, rolesDropped: true })),
+    false,
+    "a dead role beats the all-company flag — an incoherent spec must never resolve to the whole company",
   );
 }

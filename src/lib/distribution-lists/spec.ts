@@ -34,6 +34,21 @@ export type DistributionListSpec = {
    * somebody TURNED ON, never something a blank form did on its own.
    */
   allEmployees: boolean;
+  /**
+   * 🔴 THE STORED LIST NAMED ROLES AND NOT ONE OF THEM IS A LIVE ROLE ANY MORE.
+   *
+   * `sanitizeRoles` drops a role that has been renamed out of `phoenixRoles`, which is right - a
+   * string nobody holds must stop matching. But dropping it leaves `roles` EMPTY, and an empty
+   * dimension means "no constraint", so the list keeps its line and region rules and quietly stops
+   * being role-scoped. Measured against the live directory: retiring "Medical Rep" would widen 23
+   * lists by 48 people, every regional reps list silently picking up its District Manager.
+   *
+   * That is a fail-OPEN in the one module written to fail closed, and the trigger is real - two
+   * role names have already been retired in this repo. So the drop is recorded here and the matcher
+   * refuses the whole list, which turns a silent widening into a visible empty list with a reason
+   * on it. Narrowing wrongly is repairable; widening wrongly has already been sent.
+   */
+  rolesDropped: boolean;
 };
 
 /** Minimal projection of an employee the matcher needs. Kept narrow so a directory shape change
@@ -100,6 +115,19 @@ function keySet(values: readonly string[]): Set<string> {
   return out;
 }
 
+/**
+ * Did this stored value name roles, none of which survived sanitizing?
+ *
+ * Asked separately from `sanitizeRoles` because the answer is only visible where the RAW value is
+ * still in hand - by the time a caller sees `PhoenixRole[]`, "asked for nothing" and "asked for a
+ * role that no longer exists" are the same empty array, and they must not be treated alike.
+ */
+export function rolesWereDropped(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  const named = value.filter((role) => typeof role === "string" && role.trim().length > 0);
+  return named.length > 0 && sanitizeRoles(value).length === 0;
+}
+
 /** Drop anything that is not a live PhoenixRole. A role renamed out of existence must stop
  *  matching rather than silently persist as a string nobody holds. */
 export function sanitizeRoles(value: unknown): PhoenixRole[] {
@@ -141,6 +169,10 @@ export function isEmptySpec(spec: DistributionListSpec): boolean {
  */
 export function matchesDistributionRule(candidate: DistributionCandidate, spec: DistributionListSpec): boolean {
   if (!hasRuleDimension(spec)) return false;
+  // A list whose every named role has been retired matches NOBODY. Placed above the all-employees
+  // branch on purpose: a spec carrying both a dead role and the company-wide flag is incoherent,
+  // and resolving that to the whole company is the worst available reading of it.
+  if (spec.rolesDropped) return false;
   // Explicitly everyone. Every other dimension is ignored: an all-company list plus a line filter
   // is a contradiction, and widening beats narrowing here only because somebody had to switch it on.
   if (spec.allEmployees) return true;
@@ -194,6 +226,11 @@ export function resolveDistributionList(
   if (!spec.enabled) return refuse(`Distribution list "${spec.listKey}" is switched off.`);
   if (isEmptySpec(spec)) {
     return refuse(`Distribution list "${spec.listKey}" states no rule, no names and no addresses. Refused.`);
+  }
+  if (spec.rolesDropped) {
+    return refuse(
+      `Distribution list "${spec.listKey}" names a role that no longer exists. Refused rather than resolved without the role filter, which would have widened it.`,
+    );
   }
 
   const excluded = keySet(spec.excludedHrIds);
