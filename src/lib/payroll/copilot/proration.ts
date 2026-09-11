@@ -66,10 +66,26 @@ export type ResignationSettlementInput = {
   period: CopilotPeriod;
   otherAdditions: number;
   otherDeductions: number;
+  /**
+   * True only for a genuine resignation — see `isResignationEmploymentStatus`.
+   *
+   * REQUIRED, deliberately. It was not a parameter at all until 2026-09-11, and every caller
+   * therefore settled a dismissal as a resignation. Making it optional with a friendly default
+   * would recreate exactly that: the default would be "resignation", and the one caller who
+   * forgot would hand a dismissal a full month of Base plus both allowances with nothing to
+   * notice it by. A required field makes each surface state which kind of departure it is looking
+   * at, in the open.
+   */
+  isResignation: boolean;
 };
 
 export type ResignationSettlement = {
-  branch: "on_or_before_25" | "after_25";
+  /**
+   * `non_resignation` is the company-ended departure: Base prorated to the days worked, neither
+   * allowance, and no >25th waiver. It is a branch of its own rather than a flag on the others so
+   * that a screen or an export showing the branch says what treatment was applied.
+   */
+  branch: "on_or_before_25" | "after_25" | "non_resignation";
   daysWorked: number;
   /** This month's Base — prorated (≤25th branch) or the full base (>25th). */
   baseForMonth: number;
@@ -105,12 +121,17 @@ export type ResignationSettlement = {
  * The >25th branch is untouched. It already pays every component in full, so
  * "prorate the net" is a no-op there — a full month IS the full net.
  *
- * NOT extended to a NON-resignation leaver. A `terminated` or `inactive` leaver
- * keeps neither allowance by the owner's separate ruling of 2026-08-14, and
- * that gate lives in the Ready sheet's resolveReadyLifecycleSettlement — the
- * automated engine never sees one, because its feeder keys leavers off the
- * employee_resignations workflow. Prorating "net" for a dismissal would hand
- * back allowances that ruling deliberately withholds.
+ * NOT extended to a NON-resignation leaver. A `terminated` or `inactive` leaver keeps neither
+ * allowance by the owner's separate ruling of 2026-08-14: Base prorates to the days actually
+ * worked and there is no >25th waiver.
+ *
+ * THAT GATE NOW LIVES HERE, not only in the Ready sheet. This comment used to say the automated
+ * engine "never sees one, because its feeder keys leavers off the employee_resignations workflow".
+ * It does see one. The exit workflow is how EVERY departure is recorded, dismissals included:
+ * production carries a `terminated` employee with an `employee_resignations` row at
+ * `exit_status = completed`. The workflow describes the process, never the reason, so it could
+ * never have answered this question — and the comment asserting otherwise is why no caller
+ * checked. Both terminations on record left before the 25th, so nothing has been overpaid yet.
  */
 export function computeResignationSettlement(
   input: ResignationSettlementInput,
@@ -119,6 +140,24 @@ export function computeResignationSettlement(
   if (day == null) return null;
 
   const netAdjustment = input.otherAdditions - input.otherDeductions;
+  const totalDaysInMonth = calendarDaysInMonth(input.period);
+
+  // A company-ended departure: Base prorated to the days actually worked, NEITHER allowance, and
+  // no >25th waiver — the treatment every leaver got before Rule 1 existed, now scoped to the
+  // departures Rule 1 was never meant to cover.
+  if (!input.isResignation) {
+    const share = totalDaysInMonth > 0 ? day / totalDaysInMonth : 0;
+    const baseForMonth = roundCurrency(input.baseSalary * share);
+    return {
+      branch: "non_resignation",
+      daysWorked: day,
+      baseForMonth,
+      ecolPaid: 0,
+      fuelPaid: 0,
+      netForMonth: baseForMonth,
+      total: roundCurrency(baseForMonth + netAdjustment),
+    };
+  }
 
   if (day <= 25) {
     // DAYS WORKED IS THE CALENDAR COUNT TO THE LAST WORKING DAY. Nothing is netted out of it here.
@@ -138,8 +177,7 @@ export function computeResignationSettlement(
     // the Ready sheet and the resignations service — already passed 0 and never subtracted, so the
     // same leaver's days worked differed depending on which surface asked. Now all four agree.
     const daysWorked = day;
-    const totalDays = calendarDaysInMonth(input.period);
-    const workedShare = totalDays > 0 ? daysWorked / totalDays : 0;
+    const workedShare = totalDaysInMonth > 0 ? daysWorked / totalDaysInMonth : 0;
     // Each component is rounded separately, matching computeJoinerPay: a row's
     // three parts must always add up to the row's own total, because every
     // consumer displays the parts and sums them.

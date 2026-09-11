@@ -336,6 +336,8 @@ export function resolveReadyLifecycleSettlement(input: {
   if (leavingThisMonth) {
     // isResignation is necessarily true here — the non-resignation leaver returned above.
     const settlement = computeResignationSettlement({
+      // Guaranteed by the early return above: a non-resignation leaver never reaches this line.
+      isResignation: true,
       baseSalary,
       extraCostOfLiving,
       fuelAllowance,

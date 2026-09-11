@@ -762,6 +762,7 @@ import { runVacationRetentionPurgeAuditTests } from "./vacation-retention-purge-
 import { runCronControlRegistryTests } from "./cron-control-registry.test.ts";
 import { runNotificationRoleRecipientsTests } from "./notification-role-recipients.test.ts";
 import { runDistributionListsTests } from "./distribution-lists.test.ts";
+import { runClosingFixedCcListTests } from "./closing-fixed-cc-list.test.ts";
 import { runComposerGroupListsTests } from "./composer-group-lists.test.ts";
 import { runEmailControlCenterTests } from "./email-control-center.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
@@ -1068,6 +1069,7 @@ import { runAutomatedPayrollCibSheetTests } from "./automated-payroll-cib-sheet.
 import { runAutomatedPayrollHeldTabTests } from "./automated-payroll-held-tab.test.ts";
 import { runAutomatedPayrollLeaverOverpaymentTests } from "./automated-payroll-leaver-overpayment.test.ts";
 import { runAutomatedPayrollGuardsThatGuardTests } from "./automated-payroll-guards-that-guard.test.ts";
+import { runAutomatedPayrollDismissalSettlementTests } from "./automated-payroll-dismissal-settlement.test.ts";
 import { runAutomatedPayrollInsuranceWageTests } from "./automated-payroll-insurance-wage.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
 import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
@@ -1780,6 +1782,10 @@ await runTest(
 await runTest(
   "automated payroll: the guards that did not guard",
   runAutomatedPayrollGuardsThatGuardTests,
+);
+await runTest(
+  "automated payroll: a dismissal is settled as a dismissal, not as a resignation",
+  runAutomatedPayrollDismissalSettlementTests,
 );
 await runTest(
   "automated payroll: the statutory filing comes from the insurance wage, not the stored column",
@@ -5100,6 +5106,11 @@ await runTest(
 await runTest(
   "a distribution list ANDs its rule dimensions, treats a blank dimension as no constraint but NO rule as nobody, and lets an exclusion beat a hand-added name",
   runDistributionListsTests,
+);
+
+await runTest(
+  "the closing's fixed Cc roles come from a list whose seed and code fallback cannot drift, while the per-line District Managers, NSM and PM stay on the organogram",
+  runClosingFixedCcListTests,
 );
 
 await runTest(

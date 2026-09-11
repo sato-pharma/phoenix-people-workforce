@@ -203,6 +203,64 @@ export async function resolveAllDistributionLists(): Promise<DistributionResolut
   return specs.map((spec) => withRefusalWarning(resolveDistributionList(spec, candidates), warnings));
 }
 
+/**
+ * The ROLE LIST a named list carries — not its resolved recipients.
+ *
+ * For a caller that already owns a recipient pipeline (the Monthly Closing publish resolves seats
+ * from the organogram, checks employment status, filters the shared sales exclusion list and splits
+ * To/Cc/Bcc), swapping in a fully-resolved audience would replace all of that. Handing back only
+ * the roles lets such a caller keep every downstream step byte-identical and gain exactly one
+ * thing: which roles it uses becomes editable without a developer.
+ *
+ * NEVER THROWS, and falls back to `fallback` — the caller's own hardcoded default — on any failure
+ * or on a switched-off list. Same direction as resolveNotificationRoleRecipients: an unreadable
+ * table must reproduce today's behaviour rather than silently shrink an audience. That is the
+ * OPPOSITE of resolveDistributionListByKey's fail-closed rule, and deliberately so — there the risk
+ * is reaching too many people, here it is a high-stakes email quietly going out without its Cc.
+ *
+ * An ENABLED list naming no roles is honoured as "no roles" rather than overridden by the fallback,
+ * because otherwise a role could never be REMOVED, which is the whole point of making it editable.
+ */
+export async function resolveDistributionListRoles(
+  listKey: string,
+  fallback: readonly PhoenixRole[],
+): Promise<{ roles: PhoenixRole[]; warnings: string[] }> {
+  const warnings: string[] = [];
+  try {
+    const specs = await getDistributionListSpecs();
+    const spec = specs.find((item) => item.listKey === listKey);
+    if (!spec) {
+      warnings.push(`Distribution list "${listKey}" does not exist — using the built-in default.`);
+      return { roles: [...fallback], warnings };
+    }
+    if (!spec.enabled) {
+      warnings.push(`Distribution list "${listKey}" is switched off — using the built-in default.`);
+      return { roles: [...fallback], warnings };
+    }
+    // This call site consumes ONLY `roles`. A name or address added to the list would otherwise sit
+    // there doing nothing, which reads as "they are on the list" — so say so rather than ignore it.
+    const inert = [
+      spec.includedHrIds.length > 0 ? "named people" : null,
+      spec.excludedHrIds.length > 0 ? "exclusions" : null,
+      spec.externalEmails.length > 0 ? "external addresses" : null,
+    ].filter(Boolean);
+    if (inert.length > 0) {
+      warnings.push(
+        `Distribution list "${listKey}" carries ${inert.join(", ")}, which this email ignores — it reads the roles only.`,
+      );
+    }
+    if (spec.roles.length === 0) {
+      warnings.push(`Distribution list "${listKey}" names no roles, so nobody is added from it.`);
+    }
+    return { roles: spec.roles, warnings };
+  } catch (error) {
+    warnings.push(
+      `Distribution list "${listKey}" could not be read (${error instanceof Error ? error.message : "unknown error"}) — using the built-in default.`,
+    );
+    return { roles: [...fallback], warnings };
+  }
+}
+
 export type DistributionListUpdate = Partial<
   Pick<
     DistributionListSpec,

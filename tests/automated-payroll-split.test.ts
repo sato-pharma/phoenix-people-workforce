@@ -106,6 +106,7 @@ export function runAutomatedPayrollSplitTests() {
     netSalary: NET,
     period: JUNE,
     lifecycle: "leaver",
+    isResignation: true, // these cases are all genuine resignations
     // Was the 20th. Moved to the 18th when the rule changed on 2026-08-29: on
     // net, the 20th pays 31,500 × 20/30 = 21,000, which is exactly the Basic
     // anchor — and every freezeFirstPart case below this one is built on this
@@ -128,6 +129,7 @@ export function runAutomatedPayrollSplitTests() {
     netSalary: NET,
     period: JUNE,
     lifecycle: "leaver",
+    isResignation: true, // these cases are all genuine resignations
     lastWorkingDate: "2026-06-28",
   });
   // Paid the FULL month under Rule 1 — and he was here 28 of June's 30 days,

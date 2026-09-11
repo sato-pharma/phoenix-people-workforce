@@ -21,6 +21,8 @@ import { deductionsCategoryLabel } from "@/lib/deductions/calculations";
 // Value import into a module assemble.ts imports FROM — safe, and deliberately
 // so: assemble.ts takes only `import type { PopulationMember }` back, which is
 // erased at compile time, so there is no runtime cycle.
+import { isResignationEmploymentStatus } from "@/lib/payroll/leaver-kind.ts";
+
 import { settlementBasisFor } from "./assemble.ts";
 import {
   linesFor,
@@ -732,6 +734,9 @@ async function recommendResignations(
       lastWorkingDate: member.lastWorkingDate,
       period,
       draft,
+      // The exit workflow records dismissals as well as resignations, so only the employee's own
+      // status can say which this is — and a dismissal keeps neither allowance.
+      isResignation: isResignationEmploymentStatus(member.employee.employmentStatus),
     });
     if (!basis) continue;
     const { settlement } = basis;
@@ -1731,6 +1736,9 @@ function recommendResignationCrm(
       lastWorkingDate: member.lastWorkingDate,
       period,
       draft,
+      // The exit workflow records dismissals as well as resignations, so only the employee's own
+      // status can say which this is — and a dismissal keeps neither allowance.
+      isResignation: isResignationEmploymentStatus(member.employee.employmentStatus),
     });
     if (!basis) continue;
     const daysWorked = basis.daysWorked;
