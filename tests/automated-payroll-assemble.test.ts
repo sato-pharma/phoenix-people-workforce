@@ -118,6 +118,8 @@ function draft(hrId: string, patch: Partial<DraftRow>): DraftRow {
     specialAdditionValue: null,
     specialSituationPart: null,
     firstPartFrozen: null,
+    // Not frozen: these fixtures stand before Part 1 confirm, so the live rule still answers.
+    settledInPart1: null,
     onHold: false,
     holdReason: null,
     excluded: false,

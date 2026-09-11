@@ -215,6 +215,23 @@ export type DraftRow = {
   specialSituationPart: "first" | "second" | null;
   // Frozen at Part 1 confirm — the first installment, never recomputed afterward.
   firstPartFrozen: number | null;
+  /**
+   * THE PART 1 / PART 2 DEDUCTION ROUTING, frozen at Part 1 confirm in the same
+   * write as `firstPartFrozen`.
+   *
+   * `isSettledInPart1` decides whether somebody's loan, CRM or unpaid vacation is
+   * taken in Part 1 or Part 2, and it reads their payment mode and lifecycle LIVE
+   * every time a step is opened. The columns it routes money into are permanent.
+   * So correcting somebody from one-part to two-part between the two confirms left
+   * their loan in the Part 1 column from before AND offered it again on the Part 2
+   * step: charged twice. The mirror correction means it reaches no step at all and
+   * is never taken.
+   *
+   * NULL means Part 1 is not confirmed yet, and the live rule is still the right
+   * answer. That is also what every run predating this column reads, so nothing
+   * already on the books moves. Cleared by `unconfirmPart1`, which re-freezes.
+   */
+  settledInPart1: boolean | null;
   // Hold — held employee still appears (red + flagged), excluded from publish.
   onHold: boolean;
   holdReason: string | null;
