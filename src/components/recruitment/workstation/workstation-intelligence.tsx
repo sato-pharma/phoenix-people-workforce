@@ -4,7 +4,7 @@
 //
 // FOUR TABS, and each answers a question a recruiter asks in a different order:
 //
-//   SUMMARY   — "should I keep reading?"      snapshot, fit against the seat, and a briefing.
+//   SUMMARY   — "should I keep reading?"      their WhatsApp answers, snapshot, fit, and a briefing.
 //   CV DATA   — "what did the reader find?"   the structured extraction, field by field.
 //   TIMELINE  — "what has happened to them?"  every stored event, in order.
 //   NOTES     — "what did we say about them?" the existing conversation, added to.
@@ -31,6 +31,8 @@ import { Brain, ClipboardList, FileText, Loader2, MessageSquare } from "lucide-r
 
 import { buildRecruiterBriefing } from "@/lib/recruitment/recruiter-briefing";
 import { CandidateFactsSummary } from "@/components/recruitment/candidate-facts-summary";
+import { WhatsAppAnswersList } from "@/components/recruitment/whatsapp-answers-list";
+import { candidateWhatsAppAnswers, type ScreeningQuestionLabel } from "@/lib/recruitment/whatsapp-answers";
 import {
   candidateScreeningFacts,
   unconfirmedCvFactsFromExtraction,
@@ -85,6 +87,7 @@ export function WorkstationIntelligencePanel({
   onCollapse,
   onNoteCountChange,
   onTabChange,
+  screeningQuestions,
   tab,
 }: {
   appliedForText: string | null;
@@ -105,6 +108,11 @@ export function WorkstationIntelligencePanel({
   onCollapse?: () => void;
   onNoteCountChange: (count: number) => void;
   onTabChange: (tab: IntelligenceTab) => void;
+  /**
+   * The wording of the admin-defined WhatsApp questions, from the profile route, so every answer is
+   * printed under the question it answers. Null when it could not be read.
+   */
+  screeningQuestions: readonly ScreeningQuestionLabel[] | null;
   tab: IntelligenceTab;
 }) {
   return (
@@ -156,7 +164,12 @@ export function WorkstationIntelligencePanel({
             <EmptyNote>Pick a candidate from the list to read their record.</EmptyNote>
           )
         ) : tab === "summary" ? (
-          <SummaryTab appliedForText={appliedForText} candidate={candidate} extraction={extraction} />
+          <SummaryTab
+            appliedForText={appliedForText}
+            candidate={candidate}
+            extraction={extraction}
+            screeningQuestions={screeningQuestions}
+          />
         ) : tab === "cv" ? (
           <CvDataTab candidate={candidate} extraction={extraction} onAccept={onAcceptField} />
         ) : tab === "timeline" ? (
@@ -173,10 +186,12 @@ function SummaryTab({
   appliedForText,
   candidate,
   extraction,
+  screeningQuestions,
 }: {
   appliedForText: string | null;
   candidate: Candidate;
   extraction: StoredCvExtraction | null;
+  screeningQuestions: readonly ScreeningQuestionLabel[] | null;
 }) {
   const facts = useMemo(
     () =>
@@ -192,12 +207,35 @@ function SummaryTab({
   const family = useMemo(() => hiringTargetFamily(appliedForText, facts), [appliedForText, facts]);
   const fit = useMemo(() => readRoleFit(facts, family, appliedForText), [appliedForText, facts, family]);
   const briefing = useMemo(() => buildRecruiterBriefing(facts, fit, family), [facts, fit, family]);
+  const answers = useMemo(
+    () => candidateWhatsAppAnswers(candidate, screeningQuestions),
+    [candidate, screeningQuestions],
+  );
 
   return (
     <div className="pb-4">
       {/* EVERY BLOCK FOLDS, and the fold is keyed to the BLOCK, not to the candidate — a recruiter
           who has closed the snapshot because they only care about role fit today keeps it closed all
           the way down the list, instead of re-closing it on every person. */}
+      {/* THEIR ANSWERS COME FIRST. The owner, 2026-09-11: applicants on WhatsApp are asked many
+          questions — salary and much else — and he wants to read every answer while he reads the CV.
+          They are the one thing on this panel only the applicant could have told us, yet they sat
+          under the CV facts inside the snapshot, and the admin-defined questions were missing from
+          screening altogether. The count survives the fold. */}
+      <CollapsibleSection
+        right={answers.length === 0 ? "none" : `${answers.length}`}
+        storageKey="summary:whatsapp"
+        title="Answers on WhatsApp"
+      >
+        {answers.length === 0 ? (
+          <p className="px-3 py-2 text-[12px] leading-relaxed text-phx-ink-soft">
+            No WhatsApp answers are on this record.
+          </p>
+        ) : (
+          <WhatsAppAnswersList answers={answers} frame="flat" />
+        )}
+      </CollapsibleSection>
+
       <CollapsibleSection storageKey="summary:snapshot" title="Candidate snapshot">
         {/* The EXISTING summary component, not a second copy of it. It already resolves the confirmed
             and hedged tiers with one convention, and forking it here is how the two screens would
@@ -208,6 +246,10 @@ function SummaryTab({
           columns={1}
           extraction={extraction}
           frame="flat"
+          screeningQuestions={screeningQuestions}
+          // Already the section above. Printing them inside the snapshot too would put the same
+          // answers in this panel twice.
+          showWhatsAppAnswers={false}
         />
       </CollapsibleSection>
 

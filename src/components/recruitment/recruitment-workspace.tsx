@@ -143,6 +143,7 @@ import { WhatsAppReplyBox } from "@/components/recruitment/whatsapp-reply-box";
 import { CvExtractionPanel } from "@/components/recruitment/cv-extraction-panel";
 import { CvExtractionReviewBoard } from "@/components/recruitment/cv-extraction-review-board";
 import { CandidateFactsSummary } from "@/components/recruitment/candidate-facts-summary";
+import type { ScreeningQuestionLabel } from "@/lib/recruitment/whatsapp-answers";
 import { CandidateScreeningSession } from "@/components/recruitment/candidate-screening-session";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
 // The screening queue's two pickers, used verbatim here.
@@ -3382,6 +3383,9 @@ function CandidatesTab({
   // every inbound CV and stores the result, so for those candidates the fields are waiting here
   // before anyone opens the profile — reviewing them costs nothing, unlike "Extract from CV".
   const [storedExtraction, setStoredExtraction] = useState<StoredCvExtraction | null>(null);
+  // The wording of the admin-defined WhatsApp questions, so the profile prints each of the applicant's
+  // answers under the question it answers. Arrives with the profile; null until then.
+  const [screeningQuestions, setScreeningQuestions] = useState<ScreeningQuestionLabel[] | null>(null);
 
   // Which shell this pool is rendering in, so the screening link points at the twin the caller can
   // actually open. A hard-coded /recruitment/screening in the portal would bounce Talent
@@ -3588,12 +3592,14 @@ function CandidatesTab({
     setRetryError(null);
     setRetryPositionKey(defaultCvPositionKey);
     setStoredExtraction(null);
+    setScreeningQuestions(null);
     try {
       const res = await fetch(`/api/recruitment/candidates/${id}`);
       const data = (await res.json().catch(() => ({}))) as {
         profile?: CandidateProfile;
         latestCvExtraction?: StoredCvExtraction | null;
         message?: string;
+        screeningQuestions?: ScreeningQuestionLabel[] | null;
       };
       if (!res.ok || !data.profile) throw new Error(data.message ?? "Failed to load candidate profile.");
       setProfile(data.profile);
@@ -3603,6 +3609,7 @@ function CandidatesTab({
       setStatusDraft("");
       setStatusNoteDraft("");
       setStoredExtraction(data.latestCvExtraction ?? null);
+      setScreeningQuestions(data.screeningQuestions ?? null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Failed to load candidate profile.");
     }
@@ -3699,6 +3706,7 @@ function CandidatesTab({
     setRetryError(null);
     setRetryPositionKey(defaultCvPositionKey);
     setStoredExtraction(null);
+    setScreeningQuestions(null);
     // Drop the ?candidate= link on the way out. Without this, a CV opened from a folder (or from the
     // inbound-CV notification) could be opened exactly ONCE: the deep-link effect is guarded on the
     // id, so closing and pressing the same CV again would set a value the guard had already seen and
@@ -4865,7 +4873,11 @@ function CandidatesTab({
 
           {/* Who this person is. Same block, same module, as screening mode — extracted
               2026-08-24 so the drawer and the queue can never drift apart. */}
-          <CandidateFactsSummary candidate={profile.candidate} extraction={storedExtraction} />
+          <CandidateFactsSummary
+            candidate={profile.candidate}
+            extraction={storedExtraction}
+            screeningQuestions={screeningQuestions}
+          />
 
           {/* The applied-for role, with the wording it was read from directly beneath it. The
               evidence is shown rather than hidden in a tooltip because this value is INFERRED from

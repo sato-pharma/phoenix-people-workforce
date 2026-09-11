@@ -78,9 +78,15 @@ import { primaryCvFile } from "@/lib/recruitment/cv-file-choice";
 import type { StoredCvExtraction } from "@/lib/recruitment/cv-extraction-fields";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
 import type { Candidate } from "@/lib/recruitment/types";
+import type { ScreeningQuestionLabel } from "@/lib/recruitment/whatsapp-answers";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
-type LoadedCandidate = { profile: CandidateProfile; extraction: StoredCvExtraction | null };
+type LoadedCandidate = {
+  profile: CandidateProfile;
+  extraction: StoredCvExtraction | null;
+  /** The admin-defined WhatsApp questions' wording, so each answer prints under its question. */
+  screeningQuestions: ScreeningQuestionLabel[] | null;
+};
 
 // Chip colours. Deliberately muted against the dark header: this says where you are in the queue,
 // it is not a verdict on the person, and a red badge beside somebody's name reads as one.
@@ -441,10 +447,18 @@ export function CandidateScreeningSession({
           profile?: CandidateProfile;
           latestCvExtraction?: StoredCvExtraction | null;
           message?: string;
+          screeningQuestions?: ScreeningQuestionLabel[] | null;
         };
         const profile = data.profile;
         if (!res.ok || !profile) throw new Error(data.message ?? "Could not load this candidate.");
-        setLoaded((prev) => ({ ...prev, [candidateId]: { extraction: data.latestCvExtraction ?? null, profile } }));
+        setLoaded((prev) => ({
+          ...prev,
+          [candidateId]: {
+            extraction: data.latestCvExtraction ?? null,
+            profile,
+            screeningQuestions: data.screeningQuestions ?? null,
+          },
+        }));
       } catch (caught) {
         setFailed((prev) => ({
           ...prev,
@@ -1111,7 +1125,12 @@ export function CandidateScreeningSession({
             </div>
 
             {entry ? (
-              <CandidateFactsSummary candidate={entry.profile.candidate} columns={1} extraction={entry.extraction} />
+              <CandidateFactsSummary
+                candidate={entry.profile.candidate}
+                columns={1}
+                extraction={entry.extraction}
+                screeningQuestions={entry.screeningQuestions}
+              />
             ) : null}
           </div>
 

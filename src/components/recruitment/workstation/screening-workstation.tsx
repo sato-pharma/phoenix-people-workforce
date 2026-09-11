@@ -61,6 +61,7 @@ import { DUPLICATE_FOLDER_KEY, DUPLICATE_FOLDER_KIND } from "@/lib/recruitment/c
 import { FREE_POSITION, NO_POSITION } from "@/components/recruitment/vacancy-picker";
 import { primaryCvFile } from "@/lib/recruitment/cv-file-choice";
 import type { ExtractedCvValue, StoredCvExtraction } from "@/lib/recruitment/cv-extraction-fields";
+import type { ScreeningQuestionLabel } from "@/lib/recruitment/whatsapp-answers";
 import type {
   WorkspaceCandidateRow,
   WorkspaceManager,
@@ -78,8 +79,15 @@ import { WorkstationReviewHeader, type SendState } from "@/components/recruitmen
 import { EmptyNote, PaneSpine } from "@/components/recruitment/workstation/workstation-ui";
 import { cn } from "@/lib/utils";
 
-/** What one loaded candidate is: the profile, and the CV read if there is one. */
-type LoadedCandidate = { profile: CandidateProfileShape; extraction: StoredCvExtraction | null };
+/**
+ * What one loaded candidate is: the profile, the CV read if there is one, and the wording of the
+ * admin-defined WhatsApp questions their answers are printed under (null when it could not be read).
+ */
+type LoadedCandidate = {
+  profile: CandidateProfileShape;
+  extraction: StoredCvExtraction | null;
+  screeningQuestions: ScreeningQuestionLabel[] | null;
+};
 
 /**
  * The half of `CandidateProfile` this screen touches.
@@ -316,10 +324,18 @@ export function ScreeningWorkstation({
         profile?: CandidateProfileShape;
         latestCvExtraction?: StoredCvExtraction | null;
         message?: string;
+        screeningQuestions?: ScreeningQuestionLabel[] | null;
       };
       const profile = data.profile;
       if (!res.ok || !profile) throw new Error(data.message ?? "Could not load this candidate.");
-      setLoaded((prev) => ({ ...prev, [candidateId]: { extraction: data.latestCvExtraction ?? null, profile } }));
+      setLoaded((prev) => ({
+        ...prev,
+        [candidateId]: {
+          extraction: data.latestCvExtraction ?? null,
+          profile,
+          screeningQuestions: data.screeningQuestions ?? null,
+        },
+      }));
     } catch (caught) {
       setLoadError((prev) => ({
         ...prev,
@@ -1200,6 +1216,7 @@ export function ScreeningWorkstation({
                 setNoteCounts((prev) => ({ ...prev, [selected.id]: count }));
               }}
               onTabChange={setTab}
+              screeningQuestions={entry?.screeningQuestions ?? null}
               tab={tab}
             />
           </div>

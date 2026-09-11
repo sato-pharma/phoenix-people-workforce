@@ -14,6 +14,8 @@ import {
   unconfirmedCvFactsFromExtraction,
 } from "@/lib/recruitment/candidate-screening-facts";
 import type { Candidate } from "@/lib/recruitment/types";
+import { candidateWhatsAppAnswers, type ScreeningQuestionLabel } from "@/lib/recruitment/whatsapp-answers";
+import { WhatsAppAnswersList } from "@/components/recruitment/whatsapp-answers-list";
 
 type Cell = { hint?: string; label: string; unconfirmed?: boolean; value: string };
 
@@ -40,12 +42,25 @@ export function CandidateFactsSummary({
   columns = 3,
   extraction,
   frame = "card",
+  screeningQuestions,
+  showWhatsAppAnswers = true,
 }: {
   candidate: Candidate;
   className?: string;
   columns?: 1 | 2 | 3;
   extraction: StoredCvExtraction | null;
   frame?: Frame;
+  /**
+   * The wording of the admin-defined WhatsApp questions, from the profile route. Null when it could
+   * not be read. REQUIRED, so a screen that forgets to pass it fails to compile instead of printing
+   * every admin-defined answer under "could not be loaded".
+   */
+  screeningQuestions: readonly ScreeningQuestionLabel[] | null;
+  /**
+   * False where the caller already shows the answers as a section of its own — the workstation puts
+   * them first, above this block — so one panel does not print the same answers twice.
+   */
+  showWhatsAppAnswers?: boolean;
 }) {
   const flat = frame === "flat";
   const facts = candidateScreeningFacts({
@@ -103,7 +118,7 @@ export function CandidateFactsSummary({
       // "Upper Egypt" alone invites a reader to check it against a map and call it wrong.
       // Only when the region was DERIVED from this very governorate. A region the applicant
       // DECLARED is a different claim — where they want to work, not where they live — and it gets
-      // its own cell in "In their own words" below rather than being repeated here as a footnote.
+      // its own line in the WhatsApp answers rather than being repeated here as a footnote.
       hint: facts.region && !facts.region.value.declared ? `${facts.region.value.label} region` : undefined,
       label: "Governorate",
       unconfirmed: !facts.governorate.confirmed,
@@ -115,41 +130,29 @@ export function CandidateFactsSummary({
 
   // ── What the applicant answered on WhatsApp ────────────────────────────────────────────────────
   //
-  // A SECOND block, not five more cells in the first one, because these are a different kind of
-  // fact. Everything above was read off a document by a machine; everything here was typed or
-  // tapped by the person themselves, and a screener deciding whether to call someone needs to know
-  // which of the two they are looking at. They are all black — a declared answer is settled, there
-  // is nothing to hedge against — so the heading is the only thing carrying the distinction.
+  // A SECOND block, not more cells in the first one, because these are a different kind of fact.
+  // Everything above was read off a document by a machine; everything here was typed or tapped by
+  // the person themselves, and a screener deciding whether to call someone needs to know which of
+  // the two they are looking at.
   //
-  // Until 2026-09-02 not one of them was displayed anywhere in screening. The area was resolved by
-  // `candidateScreeningFacts` and thrown away by every caller; the background and the salary were
-  // stored and read by nothing; the experience band never even reached the Candidate type. The
-  // owner's report was exactly right: he was answering questions on WhatsApp and screening a card
-  // that showed him only the CV.
-  const declared: Cell[] = [];
-  if (facts.area) declared.push({ label: "Preferred area", value: facts.area.value });
-  if (facts.region?.value.declared) {
-    // Their own region answer. Shown even when it duplicates the governorate's region, because
-    // "they asked for Upper Egypt" and "their address is in Upper Egypt" are different facts that
-    // happen to agree — and 20 candidates in production declared a region with no address at all,
-    // whose answer had nowhere to appear while the region rode as a hint on "Lives in".
-    declared.push({ label: "Preferred region", value: facts.region.value.label });
-  }
-  if (facts.background) declared.push({ label: "Education (declared)", value: facts.background.value });
-  if (facts.declaredExperience) {
-    declared.push({
-      // "(declared)" is doing real work: this is a bracket the applicant picked, next to an
-      // "Experience" cell above that is a number counted off their work history. They can disagree
-      // honestly, and a reader has to be able to see which of the two he is looking at.
-      label: "Experience (declared)",
-      value: facts.declaredExperience.value,
-    });
-  }
-  if (facts.expectedSalary) declared.push({ label: "Expected salary", value: facts.expectedSalary.value });
+  // Until 2026-09-02 none of the six built-in answers was displayed anywhere in screening. Until
+  // 2026-09-11 the questions an admin adds on /admin/screening-questions — age, MS Office, start date
+  // — were displayed on no screening screen at all, though 116 candidates had answered them, and the
+  // six that were shown sat under field names ("Preferred area") rather than the questions they
+  // answer. The owner asked to read EVERY answer beside the CV, so the list now comes from one
+  // resolver and prints each answer under its question. It keeps the split this block always drew:
+  // a typed region reads as their words here, and the experience band stays apart from the counted
+  // "Experience" above — the two can disagree honestly.
+  const answers = showWhatsAppAnswers ? candidateWhatsAppAnswers(candidate, screeningQuestions) : [];
+  // A salary figure typed into the ATS by hand is not a WhatsApp answer, so that list does not carry
+  // it — but it is still this record's expected salary, which this block used to show, and one
+  // production row (2026-09-11) holds a figure and no WhatsApp answer. Dropping it would be a silent erase.
+  const salaryOnFile =
+    !candidate.declaredExpectedSalary?.trim() && facts.expectedSalary ? facts.expectedSalary.value : null;
 
   // Nothing known at all is itself worth saying out loud — silence reads as a rendering fault, and
   // the reader needs to know the CV is the only place left to look.
-  if (cells.length === 0 && declared.length === 0 && !candidate.professionalSummary) {
+  if (cells.length === 0 && answers.length === 0 && !salaryOnFile && !candidate.professionalSummary) {
     return (
       <div
         className={
@@ -185,12 +188,18 @@ export function CandidateFactsSummary({
         </>
       ) : null}
       {/* Their own answers, under their own heading. The border is the whole point: it says "a
-          person told us this" without needing a word of explanation on every cell. */}
-      {declared.length > 0 ? (
+          person told us this" without needing a word of explanation on every line. */}
+      {answers.length > 0 ? (
         <div className={cells.length > 0 ? `mt-3 border-t ${ruleClass} pt-2` : ""}>
-          <p className={headingClass}>Declared by the applicant</p>
+          <p className={headingClass}>Answers on WhatsApp</p>
+          <WhatsAppAnswersList answers={answers} className="mt-2" columns={columns} frame={frame} />
+        </div>
+      ) : null}
+      {salaryOnFile ? (
+        <div className={cells.length > 0 || answers.length > 0 ? `mt-3 border-t ${ruleClass} pt-2` : ""}>
+          <p className={headingClass}>On the record</p>
           <dl className={`mt-2 grid gap-x-6 gap-y-2 ${gridColumns}`}>
-            <FactCells cells={declared} flat={flat} />
+            <FactCells cells={[{ label: "Expected salary", value: salaryOnFile }]} flat={flat} />
           </dl>
         </div>
       ) : null}
