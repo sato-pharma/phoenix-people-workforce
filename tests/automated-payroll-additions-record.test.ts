@@ -47,7 +47,7 @@ export async function runAutomatedPayrollAdditionsRecordTests() {
       assertAdditionsReasonsPresent([
         { hrId: "B-9", fullName: "Paid Person", total: 50_000, reason: null },
       ]),
-    /Validation:.*reason/s,
+    /Validation:[\s\S]*reason/,
     "money added to a payslip with nothing recording who asked for it must not confirm — this is " +
       "the one step with no feeder, so the reason is the only explanation that will ever exist",
   );
