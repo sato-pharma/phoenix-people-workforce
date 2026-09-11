@@ -2819,7 +2819,13 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     icon: MousePointerClick,
     label: "Email Activity",
     description: "Each email's exact situation — sent, delivered, opened, clicked (Resend + Brevo).",
+    // Owner 2026-09-11: Super Admin only. This is a COMPANY-WIDE log naming the subject and the
+    // recipient of every mail the system sends, payroll and resignation and offer mail included.
+    // It was Super-Admin-only by ACCIDENT until `hr_communication` gave a second seat
+    // `communication`. The PAGE carries the same check — this row only stops the sidebar offering
+    // a link that redirects. `roles` ANDs with `permissions` in the gate, so this narrows.
     permissions: [{ resource: "communication" }],
+    roles: ["Super Admin"],
   },
   {
     href: "/admin/dev-preview",

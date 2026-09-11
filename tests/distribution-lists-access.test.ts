@@ -58,6 +58,14 @@ const ROUTE_ROLLBACK = readFileSync(
   fileURLToPath(new URL("../app/api/admin/email-templates/[templateKey]/rollback/route.ts", import.meta.url)),
   "utf8",
 );
+const PAGE_EMAIL_TRACKING = readFileSync(
+  fileURLToPath(new URL("../app/(admin)/admin/notifications/email-tracking/page.tsx", import.meta.url)),
+  "utf8",
+);
+const NAVIGATION = readFileSync(
+  fileURLToPath(new URL("../src/config/system-navigation.ts", import.meta.url)),
+  "utf8",
+);
 const SETTINGS = readFileSync(
   fileURLToPath(new URL("../src/config/system-settings.ts", import.meta.url)),
   "utf8",
@@ -333,5 +341,38 @@ export function runDistributionListsAccessTests() {
     rollbackRoute,
     /payload:\s*\{\s*isActive:\s*target\.templateSnapshot\.isActive,\s*rules:\s*target\.rulesSnapshot\s*\}/,
     "the rollback guard must read the snapshot it is about to restore - reading the request body would pass every rollback silently",
+  );
+
+  // ── 🔴 THE COMPANY-WIDE EMAIL LOG IS SUPER ADMIN ONLY ────────────────────────────────────────
+  // Owner 2026-09-11, after being shown what it carries: every row names the SUBJECT and the
+  // RECIPIENT of a mail the system sent, so payroll, resignation, offer and probation mail are all
+  // in it. Not the bodies - but for those four, who received what and what it was called is most of
+  // the sensitivity. It was Super-Admin-only by ACCIDENT until `hr_communication` made a second
+  // seat a holder of `communication`.
+  const emailTracking = code(PAGE_EMAIL_TRACKING);
+  assert.match(
+    emailTracking,
+    /access\.role !== "Super Admin"[\s\S]{0,120}redirect\(/,
+    '🔴 the email activity page must refuse anyone but Super Admin - `communication: read` stopped meaning "Super Admin" the moment a second seat held that resource',
+  );
+  // 🔴 ON TOP OF the resource gate, never INSTEAD of it. Replacing the `communication` check with a
+  // role check reads equivalent and is not: it would let any future Super-Admin-adjacent seat in
+  // without the resource, and it would silently drop the redirect that protects an unauthenticated
+  // caller - who resolves as `Employee`, not null, so a missing gate is not a 401 here.
+  assert.match(
+    emailTracking,
+    /canAccess\(access, "communication", "read"\)/,
+    "and the resource gate must survive beside it - a role check alone is a different, weaker rule",
+  );
+  // The sidebar must not offer a link that only redirects. Same defect class as the two dead
+  // Telegram buttons: a 403 or a bounce from a control the app itself offered reads as a broken
+  // deploy rather than as a boundary.
+  const navEntry = NAVIGATION.slice(
+    NAVIGATION.indexOf('href: "/admin/notifications/email-tracking"'),
+    NAVIGATION.indexOf('href: "/admin/notifications/email-tracking"') + 900,
+  );
+  assert.ok(
+    /roles: \["Super Admin"\]/.test(navEntry),
+    "the Email Activity sidebar row must be Super Admin only too, or she is shown a link that bounces her",
   );
 }
