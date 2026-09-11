@@ -40,6 +40,17 @@ export async function PATCH(request: Request) {
     const access = await assertTelegramAdmin(request, "update");
     const body = await request.json();
     if (body?.type === "global_switch") {
+      // SUPER ADMIN ONLY. This switches Telegram off for the whole company, and Telegram is where
+      // the outbox drain's dead-man's-switch alarm goes - deliberately never email, because it
+      // fires exactly when the email pipeline is the broken thing (AGENTS section 3). Super Admin
+      // was the only holder of `communication: update` until 2026-09-11, so this was
+      // Super-Admin-only by ACCIDENT; a second holder makes the accident load-bearing.
+      if (access.role !== "Super Admin") {
+        return NextResponse.json(
+          { error: "forbidden", message: "The company-wide Telegram switch is Super Admin only." },
+          { status: 403 },
+        );
+      }
       await setTelegramGlobalSwitch(access, body.enabled === true);
       return NextResponse.json({ data: await getTelegramAdminControlCenter(access), success: true });
     }
@@ -94,6 +105,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ data: { count }, success: true });
     }
     if (body?.action === "send_invitations") {
+      // SUPER ADMIN ONLY - this is a BULK EMAIL and the standing rule is that the system never
+      // fires one. One call emails up to DEFAULT_CAMPAIGN_LIMIT (250) employees, and the mass-send
+      // brake cannot see it: the confidence gate skips single-recipient sends by design, and every
+      // campaign send is single-recipient, so 250 of them read as 250 ordinary emails. The
+      // 25-recipient composer cap lives in validateManualEmailRecipientPolicy, never called here.
+      if (access.role !== "Super Admin") {
+        return NextResponse.json(
+          { error: "forbidden", message: "Sending connect invitations is Super Admin only." },
+          { status: 403 },
+        );
+      }
       // `force` (re-emails already-connected users / bypasses the unconnected filter) is
       // a Super-Admin-only escalation; broad HR/recruitment roles cannot use it.
       const isSuperAdmin = access.role === "Super Admin";

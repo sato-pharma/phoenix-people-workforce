@@ -45,10 +45,21 @@ const ROUTE_SEND = readFileSync(
   fileURLToPath(new URL("../app/api/admin/email-reply/send/route.ts", import.meta.url)),
   "utf8",
 );
+const ROUTE_TELEGRAM = readFileSync(
+  fileURLToPath(new URL("../app/api/admin/notifications/telegram/route.ts", import.meta.url)),
+  "utf8",
+);
 const SETTINGS = readFileSync(
   fileURLToPath(new URL("../src/config/system-settings.ts", import.meta.url)),
   "utf8",
 );
+
+/** Source with comments stripped, so a rule described in prose cannot satisfy a check. */
+function code(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+}
 
 const as = (role: string): AccessContext =>
   ({ hrId: "X-1", loginId: "X-1", role, scope: "company", source: "session" }) as unknown as AccessContext;
@@ -158,6 +169,39 @@ export function runDistributionListsAccessTests() {
     false,
     "a reply address must NEVER become the From - From stays on the verified sending subdomain or the mail stops being delivered",
   );
+  // ── 🔴 THE TWO DOORS `communication` OPENED, AND WHY THEY ARE SHUT ───────────────────────────
+  // Granting hr_communication made the HR Business Partner the SECOND holder of `communication` in
+  // this system's history. Two actions on the Telegram route were gated on that resource alone and
+  // were therefore Super-Admin-only by ACCIDENT, not by rule. Owner 2026-09-11, told what each did:
+  // close both.
+  //
+  // send_invitations emails up to 250 employees in one call, and the mass-send brake cannot see it:
+  // the confidence gate skips single-recipient sends by design and every campaign send is
+  // single-recipient, so 250 of them read as 250 ordinary emails. That is the standing
+  // never-fire-bulk-email rule.
+  //
+  // global_switch turns Telegram off company-wide - and Telegram is where the outbox drain's
+  // dead-man's-switch alarm goes, deliberately never email, because it fires exactly when email is
+  // the broken thing.
+  // Anchored on the CODE, and on comment-stripped source. The first attempt sliced from
+  // indexOf("send_invitations"), which found that word inside the comment on the OTHER gate - so
+  // the window contained global_switch's check and the assertion passed with the real campaign gate
+  // deleted. Proven by breaking it; a source pin that can match its own prose proves nothing.
+  const telegram = code(ROUTE_TELEGRAM);
+  for (const [guard, what] of [
+    ['body?.action === "send_invitations"', "the 250-recipient onboarding campaign"],
+    ['body?.type === "global_switch"', "the company-wide Telegram switch"],
+  ] as const) {
+    const idx = telegram.indexOf(guard);
+    assert.ok(idx > 0, `${what} must still be handled on the telegram route`);
+    const block = telegram.slice(idx, idx + 700);
+    assert.match(
+      block,
+      /access\.role !== "Super Admin"[\s\S]{0,160}status: 403/,
+      `${what} must refuse anyone but Super Admin - the \`communication: update\` gate above it stopped being Super-Admin-only the moment a second seat held that resource`,
+    );
+  }
+
   assert.match(
     ROUTE_SEND,
     /const from = process\.env\.HR_REPLY_EMAIL_FROM \|\| process\.env\.NOTIFICATION_EMAIL_FROM/,

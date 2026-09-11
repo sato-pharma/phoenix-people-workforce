@@ -154,10 +154,28 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
     // address sat on a route only Super Admin could reach, so it could never fire. Told that making
     // it real meant granting `communication`, he chose to give her the composer.
     //
-    // ⚠ `communication` IS WIDER THAN "SEND AN EMAIL", and there is no narrower resource to use.
-    // Per access-registry.ts it also gates the email TEMPLATES and the Telegram templates, and the
-    // send route needs `update`, so read-only is not an option — she can therefore edit those
-    // templates too. Stated here rather than discovered later.
+    // 🔴 `communication` IS MUCH WIDER THAN "SEND AN EMAIL", and there is no narrower resource.
+    // The first version of this comment named only the composer and the templates; review found
+    // that incomplete, and the owner had already approved the grant on that description. The full
+    // picture, so the next reader does not have to rediscover it:
+    //
+    //   * the manual email composer and its send route (`communication: update`) — the point of it
+    //   * the email TEMPLATES, including `isActive`. Deactivating one silently stops that whole
+    //     class of email: setting `password_reset` inactive ends every password-reset mail
+    //     company-wide, with a log line and nothing else
+    //   * a template's static Cc/Bcc addresses, which are declared EXTERNAL to the Recipient
+    //     Assurance Guard — so the control that normally blocks an unrecognised address is told
+    //     that this one is deliberate
+    //   * the Telegram admin console
+    //   * /admin/notifications/email-tracking, a COMPANY-WIDE email activity log carrying the
+    //     subject and recipient of payroll, resignation and offer mail. This seat holds no payroll
+    //     grant and still sees that metadata
+    //
+    // TWO DOORS WERE CLOSED rather than accepted (owner, 2026-09-11): the 250-recipient Telegram
+    // onboarding CAMPAIGN and the company-wide Telegram switch are now Super-Admin-only in
+    // app/api/admin/notifications/telegram/route.ts. Both were Super-Admin-only by ACCIDENT until
+    // this function existed — Super Admin was the sole holder of `communication` — and a bulk-send
+    // button behind an HR seat is the standing never-fire-bulk-email rule, not a nuance.
     //
     // NOT `create`, `delete`, `approve` or `import`: nothing in the composer path asks for them,
     // and the narrower set is the one that still does the job.
