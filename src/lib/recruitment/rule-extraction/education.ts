@@ -11,6 +11,7 @@ import {
   DEGREE_QUALIFIER_KEYWORDS,
   EGYPT_UNIVERSITIES,
   FACULTY_KEYWORDS,
+  FACULTY_KEYWORDS_WEAK,
   GRADE_KEYWORDS,
   LANGUAGE_KEYWORDS,
   LANGUAGE_PROFICIENCY,
@@ -88,6 +89,15 @@ function matchDegreeQualifier(text: string): string | null {
   return null;
 }
 
+/**
+ * The faculty named in the education section.
+ *
+ * "Faculty of Pharmacy" is unambiguous and is trusted outright. A bare "Pharmacy" is not — it is an
+ * ordinary word that can turn up in an education section for reasons that have nothing to do with
+ * the candidate's own faculty, so it is only offered at LOW confidence: enough to show a reviewer,
+ * never enough to overwrite a candidate's real faculty gone unwritten. See FACULTY_KEYWORDS_WEAK in
+ * dictionaries.ts for the incident this split fixes.
+ */
 export function findFaculty(sections: readonly CvSection[]): ExtractedField<string> | null {
   const text = textOfKind(sections, "education");
   if (!text) return null;
@@ -112,6 +122,13 @@ export function findFaculty(sections: readonly CvSection[]): ExtractedField<stri
     // at LOW confidence, the same treatment findUniversity gives an institution line it cannot
     // validate: a human sees exactly what the CV said instead of an empty field.
     if (department.length <= 60) return low(titleCase(department));
+  }
+
+  // Last resort: a bare word that MIGHT name a faculty but is also ordinary vocabulary (a training
+  // rotation, a former employer, a course title). Kept separate and LOW so it never outranks an
+  // explicit signal above — see FACULTY_KEYWORDS_WEAK in dictionaries.ts for the incident this fixes.
+  for (const name of [...FACULTY_KEYWORDS_WEAK].sort((a, b) => b.length - a.length)) {
+    if (containsPhrase(text, name)) return low(titleCase(name));
   }
 
   return null;

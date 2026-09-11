@@ -1582,6 +1582,7 @@ import { runLeaveRequestCodesTests } from "./leave-request-codes.test.ts";
 
 import { runManagerAreaRegionGuardTests } from "./manager-area-region-guard.test.ts";
 import { runDataBackupWorkbookTests } from "./data-backup-workbook.test.ts";
+import { runBackgroundFolderFilingGateTests } from "./background-folder-filing-gate.test.ts";
 import { runPhoenixOfficialLogoTests } from "./phoenix-official-logo.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -2161,6 +2162,10 @@ await runTest(
 await runTest(
   "background review queue (an admin's answer outranks the parser in BOTH directions, and actually changes who sees the CV)",
   runBackgroundReviewQueueTests,
+);
+await runTest(
+  "background folder filing gate (a paramedical degree nobody has checked cannot be filed by hand onto Medical Representative or District Manager, only onto the shelves the degree rule has no opinion about, and unknown never blocks ordinary filing)",
+  runBackgroundFolderFilingGateTests,
 );
 await runTest(
   "cv address place (which area a CV own text names, and the four addresses that lied)",
