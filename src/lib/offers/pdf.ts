@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 
 import { renderOfferDocument } from "@/lib/offers/render";
-import { satoLogoDataUri, satoSignatureDataUri } from "@/lib/offers/brand";
+import { satoLogoDataUri, satoSealDataUri, satoSignatureDataUri } from "@/lib/offers/brand";
 import type { OfferBlock, OfferFields, OfferTemplateVariant, OfferTheme } from "@/lib/offers/types";
 
 /**
@@ -166,6 +166,7 @@ export async function renderOfferPdf(
   // the one image with no public URL at all.
   const { html, pageFooterHtml, pageHeaderHtml, pageSize } = renderOfferDocument(template, fields, {
     logoUrl: options.logoUrl ?? satoLogoDataUri() ?? undefined,
+    sealUrl: satoSealDataUri() ?? undefined,
     signatureUrl: options.signatureUrl ?? satoSignatureDataUri() ?? undefined,
   });
   const timeout = options.timeoutMs ?? 30_000;

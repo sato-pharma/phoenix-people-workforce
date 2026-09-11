@@ -17,7 +17,6 @@
  * four drifting mastheads in the hiring pack the same week. Everything else here stays frozen.
  * ───────────────────────────────────────────────────────────────────────────────────────────── */
 import { houseEngineTurnedBand } from "@/lib/hiring-pack/house-identity";
-import { satoSealDataUri } from "@/lib/offers/brand";
 import { OFFER_DEFAULT_FONT, OFFER_DEFAULT_FONT_SIZE_PT, OFFER_DEFAULT_THEME } from "@/lib/offers/default-template";
 import { deriveOfferPay, formatOfferAmount } from "@/lib/offers/pay";
 import { systemLegalEntity } from "@/config/system-settings";
@@ -164,7 +163,7 @@ function signatureInk(prop: unknown, fallback: string | undefined): string {
 export function renderOfferBlock(
   block: OfferBlock,
   tokens: Record<string, string>,
-  options: { logoUrl?: string; signatureUrl?: string } = {},
+  options: { logoUrl?: string; sealUrl?: string; signatureUrl?: string } = {},
 ): string {
   const p = block.props ?? {};
   const f = (value: unknown) => fillOfferTokens(value, tokens);
@@ -325,9 +324,13 @@ export function renderOfferBlock(
       // THE SEAL GOES ON THE COMPANY'S RULE ONLY — the left column is the authorised signatory's,
       // the right is the candidate's date. Stamping the candidate's side would be the company
       // certifying the other party's own signature.
-      const seal = satoSealDataUri();
-      const sealImg = seal
-        ? `<img class="offer-seal" src="${seal}" alt="">`
+      // 🔴 PASSED IN, NEVER READ HERE. `brand.ts` reads the file with node:fs, and this module is
+      // imported by the offer template DESIGNER — a client component. Importing the reader pulled
+      // node:fs into the client bundle and `client-bundle-server-leak` caught it. That is the whole
+      // reason `logoUrl` and `signatureUrl` are options rather than lookups, and the seal follows
+      // the same route: the server resolves it, the renderer only places it.
+      const sealImg = options.sealUrl
+        ? `<img class="offer-seal" src="${escapeHtml(options.sealUrl)}" alt="">`
         : "";
       // `sealed` IS THE COMPANY SIDE ONLY. This builder draws BOTH parties' rules — the left is the
       // authorised signatory's, the right is the candidate's — so sealing inside it unconditionally
@@ -775,7 +778,7 @@ export function renderOfferDocument(
     variant?: OfferTemplateVariant;
   },
   fields: OfferFields,
-  options: { logoUrl?: string; signatureUrl?: string } = {},
+  options: { logoUrl?: string; sealUrl?: string; signatureUrl?: string } = {},
 ): RenderedOffer {
   const variant: OfferTemplateVariant = template.variant === "executive" ? "executive" : "classic";
   const tokens = buildOfferTokens(fields);
