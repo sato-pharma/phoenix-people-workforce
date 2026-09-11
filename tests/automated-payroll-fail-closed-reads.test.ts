@@ -149,4 +149,36 @@ export async function runAutomatedPayrollFailClosedReadTests() {
     /Nothing was retired/,
     "and it must say so, because a silent no-op is what this whole check is about",
   );
+
+  // ---- FINDING 49: the check against a live Payroll Copilot run fails closed --------------------
+  // Both engines write the same expense and vacation decision tables, so a run may not start while
+  // the other engine has one open for the month. The read's error used to be discarded, so a failed
+  // read looked like "no Copilot run" and the guard passed. Source-checked: the read needs a live
+  // client and sits between two other live reads in startOrResumeRun.
+  const runServiceSource = readFileSync("src/lib/automated-payroll/run-service.ts", "utf8");
+  const startAt = runServiceSource.indexOf("export async function startOrResumeRun(");
+  const startEnd = runServiceSource.indexOf("\nexport ", startAt + 10);
+  assert.ok(startAt > 0 && startEnd > startAt, "startOrResumeRun and its end must be found");
+  const startBody = runServiceSource.slice(startAt, startEnd);
+  assert.ok(
+    startBody.length > 1000 && startBody.length < 12000,
+    `the slice must stay bounded to startOrResumeRun (got ${startBody.length})`,
+  );
+  const copilotReadAt = startBody.indexOf('.from("payroll_copilot_runs")');
+  assert.ok(copilotReadAt > 0, "startOrResumeRun must still check for a live Payroll Copilot run");
+  const copilotBlock = startBody.slice(Math.max(0, copilotReadAt - 200), copilotReadAt + 1200);
+  assert.match(
+    copilotBlock,
+    /const \{ data: copilotRuns, error: copilotRunsError \} = await/,
+    "the Copilot exclusion read must take its error: discarding it turns a failed read into 'no Copilot run'",
+  );
+  assert.match(
+    copilotBlock,
+    /if \(copilotRunsError\) \{[\s\S]*?throw new Error\(\s*"Conflict: could not confirm that no Payroll Copilot run is active/,
+    "and a failed read must refuse to start the run, not let both engines write the same month",
+  );
+  assert.ok(
+    startBody.indexOf("if (copilotRunsError)") < startBody.indexOf("await createRun("),
+    "the refusal must come before the run is created",
+  );
 }

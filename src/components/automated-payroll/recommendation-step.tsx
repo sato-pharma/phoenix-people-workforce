@@ -13,6 +13,7 @@ import {
 } from "@/lib/automated-payroll/conflicts";
 import { computeSettlementSummary } from "@/lib/automated-payroll/settlement-summary";
 import {
+  dayDrivenMoney,
   monthNameAndYear,
   stepDefinition,
   stepFieldsTotal,
@@ -508,17 +509,9 @@ export function RecommendationStep({
     spec: StepFieldSpec | undefined,
     days: number,
   ) => {
-    if (!spec?.autoCalcMoneyKey) return;
-    const divisorKey = spec.autoCalcDivisorContextKey;
-    const divisor = divisorKey ? Number(row.context[divisorKey] ?? 0) || 30 : 30;
-    const share = (amountContextKey: string) => {
-      const amount = Number(row.context[amountContextKey] ?? 0);
-      return Math.round(((amount / divisor) * days + Number.EPSILON) * 100) / 100;
-    };
-    values[spec.autoCalcMoneyKey] = share(spec.autoCalcAmountContextKey ?? "Base Salary");
-    for (const companion of spec.autoCalcCompanionMoneyKeys ?? []) {
-      values[companion.key] = share(companion.amountContextKey);
-    }
+    // The arithmetic lives in step-definitions.ts so a re-uploaded sheet prices a corrected day
+    // count exactly as this grid does (audit finding 32).
+    Object.assign(values, dayDrivenMoney(spec, row.context, days));
   };
 
   const setDaysValue = (hrId: string, field: string, days: number) => {

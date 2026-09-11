@@ -1,4 +1,4 @@
-import type { PayrollPeriod, StepDefinition, StepDetailColumn, StepKey } from "./types.ts";
+import type { PayrollPeriod, StepDefinition, StepDetailColumn, StepFieldSpec, StepKey } from "./types.ts";
 
 /**
  * Declarative config for every wizard step. Drives the generic recommendation
@@ -59,6 +59,38 @@ export function stepFieldsTotal(
   // Cents, not raw float: three prorated amounts summed straight would print
   // 4645.159999999999 on a payroll screen.
   return Math.round(sum * 100) / 100;
+}
+
+/**
+ * What a day count is worth, for each money field a "days" field drives.
+ *
+ * ONE definition, used by the grid while HR types and by the xlsx re-upload on the server, so a
+ * correction made in the sheet moves the same money by the same amount as the same correction made
+ * on screen (audit finding 32: the sheet used to move the days and leave the money behind).
+ *
+ *   amount  — the context column `autoCalcAmountContextKey` names, default "Base Salary".
+ *   divisor — the context column `autoCalcDivisorContextKey` names, default 30.
+ *
+ * Rounded to cents with an epsilon, exactly as the grid always did. A money field whose amount is not
+ * a number (a "—" for missing compensation) is left out rather than priced at NaN.
+ */
+export function dayDrivenMoney(
+  spec: StepFieldSpec | undefined,
+  context: Record<string, string | number | null>,
+  days: number,
+): Record<string, number> {
+  const money: Record<string, number> = {};
+  if (!spec?.autoCalcMoneyKey) return money;
+  const divisorKey = spec.autoCalcDivisorContextKey;
+  const divisor = divisorKey ? Number(context[divisorKey] ?? 0) || 30 : 30;
+  const share = (moneyKey: string, amountContextKey: string) => {
+    const amount = Number(context[amountContextKey] ?? 0);
+    if (!Number.isFinite(amount)) return;
+    money[moneyKey] = Math.round(((amount / divisor) * days + Number.EPSILON) * 100) / 100;
+  };
+  share(spec.autoCalcMoneyKey, spec.autoCalcAmountContextKey ?? "Base Salary");
+  for (const companion of spec.autoCalcCompanionMoneyKeys ?? []) share(companion.key, companion.amountContextKey);
+  return money;
 }
 
 export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
@@ -195,6 +227,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
         key: "p1odCrmWorkingDays",
         label: "Working Days",
         kind: "days",
+        notPersisted: true,
         complementFieldKey: "p1odCrmDays",
         complementTotalContextKey: "Days In Month",
       },
@@ -202,8 +235,11 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
         key: "p1odCrmDays",
         label: "Non-Working Days",
         kind: "days",
-        // Money divisor stays the DEFAULT 30 (matches calculateDeductionAmountFromBaseSalary
-        // server-side) — never autoCalcDivisorContextKey here, see that field's own doc.
+        // Money divisor stays the DEFAULT 30: the flat Base/30 rate the owner set on 2026-07-25, the
+        // one calculateFlat30DeductionAmount (flat-deduction-rate.ts) applies. NOT
+        // calculateDeductionAmountFromBaseSalary, which this comment used to cite: that function has
+        // divided by the month's real calendar days since 2026-08-01. Never autoCalcDivisorContextKey
+        // here, see that field's own doc.
         autoCalcMoneyKey: "p1odCrmValue",
         complementFieldKey: "p1odCrmWorkingDays",
         complementTotalContextKey: "Days In Month",
@@ -235,6 +271,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
         key: "resigCrmWorkingDays",
         label: "Working Days",
         kind: "days",
+        notPersisted: true,
         complementFieldKey: "resignationCrmDays",
         complementTotalContextKey: "Days Worked",
       },
@@ -437,7 +474,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       { key: "Confirmed Lines", label: "Confirmed Lines" },
     ],
     fields: [
-      { key: "p2VacationDays", label: "Deduction Days", kind: "days", autoCalcMoneyKey: "unpaidVacations" },
+      { key: "p2VacationDays", label: "Deduction Days", kind: "days", autoCalcMoneyKey: "unpaidVacations", notPersisted: true },
       { key: "unpaidVacations", label: "Deduction Value", kind: "money" },
     ],
     hasReason: false,
@@ -456,7 +493,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       { key: "Confirmed Lines", label: "Confirmed Lines" },
     ],
     fields: [
-      { key: "p2CrmDays", label: "Deduction Days", kind: "days", autoCalcMoneyKey: "crm" },
+      { key: "p2CrmDays", label: "Deduction Days", kind: "days", autoCalcMoneyKey: "crm", notPersisted: true },
       { key: "crm", label: "Deduction Value", kind: "money" },
     ],
     hasReason: false,
@@ -488,7 +525,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       "Add any other deduction per employee, with a reason. Pre-filled with the Loan and Other deductions you marked \"Approved for Payroll\" in the Deductions module for continuing two-part employees (owner request 2026-08-03) — resignations and one-part-salary employees take theirs on the Part 1 Other Deductions tab instead, so nobody is charged twice. Expand a row to see what made up the figure. Edit freely, or leave 0 for none.",
     contextColumns: [{ key: "Hire Date", label: "Hire Date" }],
     fields: [
-      { key: "p2ManualDeductionDays", label: "Days", kind: "days", autoCalcMoneyKey: "manualOtherDeductions" },
+      { key: "p2ManualDeductionDays", label: "Days", kind: "days", autoCalcMoneyKey: "manualOtherDeductions", notPersisted: true },
       { key: "manualOtherDeductions", label: "Value", kind: "money" },
     ],
     hasReason: true,

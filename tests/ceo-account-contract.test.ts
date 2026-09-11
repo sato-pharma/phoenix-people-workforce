@@ -320,6 +320,20 @@ export async function runCeoAccountContractTests() {
     /\/admin\/m-payroll\?batchId/,
     "CEO payroll console batch links must stay inside the CEO payroll console",
   );
+  // Audit finding 51: the console lists every salary batch in the company, and `payroll:read` alone
+  // is held by self-scope admin roles such as SFE Manager. The sidebar hiding the link is not a
+  // boundary, so the page must send a self-scope viewer away before it reads anything.
+  assert.match(
+    mPayrollPageSource,
+    /getPayrollScope\(access\) !== "COMPANY"\) \{\s*redirect\("\/payslips"\);/,
+    "the CEO payroll console must redirect a viewer whose payroll scope is not company-wide",
+  );
+  assert.ok(
+    mPayrollPageSource.indexOf('getPayrollScope(access) !== "COMPANY"') > 0 &&
+      mPayrollPageSource.indexOf('getPayrollScope(access) !== "COMPANY"') <
+        mPayrollPageSource.indexOf("listSalaryBatches("),
+    "the scope redirect must come before the batch register is read",
+  );
   assert.equal(payrollBatchHref("batch 1"), "/payroll?batchId=batch%201");
   assert.equal(payrollBatchHref("batch 1", "executive"), "/admin/m-payroll?batchId=batch%201");
   assert.equal(

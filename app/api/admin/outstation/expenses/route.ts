@@ -7,6 +7,7 @@ import {
   savePayrollExpenseApprovals,
 } from "@/lib/outstation/expenses";
 import { partitionExpenseApprovalRecords } from "@/lib/outstation/expense-approval-decisions";
+import { describeExpenseResyncNotApplied, type ExpenseResyncOutcome } from "@/lib/automated-payroll/expense-resync";
 import { applyOutstationRequestExpenseDecisions } from "@/lib/outstation/service";
 import {
   assertOutstationExpenseApprovalReviewAccess,
@@ -173,15 +174,23 @@ export async function POST(request: Request) {
     // Nothing left for the payroll path → do not call it at all. It mints an
     // `outstation_expense_reports` row for every save with no report id, so a Save that only
     // decided requests used to leave an empty report behind on each click.
+    // What the payroll resync did with these decisions. One that did NOT reach an open run is said out
+    // loud in `payrollWarnings`, rather than hidden behind "Approvals saved" (audit finding 47).
+    let payrollResync: ExpenseResyncOutcome[] = [];
     const expenses =
       payrollRecords.length > 0
-        ? await savePayrollExpenseApprovals({ fileName, records: payrollRecords, reportId }, access)
+        ? await savePayrollExpenseApprovals({ fileName, records: payrollRecords, reportId }, access, {
+            onPayrollResync: (outcomes) => {
+              payrollResync = outcomes;
+            },
+          })
         : [];
 
     return NextResponse.json({
       expenses,
       requestDecisions,
       saved: expenses.length + requestDecisions.applied,
+      payrollWarnings: describeExpenseResyncNotApplied(payrollResync),
     });
   } catch (error) {
     const message = clientSafeErrorMessage(error, "Unable to save expense approvals.");

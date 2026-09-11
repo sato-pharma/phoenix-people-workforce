@@ -18,6 +18,7 @@ import { buildFabSheetWorkbook, defaultFabValueDate, fabRowsForNonEmployees, fab
 import { buildFullSheetWorkbook, buildPart1SheetWorkbook, type PeriodSummary } from "./exports/sheet.ts";
 import { buildStepTemplateWorkbook } from "./exports/step-template.ts";
 import { diffStepUpload, parseStepWorkbook } from "./imports/step-parser.ts";
+import { applyDayDrivenMoney } from "./imports/day-driven-money.ts";
 import {
   additionsCandidatesFromStepRows,
   assertAdditionsReasonsPresent,
@@ -25,6 +26,7 @@ import {
 import { assertHoldReasonsPresent, holdCandidatesFromStepRows } from "./hold-reason.ts";
 import { buildHoldReview, type HoldReview } from "./hold-review.ts";
 import { exclusionRefusal } from "./exclusion-guard.ts";
+import { assertNoNegativeStepValues } from "./negative-values.ts";
 import {
   describePayrollDayCollisions,
   detectPayrollDayCollisions,
@@ -65,6 +67,7 @@ import { buildBankCoverage, describeBankCoverage, type BankCoverage } from "./ex
 import { getHeldSettlements, loadHeldBalances } from "./held-settlements.ts";
 import { getNonEmployeePayrollRows } from "./non-employees.ts";
 import { seedRunFromRecurring } from "./non-employee-recurring.ts";
+import { heldDraftHrIds, readPublishedHoldRecord } from "./published-holds.ts";
 import {
   auditPayrollDataQuality,
   describePayrollDataQuality,
@@ -321,13 +324,27 @@ export async function startOrResumeRun(
 
   // Mutual exclusion: do not start while a Payroll Copilot run is active for the
   // same period (both write the shared expense/vacation decision tables).
-  const { data: copilotRuns } = await getSupabaseAdmin()
+  //
+  // FAILS CLOSED (audit finding 49). The read's error used to be discarded, so a read that failed
+  // came back as "no Copilot run" and the guard passed: both engines then write the same decision
+  // tables for the same month, the double-write this check exists to stop, with nothing recording
+  // that the check never ran. Not being able to look is not the same as finding nothing.
+  const { data: copilotRuns, error: copilotRunsError } = await getSupabaseAdmin()
     .from("payroll_copilot_runs")
     .select("id,status")
     .eq("month", period.month)
     .eq("year", period.year)
     .in("status", ["assembling", "negotiating", "drafted"])
     .limit(1);
+  if (copilotRunsError) {
+    logError("Automated payroll: could not check for an active Payroll Copilot run", {
+      labels: { event: "automated_payroll_copilot_exclusion_read_failed", month: String(period.month), year: String(period.year) },
+      error: copilotRunsError,
+    });
+    throw new Error(
+      "Conflict: could not confirm that no Payroll Copilot run is active for this month, so nothing was started. Try again in a moment.",
+    );
+  }
   if (copilotRuns && copilotRuns.length > 0) {
     throw new Error(
       "Conflict: a Payroll Copilot run is active for this month. Cancel it before using Automated Payroll (they share deduction/expense decisions).",
@@ -518,6 +535,12 @@ export async function saveStep(
   stepKey: StepKey,
   edits: StepEditInput[],
   inputMode: StepInputMode,
+  /**
+   * Server-internal only; the step route never supplies it. `recalculateMoney` names, per lower-cased
+   * HR id, the money fields a re-uploaded sheet left stale beside a corrected day count. They are
+   * cleared so the settlement rule re-derives them (see applyDayDrivenMoney).
+   */
+  options?: { recalculateMoney?: Map<string, string[]> },
 ): Promise<void> {
   assertRealSessionForDecision(access, "save a payroll run step");
   assertAutomatedPayrollHrActor(access);
@@ -551,6 +574,10 @@ export async function saveStep(
     .filter((edit) => !readOnlyHrIds.has(String(edit.hrId ?? "").toLowerCase()))
     .filter((edit) => !populationHrIds || populationHrIds.has(String(edit.hrId ?? "").toLowerCase()));
 
+  // Nothing on a step may be negative (audit finding 42): a negative addition is a deduction no
+  // deduction check can see. Here because both the inline grid and a re-uploaded xlsx come through.
+  assertNoNegativeStepValues(stepDefinition(stepKey), applicable, currentRows);
+
   // A hold may not be saved without a reason.
   //
   // This is the boundary that matters: `recommendHolds` reads `onHold` straight
@@ -583,6 +610,12 @@ export async function saveStep(
   const patches = applicable.map((edit) => {
     const isLeaver = leaverHrIds.has(String(edit.hrId ?? "").toLowerCase());
     const patch = stepEditToPatch(stepKey, edit, isLeaver);
+    // Money the settlement rule must re-derive from a corrected day count is CLEARED rather than left
+    // at the sheet's stale figure (audit finding 32). Only stored money columns, and only what the
+    // server itself asked for.
+    for (const key of options?.recalculateMoney?.get(String(edit.hrId ?? "").toLowerCase()) ?? []) {
+      if ((NUMERIC_FIELDS as string[]).includes(key)) (patch as unknown as Record<string, number | null>)[key] = null;
+    }
     patch.source = inputMode;
     patch.editedBy = actorId(access);
     return patch;
@@ -769,7 +802,10 @@ export async function getPayrollDayCollisions(
  * Every numeric field is now totalled and named. `primaryField` and `total` are kept exactly as
  * they were so nothing reading an older audit row has to change its mind about what they mean.
  */
-export function summarizeStep(stepKey: StepKey, rows: StepRow[]): Record<string, unknown> {
+export function summarizeStep(stepKey: StepKey, allRows: StepRow[]): Record<string, unknown> {
+  // A read-only row is shown, never written: a notice-period leaver, or expenses for someone outside the
+  // run (audit finding 45). The record of what a confirm wrote does not count it.
+  const rows = allRows.filter((row) => !row.readOnly);
   if (stepKey === "p1_holds" || stepKey === "p2_holds") {
     return { employees: rows.length, held: rows.filter((row) => row.onHold).length };
   }
@@ -1302,23 +1338,58 @@ async function previousMonthRoster(period: PayrollPeriod): Promise<PreviousRoste
   // Anyone whose resignation had already taken effect by the end of last month
   // is legitimately absent now — that is "left", not "disappeared".
   const { end } = periodBoundsFor(prev);
-  const { data: leavers } = await getSupabaseAdmin()
+  const { data: leavers, error: leaversError } = await getSupabaseAdmin()
     .from("employee_resignations")
     .select("employee_hr_id")
     .lte("last_working_date", end);
+  // A failed read used to leave this set empty, which turned every legitimate leaver into
+  // "disappeared" (audit finding 46). A refusal beats a panel of false alarms.
+  if (leaversError) throw leaversError;
   const leaverCompacts = new Set(
     ((leavers ?? []) as Array<{ employee_hr_id: string | null }>)
       .map((row) => compactHrKey(row.employee_hr_id ?? ""))
       .filter(Boolean),
   );
 
-  return ((data ?? []) as Array<{ hr_id: string | null; full_name: string | null }>)
+  const roster = ((data ?? []) as Array<{ hr_id: string | null; full_name: string | null }>)
     .map((row) => {
       const hrId = row.hr_id ?? "";
       const compact = compactHrKey(hrId);
       return { hrId, compact, fullName: row.full_name ?? hrId, wasLeaver: leaverCompacts.has(compact) };
     })
     .filter((entry) => entry.compact);
+
+  // LAST MONTH'S HELD PEOPLE BELONG IN THE BASELINE (audit finding 46). A held row is dropped at publish,
+  // so salary_records never lists them, and someone held last month read as "joined" this month beside
+  // the real new hires. Named from publish's own record where it kept one, and from the run's draft rows
+  // where it kept only a count (July and August 2026).
+  const onRoster = new Set(roster.map((entry) => entry.compact));
+  const holdRecord = await readPublishedHoldRecord(prevRun.id);
+  const heldPeople = holdRecord.held
+    ? holdRecord.held.map((person) => ({ hrId: person.hrId, fullName: person.name }))
+    : await heldPeopleFromDrafts(prevRun.id);
+  for (const person of heldPeople) {
+    const compact = compactHrKey(person.hrId);
+    if (!compact || onRoster.has(compact)) continue;
+    onRoster.add(compact);
+    roster.push({ hrId: person.hrId, compact, fullName: person.fullName, wasLeaver: leaverCompacts.has(compact) });
+  }
+  return roster;
+}
+
+/** A run's held HR ids from its draft rows, named from the employee directory (compact-keyed: HR ids are mixed case). */
+async function heldPeopleFromDrafts(runId: string): Promise<Array<{ hrId: string; fullName: string }>> {
+  const hrIds = await heldDraftHrIds(runId);
+  if (hrIds.length === 0) return [];
+  const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,full_name");
+  if (error) throw error;
+  const names = new Map(
+    ((data ?? []) as Array<{ hr_id: string | null; full_name: string | null }>).map((row) => [
+      compactHrKey(row.hr_id ?? ""),
+      row.full_name ?? "",
+    ]),
+  );
+  return hrIds.map((hrId) => ({ hrId, fullName: names.get(compactHrKey(hrId)) || hrId }));
 }
 
 function periodBoundsFor(period: PayrollPeriod): { start: string; end: string } {
@@ -1600,6 +1671,10 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
       firstPartAlreadyPaid: roundCurrency(entry.row.firstPart),
       secondPartWithheld: roundCurrency(entry.row.secondPart),
       monthTotal: roundCurrency(entry.row.monthSalary),
+      // The filing figures too (audit finding 43): a held person has no salary record, so the statutory
+      // summary can only name what they would have filed if publish writes it down here.
+      socialInsurance: roundCurrency(entry.row.socialInsurance),
+      employmentIncomeTax: roundCurrency(entry.row.employmentIncomeTax),
     }))
     .sort((a, b) => b.secondPartWithheld - a.secondPartWithheld);
   const heldSecondPartTotal = roundCurrency(
@@ -1824,9 +1899,31 @@ async function previousMonthSummary(
     .eq("batch_id", prevRun.publishedBatchId);
   if (error) throw error;
   const rows = (data ?? []) as Array<Record<string, number | null>>;
+  const recordsValue = Math.round(rows.reduce((sum, row) => sum + Number(row[valueField] ?? 0), 0) * 100) / 100;
+
+  // THE SAME POPULATION AS THIS MONTH'S FIGURE (audit finding 52). This month counts every assembled row,
+  // held people included, plus the non-employees paid in this scope; salary_records holds neither last
+  // month's held people nor any non-employee, so both are added back from what that run recorded.
+  const holdRecord = await readPublishedHoldRecord(prevRun.id);
+  const heldCount = holdRecord.held?.length ?? holdRecord.heldExcluded ?? 0;
+  const heldValue = holdRecord.held
+    ? holdRecord.held.reduce(
+        (sum, person) => sum + (valueField === "first_part" ? person.firstPartAlreadyPaid : person.monthTotal),
+        0,
+      )
+    : 0;
+  const nonEmployees = await getNonEmployeePayrollRows(prevRun.id, valueField === "first_part" ? "first" : undefined);
+  const nonEmployeeValue = nonEmployees.reduce((sum, entry) => sum + entry.totalSalary, 0);
+
   return {
-    headcount: rows.length,
-    totalValue: Math.round(rows.reduce((sum, row) => sum + Number(row[valueField] ?? 0), 0) * 100) / 100,
+    headcount: rows.length + heldCount,
+    totalValue: roundCurrency(recordsValue + heldValue + nonEmployeeValue),
+    // A publish that recorded only HOW MANY were held cannot supply their pay. Said beside the figure,
+    // so the gap is not read as a month-on-month movement.
+    basis:
+      !holdRecord.held && heldCount > 0
+        ? `Last month counts ${heldCount} held employees, but its value leaves out their pay: that month was published before held amounts were recorded.`
+        : undefined,
   };
 }
 
@@ -1917,14 +2014,17 @@ export async function importStepUpload(
   const run = await requireRun(runId);
   assertStepPhaseAllowed(run, stepKey);
 
-  const { edits, invalidHrIds } = await parseStepWorkbook({ file, stepKey });
+  const { edits: parsed, invalidHrIds } = await parseStepWorkbook({ file, stepKey });
+  // A corrected day count moves the money it drives, as it does on screen (audit finding 32). Priced
+  // against the rows as they stand BEFORE the upload, so the preview and the commit move the same money.
+  const { rows: before } = await getStepRecommendation(access, runId, stepKey);
+  const { edits, recalculated } = applyDayDrivenMoney({ stepKey, edits: parsed, current: before });
 
   if (!commit) {
-    const { rows: current } = await getStepRecommendation(access, runId, stepKey);
-    return diffStepUpload({ stepKey, edits, current, invalidHrIds });
+    return diffStepUpload({ stepKey, edits, current: before, invalidHrIds, recalculated });
   }
 
-  await saveStep(access, runId, stepKey, edits, "xlsx");
+  await saveStep(access, runId, stepKey, edits, "xlsx", { recalculateMoney: recalculated });
   const { rows: current } = await getStepRecommendation(access, runId, stepKey);
   const preview = diffStepUpload({ stepKey, edits, current, invalidHrIds });
   return { mode: "commit", applied: edits.length, invalid: preview.invalid, diffs: preview.diffs };

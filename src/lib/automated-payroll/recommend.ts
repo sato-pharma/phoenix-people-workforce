@@ -358,6 +358,12 @@ export type PayoutExpenseTrip = {
   hrApproved: boolean;
   hrStatus: string;
   description: string;
+  /**
+   * The row's own HR id and claimant name. Only needed for a trip belonging to nobody in the run, which
+   * has no population member to name it (audit finding 45). Optional so hand-built fixtures stay valid.
+   */
+  hrId?: string;
+  specialist?: string;
 };
 
 export type PayoutExpenseRow = {
@@ -386,6 +392,7 @@ export type PayoutExpenseRow = {
    */
   status: string | null;
   description: string | null;
+  specialist?: string | null;
 };
 
 /** PostgREST's default cap — same pagination pattern as outstation/geocode-warmup.ts. */
@@ -455,6 +462,8 @@ export function buildPayoutExpenseTripMap(rows: PayoutExpenseRow[]): Map<string,
       travelCost: Number(row.travel_cost ?? 0),
       tripId: text(row.trip_id),
       tripType: text(row.trip_type),
+      hrId: text(row.hr_id),
+      specialist: text(row.specialist),
     });
     byCompact.set(compact, trips);
   }
@@ -476,7 +485,11 @@ export function buildPayoutExpenseTripMap(rows: PayoutExpenseRow[]): Map<string,
  * this was not yet biting — the loop keeps it from ever starting. Rows are collected
  * across pages and grouped once, so the rejected-row exclusion has a single home.
  *
- * Defensive: empty map on any failure.
+ * FAILS CLOSED (audit finding 35). It used to log a failed read and return whatever it had
+ * collected, which is nothing, so the step showed zero employees: identical to a month nobody
+ * travelled. HR confirmed it and the run published paying no reimbursement at all. A failure on a
+ * later page was worse, returning earlier pages as though they were the whole month. A read that
+ * fails now stops the step with a 409 whose words reach the screen.
  */
 async function loadPayoutExpenseTrips(period: PayrollPeriod): Promise<Map<string, PayoutExpenseTrip[]>> {
   const collected: PayoutExpenseRow[] = [];
@@ -491,7 +504,7 @@ async function loadPayoutExpenseTrips(period: PayrollPeriod): Promise<Map<string
       const { data, error } = await getSupabaseAdmin()
         .from("outstation_expenses")
         .select(
-          "hr_id,trip_id,expense_date,to_date,from_location,to_location,location,trip_type,transportation_type,km,travel_cost,meeting_amount,allowance,other_amount,total,approved_amount,hr_approved,hr_status,status,description",
+          "hr_id,trip_id,expense_date,to_date,from_location,to_location,location,trip_type,transportation_type,km,travel_cost,meeting_amount,allowance,other_amount,total,approved_amount,hr_approved,hr_status,status,description,specialist",
         )
         .eq("payout_month", period.month)
         .eq("payout_year", period.year)
@@ -503,19 +516,33 @@ async function loadPayoutExpenseTrips(period: PayrollPeriod): Promise<Map<string
           labels: { event: "automated_payroll_payout_expenses_load_failed", month: period.month, year: period.year },
           error,
         });
-        return buildPayoutExpenseTripMap(collected);
+        throw new ExpenseSourceUnavailableError(period);
       }
       const rows = (data ?? []) as PayoutExpenseRow[];
       collected.push(...rows);
       if (rows.length < EXPENSE_PAGE_SIZE) break;
     }
   } catch (error) {
+    // The refusal raised inside the try above is already the answer; only a THROWN read is logged here.
+    if (error instanceof ExpenseSourceUnavailableError) throw error;
     logError("Automated payroll: payout expenses load threw an exception", {
       labels: { event: "automated_payroll_payout_expenses_load_threw", month: period.month, year: period.year },
       error,
     });
+    throw new ExpenseSourceUnavailableError(period);
   }
   return buildPayoutExpenseTripMap(collected);
+}
+
+/** A failed expense read: a 409 whose words reach the step, never an empty list that reads as "nobody travelled". */
+class ExpenseSourceUnavailableError extends Error {
+  constructor(period: PayrollPeriod) {
+    super(
+      `Conflict: the outstation expenses for ${monthNameAndYear(period.month, period.year)} could not be read, so this ` +
+        "step cannot show who is owed a reimbursement. Nothing was changed. Try again in a moment.",
+    );
+    this.name = "ExpenseSourceUnavailableError";
+  }
 }
 
 /** "2026-06-01" for a single-day trip, "2026-06-01 → 2026-06-02" for an overnight one. */
@@ -998,9 +1025,15 @@ export function buildExpenseStepRows(
 ): StepRow[] {
   const byCompact = new Map(members.map((member) => [member.compact, member]));
   const rows: StepRow[] = [];
+  const outsideRun: StepRow[] = [];
   for (const [compact, trips] of tripsByCompact) {
     const member = byCompact.get(compact);
-    if (!member) continue;
+    if (!member) {
+      // Trips for someone NOT in this run (audit finding 45): shown read-only, never paid from here.
+      // They used to be skipped with no row, no counter and no warning.
+      outsideRun.push(expenseRowOutsideRun(trips));
+      continue;
+    }
     const draft = drafts.get(compact);
 
     // THE PROPOSED FIGURE IS WHAT HR HAS ACTUALLY APPROVED — owner decision 2026-09-08.
@@ -1053,27 +1086,7 @@ export function buildExpenseStepRows(
       // whose trips are all decided, which is the state HR is working towards.
       "Awaiting Decision": awaitingDecision,
     };
-    row.details = trips.map((trip) => ({
-      Dates: formatDateRange(trip.expenseDate, trip.toDate),
-      From: trip.fromLocation || "—",
-      To: trip.toLocation || "—",
-      "Trip Type": trip.tripType || "—",
-      Transport: trip.transportationType || "—",
-      KM: trip.km,
-      Travel: trip.travelCost,
-      Meeting: trip.meetingAmount,
-      Allowance: trip.allowance,
-      Other: trip.otherAmount,
-      // The payable figure, so the visible breakdown always adds up to the reimbursed total.
-      // When HR reduced a claim this is below the sum of the components above — that gap IS the
-      // approval decision, and the original claim stays on the Expense Approvals page.
-      Total: payableExpenseAmount(trip.approvedAmount, trip.total),
-      // hr_status is blank on every live row, so hr_approved is the real signal;
-      // fall back to hr_status only if a future import starts populating it.
-      "HR Approved": trip.hrApproved ? "Yes" : trip.hrStatus || "Not yet approved",
-      Description: trip.description || "—",
-      "Trip ID": trip.tripId || "—",
-    }));
+    row.details = tripDetailRows(trips);
     row.recommended = { expenses: value };
     row.values = { expenses: pick(draft?.expenses, value) };
     row.reasons = { expensesNote: draft?.expensesNote ?? "" };
@@ -1105,8 +1118,88 @@ export function buildExpenseStepRows(
   }
   manual.sort((left, right) => left.fullName.localeCompare(right.fullName));
   rows.push(...manual);
+  outsideRun.sort((left, right) => left.fullName.localeCompare(right.fullName));
+  rows.push(...outsideRun);
 
   return rows;
+}
+
+/**
+ * The breakdown a row expands into, one line per trip. Shared by a payroll row and a row outside the run,
+ * so the two can never describe the same trip differently.
+ */
+function tripDetailRows(trips: PayoutExpenseTrip[]): NonNullable<StepRow["details"]> {
+  return trips.map((trip) => ({
+    Dates: formatDateRange(trip.expenseDate, trip.toDate),
+    From: trip.fromLocation || "—",
+    To: trip.toLocation || "—",
+    "Trip Type": trip.tripType || "—",
+    Transport: trip.transportationType || "—",
+    KM: trip.km,
+    Travel: trip.travelCost,
+    Meeting: trip.meetingAmount,
+    Allowance: trip.allowance,
+    Other: trip.otherAmount,
+    // The payable figure, so the visible breakdown always adds up to the reimbursed total.
+    // When HR reduced a claim this is below the sum of the components above — that gap IS the
+    // approval decision, and the original claim stays on the Expense Approvals page.
+    Total: payableExpenseAmount(trip.approvedAmount, trip.total),
+    // hr_status is blank on every live row, so hr_approved is the real signal;
+    // fall back to hr_status only if a future import starts populating it.
+    "HR Approved": trip.hrApproved ? "Yes" : trip.hrStatus || "Not yet approved",
+    Description: trip.description || "—",
+    "Trip ID": trip.tripId || "—",
+  }));
+}
+
+/**
+ * Approved or pending trips tagged to this payout for someone who is NOT in this run (audit finding 45).
+ *
+ * A rep who left in an earlier month, or someone HR excluded, had these skipped with no row, no counter
+ * and no warning: money approved on the Expense Approvals page that was neither paid, listed nor flagged,
+ * and never stamped either, so no later report showed it outstanding. Measured 2026-09-11, the two
+ * published months carried none, so this is preventive.
+ *
+ * READ-ONLY on purpose, and carrying no values: paying someone the run does not carry would put a stranger
+ * on the sheet. `saveStep` and `confirmStep` both skip read-only rows; the note says what to do instead.
+ */
+function expenseRowOutsideRun(trips: PayoutExpenseTrip[]): StepRow {
+  let approved = 0;
+  let awaitingDecision = 0;
+  for (const trip of trips) {
+    const payable = payableExpenseAmount(trip.approvedAmount, trip.total);
+    if (trip.hrApproved) approved = roundCurrency(approved + payable);
+    else awaitingDecision = roundCurrency(awaitingDecision + payable);
+  }
+  const hrId = trips.find((trip) => trip.hrId)?.hrId ?? "";
+  const name = trips.find((trip) => trip.specialist)?.specialist ?? "";
+  const tripDates = trips.map((trip) => trip.expenseDate).filter(Boolean).sort();
+  const tripEndDates = trips.map((trip) => trip.toDate || trip.expenseDate).filter(Boolean).sort();
+  const egp = (value: number) =>
+    `EGP ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return {
+    hrId,
+    fullName: name || hrId,
+    jobTitle: null,
+    line: null,
+    context: {
+      "Hire Date": "",
+      Trips: trips.length,
+      "Trip Dates": tripDates.length
+        ? formatDateRange(tripDates[0], tripEndDates[tripEndDates.length - 1] ?? tripDates[tripDates.length - 1])
+        : "—",
+      "Awaiting Decision": awaitingDecision,
+    },
+    values: {},
+    recommended: {},
+    reason: null,
+    onHold: false,
+    details: tripDetailRows(trips),
+    readOnly: true,
+    readOnlyNote:
+      `Not in this month's payroll run, so nothing here is paid: ${egp(approved)} approved and ` +
+      `${egp(awaitingDecision)} awaiting decision. Pay it outside payroll, or put them back in the run.`,
+  };
 }
 
 type VacationDeductionTotal = {
