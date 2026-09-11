@@ -119,14 +119,14 @@ function theAlertGoesOutBeforeTheSweepAndOutsideTheSwitch() {
 
 /** 5. A failed refresh must never turn a delivered alert into a 500. */
 function aFailedSweepCannotFailTheAlert() {
-  const module = readFileSync(MODULE, "utf8");
+  const sweepSource = readFileSync(MODULE, "utf8");
   assert.ok(
-    /catch \(error\) \{/.test(module) && /failed: true/.test(module),
+    /catch \(error\) \{/.test(sweepSource) && /failed: true/.test(sweepSource),
     "refreshStaleAttributionPeriods must catch its own failure and report it — its caller's job is "
       + "telling the owner his map is refusing writes, which must not depend on a rollup refresh",
   );
   assert.ok(
-    !/throw error/.test(module),
+    !/throw error/.test(sweepSource),
     "the sweep must not re-throw: the route has no way to tell a failed refresh from a failed alert",
   );
   assert.ok(
