@@ -71,26 +71,83 @@ export function runPayrollExportsTests() {
   assert.equal(bankRows[1].missingBank, true);
   assert.equal(bankRows[1].amount, 4200);
 
-  // --- statutory summary (employer SI + subject wage derived from employee SI)
+  // --- statutory summary: the subject wage is READ, never reconstructed --------------------
+  //
+  // WHAT THIS REPLACES. The old assertions fed deductions that were exactly 11% of a round wage
+  // (1837 = 11% of 16,700), so dividing the deduction by the rate gave the wage back and the test
+  // went green. That is the one input shape on which the defect is invisible — and production
+  // carries the opposite shape on every single record. This test now uses production's shape.
+  const wages = new Map<string, number | null>([
+    ["b100", 16700],
+    ["b101", 7700],
+    ["b102", 40000], // above the ceiling — must clamp, never file at 40,000
+    // b103 is deliberately absent: nobody has entered a wage for them.
+  ]);
   const { rows, totals } = buildStatutorySummaryRows(
     [
+      // A month built by the FIXED engine: the deduction is 11% of the wage, so variance is 0.
       makeRecord({ hrId: "B-100", fullName: "Ahmed", socialInsurance: 1837, employmentIncomeTax: 5000 }),
-      makeRecord({ hrId: "B-101", fullName: "Mona", socialInsurance: 847, employmentIncomeTax: 1431.33 }),
+      // PRODUCTION'S SHAPE, August 2026: the deduction is the raw employee column and is 11% of
+      // nothing. The old code turned 2,400 into a subject wage of 21,818.18 — over the legal
+      // ceiling, on the document the insurance office reads.
+      makeRecord({ hrId: "B-101", fullName: "Mona", socialInsurance: 2400, employmentIncomeTax: 1431.33 }),
+      makeRecord({ hrId: "B-102", fullName: "Youssef", socialInsurance: 1837, employmentIncomeTax: 900 }),
+      makeRecord({ hrId: "B-103", fullName: "Nadia", socialInsurance: 500, employmentIncomeTax: 0 }),
     ],
     DEFAULT_STATUTORY_CONFIG,
+    wages,
   );
-  // 1837 = 11% x 16700 → subject wage 16700, employer 18.75% x 16700 = 3131.25
+
+  // Wage 16,700 -> employee 11% = 1,837, employer 18.75% = 3,131.25. Deducted matches, so no gap.
   assert.equal(rows[0].subjectWage, 16700);
   assert.equal(rows[0].employeeSi, 1837);
   assert.equal(rows[0].employerSi, 3131.25);
   assert.equal(rows[0].totalSi, 4968.25);
+  assert.equal(rows[0].deductedEmployeeSi, 1837);
+  assert.equal(rows[0].variance, 0, "a month built from the wage has nothing to reconcile");
   assert.equal(rows[0].incomeTax, 5000);
-  // 847 = 11% x 7700 → subject wage 7700, employer 18.75% x 7700 = 1443.75
-  assert.equal(rows[1].subjectWage, 7700);
-  assert.equal(rows[1].employerSi, 1443.75);
 
-  assert.equal(totals.employeeSi, 2684); // 1837 + 847
-  assert.equal(totals.employerSi, 4575); // 3131.25 + 1443.75
-  assert.equal(totals.totalSi, 7259); // 2684 + 4575
-  assert.equal(totals.incomeTax, 6431.33);
+  // THE HEADLINE. The wage decides the filing; the deduction is reported beside it, not folded in.
+  assert.equal(
+    rows[1].subjectWage,
+    7700,
+    "the subject wage must come from the employee's own insurance wage — reconstructing it from " +
+      "the 2,400 deduction yields 21,818.18, which is above the 16,700 legal ceiling and is what " +
+      "this document used to print for 90 of 100 people",
+  );
+  assert.equal(rows[1].employeeSi, 847, "11% of 7,700 — from the wage, not from the deduction");
+  assert.equal(rows[1].employerSi, 1443.75, "18.75% of the WAGE, never a ratio off a wrong employee share");
+  assert.equal(rows[1].deductedEmployeeSi, 2400, "what the payslip actually took is carried, not derived");
+  assert.equal(rows[1].variance, 1553, "2,400 deducted against 847 filed — the gap is shown, not hidden");
+
+  // A wage over the ceiling is clamped on the way in, so an over-ceiling filing is unreachable.
+  assert.equal(rows[2].subjectWage, 16700, "40,000 clamps to the statutory ceiling");
+  assert.equal(rows[2].employeeSi, 1837);
+
+  // No wage on file is a state of its own — never a zero, and never a number invented by division.
+  assert.equal(rows[3].subjectWage, null);
+  assert.equal(rows[3].employeeSi, null);
+  assert.equal(rows[3].employerSi, null);
+  assert.equal(rows[3].totalSi, null);
+  assert.equal(rows[3].variance, null);
+  assert.equal(rows[3].deductedEmployeeSi, 500, "what was deducted is still reported");
+
+  // Totals: the insured payroll is what the filing is assessed on, and it counts only the people
+  // who have a wage. 16,700 + 7,700 + 16,700 = 41,100 — Nadia is absent and the count says so.
+  assert.equal(totals.insuredPayroll, 41100);
+  assert.equal(totals.withoutWage, 1);
+  assert.equal(totals.withVariance, 1, "only Mona's deduction disagrees with her own wage");
+  assert.equal(totals.employeeSi, 4521); // 1837 + 847 + 1837
+  assert.equal(totals.employerSi, 7706.25); // 3131.25 + 1443.75 + 3131.25
+  assert.equal(totals.totalSi, 12227.25);
+  assert.equal(totals.deductedEmployeeSi, 6574); // 1837 + 2400 + 1837 + 500
+  assert.equal(totals.incomeTax, 7331.33);
+
+  // The insured payroll can never exceed the ceiling times the number of assessed people. This is
+  // the invariant the old form broke: it reported 2,626,960.36 on a true 1,214,513.00.
+  const assessed = rows.filter((row) => row.subjectWage !== null).length;
+  assert.ok(
+    totals.insuredPayroll <= assessed * DEFAULT_STATUTORY_CONFIG.siMaxMonthlyWage,
+    "the insured payroll cannot exceed the ceiling times the number of people assessed",
+  );
 }

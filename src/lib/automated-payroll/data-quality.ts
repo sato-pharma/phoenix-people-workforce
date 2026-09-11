@@ -1,5 +1,6 @@
 import { lookupSource } from "@/lib/payroll/copilot/assemble.ts";
 import type { PayrollSalarySource } from "@/lib/payroll/salary-source-model.ts";
+import { usableInsuranceWage } from "@/lib/payroll/statutory/insurance-wages.ts";
 
 import type { PopulationMember } from "./recommend.ts";
 import type { DraftRow } from "./types.ts";
@@ -47,7 +48,8 @@ export type PayrollDataIssue =
   | "missing_salary"
   | "zero_base_after_allowances"
   | "missing_payment_mode"
-  | "joined_after_part1";
+  | "joined_after_part1"
+  | "missing_insurance_wage";
 
 export type PayrollDataQualityRow = {
   hrId: string;
@@ -77,6 +79,12 @@ export const PAYROLL_DATA_ISSUE_LABELS: Record<PayrollDataIssue, string> = {
     "Net salary is on record but no base salary — after standard allowances that nets to a zero base, so every day-rate deduction (Base/30 × days) will compute as 0.00 for them",
   missing_payment_mode: "No payment mode — the First/Second Part split is being decided by a default",
   joined_after_part1: "Added to the run after Part 1 was confirmed — no frozen first installment",
+  // The one issue here that costs nobody a pound. Social insurance is absorbed by the company and
+  // never reduces take-home, so this is a FILING gap, not a pay gap — the label says so plainly,
+  // because the banner it appears in is otherwise a list of ways somebody gets paid the wrong
+  // amount, and reading this one as pay would send HR looking for money that never moved.
+  missing_insurance_wage:
+    "No social insurance wage on record — the statutory filing has nothing to compute from, so the raw insurance figure on the employee record is carried instead. Nobody's take-home pay is affected: the company absorbs social insurance",
 };
 
 function hasSalary(source: PayrollSalarySource | undefined): boolean {
@@ -99,6 +107,12 @@ export function auditPayrollDataQuality(input: {
   sources: Map<string, PayrollSalarySource>;
   draftRows: DraftRow[];
   part1Confirmed: boolean;
+  /**
+   * Every employee's insurance wage, keyed by compact HR id. Optional: a caller that has not
+   * loaded it simply does not raise the filing issue, rather than accusing the whole company of a
+   * missing wage because the map was never passed.
+   */
+  insuranceWages?: Map<string, number | null>;
 }): PayrollDataQualityReport {
   const draftByCompact = new Map(input.draftRows.map((row) => [row.employeeHrIdCompact, row]));
   const rows: PayrollDataQualityRow[] = [];
@@ -122,6 +136,14 @@ export function auditPayrollDataQuality(input: {
       issues.push("joined_after_part1");
     }
 
+    // Only asked when the caller supplied the map. `usableInsuranceWage` rather than a null check:
+    // the column is hand-edited and an unusable value (a zero, a stray non-number) has to read as
+    // missing, because that is exactly what the engine will treat it as when it computes the
+    // filing.
+    if (input.insuranceWages && usableInsuranceWage(input.insuranceWages.get(member.compact)) === null) {
+      issues.push("missing_insurance_wage");
+    }
+
     if (issues.length > 0) {
       rows.push({ hrId: member.employee.hrId, fullName: member.employee.fullName, issues });
     }
@@ -133,6 +155,36 @@ export function auditPayrollDataQuality(input: {
     (left, right) => right.issues.length - left.issues.length || left.fullName.localeCompare(right.fullName),
   );
 
+  return { rows, total: rows.length };
+}
+
+/**
+ * Does this issue change what somebody is PAID?
+ *
+ * Every issue on this list except one does: a missing hire date pays a full unprorated month, a
+ * missing salary pays nothing, a missing payment mode lets a default split the instalments. The
+ * confirm gate exists for exactly that class — a human must see them before money moves.
+ *
+ * A missing insurance wage does not. Social insurance is absorbed by the company and never reduces
+ * take-home, so it changes the statutory filing and nothing else. It is shown in the banner, where
+ * HR can act on it, and deliberately does NOT hold up a confirm — a gate that stops payroll over a
+ * figure that moves nobody's money teaches people to acknowledge without reading, which is how the
+ * gate stops working for the four issues that do.
+ */
+export const PAYROLL_DATA_ISSUE_AFFECTS_PAY: Record<PayrollDataIssue, boolean> = {
+  missing_hire_date: true,
+  missing_salary: true,
+  zero_base_after_allowances: true,
+  missing_payment_mode: true,
+  joined_after_part1: true,
+  missing_insurance_wage: false,
+};
+
+/** The subset the confirm gate acts on — people carrying at least one pay-affecting issue. */
+export function payAffectingIssues(report: PayrollDataQualityReport): PayrollDataQualityReport {
+  const rows = report.rows
+    .map((row) => ({ ...row, issues: row.issues.filter((issue) => PAYROLL_DATA_ISSUE_AFFECTS_PAY[issue]) }))
+    .filter((row) => row.issues.length > 0);
   return { rows, total: rows.length };
 }
 
