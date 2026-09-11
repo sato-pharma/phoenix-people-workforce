@@ -27,7 +27,6 @@ import { findDegree, findFaculty } from "../src/lib/recruitment/rule-extraction/
 import { resolveGovernorate, parseFullDate, readLabelledValue } from "../src/lib/recruitment/rule-extraction/personal.ts";
 import { classifyHeading, sliceCvSections } from "../src/lib/recruitment/rule-extraction/sections.ts";
 import { splitTitleAndEmployer } from "../src/lib/recruitment/rule-extraction/work.ts";
-import { findFaculty } from "../src/lib/recruitment/rule-extraction/education.ts";
 
 const high = (value: unknown) => ({ confidence: "high" as const, value: value as never });
 const low = (value: unknown) => ({ confidence: "low" as const, value: value as never });
