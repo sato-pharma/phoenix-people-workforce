@@ -271,11 +271,14 @@ function runFacultyExtractionTests() {
   // education.ts's own comment already states dashes are folded before any rule sees the text, so
   // folding apostrophes there fixes the whole class instead of two call sites.
   for (const apostrophe of ["'", "’", "‘", "ʼ"]) {
+    // codePointAt returns number | undefined, and a non-null assertion in a test is a habit worth not
+    // forming — the label is only an error message, so a 0 it can never reach costs nothing.
+    const codePoint = (apostrophe.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0");
     const curly = findFaculty(sectionsFor(`EDUCATION\nBachelor${apostrophe}s degree in Veterinary Medicine - Sohag University - 2024`));
     assert.equal(
       curly?.value,
       "Faculty of Veterinary Medicine",
-      `a degree written with U+${apostrophe.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")} must read the same as one written with a straight quote`,
+      `a degree written with U+${codePoint} must read the same as one written with a straight quote`,
     );
     assert.equal(
       curly?.confidence,
