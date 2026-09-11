@@ -256,21 +256,25 @@ const ADDRESS_LABELS = ["address", "location", "residence", "based in", "living 
  * actually lives in — the street/compound name earlier in the line is not where they are from.
  */
 export function resolveGovernorate(text: string): { readonly governorate: string; readonly viaDistrict: boolean } | null {
-  let best: { readonly governorate: string; readonly viaDistrict: boolean; readonly index: number } | null = null;
+  const hits: { readonly governorate: string; readonly viaDistrict: boolean; readonly index: number }[] = [];
 
-  const consider = (governorate: string, viaDistrict: boolean, alias: string) => {
-    const index = indexOfPhrase(text, alias);
-    if (index >= 0 && (!best || index > best.index)) best = { governorate, index, viaDistrict };
-  };
-
+  // Districts first, so that on a TIE a district beats a bare governorate name.
   for (const entry of EGYPT_DISTRICTS) {
-    for (const alias of entry.aliases) consider(entry.governorate, true, alias);
+    for (const alias of entry.aliases) {
+      const index = indexOfPhrase(text, alias);
+      if (index >= 0) hits.push({ governorate: entry.governorate, index, viaDistrict: true });
+    }
   }
   for (const entry of EGYPT_GOVERNORATES) {
-    for (const alias of entry.aliases) consider(entry.canonical, false, alias);
+    for (const alias of entry.aliases) {
+      const index = indexOfPhrase(text, alias);
+      if (index >= 0) hits.push({ governorate: entry.canonical, index, viaDistrict: false });
+    }
   }
 
-  return best ? { governorate: best.governorate, viaDistrict: best.viaDistrict } : null;
+  if (hits.length === 0) return null;
+  const best = hits.reduce((furthest, hit) => (hit.index > furthest.index ? hit : furthest));
+  return { governorate: best.governorate, viaDistrict: best.viaDistrict };
 }
 
 export function findAddressAndGovernorate(
