@@ -45,8 +45,15 @@ const HR_OWNED_LIST_KEYS: ReadonlySet<string> = new Set(["hr_team"]);
  */
 export function distributionListScopeFor(access: AccessContext): "all" | ReadonlySet<string> {
   if (canAccessSystemAdministratorWorkspace(access)) return "all";
+  // A seat that cannot reach the screen holds NO list. Returning the HR set to everyone was safe
+  // only because every caller checks the gate first — which is a property of today's callers, not
+  // of this function. Answering honestly means a future reader that forgets the gate still gets
+  // nothing rather than the HR Business Partner's lists.
+  if (!canManageDistributionLists(access)) return EMPTY_SCOPE;
   return HR_OWNED_LIST_KEYS;
 }
+
+const EMPTY_SCOPE: ReadonlySet<string> = new Set();
 
 /** True when this viewer may read and edit that one list. */
 export function canManageDistributionList(access: AccessContext, listKey: string): boolean {
