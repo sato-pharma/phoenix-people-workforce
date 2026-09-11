@@ -762,6 +762,7 @@ import { runVacationRetentionPurgeAuditTests } from "./vacation-retention-purge-
 import { runCronControlRegistryTests } from "./cron-control-registry.test.ts";
 import { runNotificationRoleRecipientsTests } from "./notification-role-recipients.test.ts";
 import { runDistributionListsTests } from "./distribution-lists.test.ts";
+import { runComposerGroupListsTests } from "./composer-group-lists.test.ts";
 import { runEmailControlCenterTests } from "./email-control-center.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
 import { runWorkflowRegistryEnforcementTests } from "./workflow-registry-enforcement.test.ts";
@@ -5099,6 +5100,11 @@ await runTest(
 await runTest(
   "a distribution list ANDs its rule dimensions, treats a blank dimension as no constraint but NO rule as nobody, and lets an exclusion beat a hand-added name",
   runDistributionListsTests,
+);
+
+await runTest(
+  "the composer's HR and Finance groups read editable lists that preserve today's membership, while Managers stays on the organogram relationship no list can express",
+  runComposerGroupListsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
