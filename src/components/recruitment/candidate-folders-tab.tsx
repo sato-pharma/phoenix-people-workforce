@@ -382,9 +382,9 @@ function DeclaredFilingsPanel({ candidates }: { candidates: Candidate[] }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { filings, skipped } = collectSuggestedFilings(candidates);
+  const { filings, skipped, rejectedCount } = collectSuggestedFilings(candidates);
 
-  if (filings.length === 0 && skipped.length === 0) return null;
+  if (filings.length === 0 && skipped.length === 0 && rejectedCount === 0) return null;
 
   // Grouped by destination, because "8 CVs into Gharbia 1 (Tanta)" is a sentence the owner can check
   // at a glance, while eight separate rows naming the same folder is one he has to add up himself.
@@ -477,21 +477,33 @@ function DeclaredFilingsPanel({ candidates }: { candidates: Candidate[] }) {
         </ul>
       ) : null}
 
-      {skipped.length > 0 ? (
+      {skipped.length > 0 || rejectedCount > 0 ? (
         <div className="border-t border-phx-accent/40 px-3 py-2">
-          <p className="whitespace-nowrap text-xs font-bold text-slate-600">
-            {skipped.length} answered but cannot be placed
-          </p>
-          <ul className="mt-1 space-y-0.5">
-            {skipped.map((row) => (
-              <li className="flex flex-wrap items-baseline gap-x-2 text-phx-xs" key={row.candidateId}>
-                <span className="whitespace-nowrap font-semibold text-phx-ink">
-                  {candidateDisplayName(row.fullName)}
-                </span>
-                <span className="font-medium text-slate-500">{row.reason}</span>
-              </li>
-            ))}
-          </ul>
+          {/* A rejection is a settled decision, not an open question — see collectSuggestedFilings.
+              Counted here rather than listed one row per person, which is what buried the 25 rows a
+              recruiter could actually act on under 40 rows nobody can. */}
+          {rejectedCount > 0 ? (
+            <p className="whitespace-nowrap text-xs font-medium text-slate-500">
+              {rejectedCount} more already rejected — a rejection is a settled decision, not shown here.
+            </p>
+          ) : null}
+          {skipped.length > 0 ? (
+            <>
+              <p className="mt-1 whitespace-nowrap text-xs font-bold text-slate-600 first:mt-0">
+                {skipped.length} answered but cannot be placed
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {skipped.map((row) => (
+                  <li className="flex flex-wrap items-baseline gap-x-2 text-phx-xs" key={row.candidateId}>
+                    <span className="whitespace-nowrap font-semibold text-phx-ink">
+                      {candidateDisplayName(row.fullName)}
+                    </span>
+                    <span className="font-medium text-slate-500">{row.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
         </div>
       ) : null}
     </section>
