@@ -1065,6 +1065,7 @@ import { runAutomatedPayrollCibSheetTests } from "./automated-payroll-cib-sheet.
 import { runAutomatedPayrollHeldTabTests } from "./automated-payroll-held-tab.test.ts";
 import { runAutomatedPayrollLeaverOverpaymentTests } from "./automated-payroll-leaver-overpayment.test.ts";
 import { runAutomatedPayrollGuardsThatGuardTests } from "./automated-payroll-guards-that-guard.test.ts";
+import { runAutomatedPayrollDismissalSettlementTests } from "./automated-payroll-dismissal-settlement.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
 import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
 import { runAutomatedPayrollExecutiveSummaryTests } from "./automated-payroll-executive-summary.test.ts";
@@ -1776,6 +1777,10 @@ await runTest(
 await runTest(
   "automated payroll: the guards that did not guard",
   runAutomatedPayrollGuardsThatGuardTests,
+);
+await runTest(
+  "automated payroll: a dismissal is settled as a dismissal, not as a resignation",
+  runAutomatedPayrollDismissalSettlementTests,
 );
 await runTest(
   "automated payroll: every payable row reaches a bank file or is named",

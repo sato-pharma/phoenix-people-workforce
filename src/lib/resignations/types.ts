@@ -19,8 +19,12 @@ export type ResignationSettlementPreview = {
   baseSalary: number;
   /** Days paid in the resignation month under Rule 1. */
   daysWorked: number;
-  /** "on_or_before_25" = Base-only day-rate proration; "after_25" = full Base + ECoL + Fuel. */
-  branch: "on_or_before_25" | "after_25";
+  /**
+   * "on_or_before_25" = day-rate proration of the whole net; "after_25" = full Base + ECoL + Fuel;
+   * "non_resignation" = a company-ended departure, Base prorated with NEITHER allowance and no
+   * >25th waiver (owner ruling 2026-08-14).
+   */
+  branch: "on_or_before_25" | "after_25" | "non_resignation";
   /** Payable this month before other deductions. */
   total: number;
   firstPart: number;

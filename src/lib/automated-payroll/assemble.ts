@@ -1,5 +1,6 @@
 import { lookupSource } from "@/lib/payroll/copilot/assemble.ts";
 import { roundCurrency } from "@/lib/payroll/money";
+import { isResignationEmploymentStatus } from "@/lib/payroll/leaver-kind.ts";
 import { normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import type { SalaryValidationRow } from "@/lib/payroll/salary-import";
 import type { PayrollSalarySource } from "@/lib/payroll/salary-source-model.ts";
@@ -116,6 +117,10 @@ function buildEffective(
     lifecycle: member.lifecycle,
     hireDate: member.employee.hireDate,
     lastWorkingDate: member.lastWorkingDate,
+    // The exit workflow records dismissals too, so the last working date cannot say which kind of
+    // departure this is — only the employee's own status can. A dismissal keeps neither allowance
+    // and gets no >25th waiver (owner ruling 2026-08-14).
+    isResignation: isResignationEmploymentStatus(member.employee.employmentStatus),
     overrideBase: draft?.baseForMonth ?? null,
     overrideEcol: draft?.ecolPaid ?? null,
     overrideFuel: draft?.fuelPaid ?? null,

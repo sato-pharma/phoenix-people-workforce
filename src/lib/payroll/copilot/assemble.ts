@@ -102,7 +102,11 @@ type BuildRowInput = {
   index: number;
   statutory?: { config: StatutoryConfig; insuranceWage: number | null };
   /** Set when this employee's last working date falls within `period` — routes through resignation Rule 1/2 instead of the normal parts split. */
-  resignation?: { lastWorkingDate: string } | null;
+  /**
+   * `isResignation` distinguishes a genuine resignation from a company-ended departure — the exit
+   * workflow records both, so the last working date alone cannot say which this is.
+   */
+  resignation?: { lastWorkingDate: string; isResignation: boolean } | null;
   /**
    * Retired in the C6 deductions cutover: the Copilot's own Fingerprint/CRM review path
    * (formerly deductions-review.ts, now deleted) is gone, and the unified /admin/deductions
@@ -270,6 +274,7 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
       extraCostOfLiving,
       fuelAllowance,
       lastWorkingDate: input.resignation.lastWorkingDate,
+      isResignation: input.resignation.isResignation,
       period,
       otherAdditions: settlementAdditions,
       otherDeductions: settlementDeductions,

@@ -5,6 +5,7 @@ import {
 import { describeUnifiedDeductionsConflict } from "@/lib/deductions/service.ts";
 import { logError } from "@/lib/observability/log";
 import { isPayrollIneligibleEmployee } from "@/lib/payroll/eligibility";
+import { isResignationEmploymentStatus } from "@/lib/payroll/leaver-kind";
 import { payrollPaymentModeLabel } from "@/lib/payroll/policy";
 import {
   validateSalaryRows,
@@ -230,6 +231,9 @@ export async function assembleDraft(
       resignation: feeder?.leaverLastWorkingDate
         ? {
             lastWorkingDate: feeder.leaverLastWorkingDate,
+            // The feeder finds leavers in the exit workflow, which records dismissals too. Only
+            // the employee's own status separates the two, and a dismissal keeps neither allowance.
+            isResignation: isResignationEmploymentStatus(employee.employmentStatus),
           }
         : null,
       settledUnpaidVacationSalaryDeduction: settledVacationSalaryDeductions.get(compact),

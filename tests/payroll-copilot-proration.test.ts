@@ -80,6 +80,7 @@ export function runPayrollCopilotProrationTests() {
     extraCostOfLiving: 1000,
     fuelAllowance: 500,
     lastWorkingDate: "2026-06-20",
+    isResignation: true, // every case in this file is a genuine resignation
     period: JUNE,
     otherAdditions: 0,
     otherDeductions: 0,
@@ -104,6 +105,7 @@ export function runPayrollCopilotProrationTests() {
     extraCostOfLiving: 1000,
     fuelAllowance: 500,
     lastWorkingDate: "2026-06-25",
+    isResignation: true, // every case in this file is a genuine resignation
     period: JUNE,
     otherAdditions: 0,
     otherDeductions: 0,
@@ -122,6 +124,7 @@ export function runPayrollCopilotProrationTests() {
     extraCostOfLiving: 1000,
     fuelAllowance: 500,
     lastWorkingDate: "2026-06-26",
+    isResignation: true, // every case in this file is a genuine resignation
     period: JUNE,
     otherAdditions: 0,
     otherDeductions: 0,
@@ -141,6 +144,7 @@ export function runPayrollCopilotProrationTests() {
     extraCostOfLiving: 1000,
     fuelAllowance: 500,
     lastWorkingDate: "2026-06-28",
+    isResignation: true, // every case in this file is a genuine resignation
     period: JUNE,
     otherAdditions: 2000,
     otherDeductions: 500,
@@ -235,7 +239,7 @@ export function runPayrollCopilotProrationTests() {
     adjustments: [],
     period: JUNE,
     index: 1,
-    resignation: { lastWorkingDate: "2026-06-20" },
+    resignation: { lastWorkingDate: "2026-06-20", isResignation: true },
   });
   assert.ok(resignRow);
   // OWNER RULE 2026-09-04, and the reason these four numbers changed: the salary
@@ -281,7 +285,7 @@ export function runPayrollCopilotProrationTests() {
     adjustments: [],
     period: JUNE,
     index: 1,
-    resignation: { lastWorkingDate: "2026-06-20" },
+    resignation: { lastWorkingDate: "2026-06-20", isResignation: true },
     approvedExpenses: 800,
   });
   assert.ok(resignWithExpense);
@@ -300,7 +304,7 @@ export function runPayrollCopilotProrationTests() {
     adjustments: [],
     period: JUNE,
     index: 1,
-    resignation: { lastWorkingDate: "2026-06-28" },
+    resignation: { lastWorkingDate: "2026-06-28", isResignation: true },
   });
   assert.ok(resignOnePart);
   assert.equal(resignOnePart.baseSalary, 30000);
