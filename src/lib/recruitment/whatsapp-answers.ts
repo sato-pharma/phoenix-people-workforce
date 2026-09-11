@@ -23,9 +23,17 @@ import {
   candidateRegionLabels,
   type CandidateRegionCode,
 } from "@/lib/recruitment/candidate-region";
+import { candidateRoleFamilyLabels } from "@/lib/recruitment/candidate-role-family";
 
-/** One admin-defined question's wording, keyed the way `screening_extra_answers` is keyed. */
-export type ScreeningQuestionLabel = { questionKey: string; bodyText: string };
+/**
+ * One admin-defined question's wording, keyed the way `screening_extra_answers` is keyed, and who it
+ * is asked to. `appliesToRoleFamilies` null or empty means everyone.
+ */
+export type ScreeningQuestionLabel = {
+  questionKey: string;
+  bodyText: string;
+  appliesToRoleFamilies?: readonly string[] | null;
+};
 
 export type WhatsAppAnswer = {
   /** Stable per candidate — the built-in step's name, or `extra:<question key>`. */
@@ -34,6 +42,16 @@ export type WhatsAppAnswer = {
   question: string;
   /** Their answer, exactly as it was stored. */
   answer: string;
+  /**
+   * "Asked only to Office Coordinator applicants", or null for a question asked to everyone.
+   *
+   * Printed because one WhatsApp number can apply for several jobs, and the record keeps the answers
+   * to a role-scoped question after a later application for another role replaces "Applying for".
+   * Measured 2026-09-11: one number held nine conversations across four roles, and its record read
+   * "Medical Representative" above six answers only an Office Coordinator applicant is ever asked —
+   * which the owner read, reasonably, as the bot asking medical reps about commuting to Sheraton.
+   */
+  askedTo: string | null;
 };
 
 /** Just enough of a candidate to read the answers off. Structural, so `types.ts` need not import this. */
@@ -76,6 +94,18 @@ function text(raw: unknown): string | null {
 }
 
 /**
+ * A question's audience in words — "Asked only to Office Coordinator applicants" — or null when it is
+ * asked to everyone. A family with no label is left out rather than printed as a code; it matches no
+ * applicant anyway (see screeningQuestionViolations).
+ */
+function askedToLine(families: readonly string[] | null | undefined): string | null {
+  const labels = (families ?? [])
+    .map((family) => (candidateRoleFamilyLabels as Record<string, string | undefined>)[family])
+    .filter((label): label is string => Boolean(label));
+  return labels.length > 0 ? `Asked only to ${labels.join(" or ")} applicants` : null;
+}
+
+/**
  * The region they asked for: the company region's name for a tapped one, their own words for a typed
  * one. A stored code that is not a live region is not printed — it would be a raw code on screen.
  *
@@ -111,9 +141,9 @@ export function candidateWhatsAppAnswers(
   questions: readonly ScreeningQuestionLabel[] | null,
 ): WhatsAppAnswer[] {
   const answers: WhatsAppAnswer[] = [];
-  const add = (key: string, question: string, raw: unknown) => {
+  const add = (key: string, question: string, raw: unknown, askedTo: string | null = null) => {
     const answer = text(raw);
-    if (answer) answers.push({ answer, key, question });
+    if (answer) answers.push({ answer, askedTo, key, question });
   };
 
   if (text(candidate.preferencesDeclaredAt)) {
@@ -134,7 +164,12 @@ export function candidateWhatsAppAnswers(
   const named = new Set<string>();
   for (const question of questions ?? []) {
     named.add(question.questionKey);
-    add(`extra:${question.questionKey}`, text(question.bodyText) ?? UNREADABLE_QUESTION_LABEL, own(question.questionKey));
+    add(
+      `extra:${question.questionKey}`,
+      text(question.bodyText) ?? UNREADABLE_QUESTION_LABEL,
+      own(question.questionKey),
+      askedToLine(question.appliesToRoleFamilies),
+    );
   }
   for (const key of Object.keys(extra)) {
     if (!named.has(key)) add(`extra:${key}`, UNREADABLE_QUESTION_LABEL, own(key));

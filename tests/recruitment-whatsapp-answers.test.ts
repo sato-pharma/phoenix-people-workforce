@@ -26,6 +26,7 @@ export function runWhatsAppAnswersTests() {
   const questions = [
     { bodyText: "How old are you?", questionKey: "oc_age_band" },
     {
+      appliesToRoleFamilies: ["office_coordinator"],
       bodyText: "The job is on site in Sheraton, Cairo. Could you travel there every working day?",
       questionKey: "oc_sheraton_commute",
     },
@@ -81,6 +82,23 @@ export function runWhatsAppAnswersTests() {
     "the admin's question order decides the list, never the order the answers were stored in",
   );
 
+  // --- 1b · A role-scoped question says who it is asked to. One WhatsApp number applied for four
+  // --- roles in production, and its record read "Medical Representative" above answers only an
+  // --- Office Coordinator applicant is ever asked — the owner reasonably read that as the bot asking
+  // --- medical reps about Sheraton. The audience line is what tells the two apart.
+  assert.deepEqual(
+    everything.map((entry) => entry.askedTo),
+    [null, null, null, null, null, null, null, "Asked only to Office Coordinator applicants", null],
+    "a role-scoped question carries its audience in words; the built-in six and an unscoped question carry none",
+  );
+  assert.equal(
+    candidateWhatsAppAnswers({ screeningExtraAnswers: { q_new: "Yes" } }, [
+      { appliesToRoleFamilies: ["not_a_role"], bodyText: "A question?", questionKey: "q_new" },
+    ])[0]?.askedTo,
+    null,
+    "a role we have no name for is never printed as a code",
+  );
+
   // --- 2 · The job title is the applicant's only where the bot's completion stamp says so. The same
   // --- column is filled by the CV reader and by people; printing that under "What are you applying
   // --- for?" would put somebody else's words in the applicant's mouth.
@@ -107,7 +125,7 @@ export function runWhatsAppAnswersTests() {
   // --- 4 · An answer is never dropped because its question cannot be named.
   assert.deepEqual(
     candidateWhatsAppAnswers({ screeningExtraAnswers: { oc_age_band: "25 - 29" } }, null),
-    [{ answer: "25 - 29", key: "extra:oc_age_band", question: UNREADABLE_QUESTION_LABEL }],
+    [{ answer: "25 - 29", askedTo: null, key: "extra:oc_age_band", question: UNREADABLE_QUESTION_LABEL }],
     "when the question list could not be read, the answer still shows, under a label that says so",
   );
   assert.deepEqual(

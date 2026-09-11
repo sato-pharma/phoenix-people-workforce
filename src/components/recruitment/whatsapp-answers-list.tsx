@@ -18,6 +18,10 @@ import type { WhatsAppAnswer } from "@/lib/recruitment/whatsapp-answers";
  * sentences — "If you were offered the job, when could you start?" — and a sentence in capitals is
  * slower to read than the answer beneath it. Both wrap; nothing is cut short.
  *
+ * A role-scoped question carries its audience beneath it ("Asked only to Office Coordinator
+ * applicants"), because a record can hold answers from an application for a different role than the
+ * one it now shows as "Applying for".
+ *
  * `dir="auto"` on each value, because each is one language and some are Arabic — house style for
  * single-language free text.
  */
@@ -39,6 +43,9 @@ export function WhatsAppAnswersList({
           <div className="border-b border-phx-line/70 px-3 py-1.5 last:border-b-0" key={entry.key}>
             <dt className="break-words text-[11px] font-semibold leading-[1.45] text-phx-ink-soft" dir="auto">
               {entry.question}
+              {entry.askedTo ? (
+                <span className="block text-[10px] font-normal leading-[1.5] text-phx-ink-faint">{entry.askedTo}</span>
+              ) : null}
             </dt>
             <dd
               className="mt-0.5 whitespace-pre-wrap break-words text-[13px] font-medium leading-[1.45] text-phx-ink"
@@ -60,6 +67,7 @@ export function WhatsAppAnswersList({
         <div className="min-w-0" key={entry.key}>
           <dt className="break-words text-xs text-slate-500" dir="auto">
             {entry.question}
+            {entry.askedTo ? <span className="block text-phx-xs text-slate-400">{entry.askedTo}</span> : null}
           </dt>
           <dd className="whitespace-pre-wrap break-words text-sm font-medium text-slate-900" dir="auto">
             {entry.answer}
