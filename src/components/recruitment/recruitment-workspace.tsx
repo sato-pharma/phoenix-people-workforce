@@ -51,6 +51,7 @@ import {
   normalizeCandidatePoolQuery,
 } from "@/lib/recruitment/candidate-pool-search";
 import { candidateDisplayName, isShortenedCandidateName } from "@/lib/recruitment/candidate-display";
+import { managerLabelOrNull } from "@/lib/recruitment/person-labels";
 import {
   candidateFolderKeyLabels,
   candidateFolderKindLabels,
@@ -435,8 +436,10 @@ function SendToManagerCard({
   pending: boolean;
   run: (work: () => Promise<string | void>) => void;
 }) {
-  const managerName =
-    application.requisition?.hiringManagerName ?? application.requisition?.hiringManagerHrId ?? null;
+  const managerName = managerLabelOrNull(
+    application.requisition?.hiringManagerName,
+    application.requisition?.hiringManagerHrId,
+  );
   const notified = application.managerNotified;
 
   return (
@@ -1821,7 +1824,10 @@ function RequisitionCard({
     >
       <PortalRecordFields
         fields={[
-          { label: "Hiring manager", value: requisition.hiringManagerName ?? requisition.hiringManagerHrId ?? "—" },
+          {
+            label: "Hiring manager",
+            value: managerLabelOrNull(requisition.hiringManagerName, requisition.hiringManagerHrId) ?? "—",
+          },
         ]}
       />
     </PortalRecordCard>
@@ -1996,7 +2002,7 @@ function RequisitionsTab({
             {selectedVacancy ? (
               <RequisitionField hint="Comes with the seat." label="Hiring manager">
                 <div className={`${fieldClass} bg-slate-50 text-slate-600`}>
-                  {selectedVacancy.managerName ?? selectedVacancy.managerHrId ?? "—"}
+                  {managerLabelOrNull(selectedVacancy.managerName, selectedVacancy.managerHrId) ?? "—"}
                 </div>
               </RequisitionField>
             ) : (
@@ -2125,7 +2131,7 @@ function RequisitionsTab({
                     {vacancy.jobTitle ?? vacancy.positionTitle ?? "Untitled seat"}
                   </p>
                   <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500">
-                    {[vacancy.lineName, vacancy.areaName, vacancy.managerName ?? vacancy.managerHrId]
+                    {[vacancy.lineName, vacancy.areaName, managerLabelOrNull(vacancy.managerName, vacancy.managerHrId)]
                       .filter(Boolean)
                       .join(" · ") || vacancy.vacancyCode}
                   </p>
@@ -2183,7 +2189,9 @@ function RequisitionsTab({
                     <td className="px-3 py-2">
                       <StagePill tone={requisitionStatusTone(requisition.status)}>{requisitionStatusLabel(requisition.status)}</StagePill>
                     </td>
-                    <td className="px-3 py-2">{requisition.hiringManagerName ?? requisition.hiringManagerHrId ?? "—"}</td>
+                    <td className="px-3 py-2">
+                      {managerLabelOrNull(requisition.hiringManagerName, requisition.hiringManagerHrId) ?? "—"}
+                    </td>
                     <td className="px-3 py-2">
                       <RequisitionActionsControl
                         canDelete={canDelete}

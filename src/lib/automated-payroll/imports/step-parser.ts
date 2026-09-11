@@ -98,11 +98,21 @@ export async function parseStepWorkbook(input: {
           }
           continue;
         }
+        // A field with nowhere to be saved is never read back (audit finding 31). It used to be, so
+        // the preview printed "2 to 6 (changed)" for a day count the commit then silently dropped.
+        // The template now ships it read-only; this is the other half of the same rule.
+        if (field.notPersisted) continue;
         const value = readNumber(pickCell(jsonRow, field.label));
         if (value != null) edit.values![field.key] = value;
       }
       if (definition.hasReason) {
-        edit.reason = String(pickCell(jsonRow, "Reason") ?? "").trim() || null;
+        // An ABSENT Reason column means "not supplied", never "blank" (audit finding 48). The reason
+        // used to be written unconditionally, so re-uploading a sheet rebuilt without that column
+        // blanked the justification on every row while the preview reported nothing changed.
+        // `excelWorksheetToJsonRows` gives every row every header key, with "" for an empty cell, so
+        // `undefined` here can only mean the column is not on the sheet at all.
+        const reasonCell = pickCell(jsonRow, "Reason");
+        if (reasonCell !== undefined) edit.reason = String(reasonCell ?? "").trim() || null;
       }
     }
     edits.push(edit);
@@ -117,6 +127,12 @@ export function diffStepUpload(input: {
   edits: StepEditInput[];
   current: StepRow[];
   invalidHrIds: number;
+  /**
+   * Money fields the server will RECALCULATE from a corrected day count rather than take from the
+   * sheet, keyed by lower-cased HR id (see `applyDayDrivenMoney`). Shown as changed, because they
+   * will be, even though the sheet still carries the old figure.
+   */
+  recalculated?: Map<string, string[]>;
 }): StepImportPreview {
   const definition = stepDefinition(input.stepKey);
   const currentByHr = new Map(input.current.map((row) => [row.hrId.toLowerCase(), row]));
@@ -177,6 +193,7 @@ export function diffStepUpload(input: {
       continue;
     }
 
+    const recalculatedKeys = input.recalculated?.get(edit.hrId.toLowerCase()) ?? [];
     for (const field of definition.fields) {
       if (field.kind === "text" || field.kind === "select") {
         const to = field.kind === "text" ? edit.reasons?.[field.key] : edit.selects?.[field.key];
@@ -188,11 +205,36 @@ export function diffStepUpload(input: {
         continue;
       }
       const to = edit.values?.[field.key];
-      if (to === undefined) continue;
+      if (to === undefined) {
+        if (recalculatedKeys.includes(field.key)) {
+          changed += 1;
+          diffs.push({
+            hrId: edit.hrId,
+            fullName: current.fullName,
+            field: field.label,
+            from: current.values[field.key] ?? 0,
+            to: "recalculated",
+            status: "changed",
+            message: "Recalculated from the corrected day count by the settlement rule when this is saved.",
+          });
+        }
+        continue;
+      }
       const from = current.values[field.key] ?? 0;
       const status = Math.round(from * 100) === Math.round(to * 100) ? "unchanged" : "changed";
       if (status === "changed") changed += 1;
       diffs.push({ hrId: edit.hrId, fullName: current.fullName, field: field.label, from, to, status });
+    }
+
+    // The step's Reason is compared too (audit finding 48), the same way the hold steps compare
+    // theirs: a sheet that blanks it must say so in the preview, not only erase it on commit. An
+    // absent column leaves `edit.reason` undefined, which is "not supplied" and shows nothing.
+    if (definition.hasReason && edit.reason !== undefined) {
+      const reasonFrom = (current.reason ?? "").trim();
+      const reasonTo = (edit.reason ?? "").trim();
+      const status = reasonFrom === reasonTo ? "unchanged" : "changed";
+      if (status === "changed") changed += 1;
+      diffs.push({ hrId: edit.hrId, fullName: current.fullName, field: "Reason", from: reasonFrom, to: reasonTo, status });
     }
   }
 

@@ -12,6 +12,7 @@ import { useMemo, useState } from "react";
 
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import type { ReturnedCvItem, ReturnedCvManagerGroup } from "@/lib/recruitment/district-returns";
+import { managerLabel } from "@/lib/recruitment/person-labels";
 
 function Pill({ children }: { children: React.ReactNode }) {
   return (
@@ -151,7 +152,9 @@ export function ReturnedCvsQueue({ groups: initialGroups }: { groups: ReturnedCv
         <div className="rounded-lg border border-slate-200 bg-white" key={manager.managerHrId}>
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
             <h2 className="text-sm font-semibold text-slate-900" dir="auto">
-              {manager.managerName?.trim() ? manager.managerName : manager.managerHrId}
+              {/* A pile is headed by the manager who sent it back — by name, or by words when his
+                  HR id resolved to nobody. Never the id itself. */}
+              {managerLabel(manager.managerName)}
             </h2>
             <span className="shrink-0 whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-600">
               {manager.total === 1 ? "1 CV" : `${manager.total} CVs`}

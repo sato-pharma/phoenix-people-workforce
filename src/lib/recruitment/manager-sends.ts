@@ -17,6 +17,7 @@
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { recruitmentDb } from "@/lib/recruitment/db";
+import { managerLabel } from "@/lib/recruitment/person-labels";
 import type { SentForPosition } from "@/lib/recruitment/types";
 
 /** The table, named once so a rename is one edit and a typo cannot half-apply. */
@@ -157,9 +158,11 @@ export function managerSendStamp(send: ManagerSend): {
       areaName: send.managerArea,
       hrId: send.managerHrId,
       jobTitle: send.managerJobTitle,
-      // Never a bare HR_ID on a screen — the standing rule. Falls back to the id only when the send
-      // was recorded without a resolvable name, which is strictly better than rendering nothing.
-      name: send.managerName ?? send.managerHrId,
+      // Never a bare HR_ID on a screen — the standing rule. This fell back to the id when the send
+      // was recorded without a resolvable name, on the reasoning that an id beats an empty space. It
+      // does, and words beat both: "Unnamed manager" is something the reader can act on, and it is
+      // what every other recruitment surface now says.
+      name: managerLabel(send.managerName),
       regionName: send.managerRegion,
       sentAt: send.sentAt,
     },

@@ -1224,11 +1224,27 @@ export function validateSalaryRows(
     }
 
     // Negative-value guards.
+    //
+    // Every addition and deduction COMPONENT, not only the totals (audit finding 42). A negative
+    // bonus is a deduction travelling through the additions side, and a negative loan is an addition
+    // travelling through the deductions side; the totals checks above cannot see either, because the
+    // negative component is already folded into the total it is reconciled against.
     const negativeChecks: ReadonlyArray<readonly [string, number, string]> = [
       ["Base salary", row.baseSalary, "Base Salary"],
       ["Net salary", row.netSalary, "Net Salary"],
       ["Gross salary", row.grossSalary, "Gross Salary"],
       ["Total deductions", row.totalDeductions, "Total Deductions"],
+      ["Expenses", row.expenses, "Expenses"],
+      ["Incentive", row.incentive, "Incentive"],
+      ["Overtime", row.overtime, "Overtime"],
+      ["Bonus", row.bonus, "Bonus"],
+      ["Other additions", row.otherAdditions, "Other Additions"],
+      ["CRM", row.crm, "CRM"],
+      ["Finger print", row.fingerPrint, "Finger Print"],
+      ["Unpaid vacations", row.unpaidVacations, "Unpaid Vacations"],
+      ["Medical insurance", row.medicalInsurance, "Medical Insurance"],
+      ["Loans", row.loans, "Loans"],
+      ["Other deductions", row.otherDeductions, "Other Deductions"],
     ];
     for (const [label, value, column] of negativeChecks) {
       if (value < 0) {

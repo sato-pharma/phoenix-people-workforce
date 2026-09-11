@@ -501,7 +501,16 @@ const DECREASE_FILL = "FFFEE2E2";
 const DECREASE_TEXT = "FF991B1B";
 
 /** Headcount + total payout for one period — current (computed from AssembledRow[]) or previous (from salary_records). */
-export type PeriodSummary = { headcount: number; totalValue: number };
+export type PeriodSummary = {
+  headcount: number;
+  totalValue: number;
+  /**
+   * What the figures do NOT cover, in words, when that differs from this month's basis. Set on last
+   * month's summary when its publish recorded how many were held but not their amounts (audit
+   * finding 52), so the comparison says so beside the numbers instead of reading as movement.
+   */
+  basis?: string;
+};
 
 function periodDelta(current: number, previous: number): { delta: number; percent: number | null } {
   const delta = Math.round((current - previous) * 100) / 100;
@@ -592,6 +601,18 @@ function addExecutiveSummarySheet(
     column.width = Math.max(column.width ?? 9, Math.min(30, Math.max(14, label.length + 4)));
   });
   sheet.getColumn(1).width = 28;
+  // A basis the two months do not share is said beside the numbers, never left to read as movement
+  // (audit finding 52).
+  const basis = [input.previous?.basis, input.current.basis].filter((text): text is string => Boolean(text));
+  basis.forEach((text, index) => {
+    const noteRow = sheet.getRow(headerRowNumber + metrics.length + 2 + index);
+    const cell = noteRow.getCell(1);
+    cell.value = text;
+    cell.font = { italic: true, color: { argb: SLATE }, name: "Calibri", size: 10 };
+    cell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
+    sheet.mergeCells(noteRow.number, 1, noteRow.number, labels.length);
+    noteRow.height = 30;
+  });
   sheet.views = [{ state: "frozen", xSplit: 0, ySplit: headerRowNumber, showGridLines: false }];
 }
 
