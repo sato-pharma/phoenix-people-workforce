@@ -189,6 +189,18 @@ export type WhatsAppNumberProbe = {
   displayNumber: string | null;
   /** Meta's own error text (or a status like "number status is FLAGGED") when unhealthy, else null. */
   error: string | null;
+  /**
+   * What kind of failure `error` describes, null when `ok` is true.
+   *
+   * "transport": the fetch itself threw (a network error or the AbortSignal.timeout firing) — Meta
+   * never answered, so this says nothing about our credentials. "meta": Meta sent an HTTP response —
+   * an error body, or a resolved number that is not CONNECTED — which is a fact about our
+   * configuration right now. The distinction exists because a container cutover or a DNS hiccup
+   * produces the exact same shape of failure as the 2026-07-26 app-block incident, and wording both
+   * as "rejecting our credentials" pages people to investigate a credential problem that does not
+   * exist.
+   */
+  failureKind: "transport" | "meta" | null;
   /** Last inbound CV recorded on THIS line (ISO), populated by checkWhatsAppIntakeHealth. */
   lastInboundAt?: string | null;
 };
@@ -257,6 +269,22 @@ export function aggregateProbeError(probes: readonly WhatsAppNumberProbe[]): str
   const failed = probes.filter((probe) => !probe.ok);
   if (failed.length === 0) return null;
   return failed.map((probe) => `${probe.displayNumber ?? probe.phoneNumberId}: ${probe.error ?? "unreachable"}`).join("; ");
+}
+
+/**
+ * Whether the failing probes describe a TRANSPORT problem (Meta never answered) or a META one
+ * (Meta answered with an error, or a resolved number that is not CONNECTED). Null when nothing
+ * failed.
+ *
+ * A single "meta" failure outranks every "transport" one: a mix means at least one number gave a
+ * deterministic, actionable answer, and that is the fact worth wording the alert around — exactly
+ * the same precedence `evaluateWhatsAppIntakeHealth` already gives a named misconfiguration over
+ * silence. Pure, so the rule is testable without touching Meta.
+ */
+export function aggregateProbeFailureKind(probes: readonly WhatsAppNumberProbe[]): "transport" | "meta" | null {
+  const failed = probes.filter((probe) => !probe.ok);
+  if (failed.length === 0) return null;
+  return failed.some((probe) => probe.failureKind === "meta") ? "meta" : "transport";
 }
 
 function silenceAlertHours(): number {
@@ -333,6 +361,12 @@ export function cairoDateKey(now: Date): string {
 export function evaluateWhatsAppIntakeHealth(input: {
   configured: boolean;
   apiError: string | null;
+  /**
+   * What kind of failure `apiError` describes — see `aggregateProbeFailureKind`. Omitted or null is
+   * treated the same as "meta": the wording this file shipped with, and the correct default because
+   * every caller that predates this field only ever set `apiError` from a Meta-answered failure.
+   */
+  apiErrorKind?: "transport" | "meta" | null;
   lastInboundAt: Date | null;
   now: Date;
   silenceThresholdHours: number;
@@ -354,11 +388,16 @@ export function evaluateWhatsAppIntakeHealth(input: {
   }
 
   if (input.apiError) {
-    return {
-      ...base,
-      detail: `WhatsApp Cloud API is rejecting our credentials: ${input.apiError}`,
-      status: "api_unreachable",
-    };
+    // "transport" means the fetch itself threw or timed out — Meta never sent a response, so this
+    // has nothing to do with our credentials. That was the false alarm on 2026-09-11: a Railway
+    // container cutover made every probe throw undici's "fetch failed", and the old wording here
+    // told Talent Acquisition Meta was rejecting the credentials when Meta had not been reached at
+    // all. Only a real Meta answer (an error body, a non-CONNECTED number) earns that wording.
+    const detail =
+      input.apiErrorKind === "transport"
+        ? `WhatsApp Cloud API could not be reached: ${input.apiError}`
+        : `WhatsApp Cloud API is rejecting our credentials: ${input.apiError}`;
+    return { ...base, detail, status: "api_unreachable" };
   }
 
   // A deterministic misconfiguration outranks silence, because it EXPLAINS the silence and is the
@@ -424,13 +463,33 @@ export function evaluateWhatsAppIntakeHealth(input: {
   return { ...base, detail: `Last inbound WhatsApp message ${Math.floor(hoursSinceLastInbound)}h ago.`, status: "ok" };
 }
 
+// A transient network blip (mid-deploy container cutover, a DNS hiccup) throws the exact same
+// undici "fetch failed" TypeError as a genuinely dead credential, and clears on its own within a
+// few seconds. Retrying keeps that from paging on the first sighting; MAX_PROBE_RETRIES is retries
+// on top of the initial attempt, so 2 means 3 attempts total. Only ever applies to a TRANSPORT
+// failure — a response Meta actually sent (an error body, a non-CONNECTED status) is a fact about
+// right now and must page immediately, unretried, exactly as before this file changed.
+const MAX_PROBE_RETRIES = 2;
+
+// Read fresh on every call (not a module-level constant) so it is overridable at runtime — the
+// retry test suite sets this env var before calling probeWhatsAppNumber so it does not have to burn
+// real wall-clock time waiting out production-realistic delays. A module-level constant would
+// capture whatever the env var was at import time, before any test had a chance to set it.
+function probeRetryDelayMs(): number {
+  return Math.max(0, Number(process.env.WHATSAPP_PROBE_RETRY_DELAY_MS) || 3_000);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
- * One authenticated read against a single phone-number node. Never throws — a probe is
- * diagnostics, not a workload. A number that resolves but is not CONNECTED (FLAGGED, RESTRICTED,
+ * One attempt at an authenticated read against a single phone-number node. Never throws — a probe
+ * is diagnostics, not a workload. A number that resolves but is not CONNECTED (FLAGGED, RESTRICTED,
  * PENDING, …) counts as unhealthy: that is how a per-number restriction shows up while the token
  * itself is still valid.
  */
-export async function probeWhatsAppNumber(phoneNumberId: string, token: string): Promise<WhatsAppNumberProbe> {
+async function probeWhatsAppNumberOnce(phoneNumberId: string, token: string): Promise<WhatsAppNumberProbe> {
   try {
     const response = await fetch(
       `https://graph.facebook.com/${graphApiVersion()}/${phoneNumberId}?fields=id,display_phone_number,status`,
@@ -444,24 +503,55 @@ export async function probeWhatsAppNumber(phoneNumberId: string, token: string):
       const displayNumber = body?.display_phone_number ?? null;
       const status = body?.status;
       if (status && status !== "CONNECTED") {
-        return { displayNumber, error: `number status is ${status}`, ok: false, phoneNumberId };
+        return { displayNumber, error: `number status is ${status}`, failureKind: "meta", ok: false, phoneNumberId };
       }
-      return { displayNumber, error: null, ok: true, phoneNumberId };
+      return { displayNumber, error: null, failureKind: null, ok: true, phoneNumberId };
     }
 
     // Meta's error body is far more actionable than the status code ("API access blocked" vs a
-    // bare 400), so surface its message when there is one.
+    // bare 400), so surface its message when there is one. Meta answered, so this is a "meta"
+    // failure — a fact about our credentials right now, not a network problem.
     const message = body?.error?.message?.trim();
     const code = body?.error?.code;
     return {
       displayNumber: null,
       error: message ? `${message}${code === undefined ? "" : ` (code ${code})`}` : `HTTP ${response.status}`,
+      failureKind: "meta",
       ok: false,
       phoneNumberId,
     };
   } catch (error) {
-    return { displayNumber: null, error: error instanceof Error ? error.message : "probe failed", ok: false, phoneNumberId };
+    // fetch threw: a network error (undici's "fetch failed") or the AbortSignal.timeout firing.
+    // Meta never sent a response, so this says nothing about whether our credentials are valid —
+    // see probeWhatsAppNumber's retry and evaluateWhatsAppIntakeHealth's wording.
+    return {
+      displayNumber: null,
+      error: error instanceof Error ? error.message : "probe failed",
+      failureKind: "transport",
+      ok: false,
+      phoneNumberId,
+    };
   }
+}
+
+/**
+ * One authenticated read against a single phone-number node, retrying up to MAX_PROBE_RETRIES times
+ * when the failure is a TRANSPORT one (Meta never answered) before counting the number as down. A
+ * response Meta actually sent is never retried — it already is the deterministic, actionable
+ * answer this file exists to catch (the 2026-07-26 incident), so it pages on first sight.
+ *
+ * Bounded well within the cron route's 120s maxDuration: worst case is
+ * MAX_PROBE_RETRIES retries x (PROBE_TIMEOUT_MS + probeRetryDelayMs()) for a SINGLE number, and
+ * every configured number retries concurrently (probeAllWhatsAppNumbers runs them in parallel), so
+ * this does not multiply per number. Never throws — a probe is diagnostics, not a workload.
+ */
+export async function probeWhatsAppNumber(phoneNumberId: string, token: string): Promise<WhatsAppNumberProbe> {
+  let result = await probeWhatsAppNumberOnce(phoneNumberId, token);
+  for (let attempt = 1; attempt <= MAX_PROBE_RETRIES && result.failureKind === "transport"; attempt += 1) {
+    await delay(probeRetryDelayMs());
+    result = await probeWhatsAppNumberOnce(phoneNumberId, token);
+  }
+  return result;
 }
 
 /** Probes every configured intake number concurrently. Empty when the channel is not configured. */
@@ -733,6 +823,7 @@ export async function checkWhatsAppIntakeHealth(now: Date = new Date()): Promise
 
   const core = evaluateWhatsAppIntakeHealth({
     apiError: aggregateProbeError(enriched),
+    apiErrorKind: aggregateProbeFailureKind(enriched),
     configured: true,
     lastInboundAt: lastInbound,
     now,
