@@ -240,6 +240,12 @@ export function mapCandidate(row: CandidateDbRow): Candidate {
         ? {
             filedAt: String(row.folder_filed_at),
             filedByHrId: textOrNull(row.folder_filed_by_hr_id),
+            // Deliberately NOT read off the row: the filer's name lives in `employees`, not on the
+            // candidate, so resolving it is a second query and this mapper is synchronous.
+            // `listCandidates` fills it (attachFolderFilerNames); every other caller leaves it null
+            // and the shelf says so in words. Named here rather than left optional so a screen
+            // cannot read `undefined` and quietly print nothing where a person belongs.
+            filedByName: null,
             key: String(row.folder_key),
             kind: row.folder_kind,
           }

@@ -180,6 +180,11 @@ export const NO_INSURANCE_WAGE_CELL = "No insurance wage on file";
 export function buildStatutorySummaryWorkbook(input: {
   rows: StatutorySummaryRow[];
   totals: StatutorySummaryTotals;
+  /**
+   * Printed under the TOTAL after the notes above: who the rows cannot show, in words. Used for the
+   * people publish held back (audit finding 43), who have no salary record and so no row here.
+   */
+  extraNotes?: string[];
 }): ExcelJS.Workbook {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Statutory Summary");
@@ -242,6 +247,8 @@ export function buildStatutorySummaryWorkbook(input: {
         "before the payroll engine read the wage column looks like.",
     );
   }
+  // Then what the rows cannot show at all, supplied by the caller (see `extraNotes`).
+  notes.push(...(input.extraNotes ?? []).filter((note) => note.trim().length > 0));
   if (notes.length > 0) {
     sheet.addRow([]);
     for (const note of notes) {
