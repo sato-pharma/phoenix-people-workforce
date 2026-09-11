@@ -1564,6 +1564,7 @@ import { runVacationAdminOverrideTests } from "./vacation-admin-override.test.ts
 import { runLeaveRequestCodesTests } from "./leave-request-codes.test.ts";
 
 import { runManagerAreaRegionGuardTests } from "./manager-area-region-guard.test.ts";
+import { runDataBackupWorkbookTests } from "./data-backup-workbook.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5148,6 +5149,11 @@ await runTest(
 await runTest(
   "a sales manager is recorded against his region, never one of his own rep areas, and a region with no area row is reported before a manager is pinned to one",
   runManagerAreaRegionGuardTests,
+);
+
+await runTest(
+  "the admin data backup streams its workbook row by row, so a 300k-row table cannot overflow the in-memory XML writer",
+  runDataBackupWorkbookTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
