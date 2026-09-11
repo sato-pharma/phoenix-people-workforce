@@ -133,9 +133,10 @@ type SessionDiscoveryRow = {
   completed_at: string;
 };
 
+// One unbroken literal on purpose: `"a," + "b"` widens to `string`, and PostgREST's typings then
+// cannot infer a row shape from it, so every `as SessionDiscoveryRow[]` below stops compiling.
 const DISCOVERY_SESSION_COLUMNS =
-  "id,applied_candidate_id,wa_id,job_title_family,job_title_other_text,region_code,region_other_text," +
-  "area_name,area_other_text,background,background_other_text,experience,expected_salary,extra_answers,completed_at";
+  "id,applied_candidate_id,wa_id,job_title_family,job_title_other_text,region_code,region_other_text,area_name,area_other_text,background,background_other_text,experience,expected_salary,extra_answers,completed_at";
 
 /**
  * One row per candidate: their MOST RECENTLY COMPLETED WhatsApp session. Rows arrive
@@ -188,9 +189,9 @@ type CandidateSnapshot = {
   screening_extra_answers: Record<string, unknown> | null;
 };
 
+// One unbroken literal, for the same reason as DISCOVERY_SESSION_COLUMNS above.
 const CANDIDATE_SNAPSHOT_COLUMNS =
-  "id,full_name,status,preferences_declared_at,preferred_region_code,preferred_region_name,preferred_area_name," +
-  "declared_background,declared_experience,declared_expected_salary,applied_for_job_title,screening_extra_answers";
+  "id,full_name,status,preferences_declared_at,preferred_region_code,preferred_region_name,preferred_area_name,declared_background,declared_experience,declared_expected_salary,applied_for_job_title,screening_extra_answers";
 
 /** Chunked at 50: a PostgREST `.in()` can fail on a large id list (a documented trap here). */
 async function loadCandidateSnapshots(
