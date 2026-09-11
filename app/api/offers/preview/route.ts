@@ -8,7 +8,7 @@ import { offerJsonError } from "@/lib/offers/http";
 import { renderOfferDocument } from "@/lib/offers/render";
 import { renderOfferEmail } from "@/lib/offers/render-email";
 import { isOfferTemplateVariant } from "@/lib/offers/builtin-templates";
-import { satoLogoDataUri, satoLogoUrl, satoSignatureDataUri } from "@/lib/offers/brand";
+import { satoLogoDataUri, satoLogoUrl, satoSealDataUri, satoSignatureDataUri } from "@/lib/offers/brand";
 import { systemDeployment } from "@/config/system-settings";
 import { sanitizeTemplateBlocks, sanitizeTheme } from "@/lib/offers/service";
 import {
@@ -85,6 +85,7 @@ export async function POST(request: Request) {
       // The designer has to show the signature the PDF will actually carry. Without this the
       // preview would render an unsigned letter and the signed one would only ever appear in the
       // candidate's inbox — the one place nobody checks it before it is too late.
+      sealUrl: satoSealDataUri() ?? undefined,
       signatureUrl: satoSignatureDataUri() ?? undefined,
     });
     return NextResponse.json({

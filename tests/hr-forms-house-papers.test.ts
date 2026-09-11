@@ -5,6 +5,7 @@ import {
   HOUSE_BAND_HEIGHT_MM,
   HOUSE_BAND_WAVELENGTH_MM,
   HOUSE_COLORS,
+  HOUSE_SEAL_SRC,
   HOUSE_IDENTITY_CSS,
   houseEngineTurnedBand,
 } from "../src/lib/hiring-pack/house-identity.ts";
@@ -47,6 +48,7 @@ import {
   renderCustodyMobileHtml,
 } from "../src/lib/hiring-pack/render-custody.ts";
 import { renderWorkerFormHtml } from "../src/lib/hiring-pack/render-worker-form.ts";
+import { inlineLocalAssets } from "../src/lib/hiring-pack/paper-artwork.ts";
 import {
   renderContractNonRenewalHtml,
   renderContractRenewalHtml,
@@ -1129,7 +1131,82 @@ function testEveryMastheadCarriesTheBand(): void {
   }
 }
 
+
+/**
+ * EVERY HOUSE PAPER CARRIES EXACTLY ONE SEAL, ON THE COMPANY'S SIDE.
+ *
+ * Counted on the RENDERED document, because "the seal is wired in" is not the same claim as "the
+ * seal appears once". Wiring it produced three distinct ways of being wrong, all of them silent:
+ *
+ *   · ZERO — the absence warning heads its company column إدارة الموارد البشرية, not الشركة, so a
+ *     naive string test skipped it entirely.
+ *   · TWO — the employee clearance has THREE parties and two are company-side, and the custody
+ *     receipts draw a second signature block for the return protocol.
+ *   · THE WRONG SIDE — the offer letter's row builder draws both parties, so an unconditional seal
+ *     stamped the candidate's own signature line.
+ *
+ * One impression, company side. Nothing else is acceptable on a paper someone signs.
+ */
+function testEveryPaperCarriesExactlyOneSeal(): void {
+  const pack = packFixture();
+  const rendered: ReadonlyArray<readonly [string, string]> = [
+    ["employment contract", renderContractHtml(pack, 1)],
+    ["employee clearance", renderClearanceEmployeeHtml(pack, 1)],
+    ["laptop custody receipt", renderCustodyLaptopHtml(pack, 1)],
+    ["worker data form", renderWorkerFormHtml(pack, 1)],
+    ...HR_PAPERS.map((paper) => [paper.id, renderHrPaperHtml(pack, 1, paper)] as const),
+  ];
+
+  for (const [name, html] of rendered) {
+    const seals = (html.match(/class="phx-seal"/g) ?? []).length;
+    assert.equal(
+      seals,
+      1,
+      `${name} carries ${seals} seals, not 1. Zero means the company's signature party was not `
+        + "recognised (its heading is not always الشركة); more than one means a second company "
+        + "column or a second signature block was sealed too.",
+    );
+    assert.ok(
+      html.includes(HOUSE_SEAL_SRC),
+      `${name} must reference the shared seal asset, not a second copy of the artwork.`,
+    );
+  }
+
+  // THE PDF PATH MUST BE ABLE TO INLINE IT. `renderHiringPaperPdf` refuses to file a document whose
+  // artwork it cannot read, so a seal that is not allow-listed in paper-artwork.ts turns every one
+  // of these into a hard failure at print time rather than a missing stamp.
+  for (const [name, html] of rendered) {
+    const { missing } = inlineLocalAssets(html);
+    assert.deepEqual(
+      missing,
+      [],
+      `${name} references artwork the PDF path cannot resolve: ${missing.join(", ")}. `
+        + "Add it to the allow-list in paper-artwork.ts.",
+    );
+  }
+}
+
+/**
+ * THE CUSTODY RETURN PROTOCOL IS NEVER PRE-SEALED.
+ *
+ * The return block is signed when the device actually comes back — months later, and sometimes
+ * never. A seal printed there certifies a return that has not happened, on a page the company
+ * issued itself. The receipt half is the company acknowledging what it handed over today; the
+ * return half is a future event.
+ */
+function testTheCustodyReturnProtocolIsNotSealed(): void {
+  const html = renderCustodyLaptopHtml(packFixture(), 1);
+  const returnBlock = html.slice(html.indexOf('<section class="ret">'));
+  assert.ok(returnBlock.length > 0, "the custody receipt must still carry its return protocol");
+  assert.ok(
+    !returnBlock.includes('class="phx-seal"'),
+    "The custody RETURN protocol is pre-sealed. That certifies a return that has not happened.",
+  );
+}
+
 export function runHrFormsHousePapersTests(): void {
+  testEveryPaperCarriesExactlyOneSeal();
+  testTheCustodyReturnProtocolIsNotSealed();
   testTheBandSurvivesAnInlineStyleAttribute();
   testTheBandTilesAtOneWavelength();
   testEveryMastheadCarriesTheBand();

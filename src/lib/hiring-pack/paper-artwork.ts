@@ -68,6 +68,11 @@ function readAsset(publicPath: string): string | null {
     // layout still references the raster.
     case "/brand/sato-pharma-logo-on-light.svg":
       return svg(read(join(process.cwd(), "public", "brand", "sato-pharma-logo-on-light.svg")));
+    // THE COMPANY SEAL, added 2026-09-11. Without this entry the seal reaches the screen and is
+    // reported MISSING on the PDF — loudly, which is the right failure: `renderHiringPaperPdf`
+    // refuses to file rather than producing a document whose stamp silently did not print.
+    case "/brand/sato-hr-seal.svg":
+      return svg(read(join(process.cwd(), "public", "brand", "sato-hr-seal.svg")));
     case "/brand/sato-pharma-logo.svg":
       return svg(read(join(process.cwd(), "public", "brand", "sato-pharma-logo.svg")));
     case "/brand/sato-pharma-logo-on-light.png":
