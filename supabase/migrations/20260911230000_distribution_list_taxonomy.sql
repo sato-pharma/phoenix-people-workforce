@@ -4,6 +4,14 @@
 -- resolves to NOBODY by design, so a half-finished list can never quietly mail everyone; that
 -- guard also made a legitimate all-company list impossible, which is what this flag is for.
 --
+-- HEAD OFFICE IS AN ALLOWLIST OF DEPARTMENTS, SO A NEW DEPARTMENT IS OUT UNTIL SOMEBODY ADDS IT.
+-- That is the safe direction - a person missed from a list is visible on the screen, a stranger
+-- silently added to one is not - but it is a real edge, and Supply Chain (47) is the proof: a
+-- genuine head-office department with nobody in it today, which the first version of this rule
+-- missed for exactly that reason. Department 3 is a stray record literally named "Active" and is
+-- deliberately NOT here. The rule cannot be written as "not Sales": the spec supports including
+-- departments, never excluding them.
+--
 -- REGIONS ARE MATCHED ON NAME **AND** CODE. Measured on production: 13 field employees carry a
 -- region_name with no region_code, and every one of them is a District Manager. Keying the region
 -- rules on the code alone would have produced 20 silently EMPTY district-manager lists while the
@@ -148,8 +156,8 @@ insert into public.distribution_lists
    array['Medical Rep']::text[], array[3]::integer[], array['Upper Egypt', 'UE']::text[], '{}'::integer[], false, true),
   ('cns_upper_egypt_district_managers', 'CNS - Upper Egypt - District Managers', 'District Managers on the CNS line in Upper Egypt. Matched on region NAME and CODE together, because 13 district managers carry a name and no code.',
    array['District Manager']::text[], array[3]::integer[], array['Upper Egypt', 'UE']::text[], '{}'::integer[], false, true),
-  ('head_office', 'Head Office', 'Everyone outside the field force - Marketing, Finance, HR, Admins, Executive, QPPV, R&D and SFE. Keyed on DEPARTMENT, not on the Head Office line: three head-office people sit on a sales line because they own that line''s brands, and their line_id is deliberate rather than a mistake to correct.',
-   '{}'::text[], '{}'::integer[], '{}'::text[], array[2, 40, 41, 42, 43, 44, 45, 46]::integer[], false, true)
+  ('head_office', 'Head Office', 'Everyone outside the field force - Marketing, Finance, HR, Admins, Executive, QPPV, R&D, SFE and Supply Chain. Keyed on DEPARTMENT, not on the Head Office line: three head-office people sit on a sales line because they own that line''s brands, and their line_id is deliberate rather than a mistake to correct.',
+   '{}'::text[], '{}'::integer[], '{}'::text[], array[2, 40, 41, 42, 43, 44, 45, 46, 47]::integer[], false, true)
 on conflict (list_key) do nothing;
 
 commit;
