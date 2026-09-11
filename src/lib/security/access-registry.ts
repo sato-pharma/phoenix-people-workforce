@@ -1032,6 +1032,19 @@ export const accessRegistry = [
   // its own per-device audit row, because it goes through createDevice/issueDevice rather than
   // around them.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/import/confirm", permission: { resource: "company_devices", action: "import" }, csrfRequired: true }),
+  // The Action1 pull — the same two presses as the spreadsheet import, with no file in the middle,
+  // so it is gated identically on `company_devices:import`. Nothing about reading a fleet from an
+  // external console makes it a lighter door than reading it from an .xlsx: both end in rows in the
+  // asset register, and both are refused together when the bulk door is withdrawn.
+  //
+  // Both are POSTs carrying no body at all, and both are still CSRF-guarded — more firmly than the
+  // file pair, not less. They make an outbound call on the company's own Action1 credentials, and a
+  // GET that a cross-origin page could trigger would let somebody else's page spend them.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/devices/action1/dry-run", permission: { resource: "company_devices", action: "import" }, csrfRequired: true }),
+  // The COMMIT. Required audit like every other device mutation, and each registered row still
+  // writes its own per-device audit row — the pull goes through createDevice, not around it. It
+  // never issues custody to anybody, so no assignment audit row can come from this path.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/action1/confirm", permission: { resource: "company_devices", action: "import" }, csrfRequired: true }),
   // Retention register (Phase 6). The GET returns stay and exit conversations, which hold what an
   // employee said in confidence about their manager and their pay — the permission is the whole
   // protection, since RLS is disabled-by-default here like every other table in this app.
