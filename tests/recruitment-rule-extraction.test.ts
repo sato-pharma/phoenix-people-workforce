@@ -26,6 +26,7 @@ import {
 import { resolveGovernorate, parseFullDate, readLabelledValue } from "../src/lib/recruitment/rule-extraction/personal.ts";
 import { classifyHeading, sliceCvSections } from "../src/lib/recruitment/rule-extraction/sections.ts";
 import { splitTitleAndEmployer } from "../src/lib/recruitment/rule-extraction/work.ts";
+import { findFaculty } from "../src/lib/recruitment/rule-extraction/education.ts";
 
 const high = (value: unknown) => ({ confidence: "high" as const, value: value as never });
 const low = (value: unknown) => ({ confidence: "low" as const, value: value as never });
@@ -214,6 +215,40 @@ function runPersonalTests() {
   assert.equal(resolveGovernorate("10th of Ramadan City")?.governorate, "Sharqia");
   assert.equal(resolveGovernorate("El Khanka")?.governorate, "Qalyubia");
   assert.equal(resolveGovernorate("nowhere in particular"), null);
+}
+
+function runEducationTests() {
+  // An unambiguous "Faculty of X" phrase is trusted outright.
+  const clear = sliceCvSections(["EDUCATION", "Faculty of Pharmacy, Cairo University, 2019"]);
+  assert.equal(findFaculty(clear)?.value, "Faculty of Pharmacy");
+  assert.equal(findFaculty(clear)?.confidence, "high");
+
+  // The bug this pins: a candidate's own CV named "Faculty of Agriculture" in full, but her
+  // education section also carried a stray bare "Pharmacy" elsewhere (a rotation, an employer — the
+  // exact word does not matter). Production candidate edb6ea02-…, 2026-09-09: faculty came back
+  // "Pharmacy" while her degree and her own declared background both said Agriculture. The specific
+  // phrase must win over the bare word regardless of which appears first or is longer.
+  const conflicting = sliceCvSections([
+    "EDUCATION",
+    "Bachelor of Science in Agriculture - Clinical Nutrition",
+    "Faculty of Agriculture, Mansoura University, 2019",
+    "Completed a rotation at a community Pharmacy",
+  ]);
+  assert.equal(findFaculty(conflicting)?.value, "Faculty of Agriculture");
+  assert.equal(findFaculty(conflicting)?.confidence, "high");
+
+  // With NO qualifying "Faculty of X" phrase at all, a bare generic word ("Pharmacy", "Commerce",
+  // "Law", "Engineering", "Veterinary") is still offered — but only at LOW confidence, so it can
+  // reach a reviewer without being auto-filled onto the candidate record as if it were a fact. This
+  // is the fix itself: before it, this case returned "high" and the wrong label became visible to
+  // recruiters with no human ever having looked at it.
+  const bareWordOnly = sliceCvSections(["EDUCATION", "Completed a rotation at a community Pharmacy"]);
+  assert.equal(findFaculty(bareWordOnly)?.value, "Pharmacy");
+  assert.equal(findFaculty(bareWordOnly)?.confidence, "low");
+
+  // No education section at all, and no match — both still yield nothing.
+  assert.equal(findFaculty([]), null);
+  assert.equal(findFaculty(sliceCvSections(["EDUCATION", "Diploma in Project Management"])), null);
 }
 
 function runWorkTests() {
@@ -643,6 +678,7 @@ export function runRecruitmentRuleExtractionTests() {
   runPatternTests();
   runSectionTests();
   runPersonalTests();
+  runEducationTests();
   runWorkTests();
   runEndToEndTests();
   runMergeTests();
