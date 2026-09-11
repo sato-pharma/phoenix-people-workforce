@@ -166,6 +166,50 @@ export const FACULTY_KEYWORDS: readonly string[] = [
 ];
 
 /**
+ * The SAME faculties as FACULTY_KEYWORDS, indexed by the word a DEGREE TITLE uses rather than the
+ * word a section HEADING uses — "Bachelor of Arts" and "Department: Archaeology" name a faculty
+ * exactly as validly as a CV line that literally says "Faculty of Arts", but neither is a substring
+ * of "faculty of arts" and so neither is reachable by FACULTY_KEYWORDS at all. A degree line that
+ * names one of these was, until this dictionary existed, read for its LEVEL only ("Bachelor") with
+ * the faculty silently dropped — see findFaculty's degree-qualifier and department-label passes.
+ *
+ * Deliberately the same closed set of disciplines FACULTY_KEYWORDS recognises, restated rather than
+ * derived from it: a degree title's grammar ("of Arts") and a heading's grammar ("of Arts" too, but
+ * inside "Faculty of Arts") happen to share a word here, but "Faculty of Veterinary Medicine" vs.
+ * plain "Veterinary Medicine" and the Arabic pairs do not reduce to one string operation. Extending
+ * one list is expected to mean extending both.
+ *
+ * Matched by LENGTH, longest alias first (see matchDegreeQualifier in education.ts) so "Computer
+ * Science" or "Veterinary Medicine" is read whole before the generic "Science" hiding inside it —
+ * the same reason FACULTY_KEYWORDS itself is sorted longest-first at its own call site.
+ */
+export const DEGREE_QUALIFIER_KEYWORDS: ReadonlyArray<{ readonly canonical: string; readonly aliases: readonly string[] }> = [
+  { aliases: ["veterinary medicine", "veterinary"], canonical: "Faculty of Veterinary Medicine" },
+  { aliases: ["computer science"], canonical: "Faculty of Computer Science" },
+  { aliases: ["mass communication"], canonical: "Faculty of Mass Communication" },
+  { aliases: ["physical education"], canonical: "Faculty of Physical Education" },
+  { aliases: ["applied arts"], canonical: "Faculty of Applied Arts" },
+  { aliases: ["fine arts"], canonical: "Faculty of Fine Arts" },
+  { aliases: ["social work"], canonical: "Faculty of Social Work" },
+  { aliases: ["business administration"], canonical: "Faculty of Business" },
+  { aliases: ["dental medicine", "dentistry"], canonical: "Faculty of Dentistry" },
+  { aliases: ["archaeology"], canonical: "Faculty of Archaeology" },
+  { aliases: ["medicine"], canonical: "Faculty of Medicine" },
+  { aliases: ["pharmacy"], canonical: "Faculty of Pharmacy" },
+  { aliases: ["engineering"], canonical: "Faculty of Engineering" },
+  { aliases: ["agriculture"], canonical: "Faculty of Agriculture" },
+  { aliases: ["education"], canonical: "Faculty of Education" },
+  { aliases: ["economics"], canonical: "Faculty of Economics" },
+  { aliases: ["tourism"], canonical: "Faculty of Tourism" },
+  { aliases: ["nursing"], canonical: "Faculty of Nursing" },
+  { aliases: ["computers", "computing"], canonical: "Faculty of Computers" },
+  { aliases: ["science"], canonical: "Faculty of Science" },
+  { aliases: ["commerce"], canonical: "Faculty of Commerce" },
+  { aliases: ["law"], canonical: "Faculty of Law" },
+  { aliases: ["arts"], canonical: "Faculty of Arts" },
+];
+
+/**
  * Bare single/short words that MIGHT name a faculty ("Pharmacy", "Commerce", "Law"), but are
  * ordinary English words that turn up in an education section for reasons that have nothing to do
  * with the candidate's own faculty — a training rotation, a previous employer's name, a course
