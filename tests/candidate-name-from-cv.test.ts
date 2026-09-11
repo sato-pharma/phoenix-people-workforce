@@ -6,6 +6,7 @@ import {
   isTrustworthyExtractedName,
   personNameFromFileName,
   resolveCandidateFullNameFromCv,
+  stripNameLabelSuffix,
 } from "../src/lib/recruitment/candidate-name-from-cv.ts";
 
 /**
@@ -135,6 +136,74 @@ export function runCandidateNameFromCvTests() {
     }),
     "",
     "the resolver must never return an empty name for a NOT NULL column",
+  );
+
+  // ---------------------------------------------------------------------------
+  // Label contamination: a governorate, a marital/military status, a nationality or a profession
+  // glued or trailing onto the name field itself — four real production candidates, 2026-09,
+  // every one written at "high" confidence before this existed.
+  // ---------------------------------------------------------------------------
+  assert.equal(
+    stripNameLabelSuffix("REHAB MOHAMEDDakahlia"),
+    "REHAB MOHAMED",
+    "a governorate GLUED onto the name with no space must be stripped",
+  );
+  assert.equal(
+    stripNameLabelSuffix("MONA YOUSSEF SAYED Veterinarian"),
+    "MONA YOUSSEF SAYED",
+    "a trailing profession must be stripped",
+  );
+  assert.equal(
+    stripNameLabelSuffix("Mustafa Mohamed Al-Laqqani Single"),
+    "Mustafa Mohamed Al-Laqqani",
+    "a trailing marital status must be stripped",
+  );
+  assert.equal(
+    stripNameLabelSuffix("Abdelrhman Attia Medical Representative"),
+    "Abdelrhman Attia",
+    "a trailing job title printed under the name must be stripped",
+  );
+
+  // Refuses rather than guesses.
+  assert.equal(stripNameLabelSuffix("Reham Aziz"), "Reham Aziz", "an ordinary name is left untouched");
+  assert.equal(
+    stripNameLabelSuffix("Marwa Single"),
+    "Marwa Single",
+    "a label is not stripped when doing so would leave fewer than two words",
+  );
+  // A SHORT label ("Giza", four letters) is too likely to be the tail of an unrelated real word to
+  // strip when it is GLUED with no space — so it is left alone there — but is still stripped when it
+  // is its own, space-separated word and enough of a name remains either way.
+  assert.equal(
+    stripNameLabelSuffix("Ahmed SamirGiza"),
+    "Ahmed SamirGiza",
+    "a short label glued with no space is left untouched",
+  );
+  assert.equal(
+    stripNameLabelSuffix("Ahmed Samir Giza"),
+    "Ahmed Samir",
+    "the same short label, space-separated, is stripped",
+  );
+
+  // End to end: the contamination must not survive resolveCandidateFullNameFromCv either — this is
+  // what actually reaches ats_candidates.full_name at candidate creation.
+  assert.equal(
+    resolveCandidateFullNameFromCv({
+      extractedConfidence: "high",
+      extractedName: "REHAB MOHAMEDDakahlia",
+      fileName: "REHAB MOHAMED.pdf",
+      senderFullName: "Rehab",
+    }),
+    "REHAB MOHAMED",
+  );
+  assert.equal(
+    resolveCandidateFullNameFromCv({
+      extractedConfidence: "high",
+      extractedName: "Mustafa Mohamed Al-Laqqani Single",
+      fileName: "mostafa CV 20264.docx",
+      senderFullName: "Mostafa",
+    }),
+    "Mustafa Mohamed Al-Laqqani",
   );
 
   // ---------------------------------------------------------------------------
