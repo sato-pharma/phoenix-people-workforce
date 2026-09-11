@@ -41,6 +41,7 @@ import {
   Loader2,
   PackageCheck,
   Plus,
+  RefreshCw,
   Smartphone,
   TriangleAlert,
   Upload,
@@ -263,6 +264,16 @@ const EMPTY_NEW_DEVICE = {
   note: "",
 };
 
+/** Rows reach the register two ways, and the commit press has to know which it is committing. */
+type ImportSource = "file" | "action1";
+
+/** What a pull reported about itself, shown so a blank column is diagnosable on the spot. */
+type Action1PullInfo = {
+  endpointsSeen: number;
+  fieldsSeen: string[];
+  organizationId: string;
+};
+
 export function DeviceRegisterWorkspace({
   canImport,
   canRecord,
@@ -287,6 +298,16 @@ export function DeviceRegisterWorkspace({
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importPreview, setImportPreview] = useState<DeviceImportPreview | null>(null);
   const [importResult, setImportResult] = useState<DeviceImportResult | null>(null);
+  /**
+   * Which of the two ways rows arrived.
+   *
+   * The black commit button is shared, so it has to commit the source that was CHECKED. Without
+   * this it would always post the spreadsheet route, and a pull from Action1 that previewed 12
+   * machines would answer "choose the filled-in template first" — a refusal naming a file nobody
+   * was using.
+   */
+  const [importSource, setImportSource] = useState<ImportSource>("file");
+  const [action1Info, setAction1Info] = useState<Action1PullInfo | null>(null);
 
   const post = useCallback(async (payload: Record<string, unknown>) => {
     setBusy(true);
@@ -394,27 +415,43 @@ export function DeviceRegisterWorkspace({
    * than a duplicate or a crash.
    */
   const sendImport = useCallback(
-    async (step: "dry-run" | "confirm") => {
-      if (!importFile) {
+    async (step: "dry-run" | "confirm", source: ImportSource = "file") => {
+      const file = importFile;
+      if (source === "file" && !file) {
         setError("Choose the filled-in template first.");
         return;
       }
       setBusy(true);
       setError(null);
       try {
-        const body = new FormData();
-        body.append("file", importFile);
-        const response = await fetch(`/api/devices/import/${step}`, { body, method: "POST" });
+        // The Action1 press carries no body at all: the server pulls the fleet itself, on the
+        // company's own credentials, and re-pulls at commit for the same reason the file is re-read.
+        let response: Response;
+        if (source === "file" && file) {
+          const body = new FormData();
+          body.append("file", file);
+          response = await fetch(`/api/devices/import/${step}`, { body, method: "POST" });
+        } else {
+          response = await fetch(`/api/devices/action1/${step}`, { method: "POST" });
+        }
+
         const payload = (await response.json()) as Partial<DeviceRegisterData> &
-          DeviceImportPreview & { message?: string; importResult?: DeviceImportResult };
+          DeviceImportPreview & {
+            action1?: Action1PullInfo;
+            importResult?: DeviceImportResult;
+            message?: string;
+          };
 
         if (!response.ok) {
           setError(payload.message ?? "The import could not be read.");
           return;
         }
 
+        setImportSource(source);
+
         if (step === "dry-run") {
           setImportPreview(payload);
+          setAction1Info(payload.action1 ?? null);
           setImportResult(null);
           return;
         }
@@ -424,7 +461,10 @@ export function DeviceRegisterWorkspace({
         if (payload.devices) setData(payload as DeviceRegisterData);
         setImportResult(payload.importResult ?? null);
         setImportPreview(null);
-        setImportFile(null);
+        setAction1Info(null);
+        // Only the file is cleared. A pull has nothing to clear, and clearing the chosen file after
+        // an Action1 commit would silently drop a spreadsheet somebody had queued up beside it.
+        if (source === "file") setImportFile(null);
       } catch (requestError) {
         setError(requestError instanceof Error ? requestError.message : "The upload failed.");
       } finally {
@@ -646,12 +686,70 @@ export function DeviceRegisterWorkspace({
               <button
                 className="border border-slate-900 bg-slate-900 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-white hover:bg-slate-800 disabled:opacity-50"
                 disabled={busy}
-                onClick={() => void sendImport("confirm")}
+                onClick={() => void sendImport("confirm", importSource)}
                 type="button"
               >
                 Import {importPreview.summary.canImport.toLocaleString("en-US")} device
                 {importPreview.summary.canImport === 1 ? "" : "s"}
               </button>
+            ) : null}
+          </div>
+
+          {/*
+            THE SAME TWO PRESSES, WITH NO FILE IN THE MIDDLE.
+
+            It shares the preview and the black commit button deliberately rather than growing a
+            second set: the thing being checked is identical — rows against the register — and two
+            "Import" buttons on one panel is how somebody commits the pull while reading the
+            spreadsheet's preview.
+
+            It is offered whether or not Action1 is connected, because the server is the only side
+            that knows, and the refusal it answers with names the two variables that fix it. A
+            button hidden on an unset environment variable would read as the feature not existing.
+          */}
+          <div className="mt-3 border border-slate-200 bg-slate-50 px-3 py-3">
+            <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-600">
+              Or pull the fleet from Action1
+            </p>
+            <p className="mt-1.5 text-[11px] font-semibold leading-relaxed text-slate-500">
+              Every machine running the Action1 agent, with its manufacturer, model, serial number,
+              processor and memory read off the endpoint itself rather than copied by hand. Devices
+              arrive in stock and nobody is signed for anything — you issue each one to its holder
+              here, and that press is what the custody receipt records. A machine already in the
+              register comes back as a skip, so this is safe to run again whenever a laptop is set
+              up.
+            </p>
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+              <button
+                className="inline-flex items-center gap-2 border border-slate-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                disabled={busy}
+                onClick={() => void sendImport("dry-run", "action1")}
+                type="button"
+              >
+                <RefreshCw aria-hidden="true" className="h-3 w-3" />
+                Check Action1
+              </button>
+              {action1Info ? (
+                <span className="text-[11px] font-semibold text-slate-600">
+                  {action1Info.endpointsSeen.toLocaleString("en-US")} endpoint
+                  {action1Info.endpointsSeen === 1 ? "" : "s"} in organization {action1Info.organizationId}
+                </span>
+              ) : null}
+            </div>
+
+            {/*
+              The field vocabulary the pull actually saw. This is here because the mapping was
+              written against Action1's published paths but not against a live response, so if a
+              column comes back empty the question "what did Action1 call it" has an answer on the
+              page instead of needing a developer and a token.
+            */}
+            {action1Info && action1Info.fieldsSeen.length > 0 ? (
+              <details className="mt-2 text-[11px] font-semibold text-slate-500">
+                <summary className="cursor-pointer text-slate-600">
+                  Fields Action1 sent ({action1Info.fieldsSeen.length})
+                </summary>
+                <p className="mt-1 break-words leading-relaxed">{action1Info.fieldsSeen.join(", ")}</p>
+              </details>
             ) : null}
           </div>
 
