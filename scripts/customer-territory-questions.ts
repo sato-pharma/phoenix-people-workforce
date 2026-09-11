@@ -726,7 +726,10 @@ async function main(): Promise<void> {
     connect_timeout: 20,
     max: 1,
     ssl: "require",
-    connection: { statement_timeout: "900000" },
+    // A NUMBER, not a string. The finder scans every alias key against every mapped customer and
+    // runs well past the server default; the untracked scripts this replaces wrote it as a string,
+    // which typechecks nowhere because CI never saw them.
+    connection: { statement_timeout: 900_000 },
   });
 
   try {
