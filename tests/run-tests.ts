@@ -1401,6 +1401,7 @@ import { runMarketingFinanceHoldUiTests } from "./marketing-finance-hold-ui.test
 import { runDistributorUploadNudgeTests } from "./distributor-upload-nudge.test.ts";
 import { runMarketingInvoiceOverdueNudgeTests } from "./marketing-invoice-overdue-nudge.test.ts";
 import { runSosMappingGuardTests } from "./sos-mapping-guard.test.ts";
+import { runAttributionFreshnessSweepTests } from "./attribution-freshness-sweep.test.ts";
 
 import { runLeaverRosterExclusionTests } from "./leaver-roster-exclusion.test.ts";
 import { runCompanyActivityReportPostExitDaysTests } from "./company-activity-report-post-exit-days.test.ts";
@@ -5144,6 +5145,11 @@ await runTest("leave request codes (EXC-/VAC- stored, unique, backfilled, immuta
 await runTest(
   "the mapping guard holds a re-mapping that overwrites his decision or crosses a region, and tells him once per batch",
   runSosMappingGuardTests,
+);
+
+await runTest(
+  "a mapping change heals the attribution rollup on the mapping clock, and the sweep cannot reach a published month",
+  runAttributionFreshnessSweepTests,
 );
 
 await runTest(
