@@ -78,10 +78,6 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: systemIdentity.appName,
   },
-  // Chrome reads this meta before it reads the html[translate] attribute, and it is the signal
-  // its translate bar actually honours. Paired with translate="no" on <html> below — see the
-  // comment there for why either exists at all.
-  other: { google: "notranslate" },
 };
 
 // viewport-fit=cover is required for env(safe-area-inset-*) to resolve to real
@@ -97,31 +93,37 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   /*
-    translate="no" asks the browser not to machine-translate this page, and it is here for a
-    hydration bug rather than for a language preference.
+    NO translate="no" HERE, AND THAT IS A DECISION — do not re-add it without reading this.
 
-    A browser translation rewrites text nodes in the DOM. If it lands before or during React's
-    hydration pass, the text no longer matches what the server sent and React throws away the
-    server HTML — hydration error #418, always the `args[]=text` variant, never `args[]=html`,
-    because translation changes content and not structure.
+    It was here from 2026-09-08 to 2026-09-11, paired with a google=notranslate meta in the
+    metadata export above, as a TEST of one hypothesis about React hydration error #418: a browser
+    translation rewrites text nodes, and if that lands before or during hydration the text no
+    longer matches what the server sent, so React discards the server HTML. Always the
+    `args[]=text` variant, never `args[]=html`, because translation changes content and not
+    structure.
 
-    Measured on production 2026-09-08, and the reason this is a plausible cause rather than a
-    guess: #418 is concentrated in PEOPLE, not pages. One user (B-10) accounts for 63 events
-    across 23 unrelated routes and three different desktop browsers — no page-level defect has
-    that shape. Two further routes, /employee-portals/vacation-report and
-    /employee-portals/recruitment-candidates, kept throwing after every code cause was found and
-    fixed, and an exhaustive sweep of both import graphs (154 and 155 files) turned up nothing.
+    The hypothesis was worth testing because #418 was concentrated in PEOPLE, not pages: user B-10
+    alone produced 63 events across 23 unrelated routes and three desktop browsers, which no
+    page-level defect can do. The commit that added it named its own falsification test — if the
+    two routes still erroring went quiet the diagnosis was right, and if they kept erroring the
+    attribute should come back out.
 
-    THE TRADE, stated because it is a real one: this stops browsers offering to translate Phoenix
-    for everybody, and the workforce is Arabic-speaking. Owner's decision, 2026-09-08, taken with
-    that cost in front of him. If the two routes go quiet from here, the diagnosis was right; if
-    they keep erroring, this was not the cause and the attribute can come out again.
+    MEASURED ON PRODUCTION 2026-09-11, three days in. Across the whole platform exactly ONE route
+    still threw #418: /employee-portals/recruitment-candidates, 12 events, every one of them from
+    a single District Sales Manager on a Samsung Galaxy A12 (Samsung Internet 20 / Chrome 106).
+    Every other route, /employee-portals/vacation-report included, went silent. So the attribute
+    did not close the case it was added for, and the reader it was meant to help is on an engine
+    that need not honour Chrome's signal at all.
 
-    NOT a guarantee: a reader can still invoke translation by hand, and some iOS builds ignore
-    both signals. It removes the automatic case, which is the one nobody chooses.
+    THE COST IT WAS PAYING, which is why it is gone rather than left in place harmlessly: it stops
+    browsers offering to translate Phoenix for everybody, and the workforce is Arabic-speaking.
+    Owner's decision to remove, 2026-09-11, having been shown that one reader on one page is all
+    that is left.
+
+    The remaining #418 on that page is NOT explained by this removal and is still open.
   */
   return (
-    <html lang="en" translate="no" className="h-full antialiased" suppressHydrationWarning>
+    <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <body className="min-h-full bg-bg font-sans text-text">
         {/* FIRST, and before anything renders — see DISPLAY_SCALE_BOOT_SCRIPT. Moving this below
             the shell reintroduces the paint-at-100%-then-snap flash it exists to prevent. */}

@@ -88,13 +88,20 @@ off-app, and `decodeErrorMessage()` leads the display with that origin.
   longer true — `src/lib/google-maps/browser.ts` injects the Maps API on every page with a map,
   and Maps serves CORS headers, so its failures arrive in full rather than masked.
 
-**Hydration `#418` had one cause left standing and no evidence either way.** It concentrates in
-PEOPLE, not pages: one reader produced 63 events across 23 unrelated routes, and sweeping the two
-worst routes' import graphs (154 and 155 files) found no app-code cause. `app/layout.tsx` opted
-out of machine translation on 2026-09-08 (#3487, `translate="no"` plus the `google: notranslate`
-meta) and its own comment named the falsification test. The routes did NOT go quiet:
-`/employee-portals/recruitment-candidates` threw twice on 2026-09-09 on a release containing the
-opt-out, from Samsung Internet, whose translator honours neither signal.
+**Hydration `#418` had one cause left standing, it was tested, and it was ruled out.** The error
+concentrates in PEOPLE, not pages: one reader produced 63 events across 23 unrelated routes, and
+sweeping the two worst routes' import graphs (154 and 155 files) found no app-code cause.
+`app/layout.tsx` opted out of machine translation on 2026-09-08 (#3487, `translate="no"` plus the
+`google: notranslate` meta) and its own comment named the falsification test.
+
+**The opt-out was REMOVED on 2026-09-11 and must not be re-added without new evidence.** Measured
+three days in: across the whole platform exactly one route still threw `#418` —
+`/employee-portals/recruitment-candidates`, 12 events, every one from a single District Sales
+Manager on Samsung Internet 20 (Chrome 106), whose translator honours neither signal. Every other
+route, `/employee-portals/vacation-report` included, went silent. No event in that window carried
+a `domRewriter=` marker, and the probe was live in all three releases that threw. So the attribute
+was costing every Arabic-speaking reader the browser's translate offer and closing nothing. **The
+remaining `#418` on that one page is still unexplained.**
 
 So `report-client-error.ts` now records what rewrote the DOM, through the pure
 `describeDomRewriters()` (`src/lib/error-monitor/dom-rewriter.ts`): the `translated-ltr` /

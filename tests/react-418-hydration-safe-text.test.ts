@@ -405,29 +405,26 @@ export function runReact418HydrationSafeTextTests() {
     `these client components ask the reader's ICU build for an en-GB month abbreviation, which CLDR 42 changed from "Sep" to "Sept" — every one is React hydration error #418 for anyone on an older browser, and it will only show up in September:\n  ${offenders.join("\n  ")}\nRoute them through stableEnGbFormatter (keeping their own options and timeZone verbatim — the zone is not the bug).`,
   );
 
-  // ── 3g. The page opts out of browser machine-translation ───────────────────────────────────
+  // ── 3g. THE MACHINE-TRANSLATION OPT-OUT IS GONE, AND NOTHING IS PINNED HERE ────────────────
   //
-  // A different cause of the SAME error, and the only one left after every code-level source was
-  // found and fixed. A browser translation rewrites text nodes; if that lands before or during
-  // hydration, React discards the server HTML — #418, always the `args[]=text` variant.
+  // This section used to assert translate="no" on <html> and a google=notranslate meta in
+  // app/layout.tsx. Both were added on 2026-09-08 to test one hypothesis about this same error: a
+  // browser translation rewrites text nodes, so if it lands before or during hydration React
+  // discards the server HTML. That commit named its own falsification test — if the routes still
+  // erroring went quiet the diagnosis was right, and if they kept erroring the attribute should
+  // come back out.
   //
-  // The evidence that this is a real class here is the SHAPE of the production data rather than any
-  // one event: #418 is concentrated in PEOPLE, not pages. User B-10 alone produced 63 events across
-  // 23 unrelated routes and three different desktop browsers, which no page-level defect can do.
+  // It kept erroring. Measured on production 2026-09-11: exactly one route platform-wide still
+  // threw #418, /employee-portals/recruitment-candidates, 12 events, all from ONE District Sales
+  // Manager on Samsung Internet 20 (Chrome 106) — an engine that need not honour Chrome's signal
+  // in the first place. Everything else had gone quiet. Removed at the owner's instruction that
+  // day, because the attribute was costing every Arabic-speaking reader the browser's translate
+  // offer and buying nothing measurable.
   //
-  // Pinned so it cannot be quietly dropped in a layout tidy-up. If the remaining routes keep
-  // erroring, the right response is to REMOVE this deliberately and record why — not to let it rot.
-  const layoutSource = codeOnly(read("app/layout.tsx"));
-  assert.match(
-    layoutSource,
-    /<html[^>]*\stranslate="no"/,
-    'app/layout.tsx must keep translate="no" on <html> — a browser translation rewrites text nodes and turns every page into React hydration error #418',
-  );
-  assert.match(
-    layoutSource,
-    /other:\s*\{\s*google:\s*["']notranslate["']\s*\}/,
-    'the google=notranslate meta must stay in the metadata export — Chrome honours it ahead of the html[translate] attribute, so the attribute alone is the weaker half of the pair',
-  );
+  // NOTHING IS ASSERTED IN EITHER DIRECTION. An anti-pin would block a future session from
+  // re-running the experiment properly, and that is not what the evidence supports — the remaining
+  // #418 on that one page is still unexplained. The account is here so a re-add is a decision
+  // somebody makes on purpose rather than a guess somebody repeats. See app/layout.tsx.
 
   // ── 4. The portal shell clock is NOT pinned here — #3336 owns it ─────────────────────
   //
