@@ -32,6 +32,7 @@ export type DistributionSpecView = {
   includedHrIds: string[];
   excludedHrIds: string[];
   externalEmails: string[];
+  allEmployees: boolean;
 };
 
 export type AliasView = {
@@ -212,6 +213,12 @@ function ListCard({
     : [];
 
   const shown = showAll ? list.members : list.members.slice(0, 12);
+  // 🔴 The one list that reaches the whole company must SAY SO on its own card. Without this it
+  // renders like any other: an editable Roles picker reading "No role filter" whose every choice is
+  // silently inert (the matcher returns true before the roles check), no "Also filtered by" line
+  // because every array is empty, and the words "Nobody. Check the rule above" — because a disabled
+  // list resolves to nobody. Toggle and Save, and that card becomes a live company-wide audience.
+  const reachesEveryone = spec?.allEmployees === true;
 
   return (
     <div className="rounded-2xl border border-phx-line bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
@@ -236,18 +243,35 @@ function ListCard({
         </div>
       ) : null}
 
+      {reachesEveryone ? (
+        <div className="mt-3 flex items-start gap-1.5 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs font-black text-amber-900">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            This list reaches EVERY employee in the company. Switching it on makes one send a
+            company-wide email, which cannot be recalled.
+          </span>
+        </div>
+      ) : null}
+
       <div className="mt-3 flex flex-wrap items-end gap-3">
-        <MultiSelectFilter
-          allLabel="No role filter"
-          label="Roles"
-          mode="include"
-          onModeChange={() => {
-            /* A recipient list is always an "include" — exclude mode has no meaning here. */
-          }}
-          onSelectedChange={(next) => onRolesChange(next as PhoenixRole[])}
-          options={ROLE_OPTIONS}
-          selected={spec?.roles ?? []}
-        />
+        {reachesEveryone ? (
+          // No role picker on an all-company list: every choice in it is inert, because the matcher
+          // answers true before it reads roles. An editable control that does nothing is worse than
+          // no control.
+          <p className="text-xs font-semibold text-phx-ink-2">Rule: everyone — no filter applies.</p>
+        ) : (
+          <MultiSelectFilter
+            allLabel="No role filter"
+            label="Roles"
+            mode="include"
+            onModeChange={() => {
+              /* A recipient list is always an "include" — exclude mode has no meaning here. */
+            }}
+            onSelectedChange={(next) => onRolesChange(next as PhoenixRole[])}
+            options={ROLE_OPTIONS}
+            selected={spec?.roles ?? []}
+          />
+        )}
         <button
           className="inline-flex h-[42px] items-center gap-1.5 rounded-lg bg-[#0B0B0B] px-4 text-phx-xs font-black text-white transition hover:bg-[#1E293B] disabled:opacity-50"
           disabled={saving}
