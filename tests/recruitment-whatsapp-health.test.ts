@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   aggregateProbeError,
+  aggregateProbeFailureKind,
   evaluateWebhookRouting,
   expectedWebhookUrl,
   normalizeCallbackUrl,
@@ -14,6 +15,7 @@ import {
   isNumberSilent,
   isPublicWhatsAppArrival,
   isSilenceAlertWindow,
+  probeWhatsAppNumber,
   resolveConfiguredPhoneNumberIds,
   type WhatsAppNumberProbe,
   type WhatsAppPublicReach,
@@ -88,6 +90,11 @@ export function runRecruitmentWhatsAppHealthTests() {
   });
   assert.equal(blocked.status, "api_unreachable");
   assert.match(blocked.detail, /API access blocked/, "Meta's own wording is what makes the alert actionable");
+  assert.match(
+    blocked.detail,
+    /rejecting our credentials/,
+    "omitting apiErrorKind must default to the original wording - every pre-existing caller only ever set apiError from a real Meta answer",
+  );
 
   // A dead API outranks silence — one incident must not be reported as two problems.
   const blockedAndSilent = evaluateWhatsAppIntakeHealth({
@@ -98,6 +105,46 @@ export function runRecruitmentWhatsAppHealthTests() {
     silenceThresholdHours: 24,
   });
   assert.equal(blockedAndSilent.status, "api_unreachable");
+
+  // --- TRANSPORT failure vs. a real Meta answer (the 2026-09-11 false alarm) --------------------
+  // A Railway container cutover made every probe throw undici's "fetch failed" at 20:44:02 Cairo,
+  // in the same second the deploy went live. Production paged "WhatsApp CV intake is DOWN" wording
+  // it as Meta rejecting the credentials; a read-only re-check an hour later found both numbers
+  // CONNECTED and CVs arriving all day. Meta was never reached at all - this pins the honest wording.
+  const transportDown = evaluateWhatsAppIntakeHealth({
+    apiError: "1319071451278873: fetch failed; 477586495433549: fetch failed",
+    apiErrorKind: "transport",
+    configured: true,
+    lastInboundAt: new Date(CAIRO_NOON.getTime() - 2 * 60 * 60 * 1000),
+    now: CAIRO_NOON,
+    silenceThresholdHours: 24,
+  });
+  assert.equal(
+    transportDown.status,
+    "api_unreachable",
+    "a transport failure that survives its retries must still page - honest wording, not silence",
+  );
+  assert.match(transportDown.detail, /could not be reached/i, "the honest wording: Meta could not be reached");
+  assert.equal(
+    /rejecting our credentials/.test(transportDown.detail),
+    false,
+    "a network blip must NEVER be worded as Meta rejecting our credentials",
+  );
+
+  // The 2026-07-26 incident must still read exactly as it always has when Meta genuinely answered.
+  const metaDown = evaluateWhatsAppIntakeHealth({
+    apiError: "API access blocked. (code 200)",
+    apiErrorKind: "meta",
+    configured: true,
+    lastInboundAt: new Date(CAIRO_NOON.getTime() - 2 * 60 * 60 * 1000),
+    now: CAIRO_NOON,
+    silenceThresholdHours: 24,
+  });
+  assert.match(
+    metaDown.detail,
+    /rejecting our credentials/,
+    "a real Meta answer keeps the accurate, original wording - only transport failures get new wording",
+  );
 
   // --- Silence (credentials fine, messages not arriving) ---------------------------------------
   const silent = evaluateWhatsAppIntakeHealth({
@@ -244,15 +291,15 @@ export function runRecruitmentWhatsAppHealthTests() {
 
   // --- aggregateProbeError (per-number probe -> one status) ------------------------------------
   const bothOk: WhatsAppNumberProbe[] = [
-    { displayNumber: "+20 10 98500699", error: null, ok: true, phoneNumberId: "a" },
-    { displayNumber: "+20 11 59888247", error: null, ok: true, phoneNumberId: "b" },
+    { displayNumber: "+20 10 98500699", error: null, failureKind: null, ok: true, phoneNumberId: "a" },
+    { displayNumber: "+20 11 59888247", error: null, failureKind: null, ok: true, phoneNumberId: "b" },
   ];
   assert.equal(aggregateProbeError(bothOk), null, "all numbers healthy -> no API error");
   assert.equal(aggregateProbeError([]), null, "no numbers probed -> no API error (handled as not_configured upstream)");
 
   const oneDown: WhatsAppNumberProbe[] = [
-    { displayNumber: "+20 10 98500699", error: null, ok: true, phoneNumberId: "a" },
-    { displayNumber: "+20 11 59888247", error: "number status is FLAGGED", ok: false, phoneNumberId: "b" },
+    { displayNumber: "+20 10 98500699", error: null, failureKind: null, ok: true, phoneNumberId: "a" },
+    { displayNumber: "+20 11 59888247", error: "number status is FLAGGED", failureKind: "meta", ok: false, phoneNumberId: "b" },
   ];
   assert.equal(
     aggregateProbeError(oneDown),
@@ -261,13 +308,37 @@ export function runRecruitmentWhatsAppHealthTests() {
   );
 
   const bothDown: WhatsAppNumberProbe[] = [
-    { displayNumber: null, error: "API access blocked. (code 200)", ok: false, phoneNumberId: "a" },
-    { displayNumber: "+20 11 59888247", error: "number status is RESTRICTED", ok: false, phoneNumberId: "b" },
+    { displayNumber: null, error: "API access blocked. (code 200)", failureKind: "meta", ok: false, phoneNumberId: "a" },
+    { displayNumber: "+20 11 59888247", error: "number status is RESTRICTED", failureKind: "meta", ok: false, phoneNumberId: "b" },
   ];
   assert.equal(
     aggregateProbeError(bothDown),
     "a: API access blocked. (code 200); +20 11 59888247: number status is RESTRICTED",
     "every failing line is reported; the id is used when Meta returned no display number",
+  );
+
+  // --- aggregateProbeFailureKind (transport vs. meta — the 2026-09-11 false alarm) -------------
+  // A Railway container cutover made every probe throw "fetch failed" at the same instant a real
+  // Meta credential block would. This is the rule that tells the two apart before wording an alert.
+  assert.equal(aggregateProbeFailureKind(bothOk), null, "nothing failed -> null");
+  assert.equal(aggregateProbeFailureKind(bothDown), "meta", "every failure was a real Meta answer");
+
+  const transportProbe: WhatsAppNumberProbe = {
+    displayNumber: null,
+    error: "fetch failed",
+    failureKind: "transport",
+    ok: false,
+    phoneNumberId: "c",
+  };
+  assert.equal(
+    aggregateProbeFailureKind([transportProbe]),
+    "transport",
+    "a lone transport failure reads as transport, not a credential rejection",
+  );
+  assert.equal(
+    aggregateProbeFailureKind([transportProbe, oneDown[1]]),
+    "meta",
+    "a mix outranks toward meta — a co-occurring network blip must not hide a real, actionable answer",
   );
 
   // --- isNumberSilent (per-line silence) --------------------------------------------------------
@@ -784,4 +855,139 @@ export function runPublicWhatsAppArrivalTests() {
     !/\.neq\("raw_metadata->>bulkImport"/.test(source),
     "a bare .neq() on bulkImport silently returns no rows - use the or(is.null,neq) form",
   );
+}
+
+// ===================================================================================================
+// PROBE RETRY — the 2026-09-11 false alarm. A Railway container cutover made probeWhatsAppNumber's
+// fetch throw undici's "fetch failed" for both numbers in the same second the deploy went live;
+// production paged it as Meta rejecting the credentials, and a read-only re-check an hour later
+// found both numbers CONNECTED. This is a real behavioral test (mocked global.fetch, real setTimeout
+// delays collapsed via an env var) rather than a source-text assertion, since probeWhatsAppNumber
+// depends only on fetch + process.env and is directly testable.
+// ===================================================================================================
+
+const PROBE_TOKEN = "test-token";
+const PROBE_PHONE_NUMBER_ID = "1319071451278873";
+
+function jsonProbeResponse(status: number, payload: unknown): Response {
+  return new Response(JSON.stringify(payload), { headers: { "content-type": "application/json" }, status });
+}
+
+function installProbeRetryEnv() {
+  const saved = process.env.WHATSAPP_PROBE_RETRY_DELAY_MS;
+  // Collapse the production ~3s-between-retries delay to a few ms so this test doesn't burn real
+  // wall-clock time (2 retries at the production delay would otherwise cost 6s+).
+  process.env.WHATSAPP_PROBE_RETRY_DELAY_MS = "5";
+  return () => {
+    if (saved === undefined) delete process.env.WHATSAPP_PROBE_RETRY_DELAY_MS;
+    else process.env.WHATSAPP_PROBE_RETRY_DELAY_MS = saved;
+  };
+}
+
+// Queues a sequence of fetch outcomes, one per call; the last entry repeats once exhausted. An
+// Error entry is THROWN (a transport failure, exactly like undici's "fetch failed"); a Response is
+// returned (Meta answered).
+function installProbeFetchQueue(outcomes: Array<Response | Error>) {
+  const savedFetch = globalThis.fetch;
+  let callCount = 0;
+  globalThis.fetch = (async () => {
+    const outcome = outcomes[Math.min(callCount, outcomes.length - 1)];
+    callCount += 1;
+    if (outcome instanceof Error) throw outcome;
+    return outcome;
+  }) as typeof fetch;
+  return {
+    callCount: () => callCount,
+    restore: () => {
+      globalThis.fetch = savedFetch;
+    },
+  };
+}
+
+export async function runWhatsAppProbeRetryTests() {
+  // --- THE REGRESSION THIS SHIPS FOR: a transient network blip retries and recovers -------------
+  {
+    const restoreEnv = installProbeRetryEnv();
+    const fetchMock = installProbeFetchQueue([
+      new TypeError("fetch failed"),
+      jsonProbeResponse(200, { display_phone_number: "+20 10 98500699", id: PROBE_PHONE_NUMBER_ID, status: "CONNECTED" }),
+    ]);
+    try {
+      const result = await probeWhatsAppNumber(PROBE_PHONE_NUMBER_ID, PROBE_TOKEN);
+      assert.equal(result.ok, true, "a probe that recovers within its retry budget must report healthy");
+      assert.equal(result.failureKind, null);
+      assert.equal(fetchMock.callCount(), 2, "one failed attempt was retried, and the second succeeded");
+    } finally {
+      fetchMock.restore();
+      restoreEnv();
+    }
+  }
+
+  // --- a sustained network outage exhausts retries and still counts the number as down -----------
+  {
+    const restoreEnv = installProbeRetryEnv();
+    const fetchMock = installProbeFetchQueue([new TypeError("fetch failed")]);
+    try {
+      const result = await probeWhatsAppNumber(PROBE_PHONE_NUMBER_ID, PROBE_TOKEN);
+      assert.equal(result.ok, false, "an outage that never clears must still count the number as down");
+      assert.equal(result.failureKind, "transport", "the failure must still be labelled transport, never meta");
+      assert.equal(result.error, "fetch failed");
+      assert.equal(fetchMock.callCount(), 3, "the initial attempt plus 2 retries - 3 total - before giving up");
+    } finally {
+      fetchMock.restore();
+      restoreEnv();
+    }
+  }
+
+  // --- a real Meta answer pages on the FIRST sighting, unretried ----------------------------------
+  // The 2026-07-26 incident this file exists for: Meta answered with an OAuthException, and that
+  // must never wait out a retry budget before paging.
+  {
+    const restoreEnv = installProbeRetryEnv();
+    const fetchMock = installProbeFetchQueue([jsonProbeResponse(400, { error: { code: 200, message: "API access blocked" } })]);
+    try {
+      const result = await probeWhatsAppNumber(PROBE_PHONE_NUMBER_ID, PROBE_TOKEN);
+      assert.equal(result.ok, false);
+      assert.equal(result.failureKind, "meta");
+      assert.match(result.error ?? "", /API access blocked/);
+      assert.equal(fetchMock.callCount(), 1, "a real Meta answer must never be retried");
+    } finally {
+      fetchMock.restore();
+      restoreEnv();
+    }
+  }
+
+  // --- a resolved-but-not-CONNECTED number is also a Meta answer, unretried -----------------------
+  {
+    const restoreEnv = installProbeRetryEnv();
+    const fetchMock = installProbeFetchQueue([
+      jsonProbeResponse(200, { display_phone_number: "+20 11 59888247", id: PROBE_PHONE_NUMBER_ID, status: "FLAGGED" }),
+    ]);
+    try {
+      const result = await probeWhatsAppNumber(PROBE_PHONE_NUMBER_ID, PROBE_TOKEN);
+      assert.equal(result.ok, false);
+      assert.equal(result.failureKind, "meta");
+      assert.equal(result.error, "number status is FLAGGED");
+      assert.equal(fetchMock.callCount(), 1, "a resolved number status is a fact from Meta right now, never retried");
+    } finally {
+      fetchMock.restore();
+      restoreEnv();
+    }
+  }
+
+  // --- healthy on the very first attempt costs exactly one call -----------------------------------
+  {
+    const restoreEnv = installProbeRetryEnv();
+    const fetchMock = installProbeFetchQueue([
+      jsonProbeResponse(200, { display_phone_number: "+20 10 98500699", id: PROBE_PHONE_NUMBER_ID, status: "CONNECTED" }),
+    ]);
+    try {
+      const result = await probeWhatsAppNumber(PROBE_PHONE_NUMBER_ID, PROBE_TOKEN);
+      assert.equal(result.ok, true);
+      assert.equal(fetchMock.callCount(), 1, "a healthy probe must never retry");
+    } finally {
+      fetchMock.restore();
+      restoreEnv();
+    }
+  }
 }

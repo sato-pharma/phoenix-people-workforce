@@ -285,6 +285,7 @@ import {
   runWhatsAppWebhookRoutingTests,
   runWhatsAppPublicReachTests,
   runPublicWhatsAppArrivalTests,
+  runWhatsAppProbeRetryTests,
 } from "./recruitment-whatsapp-health.test.ts";
 import { runRecruitmentInboundQueueTests } from "./recruitment-inbound-queue.test.ts";
 import { runRecruitmentInboundMasteryTests } from "./recruitment-inbound-mastery.test.ts";
@@ -2260,6 +2261,10 @@ await runTest(
 await runTest(
   "recruitment whatsapp public arrival (a forward must not reset the silence clock)",
   runPublicWhatsAppArrivalTests,
+);
+await runTest(
+  "recruitment whatsapp probe retry (a transport blip retries; a real Meta answer pages on first sight)",
+  runWhatsAppProbeRetryTests,
 );
 await runTest("recruitment inbound intake queue (backoff, dead-letter, dedupe key)", runRecruitmentInboundQueueTests);
 await runTest("recruitment inbound mastery (analytics, spike, fuzzy dedup, cv-link allowlist)", runRecruitmentInboundMasteryTests);
