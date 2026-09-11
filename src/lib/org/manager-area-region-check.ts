@@ -41,7 +41,9 @@ async function loadPaged<T>(
       .order(orderBy, { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
     if (error) throw error;
-    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    // Through `unknown` on purpose: the column list is a runtime string, so the client cannot infer
+    // a row shape and types the payload as GenericStringError[]. A direct cast is rejected.
+    const rows = ((data ?? []) as unknown) as Array<Record<string, unknown>>;
     for (const row of rows) {
       const mapped = map(row);
       if (mapped !== null) out.push(mapped);
