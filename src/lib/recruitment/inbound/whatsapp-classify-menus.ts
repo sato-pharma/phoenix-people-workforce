@@ -447,9 +447,20 @@ export function typedAnswerTooLongText(what: string, max: number): string {
 }
 
 // ── Question 3 — which region? ───────────────────────────────────────────────────────────────────
-// Still NOT read from au.regions live: that table also carries `UE-1` and `UE-2`, which are sales
-// subdivisions of Upper Egypt with ZERO active areas, and asking an applicant to choose between
-// them asks them to know an internal split. `candidateRegionCodes` stays the reviewed list.
+// Still NOT read from au.regions live: that table also carries `UE-1` and `UE-2`, sales subdivisions
+// of Upper Egypt, and asking an applicant to choose between them asks them to know an internal
+// split. `candidateRegionCodes` stays the reviewed list.
+//
+// "ZERO active areas" stopped being true on 2026-09-01 — do not read this note as still saying so.
+// Pedia's Upper Egypt split into UE-1/UE-2 that day (AGENTS.md's August/Upper Egypt golden rule), so
+// both now carry real seats. That does not by itself make the split offerable HERE: AGENTS.md is
+// explicit that UE-1/UE-2 membership DIFFERS by product line, and this question is asked before the
+// flow knows which line an applicant is bound for, so there is still no line to resolve the split
+// with. A district manager who types "Upper Egypt 1" instead of tapping the one Upper Egypt row is
+// read by `readDeclaredRegionFreeText` in candidate-folder-suggestion.ts, which — the owner's decision
+// 2026-09-11, asked directly — files it into the single Upper Egypt folder this apply flow offers,
+// same as a plain "Upper Egypt" answer. Which HALF they meant is not recovered by that; it is still
+// sitting in `preferred_region_name` verbatim for whoever needs it once the flow can ask a line.
 //
 // Revised 2026-08-28. That reviewed list had gone stale in the one way that matters: Delta (3) was
 // live and carrying target in `au.regions` while absent here, so the owner could open a District

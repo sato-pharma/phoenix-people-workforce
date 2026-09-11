@@ -117,9 +117,22 @@ export function resolveBackgroundStanding(
  * in a queue somebody has to work through:
  *
  *   already answered — the whole point of storing the confirmation.
- *   already filed    — including onto the Paramedical shelf, which IS the answer.
+ *   filed elsewhere  — onto the Paramedical shelf (which IS the answer), "other" (a job the five
+ *                      disciplines are not part of — see degreeEligibilityAppliesToDeclaredRole), or
+ *                      the duplicate archive (not a live CV at all).
  *   rejected         — the decision has been made on the whole application, not just the degree.
  *   judged eligible  — routed automatically; the owner asked for a check on the OTHER ones.
+ *
+ * FILED ONTO MEDICAL REP OR DISTRICT MANAGER IS DELIBERATELY NOT ONE OF THE FOUR. Those are the two
+ * shelves the eligibility rule is ABOUT, and a CV can sit on either with nobody having ever opened
+ * it: candidate-folder-suggestion.ts's degree gate only protects a filing made through the bulk
+ * "file what they answered" action, and only since it shipped (2026-09-02) — a CV filed before that,
+ * or filed by hand through the folder picker, which asks nothing about a degree at all, reaches the
+ * shelf unchecked. Production, 2026-09-11: 4 CVs sitting on these two shelves read as paramedical by
+ * this same rule and had never been looked at — one filed on Medical Representative / Behira 1 for
+ * eleven days. So being filed onto one of these two shelves answers nothing; it stays in the queue
+ * exactly as an unfiled CV would, and the row says which folder it is already sitting in so an admin
+ * loses no context by having answered "yes, that folder is right" as well as the degree question.
  *
  * What is left is exactly two groups: the CVs the rule reads as paramedical, and the ones whose
  * evidence it could not parse at all. Both need a person; they need to be told apart, which is what
@@ -130,9 +143,38 @@ export function needsBackgroundReview(
 ): boolean {
   if (!candidate) return false;
   if (isBackgroundConfirmationOutcome(candidate.backgroundConfirmedOutcome)) return false;
-  if (candidate.folder) return false;
+  const folderKind = candidate.folder?.kind ?? null;
+  if (folderKind && folderKind !== "medical_rep" && folderKind !== "district_manager") return false;
   if (String(candidate.status ?? "").trim().toLowerCase() === "rejected") return false;
   return resolveBackgroundStanding(candidate).outcome !== "eligible";
+}
+
+/**
+ * Why filing this CV onto Medical Representative or District Manager should wait for the degree
+ * question, or null when it may proceed.
+ *
+ * THE SAME RULE candidate-folder-suggestion.ts already holds for the bulk "file what they answered"
+ * action, applied to the one path that bypasses it: a recruiter filing a single CV by hand through
+ * the folder picker (`FileToFolderPicker` in recruitment-workspace.tsx), which never asked about a
+ * degree at all. Scoped to the two field-force shelves by their KIND directly — filing a CV there is
+ * itself a claim that this person is field-force eligible, whatever job title or area brought them
+ * to the picker.
+ *
+ * PARAMEDICAL ONLY, never `unknown` — same narrowness and the same reason as the bulk gate: most of
+ * the pool carries no faculty at all (159 of 604 production CVs, measured 2026-08-31), and blocking
+ * ordinary filing on an absent or unparseable degree would break the feature for most of the people
+ * who use it. `resolveBackgroundStanding` reads a CONFIRMED answer first in either direction, so an
+ * admin who has already said "one of the five" about a CV the parser dislikes is never blocked here,
+ * and one already confirmed paramedical is refused just as a fresh paramedical verdict would be.
+ */
+export function backgroundFolderFilingRefusal(
+  candidate: BackgroundReviewCandidate | null | undefined,
+  kind: string,
+): string | null {
+  if (kind !== "medical_rep" && kind !== "district_manager") return null;
+  const standing = resolveBackgroundStanding(candidate);
+  if (standing.outcome !== "paramedical") return null;
+  return "Their degree reads as outside the five eligible disciplines (pharmacy, science, veterinary, medicine, dentistry) and nobody has confirmed it. Answer it first in \"Degrees waiting for you to check\".";
 }
 
 /** One row of the queue, carrying the evidence the judge read so an admin can see what it saw. */

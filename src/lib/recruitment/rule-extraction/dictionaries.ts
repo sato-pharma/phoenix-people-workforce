@@ -147,7 +147,12 @@ export const EGYPT_UNIVERSITIES: readonly string[] = [
   "جامعة الزقازيق", "جامعة طنطا", "جامعة أسيوط", "جامعة المنوفية", "جامعة بنها", "جامعة الأزهر",
 ];
 
-/** Faculty names. Matched inside the education section only. */
+/**
+ * Faculty names that unambiguously name a FACULTY, matched inside the education section only.
+ *
+ * Every entry says "faculty of" / "كلية" itself, so a hit can only mean the CV is naming its
+ * faculty — see FACULTY_KEYWORDS_WEAK below for the bare-word alternative and why it is kept apart.
+ */
 export const FACULTY_KEYWORDS: readonly string[] = [
   "faculty of commerce", "faculty of law", "faculty of arts", "faculty of science",
   "faculty of engineering", "faculty of pharmacy", "faculty of medicine", "faculty of agriculture",
@@ -156,7 +161,6 @@ export const FACULTY_KEYWORDS: readonly string[] = [
   "faculty of mass communication", "faculty of tourism", "faculty of nursing",
   "faculty of physical education", "faculty of applied arts", "faculty of fine arts",
   "faculty of social work", "faculty of archaeology", "faculty of dentistry",
-  "business administration", "commerce", "law", "pharmacy", "engineering", "veterinary",
   "كلية التجارة", "كلية الحقوق", "كلية الآداب", "كلية العلوم", "كلية الهندسة", "كلية الصيدلة",
   "كلية الطب", "كلية الزراعة", "كلية التربية", "كلية الحاسبات",
 ];
@@ -203,6 +207,23 @@ export const DEGREE_QUALIFIER_KEYWORDS: ReadonlyArray<{ readonly canonical: stri
   { aliases: ["commerce"], canonical: "Faculty of Commerce" },
   { aliases: ["law"], canonical: "Faculty of Law" },
   { aliases: ["arts"], canonical: "Faculty of Arts" },
+];
+
+/**
+ * Bare single/short words that MIGHT name a faculty ("Pharmacy", "Commerce", "Law"), but are
+ * ordinary English words that turn up in an education section for reasons that have nothing to do
+ * with the candidate's own faculty — a training rotation, a previous employer's name, a course
+ * title. Matched the same way as FACULTY_KEYWORDS but kept in a SEPARATE, weaker-confidence list on
+ * purpose.
+ *
+ * Real production example (2026-09): a candidate whose CV plainly stated "Faculty of Agriculture"
+ * came back with faculty = "Pharmacy" — the word "pharmacy" appeared somewhere else in her education
+ * section, matched this list, and (wrongly) outranked nothing, because at the time this list was not
+ * separate and every hit here was trusted exactly as much as "Faculty of Agriculture" would have
+ * been. See findFaculty in education.ts for how this list is now used.
+ */
+export const FACULTY_KEYWORDS_WEAK: readonly string[] = [
+  "business administration", "commerce", "law", "pharmacy", "engineering", "veterinary",
 ];
 
 /** Degree levels, most specific first so "Bachelor of Commerce" is not read as a bare "Bachelor". */

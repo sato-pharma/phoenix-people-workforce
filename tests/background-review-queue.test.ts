@@ -102,6 +102,63 @@ export function runBackgroundReviewQueueTests(): void {
     );
     assert.equal(needsBackgroundReview(person("s4", { status: "rejected" })), false, "the whole application was decided, not just the degree");
     assert.equal(needsBackgroundReview(null), false);
+
+    // ── FILED ONTO A FIELD-FORCE SHELF IS NOT AN ANSWER ────────────────────────────────────────────
+    //
+    // Production, 2026-09-11: a CV with faculty "Faculty of Education" sat on Medical Representative
+    // / Behira 1 for eleven days — filed before candidate-folder-suggestion.ts's degree gate shipped
+    // (2026-09-02), and the manual "File to folder" picker never asked about a degree at all. The
+    // old code excluded ANY folder, which is exactly how that CV became invisible to this queue.
+    assert.equal(
+      needsBackgroundReview(
+        person("mr1", {
+          faculty: "Faculty of Education",
+          folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, key: "Behira 1", kind: "medical_rep" },
+        }),
+      ),
+      true,
+      "Medical Representative is one of the two shelves the degree rule is ABOUT — being filed there is not itself an answer",
+    );
+    assert.equal(
+      needsBackgroundReview(
+        person("dm1", {
+          faculty: "Faculty of Commerce",
+          folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, key: "D3", kind: "district_manager" },
+        }),
+      ),
+      true,
+      "District Manager is the other half of the same shelf pair",
+    );
+    assert.equal(
+      needsBackgroundReview(
+        person("mr2", {
+          faculty: "Faculty of Pharmacy",
+          folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, key: "Behira 1", kind: "medical_rep" },
+        }),
+      ),
+      false,
+      "a legitimately eligible degree filed there stays out of the queue — this is about the unchecked ones, not every filing",
+    );
+    assert.equal(
+      needsBackgroundReview(
+        person("other1", {
+          faculty: "Faculty of Commerce",
+          folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, key: "Regulatory Affairs Specialist", kind: "other" },
+        }),
+      ),
+      false,
+      "the 'other' shelf is for jobs the five disciplines are not part of — the degree rule has no opinion here",
+    );
+    assert.equal(
+      needsBackgroundReview(
+        person("dup1", {
+          faculty: "Faculty of Commerce",
+          folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, key: "Duplicate", kind: "duplicate" },
+        }),
+      ),
+      false,
+      "the duplicate archive is not a live CV — nobody works this queue against a discarded record",
+    );
   }
 
   // ── The queue is two questions, not one list ───────────────────────────────────────────────────
@@ -114,12 +171,23 @@ export function runBackgroundReviewQueueTests(): void {
       person("u3"),
       person("skip", { faculty: "Faculty of Pharmacy" }),
       person("gone", { status: "rejected", faculty: "Faculty of Law" }),
+      // The Habiba shape: filed onto a field-force shelf before anybody checked the degree. Must
+      // land in `paramedical` beside the never-filed rows, not vanish because a folder is set.
+      person("habiba", {
+        faculty: "Faculty of Education",
+        folder: { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, key: "Behira 1", kind: "medical_rep" },
+      }),
     ]);
 
-    assert.deepEqual(queue.paramedical.map((row) => row.candidate.id), ["p1", "p2"]);
+    assert.deepEqual(queue.paramedical.map((row) => row.candidate.id), ["p1", "p2", "habiba"]);
     assert.deepEqual(queue.unreadable.map((row) => row.candidate.id), ["u1", "u2", "u3"]);
-    assert.equal(queue.total, 5);
+    assert.equal(queue.total, 6);
     assert.equal(queue.withoutEvidence, 2, "u2 and u3 have nothing on screen to read but the document itself");
+    assert.deepEqual(
+      queue.paramedical[2]?.candidate.folder,
+      { filedAt: "2026-08-31T19:18:00.000Z", filedByHrId: null, key: "Behira 1", kind: "medical_rep" },
+      "the row carries its folder so the screen can show an admin which shelf this CV is already sitting on",
+    );
 
     // The evidence travels with the row. An admin reading "Faculty of Law" settles it without
     // opening anything; a queue of bare names would make them open all five to find the two.
