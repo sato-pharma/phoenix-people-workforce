@@ -46,6 +46,8 @@ import { recruitmentDb } from "@/lib/recruitment/db";
 import { loadAllDistrictBoards } from "@/lib/recruitment/district-manager-folders-db";
 import { getFileForDownload, listCandidateFiles, type FileDownload } from "@/lib/recruitment/files";
 import { MANAGER_SENDS_TABLE } from "@/lib/recruitment/manager-sends";
+import { UNNAMED_USER_LABEL } from "@/lib/recruitment/person-labels";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import type { RecruitmentFile } from "@/lib/recruitment/types";
 import { isUuid } from "@/lib/http/uuid";
 
@@ -594,23 +596,31 @@ export async function getManagerEngagementCandidateFile(
  * is case-insensitive; `ilike` with no wildcard in the value is an exact, case-blind match.
  *
  * NEVER THROWS. This decorates a provenance line — an export that failed because the directory was
- * briefly unreachable would be a far worse outcome than one whose cover reads "S-1" instead of a
- * name, so every failure falls back to the id the caller already has.
+ * briefly unreachable would be a far worse outcome than one whose cover could not name the exporter.
+ *
+ * AND NEVER FALLS BACK TO THE ID. It used to answer `access.hrId ?? access.loginId ?? "System"`, so
+ * a directory blip put "B-10" on the cover of a file that leaves the building — the raw code the
+ * rule forbids, in the one field a reader consults to find out who produced the numbers. "System"
+ * was worse than useless there: it is a positive claim that nobody produced it. Words instead.
  */
 export async function resolveManagerEngagementViewerName(access: AccessContext): Promise<string> {
-  const fallback = access.hrId ?? access.loginId ?? "System";
   const hrId = String(access.hrId ?? "").trim();
-  if (!hrId) return fallback;
+  if (!hrId) return UNNAMED_USER_LABEL;
   try {
     const { data, error } = await recruitmentDb()
       .from("employees")
-      .select("full_name")
+      .select("full_name,nickname")
       .ilike("hr_id", hrId)
       .limit(1)
       .maybeSingle();
-    if (error) return fallback;
-    return textOrNull((data as { full_name?: unknown } | null)?.full_name) ?? fallback;
+    if (error) return UNNAMED_USER_LABEL;
+    const row = data as { full_name?: unknown; nickname?: unknown } | null;
+    const fullName = textOrNull(row?.full_name);
+    if (!fullName) return UNNAMED_USER_LABEL;
+    // Nickname-aware, like every other live surface: the cover says "Omar Gawish", not the legal
+    // name that only payroll and the signed documents use.
+    return resolveEmployeeDisplayName(fullName, textOrNull(row?.nickname), hrId);
   } catch {
-    return fallback;
+    return UNNAMED_USER_LABEL;
   }
 }

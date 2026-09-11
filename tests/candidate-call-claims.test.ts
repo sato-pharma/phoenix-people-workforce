@@ -146,8 +146,11 @@ export async function runCandidateCallClaimTests() {
   assert.match(callClaimNotice(claim("B-10"), "b-10"), /^You /, "the holder is told it is his");
   assert.equal(
     callClaimNotice(claim("A-12", null), "b-10"),
-    "A-12 will call this candidate.",
-    "a claim whose name could not be resolved still names somebody — it is still a claim",
+    "Unnamed manager will call this candidate.",
+    // Owner's rule: names, never raw ids — see AGENTS.md §4. This used to read "A-12 will call this
+    // candidate.", printing the raw HR id in the one sentence whose whole job is to say WHO. It
+    // still names somebody the only way it honestly can, in words instead of a code nobody can act on.
+    "a claim whose name could not be resolved still names somebody — in words, never as the raw id",
   );
 
   // ── 7 · What a press is refused for ───────────────────────────────────────────────────────────

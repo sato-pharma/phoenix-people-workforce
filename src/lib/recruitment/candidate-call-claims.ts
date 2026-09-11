@@ -38,6 +38,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 // Type-only, so this module still compiles to nothing but its own functions and stays free of the
 // folder machinery — the same shape as the type-only imports in types.ts.
 import type { DistrictManagerBoard } from "@/lib/recruitment/district-manager-folders";
+import { managerLabel } from "@/lib/recruitment/person-labels";
 
 /** The two things a row in the table can be. */
 export const candidateCallActions = ["will_call", "skipped"] as const;
@@ -159,10 +160,16 @@ export function redactDistrictBoardsContact<
   }));
 }
 
-/** How the holder of a claim is named on somebody else's screen. */
+/**
+ * How the holder of a claim is named on somebody else's screen.
+ *
+ * Goes into a sentence another manager reads — "Ahmed will call this candidate." This returned the
+ * HR id when no name was resolved, which made that sentence read "B-10 will call this candidate": a
+ * raw code where the owner's rule is a human-readable name, in the one place on the screen whose
+ * whole job is to say WHO. Words instead, so the sentence still scans and still says what it knows.
+ */
 export function callClaimHolderLabel(claim: CandidateCallClaim): string {
-  const name = String(claim.managerName ?? "").trim();
-  return name || claim.managerHrId;
+  return managerLabel(claim.managerName);
 }
 
 /**

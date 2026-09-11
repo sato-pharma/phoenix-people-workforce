@@ -40,8 +40,8 @@ function candidate(id: string, fields: Partial<Candidate> = {}): Candidate {
   } as Candidate;
 }
 
-const recruiterFiling = { filedAt: "2026-08-20T09:00:00.000Z", filedByHrId: "TA-1", key: "Heliopolis", kind: "medical_rep" } as const;
-const managerFiling = { filedAt: "2026-08-30T09:00:00.000Z", filedByHrId: "B-94", key: "Nasr City", kind: "medical_rep" } as const;
+const recruiterFiling = { filedAt: "2026-08-20T09:00:00.000Z", filedByHrId: "TA-1", filedByName: null, key: "Heliopolis", kind: "medical_rep" } as const;
+const managerFiling = { filedAt: "2026-08-30T09:00:00.000Z", filedByHrId: "B-94", filedByName: null, key: "Nasr City", kind: "medical_rep" } as const;
 
 export function runManagerFolderShelfTests() {
   // ── The overlay REPLACES; it never merges ──────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ export function runManagerFolderShelfTests() {
     const rows = [candidate("c1"), candidate("c2"), candidate("c3")];
     const filings: ManagerFolderFilings = {
       c2: { ...managerFiling },
-      c3: { filedAt: "2026-08-30T10:00:00.000Z", filedByHrId: "B-94", key: "D3", kind: "district_manager" },
+      c3: { filedAt: "2026-08-30T10:00:00.000Z", filedByHrId: "B-94", filedByName: null, key: "D3", kind: "district_manager" },
     };
     const { live, shelves, filedCount } = partitionManagerCandidates(rows, filings);
 

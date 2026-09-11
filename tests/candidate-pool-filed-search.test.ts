@@ -46,6 +46,7 @@ export function runCandidatePoolFiledSearchTests() {
     folder: {
       filedAt: "2026-09-03T11:00:00.000Z",
       filedByHrId: "B-10",
+      filedByName: null,
       key: "Office Coordinator",
       kind: "other",
     },

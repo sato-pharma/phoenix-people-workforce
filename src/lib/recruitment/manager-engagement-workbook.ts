@@ -38,6 +38,7 @@ import {
   type TableColumn,
 } from "@/lib/export/phoenix-xlsx-style";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
+import { managerLabel } from "@/lib/recruitment/person-labels";
 import type { ManagerCvEngagementReport, ManagerCvEngagementRow } from "@/lib/recruitment/manager-cv-engagement";
 import {
   cairoCalendarDay,
@@ -117,14 +118,21 @@ const CV_COLUMNS: TableColumn[] = [
   { label: "Decision", width: 18 },
 ];
 
-/** The manager's display name, exactly as the screen resolves it — the HR_ID only when there is no name. */
-function managerLabel(row: ManagerCvEngagementRow): string {
-  return row.managerName || row.managerHrId;
+/**
+ * The manager's display name, exactly as the screen resolves it.
+ *
+ * Routed through the SHARED helper rather than kept as a second copy: the owner's rule is that an
+ * export matches the screen, and this function's whole reason for existing is that promise. It used
+ * to fall back to the HR_ID, and so did the screen — so the two agreed, on a raw code the rule
+ * forbids. They still agree, now on words.
+ */
+function managerRowLabel(row: ManagerCvEngagementRow): string {
+  return managerLabel(row.managerName);
 }
 
 function managerRows(rows: readonly ManagerCvEngagementRow[]): CellValue[][] {
   return rows.map((row) => [
-    managerLabel(row),
+    managerRowLabel(row),
     row.managerJobTitle ?? "",
     row.managerArea ?? "",
     row.managerLine ?? "",
@@ -144,7 +152,7 @@ function managerRows(rows: readonly ManagerCvEngagementRow[]): CellValue[][] {
 function candidateRows(rows: readonly ManagerCvEngagementRow[]): CellValue[][] {
   const flat: CellValue[][] = [];
   for (const row of rows) {
-    const name = managerLabel(row);
+    const name = managerRowLabel(row);
     for (const group of groupEngagementCandidatesByArea(row.candidates)) {
       for (const candidate of group.list) {
         flat.push([

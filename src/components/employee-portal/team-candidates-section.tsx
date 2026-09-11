@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import type { CandidateCallClaims } from "@/lib/recruitment/candidate-call-claims";
 import type { OutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock";
 import type { DistrictManagerBoard } from "@/lib/recruitment/district-manager-folders";
+import { managerLabel } from "@/lib/recruitment/person-labels";
 import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
 
 /**
@@ -41,8 +42,15 @@ export type TeamManagerOption = {
   awaitingCount: number;
 };
 
-function managerLabel(manager: TeamManagerOption): string {
-  return manager.fullName?.trim() || manager.hrId;
+/**
+ * What a district manager is called in the picker and on the panel heading.
+ *
+ * The name, or words saying we could not resolve one — never the HR id, which this returned until
+ * 2026-09-11. The owner's rule is human-readable names, and an NSM choosing between his districts
+ * cannot pick "B-94" off a list.
+ */
+function teamManagerLabel(manager: TeamManagerOption): string {
+  return managerLabel(manager.fullName);
 }
 
 export function TeamCandidatesSection({
@@ -154,7 +162,7 @@ export function TeamCandidatesSection({
               type="button"
             >
               <span className="block whitespace-nowrap text-sm font-semibold">
-                {managerLabel(manager)}
+                {teamManagerLabel(manager)}
                 {manager.active ? "" : " · left the company"}
               </span>
               <span
@@ -178,11 +186,11 @@ export function TeamCandidatesSection({
       {selected ? (
         <div className="space-y-3">
           {busy ? (
-            <p className="text-xs text-slate-400">Loading {managerLabel(selected)}&apos;s candidates…</p>
+            <p className="text-xs text-slate-400">Loading {teamManagerLabel(selected)}&apos;s candidates…</p>
           ) : candidates && candidates.length === 0 ? (
             <Card className="rounded-lg border border-gray-200 bg-white p-6 text-center shadow-[0_1px_3px_rgba(15,23,42,0.08)]">
               <p className="text-sm font-semibold text-slate-700">
-                No CVs have been sent to {managerLabel(selected)}
+                No CVs have been sent to {teamManagerLabel(selected)}
               </p>
               <p className="mt-1 text-xs text-slate-400">
                 This is the real answer, not a filter — the recruitment team has not sent them anyone yet.
@@ -213,8 +221,8 @@ export function TeamCandidatesSection({
               files={files}
               onFeedbackGiven={onFeedbackGiven}
               outstandingFeedback={outstandingFeedback}
-              heading={`${managerLabel(selected)}'s areas`}
-              subheading={`Every area ${managerLabel(selected)} holds in the organogram, and the CVs of applicants who asked to work in it.`}
+              heading={`${teamManagerLabel(selected)}'s areas`}
+              subheading={`Every area ${teamManagerLabel(selected)} holds in the organogram, and the CVs of applicants who asked to work in it.`}
               viewerHrId={viewerHrId}
             />
           )}
@@ -229,10 +237,10 @@ export function TeamCandidatesSection({
               boards={districtBoards.filter((board) => board.intake === "district_managers")}
               callClaims={callClaims}
               files={files}
-              heading={`District manager applicants under ${managerLabel(selected)}`}
+              heading={`District manager applicants under ${teamManagerLabel(selected)}`}
               onFeedbackGiven={onFeedbackGiven}
               outstandingFeedback={outstandingFeedback}
-              subheading={`People applying to run one of the districts ${managerLabel(selected)} covers, filed by the district they asked for.`}
+              subheading={`People applying to run one of the districts ${teamManagerLabel(selected)} covers, filed by the district they asked for.`}
               viewerHrId={viewerHrId}
             />
           )}

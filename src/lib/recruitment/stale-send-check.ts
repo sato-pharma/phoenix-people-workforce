@@ -35,6 +35,7 @@ import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
 import { createSystemNotification, createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { recruitmentManageRoles } from "@/lib/recruitment/access";
+import { managerLabel } from "@/lib/recruitment/person-labels";
 import {
   STALE_SEND_ESCALATE_AFTER_DAYS,
   STALE_SEND_NUDGE_AFTER_DAYS,
@@ -229,8 +230,10 @@ export function buildStrandedEscalationMessage(stranded: readonly StrandedSend[]
       `${count(cannotAnswer.length, "CV")} sits with a manager who cannot answer — they are no longer active.`,
       "Waiting will not help. Send these to somebody else:",
       "",
+      // By name, never by id. This text goes into a notification a person reads, and the owner's
+      // rule covers chat as much as the UI — "sent to B-10 on 3 Sept" is the shape it replaces.
       ...cannotAnswer.map((send) => {
-        const manager = send.managerName ?? send.managerHrId;
+        const manager = managerLabel(send.managerName);
         return `• ${send.fullName} — sent to ${manager} on ${cairoDateLabel(send.sentAt)}`;
       }),
     );
@@ -243,7 +246,7 @@ export function buildStrandedEscalationMessage(stranded: readonly StrandedSend[]
       "The manager has been nudged every day since day three:",
       "",
       ...noAnswer.map((send) => {
-        const manager = send.managerName ?? send.managerHrId;
+        const manager = managerLabel(send.managerName);
         return `• ${send.fullName} — with ${manager} for ${count(send.daysWaiting, "day")}`;
       }),
     );

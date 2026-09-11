@@ -59,6 +59,7 @@ function mapFiling(row: ManagerFolderRow): ManagerFolderFiling | null {
   return {
     filedAt: String(row.filed_at ?? ""),
     filedByHrId: row.filed_by_hr_id === null || row.filed_by_hr_id === undefined ? null : String(row.filed_by_hr_id),
+    filedByName: null,
     key,
     kind,
   };
