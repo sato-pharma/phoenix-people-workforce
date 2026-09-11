@@ -16,17 +16,24 @@
 // a fresh, empty auto-memory bucket and no `.claude/settings.local.json` —
 // none of the accumulated MEMORY.md history or the personal Bash permission
 // allow-list carries over, and it reads as a different repository entirely.
-// This script closes that gap for the ENV/memory/settings triad the same
-// way: copy what's missing, never touch what's already there without
-// --force.
+// This script closes that gap. The two halves are NOT treated the same way,
+// on purpose:
+//   * .env files and node_modules — copy what's missing, never touch what's
+//     already there without --force. A worktree's env may legitimately differ.
+//   * .claude/settings.local.json — the PRIMARY is the single source of truth
+//     and this worktree's copy is refreshed from it on EVERY run, because a
+//     permission allow-list that each worktree edits on its own does not
+//     converge, it drifts (see the block that does it, below). A worktree that
+//     genuinely needs its own opts out with .claude/settings.local.nosync.
 //
-// Never prints file contents — only filenames and byte counts, and only the
-// KEYS touched in settings.local.json, never its values — so secrets never
-// land in a terminal transcript or log.
+// Never prints file contents — only filenames and byte counts, and for
+// settings.local.json only key names, entry counts, and dropped permission
+// grants that are plain quote-free command patterns — so a value carrying a
+// secret never lands in a terminal transcript or log.
 //
 // Usage:
 //   node scripts/sync-worktree-env.mjs            # copy files that are missing here
-//   node scripts/sync-worktree-env.mjs --force     # also overwrite existing files
+//   node scripts/sync-worktree-env.mjs --force     # also overwrite existing env files
 //   node scripts/sync-worktree-env.mjs --dry-run   # print what would happen, change nothing
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -165,56 +172,106 @@ function readJsonIfValid(file) {
 const claudeSettingsRelPath = path.join(".claude", "settings.local.json");
 const targetClaudeSettings = path.join(currentRoot, claudeSettingsRelPath);
 const primaryClaudeSettings = path.join(primaryRoot, claudeSettingsRelPath);
+// Matches .gitignore's `.claude/settings.local.json.bak-*`. Deliberately ONE rolling
+// file and not a dated one: this runs at every SessionStart, so a dated backup would
+// leave a 31 KB copy per day per worktree forever.
+const backupPath = targetClaudeSettings + ".bak-prev";
+// Escape hatch for a worktree that genuinely needs its own permission set. A CLI flag
+// cannot serve here — the hook, not a human, is what runs this — so the opt-out has to
+// be a file that survives between sessions.
+const optOutRelPath = path.join(".claude", "settings.local.nosync");
+const optOutPath = path.join(currentRoot, optOutRelPath);
 
 const memoryDir = memoryDirFor(primaryRoot);
+const memoryKeys = memoryDir ? { autoMemoryEnabled: true, autoMemoryDirectory: memoryDir } : {};
 const targetExisting = readJsonIfValid(targetClaudeSettings);
+const primaryExisting = readJsonIfValid(primaryClaudeSettings);
+const primaryUsable =
+  primaryExisting && typeof primaryExisting === "object" && !Array.isArray(primaryExisting);
+
+const allowOf = (o) =>
+  o && o.permissions && Array.isArray(o.permissions.allow) ? o.permissions.allow.map(String) : [];
+
+// A dropped grant is echoed verbatim only when it is a plain Bash/PowerShell command
+// pattern — no quotes, no `=`, no URL — so a grant carrying a token or a connection
+// string can never be printed by accident. Everything else is counted, and the full
+// list is in the backup file either way.
+const printableGrant = (s) => /^(?:Bash|PowerShell)\([A-Za-z0-9 ._:*/\\-]+\)$/.test(s);
 
 if (targetExisting === undefined) {
   console.log(`  claude config: ${claudeSettingsRelPath} exists but is not valid JSON here — leaving it untouched.`);
-} else {
-  const usingExisting = targetExisting !== null && !force;
-  let settings;
-  let sourceLabel;
-  if (usingExisting) {
-    settings = targetExisting;
-    sourceLabel = "already present";
+} else if (fs.existsSync(optOutPath)) {
+  console.log(`  claude config: ${optOutRelPath} present — this worktree keeps its own settings, not syncing.`);
+} else if (!primaryUsable) {
+  // The primary's file is missing or unreadable. NEVER read that as "the primary grants
+  // nothing" and wipe this worktree — fall back to the old behaviour of just making sure
+  // the memory pointer is there, and say why.
+  const settings = targetExisting ? { ...targetExisting, ...memoryKeys } : { ...memoryKeys };
+  const text = JSON.stringify(settings, null, 2) + "\n";
+  const raw = fs.existsSync(targetClaudeSettings) ? fs.readFileSync(targetClaudeSettings, "utf8") : null;
+  console.log("  claude config: the primary's settings.local.json is missing or invalid — not syncing grants.");
+  if (raw === text) {
+    console.log(`    ${claudeSettingsRelPath} already linked — nothing to do.`);
+  } else if (dryRun) {
+    console.log(`    would-write ${claudeSettingsRelPath} (memory pointer only)`);
   } else {
-    const primaryExisting = readJsonIfValid(primaryClaudeSettings);
-    settings =
-      primaryExisting && typeof primaryExisting === "object" && !Array.isArray(primaryExisting)
-        ? JSON.parse(JSON.stringify(primaryExisting))
-        : {};
-    sourceLabel = primaryExisting ? "copied from primary" : "created new";
+    fs.mkdirSync(path.dirname(targetClaudeSettings), { recursive: true });
+    fs.writeFileSync(targetClaudeSettings, text);
+    console.log(`    wrote ${claudeSettingsRelPath} (memory pointer only)`);
   }
+} else {
+  // ---- the fix for settings drift (2026-09-12) --------------------------------------
+  // This block used to stop at "the file exists, leave it alone", which is precisely how
+  // 26 worktrees ended up with five different versions of it. A worktree's file is only
+  // ever written by the permission prompts answered inside THAT worktree, so each one
+  // drifts independently and never converges — by 2026-09-12, 22 of them had accumulated
+  // a `Bash(git push *)` grant that the primary has never had, silently auto-approving
+  // pushes in exactly the folders where parallel sessions do the risky work, against the
+  // owner's standing "always ask before commit/push/PR/merge" rule. So the primary is now
+  // the single source of truth and a worktree copy is refreshed from it every session.
+  //
+  // Primary-wins, not a union: a union would re-accumulate those same grants forever,
+  // which is the bug. Anything dropped is recoverable from the backup, and a grant that
+  // was deliberate belongs in the PRIMARY's file so all worktrees inherit it.
+  const desired = { ...primaryExisting, ...memoryKeys };
+  const desiredText = JSON.stringify(desired, null, 2) + "\n";
+  const rawText = fs.existsSync(targetClaudeSettings) ? fs.readFileSync(targetClaudeSettings, "utf8") : null;
 
-  let changed = !usingExisting;
-  if (memoryDir) {
-    if (settings.autoMemoryDirectory !== memoryDir) {
-      settings.autoMemoryDirectory = memoryDir;
-      changed = true;
-    }
-    if (settings.autoMemoryEnabled !== true) {
-      settings.autoMemoryEnabled = true;
-      changed = true;
-    }
-  }
-
-  if (!memoryDir && !fs.existsSync(targetClaudeSettings)) {
+  if (!memoryDir) {
     console.log("  claude config: could not resolve the primary's auto-memory directory — memory will not be linked.");
   }
 
-  if (dryRun) {
-    console.log(
-      `  claude config: would-write ${claudeSettingsRelPath} (${sourceLabel}${memoryDir ? ", memory linked" : ""})`,
-    );
-  } else if (!changed) {
-    console.log(`  claude config: ${claudeSettingsRelPath} already linked — nothing to do.`);
+  if (rawText === desiredText) {
+    console.log(`  claude config: ${claudeSettingsRelPath} matches the primary — nothing to do.`);
   } else {
-    fs.mkdirSync(path.dirname(targetClaudeSettings), { recursive: true });
-    fs.writeFileSync(targetClaudeSettings, JSON.stringify(settings, null, 2) + "\n");
-    console.log(
-      `  claude config: wrote ${claudeSettingsRelPath} (${sourceLabel}${memoryDir ? ", memory linked" : ""})`,
-    );
+    const before = allowOf(targetExisting);
+    const after = allowOf(desired);
+    const beforeSet = new Set(before);
+    const afterSet = new Set(after);
+    const dropped = before.filter((x) => !afterSet.has(x));
+    const gained = after.filter((x) => !beforeSet.has(x));
+    const verb = rawText === null ? "created from primary" : "refreshed from primary";
+    const counts = `allow ${before.length} -> ${after.length} (+${gained.length}, -${dropped.length})`;
+
+    if (dryRun) {
+      console.log(`  claude config: would-write ${claudeSettingsRelPath} — ${verb}, ${counts}`);
+    } else {
+      fs.mkdirSync(path.dirname(targetClaudeSettings), { recursive: true });
+      if (rawText !== null) fs.writeFileSync(backupPath, rawText);
+      fs.writeFileSync(targetClaudeSettings, desiredText);
+      console.log(
+        `  claude config: ${verb} — ${counts}${rawText !== null ? `, previous copy kept as ${path.basename(backupPath)}` : ""}`,
+      );
+    }
+
+    if (dropped.length) {
+      const named = dropped.filter(printableGrant);
+      const shown = named.slice(0, 12);
+      for (const g of shown) console.log(`    dropped grant: ${g}`);
+      const rest = dropped.length - shown.length;
+      if (rest > 0) console.log(`    ...and ${rest} more dropped (full list in ${path.basename(backupPath)})`);
+      console.log("    if any of those were deliberate, add them to the PRIMARY's settings.local.json so every worktree inherits them.");
+    }
   }
 }
 
