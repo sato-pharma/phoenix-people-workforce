@@ -39,6 +39,11 @@ const B3_DATES = ["2026-08-05", "2026-08-06", "2026-08-08", "2026-08-09"];
 // B-112's real span, 1-5 August: Sat, Sun, Mon, Tue, Wed. No Thursday.
 const B112_DATES = ["2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05"];
 
+/** The Thursday rule, restated for the test: a Thursday is half a day, everything else is whole. */
+function weightedDaysFor(dates: string[]): number {
+  return dates.reduce((sum, date) => sum + (new Date(`${date}T00:00:00Z`).getUTCDay() === 4 ? 0.5 : 1), 0);
+}
+
 function candidate(overrides: {
   category?: DeductionsCategory;
   compact?: string;
@@ -162,6 +167,86 @@ export async function runAutomatedPayrollThursdayHalfDayChargeTests() {
     chargeableDeductionDays(narrowed),
     2,
     "a stated appliedValue is a number a human typed after looking at the row — it is not re-weighted",
+  );
+
+  // ---- OPENING A CANDIDATE AND SAVING IT MUST NOT THROW THE WEIGHTING AWAY ----
+  //
+  // The review screen PRE-FILLS its day box with the count of ticked dates and sends it on every
+  // save. So a stored appliedValue equal to that count is the default coming back, not a
+  // correction — and honouring it as a human's figure is how the Thursday rule was lost the moment
+  // anybody opened a CRM row, changed or not. Measured on production, August 2026: five approved
+  // CRM candidates carrying a Thursday were stamped at the flagged count.
+  const openedAndSaved = candidate({
+    compact: "b9",
+    rawValue: 4,
+    estimatedAmount: 1862.9,
+    dates: B3_DATES,
+    // Exactly what the screen sends back when the reviewer touches nothing.
+    appliedDates: B3_DATES,
+    appliedValue: B3_DATES.length,
+  });
+  assert.equal(
+    chargeableDeductionDays(openedAndSaved),
+    3.5,
+    "a stored day count EQUAL to the ticked-date count is the box's own default, not a reviewer's " +
+      "correction — the Thursday weighting must still apply, or 4 flagged days charge as 4",
+  );
+
+  // Narrowing the days is still honoured, and still weighted: three days kept, one a Thursday.
+  const narrowedByTicking = candidate({
+    compact: "b10",
+    rawValue: 4,
+    estimatedAmount: 1862.9,
+    dates: B3_DATES,
+    appliedDates: B3_DATES.slice(0, 3),
+    appliedValue: 3,
+  });
+  assert.equal(
+    chargeableDeductionDays(narrowedByTicking),
+    weightedDaysFor(B3_DATES.slice(0, 3)),
+    "unticking a day narrows the span; the days that remain are still weighted",
+  );
+
+  // A reviewer who types a DIFFERENT number is still never second-guessed.
+  const typedOverTheDefault = candidate({
+    compact: "b11",
+    rawValue: 4,
+    estimatedAmount: 1862.9,
+    dates: B3_DATES,
+    appliedDates: B3_DATES,
+    appliedValue: 1,
+  });
+  assert.equal(
+    chargeableDeductionDays(typedOverTheDefault),
+    1,
+    "a figure that differs from the ticked-date count is a human's correction and stands unweighted",
+  );
+
+  // Including a reviewer who writes it down to nothing — production carries two of these.
+  const zeroed = candidate({
+    compact: "b12",
+    rawValue: 14,
+    estimatedAmount: 5000,
+    dates: B3_DATES,
+    appliedDates: B3_DATES,
+    appliedValue: 0,
+  });
+  assert.equal(chargeableDeductionDays(zeroed), 0, "zero is a decision, not a missing value");
+
+  // A NON-CRM candidate is untouched by any of this: the half-day is a field-activity rule.
+  const fingerprintSaved = candidate({
+    category: "fingerprint",
+    compact: "b13",
+    rawValue: 4,
+    estimatedAmount: 1862.9,
+    dates: B3_DATES,
+    appliedDates: B3_DATES,
+    appliedValue: B3_DATES.length,
+  });
+  assert.equal(
+    chargeableDeductionDays(fingerprintSaved),
+    4,
+    "a fingerprint day on a Thursday is a whole day whatever the review screen sent",
   );
 
   // ---- a candidate with no dates falls back rather than charging zero ------
