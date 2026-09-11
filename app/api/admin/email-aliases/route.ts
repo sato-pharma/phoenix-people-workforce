@@ -1,17 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { canManageDistributionLists, distributionListScopeFor } from "@/lib/distribution-lists/access";
 import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { recordAliasMembership, upsertCompanyEmailAlias } from "@/lib/distribution-lists/service";
+import { getCompanyEmailAliases, recordAliasMembership, upsertCompanyEmailAlias } from "@/lib/distribution-lists/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * The Turbify alias register. Super Admin only.
+ * The Turbify alias register. Super Admin, plus the HR Business Partner for aliases driven by
+ * an HR-owned list.
  *
  * Two actions, deliberately separate. `register` says an alias exists and what drives it;
  * `record` says who was on it when a human last looked. Folding them together would let
@@ -27,9 +28,11 @@ export async function POST(request: NextRequest) {
     if (csrf) return csrf;
 
     const access = await resolveAccessContext(request);
-    if (!canAccessSystemAdministratorWorkspace(access)) {
-      return NextResponse.json({ message: "Forbidden: Super Admin only." }, { status: 403 });
+    if (!canManageDistributionLists(access)) {
+      return NextResponse.json({ message: "Forbidden." }, { status: 403 });
     }
+    const scope = distributionListScopeFor(access);
+    const inScope = (listKey: string | null) => scope === "all" || (listKey != null && scope.has(listKey));
 
     await assertApiRateLimit({
       identifier: rateLimitIdentity({ actor: access.loginId ?? access.hrId, request }),
@@ -53,10 +56,29 @@ export async function POST(request: NextRequest) {
       if (body.provider !== undefined && body.provider !== "turbify" && body.provider !== "other") {
         return NextResponse.json({ message: 'provider must be "turbify" or "other".' }, { status: 400 });
       }
+      const listKey = typeof body.distributionListKey === "string" ? body.distributionListKey : null;
+      // TWO CHECKS, because this is an UPSERT on the address and one check is not enough.
+      //
+      // The destination: an alias driven by no list, or by somebody else's, is not hers to point at.
+      if (!inScope(listKey)) {
+        return NextResponse.json({ message: "Forbidden: that list is not yours." }, { status: 403 });
+      }
+      // 🔴 AND THE ALIAS AS IT STANDS. Without this, naming an address that ALREADY EXISTS
+      // overwrites its distribution_list_key — so re-pointing the finance or closing alias at
+      // `hr_team` makes the very field every reader scopes on say it is hers, and its attested
+      // Turbify membership becomes visible and writable. The scope predicate must not be a field
+      // the caller can write. `record` below already reads the stored row for this reason; this
+      // action did not, until review caught it on 2026-09-11.
+      if (scope !== "all") {
+        const existing = (await getCompanyEmailAliases()).find((row) => row.aliasAddress === aliasAddress);
+        if (existing && !inScope(existing.distributionListKey)) {
+          return NextResponse.json({ message: "Forbidden: that alias is not yours." }, { status: 403 });
+        }
+      }
       const alias = await upsertCompanyEmailAlias(
         {
           aliasAddress,
-          distributionListKey: typeof body.distributionListKey === "string" ? body.distributionListKey : null,
+          distributionListKey: listKey,
           isActive: typeof body.isActive === "boolean" ? body.isActive : undefined,
           label: body.label,
           notes: typeof body.notes === "string" ? body.notes : undefined,
@@ -71,6 +93,14 @@ export async function POST(request: NextRequest) {
     if (action === "record") {
       if (!Array.isArray(body.memberEmails) || !body.memberEmails.every((email) => typeof email === "string")) {
         return NextResponse.json({ message: "memberEmails must be an array of strings." }, { status: 400 });
+      }
+      // Recording membership is judged on the alias as it stands, read back rather than taken from
+      // the request — the caller does not get to assert which list an alias belongs to.
+      if (scope !== "all") {
+        const existing = (await getCompanyEmailAliases()).find((row) => row.aliasAddress === aliasAddress);
+        if (!existing || !inScope(existing.distributionListKey)) {
+          return NextResponse.json({ message: "Forbidden: that alias is not yours." }, { status: 403 });
+        }
       }
       const alias = await recordAliasMembership(aliasAddress, body.memberEmails as string[], access);
       return NextResponse.json({ alias, ok: true });

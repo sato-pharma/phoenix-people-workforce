@@ -45,6 +45,7 @@
  */
 
 import {
+  Mail,
   ArrowUpRight,
   BriefcaseBusiness,
   ChevronDown,
@@ -74,6 +75,7 @@ import type { HrCommandCenterData, HrCommandGroup, HrCommandTile } from "@/lib/h
 
 const GROUP_ICONS: Record<HrFunctionKey, LucideIcon> = {
   engagement_retention: HeartPulse,
+  hr_communication: Mail,
   hr_governance: ShieldCheck,
   payroll_inputs: FileSpreadsheet,
   people_records: IdCard,
