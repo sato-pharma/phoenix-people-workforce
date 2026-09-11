@@ -1096,6 +1096,8 @@ import { runAutomatedPayrollRunIntegrityTests } from "./automated-payroll-run-in
 import { runAutomatedPayrollTemplateHeadingTests } from "./automated-payroll-template-headings.test.ts";
 import { runAutomatedPayrollPartSplitStampTests } from "./automated-payroll-part-split-stamp.test.ts";
 import { runAutomatedPayrollAdditionsRecordTests } from "./automated-payroll-additions-record.test.ts";
+import { runAutomatedPayrollNegativeValuesTests } from "./automated-payroll-negative-values.test.ts";
+import { runAutomatedPayrollStepUploadRoundTripTests } from "./automated-payroll-step-upload-roundtrip.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
 import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
 import { runAutomatedPayrollExecutiveSummaryTests } from "./automated-payroll-executive-summary.test.ts";
@@ -1129,6 +1131,8 @@ import { runStagingMigrationApplierTests } from "./staging-migration-applier.tes
 import { runAutomatedPayrollRejectedExpensesTests } from "./automated-payroll-rejected-expenses.test.ts";
 import { runAutomatedPayrollExpenseStepApprovedOnlyTests } from "./automated-payroll-expense-step-approved-only.test.ts";
 import { runAutomatedPayrollExpenseResyncTests } from "./automated-payroll-expense-resync.test.ts";
+import { runAutomatedPayrollExpenseGapsTests } from "./automated-payroll-expense-gaps.test.ts";
+import { runAutomatedPayrollHeldInReportsTests } from "./automated-payroll-held-in-reports.test.ts";
 import { runAutomatedPayrollReadsDeductionsModuleTests } from "./automated-payroll-reads-deductions-module.test.ts";
 import { runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests } from "./automated-payroll-manual-expenses-and-part2-non-employees.test.ts";
 import { runAutomatedPayrollRecurringNonEmployeesTests } from "./automated-payroll-recurring-non-employees.test.ts";
@@ -1586,6 +1590,7 @@ import { runManagerAreaRegionGuardTests } from "./manager-area-region-guard.test
 import { runDataBackupWorkbookTests } from "./data-backup-workbook.test.ts";
 import { runBackgroundFolderFilingGateTests } from "./background-folder-filing-gate.test.ts";
 import { runPhoenixOfficialLogoTests } from "./phoenix-official-logo.test.ts";
+import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending-backfill-completed-only.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1870,6 +1875,14 @@ await runTest(
 await runTest(
   "automated payroll: money added to a payslip says why, and the record names every field",
   runAutomatedPayrollAdditionsRecordTests,
+);
+await runTest(
+  "automated payroll: nothing typed onto a step can be negative, and the validator checks every component",
+  runAutomatedPayrollNegativeValuesTests,
+);
+await runTest(
+  "automated payroll: the step spreadsheet round trip says what it will do, and does it",
+  runAutomatedPayrollStepUploadRoundTripTests,
 );
 await runTest(
   "automated payroll: every payable row reaches a bank file or is named",
@@ -3487,6 +3500,14 @@ await runTest(
 await runTest("automated payroll rejected expenses (an HR rejection must not be reimbursed; pending still flows)", runAutomatedPayrollRejectedExpensesTests);
 await runTest("automated payroll expense step proposes only approved trips, and surfaces the undecided ones", runAutomatedPayrollExpenseStepApprovedOnlyTests);
 await runTest("automated payroll expense resync (an approval changed after the step was confirmed must reach payroll)", runAutomatedPayrollExpenseResyncTests);
+await runTest(
+  "automated payroll: outstation money never leaves the payroll picture without a word",
+  runAutomatedPayrollExpenseGapsTests,
+);
+await runTest(
+  "automated payroll: a held person is not absent from the filing, the population baseline or last month's total",
+  runAutomatedPayrollHeldInReportsTests,
+);
 await runTest("automated payroll reads the Deductions module (only what HR confirmed reaches the sheet; unknown statuses fail closed)", runAutomatedPayrollReadsDeductionsModuleTests);
 await runTest("automated payroll manual expenses + Part 2 non-employees (a hand-added employee survives reload; a Part 2 non-employee reaches the bank file)", runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests);
 await runTest("automated payroll recurring non-employees (a new run seeds itself from the standing roster; the full finance sheet carries bank details)", runAutomatedPayrollRecurringNonEmployeesTests);
@@ -5258,6 +5279,11 @@ await runTest(
 await runTest(
   "every Phoenix mark the system draws — browser and app icons, app shell, notification, email signature, Excel exports — is the owner's ringed emblem, and the retired drawings stay gone",
   runPhoenixOfficialLogoTests,
+);
+
+await runTest(
+  "a WhatsApp applicant's pending-classification and pending-extra-answers backfills only ever apply a session whose completed_at is set, never a snapshot of one still mid-conversation",
+  runWhatsAppPendingBackfillCompletedOnlyTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

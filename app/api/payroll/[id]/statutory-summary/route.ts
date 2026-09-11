@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 
+import {
+  automatedPayrollRunIdFromBatchFileName,
+  heldExcludedFilingNote,
+  readPublishedHoldRecord,
+} from "@/lib/automated-payroll/published-holds";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
@@ -31,9 +36,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     });
     const insuranceWages = await loadInsuranceWages();
     const { rows, totals } = buildStatutorySummaryRows(exportData.records, config, insuranceWages);
+    // A held employee has no salary record, so no row above: the filing says who is missing and why
+    // (audit finding 43). Only a batch Automated Payroll published carries a hold record.
+    const runId = automatedPayrollRunIdFromBatchFileName(exportData.batch.fileName);
+    const heldNote = runId ? heldExcludedFilingNote(await readPublishedHoldRecord(runId)) : null;
     // The sheet is built in the domain module, beside the figures it prints — see
     // buildStatutorySummaryWorkbook. This route resolves access, loads, and returns the file.
-    const workbook = buildStatutorySummaryWorkbook({ rows, totals });
+    const workbook = buildStatutorySummaryWorkbook({ rows, totals, extraNotes: heldNote ? [heldNote] : [] });
 
     const buffer = await workbook.xlsx.writeBuffer();
     const period = `${exportData.batch.year}-${String(exportData.batch.month).padStart(2, "0")}`;

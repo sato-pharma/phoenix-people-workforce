@@ -3,6 +3,7 @@ import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { expenseApprovalState } from "@/lib/outstation/approval-state";
 
 import { clearDraftExpenses, findActiveRun, listStepStates, upsertStepState } from "./draft-store.ts";
+import { monthNameAndYear } from "./step-definitions.ts";
 import type { MonthlySalaryRun } from "./types.ts";
 
 /**
@@ -37,8 +38,19 @@ export type ExpenseDecisionSnapshot = {
 };
 
 export type ExpenseResyncTarget = {
+  /** Every employee whose decision moved, whatever its payout period. */
   hrIds: string[];
+  /** Every payout period a moved decision touched. */
   periods: Array<{ month: number; year: number }>;
+  /**
+   * Each touched period with ONLY the employees whose decision moved IN THAT PERIOD (audit finding 44).
+   *
+   * The resync clears by this list. It used to clear every changed employee in every changed period,
+   * because the two lists above were never paired: one approvals save covering two payout months
+   * wiped a hand-typed figure in the month where nothing of that person's had moved, and a hand-added
+   * row cleared that way re-rendered as nothing and was paid zero.
+   */
+  byPeriod: Array<{ month: number; year: number; hrIds: string[] }>;
 };
 
 export type ExpenseResyncSkipReason = "no_active_run" | "part2_already_confirmed";
@@ -96,14 +108,23 @@ export function expenseDecisionsThatChanged(
   const afterByTrip = new Map(after.map((row) => [row.tripId, row]));
   const hrIds = new Set<string>();
   const periods = new Map<string, { month: number; year: number }>();
+  const byPeriod = new Map<string, { month: number; year: number; hrIds: Set<string> }>();
 
+  // One call per side of a change, so an employee is filed under the period of THAT row. A trip
+  // moving between months is noted once per side, which files the employee under both months.
   const note = (row: ExpenseDecisionSnapshot) => {
     const hrId = (row.hrId ?? "").trim();
     if (hrId) hrIds.add(hrId);
     const month = Number(row.payoutMonth);
     const year = Number(row.payoutYear);
     if (Number.isFinite(month) && Number.isFinite(year) && month > 0 && year > 0) {
-      periods.set(periodKey(month, year), { month, year });
+      const key = periodKey(month, year);
+      periods.set(key, { month, year });
+      if (hrId) {
+        const entry = byPeriod.get(key) ?? { month, year, hrIds: new Set<string>() };
+        entry.hrIds.add(hrId);
+        byPeriod.set(key, entry);
+      }
     }
   };
 
@@ -136,7 +157,15 @@ export function expenseDecisionsThatChanged(
     if (!afterByTrip.has(tripId)) note(previous);
   }
 
-  return { hrIds: Array.from(hrIds), periods: Array.from(periods.values()) };
+  return {
+    hrIds: Array.from(hrIds),
+    periods: Array.from(periods.values()),
+    byPeriod: Array.from(byPeriod.values()).map((entry) => ({
+      month: entry.month,
+      year: entry.year,
+      hrIds: Array.from(entry.hrIds),
+    })),
+  };
 }
 
 /**
@@ -162,24 +191,35 @@ export function planExpenseResync(run: MonthlySalaryRun | null): { ok: boolean; 
 export async function resyncPayrollExpenseStep(
   target: ExpenseResyncTarget,
 ): Promise<ExpenseResyncOutcome[]> {
-  if (target.hrIds.length === 0 || target.periods.length === 0) return [];
+  if (target.byPeriod.length === 0) return [];
 
   const outcomes: ExpenseResyncOutcome[] = [];
-  for (const period of target.periods) {
+  for (const period of target.byPeriod) {
     try {
       const run = await findActiveRun(period.month, period.year);
       const plan = planExpenseResync(run);
       if (!plan.ok || !run) {
-        outcomes.push({
-          action: "skip",
-          month: period.month,
-          year: period.year,
-          reason: plan.reason ?? "no_active_run",
-        });
+        const reason = plan.reason ?? "no_active_run";
+        // A skip because Part 2 is already confirmed leaves payroll paying a decision that has since
+        // changed, until someone reopens Part 2. It used to be returned to callers that discarded it
+        // and logged nowhere (audit finding 47). No open run for the month is ordinary and stays quiet.
+        if (reason === "part2_already_confirmed" && run) {
+          logError("Automated payroll: an expense decision changed after Part 2 was confirmed and did not reach payroll", {
+            labels: {
+              event: "automated_payroll_expense_resync_skipped_part2_confirmed",
+              runId: run.id,
+              month: period.month,
+              year: period.year,
+              employees: period.hrIds.length,
+              hrIds: period.hrIds.join(","),
+            },
+          });
+        }
+        outcomes.push({ action: "skip", month: period.month, year: period.year, reason });
         continue;
       }
 
-      const clearedHrIds = await clearDraftExpenses(run.id, target.hrIds);
+      const clearedHrIds = await clearDraftExpenses(run.id, period.hrIds);
 
       // Re-open only a step that was actually confirmed. Writing "pending" over a step that is
       // already pending would create a step_state row for a step HR has never opened.
@@ -218,4 +258,25 @@ export async function resyncPayrollExpenseStep(
     }
   }
   return outcomes;
+}
+
+/**
+ * Plain-language lines for every outcome where a saved expense decision did NOT reach payroll, for
+ * the save's own response (audit finding 47). Without them the approvals page reads "Approvals saved"
+ * while payroll goes on paying the old figure. No open run for the month says nothing: that is normal.
+ */
+export function describeExpenseResyncNotApplied(outcomes: ExpenseResyncOutcome[]): string[] {
+  const lines: string[] = [];
+  for (const outcome of outcomes) {
+    const month = monthNameAndYear(outcome.month, outcome.year);
+    if (outcome.action === "skip" && outcome.reason === "part2_already_confirmed") {
+      lines.push(
+        `Payroll for ${month} already has Part 2 confirmed, so this decision did not reach it. ` +
+          "Reopen Part 2 in Automated Payroll for the change to apply.",
+      );
+    } else if (outcome.action === "failed") {
+      lines.push(`Payroll for ${month} could not be updated with this decision. The decision itself is saved.`);
+    }
+  }
+  return lines;
 }

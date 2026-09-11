@@ -1,11 +1,12 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { AlertTriangle, Download } from "lucide-react";
 
 import { AdminCallout, AdminInsightChip, AdminPageHero, adminPanelClassName } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertPermission, getPayrollScope } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { listSalaryBatches } from "@/lib/payroll/service";
@@ -67,6 +68,12 @@ export default async function MPayrollPage({
   searchParams: SearchParams;
 }) {
   const access = await resolveAuthenticatedPageAccess();
+  // The same company-scope gate as the operational payroll page (audit finding 51). This console
+  // lists every salary batch in the company, and `payroll:read` alone is held by self-scope admin
+  // roles such as SFE Manager; the sidebar hiding the link is presentation, not a boundary.
+  if (getPayrollScope(access) !== "COMPANY") {
+    redirect("/payslips");
+  }
   await assertPermission(access, "payroll", "read");
 
   const now = new Date();
