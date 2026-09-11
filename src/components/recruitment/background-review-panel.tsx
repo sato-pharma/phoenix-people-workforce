@@ -12,6 +12,7 @@ import {
   type BackgroundConfirmationOutcome,
   type BackgroundReviewRow,
 } from "@/lib/recruitment/background-review";
+import { candidateFolderKindLabels, candidateFolderLabel } from "@/lib/recruitment/candidate-folder";
 import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
 import type { Candidate } from "@/lib/recruitment/types";
@@ -176,6 +177,17 @@ function ReviewGroup({
             <span className="whitespace-nowrap text-phx-xs font-semibold text-slate-400">
               {candidateStatusLabel(candidate.status)}
             </span>
+
+            {/* Already sitting on one of the two field-force shelves — the reason this row is in the
+                queue at all despite being "filed". Named so an admin does not have to go find out
+                where the CV already is before deciding whether it belongs there. */}
+            {candidate.folder &&
+            (candidate.folder.kind === "medical_rep" || candidate.folder.kind === "district_manager") ? (
+              <span className="whitespace-nowrap bg-amber-50 px-1.5 py-0.5 text-phx-xs font-semibold text-amber-700">
+                Filed: {candidateFolderKindLabels[candidate.folder.kind]} ·{" "}
+                {candidateFolderLabel(candidate.folder.kind, candidate.folder.key)}
+              </span>
+            ) : null}
 
             {/* The exact text the rule judged, and where it came from. "declared" is the applicant's
                 own answer and "cv" is what the extractor read off the document — an admin weighs
