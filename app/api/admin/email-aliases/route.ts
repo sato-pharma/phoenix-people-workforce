@@ -56,10 +56,23 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ message: 'provider must be "turbify" or "other".' }, { status: 400 });
       }
       const listKey = typeof body.distributionListKey === "string" ? body.distributionListKey : null;
-      // An alias driven by no list, or by somebody else's, is not hers to register — otherwise the
-      // narrow list scope is reachable sideways by pointing a new alias at a list she cannot edit.
+      // TWO CHECKS, because this is an UPSERT on the address and one check is not enough.
+      //
+      // The destination: an alias driven by no list, or by somebody else's, is not hers to point at.
       if (!inScope(listKey)) {
         return NextResponse.json({ message: "Forbidden: that list is not yours." }, { status: 403 });
+      }
+      // 🔴 AND THE ALIAS AS IT STANDS. Without this, naming an address that ALREADY EXISTS
+      // overwrites its distribution_list_key — so re-pointing the finance or closing alias at
+      // `hr_team` makes the very field every reader scopes on say it is hers, and its attested
+      // Turbify membership becomes visible and writable. The scope predicate must not be a field
+      // the caller can write. `record` below already reads the stored row for this reason; this
+      // action did not, until review caught it on 2026-09-11.
+      if (scope !== "all") {
+        const existing = (await getCompanyEmailAliases()).find((row) => row.aliasAddress === aliasAddress);
+        if (existing && !inScope(existing.distributionListKey)) {
+          return NextResponse.json({ message: "Forbidden: that alias is not yours." }, { status: 403 });
+        }
       }
       const alias = await upsertCompanyEmailAlias(
         {

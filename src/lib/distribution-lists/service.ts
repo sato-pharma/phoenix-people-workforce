@@ -43,7 +43,6 @@ type DistributionListRow = {
   excluded_hr_ids: unknown;
   external_emails: unknown;
   enabled: boolean | null;
-  reply_to: string | null;
 };
 
 export type CompanyEmailAlias = {
@@ -60,7 +59,7 @@ export type CompanyEmailAlias = {
 };
 
 const listSelect =
-  "list_key,label,description,roles,line_ids,area_ids,department_ids,position_ids,region_codes,included_hr_ids,excluded_hr_ids,external_emails,enabled,reply_to";
+  "list_key,label,description,roles,line_ids,area_ids,department_ids,position_ids,region_codes,included_hr_ids,excluded_hr_ids,external_emails,enabled";
 const aliasSelect =
   "alias_address,label,purpose,provider,distribution_list_key,recorded_member_emails,recorded_at,recorded_by,is_active,notes";
 
@@ -87,7 +86,6 @@ function rowToSpec(row: DistributionListRow): DistributionListSpec {
     lineIds: numberArray(row.line_ids),
     listKey: row.list_key,
     positionIds: numberArray(row.position_ids),
-    replyTo: row.reply_to?.trim() ? row.reply_to.trim().toLowerCase() : null,
     regionCodes: textArray(row.region_codes),
     roles: sanitizeRoles(row.roles),
   };
@@ -169,7 +167,6 @@ const emptyResolution = (listKey: string, warnings: string[]): DistributionResol
   listKey,
   members: [],
   refusedReason: warnings[warnings.length - 1] ?? null,
-  replyTo: null,
   skipped: [],
   warnings,
 });

@@ -150,10 +150,9 @@ type GroupMembership = Map<ComposerRecipientGroupKey, Set<string>>;
  */
 async function resolveGroupMembership(
   selections: ComposerRecipientSelection[],
-): Promise<{ membership: GroupMembership; warnings: string[]; replyTo: string | null }> {
+): Promise<{ membership: GroupMembership; warnings: string[] }> {
   const membership: GroupMembership = new Map();
   const warnings: string[] = [];
-  const replyTos = new Set<string>();
   const wanted = new Set(
     selections
       .filter((selection): selection is Extract<ComposerRecipientSelection, { type: "group" }> => selection.type === "group")
@@ -170,21 +169,9 @@ async function resolveGroupMembership(
       continue; // no entry — resolveSelection then uses groupEmployees
     }
     membership.set(key, new Set(resolved.members.map((member) => member.hrId.toLowerCase())));
-    if (resolved.replyTo) replyTos.add(resolved.replyTo);
   }
 
-  // A list can carry its own Reply-To — the HR Team list answers to the HR Business Partner. With
-  // TWO lists selected that disagree, there is no right answer, so the send falls back to the
-  // system default and SAYS so: silently picking one would route a reply to the wrong person.
-  let replyTo: string | null = null;
-  if (replyTos.size === 1) [replyTo] = replyTos;
-  else if (replyTos.size > 1) {
-    warnings.push(
-      `The selected lists disagree on a reply address (${Array.from(replyTos).sort().join(", ")}), so the default is used.`,
-    );
-  }
-
-  return { membership, replyTo, warnings };
+  return { membership, warnings };
 }
 
 function addEmail(output: Array<{ email: string; label: string; source: string }>, email: string, label: string, source: string) {
@@ -461,7 +448,7 @@ export async function resolveComposerRecipients(input: ComposerPayload) {
     ...(input.ccSelections ?? []),
     ...(input.bccSelections ?? []),
   ];
-  const { membership, replyTo: groupReplyTo, warnings: groupWarnings } = await resolveGroupMembership(allSelections);
+  const { membership, warnings: groupWarnings } = await resolveGroupMembership(allSelections);
   const resolvedSelections = {
     bcc: (input.bccSelections ?? []).flatMap((selection) => resolveSelection(selection, employees, membership)),
     cc: (input.ccSelections ?? []).flatMap((selection) => resolveSelection(selection, employees, membership)),
@@ -488,10 +475,6 @@ export async function resolveComposerRecipients(input: ComposerPayload) {
       to: channels.to.map((item) => item.email),
     },
     context,
-    // Set only when a distribution list carrying one was used. The send route passes it to
-    // sendPhoenixEmail as Reply-To — never as From, which must stay on the verified sending
-    // subdomain or the mail is rejected or filed as spam.
-    replyTo: groupReplyTo,
     totalRecipients: allEmails.length,
     warnings,
   };

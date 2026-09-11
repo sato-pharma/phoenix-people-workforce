@@ -188,6 +188,16 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // scopeForRole misleads anyone auditing user_access_profiles — keeping the two in step is for
   // legibility, not enforcement. SFE Manager already sits that way (scope "self", mirror
   // COMPANY_READ), which is why this is a per-seat note and not a general invariant.
+  // Names HR Advisory in systemEmail.seatReplyTo, added 2026-09-11. Reviewed verdict: it GRANTS
+  // NOTHING. The value is a Reply-To address chosen by the SENDER's seat when that seat composes a
+  // mail by hand — it opens no page, widens no query, and reads no record on her behalf. It is
+  // listed because the string is a seat name, which is what Rule 10 pins, and because a reply
+  // address is a CLAIM about who answers: if the HR Business Partner seat is ever retired or
+  // renamed, this line starts routing replies to a mailbox nobody watches.
+  //
+  // Deliberately not a From address — From stays on the verified sending subdomain, and
+  // tests/distribution-lists-access.test.ts pins both directions of that.
+  "src/config/system-settings.ts",
   "src/lib/auth/supabase-identity.ts",
   "src/lib/contracts/service.ts",
   // Names HR Advisory in canManageDistributionLists, added 2026-09-11 when the owner asked that the

@@ -53,6 +53,24 @@ export const systemEditingPolicy = {
 export const systemEmail = {
   defaultFromEmail: "phoenix@send.satopharma.com",
   defaultReplyTo: "phoenix@satopharma.com",
+  /**
+   * Reply-To for mail a particular SEAT sends by hand, keyed on the SENDER's role.
+   *
+   * Owner 2026-09-11, refined when asked: a mail carries the HR Business Partner's address when
+   * SHE is sending — not whenever the HR Team happens to be addressed. The earlier shape keyed on
+   * recipients, which meant a Super Admin Bcc'ing HR Team for the record would send a vendor's
+   * reply to her instead of to himself, silently and with nothing on screen saying so.
+   *
+   * 🔴 REPLY-TO, NEVER FROM. `defaultFromEmail` above is a SUBDOMAIN, which is what Resend
+   * authenticates (DKIM/SPF). Sending as an apex-domain mailbox like hrbp@satopharma.com is
+   * rejected or filed as spam unless satopharma.com is itself verified for sending. Reply-To is
+   * what decides where a reply lands, and it carries no deliverability risk.
+   *
+   * A seat absent from here falls through to NOTIFICATION_REPLY_TO, then `defaultReplyTo`.
+   */
+  seatReplyTo: {
+    "HR Advisory": "hrbp@satopharma.com",
+  } as Readonly<Record<string, string>>,
   // Controlled internal inboxes only. NEVER add personal/external addresses here:
   // when testing-delivery is on, ALL mail is redirected to this list, so a personal
   // address would receive real employee/candidate PII.

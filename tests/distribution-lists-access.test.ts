@@ -45,8 +45,8 @@ const ROUTE_SEND = readFileSync(
   fileURLToPath(new URL("../app/api/admin/email-reply/send/route.ts", import.meta.url)),
   "utf8",
 );
-const MIGRATION_REPLY_TO = readFileSync(
-  fileURLToPath(new URL("../supabase/migrations/20260911220000_distribution_list_reply_to.sql", import.meta.url)),
+const SETTINGS = readFileSync(
+  fileURLToPath(new URL("../src/config/system-settings.ts", import.meta.url)),
   "utf8",
 );
 
@@ -102,47 +102,52 @@ export function runDistributionListsAccessTests() {
   assert.match(ROUTE_INDEX, /distributionListScopeFor\(/, "the index route must narrow what it returns");
   assert.match(ROUTE_ALIASES, /distributionListScopeFor\(/, "the alias route must narrow too");
 
-  // Both alias actions, or the one left open is the side door.
-  assert.equal(
-    (ROUTE_ALIASES.match(/inScope\(/g) ?? []).length >= 2,
-    true,
-    "BOTH alias actions must be scoped — register (pointing a new alias at a list) and record (writing to an existing one)",
+  // Both alias actions, PER ACTION. A count of `inScope(` across the file is the weaker form: the
+  // register fix below adds a third call, after which a count would pass with `record` wide open.
+  const registerHalf = ROUTE_ALIASES.slice(
+    ROUTE_ALIASES.indexOf('action === "register"'),
+    ROUTE_ALIASES.indexOf('action === "record"'),
   );
-  assert.match(
-    ROUTE_ALIASES,
-    /getCompanyEmailAliases\(\)/,
-    "recording membership must judge the alias as STORED, not as the request claims — otherwise the caller asserts which list it belongs to",
-  );
-
-  // ── A list can name its own reply address, and it is REPLY-TO, never FROM ────────────────────
-  // Owner 2026-09-11: mail sent through the HR list should answer to HRBP@satopharma.com.
-  assert.match(
-    MIGRATION_REPLY_TO,
-    /'hrbp@satopharma\.com'/,
-    "the HR Team list must carry the HR Business Partner's address",
-  );
-  assert.match(
-    MIGRATION_REPLY_TO,
-    /where list_key = 'hr_team'/,
-    "and only that list — a global reply address would make a Monthly Closing publish answer to HR",
+  const recordHalf = ROUTE_ALIASES.slice(ROUTE_ALIASES.indexOf('action === "record"'));
+  assert.ok(registerHalf.includes("inScope("), "the register action must be scoped");
+  assert.ok(recordHalf.includes("inScope("), "the record action must be scoped too, or it is the side door");
+  // 🔴 register is an UPSERT on the address, so checking only the DESTINATION list lets her name an
+  // alias that already exists and re-point it at a list she owns — making the very field every
+  // reader scopes on say it is hers. It must read the stored row, as record does.
+  assert.ok(
+    registerHalf.includes("getCompanyEmailAliases()"),
+    "register must read the alias AS STORED before overwriting it — otherwise the scope predicate is a field the caller can write",
   );
 
+  // ── The reply address is keyed on the SENDER, and is Reply-To, never From ───────────────────
+  // Owner 2026-09-11, asked and answered: a mail carries the HR Business Partner's address when
+  // SHE is sending, not whenever the HR Team is addressed. Keying it on recipients meant a Super
+  // Admin Bcc'ing HR Team sent a vendor's reply to her instead of to himself.
+  assert.match(
+    SETTINGS,
+    /seatReplyTo:\s*\{[^}]*"HR Advisory":\s*"hrbp@satopharma\.com"/,
+    "the HR Business Partner's seat must carry her reply address",
+  );
   assert.match(
     ROUTE_SEND,
-    /replyTo:\s*resolved\.replyTo/,
-    "the composer send must pass the list's reply address through",
+    /replyTo:\s*systemEmail\.seatReplyTo\[access\.role\]/,
+    "the send must pick the reply address from the SENDER's seat",
   );
-  // 🔴 THE ONE THAT PROTECTS DELIVERABILITY. `from` is phoenix@send.satopharma.com — a subdomain
-  // Resend authenticates. Sending as an apex-domain mailbox is rejected or filed as spam, so the
-  // list address must never reach `from`, however natural "send it from HRBP" sounds.
-  // The regex below was once written through a Python heredoc as `\b`, which is the BACKSPACE
-  // escape there, not two characters — so it required a 0x08 byte after "replyTo" and could never
-  // match. The guard passed while the code under it was broken. Kept in the assert.equal form with
-  // the boolean named, so the thing being asserted is readable and a stray byte is visible.
-  const fromUsesTheListAddress = /from:\s*(resolved\.replyTo|replyTo)/.test(ROUTE_SEND);
+
+  // 🔴 THE PAIR THAT PROTECTS DELIVERABILITY, negative AND positive.
+  // From is phoenix@send.satopharma.com - the subdomain Resend authenticates. An apex-domain From
+  // is rejected or filed as spam. The negative pin alone was evadable: the send site writes `from,`
+  // as property shorthand, so `const from = replyTo ?? ...` higher up would never match it. The
+  // positive pin below closes that by requiring `from` to keep coming from the env vars.
+  const fromUsesTheReplyAddress = /from:\s*(systemEmail\.seatReplyTo|replyTo)/.test(ROUTE_SEND);
   assert.equal(
-    fromUsesTheListAddress,
+    fromUsesTheReplyAddress,
     false,
-    "a list's address must NEVER become the From - From stays on the verified sending subdomain or the mail stops being delivered",
+    "a reply address must NEVER become the From - From stays on the verified sending subdomain or the mail stops being delivered",
+  );
+  assert.match(
+    ROUTE_SEND,
+    /const from = process\.env\.HR_REPLY_EMAIL_FROM \|\| process\.env\.NOTIFICATION_EMAIL_FROM/,
+    "and From must still be resolved from the env vars - without this positive pin, reassigning `from` higher up slips past the negative one",
   );
 }

@@ -45,7 +45,6 @@ const BASE_SPEC: DistributionListSpec = {
   lineIds: [],
   listKey: "test_list",
   positionIds: [],
-  replyTo: null,
   regionCodes: [],
   roles: [],
 };
