@@ -11,7 +11,9 @@ import {
   normalizeSystemType,
 } from "../src/lib/devices/action1.ts";
 import { buildDeviceImportPreviewFrom } from "../src/lib/devices/bulk-import.ts";
-import type { DirectoryEntry, ExistingRegisterKeys } from "../src/lib/devices/bulk-import.ts";
+import type { DeviceImportResult, DirectoryEntry, ExistingRegisterKeys } from "../src/lib/devices/bulk-import.ts";
+import { importedDevicesForHandover } from "../src/lib/devices/handover-queue.ts";
+import type { CompanyDevice } from "../src/lib/devices/types.ts";
 
 // The Action1 pull turns an endpoint into a row the device register's own import pipeline writes.
 // Everything pinned here is PURE — the mapping, the unit conversions and the two properties that
@@ -273,6 +275,119 @@ function assertKeySampleIsReported(): void {
   assert.deepEqual(action1KeySample([]), []);
 }
 
+/** A register row carrying only what the hand-over list reads; everything else empty. */
+function registerRow(
+  fields: Pick<CompanyDevice, "assetTag" | "id" | "status"> & Partial<CompanyDevice>,
+): CompanyDevice {
+  return {
+    agreedValueEgp: null,
+    assignmentId: null,
+    category: "laptop",
+    daysSinceHolderLeft: 0,
+    declarationNo: null,
+    deviceName: null,
+    estimatedValueEgp: null,
+    holderHrId: null,
+    holderJobTitle: null,
+    holderLastWorkingDate: null,
+    holderName: null,
+    holderState: "active",
+    imei: null,
+    installedRam: null,
+    isHeldByLeaver: false,
+    issuedOn: null,
+    itemValuesEgp: null,
+    lineNumber: null,
+    manufacturer: null,
+    model: null,
+    note: null,
+    processor: null,
+    purchasedOn: null,
+    serialNumber: null,
+    simNumber: null,
+    statusChangedAt: null,
+    statusReason: null,
+    systemType: null,
+    windowsDeviceId: null,
+    windowsProductId: null,
+    ...fields,
+  };
+}
+
+/**
+ * PROPERTY 3 — what an import put in stock is offered for a hand-over, and nobody is named for it.
+ *
+ * The owner chose on 2026-09-11 that enrolling a machine leads straight to its hand-over, with the
+ * person picked in Phoenix. Action1 cannot supply that person — on the first machine enrolled it
+ * reported the shared `satoh` login — so the import result lists what it registered with nobody
+ * signed for it, each with the existing Hand over form, and the press stays a person's.
+ */
+function assertTheImportResultOffersEachMachineForHandover(): void {
+  const handedOverFromTheList = registerRow({
+    assetTag: "SATO-LAP-14",
+    assignmentId: "assignment-14",
+    holderHrId: "B-25",
+    holderName: "Aya Mohamed",
+    id: "device-14",
+    status: "assigned",
+  });
+  const register = [
+    registerRow({ assetTag: "SATO-LAP-01", id: "device-01", status: "in_stock" }),
+    registerRow({ assetTag: "SATO-LAP-12", id: "device-12", status: "in_stock" }),
+    registerRow({ assetTag: "SATO-LAP-13", holderHrId: "b-40", holderName: "Hoda", id: "device-13", status: "assigned" }),
+    handedOverFromTheList,
+  ];
+  const result: Pick<DeviceImportResult, "outcomes"> = {
+    outcomes: [
+      { assetTag: "SATO-LAP-07", deviceId: null, error: "Already in the register.", issuedTo: null, result: "skipped", rowNumber: 1 },
+      { assetTag: "SATO-LAP-12", deviceId: "device-12", error: null, issuedTo: null, result: "imported", rowNumber: 2 },
+      // A spreadsheet row that named its holder was handed over by the import itself.
+      { assetTag: "SATO-LAP-13", deviceId: "device-13", error: null, issuedTo: "Hoda", result: "imported", rowNumber: 3 },
+      // Registered by this import, then handed over from the list a moment ago.
+      { assetTag: "SATO-LAP-14", deviceId: "device-14", error: null, issuedTo: null, result: "imported", rowNumber: 4 },
+      { assetTag: "(row 5)", deviceId: null, error: "A device needs a serial number or an IMEI.", issuedTo: null, result: "failed", rowNumber: 5 },
+    ],
+  };
+
+  const offered = importedDevicesForHandover(result, register);
+  assert.deepEqual(
+    offered.devices.map((device) => device.assetTag),
+    ["SATO-LAP-12", "SATO-LAP-14"],
+    "the list is what THIS import registered without a hand-over — never the skip, the failure, a row " +
+      "the sheet already handed over, or a machine that was in stock before the import ran",
+  );
+  assert.equal(offered.stillInStock, 1, "one of the two is still owed a hand-over");
+
+  // Handed over from the list, it STAYS in the list: the receipt it now needs is printed from there.
+  assert.equal(offered.devices[1], handedOverFromTheList);
+
+  // It names nobody. The machine still in stock carries no holder; choosing one is the form's job.
+  assert.equal(offered.devices[0]?.holderHrId, null, "the list must never arrive with a holder chosen");
+
+  // Registered, but the sheet's own hand-over was refused: in stock and owed one, so it is listed.
+  const partial = importedDevicesForHandover(
+    {
+      outcomes: [
+        { assetTag: "SATO-LAP-01", deviceId: "device-01", error: "Registered, but the handover was not recorded.", issuedTo: null, result: "imported", rowNumber: 1 },
+      ],
+    },
+    register,
+  );
+  assert.deepEqual(partial.devices.map((device) => device.assetTag), ["SATO-LAP-01"]);
+
+  // No import offers nothing, and an id the register no longer holds is dropped rather than invented.
+  assert.deepEqual(importedDevicesForHandover(null, register), { devices: [], stillInStock: 0 });
+  const vanished = importedDevicesForHandover(
+    {
+      outcomes: [
+        { assetTag: "SATO-LAP-99", deviceId: "device-99", error: null, issuedTo: null, result: "imported", rowNumber: 1 },
+      ],
+    },
+    register,
+  );
+  assert.deepEqual(vanished, { devices: [], stillInStock: 0 });
+}
+
 export async function runDeviceAction1SyncTests(): Promise<void> {
   assertWindowsLaptopMapping();
   assertKeySpellingTolerance();
@@ -282,4 +397,5 @@ export async function runDeviceAction1SyncTests(): Promise<void> {
   assertNeverAssignsCustody();
   assertRepeatPullIsAddOnly();
   assertKeySampleIsReported();
+  assertTheImportResultOffersEachMachineForHandover();
 }
