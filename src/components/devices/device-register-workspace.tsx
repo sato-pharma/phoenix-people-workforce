@@ -57,6 +57,7 @@ import type {
   DeviceImportPreview,
   DeviceImportResult,
 } from "@/lib/devices/bulk-import";
+import { importedDevicesForHandover } from "@/lib/devices/handover-queue";
 import type {
   CompanyDevice,
   DeviceCategory,
@@ -219,9 +220,20 @@ const INPUT_CLASS =
 
 type DraftKind = "issue" | "return" | "mark" | null;
 
+/**
+ * Which list an open editor belongs to.
+ *
+ * One device can be on screen twice — in the import result that just registered it, and in the
+ * register below when the filter includes stock. Both render `DeviceActions` against the one draft,
+ * so without this an editor opened in one list would open in the other as well, and what was typed
+ * into either would appear in both.
+ */
+type DraftSurface = "register" | "import";
+
 type Draft = {
   deviceId: string;
   kind: DraftKind;
+  surface: DraftSurface;
   employeeHrId: string;
   declarationNo: string;
   handoverPlace: string;
@@ -235,6 +247,7 @@ type Draft = {
 const EMPTY_DRAFT: Draft = {
   deviceId: "",
   kind: null,
+  surface: "register",
   employeeHrId: "",
   declarationNo: "",
   handoverPlace: "",
@@ -357,9 +370,18 @@ export function DeviceRegisterWorkspace({
       });
   }, [data, filter]);
 
-  const openDraft = useCallback((deviceId: string, kind: Exclude<DraftKind, null>) => {
-    setDraft({ ...EMPTY_DRAFT, deviceId, kind });
-  }, []);
+  /** What the last import put in stock, for its result to offer a hand-over against. */
+  const importedForHandover = useMemo(
+    () => importedDevicesForHandover(importResult, data?.devices ?? []),
+    [data, importResult],
+  );
+
+  const openDraft = useCallback(
+    (deviceId: string, kind: Exclude<DraftKind, null>, surface: DraftSurface = "register") => {
+      setDraft({ ...EMPTY_DRAFT, deviceId, kind, surface });
+    },
+    [],
+  );
 
   const closeDraft = useCallback(() => setDraft(EMPTY_DRAFT), []);
 
@@ -715,10 +737,10 @@ export function DeviceRegisterWorkspace({
             <p className="mt-1.5 text-[11px] font-semibold leading-relaxed text-slate-500">
               Every machine running the Action1 agent, with its manufacturer, model, serial number,
               processor and memory read off the endpoint itself rather than copied by hand. Devices
-              arrive in stock and nobody is signed for anything — you issue each one to its holder
-              here, and that press is what the custody receipt records. A machine already in the
-              register comes back as a skip, so this is safe to run again whenever a laptop is set
-              up.
+              arrive in stock and nobody is signed for anything. The import result then lists each
+              one with a Hand over button: choose who is signing for it, and that press is what the
+              custody receipt records. A machine already in the register comes back as a skip, so
+              this is safe to run again whenever a laptop is set up.
             </p>
             <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
               <button
@@ -900,6 +922,30 @@ export function DeviceRegisterWorkspace({
                     </li>
                   ))}
               </ul>
+
+              {/*
+                WHAT THIS IMPORT PUT IN STOCK, HANDED OVER WHERE IT ARRIVED. The owner chose on
+                2026-09-11 that enrolling a machine leads straight to its hand-over, with the person
+                picked here rather than typed into Action1 — whose own user field, on the first
+                machine enrolled, was the shared `satoh` login and named nobody. So nothing arrives
+                chosen: each machine gets the register's own Hand over form, and once it is signed out
+                the same row offers its receipt. Shown only to someone who may record a hand-over;
+                the route asserts that again, and it is the boundary.
+              */}
+              {canRecord && importedForHandover.devices.length > 0 ? (
+                <ImportedDevicesHandover
+                  assignable={data?.assignable ?? []}
+                  busy={busy}
+                  devices={importedForHandover.devices}
+                  draft={draft.surface === "import" ? draft : EMPTY_DRAFT}
+                  onClose={closeDraft}
+                  onOpen={(deviceId, kind) => openDraft(deviceId, kind, "import")}
+                  onSubmit={(device) => void submitDraft(device)}
+                  post={post}
+                  setDraft={setDraft}
+                  stillInStock={importedForHandover.stillInStock}
+                />
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -1195,7 +1241,7 @@ export function DeviceRegisterWorkspace({
                         assignable={data?.assignable ?? []}
                         busy={busy}
                         device={device}
-                        draft={draft}
+                        draft={draft.surface === "register" ? draft : EMPTY_DRAFT}
                         onClose={closeDraft}
                         onOpen={openDraft}
                         onSubmit={() => void submitDraft(device)}
@@ -1265,7 +1311,7 @@ export function DeviceRegisterWorkspace({
                   assignable={data?.assignable ?? []}
                   busy={busy}
                   device={device}
-                  draft={draft}
+                  draft={draft.surface === "register" ? draft : EMPTY_DRAFT}
                   onClose={closeDraft}
                   onOpen={openDraft}
                   onSubmit={() => void submitDraft(device)}
@@ -1277,6 +1323,100 @@ export function DeviceRegisterWorkspace({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The machines the last import put in stock, each with its hand-over — in the import result, where
+ * they arrived.
+ *
+ * THE REGISTER'S OWN CONTROLS, NOT A SECOND SET. Each machine renders `DeviceActions`, so the
+ * hand-over is the same form as in the table: the person is chosen from the list and never arrives
+ * chosen, and the press goes through the same route to the same `phx_device_issue`. A machine signed
+ * out from here STAYS here with Print receipt and its item prices, because that is the next thing
+ * its paper needs.
+ *
+ * LAID OUT AS THE MOBILE CARDS ARE, AT EVERY WIDTH. It sits inside the import panel rather than in the
+ * table's fixed columns, and one column of cards is what fits both a 375px phone and the 669px
+ * desktop content box without a second table.
+ */
+function ImportedDevicesHandover({
+  assignable,
+  busy,
+  devices,
+  draft,
+  onClose,
+  onOpen,
+  onSubmit,
+  post,
+  setDraft,
+  stillInStock,
+}: {
+  assignable: DeviceRegisterData["assignable"];
+  busy: boolean;
+  devices: CompanyDevice[];
+  draft: Draft;
+  onClose: () => void;
+  onOpen: (deviceId: string, kind: Exclude<DraftKind, null>) => void;
+  onSubmit: (device: CompanyDevice) => void;
+  post: (payload: Record<string, unknown>) => Promise<unknown>;
+  setDraft: (draft: Draft) => void;
+  stillInStock: number;
+}) {
+  return (
+    <div className="mt-3 border-t border-slate-200 pt-3">
+      <p className="break-words text-[11px] font-black uppercase tracking-[0.12em] text-slate-600">
+        {stillInStock > 0
+          ? `${stillInStock.toLocaleString("en-US")} of ${devices.length.toLocaleString("en-US")} still to hand over`
+          : `All ${devices.length.toLocaleString("en-US")} handed over`}
+      </p>
+      <p className="mt-1.5 break-words text-[11px] font-semibold leading-relaxed text-slate-500">
+        {stillInStock > 0
+          ? "These arrived in stock with nobody signed for them. Press Hand over, choose who is signing for it, and Print receipt appears beside it."
+          : "Each one is signed out. Print its receipt and price its items from here or from the register below."}
+      </p>
+      <ul className="mt-2 space-y-2">
+        {devices.map((device) => (
+          <li className="min-w-0 border border-slate-200 bg-white px-3 py-2" key={device.id}>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="break-words text-[12px] font-black text-slate-900">{device.assetTag}</p>
+                <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
+                  {CATEGORY_LABEL[device.category]}
+                  {device.manufacturer || device.model
+                    ? ` — ${[device.manufacturer, device.model].filter(Boolean).join(" ")}`
+                    : ""}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                <StatusChip device={device} />
+              </div>
+            </div>
+            <p className="mt-1.5 break-words text-[11px] font-bold text-slate-700" dir="ltr">
+              {device.serialNumber ? `S/N ${device.serialNumber}` : `IMEI ${device.imei ?? ""}`}
+            </p>
+            {device.holderName ? (
+              <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-700">
+                Signed for by {device.holderName}
+              </p>
+            ) : null}
+            <div className="mt-2 border-t border-slate-100 pt-2">
+              <DeviceActions
+                assignable={assignable}
+                busy={busy}
+                device={device}
+                draft={draft}
+                onClose={onClose}
+                onOpen={onOpen}
+                onSubmit={() => onSubmit(device)}
+                post={post}
+                setDraft={setDraft}
+              />
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

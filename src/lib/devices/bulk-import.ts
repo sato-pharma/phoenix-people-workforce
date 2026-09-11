@@ -218,6 +218,13 @@ export type DeviceImportOutcome = {
   result: "imported" | "skipped" | "failed";
   /** Whether a custody record was opened too, not merely the device registered. */
   issuedTo: string | null;
+  /**
+   * The register row this import wrote, or null when it wrote none.
+   *
+   * Carried so the result can offer a hand-over against exactly the machines it just put in stock
+   * (`handover-queue.ts`), rather than finding them again by asset tag.
+   */
+  deviceId: string | null;
   error: string | null;
 };
 
@@ -872,6 +879,7 @@ export async function executeDeviceImport(
         assetTag,
         result: "skipped",
         issuedTo: null,
+        deviceId: null,
         error: row.errors[0] ?? "This row was not importable.",
       });
       continue;
@@ -924,19 +932,21 @@ export async function executeDeviceImport(
             assetTag,
             result: "imported",
             issuedTo: null,
+            deviceId,
             error: `Registered, but the handover was not recorded: ${deviceErrorMessage(issueError)}`,
           });
           continue;
         }
       }
 
-      outcomes.push({ rowNumber: row.rowNumber, assetTag, result: "imported", issuedTo, error: null });
+      outcomes.push({ rowNumber: row.rowNumber, assetTag, result: "imported", issuedTo, deviceId, error: null });
     } catch (error) {
       outcomes.push({
         rowNumber: row.rowNumber,
         assetTag,
         result: "failed",
         issuedTo: null,
+        deviceId: null,
         error: deviceErrorMessage(error),
       });
     }
