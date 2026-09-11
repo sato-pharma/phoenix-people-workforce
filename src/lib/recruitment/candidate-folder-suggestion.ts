@@ -141,38 +141,36 @@ function isKnownRegionCode(code: string): code is CandidateRegionCode {
  * Measured against production 2026-09-11: 11 district manager applicants sat unplaceable this way,
  * and every one of them HAD typed a real answer — "Minya", "Behira, Alex, Kafr El-Sheikh", "UE ( 1 )".
  * The old refusal read "named no region from the list" for all of them, which is false for every one:
- * they named a region, just not by tapping a row. This is that answer read properly, in three shapes:
+ * they named a region, just not by tapping a row. This is that answer read properly, in two shapes:
  *
- *   RESOLVED           exactly one region, confidently — the same governorate reader `Others named
- *                       for a governorate` uses elsewhere (`egyptRegionFromFreeText`), so this file
- *                       stays the one place that owns "what governorate is this".
- *   SPANS REGIONS       the text names MORE than one — "Behira, Alex, Kafr El-Sheikh" is Alex-BHR
- *                       AND Delta (1), and there is no single folder for that. Comma-split so each
- *                       place is read on its own rather than the first WORD in the whole string
- *                       winning, which is what `candidateRegionForGovernorate` alone would do.
- *   UPPER EGYPT SPLIT   names a NUMBERED half of Upper Egypt ("Upper Egypt 1", "UE ( 1 )", "UE1 or
- *                       UE2") rather than the region itself. `candidateRegionCodes` carries ONE Upper
- *                       Egypt folder, but Pedia's Upper Egypt split into UE-1/UE-2 on 2026-09-01 (see
- *                       the regionMenu() comment in whatsapp-classify-menus.ts) and AGENTS.md's golden
- *                       rule is that the split membership DIFFERS by product line — which this apply
- *                       flow has no way to know. So this is deliberately NOT resolved to "UE": doing
- *                       that would be this module deciding a question only the owner can answer.
- *
- * A short region CODE or the company's own region LABEL, typed verbatim ("UE", "Delta (1)"), resolves
- * directly and is checked before either of the ambiguous shapes above — a plain "Upper Egypt" with no
- * trailing number is not the split case and should still open its one real folder.
+ *   RESOLVED        exactly one region, confidently — the same governorate reader other callers use
+ *                    elsewhere (`egyptRegionFromFreeText`), so this file stays the one place that
+ *                    owns "what governorate is this"; a region CODE or LABEL typed verbatim ("UE",
+ *                    "Delta (1)"); or a NUMBERED half of Upper Egypt ("Upper Egypt 1", "UE ( 1 )",
+ *                    "UE1 or UE2") — the owner's decision on 2026-09-11, asked directly: file a typed
+ *                    numbered mention into the one Upper Egypt folder this apply flow offers, same as
+ *                    a plain "Upper Egypt". Pedia's Upper Egypt split into UE-1/UE-2 on 2026-09-01
+ *                    (see the regionMenu() comment in whatsapp-classify-menus.ts) and AGENTS.md's
+ *                    golden rule is that the split membership DIFFERS by product line, which this
+ *                    apply flow has no way to know — so which HALF they meant is not recovered here,
+ *                    only that they meant Upper Egypt. `preferred_region_name` still holds their exact
+ *                    words, so nothing is lost for whoever later needs to tell UE-1 from UE-2.
+ *   SPANS REGIONS   the text names MORE than one — "Behira, Alex, Kafr El-Sheikh" is Alex-BHR AND
+ *                    Delta (1), and there is no single folder for that. Comma-split so each place is
+ *                    read on its own rather than the first WORD in the whole string winning, which is
+ *                    what `candidateRegionForGovernorate` alone would do. UNRECOGNIZED — the text
+ *                    names no region this app knows at all — falls out of the same path with zero
+ *                    matches rather than one.
  */
 export type DeclaredRegionFreeTextReading =
   | { kind: "resolved"; code: CandidateRegionCode }
   | { kind: "spans_regions"; codes: readonly CandidateRegionCode[] }
-  | { kind: "upper_egypt_split" }
   | { kind: "unrecognized" };
 
 // "Upper Egypt 1", "UE ( 1 )", "Upper (1)", "Upper Egypt (1)", "UE1 or UE2" — every variant production
 // actually holds — all reduce, once punctuation is flattened to spaces, to "ue"/"upper" immediately
-// followed (a bare space or nothing at all) by a "1" or "2". Plain "upper egypt" carries no digit and
-// never matches, which is the whole point: the split is what is undecided, not the region itself.
-const UPPER_EGYPT_SPLIT_PATTERN = /\b(?:ue|upper)\s*(?:egypt)?\s*([12])\b/;
+// followed (a bare space or nothing at all) by a "1" or "2".
+const UPPER_EGYPT_NUMBERED_PATTERN = /\b(?:ue|upper)\s*(?:egypt)?\s*([12])\b/;
 
 function normalizeForRegionScan(value: string): string {
   return value
@@ -196,7 +194,9 @@ function regionNamedDirectly(typed: string): CandidateRegionCode | null {
 }
 
 export function readDeclaredRegionFreeText(typed: string): DeclaredRegionFreeTextReading {
-  if (UPPER_EGYPT_SPLIT_PATTERN.test(normalizeForRegionScan(typed))) return { kind: "upper_egypt_split" };
+  // A numbered mention of Upper Egypt names the REGION, by the owner's decision — see the doc comment
+  // above. Checked before the label match below so this never falls through to "unrecognized".
+  if (UPPER_EGYPT_NUMBERED_PATTERN.test(normalizeForRegionScan(typed))) return { code: "UE", kind: "resolved" };
 
   const direct = regionNamedDirectly(typed);
   if (direct) return { kind: "resolved", code: direct };
@@ -296,12 +296,6 @@ export function suggestFolderFromDeclaredAnswers(
       const names = reading.codes.map((regionCode) => candidateRegionLabels[regionCode]).join(" and ");
       return {
         refusal: `Typed "${typedRegion}" as their region, which spans ${names} — there is no single region folder for that.`,
-        suggestion: null,
-      };
-    }
-    if (reading.kind === "upper_egypt_split") {
-      return {
-        refusal: `Typed "${typedRegion}" as their region. Upper Egypt has split into UE-1/UE-2 by product line since 2026-09-01 and this system offers only one Upper Egypt folder — ask the owner whether this should file there before filing it.`,
         suggestion: null,
       };
     }

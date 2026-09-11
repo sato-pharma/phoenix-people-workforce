@@ -457,9 +457,10 @@ export function typedAnswerTooLongText(what: string, max: number): string {
 // explicit that UE-1/UE-2 membership DIFFERS by product line, and this question is asked before the
 // flow knows which line an applicant is bound for, so there is still no line to resolve the split
 // with. A district manager who types "Upper Egypt 1" instead of tapping the one Upper Egypt row is
-// read by `readDeclaredRegionFreeText` in candidate-folder-suggestion.ts, which deliberately leaves
-// it unresolved pending the owner's call on whether that should file into the single Upper Egypt
-// folder this apply flow still offers.
+// read by `readDeclaredRegionFreeText` in candidate-folder-suggestion.ts, which — the owner's decision
+// 2026-09-11, asked directly — files it into the single Upper Egypt folder this apply flow offers,
+// same as a plain "Upper Egypt" answer. Which HALF they meant is not recovered by that; it is still
+// sitting in `preferred_region_name` verbatim for whoever needs it once the flow can ask a line.
 //
 // Revised 2026-08-28. That reviewed list had gone stale in the one way that matters: Delta (3) was
 // live and carrying target in `au.regions` while absent here, so the owner could open a District

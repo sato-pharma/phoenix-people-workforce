@@ -163,25 +163,25 @@ export async function runCandidateFolderSuggestionTests() {
   );
 
   // Eight production candidates typed a numbered half of Upper Egypt — "Upper Egypt 1", "UE ( 1 )",
-  // "Upper (1)", "Upper Egypt (1)" — and one typed "UE1 or UE2". `candidateRegionCodes` carries ONE
-  // Upper Egypt folder; whether a numbered half should file there is the owner's call, not this
-  // module's, so NONE of these may resolve.
+  // "Upper (1)", "Upper Egypt (1)" — and one typed "UE1 or UE2". The owner's decision, 2026-09-11,
+  // asked directly: file a typed numbered mention into the single Upper Egypt folder, same as a
+  // plain "Upper Egypt" answer — WHICH half they meant is not recovered here, only that they meant
+  // Upper Egypt at all, and `preferred_region_name` keeps their exact words for later.
   for (const typed of ["Upper Egypt 1", "UE ( 1 )", "Upper (1)", "Upper Egypt (1)", "UE1 or UE2", "Upper Egypt 2"]) {
     assert.deepEqual(
       readDeclaredRegionFreeText(typed),
-      { kind: "upper_egypt_split" },
-      `"${typed}" names a numbered half of Upper Egypt and must stay unresolved`,
+      { kind: "resolved", code: "UE" },
+      `"${typed}" names a numbered half of Upper Egypt and must resolve to the one Upper Egypt folder`,
     );
   }
-  // Plain "Upper Egypt" — no number — is not the split question and still opens its one real folder.
+  // Plain "Upper Egypt" — no number — resolves the same way.
   assert.deepEqual(readDeclaredRegionFreeText("Upper Egypt"), { kind: "resolved", code: "UE" });
 
   const dmUpperSplit = suggestFolderFromDeclaredAnswers(
     declared("dmUpperSplit", { title: "District Manager", regionName: "UE ( 1 )" }),
   );
-  assert.equal(dmUpperSplit.suggestion, null, "a numbered Upper Egypt half must never resolve to the UE folder");
-  assert.match(String(dmUpperSplit.refusal), /UE \( 1 \)/, "quoted verbatim, so a recruiter can read what they typed");
-  assert.match(String(dmUpperSplit.refusal), /owner/i, "and the reason says this is a decision, not a data gap");
+  assert.equal(dmUpperSplit.suggestion?.kind, "district_manager");
+  assert.equal(dmUpperSplit.suggestion?.key, "UE", "a numbered Upper Egypt half files into the one UE folder");
 
   // Text naming no region at all is still told apart from "never typed anything".
   assert.deepEqual(readDeclaredRegionFreeText("somewhere near my hometown"), { kind: "unrecognized" });
