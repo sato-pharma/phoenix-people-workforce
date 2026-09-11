@@ -255,6 +255,35 @@ function runFacultyExtractionTests() {
   assert.equal(findFaculty(sectionsFor("EXPERIENCE\nHR Specialist — Marfaa Egypt")), null);
   assert.equal(findFaculty(sectionsFor("EDUCATION\nCairo University, 2019")), null);
 
+  // THE CURLY APOSTROPHE. Word autocorrects a typed ' to U+2019, so "Bachelor's degree in
+  // Veterinary Medicine" and "Bachelor's degree in Veterinary Medicine" are the same sentence to a
+  // reader and two different strings to a rule: DEGREE_QUALIFIER_LINE spells bachelor(?:'s)? with a
+  // STRAIGHT quote only, so the curly spelling missed the degree-title pass entirely and fell
+  // through to the weak bare-word scan at LOW confidence. LOW is never auto-applied, so an
+  // identical CV kept its faculty column blank purely on which quote character Word had chosen.
+  //
+  // Found 2026-09-12 while dry-running the 42 medical-rep candidates who carry a degree and no
+  // faculty — a gap in the fix that shipped as ca00dc7b3 the night before. Two of those 42 are
+  // exactly this shape (Hatem Zahran, "Bachelor’s of Pharmacy"; Manar Tharwat, "Bachelor’s
+  // degree in veterinary medicine"), and both now resolve at HIGH.
+  //
+  // Fixed in normalizeCvText beside the DASHES fold rather than in the two education.ts regexes:
+  // education.ts's own comment already states dashes are folded before any rule sees the text, so
+  // folding apostrophes there fixes the whole class instead of two call sites.
+  for (const apostrophe of ["'", "’", "‘", "ʼ"]) {
+    const curly = findFaculty(sectionsFor(`EDUCATION\nBachelor${apostrophe}s degree in Veterinary Medicine - Sohag University - 2024`));
+    assert.equal(
+      curly?.value,
+      "Faculty of Veterinary Medicine",
+      `a degree written with U+${apostrophe.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")} must read the same as one written with a straight quote`,
+    );
+    assert.equal(
+      curly?.confidence,
+      "high",
+      "the curly spelling must reach HIGH like the straight one — LOW is never auto-applied, so a demotion here leaves the faculty column blank with nothing on screen to say why",
+    );
+  }
+
   // END TO END — the value actually emitted by the pipeline production writes into
   // ats_candidate_cv_extractions.extracted_fields, not merely the isolated rule. Mirrors
   // production's exact source text (source: whatsapp, a PDF whose text layer reads this literally).

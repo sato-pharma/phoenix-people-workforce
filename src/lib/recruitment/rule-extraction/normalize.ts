@@ -35,6 +35,18 @@ const INVISIBLE = /[​-‏‪-‮⁦-⁩﻿]/g;
 const DASHES = /[‐-―−⁃]/g;
 
 /**
+ * Every curly apostrophe a CV writes in "Bachelor's", folded to a plain one.
+ *
+ * Word autocorrects a typed ' to U+2019, so "Bachelor's degree in Veterinary Medicine" and
+ * "Bachelor's degree in veterinary medicine" are the same sentence to a reader and two different
+ * strings to a rule. Measured on the 42 medical-rep candidates carrying a degree and no faculty
+ * (2026-09-12): the straight-quote spelling resolved the faculty at HIGH confidence and the curly
+ * one fell through to the weak bare-word scan at LOW — which is never auto-applied, so an identical
+ * CV kept its faculty column blank purely on which quote character Word had chosen.
+ */
+const APOSTROPHES = /[\u2018\u2019\u02BC\u2032]/g;
+
+/**
  * Bullet glyphs, folded to "• " so a list item is recognisable by one rule instead of nine.
  *
  * The PRIVATE-USE range (U+E000-U+F8FF) is in here for a reason that cost real fields: Word writes
@@ -221,6 +233,7 @@ export function normalizeCvText(raw: string): NormalizedCvText {
   text = repairWrappedContacts(text);
   text = foldArabicIndicDigits(text);
   text = text.replace(DASHES, "-");
+  text = text.replace(APOSTROPHES, "'");
   // Normalize line endings, then trim each line and fold bullet glyphs. A tab becomes two spaces:
   // tabs are load-bearing in a CV (a tab is what separates "Job Title — Employer" from its
   // right-aligned date range), so it must not vanish, but it must not read as one word gap either.

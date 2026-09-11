@@ -85,3 +85,60 @@ export function selectNewestIsRulesCandidateIds(
       .map(([candidateId]) => candidateId),
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The fourth set, 2026-09-12: candidates carrying a degree and NO faculty.
+//
+// Every set above keys on the EXTRACTION history — "has this candidate been read, and by what".
+// That is the right question for a backlog and the wrong one for a repaired RULE. A rule fix does
+// not change who has been read; it changes what a read would now return, so the candidates worth
+// re-reading are the ones whose CANDIDATE RECORD still carries the hole the rule used to leave.
+//
+// Measured live on production (ozucdzovmcqvepbozvqf) 2026-09-12, after the degree/faculty fix
+// merged as ca00dc7b3: 944 candidates, 563 with a faculty, 313 with a degree and no faculty, 42 of
+// those applying for a Medical Representative role. All 313 already have an extraction row, so
+// every flag on the re-read script — whose truth set is "no extraction row at all" — selects
+// exactly ZERO of them. Without this set the repaired rule reaches nobody already on file.
+//
+// A word on why the emptiness test is not `faculty === null`. Both shapes are in the column: the
+// extractor writes null when it read nothing, while the candidate form and the import path write
+// an empty string. A PostgREST `.is("faculty", null)` therefore silently under-selects, which in a
+// re-read script reads as "fewer candidates need this than we thought" rather than as a bug. The
+// same applies in reverse to `degree`, where a blank string would otherwise qualify a candidate
+// who has no degree on record at all.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type CandidateEducationRow = {
+  id: string;
+  degree: string | null;
+  faculty: string | null;
+  applied_for_job_title: string | null;
+};
+
+const blank = (value: string | null | undefined) => String(value ?? "").trim() === "";
+
+/**
+ * Candidates whose record holds a degree but no faculty — the population a faculty-rule fix can
+ * actually repair.
+ *
+ * `appliedForContains` narrows to one shelf, case-insensitively, against `applied_for_job_title`.
+ * It is a SUBSTRING and not an equality test on purpose: that column holds whatever the subject
+ * line or the WhatsApp answer said, so the 42 medical-rep candidates spell the same role as
+ * "Medical Representative", "Medical Rep", "medical rep." and half a dozen other ways. An equality
+ * test on the canonical spelling reads as a much smaller group, with no error to say so.
+ */
+export function selectBlankFacultyCandidateIds(
+  rows: readonly CandidateEducationRow[],
+  options: { appliedForContains?: string | null } = {},
+): Set<string> {
+  const needle = String(options.appliedForContains ?? "").trim().toLowerCase();
+  return new Set(
+    rows
+      .filter((row) => !blank(row.degree) && blank(row.faculty))
+      .filter((row) => {
+        if (!needle) return true;
+        return String(row.applied_for_job_title ?? "").toLowerCase().includes(needle);
+      })
+      .map((row) => String(row.id)),
+  );
+}
