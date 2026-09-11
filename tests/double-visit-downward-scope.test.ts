@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   buildManagerSummariesDetailed,
@@ -115,7 +117,32 @@ function chainKeysFor(viewerHrId: string): Set<string> {
   return keys;
 }
 
+const SERVICE_SOURCE = readFileSync(
+  fileURLToPath(new URL("../src/lib/double-visit-analytics/service.ts", import.meta.url)),
+  "utf8",
+);
+
 export function runDoubleVisitDownwardScopeTests() {
+  // ── 🔴 COMPANY-WIDE OVERSIGHT ROLES ARE NOT NARROWED BY THIS FIX ─────────────────────────────
+  // CEO, SFE Manager, Training Manager and Marketing Manager answer `all`, which the code calls
+  // "executive company-wide READ oversight". The chain cut is computed for scoped viewers only, so
+  // a fix aimed at a Product Manager cannot silently remove rows from a board built to show
+  // everything. Found by measuring: the Training Manager's own chain is Marketing Manager -> CEO.
+  // It costs nothing today (neither records a double visit) which is exactly why it needs pinning
+  // rather than leaving to a future reader to notice.
+  for (const role of ["CEO", "SFE Manager", "Training Manager", "Marketing Manager"]) {
+    assert.equal(
+      resolveDoubleVisitAccessScope(access(role, "A-7"), DIRECTORY).all,
+      true,
+      `${role} keeps company-wide oversight — this is the seam the exemption keys on`,
+    );
+  }
+  assert.match(
+    SERVICE_SOURCE,
+    /if \(resolveDoubleVisitAccessScope\(input\.access, employees\)\.all\) return undefined;/,
+    "🔴 the chain exclusion must be skipped for company-wide viewers — without this an oversight board silently loses rows, which reads as a data fault",
+  );
+
   // ── 🔴 THE REP-VISIT SHAPE: the manager's name must go, though every row is admitted on a rep ──
   const repVisitRows = [
     row(OWN_MANAGER, REP_ONE, 5),

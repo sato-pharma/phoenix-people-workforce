@@ -1441,6 +1441,20 @@ export async function getDoubleVisitDashboardData(input: {
   // translated per-person rather than by re-normalising a key — the two domains in this file are
   // not convertible, and a mismatched key fails silently by matching nobody.
   const viewerChainKeys = (() => {
+    // 🔴 COMPANY-WIDE OVERSIGHT ROLES ARE LEFT ALONE — CEO, SFE Manager, Training Manager,
+    // Marketing Manager and Super Admin, the ones resolveDoubleVisitAccessScope answers `all` for.
+    //
+    // Two owner decisions meet here. The downward rule is stated about PEOPLE, so on its face it
+    // covers them too; but `all` is itself his decision, and its own comment calls it "executive
+    // company-wide READ oversight". Narrowing that as a side effect of a fix aimed at a Product
+    // Manager would be a silent functional change to a role built to see everything, and a missing
+    // row on an oversight board reads as a data fault rather than as a rule.
+    //
+    // Measured on production 2026-09-11 the choice costs nothing today: the Training Manager's
+    // chain is Marketing Manager -> CEO, and NEITHER records a double visit, so all three boards
+    // are identical at 35 rows either way. It is the latent case this guards. Reversing it is one
+    // condition, and the test names the seam.
+    if (resolveDoubleVisitAccessScope(input.access, employees).all) return undefined;
     const viewerAccessKey = normalizedHrKey(
       resolveEmployeeIdentityId(input.access) ?? input.access.hrId ?? input.access.loginId,
     );
