@@ -5,6 +5,7 @@ import {
   confirmPart2,
   DATA_QUALITY_ACK_REQUIRED,
   OVERPAID_ACK_REQUIRED,
+  POPULATION_DIFF_ACK_REQUIRED,
 } from "@/lib/automated-payroll/run-service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -21,10 +22,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
     const body = (await request.json().catch(() => ({}))) as {
       acknowledgeOverpaid?: boolean;
       acknowledgeDataIssues?: boolean;
+      acknowledgePopulationDiff?: boolean;
     };
     const run = await confirmPart2(access, runId, {
       acknowledgeOverpaid: body.acknowledgeOverpaid === true,
       acknowledgeDataIssues: body.acknowledgeDataIssues === true,
+      acknowledgePopulationDiff: body.acknowledgePopulationDiff === true,
     });
     return NextResponse.json({ success: true, run });
   } catch (error) {
@@ -39,6 +42,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
           success: false,
           requiresDataQualityAcknowledgment: true,
           error: message.replace(/^conflict:\s*/i, "").replace(`${DATA_QUALITY_ACK_REQUIRED} `, ""),
+        },
+        { status: 409 },
+      );
+    }
+    // Someone paid last month is missing with no resignation on file (audit finding 46).
+    if (message.includes(POPULATION_DIFF_ACK_REQUIRED)) {
+      return NextResponse.json(
+        {
+          success: false,
+          requiresPopulationDiffAcknowledgment: true,
+          error: message.replace(/^conflict:\s*/i, "").replace(`${POPULATION_DIFF_ACK_REQUIRED} `, ""),
         },
         { status: 409 },
       );
