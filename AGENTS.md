@@ -59,9 +59,9 @@ These exist because 1.4 fixes per feature is what happens without them.
 4. **After compaction or a long session, distrust yourself.** A replayed summary of earlier work can
    read like a live instruction. Before acting on "previous" state, re-run the check. Prefer one
    fresh session per task over one endless session.
-5. **The absence of a permission prompt is not approval.** `permissions.defaultMode` is **`default`**
-   in user-level `~/.claude/settings.json` (changed from `auto` 2026-08-31, so a would-be block
-   becomes a prompt). But `permissions.ask` in `.claude/settings.json` is **empty** — no dialog fires
+5. **The absence of a permission prompt is not approval.** The desktop app starts every session with
+   `--permission-mode auto`, overriding user-level `defaultMode: default`, so a classifier, not a
+   prompt, decides. And `permissions.ask` in `.claude/settings.json` is **empty** — no dialog fires
    from a prompt rule at all — and several hundred allow rules wave routine calls straight through.
    `permissions.deny` holds only silent hard blocks, not prompts. **Every approval rule in §6 is
    therefore behavioral: ask in plain words and wait for a plain answer.** Never offer a prompt that
@@ -105,7 +105,7 @@ it for the hook's wording. Which memory backs which hook:
 - **`pg_dump` piped through stdout on Windows writes CRLF into every `COPY` row — exit 0, plausible size, empty stderr, and the restore puts a stray `\r` in the last column of every row.** Use `pg_dump -f <file>`, which writes clean LF, and verify the archive's row counts against the live tables *before* the drop.
 - **Reads of `.env*` are auto-approved deliberately, for EVERY key** — licence to inspect, never to propagate. Do not re-litigate or narrow it.
 - **A permission allow-rule stores the LITERAL command, so an inline env var bakes a live credential into `settings.local.json` in plaintext.** Grep `settings.*.json` for `TOKEN=`/`KEY=`/`SECRET=` before sharing or merging.
-- **`mcp__supabase-staging__*` is broken** — route staging work through `mcp__supabase-production__*` passing the staging `project_id`.
+- **`mcp__supabase-staging__*` is PINNED to staging** (`project_ref` in `.mcp.json`) — no `project_id`, no path to production.
 - **The Supabase MCP returns ONLY the last result set of a multi-statement `execute_sql`** — earlier ones vanish with no error, so a block that verifies in statement one and summarizes in two certifies a check you never saw. One question per call.
 - **A Windows USER env var SHADOWS every `.env.local`, silently.** Re-probe all three; never print the value.
 - **The local attendance agent dies at EVERY logon and loses NOTHING — do not escalate it.** Never disable the 2-hourly task, never launch a second agent (it can fire a PRODUCTION sync).
@@ -336,7 +336,7 @@ are in [docs/agents-incident-history.md](docs/agents-incident-history.md).
 
   **Dead refs — treat any doc, memory, or prompt still naming one as stale:** `izhmxvgiktiafqusolot` and `oaifhavixhdtwmseshff`. Neither is returned by `list_projects` any more.
 
-  **Neither region nor org is a guard** — three of the four are `eu-central-1`, and both named MCP servers see **all four**. Resolve with `list_projects` before acting (§8).
+  **Neither region nor org is a guard** — three of the four are `eu-central-1`, and `supabase-production` sees every ref its token can. Resolve with `list_projects` before acting (§8).
 - GitHub Actions secret `STAGING_SUPABASE_SERVICE_ROLE_KEY`: the staging service-role key, used by `ci.yml`'s login-smoke step and both staging legs of `migration-drift-check.yml`. **There is no `preview-smoke` job** — the smoke test is a step inside `validate`.
 - **`.env.local` points at PRODUCTION Supabase.** `pnpm run dev` mutates production data.
 
@@ -471,14 +471,14 @@ time locally — parallel validation belongs to CI.
 idle against ~3.5 GB for a dev server, build or cold typecheck, so the real limit is ~5 concurrent
 HEAVY jobs.
 
-🔴 **COMMIT headroom and PHYSICAL RAM are two different ceilings, and the one above stays GREEN while
-the machine dies. Read FREE RAM, never the session count** — a session is ~269 MB while ONE
-`next dev` held 3,454 MB, more than eleven sessions together. Under **2,600 MB** a dev server or cold
-typecheck crosses `mem-watchdog.ps1`'s floor; under **1,800 MB** you are already in it, and the
-watchdog reclaims NOTHING unless an IDLE dev server exists. **Stop a dev server before closing a
-session, and kill it by PORT.** Enforced at SessionStart by `~/.claude/hooks/session-census.mjs`,
-deliberately SILENT at 10–12 sessions and speaking only at 13/16 — **a count on the statusline is not
-a guard.** Measurements and both incidents:
+🔴 **COMMIT headroom and PHYSICAL RAM are two ceilings; the one above stays GREEN while the machine
+dies. Read FREE RAM, never the session count** — a session is ~269 MB while ONE `next dev` held
+3,454 MB, more than eleven sessions. Under **2,600 MB** a dev server or cold typecheck crosses
+`mem-watchdog.ps1`'s floor and `~/.claude/hooks/heavy-job-gate.mjs` refuses to START one; under
+**1,800 MB** the watchdog reaps IDLE dev servers, then all but the most recently active, and under
+**500 MB** ANY node job, most RAM first. **Stop a dev server before closing a session, and kill it
+by PORT.** `~/.claude/hooks/session-census.mjs` is deliberately SILENT until 13/16 sessions — **a
+statusline count is not a guard.** Account:
 [docs/agents-worktree-and-machine-limits.md](docs/agents-worktree-and-machine-limits.md).
 
 Route work by tier:
@@ -670,10 +670,10 @@ console, network/API response, deployment logs, and database/RLS evidence before
 
 ## 8. Supabase and data safety
 
-- **Supabase writes are pre-authorized end to end — NO approval prompt** (owner's `autoMode` grant, applied by hand 2026-08-02, which deliberately removes the §6 gate for Supabase). It covers the `supabase-staging` and `supabase-production` MCP servers, the owner's connector `mcp__45bb6356-…`, and the `supabase` CLI (incl. `db push`), on staging AND production — every read tool and every write tool: `execute_sql` mutations, `apply_migration`, bulk and destructive SQL. **You do NOT wait for a separate approval.** The one standing condition: **announce any destructive or bulk PRODUCTION change in plain words before you run it, and give the owner a chance to stop it** — the removed prompt is a UI gate, not licence to skip telling him. (This grant does NOT cover creating/deleting a project or reading secrets.)
+- **Supabase writes are pre-authorized end to end — NO approval prompt** (owner's `autoMode` grant, applied by hand 2026-08-02, which deliberately removes the §6 gate for Supabase). It covers the `supabase-staging` and `supabase-production` MCP servers and the `supabase` CLI (incl. `db push`), on staging AND production — every read tool and every write tool: `execute_sql` mutations, `apply_migration`, bulk and destructive SQL. **You do NOT wait for a separate approval.** The one standing condition: **announce any destructive or bulk PRODUCTION change in plain words before you run it, and give the owner a chance to stop it** — the removed prompt is a UI gate, not licence to skip telling him. (This grant does NOT cover creating/deleting a project or reading secrets.)
 - All schema changes must be migration-based, repeatable, reviewable, and rollback-aware. Never patch production manually.
 - Before any database action, print and verify the exact project ref, resolving it with `list_projects` rather than trusting a ref pasted in a prompt or copied from an older doc.
-- Both named servers can see **every project the account is entitled to — all four in the §3 table.** **The server name guarantees nothing — the `project_id` argument is the only thing separating staging from production on every call.**
+- `supabase-production` can see **every project its token reaches.** **Its name guarantees nothing — the `project_id` argument is the only thing separating staging from production on every call.** `supabase-staging` is pinned to staging.
 - Any UUID-named Supabase tool (a claude.ai account connector) has an identity you cannot verify from its name alone, so it stays deny-listed by default. `mcp__b345e47e-3198-4b48-97cc-07b47bbb3087` remains denied. **Write the BARE server name in a deny rule** — a `__*` suffix is not a supported wildcard, so a rule spelled that way can match nothing while reading as a block.
 - **OWNER DECISION 2026-08-23: `mcp__45bb6356-…` stays DENIED.** It is the owner's own connector and was briefly allowed, but he was asked directly and answered plainly, so this is settled. Do not re-allow it, do not propose re-allowing it, and do not read a blocked call as a bug to chase — a `deny` is a silent hard block, not a prompt. Nothing is lost: the two named servers cover routine work, and this connector's grant was always the broader one (read+write on Secrets, Environment and Projects).
 - Before destructive or bulk live-data work, inventory the target, create or verify a backup, show the exact mutation, and define post-change counts or checks.

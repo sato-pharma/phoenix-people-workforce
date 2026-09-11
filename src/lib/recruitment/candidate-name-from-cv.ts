@@ -30,6 +30,13 @@
 // Pure (no DB, no AI imports) for the same reason cv-auto-apply.ts and contact-review.ts are — the
 // rules are the thing worth testing, and they must be testable without the extraction stack.
 
+import {
+  EGYPT_GOVERNORATES,
+  MARITAL_STATUS_KEYWORDS,
+  MILITARY_STATUS_KEYWORDS,
+  NATIONALITY_KEYWORDS,
+} from "@/lib/recruitment/rule-extraction/dictionaries";
+
 /** The extraction's own hedge, as stored in ats_candidate_cv_extractions.extracted_fields. */
 export type ExtractionConfidence = "high" | "low";
 
@@ -135,6 +142,82 @@ export function personNameFromFileName(fileName: string | null | undefined): str
 }
 
 /**
+ * Personal-detail and profession words that end up trailing the NAME field itself, rather than in
+ * their own column. A two-column "personal information" table collapses to one run of text in a
+ * PDF's text layer when the columns carry no space between them, and a model reading the same page
+ * inherits the identical run-on — so this list guards both the rule engine's output and the AI's.
+ *
+ * Real production examples (2026-09), all at "high" confidence before this existed:
+ *
+ *   "REHAB MOHAMEDDakahlia"              <- her governorate, GLUED with no space at all
+ *   "MONA YOUSSEF SAYED Veterinarian"    <- her former profession
+ *   "Mustafa Mohamed Al-Laqqani Single"  <- her marital status
+ *   "Abdelrhman Attia Medical Representative" <- the job title printed under her name
+ *
+ * Sourced from the same dictionaries the personal-block rules already match against, so this list
+ * cannot silently drift from what "Marital Status: Single" or "Nationality: Egyptian" mean
+ * elsewhere in this pipeline.
+ */
+const NAME_LABEL_SUFFIXES: readonly string[] = [
+  ...MARITAL_STATUS_KEYWORDS.flatMap((entry) => entry.aliases),
+  ...MILITARY_STATUS_KEYWORDS.flatMap((entry) => entry.aliases),
+  ...NATIONALITY_KEYWORDS.flatMap((entry) => entry.aliases),
+  ...EGYPT_GOVERNORATES.map((entry) => entry.canonical),
+  // Professions and roles a candidate sometimes prints directly under their name. Not Phoenix job
+  // titles (those are screened separately) — what the person studied or last did for a living.
+  "veterinarian", "pharmacist", "dentist", "physician", "nutritionist", "accountant",
+  "agronomist", "biologist", "chemist", "microbiologist", "nurse", "teacher",
+  "medical representative", "medical rep", "sales representative", "district manager",
+  "hr operations", "human resources",
+].filter((word) => word.trim().length > 0);
+
+/** Shortest label worth stripping when it is GLUED with no space — see stripNameLabelSuffix. */
+const MIN_GLUED_SUFFIX_LENGTH = 5;
+
+function escapeForRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Whether what is left after stripping a label still reads like a person's name. */
+function looksLikeNameRemainder(value: string): boolean {
+  const words = value.split(/\s+/).filter(Boolean);
+  if (words.length < 2) return false;
+  return words.every((word) => /^[A-Za-z][A-Za-z'.-]*$/.test(word) || /^[؀-ۿ]+$/.test(word));
+}
+
+/**
+ * Removes a trailing personal-detail or profession label from an otherwise name-shaped string,
+ * when — and only when — doing so leaves something that still reads like a person's name.
+ *
+ * Tried both ways this contamination actually arrives: SPACE-separated ("... Al-Laqqani Single")
+ * and GLUED with no separator at all ("...MOHAMEDDakahlia"). The glued form is only attempted for a
+ * label of five letters or more — a short one ("Giza", "law") is too likely to be the tail of an
+ * unrelated real word to strip blind. Refuses rather than guesses: an unrecognised or ambiguous
+ * ending is left exactly as extracted.
+ */
+export function stripNameLabelSuffix(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return trimmed;
+
+  for (const label of [...NAME_LABEL_SUFFIXES].sort((a, b) => b.length - a.length)) {
+    const escaped = escapeForRegExp(label);
+
+    const spacedMatch = new RegExp(`(?:^|\\s)${escaped}$`, "iu").exec(trimmed);
+    if (spacedMatch) {
+      const remainder = trimmed.slice(0, spacedMatch.index).trim();
+      if (looksLikeNameRemainder(remainder)) return remainder;
+    }
+
+    if (label.length >= MIN_GLUED_SUFFIX_LENGTH && new RegExp(`(?<=[A-Za-z])${escaped}$`, "i").test(trimmed)) {
+      const remainder = trimmed.slice(0, trimmed.length - label.length).trim();
+      if (looksLikeNameRemainder(remainder)) return remainder;
+    }
+  }
+
+  return trimmed;
+}
+
+/**
  * Whether an extracted name may be written to a candidate record as-is.
  *
  * Both gates, together: the model has to have been sure, AND the string has to be a person.
@@ -152,11 +235,12 @@ export function isTrustworthyExtractedName(
 /**
  * The name a newly-created candidate gets, in order of how much it can be trusted.
  *
- *   1. the extracted name, when the model was sure and it names a person;
+ *   1. the extracted name, when the model was sure and it names a person — after stripping any
+ *      trailing personal-detail or profession label the extraction glued onto it;
  *   2. the CV's filename, when that names a person;
  *   3. the sender's name — unchanged, and still correct for a direct applicant, who IS the sender;
- *   4. the extracted name after all, rather than nothing: full_name is NOT NULL, and a bad name a
- *      recruiter can see and correct beats a failed intake that drops the CV on the floor.
+ *   4. the extracted (cleaned) name after all, rather than nothing: full_name is NOT NULL, and a
+ *      bad name a recruiter can see and correct beats a failed intake that drops the CV on the floor.
  *
  * Only step 1's second condition and step 2 are new. An extraction that produced no name at all
  * still falls straight through to the sender, exactly as it did before.
@@ -167,7 +251,7 @@ export function resolveCandidateFullNameFromCv(input: {
   fileName: string | null | undefined;
   senderFullName: string;
 }): string {
-  const extracted = String(input.extractedName ?? "").trim();
+  const extracted = stripNameLabelSuffix(String(input.extractedName ?? "").trim());
 
   if (isTrustworthyExtractedName(extracted, input.extractedConfidence)) return extracted;
 

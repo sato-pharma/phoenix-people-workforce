@@ -8,8 +8,10 @@
 
 import {
   DEGREE_KEYWORDS,
+  DEGREE_QUALIFIER_KEYWORDS,
   EGYPT_UNIVERSITIES,
   FACULTY_KEYWORDS,
+  FACULTY_KEYWORDS_WEAK,
   GRADE_KEYWORDS,
   LANGUAGE_KEYWORDS,
   LANGUAGE_PROFICIENCY,
@@ -44,12 +46,91 @@ export function findUniversity(sections: readonly CvSection[]): ExtractedField<s
   return line && line.length <= 90 ? low(line.trim()) : null;
 }
 
+// The dashes a CV writes ("Bachelor of Arts – Damanhur University – 2026") are already folded to a
+// plain hyphen by normalizeCvText before any rule sees this text — see rule-extraction/normalize.ts
+// (DASHES). So a bare "-" is the only dash variant either pattern below needs to recognise.
+//
+// Both patterns capture lazily up to the FIRST thing that plainly ends a degree title or a labeled
+// value — a dash, a comma, an opening paren, "from"/"at"/"university"/"academy"/"institute", a slash
+// or newline, or the end of the text — so "Bachelor of Arts – Damanhur University" stops at "Arts"
+// rather than swallowing the institution name that follows it.
+
+/**
+ * The word(s) right after "Bachelor of/in" (or Master/Diploma/PhD/Licence) — what a degree TITLE
+ * calls the faculty when the CV never writes "Faculty of X" as a line of its own. "Bachelor of Arts"
+ * is the common case a CV actually uses instead of ever spelling out "Faculty of Arts".
+ */
+const DEGREE_QUALIFIER_LINE =
+  /\b(?:bachelor(?:'s)?|licence|master(?:'s)?|diploma|ph\.?\s?d\.?|doctorate|b\.?\s?sc\.?|m\.?\s?sc\.?)\s+(?:degree\s+)?(?:of|in)\s+([A-Za-z][A-Za-z\s&']{1,45}?)(?=\s*[-|,(]|\s+(?:from|at|university|academy|institute)\b|[\n/]|$)/i;
+
+/**
+ * A labeled department/major line — "Department: Archaeology", "Major: Chemistry" — a transcript-style
+ * CV uses instead of, or alongside, naming its faculty by name.
+ */
+const DEPARTMENT_LABEL_LINE =
+  /\b(?:department|dept\.?|major|specialization|specialisation|field of study)\s*(?:of|:|-)\s*([A-Za-z][A-Za-z\s&']{1,45}?)(?=\s*[-|,(]|\s+(?:from|at|university|academy|institute)\b|[\n/]|$)/i;
+
+/**
+ * The DEGREE_QUALIFIER_KEYWORDS entry contained in `text`, longest alias first.
+ *
+ * Flattened and re-sorted per call rather than once at module load: the list is a handful of short
+ * entries, so the cost is negligible, and doing it here (rather than trusting DEGREE_QUALIFIER_KEYWORDS'
+ * own declaration order) is what guarantees "Computer Science" is read whole before the generic
+ * "Science" sitting inside it, the same specific-before-generic reasoning findFaculty's own dictionary
+ * scan below already relies on.
+ */
+function matchDegreeQualifier(text: string): string | null {
+  const flattened = DEGREE_QUALIFIER_KEYWORDS.flatMap((entry) =>
+    entry.aliases.map((alias) => ({ alias, canonical: entry.canonical })),
+  ).sort((a, b) => b.alias.length - a.alias.length);
+  for (const { alias, canonical } of flattened) {
+    if (containsPhrase(text, alias)) return canonical;
+  }
+  return null;
+}
+
+/**
+ * The faculty named in the education section.
+ *
+ * "Faculty of Pharmacy" is unambiguous and is trusted outright. A bare "Pharmacy" is not — it is an
+ * ordinary word that can turn up in an education section for reasons that have nothing to do with
+ * the candidate's own faculty, so it is only offered at LOW confidence: enough to show a reviewer,
+ * never enough to overwrite a candidate's real faculty gone unwritten. See FACULTY_KEYWORDS_WEAK in
+ * dictionaries.ts for the incident this split fixes.
+ */
 export function findFaculty(sections: readonly CvSection[]): ExtractedField<string> | null {
   const text = textOfKind(sections, "education");
   if (!text) return null;
   for (const name of [...FACULTY_KEYWORDS].sort((a, b) => b.length - a.length)) {
     if (containsPhrase(text, name)) return high(titleCase(name));
   }
+
+  // The dictionary above only catches a CV that names its faculty the way a SECTION HEADING would.
+  // Just as many name it the way a degree TITLE does ("Bachelor of Arts") or a transcript LABEL does
+  // ("Department: Archaeology") — see the two patterns above. Read from the actual document, against
+  // the same closed vocabulary, so these stay HIGH confidence exactly like the dictionary scan above.
+  const degreeQualifier = DEGREE_QUALIFIER_LINE.exec(text)?.[1];
+  const fromDegreeTitle = degreeQualifier ? matchDegreeQualifier(degreeQualifier) : null;
+  if (fromDegreeTitle) return high(fromDegreeTitle);
+
+  const department = DEPARTMENT_LABEL_LINE.exec(text)?.[1]?.trim();
+  if (department) {
+    const fromDepartment = matchDegreeQualifier(department);
+    if (fromDepartment) return high(fromDepartment);
+    // Named a real department, just not one of the disciplines either dictionary recognises
+    // ("Marketing", "Human Resources Management" — real strings in this corpus). Still worth keeping
+    // at LOW confidence, the same treatment findUniversity gives an institution line it cannot
+    // validate: a human sees exactly what the CV said instead of an empty field.
+    if (department.length <= 60) return low(titleCase(department));
+  }
+
+  // Last resort: a bare word that MIGHT name a faculty but is also ordinary vocabulary (a training
+  // rotation, a former employer, a course title). Kept separate and LOW so it never outranks an
+  // explicit signal above — see FACULTY_KEYWORDS_WEAK in dictionaries.ts for the incident this fixes.
+  for (const name of [...FACULTY_KEYWORDS_WEAK].sort((a, b) => b.length - a.length)) {
+    if (containsPhrase(text, name)) return low(titleCase(name));
+  }
+
   return null;
 }
 

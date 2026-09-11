@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   collectSuggestedFilings,
   degreeEligibilityAppliesToDeclaredRole,
+  readDeclaredRegionFreeText,
   suggestFolderFromDeclaredAnswers,
 } from "../src/lib/recruitment/candidate-folder-suggestion.ts";
 import { partitionCandidatesByFolder } from "../src/lib/recruitment/candidate-folder.ts";
@@ -37,6 +38,7 @@ function declared(
     title?: string | null;
     area?: string | null;
     regionCode?: string | null;
+    regionName?: string | null;
     declaredAt?: string | null;
     status?: string;
     faculty?: string | null;
@@ -54,10 +56,14 @@ function declared(
     appliedForJobTitle: fields.title ?? null,
     preferredAreaName: fields.area ?? null,
     preferredRegionCode: fields.regionCode ?? null,
+    preferredRegionName: fields.regionName ?? null,
     preferencesDeclaredAt: fields.declaredAt === undefined ? "2026-08-30T06:00:00Z" : fields.declaredAt,
     folder: fields.folder ?? null,
   } as unknown as Candidate;
 }
+
+/** Every area a test below files against — a small stand-in for the live `au.canonical_areas` list. */
+const CANONICAL_AREAS = ["Alex West", "Alex Center", "Gharbia 1 (Tanta)"];
 
 export async function runCandidateFolderSuggestionTests() {
   // ── 1 · THE GATE — an extracted title is not an answer ────────────────────
@@ -71,17 +77,17 @@ export async function runCandidateFolderSuggestionTests() {
   });
 
   assert.equal(
-    suggestFolderFromDeclaredAnswers(tapped).suggestion?.key,
+    suggestFolderFromDeclaredAnswers(tapped, CANONICAL_AREAS).suggestion?.key,
     "Alex West",
     "a tapped answer names its folder",
   );
   assert.equal(
-    suggestFolderFromDeclaredAnswers(extracted).suggestion,
+    suggestFolderFromDeclaredAnswers(extracted, CANONICAL_AREAS).suggestion,
     null,
     "an EXTRACTED title must never produce a filing — 64 of production's 82 titles are extractor output",
   );
   assert.match(
-    String(suggestFolderFromDeclaredAnswers(extracted).refusal),
+    String(suggestFolderFromDeclaredAnswers(extracted, CANONICAL_AREAS).refusal),
     /extractor/i,
     "and the refusal must say why, or the next reader concludes the data is missing rather than untrusted",
   );
@@ -89,6 +95,7 @@ export async function runCandidateFolderSuggestionTests() {
   // ── 2 · Medical reps file by AREA ─────────────────────────────────────────
   const rep = suggestFolderFromDeclaredAnswers(
     declared("rep", { title: "Medical Representative", area: "Gharbia 1 (Tanta)", regionCode: "D1" }),
+    CANONICAL_AREAS,
   );
   assert.equal(rep.suggestion?.kind, "medical_rep");
   assert.equal(rep.suggestion?.key, "Gharbia 1 (Tanta)", "the AREA is the key, never the region");
@@ -99,13 +106,50 @@ export async function runCandidateFolderSuggestionTests() {
   // One real production row is exactly this shape.
   const repNoArea = suggestFolderFromDeclaredAnswers(
     declared("repNoArea", { title: "Medical Representative", area: null }),
+    CANONICAL_AREAS,
   );
   assert.equal(repNoArea.suggestion, null, "a rep with no area cannot be filed");
   assert.match(String(repNoArea.refusal), /area/i);
 
+  // ── 2a · A typed area must be CANONICAL, never a guess ────────────────────
+  // Production, 2026-09-11: seven CVs were filed this way — the applicant's free-typed "area not
+  // listed" answer became its own one-CV folder, matching none of the ~50 real areas. Reused here as
+  // the regression: each of the seven real strays must now be refused, not filed.
+  const productionStrays = [
+    "kafrelsheikh",
+    "Qena north",
+    "“Haram”", // curly quotes, exactly as the applicant's message carried them
+    "Badr city",
+    "El Minya",
+    "Minia Government",
+    "Qena",
+  ];
+  for (const stray of productionStrays) {
+    const result = suggestFolderFromDeclaredAnswers(
+      declared(`stray-${stray}`, { title: "Medical Representative", area: stray }),
+      CANONICAL_AREAS,
+    );
+    assert.equal(
+      result.suggestion,
+      null,
+      `"${stray}" matched no real area in production and must be refused, not filed as its own folder`,
+    );
+    assert.match(String(result.refusal), /not one of the current areas/i);
+  }
+
+  // A canonical name typed with different case and stray whitespace resolves to the EXACT stored
+  // spelling — never the caller's own casing — or "Alex west" and "Alex West" would split into two
+  // folders that read the same, exactly the case-drift candidateFolderKey already guards against.
+  const caseDrift = suggestFolderFromDeclaredAnswers(
+    declared("caseDrift", { title: "Medical Representative", area: "  alex WEST  " }),
+    CANONICAL_AREAS,
+  );
+  assert.equal(caseDrift.suggestion?.key, "Alex West", "resolves to the canonical spelling, not the typed casing");
+
   // ── 3 · District managers file by REGION CODE, shown as the region's name ──
   const dm = suggestFolderFromDeclaredAnswers(
     declared("dm", { title: "District Manager", regionCode: "D3" }),
+    CANONICAL_AREAS,
   );
   assert.equal(dm.suggestion?.kind, "district_manager");
   assert.equal(dm.suggestion?.key, "D3", "the CODE is stored — it is the stable half");
@@ -115,31 +159,103 @@ export async function runCandidateFolderSuggestionTests() {
   // is the shape that produced undefined label lookups in production on 2026-08-24.
   const dmTyped = suggestFolderFromDeclaredAnswers(
     declared("dmTyped", { title: "District Manager", regionCode: null }),
+    CANONICAL_AREAS,
   );
   assert.equal(dmTyped.suggestion, null, "a typed region is not a region code and must not be filed as one");
 
   const dmUnknown = suggestFolderFromDeclaredAnswers(
     declared("dmUnknown", { title: "District Manager", regionCode: "ZZ" }),
+    CANONICAL_AREAS,
   );
   assert.equal(dmUnknown.suggestion, null, "a region the company no longer lists cannot open a folder");
   assert.match(String(dmUnknown.refusal), /ZZ/, "and the refusal names it, so the reader can act");
 
+  // ── 3a · A TYPED region ("My region is not listed") is read, not just refused ─────────────────
+  // Measured against production 2026-09-11: 11 district managers sat unplaceable here, and every one
+  // of them had TYPED a real answer into preferred_region_name. readDeclaredRegionFreeText is what
+  // reads it; suggestFolderFromDeclaredAnswers is what a screen actually sees.
+  assert.deepEqual(
+    readDeclaredRegionFreeText("Minya"),
+    { kind: "resolved", code: "UE" },
+    "a governorate typed plainly still resolves, via the same reader the free-text module already ships",
+  );
+  const dmMinya = suggestFolderFromDeclaredAnswers(
+    declared("dmMinya", { title: "District Manager", regionName: "Minya" }),
+    CANONICAL_AREAS,
+  );
+  assert.equal(dmMinya.suggestion?.kind, "district_manager");
+  assert.equal(dmMinya.suggestion?.key, "UE", "a typed governorate resolves to its company region");
+
+  // A region NAME or CODE typed verbatim, not a governorate — "Delta 1" for the label, "UE" for the
+  // code — both resolve directly rather than falling through to the governorate reader.
+  assert.deepEqual(readDeclaredRegionFreeText("Delta 1"), { kind: "resolved", code: "D1" });
+  assert.deepEqual(readDeclaredRegionFreeText("ue"), { kind: "resolved", code: "UE" });
+
+  // Two production candidates typed "Behira, Alex, Kafr El-Sheikh" — Behira and Alex are Alex-BHR,
+  // Kafr El-Sheikh is Delta (1). One string, two regions, and there is no folder for that.
+  const spanning = readDeclaredRegionFreeText("Behira, Alex, Kafr El-Sheikh");
+  assert.equal(spanning.kind, "spans_regions");
+  assert.deepEqual(spanning.kind === "spans_regions" ? [...spanning.codes].sort() : [], ["AB", "D1"]);
+  const dmSpans = suggestFolderFromDeclaredAnswers(
+    declared("dmSpans", { title: "District Manager", regionName: "Behira, Alex, Kafr El-Sheikh" }),
+    CANONICAL_AREAS,
+  );
+  assert.equal(dmSpans.suggestion, null, "a spanning answer must never resolve to either half of it");
+  assert.match(
+    String(dmSpans.refusal),
+    /Behira, Alex, Kafr El-Sheikh/,
+    "the refusal must quote exactly what they typed, or nobody can tell the answer from a blank one",
+  );
+
+  // Eight production candidates typed a numbered half of Upper Egypt — "Upper Egypt 1", "UE ( 1 )",
+  // "Upper (1)", "Upper Egypt (1)" — and one typed "UE1 or UE2". The owner's decision, 2026-09-11,
+  // asked directly: file a typed numbered mention into the single Upper Egypt folder, same as a
+  // plain "Upper Egypt" answer — WHICH half they meant is not recovered here, only that they meant
+  // Upper Egypt at all, and `preferred_region_name` keeps their exact words for later.
+  for (const typed of ["Upper Egypt 1", "UE ( 1 )", "Upper (1)", "Upper Egypt (1)", "UE1 or UE2", "Upper Egypt 2"]) {
+    assert.deepEqual(
+      readDeclaredRegionFreeText(typed),
+      { kind: "resolved", code: "UE" },
+      `"${typed}" names a numbered half of Upper Egypt and must resolve to the one Upper Egypt folder`,
+    );
+  }
+  // Plain "Upper Egypt" — no number — resolves the same way.
+  assert.deepEqual(readDeclaredRegionFreeText("Upper Egypt"), { kind: "resolved", code: "UE" });
+
+  const dmUpperSplit = suggestFolderFromDeclaredAnswers(
+    declared("dmUpperSplit", { title: "District Manager", regionName: "UE ( 1 )" }),
+    CANONICAL_AREAS,
+  );
+  assert.equal(dmUpperSplit.suggestion?.kind, "district_manager");
+  assert.equal(dmUpperSplit.suggestion?.key, "UE", "a numbered Upper Egypt half files into the one UE folder");
+
+  // Text naming no region at all is still told apart from "never typed anything".
+  assert.deepEqual(readDeclaredRegionFreeText("somewhere near my hometown"), { kind: "unrecognized" });
+  const dmGibberish = suggestFolderFromDeclaredAnswers(
+    declared("dmGibberish", { title: "District Manager", regionName: "somewhere near my hometown" }),
+    CANONICAL_AREAS,
+  );
+  assert.equal(dmGibberish.suggestion, null);
+  assert.match(String(dmGibberish.refusal), /somewhere near my hometown/);
+
   // ── 4 · Everything else files by JOB TITLE — the owner's own split ────────
   const other = suggestFolderFromDeclaredAnswers(
     declared("other", { title: "Regulatory Affairs Specialist" }),
+    CANONICAL_AREAS,
   );
   assert.equal(other.suggestion?.kind, "other");
   assert.equal(other.suggestion?.key, "Regulatory Affairs Specialist");
 
   // A tapped family label wins over inference. "Human Resources" is a family LABEL, and must land on
   // the other shelf under those exact words rather than being re-inferred into something else.
-  const hr = suggestFolderFromDeclaredAnswers(declared("hr", { title: "Human Resources" }));
+  const hr = suggestFolderFromDeclaredAnswers(declared("hr", { title: "Human Resources" }), CANONICAL_AREAS);
   assert.equal(hr.suggestion?.kind, "other");
   assert.equal(hr.suggestion?.key, "Human Resources");
 
   // ── 5 · A rejected CV is never shelved, in the folder module's OWN words ──
   const rejected = suggestFolderFromDeclaredAnswers(
     declared("rejected", { title: "Medical Representative", area: "Alex Center", status: "rejected" }),
+    CANONICAL_AREAS,
   );
   assert.equal(rejected.suggestion, null, "two of production's 17 placeable rows are rejected");
   assert.match(
@@ -155,6 +271,7 @@ export async function runCandidateFolderSuggestionTests() {
       area: "Alex West",
       folder: { kind: "medical_rep", key: "Alex West", filedAt: "2026-08-30T05:00:00Z", filedByHrId: "B-10" },
     }),
+    CANONICAL_AREAS,
   );
   assert.equal(already.suggestion, null, "filing twice would be a no-op that reads as new work");
 
@@ -167,6 +284,15 @@ export async function runCandidateFolderSuggestionTests() {
     declared("e", { title: "Medical Representative", area: "Alex Center", status: "rejected" }),
     declared("f", { title: "Medical Representative", area: "Alex West", declaredAt: null }), // extracted
     declared("g", { title: null, declaredAt: null }), // never answered anything
+    // Rejected AND paramedical — the shape that used to show the DEGREE sentence instead of the
+    // rejection, because the degree gate ran before the rejection was ever checked (measured: 5 of
+    // production's 60 rows this way on 2026-09-11). Must be COUNTED, never narrated either way.
+    declared("rejected-para", {
+      title: "Medical Representative",
+      area: "Alex West",
+      status: "rejected",
+      backgroundConfirmedOutcome: "paramedical",
+    }),
     // Answered everything, and reads as a Commerce graduate. The owner's rule is that a degree
     // outside the five is checked by a person first — and filing this row would not merely
     // mis-shelve him, it would REMOVE him from the review queue, which refuses anybody already on
@@ -186,7 +312,7 @@ export async function runCandidateFolderSuggestionTests() {
     // is not grounds for exclusion — the module says so itself.
     declared("blank", { title: "Medical Representative", area: "Alex West", faculty: "qwerty zzz" }),
   ];
-  const collected = collectSuggestedFilings(pool);
+  const collected = collectSuggestedFilings(pool, CANONICAL_AREAS);
 
   assert.deepEqual(
     collected.filings.map((filing) => filing.candidateId).sort(),
@@ -195,13 +321,22 @@ export async function runCandidateFolderSuggestionTests() {
   );
   assert.deepEqual(
     collected.skipped.map((row) => row.candidateId).sort(),
-    ["d", "e", "law"],
-    "answered-but-unplaceable is SHOWN, and so is the degree that needs a person — those are the people a silent screen would lose",
+    ["d", "law"],
+    "answered-but-unplaceable is SHOWN, and so is the degree that needs a person — but a REJECTED CV (e) is a settled decision and must not be one more row here",
+  );
+  assert.equal(
+    collected.rejectedCount,
+    2,
+    "both rejected rows (e, and rejected-para which also reads as paramedical) are COUNTED, not narrated",
   );
   assert.match(
     String(collected.skipped.find((row) => row.candidateId === "law")?.reason),
     /Degrees waiting for you to check/i,
     "the reason must name the screen that resolves it — a skip with no route out is a dead end",
+  );
+  assert.ok(
+    !collected.skipped.some((row) => row.candidateId === "rejected-para"),
+    "a rejected candidate must be counted even when the degree gate would otherwise catch them first — the rejection wins",
   );
   assert.ok(
     !collected.skipped.some((row) => row.candidateId === "f" || row.candidateId === "g"),
@@ -219,7 +354,7 @@ export async function runCandidateFolderSuggestionTests() {
     declared("hired", { title: "Medical Representative", area: "Alex West", status: "hired" }),
     declared("legacy", { title: "Medical Representative", area: "Alex West", status: "Interviewing 2nd round" }),
   ];
-  const mixedFilings = collectSuggestedFilings(mixed).filings;
+  const mixedFilings = collectSuggestedFilings(mixed, CANONICAL_AREAS).filings;
 
   assert.equal(mixedFilings.length, 5, "all five are placeable — the split decides the BUTTON, not the folder");
   assert.deepEqual(
@@ -273,8 +408,8 @@ export async function runCandidateFolderSuggestionTests() {
   assert.equal(dmShelf?.folders[0]?.label, "Alex-BHR", "the code files, the company's own name displays");
 
   // ── 9 · Nothing is suggested for a candidate that is not there ────────────
-  assert.equal(suggestFolderFromDeclaredAnswers(null).suggestion, null);
-  assert.equal(collectSuggestedFilings([]).filings.length, 0);
+  assert.equal(suggestFolderFromDeclaredAnswers(null, CANONICAL_AREAS).suggestion, null);
+  assert.equal(collectSuggestedFilings([], CANONICAL_AREAS).filings.length, 0);
 
   // ── 10 · The degree gate is about the FIELD FORCE, not about employment ───
   //
@@ -319,7 +454,7 @@ export async function runCandidateFolderSuggestionTests() {
     }),
     declared("para-office", { title: "Office Coordinator", backgroundConfirmedOutcome: "paramedical" }),
     declared("para-noroll", { title: null, backgroundConfirmedOutcome: "paramedical" }),
-  ]);
+  ], CANONICAL_AREAS);
 
   assert.deepEqual(
     degreeGate.filings.map((filing) => filing.candidateId),

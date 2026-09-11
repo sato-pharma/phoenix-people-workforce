@@ -334,4 +334,35 @@ export function runWorktreeExitGuardPreRemovalTests() {
       cleanup();
     }
   }
+
+  // ── The same relay fires for the PowerShell tool ─────────────────────────────────────────────
+  // Until 2026-09-12 bash-guard returned early for any tool but Bash, so `Remove-Item` on a worktree
+  // from the PowerShell tool — the removal AGENTS.md §2.1 itself recommends for a locked husk — was
+  // never logged at all. Its settings matcher was `Bash` alone too; both halves had to change.
+  {
+    const { repo, foo, cleanup } = makeRepo();
+    try {
+      const payload = JSON.stringify({
+        tool_name: "PowerShell",
+        tool_input: { command: `Remove-Item -LiteralPath "${foo}" -Recurse -Force` },
+      });
+      const stdout = execFileSync(process.execPath, [bashGuardPath], {
+        cwd: repo,
+        input: payload,
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 30000,
+      });
+
+      assert.ok(
+        stdout.includes("systemMessage"),
+        `bash-guard must relay the guard's report for a PowerShell-tool removal too.\n${stdout}`,
+      );
+      assert.ok(logNames(readLog(repo), foo), "a PowerShell-tool removal must write the log");
+      assert.ok(!stdout.includes("\"permissionDecision\":\"deny\""), `a removal is reported, never blocked.\n${stdout}`);
+      assert.ok(existsSync(foo), "the hook must not remove the worktree itself");
+    } finally {
+      cleanup();
+    }
+  }
 }

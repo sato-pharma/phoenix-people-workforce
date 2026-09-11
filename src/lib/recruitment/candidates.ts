@@ -8,7 +8,10 @@ import {
 } from "@/lib/uploads/exceljs-rows";
 import { assertCanDeleteRecruitment } from "@/lib/recruitment/access";
 import { candidateAppliedFor, freeAppliedForEvidence } from "@/lib/recruitment/applied-for";
-import { isBackgroundConfirmationOutcome } from "@/lib/recruitment/background-review";
+import {
+  backgroundFolderFilingRefusal,
+  isBackgroundConfirmationOutcome,
+} from "@/lib/recruitment/background-review";
 import {
   candidateFolderRefusal,
   DUPLICATE_FOLDER_KEY,
@@ -16,7 +19,9 @@ import {
   isStorableFolderKind,
   cleanFolderKey,
   PARAMEDICAL_FOLDER_KEY,
+  resolveCanonicalMedicalRepArea,
 } from "@/lib/recruitment/candidate-folder";
+import { listCanonicalMedicalRepAreaNames } from "@/lib/recruitment/candidate-folder-options";
 import {
   candidateManagerSeatTier,
   managerMayBeSentApplication,
@@ -1139,12 +1144,26 @@ export async function fileCandidateToFolder(
   // effectively lost. Normalised here rather than in the route so that every caller is covered by
   // one rule: the recruiter's picker, and confirmCandidateBackground below it.
   // The duplicate shelf holds ONE folder for the same reason and by the same mechanism.
-  const folderKey =
-    kind === "paramedical"
-      ? PARAMEDICAL_FOLDER_KEY
-      : kind === DUPLICATE_FOLDER_KIND
-        ? DUPLICATE_FOLDER_KEY
-        : cleanKey;
+  //
+  // THE MEDICAL-REP AREA IS VALIDATED HERE TOO, FILE-TIME — not just where a suggestion is proposed.
+  // The picker's own dropdown already only offers a live area, but this function is the one place
+  // every write actually lands (the picker, the bulk "file the declared CVs" button, and any future
+  // caller), so it is the one place a typo, a stale tab, or a hand-made request gets refused instead
+  // of quietly opening a folder nobody else will ever open. Measured against production 2026-09-11:
+  // seven CVs had already been filed this way — see resolveCanonicalMedicalRepArea.
+  let folderKey: string;
+  if (kind === "paramedical") {
+    folderKey = PARAMEDICAL_FOLDER_KEY;
+  } else if (kind === DUPLICATE_FOLDER_KIND) {
+    folderKey = DUPLICATE_FOLDER_KEY;
+  } else if (kind === "medical_rep") {
+    const canonicalAreas = await listCanonicalMedicalRepAreaNames();
+    const resolved = resolveCanonicalMedicalRepArea(cleanKey, canonicalAreas);
+    if (resolved.area === null) throw new Error(resolved.refusal);
+    folderKey = resolved.area;
+  } else {
+    folderKey = cleanKey;
+  }
 
   const existing = await getCandidate(id);
   if (!existing) throw new Error("Candidate not found.");
@@ -1153,6 +1172,15 @@ export async function fileCandidateToFolder(
   // take one, since a duplicate is at least as likely to be rejected as anything else.
   const refusal = candidateFolderRefusal(existing, kind);
   if (refusal) throw new Error(refusal);
+
+  // THE DEGREE, for the two shelves it is about. The bulk "file what they answered" action already
+  // holds this rule (candidate-folder-suggestion.ts); this is the same rule for the one path that
+  // bypassed it — a recruiter filing a single CV by hand through the picker, which never asked about
+  // a degree at all. That gap is what let a Faculty-of-Education CV sit on Medical Representative /
+  // Behira 1 for eleven days with nobody having opened it. See background-review.ts for why this is
+  // scoped to a `paramedical` verdict only, never `unknown`.
+  const backgroundRefusal = backgroundFolderFilingRefusal(existing, kind);
+  if (backgroundRefusal) throw new Error(backgroundRefusal);
 
   const filedAt = new Date().toISOString();
   const supabase = recruitmentDb();

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { fileCandidateToFolder, listCandidates } from "@/lib/recruitment/candidates";
 import { collectSuggestedFilings } from "@/lib/recruitment/candidate-folder-suggestion";
+import { listCanonicalMedicalRepAreaNames } from "@/lib/recruitment/candidate-folder-options";
 import {
   assertSameOriginMutation,
   readJsonObject,
@@ -38,7 +39,8 @@ export async function POST(request: Request) {
       ? new Set(rawIds.map((value) => String(value ?? "").trim()).filter((value) => value.length > 0))
       : null;
 
-    const { filings, skipped } = collectSuggestedFilings(await listCandidates());
+    const [candidates, canonicalAreas] = await Promise.all([listCandidates(), listCanonicalMedicalRepAreaNames()]);
+    const { filings, skipped } = collectSuggestedFilings(candidates, canonicalAreas);
     const targets = wanted ? filings.filter((filing) => wanted.has(filing.candidateId)) : filings;
 
     const filed: Array<{ candidateId: string; folder: string }> = [];

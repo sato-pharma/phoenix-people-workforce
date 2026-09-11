@@ -23,6 +23,7 @@ import {
   normalizeEgyptianMobile,
   parseDateRange,
 } from "../src/lib/recruitment/rule-extraction/patterns.ts";
+import { findDegree, findFaculty } from "../src/lib/recruitment/rule-extraction/education.ts";
 import { resolveGovernorate, parseFullDate, readLabelledValue } from "../src/lib/recruitment/rule-extraction/personal.ts";
 import { classifyHeading, sliceCvSections } from "../src/lib/recruitment/rule-extraction/sections.ts";
 import { splitTitleAndEmployer } from "../src/lib/recruitment/rule-extraction/work.ts";
@@ -189,6 +190,92 @@ function runSectionTests() {
   assert.deepEqual([...(sections[1]?.lines ?? [])], ["Cairo University"]);
 }
 
+// The production defect: candidate 459929dc-ffd1-43ce-b13f-7e1aeeeb47d3 ("Mostafa Mahrous
+// El-Sheikh", found 2026-09-11 while screening the live Behira 1 folder). His CV's education line
+// reads, verbatim: "Bachelor of Arts – Damanhur University – 2026 / Department: Archaeology" — a
+// faculty AND a department, both plainly named. Before this fix, findFaculty's dictionary scan
+// only recognised the section-HEADING grammar ("Faculty of Arts"), never the degree-TITLE grammar
+// ("Bachelor of Arts") or a transcript LABEL ("Department: Archaeology"), so the CV was stored as
+// degree="Bachelor", faculty=NULL — and resolveBackgroundStanding (background-review.ts) then read
+// that as "unknown", which candidate-folder-suggestion.ts deliberately lets through to the Medical
+// Representative shelf. He was filed to Behira 1 looking eligible for a role his Archaeology degree
+// does not qualify him for.
+function sectionsFor(text: string) {
+  return sliceCvSections(normalizeCvText(text).lines);
+}
+
+function runFacultyExtractionTests() {
+  // THE HEADLINE ASSERTION. The exact reported line, en-dashes and all (proving the DASHES fold in
+  // normalizeCvText and this new logic work together, not just against a pre-cleaned fixture).
+  const mostafaCv = "EDUCATION\nBachelor of Arts – Damanhur University – 2026 / Department: Archaeology";
+  const faculty = findFaculty(sectionsFor(mostafaCv));
+  assert.ok(faculty, "a degree line naming a faculty must not come back null");
+  assert.equal(faculty.value, "Faculty of Arts");
+  // HIGH, not low: this is what lets cv-auto-apply (selectAutoApplyFields, gate 1) actually WRITE the
+  // value to the candidate.faculty column. The production row's AI-assisted extraction already held
+  // faculty: {value: "Department: Archaeology", confidence: "low"} and it was silently discarded by
+  // that exact gate — a low-confidence rule answer would reproduce the same failure by a new route.
+  assert.equal(faculty.confidence, "high");
+
+  // The degree LEVEL is unaffected and unaffected on purpose — "Bachelor" is a correct, complete
+  // answer to "degree awarded" (see the schema's own aiDescription); it is FACULTY that was dropped,
+  // not the degree.
+  assert.equal(findDegree(sectionsFor(mostafaCv))?.value, "Bachelor");
+
+  // A department label alone, with no "Bachelor of X" to pre-empt it, still resolves against the
+  // same closed vocabulary — the second of the two new passes, exercised on its own.
+  const departmentOnly = findFaculty(sectionsFor("EDUCATION\nBachelor's Degree - Cairo University - 2021\nDepartment: Archaeology"));
+  assert.equal(departmentOnly?.value, "Faculty of Archaeology");
+  assert.equal(departmentOnly?.confidence, "high");
+
+  // A department the closed vocabulary does not recognise is still kept, verbatim, at LOW
+  // confidence — the same treatment findUniversity gives an institution line it cannot validate. It
+  // will not auto-apply, but a human reviewing this candidate sees what the CV actually said instead
+  // of a blank field.
+  const unrecognisedDepartment = findFaculty(
+    sectionsFor("EDUCATION\nBachelor's Degree - Cairo University - 2021\nMajor: Public Relations"),
+  );
+  assert.equal(unrecognisedDepartment?.value, "Public Relations");
+  assert.equal(unrecognisedDepartment?.confidence, "low");
+
+  // Longest-match-first: "Bachelor of Computer Science" must read as Computer Science, not as the
+  // generic "Science" sitting inside it — the same specific-before-generic rule FACULTY_KEYWORDS'
+  // own scan already relies on, now proven for the new degree-title pass too.
+  const computerScience = findFaculty(sectionsFor("EDUCATION\nBachelor of Computer Science - Helwan University - 2018"));
+  assert.equal(computerScience?.value, "Faculty of Computer Science");
+
+  // A CV that already states its faculty the ordinary way is completely unaffected — the new passes
+  // are a FALLBACK, only reached once the existing dictionary scan finds nothing.
+  const alreadyWorking = findFaculty(sectionsFor("EDUCATION\nBachelor of Commerce, Faculty of Commerce, Cairo University, 2019"));
+  assert.equal(alreadyWorking?.value, "Faculty of Commerce");
+  assert.equal(alreadyWorking?.confidence, "high");
+
+  // No education section at all, or one naming neither a degree title nor a department: still null,
+  // never a guess.
+  assert.equal(findFaculty(sectionsFor("EXPERIENCE\nHR Specialist — Marfaa Egypt")), null);
+  assert.equal(findFaculty(sectionsFor("EDUCATION\nCairo University, 2019")), null);
+
+  // END TO END — the value actually emitted by the pipeline production writes into
+  // ats_candidate_cv_extractions.extracted_fields, not merely the isolated rule. Mirrors
+  // production's exact source text (source: whatsapp, a PDF whose text layer reads this literally).
+  const endToEnd = runRuleCvExtraction(
+    [
+      "Mostafa Mahrous El-Sheikh",
+      "01012345678",
+      "EDUCATION",
+      "Bachelor of Arts – Damanhur University – 2026 / Department: Archaeology",
+    ].join("\n"),
+  );
+  assert.equal(endToEnd.fields.faculty?.value, "Faculty of Arts");
+  assert.equal(endToEnd.fields.faculty?.confidence, "high");
+  assert.equal(endToEnd.fields.degree?.value, "Bachelor");
+  // NOT asserted here: university. "Damanhur" (one "u") is not the "Damanhour" spelling
+  // EGYPT_UNIVERSITIES carries, so the free rule pass alone reads it only via findUniversity's own
+  // low-confidence raw-line fallback — a pre-existing, unrelated gap in that dictionary, not
+  // something this fix touches. Production's clean "Damanhur University" on this candidate came from
+  // the AI pass, not the rules; see the extraction row queried during reproduction.
+}
+
 function runPersonalTests() {
   // The bug this pins: several labels packed onto one line must not swallow each other.
   const packed = ["Date of Birth: March 17, 1994 | Marital Status: Single | Military Status: Exempted"];
@@ -214,6 +301,40 @@ function runPersonalTests() {
   assert.equal(resolveGovernorate("10th of Ramadan City")?.governorate, "Sharqia");
   assert.equal(resolveGovernorate("El Khanka")?.governorate, "Qalyubia");
   assert.equal(resolveGovernorate("nowhere in particular"), null);
+}
+
+function runEducationTests() {
+  // An unambiguous "Faculty of X" phrase is trusted outright.
+  const clear = sliceCvSections(["EDUCATION", "Faculty of Pharmacy, Cairo University, 2019"]);
+  assert.equal(findFaculty(clear)?.value, "Faculty of Pharmacy");
+  assert.equal(findFaculty(clear)?.confidence, "high");
+
+  // The bug this pins: a candidate's own CV named "Faculty of Agriculture" in full, but her
+  // education section also carried a stray bare "Pharmacy" elsewhere (a rotation, an employer — the
+  // exact word does not matter). Production candidate edb6ea02-…, 2026-09-09: faculty came back
+  // "Pharmacy" while her degree and her own declared background both said Agriculture. The specific
+  // phrase must win over the bare word regardless of which appears first or is longer.
+  const conflicting = sliceCvSections([
+    "EDUCATION",
+    "Bachelor of Science in Agriculture - Clinical Nutrition",
+    "Faculty of Agriculture, Mansoura University, 2019",
+    "Completed a rotation at a community Pharmacy",
+  ]);
+  assert.equal(findFaculty(conflicting)?.value, "Faculty of Agriculture");
+  assert.equal(findFaculty(conflicting)?.confidence, "high");
+
+  // With NO qualifying "Faculty of X" phrase at all, a bare generic word ("Pharmacy", "Commerce",
+  // "Law", "Engineering", "Veterinary") is still offered — but only at LOW confidence, so it can
+  // reach a reviewer without being auto-filled onto the candidate record as if it were a fact. This
+  // is the fix itself: before it, this case returned "high" and the wrong label became visible to
+  // recruiters with no human ever having looked at it.
+  const bareWordOnly = sliceCvSections(["EDUCATION", "Completed a rotation at a community Pharmacy"]);
+  assert.equal(findFaculty(bareWordOnly)?.value, "Pharmacy");
+  assert.equal(findFaculty(bareWordOnly)?.confidence, "low");
+
+  // No education section at all, and no match — both still yield nothing.
+  assert.equal(findFaculty([]), null);
+  assert.equal(findFaculty(sliceCvSections(["EDUCATION", "Diploma in Project Management"])), null);
 }
 
 function runWorkTests() {
@@ -642,7 +763,9 @@ export function runRecruitmentRuleExtractionTests() {
   runNormalizationTests();
   runPatternTests();
   runSectionTests();
+  runFacultyExtractionTests();
   runPersonalTests();
+  runEducationTests();
   runWorkTests();
   runEndToEndTests();
   runMergeTests();
