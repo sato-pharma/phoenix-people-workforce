@@ -1,4 +1,6 @@
-import { logInfo } from "@/lib/observability/log";
+import { logError, logInfo } from "@/lib/observability/log";
+import { type ManagerAreaFinding, describeManagerAreaDrift } from "@/lib/org/manager-area-region";
+import { findManagerAreaDrift } from "@/lib/org/manager-area-region-check";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { computeSyncPeriods, syncTerritoryData, TERRITORY_SYNC_DEFAULT_MONTHS } from "./sync";
@@ -52,6 +54,14 @@ export type ScheduledTerritorySyncResult = {
   allReconciled: boolean | null;
   /** True when every period in the window is published and the RPC was not called at all. */
   skippedEntirely: boolean;
+  /**
+   * Sales managers recorded against one of their own rep areas, and regions with no area row for a
+   * manager to point at. Empty means the geography is clean. `managerAreaCheckRan: false` means the
+   * read failed and NOTHING is known — deliberately a different answer from "clean", because a
+   * check that cannot run is the one state that reads as healthy in every report that counts rows.
+   */
+  managerAreaFindings: ManagerAreaFinding[];
+  managerAreaCheckRan: boolean;
   durationMs: number;
   ranAt: string;
 };
@@ -128,6 +138,23 @@ export async function runScheduledTerritorySync(
   const syncedPeriods = selectUnpublishedPeriods(window, published);
   const publishedPeriodsSkipped = window.filter((period) => !syncedPeriods.includes(period));
 
+  // Manager geography is checked on EVERY run, including the skip path below. It has nothing to do
+  // with whether a period was re-stamped: a manager drifts onto a rep area the moment somebody
+  // resigns and the replacement vacancy copies his area forward, which happens on nights when this
+  // job re-stamps nothing at all. Gating it on work done would hide it for exactly as long as the
+  // window stays published.
+  const managerArea = await findManagerAreaDrift();
+  const managerAreaSummary = describeManagerAreaDrift(managerArea.findings);
+  if (managerAreaSummary) {
+    // ERROR, not INFO: this is a wrong answer already on screen, not a note about work done. Every
+    // board that groups people by area is showing a district manager occupying a rep's patch, and
+    // the rep seat under him reads as covered when it is vacant.
+    logError(managerAreaSummary, {
+      labels: { event: "manager_area_region_drift", job: "territory-restamp" },
+      context: { findings: managerArea.findings },
+    });
+  }
+
   if (syncedPeriods.length === 0) {
     logInfo("Territory re-stamp skipped — every period in the window is a published closing", {
       labels: { event: "territory_restamp_skipped", job: "territory-restamp" },
@@ -141,6 +168,8 @@ export async function runScheduledTerritorySync(
       refreshedBatches: 0,
       allReconciled: null,
       skippedEntirely: true,
+      managerAreaFindings: managerArea.findings,
+      managerAreaCheckRan: managerArea.ran,
       durationMs: Date.now() - startedAt,
       ranAt: new Date().toISOString(),
     };
@@ -175,6 +204,8 @@ export async function runScheduledTerritorySync(
     refreshedBatches: report.refreshedBatches,
     allReconciled: report.allReconciled,
     skippedEntirely: false,
+    managerAreaFindings: managerArea.findings,
+    managerAreaCheckRan: managerArea.ran,
     durationMs: Date.now() - startedAt,
     ranAt: report.syncedAt,
   };

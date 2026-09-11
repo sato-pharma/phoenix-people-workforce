@@ -1556,6 +1556,8 @@ import { runVacationAdminOverrideTests } from "./vacation-admin-override.test.ts
 
 import { runLeaveRequestCodesTests } from "./leave-request-codes.test.ts";
 
+import { runManagerAreaRegionGuardTests } from "./manager-area-region-guard.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -5121,6 +5123,11 @@ await runTest(
 await runTest(
   "the composer's HR and Finance groups read editable lists that preserve today's membership, while Managers stays on the organogram relationship no list can express",
   runComposerGroupListsTests,
+);
+
+await runTest(
+  "a sales manager is recorded against his region, never one of his own rep areas, and a region with no area row is reported before a manager is pinned to one",
+  runManagerAreaRegionGuardTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
