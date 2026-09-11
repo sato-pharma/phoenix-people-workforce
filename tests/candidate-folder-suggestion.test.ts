@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   collectSuggestedFilings,
   degreeEligibilityAppliesToDeclaredRole,
+  readDeclaredRegionFreeText,
   suggestFolderFromDeclaredAnswers,
 } from "../src/lib/recruitment/candidate-folder-suggestion.ts";
 import { partitionCandidatesByFolder } from "../src/lib/recruitment/candidate-folder.ts";
@@ -37,6 +38,7 @@ function declared(
     title?: string | null;
     area?: string | null;
     regionCode?: string | null;
+    regionName?: string | null;
     declaredAt?: string | null;
     status?: string;
     faculty?: string | null;
@@ -54,6 +56,7 @@ function declared(
     appliedForJobTitle: fields.title ?? null,
     preferredAreaName: fields.area ?? null,
     preferredRegionCode: fields.regionCode ?? null,
+    preferredRegionName: fields.regionName ?? null,
     preferencesDeclaredAt: fields.declaredAt === undefined ? "2026-08-30T06:00:00Z" : fields.declaredAt,
     folder: fields.folder ?? null,
   } as unknown as Candidate;
@@ -167,6 +170,70 @@ export async function runCandidateFolderSuggestionTests() {
   assert.equal(dmUnknown.suggestion, null, "a region the company no longer lists cannot open a folder");
   assert.match(String(dmUnknown.refusal), /ZZ/, "and the refusal names it, so the reader can act");
 
+  // ── 3a · A TYPED region ("My region is not listed") is read, not just refused ─────────────────
+  // Measured against production 2026-09-11: 11 district managers sat unplaceable here, and every one
+  // of them had TYPED a real answer into preferred_region_name. readDeclaredRegionFreeText is what
+  // reads it; suggestFolderFromDeclaredAnswers is what a screen actually sees.
+  assert.deepEqual(
+    readDeclaredRegionFreeText("Minya"),
+    { kind: "resolved", code: "UE" },
+    "a governorate typed plainly still resolves, via the same reader the free-text module already ships",
+  );
+  const dmMinya = suggestFolderFromDeclaredAnswers(
+    declared("dmMinya", { title: "District Manager", regionName: "Minya" }),
+  );
+  assert.equal(dmMinya.suggestion?.kind, "district_manager");
+  assert.equal(dmMinya.suggestion?.key, "UE", "a typed governorate resolves to its company region");
+
+  // A region NAME or CODE typed verbatim, not a governorate — "Delta 1" for the label, "UE" for the
+  // code — both resolve directly rather than falling through to the governorate reader.
+  assert.deepEqual(readDeclaredRegionFreeText("Delta 1"), { kind: "resolved", code: "D1" });
+  assert.deepEqual(readDeclaredRegionFreeText("ue"), { kind: "resolved", code: "UE" });
+
+  // Two production candidates typed "Behira, Alex, Kafr El-Sheikh" — Behira and Alex are Alex-BHR,
+  // Kafr El-Sheikh is Delta (1). One string, two regions, and there is no folder for that.
+  const spanning = readDeclaredRegionFreeText("Behira, Alex, Kafr El-Sheikh");
+  assert.equal(spanning.kind, "spans_regions");
+  assert.deepEqual(spanning.kind === "spans_regions" ? [...spanning.codes].sort() : [], ["AB", "D1"]);
+  const dmSpans = suggestFolderFromDeclaredAnswers(
+    declared("dmSpans", { title: "District Manager", regionName: "Behira, Alex, Kafr El-Sheikh" }),
+  );
+  assert.equal(dmSpans.suggestion, null, "a spanning answer must never resolve to either half of it");
+  assert.match(
+    String(dmSpans.refusal),
+    /Behira, Alex, Kafr El-Sheikh/,
+    "the refusal must quote exactly what they typed, or nobody can tell the answer from a blank one",
+  );
+
+  // Eight production candidates typed a numbered half of Upper Egypt — "Upper Egypt 1", "UE ( 1 )",
+  // "Upper (1)", "Upper Egypt (1)" — and one typed "UE1 or UE2". The owner's decision, 2026-09-11,
+  // asked directly: file a typed numbered mention into the single Upper Egypt folder, same as a
+  // plain "Upper Egypt" answer — WHICH half they meant is not recovered here, only that they meant
+  // Upper Egypt at all, and `preferred_region_name` keeps their exact words for later.
+  for (const typed of ["Upper Egypt 1", "UE ( 1 )", "Upper (1)", "Upper Egypt (1)", "UE1 or UE2", "Upper Egypt 2"]) {
+    assert.deepEqual(
+      readDeclaredRegionFreeText(typed),
+      { kind: "resolved", code: "UE" },
+      `"${typed}" names a numbered half of Upper Egypt and must resolve to the one Upper Egypt folder`,
+    );
+  }
+  // Plain "Upper Egypt" — no number — resolves the same way.
+  assert.deepEqual(readDeclaredRegionFreeText("Upper Egypt"), { kind: "resolved", code: "UE" });
+
+  const dmUpperSplit = suggestFolderFromDeclaredAnswers(
+    declared("dmUpperSplit", { title: "District Manager", regionName: "UE ( 1 )" }),
+  );
+  assert.equal(dmUpperSplit.suggestion?.kind, "district_manager");
+  assert.equal(dmUpperSplit.suggestion?.key, "UE", "a numbered Upper Egypt half files into the one UE folder");
+
+  // Text naming no region at all is still told apart from "never typed anything".
+  assert.deepEqual(readDeclaredRegionFreeText("somewhere near my hometown"), { kind: "unrecognized" });
+  const dmGibberish = suggestFolderFromDeclaredAnswers(
+    declared("dmGibberish", { title: "District Manager", regionName: "somewhere near my hometown" }),
+  );
+  assert.equal(dmGibberish.suggestion, null);
+  assert.match(String(dmGibberish.refusal), /somewhere near my hometown/);
+
   // ── 4 · Everything else files by JOB TITLE — the owner's own split ────────
   const other = suggestFolderFromDeclaredAnswers(
     declared("other", { title: "Regulatory Affairs Specialist" }),
@@ -213,6 +280,15 @@ export async function runCandidateFolderSuggestionTests() {
     declared("e", { title: "Medical Representative", area: "Alex Center", status: "rejected" }),
     declared("f", { title: "Medical Representative", area: "Alex West", declaredAt: null }), // extracted
     declared("g", { title: null, declaredAt: null }), // never answered anything
+    // Rejected AND paramedical — the shape that used to show the DEGREE sentence instead of the
+    // rejection, because the degree gate ran before the rejection was ever checked (measured: 5 of
+    // production's 60 rows this way on 2026-09-11). Must be COUNTED, never narrated either way.
+    declared("rejected-para", {
+      title: "Medical Representative",
+      area: "Alex West",
+      status: "rejected",
+      backgroundConfirmedOutcome: "paramedical",
+    }),
     // Answered everything, and reads as a Commerce graduate. The owner's rule is that a degree
     // outside the five is checked by a person first — and filing this row would not merely
     // mis-shelve him, it would REMOVE him from the review queue, which refuses anybody already on
@@ -241,13 +317,22 @@ export async function runCandidateFolderSuggestionTests() {
   );
   assert.deepEqual(
     collected.skipped.map((row) => row.candidateId).sort(),
-    ["d", "e", "law"],
-    "answered-but-unplaceable is SHOWN, and so is the degree that needs a person — those are the people a silent screen would lose",
+    ["d", "law"],
+    "answered-but-unplaceable is SHOWN, and so is the degree that needs a person — but a REJECTED CV (e) is a settled decision and must not be one more row here",
+  );
+  assert.equal(
+    collected.rejectedCount,
+    2,
+    "both rejected rows (e, and rejected-para which also reads as paramedical) are COUNTED, not narrated",
   );
   assert.match(
     String(collected.skipped.find((row) => row.candidateId === "law")?.reason),
     /Degrees waiting for you to check/i,
     "the reason must name the screen that resolves it — a skip with no route out is a dead end",
+  );
+  assert.ok(
+    !collected.skipped.some((row) => row.candidateId === "rejected-para"),
+    "a rejected candidate must be counted even when the degree gate would otherwise catch them first — the rejection wins",
   );
   assert.ok(
     !collected.skipped.some((row) => row.candidateId === "f" || row.candidateId === "g"),

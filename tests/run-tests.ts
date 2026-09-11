@@ -286,6 +286,7 @@ import {
   runWhatsAppWebhookRoutingTests,
   runWhatsAppPublicReachTests,
   runPublicWhatsAppArrivalTests,
+  runWhatsAppProbeRetryTests,
 } from "./recruitment-whatsapp-health.test.ts";
 import { runRecruitmentInboundQueueTests } from "./recruitment-inbound-queue.test.ts";
 import { runRecruitmentInboundMasteryTests } from "./recruitment-inbound-mastery.test.ts";
@@ -1582,6 +1583,8 @@ import { runLeaveRequestCodesTests } from "./leave-request-codes.test.ts";
 
 import { runManagerAreaRegionGuardTests } from "./manager-area-region-guard.test.ts";
 import { runDataBackupWorkbookTests } from "./data-backup-workbook.test.ts";
+import { runBackgroundFolderFilingGateTests } from "./background-folder-filing-gate.test.ts";
+import { runPhoenixOfficialLogoTests } from "./phoenix-official-logo.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2166,6 +2169,10 @@ await runTest(
   runBackgroundReviewQueueTests,
 );
 await runTest(
+  "background folder filing gate (a paramedical degree nobody has checked cannot be filed by hand onto Medical Representative or District Manager, only onto the shelves the degree rule has no opinion about, and unknown never blocks ordinary filing)",
+  runBackgroundFolderFilingGateTests,
+);
+await runTest(
   "cv address place (which area a CV own text names, and the four addresses that lied)",
   runCvAddressPlaceTests,
 );
@@ -2265,6 +2272,10 @@ await runTest(
 await runTest(
   "recruitment whatsapp public arrival (a forward must not reset the silence clock)",
   runPublicWhatsAppArrivalTests,
+);
+await runTest(
+  "recruitment whatsapp probe retry (a transport blip retries; a real Meta answer pages on first sight)",
+  runWhatsAppProbeRetryTests,
 );
 await runTest("recruitment inbound intake queue (backoff, dead-letter, dedupe key)", runRecruitmentInboundQueueTests);
 await runTest("recruitment inbound mastery (analytics, spike, fuzzy dedup, cv-link allowlist)", runRecruitmentInboundMasteryTests);
@@ -5237,6 +5248,11 @@ await runTest(
 await runTest(
   "the custody receipt prices each item and totals only the rows handed over, where a blank is never a zero and a settled record cannot be re-priced",
   runCustodyItemValuesTests,
+);
+
+await runTest(
+  "every Phoenix mark the system draws — browser and app icons, app shell, notification, email signature, Excel exports — is the owner's ringed emblem, and the retired drawings stay gone",
+  runPhoenixOfficialLogoTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

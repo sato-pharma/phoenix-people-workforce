@@ -112,6 +112,7 @@ type MirrorCandidateRow = {
   sent_for_job_title: string | null;
   preferred_area_name: string | null;
   preferred_region_code: string | null;
+  preferred_region_name: string | null;
   preferences_declared_at: string | null;
   folder_kind: string | null;
   folder_key: string | null;
@@ -121,7 +122,7 @@ type MirrorCandidateRow = {
 };
 
 const CANDIDATE_FIELDS =
-  "id, full_name, phone, whatsapp, status, applied_for_job_title, current_job_title, declared_background, faculty, sent_for_job_title, preferred_area_name, preferred_region_code, preferences_declared_at, folder_kind, folder_key, governorate, address, sent_for_region";
+  "id, full_name, phone, whatsapp, status, applied_for_job_title, current_job_title, declared_background, faculty, sent_for_job_title, preferred_area_name, preferred_region_code, preferred_region_name, preferences_declared_at, folder_kind, folder_key, governorate, address, sent_for_region";
 
 /**
  * The folder path for one candidate, and the name their file should carry.
@@ -153,6 +154,7 @@ export function placementFor(
             preferencesDeclaredAt: row.preferences_declared_at,
             preferredAreaName: row.preferred_area_name,
             preferredRegionCode: row.preferred_region_code,
+            preferredRegionName: row.preferred_region_name,
             status: row.status ?? "",
           },
           // areaRegions is already keyed by every live area name — the same list

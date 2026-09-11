@@ -8,7 +8,10 @@ import {
 } from "@/lib/uploads/exceljs-rows";
 import { assertCanDeleteRecruitment } from "@/lib/recruitment/access";
 import { candidateAppliedFor, freeAppliedForEvidence } from "@/lib/recruitment/applied-for";
-import { isBackgroundConfirmationOutcome } from "@/lib/recruitment/background-review";
+import {
+  backgroundFolderFilingRefusal,
+  isBackgroundConfirmationOutcome,
+} from "@/lib/recruitment/background-review";
 import {
   candidateFolderRefusal,
   DUPLICATE_FOLDER_KEY,
@@ -1103,6 +1106,15 @@ export async function fileCandidateToFolder(
   // take one, since a duplicate is at least as likely to be rejected as anything else.
   const refusal = candidateFolderRefusal(existing, kind);
   if (refusal) throw new Error(refusal);
+
+  // THE DEGREE, for the two shelves it is about. The bulk "file what they answered" action already
+  // holds this rule (candidate-folder-suggestion.ts); this is the same rule for the one path that
+  // bypassed it — a recruiter filing a single CV by hand through the picker, which never asked about
+  // a degree at all. That gap is what let a Faculty-of-Education CV sit on Medical Representative /
+  // Behira 1 for eleven days with nobody having opened it. See background-review.ts for why this is
+  // scoped to a `paramedical` verdict only, never `unknown`.
+  const backgroundRefusal = backgroundFolderFilingRefusal(existing, kind);
+  if (backgroundRefusal) throw new Error(backgroundRefusal);
 
   const filedAt = new Date().toISOString();
   const supabase = recruitmentDb();

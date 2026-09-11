@@ -35,8 +35,13 @@ import {
   resolveCanonicalMedicalRepArea,
   type CandidateFolderKind,
 } from "@/lib/recruitment/candidate-folder";
-import { candidateRegionCodes, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
-import { isUnreviewedCandidateStatus } from "@/lib/recruitment/candidate-status";
+import {
+  candidateRegionCodes,
+  candidateRegionLabels,
+  type CandidateRegionCode,
+} from "@/lib/recruitment/candidate-region";
+import { egyptRegionFromFreeText } from "@/lib/recruitment/candidate-region-freetext";
+import { isUnreviewedCandidateStatus, normalizeCandidateStatus } from "@/lib/recruitment/candidate-status";
 import { resolveBackgroundStanding } from "@/lib/recruitment/background-review";
 import { screeningBandForFamily } from "@/lib/recruitment/screening-order";
 import {
@@ -54,6 +59,7 @@ export type DeclaringCandidate = Pick<
   | "preferencesDeclaredAt"
   | "preferredAreaName"
   | "preferredRegionCode"
+  | "preferredRegionName"
   | "status"
 >;
 
@@ -129,6 +135,91 @@ function isKnownRegionCode(code: string): code is CandidateRegionCode {
 }
 
 /**
+ * Reading a TYPED region answer — an applicant who chose "My region is not listed" and then typed
+ * words into `preferred_region_name`, which is free text and answers for none of the eight regions
+ * by construction.
+ *
+ * Measured against production 2026-09-11: 11 district manager applicants sat unplaceable this way,
+ * and every one of them HAD typed a real answer — "Minya", "Behira, Alex, Kafr El-Sheikh", "UE ( 1 )".
+ * The old refusal read "named no region from the list" for all of them, which is false for every one:
+ * they named a region, just not by tapping a row. This is that answer read properly, in two shapes:
+ *
+ *   RESOLVED        exactly one region, confidently — the same governorate reader other callers use
+ *                    elsewhere (`egyptRegionFromFreeText`), so this file stays the one place that
+ *                    owns "what governorate is this"; a region CODE or LABEL typed verbatim ("UE",
+ *                    "Delta (1)"); or a NUMBERED half of Upper Egypt ("Upper Egypt 1", "UE ( 1 )",
+ *                    "UE1 or UE2") — the owner's decision on 2026-09-11, asked directly: file a typed
+ *                    numbered mention into the one Upper Egypt folder this apply flow offers, same as
+ *                    a plain "Upper Egypt". Pedia's Upper Egypt split into UE-1/UE-2 on 2026-09-01
+ *                    (see the regionMenu() comment in whatsapp-classify-menus.ts) and AGENTS.md's
+ *                    golden rule is that the split membership DIFFERS by product line, which this
+ *                    apply flow has no way to know — so which HALF they meant is not recovered here,
+ *                    only that they meant Upper Egypt. `preferred_region_name` still holds their exact
+ *                    words, so nothing is lost for whoever later needs to tell UE-1 from UE-2.
+ *   SPANS REGIONS   the text names MORE than one — "Behira, Alex, Kafr El-Sheikh" is Alex-BHR AND
+ *                    Delta (1), and there is no single folder for that. Comma-split so each place is
+ *                    read on its own rather than the first WORD in the whole string winning, which is
+ *                    what `candidateRegionForGovernorate` alone would do. UNRECOGNIZED — the text
+ *                    names no region this app knows at all — falls out of the same path with zero
+ *                    matches rather than one.
+ */
+export type DeclaredRegionFreeTextReading =
+  | { kind: "resolved"; code: CandidateRegionCode }
+  | { kind: "spans_regions"; codes: readonly CandidateRegionCode[] }
+  | { kind: "unrecognized" };
+
+// "Upper Egypt 1", "UE ( 1 )", "Upper (1)", "Upper Egypt (1)", "UE1 or UE2" — every variant production
+// actually holds — all reduce, once punctuation is flattened to spaces, to "ue"/"upper" immediately
+// followed (a bare space or nothing at all) by a "1" or "2".
+const UPPER_EGYPT_NUMBERED_PATTERN = /\b(?:ue|upper)\s*(?:egypt)?\s*([12])\b/;
+
+function normalizeForRegionScan(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+/** A region label or code, reduced the same way on both sides so "Delta 1" typed plainly still
+ *  matches the stored "Delta (1)". */
+function regionLabelKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function regionNamedDirectly(typed: string): CandidateRegionCode | null {
+  const upper = typed.toUpperCase();
+  if (isKnownRegionCode(upper)) return upper;
+  const key = regionLabelKey(typed);
+  return candidateRegionCodes.find((code) => regionLabelKey(candidateRegionLabels[code]) === key) ?? null;
+}
+
+export function readDeclaredRegionFreeText(typed: string): DeclaredRegionFreeTextReading {
+  // A numbered mention of Upper Egypt names the REGION, by the owner's decision — see the doc comment
+  // above. Checked before the label match below so this never falls through to "unrecognized".
+  if (UPPER_EGYPT_NUMBERED_PATTERN.test(normalizeForRegionScan(typed))) return { code: "UE", kind: "resolved" };
+
+  const direct = regionNamedDirectly(typed);
+  if (direct) return { kind: "resolved", code: direct };
+
+  // Comma-split so "Behira, Alex, Kafr El-Sheikh" is read as three PLACES, not one long string whose
+  // first matching word wins — `candidateRegionForGovernorate`'s own fallback would otherwise return
+  // "Alex-BHR" alone and silently drop that the third place is Delta (1).
+  const segments = typed
+    .split(/[,،]/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  const distinct: CandidateRegionCode[] = [];
+  for (const segment of segments.length > 0 ? segments : [typed]) {
+    const code = egyptRegionFromFreeText(segment);
+    if (code && !distinct.includes(code)) distinct.push(code);
+  }
+  if (distinct.length === 1) return { kind: "resolved", code: distinct[0] };
+  if (distinct.length > 1) return { kind: "spans_regions", codes: distinct };
+  return { kind: "unrecognized" };
+}
+
+/**
  * The folder this candidate's own answers put them in, or why there is none.
  *
  * The order of the gates is deliberate: already-filed, then never-answered, then rejected, then the
@@ -197,17 +288,40 @@ export function suggestFolderFromDeclaredAnswers(
     // typed their region left words, not a code; storing words in this shelf is the exact shape that
     // produced undefined label lookups in production on 2026-08-24.
     const code = cleanFolderKey(candidate.preferredRegionCode)?.toUpperCase() ?? null;
-    if (!code) {
+    if (code) {
+      if (!isKnownRegionCode(code)) {
+        return { refusal: `Named a region this system no longer lists (${code}).`, suggestion: null };
+      }
+      return { refusal: null, suggestion: buildSuggestion("district_manager", code) };
+    }
+
+    // No tapped code — but they may still have TYPED one after choosing "My region is not listed",
+    // which lands in preferredRegionName rather than the code column. Read it properly instead of
+    // reporting "named no region" for somebody who plainly named one. See readDeclaredRegionFreeText.
+    const typedRegion = cleanFolderKey(candidate.preferredRegionName);
+    if (!typedRegion) {
       return {
         refusal:
           "Applied as a district manager but named no region from the list, so there is no region folder to file into.",
         suggestion: null,
       };
     }
-    if (!isKnownRegionCode(code)) {
-      return { refusal: `Named a region this system no longer lists (${code}).`, suggestion: null };
+
+    const reading = readDeclaredRegionFreeText(typedRegion);
+    if (reading.kind === "resolved") {
+      return { refusal: null, suggestion: buildSuggestion("district_manager", reading.code) };
     }
-    return { refusal: null, suggestion: buildSuggestion("district_manager", code) };
+    if (reading.kind === "spans_regions") {
+      const names = reading.codes.map((regionCode) => candidateRegionLabels[regionCode]).join(" and ");
+      return {
+        refusal: `Typed "${typedRegion}" as their region, which spans ${names} — there is no single region folder for that.`,
+        suggestion: null,
+      };
+    }
+    return {
+      refusal: `Typed "${typedRegion}" as their region, but it names no region this app recognises.`,
+      suggestion: null,
+    };
   }
 
   // Every other role goes on the "other" shelf under the job title itself — the owner's own split:
@@ -258,6 +372,15 @@ export type SkippedFiling = {
  * `canonicalMedicalRepAreas` is threaded straight through to `suggestFolderFromDeclaredAnswers` —
  * see there for why a medical rep's typed area is refused rather than guessed when it does not
  * exactly match a live area.
+ *
+ * REJECTION IS COUNTED, NOT NARRATED. Measured against production 2026-09-11: 40 of the 60 rows this
+ * screen called "answered but cannot be placed" were REJECTED — a settled decision, not an open one —
+ * and burying 25 genuinely actionable rows under them is worse than the silence `skipped` exists to
+ * prevent. So a rejection is pulled out before any per-shelf reason runs (which also fixes a second
+ * fault: the degree gate below used to run FIRST, so a rejected candidate who also read as paramedical
+ * showed the degree sentence instead of the rejection — two wordings for the same settled decision).
+ * `rejectedCount` keeps the transparency this module insists on everywhere else: the number is still
+ * on screen, it is just not 40 rows of the same unchangeable sentence.
  */
 export function collectSuggestedFilings(
   candidates: readonly Candidate[],
@@ -265,15 +388,22 @@ export function collectSuggestedFilings(
 ): {
   filings: SuggestedFiling[];
   skipped: SkippedFiling[];
+  rejectedCount: number;
 } {
   const filings: SuggestedFiling[] = [];
   const skipped: SkippedFiling[] = [];
+  let rejectedCount = 0;
 
   for (const candidate of candidates) {
     // A candidate who never answered is not "skipped" in any sense worth showing — that is most of
     // the pool, and listing it would bury the handful that genuinely could not be placed.
     if (!cleanFolderKey(candidate.preferencesDeclaredAt)) continue;
     if (isFiledCandidate(candidate)) continue;
+
+    if (normalizeCandidateStatus(candidate.status) === "rejected") {
+      rejectedCount += 1;
+      continue;
+    }
 
     // THE DEGREE COMES FIRST — for the jobs the degree is about.
     //
@@ -327,5 +457,5 @@ export function collectSuggestedFilings(
     }
   }
 
-  return { filings, skipped };
+  return { filings, skipped, rejectedCount };
 }
