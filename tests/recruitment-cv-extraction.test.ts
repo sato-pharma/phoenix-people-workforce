@@ -465,6 +465,36 @@ export function runRecruitmentCvExtractionTests() {
     );
   }
 
+  // The four fact errors the owner found on 2026-09-11 reading CVs beside their stored records.
+  // The rule extractor was fixed at its own source; these assert the AI half of the same four, and
+  // they read the EMITTED schema — the description string that actually travels to the model —
+  // rather than the CvFieldDefinition constant, so a field that stops propagating fails here too.
+  const describedAs = (key: string): string => {
+    const property = jsonSchema.properties[key] as unknown as { properties: { value: { description: string } } };
+    assert.ok(property?.properties?.value, `missing ${key} in the emitted extraction schema`);
+    return property.properties.value.description;
+  };
+
+  // 1. A degree still running has produced no graduation year — its START year is not a graduation.
+  const graduationYear = describedAs("graduationYear");
+  assert.match(graduationYear, /still in progress|Present/i, "graduationYear must warn the model off an ongoing degree");
+  assert.match(graduationYear, /\bnull\b/, "graduationYear must say what to answer instead — null, not the start year");
+
+  // 2. An internship is time spent learning a job, not holding one.
+  const yearsExperience = describedAs("yearsExperience");
+  assert.match(yearsExperience, /internship/i, "yearsExperience must exclude internships by name");
+  assert.match(yearsExperience, /training|rotation|placement/i, "yearsExperience must exclude training placements too");
+
+  // 3. The headline under the name is what a fresh graduate is CHASING, not proof of employment.
+  const currentJobTitle = describedAs("currentJobTitle");
+  assert.match(currentJobTitle, /work.history/i, "currentJobTitle must be taken from real work history");
+  assert.match(currentJobTitle, /headline/i, "currentJobTitle must name the CV headline as the thing NOT to trust");
+
+  // 4. An Egyptian address ends with the town; a district earlier in the line is not where they live.
+  const governorate = describedAs("governorate");
+  assert.match(governorate, /Damanhur/i, "governorate must carry the worked example that used to answer Cairo");
+  assert.match(governorate, /Beheira/i, "governorate's worked example must state the right answer, not just the wrong one");
+
   // A stray position_key cannot fail the API call. position_key is plain `text` with no CHECK
   // constraint, and OpenAI requires the schema name to match ^[a-zA-Z0-9_-]+$ — so the name is
   // slugged rather than interpolated raw.

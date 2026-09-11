@@ -198,7 +198,7 @@ const personalFields: CvFieldDefinition[] = [
   },
   {
     aiDescription:
-      "The single Egyptian governorate the candidate lives in (e.g. Cairo, Giza, Alexandria) — not a full street address. Leave null for a candidate living outside Egypt.",
+      "The single Egyptian governorate the candidate lives in (e.g. Cairo, Giza, Alexandria) — not a full street address. Derive it from the TOWN OR CITY the address names, which in an Egyptian address is written LAST, after the street and district: \"Al-Rehab St., Damanhur\" is Beheira, because Damanhur is the town — never Cairo, even though Al-Rehab is also the name of a well-known Cairo compound. A street, compound or district name earlier in the line is not where the person lives. Do not default to Cairo or another big governorate because the earlier part of the address is familiar. Leave null for a candidate living outside Egypt.",
     key: "governorate",
     label: "Governorate",
     section: "personal",
@@ -215,7 +215,7 @@ const personalFields: CvFieldDefinition[] = [
 const professionalFields: CvFieldDefinition[] = [
   {
     aiDescription:
-      "The candidate's own current or most recent professional job title, in their words (e.g. \"HR Recruitment Consultant\", \"Payroll Specialist\", \"Medical Representative\", \"District Sales Manager\"). This is the candidate's title — NOT the vacancy they are applying to.",
+      "The candidate's own current or most recent professional job title, in their words (e.g. \"HR Recruitment Consultant\", \"Payroll Specialist\", \"Medical Representative\", \"District Sales Manager\"). This is the candidate's title — NOT the vacancy they are applying to. Take it from a real WORK-HISTORY entry: an employer they actually worked for, with dates. The headline printed under the name at the top of a CV is NOT proof of employment — a fresh graduate routinely headlines the role they are chasing (\"Medical Sales Representative\") having never held it, and a pharmacy graduate headlining \"Pharmacist\" may only ever have done a training rotation. When the work history shows no real job, leave this null and let appliedForJobTitle carry what they are after; a headline recorded as a held job tells a recruiter the person has done work they have never done.",
     key: "currentJobTitle",
     label: "Current / main job title",
     section: "professional",
@@ -268,7 +268,7 @@ const professionalFields: CvFieldDefinition[] = [
   },
   {
     aiDescription:
-      "Total years of professional work experience as a number. Derive it from the work history when the CV does not state a total outright; use whole or one-decimal years.",
+      "Total years of professional work experience as a number. Derive it from the work history when the CV does not state a total outright; use whole or one-decimal years. An INTERNSHIP, summer or vacation training, clinical rotation, apprenticeship or student placement is NOT professional experience and contributes nothing here — it is time spent learning a job, not holding one. A fresh graduate whose CV lists only a two-month hospital internship and a summer training placement has 0 years, not 1; answer 0 rather than padding it, because an inflated figure sends a recruiter into an interview expecting someone they are not about to meet.",
     key: "yearsExperience",
     label: "Total years of experience",
     section: "professional",
@@ -324,7 +324,8 @@ const educationFields: CvFieldDefinition[] = [
     type: "string",
   },
   {
-    aiDescription: "Year of graduation as a four-digit year.",
+    aiDescription:
+      "Year of graduation as a four-digit year — the year the degree FINISHED. A degree still in progress has NOT produced a graduation year: when the education line reads \"2023 - Present\", \"2022 – till now\", \"2023 – حتى الآن\", or names an expected/anticipated year still ahead, leave this null rather than answering with the year the candidate STARTED. Reading a start year as a graduation turns a student still enrolled into someone who graduated years ago.",
     key: "graduationYear",
     label: "Graduation year",
     section: "education",
