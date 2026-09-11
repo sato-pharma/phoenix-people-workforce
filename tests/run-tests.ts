@@ -1129,6 +1129,7 @@ import { runDoctorCoverageRepNameTests } from "./doctor-coverage-rep-names.test.
 // there, so a branch parked on that anchor conflicts with each one that lands (this PR hit it
 // four times in one evening — #1910, #1918, #1919 and a re-run).
 import { runDoctorCoverageScopeTests } from "./doctor-coverage-scope.test.ts";
+import { runDoubleVisitDownwardScopeTests } from "./double-visit-downward-scope.test.ts";
 import { runDoctorCoverageNormsTests } from "./doctor-coverage-norms.test.ts";
 import { runVisitContactKindTests } from "./visit-contact-kind.test.ts";
 import { runRootRedirectHttp307Tests } from "./root-redirect-http-307.test.ts";
@@ -3410,6 +3411,10 @@ await runTest("Doctor coverage rep names (the employee directory names the perso
 await runTest(
   "doctor coverage scope (full subtree, line boundary, fail-closed) and elapsed-month pace",
   runDoctorCoverageScopeTests,
+);
+await runTest(
+  "the downward rule reaches double-visit analytics: a PM sees neither his own manager nor any seat at or above his rank, keeps his own reports, and the line LABEL cannot re-admit anyone the cut removed",
+  runDoubleVisitDownwardScopeTests,
 );
 await runTest(
   "doctor coverage norms (SP/HCP taxonomy, admin-editable visits per grade, 0 = not scored not green)",

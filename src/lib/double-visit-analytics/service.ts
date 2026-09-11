@@ -15,6 +15,7 @@ import type { DvProgress } from "@/lib/probation/intelligence/report-metrics";
 import type { ProbationRow } from "@/lib/probation/types";
 import { buildReportSummaryMetrics, formatActiveFilters } from "@/lib/double-visit-analytics/report-filters";
 import { normalizeRegionLabel, regionsWithinManagerHierarchy, sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
+import { downwardOnlyFilter, seatRank } from "@/lib/workforce/downward-scope";
 import { getDoubleVisitRows } from "@/lib/crm/reads";
 import { getCrmIdentityResolutions } from "@/lib/crm/identity";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
@@ -272,20 +273,42 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
   // sameWorkforceLine (line_id preferred, line-name fallback) and add every line member to
   // allowedHrIds, so a DV is in scope whenever the double-visitor OR the visited MR sits on
   // the line. Without this a GPM saw only their direct chain (≈30 of ≈1,900 line visits).
+  //
+  // THE LINE IS NOT A DIRECTION, so the downward rule is applied on top of it. Line membership is
+  // simply everyone carrying that line id — it includes the viewer's own manager, his peers and
+  // every seat above him. Owner rule 2026-09-04: "Never an employee sees his direct manager. You
+  // see yourself and your scope down." Enforced on the CRM boards from that date, but not here
+  // until 2026-09-11: measured in production, Product Manager B-155 had his own manager A-8 inside
+  // this scope, along with 8 seats at or above his rank. Shared with those boards via
+  // @/lib/workforce/downward-scope so the two implementations cannot drift apart again.
   if (
     (access.role === "Product Manager" ||
      access.role === "Group Product Manager") &&
     viewer &&
+    viewerKey &&
     (viewer.lineId != null || viewer.lineName)
   ) {
+    // Rank from the live AccessContext role first, exactly as the CRM resolver does; the job-title
+    // fallback covers a viewer whose role is off the ladder, and a null rank degrades to the chain
+    // cut alone rather than to an empty scope.
+    const keepDownward = downwardOnlyFilter({
+      people: employees,
+      viewerCanonicalHrId: viewerKey,
+      viewerRank: seatRank(access.role) ?? seatRank(viewer.jobTitle),
+    });
+
     for (const employee of employees) {
       if (!sameWorkforceLine(viewer, employee)) continue;
-      const key = normalizedHrKey(employee.hrId);
-      if (key) allowedHrIds.add(key);
-      // Keep any non-null line label too, so line-tagged rows with no mapped employee
-      // (e.g. resigned/vacant territories on the line) are still captured.
+      // The line LABEL is collected for every member, before the cut. It exists so line-tagged ROWS
+      // with no mapped employee (a resigned or vacant territory) are still captured, which is about
+      // rows and not about people — filterEmployeesForDoubleVisitAccess deliberately does not read
+      // it, or it would re-admit the very people this cut removes.
       const line = normalizeLabelKey(employee.lineName);
       if (line) allowedLines.add(line);
+
+      if (!keepDownward(employee)) continue;
+      const key = normalizedHrKey(employee.hrId);
+      if (key) allowedHrIds.add(key);
     }
   }
 
@@ -318,7 +341,12 @@ export function filterEmployeesForDoubleVisitAccess(employees: EmployeeDirectory
     const key = normalizedHrKey(employee.hrId);
     if (key && scope.allowedHrIds.has(key)) return true;
     if (employee.areaName && scope.allowedAreas.has(normalizeLabelKey(employee.areaName))) return true;
-    if (employee.lineName && scope.allowedLines.has(normalizeLabelKey(employee.lineName))) return true;
+    // 🔴 `allowedLines` is deliberately NOT consulted here. It is a ROW rule — it exists so a
+    // line-tagged double-visit row with no mapped employee (a resigned or vacant territory) is
+    // still counted. Using it to admit a PERSON re-admits every member of the line, including the
+    // viewer's own manager and everyone at or above his rank, which is precisely what the downward
+    // cut in resolveDoubleVisitAccessScope removes. Reading it here would silently undo that cut
+    // while the cut itself still looked correct.
     return false;
   });
 }

@@ -38,6 +38,7 @@
 
 import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { isWithinManagerHierarchy, sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
+import { isAboveViewer, managementChainOf, seatRank } from "@/lib/workforce/downward-scope";
 import {
   doctorCoverageScopeBasisForRole,
   type DoctorCoverageScope,
@@ -68,109 +69,17 @@ export type DoctorCoverageScopeEmployee = {
 };
 
 /**
- * THE DOWNWARD RULE - owner, 2026-09-04, stated plainly: "Never an employee sees his direct
- * manager. You see yourself and your scope down - downgrading, not upgrading." Asked whether the
- * cut should reach past his own manager, he answered: "remove dsms rsm and peer pms too."
+ * The downward rule — the viewer's management chain, plus the seat-rank ladder — now lives in
+ * @/lib/workforce/downward-scope. It is a rule about PEOPLE, not about this board: it was written
+ * here and applied here alone, and double-visit analytics kept the wide pre-rule shape for another
+ * week, which in production let Product Manager B-155 see his own manager A-8 there while the same
+ * person was correctly hidden here. One implementation, so the two cannot drift.
  *
- * A `line` scope is line MEMBERSHIP, which is neither up nor down: it is everyone who happens to
- * carry that line id. Measured in production the day the rule was given, Product Manager B-155's
- * scope held 57 people - 41 medical reps, 10 District Sales Managers, 2 National Sales Managers, a
- * peer Product Manager, a Regional Sales Manager, and A-8, his own direct manager, who has 57 real
- * CRM visits of her own. Nothing rendered her, but only by accident: the Reps Plans board carries
- * an explicit medical-reps-only filter, and the KPIs board simply had no plan row to build for her.
- * Neither is a rule. So the stop belongs HERE, in the resolver that IS the security boundary, and
- * not in whichever downstream board remembers to filter.
- *
- * TWO INDEPENDENT CUTS, because they catch different things:
- *
- *   1. The viewer's own management chain - his manager, his manager's manager, all the way up.
- *      Identity-based and title-BLIND, so it still catches a manager whose job title is misspelt,
- *      missing, or absent from the ladder below.
- *   2. Anyone not ranked strictly BELOW the viewer's own seat, per the ladder.
- *
- * WHY A LADDER AND NOT A LIST OF BANNED TITLES. The `line` basis serves all three of
- * doctor-coverage-roles.ts's LINE_ROLES, and "District Sales Manager" is upward from a Product
- * Manager but DOWNWARD from a National Sales Manager. A flat blocklist of DSM/RSM/peer-PM would
- * therefore have deleted an NSM's own reports and handed him "no active employees are recorded on
- * your product line" - the module's own empty state, indistinguishable from a data fault. A ladder
- * is relative to the viewer, so one rule serves all three seats correctly.
- *
- * A title the ladder does not know is EXCLUDED from a line scope. That is deliberate, and it is the
- * safe direction: in production 12 head-office seats (the CEO, HR, Finance, QPPV, R&D, even
- * "Buffet") carry a line_id, so "unknown means field force, keep them" would put the CEO inside a
- * Product Manager's scope. It costs nothing today - lines 1, 2 and 3 are the field lines and every
- * title on them is ranked here, while line 4, which holds those office seats, has no line-scoped
- * viewer on it at all.
- *
- * THE VIEWER IS NEVER EXCLUDED FROM HIS OWN SCOPE. That guard is load-bearing rather than tidy: a
- * National Sales Manager is not strictly below himself, so without it the ladder would delete him
- * from his own board and produce exactly the empty state described above.
- *
- * The rank numbers are ORDER ONLY and carry no meaning of their own. Both spellings of each seat
- * are listed because this repo runs two vocabularies: an app ROLE ("Medical Rep", "District
- * Manager", "Regional Manager") and an employee JOB TITLE ("Medical Representative", "District
- * Sales Manager", "Regional Sales Manager"). A Product Manager is ranked alongside a District Sales
- * Manager on purpose - that is what makes a peer PM, and every DSM, fall outside his scope while
- * leaving the 41 medical reps inside it.
+ * What stays here is WHERE the cuts are applied: on the `line` basis only. A team scope is already
+ * provably downward because it is walked out of the org tree, and ranking it would drop a report
+ * whose job title sits off the ladder (an Admin Assistant under a DM) out of his own manager's
+ * board. The chain cut runs on both.
  */
-const SEAT_RANK = new Map<string, number>([
-  ["medical rep", 1],
-  ["medical representative", 1],
-  ["district manager", 2],
-  ["district sales manager", 2],
-  ["product manager", 2],
-  ["regional manager", 3],
-  ["regional sales manager", 3],
-  ["group product manager", 3],
-  ["national sales manager", 4],
-]);
-
-/** `null` means this seat is not on the ladder at all. */
-function seatRank(titleOrRole: string | null | undefined): number | null {
-  const key = titleOrRole?.trim().toLowerCase();
-  if (!key) return null;
-  return SEAT_RANK.get(key) ?? null;
-}
-
-/**
- * Every ancestor of the viewer, canonicalised. Climbs `managerHrId` exactly as
- * `isWithinManagerHierarchy` does, and treats a pending seat replacement as an ancestor too — the
- * conservative direction, because being wrong here hides a row rather than exposing one.
- *
- * The `chain.has` break is not decoration: a self-referencing or mutually-referencing manager pair
- * exists in this directory often enough that the downward walk guards against it, and an unguarded
- * climb would spin forever inside a server render.
- */
-function managementChainOf(
-  viewerCanonicalHrId: string,
-  byCanonicalHrId: ReadonlyMap<string, DoctorCoverageScopeEmployee>,
-): ReadonlySet<string> {
-  const chain = new Set<string>();
-  let node = byCanonicalHrId.get(viewerCanonicalHrId);
-
-  while (node) {
-    const pending = normalizeHrIdForAccess(node.pendingManagerReplacementForHrId ?? "");
-    if (pending) chain.add(pending);
-
-    const managerKey = normalizeHrIdForAccess(node.managerHrId ?? "");
-    if (!managerKey || chain.has(managerKey)) break;
-    chain.add(managerKey);
-    node = byCanonicalHrId.get(managerKey);
-  }
-
-  return chain;
-}
-
-/** Cut 1: true when this person is an ancestor of the viewer, so must not appear in his scope. */
-function isAboveViewer(
-  employee: DoctorCoverageScopeEmployee,
-  viewerCanonicalHrId: string,
-  chain: ReadonlySet<string>,
-): boolean {
-  const key = normalizeHrIdForAccess(employee.hrId);
-  if (!key || key === viewerCanonicalHrId) return false; // you always see yourself
-  return chain.has(key);
-}
 
 /**
  * Pure core — fixture-testable, no IO. `employees` must be the FULL directory including inactive
