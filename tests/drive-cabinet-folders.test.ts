@@ -582,6 +582,64 @@ export function runDriveScriptAgreesWithAppTests() {
     "the hand-deleted marker must not be written out a second time — import the constant",
   );
 
+  // ── A RE-SENT COPY IS SUPPRESSED, AND THE SCRIPT MUST ASK THE APP WHICH ONE ───────────────────
+  //
+  // Same shape as the folder rule above, and it bit the same way. `chooseCvCopies` keeps one copy
+  // per candidate per distinct file; the live mirror and `build-cv-cabinet.mjs` both obey it, so a
+  // byte-identical re-send keeps its ROW and never reaches Drive. This script asked nobody, and from
+  // its side a suppressed row is identical to a failed upload — both just lack a mirror id.
+  //
+  // Measured on production 2026-09-11: four such rows, uploaded by a plain backfill run, put four
+  // duplicates into the cabinet — one of them the SIXTEENTH copy of one candidate's CV. `--verify`
+  // had been reporting the same rows as "NOT mirrored yet" for days, so the run was made on the
+  // report's own advice. Both halves are pinned here because fixing either alone leaves the loop.
+  assert.match(
+    source,
+    /import \{[^}]*shouldMirrorCopy[^}]*\} from "@\/lib\/recruitment\/cv-duplicate-copies"/,
+    "the backfill must take the duplicate rule from the module the app itself runs",
+  );
+  {
+    // The IMPORT is not the guard. Deleting the call and leaving the import is the likeliest way
+    // this regresses, and a bare `source.includes` would wave it through — so each half of the
+    // script is asked separately, in its own slice.
+    const uploadRun = source.slice(
+      source.indexOf("async function main"),
+      source.indexOf("async function verifyMirror"),
+    );
+    assert.ok(uploadRun.length > 0, "main() must exist — it is the uploading half");
+    assert.ok(
+      uploadRun.includes("shouldMirrorCopy"),
+      "the backfill must ask the app's duplicate rule before uploading — a run without it re-files "
+        + "every copy the live mirror suppressed on purpose",
+    );
+  }
+  assert.ok(
+    !source.includes("function shouldMirrorCopy") && !source.includes("function chooseCvCopies"),
+    "the script must not keep its own copy of the duplicate rule — a second copy cannot be kept in "
+      + "step, only found later",
+  );
+  {
+    const verify = source.slice(source.indexOf("async function verifyMirror"));
+    assert.ok(
+      verify.includes("shouldMirrorCopy"),
+      "--verify must count a suppressed re-send apart from a real backlog: reported as missing, the "
+        + "same rows ask for an upload every morning until somebody obliges",
+    );
+
+    // EACH SELECT, not the file. `content_md5` is the fingerprint the rule reads, and a row without
+    // one is always KEPT — so a half that forgets the column fails OPEN, quietly restoring the exact
+    // behaviour above while the other half still names it and a whole-file grep still passes.
+    assert.ok(
+      verify.includes("content_md5"),
+      "--verify's SELECT must fetch content_md5, or every row reads as unique and every suppressed "
+        + "copy goes back to being reported as a missing upload",
+    );
+    assert.ok(
+      source.slice(0, source.indexOf("async function verifyMirror")).includes("content_md5"),
+      "the sibling SELECT the upload run reads must fetch content_md5, for the same reason",
+    );
+  }
+
   // ── THE ROOTED PATH AND THE DRIVE PATH ARE NOT THE SAME ARRAY ─────────────────────────────────
   //
   // `ensureFolderPath` starts at `ensureRootFolder()`, which IS the cabinet, and walks the segments

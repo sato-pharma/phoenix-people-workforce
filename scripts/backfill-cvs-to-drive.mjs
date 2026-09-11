@@ -36,6 +36,7 @@ import process from "node:process";
 // governorate spelling comes from the same pure modules the app itself calls, so this script and
 // the running site can never disagree about where a candidate belongs. See the block comment
 // above `sanitize` for the drift that made this non-negotiable.
+import { shouldMirrorCopy } from "@/lib/recruitment/cv-duplicate-copies";
 import { CABINET_ROOT_NAME, cabinetPathFor } from "@/lib/recruitment/drive-cabinet-folders";
 import { sanitizeDriveSegment } from "@/lib/recruitment/drive-cv-folders";
 import { REMOVED_FROM_DRIVE_BY_HAND } from "@/lib/recruitment/drive-cv-mirror";
@@ -283,6 +284,47 @@ function cabinetStoredPathKey(candidate, areaRegions) {
   return [CABINET_ROOT_NAME, ...cabinetDriveSegments(candidate, areaRegions)].join("/");
 }
 
+/**
+ * Every CV row each of these candidates has, keyed by candidate — the input `shouldMirrorCopy` needs.
+ *
+ * WHY THIS EXISTS, MEASURED. A byte-identical re-send is suppressed on purpose: the live mirror and
+ * `build-cv-cabinet.mjs` both run `chooseCvCopies`, so the row is kept as the record that the person
+ * sent the file again while the COPY never reaches the cabinet. This script did not ask, and a
+ * suppressed row is indistinguishable here from one whose upload failed — both simply have no
+ * `drive_mirror_file_id`. On 2026-09-11 that put four duplicates back into the cabinet, one of them
+ * a sixteenth copy of the same CV, and `--verify` had been reporting the same rows as "NOT mirrored
+ * yet" every morning for days: the report was reading a deliberate suppression as a backlog.
+ *
+ * The whole row set is needed, not just the unmirrored ones. `chooseCvCopies` keeps the OLDEST copy
+ * of each fingerprint, so a decision taken over the unmirrored rows alone would elect a second
+ * keeper for a fingerprint already in Drive — the same duplicate by a subtler route.
+ *
+ * Chunked at 25 ids and paged: a PostgREST `.in()` returns ZERO rows and NO error once the list
+ * grows long, and an unbounded select stops at 1000 with no marker. One candidate here holds 20 CV
+ * rows, so a 50-id chunk could reach that ceiling on a bad day and silently drop the siblings that
+ * prove a row is a duplicate — which would fail OPEN, straight back into re-uploading copies.
+ */
+async function loadCvSiblingsByCandidate(candidateIds) {
+  const wanted = [...new Set(candidateIds.filter(Boolean))];
+  const byCandidate = new Map();
+  const PAGE = 500;
+  for (let at = 0; at < wanted.length; at += 25) {
+    const chunk = wanted.slice(at, at + 25);
+    for (let offset = 0; ; offset += PAGE) {
+      const page = await rest(
+        `ats_files?select=id,candidate_id,content_md5,created_at&kind=eq.cv&drive_file_id=not.is.null`
+          + `&candidate_id=in.(${chunk.join(",")})&order=created_at.asc&offset=${offset}&limit=${PAGE}`,
+      );
+      for (const row of page) {
+        if (!byCandidate.has(row.candidate_id)) byCandidate.set(row.candidate_id, []);
+        byCandidate.get(row.candidate_id).push(row);
+      }
+      if (page.length < PAGE) break;
+    }
+  }
+  return byCandidate;
+}
+
 // ── run ──────────────────────────────────────────────────────────────────────────────────────────
 async function main() {
   console.log(DRY_RUN ? "DRY RUN — nothing will be written to Drive.\n" : "Backfilling CVs to Google Drive.\n");
@@ -319,7 +361,11 @@ async function main() {
   console.log(`${rows.length} CV file(s) not yet in Drive; processing ${todo.length}.\n`);
   if (todo.length === 0) return;
 
-  const counts = { failed: 0, moved: 0, skipped: 0, unchanged: 0, uploaded: 0 };
+  // Asked once for the whole run, never per file: the answer is a property of the candidate's rows,
+  // and `--refile` only ever touches rows that already HAVE a Drive file, so it needs none of this.
+  const siblings = REFILE ? new Map() : await loadCvSiblingsByCandidate(todo.map((file) => file.candidate_id));
+
+  const counts = { duplicate: 0, failed: 0, moved: 0, skipped: 0, unchanged: 0, uploaded: 0 };
   const treePreview = new Map();
 
   for (const [index, file] of todo.entries()) {
@@ -335,6 +381,13 @@ async function main() {
       const candidate = candidates[0];
       if (!candidate) {
         counts.skipped += 1;
+        continue;
+      }
+
+      // THE SAME RULE THE RUNNING SITE APPLIES, asked of the app rather than restated here. A row
+      // the app suppressed is not a gap to fill — uploading it is what puts a duplicate back.
+      if (!REFILE && !shouldMirrorCopy(file.id, siblings.get(file.candidate_id) ?? [file])) {
+        counts.duplicate += 1;
         continue;
       }
 
@@ -436,7 +489,8 @@ async function main() {
   console.log(
     REFILE
       ? `\n${DRY_RUN ? "Would move" : "Moved"}: ${counts.moved}   already correct: ${counts.unchanged}   skipped: ${counts.skipped}   failed: ${counts.failed}`
-      : `\n${DRY_RUN ? "Would upload" : "Uploaded"}: ${counts.uploaded}   skipped: ${counts.skipped}   failed: ${counts.failed}`,
+      : `\n${DRY_RUN ? "Would upload" : "Uploaded"}: ${counts.uploaded}   skipped: ${counts.skipped}`
+        + `   re-sent copies left alone: ${counts.duplicate}   failed: ${counts.failed}`,
   );
   if (!DRY_RUN && counts.failed > 0) console.log("Re-run with --retry to revisit the failures.");
   if (!REFILE && !DRY_RUN) console.log("Run again with --refile to move any CV whose folder has since changed.");
@@ -462,7 +516,7 @@ async function verifyMirror(areaRegions) {
   const PAGE = 500;
   for (let offset = 0; ; offset += PAGE) {
     const page = await rest(
-      `ats_files?select=id,candidate_id,drive_mirror_file_id,drive_mirror_path,drive_mirror_error&kind=eq.cv&drive_file_id=not.is.null&order=created_at.asc&offset=${offset}&limit=${PAGE}`,
+      `ats_files?select=id,candidate_id,content_md5,created_at,drive_mirror_file_id,drive_mirror_path,drive_mirror_error&kind=eq.cv&drive_file_id=not.is.null&order=created_at.asc&offset=${offset}&limit=${PAGE}`,
     );
     rows.push(...page);
     if (page.length < PAGE) break;
@@ -486,7 +540,17 @@ async function verifyMirror(areaRegions) {
     for (const candidate of page) byId.set(candidate.id, candidate);
   }
 
+  // Every CV row this candidate has, so a row with no Drive file can be told apart from a row that
+  // was never meant to have one. Built from `rows`, which is already the WHOLE pool — no second read.
+  const siblings = new Map();
+  for (const file of rows) {
+    if (!file.candidate_id) continue;
+    if (!siblings.has(file.candidate_id)) siblings.set(file.candidate_id, []);
+    siblings.get(file.candidate_id).push(file);
+  }
+
   const stats = {
+    duplicateCopy: 0,
     errored: 0,
     misfiled: 0,
     mirrored: 0,
@@ -502,7 +566,12 @@ async function verifyMirror(areaRegions) {
     if (file.drive_mirror_error === REMOVED_FROM_DRIVE_BY_HAND) stats.removedByHand += 1;
     else if (file.drive_mirror_error) stats.errored += 1;
     if (!file.drive_mirror_file_id) {
-      stats.notMirrored += 1;
+      // A byte-identical re-send is SUPPRESSED, not missing. Counting it as a backlog is what made
+      // this report ask for an upload that puts a duplicate back in the cabinet — and because the
+      // same rows persist, it asked again every morning, which is how a daily check earns its
+      // first ignored alarm.
+      if (shouldMirrorCopy(file.id, siblings.get(file.candidate_id) ?? [file])) stats.notMirrored += 1;
+      else stats.duplicateCopy += 1;
       continue;
     }
     stats.mirrored += 1;
@@ -523,6 +592,10 @@ async function verifyMirror(areaRegions) {
   console.log(`  CVs with a stored file        ${stats.total}`);
   console.log(`  mirrored into Drive           ${stats.mirrored}`);
   console.log(`  NOT mirrored yet              ${stats.notMirrored}${stats.notMirrored ? "   <- run without --verify" : ""}`);
+  console.log(
+    `  re-sent copies, never filed   ${stats.duplicateCopy}`
+      + `${stats.duplicateCopy ? "   <- byte-identical re-sends, suppressed on purpose" : ""}`,
+  );
   console.log(`  last attempt errored          ${stats.errored}${stats.errored ? "   <- run with --retry" : ""}`);
   console.log(
     `  deleted in Drive by hand      ${stats.removedByHand}`
