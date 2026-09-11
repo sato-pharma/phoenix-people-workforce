@@ -730,6 +730,7 @@ import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboard
 import { runDeviceRegisterTests } from "./device-register.test.ts";
 import { runDeviceRegisterFitsTheScreenTests } from "./device-register-fits-the-screen.test.ts";
 import { runDeviceBulkImportTests } from "./device-bulk-import.test.ts";
+import { runDeviceAction1SyncTests } from "./device-action1-sync.test.ts";
 import { runDeviceImportAttemptLogTests } from "./device-import-attempt-log.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
 import { runHrTodayTasksTests } from "./hr-today-tasks.test.ts";
@@ -1083,6 +1084,7 @@ import { runAutomatedPayrollModuleDriftTests } from "./automated-payroll-module-
 import { runAutomatedPayrollDayCollisionTests } from "./automated-payroll-day-collisions.test.ts";
 import { runAutomatedPayrollNonEmployeeSeedingTests } from "./automated-payroll-non-employee-seeding.test.ts";
 import { runAutomatedPayrollFailClosedReadTests } from "./automated-payroll-fail-closed-reads.test.ts";
+import { runPayrollAuditTrailAppendOnlyTests } from "./payroll-audit-trail-append-only.test.ts";
 import { runAutomatedPayrollPartSplitStampTests } from "./automated-payroll-part-split-stamp.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
 import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
@@ -1828,6 +1830,10 @@ await runTest(
 await runTest(
   "automated payroll: a failed read does not look like a quiet month",
   runAutomatedPayrollFailClosedReadTests,
+);
+await runTest(
+  "automated payroll: the decision trail cannot be edited, deleted or truncated",
+  runPayrollAuditTrailAppendOnlyTests,
 );
 await runTest(
   "automated payroll: one deduction is charged in one instalment, whatever the payment mode becomes",
@@ -5185,6 +5191,11 @@ await runTest(
 await runTest(
   "the admin data backup streams its workbook row by row, so a 300k-row table cannot overflow the in-memory XML writer",
   runDataBackupWorkbookTests,
+);
+
+await runTest(
+  "an Action1 pull maps an endpoint onto a register row, never names a holder, and reports an already-registered serial as a skip rather than writing it twice",
+  runDeviceAction1SyncTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
