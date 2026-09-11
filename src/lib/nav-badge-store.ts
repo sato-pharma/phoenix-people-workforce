@@ -108,7 +108,7 @@ function applyCount(src: string, newCount: number, overdue: boolean): void {
     } else if (Notification.permission === "granted") {
       new Notification("Action Center", {
         body: "New items are awaiting your approval.",
-        icon: "/favicon.ico",
+        icon: "/brand/phoenix-notification-icon.png",
       });
     }
   }
