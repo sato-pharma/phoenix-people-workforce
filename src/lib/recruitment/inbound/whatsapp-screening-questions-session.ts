@@ -402,12 +402,21 @@ export async function applyPendingExtraAnswers(input: { waId: string; candidateI
   if (!isWhatsAppClassifyEnabled()) return false;
   try {
     const supabase = recruitmentDb();
+    // `completed_at IS NOT NULL` is load-bearing, not a narrowing filter — same reason as its
+    // classify-session twin, applyPendingClassification. Without it, a loop still mid-question is the
+    // only row for this wa_id and becomes this query's answer: a partial `extra_answers` snapshot
+    // gets frozen onto the candidate, and nothing re-syncs the rest if the applicant keeps answering,
+    // because this function is only invoked once, from the intake worker's own candidate-creation
+    // race. `finishExtraQuestionLoop` already writes the full, final answers unconditionally once the
+    // loop actually completes — this function exists only to catch a loop that finished BEFORE the
+    // candidate existed, never one still in progress.
     const { data } = await supabase
       .from(SESSIONS_TABLE)
       .select(EXTRA_SESSION_COLUMNS)
       .eq("wa_id", input.waId)
       .is("applied_at", null)
-      .order("completed_at", { ascending: false, nullsFirst: false })
+      .not("completed_at", "is", null)
+      .order("completed_at", { ascending: false })
       .limit(1);
     const session = ((data ?? [])[0] ?? null) as ExtraSessionRow | null;
     if (!session) return false;
