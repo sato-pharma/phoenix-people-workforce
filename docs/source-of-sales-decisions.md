@@ -86,22 +86,30 @@ time, and only two were ever confirmed.
 | 2026-09-11 | `B28-47` → `B17-28` باب الشعرية | **Put it back** — Bab El Sharia belongs to Down town, not Cairo East 1 |
 
 The eleven open ones were put to him as one dropdown sheet, one row per brick rather than one per
-pharmacy, so eleven answers settled 890 shops.
+pharmacy, so eleven answers settled every pharmacy standing on those bricks.
 
 **What was applied on 2026-09-11.** Brick `B28-47` was created under block B28, which already sits
 in Down town, because a brick's area is inherited from its block and cannot be set; `B17-28` stays
-active in Cairo East 1 with its own 20 customers, since retiring a brick that carries closed-month
-history lights up a data-quality warning on months that cannot be restated. Seventeen pharmacies
-moved onto the new brick and the five Bab El Sharia aliases followed it, without which the next
-import would have re-resolved the town by name and quietly rebuilt the problem. Across the ten kept
-bricks, 57 pharmacies that had drifted elsewhere since July were aligned with the brick he kept,
-each sent to the brick its own siblings use rather than to the brick the July file named — four of
-those target IDs no longer exist, because the master was replaced again on 2026-07-27.
+active in Cairo East 1 and keeps the customers that were already its own, since retiring a brick
+that carries closed-month history lights up a data-quality warning on months that cannot be
+restated. The pharmacies standing on the vanished brick moved onto the new one, and the five Bab El
+Sharia aliases followed them, without which the next import would have re-resolved the town by name
+and quietly rebuilt the problem. Across the ten kept bricks, the pharmacies that had drifted
+elsewhere since July were aligned with the brick he kept, each sent to the brick its own siblings
+use rather than to the brick the July file named — four of those target IDs no longer exist, because
+the master was replaced again on 2026-07-27.
 
-Fifty-one of those writes were parked by the mapping guard, 45 because the row carried an earlier
-decision of his and two because they crossed a region, and each was released against his answer
-through `sos_map_guard_decide`. Pre-images: `bab_elsheria_backup_20260911`,
-`keep_bricks_backup_20260911`, `kes_alias_backup_20260911`.
+The mapping guard parked most of those writes, because the row carried an earlier decision of his or
+because it crossed a region, and each was released against his answer through
+`sos_map_guard_decide`. Pre-images: `bab_elsheria_backup_20260911`, `keep_bricks_backup_20260911`,
+`kes_alias_backup_20260911`.
+
+**Deliberately no row counts here.** Every figure that described how many pharmacies sit on which
+brick was removed on 2026-09-11, because the crosswalk is written continuously by several hands and
+a number in a decisions file goes stale within the hour. It did: two more rows moved onto `B28-47`
+thirty minutes after this section was first written, and reconciling the file against production
+then read as a discrepancy. The ruling is what this file is for. For counts, ask production —
+`source_of_sales_customer_map` by `brick_id`, and `sos_map_change_log` for who moved what.
 
 **No closed month moved, by design.** Each import row carries the area it was stamped with at
 import, so a crosswalk repair reaches the next import and never restates history. July and August
@@ -112,7 +120,7 @@ are locked on all three lines and both matched a live recompute at zero cells be
 
 Two aliases were repaired in the same pass, unrelated to the sheet: `بيلا` and `حامول` still pointed
 at bricks retired in the 2026-08-06 Kafr El-Sheikh realignment, so those two town names resolved to
-nothing on import. Their 225 pharmacies were already in Kafr El-Sheikh 2 and did not move.
+nothing on import. Their pharmacies were already in Kafr El-Sheikh 2 and did not move.
 
 ## Deliberately not fixed
 
