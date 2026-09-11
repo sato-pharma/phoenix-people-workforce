@@ -1124,13 +1124,21 @@ export async function applyPendingClassification(input: { waId: string; candidat
   if (!isWhatsAppClassifyEnabled()) return false;
   try {
     const supabase = recruitmentDb();
+    // `completed_at IS NOT NULL` is load-bearing, not a narrowing filter: without it, an applicant
+    // who is still mid-conversation when this worker races in (job_title answered, nothing else yet)
+    // is the ONLY row for their wa_id, so it becomes this query's answer — writing a permanent
+    // snapshot of an UNFINISHED conversation onto the candidate, `preferences_declared_at` included.
+    // Nothing then re-syncs the region/area/experience/salary they go on to answer, because
+    // `applied_at` is now set and this function never runs again for that session. Production held 24
+    // such candidates on 2026-09-11, spread across every step from `background` to `salary`.
     const { data } = await supabase
       .from(SESSIONS_TABLE)
       .select(SESSION_COLUMNS)
       .eq("wa_id", input.waId)
       .is("applied_at", null)
+      .not("completed_at", "is", null)
       .not("job_title_family", "is", null)
-      .order("completed_at", { ascending: false, nullsFirst: false })
+      .order("completed_at", { ascending: false })
       .limit(1);
     const session = ((data ?? [])[0] ?? null) as SessionRow | null;
     if (!session) return false;
