@@ -49,6 +49,7 @@ import {
   resolveEvidenceLocationStamp,
 } from "@/components/outstation/evidence-watermark";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 
 type MedicalTripOption = {
@@ -89,7 +90,7 @@ function buildDraftId() {
 }
 
 function egp(value: number) {
-  return new Intl.NumberFormat("en-US", {
+  return stableCurrencyFormatter("en-US", {
     currency: "EGP",
     maximumFractionDigits: 0,
     style: "currency",

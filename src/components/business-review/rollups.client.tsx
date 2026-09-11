@@ -36,10 +36,11 @@ import {
 import { cn } from "@/lib/utils";
 import type { ReviewPersonRow, ReviewRoleRow } from "@/lib/business-review/sources/roles";
 import { periodColumnLabel } from "@/lib/business-review/period-format";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 const num = (n: number | null | undefined) => (n != null && Number.isFinite(n) ? n.toLocaleString("en-US") : "0");
 const egp = (n: number) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(
+  stableCurrencyFormatter("en-US", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(
     Number.isFinite(n) ? n : 0,
   );
 

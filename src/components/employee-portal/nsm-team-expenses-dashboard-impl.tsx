@@ -23,11 +23,12 @@ import {
 } from "@/lib/outstation/approval-state";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 /* ---------- helpers ---------- */
 
 function egp(value: number) {
-  return new Intl.NumberFormat("en-US", {
+  return stableCurrencyFormatter("en-US", {
     currency: "EGP",
     maximumFractionDigits: 0,
     style: "currency",
@@ -35,7 +36,7 @@ function egp(value: number) {
 }
 
 function compactEgp(value: number) {
-  return new Intl.NumberFormat("en-US", {
+  return stableCurrencyFormatter("en-US", {
     compactDisplay: "short",
     currency: "EGP",
     maximumFractionDigits: 1,

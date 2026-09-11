@@ -7,6 +7,7 @@ import {
 import type { MarketingApproverChainRung } from "@/lib/marketing-requests/service";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------- Shared between the inbox's two tabs ------------------------------------------------------------------------------------------------ */
@@ -17,7 +18,7 @@ import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
 export function egp(value: number) {
-  return new Intl.NumberFormat("en-US", {
+  return stableCurrencyFormatter("en-US", {
     currency: "EGP",
     maximumFractionDigits: 0,
     style: "currency",

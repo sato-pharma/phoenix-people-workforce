@@ -20,6 +20,7 @@ import { DeparturePhotoCard } from "@/components/outstation/departure-photo-card
 import type { MyOutstationSubmission } from "@/lib/outstation/service";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 /**
  * The submitter's own outstation submissions.
@@ -36,7 +37,7 @@ import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
  * one-shot rule, and a money-bearing capture path must not exist twice.
  */
 
-const EGP = new Intl.NumberFormat("en-EG", {
+const EGP = stableCurrencyFormatter("en-EG", {
   currency: "EGP",
   maximumFractionDigits: 2,
   minimumFractionDigits: 0,

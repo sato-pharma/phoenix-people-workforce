@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import type { PayslipCenterRow } from "@/lib/payroll/payslip-center";
 import { formatEmployeeDisplayName } from "@/lib/utils";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 /**
  * The Payslips Center history, as cards on a phone and a table from `md` up.
@@ -159,7 +160,7 @@ export function PayslipsCenterRows({
 }
 
 function formatMoney(value: number) {
-  return new Intl.NumberFormat("en-EG", {
+  return stableCurrencyFormatter("en-EG", {
     currency: "EGP",
     maximumFractionDigits: 2,
     minimumFractionDigits: 2,

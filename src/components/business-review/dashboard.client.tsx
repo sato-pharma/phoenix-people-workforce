@@ -19,6 +19,7 @@ import {
 } from "./coverage.client";
 import { ReviewPeriodFilter } from "./review-filter.client";
 import { CustomersByAreaTable, PeopleActivityTable, RoleActivityTable } from "./rollups.client";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 type DmRow = DmSummary & { payoutPct: number; band: string; activePayoutPct: number; activeBand: string };
 type AreaRow = AreaSummary & { payoutPct: number; band: string };
@@ -50,7 +51,7 @@ type Props =
   | ({ view: ReviewLine; ds: ReviewDataset; dms: DmRow[]; areas: AreaRow[] } & Shared);
 
 const egp = (n: number) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(Number.isFinite(n) ? n : 0);
+  stableCurrencyFormatter("en-US", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(Number.isFinite(n) ? n : 0);
 const pct = (n: number | null) => (n == null ? "—" : `${n.toFixed(1)}%`);
 const num = (n: number | null | undefined) => (n != null && Number.isFinite(n) ? n.toLocaleString("en-US") : "0");
 /** Renders "no data" instead of a misleading 0 when the source holds no rows for this

@@ -45,6 +45,7 @@ import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import {
   PortalRecordCard,
   PortalRecordFields,
@@ -63,7 +64,7 @@ type ActionPayload = {
 };
 
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", {
+  return stableCurrencyFormatter("en-US", {
     currency: "EGP",
     maximumFractionDigits: 0,
     style: "currency",

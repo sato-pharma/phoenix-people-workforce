@@ -2,9 +2,10 @@
 
 import { Card } from "@/components/ui/card";
 import type { OutstationCalculationResult } from "@/lib/outstation/types";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 function egp(value: number) {
-  return new Intl.NumberFormat("en-US", {
+  return stableCurrencyFormatter("en-US", {
     currency: "EGP",
     maximumFractionDigits: 0,
     style: "currency",

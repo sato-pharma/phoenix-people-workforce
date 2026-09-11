@@ -25,6 +25,7 @@ import { LoadingSpinner } from "@/components/ui/loading-state";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 
 type ActiveTab = "submit" | "input";
@@ -50,7 +51,7 @@ const expenseExcelHeaders = [
 ];
 
 function egp(value: number) {
-  return new Intl.NumberFormat("en-US", {
+  return stableCurrencyFormatter("en-US", {
     currency: "EGP",
     maximumFractionDigits: 0,
     style: "currency",

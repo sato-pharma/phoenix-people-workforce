@@ -2,6 +2,7 @@
 
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { cn } from "@/lib/utils";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 type StackedChartProps = {
   data: { name: string; value: number; color: string; percent?: number }[];
@@ -34,7 +35,7 @@ const compactEGP = (val: number) => {
   const safe = Number.isFinite(val) ? val : 0;
   if (Math.abs(safe) >= 1_000_000) return `EGP ${(safe / 1_000_000).toFixed(2)}M`;
   if (Math.abs(safe) >= 1_000) return `EGP ${(safe / 1_000).toFixed(0)}K`;
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(safe);
+  return stableCurrencyFormatter("en-US", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(safe);
 };
 
 export function StackedChart({

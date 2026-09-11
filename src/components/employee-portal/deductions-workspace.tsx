@@ -13,6 +13,7 @@ import type {
   DeductionsSalaryRecordsColumn,
 } from "@/lib/deductions/types";
 import { cn } from "@/lib/utils";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 const DEDUCTION_LINES_PAGE_SIZE = 25;
 
@@ -23,7 +24,7 @@ type DeductionsPortalWorkspaceProps = {
 };
 
 function formatMoney(value: number): string {
-  return new Intl.NumberFormat("en-EG", {
+  return stableCurrencyFormatter("en-EG", {
     currency: "EGP",
     maximumFractionDigits: 2,
     minimumFractionDigits: 2,

@@ -5,9 +5,10 @@ import Link from "next/link";
 import { AlertTriangle, ArrowRight, CheckCircle, Clock, RefreshCw, X } from "lucide-react";
 
 import type { MarketingApproverInboxRow } from "@/lib/marketing-requests/service";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 function egp(n: number) {
-  return new Intl.NumberFormat("en-EG", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(n);
+  return stableCurrencyFormatter("en-EG", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(n);
 }
 
 function ageInDays(iso: string | null, now: number): number | null {

@@ -67,6 +67,7 @@ import type {
   MarketingRequestType,
 } from "@/lib/marketing-requests/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
@@ -223,7 +224,7 @@ function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>) {
 const todayDate = new Date().toISOString().slice(0, 10);
 
 function egp(value: number) {
-  return new Intl.NumberFormat("en-US", {
+  return stableCurrencyFormatter("en-US", {
     currency: "EGP",
     maximumFractionDigits: 0,
     style: "currency",

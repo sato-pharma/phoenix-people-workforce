@@ -21,6 +21,7 @@ import type { AreaSummary, CompanyLineRow, DmSummary, ProductRow } from "@/lib/b
 import { CoverageBanner, HardEmptyWindow } from "./coverage.client";
 import { ReviewPeriodFilter } from "./review-filter.client";
 import { CustomersByAreaTable } from "./rollups.client";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 /**
  * Business Review — the employee-portal view, at every scope breadth.
@@ -76,7 +77,7 @@ type Props = {
 /* ---------- formatting ---------- */
 
 const egp = (n: number) =>
-  new Intl.NumberFormat("en-US", { currency: "EGP", maximumFractionDigits: 0, style: "currency" }).format(
+  stableCurrencyFormatter("en-US", { currency: "EGP", maximumFractionDigits: 0, style: "currency" }).format(
     Number.isFinite(n) ? n : 0,
   );
 const pct = (n: number | null) => (n == null ? "—" : `${n.toFixed(1)}%`);

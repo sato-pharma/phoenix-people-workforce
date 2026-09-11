@@ -21,10 +21,11 @@ import { AlertTriangle, CircleAlert, Info } from "lucide-react";
 import { describePeriods, type ReviewCoverage, type SourceCoverage } from "@/lib/business-review/coverage";
 import { periodLabel } from "@/lib/business-review/period-format";
 import { cn } from "@/lib/utils";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 const num = (n: number) => (Number.isFinite(n) ? n.toLocaleString("en-US") : "0");
 const egp = (n: number) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(
+  stableCurrencyFormatter("en-US", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(
     Number.isFinite(n) ? n : 0,
   );
 
