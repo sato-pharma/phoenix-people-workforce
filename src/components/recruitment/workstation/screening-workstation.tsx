@@ -147,9 +147,12 @@ export function ScreeningWorkstation({
   hiringManagers,
   overdueManagerFeedback,
   poolSize,
+  onSelectVacancy,
   positionSuggestions,
   rows,
+  seatLabel,
   vacancies,
+  vacancyId,
   vacancyStats,
 }: {
   /**
@@ -174,11 +177,16 @@ export function ScreeningWorkstation({
   /** Passed straight through to the send panel's free-typed inputs — see WorkstationReviewHeader. */
   positionSuggestions: { jobTitles: string[]; areas: string[] };
   rows: readonly WorkspaceCandidateRow[];
+  /** Go to — or leave — seat mode. A navigation, because the seat is in the link. */
+  onSelectVacancy: (vacancyId: number | null) => void;
+  /** The seat being screened, in words. Printed above the list so the pile names itself. */
+  seatLabel: string | null;
   vacancies: readonly WorkspaceVacancy[];
+  /** The seat the link names, or null for the ordinary queue. */
+  vacancyId: number | null;
   vacancyStats: readonly VacancyApplicantStats[];
 }) {
   const [queue, setQueue] = useState<ScreeningWorkQueue>("new");
-  const [vacancyId, setVacancyId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(rows[0]?.id ?? null);
   const [tab, setTab] = useState<IntelligenceTab>("summary");
@@ -934,7 +942,9 @@ export function ScreeningWorkstation({
             setMobilePane("list");
           }}
           onSelectVacancy={(next) => {
-            setVacancyId(next);
+            // A LINK, not a piece of state: picking a seat changes what the SERVER loads, because
+            // for that seat the filed CVs are read back in and the email applicants are matched.
+            onSelectVacancy(next);
             setQueueOpen(false);
             setMobilePane("list");
           }}
@@ -1066,6 +1076,30 @@ export function ScreeningWorkstation({
                 </span>
               </>
             )}
+          </div>
+        ) : null}
+
+        {/* ── SCREENING ONE VACANT SEAT ───────────────────────────────────────────────────────────
+            The pile names itself, and the way out is one press. Without this line a recruiter who
+            followed a bookmarked seat link would see a short queue with nothing on the page saying
+            why it is short — which is exactly the complaint this whole mode exists to answer, in
+            reverse. Wraps at 375px rather than scrolling sideways; no ellipsis, no id. */}
+        {seatLabel ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-phx-accent-line bg-phx-accent-soft px-4 py-1.5">
+            <span className="min-w-0 break-words text-[12px] font-bold text-phx-accent-press">
+              Screening the vacant seat: {seatLabel}
+            </span>
+            <span className="min-w-0 flex-1 break-words text-[11px] leading-tight text-phx-ink-soft">
+              Every undecided CV for this seat — filed to its folder, chosen on WhatsApp, or named in
+              an email — with the reason under each name.
+            </span>
+            <button
+              className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper"
+              onClick={() => onSelectVacancy(null)}
+              type="button"
+            >
+              Show everyone
+            </button>
           </div>
         ) : null}
 

@@ -251,6 +251,7 @@ import { runArabicPlaceMatchTests } from "./arabic-place-match.test.ts";
 import { runCvAddressPlaceTests } from "./cv-address-place.test.ts";
 import { runEgyptVocabularySpellingsTests } from "./egypt-vocabulary-spellings.test.ts";
 import { runCandidatePositionSuggestionTests } from "./candidate-position-suggestion.test.ts";
+import { runVacancySeatQueueTests } from "./vacancy-seat-queue.test.ts";
 import { runRecruitmentStaleSendCheckTests } from "./recruitment-stale-send-check.test.ts";
 import { runRecruitmentTriageBacklogCheckTests } from "./recruitment-triage-backlog-check.test.ts";
 import { runVacancyManagerEscalationTests } from "./vacancy-manager-escalation.test.ts";
@@ -2187,6 +2188,10 @@ await runTest(
 await runTest(
   "recruitment position suggestion (the seat a CV is proposed for, and the four ways a place name lied)",
   runCandidatePositionSuggestionTests,
+);
+await runTest(
+  "screen a vacant seat (a CV filed to the seat folder, chosen on WhatsApp or named in a misspelt email subject all reach the seat, and say which; a decided CV never does)",
+  runVacancySeatQueueTests,
 );
 await runTest(
   "vacancy manager escalation (when the seat's own manager post is vacant, climb to whoever is above it)",

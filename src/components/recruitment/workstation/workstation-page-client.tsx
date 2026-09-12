@@ -13,9 +13,15 @@
 //
 //   • THE URL narrows what is LOADED — the eight filters above. They are shareable, they survive a
 //     reload, and changing one is a fresh server read because it changes the pool itself.
-//   • THE WORKSTATION narrows what is SHOWN — work queue, vacancy, search. They are instant, they
-//     never navigate, and they never lose the CV that is open. That is the whole point: an hour of
+//   • THE WORKSTATION narrows what is SHOWN — work queue and search. They are instant, they never
+//     navigate, and they never lose the CV that is open. That is the whole point: an hour of
 //     screening is spent moving between piles, and a page load per move is the cost this replaces.
+//
+// THE VACANT SEAT MOVED FROM THE SECOND GROUP TO THE FIRST, and it had to. Picking a seat no longer
+// only narrows what is already loaded: for that one seat the server reads the FILED CVs back in and
+// matches the email applicants who never answered the WhatsApp questions, so the pool itself is
+// different. Making it a link is also what the owner asked for — "screen Menoufia 1" survives a
+// reload and can be pasted to the other screener, exactly like every other filter on this page.
 //
 // FULL WIDTH IS A BUTTON, and it is not decoration. Measured on a 1366px laptop, the admin shell's
 // sidebar leaves the CV pane roughly 300px narrower than the same pane full-bleed — enough that a
@@ -79,7 +85,9 @@ export function WorkstationPageClient({
   sourceOptions,
   status,
   throughput,
+  seatLabel,
   vacancies,
+  vacancy,
   vacancyStats,
 }: {
   area: string | null;
@@ -118,7 +126,11 @@ export function WorkstationPageClient({
   status: CandidateStatus | null;
   /** Backlog in against backlog out, over four weeks — see the strip below. */
   throughput: ThroughputSummary;
+  /** The seat being screened, in words, or null for the ordinary queue. Printed, never an id. */
+  seatLabel: string | null;
   vacancies: WorkspaceVacancy[];
+  /** The open seat the link names, or null. The one narrowing that carries an id — see the header. */
+  vacancy: number | null;
   vacancyStats: VacancyApplicantStats[];
 }) {
   const router = useRouter();
@@ -160,6 +172,7 @@ export function WorkstationPageClient({
     received,
     notified === "any" ? null : notified,
     seen === "any" ? null : seen,
+    vacancy,
   ].filter((value) => value !== null && value !== undefined && value !== "").length;
   // WHICH SHELL AM I ACTUALLY IN? Not always the one that rendered me — see screeningShellPoolHref.
   const shellPoolHref = screeningShellPoolHref(usePathname(), poolHref);
@@ -176,10 +189,11 @@ export function WorkstationPageClient({
           seen: next.seen !== undefined ? next.seen : seen,
           source: next.source !== undefined ? next.source : source,
           status: next.status !== undefined ? next.status : status,
+          vacancy: next.vacancy !== undefined ? next.vacancy : vacancy,
         }),
       );
     },
-    [area, notified, received, region, role, router, seen, shellPoolHref, source, status],
+    [area, notified, received, region, role, router, seen, shellPoolHref, source, status, vacancy],
   );
 
   // `F` for full width, Escape to leave it. Ignored while typing, so an "f" in a search term does
@@ -221,10 +235,13 @@ export function WorkstationPageClient({
       hiringManagers={hiringManagers}
       onToggleFocus={toggleFocus}
       overdueManagerFeedback={overdueManagerFeedback}
+      onSelectVacancy={(next) => goTo({ vacancy: next })}
       poolSize={poolSize}
       positionSuggestions={positionSuggestions}
       rows={rows}
+      seatLabel={seatLabel}
       vacancies={vacancies}
+      vacancyId={vacancy}
       vacancyStats={vacancyStats}
     />
   );
@@ -288,6 +305,7 @@ export function WorkstationPageClient({
               seen: "any",
               source: null,
               status: null,
+              vacancy: null,
             })
           }
           queueCount={rows.length}

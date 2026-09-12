@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 
 import { candidateRegionCodes } from "../src/lib/recruitment/candidate-region.ts";
 import {
+  candidateAgeInYears,
+  candidateScreeningChecks,
   candidateScreeningFacts,
   candidateScreeningRoleFamily,
   formatYearsOfExperience,
@@ -201,4 +203,61 @@ export function runCandidateScreeningFactsTests() {
   });
   assert.equal(wrongTypes.hasMedicalRepExperience, null, "a string is not a boolean answer");
   assert.equal(wrongTypes.yearsExperience, null, "a string is not a number of years");
+
+  // --- THE FOUR CHECKS A SCREENER MAKES, AND THE HOLES SAID OUT LOUD. Screening one vacant seat on
+  // --- 2026-09-11 meant opening every CV to find the degree, the gender, the age and the military
+  // --- status, because not one of them was printed anywhere. Printed now - and an unanswered one
+  // --- has to READ as unanswered, because a blank cell looks like a rendering fault and a 0 looks
+  // --- like an answer.
+  type Check = ReturnType<typeof candidateScreeningChecks>[number];
+  const byLabel = (candidate: Parameters<typeof candidateScreeningChecks>[0], now?: Date) => {
+    const found = new Map<string, Check>();
+    for (const check of candidateScreeningChecks(candidate, now)) found.set(check.label, check);
+    return found;
+  };
+
+  const known = byLabel(
+    {
+      dateOfBirth: "1997-04-11",
+      declaredBackground: "Pharmacy",
+      gender: "male",
+      militaryStatus: "exempted",
+    },
+    new Date(2026, 8, 12),
+  );
+  assert.equal(known.get("Degree rule")?.value, "Pharmacy", "the degree rule reuses the existing gate");
+  assert.equal(known.get("Gender")?.value, "Male");
+  assert.equal(known.get("Age")?.value, "29", "born April 1997, read on 12 September 2026");
+  assert.equal(known.get("Age")?.hint, "1997-04-11", "the date sits under the age so it can be checked");
+  assert.equal(known.get("Military service")?.value, "Exempted");
+
+  // The headline assertion: an empty record still prints all four, and every one of them is null -
+  // which the renderer turns into "not on file", never a blank and never a zero.
+  const empty = candidateScreeningChecks({});
+  assert.deepEqual(
+    empty.map((check) => check.label),
+    ["Degree rule", "Gender", "Age", "Military service"],
+    "every check is printed even when nothing is known",
+  );
+  assert.deepEqual(
+    empty.map((check) => check.value),
+    [null, null, null, null],
+    "nothing on file reads as nothing on file - never 0, never blank",
+  );
+
+  // A degree that is not one of the five is a VERDICT, not a hole, and it says which.
+  const refused = byLabel({ declaredBackground: "Law" });
+  assert.equal(refused.get("Degree rule")?.value, "Not one of the five eligible degrees");
+
+  // The CV's faculty answers when the applicant never did - the same order judgeBackground uses.
+  const fromCv = byLabel({ faculty: "Faculty of Veterinary Medicine" });
+  assert.equal(fromCv.get("Degree rule")?.value, "Veterinary");
+
+  // --- Age is parsed by hand rather than through `new Date`, so a birthday cannot land a day early
+  // --- for a reader east of Greenwich, and a mis-parsed date is refused instead of printed.
+  assert.equal(candidateAgeInYears("1997-04-11", new Date(2026, 3, 10)), 28, "the day before the birthday");
+  assert.equal(candidateAgeInYears("1997-04-11", new Date(2026, 3, 11)), 29, "the birthday itself");
+  assert.equal(candidateAgeInYears(null), null);
+  assert.equal(candidateAgeInYears("not a date"), null);
+  assert.equal(candidateAgeInYears("2025-01-01", new Date(2026, 8, 12)), null, "a one-year-old is a bad date");
 }

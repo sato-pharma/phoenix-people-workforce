@@ -8,7 +8,9 @@
 
 import type { StoredCvExtraction } from "@/lib/recruitment/cv-extraction-fields";
 import {
+  candidateScreeningChecks,
   candidateScreeningFacts,
+  FACT_NOT_ON_FILE,
   formatYearsOfExperience,
   UNCONFIRMED_FACT_TITLE,
   unconfirmedCvFactsFromExtraction,
@@ -17,7 +19,17 @@ import type { Candidate } from "@/lib/recruitment/types";
 import { candidateWhatsAppAnswers, type ScreeningQuestionLabel } from "@/lib/recruitment/whatsapp-answers";
 import { WhatsAppAnswersList } from "@/components/recruitment/whatsapp-answers-list";
 
-type Cell = { hint?: string; label: string; unconfirmed?: boolean; value: string };
+type Cell = {
+  hint?: string;
+  label: string;
+  /**
+   * Nobody has ever answered this one. Rendered as the words "not on file" rather than as a blank
+   * or a zero: a cell left empty reads as a rendering fault, and a 0 reads as an answer.
+   */
+  missing?: boolean;
+  unconfirmed?: boolean;
+  value: string;
+};
 
 /**
  * WHICH FRAME THIS BLOCK DRAWS AROUND ITSELF.
@@ -43,6 +55,7 @@ export function CandidateFactsSummary({
   extraction,
   frame = "card",
   screeningQuestions,
+  showScreeningChecks = false,
   showWhatsAppAnswers = true,
 }: {
   candidate: Candidate;
@@ -57,7 +70,14 @@ export function CandidateFactsSummary({
    */
   screeningQuestions: readonly ScreeningQuestionLabel[] | null;
   /**
-   * False where the caller already shows the answers as a section of its own — the workstation puts
+   * Print the four always-on screening checks — the degree rule, gender, age and military service.
+   *
+   * Off by default so the older screens are untouched. The screening workstation turns it on,
+   * because those four are what the owner opened all 17 CVs to find on 2026-09-11, and unlike every
+   * other cell here they are printed whether or not there is an answer: "not on file" is itself the
+   * fact a screener needs, and a row that simply vanished when empty could not say it.
+   */
+  showScreeningChecks?: boolean; — the workstation puts
    * them first, above this block — so one panel does not print the same answers twice.
    */
   showWhatsAppAnswers?: boolean;
@@ -143,6 +163,18 @@ export function CandidateFactsSummary({
   // resolver and prints each answer under its question. It keeps the split this block always drew:
   // a typed region reads as their words here, and the experience band stays apart from the counted
   // "Experience" above — the two can disagree honestly.
+  // The four checks, from the SHARED module — the degree half is `judgeBackground`, the very gate
+  // that decides whether a CV may be auto-filed, so this panel can never tell a recruiter something
+  // the rest of the system does not believe.
+  const checks: Cell[] = showScreeningChecks
+    ? candidateScreeningChecks(candidate).map((check) => ({
+        hint: check.hint ?? undefined,
+        label: check.label,
+        missing: check.value === null,
+        value: check.value ?? FACT_NOT_ON_FILE,
+      }))
+    : [];
+
   const answers = showWhatsAppAnswers ? candidateWhatsAppAnswers(candidate, screeningQuestions) : [];
   // A salary figure typed into the ATS by hand is not a WhatsApp answer, so that list does not carry
   // it — but it is still this record's expected salary, which this block used to show, and one
@@ -152,7 +184,13 @@ export function CandidateFactsSummary({
 
   // Nothing known at all is itself worth saying out loud — silence reads as a rendering fault, and
   // the reader needs to know the CV is the only place left to look.
-  if (cells.length === 0 && answers.length === 0 && !salaryOnFile && !candidate.professionalSummary) {
+  if (
+    cells.length === 0 &&
+    checks.length === 0 &&
+    answers.length === 0 &&
+    !salaryOnFile &&
+    !candidate.professionalSummary
+  ) {
     return (
       <div
         className={
@@ -179,24 +217,34 @@ export function CandidateFactsSummary({
 
   return (
     <div className={`${frameClass} ${className ?? ""}`}>
-      {cells.length > 0 ? (
+      {/* FIRST, because they are the first four questions asked of any CV and the only ones whose
+          ANSWERLESSNESS is worth printing. */}
+      {checks.length > 0 ? (
         <>
+          <p className={headingClass}>Screening checks</p>
+          <dl className={`mt-2 grid gap-x-6 gap-y-2 ${gridColumns}`}>
+            <FactCells cells={checks} flat={flat} />
+          </dl>
+        </>
+      ) : null}
+      {cells.length > 0 ? (
+        <div className={checks.length > 0 ? `mt-3 border-t ${ruleClass} pt-2` : ""}>
           <p className={headingClass}>From the CV</p>
           <dl className={`mt-2 grid gap-x-6 gap-y-2 ${gridColumns}`}>
             <FactCells cells={cells} flat={flat} />
           </dl>
-        </>
+        </div>
       ) : null}
       {/* Their own answers, under their own heading. The border is the whole point: it says "a
           person told us this" without needing a word of explanation on every line. */}
       {answers.length > 0 ? (
-        <div className={cells.length > 0 ? `mt-3 border-t ${ruleClass} pt-2` : ""}>
+        <div className={cells.length > 0 || checks.length > 0 ? `mt-3 border-t ${ruleClass} pt-2` : ""}>
           <p className={headingClass}>Answers on WhatsApp</p>
           <WhatsAppAnswersList answers={answers} className="mt-2" columns={columns} frame={frame} />
         </div>
       ) : null}
       {salaryOnFile ? (
-        <div className={cells.length > 0 || answers.length > 0 ? `mt-3 border-t ${ruleClass} pt-2` : ""}>
+        <div className={cells.length > 0 || checks.length > 0 || answers.length > 0 ? `mt-3 border-t ${ruleClass} pt-2` : ""}>
           <p className={headingClass}>On the record</p>
           <dl className={`mt-2 grid gap-x-6 gap-y-2 ${gridColumns}`}>
             <FactCells cells={[{ label: "Expected salary", value: salaryOnFile }]} flat={flat} />
@@ -231,7 +279,16 @@ function FactCells({ cells, flat = false }: { cells: Cell[]; flat?: boolean }) {
             {cell.label}
           </dt>
           <dd
-            className={`text-sm ${cell.unconfirmed ? "italic text-slate-500" : "font-medium text-slate-900"}`}
+            className={`text-sm ${
+              cell.missing
+                ? // NOT italic: italic already means "the CV reader hedged this", which is a claim
+                  // about confidence. This is a claim about existence, and conflating the two would
+                  // make a hole look like a guess.
+                  "text-phx-ink-faint"
+                : cell.unconfirmed
+                  ? "italic text-slate-500"
+                  : "font-medium text-slate-900"
+            }`}
             // Every value here is free text somebody typed, and some of it is Arabic — the longest
             // expected-salary answer in production is a list of governorates in Arabic. House style
             // for SINGLE-language free text is block-level `dir="auto"`: it reads the first strong
