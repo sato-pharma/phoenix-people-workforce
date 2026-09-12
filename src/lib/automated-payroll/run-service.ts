@@ -771,12 +771,6 @@ export async function confirmStep(
   if (MODULE_SOURCED_STEP_KEYS.includes(stepKey)) {
     summary[RECOMMENDED_AT_CONFIRM_KEY] = snapshotRecommendations(rows);
   }
-  // WHAT THE MODULE WAS PROPOSING AT THIS MOMENT, for the steps it feeds.
-  //
-  // Confirming copies the module's figure onto the run's own row, and the engine reads that row
-  // from here on. Without a record of what was proposed at the time, a later check cannot tell a
-  // figure somebody deliberately overrode from one the module has since changed — see
-  // module-drift.ts. Stored in the step state's existing jsonb summary, so it costs no schema.
 
   const state = await upsertStepState({
     runId,
