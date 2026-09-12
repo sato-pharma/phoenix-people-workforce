@@ -247,6 +247,10 @@ function SummaryTab({
           extraction={extraction}
           frame="flat"
           screeningQuestions={screeningQuestions}
+          // The degree rule, gender, age and military service — printed for EVERY candidate, with
+          // "not on file" where nothing is known. These are the four the owner opened all 17 CVs to
+          // find while screening one vacant seat, and screening is the screen that needs them.
+          showScreeningChecks
           // Already the section above. Printing them inside the snapshot too would put the same
           // answers in this panel twice.
           showWhatsAppAnswers={false}
