@@ -315,9 +315,15 @@ export function stripDateRange(line: string): string {
 
 /** Whether `haystack` contains `needle` as a WHOLE word/phrase, not as part of a longer one. */
 export function containsPhrase(haystack: string, needle: string): boolean {
+  return indexOfPhrase(haystack, needle) >= 0;
+}
+
+/** As containsPhrase, but the string INDEX of the match (or -1) — for picking between several hits. */
+export function indexOfPhrase(haystack: string, needle: string): number {
   const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   // \b does not work against Arabic, so the boundary is "not a letter/digit on either side".
-  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "iu").test(haystack);
+  const match = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "iu").exec(haystack);
+  return match ? match.index : -1;
 }
 
 /**
