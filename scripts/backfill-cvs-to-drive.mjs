@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Backfill every stored CV into the owner's Google Drive, filed by region and area.
+// Backfill every stored CV into the owner's Google Drive cabinet, filed by the channel it arrived on
+// and by the applicant's own answers (see src/lib/recruitment/drive-cabinet-folders.ts).
 //
 //   node scripts/backfill-cvs-to-drive.mjs --dry-run     print the tree it WOULD build, write nothing
 //   node scripts/backfill-cvs-to-drive.mjs               upload for real, resumable
@@ -40,7 +41,11 @@ import { shouldMirrorCopy } from "@/lib/recruitment/cv-duplicate-copies";
 import { CABINET_ROOT_NAME, cabinetPathFor } from "@/lib/recruitment/drive-cabinet-folders";
 import { sanitizeDriveSegment } from "@/lib/recruitment/drive-cv-folders";
 import { REMOVED_FROM_DRIVE_BY_HAND } from "@/lib/recruitment/drive-cv-mirror";
-import { ensureFolderPath } from "@/lib/recruitment/drive-tree";
+import { ensureFolderPath, moveDriveFile } from "@/lib/recruitment/drive-tree";
+
+// Where each CV ARRIVED and whether it is a CV at all — the two per-file facts the cabinet rule reads
+// besides the candidate. Shared with build-cv-cabinet.mjs, so both scripts load them one way.
+import { cabinetInputFor, loadCabinetFacts, requireImportSenders } from "./cv-cabinet-context.mjs";
 
 // ── env ──────────────────────────────────────────────────────────────────────────────────────────
 // Loaded by hand rather than via a dependency: this script has to run from a bare worktree, where
@@ -140,36 +145,6 @@ async function getDriveToken() {
   const data = JSON.parse(text);
   driveToken = { expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000, token: data.access_token };
   return driveToken.token;
-}
-
-/**
- * Move an existing Drive file into `parentId`, dropping every parent it currently has.
- *
- * Drive permits multi-parenting through the API, and that is exactly the state that makes a filing
- * cabinet lie - the same file appearing in two folders with two different stories about the person.
- * Returns false when the file is gone, so the caller can re-upload rather than patch a ghost.
- */
-async function moveInDrive({ driveFileId, parentId }) {
-  const token = await getDriveToken();
-  const id = encodeURIComponent(driveFileId);
-  const current = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?fields=parents`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (current.status === 404) return false;
-  if (!current.ok) throw new Error(`Drive lookup failed (${current.status}).`);
-  const parents = (await current.json()).parents ?? [];
-  if (parents.length === 1 && parents[0] === parentId) return true;
-
-  const params = new URLSearchParams({ addParents: parentId, fields: "id" });
-  if (parents.length > 0) params.set("removeParents", parents.join(","));
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?${params.toString()}`, {
-    body: "{}",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    method: "PATCH",
-  });
-  if (res.status === 404) return false;
-  if (!res.ok) throw new Error(`Drive move failed (${res.status}): ${await res.text()}`);
-  return true;
 }
 
 async function uploadToDrive({ bytes, mimeType, name, parentId }) {
@@ -276,12 +251,15 @@ function driveFileName(candidate, mimeType, originalName) {
  * `--verify` compares `drive_mirror_path` as a STRING: the string was right, the folder it named
  * was a different folder with the same name.
  */
-function cabinetDriveSegments(candidate, areaRegions) {
-  return cabinetPathFor(candidate, areaRegions);
+// `input` is the whole per-FILE question (see cv-cabinet-context.mjs), not the candidate alone: since
+// 2026-09-12 the cabinet files by the channel a CV arrived on and red-flags it by its own verdict,
+// intake record and siblings, none of which the candidate row carries.
+function cabinetDriveSegments(input, areaRegions) {
+  return cabinetPathFor(input, areaRegions);
 }
 
-function cabinetStoredPathKey(candidate, areaRegions) {
-  return [CABINET_ROOT_NAME, ...cabinetDriveSegments(candidate, areaRegions)].join("/");
+function cabinetStoredPathKey(input, areaRegions) {
+  return [CABINET_ROOT_NAME, ...cabinetDriveSegments(input, areaRegions)].join("/");
 }
 
 /**
@@ -337,8 +315,13 @@ async function main() {
   for (const row of areas) if (row.area_name && row.code_region_code) areaRegions[row.area_name] = row.code_region_code;
   console.log(`Area map: ${Object.keys(areaRegions).length} active areas.`);
 
+  // The auto-forward flag reads the same import-sender lists the intake does. Missing locally, they
+  // would turn the owner's own forwards into applicants, so the run refuses rather than disagreeing
+  // with the live mirror.
+  const importSenders = requireImportSenders();
+
   if (VERIFY) {
-    await verifyMirror(areaRegions);
+    await verifyMirror(areaRegions, importSenders);
     return;
   }
 
@@ -352,7 +335,7 @@ async function main() {
   for (let offset = 0; ; offset += PAGE) {
     // Paged with an explicit order: an unbounded PostgREST select silently stops at 1000 rows.
     const page = await rest(
-      `ats_files?select=id,candidate_id,file_name,mime_type,drive_file_id,drive_mirror_file_id,drive_mirror_path&kind=eq.cv&drive_file_id=not.is.null${mirrorClause}${failedClause}&order=created_at.asc&offset=${offset}&limit=${PAGE}`,
+      `ats_files?select=id,candidate_id,content_md5,created_at,file_name,mime_type,drive_file_id,drive_mirror_file_id,drive_mirror_path,drive_mirror_error&kind=eq.cv&drive_file_id=not.is.null${mirrorClause}${failedClause}&order=created_at.asc&offset=${offset}&limit=${PAGE}`,
     );
     rows.push(...page);
     if (page.length < PAGE) break;
@@ -361,11 +344,13 @@ async function main() {
   console.log(`${rows.length} CV file(s) not yet in Drive; processing ${todo.length}.\n`);
   if (todo.length === 0) return;
 
-  // Asked once for the whole run, never per file: the answer is a property of the candidate's rows,
-  // and `--refile` only ever touches rows that already HAVE a Drive file, so it needs none of this.
-  const siblings = REFILE ? new Map() : await loadCvSiblingsByCandidate(todo.map((file) => file.candidate_id));
+  // Asked once for the whole run, never per file: the answer is a property of the candidate's rows.
+  // `--refile` needs it as much as an upload does — a byte-identical copy ALREADY in Drive now moves
+  // to `Red flags/Duplicate copies`, and only the full sibling set can say which copy is the original.
+  const siblings = await loadCvSiblingsByCandidate(todo.map((file) => file.candidate_id));
+  const facts = await loadCabinetFacts(rest, todo.map((file) => file.id));
 
-  const counts = { duplicate: 0, failed: 0, moved: 0, skipped: 0, unchanged: 0, uploaded: 0 };
+  const counts = { duplicate: 0, failed: 0, moved: 0, removed: 0, skipped: 0, unchanged: 0, uploaded: 0 };
   const treePreview = new Map();
 
   for (const [index, file] of todo.entries()) {
@@ -376,7 +361,7 @@ async function main() {
         continue;
       }
       const candidates = await rest(
-        `ats_candidates?select=id,full_name,phone,whatsapp,status,applied_for_job_title,current_job_title,declared_background,faculty,sent_for_job_title,preferred_area_name,preferred_region_code,preferences_declared_at,folder_kind,folder_key,governorate,address,sent_for_region&id=eq.${file.candidate_id}`,
+        `ats_candidates?select=id,full_name,phone,whatsapp,applied_for_job_title,preferred_area_name,preferred_region_code,preferences_declared_at&id=eq.${file.candidate_id}`,
       );
       const candidate = candidates[0];
       if (!candidate) {
@@ -392,14 +377,27 @@ async function main() {
       }
 
       // UNROOTED for Drive, ROOTED for the database. See cabinetDriveSegments.
-      const segments = cabinetDriveSegments(candidate, areaRegions);
+      const input = cabinetInputFor({
+        candidate,
+        facts,
+        file,
+        importSenders,
+        siblings: siblings.get(file.candidate_id) ?? [file],
+      });
+      const segments = cabinetDriveSegments(input, areaRegions);
       const name = driveFileName(candidate, file.mime_type, file.file_name);
-      const key = cabinetStoredPathKey(candidate, areaRegions);
+      const key = cabinetStoredPathKey(input, areaRegions);
       if (!REFILE || file.drive_mirror_path !== key) {
         treePreview.set(key, (treePreview.get(key) ?? 0) + 1);
       }
 
       if (REFILE) {
+        // Binned in Drive by a person. Left exactly where it is: re-filing it would overrule a
+        // deliberate deletion, the same reason the live mirror keeps its hands off it.
+        if (file.drive_mirror_error === REMOVED_FROM_DRIVE_BY_HAND) {
+          counts.removed += 1;
+          continue;
+        }
         // Already where it belongs. By far the commonest outcome on a second run, and the reason
         // this mode is safe to re-run: it is a no-op for everything it has already handled.
         if (file.drive_mirror_path === key) {
@@ -411,9 +409,22 @@ async function main() {
           if (counts.moved <= 15) console.log(`  ${position}  ${file.drive_mirror_path ?? "?"}  ->  ${key}`);
           continue;
         }
-        const parentId = await ensureFolderPath(segments);
-        const ok = await moveInDrive({ driveFileId: file.drive_mirror_file_id, parentId });
-        if (!ok) {
+        // The APP's move, not a local copy of it: it asks Drive whether the file was binned BEFORE it
+        // creates any folder, and drops every other parent so a CV never sits in two folders.
+        const moved = await moveDriveFile({ driveFileId: file.drive_mirror_file_id, path: segments });
+        if (moved === "trashed") {
+          await rest(`ats_files?id=eq.${file.id}`, {
+            body: JSON.stringify({
+              drive_mirror_at: new Date().toISOString(),
+              drive_mirror_error: REMOVED_FROM_DRIVE_BY_HAND,
+            }),
+            headers: { Prefer: "return=minimal" },
+            method: "PATCH",
+          });
+          counts.removed += 1;
+          continue;
+        }
+        if (moved === "missing") {
           // The owner moved or deleted it himself. Clear our claim so a later plain run re-uploads
           // it, rather than leaving a row pointing at a file that is not there.
           await rest(`ats_files?id=eq.${file.id}`, {
@@ -488,7 +499,8 @@ async function main() {
   }
   console.log(
     REFILE
-      ? `\n${DRY_RUN ? "Would move" : "Moved"}: ${counts.moved}   already correct: ${counts.unchanged}   skipped: ${counts.skipped}   failed: ${counts.failed}`
+      ? `\n${DRY_RUN ? "Would move" : "Moved"}: ${counts.moved}   already correct: ${counts.unchanged}`
+        + `   binned by hand, left alone: ${counts.removed}   skipped: ${counts.skipped}   failed: ${counts.failed}`
       : `\n${DRY_RUN ? "Would upload" : "Uploaded"}: ${counts.uploaded}   skipped: ${counts.skipped}`
         + `   re-sent copies left alone: ${counts.duplicate}   failed: ${counts.failed}`,
   );
@@ -511,7 +523,7 @@ async function main() {
  * would find the second. Printing that limit is the point: a check that quietly certifies what it
  * never looked at is worse than no check.
  */
-async function verifyMirror(areaRegions) {
+async function verifyMirror(areaRegions, importSenders) {
   const rows = [];
   const PAGE = 500;
   for (let offset = 0; ; offset += PAGE) {
@@ -527,13 +539,9 @@ async function verifyMirror(areaRegions) {
   // grows to several hundred, so the chunk size here is a correctness limit, not a tuning knob.
   const wanted = [...new Set(rows.map((f) => f.candidate_id).filter(Boolean))];
   const byId = new Map();
-  // `current_job_title` and `sent_for_job_title` are the two rungs of the cabinet's title ladder
-  // that the old tree never read. Omitting either silently drops a candidate to a lower rung, so
-  // the verifier would report a correctly filed CV as misfiled — the exact failure this fixes.
-  const SELECT =
-    "id,full_name,status,applied_for_job_title,current_job_title,declared_background,faculty,sent_for_job_title," +
-    "preferred_area_name,preferred_region_code," +
-    "preferences_declared_at,folder_kind,folder_key,governorate,address,sent_for_region";
+  // The four answers the cabinet files by. Omitting any one silently files an answered applicant
+  // shallower than the app did, so the verifier would call a correctly filed CV misfiled.
+  const SELECT = "id,full_name,applied_for_job_title,preferred_area_name,preferred_region_code,preferences_declared_at";
   for (let at = 0; at < wanted.length; at += 50) {
     const chunk = wanted.slice(at, at + 50);
     const page = await rest(`ats_candidates?select=${SELECT}&id=in.(${chunk.join(",")})`);
@@ -548,6 +556,9 @@ async function verifyMirror(areaRegions) {
     if (!siblings.has(file.candidate_id)) siblings.set(file.candidate_id, []);
     siblings.get(file.candidate_id).push(file);
   }
+
+  // Only mirrored rows are compared against a folder, so only they need the per-file facts.
+  const facts = await loadCabinetFacts(rest, rows.filter((file) => file.drive_mirror_file_id).map((file) => file.id));
 
   const stats = {
     duplicateCopy: 0,
@@ -575,12 +586,17 @@ async function verifyMirror(areaRegions) {
       continue;
     }
     stats.mirrored += 1;
+    // Binned by hand and left where it was on purpose — never "in the wrong folder".
+    if (file.drive_mirror_error === REMOVED_FROM_DRIVE_BY_HAND) continue;
     const candidate = file.candidate_id ? byId.get(file.candidate_id) : null;
     if (!candidate) {
       stats.orphanCandidate += 1;
       continue;
     }
-    const expected = cabinetStoredPathKey(candidate, areaRegions);
+    const expected = cabinetStoredPathKey(
+      cabinetInputFor({ candidate, facts, file, importSenders, siblings: siblings.get(file.candidate_id) ?? [file] }),
+      areaRegions,
+    );
     if (expected !== file.drive_mirror_path) {
       stats.misfiled += 1;
       const key = `${file.drive_mirror_path || "(nowhere)"}  ->  ${expected}`;

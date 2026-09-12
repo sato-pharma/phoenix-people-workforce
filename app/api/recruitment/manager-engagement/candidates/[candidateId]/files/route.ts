@@ -4,6 +4,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import {
   canViewManagerCvEngagement,
+  canViewManagerEngagementCandidate,
   listManagerEngagementCandidateFiles,
 } from "@/lib/recruitment/manager-cv-engagement";
 
@@ -25,6 +26,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ cand
       );
     }
     const { candidateId } = await params;
+    // The report is scoped to the reader's line, so its preview must be too — see the helper.
+    if (!(await canViewManagerEngagementCandidate(access, candidateId))) {
+      return NextResponse.json(
+        { error: "forbidden", message: "This candidate is not in your line.", success: false },
+        { status: 403 },
+      );
+    }
     const files = await listManagerEngagementCandidateFiles(candidateId);
     return NextResponse.json({ success: true, files });
   } catch (error) {

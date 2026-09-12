@@ -153,6 +153,20 @@ const dedupedChildTables: readonly DedupedChildTable[] = [
     singular: "view marker",
     table: "ats_candidate_views",
   },
+  {
+    identityColumn: "id",
+    keyColumn: "folder_id",
+    onlyWhen: null,
+    // Unique on (folder_id, candidate_id) and, by design, no foreign key — a filing must never block a
+    // candidate delete. Unlisted, the duplicate's filings survived every merge as ghosts: the folder
+    // counted a CV nobody could open, and the survivor was missing from a folder the recruiter had put
+    // them in (audit, 2026-09-12). A folder BOTH records sit in keeps the survivor's row; the
+    // duplicate's is removed below.
+    orphansOnDelete: true,
+    plural: "folder filings",
+    singular: "folder filing",
+    table: "ats_cv_folder_items",
+  },
 ];
 
 /** One table whose rows may only be copied, never re-pointed. */

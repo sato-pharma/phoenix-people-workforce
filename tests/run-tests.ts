@@ -241,6 +241,7 @@ import {
   runDriveScriptAgreesWithAppTests,
   runDriveTrashedFileTests,
 } from "./drive-cabinet-folders.test.ts";
+import { runCvCabinetAuditFixTests } from "./cv-cabinet-audit-fixes.test.ts";
 import { runCandidateStatusRegressionGuardTests } from "./candidate-status-regression-guard.test.ts";
 import { runCvLifecycleFeedTests } from "./cv-lifecycle-feed.test.ts";
 import { runCvLifecycleShareLinksScreenTests } from "./cv-lifecycle-share-links-screen.test.ts";
@@ -2169,8 +2170,14 @@ await runTest(
   runDriveCvFolderTests,
 );
 await runTest(
-  "CV cabinet (position is classified not typed — 40 top-level folders collapse to 12 — and an identical re-send is never copied twice)",
+  "CV cabinet (filed by the channel a CV arrived on and the applicant's own answers, never the CV — "
+    + "auto-forwards, copies and non-CVs parked under Red flags)",
   runDriveCabinetFolderTests,
+);
+await runTest(
+  "CV folders and the report preview (an NSM opens only his own line's CVs, and a deleted or merged "
+    + "candidate leaves no ghost filing, past 1,000 filings too)",
+  runCvCabinetAuditFixTests,
 );
 await runTest(
   "Drive trashed-file detection (the bin is not a 404 — a binned CV must never be re-filed, and a "

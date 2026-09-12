@@ -7,12 +7,15 @@
 // a Drive outage must not fail an intake that has already captured the CV, which is the only part of
 // this flow that actually matters.
 //
-// THE SEQUENCE THIS IS BUILT AROUND. The applicant sends the CV first and answers the three
-// questions seconds-to-minutes later, on their own time or never. So:
+// THE SEQUENCE THIS IS BUILT AROUND. The applicant sends the CV first and answers the questions
+// seconds-to-minutes later, on their own time or never. So:
 //
-//   1. On intake, the CV is mirrored immediately into "Not yet classified".
-//   2. When the classification conversation completes, the same file is MOVED into its real folder.
-//   3. A CV whose sender never answers stays visible in the holding folder rather than nowhere.
+//   1. On intake, the CV is mirrored immediately into `<Channel>/Did not answer` — or straight into
+//      `Red flags` when it is an auto-forward, a duplicate copy, not a CV, or of unknown source.
+//   2. When the classification conversation completes, the same file is MOVED into
+//      `<Channel>/<Position>/<Region>/<Area>`, from the applicant's own answers.
+//   3. A CV whose sender never answers stays visible in `Did not answer` rather than being guessed
+//      into a folder from its contents. The rule itself lives in `drive-cabinet-folders.ts`.
 //
 // Measured on production 2026-09-03: 510 WhatsApp candidates, 207 of whom finished the conversation
 // and 98 of whom named both a region and an area. A design that waited for answers before filing
@@ -27,7 +30,14 @@ import {
 } from "@/lib/recruitment/candidate-folder-suggestion";
 import { inferCandidatePlacement } from "@/lib/recruitment/candidate-folder-inference";
 import { copyLabelsFor, shouldMirrorCopy, withCopyLabel } from "@/lib/recruitment/cv-duplicate-copies";
-import { CABINET_ROOT_NAME, cabinetPathFor } from "@/lib/recruitment/drive-cabinet-folders";
+import {
+  CABINET_ROOT_NAME,
+  cabinetImportSendersFromEnv,
+  cabinetPathFor,
+  earliestIntakeEvent,
+  latestCvVerdict,
+  type CabinetIntakeEvent,
+} from "@/lib/recruitment/drive-cabinet-folders";
 import {
   driveFileNameFor,
   driveFolderPathFor,
@@ -264,19 +274,6 @@ export async function mirrorCvToDrive(fileId: string): Promise<MirrorOutcome> {
       .eq("kind", "cv");
     if (siblingError) throw siblingError;
     const siblings = (siblingRows ?? []) as Array<{ content_md5: string | null; created_at: string | null; id: string }>;
-    if (!shouldMirrorCopy(fileId, siblings)) return "skipped";
-
-    const areaRegions = await loadAreaRegionMap();
-    const { fileName: baseFileName } = placementFor(candidateRow as MirrorCandidateRow, areaRegions, row.mime_type);
-    // A candidate who sent TWO DIFFERENT CVs gets both, and until now both wore the same name in the
-    // same folder. The label separates them; a candidate with one CV gets an empty label and the
-    // plain name. Owner's request, 2026-09-07: "add the date to the duplicate names".
-    const fileName = withCopyLabel(baseFileName, copyLabelsFor(siblings).get(fileId) ?? "");
-    // THE CABINET, NOT THE OLD TREE. `Phoenix CVs` is frozen at the owner's instruction ("don't fix.
-    // Create a new folder and reroute"), and `ensureRootFolder` resolves the cabinet, so this path
-    // is created beneath it. `placementFor` is still the source of the FILE NAME, which the two
-    // trees share — only the folders differ.
-    const path = cabinetPathFor(candidateRow as MirrorCandidateRow, areaRegions);
 
     // THE STORED PATH IS ROOTED, AND THAT PREFIX IS THE WHOLE CUTOVER SAFETY PROPERTY.
     //
@@ -289,8 +286,55 @@ export async function mirrorCvToDrive(fileId: string): Promise<MirrorOutcome> {
     //
     // Prefixed, a legacy row is unmistakable and is treated as "not mirrored HERE": a fresh copy is
     // made in the cabinet and the file in the old tree is never touched.
-    const pathKey = [CABINET_ROOT_NAME, ...path].join("/");
     const recordedInCabinet = String(row.drive_mirror_path ?? "").startsWith(`${CABINET_ROOT_NAME}/`);
+
+    // A NEW re-send never reaches Drive. A copy that is ALREADY in the cabinet is not deleted and not
+    // skipped either: the path rule below sends it to `Red flags/Duplicate copies`, so the original is
+    // the only copy left in the channel folders. Measured 2026-09-12: 265 such copies in the cabinet.
+    const duplicate = !shouldMirrorCopy(fileId, siblings);
+    if (duplicate && !(row.drive_mirror_file_id && recordedInCabinet)) return "skipped";
+
+    // WHERE THE CV ARRIVED, AND WHETHER IT IS A CV AT ALL. The owner's rule files by channel and by
+    // the applicant's own answers — never by what the CV says — and parks anything that would mislead
+    // a recruiter under `Red flags`. Both facts belong to THIS file, not to the candidate: one person
+    // can write to the chatbot line and email careers@, and each CV goes where it actually arrived.
+    const { data: intakeRows, error: intakeError } = await supabase
+      .from("ats_cv_intake_events")
+      .select("channel, mailbox_label, sender_identifier, raw_metadata, created_at")
+      .eq("file_id", fileId)
+      .order("created_at", { ascending: true })
+      .limit(1);
+    if (intakeError) throw intakeError;
+    const { data: verdictRows, error: verdictError } = await supabase
+      .from("ats_candidate_cv_extractions")
+      .select("is_cv, created_at")
+      .eq("file_id", fileId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (verdictError) throw verdictError;
+
+    const areaRegions = await loadAreaRegionMap();
+    const { fileName: baseFileName } = placementFor(candidateRow as MirrorCandidateRow, areaRegions, row.mime_type);
+    // A candidate who sent TWO DIFFERENT CVs gets both, and until now both wore the same name in the
+    // same folder. The label separates them; a candidate with one CV gets an empty label and the
+    // plain name. Owner's request, 2026-09-07: "add the date to the duplicate names".
+    const fileName = withCopyLabel(baseFileName, copyLabelsFor(siblings).get(fileId) ?? "");
+    // THE CABINET, NOT THE OLD TREE. `Phoenix CVs` is frozen at the owner's instruction ("don't fix.
+    // Create a new folder and reroute"), and `ensureRootFolder` resolves the cabinet, so this path
+    // is created beneath it. `placementFor` is still the source of the FILE NAME, which the two
+    // trees share — only the folders differ.
+    const path = cabinetPathFor(
+      {
+        candidate: candidateRow as MirrorCandidateRow,
+        fileId,
+        importSenders: cabinetImportSendersFromEnv(process.env),
+        intake: earliestIntakeEvent((intakeRows ?? []) as CabinetIntakeEvent[]),
+        isCv: latestCvVerdict((verdictRows ?? []) as Array<{ created_at: string | null; is_cv: boolean | null }>),
+        siblings,
+      },
+      areaRegions,
+    );
+    const pathKey = [CABINET_ROOT_NAME, ...path].join("/");
 
     // Already in the cabinet: reconcile it. The folder may have changed, and so may the NAME.
     //

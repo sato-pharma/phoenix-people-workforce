@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Build the CV CABINET — the owner's second Drive tree, filed Position / Region / Area.
+// Build the CV CABINET — the owner's second Drive tree, filed by the channel each CV arrived on and by
+// the applicant's own answers (see src/lib/recruitment/drive-cabinet-folders.ts).
 //
 //   node scripts/build-cv-cabinet.mjs --dry-run    print the tree it WOULD build, write nothing
 //   node scripts/build-cv-cabinet.mjs              build it for real, resumable
@@ -39,6 +40,8 @@ import process from "node:process";
 import { chooseCvCopies } from "@/lib/recruitment/cv-duplicate-copies";
 import { CABINET_ROOT_NAME, cabinetPathFor } from "@/lib/recruitment/drive-cabinet-folders";
 import { driveFileNameFor, sanitizeDriveSegment } from "@/lib/recruitment/drive-cv-folders";
+
+import { cabinetInputFor, loadCabinetFacts, requireImportSenders } from "./cv-cabinet-context.mjs";
 
 // ── env ──────────────────────────────────────────────────────────────────────────────────────────
 function loadEnvFile(file) {
@@ -241,15 +244,9 @@ const CANDIDATE_FIELDS = [
   "phone",
   "whatsapp",
   "applied_for_job_title",
-  "current_job_title",
-  "sent_for_job_title",
   "preferred_area_name",
   "preferred_region_code",
-  "folder_kind",
-  "folder_key",
-  "governorate",
-  "address",
-  "sent_for_region",
+  "preferences_declared_at",
 ].join(",");
 
 async function pageAll(build) {
@@ -306,13 +303,19 @@ async function main() {
   keepers.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
   console.log(`Deduped: ${keepers.length} to file, ${suppressed} identical re-sends suppressed.\n`);
 
+  const importSenders = requireImportSenders();
+  const facts = await loadCabinetFacts(rest, keepers.map((file) => file.id));
+
   const ledger = fs.existsSync(LEDGER) ? JSON.parse(fs.readFileSync(LEDGER, "utf8")) : {};
   const tree = new Map();
   const todo = [];
   for (const file of keepers) {
     const candidate = candidates.get(file.candidate_id);
     if (!candidate) continue;
-    const segments = cabinetPathFor(candidate, areaRegions);
+    const segments = cabinetPathFor(
+      cabinetInputFor({ candidate, facts, file, importSenders, siblings: byCandidate.get(file.candidate_id) ?? [file] }),
+      areaRegions,
+    );
     const name = driveFileNameFor({
       candidateName: candidate.full_name,
       mimeType: file.mime_type,
@@ -334,7 +337,7 @@ async function main() {
     const position = key.split("/")[0];
     positions.set(position, (positions.get(position) ?? 0) + count);
   }
-  console.log(`\n=== TOP LEVEL (${positions.size} positions) ===`);
+  console.log(`\n=== TOP LEVEL (${positions.size} channel and red-flag folders) ===`);
   for (const [position, count] of [...positions.entries()].sort((a, b) => b[1] - a[1])) {
     console.log(`  ${String(count).padStart(4)}  ${position}`);
   }

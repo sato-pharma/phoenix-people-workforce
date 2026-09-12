@@ -1,53 +1,59 @@
-// Recruitment / ATS — where a CV goes in the CABINET, the owner's second Google Drive tree.
+// Recruitment / ATS — where a CV goes in the CABINET, the owner's Google Drive tree.
 //
-// WHY A SECOND TREE EXISTS AT ALL. The first one (`drive-cv-folders.ts`, root "Phoenix CVs") files
-// by CONFIDENCE first: a confirmed answer goes on the "Medical Representative" shelf, an inferred
-// one on "From the CV (not confirmed)", and the two never mix. That is honest and it is unusable at
-// this size — the owner, 2026-09-07: "currently I am lost. Many CVs, many the same folder, many
-// copies, and the CVs I can't reach everything."
+// THE RULE, IN THE OWNER'S WORDS (2026-09-12). "You will make every folder with every channel we
+// receive CVs from … any CV received on this WhatsApp, folder it in this WhatsApp folder. And don't
+// follow the data in the CV … Follow what they choose in the WhatsApp: the region and the area and
+// the position." And, added in the same conversation: "Anything that may disturb our work, that's a
+// red flag and that's separate. For example, the auto-forward."
 //
-// The reason is structural rather than cosmetic. A region exists in as many places as there are
-// shelves, so "Cairo" is three different folders and none of them is all the Cairo CVs. Measured
-// the same day: `From the CV (not confirmed)/Cairo` alone held 297 files for 192 people.
+// So the cabinet is CHANNEL FIRST and ANSWER DRIVEN:
 //
-// WHAT HE ASKED FOR, IN HIS WORDS: "the region have one folder. The area have one folder. The
-// position have one folder." Asked which way to nest them, he chose POSITION first. So:
+//     <Channel> / <Position> / <Region> / <Area>        an applicant who answered the questions
+//     <Channel> / Did not answer                        an applicant who never answered
+//     Red flags / <Flag>                                anything that would mislead a recruiter
 //
-//     <Position> / <Region> / <Area>
+// WHAT CHANGED FROM THE TREE THIS REPLACES. The previous cabinet (Position / Region / Area, built
+// 2026-09-07) filled every gap it could from the CV itself — the current job title, the degree, the
+// address, a governorate the extractor read. Measured on production 2026-09-12: of 783 CVs whose
+// sender never answered, 698 sat in a position folder and 666 in a region folder that the CV had
+// been GUESSED into, 53 of them under "Outside Egypt". The owner read that tree as "totally
+// misleading", and it was: a folder called "Cairo" held people who never said Cairo. Nothing here
+// reads the CV any more. A person who did not answer is filed as exactly that.
 //
-// and every level is optional from the bottom up — a candidate whose area nobody knows stops at the
-// region, and one who named neither stops at the position. Three levels, never four.
+// THE CHANNEL IS THE LINE THE CV ARRIVED ON, NOT THE PERSON. One applicant who wrote to the chatbot
+// line and also emailed careers@ has one CV in each channel folder, because that is where each one
+// actually arrived. Each WhatsApp number is its own folder, named by the number, so a third line the
+// company adds tomorrow opens its own folder with no code change. Email is one folder: careers@ and
+// hr@ are two inboxes of one channel, and the owner asked for folders per channel.
 //
-// NO GOVERNORATE RUNG. The first tree groups "Qena 1" and "Qena 2" under a "Qena" parent. That rung
-// is deliberately absent here: he asked for one folder per area, and the preview he chose showed
-// `Delta (1)/Gharbia 1 (Tanta)` with nothing between. A governorate typed by hand still resolves to
-// the parent NAME and becomes an area folder in its own right, so nothing is lost — "Qena" simply
-// sits beside "Qena 1" and "Qena 2" rather than above them.
+// RED FLAGS WIN, AND THE ORDER BETWEEN THEM IS DELIBERATE — a CV carries at most one, the first that
+// applies:
 //
-// THE OLD TREE IS FROZEN, NOT MIGRATED. Owner: "don't fix. Create a new folder and reroute."
-// `Phoenix CVs` keeps every file it has and is never written to again. This module never resolves a
-// path inside it and has no opinion about it.
+//   1. Not a CV          the extractor's verdict on this very file was "not a CV" (a certificate, an
+//                        ID card, a job posting). Nobody should open it looking for an applicant.
+//   2. Duplicate copies  a byte-identical re-send of a file this candidate already sent. The ORIGINAL
+//                        keeps its real folder; the copies are parked, never deleted.
+//   3. Auto-forwarded    a CV the company forwarded to itself — a bulk import, a sender on the import
+//                        list, or one of the company's own WhatsApp lines as the sender. The person
+//                        in the file never wrote to us, so an "answered" stamp on the record belongs
+//                        to somebody else's conversation. It stays here even if they answer later.
+//   4. Sent by a colleague  an email from a company address. Somebody inside passed it on.
+//   5. Source unknown    no intake record at all, or a WhatsApp record that never said which line.
 //
-// PURE — no database, no network, no React. The area→region grouping is handed in as a map, exactly
-// as in `drive-cv-folders.ts`, so the whole tree is unit-testable without either.
+// WHAT IS NOT A FLAG, ON PURPOSE. A rejected candidate's CV stays in its normal folder — rejection is
+// a recruiting decision the app already shows, and hiding the file would lose the history. And an
+// applicant who forwarded THEIR OWN CV from another chat is an applicant, not an auto-forward.
+//
+// PURE — no database, no network. The mirror and both Drive scripts hand in rows and read the
+// answer, so the running site and a one-off re-file can never disagree about where a CV belongs.
 
-import {
-  candidateFolderKindLabels,
-  candidateFolderLabel,
-  cleanFolderKey,
-  isCandidateFolderKind,
-} from "@/lib/recruitment/candidate-folder";
-import { canAutoFileBackground } from "@/lib/recruitment/candidate-background";
-import { inferCandidatePlacement } from "@/lib/recruitment/candidate-folder-inference";
-import { candidateRoleFamilyLabels, candidateRoleFamilyOrNull } from "@/lib/recruitment/candidate-role-family";
-import {
-  governorateFolderFromTypedArea,
-  readsAsAJobTitle,
-  regionFolderForArea,
-  regionFolderFromTypedArea,
-  sanitizeDriveSegment,
-  type AreaRegionMap,
-} from "@/lib/recruitment/drive-cv-folders";
+import { candidateFolderKindLabels } from "@/lib/recruitment/candidate-folder";
+import { candidateRegionLabels, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
+import { candidateRoleFamilyLabels, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
+import { shouldMirrorCopy, type DedupableCvRow } from "@/lib/recruitment/cv-duplicate-copies";
+import { regionFolderForArea, sanitizeDriveSegment, type AreaRegionMap } from "@/lib/recruitment/drive-cv-folders";
+import { isEmailImportSender, parseEmailImportSenders } from "@/lib/recruitment/inbound/email-message-parser";
+import { isWhatsAppImportSender, parseWhatsAppImportSenders } from "@/lib/recruitment/inbound/whatsapp-payload-parser";
 
 /**
  * The cabinet's root folder name.
@@ -57,198 +63,267 @@ import {
  */
 export const CABINET_ROOT_NAME = "Phoenix CV Cabinet";
 
-/** Level one when the record names no job title at all. 449 of 875 candidates on 2026-09-07. */
+/** careers@ and hr@ together — two inboxes of one channel. */
+export const EMAIL_CHANNEL_FOLDER = "Email";
+
+/** Under a channel, for a sender who never answered the questions. Nothing is guessed for them. */
+export const DID_NOT_ANSWER_FOLDER = "Did not answer";
+
+/** An applicant who answered but left the role question empty. */
 export const POSITION_NOT_STATED = "Position not stated";
 
-/** Level two when nothing on the record — stated, typed or inferred — names a place. */
-export const REGION_NOT_STATED = "Region not stated";
+/** A role typed under "Other", or the bare "Other" choice. The shelf name the app already uses. */
+export const OTHER_POSITIONS_FOLDER = candidateFolderKindLabels.other;
 
-/** Level two for a candidate living outside Egypt; the country then becomes the AREA folder. */
-export const OUTSIDE_EGYPT_REGION = "Outside Egypt";
+/**
+ * An area the applicant TYPED that is not one of the company's areas. One folder per region rather
+ * than one per spelling: "Qena north" must never sit beside the real "Qena 1" wearing an
+ * official-looking name for a territory nobody owns.
+ */
+export const TYPED_AREA_FOLDER = "Typed area (not a company area)";
 
-/** Everything this module needs about a candidate. Matches the mirror's own row shape exactly. */
-export type CabinetCandidateRow = {
-  applied_for_job_title: string | null;
-  address: string | null;
-  current_job_title: string | null;
-  declared_background: string | null;
-  faculty: string | null;
-  folder_key: string | null;
-  folder_kind: string | null;
-  governorate: string | null;
-  preferred_area_name: string | null;
-  preferred_region_code: string | null;
-  sent_for_job_title: string | null;
-  sent_for_region: string | null;
+/** The top-level folder every red-flagged CV sits under, apart from the channel folders. */
+export const RED_FLAGS_FOLDER = "Red flags";
+
+export const cabinetRedFlags = ["not_a_cv", "duplicate_copy", "auto_forward", "colleague", "source_unknown"] as const;
+export type CabinetRedFlag = (typeof cabinetRedFlags)[number];
+
+export const cabinetRedFlagLabels: Record<CabinetRedFlag, string> = {
+  auto_forward: "Auto-forwarded",
+  colleague: "Sent by a colleague",
+  duplicate_copy: "Duplicate copies",
+  not_a_cv: "Not a CV",
+  source_unknown: "Source unknown",
 };
 
-/**
- * The "other" family's folder, named for the shelf the app already calls it rather than the bare
- * "Other" the family table uses. A top-level folder called "Other" beside ten real job titles reads
- * as a mistake; "Other positions" reads as a decision.
- */
-const OTHER_POSITIONS_FOLDER = candidateFolderKindLabels.other;
+/** An email from this domain was passed on by somebody inside the company. */
+export const COMPANY_EMAIL_DOMAIN = "satopharma.com";
 
 /**
- * The position folder for one candidate — level one of the cabinet.
- *
- * THE TITLE IS CLASSIFIED, NEVER USED VERBATIM, and that is the whole difference between this tree
- * and the one it replaces. Filing on the typed string is what produced the old tree's long tail:
- * measured 2026-09-07, filing 58 distinct typed titles verbatim gives 40 top-level folders of which
- * 26 hold exactly ONE CV — "Office Coordinator (Sheraton, Cairo)" sitting beside "Office
- * Coordinator", "Upper Egypt District Sales Manager" beside "District Manager", seven separate HR
- * spellings, four separate accountant spellings. That is the owner's own complaint, "many the same
- * folder", reproduced in a new tree.
- *
- * So the position is resolved through `candidateRoleFamily`, the repository's existing job-title
- * classifier. It is not a new judgement invented here: it is rule-based rather than substring-based,
- * repairs the "manger" misspelling three candidates actually have, handles compound titles that name
- * two jobs at once, and its area/district boundary is the OWNER'S OWN correction from 2026-08-28.
- * Eleven families, each already carrying the company's own label. Reusing it means a candidate
- * cannot be a District Manager to the pool filter and something else in the cabinet.
- *
- * A folder a RECRUITER filed by hand still outranks the title — that decision is the point of the
- * shelf, and re-deriving it would quietly move a CV a human placed.
- *
- * WHY A GUESSED TITLE IS ALLOWED HERE AT ALL. `suggestFolderFromDeclaredAnswers` refuses to file on
- * `applied_for_job_title` unless the applicant actually answered, because three times in four the
- * value is the CV extractor's guess. The cabinet deliberately takes the guess: it is a browsing aid
- * over a frozen second copy, never the record of a decision, and a guessed folder that is wrong
- * costs a recruiter one wrong click while no folder at all costs him the CV. The owner chose this
- * layout knowing 449 candidates would land under `Position not stated`.
+ * The company's own WhatsApp lines. A CV whose SENDER is one of these was forwarded by us — measured
+ * 2026-09-12, 109 CVs reached the chatbot line from the advertised handset. Checked on top of the
+ * import-sender list because a missing environment variable must not quietly turn our own forwards
+ * into applicants.
  */
-export function cabinetPositionFolder(row: CabinetCandidateRow): string {
-  const filedKind = isCandidateFolderKind(row.folder_kind) ? row.folder_kind : null;
-  const filedKey = cleanFolderKey(row.folder_key);
-  if (filedKind && filedKind !== "other") return candidateFolderKindLabels[filedKind];
+export const COMPANY_WHATSAPP_LINES: readonly string[] = ["201159888247", "201098500699"];
 
-  // A hand-filed "other" carries a typed key, so it goes through the same classifier as a typed
-  // title — otherwise the one shelf a human chose is the one that fragments.
-  //
-  // THE LADDER, STRONGEST FIRST, AND IT ONLY EVER FILLS A GAP. `sent_for_job_title` is written when
-  // a recruiter actually puts someone forward, so it is an action rather than an extraction — the
-  // same reason `candidate-folder-inference.ts` calls `sent_for_region` "the strongest signal in
-  // this file". `applied_for_job_title` is what they said they want. `current_job_title` is what
-  // their CV says they do now, which is a DIFFERENT claim and therefore last.
-  //
-  // Reaching for the current title is safe precisely because it is last: a candidate who named a
-  // job they applied for never consults it, so this can never move anyone AWAY from the folder
-  // their own answer earned. It only fills in for someone who would otherwise be in
-  // `Position not stated`, and "the CV says medical rep" is a better answer than "we have no idea".
-  // Measured 2026-09-07: of 449 candidates with no applied-for title, 15 have a recruiter's
-  // `sent_for_job_title` and 338 a `current_job_title`, taking the unknown branch from 462 CVs —
-  // over half the cabinet — down to 109.
-  const title =
-    cleanFolderKey(filedKind === "other" ? filedKey : null) ??
-    cleanFolderKey(row.sent_for_job_title) ??
-    cleanFolderKey(row.applied_for_job_title) ??
-    cleanFolderKey(row.current_job_title);
+/** Everything this module needs about the candidate. Nothing the CV extractor wrote is on it. */
+export type CabinetCandidateRow = {
+  applied_for_job_title: string | null;
+  preferences_declared_at: string | null;
+  preferred_area_name: string | null;
+  preferred_region_code: string | null;
+};
 
-  // Blank is NOT "other": "we do not know this person's job" is a different claim from "their job is
-  // none of these", and only the second deserves a folder full of unrelated roles.
-  const family = candidateRoleFamilyOrNull(title);
+/** The intake record of the CV — `ats_cv_intake_events`, joined by `file_id`. */
+export type CabinetIntakeEvent = {
+  channel: string | null;
+  created_at?: string | null;
+  mailbox_label?: string | null;
+  raw_metadata: Record<string, unknown> | null;
+  sender_identifier: string | null;
+};
 
-  // ── THE LAST RUNG: THE DEGREE, WHEN NO TITLE SURVIVED ──────────────────────────────────────────
-  //
-  // A pharmacy, science, veterinary or dentistry graduate with no job title anywhere is the medical
-  // rep pool. Measured 2026-09-08: 118 CVs sat in `Position not stated`, and 32 of them had exactly
-  // that — a recognised, eligible degree and nothing else. Filing them under the shrug meant the one
-  // group Phoenix hires most of was the hardest group to find.
-  //
-  // OWNER'S CHOICE, ASKED AND ANSWERED. This asserts a position nobody stated, and the alternative
-  // offered was a truthful `Graduate — Pharmacy` shelf that claims only what is known. He chose this
-  // one: the cabinet is where a recruiter LOOKS, and a science graduate with no title is looked for
-  // beside the reps. Recorded because the objection is real and a later reader will raise it again.
-  //
-  // LAST, so it can only ever fill a gap. Any title that resolves to a family — including `other` —
-  // is reached first, so this can never move somebody away from a folder their own words earned.
-  //
-  // THE GATE IS THE APP'S OWN. `canAutoFileBackground` already decides which degrees may be acted on
-  // unattended, and it refuses paramedical and unrecognised ones. Of the 118, it cleared 32 and
-  // declined 86 — 25 paramedical, 61 unreadable. Re-deriving that judgement here would be a second
-  // copy of a rule that has already been argued out once.
-  if (!family && canAutoFileBackground({ declaredBackground: row.declared_background, faculty: row.faculty })) {
-    return candidateRoleFamilyLabels.medical_rep;
-  }
+export type CabinetImportSenders = {
+  email: readonly string[];
+  whatsapp: readonly string[];
+};
 
-  if (!family) return POSITION_NOT_STATED;
+/** One CV file and everything that decides its folder. */
+export type CabinetFileInput = {
+  candidate: CabinetCandidateRow;
+  fileId: string;
+  importSenders?: CabinetImportSenders | null;
+  intake: CabinetIntakeEvent | null;
+  /** The latest extraction's verdict for THIS file. `null` means never judged, never "not a CV". */
+  isCv: boolean | null;
+  /** Every CV row the candidate has, this one included — the duplicate rule needs all of them. */
+  siblings: readonly DedupableCvRow[];
+};
 
-  // A job title that is really a WhatsApp message never becomes a folder name — the measured case is
-  // "بخصوص الإعلان دا" ("regarding this advertisement"), typed into the title box and already a
-  // folder in the old tree. The classifier cannot catch it because it is a valid-looking string that
-  // matches no family, so the readability test still guards the one place it could surface.
-  if (family === "other") {
-    return title && readsAsAJobTitle(title) ? OTHER_POSITIONS_FOLDER : POSITION_NOT_STATED;
-  }
-  return candidateRoleFamilyLabels[family];
+function clean(value: unknown): string | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const text = String(value).replace(/\s+/g, " ").trim();
+  return text || null;
+}
+
+function isTrue(value: unknown): boolean {
+  return value === true || String(value ?? "").trim().toLowerCase() === "true";
+}
+
+function lower(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+/** The two import-sender lists, read from the same variables the intake reads them from. */
+export function cabinetImportSendersFromEnv(env: Record<string, string | undefined>): CabinetImportSenders {
+  return {
+    email: parseEmailImportSenders(env.RECRUITMENT_EMAIL_IMPORT_SENDERS),
+    whatsapp: parseWhatsAppImportSenders(env.RECRUITMENT_WHATSAPP_IMPORT_SENDERS),
+  };
 }
 
 /**
- * The region and area folders for one candidate — levels two and three.
+ * The folder for one WhatsApp line, named by its local number: `201098500699` → `WhatsApp 01098500699`.
  *
- * Resolution runs strongest-signal-first and stops at the first answer, so a stated area is never
- * overridden by an inference drawn from the same record.
+ * Named by the NUMBER rather than by a nickname, because the number is what the owner advertises and
+ * what an applicant typed — and because a new line then files itself with nothing to configure.
+ * A foreign number keeps its international form rather than being forced into Egypt's.
+ */
+export function whatsappLineFolderName(displayNumber: unknown): string | null {
+  const digits = String(displayNumber ?? "").replace(/\D/g, "");
+  if (digits.length < 8) return null;
+  const local = digits.startsWith("20") && digits.length === 12 ? `0${digits.slice(2)}` : `+${digits}`;
+  return `WhatsApp ${local}`;
+}
+
+/** The channel folder a CV arrived through, or null when its record never said. */
+export function cabinetChannelFolder(intake: CabinetIntakeEvent | null): string | null {
+  if (!intake) return null;
+  const channel = lower(intake.channel);
+  if (channel === "email") return EMAIL_CHANNEL_FOLDER;
+  if (channel === "whatsapp") return whatsappLineFolderName(intake.raw_metadata?.deliveredToDisplayNumber);
+  return null;
+}
+
+/** Whether the company forwarded this CV to itself. See the header for why it outranks an answer. */
+export function isAutoForwardedCv(intake: CabinetIntakeEvent | null, importSenders?: CabinetImportSenders | null): boolean {
+  if (!intake) return false;
+  const meta = intake.raw_metadata ?? {};
+  if (isTrue(meta.bulkImport)) return true;
+  const channel = lower(intake.channel);
+  if (channel === "whatsapp") {
+    const sender = clean(intake.sender_identifier) ?? clean(meta.wa_id);
+    if (!sender) return false;
+    return (
+      isWhatsAppImportSender(sender, importSenders?.whatsapp ?? []) ||
+      isWhatsAppImportSender(sender, COMPANY_WHATSAPP_LINES)
+    );
+  }
+  if (channel === "email") {
+    return isEmailImportSender(clean(intake.sender_identifier), importSenders?.email ?? []);
+  }
+  return false;
+}
+
+/** Whether an email came from a company address. */
+export function isColleagueEmail(intake: CabinetIntakeEvent | null): boolean {
+  if (!intake || lower(intake.channel) !== "email") return false;
+  const sender = lower(intake.sender_identifier);
+  const at = sender.lastIndexOf("@");
+  if (at <= 0) return false;
+  const domain = sender.slice(at + 1);
+  return domain === COMPANY_EMAIL_DOMAIN || domain.endsWith(`.${COMPANY_EMAIL_DOMAIN}`);
+}
+
+/** The one red flag a CV carries, strongest first, or null for a clean CV. */
+export function cabinetRedFlagFor(input: CabinetFileInput): CabinetRedFlag | null {
+  if (input.isCv === false) return "not_a_cv";
+  // Only a sibling list that actually CONTAINS this file can call it a copy. An empty or partial list
+  // would make `shouldMirrorCopy` answer "not kept" for a file it never saw, and park an original.
+  if (input.siblings.some((row) => row.id === input.fileId) && !shouldMirrorCopy(input.fileId, input.siblings)) {
+    return "duplicate_copy";
+  }
+  if (isAutoForwardedCv(input.intake, input.importSenders)) return "auto_forward";
+  if (isColleagueEmail(input.intake)) return "colleague";
+  if (!cabinetChannelFolder(input.intake)) return "source_unknown";
+  return null;
+}
+
+const MENU_LABEL_BY_KEY = new Map<string, string>(
+  (Object.entries(candidateRoleFamilyLabels) as Array<[CandidateRoleFamily, string]>)
+    .filter(([family]) => family !== "other")
+    .map(([, label]) => [label.toLowerCase(), label]),
+);
+
+/**
+ * The position folder for an applicant who answered: the role they TAPPED, verbatim.
  *
- * `region` is always a string; `area` is null whenever nothing names one, and the caller then files
- * one level shallower rather than inventing a folder.
+ * NOT classified. The previous cabinet ran every title through the job-title classifier, which is
+ * right for a CV's free text and wrong here: a tapped menu row is already the company's own label,
+ * and a typed "Other" answer is the applicant's own words, which the owner asked us to follow rather
+ * than reinterpret. So a label matches case-insensitively (one live record says "Office coordinator")
+ * and anything else is "Other positions".
+ */
+export function cabinetPositionFolder(candidate: CabinetCandidateRow): string {
+  const title = clean(candidate.applied_for_job_title);
+  if (!title) return POSITION_NOT_STATED;
+  return MENU_LABEL_BY_KEY.get(title.toLowerCase()) ?? OTHER_POSITIONS_FOLDER;
+}
+
+function companyAreaName(typed: string, areaRegions: AreaRegionMap): string | null {
+  if (areaRegions[typed]) return typed;
+  const wanted = typed.toLowerCase();
+  return Object.keys(areaRegions).find((area) => area.toLowerCase() === wanted) ?? null;
+}
+
+/**
+ * The region and area folders for an applicant who answered.
+ *
+ * The REGION is the one they chose. Only when they chose none and named a company area is the region
+ * taken from that area — through `regionFolderForArea`, which applies the recruitment Delta (3)
+ * override rather than the raw sales region. With no region at all the path stops at the position:
+ * a region folder they never chose is exactly the guess this tree exists to stop making.
  */
 export function cabinetPlaceFolders(
-  row: CabinetCandidateRow,
+  candidate: CabinetCandidateRow,
   areaRegions: AreaRegionMap,
-): { region: string; area: string | null } {
-  const statedArea = cleanFolderKey(row.preferred_area_name);
-  const statedRegion = cleanFolderKey(row.preferred_region_code);
-
-  // 1. A stated AREA is the strongest thing here: it names both rungs at once.
-  if (statedArea) {
-    const region = regionFolderForArea(statedArea, areaRegions);
-    // Routed through `regionFolderForArea`, which applies the recruitment Delta (3) override rather
-    // than the raw sales `code_region_code`. Reading the column directly would file a Sharkia
-    // applicant under Delta (2) — the exact mis-file that override exists to prevent.
-    if (region) return { area: statedArea, region };
-
-    // Not one of the company's areas — almost always a governorate typed by hand. Their words never
-    // become a folder verbatim: "Qena north" would sit beside the real "Qena 1" and "Qena 2" wearing
-    // an official-looking name for a territory nobody owns. Resolve to what the company does own.
-    const typedRegion = regionFolderFromTypedArea(statedArea);
-    if (typedRegion) return { area: governorateFolderFromTypedArea(statedArea), region: typedRegion };
-  }
-
-  // 2. A stated REGION with no readable area — the District Manager case, and every applicant who
-  //    answered the region question and skipped the area one.
-  if (statedRegion) {
-    const label = candidateFolderLabel("district_manager", statedRegion);
-    if (label) return { area: null, region: label };
-  }
-
-  // 3. Nothing stated. Fall to the same inference the mirror uses. It answers a real placement or
-  //    null, and null genuinely means the record names nowhere — a fact, not a failure.
-  const placement = inferCandidatePlacement({
-    address: row.address,
-    governorate: row.governorate,
-    preferredRegionCode: row.preferred_region_code,
-    sentForRegion: row.sent_for_region,
-  });
-  if (!placement) return { area: null, region: REGION_NOT_STATED };
-
-  // A foreign country is not an Egyptian region, so it becomes the AREA under one shared region
-  // folder. That keeps the region level a list of the company's own eight and nothing else.
-  if (placement.basis === "outside-egypt") {
-    return { area: placement.label || null, region: OUTSIDE_EGYPT_REGION };
-  }
-  return { area: null, region: placement.label || REGION_NOT_STATED };
+): { area: string | null; region: string | null } {
+  const typedArea = clean(candidate.preferred_area_name);
+  const area = typedArea ? companyAreaName(typedArea, areaRegions) : null;
+  const code = clean(candidate.preferred_region_code)?.toUpperCase() ?? null;
+  const region = code
+    ? candidateRegionLabels[code as CandidateRegionCode] ?? code
+    : area
+      ? regionFolderForArea(area, areaRegions)
+      : null;
+  if (!region) return { area: null, region: null };
+  if (!typedArea) return { area: null, region };
+  return { area: area ?? TYPED_AREA_FOLDER, region };
 }
 
 /**
- * The full cabinet path for one CV: `[position, region]` or `[position, region, area]`.
+ * The full cabinet path for one CV, UNROOTED — `ensureFolderPath` roots it at the cabinet.
  *
- * Sanitized here as well as at the Drive layer, deliberately — this is the last point at which a
- * segment is still a domain value rather than a folder name, and a typed job title carrying a "/"
- * ("HR Generalist / HR Operations / Personnel & Payroll" is live in production) would otherwise read
- * as three folders in any path-shaped view of the tree.
+ * Sanitized here as well as at the Drive layer: a typed value carrying a "/" would otherwise read as
+ * two folders in any path-shaped view of the tree.
  */
-export function cabinetPathFor(row: CabinetCandidateRow, areaRegions: AreaRegionMap): string[] {
-  const { area, region } = cabinetPlaceFolders(row, areaRegions);
-  const segments = area ? [cabinetPositionFolder(row), region, area] : [cabinetPositionFolder(row), region];
+export function cabinetPathFor(input: CabinetFileInput, areaRegions: AreaRegionMap): string[] {
+  const flag = cabinetRedFlagFor(input);
+  let segments: string[];
+  if (flag) {
+    segments = [RED_FLAGS_FOLDER, cabinetRedFlagLabels[flag]];
+  } else {
+    // Not null: a CV with no channel is flagged "Source unknown" above.
+    const channel = cabinetChannelFolder(input.intake) as string;
+    if (!clean(input.candidate.preferences_declared_at)) {
+      segments = [channel, DID_NOT_ANSWER_FOLDER];
+    } else {
+      const { area, region } = cabinetPlaceFolders(input.candidate, areaRegions);
+      segments = [channel, cabinetPositionFolder(input.candidate), ...(region ? [region] : []), ...(area ? [area] : [])];
+    }
+  }
   return segments.map(sanitizeDriveSegment).filter(Boolean);
+}
+
+/** The FIRST intake record of a file — where it actually arrived. */
+export function earliestIntakeEvent<T extends CabinetIntakeEvent>(events: readonly T[]): T | null {
+  let first: T | null = null;
+  for (const event of events) {
+    if (!first || String(event.created_at ?? "") < String(first.created_at ?? "")) first = event;
+  }
+  return first;
+}
+
+/**
+ * The LATEST extraction's verdict on a file. Only an explicit `false` is "not a CV" — a null is an
+ * extraction that never judged, and treating it as a verdict would park real CVs.
+ */
+export function latestCvVerdict(rows: ReadonlyArray<{ created_at?: string | null; is_cv?: boolean | null }>): boolean | null {
+  let latest: { created_at?: string | null; is_cv?: boolean | null } | null = null;
+  for (const row of rows) {
+    if (!latest || String(row.created_at ?? "") > String(latest.created_at ?? "")) latest = row;
+  }
+  if (!latest) return null;
+  return latest.is_cv === false ? false : latest.is_cv === true ? true : null;
 }

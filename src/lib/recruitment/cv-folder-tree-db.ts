@@ -119,6 +119,31 @@ async function attachFolderCreatorNames(rows: CvFolderRow[]): Promise<void> {
   }
 }
 
+const FOLDER_ITEMS_PAGE = 1000;
+
+/**
+ * Every filing, newest first, PAGED. An unbounded PostgREST select stops at 1,000 rows with no
+ * marker, and past that a folder would silently lose its oldest members while those CVs reappeared
+ * in the main pool (audit, 2026-09-12). `id` breaks `filed_at` ties so no page repeats or skips a row.
+ */
+async function readAllFolderItems(
+  supabase: ReturnType<typeof recruitmentDb>,
+): Promise<{ data: Array<Record<string, unknown>>; error: unknown }> {
+  const data: Array<Record<string, unknown>> = [];
+  for (let from = 0; ; from += FOLDER_ITEMS_PAGE) {
+    const { data: page, error } = await supabase
+      .from("ats_cv_folder_items")
+      .select("id,folder_id,candidate_id,filed_at")
+      .order("filed_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + FOLDER_ITEMS_PAGE - 1);
+    if (error) return { data: [], error };
+    const rows = (page ?? []) as Array<Record<string, unknown>>;
+    data.push(...rows);
+    if (rows.length < FOLDER_ITEMS_PAGE) return { data, error: null };
+  }
+}
+
 /** The whole tree and its contents. Empty — never throwing — when the migration has not landed. */
 export async function loadCvFolderCabinet(options: { withNames?: boolean } = {}): Promise<CvFolderCabinet> {
   const supabase = recruitmentDb();
@@ -126,9 +151,7 @@ export async function loadCvFolderCabinet(options: { withNames?: boolean } = {})
 
   const [foldersResult, itemsResult] = await Promise.all([
     supabase.from("ats_cv_folders").select("id,parent_id,name,created_at,created_by_hr_id"),
-    supabase.from("ats_cv_folder_items").select("folder_id,candidate_id,filed_at").order("filed_at", {
-      ascending: false,
-    }),
+    readAllFolderItems(supabase),
   ]);
 
   if (foldersResult.error) {
@@ -139,7 +162,7 @@ export async function loadCvFolderCabinet(options: { withNames?: boolean } = {})
   // nothing in it rather than nothing at all. It cannot hide a CV either — an unreadable membership
   // set means `filedCandidateIds` is empty, so every candidate stays in the pool, which is the
   // direction that loses nobody.
-  const itemRows = itemsResult.error ? [] : ((itemsResult.data ?? []) as Array<Record<string, unknown>>);
+  const itemRows = itemsResult.error ? [] : itemsResult.data;
 
   const rows = ((foldersResult.data ?? []) as Array<Record<string, unknown>>).map(mapFolderRow);
   const members = new Map<string, string[]>();

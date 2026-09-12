@@ -484,10 +484,14 @@ async function attachFolderFilerNames(candidates: Candidate[]): Promise<void> {
 /**
  * Fill in which hand-built folders each CV sits in — the second way to be off the pool.
  *
- * ONE QUERY FOR THE WHOLE TABLE, not one per candidate and not an `.in()` over the pool's ids. The
- * membership table holds one short row per filing and the pool is read in full by every caller of
+ * THE WHOLE TABLE, not one query per candidate and not an `.in()` over the pool's ids. The membership
+ * table holds one short row per filing and the pool is read in full by every caller of
  * `listCandidates` anyway, so the whole table is both smaller than the id list would be in a URL and
  * immune to the `.in()` header limit entirely.
+ *
+ * PAGED, because an unbounded PostgREST select stops at 1,000 rows with no marker. Past that the
+ * 1,001st filing would silently not exist here, and its CV would reappear in the main pool while
+ * still sitting in its folder — a person counted twice, found by nobody (audit, 2026-09-12).
  *
  * BEST-EFFORT, and the failure direction is the one that matters: if this read fails, every
  * `cvFolderIds` stays empty, so every CV stays VISIBLE in the pool. The opposite failure — hiding
@@ -498,11 +502,22 @@ async function attachFolderFilerNames(candidates: Candidate[]): Promise<void> {
 async function attachCvFolderMemberships(candidates: Candidate[]): Promise<void> {
   if (candidates.length === 0) return;
   const supabase = recruitmentDb();
-  const { data, error } = await supabase.from("ats_cv_folder_items").select("folder_id,candidate_id");
-  if (error || !data) return;
+  const rows: Array<{ folder_id?: string | null; candidate_id?: string | null }> = [];
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("ats_cv_folder_items")
+      .select("id,folder_id,candidate_id")
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    // A failure part-way leaves every CV visible, never a half-read set that hides some of them.
+    if (error || !data) return;
+    rows.push(...(data as typeof rows));
+    if (data.length < PAGE) break;
+  }
 
   const byCandidate = new Map<string, string[]>();
-  for (const row of data as Array<{ folder_id?: string | null; candidate_id?: string | null }>) {
+  for (const row of rows) {
     const candidateId = String(row.candidate_id ?? "");
     const folderId = String(row.folder_id ?? "");
     if (!candidateId || !folderId) continue;
@@ -1858,6 +1873,12 @@ export async function deleteCandidate(access: AccessContext, id: string): Promis
   const candidate = await getCandidate(id);
   if (!candidate) throw new Error("Candidate not found.");
   const supabase = recruitmentDb();
+  // ats_cv_folder_items has NO foreign key, by design (a filing must never block this delete), so
+  // nothing else removes the filings. Left behind, a hand-built folder keeps counting a CV that no
+  // longer exists (audit, 2026-09-12). Removed FIRST: if the candidate delete below then fails, the
+  // worst case is a candidate who survives unfiled — back in the pool, visible — never a ghost.
+  const { error: filingError } = await supabase.from("ats_cv_folder_items").delete().eq("candidate_id", id);
+  if (filingError) throw filingError;
   const { error } = await supabase.from("ats_candidates").delete().eq("id", id);
   if (error) throw error;
 }
