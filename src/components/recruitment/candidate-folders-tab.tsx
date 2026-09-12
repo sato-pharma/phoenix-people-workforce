@@ -528,14 +528,22 @@ function DeclaredFilingsPanel({
           {/* A rejection is a settled decision, not an open question — see collectSuggestedFilings.
               Counted here rather than listed one row per person, which is what buried the 25 rows a
               recruiter could actually act on under 40 rows nobody can. */}
+          {/* BOTH SENTENCES WRAP, and for the reason recorded against the shelf description above on
+              2026-09-02 — the same bug, in the same file, one section down. Measured at 375px on
+              2026-09-12: held at `whitespace-nowrap` the rejected line laid out 415px wide inside a
+              351px box and pushed the WHOLE PAGE to a 440px scroll width, so every section on the
+              Folders tab scrolled sideways because of this one sentence. The fits-the-screen golden
+              rule supersedes the no-wrap habit here, and the ellipsis ban is untouched: nothing is
+              cut, the sentence simply takes a second line. The label, count and name spans around
+              them keep `whitespace-nowrap` — short, bounded, and not prose. */}
           {rejectedCount > 0 ? (
-            <p className="whitespace-nowrap text-xs font-medium text-slate-500">
+            <p className="text-xs font-medium text-slate-500">
               {rejectedCount} more already rejected — a rejection is a settled decision, not shown here.
             </p>
           ) : null}
           {skipped.length > 0 ? (
             <>
-              <p className="mt-1 whitespace-nowrap text-xs font-bold text-slate-600 first:mt-0">
+              <p className="mt-1 text-xs font-bold text-slate-600 first:mt-0">
                 {skipped.length} answered but cannot be placed
               </p>
               <ul className="mt-1 space-y-0.5">
