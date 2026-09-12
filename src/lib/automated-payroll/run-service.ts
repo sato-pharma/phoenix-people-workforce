@@ -26,6 +26,7 @@ import {
 import { assertHoldReasonsPresent, holdCandidatesFromStepRows } from "./hold-reason.ts";
 import { buildHoldReview, type HoldReview } from "./hold-review.ts";
 import { exclusionRefusal } from "./exclusion-guard.ts";
+import { assertNoTransitionInProgress, describeTransitionRefusal, TRANSITION_CLAIM_LOST } from "./transition-claim.ts";
 import { assertNoNegativeStepValues } from "./negative-values.ts";
 import {
   describePayrollDayCollisions,
@@ -75,13 +76,17 @@ import {
   type PayrollDataQualityReport,
 } from "./data-quality.ts";
 import {
+  describeUnexplainedDisappearances,
   diffPopulation,
+  unexplainedDisappearances,
   type PopulationDiff,
   type PreviousRosterEntry,
 } from "./population-diff.ts";
 import {
+  claimRunTransition,
   createRun,
   findActiveRun,
+  releaseRunTransition,
   findLatestRun,
   findPublishedRun,
   getRunById,
@@ -120,6 +125,7 @@ import type {
   MonthlySalaryRun,
   PayrollPeriod,
   ReconciliationTotals,
+  RunPhase,
   StepEditInput,
   StepImportCommit,
   StepImportPreview,
@@ -288,6 +294,43 @@ function assertActiveRun(run: MonthlySalaryRun): void {
   if (run.phase === "cancelled") throw new Error("Conflict: this run was cancelled.");
 }
 
+/**
+ * ONE TRANSITION AT A TIME (audit finding 50).
+ *
+ * Every phase change read the run, checked the phase here in code, did seconds of work, then wrote the
+ * new phase with no condition. Two overlapping requests both passed and the later writer won: a cancel
+ * landing while Part 2 confirm was still running was overwritten back to `ready`, publishable again,
+ * with the carry-forward ledger recorded against a run that had been cancelled.
+ *
+ * So a transition claims the run before its FIRST WRITE, in one statement that also re-checks the phase
+ * (phx_claim_automated_payroll_run_transition). Its writes and its phase write run under the claim; the
+ * phase write is conditioned on it and clears it; a failure part-way releases it; a claim left by a
+ * request that died lapses after 15 minutes. Step saves are refused while it is held.
+ *
+ * The read-only gates run BEFORE the claim on purpose: a validation refusal, the common failure, never
+ * holds the run, and a phase that moved underneath them is caught by the claim itself.
+ */
+async function claimTransition(runId: string, expected: RunPhase[], action: string): Promise<string> {
+  const token = await claimRunTransition(runId, expected, action);
+  if (token) return token;
+  throw new Error(describeTransitionRefusal(await getRunById(runId), expected));
+}
+
+/** Run a transition's writes under its claim, letting the claim go if they fail part-way. */
+async function whileClaimed<T>(runId: string, token: string, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    await releaseRunTransition(runId, token).catch((releaseError: unknown) => {
+      logError("Automated payroll: could not release a run transition after it failed", {
+        labels: { event: "automated_payroll_transition_release_failed", runId },
+        error: releaseError,
+      });
+    });
+    throw error;
+  }
+}
+
 // ---- Run lifecycle ----------------------------------------------------------
 
 /** Start a new run for a period, or resume the active one. */
@@ -396,14 +439,18 @@ export async function cancelRun(access: AccessContext, runId: string): Promise<M
   const run = await requireRun(runId);
   assertActiveRun(run);
 
-  // Undo this run's effect on the carry-forward ledger BEFORE marking it
-  // cancelled. A run whose Part 2 was confirmed has already marked previous
-  // months' overpayments as recovered — but a cancelled run pays nobody, so
-  // leaving that would silently forgive real money (the exact bug the ledger
-  // exists to prevent). See releaseCarryForwardForCancelledRun.
-  const ledger = await releaseCarryForwardForCancelledRun(runId);
-
-  const updated = await updateRun(runId, { phase: "cancelled" });
+  // One transition at a time (audit finding 50): see claimTransition.
+  const transition = await claimTransition(runId, ["part1", "part2", "ready"], "Cancelling this run");
+  const { ledger, updated } = await whileClaimed(runId, transition, async () => {
+    // Undo this run's effect on the carry-forward ledger BEFORE marking it
+    // cancelled. A run whose Part 2 was confirmed has already marked previous
+    // months' overpayments as recovered — but a cancelled run pays nobody, so
+    // leaving that would silently forgive real money (the exact bug the ledger
+    // exists to prevent). See releaseCarryForwardForCancelledRun.
+    const released = await releaseCarryForwardForCancelledRun(runId);
+    const cancelled = await updateRun(runId, { phase: "cancelled" }, { transitionToken: transition });
+    return { ledger: released, updated: cancelled };
+  });
   await writeAutomatedPayrollAudit({
     runId,
     actorHrId: actorId(access),
@@ -526,6 +573,9 @@ function assertStepPhaseAllowed(run: MonthlySalaryRun, stepKey: StepKey): void {
   if (phase === "part2" && run.phase === "part1") {
     throw new Error("Conflict: confirm Part 1 before editing Part 2 steps.");
   }
+
+  // Nor while a confirm, reopen, cancel or publish holds the run (audit finding 50).
+  assertNoTransitionInProgress(run);
 }
 
 /** Save inline/xlsx edits for a step (marks the step edited, not confirmed). */
@@ -921,12 +971,15 @@ export async function confirmPart1(
     settledInPart1: isSettledInPart1(member, lookupSource(sources, member.employee.hrId)),
     editedBy: actorId(access),
   }));
-  await upsertDraftRows(runId, patches);
-
-  const updated = await updateRun(runId, {
-    phase: "part2",
-    part1ConfirmedAt: nowIso(),
-    part1ConfirmedBy: actorId(access),
+  // The freeze and the phase write happen under one claim (audit finding 50): see claimTransition.
+  const transition = await claimTransition(runId, ["part1"], "Confirming Part 1");
+  const updated = await whileClaimed(runId, transition, async () => {
+    await upsertDraftRows(runId, patches);
+    return updateRun(
+      runId,
+      { phase: "part2", part1ConfirmedAt: nowIso(), part1ConfirmedBy: actorId(access) },
+      { transitionToken: transition },
+    );
   });
   await writeAutomatedPayrollAudit({
     runId,
@@ -1009,12 +1062,15 @@ export async function unconfirmPart1(access: AccessContext, runId: string): Prom
     daysWorked: null,
     editedBy: actorId(access),
   }));
-  await upsertDraftRows(runId, patches);
-
-  const updated = await updateRun(runId, {
-    phase: "part1",
-    part1ConfirmedAt: null,
-    part1ConfirmedBy: null,
+  // Under one claim with the phase write (audit finding 50): see claimTransition.
+  const transition = await claimTransition(runId, ["part2"], "Reopening Part 1");
+  const updated = await whileClaimed(runId, transition, async () => {
+    await upsertDraftRows(runId, patches);
+    return updateRun(
+      runId,
+      { phase: "part1", part1ConfirmedAt: null, part1ConfirmedBy: null },
+      { transitionToken: transition },
+    );
   });
   await writeAutomatedPayrollAudit({
     runId,
@@ -1054,12 +1110,16 @@ export async function unconfirmPart2(access: AccessContext, runId: string): Prom
     );
   }
 
-  const ledger = await releaseCarryForwardForCancelledRun(runId);
-
-  const updated = await updateRun(runId, {
-    phase: "part2",
-    part2ConfirmedAt: null,
-    part2ConfirmedBy: null,
+  // Under one claim with the phase write (audit finding 50): see claimTransition.
+  const transition = await claimTransition(runId, ["ready"], "Reopening Part 2");
+  const { ledger, updated } = await whileClaimed(runId, transition, async () => {
+    const released = await releaseCarryForwardForCancelledRun(runId);
+    const reopened = await updateRun(
+      runId,
+      { phase: "part2", part2ConfirmedAt: null, part2ConfirmedBy: null },
+      { transitionToken: transition },
+    );
+    return { ledger: released, updated: reopened };
   });
   await writeAutomatedPayrollAudit({
     runId,
@@ -1100,7 +1160,7 @@ async function readPart2ConfirmedTotals(runId: string): Promise<ConfirmedTotals 
 export async function confirmPart2(
   access: AccessContext,
   runId: string,
-  options: { acknowledgeOverpaid?: boolean; acknowledgeDataIssues?: boolean } = {},
+  options: { acknowledgeOverpaid?: boolean; acknowledgeDataIssues?: boolean; acknowledgePopulationDiff?: boolean } = {},
 ): Promise<MonthlySalaryRun> {
   const acknowledgeOverpaid = options.acknowledgeOverpaid === true;
   assertRealSessionForDecision(access, "confirm Part 2 of a payroll run");
@@ -1127,6 +1187,13 @@ export async function confirmPart2(
       sources: context.sources,
       draftRows: context.draftRows,
       acknowledged: options.acknowledgeDataIssues === true,
+    });
+    await assertPopulationDiffAcknowledged({
+      access,
+      run,
+      members: context.members,
+      draftRows: context.draftRows,
+      acknowledged: options.acknowledgePopulationDiff === true,
     });
   }
 
@@ -1235,16 +1302,16 @@ export async function confirmPart2(
   const carryForwardPendingRecovery = rows.filter(
     (entry) => entry.carriedForwardApplied > 0 && !entry.onHold && Boolean(entry.compact),
   ).length;
-  const carryForwardRecorded = await recordOverpaidCarryForward({
-    runId,
-    rows,
-    actorHrId: actorId(access),
-  });
-
-  const updated = await updateRun(runId, {
-    phase: "ready",
-    part2ConfirmedAt: nowIso(),
-    part2ConfirmedBy: actorId(access),
+  // Recorded and confirmed under one claim (audit finding 50): see claimTransition.
+  const transition = await claimTransition(runId, ["part2"], "Confirming Part 2");
+  const { carryForwardRecorded, updated } = await whileClaimed(runId, transition, async () => {
+    const recorded = await recordOverpaidCarryForward({ runId, rows, actorHrId: actorId(access) });
+    const confirmed = await updateRun(
+      runId,
+      { phase: "ready", part2ConfirmedAt: nowIso(), part2ConfirmedBy: actorId(access) },
+      { transitionToken: transition },
+    );
+    return { carryForwardRecorded: recorded, updated: confirmed };
   });
   await writeAutomatedPayrollAudit({
     runId,
@@ -1490,6 +1557,7 @@ export async function excludeEmployeeFromRun(
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertActiveRun(run);
+  assertNoTransitionInProgress(run);
   const compact = compactHrKey(hrId);
   if (!compact) throw new Error("Validation: a valid HR ID is required.");
   const trimmedReason = reason.trim();
@@ -1518,6 +1586,7 @@ export async function includeEmployeeInRun(access: AccessContext, runId: string,
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertActiveRun(run);
+  assertNoTransitionInProgress(run);
   const compact = compactHrKey(hrId);
   if (!compact) throw new Error("Validation: a valid HR ID is required.");
 
@@ -1697,57 +1766,82 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
     buildBankCoverage({ rows, nonEmployees: nonEmployeesForCoverage, scope }),
   );
 
-  const ownFileName = `automated-payroll:${runId}`;
-  const existing = await findSalaryBatchForPeriod(run.month, run.year);
-  let batchId: string;
+  // From the batch to the phase, under one claim (audit finding 50): see claimTransition. A cancel racing
+  // publish used to write `cancelled` over `published` and un-mark the debts it had just recovered.
+  const transition = await claimTransition(runId, ["ready"], "Publishing to payslips");
+  // What already landed, so a lost claim can say what exists instead of "nothing was written". Publish is
+  // the one transition that writes REAL MONEY before its phase write: by the time the run is marked, the
+  // salary records exist, the batch is approved and the carry-forward ledger is settled.
+  let batchAlreadyWritten: string | null = null;
+  const published = await whileClaimed(runId, transition, async () => {
+    const ownFileName = `automated-payroll:${runId}`;
+    const existing = await findSalaryBatchForPeriod(run.month, run.year);
+    let batchId: string;
 
-  if (existing) {
-    if (existing.fileName !== ownFileName) {
+    if (existing) {
+      if (existing.fileName !== ownFileName) {
+        throw new Error(
+          `Conflict: a payroll batch already exists for ${run.month}/${run.year} ("${existing.fileName}"). Resolve it in the existing payroll tools before publishing here.`,
+        );
+      }
+      // Our own batch from a previous partial publish — finalize it.
+      batchId = existing.id;
+      // Any non-approved leftover is finalised, not just an "uploaded" one, and the result is
+      // checked. Skipping this for every other status is what let a run be marked published over a
+      // batch nobody could see.
+      const status =
+        existing.status === "approved" || existing.status === "locked"
+          ? existing.status
+          : await finalizeApproved(batchId, actorId(access));
+      assertBatchApproved(status, batchId);
+    } else {
+      const created = await createSalaryBatch({
+        records: publishRows,
+        month: run.month,
+        year: run.year,
+        fileName: ownFileName,
+        uploadedBy: actorId(access),
+        validationWarnings: [],
+      });
+      batchId = created.batch.id;
+      assertBatchApproved(await finalizeApproved(batchId, actorId(access)), batchId);
+    }
+    batchAlreadyWritten = batchId;
+
+    // SETTLE THE CARRY-FORWARD LEDGER HERE, from the rows that were actually published. Held rows
+    // are excluded because no salary record was written for them, so their debt was collected from
+    // nobody. This used to happen at Part-2 confirm, which marked balances recovered against money
+    // that had not been written yet — see carry-forward.ts.
+    const carryForwardRecovered = await markCarryForwardApplied({
+      runId,
+      appliedCompacts: rows
+        .filter((entry) => entry.carriedForwardApplied > 0 && !entry.onHold)
+        .map((entry) => entry.compact)
+        .filter((compact): compact is string => Boolean(compact)),
+    });
+
+    const updated = await updateRun(
+      runId,
+      { phase: "published", publishedBatchId: batchId, publishedAt: nowIso(), publishedBy: actorId(access) },
+      { transitionToken: transition },
+    );
+    return { batchId, carryForwardRecovered, updated };
+  }).catch((publishError: unknown) => {
+    // A lost claim HERE is not "nothing happened": the payslips are live and the run is not marked.
+    // Saying otherwise invites the two moves that make it worse — re-publishing, or reopening Part 2 and
+    // releasing a carry-forward that was genuinely collected.
+    const message = publishError instanceof Error ? publishError.message : String(publishError);
+    if (message.includes(TRANSITION_CLAIM_LOST) && batchAlreadyWritten) {
       throw new Error(
-        `Conflict: a payroll batch already exists for ${run.month}/${run.year} ("${existing.fileName}"). Resolve it in the existing payroll tools before publishing here.`,
+        `Conflict: the payslips for this run WERE written — salary batch ${batchAlreadyWritten} is approved and ` +
+          "live, and the carry-forward ledger is settled — but the run could not be marked published because " +
+          "another action took it. Do NOT publish, reopen or cancel this run again: it and its batch now " +
+          "disagree, and someone has to reconcile them by hand.",
       );
     }
-    // Our own batch from a previous partial publish — finalize it.
-    batchId = existing.id;
-    // Any non-approved leftover is finalised, not just an "uploaded" one, and the result is
-    // checked. Skipping this for every other status is what let a run be marked published over a
-    // batch nobody could see.
-    const status =
-      existing.status === "approved" || existing.status === "locked"
-        ? existing.status
-        : await finalizeApproved(batchId, actorId(access));
-    assertBatchApproved(status, batchId);
-  } else {
-    const created = await createSalaryBatch({
-      records: publishRows,
-      month: run.month,
-      year: run.year,
-      fileName: ownFileName,
-      uploadedBy: actorId(access),
-      validationWarnings: [],
-    });
-    batchId = created.batch.id;
-    assertBatchApproved(await finalizeApproved(batchId, actorId(access)), batchId);
-  }
-
-  // SETTLE THE CARRY-FORWARD LEDGER HERE, from the rows that were actually published. Held rows
-  // are excluded because no salary record was written for them, so their debt was collected from
-  // nobody. This used to happen at Part-2 confirm, which marked balances recovered against money
-  // that had not been written yet — see carry-forward.ts.
-  const carryForwardRecovered = await markCarryForwardApplied({
-    runId,
-    appliedCompacts: rows
-      .filter((entry) => entry.carriedForwardApplied > 0 && !entry.onHold)
-      .map((entry) => entry.compact)
-      .filter((compact): compact is string => Boolean(compact)),
+    throw publishError;
   });
-
-  const updated = await updateRun(runId, {
-    phase: "published",
-    publishedBatchId: batchId,
-    publishedAt: nowIso(),
-    publishedBy: actorId(access),
-  });
+  const { batchId, carryForwardRecovered, updated } = published;
 
   // TELL THE EMPLOYEES. This is the notification the whole company receives, and this path never
   // sent it: it was a helper private to the OLD payroll module's route file, and Automated Payroll
@@ -1865,6 +1959,44 @@ async function assertPayrollDataAcknowledged(input: {
     actorHrId: actorId(input.access),
     action: "payroll_data_issues_acknowledged",
     detail: { employees: report.total, rows: report.rows },
+  });
+}
+
+/**
+ * Marker for the population gate at Part 2 confirm (audit finding 46). Same contract as the two above:
+ * the route turns it into a 409 the wizard prompts on.
+ */
+export const POPULATION_DIFF_ACK_REQUIRED = "[population-diff-acknowledgment-required]";
+
+/**
+ * THE POPULATION COMPARISON STOPS PART 2 UNTIL SOMEONE HAS LOOKED (audit finding 46).
+ *
+ * It was a banner and nothing more: a run that had silently dropped someone paid last month confirmed
+ * and published with the warning on screen. That is the shape of the 2026-07-25 notice-period bug, which
+ * surfaced only because the owner asked about one person by name.
+ *
+ * Acknowledgeable, never a hard block: a real departure with no resignation on file happens, and HR can
+ * accept it on the record. Someone HR excluded from this run, with a reason, is already explained and
+ * never asks. With no previous published month there is no baseline, and nothing asks.
+ */
+async function assertPopulationDiffAcknowledged(input: {
+  access: AccessContext;
+  run: MonthlySalaryRun;
+  members: PopulationMember[];
+  draftRows: DraftRow[];
+  acknowledged: boolean;
+}): Promise<void> {
+  const previous = await previousMonthRoster({ month: input.run.month, year: input.run.year });
+  const unexplained = unexplainedDisappearances(diffPopulation({ current: input.members, previous }), input.draftRows);
+  if (unexplained.length === 0) return;
+  if (!input.acknowledged) {
+    throw new Error(`Conflict: ${POPULATION_DIFF_ACK_REQUIRED} ${describeUnexplainedDisappearances(unexplained)}`);
+  }
+  await writeAutomatedPayrollAudit({
+    runId: input.run.id,
+    actorHrId: actorId(input.access),
+    action: "population_diff_acknowledged",
+    detail: { unexplained },
   });
 }
 

@@ -109,6 +109,17 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
   const [dataIssuePrompt, setDataIssuePrompt] = useState<
     { runId: string; part: "part1" | "part2"; message: string } | null
   >(null);
+  const [populationPrompt, setPopulationPrompt] = useState<{ runId: string; message: string } | null>(null);
+  /**
+   * The acknowledgements already given in this Part 2 attempt. Every retry sends all of them, so answering
+   * one gate can never withdraw the answer to another (audit finding 46): each button used to send only
+   * its own flag, and a month raising two gates looped between the two prompts.
+   */
+  const [part2Acks, setPart2Acks] = useState<{
+    acknowledgeOverpaid?: boolean;
+    acknowledgeDataIssues?: boolean;
+    acknowledgePopulationDiff?: boolean;
+  }>({});
   const [dataQuality, setDataQuality] = useState<PayrollDataQualityReport | null>(null);
   /** The names behind the data-quality banner — collapsed by default so the
    * headline stays a one-liner instead of a nine-name wall of red. */
@@ -199,6 +210,13 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       setPopulationDiff(null);
       setHoldReview(null);
       setDataQuality(null);
+      // Every acknowledgement dies with the reload that could have changed what it answered.
+      // Keeping them would let a LATER, different disappearance be accepted with no prompt —
+      // invisible, where the loop these acks fix was merely annoying.
+      setPart2Acks({});
+      setOverpaidPrompt(null);
+      setDataIssuePrompt(null);
+      setPopulationPrompt(null);
 
       // Load the population diff eagerly rather than behind a button: the bug
       // it guards against (someone silently vanishing from payroll) is invisible
@@ -308,11 +326,10 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
    * becomes payable truth. A split mismatch is NOT acknowledgeable — it means a
    * calculation bug and always hard-blocks via the normal error path.
    */
-  const confirmPart2WithOverpaidGate = async (
-    runId: string,
-    acknowledgeOverpaid = false,
-    acknowledgeDataIssues = false,
-  ) => {
+  const confirmPart2WithOverpaidGate = async (runId: string, acknowledged: typeof part2Acks = {}) => {
+    // Everything already acknowledged in this attempt goes again with this one (see part2Acks).
+    const acks = { ...part2Acks, ...acknowledged };
+    setPart2Acks(acks);
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -320,25 +337,43 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       const res = await fetch(`/api/automated-payroll/runs/${runId}/part2/confirm`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ acknowledgeOverpaid, acknowledgeDataIssues }),
+        body: JSON.stringify({
+          acknowledgeOverpaid: acks.acknowledgeOverpaid === true,
+          acknowledgeDataIssues: acks.acknowledgeDataIssues === true,
+          acknowledgePopulationDiff: acks.acknowledgePopulationDiff === true,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
+        // One prompt at a time: the gate the server raised now is the only one on screen.
+        setDataIssuePrompt(null);
+        setOverpaidPrompt(null);
+        setPopulationPrompt(null);
         if (data.requiresDataQualityAcknowledgment) {
           setDataIssuePrompt({ runId, part: "part2", message: String(data.error ?? "") });
+          return;
+        }
+        if (data.requiresPopulationDiffAcknowledgment) {
+          setPopulationPrompt({ runId, message: String(data.error ?? "") });
           return;
         }
         if (data.requiresOverpaidAcknowledgment) {
           setOverpaidPrompt({ runId, message: String(data.error ?? "") });
           return;
         }
+        setPart2Acks({});
         throw new Error(data.error ?? "Action failed.");
       }
+      setPart2Acks({});
       setOverpaidPrompt(null);
       setDataIssuePrompt(null);
+      setPopulationPrompt(null);
       setNotice("Part 2 confirmed. Finance roles notified.");
       await loadRun(month, year);
     } catch (actionError) {
+      // A transport failure (dropped connection, timeout, non-JSON body) answers nothing:
+      // the next attempt must ask every gate again.
+      setPart2Acks({});
       setError(actionError instanceof Error ? actionError.message : "Action failed.");
     } finally {
       setBusy(false);
@@ -910,13 +945,21 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 onClick={() =>
                   void (dataIssuePrompt.part === "part1"
                     ? confirmPart1WithDataGate(dataIssuePrompt.runId, true)
-                    : confirmPart2WithOverpaidGate(dataIssuePrompt.runId, false, true))
+                    : confirmPart2WithOverpaidGate(dataIssuePrompt.runId, { acknowledgeDataIssues: true }))
                 }
                 className="border border-amber-600 bg-amber-600 text-white hover:bg-amber-700"
               >
                 Acknowledge &amp; confirm {dataIssuePrompt.part === "part1" ? "Part 1" : "Part 2"}
               </Button>
-              <Button size="sm" variant="ghost" disabled={busy} onClick={() => setDataIssuePrompt(null)}>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  setDataIssuePrompt(null);
+                  setPart2Acks({});
+                }}
+              >
                 Cancel
               </Button>
             </div>
@@ -933,12 +976,50 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
               <Button
                 size="sm"
                 disabled={busy}
-                onClick={() => void confirmPart2WithOverpaidGate(overpaidPrompt.runId, true)}
+                onClick={() => void confirmPart2WithOverpaidGate(overpaidPrompt.runId, { acknowledgeOverpaid: true })}
                 className="border border-amber-600 bg-amber-600 text-white hover:bg-amber-700"
               >
                 Acknowledge &amp; confirm Part 2
               </Button>
-              <Button size="sm" variant="ghost" disabled={busy} onClick={() => setOverpaidPrompt(null)}>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  setOverpaidPrompt(null);
+                  setPart2Acks({});
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </AdminCallout>
+      ) : null}
+
+      {populationPrompt ? (
+        <AdminCallout tone="warning">
+          <div>
+            <div className="font-black">Someone paid last month is missing — your acknowledgment is required</div>
+            <p className="mt-1 text-xs">{populationPrompt.message}</p>
+            <div className="mt-2 flex gap-2">
+              <Button
+                size="sm"
+                disabled={busy}
+                onClick={() => void confirmPart2WithOverpaidGate(populationPrompt.runId, { acknowledgePopulationDiff: true })}
+                className="border border-amber-600 bg-amber-600 text-white hover:bg-amber-700"
+              >
+                Acknowledge &amp; confirm Part 2
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  setPopulationPrompt(null);
+                  setPart2Acks({});
+                }}
+              >
                 Cancel
               </Button>
             </div>
