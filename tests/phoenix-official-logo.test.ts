@@ -195,6 +195,44 @@ export async function runPhoenixOfficialLogoTests() {
   for (const retired of RETIRED) {
     assert.ok(!existsSync(`public/${retired}`), `public/${retired} is back — it is not the Phoenix logo, and it was removed so no session reaches for it again`);
   }
+  // ── The Sato Arabic mark carries no dots BELOW the line ─────────────────────────────────
+  // The owner, 2026-09-12: "you will find 2 point under س and another 2 under ا remove them". Four
+  // diamonds sat under the baseline of the calligraphy and came off by hand — 5,461 pixels, two
+  // connected components, nothing else touched.
+  //
+  // 🔴 THIS IS A PIXEL TEST BECAUSE THE FILE IS DERIVED. The mark was built from a source image
+  // by a recipe (trim, resize to 1100, luminance to alpha, flatten to the house blue, 4-colour
+  // palette), and re-running that recipe puts every one of these dots straight back. Nothing about
+  // the file name, its size or its hash would say so. The two boxes below are where they were.
+  const MARK = "public/brand/sato-pharma-arabic-on-light.png";
+  // One box per dot, 25px square on the dot's own centre. MEASURED: each was 625 of 625 cells solid
+  // ink before the edit and 0 after. A box round the whole PAIR cannot be used — a real stroke clips
+  // the corner of the left pair's bounding box, so that test could never read zero.
+  const DOTS = [
+    { name: "the right dot under the right group", cx: 984, cy: 786 },
+    { name: "the left dot under the right group", cx: 937, cy: 786 },
+    { name: "the right dot under the alif", cx: 430, cy: 767 },
+    { name: "the left dot under the alif", cx: 384, cy: 771 },
+  ];
+  {
+    const { data, info } = await sharp(MARK).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    assert.equal(info.width, 1100, "the boxes below are measured in this artwork's own pixels, so its size is part of the check");
+    assert.equal(info.height, 813, "the same — a resized mark would move the boxes off the dots and pass while still wearing them");
+    const inkAt = (x: number, y: number) => data[(y * info.width + x) * info.channels + 3] > 8;
+    let total = 0;
+    for (let y = 0; y < info.height; y++) for (let x = 0; x < info.width; x++) if (inkAt(x, y)) total++;
+    assert.ok(total > 150_000, `the mark has almost no ink in it (${total} px) — an empty file would pass every box below`);
+    for (const dot of DOTS) {
+      let found = 0;
+      for (let y = dot.cy - 12; y <= dot.cy + 12; y++) for (let x = dot.cx - 12; x <= dot.cx + 12; x++) if (inkAt(x, y)) found++;
+      assert.equal(
+        found, 0,
+        `${dot.name} is back on the Arabic mark (${found} px of ink where it stood) — the owner had it removed, `
+          + "and rebuilding the file from its source image restores it silently",
+      );
+    }
+  }
+
   const pointers: string[] = [];
   for (const file of ["src", "app", "public", "lib", "scripts", "supabase"].flatMap(textFilesUnder)) {
     const text = readFileSync(file, "utf8");

@@ -26,10 +26,34 @@
 //     turning was the old identity's answer to "make it look premium" and it read as fussy at print
 //     size next to a name. The corners are four right angles and nothing else.
 //
-//   · NOT THE ARABIC WATERMARK. The reference sets the company's name very large and very faint
-//     behind its text, and it went in here for a day. The owner took it out on 2026-09-12: on a
-//     sheet whose payload is one enormous figure it is a second thing in the same space, and the
-//     eye reads it as a printing fault rather than as a watermark. Do not put it back.
+//   · THE ARABIC MARK, IN THE FOOT, WHERE THE SOURCE LINE USED TO BE. Sato Pharma's name in
+//     Arabic calligraphy, set in the bottom-left corner as the third member of the record foot,
+//     beside the sheet number and the document identity. The owner put it there on 2026-09-12 --
+//     "you will put in the left corner the logo ... the Arabic one" -- and struck the Source block
+//     in the same breath as irrelevant. Four earlier placements came out, and each is worth keeping:
+//
+//     🔴 NOT A CENTRED WASH BEHIND THE FIGURE. On a sheet whose payload is one enormous
+//     number, a second large thing in the same space reads as a printing fault, not a watermark.
+//
+//     🔴 AND NOT BLED OFF THE RIGHT EDGE, however exactly that copies the certificate the
+//     owner handed over. ARABIC READS RIGHT TO LEFT, so the paper ate the FIRST half of the name and
+//     left the second standing alone -- the company name gone from the company's own document, with
+//     no error anywhere. His words: "no you croped sato the company name".
+//
+//     🔴 AND NOT LOW AND CENTRED UNDER THE GAUGE, which spread it behind the gauge and its
+//     labels: a third thing in the reading path rather than a decoration beside it.
+//
+//     🔴 AND NOT A PALE WATERMARK OVER THE LEFT SHOULDER OF THE FIGURE. Every one of these
+//     is the same mistake -- putting the mark where the page is already saying something.
+//
+//     In the foot it is not a watermark at all. It is the issuer signing the bottom of the page, at
+//     full ink, in the corner a reader reaches last, on EVERY sheet including the ranking: a corner
+//     logo does not make a table of names harder to read, which a wash behind one did.
+//
+//     🔴 IT IS SIZED BY HEIGHT, AND THAT HEIGHT MAY NOT GROW THE FOOT. ROW_AREA_FIRST and
+//     ROW_AREA_LATER are MEASURED constants that already pay for a footer of the old height, and an
+//     overrun does not error -- it pushes the foot off the bottom of the paper and slices the last
+//     row in half. The Source block it replaced stood 17mm; this one is capped below that.
 //
 // 🔴 THIS TAKES THE SHEET OUT OF THE HOUSE INK RULE, DELIBERATELY. SATO-DIS-2026-01 allows no filled
 // areas except the 6% zebra row, and the crest band, the plinth and the stat band are all fills. The
@@ -112,6 +136,36 @@ function houseMark(onDark: boolean): string {
   return html;
 }
 
+/**
+ * The Arabic logotype, painted and flattened ahead of time.
+ *
+ * The file is a PNG whose only colour IS the house deep blue and whose whiteness was turned into
+ * transparency when it was built, so the sheet sets no colour at all and the PDF gets one image
+ * object. A CSS `filter` or a `mask-image` would have done the same tinting at render time and cost
+ * a composited layer per page, which is the trap at the head of this file. Transparency rather than
+ * white is what lets it sit over the foot's hairline without a box around it.
+ *
+ * 🔴 IT IS A HAND-EDITED FILE, NOT A BUILD OUTPUT. Four diamond dots sat under the baseline of
+ * the calligraphy and the owner had them taken off on 2026-09-12 ("you will find 2 point under the
+ * seen and another 2 under the alif remove them") -- 5,461 pixels, two connected components, nothing
+ * else touched. The file it came from still has them, and the recipe that produced this one puts
+ * every one of them straight back, silently. If this artwork is ever rebuilt, remove the dots again:
+ * `tests/phoenix-official-logo.test.ts` reads the four spots in the pixels and goes red if they
+ * return, which is the only thing standing between a regenerated asset and the dots coming with it.
+ *
+ * 🔴 AN <img>, FOR THE SAME REASON THE MARK IS ONE. At 16 KB it encodes to about 22 KB of base64 --
+ * lighter than the logo already repeated on every page -- and Chromium embeds one copy of the
+ * decoded image however many pages reference the same URI.
+ */
+const arabicCache = { html: "" };
+function arabicMark(): string {
+  if (arabicCache.html === "") {
+    const png = readFileSync(join(process.cwd(), "public", "brand", "sato-pharma-arabic-on-light.png"));
+    arabicCache.html = `<img alt="" src="data:image/png;base64,${png.toString("base64")}">`;
+  }
+  return arabicCache.html;
+}
+
 // ── Ornament ──────────────────────────────────────────────────────────────────────────────────
 /**
  * The bracket corner: two strokes meeting at a right angle, drawn as polylines.
@@ -148,6 +202,63 @@ function pctSizeClass(shown: string): string {
   if (shown.length >= 7) return " figure__pct--vlong";
   if (shown.length === 6) return " figure__pct--long";
   return "";
+}
+
+/**
+ * How wide a name SETS, in millimetres, at the name's full 29pt.
+ *
+ * 🔴 A CHARACTER COUNT CANNOT ANSWER THIS, and that is why the table exists. "Mohamed Mohamed
+ * Mohamed" is 23 characters and sets 151.9mm -- over the measure. "Youssef Kamal El Sharkawy" is 25
+ * and sets 133.5mm -- comfortably under. Any rule counting letters gets one of those two wrong, and
+ * the one it gets wrong wraps a name that had no need to.
+ *
+ * The advances below were MEASURED off the real face, in this renderer, under print media: each
+ * glyph repeated twenty-one times, minus one, over twenty, which sheds the side bearings and
+ * returns the advance rather than the inked width. Summing them reproduces the rendered width of
+ * twenty-one real Egyptian names to within 1.32%, and every error is an OVER-estimate -- so the
+ * worst this can do is set a name one step smaller than it strictly had to, never run it off the
+ * page. An unknown character is priced as the widest glyph in the face, for the same reason.
+ *
+ * 🔴 IT IS TIED TO --display AND TO .name's LETTER-SPACING. The numbers are Noto Serif at 29pt
+ * with the -.004em tracking the sheet sets. Change either and they are quietly wrong -- nothing
+ * errors, a name simply stops stepping down when it should. tests/spotlight-sheet-design.test.ts
+ * pins the two names this table exists to tell apart.
+ */
+const NAME_GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz -'";
+const NAME_ADVANCES_MM = [
+  7.170, 6.649, 6.239, 7.396, 6.332, 5.994, 7.262, 8.070, 3.713, 3.611, 7.119, 6.332, 9.554,
+  7.764, 7.549, 6.137, 7.549, 6.669, 5.523, 6.229, 7.293, 6.863, 10.669, 6.710, 6.352, 6.015,
+  5.718, 6.239, 4.992, 6.239, 5.432, 3.734, 5.462, 6.454, 3.232, 3.028, 5.943, 3.130, 9.625,
+  6.557, 5.861, 6.239, 6.239, 4.777, 4.572, 3.559, 6.454, 5.882, 8.776, 5.871, 5.738, 5.186,
+  2.619, 3.130, 2.209,
+];
+const NAME_ADVANCE = new Map([...NAME_GLYPHS].map((ch, i) => [ch, NAME_ADVANCES_MM[i]]));
+const NAME_WIDEST_MM = Math.max(...NAME_ADVANCES_MM);
+
+/** The measure .name is set to. A name wider than this wraps; the point is to stop it wrapping. */
+const NAME_MEASURE_MM = 150;
+
+function nameWidthMm(name: string): number {
+  let mm = 0;
+  for (const ch of name) mm += NAME_ADVANCE.get(ch) ?? NAME_WIDEST_MM;
+  return mm;
+}
+
+/**
+ * One step down, so an ordinary long name stands on ONE line over its rule.
+ *
+ * That rule is the certificate device -- a name ON a rule rather than a name in a list -- and it
+ * reads as one only while the name above it is one line. At 29pt "Mohamed Ahmed Abdel Rahman",
+ * which is an unremarkable name here, broke as "Mohamed Ahmed Abdel / Rahman": a full line and an
+ * orphan. At 25pt it sets 138.5mm and stands whole.
+ *
+ * There is exactly one step, deliberately. A name too long even for 25pt -- five parts and up -- is
+ * going to wrap whatever size it is set at, and shrinking it further buys nothing but a smaller
+ * name; it wraps at 25pt instead, balanced by the stylesheet into even lines. The owner's rule is
+ * that nothing is ever shortened, so no path here abbreviates anything.
+ */
+function nameSizeClass(name: string): string {
+  return nameWidthMm(name) > NAME_MEASURE_MM ? " name--long" : "";
 }
 
 const MONTH_NAMES = [
@@ -197,15 +308,62 @@ function monthsLabel(periods: string[]): string {
  * the business — and on a sheet handed to the person it is about, that reads as the company having
  * measured them against something nobody ever set.
  *
- * A one-month window is the case where naming the window IS naming the target, so it keeps the
+ * 🔴 AND IT NAMES THE MONTHS THAT CARRIED ONE — `row.targetedPeriods`, NEVER `result.periods`. The
+ * first wording of this caption replaced a wrong quarter with three wrong months: a rep targeted in
+ * July alone, inside a Q3 window, read "of the monthly targets for June · July · August 2026" while
+ * the stat band below said "1 of 3 months carried a target". Only months Mar–Jun 2026 on the three
+ * tracked lines carry sales with no target at all, so this is the ordinary shape of the data, not an
+ * edge case. A window with no target anywhere says so outright rather than naming a denominator the
+ * figure above it does not have.
+ *
+ * One targeted month is the case where naming the month IS naming the target, so it keeps the
  * shorter sentence.
  */
-function targetCaption(periods: string[]): string {
-  const months = monthsLabel(periods);
+function targetCaption(row: SpotlightRow): string {
+  // Nothing. The gauge below prints the whole sentence for this case, and a caption above it
+  // saying the same thing in fewer words is the sheet stating twice that it has nothing to state.
+  if (row.targetValue === null || row.targetedPeriods.length === 0) return "";
+  const months = monthsLabel(row.targetedPeriods);
   if (!months) return "of target";
-  return periods.length === 1
+  return row.targetedPeriods.length === 1
     ? `of the ${escapeHtml(months)} target`
     : `of the monthly targets for ${escapeHtml(months)}`;
+}
+
+/** "1 month" / "2 months" — said in words, because "2 mo." on a certificate is an abbreviation. */
+function monthCount(n: number): string {
+  return `${n} month${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * How many months of the window this subject was NOT targeted in.
+ *
+ * Counted against the WINDOW, because that is what the sheet's own heading claims to cover. It is
+ * what separates "this figure is the whole story" from "this figure is part of it".
+ */
+function untargetedMonthsInWindow(result: SpotlightResult, row: SpotlightRow): number {
+  return Math.max(0, result.periods.length - row.targetedMonths);
+}
+
+/**
+ * The label under the achievement's numerator.
+ *
+ * Three cases, and the third is the one that used to lie: when an untargeted month sits in the
+ * window the figure beside it is NOT everything the subject delivered, and the label has to say so
+ * in the same breath — otherwise the sheet shows a smaller number than the person's own sales and
+ * offers no reason for it.
+ */
+function targetedAgainstLabel(row: SpotlightRow): string {
+  if (row.targetValue === null) return "Delivered — no target was set";
+  const against = egp(row.targetValue);
+  if (row.gradedValue === row.actualValue) {
+    return row.targetedMonths === 1
+      ? `Delivered against ${against} targeted`
+      : `Delivered against ${against} in monthly targets`;
+  }
+  return row.targetedMonths === 1
+    ? `Delivered in the month that carried a target, against ${against}`
+    : `Delivered in the ${row.targetedMonths} months that carried a target, against ${against}`;
 }
 
 /** The gauge scale. 112 leaves an overshoot room to read AS an overshoot rather than as the end. */
@@ -247,7 +405,12 @@ function gauge(achievement: number | null, caption: string): string {
  * per person — and until the numbering went in, nothing on a loose page said whether anything was
  * missing from it.
  */
-function pageShell(result: SpotlightResult, body: string, page: number, total: number): string {
+function pageShell(
+  result: SpotlightResult,
+  body: string,
+  page: number,
+  total: number,
+): string {
   return `<div class="sheet${page === total ? "" : " sheet--break"}">
     <header class="crest">
       <div class="crest__mark">${houseMark(true)}</div>
@@ -264,12 +427,7 @@ function pageShell(result: SpotlightResult, body: string, page: number, total: n
       <div class="inner">
         ${body}
         <footer class="foot">
-          <div class="foot__block foot__block--src">
-            <p class="foot__cap">Source</p>
-            <p class="foot__line"><strong>Monthly Closing &mdash; Sales vs Target</strong></p>
-            <p class="foot__sub">${escapeHtml(result.periods.join(", "))} &middot; indirect sales at factory price,
-              direct orders on the Finance-owned sales month.</p>
-          </div>
+          <div class="foot__block foot__block--mark">${arabicMark()}</div>
           <div class="foot__block foot__block--no">
             <p class="foot__cap">Sheet</p>
             <p class="foot__no">${page}<span> of ${total}</span></p>
@@ -277,7 +435,6 @@ function pageShell(result: SpotlightResult, body: string, page: number, total: n
           <div class="foot__block foot__block--rec">
             <p class="foot__cap">Record</p>
             <p class="foot__line"><strong>SATO-DIS-2026-01 v1.0</strong></p>
-            <p class="foot__sub">Issued ${escapeHtml(result.generatedAtCairo)} &middot; Africa/Cairo</p>
           </div>
         </footer>
       </div>
@@ -520,7 +677,7 @@ function heroPage(result: SpotlightResult, row: SpotlightRow, rank: number, page
     ${opener(`${result.headline} · ${result.windowLabel}`)}
     <p class="lead-in">This sheet recognises</p>
 
-    <h1 class="name">${escapeHtml(row.title)}</h1>
+    <h1 class="name${nameSizeClass(row.title)}">${escapeHtml(row.title)}</h1>
     <div class="signrule"></div>
     ${row.titleAr ? `<p class="name-ar" dir="rtl" lang="ar">${escapeHtml(row.titleAr)}</p>` : ""}
     <p class="sentence">${heroSentence(result, row, rank)}</p>
@@ -529,25 +686,30 @@ function heroPage(result: SpotlightResult, row: SpotlightRow, rank: number, page
     <section class="figure">
       <div class="figure__core">
         <p class="figure__label">Achievement</p>
-        <p class="figure__pct${pctSizeClass(shownPct)}">${shownPct}<span>%</span></p>
-        <p class="figure__cap">${targetCaption(result.periods)}</p>
+        <p class="figure__pct${pctSizeClass(shownPct)}">${shownPct}${row.achievement === null ? "" : "<span>%</span>"}</p>
+        ${targetCaption(row) ? `<p class="figure__cap">${targetCaption(row)}</p>` : ""}
         ${gauge(row.achievement, caption)}
       </div>
     </section>
 
     ${statBand([
+      // 🔴 THE FIGURE HERE IS THE ACHIEVEMENT'S OWN NUMERATOR, not every pound delivered. A sheet
+      // that prints a number beside a target is read by dividing the two, and a reader who does that
+      // has to land on the percentage above. Where the window holds an untargeted month the two
+      // differ, so the all-months total moves to its own cell and says what it is.
       {
-        value: `${egp(row.actualValue)}<small> EGP</small>`,
-        label: row.targetValue !== null
-          ? result.periods.length === 1
-            ? `Delivered against ${egp(row.targetValue)} targeted`
-            : `Delivered against ${egp(row.targetValue)} in monthly targets`
-          : "Delivered — no target was set",
+        value: `${egp(row.targetValue !== null ? row.gradedValue : row.actualValue)}<small> EGP</small>`,
+        label: targetedAgainstLabel(row),
       },
-      {
-        value: `${row.targetedMonths}<small> of ${result.periods.length}</small>`,
-        label: "Months in this window that carried a target",
-      },
+      untargetedMonthsInWindow(result, row) > 0 && row.targetValue !== null
+        ? {
+            value: `${egp(row.actualValue)}<small> EGP</small>`,
+            label: `Delivered in total, including ${monthCount(untargetedMonthsInWindow(result, row))} with no target`,
+          }
+        : {
+            value: `${row.targetedMonths}<small> of ${result.periods.length}</small>`,
+            label: "Months in this window that carried a target",
+          },
       {
         value: `${rank}<small> of ${result.totalSubjects}</small>`,
         label: `Rank by ${result.selection.rankBy === "achievement" ? "achievement" : "sales value"} across the company`,
@@ -638,9 +800,17 @@ const CSS = `
   /* 34 pt, not 40. Egyptian names run long — "Mohamed Ahmed Abdel Rahman" is ordinary here — and at
      40 pt the common ones wrapped to a two-line block with a short orphan under a full line. Names
      that still wrap are WRAPPED, never shortened: the owner's rule is no ellipsis anywhere. */
+  /* 29 pt did not finish that job. The same name still broke as a full line and a one-word orphan,
+     because at 29 pt it sets 160.6mm against a 150mm measure. nameSizeClass() measures each name and
+     drops the ones that overrun to .name--long, where it sets 138.5mm and stands whole. */
   .name { margin-top: calc(var(--u) * 1.1); margin-left: auto; margin-right: auto; max-width: 150mm;
     text-align: center; font-family: var(--display); font-weight: 400; font-size: 29pt;
-    line-height: 1.16; color: var(--ink); letter-spacing: -.004em; }
+    line-height: 1.16; color: var(--ink); letter-spacing: -.004em; text-wrap: balance; }
+  /* THE BALANCE ABOVE IS THE OTHER HALF, and it catches the names no size can save. A name of five
+     parts wraps at any size worth setting it in; balanced, it wraps into even lines instead of a
+     full line with one word stranded under it. Chromium honours this under print media, which is
+     the only place this stylesheet is ever read. */
+  .name--long { font-size: 25pt; }
   .signrule { width: 118mm; height: 1.1pt; background: var(--ink);
     margin: calc(var(--u) * 1.05) auto 0; position: relative; }
   .signrule::after { content: ""; position: absolute; left: 0; right: 0; top: 1.5mm;
@@ -668,16 +838,29 @@ const CSS = `
     line-height: 1.6; color: var(--muted); }
 
   /* ── The figure panel ────────────────────────────────────────────────────────────────────── */
-  /* MATTED BETWEEN TWO HAIRLINES. The panel takes whatever the page has spare, so on a short name
-     it opened a hand-sized hole between the rank and the number and the sheet read as unfinished.
-     The space is the same; enclosing it is what makes it read as mounting rather than as leftover.
-     Hairlines, against the stat band's 1.6pt below, so the hierarchy stays legible. */
+  /* MATTED. The panel takes whatever the page has spare, so on a short name it opened a hand-sized
+     hole between the rank and the number and the sheet read as unfinished. The space is the same;
+     enclosing it is what makes it read as mounting rather than as leftover.
+     🔴 IT CLOSES ON THE STAT BAND, AND THE HAIRLINE THAT USED TO CLOSE IT IS GONE. There was a
+     border-bottom here AND the stat band's own 1.6pt rule 6.1mm under it -- a pale line, a gap, then
+     a heavy line: two rules doing one job at the busiest edge of the sheet. The heavy one is the
+     panel's bottom edge now, pulled flush by the .figure + .stats rule further down, which is scoped
+     to the hero sheet because the ranking's band follows a paragraph and not a panel. The top stays
+     a hairline, against the 1.6pt below, so the hierarchy still reads. */
   .figure { text-align: center; display: flex; flex-direction: column;
     margin-top: calc(var(--u) * 1.5);
-    border-top: var(--hair-w) solid var(--hair);
-    border-bottom: var(--hair-w) solid var(--hair); }
+    border-top: var(--hair-w) solid var(--hair); }
+  /* THE PANEL'S SLACK IS SHARED BETWEEN ITS FOUR PARTS, not banked at the two ends. The panel takes
+     whatever the page has spare, and with the parts centred as a block that surplus piled up above
+     the label and below the gauge: on an ordinary sheet 25.4mm of white sat between the scale and
+     the stat band's heavy rule, which reads as the panel having run out rather than as matting.
+     Spread, the same surplus opens the four intervals instead and the edges come back to 11-15mm.
+     It also steadies the sheet: under centring the edge gap swung 15.7mm to 29.2mm with the length
+     of the name, and it now moves between 11.4mm and 15.1mm, so two hero sheets in one pack look
+     like the same document. 🔴 EVENLY, NOT space-between: that one pins the label to the top
+     edge and the scale to the bottom, and hands the whole surplus to the middle. */
   .figure__core { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
-    justify-content: center; padding: calc(var(--u) * 1.6) 0; }
+    justify-content: space-evenly; padding: calc(var(--u) * 1.6) 0; }
   .figure__label { font-size: 7.4pt; font-weight: 700; letter-spacing: .42em; text-transform: uppercase;
     color: var(--muted); margin-bottom: calc(var(--u) * 1.1); }
   /* MEASURED, NOT GUESSED. At 92pt the number stood 32.5mm tall inside a 95.6mm panel and left
@@ -697,8 +880,12 @@ const CSS = `
   .figure__pct--long span { font-size: 42pt; vertical-align: 16pt; }
   .figure__pct--vlong { font-size: 72pt; letter-spacing: -.02em; }
   .figure__pct--vlong span { font-size: 33pt; vertical-align: 12pt; }
+  /* BALANCED, because this line names MONTHS and a long window makes it long. A six-month window
+     printed "OF THE MONTHLY TARGETS FOR JANUARY, FEBRUARY, MARCH, APRIL, MAY," and then "JUNE 2026"
+     alone underneath -- sixty-nine letterspaced characters over two, which on a certificate reads
+     as a line that ran out rather than a line that was set. */
   .figure__cap { margin: calc(var(--u) * 1.1) 0 0; font-size: 9.2pt; font-weight: 600;
-    letter-spacing: .19em; text-transform: uppercase; color: var(--muted); }
+    letter-spacing: .19em; text-transform: uppercase; color: var(--muted); text-wrap: balance; }
 
   .gauge { width: 128mm; margin: calc(var(--u) * 1.7) auto 0; }
   .gauge__win { text-align: right; margin-bottom: calc(var(--u) * .5); font-size: 7pt; font-weight: 700;
@@ -732,6 +919,11 @@ const CSS = `
   .stats { display: flex; margin-top: calc(var(--u) * 1.8); background: var(--wash);
     border-top: 1.6pt solid var(--ink); border-bottom: 1.6pt solid var(--ink);
     padding: calc(var(--u) * 1.1) 0; }
+  /* FLUSH UNDER THE FIGURE PANEL, AND ONLY THERE. On the hero sheet this rule IS the panel's bottom
+     edge, so the 6.1mm that used to sit between two rules belongs inside the panel instead, where
+     the figure is centred and it is shared evenly above and below. The ranking's band follows a
+     paragraph and keeps its own space -- do not lift this onto a bare .stats. */
+  .figure + .stats { margin-top: 0; }
   .stat { flex: 1 1 0; text-align: center; padding: 0 5mm; }
   .stat + .stat { border-left: var(--hair-w) solid var(--hair); }
   .stat__v { font-family: var(--display); font-weight: 700; font-size: 17.5pt; color: var(--ink);
@@ -785,7 +977,19 @@ const CSS = `
      plinth. Auto takes what is left over, and nothing when there is nothing left. */
   .foot { margin-top: auto; padding-top: calc(var(--u) * .5); display: flex; align-items: flex-start; gap: 8mm; }
   .foot__block { padding-top: calc(var(--u) * .6); border-top: var(--hair-w) solid var(--hair); }
-  .foot__block--src { flex: 1.7 1 0; }
+  /* EQUAL FLANKS, WHICH IS THE WHOLE MECHANISM. The sheet number is a fixed 20mm column between
+     these two, so it lands on the centre line of the paper only while they are the same width; the
+     mark used to take 1.7 of the row and pushed the number well right of centre. Do not widen one
+     of them to give the calligraphy more room -- the number moves with it, silently. */
+  .foot__block--mark { flex: 1 1 0; }
+  /* SIZED BY HEIGHT, AND CAPPED BELOW WHAT IT REPLACED. The Source block that stood here was 17mm
+     tall; this is 13mm of image over the same hairline, so the foot cannot grow. That matters
+     because the ranking sheets are filled against measured constants that already pay for a footer
+     of the old height, and a foot that outgrows them is pushed off the paper with no error at all.
+     Width is auto, so the calligraphy keeps its own proportion and can never be squeezed. Full ink:
+     in the foot this is the issuer signing the page, not a wash behind it. (No backticks in this
+     stylesheet -- one of them ends the template literal, 200 lines from where the error is read.) */
+  .foot__block--mark img { display: block; height: 13mm; width: auto; }
   .foot__block--no { flex: 0 0 20mm; text-align: center; }
   .foot__block--rec { flex: 1 1 0; text-align: right; }
   .foot__cap { font-size: 5.8pt; font-weight: 700; letter-spacing: .3em; text-transform: uppercase;

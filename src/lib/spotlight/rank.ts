@@ -20,7 +20,12 @@
 //
 // A consequence worth stating because it looks like a bug: `actualValue` (every pound delivered) can
 // exceed the achievement's own numerator (pounds delivered in months this subject was targeted in).
-// That is the rule working. The sheet prints both and labels them differently.
+// That is the rule working — but describing it here was not enough. Both the numerator (`gradedValue`)
+// and the months it covers (`targetedPeriods`) are now CARRIED ON THE ROW, because a renderer that
+// has only the window's months and the all-months total cannot state the fraction honestly: it ends
+// up printing a figure beside a target that does not divide into the percentage above them, and
+// naming months a target was never set for. Whoever prints the percentage must be able to print
+// its own two sides.
 //
 // 🔴 NOTHING HERE EVER SUMS UNITS. A unit total is valid for one product code only; above that the
 // only honest aggregate is VALUE. `actual_units` is deliberately not carried through this module.
@@ -233,31 +238,38 @@ export function summariseMonths(months: Map<PeriodKey, { actual: number; target:
   graded: number;
   target: number | null;
   achievement: number | null;
+  targetedPeriods: PeriodKey[];
   targetedMonths: number;
   activeMonths: number;
 } {
   let actual = 0;
   let graded = 0;
   let target = 0;
-  let targetedMonths = 0;
   let activeMonths = 0;
+  const targetedPeriods: PeriodKey[] = [];
 
-  for (const month of months.values()) {
+  for (const [period, month] of months) {
     actual += month.actual;
     if (month.actual !== 0) activeMonths += 1;
     if (month.target > 0) {
       graded += month.actual;
       target += month.target;
-      targetedMonths += 1;
+      targetedPeriods.push(period);
     }
   }
+
+  // `YYYY-MM` sorts chronologically as text, and the rows arrive in whatever order the query
+  // returned them — so this is sorted here rather than trusted, because a caller naming these
+  // months in a sentence would otherwise print them out of order.
+  targetedPeriods.sort();
 
   return {
     actual,
     graded,
-    target: targetedMonths > 0 ? target : null,
+    target: targetedPeriods.length > 0 ? target : null,
     achievement: target > 0 ? (graded / target) * 100 : null,
-    targetedMonths,
+    targetedPeriods,
+    targetedMonths: targetedPeriods.length,
     activeMonths,
   };
 }
@@ -353,9 +365,11 @@ export function rowsFromBuckets(buckets: Map<string, Bucket>, options: BuildOpti
       key: bucket.key,
       ...described,
       actualValue: summary.actual,
+      gradedValue: summary.graded,
       targetValue: summary.target,
       achievement: summary.achievement,
       varianceValue: summary.target === null ? null : summary.graded - summary.target,
+      targetedPeriods: summary.targetedPeriods,
       targetedMonths: summary.targetedMonths,
       activeMonths: summary.activeMonths,
     });
@@ -412,8 +426,9 @@ export function summariseShortlist(rows: SpotlightRow[]): {
     if (row.targetValue !== null) {
       anyTarget = true;
       target += row.targetValue;
-      // Reconstruct this row's graded actual from its own variance, which is graded − target.
-      graded += row.varianceValue !== null ? row.varianceValue + row.targetValue : row.actualValue;
+      // Read the numerator off the row. This used to be reconstructed from the variance
+      // (graded − target), which was arithmetically right and one refactor away from being wrong.
+      graded += row.gradedValue;
     }
   }
 
