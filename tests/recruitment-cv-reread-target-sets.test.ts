@@ -30,7 +30,9 @@ import assert from "node:assert/strict";
 
 import { OCR_EXTRACTION_MODEL, RULE_ONLY_EXTRACTION_MODEL } from "../src/lib/recruitment/cv-extraction.ts";
 import {
+  type CandidateEducationRow,
   type CvExtractionModelRow,
+  selectBlankFacultyCandidateIds,
   selectNewestIsRulesCandidateIds,
   selectReadCandidateIds,
   selectRulesOnlyCandidateIds,
@@ -143,4 +145,85 @@ export function runRecruitmentCvRereadTargetSetsTests() {
     0,
     "with the whole corpus model-read, the rules-only backlog is zero — reporting 174 here is the regression",
   );
+
+  // --- 7. The blank-faculty set keys on the RECORD, not on read history -------------------------
+  // Why this set exists at all. Every set above answers "has this candidate been read, and by
+  // what", which is the right question for a backlog and the wrong one for a repaired RULE: a rule
+  // fix changes what a read would now RETURN, not who has been read. Measured on production
+  // 2026-09-12, the day after the degree/faculty fix merged as ca00dc7b3: 944 candidates, 313 with
+  // a degree and no faculty, and ALL 313 already carry an extraction row — so every read-history
+  // flag on the re-read script selects exactly zero of them and the repaired rule reaches nobody.
+  const candidate = (
+    id: string,
+    degree: string | null,
+    faculty: string | null,
+    appliedFor: string | null = null,
+  ): CandidateEducationRow => ({
+    applied_for_job_title: appliedFor,
+    degree,
+    faculty,
+    id,
+  });
+
+  const records: CandidateEducationRow[] = [
+    candidate("mostafa", "Bachelor", null, "Medical Representative"),
+    candidate("has-faculty", "Bachelor", "Faculty of Pharmacy", "Medical Representative"),
+    candidate("no-degree", null, null, "Medical Representative"),
+    // BOTH empty shapes are in the column: the extractor writes null when it read nothing, the
+    // candidate form and the import path write an empty string. A PostgREST .is("faculty", null)
+    // under-selects for exactly this reason, and under-selecting in a re-read script reads as
+    // "fewer candidates need this than we thought" rather than as a bug.
+    candidate("blank-string-faculty", "Bachelor", "   ", "Medical Representative"),
+    // The mirror of it: a blank degree string is NOT a degree on record, so this candidate has
+    // nothing for the rule to work from and must not be selected.
+    candidate("blank-string-degree", "  ", null, "Medical Representative"),
+    candidate("other-shelf", "Bachelor", null, "HR Specialist"),
+    candidate("no-shelf", "Bachelor", null, null),
+  ];
+
+  assert.deepEqual(
+    [...selectBlankFacultyCandidateIds(records)].sort(),
+    ["blank-string-faculty", "mostafa", "no-shelf", "other-shelf"],
+    "a degree with no faculty qualifies whether the faculty is null or a blank string; a blank degree string does not qualify at all",
+  );
+
+  // The narrowing is a case-insensitive SUBSTRING, deliberately. applied_for_job_title holds
+  // whatever the subject line or the WhatsApp answer said, so the same role arrives as "Medical
+  // Representative", "Medical Rep" and "medical rep." — an equality test on the canonical spelling
+  // reads as a much smaller group, with no error to say so.
+  assert.deepEqual(
+    [...selectBlankFacultyCandidateIds(records, { appliedForContains: "medical rep" })].sort(),
+    ["blank-string-faculty", "mostafa"],
+    "--applied-for must match case-insensitively on a substring of applied_for_job_title",
+  );
+  assert.deepEqual(
+    [...selectBlankFacultyCandidateIds(records, { appliedForContains: "MEDICAL REPRESENTATIVE" })].sort(),
+    ["blank-string-faculty", "mostafa"],
+    "the needle's own casing must not change the answer",
+  );
+  // A candidate with no stated role can never satisfy a narrowing, and an empty or whitespace
+  // needle is not a narrowing at all — it must not quietly select the null-role rows out.
+  assert.deepEqual(
+    [...selectBlankFacultyCandidateIds(records, { appliedForContains: "   " })].sort(),
+    ["blank-string-faculty", "mostafa", "no-shelf", "other-shelf"],
+    "a blank needle means no narrowing, not a narrowing that matches everything or nothing",
+  );
+  assert.equal(
+    selectBlankFacultyCandidateIds(records, { appliedForContains: "veterinarian" }).size,
+    0,
+    "a needle nothing matches must return an empty set rather than falling back to the whole population",
+  );
+
+  // The production shape end to end: 944 candidates, 313 with the hole, 42 of them medical rep.
+  const corpusRecords: CandidateEducationRow[] = [];
+  for (let i = 0; i < 42; i++) corpusRecords.push(candidate(`hole-mr${i}`, "Bachelor", null, "Medical Representative"));
+  for (let i = 0; i < 271; i++) corpusRecords.push(candidate(`hole${i}`, "Bachelor", null, "Medical Delegate"));
+  for (let i = 0; i < 631; i++) corpusRecords.push(candidate(`filled${i}`, "Bachelor", "Faculty of Pharmacy", "Medical Representative"));
+  assert.equal(selectBlankFacultyCandidateIds(corpusRecords).size, 313, "the production-shaped corpus holds 313 candidates with a degree and no faculty");
+  assert.equal(
+    selectBlankFacultyCandidateIds(corpusRecords, { appliedForContains: "medical rep" }).size,
+    42,
+    "narrowed to the medical-rep shelf, the production-shaped corpus holds 42 — the group this flag was written for",
+  );
+
 }

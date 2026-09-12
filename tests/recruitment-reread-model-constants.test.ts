@@ -162,6 +162,29 @@ export function runRecruitmentRereadModelConstantsTests() {
     `the paged select must impose an explicit .order("created_at") — without one the page boundaries are undefined, so a row can be returned twice or never, and the newest-row-per-candidate map below is built from that order`,
   );
 
+  // --- 7b. The CANDIDATE fetch is paginated too -------------------------------------------------
+  // Added 2026-09-12, and it was unbounded until then. Section 7 above closed exactly this hole on
+  // the extraction fetch and the candidate fetch beside it kept the bug for another fortnight —
+  // which is the argument for pinning it rather than trusting that the lesson generalised. The
+  // table held 944 rows on 2026-09-12, 56 short of PostgREST's silent 1000-row cap. Past the cap
+  // the NEWEST candidates stop existing as far as this script is concerned, so the run prints a
+  // smaller backlog and reads as "nobody new needs reading".
+  const candidateSelect = scriptSource.match(/\.from\("ats_candidates"\)[\s\S]{0,400}?;/);
+  assert.ok(
+    candidateSelect,
+    `could not find the ats_candidates select in ${SCRIPT} — re-point this test at it rather than deleting it`,
+  );
+  assert.match(
+    candidateSelect[0],
+    /\.range\(/,
+    `the ats_candidates select in ${SCRIPT} must page with .range() — an unbounded select silently stops at PostgREST's 1000-row cap, and the candidates it drops are the newest ones, which is the half a re-read backlog is for`,
+  );
+  assert.match(
+    candidateSelect[0],
+    /\.order\("created_at"/,
+    "the paged candidate select must impose an explicit .order(\"created_at\") — without one the page boundaries are undefined, so a candidate can be returned twice or never",
+  );
+
   // --- 8. --newest-rules-only may only WIDEN the target set ------------------------------------
   // It exists because readIds asks "has this candidate EVER had a model row", which permanently
   // excludes anyone the model read once and badly — 38 candidates on production 2026-08-27, 25 of
