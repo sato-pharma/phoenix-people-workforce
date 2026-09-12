@@ -10,14 +10,21 @@ Cycle 1 numbered 55 findings. Thirteen of them — **1, 6–13, 21, 24, 25 and 2
 this repository: not in code, not in a test, not in git history, not in any pull request. Finding 19
 is referenced only as a comparison and was never fixed or dismissed. The audit document that
 assigned those numbers was never committed, so the wording of the missing findings cannot be
-recovered from anything the company holds.
+recovered **from this repository**.
+
+> **CORRECTED 2026-09-12 (cycle 3).** The two paragraphs below originally said the wording could not
+> be recovered from anything the company holds, and that nothing could recover the thirteen. **That
+> was wrong: the owner holds the original audit document.** What this repository lost, the company
+> still has. Every sentence in this section is scoped to the repository from here on, and the ruling
+> made on that basis is suspended pending the document — see
+> [audit-cycle-3.md](audit-cycle-3.md).
 
 The owner was offered two routes and chose the second: rather than leave thirteen permanent
 asterisks, re-audit the module empirically and find out what is actually broken today.
 
-**This cycle does not recover the thirteen, and nothing could.** The numbering gaps carry no
-information about which surfaces those findings covered. What follows is a fresh examination of the
-module as it stands, and the finding below is a *new* one — number 56, not one of the missing
+**This cycle does not recover the thirteen.** Nothing *in this repository* could: the numbering gaps
+carry no information about which surfaces those findings covered. What follows is a fresh
+examination of the module as it stands, and the finding below is a *new* one — number 56, not one of the missing
 thirteen. That distinction is the whole point of writing it down this way.
 
 ## Audit surface
@@ -202,8 +209,10 @@ catastrophe is more likely to be broken than the code is.
 
 ## What cycle 2 does not close — and the ruling that closed it
 
-- **Findings 1, 6–13, 21, 24, 25, 28 remain unaccounted for.** Nothing empirical can recover them.
-  They are not "open" and not "fixed" — the record of what they were is gone.
+- **Findings 1, 6–13, 21, 24, 25, 28 remain unaccounted for.** Nothing empirical **in this
+  repository** can recover them. They are not "open" and not "fixed" — the repository's record of
+  what they were is gone. **Corrected 2026-09-12: the owner holds the original audit document, so
+  the wording is recoverable from him.**
 - **Finding 19 still has no established outcome.**
 - `tests/payroll-audit-ledger.test.ts` therefore needs no change to its `NO_TRACE` list; the ledger's
   arithmetic for findings 1–55 stands exactly as written.
@@ -229,6 +238,13 @@ which is the authoritative place for it. In short:
 
 With that ruling, cycle 2 has no open item. Finding 56 is fixed and verified in production, and the
 fourteen are settled on the record.
+
+> **SUSPENDED 2026-09-12 (cycle 3).** The ruling above was made on the stated basis that no source
+> survived. **That basis was wrong** — the owner confirmed the original audit document exists. The
+> ruling is therefore **suspended pending that document**: not reversed, not quietly dropped, and not
+> re-opened as work. A decision taken because something was impossible cannot stand unexamined once
+> it turns out to be possible. Everything else above — that closed is not fixed, that the residual
+> risk is accepted, that a future defect is a new number from 57 — is unaffected.
 
 ## The process fix that outlasts both cycles
 
