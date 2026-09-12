@@ -25,26 +25,74 @@ import { addressNamesPlace, addressWords, compileArabicPlace, type ArabicPlace }
 import { placeAliases } from "@/lib/geo/egypt-locations";
 import { NEIGHBOURHOOD_AREAS, NEIGHBOURHOOD_PLACES } from "@/lib/geo/neighbourhood-index-generated";
 
+// ── Remembering the answer ───────────────────────────────────────────────────
+//
+// NOT ONE RULE BELOW CHANGED ITS ANSWER. Every correction, every comment and every spelling is the
+// one that was here before 2026-09-12. What changed is how often the same question gets asked.
+//
+// The owner, that morning: the screening page takes 5 to 12 seconds. It was measured against the
+// live pool rather than guessed at, and the database was not the culprit — all ten reads finish
+// together in 5.0s while the page took 13 to 15. A CPU profile put 11.8 seconds of the remainder
+// — 18% of every sample taken — inside `governorateNamedBy` alone, with `normalizePlaceText` and
+// `padded` adding 2.6s more. The reason is arithmetic, not a mistake: the queue scores 607
+// candidates against every open seat, so each address is normalised, padded and walked against the
+// whole alias table once per seat, and the alias table allocated two padded strings per alias on
+// every one of those walks.
+//
+// So the padding is done ONCE, at module load, and each of these functions remembers what it last
+// answered. Every one of them is PURE and takes a single string, which is the only reason this is
+// safe to do at all — the same string cannot mean two places.
+//
+// TWO KINDS OF CACHE LIVE HERE. The ones keyed on an AREA NAME are bounded by the organogram and
+// will never hold more than the company has areas. The ones keyed on FREE TEXT are bounded by
+// nothing, so they carry a limit and empty themselves on reaching it. An emptied cache costs one
+// slow page; it can never cost a wrong answer.
+function memoizeByText<T>(compute: (value: string) => T, limit = 8192): (value: string) => T {
+  const cache = new Map<string, T>();
+  return (value: string): T => {
+    const remembered = cache.get(value);
+    if (remembered !== undefined || cache.has(value)) return remembered as T;
+    const answer = compute(value);
+    // Emptying it wholesale is deliberate. Evicting the oldest entry would need bookkeeping on
+    // every hit, and this exists to make the hot path cheaper rather than to be clever about which
+    // CV address gets asked for twice.
+    if (cache.size >= limit) cache.clear();
+    cache.set(value, answer);
+    return answer;
+  };
+}
+
 // ── Normalisation ────────────────────────────────────────────────────────────
 // Deliberately the same shape as the geography module's own normaliser: lowercase, punctuation to
 // spaces, collapse. Kept local and Latin-first because everything compared HERE — area names and CV
 // addresses alike — is written in Latin script. Arabic arrives too, and is handled where it is
 // actually understood: the alias tables below and the Arabic brick matcher. Arabic codepoints are
 // preserved rather than stripped so a wholly Arabic address still reaches those with content intact.
-export function normalizePlaceText(value: string | null | undefined): string {
-  return String(value ?? "")
+/** The costly half, remembered: the same CV address is normalised once per open seat otherwise. */
+const normalizedText = memoizeByText((value: string): string =>
+  value
     .toLowerCase()
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
     .replace(/[^a-z0-9؀-ۿ]+/g, " ")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim(),
+);
+
+export function normalizePlaceText(value: string | null | undefined): string {
+  return normalizedText(String(value ?? ""));
 }
 
 /** " nasr city " — padded so a containment test cannot match inside a longer word. */
 function padded(value: string): string {
   return ` ${value} `;
 }
+
+/** The padded form, remembered — an address was being padded once per area otherwise. */
+const paddedText = memoizeByText(padded);
+
+/** And the space-free padded form: " downtown " from "down town". */
+const paddedSquashedText = memoizeByText((value: string) => padded(value.replace(/\s+/g, "")));
 
 // ── Governorate ──────────────────────────────────────────────────────────────
 
@@ -59,12 +107,23 @@ function padded(value: string): string {
  * written with a leading space for exactly that reason — " aga" — but normalising the key trims the
  * space back off, so the guard never survives to be applied.
  */
-const NORMALIZED_ALIASES: ReadonlyArray<{ label: string; keys: string[] }> = placeAliases.map(
-  (entry) => ({
-    keys: entry.aliases.map((alias) => normalizePlaceText(alias)).filter(Boolean),
-    label: entry.label,
-  }),
-);
+const NORMALIZED_ALIASES: ReadonlyArray<{
+  label: string;
+  /**
+   * Each alias in the two forms it is compared in, padded here and never again. `squashed` is null
+   * where the alias has no space in it and the two forms would be the same test run twice.
+   */
+  keys: ReadonlyArray<{ padded: string; squashed: string | null }>;
+}> = placeAliases.map((entry) => ({
+  keys: entry.aliases
+    .map((alias) => normalizePlaceText(alias))
+    .filter(Boolean)
+    .map((key) => {
+      const squashed = key.replace(/\s+/g, "");
+      return { padded: padded(key), squashed: squashed === key ? null : padded(squashed) };
+    }),
+  label: entry.label,
+}));
 
 /** The canonical governorate labels, normalised — used to tell a governorate name from a place name. */
 const GOVERNORATE_LABELS = new Set(placeAliases.map((entry) => normalizePlaceText(entry.label)));
@@ -80,18 +139,22 @@ const GOVERNORATE_LABELS = new Set(placeAliases.map((entry) => normalizePlaceTex
 export function governorateNamedBy(value: string | null | undefined): string | null {
   const cleaned = normalizePlaceText(value);
   if (!cleaned) return null;
+  return governorateOfCleaned(cleaned);
+}
+
+/** The walk itself, remembered on the NORMALISED string — so two spellings of one address share it. */
+const governorateOfCleaned = memoizeByText((cleaned: string): string | null => {
   const hay = padded(cleaned);
   // The space-free form as well, so "Down town" reaches the alias "downtown" and vice versa.
   const squashedHay = padded(cleaned.replace(/\s+/g, ""));
   for (const { label, keys } of NORMALIZED_ALIASES) {
     for (const key of keys) {
-      if (hay.includes(padded(key))) return label;
-      const squashedKey = key.replace(/\s+/g, "");
-      if (squashedKey !== key && squashedHay.includes(padded(squashedKey))) return label;
+      if (hay.includes(key.padded)) return label;
+      if (key.squashed !== null && squashedHay.includes(key.squashed)) return label;
     }
   }
   return null;
-}
+});
 
 // ── Area names ───────────────────────────────────────────────────────────────
 
@@ -108,7 +171,12 @@ export function governorateNamedBy(value: string | null | undefined): string | n
  * number is the company's way of splitting a governorate between two reps and means nothing on a CV.
  */
 export function areaTokens(areaName: string | null): string[] {
-  if (!areaName) return [];
+  // A COPY, because the remembered list is shared with every other caller and a `push` into it
+  // would silently teach this module a place that is not on the map.
+  return areaName ? [...tokensOfArea(areaName)] : [];
+}
+
+const tokensOfArea = memoizeByText((areaName: string): readonly string[] => {
   const tokens = new Set<string>();
   const add = (raw: string) => {
     const cleaned = normalizePlaceText(raw);
@@ -136,7 +204,7 @@ export function areaTokens(areaName: string | null): string[] {
     for (const part of parts) add(part);
   }
   return [...tokens];
-}
+});
 
 /**
  * Tokens that must never match an address.
@@ -162,16 +230,17 @@ const NON_PLACE_TOKENS = new Set(["egypt", "head office", "office"]);
  * is scored as what it is.
  */
 export function addressNamesArea(haystack: string, areaName: string | null): boolean {
-  const hay = padded(haystack);
+  const hay = paddedText(haystack);
   // "Down town" and "downtown" are the same place spelled two ways, and one of them is the area's
   // own name — so the space-free form is compared as well, on both sides.
-  const squashedHay = padded(haystack.replace(/\s+/g, ""));
-  for (const token of areaTokens(areaName)) {
+  const squashedHay = paddedSquashedText(haystack);
+  for (const token of tokensOfArea(areaName ?? "")) {
     if (NON_PLACE_TOKENS.has(token)) continue;
     if (GOVERNORATE_LABELS.has(token)) continue;
-    if (hay.includes(padded(token))) return true;
-    const squashedToken = token.replace(/\s+/g, "");
-    if (squashedToken !== token && squashedHay.includes(padded(squashedToken))) return true;
+    const paddedToken = paddedText(token);
+    if (hay.includes(paddedToken)) return true;
+    const squashedToken = paddedSquashedText(token);
+    if (squashedToken !== paddedToken && squashedHay.includes(squashedToken)) return true;
   }
   return false;
 }
@@ -185,23 +254,28 @@ export function addressNamesArea(haystack: string, areaName: string | null): boo
  * named" while the one folder that covers them sits in the same district, empty of them.
  */
 export function areaGovernorates(areaName: string | null): string[] {
+  // Copied out for the same reason areaTokens copies: the remembered list is everybody's.
+  return areaName ? [...governoratesOfArea(areaName)] : [];
+}
+
+const governoratesOfArea = memoizeByText((areaName: string): readonly string[] => {
   const found: string[] = [];
-  for (const token of areaTokens(areaName)) {
+  for (const token of tokensOfArea(areaName)) {
     if (NON_PLACE_TOKENS.has(token)) continue;
     const label = governorateNamedBy(token);
     if (label && !found.includes(label)) found.push(label);
   }
   return found;
-}
+});
 
-/** Which governorate an area sits in, read from its own name through the shared vocabulary. */
+/**
+ * Which governorate an area sits in, read from its own name through the shared vocabulary.
+ *
+ * The FIRST of the list above, which is the same thing the old separate walk returned: both read
+ * the area's tokens in order and both stop at the first that names a governorate.
+ */
 export function areaGovernorate(areaName: string | null): string | null {
-  for (const token of areaTokens(areaName)) {
-    if (NON_PLACE_TOKENS.has(token)) continue;
-    const label = governorateNamedBy(token);
-    if (label) return label;
-  }
-  return null;
+  return (areaName ? governoratesOfArea(areaName)[0] : undefined) ?? null;
 }
 
 // ── Neighbourhoods ───────────────────────────────────────────────────────────
@@ -369,7 +443,7 @@ export function areaGovernedByCv(
   if (!governorate) return null;
 
   const inThatGovernorate = areaNames.filter((areaName) =>
-    areaGovernorates(areaName).includes(governorate),
+    governoratesOfArea(areaName).includes(governorate),
   );
   if (inThatGovernorate.length !== 1) return null;
   return { areaName: inThatGovernorate[0]!, grade: "governorate" };

@@ -176,4 +176,49 @@ export function runCvAddressPlaceTests(): void {
     assert.match(source, /from "@\/lib\/geo\/egypt-locations"/,
       "and must reuse the shared Egypt vocabulary rather than carry a second copy of it");
   }
+
+  // ── 11. The answers are remembered, and remembering must not change one ────────
+  //
+  // The owner, 2026-09-12: the screening page takes 5 to 12 seconds. Measured against the live pool,
+  // the ten database reads accounted for about 5 of those and the rest was this module — the queue
+  // scores 607 candidates against 45 open seats, so every address was normalised, padded and walked
+  // against the whole alias table once per seat. Timed side by side on the same pool in the same
+  // minute, the loader went from 17.9 / 13.4 / 14.6 seconds to 6.2 / 6.2 / 5.4.
+  //
+  // Nothing here is a new RULE — sections 1 to 10 above are the proof that no answer moved, and they
+  // are now also the proof that the caches cannot corrupt one, because they all run in this process
+  // and share them. What this section guards is the two things memoisation can break by itself.
+  {
+    // A REMEMBERED LIST IS EVERYBODY'S LIST. Both of these hand out a copy for that reason; return
+    // the cached array itself and one caller's `push` teaches the whole module a place that is not
+    // on the map, for the life of the server.
+    const tokens = areaTokens("Gharbia 1 (Tanta)");
+    tokens.push("karachi");
+    assert.ok(!areaTokens("Gharbia 1 (Tanta)").includes("karachi"),
+      "a caller must not be able to write into the remembered token list");
+
+    const governorates = areaGovernorates("Nasr City");
+    governorates.push("Aswan");
+    assert.deepEqual(areaGovernorates("Nasr City"), ["Cairo"],
+      "nor into the remembered governorate list");
+  }
+  {
+    // THE BUDGET. 9,000 scorings is a fifth of one page load (607 candidates against 45 seats).
+    // With the answers remembered it costs about 26ms; without, 3,600ms. One second sits 38x above
+    // the first and 3.6x below the second, so a loaded CI runner passes and a lost cache fails.
+    const addresses = Array.from({ length: 200 }, (_, index) => `${index} St. El Mahata, El Marg, Cairo, Egypt`);
+    const areas = Array.from({ length: 45 }, (_, index) => `Gharbia ${index} (Tanta)`);
+    const started = Date.now();
+    for (const address of addresses) {
+      const haystack = normalizePlaceText(address);
+      for (const areaName of areas) {
+        addressNamesArea(haystack, areaName);
+        governorateNamedBy(haystack);
+        areaGovernorate(areaName);
+      }
+    }
+    const spent = Date.now() - started;
+    assert.ok(spent < 1000,
+      `scoring 9,000 address-by-seat pairs must stay under a second; took ${spent}ms — the place answers are no longer being remembered`);
+  }
 }
