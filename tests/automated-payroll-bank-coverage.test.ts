@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import type { AssembledRow } from "../src/lib/automated-payroll/assemble.ts";
 import {
@@ -8,6 +9,7 @@ import {
 } from "../src/lib/automated-payroll/exports/bank-coverage.ts";
 import { cibRowsForNonEmployees, cibRowsForScope } from "../src/lib/automated-payroll/exports/cib-sheet.ts";
 import { fabRowsForNonEmployees, fabRowsForScope } from "../src/lib/automated-payroll/exports/fab-sheet.ts";
+import { xlsxResponse } from "../src/lib/automated-payroll/http.ts";
 import { validateNonEmployeePayrollInput } from "../src/lib/automated-payroll/non-employees.ts";
 import type { NonEmployeePart, NonEmployeePayrollRow } from "../src/lib/automated-payroll/types.ts";
 import type { SalaryValidationRow } from "../src/lib/payroll/salary-import.ts";
@@ -275,4 +277,69 @@ export function runAutomatedPayrollBankCoverageTests() {
       bankAccount: "1",
     }),
   );
+
+  // ---- HEADLINE 4: the coverage answer travels on the download ---------------------------------
+  //
+  // The durable half of this finding — the answer written into the publish audit row — is pinned by
+  // automated-payroll-settlement-and-held-record.test.ts. The half finance actually SEES was pinned
+  // by nothing: removing `[coverage]` from a download route left every test in this repository
+  // green (measured 2026-09-12, re-verifying findings 2 and 3), and the workbook cover carries no
+  // coverage block either, so the header is the only place a downloader is told.
+
+  const arabicName = "مدحت مكرم";
+  const uncovered = buildBankCoverage({
+    rows: [],
+    nonEmployees: [buildNonEmployeeRow({ fullNameEn: arabicName, bankName: "QNB", totalSalary: 7000 })],
+    scope: "part1",
+  });
+  const covered = buildBankCoverage({
+    rows: [],
+    nonEmployees: [buildNonEmployeeRow({ fullNameEn: "Cib Person" })],
+    scope: "part1",
+  });
+
+  const uncoveredResponse = xlsxResponse(Buffer.from("x"), "f.xlsx", [uncovered]);
+  assert.equal(
+    uncoveredResponse.headers.get("X-Bank-Coverage-Complete"),
+    "false",
+    "HEADLINE: a download whose bank file misses somebody must say so on the response — the " +
+      "workbook opens perfectly well either way, which is how three people were absent from both " +
+      "transfer files for two months with nothing anywhere saying so",
+  );
+  const summary = uncoveredResponse.headers.get("X-Bank-Coverage") ?? "";
+  assert.ok(summary.length > 0, "the download must carry the coverage summary, not only the boolean");
+  assert.ok(
+    [...summary].every((char) => char.charCodeAt(0) <= 0xff),
+    "the summary header must be percent-encoded: it names people, the names here are routinely " +
+      "Arabic, and a raw non-Latin-1 header value throws rather than degrading",
+  );
+  assert.ok(
+    decodeURIComponent(summary).includes(arabicName),
+    "the decoded summary must still name the person the bank file cannot pay",
+  );
+
+  const coveredResponse = xlsxResponse(Buffer.from("x"), "f.xlsx", [covered]);
+  assert.equal(
+    coveredResponse.headers.get("X-Bank-Coverage-Complete"),
+    "true",
+    "a covered download must say so EXPLICITLY — silence has meant both 'nobody is missing' and " +
+      "'nobody checked', and those must never look alike again",
+  );
+
+  // The third argument is the whole mechanism, so every finance download must pass it.
+  for (const route of [
+    "app/api/automated-payroll/finance/download/route.ts",
+    "app/api/automated-payroll/finance/fab-download/route.ts",
+    "app/api/automated-payroll/finance/cib-download/route.ts",
+  ]) {
+    const source = readFileSync(route, "utf8");
+    const call = source.match(/xlsxResponse\(([^;]*)\)/);
+    assert.ok(call, `${route}: no xlsxResponse call found — has the download been rewired?`);
+    assert.ok(
+      call![1].split(",").length >= 3,
+      `${route}: xlsxResponse must be given the bank coverage. Without the third argument the ` +
+        "download loses both headers, and nothing else on the response or in the workbook says " +
+        "whether the file carries everybody",
+    );
+  }
 }
