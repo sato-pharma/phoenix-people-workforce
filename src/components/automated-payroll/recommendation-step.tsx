@@ -336,6 +336,13 @@ export function RecommendationStep({
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [preview, setPreview] = useState<StepImportPreview | null>(null);
+  /**
+   * The workbook the preview describes (audit finding 27). It CANNOT be read back off the file
+   * input at Apply time: the change handler clears `input.value` so re-picking the same file fires
+   * `change` again, and that empties `input.files` with it. Apply therefore read `undefined`, hit
+   * an `if (file)` guard, and did nothing at all — no request, no error, no clue on screen.
+   */
+  const [pendingUpload, setPendingUpload] = useState<File | null>(null);
   const [search, setSearch] = useState("");
   /** hrIds whose per-line breakdown is open. Keyed by hrId, never by index — see setValue. */
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -645,6 +652,7 @@ export function RecommendationStep({
       if (!res.ok) throw new Error(data.error ?? "Upload failed.");
       if (commit) {
         setPreview(null);
+        setPendingUpload(null);
         await load();
       } else {
         setPreview(data.result as StepImportPreview);
@@ -773,7 +781,11 @@ export function RecommendationStep({
             className="hidden"
             onChange={(event) => {
               const file = event.target.files?.[0];
-              if (file) void onUpload(file, false);
+              // Remember the File itself BEFORE the line below empties `input.files` (finding 27).
+              if (file) {
+                setPendingUpload(file);
+                void onUpload(file, false);
+              }
               event.target.value = "";
             }}
           />
@@ -822,15 +834,27 @@ export function RecommendationStep({
           <div className="mt-2 flex gap-2">
             <Button
               size="sm"
-              disabled={busy}
+              disabled={busy || !pendingUpload}
               onClick={() => {
-                const file = fileRef.current?.files?.[0];
-                if (file) void onUpload(file, true);
+                // Never silently no-op: a button that looks pressable and does nothing is the whole
+                // of finding 27. If the file is somehow gone, say so and ask for it again.
+                if (!pendingUpload) {
+                  setError("The uploaded file is no longer available — upload the xlsx again to apply it.");
+                  return;
+                }
+                void onUpload(pendingUpload, true);
               }}
             >
               Apply changes
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setPreview(null)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setPreview(null);
+                setPendingUpload(null);
+              }}
+            >
               Discard
             </Button>
           </div>
