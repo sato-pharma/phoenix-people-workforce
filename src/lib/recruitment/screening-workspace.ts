@@ -96,6 +96,7 @@ import {
   type SeatQueueMatch,
 } from "@/lib/recruitment/vacancy-seat-queue";
 import type { CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
+import type { ScreeningRatingFilter } from "@/lib/recruitment/candidate-rating";
 import type { Candidate } from "@/lib/recruitment/types";
 
 import type { DuplicateReason, WorkspaceCandidateRow } from "@/lib/recruitment/screening-workspace-types";
@@ -151,6 +152,8 @@ export type ScreeningWorkspace = {
   role: ScreeningRoleFilter | null;
   region: ScreeningRegionFilter | null;
   received: ScreeningReceivedFilter | null;
+  /** The star filter, as "this many OR MORE" — or `unrated`. Echoed back so the bar can show it. */
+  rating: ScreeningRatingFilter | null;
   source: string | null;
   /** The open seat being screened, or null for the ordinary whole-pool queue. */
   vacancy: number | null;
@@ -498,6 +501,9 @@ export async function loadScreeningWorkspace(
       sentToManagerAt: sentAt,
       sentToManagerName: candidate.managerNotified?.name ?? null,
       source: intakeSourceLabel(text(candidate.source)) || null,
+      // Straight off the record. Nothing here derives or defaults it — a star is somebody's opinion
+      // and the absence of one is not a zero.
+      rating: candidate.rating,
       status,
       statusChangedAt: text(candidate.statusChangedAt),
       statusNote: text(candidate.statusNote),

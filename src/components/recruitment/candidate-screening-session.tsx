@@ -48,6 +48,12 @@ import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
 import { describeForOrder } from "@/lib/recruitment/screening-describe";
 import type { CandidateView, CandidateViewMap } from "@/lib/recruitment/candidate-views";
 import { normalizePhone } from "@/lib/recruitment/candidate-matching";
+import { CandidateStars } from "@/components/recruitment/workstation/candidate-stars";
+import {
+  candidateRatingLabels,
+  parseCandidateRating,
+  type CandidateRating,
+} from "@/lib/recruitment/candidate-rating";
 import { candidateRegionCodes, candidateRegionLabels } from "@/lib/recruitment/candidate-region";
 import {
   countByBand,
@@ -392,6 +398,11 @@ export function CandidateScreeningSession({
   const [loaded, setLoaded] = useState<Record<string, LoadedCandidate>>({});
   const [failed, setFailed] = useState<Record<string, string>>({});
   const [decided, setDecided] = useState<Record<string, CandidateStatus>>({});
+  /**
+   * The star put on a CV in THIS sitting. Same contract as the workstation's: a key PRESENT holding
+   * `null` means cleared here, an absent key means the stored value still stands.
+   */
+  const [rated, setRated] = useState<Record<string, CandidateRating | null>>({});
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -581,6 +592,38 @@ export function CandidateScreeningSession({
   );
 
   /**
+   * Star this CV 1, 2 or 3 — or take the star off. The overlay's copy of the workstation's `rate`,
+   * and it follows the same rules: no status, no advance, no undo window, drawn optimistically and
+   * put back if the write fails. A star is how much of a yes; Shortlist is whether.
+   */
+  const rate = useCallback(
+    async (next: CandidateRating | null) => {
+      if (!current) return;
+      const id = current.id;
+      const was = id in rated ? (rated[id] ?? null) : current.rating;
+      setRated((prev) => ({ ...prev, [id]: next }));
+      setError(null);
+      try {
+        const res = await fetch(`/api/recruitment/candidates/${id}/rating`, {
+          body: JSON.stringify({ rating: next }),
+          headers: { "Content-Type": "application/json" },
+          method: "PATCH",
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          candidate?: { rating?: unknown };
+          message?: string;
+        };
+        if (!res.ok) throw new Error(data.message ?? "Could not save that star.");
+        setRated((prev) => ({ ...prev, [id]: parseCandidateRating(data.candidate?.rating) }));
+      } catch (caught) {
+        setRated((prev) => ({ ...prev, [id]: was }));
+        setError(caught instanceof Error ? caught.message : "Could not save that star.");
+      }
+    },
+    [current, rated],
+  );
+
+  /**
    * Push this CV to a manager without leaving the queue.
    *
    * Deliberately NOT a decision. It does not advance, and it does not shortlist: sending a CV to a
@@ -763,6 +806,9 @@ export function CandidateScreeningSession({
   ]);
 
   const decidedCount = Object.keys(decided).length;
+  /** The star on the CV on screen, as the reader sees it now. See `rate` for the `in` test. */
+  const currentRating: CandidateRating | null =
+    current === null ? null : current.id in rated ? (rated[current.id] ?? null) : current.rating;
 
   // Keyboard is what makes a queue a queue. Ignored while typing a note, so "s" in "salary" does
   // not shortlist somebody.
@@ -803,10 +849,17 @@ export function CandidateScreeningSession({
       else if (key === "m") { event.preventDefault(); managerRef.current?.focus(); }
       // F for full width, page variant only — the overlay is already full-bleed.
       else if (key === "f" && variant === "page") { event.preventDefault(); setExpanded((on) => !on); }
+      // 1, 2 and 3 give a star; 0 takes it off. Bound because the key IS the value here — nothing
+      // to explain, nothing to confirm, and a mis-pressed 2 is undone by pressing 0. A star is not
+      // a decision, so unlike S and R this changes nothing about where the queue stands.
+      else if (key === "0" || key === "1" || key === "2" || key === "3") {
+        event.preventDefault();
+        void rate(key === "0" ? null : (Number(key) as CandidateRating));
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [decide, decidedCount, expanded, goTo, index, jumpToNextFresh, onClose, variant]);
+  }, [decide, decidedCount, expanded, goTo, index, jumpToNextFresh, onClose, rate, variant]);
 
   // A fixed layer for the overlay; a tall flex column that fills its parent for the page. The
   // overlay's z-index and backdrop would fight the portal shell's own chrome if a page reused them.
@@ -1297,6 +1350,19 @@ export function CandidateScreeningSession({
                 ) : null}
               </div>
             ) : null}
+            {/* ── HOW MUCH OF A YES ──────────────────────────────────────────
+                Above the verdicts, not among them. Shortlist and Reject are the two ends of one
+                question; the star answers a different one and answering it commits to nothing — it
+                notifies nobody, advances nobody, and comes off by pressing it again. Keeping it out
+                of the two-column grid is what says so without a word of explanation. */}
+            <div className="flex items-center gap-2">
+              <CandidateStars busy={busy} onRate={rate} rating={currentRating} />
+              <span className="text-phx-xs leading-tight text-slate-500">
+                {currentRating === null
+                  ? "Star it 1, 2 or 3 — keys 1 to 3, 0 to take it off"
+                  : candidateRatingLabels[currentRating]}
+              </span>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <button
                 className="flex items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50"
