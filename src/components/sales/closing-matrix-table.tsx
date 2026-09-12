@@ -34,26 +34,58 @@ function toneText(variant: RowVariant, dim: boolean) {
   return dim ? "text-slate-300" : "text-slate-700";
 }
 
+// ── The Target axis ───────────────────────────────────────────────────────────
+// Owner, 2026-09-12: "make the tgt orange". The Tgt Units / Tgt Value figures used to share the
+// grey the renderer gives a dimmed figure, and on this grid that grey is unreadable: on the Grand
+// Total block's own ground it measured 1.09:1 (slate-300 on #FBD8A6) and 2.87:1 (slate-500 on
+// #F4C078) — the 4.5:1 floor for 14px text is not remotely in sight. So the Target axis gets its
+// own ink instead of borrowing the dim one.
+//
+// ONE ORANGE, NOT A LADDER. He saw a first cut that stepped the shade per row variant and answered
+// "no noisy". A grid this dense earns its legibility from having FEWER things going on, not from a
+// per-row optimum, so the whole axis is one ink. The only split left is physical rather than
+// decorative: the grand-total rows are #0B0B0B, and no dark ink is visible on black.
+//
+// WHY THIS PARTICULAR ORANGE. A Tgt cell does not sit on one ground — white, the band tint, the
+// family block's amber, the Grand Total block's #FBD8A6/#F4C078, a region subtotal's #FDEAD0, and
+// on a pre-August month the direct-residue row's blue. orange-900 is the LIGHTEST orange that
+// clears 4.5:1 on every one of them (worst 5.65:1, on #F4C078). The two lighter shades do not:
+// orange-800 falls to 4.40:1 there, and orange-700 — #c2410c, the shade he picked on 2026-09-12
+// when this column still wore the Sato palette — to 3.12:1, which is the complaint that started
+// this. If a future design lightens those grounds, the test says so and asks for his shade back.
+//
+//   every light ground   text-orange-900 #7c2d12 — worst 5.65:1
+//   the black grand rows text-orange-300 #fdba74 — 11.67:1
+//
+// Measured, not eyeballed. Weight is deliberately NOT raised: the Tgt headers are `font-normal
+// opacity-60` because the target is the secondary axis beside the sale, and a bold figure undoes it.
+function targetText(variant: RowVariant) {
+  return variant === "grand" ? "text-orange-300" : "text-orange-900";
+}
+
 function NumCell({
   bg = "",
   kind = "int",
-  muted = false,
+  target = false,
   value,
   variant,
 }: {
   bg?: string;
   kind?: "int" | "value";
-  muted?: boolean;
+  /** This is a Target figure — it carries the Target axis's own orange, never the dim grey. */
+  target?: boolean;
   value: number | null;
   variant: RowVariant;
 }) {
   const base = "whitespace-nowrap px-3 py-2 text-right tabular-nums";
   if (value === null) {
-    return <td className={cn(base, bg, variant === "grand" ? "text-slate-500" : "text-slate-300")}>{BLANK}</td>;
+    // "No target set" stays in the Target column's ink, so the column reads as one axis.
+    const blankTone = target ? targetText(variant) : variant === "grand" ? "text-slate-500" : "text-slate-300";
+    return <td className={cn(base, bg, blankTone)}>{BLANK}</td>;
   }
-  const dim = muted || value === 0;
   const text = kind === "value" ? valueText(value) : formatNumber(value);
-  return <td className={cn(base, bg, toneText(variant, dim))}>{text}</td>;
+  const tone = target ? targetText(variant) : toneText(variant, value === 0);
+  return <td className={cn(base, bg, tone)}>{text}</td>;
 }
 
 function AchCell({ bg = "", value, variant }: { bg?: string; value: number | null; variant: RowVariant }) {
@@ -225,8 +257,8 @@ function ProductCells({
       {officeUnits !== undefined ? <NumCell bg={officeBg} value={officeUnits} variant={variant} /> : null}
       <NumCell bg={bg} kind="value" value={cell.salesValue} variant={variant} />
       <ContribCell bg={contrBg} value={contrib} variant={variant} />
-      <NumCell bg={bg} muted value={cell.targetUnits} variant={variant} />
-      <NumCell bg={bg} kind="value" muted value={cell.targetValue} variant={variant} />
+      <NumCell bg={bg} target value={cell.targetUnits} variant={variant} />
+      <NumCell bg={bg} kind="value" target value={cell.targetValue} variant={variant} />
       <AchCell bg={achBg} value={cell.achievement} variant={variant} />
     </>
   );
@@ -255,7 +287,7 @@ function FamilyCells({
   return (
     <>
       <NumCell bg={bg} kind="value" value={famValue} variant={variant} />
-      <NumCell bg={bg} kind="value" muted value={famTarget} variant={variant} />
+      <NumCell bg={bg} kind="value" target value={famTarget} variant={variant} />
       <ContribCell bg={bg} value={famContr} variant={variant} />
     </>
   );
@@ -284,7 +316,7 @@ function TotalCells({
       <NumCell bg={bg} kind="value" value={cell.salesValue} variant={variant} />
       {officeValue !== undefined ? <NumCell bg={officeBg} kind="value" value={officeValue} variant={variant} /> : null}
       <ContribCell bg={bg} value={contrib} variant={variant} />
-      <NumCell bg={bg} kind="value" muted value={cell.targetValue} variant={variant} />
+      <NumCell bg={bg} kind="value" target value={cell.targetValue} variant={variant} />
       <AchCell bg={bg} value={cell.achievement} variant={variant} />
     </>
   );
