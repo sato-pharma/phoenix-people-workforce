@@ -554,7 +554,7 @@ export async function runRecruitmentScreeningWorkstationTests() {
   // old comment would put it back without ever seeing this measurement.
   assert.match(
     withoutComments(pageClient),
-    /const \[filtersOpen, setFiltersOpen\] = useState\(false\)/,
+    /function filtersClosedOnServer\(\): boolean \{\s+return false;/,
     "the filter bar starts closed — eight dropdowns are not what this page is opened to read",
   );
   // REMEMBERED, or closing it becomes a chore repeated on every load. In the BROWSER and not in the
@@ -562,13 +562,22 @@ export async function runRecruitmentScreeningWorkstationTests() {
   // must not prise the other screener's bar open.
   assert.match(
     withoutComments(pageClient),
-    /if \(readRememberedFiltersOpen\(\)\) setFiltersOpen\(true\)/,
+    /useSyncExternalStore\(\s+subscribeFiltersOpen,\s+readRememberedFiltersOpen,\s+filtersClosedOnServer,\s+\)/,
     "a reader who opens the bar finds it open next time",
   );
   assert.match(
     withoutComments(pageClient),
-    /rememberFiltersOpen\(next\)/,
+    /rememberFiltersOpen\(!filtersOpen\)/,
     "and the toggle is what records that, rather than an effect that also fires on the first paint",
+  );
+  // NOT an effect that seeds state. `useEffect(() => setFiltersOpen(true), [])` reads correctly and
+  // costs a whole second render of the screening page to do it; the React compiler lint calls it out
+  // by name (set-state-in-effect) and CI went red on exactly this on 2026-09-12. The store version
+  // has the same server-safe behaviour without the extra pass, so the effect must not come back.
+  assert.doesNotMatch(
+    withoutComments(pageClient),
+    /setFiltersOpen/,
+    "the preference is read from the store, never poured into state by an effect",
   );
   // localStorage THROWS rather than returning null where a browser blocks site data, so every read
   // and every write is wrapped — an unguarded one would white-screen the whole screening page over a

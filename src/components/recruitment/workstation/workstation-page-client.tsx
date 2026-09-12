@@ -53,7 +53,7 @@
 // underneath and get them back untouched when the reader comes out.
 
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { ArrowLeft, ChevronDown, ChevronUp, Minimize2, ScanLine } from "lucide-react";
 
 import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
@@ -170,23 +170,27 @@ export function WorkstationPageClient({
   //
   // Remembered in the BROWSER rather than in the URL on purpose: the URL is the shareable half — it
   // carries WHICH filters are on — and a pasted link should not prise the other screener's bar open.
-  // Opened by an effect rather than a lazy initial state because this component is server-rendered:
-  // reading the store during the first render would make the server's HTML and the client's first
-  // paint disagree. Closed-then-open is the harmless direction for that flicker; open-then-closed,
-  // which is what a lazy initial state would give, is the one that moves the list under the cursor.
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  // READ AS AN EXTERNAL STORE, not as state seeded by an effect. `localStorage` is exactly what
+  // `useSyncExternalStore` is for, and it is the only way to read one during a server render that
+  // does not lie: the server and the first client paint both take `filtersClosedOnServer`, so the
+  // markup matches, and React re-reads the real browser value the instant hydration finishes. The
+  // effect version of this (`useEffect(() => setFiltersOpen(true))`) costs a second render of the
+  // whole page for a view preference, and the compiler lint rejects it by name. Closed-then-open is
+  // the harmless direction for the one flicker either way leaves; open-then-closed, which a lazy
+  // initial state would give, is the one that moves the list under the cursor.
+  const filtersOpen = useSyncExternalStore(
+    subscribeFiltersOpen,
+    readRememberedFiltersOpen,
+    filtersClosedOnServer,
+  );
   // What full-bleed was before focus took it, so leaving focus puts the shell back exactly as it
   // was rather than deciding for the reader that he also wanted his sidebar returned.
   const [bleedBeforeFocus, setBleedBeforeFocus] = useState(false);
 
-  useEffect(() => {
-    if (readRememberedFiltersOpen()) setFiltersOpen(true);
-  }, []);
-
+  // Writing the preference IS the state change: the store notifies, React re-reads it, the bar
+  // moves. One source of truth rather than a flag and a copy of it that can drift apart.
   const toggleFilters = useCallback(() => {
-    const next = !filtersOpen;
-    setFiltersOpen(next);
-    rememberFiltersOpen(next);
+    rememberFiltersOpen(!filtersOpen);
   }, [filtersOpen]);
 
   // FOCUS TAKES THE SIDEBAR TOO. "I need the full screen to see the CV in" is one screen, not one
@@ -504,6 +508,7 @@ function cairoDay(iso: string): string {
  * follow a person onto a shared machine, and it is worth no round trip to the server.
  */
 const FILTERS_OPEN_KEY = "phoenix.screening.filters-open";
+const FILTERS_OPEN_EVENT = "phoenix.screening.filters-open.change";
 
 function readRememberedFiltersOpen(): boolean {
   if (typeof window === "undefined") return false;
@@ -514,11 +519,35 @@ function readRememberedFiltersOpen(): boolean {
   }
 }
 
+/**
+ * What the server renders, and what the client renders while it hydrates — closed, always. A real
+ * read here would produce markup the server could never have produced, which is a hydration error
+ * rather than a flicker.
+ */
+function filtersClosedOnServer(): boolean {
+  return false;
+}
+
 function rememberFiltersOpen(open: boolean): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(FILTERS_OPEN_KEY, open ? "1" : "0");
+    window.dispatchEvent(new CustomEvent(FILTERS_OPEN_EVENT));
   } catch {
     // A browser that blocks site data still screens CVs. It just forgets the bar.
   }
+}
+
+/**
+ * `storage` fires in the OTHER tabs, never the one that wrote — so the custom event is what makes
+ * the bar move in THIS one. Both are listened for: a screener with the queue open twice gets the
+ * same bar in both, which is the least surprising thing for a preference to do.
+ */
+function subscribeFiltersOpen(onChange: () => void): () => void {
+  window.addEventListener("storage", onChange);
+  window.addEventListener(FILTERS_OPEN_EVENT, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(FILTERS_OPEN_EVENT, onChange);
+  };
 }
