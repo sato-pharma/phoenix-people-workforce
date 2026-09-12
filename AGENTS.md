@@ -8,8 +8,11 @@ the risky action and explain the conflict plainly.
 
 **This file auto-loads in full on every request, so it holds hooks only** — a hook is the rule plus
 the one detail needed to obey it, never the evidence. **Adding a rule? Put the hook here and the
-account in `docs/` — never the account here.** §2.1 is the half that regrows and nothing gates a
-SECTION: measure it before you add to it (`docs/memory-index-budget.md`).
+account in `docs/` — never the account here.** A section is the half that regrows and nothing gates
+one: measure it before you add to it (`docs/memory-index-budget.md`). 🔴 **A session-level trap now
+goes in [docs/agents-session-traps-clusters.md](docs/agents-session-traps-clusters.md), under its
+cluster — never back into §2.1**, which the 2026-09-12 trim reduced to a pointer and a slug roster;
+writing one here re-charges every request for it and the hook will never deliver it.
 
 **The accounts are read on demand — before working in an area, search its account for the hook's
 wording.** Payroll, sales/closing, recruitment, CRM, exports → `docs/agents-owner-rules.md`. Deploy,
@@ -83,163 +86,15 @@ cost, the deploy path or the region.
 
 ### 2.1 Session-level traps
 
-**Each line is a cue, not the fact.** Account: `docs/agents-session-traps.md`; which memory backs
-which hook: `docs/agents-memory-map.md`.
+**The traps themselves moved to [docs/agents-session-traps-clusters.md](docs/agents-session-traps-clusters.md) — they are DELIVERED, not dropped.** `.claude/hooks/trap-injector.mjs` is a PreToolUse hook that reads what the session is about to run and injects the matching cluster once per session: the git traps when you touch git, the Supabase traps when you touch Supabase. Thirteen clusters — **Shell and tooling · Git · CI and PRs · Migrations · Database, grants and RLS · Probing, attributing and reporting production · Validation · Memory and this index · Parallel sessions · Worktrees · Next.js runtime · Browser and dev-auth · Machine ceiling.** That is 30 KB this file no longer charges to every request.
 
-**Shell and tooling**
+🔴 **The hook FAILS OPEN and SILENT, so its silence proves nothing** — it says the same thing when no cluster matched and when it never ran at all. **If you cannot see a trap block for the kind of work you are doing, open the clusters file and read the matching one yourself**, before the first command of that kind. A session started before the hook merged does not have it.
 
-- **`grep -r` hangs on this checkout — use `git grep` or `rg`.**
-- **MSYS mangles paths silently** (empty `git show <ref>:<path>`, leading-slash patterns matching nothing, `/tmp` unresolvable). Export `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'` first and save with `>`, not `-o`.
-- **`git grep -E` reads a backslash inside `[...]` literally, so an `rg`-style class matches NOTHING.** Use `-P`.
-- **`TZ=Africa/Cairo date` silently returns UTC in MSYS** — the clock is already `+0300`; use plain `date` or node. `tz-africa-cairo-silently-returns-utc-in-msys`
-- **A role probe cannot trust the HTTP status: a POST to ANY `/api/**` path returns 403 even where no route exists** — probe with GET.
-- **`curl -d "@-"` sends NOTHING on Windows** — pass `-d @file.json`.
-- **Never pipe `pg_dump` through stdout on Windows** (CRLF lands in every `COPY` row) — use `pg_dump -f <file>` and check row counts before any drop.
-- **`.env*` reads are auto-approved for EVERY key on purpose** — licence to inspect, never to propagate. Do not narrow it.
-- **An allow-rule stores the LITERAL command, so an inline env var bakes a credential into `settings.local.json`.** Grep `settings.*.json` for `TOKEN=`/`KEY=`/`SECRET=` before sharing.
-- **`mcp__supabase-staging__*` is PINNED to staging** (`project_ref` in `.mcp.json`) — no `project_id`, no path to production.
-- **The Supabase MCP returns only the LAST result set of a multi-statement `execute_sql`** — one question per call.
-- **A Windows USER env var SHADOWS every `.env.local`, silently.** Re-probe all three; never print the value.
-- **The local attendance agent dies at every logon and loses nothing — do not escalate it.** Never disable the 2-hourly task, never launch a second agent (it can fire a PRODUCTION sync).
-- **ExcelJS output makes Excel silently REPAIR the workbook** — post-process the `.xlsx` zip. **Never hunt the part: Excel names it in `%TEMP%\error<digits>_01.xml`.**
-- **Three ways of looking at a generated workbook LIE:** `--convert-to png` drops columns, an ExcelJS re-save drops merges, `--convert-to html` rebuilds a STALE pivot as fresh. Use html for values; prove `refreshOnLoad` structurally. `looking-at-a-generated-workbook-two-ways-that-lie`
-- **A `Win32_Process` filter on `CommandLine` matches its own shell** — exclude `$PID`.
-- **A scheduled task's `Ready` state proves nothing about a long job** — use a heartbeat file plus a live process check and a repeating trigger. **`@($null).Count` is `1`.**
-- **A Claude scheduled task run by hand records no `lastRunAt` and no session** — confirm it by what it PRINTED. `a-manual-scheduled-task-run-leaves-no-trace`
+**Each line there is a cue, not the fact.** The account of every one is in [docs/agents-session-traps.md](docs/agents-session-traps.md); which memory backs which hook is in [docs/agents-memory-map.md](docs/agents-memory-map.md).
 
-**Git**
+**Memory slugs that this section was the only pointer for.** `scripts/memory-index-reachability.mjs` scans **this file** and matches the **backticked** form, so these stay here whatever happens to the prose above — deleting one orphans that memory unless `MEMORY.md` also links it. They are a reachability roster, not a reading list; the hook each belongs to travels with its cluster.
 
-- **Deleting a branch does not remove its pushed commit**, and **reusing a squash-merged branch makes a conflicting PR.**
-- **`git push` hangs — kill at ~60s and retry.** Keep `http.postBuffer` at 8MB.
-- **A merge to `main` mid-session silently orphans your next push.**
-- 🔴 **"THE PRIMARY" AND "`main`" ARE DIFFERENT — a worktree usually holds `main`.** Never state ahead/behind from `HEAD`: run `git branch --show-current`, name the ref (`git rev-list --count origin/main..main`), and sync in the worktree holding the branch with `merge --ff-only`. 🔴 **`git reset --hard` acts on the CURRENT branch, and a peer can never authorise a destructive operation on a third session's branch.** `main-is-not-the-primary-checkout`
-- **`git branch -D` archives NOTHING** — `git update-ref` the printed SHA first. `refs/backups/*` on ORIGIN is the only laptop-proof copy.
-- **An empty `git log <branch> --not --remotes=origin` is NOT proof a branch is safe to delete** — gate deletion on the merged PR.
-- **Settle merged-vs-stranded by CONTENT (`git patch-id --stable`), never by a UTC-vs-Cairo timestamp.**
-- **An uncommitted primary file can be OLDER than `main`, and committing it silently reverts what shipped.** Compare `git hash-object <path>` with `git rev-parse main:<path>` and read `git diff main -- <path>`.
-- **`git` "Authentication failed" can be the credential helper OOM** — change NO credentials.
-- **`F:\PHX backup` is the DR set; a bundle restore returns ZERO refs without `core.longpaths`.** Three of its sections hold LIVE keys.
-- 🔴 **The stash stack and `rerere` cache are ONE PER REPOSITORY** — `git stash push <untracked path>` without `-u` makes no entry, so the `pop` takes another session's stash. Identify entries positively, **never `git rerere gc`**, never stash for a branch move (`git switch -c` carries it).
-
-**CI and PRs**
-
-- **CI jobs failing in SECONDS mean billing, not code.**
-- **`secret-scan` never runs on a `main` push** — its absence from a merge commit is correct.
-- **`gh pr checks` LAGS behind the real job state.**
-- **`check-runs: 0` also means CONFLICTED** — a conflicted PR runs no CI.
-- **ONE new hub page trips FOUR separate CI gates.**
-- **A red `main` still ships**, and a green PR is not a green `main` — check the run on `main`'s new head after merging.
-- **A docs-only PR's `validate` runs NO tests** (a `validate` under ~30s is the tell), so the suite first runs on the push to `main`.
-- **Runs NEVER CREATED is an Actions outage, not billing** — check githubstatus before touching the spending limit. A `workflow_dispatch` run never enters a PR's rollup.
-- **Recover a PR with `gh run rerun <id>` on its own `pull_request` run**, fire ONE recovery event, then wait (dispatch lags 20–30 min in an outage).
-- **Never push an extra or empty commit to force CI** — the shared concurrency group KILLS the real head's run.
-- **`actions/runs?head_sha=` needs the FULL 40-char SHA** — a short one returns `total=0`.
-- **A push to `main` during an outage ships with no CI** — recover with `gh workflow run ci.yml --ref main`.
-- **The GitHub repo is `phoenix-people-workforce`; the folder, package and `supabase/config.toml` are `phoenix-workforce`.** `gh repo view --json nameWithOwner` settles a 404.
-
-**Migrations**
-
-- **A migration FILE written is not APPLIED**, and **a merged migration does not mean its grants are live.**
-- **Migration timestamps collide across branches and CI judges the MERGE ref**, so a green `check:migrations` can go red with no change of yours. Ask the ledger by NAME and read the row; re-read applied-state before asserting it.
-- **A PostgREST `.in()` fails silently (zero rows), on ONE null (`22P02`), and past ~16KB of headers** — chunk at ~50, drop nulls.
-- **A `neq` on an ABSENT jsonb key matches ZERO rows, and an unbounded `.select()` stops at 1000.** Write the OR-form; `count(*)` first, then page with `.order()`.
-- **`n_live_tup` is STALE in production** — sweep with a real `count(*)` via `query_to_xml`.
-- **A Supabase request that times out at 15s STILL COMMITS** — do multi-step mutations in ONE `plpgsql` function.
-- **A missing TABLE answers `PGRST205`, NOT `42P01`** — treat both as one set behind one helper. `a-missing-table-answers-pgrst205-not-42p01`
-
-**Database, grants and RLS**
-
-- **A write REVOKE does NOT make a table read-only** (`ON DELETE CASCADE` and `SECURITY DEFINER` run as owner). Fixed on prod; **do not redo or undo.**
-- **An append-only table needs a STATEMENT-level `BEFORE TRUNCATE` trigger** — prove all three verbs are refused.
-- 🔴 **A dependency sweep MISSES RLS POLICIES, and `DROP … CASCADE` deletes them SILENTLY.** Ask `pg_depend` and carry a POSITIVE CONTROL.
-- **RLS on with no `authenticated` grant is the NORM here (~4 in 5 tables)** — not a defect class to sweep.
-- **ONE `auth.users` row with `banned_until = 'infinity'` 500s the whole GoTrue admin API** — retire with the app's finite `876000h`.
-- **`au.f_monthly_achievement` serves a precomputed rollup whose fingerprint ignores sales data.** Run `au.f_refresh_monthly_attribution(period)` after ANY sales-row repair, diffing stored against live first. `attribution-rollup-fingerprint-ignores-the-sales-data`
-- **The ATS data model has four traps** (offer-chain hole past `approved_at`; `ats_candidate_*` children with no FK, one a VIEW; `applied_fields` is not the writer; `medical_rep` reads 12 fields vs 38). **NEVER raw-SQL `national_id`/`email`/`phone`** — the `_norm` index is app-maintained. `offer-chain-was-live-in-the-registry-with-a-hole-past-approval` · `ats-candidate-children-one-has-no-fk-and-one-is-a-view` · `cv-extraction-reads-governorate-but-never-applies-it` · `the-medical-rep-cv-schema-reads-12-fields-universal-reads-38`
-- **Detect a CV import that overwrote an identity by per-candidate SENDER COUNT (healthy is 1).** The allowlist holds an inbox, not a sender; the CV file is in `ats_files`, never `cv_external_url`. `a-cv-import-overwrote-a-candidates-whole-identity` · `the-email-import-allowlist-holds-an-inbox-not-a-sender` · `cv-file-is-in-ats-files-not-cv-external-url`
-
-**Probing, attributing and reporting production**
-
-- **A 200 from a health endpoint can be blind to the breakage** — OpenAI's `/v1/models` certifies a key with no balance.
-- **`app_error_events` at 0 rows means QUIET** — prove the route with 405 against a 404 control; never POST a synthetic error to production.
-- **Census client errors by STACK, never by message** (masking makes an every-platform failure read iOS-only); never platform-predicate the fix. `census-client-errors-by-stack-not-message`
-- **The Error Monitor HIDES NULL-`environment` rows, and `create table … as select` copies no RLS** — measure the new table's ACL.
-- **`updated_by_hr_id` LIES about who wrote a row.**
-- **HR ids are MIXED CASE — lower BOTH sides**, or `.eq` silently under-returns (totally, on `au.occupancy_history`).
-- **The Sato logo's wordmark is WHITE, so "SATO" vanishes on white paper.**
-
-**Validation**
-
-- **A repo-wide pattern sweep must grep the TESTS for the old string too** — `git grep -l '<the exact old line>' -- tests` first.
-- **One `await runTest(name, fn)` per test in `tests/run-tests.ts`, checked by AST** — a conflict resolved by keeping both sides makes one call with extra arguments and silently retires a test.
-- **`node --test <file>` passes VACUOUSLY here** — call the exported function, and prove RED before quoting a local green.
-- **RAM-saturated? WAIT — do not skip validation for it.**
-- **Source-pinning tests slice a fixed BYTE window and false-FAIL** when the file shifts.
-- **A heredoc eats backslashes** and yields a test that only ever passes.
-- **`parseDiagnostics` is SYNTAX-ONLY — it cannot see a typecheck error.**
-- **A local typecheck printing ZERO errors can mean it never type-checked:** a truncated `.next/dev/types/routes.d.ts` (`TS1005`/`TS1160`/`TS1161`) stops it — **delete `.next`, never filter it.** 🔴 **Run it in the FOREGROUND and print `node --version` beside the exit code** — `node` is not on the background shell's PATH. `typecheck-incremental-false-green`
-- **`setState` inside `useEffect` is a lint ERROR here.**
-- **A green TEST run carries NO type signal** — only the PR's `typecheck` job answers.
-- **The suite runs with PRODUCTION credentials while a test sets `APP_ENV=production`** — gate any `isProductionRuntime()` write on `PHOENIX_TEST_SUITE`. `the-test-suite-runs-with-production-credentials-and-app-env-production`
-- **A test can NEVER hand a function a `process.env` literal.**
-- **An exhaustive `Record` does NOT gate the build** (`ignoreBuildErrors`) — back it with a RUNTIME assertion in a registered test.
-- **A narrowed SELECT disarms every gate downstream of it** — test the SELECT, not the branch.
-- **An OPTIONAL field written UNCONDITIONALLY is a silent erase** — fix the PATTERN, not the call sites.
-- **A feature can ship green and be reachable by NOBODY** — exercise the path end to end before reading zero usage as adoption.
-- **A merged fix on a path nobody has exercised is untested, not proven.**
-- **`cn()` SILENTLY DROPS every `text-phx-*` size** — the literal `text-[13px]` form is safe; only `getComputedStyle` in a real browser sees it. `tailwind-merge-strips-custom-named-font-sizes`
-- **Mixed Arabic + English in ONE value needs direction PER LINE**; block-level `dir="auto"` is right only for single-language text. `bilingual-bodies-need-direction-per-line-not-per-block`
-- **Classify a UI `timeZone: "UTC"` by its BACKING COLUMN** — date-only stays UTC, a vendor wall-clock (`crm_save_date`, `check_date`) is already Cairo, only an instant we stamped becomes Cairo. `ireports360-timestamps-cairo-local-mislabeled-utc`
-- **VERIFY THE EMITTED ARTIFACT, NEVER THE SOURCE** — assert on the exported generated constant, compile injected scripts with `new Function`, render the PDF. `verify-the-emitted-artifact-never-the-source`
-- **`@/lib/utils` resolves to the ROOT `lib/utils.ts`, NOT `src/lib/utils.ts`.** `at-slash-lib-shadows-src-lib-via-tsconfig-paths`
-- 🔴 **A killed workflow run is RECOVERABLE** via `journal.result → agentId → transcript → first prompt → the finding`; gate it on controls including a NEGATIVE one, and **never let an agent that DIED score a finding REFUTED**.
-
-**Memory and this index**
-
-- **Sweep memories by CLAIM, never by filename or topic**, and never rewrite a dated record.
-
-**Parallel sessions**
-
-- **A parallel session can collide with NO git trace at all** — read the SessionStart working-tree line as a collision signal. Judge a lock by AGE (>2h), never by its PID, and resolve by MERGING, never discarding.
-- **ONE approval can reach SEVERAL sessions — N sessions holding the same "yes" is N executions.** Count live sessions, say so, and re-verify the target right before a protected action; `mergedBy` naming the owner is NOT proof of a human click.
-
-**Worktrees** (see also §5)
-
-- **Another SESSION can remove a worktree under you.**
-- **A gitignored `_wt-*/` scratch folder makes a worktree look clean.**
-- **A bare worktree pushes fine (no pre-push gate)** — it cannot RUN a suite.
-- **`--fix` needs exactly ONE live session; `--strip-idle` does NOT.** If `--fix` fails on a locked husk, `rmdir /s /q` from PowerShell.
-- **Never answer a refusing census with `--force`** — it turns the concurrency check OFF; close the other sessions instead (the census fails CLOSED).
-- **`--repair` skips `.claude/worktrees/` and `ready()` accepts a REAL `node_modules`** — fix by hand: `rmdir` it, then `mklink /J` to the primary's.
-- **A repo-doctor RETIRABLE verdict is fiction by the next command** — re-read at the moment of removal.
-- **Every retirement gate can PASS on a worktree in use** — check the newest `.next/` mtime and that HEAD has not moved since the gate read.
-- **Closing a session does NOT release its worktree.** Find the holder with `scripts/find-worktree-holder.ps1` (`list_sessions` misleads — cross-check by BRANCH). 🔴 **An unkillable holder: ARCHIVE the owning session**, no reboot. A session can never clear its own husk; **NEVER kill git machine-wide.**
-- **A DEREGISTERED worktree resolves git against the PRIMARY**, so a commit lands on production's branch; `cd` cannot escape it. Use `git -C <path>` and trust only `git rev-parse --show-toplevel`.
-- **A squash-merged branch on NO origin ref is BACKED UP, not stranded** — never push it; `git branch rescue/<name> <tip>` is the zero-risk move.
-- **Self-removing a worktree MUTES its session-end guard, and a `.claude/worktrees/` one cannot retire itself** — strip the payload first: cmd's NON-recursive `rmdir` on the junction (never `Remove-Item -Recurse`), then `.next`.
-- **`next dev` in a worktree needs `--webpack`** (`pnpm run dev` chooses via `scripts/dev-server.mjs`). The watchdog's 6 GB kills are a threshold problem; `--max-old-space-size` is a no-op.
-- **`gh pr merge` from a worktree exits NON-ZERO after the merge SUCCEEDED** (`'main' is already used by worktree`). Check `gh pr view <n> --json state,mergeCommit`; never retry. `gh-pr-merge-exits-nonzero-from-a-worktree-after-it-succeeded`
-
-**Next.js runtime**
-
-- **A >2MB `unstable_cache` entry KILLS the dev server** (dev-only, uncatchable).
-- **`unstable_cache` SERIALIZES — a returned `Map` comes back `{}`.** Cache the ROWS.
-- **Standalone tracing copies FILES, not pnpm SYMLINKS**, and **a top-level `import sharp` 500s a whole PAGE** when the `.so` is missing.
-
-**Browser and dev-auth**
-
-- **A MINIMIZED window makes every browser reading LIE — check `document.visibilityState` FIRST** (rAF stops, dnd-kit cannot run). `javascript_tool` does not await a returned promise.
-- **A COLLAPSED PANE sticks on "Loading workspace" with every element at 0** — remove the `hidden` ATTRIBUTE on the wrapper, and check `innerWidth` equals the emulated size. `collapsed-browser-pane-reads-zero`
-- **Click by TEXT — blind coordinate clicks once fired a real production collection run.**
-- **Dev login is `GET /api/dev-auth?role=<Role>`** and it switches the Browser pane; add `&hrId=a-12&next=<path>` to sign in as one person. Header-only `x-phoenix-*` is the separate path role SWEEPS use.
-- **Turbopack `0xc0000142` means commit charge is exhausted** — close a session, do not debug the code.
-- **Verify a 375px mobile layout with NO dev server.**
-
-**Machine ceiling**
-
-- **A freeze leaves NO dump — the tell is `dwm.exe` dying `0xC00001AD`.** The ceiling is COMMIT, not RAM (§5). **Never judge a process by `VirtualSize`.**
-- **`nvlddmkm` dying is a symptom, but Event 2004's `node.exe` figures ARE real.** Delete throwaway ExcelJS probes when done.
-- **An interrupted session leaves the tree BROKEN ON PURPOSE.** Before acting on a bare "commit it", `git grep BREAK-`.
+`tz-africa-cairo-silently-returns-utc-in-msys` · `looking-at-a-generated-workbook-two-ways-that-lie` · `a-manual-scheduled-task-run-leaves-no-trace` · `main-is-not-the-primary-checkout` · `a-missing-table-answers-pgrst205-not-42p01` · `attribution-rollup-fingerprint-ignores-the-sales-data` · `offer-chain-was-live-in-the-registry-with-a-hole-past-approval` · `ats-candidate-children-one-has-no-fk-and-one-is-a-view` · `cv-extraction-reads-governorate-but-never-applies-it` · `the-medical-rep-cv-schema-reads-12-fields-universal-reads-38` · `a-cv-import-overwrote-a-candidates-whole-identity` · `the-email-import-allowlist-holds-an-inbox-not-a-sender` · `cv-file-is-in-ats-files-not-cv-external-url` · `census-client-errors-by-stack-not-message` · `typecheck-incremental-false-green` · `the-test-suite-runs-with-production-credentials-and-app-env-production` · `tailwind-merge-strips-custom-named-font-sizes` · `bilingual-bodies-need-direction-per-line-not-per-block` · `ireports360-timestamps-cairo-local-mislabeled-utc` · `verify-the-emitted-artifact-never-the-source` · `at-slash-lib-shadows-src-lib-via-tsconfig-paths` · `gh-pr-merge-exits-nonzero-from-a-worktree-after-it-succeeded` · `collapsed-browser-pane-reads-zero`
 
 ### 2.2 The memory index
 
