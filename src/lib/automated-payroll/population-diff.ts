@@ -1,3 +1,5 @@
+import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
+
 import type { PopulationMember } from "./recommend.ts";
 import type { RowLifecycle } from "./types.ts";
 
@@ -18,7 +20,9 @@ import type { RowLifecycle } from "./types.ts";
  *   disappeared   — absent now, present last month, NOT explained by anything.
  *                   This is the bug bucket. It should always be empty.
  *
- * Pure + I/O-free so it is unit-tested; callers supply last month's roster.
+ * Every function here is pure; callers supply last month's roster. (The one import is
+ * compactHrKey, the same id normalizer the rest of this module family matches on — a second copy
+ * of it is how a hyphen or a capital silently splits one person into two.)
  */
 
 export type PopulationDiffPerson = {
@@ -92,4 +96,32 @@ export function describePopulationDiff(diff: PopulationDiff): string {
   if (diff.left.length > 0) parts.push(`−${diff.left.length} left`);
   if (diff.disappeared.length > 0) parts.push(`⚠ ${diff.disappeared.length} unexplained`);
   return parts.join(" · ");
+}
+
+/**
+ * The subset of `disappeared` that nobody has accounted for (audit finding 46).
+ *
+ * Someone HR removed from this run on purpose still has a draft row, flagged excluded with a
+ * reason — that is an explanation, and Part 2 must not ask about them again. Anyone else who was
+ * paid last month and is simply absent now is the question the Part 2 confirm stops on.
+ */
+export function unexplainedDisappearances(
+  diff: PopulationDiff,
+  draftRows: ReadonlyArray<{ employeeHrIdCompact: string; excluded: boolean }>,
+): PopulationDiffPerson[] {
+  const explained = new Set(
+    draftRows.filter((row) => row.excluded).map((row) => compactHrKey(row.employeeHrIdCompact)),
+  );
+  return diff.disappeared.filter((person) => !explained.has(compactHrKey(person.hrId)));
+}
+
+/** What HR is asked to acknowledge, naming every person in full — never a count, never an ellipsis. */
+export function describeUnexplainedDisappearances(people: PopulationDiffPerson[]): string {
+  if (people.length === 0) return "";
+  const names = people.map((person) => `${person.fullName} (${person.hrId})`).join(", ");
+  const subject =
+    people.length === 1
+      ? "1 employee who was paid last month is missing"
+      : `${people.length} employees who were paid last month are missing`;
+  return `${subject} from this run with no resignation on file: ${names}.`;
 }

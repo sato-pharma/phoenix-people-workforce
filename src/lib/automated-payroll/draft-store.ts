@@ -1,4 +1,6 @@
 import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
+
+import { TRANSITION_CLAIM_LOST } from "./transition-claim.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { normalizeHoldReason, previousPeriod } from "./hold-reason.ts";
@@ -48,6 +50,8 @@ function mapRun(row: RunRow): MonthlySalaryRun {
     createdBy: (row.created_by as string | null) ?? null,
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),
+    transitionAction: (row.transition_action as string | null) ?? null,
+    transitionStartedAt: (row.transition_started_at as string | null) ?? null,
   };
 }
 
@@ -198,6 +202,12 @@ export async function updateRun(
     publishedAt?: string | null;
     publishedBy?: string | null;
   },
+  /**
+   * `transitionToken`: the write is conditioned on the claim this transition holds, and clears it in the
+   * same statement (audit finding 50). A claim that lapsed and was taken over matches nothing, and that
+   * is refused rather than written over the transition that took the run.
+   */
+  options: { transitionToken?: string } = {},
 ): Promise<MonthlySalaryRun> {
   const dbPatch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (patch.phase !== undefined) dbPatch.phase = patch.phase;
@@ -208,15 +218,56 @@ export async function updateRun(
   if (patch.publishedBatchId !== undefined) dbPatch.published_batch_id = patch.publishedBatchId;
   if (patch.publishedAt !== undefined) dbPatch.published_at = patch.publishedAt;
   if (patch.publishedBy !== undefined) dbPatch.published_by = patch.publishedBy;
+  if (options.transitionToken) {
+    dbPatch.transition_token = null;
+    dbPatch.transition_action = null;
+    dbPatch.transition_started_at = null;
+  }
 
-  const { data, error } = await getSupabaseAdmin()
-    .from(RUNS)
-    .update(dbPatch)
-    .eq("id", id)
-    .select("*")
-    .single();
+  let query = getSupabaseAdmin().from(RUNS).update(dbPatch).eq("id", id);
+  if (options.transitionToken) query = query.eq("transition_token", options.transitionToken);
+  const { data, error } = await query.select("*");
   if (error) throw error;
-  return mapRun(data as RunRow);
+  const row = ((data ?? []) as RunRow[])[0];
+  if (!row) {
+    throw new Error(
+      options.transitionToken
+        ? `Conflict: ${TRANSITION_CLAIM_LOST} this action's hold on the run lapsed before the run could be ` +
+            "marked, and another action has taken the run. Work this action had already saved may still " +
+            "stand — refresh the page and read where the run is before repeating it."
+        : "Not found: payroll run does not exist.",
+    );
+  }
+  return mapRun(row);
+}
+
+/**
+ * Claim a run for one phase transition (audit finding 50). Returns the claim token, or null when the run
+ * is not in one of `expectedPhases` or a live transition already holds it. One atomic statement: see
+ * phx_claim_automated_payroll_run_transition.
+ */
+export async function claimRunTransition(
+  runId: string,
+  expectedPhases: RunPhase[],
+  action: string,
+): Promise<string | null> {
+  const { data, error } = await getSupabaseAdmin().rpc("phx_claim_automated_payroll_run_transition", {
+    p_run_id: runId,
+    p_expected_phases: expectedPhases,
+    p_action: action,
+  });
+  if (error) throw error;
+  return typeof data === "string" && data.length > 0 ? data : null;
+}
+
+/** Let go of a claim a transition could not finish. Matches nothing when the phase write already cleared it. */
+export async function releaseRunTransition(runId: string, token: string): Promise<void> {
+  const { error } = await getSupabaseAdmin()
+    .from(RUNS)
+    .update({ transition_token: null, transition_action: null, transition_started_at: null })
+    .eq("id", runId)
+    .eq("transition_token", token);
+  if (error) throw error;
 }
 
 export async function listStepStates(runId: string): Promise<StepState[]> {
