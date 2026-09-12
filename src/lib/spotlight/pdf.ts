@@ -1,51 +1,59 @@
 // Spotlight — the sheet.
 //
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// THE DESIGN IS THE ONE THE OWNER APPROVED, on 2026-09-10, after rejecting three others. Its rules,
-// in the order he settled them:
+// 2026-09-12 — THE CERTIFICATE IS THE REFERENCE. The owner sent the Future Talents certificate
+// (`ftp2026-certificate-aya-mohamed-elsawy.pdf`) and asked for this sheet to be built off it. What
+// was taken, device by device, and why each one is doing work here:
 //
-//   · THE ENGRAVED SHEET. A rule trio frame with lathe-cut corners, braided bands under the
-//     masthead and above the footer, a rule PAIR (heavy over hairline, letterpress fashion) above
-//     and below the figure. He rejected a modern dark layout outright and asked to come back here.
+//   · THE CREST BAND. A dark band across the head of every sheet with the mark reversed out of it,
+//     large, and a brand rule under it. It is the first thing on the page, which on a document the
+//     company is putting its name to is what the issuer should be. It also gives the sheet a top
+//     edge — the old masthead floated in white and the page began nowhere.
 //
-//   · NO DEVICES INSIDE THE FRAME. A guilloche lozenge and then a laurel wreath both went in and
-//     both came out — "what are those shapes". The number sits in open space. Do not put anything
-//     behind it, around it, or under it except the rules and the gauge.
+//   · THE NAME ON A RULE. The subject's name set large in near-black over a rule that runs under it.
+//     That rule is the whole certificate device: it is what separates a name that has been AWARDED
+//     something from a name in a list.
 //
-//   · COLOUR MEANS SOMETHING. Green is at-or-above target, red is below, and nothing else on the
-//     page may be either colour. That is the whole licence: the moment green also means "nice", it
-//     stops meaning anything. Both are muted so they sit with the logo blues.
+//   · A SENTENCE ASSEMBLED FROM COUNTS. "Ranked first of 111 …, for June · July · August 2026."
+//     Every clause restates a figure held elsewhere on the sheet. Nothing here is an opinion about
+//     anybody, and no number appears that the query did not return.
 //
-// Everything else follows the house identity SATO-DIS-2026-01 v1.0 — the logo-sampled palette,
-// square edges everywhere, the on-light mark, and the 0.5 pt hairline floor.
+//   · THE STAT BAND, CLOSED. Three figures on a tint, between a heavy rule above and below. On the
+//     reference this is what stops the page from drifting; here it does the same job under the
+//     ranking and under the figure.
+//
+//   · BRACKET CORNERS instead of the guilloche bosses, and the braided bands are gone. The engine
+//     turning was the old identity's answer to "make it look premium" and it read as fussy at print
+//     size next to a name. The corners are four right angles and nothing else.
+//
+//   · NOT THE ARABIC WATERMARK. The reference sets the company's name very large and very faint
+//     behind its text, and it went in here for a day. The owner took it out on 2026-09-12: on a
+//     sheet whose payload is one enormous figure it is a second thing in the same space, and the
+//     eye reads it as a printing fault rather than as a watermark. Do not put it back.
+//
+// 🔴 THIS TAKES THE SHEET OUT OF THE HOUSE INK RULE, DELIBERATELY. SATO-DIS-2026-01 allows no filled
+// areas except the 6% zebra row, and the crest band, the plinth and the stat band are all fills. The
+// reference the owner handed over is built on them; the premium closing already holds the same
+// exemption. Everything else about the house identity is unchanged — the logo palette, square edges
+// everywhere, the on-light mark wherever the ground is white, the 0.5 pt hairline floor, the
+// document identity on every sheet, and no truncation anywhere.
 //
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// 2026-09-12 — "very weak exported pdf premium polish". Four things were making a correct sheet
-// look unfinished, and each is fixed here rather than decorated over:
+// WHAT MUST NOT REGRESS, whatever the sheet looks like next:
 //
-//   1. THE PAGE DID NOT FILL. Both sheets ended a third of the way up from the footer and left a
-//      dead band of white — the hero between its territory and its figure, the leaderboard under
-//      the last row. Nothing was wrong with either; the space was simply never distributed. The
-//      column now carries explicit FLEXIBLE GAPS (`.gap`) that share what is left over, and the
-//      leaderboard sizes its own row height to the page it is on. A sheet that fills is the single
-//      biggest difference between "a printout" and "a document".
+//   1. THE RANKING PAGINATES. `.sheet` clips at A4 and the limit reaches into the hundreds, so an
+//      unpaginated table printed 18 of 40 names, no footer, and a row sliced through the middle,
+//      with no error anywhere. Rows are packed by measured height and balanced across the sheets
+//      they need, and the footer numbers them.
 //
-//   2. A LONG LIST WAS SILENTLY CUT. `.sheet` clips at A4 and the table never paginated, so a
-//      40-name leaderboard printed 18 names, no footer, and a row sliced through the middle — with
-//      no error anywhere. The limit reaches into the hundreds and "everyone" is a real answer, so
-//      this was a loaded gun. The leaderboard now PAGINATES, every page carries the frame and the
-//      footer, and the footer numbers the sheets.
+//   2. NOTHING RASTERISES. Chromium turns a CSS gradient or a repeating background into its own
+//      page-sized layer when printing — measured at 6.88 MB for a 6-page sheet whose text is a few
+//      kilobytes. Ornament is inline SVG polylines, fills are flat colours, and the mark is one
+//      base64 data URI referenced by every page.
 //
-//   3. THE ORNAMENT WAS TOO FINE TO READ. The braid ran 29 periods through 1.8 mm of height, which
-//      at print size is a dotted line, and the corner bosses were 8.6 mm of nested circles. Both
-//      are drawn heavier and coarser now — the weave is legible as a weave.
-//
-//   4. GREEN HAD STOPPED MEANING ANYTHING on the leaderboard. Seven of ten rows were filled with
-//      green tint, so the page read as a spreadsheet with conditional formatting and the eye had
-//      nowhere to land. The house ink rule allows the 6% zebra and nothing else, so the fill is
-//      back to the plain zebra and the KEY moved to a rule: a 1.3 pt green or red edge on the rank
-//      cell, beside the arrow and the figure that were always coloured. The meaning survives; the
-//      block of colour does not.
+//   3. COLOUR MEANS SOMETHING. Green is at-or-above target, red is below, and nothing else on the
+//      page may be either colour. A tint washed across every over-target row is what took that
+//      meaning away once already: the fill is the zebra, the key is a rule on the rank cell.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -65,10 +73,15 @@ const C = {
   muted: "#5A6B7C",
   body: "#1A1A1A",
   green: "#0F7A47",
-  // NO GREEN TINT. There was one, and it filled every over-target row — which is how green stopped
-  // meaning "at or above target" and started meaning "this row is nice". It is not coming back: the
-  // key is a rule on the rank cell, and the only fill the house identity allows is the 6% zebra.
   red: "#B4231C",
+  // The crest band and the plinth. Near-black rather than the logo's deepest blue: on the reference
+  // the band is a ground for the mark, and a blue ground under a blue mark flattens it.
+  crest: "#0E1720",
+  // The name, and anything else that has to out-weigh the blue. Blue everywhere is what made the
+  // old sheet read as a template with the fields filled in.
+  ink: "#111820",
+  // A tint that survives being laid under 9 pt text on an office printer.
+  wash: "#EEF3F7",
 } as const;
 
 const HAIR = "0.5pt";
@@ -76,118 +89,91 @@ const HAIR = "0.5pt";
 // ── The mark ──────────────────────────────────────────────────────────────────────────────────
 // Read once and inlined. `setContent` gives Chromium no base URL, so an `<img src="/brand/…">`
 // would silently render nothing — the failure mode is a letterhead with a hole in it, which no
-// error reports. The ON-LIGHT file, always: the stock mark sets "SATO" in white for dark grounds
-// and this sheet is white paper, so the stock file would print a letterhead reading "PHARMA".
-let markCache: string | null = null;
-function houseMark(): string {
-  if (markCache === null) {
-    const svg = readFileSync(join(process.cwd(), "public", "brand", "sato-pharma-logo-on-light.svg"), "utf8");
-    // 🔴 AN <img> WITH A BASE64 DATA URI, NOT INLINE MARKUP. Inlining the SVG puts the mark's paths
-    // into the PDF once PER PAGE: measured on a 6-page sheet at 6.88 MB, and 34.69 MB at 31 pages,
-    // which is ~1.15 MB a page of nothing but a repeated logo. As an image resource Chromium
-    // embeds it once and every page references the same object. Base64 rather than percent-encoding
-    // because the encoded form is going inside an attribute, and a raw SVG's own quotes would end
-    // that attribute early — the defect that has blanked bands and a footer in this repository.
-    markCache = `<img alt="" src="data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}">`;
-  }
-  return markCache;
+// error reports.
+//
+// 🔴 WHICH FILE DEPENDS ON THE GROUND, AND GETTING IT WRONG PRINTS HALF A LOGO. The stock mark sets
+// "SATO" in white for dark grounds; the on-light file sets it in black. The crest band is dark, so
+// the band takes the stock file — and anywhere the ground is white it must be the on-light one, or
+// the letterhead reads "PHARMA".
+const markCache = new Map<string, string>();
+function houseMark(onDark: boolean): string {
+  const file = onDark ? "sato-pharma-logo.svg" : "sato-pharma-logo-on-light.svg";
+  const cached = markCache.get(file);
+  if (cached !== undefined) return cached;
+  const svg = readFileSync(join(process.cwd(), "public", "brand", file), "utf8");
+  // 🔴 AN <img> WITH A BASE64 DATA URI, NOT INLINE MARKUP. Inlining the SVG puts the mark's paths
+  // into the PDF once PER PAGE: measured on a 6-page sheet at 6.88 MB, and 34.69 MB at 31 pages,
+  // which is ~1.15 MB a page of nothing but a repeated logo. As an image resource Chromium embeds it
+  // once and every page references the same object. Base64 rather than percent-encoding because the
+  // encoded form is going inside an attribute, and a raw SVG's own quotes would end that attribute
+  // early — the defect that has blanked bands and a footer in this repository.
+  const html = `<img alt="" src="data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}">`;
+  markCache.set(file, html);
+  return html;
 }
 
 // ── Ornament ──────────────────────────────────────────────────────────────────────────────────
 /**
- * A guilloche strand is a rose curve, r(t) = R + amp·cos(lobes·t); copies rotated by a fraction of
- * ONE lobe cross into the woven chain that reads as engine turning. Rotating by a fraction of a
- * lobe rather than an arbitrary angle is the whole trick — anything else is overlapping scribble.
+ * The bracket corner: two strokes meeting at a right angle, drawn as polylines.
  *
- * Used for the corner bosses ONLY. It is not allowed anywhere near the number.
+ * It replaces the guilloche boss. The rosette was three rose curves inside 11 mm, which is a lot of
+ * craft to spend on something that prints as a smudge beside a 30 pt name — and the reference
+ * answers the same corner with a bracket, which reads at any size and does not compete.
+ *
+ * 🔴 VECTOR, NOT A BACKGROUND IMAGE. Every ornament on this sheet is an inline polyline for the
+ * raster reason at the head of this file. If this ever becomes a `background-image`, the PDF gains a
+ * page-sized layer per page and nothing warns.
  */
-function rosette(cx: number, cy: number, R: number, amp: number, lobes: number, strands: number, color: string, width: number): string {
-  let out = "";
-  for (let s = 0; s < strands; s += 1) {
-    const phase = (s / strands) * ((2 * Math.PI) / lobes);
-    const pts: string[] = [];
-    for (let i = 0; i <= 120; i += 1) {
-      const t = (i / 120) * 2 * Math.PI;
-      const r = R + amp * Math.cos(lobes * (t + phase));
-      pts.push(`${(cx + r * Math.cos(t)).toFixed(2)},${(cy + r * Math.sin(t)).toFixed(2)}`);
-    }
-    out += `<polyline points="${pts.join(" ")}" fill="none" stroke="${color}" stroke-width="${width}" stroke-linejoin="round"/>`;
-  }
-  return out;
-}
-
-/**
- * The corner boss. Drawn at 11 mm rather than the original 8.6: the rosette is the only piece of
- * engine turning left on the sheet, and at the smaller size its three strands collapsed into what
- * printed as a pair of concentric circles. The lobe count comes DOWN as the size goes up — a
- * bigger boss with more lobes is finer, not bolder, which is the opposite of what was wanted.
- */
-const CORNER_SVG = `<svg viewBox="0 0 88 88" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <path d="M0,88 L0,30 Q0,0 30,0 L88,0" fill="none" stroke="${C.deep}" stroke-width="2.6"/>
-  <path d="M10,88 L10,34 Q10,10 34,10 L88,10" fill="none" stroke="${C.hair}" stroke-width="1.1"/>
-  ${rosette(31, 31, 15.5, 4.4, 9, 3, C.light, 1.05)}
-  <circle cx="31" cy="31" r="3.4" fill="none" stroke="${C.deep}" stroke-width="1.3"/>
-  <circle cx="31" cy="31" r="0.9" fill="${C.deep}"/>
+const BRACKET_SVG = `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <polyline points="0,40 0,0 40,0" fill="none" stroke="${C.ink}" stroke-width="3.2"/>
+  <polyline points="7.5,40 7.5,7.5 40,7.5" fill="none" stroke="${C.light}" stroke-width="1"/>
 </svg>`;
 
-/**
- * The braided band: three sine passes a third of a wavelength apart.
- *
- * 🔴 DRAWN AS ONE INLINE SVG, NOT AS A TILED CSS BACKGROUND. This is the difference between a
- * 1.2 MB page and a 60 KB one. Chromium rasterises a repeating background — and every CSS gradient
- * — into its OWN PAGE-SIZED LAYER when printing: measured on a 6-page sheet, 36 images of
- * 595x842 at roughly half a megabyte each, 6.88 MB of a document whose text is a few kilobytes.
- * Nothing warns; the PDF simply arrives too big to send, which is where this was found.
- *
- * The whole strip is emitted as explicit polylines instead, so it stays vector. `preserveAspectRatio
- * ="none"` lets it stretch to whatever width it is given; the periods are computed for a 176 mm
- * measure, so the stretch is under 2% and invisible.
- *
- * THE WEAVE IS COARSE ON PURPOSE. It ran at 29 periods across that measure, which puts a whole
- * braid cycle inside 6 mm — printed, that is a dotted rule, not a braid. 18 periods over the same
- * measure gives each cycle just under 10 mm, which is where the eye resolves the crossing.
- */
-function braidSvg(color: string, weight: number): string {
-  const PERIOD = 72, H = 20, AMP = 6.8, MID = H / 2, STEPS = 24, PERIODS = 18;
-  const W = PERIOD * PERIODS;
-  const wave = (phase: number) => {
-    const pts: string[] = [];
-    for (let i = 0; i <= STEPS * PERIODS; i += 1) {
-      const x = (i / STEPS) * PERIOD;
-      pts.push(`${x.toFixed(1)},${(MID + AMP * Math.sin((2 * Math.PI * i) / STEPS + phase)).toFixed(2)}`);
-    }
-    return pts.join(" ");
-  };
-  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">`
-    + [0, (2 * Math.PI) / 3, (4 * Math.PI) / 3]
-      .map((phase) => `<polyline points="${wave(phase)}" fill="none" stroke="${color}" stroke-width="${weight}" stroke-linecap="round"/>`)
-      .join("")
-    + `</svg>`;
-}
-
-const BAND_SVG = braidSvg(C.deep, 2.6);
-const BAND_LIGHT_SVG = braidSvg(C.hair, 2.2);
-
-/** The rule-and-diamond flourish. One piece of markup, under every title block. */
-const FLOURISH = `<div class="flourish"><i></i><s></s><b></b><s></s><i></i></div>`;
+/** The short heavy rule that sits under an eyebrow. The reference's one piece of punctuation. */
+const TICK = `<div class="tick"></div>`;
 
 // ── Formatting ────────────────────────────────────────────────────────────────────────────────
 const egp = (n: number) => new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(n));
 const millions = (n: number) => (n / 1_000_000).toFixed(2);
 const pct = (n: number | null) => (n === null ? "—" : n.toFixed(1));
 
+/**
+ * How wide the hero number is allowed to be drawn, from how many characters it has.
+ *
+ * Keyed on the FORMATTED string rather than on the number, because the format is what occupies the
+ * page: pct() is a plain toFixed(1) with no thousands separator, so 141.1 is five characters and
+ * 1412.5 is six.
+ */
+function pctSizeClass(shown: string): string {
+  if (shown.length >= 7) return " figure__pct--vlong";
+  if (shown.length === 6) return " figure__pct--long";
+  return "";
+}
+
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
 
+const ORDINALS = [
+  "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth",
+];
+
+/** "first" … "tenth", and past that the figure — "18th", which is the honest way to write it. */
+function ordinal(n: number): string {
+  if (n >= 1 && n <= ORDINALS.length) return ORDINALS[n - 1];
+  const rem100 = n % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
+  const suffix = ["th", "st", "nd", "rd"][n % 10] ?? "th";
+  return `${n}${n % 10 <= 3 ? suffix : "th"}`;
+}
+
 /**
  * The months a window actually covers, written out — "June · July · August 2026".
  *
- * It is on the hero sheet because "Q3 2026" is a label the reader has to decode, and the hero sheet
- * is the one that goes to the person it names. Purely a restatement of `result.periods`: no month
- * is named that the numbers were not taken from, and a window spanning two years prints both years
- * rather than quietly assuming one.
+ * "Q3 2026" is a label the reader has to decode, and the hero sheet is the one that goes to the
+ * person it names. Purely a restatement of `result.periods`: no month is named that the numbers were
+ * not taken from, and a window spanning two years prints both years rather than quietly assuming one.
  */
 function monthsLabel(periods: string[]): string {
   if (periods.length === 0) return "";
@@ -199,6 +185,27 @@ function monthsLabel(periods: string[]): string {
   const oneYear = parts.every((part) => part.year === parts[0].year);
   if (oneYear) return `${parts.map((part) => part.name).join(" · ")} ${parts[0].year}`;
   return parts.map((part) => `${part.name} ${part.year}`).join(" · ");
+}
+
+/**
+ * What the achievement is measured AGAINST, said in full.
+ *
+ * 🔴 A TARGET IN THIS COMPANY IS SET FOR A MONTH. The owner, 2026-09-12: "no its monthly target not
+ * q3". The quarter is only the window this sheet happens to cover; the figure is the window's sales
+ * over the SUM of that window's monthly targets, and it is summed, never averaged. The caption used
+ * to read "of the Q3 2026 target", which names a quarterly target that does not exist anywhere in
+ * the business — and on a sheet handed to the person it is about, that reads as the company having
+ * measured them against something nobody ever set.
+ *
+ * A one-month window is the case where naming the window IS naming the target, so it keeps the
+ * shorter sentence.
+ */
+function targetCaption(periods: string[]): string {
+  const months = monthsLabel(periods);
+  if (!months) return "of target";
+  return periods.length === 1
+    ? `of the ${escapeHtml(months)} target`
+    : `of the monthly targets for ${escapeHtml(months)}`;
 }
 
 /** The gauge scale. 112 leaves an overshoot room to read AS an overshoot rather than as the end. */
@@ -234,42 +241,55 @@ function gauge(achievement: number | null, caption: string): string {
 
 // ── Chrome shared by every page ───────────────────────────────────────────────────────────────
 /**
- * Every page is this: the frame, the four bosses, the masthead, a braid, the body, and a footer
- * that says where the numbers came from and which sheet of how many this is.
+ * Every sheet is this: the crest band, the bracketed field, the body, the record foot, the plinth.
  *
- * THE SHEET NUMBER IS NOT DECORATION. These go out as a stapled pack — a leaderboard, then a hero
- * sheet per person — and until now nothing on a loose page said whether anything was missing.
+ * THE SHEET NUMBER IS NOT DECORATION. These go out as a stapled pack — a ranking, then a hero sheet
+ * per person — and until the numbering went in, nothing on a loose page said whether anything was
+ * missing from it.
  */
 function pageShell(result: SpotlightResult, body: string, page: number, total: number): string {
   return `<div class="sheet${page === total ? "" : " sheet--break"}">
-    <div class="frame"></div>
-    <div class="corner corner--tl">${CORNER_SVG}</div>
-    <div class="corner corner--tr">${CORNER_SVG}</div>
-    <div class="corner corner--bl">${CORNER_SVG}</div>
-    <div class="corner corner--br">${CORNER_SVG}</div>
-    <div class="inner">
-      <header class="lh">
-        <div class="lh__mark">${houseMark()}</div>
-        <div class="lh__id">
-          <strong>SATO-DIS-2026-01 v1.0</strong>
-          <em>Sales Performance Spotlight</em><br>
-          ${escapeHtml(result.windowLabel)}<br>
-          Issued ${escapeHtml(result.generatedAtCairo)} &middot; Africa/Cairo
-        </div>
-      </header>
-      <div class="band">${BAND_SVG}</div>
-      ${body}
-      <footer class="foot">
-        <div class="band band--foot">${BAND_LIGHT_SVG}</div>
-        <div class="foot__txt">
-          <span class="foot__src"><strong>Source.</strong> Monthly Closing &mdash; Sales vs Target, ${escapeHtml(result.periods.join(", "))}.<br>
-            Indirect sales at factory price, direct orders on the Finance-owned sales month.</span>
-          <span class="foot__no">Sheet ${page}<br><i>of ${total}</i></span>
-          <span class="foot__house"><strong>Sato Pharma</strong><br>Phoenix Workforce &middot; Spotlight</span>
-        </div>
-      </footer>
+    <header class="crest">
+      <div class="crest__mark">${houseMark(true)}</div>
+    </header>
+    <div class="crest__rule"></div>
+
+    <div class="page">
+      <div class="field"></div>
+      <div class="bracket bracket--tl">${BRACKET_SVG}</div>
+      <div class="bracket bracket--tr">${BRACKET_SVG}</div>
+      <div class="bracket bracket--bl">${BRACKET_SVG}</div>
+      <div class="bracket bracket--br">${BRACKET_SVG}</div>
+
+      <div class="inner">
+        ${body}
+        <footer class="foot">
+          <div class="foot__block foot__block--src">
+            <p class="foot__cap">Source</p>
+            <p class="foot__line"><strong>Monthly Closing &mdash; Sales vs Target</strong></p>
+            <p class="foot__sub">${escapeHtml(result.periods.join(", "))} &middot; indirect sales at factory price,
+              direct orders on the Finance-owned sales month.</p>
+          </div>
+          <div class="foot__block foot__block--no">
+            <p class="foot__cap">Sheet</p>
+            <p class="foot__no">${page}<span> of ${total}</span></p>
+          </div>
+          <div class="foot__block foot__block--rec">
+            <p class="foot__cap">Record</p>
+            <p class="foot__line"><strong>SATO-DIS-2026-01 v1.0</strong></p>
+            <p class="foot__sub">Issued ${escapeHtml(result.generatedAtCairo)} &middot; Africa/Cairo</p>
+          </div>
+        </footer>
+      </div>
     </div>
+
+    <div class="plinth"><span>Sato Pharma &middot; Sales Performance Spotlight &middot; ${escapeHtml(result.windowLabel)}</span></div>
   </div>`;
+}
+
+/** The eyebrow-over-a-rule that opens every sheet. */
+function opener(text: string): string {
+  return `<p class="eyebrow">${escapeHtml(text)}</p>${TICK}`;
 }
 
 // ── The leaderboard ───────────────────────────────────────────────────────────────────────────
@@ -288,14 +308,14 @@ const MAX_PAD_MM = 4.2;
  * Vertical measure, in mm, a page has for rows once its head, note and footer are paid for, and
  * what one row costs before any padding is added to it.
  *
- * MEASURED, not estimated. The first try put 18 rows on a continuation page from an arithmetic that
- * assumed a 7 mm row; the territory cell is two lines, the real row is nearer 7.8 mm, and the sheet
- * overran by about 13 mm — which does not error, it pushes the footer off the bottom of the page.
- * Both numbers below are therefore set BELOW what fits, so that a long name wrapping to two lines
- * still has somewhere to go.
+ * MEASURED, not estimated — and re-measured after the crest band and plinth went in, which together
+ * take about 34 mm off the page that the old masthead did not. An arithmetic guess put 18 rows on a
+ * continuation page once and the sheet overran by 13 mm, which does not error: it pushes the footer
+ * off the bottom of the paper. Both numbers are set BELOW what actually fits, so that a long name
+ * wrapping to two lines still has somewhere to go.
  */
-const ROW_AREA_FIRST = 146;
-const ROW_AREA_LATER = 178;
+const ROW_AREA_FIRST = 119;
+const ROW_AREA_LATER = 150;
 const ROW_CONTENT_MM = 7.8;
 
 /**
@@ -394,6 +414,16 @@ const LB_HEAD = `<thead><tr>
   <th></th><th>Name</th><th>Territory</th><th class="r">Sales</th><th class="r">Achievement</th>
 </tr></thead>`;
 
+/** The three figures on a tint, closed top and bottom — the reference's band, doing the same job. */
+function statBand(cells: { value: string; label: string; tone?: string }[]): string {
+  return `<section class="stats">
+    ${cells.map((cell) => `<div class="stat">
+      <p class="stat__v ${cell.tone ?? ""}">${cell.value}</p>
+      <p class="stat__l">${cell.label}</p>
+    </div>`).join("")}
+  </section>`;
+}
+
 function leaderboardPage(
   result: SpotlightResult,
   rows: SpotlightRow[],
@@ -407,31 +437,32 @@ function leaderboardPage(
   const last = part === parts;
   const pad = rowPaddingMm(rows, first ? ROW_AREA_FIRST : ROW_AREA_LATER);
   const totals = result.shortlistAchievement;
+  const months = monthsLabel(result.periods);
 
   const head = first
-    ? `<p class="eyebrow">Spotlight &middot; ${escapeHtml(result.windowLabel)}</p>
-    <h1 class="lb-head">${escapeHtml(result.headline)}</h1>
-    <p class="lb-sub">${escapeHtml(result.subheadline)}</p>
-    ${FLOURISH}
-
-    <section class="stats stats--lb">
-      <div class="stat">
-        <p class="stat__v">${egp(result.shortlistActualValue)}<small> EGP</small></p>
-        <p class="stat__l">Delivered by everyone<br>on this sheet</p>
-      </div>
-      <div class="stat">
-        <p class="stat__v ${totals !== null && totals >= 100 ? "is-up" : totals !== null ? "is-down" : ""}">${pct(totals)}<small>%</small></p>
-        <p class="stat__l">Their joint achievement,<br>summed and not averaged</p>
-      </div>
-      <div class="stat">
-        <p class="stat__v">${result.rows.length}<small> of ${result.totalSubjects}</small></p>
-        <p class="stat__l">Spotlighted out of<br>everyone who qualified</p>
-      </div>
-    </section>`
-    : `<p class="eyebrow">Spotlight &middot; ${escapeHtml(result.windowLabel)}</p>
-    <h1 class="lb-head lb-head--cont">${escapeHtml(result.headline)}</h1>
-    <p class="lb-sub">Continued &mdash; ranks ${offset + 1} to ${offset + rows.length} of ${result.rows.length}</p>
-    ${FLOURISH}`;
+    ? `${opener(`Spotlight · ${result.windowLabel}`)}
+    <h1 class="title">${escapeHtml(result.headline)}</h1>
+    <div class="ruleunder"></div>
+    <p class="lede">${escapeHtml(result.subheadline)}${months ? `, over ${escapeHtml(months)}` : ""}.</p>
+    ${statBand([
+      {
+        value: `${egp(result.shortlistActualValue)}<small> EGP</small>`,
+        label: "Delivered by everyone on this sheet",
+      },
+      {
+        value: `${pct(totals)}<small>%</small>`,
+        label: "Their joint achievement, summed and not averaged",
+        tone: totals !== null && totals >= 100 ? "is-up" : totals !== null ? "is-down" : "",
+      },
+      {
+        value: `${result.rows.length}<small> of ${result.totalSubjects}</small>`,
+        label: "Spotlighted out of everyone who qualified",
+      },
+    ])}`
+    : `${opener(`Spotlight · ${result.windowLabel}`)}
+    <h1 class="title title--cont">${escapeHtml(result.headline)}</h1>
+    <div class="ruleunder"></div>
+    <p class="lede">Continued &mdash; ranks ${offset + 1} to ${offset + rows.length} of ${result.rows.length}.</p>`;
 
   const body = `${head}
     <section class="lb" style="--pad:${pad.toFixed(2)}mm">
@@ -455,56 +486,73 @@ function leaderboardPage(
 }
 
 // ── One hero sheet ────────────────────────────────────────────────────────────────────────────
+/**
+ * The sentence, built from counts and nothing else.
+ *
+ * Every clause restates a figure that is on the sheet anyway: the rank out of the field, the role,
+ * the line, the territory, the months. It makes no claim about the person — a certificate that says
+ * somebody is excellent is an opinion with a logo on it, and this document's whole licence is that
+ * everything on it was counted.
+ */
+function heroSentence(result: SpotlightResult, row: SpotlightRow, rank: number): string {
+  const months = monthsLabel(result.periods);
+  const ranked = result.rows.length > 1
+    ? `ranked ${ordinal(rank)} of ${result.totalSubjects}`
+    : `spotlighted out of ${result.totalSubjects}`;
+  const role = row.roleLabel.toLowerCase();
+  const line = row.lineName ? ` on the ${escapeHtml(row.lineName)} line` : "";
+  return `${ranked} ${escapeHtml(role)}s${line} by sales value in ${escapeHtml(row.territory)}`
+    + `${months ? `, over ${escapeHtml(months)}` : ""}.`;
+}
+
 function heroPage(result: SpotlightResult, row: SpotlightRow, rank: number, page: number, total: number): string {
-  const beat = row.achievement !== null && row.achievement >= 100;
   const variance = row.varianceValue;
+  const shownPct = pct(row.achievement);
   const caption = variance === null
     ? ""
     : `${egp(Math.abs(variance))} EGP ${variance >= 0 ? "over" : "under"} target`;
-  const months = monthsLabel(result.periods);
 
   // THE FIGURE PANEL TAKES THE SLACK. A single `margin-top: auto` used to shove the figure downward
   // and leave every millimetre of leftover page in ONE place, under the stats, where it reads as the
-  // sheet having run out rather than having been laid out. Now the rule pair is the top and bottom
-  // of a panel that GROWS to whatever the page has spare, with the number centred inside it — which
-  // is the owner's own rule for this sheet, that the number sits in open space, done properly: the
-  // open space is the composition, not what is left when the content stops.
+  // sheet having run out rather than having been laid out. The panel GROWS to whatever the page has
+  // spare, with the number centred inside it: the open space is the composition, not the remainder.
   const body = `
-    <p class="eyebrow">${escapeHtml(result.headline)} &middot; ${escapeHtml(result.windowLabel)}</p>
-    <p class="accolade">${result.rows.length > 1 ? `No. ${rank}` : "Spotlight"}</p>
-    ${FLOURISH}
+    ${opener(`${result.headline} · ${result.windowLabel}`)}
+    <p class="lead-in">This sheet recognises</p>
 
     <h1 class="name">${escapeHtml(row.title)}</h1>
+    <div class="signrule"></div>
     ${row.titleAr ? `<p class="name-ar" dir="rtl" lang="ar">${escapeHtml(row.titleAr)}</p>` : ""}
-    <p class="role">${escapeHtml(row.roleLabel)}${row.lineName ? ` &mdash; ${escapeHtml(row.lineName)} Line` : ""}</p>
-    <p class="where">${escapeHtml(row.territory)}</p>
-    ${months ? `<p class="months">${escapeHtml(months)}</p>` : ""}
+    <p class="sentence">${heroSentence(result, row, rank)}</p>
+    ${result.rows.length > 1 ? `<p class="claim">No. ${rank} of ${result.totalSubjects}</p>` : ""}
 
     <section class="figure">
-      <div class="rulepair rulepair--top"><hr><hr></div>
       <div class="figure__core">
         <p class="figure__label">Achievement</p>
-        <p class="figure__pct ${row.achievement === null ? "" : beat ? "is-up" : "is-down"}">${pct(row.achievement)}<span>%</span></p>
-        <p class="figure__cap">of the ${escapeHtml(result.windowLabel)} target</p>
+        <p class="figure__pct${pctSizeClass(shownPct)}">${shownPct}<span>%</span></p>
+        <p class="figure__cap">${targetCaption(result.periods)}</p>
         ${gauge(row.achievement, caption)}
       </div>
-      <div class="rulepair rulepair--bot"><hr><hr></div>
     </section>
 
-    <section class="stats">
-      <div class="stat">
-        <p class="stat__v">${egp(row.actualValue)}<small> EGP</small></p>
-        <p class="stat__l">Delivered${row.targetValue !== null ? `<br>against ${egp(row.targetValue)} targeted` : "<br>no target set"}</p>
-      </div>
-      <div class="stat">
-        <p class="stat__v">${row.targetedMonths}<small> of ${result.periods.length}</small></p>
-        <p class="stat__l">Months in this window<br>that carried a target</p>
-      </div>
-      <div class="stat">
-        <p class="stat__v">${rank}<small> of ${result.totalSubjects}</small></p>
-        <p class="stat__l">Rank by ${result.selection.rankBy === "achievement" ? "achievement" : "sales value"}<br>across the company</p>
-      </div>
-    </section>`;
+    ${statBand([
+      {
+        value: `${egp(row.actualValue)}<small> EGP</small>`,
+        label: row.targetValue !== null
+          ? result.periods.length === 1
+            ? `Delivered against ${egp(row.targetValue)} targeted`
+            : `Delivered against ${egp(row.targetValue)} in monthly targets`
+          : "Delivered — no target was set",
+      },
+      {
+        value: `${row.targetedMonths}<small> of ${result.periods.length}</small>`,
+        label: "Months in this window that carried a target",
+      },
+      {
+        value: `${rank}<small> of ${result.totalSubjects}</small>`,
+        label: `Rank by ${result.selection.rankBy === "achievement" ? "achievement" : "sales value"} across the company`,
+      },
+    ])}`;
   return pageShell(result, body, page, total);
 }
 
@@ -515,10 +563,20 @@ const CSS = `
     --deep: ${C.deep}; --blue: ${C.blue}; --light: ${C.light}; --tint: ${C.tint};
     --hair: ${C.hair}; --muted: ${C.muted}; --body: ${C.body};
     --green: ${C.green}; --red: ${C.red};
-    --display: "Aptos Display", "Aptos", Cambria, Georgia, "Times New Roman", serif;
-    --text: "Aptos", "Segoe UI", Calibri, Arial, sans-serif;
-    --arabic: "Segoe UI", Tahoma, Arial, sans-serif;
+    --crest: ${C.crest}; --ink: ${C.ink}; --wash: ${C.wash};
+    /* NAME A FACE THE RENDERER ACTUALLY HAS. This PDF is built by the Chromium inside the
+       production image, and that image installs font-noto, font-noto-arabic and ttf-freefont --
+       nothing else. Aptos, Segoe UI and Calibri are not there, and Arial is not there, so the old
+       stack fell through to whatever fontconfig chose, and the sheet employees received was set in
+       a different face from every preview anyone had looked at. Nothing reports that. Noto is
+       installed on BOTH sides, so what renders here is what renders in production.
+       A SERIF ON THE DISPLAY LINE is the polish: the name, the titles and the figure are the
+       certificate, and a grotesque set them like a dashboard. Running text stays sans. */
+    --display: "Noto Serif", "Times New Roman", Georgia, serif;
+    --text: "Noto Sans", "Segoe UI", Calibri, Helvetica, Arial, sans-serif;
+    --arabic: "Noto Naskh Arabic", "Noto Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif;
     --hair-w: ${HAIR};
+    --rule: #D7DFE7;
     --u: 3.4mm;
     --pad: 2.4mm;
   }
@@ -526,131 +584,178 @@ const CSS = `
   body { font-family: var(--text); color: var(--body); background: #FFF;
     -webkit-print-color-adjust: exact; print-color-adjust: exact; font-kerning: normal; }
 
-  .sheet { position: relative; width: 210mm; height: 297mm; padding: 13mm 17mm 11mm; overflow: hidden; }
+  .sheet { position: relative; width: 210mm; height: 297mm; overflow: hidden;
+    display: flex; flex-direction: column; }
   .sheet--break { page-break-after: always; break-after: page; }
 
-  .frame { position: absolute; inset: 6.6mm; border: var(--hair-w) solid var(--hair); }
-  .frame::before { content:""; position:absolute; inset: 1.5mm; border: 1.6pt solid var(--deep); }
-  .frame::after  { content:""; position:absolute; inset: 3.2mm; border: var(--hair-w) solid var(--light); }
-  .corner { position: absolute; width: 11mm; height: 11mm; }
-  .corner svg { display: block; width: 100%; height: 100%; }
-  .corner--tl { top: 6.6mm; left: 6.6mm; }
-  .corner--tr { top: 6.6mm; right: 6.6mm; transform: scaleX(-1); }
-  .corner--bl { bottom: 6.6mm; left: 6.6mm; transform: scaleY(-1); }
-  .corner--br { bottom: 6.6mm; right: 6.6mm; transform: scale(-1,-1); }
+  /* ── The crest band ──────────────────────────────────────────────────────────────────────── */
+  .crest { flex: 0 0 auto; height: 26mm; background: var(--crest);
+    display: flex; align-items: center; justify-content: center; }
+  .crest__mark { width: 41mm; }
+  .crest__mark img { display: block; width: 100%; height: auto; }
+  /* A printed double rule, not one bar: the brand blue over a deeper hairline. It is the oldest
+     device on a letterhead and it costs one border. */
+  .crest__rule { flex: 0 0 auto; height: 1.7mm; background: var(--light);
+    border-bottom: .5mm solid var(--deep); }
+
+  /* ── The bracketed field ─────────────────────────────────────────────────────────────────── */
+  /* The padding clears the brackets. They stand 9 mm tall from a 6 mm inset, so anything inside a
+     13 mm top or a 15 mm bottom runs THROUGH one of them — which is how the source line at the foot
+     came out with a blue rule struck across it. */
+  .page { position: relative; flex: 1 1 auto; min-height: 0; padding: 13mm 18mm 15mm; }
+  .field { position: absolute; inset: 6mm 12mm; border: var(--hair-w) solid var(--hair); }
+  .field::after { content: ""; position: absolute; inset: 1.7mm;
+    border: var(--hair-w) solid var(--light); }
+  .bracket { position: absolute; width: 9mm; height: 9mm; }
+  .bracket svg { display: block; width: 100%; height: 100%; }
+  .bracket--tl { top: 6mm; left: 12mm; }
+  .bracket--tr { top: 6mm; right: 12mm; transform: scaleX(-1); }
+  .bracket--bl { bottom: 6mm; left: 12mm; transform: scaleY(-1); }
+  .bracket--br { bottom: 6mm; right: 12mm; transform: scale(-1,-1); }
 
   .inner { position: relative; height: 100%; display: flex; flex-direction: column; }
   /* Pinned against shrinking: a column flex container whose content is even slightly taller than
-     the box shrinks its items to fit, smallest first — which silently reduces the 2.6 mm band to
-     height 0 and leaves a page that looks deliberate. Everything is rigid EXCEPT .gap, whose
-     whole job is to absorb whatever is left over. */
+     the box shrinks its items to fit, smallest first — which silently reduces a 1.5 mm rule to
+     height 0 and leaves a page that looks deliberate. Everything is rigid EXCEPT the spacers and
+     the figure panel, whose whole job is to absorb whatever is left over. */
   .inner > *:not(.gap):not(.figure) { flex: 0 0 auto; }
   .gap { flex: 1 1 0; min-height: 0; }
   .inner > .figure { flex: 1 1 auto; min-height: 0; }
 
-  .lh { display: flex; align-items: flex-start; justify-content: space-between; }
-  .lh__mark { width: 35mm; }
-  .lh__mark img { display: block; width: 100%; height: auto; }
-  .lh__id { text-align: right; color: var(--muted); font-size: 6.3pt; line-height: 1.62;
-    padding-left: 7mm; border-left: var(--hair-w) solid var(--hair); }
-  .lh__id strong { display: block; color: var(--deep); font-size: 7.8pt; font-weight: 700; letter-spacing: .05em; }
-  .lh__id em { font-style: normal; letter-spacing: .13em; text-transform: uppercase; font-size: 5.8pt; }
+  /* ── The plinth ──────────────────────────────────────────────────────────────────────────── */
+  .plinth { flex: 0 0 auto; height: 9mm; background: var(--crest); color: #FFF;
+    display: flex; align-items: center; justify-content: center; }
+  .plinth span { font-size: 6.2pt; font-weight: 600; letter-spacing: .3em; text-transform: uppercase; }
 
-  .band { height: 2.6mm; margin-top: calc(var(--u) * .9); }
-  .band--foot { margin-top: 0; height: 2.2mm; }
-  .band svg { display: block; width: 100%; height: 100%; }
+  /* ── Openers ─────────────────────────────────────────────────────────────────────────────── */
+  .eyebrow { text-align: center; font-size: 7.6pt; font-weight: 700; letter-spacing: .42em;
+    text-transform: uppercase; color: var(--blue); }
+  .tick { width: 16mm; height: 1.5pt; background: var(--ink); margin: calc(var(--u) * .75) auto 0; }
+  .lead-in { margin-top: calc(var(--u) * 1.5); text-align: center; font-size: 6.8pt; font-weight: 600;
+    letter-spacing: .34em; text-transform: uppercase; color: var(--muted); }
 
-  .eyebrow { margin-top: calc(var(--u) * 1.5); text-align: center; font-size: 7.4pt; font-weight: 700;
-    letter-spacing: .4em; text-transform: uppercase; color: var(--blue); }
-  .accolade { margin-top: calc(var(--u) * 1.3); text-align: center; font-family: var(--display);
-    font-size: 13.5pt; letter-spacing: .52em; text-transform: uppercase; color: var(--muted); }
-  .flourish { display: flex; align-items: center; justify-content: center; gap: 3.4mm; margin-top: calc(var(--u) * .8); }
-  /* A SOLID hairline. It was a fading gradient, which looked a shade better and cost Chromium a
-     whole page-sized raster layer per rule when printing. */
-  .flourish i { display: block; width: 34mm; height: var(--hair-w); background: var(--hair); }
-  .flourish b { display: block; width: 2.1mm; height: 2.1mm; border: 1.1pt solid var(--deep); transform: rotate(45deg); }
-  .flourish s { display: block; width: 1.15mm; height: 1.15mm; border: var(--hair-w) solid var(--light); transform: rotate(45deg); }
+  /* ── The name, on its rule ───────────────────────────────────────────────────────────────── */
+  /* 34 pt, not 40. Egyptian names run long — "Mohamed Ahmed Abdel Rahman" is ordinary here — and at
+     40 pt the common ones wrapped to a two-line block with a short orphan under a full line. Names
+     that still wrap are WRAPPED, never shortened: the owner's rule is no ellipsis anywhere. */
+  .name { margin-top: calc(var(--u) * 1.1); margin-left: auto; margin-right: auto; max-width: 150mm;
+    text-align: center; font-family: var(--display); font-weight: 400; font-size: 29pt;
+    line-height: 1.16; color: var(--ink); letter-spacing: -.004em; }
+  .signrule { width: 118mm; height: 1.1pt; background: var(--ink);
+    margin: calc(var(--u) * 1.05) auto 0; position: relative; }
+  .signrule::after { content: ""; position: absolute; left: 0; right: 0; top: 1.5mm;
+    height: var(--hair-w); background: var(--hair); }
+  .name-ar { margin-top: calc(var(--u) * .8); text-align: center; font-family: var(--arabic);
+    font-size: 12.5pt; font-weight: 600; color: var(--muted); line-height: 1.35; }
+  .sentence { margin: calc(var(--u) * 1.1) auto 0; max-width: 132mm; text-align: center;
+    font-size: 9.6pt; line-height: 1.62; color: var(--body); }
+  /* The rank, engraved between two rules. It was a tinted box with a blue border, which is the
+     shape every screen in the building uses for a status chip -- on paper it was the one element
+     that looked pasted in from a browser. Two rules and letterspaced caps say the same thing in
+     the vocabulary of the rest of the sheet, and spend one less fill against the ink rule. */
+  .claim { margin: calc(var(--u) * 1.3) auto 0; padding: 1.6mm 9mm 1.5mm; width: fit-content;
+    border-top: var(--hair-w) solid var(--hair); border-bottom: var(--hair-w) solid var(--hair);
+    font-size: 8.2pt; font-weight: 700; letter-spacing: .3em;
+    text-transform: uppercase; color: var(--blue); }
 
-  .name { margin-top: calc(var(--u) * 1.5); text-align: center; font-family: var(--display);
-    font-weight: 700; font-size: 31pt; line-height: 1.1; color: var(--deep); letter-spacing: -.016em; }
-  .name-ar { margin-top: calc(var(--u) * .7); text-align: center; font-family: var(--arabic);
-    font-size: 13pt; font-weight: 600; color: var(--muted); line-height: 1.35; }
-  .role { margin-top: calc(var(--u) * .85); text-align: center; font-size: 9.6pt; font-weight: 600;
-    letter-spacing: .21em; text-transform: uppercase; color: var(--blue); }
-  .where { margin-top: calc(var(--u) * .5); text-align: center; font-size: 8.4pt; font-weight: 600;
-    letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
-  .months { margin-top: calc(var(--u) * .8); text-align: center; font-family: var(--display);
-    font-size: 8.8pt; color: var(--muted); letter-spacing: .1em; }
+  /* ── Titles on the ranking sheets ────────────────────────────────────────────────────────── */
+  .title { margin-top: calc(var(--u) * 1.4); text-align: center; font-family: var(--display);
+    font-weight: 700; font-size: 24pt; line-height: 1.16; color: var(--ink); letter-spacing: -.006em; }
+  .title--cont { font-size: 18pt; }
+  .ruleunder { width: 118mm; height: var(--hair-w); background: var(--ink);
+    margin: calc(var(--u) * 1) auto 0; }
+  .lede { margin: calc(var(--u) * .95) auto 0; max-width: 140mm; text-align: center; font-size: 9pt;
+    line-height: 1.6; color: var(--muted); }
 
-  /* The panel: two rule pairs with the number floating between them, growing to fill the sheet. */
-  .figure { text-align: center; margin-top: calc(var(--u) * 2.2); display: flex; flex-direction: column; }
-  .figure__core { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; justify-content: center;
-    padding: calc(var(--u) * 2) 0; }
-  .rulepair--top hr:first-child, .rulepair--bot hr:last-child { height: 1.6pt; background: var(--deep); border: 0; }
-  .rulepair--top hr:last-child, .rulepair--bot hr:first-child { height: var(--hair-w); background: var(--hair); border: 0; }
-  .rulepair--top hr:last-child, .rulepair--bot hr:last-child { margin-top: 1.1mm; }
-
-  /* The panel's own head. It names what the number IS, so the top rule has something to sit over
-     and the reader is not asked to infer a percentage from its size. */
+  /* ── The figure panel ────────────────────────────────────────────────────────────────────── */
+  /* MATTED BETWEEN TWO HAIRLINES. The panel takes whatever the page has spare, so on a short name
+     it opened a hand-sized hole between the rank and the number and the sheet read as unfinished.
+     The space is the same; enclosing it is what makes it read as mounting rather than as leftover.
+     Hairlines, against the stat band's 1.6pt below, so the hierarchy stays legible. */
+  .figure { text-align: center; display: flex; flex-direction: column;
+    margin-top: calc(var(--u) * 1.5);
+    border-top: var(--hair-w) solid var(--hair);
+    border-bottom: var(--hair-w) solid var(--hair); }
+  .figure__core { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+    justify-content: center; padding: calc(var(--u) * 1.6) 0; }
   .figure__label { font-size: 7.4pt; font-weight: 700; letter-spacing: .42em; text-transform: uppercase;
-    color: var(--muted); margin-bottom: calc(var(--u) * 1.2); }
-  .figure__pct { font-family: var(--display); font-weight: 700; color: var(--deep); font-size: 112pt;
-    line-height: 1; letter-spacing: -.038em; margin: 0; font-variant-numeric: lining-nums; }
-  .figure__pct span { font-size: 50pt; vertical-align: 20pt; margin-left: 1.4mm; letter-spacing: 0; }
-  .figure__pct.is-up { color: var(--deep); }
-  .figure__pct.is-down { color: var(--deep); }
-  .figure__cap { margin: calc(var(--u) * 1.2) 0 0; font-size: 9.6pt; font-weight: 600;
-    letter-spacing: .19em; text-transform: uppercase; color: var(--body); }
+    color: var(--muted); margin-bottom: calc(var(--u) * 1.1); }
+  /* MEASURED, NOT GUESSED. At 92pt the number stood 32.5mm tall inside a 95.6mm panel and left
+     14.2mm of blank above it and 14.2mm below -- the panel read as a frame around nothing, which is
+     what the watermark had been covering up before it came out. The figure is the payload of the
+     sheet, so it is the figure that fills the space, not something printed behind it. */
+  .figure__pct { font-family: var(--display); font-weight: 700; color: var(--ink); font-size: 122pt;
+    line-height: 1; letter-spacing: -.028em; margin: 0;
+    font-variant-numeric: lining-nums tabular-nums; }
+  .figure__pct span { font-size: 52pt; vertical-align: 20pt; margin-left: 2.2mm; letter-spacing: 0;
+    color: var(--light); }
+  /* 🔴 IT STEPS DOWN RATHER THAN RUNNING OFF THE SHEET. An achievement is actual over target, so a
+     tiny target prints four digits before the decimal. At the full size that is wider than the
+     174mm of page inside the margins, and .sheet clips at A4 in total silence -- the same failure
+     that once printed 18 names of 40. The number is NEVER abbreviated: it is set smaller. */
+  .figure__pct--long { font-size: 94pt; letter-spacing: -.024em; }
+  .figure__pct--long span { font-size: 42pt; vertical-align: 16pt; }
+  .figure__pct--vlong { font-size: 72pt; letter-spacing: -.02em; }
+  .figure__pct--vlong span { font-size: 33pt; vertical-align: 12pt; }
+  .figure__cap { margin: calc(var(--u) * 1.1) 0 0; font-size: 9.2pt; font-weight: 600;
+    letter-spacing: .19em; text-transform: uppercase; color: var(--muted); }
 
-  .gauge { width: 128mm; margin: calc(var(--u) * 1.8) auto 0; }
+  .gauge { width: 128mm; margin: calc(var(--u) * 1.7) auto 0; }
   .gauge__win { text-align: right; margin-bottom: calc(var(--u) * .5); font-size: 7pt; font-weight: 700;
     letter-spacing: .13em; text-transform: uppercase; }
   .gauge__win.is-up { color: var(--green); }
   .gauge__win.is-down { color: var(--red); }
   .gauge__win i { font-style: normal; font-size: 5.8pt; margin-right: 1.2mm; vertical-align: 1pt; }
-  .gauge__track { position: relative; height: 3.4mm; background: #E7EDF2; }
-  .gauge__base { position: absolute; left: 0; top: 0; bottom: 0; background: var(--deep); }
-  .gauge__over { position: absolute; top: 0; bottom: 0; background: var(--green); }
-  /* Solid, for the same reason: a repeating gradient rasterises the page. */
-  .gauge__under { position: absolute; top: 0; bottom: 0; background: var(--red); opacity: .28; }
-  .gauge__tick { position: absolute; top: -1.5mm; bottom: -1.5mm; width: .6mm; background: var(--body); }
+  /* THE SCALE IS ENGRAVED, NOT FILLED. It was a grey slab with a blue bar inside it and a green
+     one on the end, which is a progress bar -- the one device on the sheet that belonged to a
+     screen rather than to a printed page, and the first thing the eye caught after the figure.
+     The same three facts are now rules standing on a hairline: how far, where the target is, and
+     how far past it. Solid colours only, for the raster reason at the head of this file.
+     The shortfall keeps a lighter red so it reads as the part that is MISSING rather than as
+     achievement printed in red -- opacity would hand Chromium a compositing layer for nothing. */
+  .gauge__track { position: relative; height: 3mm; }
+  .gauge__track::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0;
+    height: var(--hair-w); background: var(--hair); }
+  /* 2.4 pt, not 1.5. At a hairline-and-a-half the achieved run read as part of the baseline rather
+     than as a measurement drawn on top of it, and the sheet lost the one thing the scale is for. */
+  .gauge__base { position: absolute; left: 0; bottom: 0; height: 2.4pt; background: var(--deep); }
+  .gauge__over { position: absolute; bottom: 0; height: 2.4pt; background: var(--green); }
+  .gauge__under { position: absolute; bottom: 0; height: 2.4pt; background: #E0B9B6; }
+  .gauge__tick { position: absolute; bottom: -1.3mm; height: 5.2mm; width: 1.4pt;
+    background: var(--ink); }
   .gauge__labels { position: relative; margin-top: calc(var(--u) * .6); height: 3.2mm; font-size: 6.2pt;
     font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
-  .gauge__t { position: absolute; transform: translateX(-50%); color: var(--body); white-space: nowrap; }
+  .gauge__t { position: absolute; transform: translateX(-50%); color: var(--ink); white-space: nowrap; }
   .gauge__none { font-size: 7.4pt; color: var(--muted); text-align: center; }
 
-  .stats { display: flex; }
-  .figure + .stats { margin-top: calc(var(--u) * 2.2); }
-  .stats--lb { margin-top: calc(var(--u) * 2); padding-top: calc(var(--u) * 1.2); border-top: var(--hair-w) solid var(--hair); }
-  .stat { flex: 1 1 0; text-align: center; padding: 0 3mm; }
+  /* ── The stat band ───────────────────────────────────────────────────────────────────────── */
+  .stats { display: flex; margin-top: calc(var(--u) * 1.8); background: var(--wash);
+    border-top: 1.6pt solid var(--ink); border-bottom: 1.6pt solid var(--ink);
+    padding: calc(var(--u) * 1.1) 0; }
+  .stat { flex: 1 1 0; text-align: center; padding: 0 5mm; }
   .stat + .stat { border-left: var(--hair-w) solid var(--hair); }
-  .stat__v { font-family: var(--display); font-weight: 700; font-size: 18pt; color: var(--deep);
-    line-height: 1.12; font-variant-numeric: lining-nums; letter-spacing: -.018em; }
+  .stat__v { font-family: var(--display); font-weight: 700; font-size: 17.5pt; color: var(--ink);
+    line-height: 1.16; font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.006em; }
   .stat__v.is-up { color: var(--green); }
   .stat__v.is-down { color: var(--red); }
   .stat__v small { font-size: 9.5pt; font-weight: 600; color: var(--muted); letter-spacing: .03em; }
-  .stat__l { margin-top: calc(var(--u) * .55); font-size: 6.4pt; font-weight: 600; letter-spacing: .18em;
+  .stat__l { margin-top: calc(var(--u) * .5); font-size: 6.4pt; font-weight: 600; letter-spacing: .16em;
     text-transform: uppercase; color: var(--muted); line-height: 1.6; }
 
-  .lb-head { margin-top: calc(var(--u) * 1.1); text-align: center; font-family: var(--display);
-    font-weight: 700; font-size: 26pt; line-height: 1.12; color: var(--deep); letter-spacing: -.016em; }
-  .lb-head--cont { font-size: 19pt; }
-  .lb-sub { margin-top: calc(var(--u) * .8); text-align: center; font-size: 8pt; font-weight: 600;
-    letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
-
-  .lb { margin-top: calc(var(--u) * 1.9); }
+  /* ── The ranking ─────────────────────────────────────────────────────────────────────────── */
+  .lb { margin-top: calc(var(--u) * 1.7); }
   table { width: 100%; table-layout: fixed; border-collapse: collapse; }
-  thead th { padding: 0 1.7mm calc(var(--u) * .6); font-size: 6.4pt; font-weight: 700; letter-spacing: .22em;
-    text-transform: uppercase; color: var(--blue); text-align: left; border-bottom: 1.2pt solid var(--deep); }
+  thead th { padding: 0 1.7mm calc(var(--u) * .66); font-size: 6.4pt; font-weight: 700; letter-spacing: .22em;
+    text-transform: uppercase; color: var(--blue); text-align: left; border-bottom: 1.2pt solid var(--ink); }
   thead th.r { text-align: right; }
-  td { padding: var(--pad) 1.7mm; vertical-align: baseline; border-bottom: var(--hair-w) solid var(--hair); }
-  /* THE ONLY FILL ON THE PAGE is the 6% zebra the house identity allows. The over/under key is a
-     RULE on the rank cell, not a wash across the row — see the note at the head of this file. */
+  td { padding: var(--pad) 1.7mm; vertical-align: baseline; border-bottom: var(--hair-w) solid var(--rule); }
+  /* THE ONLY FILL INSIDE THE RANKING is the 6% zebra. The over/under key is a RULE on the rank cell,
+     not a wash across the row — see the note at the head of this file. */
   tr.zebra td { background: var(--tint); }
   td:first-child { border-left: 1.3pt solid transparent; }
   tr.beat td:first-child { border-left-color: var(--green); }
   tr.miss td:first-child { border-left-color: var(--red); }
-  tbody tr:last-child td { border-bottom: 1.2pt solid var(--deep); }
+  tbody tr:last-child td { border-bottom: 1.2pt solid var(--ink); }
 
   .lb-rank { font-family: var(--display); font-size: 9pt; color: var(--light); font-weight: 700;
     font-variant-numeric: lining-nums tabular-nums; padding-left: 2.8mm; }
@@ -659,10 +764,10 @@ const CSS = `
     text-transform: uppercase; color: var(--muted); }
   .lb-where { font-size: 8pt; color: var(--muted); font-weight: 600; }
   .lb-line { display: block; font-size: 6.4pt; letter-spacing: .1em; text-transform: uppercase; color: var(--light); }
-  .lb-value { text-align: right; font-family: var(--display); font-size: 11pt; font-weight: 700;
-    color: var(--deep); font-variant-numeric: lining-nums tabular-nums; }
+  .lb-value { text-align: right; font-family: var(--display); font-size: 10.5pt; font-weight: 700;
+    color: var(--ink); font-variant-numeric: lining-nums tabular-nums; }
   .lb-unit { font-size: 7pt; color: var(--muted); margin-left: .7mm; font-weight: 600; }
-  .lb-ach { text-align: right; font-family: var(--display); font-size: 10.5pt; font-weight: 700;
+  .lb-ach { text-align: right; font-family: var(--display); font-size: 10pt; font-weight: 700;
     font-variant-numeric: lining-nums tabular-nums; }
   .lb-ach.up { color: var(--green); }
   .lb-ach.down { color: var(--red); }
@@ -671,15 +776,27 @@ const CSS = `
   .lb-pc { font-size: 7pt; font-weight: 600; margin-left: .4mm; }
   .lb-note { margin-top: calc(var(--u) * .9); font-size: 6.4pt; color: var(--muted); line-height: 1.62; }
 
-  .foot { margin-top: calc(var(--u) * 1.4); }
-  .foot__txt { margin-top: calc(var(--u) * .8); display: flex; align-items: flex-start; gap: 6mm;
-    font-size: 6.3pt; color: var(--muted); line-height: 1.62; }
-  .foot__txt strong { color: var(--deep); font-weight: 700; }
-  .foot__src { flex: 1.9 1 0; }
-  .foot__no { flex: 0 0 auto; text-align: center; font-family: var(--display); font-size: 7.6pt;
-    font-weight: 700; color: var(--deep); letter-spacing: .12em; line-height: 1.45; }
-  .foot__no i { font-style: normal; font-size: 6pt; font-weight: 600; color: var(--muted); letter-spacing: .1em; }
-  .foot__house { flex: 1 1 0; text-align: right; }
+  /* ── The record foot ─────────────────────────────────────────────────────────────────────── */
+  /* An AUTO margin, never a fixed one. (No backticks in this stylesheet: it is a template literal,
+     and one of them ends it early — which is a TypeScript syntax error 200 lines further down.)
+     A fixed margin is charged to the page whether or not the page has it to give: a ten-name sheet
+     came out 1.06 mm over A4 because the last 5.4 mm of separation was spent after the column had
+     already been filled, and an overflowing sheet does not error — it hides the foot under the
+     plinth. Auto takes what is left over, and nothing when there is nothing left. */
+  .foot { margin-top: auto; padding-top: calc(var(--u) * .5); display: flex; align-items: flex-start; gap: 8mm; }
+  .foot__block { padding-top: calc(var(--u) * .6); border-top: var(--hair-w) solid var(--hair); }
+  .foot__block--src { flex: 1.7 1 0; }
+  .foot__block--no { flex: 0 0 20mm; text-align: center; }
+  .foot__block--rec { flex: 1 1 0; text-align: right; }
+  .foot__cap { font-size: 5.8pt; font-weight: 700; letter-spacing: .3em; text-transform: uppercase;
+    color: var(--muted); }
+  .foot__line { margin-top: calc(var(--u) * .35); font-size: 7pt; color: var(--body); }
+  .foot__line strong { color: var(--ink); font-weight: 700; }
+  .foot__sub { margin-top: calc(var(--u) * .2); font-size: 6.2pt; color: var(--muted); line-height: 1.55; }
+  .foot__no { margin-top: calc(var(--u) * .3); font-family: var(--display); font-size: 12pt;
+    font-weight: 700; color: var(--ink); line-height: 1.1; }
+  .foot__no span { display: block; font-size: 6pt; font-weight: 600; color: var(--muted);
+    letter-spacing: .14em; text-transform: uppercase; }
 `;
 
 /** The whole document, as HTML. Exported so a test can assert on the markup without Chromium. */
@@ -720,10 +837,10 @@ export function spotlightDocumentHtml(result: SpotlightResult): string {
   // silently successful download of one blank page, reads as the export being broken.
   if (pages.length === 0) {
     pages.push(pageShell(result, `
-      <p class="eyebrow">Spotlight &middot; ${escapeHtml(result.windowLabel)}</p>
-      <h1 class="lb-head">${escapeHtml(result.headline)}</h1>
-      <p class="lb-sub">Nobody matched this selection</p>
-      ${FLOURISH}
+      ${opener(`Spotlight · ${result.windowLabel}`)}
+      <h1 class="title">${escapeHtml(result.headline)}</h1>
+      <div class="ruleunder"></div>
+      <p class="lede">Nobody matched this selection.</p>
       <section class="lb"><p class="lb-note">No subject survived these filters for ${escapeHtml(result.windowLabel)}.
         Widen the lines, regions or areas, or check that the window carries sales.</p></section>
       <div class="gap"></div>`, 1, 1));

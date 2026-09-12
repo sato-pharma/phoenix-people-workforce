@@ -101,9 +101,15 @@ export function runSpotlightSheetDesignTests() {
   const orderedRanks = [...long.matchAll(/class="lb-rank">(\d+)</g)].map((m) => Number(m[1]));
   assert.deepEqual(orderedRanks, Array.from({ length: 40 }, (_, i) => i + 1), "ranks must run 1..40 in order");
 
-  // ── Every sheet says which sheet it is ─────────────────────────────────────────────────────
-  assert.equal(countOf(long, "Sheet "), sheets, "every sheet carries its own number — these go out as a stapled pack");
-  assert.equal(countOf(long, `of ${sheets}</i>`), sheets, "the total on each sheet is the real page count");
+  // ── Every sheet says which sheet it is, and whose it is ────────────────────────────────────
+  assert.equal(
+    countOf(long, 'class="foot__cap">Sheet<'),
+    sheets,
+    "every sheet carries its own number — these go out as a stapled pack",
+  );
+  assert.equal(countOf(long, `<span> of ${sheets}</span>`), sheets, "the total on each sheet is the real page count");
+  assert.equal(countOf(long, 'class="crest"'), sheets, "the crest band is the issuer's name and belongs on every sheet");
+  assert.equal(countOf(long, 'class="plinth"'), sheets, "and the plinth closes every sheet, not just the first");
 
   // ── Pages are balanced, not filled-then-remainder ──────────────────────────────────────────
   const spread = rowsPerSheet(spotlightDocumentHtml(result(people(14))));
@@ -125,6 +131,45 @@ export function runSpotlightSheetDesignTests() {
   assert.equal(countOf(nobody, 'class="sheet'), 1, "an empty selection still prints a sheet that says so");
   assert.ok(nobody.includes("Nobody matched this selection"), "and says it in words, rather than exporting a blank page");
 
+  // ── A target is set for a MONTH, and the sheet may not invent a quarterly one ──────────────
+  // The owner, 2026-09-12: "no its monthly target not q3". The window a sheet covers is not the
+  // period a target was set for. Over a three-month window the figure is sales over the SUM of
+  // three monthly targets — so naming it "the Q3 2026 target" tells the person the sheet is about
+  // that they were measured against a number nobody in the business ever set.
+  const quarterHero = spotlightDocumentHtml(result(people(1), "heroes"));
+  assert.ok(
+    quarterHero.includes("of the monthly targets for June · July · August 2026"),
+    "a multi-month window is measured against the monthly targets in it, named month by month",
+  );
+  assert.ok(!quarterHero.includes("Q3 2026 target"), "there is no such thing as a quarterly target here");
+
+  // A one-month window is the case where naming the window IS naming the target.
+  const oneMonth = { ...result(people(1), "heroes"), periods: ["2026-07"], windowLabel: "July 2026" };
+  assert.ok(
+    spotlightDocumentHtml(oneMonth).includes("of the July 2026 target"),
+    "a single-month window keeps the shorter sentence, because there the window is the target",
+  );
+
+  // ── The hero number steps down rather than running off the sheet ───────────────────────────
+  // An achievement is actual over target, so a small target prints four or five digits before the
+  // decimal. Measured in Chromium under print media: at the full size a seven-character number is
+  // 174.2mm of glyph against the 174mm of page inside the margins, and .sheet clips at A4 without
+  // an error — the same silent failure that once printed 18 names of 40. It is set smaller
+  // instead; it is never shortened.
+  const vast = spotlightDocumentHtml(result([row({ title: "Ali Hassan", actualValue: 4_812_400, targetValue: 34_070 })], "heroes"));
+  assert.ok(
+    vast.includes('class="figure__pct figure__pct--vlong"'),
+    "a seven-character achievement must step down, not be clipped by the sheet",
+  );
+  const wide = spotlightDocumentHtml(result([row({ title: "Ali Hassan", actualValue: 4_812_400, targetValue: 340_600 })], "heroes"));
+  assert.ok(wide.includes('class="figure__pct figure__pct--long"'), "and a six-character one takes the middle step");
+  const ordinary = spotlightDocumentHtml(result([row({ title: "Ali Hassan" })], "heroes"));
+  assert.ok(ordinary.includes('class="figure__pct"'), "an ordinary achievement keeps the full size");
+  assert.ok(
+    !ordinary.includes('class="figure__pct figure__pct--'),
+    "the step-down is for the exception — these assertions must read the element, never the stylesheet every sheet carries",
+  );
+
   // ── Nothing on the page may rasterise ──────────────────────────────────────────────────────
   assert.ok(!/gradient\(/.test(long), "a CSS gradient costs Chromium a page-sized raster layer per rule when printing");
   assert.ok(!/repeating-/.test(long), "a repeating background rasterises the same way — the ornament stays vector");
@@ -141,6 +186,19 @@ export function runSpotlightSheetDesignTests() {
   const radii = [...long.matchAll(/border-radius:\s*([^;}]+)/g)].map((m) => m[1].trim());
   assert.deepEqual([...new Set(radii)], ["0"], `no rounded corner may appear on a company document — found ${radii.join(", ")}`);
   assert.ok(long.includes("SATO-DIS-2026-01 v1.0"), "the document identity is Sato Pharma's, on every sheet");
+
+  // ── The face the production renderer actually has ──────────────────────────────────────────
+  // This PDF is built by the Chromium inside the production image, and that image installs exactly
+  // three font packages: font-noto, font-noto-arabic and ttf-freefont. A stack led by Aptos, Segoe
+  // UI, Calibri or Arial — none of which are in the image — fell through to whatever fontconfig
+  // chose, so the sheet employees received was set in a different face from every preview anybody
+  // had looked at, and nothing in the render reports it.
+  assert.ok(/--display:\s*"Noto Serif"/.test(long), "the display face must be one the production image installs");
+  assert.ok(/--text:\s*"Noto Sans"/.test(long), "so must the text face — Segoe UI and Calibri are not in that image");
+  assert.ok(
+    /--arabic:\s*"Noto Naskh Arabic"/.test(long),
+    "and the Arabic face: ttf-freefont carries the codepoints but does not SHAPE them, which prints a name as separate letters",
+  );
 
   // ── Colour keeps its meaning ───────────────────────────────────────────────────────────────
   // Green means at-or-above target and red means below, and nothing else on the page is either.
