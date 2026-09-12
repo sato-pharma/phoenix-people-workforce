@@ -77,7 +77,9 @@ export function CandidateFactsSummary({
    * other cell here they are printed whether or not there is an answer: "not on file" is itself the
    * fact a screener needs, and a row that simply vanished when empty could not say it.
    */
-  showScreeningChecks?: boolean; — the workstation puts
+  showScreeningChecks?: boolean;
+  /**
+   * False where the caller already shows the answers as a section of its own — the workstation puts
    * them first, above this block — so one panel does not print the same answers twice.
    */
   showWhatsAppAnswers?: boolean;

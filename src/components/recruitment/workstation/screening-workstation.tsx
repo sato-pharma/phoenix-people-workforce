@@ -186,7 +186,12 @@ export function ScreeningWorkstation({
   vacancyId: number | null;
   vacancyStats: readonly VacancyApplicantStats[];
 }) {
-  const [queue, setQueue] = useState<ScreeningWorkQueue>("new");
+  // "New" is the right default for the ordinary queue and the WRONG one for a seat. The seat pile
+  // the server just built is everything UNDECIDED for that seat, and plenty of it has been looked at
+  // before — a CV filed to the area folder months ago is not new. Opening a bookmarked seat link on
+  // the "New" tab would show a fraction of the pile with the rail beside it reporting the whole of
+  // it, which is the one thing this mode must never do.
+  const [queue, setQueue] = useState<ScreeningWorkQueue>(vacancyId === null ? "new" : "all");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(rows[0]?.id ?? null);
   const [tab, setTab] = useState<IntelligenceTab>("summary");
@@ -945,6 +950,7 @@ export function ScreeningWorkstation({
             // A LINK, not a piece of state: picking a seat changes what the SERVER loads, because
             // for that seat the filed CVs are read back in and the email applicants are matched.
             onSelectVacancy(next);
+            setQueue(next === null ? "new" : "all");
             setQueueOpen(false);
             setMobilePane("list");
           }}
@@ -1095,7 +1101,10 @@ export function ScreeningWorkstation({
             </span>
             <button
               className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper"
-              onClick={() => onSelectVacancy(null)}
+              onClick={() => {
+                onSelectVacancy(null);
+                setQueue("new");
+              }}
               type="button"
             >
               Show everyone

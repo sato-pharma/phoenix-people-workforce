@@ -596,6 +596,15 @@ export async function loadScreeningWorkspace(
     const candidate = byId.get(row.id);
     if (!candidate) continue;
     row.vacancyIds = vacancyIdsFor(row, candidate, openVacancies, vacancyStatsById);
+    // AND THE SEAT BEING SCREENED IS ALWAYS ONE OF THEM. This index is what the list filters on in
+    // the browser, and `vacancyIdsFor` only ever reads an address and a job title — so a CV that
+    // reached this seat because it was FILED here, or because the applicant named the area on
+    // WhatsApp or in an email subject, would carry an index without the seat in it and be filtered
+    // straight back out of the queue the server just built for it. Seat mode only: in the ordinary
+    // queue this index is exactly what it has always been.
+    if (seat && seatReasons.has(row.id) && !row.vacancyIds.includes(seat.id)) {
+      row.vacancyIds = [seat.id, ...row.vacancyIds];
+    }
   }
 
   const { counts, overdueManagerFeedback } = tallyWorkQueues(
