@@ -104,6 +104,23 @@ function assertHeadingsAreUnique(stepKey: StepKey, columns: TemplateColumn[]): v
   }
 }
 
+/**
+ * A worksheet name Excel will accept, built from the step's own title.
+ *
+ * ExcelJS THROWS on a sheet name containing any of * ? : \ / [ ], and it throws before a single
+ * byte is written. The Part 2 step is titled "Any more deductions?", so `addWorksheet` rejected it
+ * and the Download-template button on that one step answered 500 with nothing to say — found
+ * 2026-09-12 while re-verifying finding 48, which could not be checked on that step because the
+ * template it needs cannot be produced.
+ *
+ * Derived from the title rather than hard-coded per step, because the title is what a future step
+ * changes, and a punctuation mark in it must never again decide whether a download works.
+ */
+function worksheetNameFor(title: string): string {
+  const cleaned = title.replace(/[*?:\\\/\[\]]/g, "").replace(/\s+/g, " ").trim();
+  return (cleaned || "Step").slice(0, 28);
+}
+
 function cellValueForColumn(stepKey: StepKey, row: StepRow, label: string): string | number {
   const definition = stepDefinition(stepKey);
   if (label === "HR_ID") return row.hrId;
@@ -140,7 +157,7 @@ export async function buildStepTemplateWorkbook(input: {
   const definition = stepDefinition(input.stepKey);
   const columns = stepTemplateColumns(input.stepKey);
   const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet(definition.title.slice(0, 28));
+  const sheet = workbook.addWorksheet(worksheetNameFor(definition.title));
 
   bandHeader(
     sheet,

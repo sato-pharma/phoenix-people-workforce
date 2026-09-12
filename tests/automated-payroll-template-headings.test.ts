@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 
-import { stepTemplateColumns } from "../src/lib/automated-payroll/exports/step-template.ts";
+import {
+  buildStepTemplateWorkbook,
+  stepTemplateColumns,
+} from "../src/lib/automated-payroll/exports/step-template.ts";
 import { STEP_DEFINITIONS } from "../src/lib/automated-payroll/step-definitions.ts";
 import type { StepKey } from "../src/lib/automated-payroll/types.ts";
 
@@ -78,6 +81,37 @@ export async function runAutomatedPayrollTemplateHeadingTests() {
     unpaidVacation.includes("Unpaid Vacation Days (reference)"),
     "and the read-only reference is the one that moved, because renaming the editable column would " +
       "change what HR is asked to fill in",
+  );
+
+
+  // ---- EVERY STEP'S TEMPLATE MUST ACTUALLY BUILD --------------------------------------------------
+  //
+  // Found 2026-09-12: the Part 2 step titled "Any more deductions?" produced no file at all.
+  // `buildStepTemplateWorkbook` names the worksheet after the step title, and ExcelJS REFUSES a
+  // sheet name containing any of * ? : \ / [ ] — it throws before a byte is written, so the
+  // Download-template button on that one step answered 500 with nothing on screen to explain it.
+  //
+  // The column survey above could never have caught it: the headings were perfectly fine. Only
+  // building the file catches it, so this builds all sixteen. A step title is ordinary prose and
+  // the next one may well carry a colon; punctuation must never decide whether a download works.
+  const failedToBuild: string[] = [];
+  for (const stepKey of stepKeys) {
+    try {
+      const buffer = await buildStepTemplateWorkbook({
+        run: { id: "run", month: 9, year: 2026 } as never,
+        stepKey,
+        rows: [],
+      });
+      if (!buffer || buffer.length === 0) failedToBuild.push(`${stepKey}: empty file`);
+    } catch (error) {
+      failedToBuild.push(`${stepKey}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  assert.deepEqual(
+    failedToBuild,
+    [],
+    "a step whose template cannot be built has no spreadsheet path at all — HR cannot download it, " +
+      "so they cannot edit it in Excel and cannot re-upload it either",
   );
 
   // ---- The builder REFUSES a colliding definition --------------------------------------------------
