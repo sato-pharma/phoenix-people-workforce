@@ -9,6 +9,7 @@ import {
   AdminPageHero,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import { ClosingIdentityStyles, CLOSING_SURFACE_CLASS } from "@/components/sales/closing-identity-styles";
 import { ClosingDetailsPanel } from "@/components/sales/closing-details-panel";
 import { ClosingMatrixTable } from "@/components/sales/closing-matrix-table";
 import { ClosingSummaryFits } from "@/components/sales/closing-summary-fits";
@@ -388,7 +389,11 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
     "h-11 w-full rounded-2xl border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60";
 
   return (
-    <div className="min-h-[calc(100vh-7rem)] space-y-7">
+    // The premium closing workbook's identity, wrapped round the whole screen rather than applied
+    // control by control - see closing-identity-styles.tsx for why the shell's own table rules make
+    // that the only thing that works here.
+    <div className={`${CLOSING_SURFACE_CLASS} min-h-[calc(100vh-7rem)] space-y-7`}>
+      <ClosingIdentityStyles />
       <AdminPageHero
         badges={(
           <>
@@ -422,7 +427,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
         action={(
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <label className="flex flex-col gap-1 sm:w-44">
-              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
+              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-[#6B8296]">Line</span>
               <SearchableSelect
                 className={selectClassName}
                 disabled={isLoading || availableLines.length === 0}
@@ -439,7 +444,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
               </SearchableSelect>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">
+              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-[#6B8296]">
                 {isMultiPeriod ? "Months" : "Month"}
               </span>
               <ClosingPeriodSelect
@@ -528,13 +533,13 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
         ) : (
           <>
             {canPublish && published ? (
-              <div className="flex items-center gap-2 border-b border-emerald-100 bg-emerald-50/60 px-4 py-2.5 text-xs font-semibold text-emerald-700 md:px-5">
+              <div className="flex items-center gap-2 border-b border-[#0B78B7]/25 bg-[#E8F2F8] px-4 py-2.5 text-xs font-semibold text-[#0B78B7] md:px-5">
                 <CheckCircle2 className="h-4 w-4" />
                 This month is published — sales managers and product managers can see it in their portal (scoped to their line / products).
               </div>
             ) : null}
             {coverageWarning ? (
-              <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50/70 px-4 py-2.5 text-xs font-semibold text-amber-800 md:px-5">
+              <div className="flex items-start gap-2 border-b border-[#8A5A00]/25 bg-[#FFF3D6] px-4 py-2.5 text-xs font-semibold text-[#8A5A00] md:px-5">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <p>{coverageWarning}</p>
               </div>
@@ -542,7 +547,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
             {/* A requested month the closing could not read is NAMED, never dropped quietly — the
                 totals below would otherwise cover fewer months than the picker says they do. */}
             {skippedPeriods.length > 0 ? (
-              <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50/70 px-4 py-2.5 text-xs font-semibold text-amber-800 md:px-5">
+              <div className="flex items-start gap-2 border-b border-[#8A5A00]/25 bg-[#FFF3D6] px-4 py-2.5 text-xs font-semibold text-[#8A5A00] md:px-5">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <p>
                   {skippedPeriods.map((period) => periodLabel(period)).join(", ")}
@@ -553,7 +558,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
             ) : null}
             {/* Matrix = the published headline. Details = the invoice lines underneath it,
                 so the arithmetic can be checked without leaving the page. */}
-            <div className="flex items-center gap-1 border-b border-slate-100 px-4 pt-3 md:px-5">
+            <div className="flex items-center gap-1 border-b border-[#6B8296]/20 px-4 pt-3 md:px-5">
               {([
                 { icon: <CalendarRange className="h-4 w-4" />, key: "matrix" as const, label: "Closing Matrix" },
                 { icon: <Table2 className="h-4 w-4" />, key: "details" as const, label: "Details" },
@@ -562,8 +567,8 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                   className={cn(
                     "inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-bold transition",
                     tab === entry.key
-                      ? "border-phx-accent text-[#0B0B0B]"
-                      : "border-transparent text-slate-500 hover:text-slate-800",
+                      ? "border-phx-accent text-[#0A1F33]"
+                      : "border-transparent text-[#6B8296] hover:text-[#16324A]",
                   )}
                   key={entry.key}
                   onClick={() => setTab(entry.key)}
@@ -577,7 +582,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
 
             {tab === "matrix" ? (
               <>
-                <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-5">
+                <div className="flex flex-col gap-3 border-b border-[#6B8296]/20 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-5">
                   <MonthlyClosingFilters
                     areas={filterOptions.areas}
                     onChange={setFilter}
@@ -617,7 +622,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                     </button>
                     <button
                       className={cn(
-                        "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-white px-4 text-sm font-bold text-[#0B0B0B] transition hover:border-phx-accent hover:bg-phx-accent hover:text-white disabled:opacity-50",
+                        "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0A1F33] bg-[#0A1F33] px-4 text-sm font-bold text-white transition hover:bg-[#103A5C] disabled:opacity-50",
                       )}
                       disabled={isExporting || isExportingPremium || isExportingPremiumXlsx || isMultiPeriod || filteredMatrix.columns.length === 0}
                       onClick={() => void handlePremiumExport()}
@@ -633,7 +638,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                     </button>
                     <button
                       className={cn(
-                        "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-white px-4 text-sm font-bold text-[#0B0B0B] transition hover:border-phx-accent hover:bg-phx-accent hover:text-white disabled:opacity-50",
+                        "inline-flex h-10 shrink-0 items-center gap-2 border border-[#00A6D6] bg-[#00A6D6] px-4 text-sm font-bold text-white transition hover:border-[#0B78B7] hover:bg-[#0B78B7] disabled:opacity-50",
                       )}
                       disabled={isExporting || isExportingPremium || isExportingPremiumXlsx || isMultiPeriod || filteredMatrix.columns.length === 0}
                       onClick={() => void handlePremiumXlsxExport()}
@@ -653,7 +658,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                     it now carries the same store split the export always applied — see
                     loadMonthlyClosingWithStoreSplit. The workbook still has its own Store Split
                     audit tab naming exactly which stores moved where. */}
-                <div className="border-b border-slate-100 px-4 py-2.5 text-xs text-slate-500 md:px-5">
+                <div className="border-b border-[#6B8296]/20 px-4 py-2.5 text-xs text-[#6B8296] md:px-5">
                   Store sales are shared across their city&apos;s areas — this matrix and the exported workbook show the same numbers.
                 </div>
                 {/* BESIDE the matrix, never instead of it. The full product matrix cannot fit a
