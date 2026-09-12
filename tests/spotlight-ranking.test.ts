@@ -17,7 +17,9 @@ import {
   windowLabel,
   windowPeriods,
 } from "../src/lib/spotlight/period.ts";
+import { buildSubheadline } from "../src/lib/spotlight/headline.ts";
 import type { AchievementRow } from "../src/lib/sales/monthly-targets.ts";
+import type { SpotlightRow, SpotlightSelection } from "../src/lib/spotlight/types.ts";
 import type { SpotlightSubjectKind } from "../src/lib/spotlight/types.ts";
 
 // Spotlight — the arithmetic and the gate.
@@ -384,5 +386,87 @@ export function runSpotlightRankingTests() {
     for (const kind of ["month", "quarter", "semester", "year"] as const) {
       assert.ok(blockedReason(kind, false), `${kind} explains why it is blocked`);
     }
+  }
+
+  // ── 13. The sub-line never claims a scope the sheet does not have ───────────────────
+  //
+  // The exported August 2026 sheet printed "August 2026 · All lines · Ranked by achievement" over a
+  // ranking Head Office is deliberately absent from. Head Office is 90% of weekly value, so "all
+  // lines" was not a rounding of the truth — it was the opposite of it, printed on a document that
+  // goes in front of the whole company. Owner's wording, 12 September 2026: "All tracked lines".
+  {
+    const selection = (lines: string[] | undefined): SpotlightSelection => ({
+      window: { kind: "month", key: "2026-08" },
+      subject: "rep",
+      filters: { lines },
+      rankBy: "achievement",
+      direction: "top",
+      limit: 10,
+      layout: "both",
+    });
+
+    const subject = (title: string, lineName: string | null): SpotlightRow => ({
+      key: title,
+      title,
+      titleAr: null,
+      roleLabel: "Medical Representative",
+      territory: "Dakahlia 1",
+      lineName,
+      hrId: null,
+      isVacant: false,
+      actualValue: 100,
+      gradedValue: 100,
+      targetValue: 50,
+      achievement: 200,
+      varianceValue: 50,
+      targetedPeriods: ["2026-08"],
+      targetedMonths: 1,
+      activeMonths: 1,
+    });
+
+    const names = new Map([["cns", "CNS"], ["pedia", "Pedia"], ["anti_infective", "Anti Infective"]]);
+    const sub = (lines: string[] | undefined, rows: SpotlightRow[]) => buildSubheadline({
+      selection: selection(lines),
+      rows,
+      windowLabel: "August 2026",
+      lineNames: names,
+      regionNames: new Map(),
+      areaNames: new Map(),
+    });
+
+    const spread = [subject("Batool", "CNS"), subject("Mostafa", "Pedia")];
+    const whole = sub(["cns", "pedia", "anti_infective"], spread);
+    assert.ok(whole.includes("All tracked lines"),
+      "the widest scope the sheet has is the three TRACKED lines, and the sub-line says so");
+    assert.ok(!whole.includes("All lines"),
+      "and never the bare claim \"All lines\" — Head Office is 90% of weekly value and is not in this ranking");
+
+    // 🔴 AND WHO WON IS NOT EVIDENCE OF THE SCOPE. Nine of the real August 2026 top ten were
+    // CNS; one Pedia rep at number six was all that stood between the sheet and announcing a
+    // three-line ranking as a CNS one.
+    const swept = [subject("Batool", "CNS"), subject("Fatma", "CNS")];
+    const allCns = sub(["cns", "pedia", "anti_infective"], swept);
+    assert.ok(allCns.includes("All tracked lines"),
+      "one line sweeping the top ten does not turn a three-line ranking into a sheet of its own");
+    assert.ok(!allCns.includes("CNS"),
+      "and the line name is printed only where it was FILTERED to, never appended from who happened to win");
+
+    // The narrower shapes are untouched: naming the lines you picked beats any summary of them.
+    assert.ok(sub(["cns"], spread).includes("CNS"), "one line picked is still named outright");
+    assert.ok(!sub(["cns"], spread).includes("tracked"),
+      "and a single-line sheet never calls itself tracked-wide");
+    assert.ok(sub(["cns", "pedia"], spread).includes("CNS and Pedia"),
+      "two lines picked are both named, joined with 'and' and no ellipsis");
+
+    // An override still wins outright — the owner's own words are never second-guessed.
+    const overridden = buildSubheadline({
+      selection: { ...selection(undefined), subheadline: "CNS only, by request" },
+      rows: spread,
+      windowLabel: "August 2026",
+      lineNames: names,
+      regionNames: new Map(),
+      areaNames: new Map(),
+    });
+    assert.equal(overridden, "CNS only, by request", "a typed sub-line is printed exactly as typed");
   }
 }
