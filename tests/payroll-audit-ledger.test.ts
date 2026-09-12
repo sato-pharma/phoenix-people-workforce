@@ -142,14 +142,19 @@ export async function runPayrollAuditLedgerTests(): Promise<void> {
   }>;
   const payroll = registry.find((entry) => entry.moduleSlug === "automated-payroll");
   assert.ok(payroll, "HEADLINE: the audit registry must carry a real Automated Payroll record — it held only a May 2026 'Replace Me' placeholder while 55 findings were worked through");
-  assert.equal(
-    payroll!.latestAuditFile,
-    LEDGER,
-    "the registry must point at the ledger, so the dashboard and the record cannot disagree",
-  );
+  // The registry points at the LATEST audit, which since cycle 2 (2026-09-12) is no longer the
+  // cycle-1 ledger. What must hold is the rule that assertion was really protecting: the pointer
+  // resolves, and the ledger is still reachable from it rather than orphaned. A later cycle that
+  // quietly drops the link is how the finding-by-finding record for 1-55 would go missing next.
+  assert.ok(payroll!.latestAuditFile, "the registry must name a latest audit file");
+  let latestAudit = "";
   assert.doesNotThrow(
-    () => readFileSync(payroll!.latestAuditFile!, "utf8"),
+    () => { latestAudit = readFileSync(payroll!.latestAuditFile!, "utf8"); },
     "the file the registry names must exist on disk",
+  );
+  assert.ok(
+    payroll!.latestAuditFile === LEDGER || latestAudit.includes("audit-ledger.md"),
+    "HEADLINE: the registry's latest audit file must be the ledger or link to it — the ledger is the only finding-by-finding record of 1-55 and nothing else reproduces it",
   );
 
   // The registry's score measures the completeness of the RECORD, not the quality of the module, and
