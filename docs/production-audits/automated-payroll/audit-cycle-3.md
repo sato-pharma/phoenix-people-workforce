@@ -1,7 +1,7 @@
 # Automated Payroll — Audit Cycle 3
 
-**Opened:** 2026-09-12 · **Findings covered:** 14–18, 20, 22, 23, 26, 27, 29–55 (37 of them)
-**Status:** ALL FOUR TIERS VERIFIED — 37 of 37
+**Opened:** 2026-09-12 · **Findings covered:** 14–18, 20, 22, 23, 26, 27, 29–55 (37 of them), plus 2–5
+**Status:** ALL FOUR TIERS VERIFIED — 37 of 37, and findings 2–5 verified 2026-09-12
 **Cycle 1:** [audit-ledger.md](audit-ledger.md) · **Cycle 2:** [audit-cycle-2.md](audit-cycle-2.md)
 
 > This document exists **before** the first fix PR of the cycle, not after the last one. That
@@ -454,6 +454,78 @@ excluded panel's markup and the Payslips Center's input box were read as source;
 live is the data each one is handed. This is the same machine limit as findings 27 and 47 — free RAM
 below the dev-server floor — and the same honest boundary: the value that reaches the component was
 verified against production, the pixel was not.
+
+## Findings 2–5 — outside the 37, verified 2026-09-12
+
+**Four of four verified. The condition finding 2 describes is FIFTEEN TIMES larger in production
+than the audit recorded, and one half of finding 3 was guarded by nothing until this change.**
+
+These four never appeared on the owner's list of 37, so nothing in this cycle covered them. They sat
+in the ledger as *fixed, with evidence* on the strength of **PR #3642's description alone** — the
+exact standard cycle 2 proved can be wrong. They are verified here the same way as the 37: against
+production data, the emitted artifact, and a forced failure.
+
+| Finding | What was broken to prove it | What fired |
+| ---: | --- | --- |
+| **2** | every non-FAB/CIB bank folded back into FAB | `QNB must not be treated as a bulk-file bank` |
+| **2** | unroutable rows dropped silently, as before the fix | `every payable row that reaches no bank file must be named` |
+| **3** | the `bankCoverage` key renamed out of the publish audit | `the published audit detail must record bank coverage` |
+| **3** | the headers dropped from `xlsxResponse`, then the third argument dropped from the FAB route | `a download whose bank file misses somebody must say so on the response`, then `xlsxResponse must be given the bank coverage` — **both assertions are new in this change** |
+| **4** | `markCarryForwardApplied` removed from `publishToPayslips` | `publishToPayslips must settle the carry-forward ledger` |
+| **4** | `buildFabSheet` assembling by hand again | `must assemble through assembleForRun, the same path publish uses` |
+| **5** | the held roster removed from the published audit detail | ``the published audit detail must carry `held` `` |
+
+### What the emitted workbooks say
+
+The FAB, CIB and finance workbooks were **built from the published August 2026 run** and read back.
+
+| | Part 1 | Part 2 |
+| --- | ---: | ---: |
+| FAB file | 65 rows · 895,127.40 | 60 rows · 437,266.27 |
+| CIB file | 12 rows · 545,894.24 | 8 rows · 130,063.35 |
+| **Reaches no bank file** | **24 rows · 291,477.41** | **17 rows · 115,516.16** |
+| Payable | 101 rows · 1,732,499.05 | 85 rows · 682,845.78 |
+
+Emitted row counts equal the coverage counts exactly — 65/65, 12/12, 60/60, 8/8 — so the report and
+the files cannot drift apart silently. And the Part 1 finance sheet's TOTALS row foots to the cent:
+
+**895,127.40 + 545,894.24 + 291,477.41 + 260,904.42 held = 1,993,403.47 = the sheet's First Part
+total.**
+
+That equation is finding 3 in one line: the document finance executes from certifies 1,993,403.47,
+of which 1,441,021.64 reaches a bank file, 291,477.41 reaches none, and 260,904.42 belongs to people
+this run does not pay at all.
+
+**The scale is not what the audit recorded.** Finding 2 named three people at EGP 19,000 a month.
+Production carries **twenty-one employees as well**: four on QNB, and **eighteen with no bank
+recorded at all**, one of them at 45,000 a month. Company-wide, 30 of the active payroll-eligible
+employees have neither a bank name nor an account number. They are paid; the system has no record of
+how. That question went to the owner as a filled-in-by-dropdown sheet on 2026-09-12 rather than being
+guessed at here.
+
+### The three answers that are not a clean tick
+
+**3 and 5 are fixed for the next month, not proven on a month that has run.** Both published audit
+rows — July and August — carry exactly `batchId`, `heldExcluded` and `publishedCount`. No held
+roster, no coverage block. August published on **2026-09-08** and #3642 merged on **2026-09-10**, so
+neither record could exist yet. **September's publish is the first that can carry either.** August's
+20 held people and their **260,904.42** of already-paid first instalment, 18 of them with a hold
+reason of a single dash, are still recoverable — but only from draft rows, the same rows Tier 3
+showed a later write can overwrite.
+
+**4 has never fired.** `automated_payroll_carry_forward` holds **0 rows** and
+`automated_payroll_held_settlements` holds **0**. The defect was armed, never triggered, and the fix
+is equally unexercised in production. It arms the first time any employee's Part-2 deductions exceed
+their first instalment.
+
+**Half of 3 was guarded by nothing, and is guarded now.** Removing `[coverage]` from a finance
+download route left **every test in this repository green**, so both headers could vanish from every
+download with nothing going red — and the workbook cover carries no coverage block either (PR #3642
+listed that as a follow-up and nobody returned to it). The cover does now name holds, from finding
+38's fix, which is why the omission is easy to miss: the cover looks like it reports everything.
+`tests/automated-payroll-bank-coverage.test.ts` now pins both halves — the response headers, and the
+third argument on all three finance download routes — and both assertions were proved red before
+this document was written.
 
 ## Method
 
