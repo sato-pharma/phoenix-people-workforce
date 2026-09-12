@@ -1140,6 +1140,7 @@ import { runAutomatedPayrollRunTransitionClaimTests } from "./automated-payroll-
 import { runAutomatedPayrollReadsDeductionsModuleTests } from "./automated-payroll-reads-deductions-module.test.ts";
 import { runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests } from "./automated-payroll-manual-expenses-and-part2-non-employees.test.ts";
 import { runAutomatedPayrollRecurringNonEmployeesTests } from "./automated-payroll-recurring-non-employees.test.ts";
+import { runPayrollAcknowledgmentTokenTests } from "./payroll-acknowledgment-token.test.ts";
 import { runPayrollSilentScreensTests } from "./payroll-silent-screens.test.ts";
 import { runFieldWorkforceThursdayHalfDayTests } from "./field-workforce-thursday-half-day.test.ts";
 import { runDeductionsModuleNoRecordsScopeTests } from "./deductions-module-no-records-scope.test.ts";
@@ -5315,6 +5316,11 @@ await runTest(
 await runTest(
   "five payroll screens that said nothing: Apply changes commits the workbook it previewed, a saved approval that never reached payroll says so, the finance cover names the held people, the excluded panel shows names not codes, and a lower-case HR id still finds its payslips",
   runPayrollSilentScreensTests,
+);
+
+await runTest(
+  "a payroll warning can only be acknowledged by the person it was shown to, for the run and gate it was raised on, while it still says the same thing — a yes on the first request answers nothing",
+  runPayrollAcknowledgmentTokenTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
