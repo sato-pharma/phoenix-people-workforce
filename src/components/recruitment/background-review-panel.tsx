@@ -65,7 +65,12 @@ export function BackgroundReviewPanel({
           <FileSearch aria-hidden className="mr-1.5 h-4 w-4 text-phx-accent-press" />
           Degrees waiting for you to check
         </span>
-        <span className="whitespace-nowrap text-xs font-medium text-slate-500">
+        {/* WRAPS, like every other sentence on this tab. Measured at 375px on 2026-09-12: held at
+            `whitespace-nowrap` it lays out 314px inside a 349px row — it fits, but with 35px to
+            spare, and it is a SENTENCE. #3743 fixed the identical shape two sections down, where
+            the same class had put the whole tab into a 65px sideways scroll. The heading beside it
+            and the count after it are short labels and keep theirs. */}
+        <span className="text-xs font-medium text-slate-500">
           Nobody here reaches a district manager until you answer.
         </span>
         <span className="ml-auto whitespace-nowrap text-xs font-bold tabular-nums text-phx-accent-press">
@@ -183,7 +188,12 @@ function ReviewGroup({
                 where the CV already is before deciding whether it belongs there. */}
             {candidate.folder &&
             (candidate.folder.kind === "medical_rep" || candidate.folder.kind === "district_manager") ? (
-              <span className="whitespace-nowrap bg-amber-50 px-1.5 py-0.5 text-phx-xs font-semibold text-amber-700">
+              {/* Wraps: this reads like a label but it is a clause carrying a FOLDER name, and a
+                  folder name has no length bound — "Dokki - Mohandseen - Bolak" is a real area and
+                  "Technical Support and infrastructure Engineer" is a real declared job title.
+                  Measured at 375px on 2026-09-12 the widest one live is 265px inside 349px; a
+                  longer one is what breaks it, exactly as the folder chip nearly did in #3743. */}
+              <span className="bg-amber-50 px-1.5 py-0.5 text-phx-xs font-semibold text-amber-700">
                 Filed: {candidateFolderKindLabels[candidate.folder.kind]} ·{" "}
                 {candidateFolderLabel(candidate.folder.kind, candidate.folder.key)}
               </span>
