@@ -24,7 +24,7 @@
       {
         "risk": "A guard that the application disarms is invisible to everyone who trusts it",
         "businessImpact": "Finding 56 was a trigger doing exactly its job while the one code path that mattered switched it off on every call. Anyone reading the schema would have concluded a closed month was protected. The same shape can exist anywhere a bypass flag was added for a legitimate cascade.",
-        "requiredAction": "When a migration adds a bypass for a guard, the function that sets it must re-assert the rule itself. Audit the remaining set_config bypasses in the schema against that standard."
+        "requiredAction": "When a migration adds a bypass for a guard, the function that sets it must re-assert the rule itself. DONE for the whole schema as of 12 September 2026: it holds exactly two such flags. request.phx_allow_salary_batch_delete was finding 56. request.phx_allow_terminal_employee_reactivation came back CLEAN - it is read only by the employees reactivation trigger and is set by nothing that ships: no database function, no migration, no application code, no role or database default, and no path a client can reach through PostgREST. The guard is armed on every route that exists, confirmed by a rolled-back probe on production. Apply the standard to any bypass added from now on."
       },
       {
         "risk": "An audit whose findings document is written last loses findings",
