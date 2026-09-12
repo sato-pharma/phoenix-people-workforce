@@ -13,17 +13,18 @@ import type { AccessContext } from "../src/lib/auth/permissions.ts";
 /**
  * THE HR BUSINESS PARTNER REACHES THE DISTRIBUTION LISTS, AND ONLY THE HR ONES.
  *
- * Owner 2026-09-11: she should see that screen and use it. Asked whether "all of it" included the
- * Monthly Closing Cc, he answered plainly: *"HR lists only, she shouldn't touch the closing cc."*
+ * Owner 2026-09-11: she should see that screen and use it, and edit the HR lists only. (The Monthly
+ * Closing Cc list he named then was retired the same day, when the lists became the Sato Email
+ * Composer's alone; the allowlist rule it motivated stands.)
  *
  * 🔴 THE THREE FAILURES THIS PINS ARE EACH SILENT.
  *
- * A DENYLIST INSTEAD OF AN ALLOWLIST. "Everything except the closing" reads equivalent and is not:
+ * A DENYLIST INSTEAD OF AN ALLOWLIST. "Everything except Finance" reads equivalent and is not:
  * the next list added is visible to her by default, and the first one nobody remembered to deny is
  * a widening no error reports. The set is an allowlist, and an unknown key is OUT.
  *
  * A SCREEN THAT ONLY HIDES. `/api/admin/distribution-lists/[listKey]` takes a key from the URL. A
- * page that filters its rows stops nobody from naming `closing_fixed_cc` by hand, so the per-list
+ * page that filters its rows stops nobody from naming `finance_team` by hand, so the per-list
  * check has to live in the ROUTE. Same for both alias actions.
  *
  * AN ALIAS AS THE SIDE DOOR. Registering an alias pointed at a list she cannot edit, or recording
@@ -103,18 +104,13 @@ export function runDistributionListsAccessTests() {
   if (hrScope === "all") return;
 
   assert.equal(canManageDistributionList(hrbp, "hr_team"), true, "she owns the HR Team list");
-  assert.equal(
-    canManageDistributionList(hrbp, "closing_fixed_cc"),
-    false,
-    'she must not touch the Monthly Closing Cc — owner: "HR lists only, she shouldn\'t touch the closing cc"',
-  );
-  assert.equal(canManageDistributionList(hrbp, "finance_team"), false, "nor the Finance list");
+  assert.equal(canManageDistributionList(hrbp, "finance_team"), false, "she must not edit the Finance list — HR lists only");
   assert.equal(
     canManageDistributionList(hrbp, "a_list_invented_next_week"),
     false,
     "🔴 a list she has never been granted is OUT — an allowlist fails closed, a denylist would have shown it to her by default",
   );
-  assert.equal(canManageDistributionList(superAdmin, "closing_fixed_cc"), true, "Super Admin still edits everything");
+  assert.equal(canManageDistributionList(superAdmin, "finance_team"), true, "Super Admin still edits everything");
   assert.equal(
     canManageDistributionList(as("Medical Rep"), "hr_team"),
     false,

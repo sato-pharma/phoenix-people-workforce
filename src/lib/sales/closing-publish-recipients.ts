@@ -8,15 +8,14 @@
 //        published line, from the live organogram (au_v_org_tree). A vacant seat or an inactive
 //        employee is silently skipped, never sent to and never a blank/broken row.
 // CC   — CEO, Marketing Manager, SFE Manager (each a company-wide singleton role — resolved by
-//        role, so a personnel change updates the recipient automatically; WHICH roles these are
-//        is editable as the `closing_fixed_cc` list), the published line's own National Sales
-//        Manager and Product/Group Product Manager, and Ahmed Sharaf (named explicitly by the
-//        owner — not the line's own PM on every line, see resolveClosingPublishRecipients).
+//        role, so a personnel change updates the recipient automatically), the published line's
+//        own National Sales Manager and Product/Group Product Manager, and Ahmed Sharaf (named
+//        explicitly by the owner — not the line's own PM on every line, see
+//        resolveClosingPublishRecipients).
 // BCC  — Omar Anwar (Super Admin), named explicitly by the owner.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isSalesNotificationExcluded } from "@/lib/sales/sales-notification-exclusions";
-import { resolveDistributionListRoles } from "@/lib/distribution-lists/service";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 
@@ -36,20 +35,10 @@ const NAMED_CC_HR_IDS = ["B-155"] as const; // Ahmed Sharaf
 const NAMED_BCC_HR_IDS = ["B-10"] as const; // Omar Anwar (Super Admin)
 
 /**
- * The company-wide singleton roles Cc'd on every line's publish.
- *
- * This array is now the FALLBACK, not the source of truth — the live answer is the
- * `closing_fixed_cc` distribution list, which is editable at /admin/distribution-lists. Keep the
- * two in step: this is what ships when the list is unreadable or switched off, so it must stay a
- * faithful copy of the intended default rather than drift into a second opinion.
- *
- * Only these three moved. The District Managers, the line's NSM and the line's PM/GPM stay resolved
- * from the organogram per published line, because a stored list cannot express "the DMs on THIS
- * line" — one list per line would have to be re-edited every time a seat changes, which is exactly
- * what reading the org tree live avoids.
+ * The company-wide singleton roles Cc'd on every line's publish. Deliberately not a distribution
+ * list: owner 2026-09-11, the lists belong to the Sato Email Composer and nothing else.
  */
 const FIXED_CC_ROLES: readonly PhoenixRole[] = ["CEO", "Marketing Manager", "SFE Manager"];
-const CLOSING_FIXED_CC_LIST_KEY = "closing_fixed_cc";
 const LINE_PRODUCT_MANAGER_ROLES = ["Product Manager", "Group Product Manager"] as const;
 const DM_SEAT_TIERS = new Set(["DM", "ACTING_DM"]);
 
@@ -93,28 +82,11 @@ export async function resolveClosingPublishRecipients(officialLine: string): Pro
   const lineCode = resolveTargetLineCode(line);
 
   try {
-    // WHICH roles are fixed-Cc'd is editable at /admin/distribution-lists; WHO holds them is still
-    // resolved live from app_auth_users by the identical query below, so every downstream step —
-    // the employee lookup, the active check, the shared sales exclusion filter, the To/Cc/Bcc split
-    // — is untouched. Falls back to FIXED_CC_ROLES whenever the list is unreadable or switched off,
-    // so this can only ever reproduce today's behaviour, never quietly drop the Cc.
-    const fixedCc = await resolveDistributionListRoles(CLOSING_FIXED_CC_LIST_KEY, FIXED_CC_ROLES);
-    warnings.push(...fixedCc.warnings);
-
     const [seatResult, fixedRoleResult, namedResult, pmResult] = await Promise.all([
       lineCode
         ? supabase.from("au_v_org_tree").select("seat_tier,line_code,occupant_hr_id").eq("line_code", lineCode)
         : Promise.resolve({ data: [] as Array<Record<string, unknown>>, error: null }),
-      // An empty role list is a real state (the owner removed them all), and `.in("role", [])` is
-      // left unissued rather than trusted — a PostgREST `.in()` on an empty array returns zero rows
-      // with no error, which is right here but is not a behaviour worth depending on.
-      fixedCc.roles.length > 0
-        ? supabase
-            .from("app_auth_users")
-            .select("hr_id,role")
-            .eq("is_active", true)
-            .in("role", fixedCc.roles)
-        : Promise.resolve({ data: [] as Array<{ hr_id: string | null }>, error: null }),
+      supabase.from("app_auth_users").select("hr_id,role").eq("is_active", true).in("role", [...FIXED_CC_ROLES]),
       supabase
         .from("employees")
         .select("hr_id,full_name,work_email,employment_status")

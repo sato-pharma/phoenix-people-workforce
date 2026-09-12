@@ -29,9 +29,10 @@ import { canAccessSystemAdministratorWorkspace, type AccessContext } from "@/lib
  * cannot see this gate — which is exactly what Rule 10 of `tests/hr-function-governance.test.ts`
  * exists to catch, so this file is listed there with its verdict rather than arriving unnoticed.
  *
- * It grants nothing beyond those lists. No list can originate an email — they decide who an
- * existing send reaches — and the alias register cannot touch a mailbox at all, because Turbify has
- * no API.
+ * It grants nothing beyond those lists. A list sends nothing by itself: the Sato Email Composer is
+ * the only thing that reads one (owner 2026-09-11, "I don't want this distribution list to be
+ * linked with anything except the email composer"), and the alias register cannot touch a mailbox
+ * at all, because Turbify has no API.
  */
 export function canManageDistributionLists(access: AccessContext): boolean {
   return canAccessSystemAdministratorWorkspace(access) || access.role === "HR Advisory";
@@ -43,8 +44,10 @@ export function canManageDistributionLists(access: AccessContext): boolean {
  * 🔴 FAIL-CLOSED, AND THAT DIRECTION IS THE WHOLE POINT. A list absent from this set is invisible
  * to her, so a list added later is private until somebody decides it is hers. The opposite shape —
  * "everything except a denylist" — would make each new list visible by default, and the first one
- * nobody remembered to deny would be a silent widening. `closing_fixed_cc` decides who is Cc'd on
- * every Monthly Closing publish, a sales email; `finance_team` is Finance's.
+ * nobody remembered to deny would be a silent widening. `finance_team` is Finance's.
+ *
+ * This is who may EDIT a list on the lists screen. Who may SEND to one is the composer's own rule
+ * (`src/lib/sato-email/access.ts`): both seats may address any switched-on list.
  */
 const HR_OWNED_LIST_KEYS: ReadonlySet<string> = new Set(["hr_team"]);
 

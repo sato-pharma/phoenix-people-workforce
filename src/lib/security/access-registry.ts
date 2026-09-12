@@ -245,14 +245,38 @@ export const accessRegistry = [
   // silence or retarget the stranded-drain alert.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/notification-recipients", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/notification-recipients/*", permission: null, guard: "domain-helper", csrfRequired: true }),
-  // Distribution lists (named recipient groups) and the Turbify alias register: Super Admin only
-  // end-to-end, same reasoning as notification-recipients above — editing one changes who
-  // receives company mail, which is routing plumbing rather than an oversight surface. Neither
-  // route sends anything; the alias half cannot even reach a mailbox, because Turbify has no API
-  // and its output is a worklist somebody applies by hand.
+  // Distribution lists (named recipient groups) and the Turbify alias register: Super Admin, plus
+  // the HR Business Partner narrowed to the HR-owned lists — the boundary is
+  // @/lib/distribution-lists/access, and the per-list check lives in the [listKey] route rather
+  // than only on the screen. Same reasoning as notification-recipients above: editing one changes
+  // who receives company mail, which is routing plumbing rather than an oversight surface.
+  //
+  // ⚠ CORRECTED 2026-09-12. This note read "Super Admin only end-to-end", which stopped being true
+  // when the owner asked that she reach that screen. A registry comment claiming a narrower
+  // audience than the code allows is the one kind of staleness this file cannot afford.
+  //
+  // Neither route sends anything; the alias half cannot even reach a mailbox, because Turbify has
+  // no API and its output is a worklist somebody applies by hand. The only sender that reads a
+  // list is the Sato Email Composer, registered below.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/distribution-lists", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/distribution-lists/*", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/email-aliases", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // The Sato Email Composer: Super Admin and the HR Business Partner, gated by canUseSatoEmail in
+  // @/lib/sato-email/access. Owner 2026-09-11: "This module would be accessible for HR business
+  // partner and the system administrator."
+  //
+  // 🔴 THIS IS THE ONE SURFACE HERE THAT ACTUALLY PUTS MAIL IN SOMEBODY'S INBOX, and `send` is the
+  // route that does it — everything above this block edits routing and sends nothing. A sent email
+  // cannot be recalled, so the send route carries a 5-per-minute limit and a required audit row of
+  // its own beside the `sato_email_sends` record.
+  //
+  // `preview` is a POST that writes nothing: the draft is a whole email and has no business in a
+  // URL. It is classified as a read because that is what it is.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/sato-email/employees", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/sato-email/preview", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/sato-email/send", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/sato-email/templates", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/sato-email/templates", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Email Control Center: a read-only rollup over the 3 systems above plus email-templates —
   // view = CEO + Super Admin, edit = Super Admin only (matches
   // notification-recipients), since every write here dispatches straight into those systems'

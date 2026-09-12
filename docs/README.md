@@ -49,6 +49,8 @@
 | [Attendance Agent](attendance-agent.md) | Local ZKTeco attendance integration |
 | [Observability](observability.md) | Error capture, monitoring, alerting |
 | [Development Workflow](development-workflow.md) | Engineering operating rules and contributor governance |
+| [Sato Email Composer](sato-email-composer.md) | Manual company email at `/admin/sato-email` — fixed Sato templates or free-typed, sent to distribution lists in the company identity |
+| [Distribution Lists](distribution-lists.md) | Named recipient groups at `/admin/distribution-lists` — read by the Sato Email Composer and nothing else |
 
 ## Planning & Audits
 

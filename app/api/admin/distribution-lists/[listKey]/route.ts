@@ -53,9 +53,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ li
 
     const { listKey } = await context.params;
     // 🔴 THE PER-LIST CHECK, not just the screen's. The HR Business Partner reaches this route, and
-    // hiding a row on the page does nothing about a hand-made request naming `closing_fixed_cc` —
-    // the list that decides who is Cc'd on every Monthly Closing publish. Owner, 2026-09-11:
-    // "HR lists only, she shouldn't touch the closing cc."
+    // hiding a row on the page does nothing about a hand-made request naming `finance_team`.
+    // Owner, 2026-09-11: HR lists only.
     if (!canManageDistributionList(access, listKey)) {
       return NextResponse.json({ message: "Forbidden: that list is not yours to edit." }, { status: 403 });
     }

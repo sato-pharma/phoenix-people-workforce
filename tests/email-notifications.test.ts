@@ -84,6 +84,14 @@ export function runEmailNotificationTests() {
     // Its body is built from the letter design HR edits in the module itself, not from a DB email
     // template. See src/lib/offers/send.ts.
     "src/lib/offers/send.ts",
+    // The Sato Email Composer, added 2026-09-12. There is no fixed wording to move into the
+    // admin email-template catalogue: the body is written by the sender at send time, either
+    // free-typed or from a Sato template the two seats edit inside the module itself and which
+    // lives in sato_email_templates, not in the DB email-template catalogue. The dispatcher has
+    // no preference to resolve either — the audience is chosen by hand, list or person, on the
+    // screen. It is a manual human send, so it passes no origin and never bypasses the
+    // confidence gate; see tests/sato-email-lists-only-composer.test.ts.
+    "src/lib/sato-email/service.ts",
     // The five leave fallback bodies, which fire ONLY when the matching template has been
     // deactivated — so they deliberately cannot themselves be templates.
     "src/lib/vacation/email.ts",

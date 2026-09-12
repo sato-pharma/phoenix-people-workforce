@@ -206,12 +206,14 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   //
   // What it opens: the named recipient groups and the Turbify alias register, narrowed by
   // distributionListScopeFor to HR_OWNED_LIST_KEYS — `hr_team` alone today. A list absent from that
-  // set is invisible to her, so one added later is private until somebody decides it is hers. Asked
-  // whether "use all of it" included the Monthly Closing Cc, the owner answered "HR lists only, she
-  // shouldn't touch the closing cc" — so `closing_fixed_cc` and `finance_team` stay out, enforced in
-  // the [listKey] route and in both alias actions rather than merely hidden on the screen.
+  // set is invisible to her, so one added later is private until somebody decides it is hers. The
+  // owner answered "HR lists only" — so `finance_team` stays out, enforced in the [listKey] route
+  // and in both alias actions rather than merely hidden on the screen. (The Monthly Closing Cc list
+  // named in that exchange was retired the same day, when the lists became the Sato Email
+  // Composer's alone.)
   //
-  // What it cannot do: originate an email. A list decides who an EXISTING send reaches, and the
+  // What it cannot do here: send. Editing a list sends nothing; the only sender that reads a list is
+  // the Sato Email Composer, gated separately in src/lib/sato-email/access.ts and listed below. The
   // alias register cannot touch a mailbox at all because Turbify has no API — its output is a
   // worklist a human applies by hand. No HR_ROLE_BOUNDARIES entry is crossed: this is not payroll,
   // deductions, organogram, user_admin, permission_admin or report_it.
@@ -304,6 +306,30 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/recruitment/account-activation.ts",
   "src/lib/reports/organogram.ts",
   "src/lib/resignations/service.ts",
+  // Names HR Advisory in canUseSatoEmail, added 2026-09-12 for the Sato Email Composer. Owner
+  // 2026-09-11: "This module would be accessible for HR business partner and the system
+  // administrator." Reviewed verdict: it GRANTS reach, and this is the SENDING half of the pair
+  // whose editing half sits at src/lib/distribution-lists/access.ts above — so it is the one of the
+  // two that can actually put mail in somebody's inbox, and it was read as such.
+  //
+  // What it opens: one screen, where she writes a subject and a body, picks a fixed template or
+  // types freely, addresses the switched-on distribution lists or named colleagues, and sends. The
+  // owner asked for exactly this, and for both seats to be able to address any list.
+  //
+  // What it cannot do, and none of these is left to the screen: it cannot reach the whole company
+  // — `allEmployees` lists are withheld in the service, so naming one by hand gets nothing either.
+  // It cannot mail an address the directory does not know without declaring it, because the
+  // Recipient Assurance Guard still runs. It cannot exceed the manual-email recipient cap, because
+  // every email is cut to it. And it cannot skip the Notification Confidence Gate: the fan-out hold
+  // is not applied (owner: "in composer its manual email by human") but the gate itself runs on
+  // every send, pinned by tests/sato-email-lists-only-composer.test.ts.
+  //
+  // No HR_ROLE_BOUNDARIES entry is crossed: this is not payroll, deductions, organogram,
+  // user_admin, permission_admin or report_it. She already holds `communication` through
+  // hr_communication — the reason this is a by-name gate rather than that resource is that
+  // `communication` also opens the older HR reply composer, the system email templates and the
+  // Telegram console, and the owner scoped this to the new module alone.
+  "src/lib/sato-email/access.ts",
   // Names both seats in `roleHrefsForSubject`, added 2026-09-07 with the retention-risk alert.
   // Reviewed verdict: ROUTING ONLY, and it can only ever REMOVE a wrong destination — it grants
   // nothing and it cannot widen what either seat may open.
