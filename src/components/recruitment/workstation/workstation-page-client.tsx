@@ -62,6 +62,7 @@ import {
   type ThroughputSummary,
 } from "@/lib/recruitment/candidate-throughput";
 import { ScreeningFilterBar, ScreeningPageFrame } from "@/components/recruitment/screening-page-client";
+import type { ScreeningRatingFilter } from "@/lib/recruitment/candidate-rating";
 import { ScreeningWorkstation } from "@/components/recruitment/workstation/screening-workstation";
 import {
   Action,
@@ -103,6 +104,7 @@ export function WorkstationPageClient({
   poolHref,
   poolSize,
   positionSuggestions,
+  rating,
   received,
   region,
   role,
@@ -143,6 +145,8 @@ export function WorkstationPageClient({
   poolSize: number;
   /** Job titles and areas already used, offered as a datalist behind the free-typed position. */
   positionSuggestions: { jobTitles: string[]; areas: string[] };
+  /** The star this link narrowed to, as "that many OR MORE" — or `unrated`. Null means any. */
+  rating: ScreeningRatingFilter | null;
   received: ScreeningReceivedFilter | null;
   region: ScreeningRegionFilter | null;
   role: ScreeningRoleFilter | null;
@@ -231,7 +235,18 @@ export function WorkstationPageClient({
   // dispatched inside is still running, then falls back to the server's own answer. Not `useState`:
   // a state copy has to be cleared when the real value lands, and the only place to do that is an
   // effect — which is the same set-state-in-effect the store rewrite above just removed.
-  const serverNarrowing = { area, notified, received, region, role, seen, source, status, vacancy };
+  const serverNarrowing = {
+    area,
+    notified,
+    rating,
+    received,
+    region,
+    role,
+    seen,
+    source,
+    status,
+    vacancy,
+  };
   const [shown, showImmediately] = useOptimistic(
     serverNarrowing,
     (current, picked: ScreeningHrefOptions) => mergeNarrowing(current, picked),
@@ -239,7 +254,7 @@ export function WorkstationPageClient({
   // The list is fetched by the ROUTER, so `pending` is the only honest signal that it is on its way.
   const [pending, startTransition] = useTransition();
 
-  // How many of the eight URL narrowings are actually holding something. It is what the folded
+  // How many of the nine URL narrowings are actually holding something. It is what the folded
   // filter bar says about itself: a bar that hides how many filters are on is a bar that makes
   // "why am I only seeing four people" unanswerable without opening it again. Reads the OPTIMISTIC
   // values, so a filter changed while the bar is folded is counted the moment it is picked.
@@ -247,6 +262,7 @@ export function WorkstationPageClient({
     shown.area,
     shown.source,
     shown.status,
+    shown.rating,
     shown.role,
     shown.region,
     shown.received,
@@ -262,6 +278,7 @@ export function WorkstationPageClient({
       const href = screeningHref(shellPoolHref, {
         area: next.area !== undefined ? next.area : area,
         notified: next.notified !== undefined ? next.notified : notified,
+        rating: next.rating !== undefined ? next.rating : rating,
         received: next.received !== undefined ? next.received : received,
         region: next.region !== undefined ? next.region : region,
         role: next.role !== undefined ? next.role : role,
@@ -278,7 +295,21 @@ export function WorkstationPageClient({
         router.push(href);
       });
     },
-    [area, notified, received, region, role, router, seen, shellPoolHref, showImmediately, source, status, vacancy],
+    [
+      area,
+      notified,
+      rating,
+      received,
+      region,
+      role,
+      router,
+      seen,
+      shellPoolHref,
+      showImmediately,
+      source,
+      status,
+      vacancy,
+    ],
   );
 
   // `F` for full width, Escape to leave it. Ignored while typing, so an "f" in a search term does
@@ -393,6 +424,7 @@ export function WorkstationPageClient({
             goTo({
               area: null,
               notified: "any",
+              rating: null,
               received: null,
               region: null,
               role: null,
@@ -404,6 +436,7 @@ export function WorkstationPageClient({
           }
           pending={pending}
           queueCount={rows.length}
+          rating={shown.rating}
           received={shown.received}
           region={shown.region}
           role={shown.role}

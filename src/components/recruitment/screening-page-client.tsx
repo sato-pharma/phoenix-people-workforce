@@ -24,6 +24,11 @@ import {
   candidateRegionLabels,
   foreignRegionLabel,
 } from "@/lib/recruitment/candidate-region";
+import {
+  screeningRatingFilterLabels,
+  screeningRatingFilters,
+  type ScreeningRatingFilter,
+} from "@/lib/recruitment/candidate-rating";
 import { candidateRoleFamilies, candidateRoleFamilyLabels } from "@/lib/recruitment/candidate-role-family";
 import { candidateStatuses, candidateStatusLabels, type CandidateStatus } from "@/lib/recruitment/candidate-status";
 import type { CandidateViewMap } from "@/lib/recruitment/candidate-views";
@@ -82,6 +87,7 @@ export function ScreeningPageClient({
   openVacancies,
   poolHref,
   positionSuggestions,
+  rating,
   received,
   region,
   role,
@@ -114,6 +120,8 @@ export function ScreeningPageClient({
    * tests/recruitment-hub-portal-coverage.test.ts (ORPHANED_PORTAL_MIRRORS).
    */
   poolHref: string;
+  /** The star this link narrowed to, as "that many OR MORE" — or `unrated`. Null means any. */
+  rating: ScreeningRatingFilter | null;
   /** How long ago this link narrowed the CV to have arrived — null means any time. */
   received: ScreeningReceivedFilter | null;
   /** The region this link narrowed to: a company region, `foreign`, or `unknown`. */
@@ -158,7 +166,7 @@ export function ScreeningPageClient({
   // defect for the same reason: a `<select>` controlled by the server’s last answer, and an answer
   // that takes seconds. See the long note in workstation-page-client.tsx. The types caught that this
   // second caller existed — a reminder that the bar has two homes and a fix to one is half a fix.
-  const shownNarrowing = { area, notified, received, region, role, seen, source, status };
+  const shownNarrowing = { area, notified, rating, received, region, role, seen, source, status };
   const [shown, showImmediately] = useOptimistic(
     shownNarrowing,
     (current, picked: ScreeningHrefOptions) => mergeNarrowing(current, picked),
@@ -170,6 +178,7 @@ export function ScreeningPageClient({
       const href = screeningHref(shellPoolHref, {
         area: next.area !== undefined ? next.area : area,
         notified: next.notified !== undefined ? next.notified : notified,
+        rating: next.rating !== undefined ? next.rating : rating,
         received: next.received !== undefined ? next.received : received,
         region: next.region !== undefined ? next.region : region,
         role: next.role !== undefined ? next.role : role,
@@ -183,7 +192,20 @@ export function ScreeningPageClient({
         router.push(href);
       });
     },
-    [area, notified, received, region, role, router, seen, shellPoolHref, showImmediately, source, status],
+    [
+      area,
+      notified,
+      rating,
+      received,
+      region,
+      role,
+      router,
+      seen,
+      shellPoolHref,
+      showImmediately,
+      source,
+      status,
+    ],
   );
 
   return (
@@ -197,6 +219,7 @@ export function ScreeningPageClient({
           goTo({
             area: null,
             notified: "any",
+            rating: null,
             received: null,
             region: null,
             role: null,
@@ -207,6 +230,7 @@ export function ScreeningPageClient({
         }
         pending={pending}
         queueCount={candidates.length}
+        rating={shown.rating}
         received={shown.received}
         region={shown.region}
         role={shown.role}
@@ -316,6 +340,7 @@ export function ScreeningFilterBar({
   onClear,
   pending,
   queueCount,
+  rating,
   received,
   region,
   role,
@@ -339,6 +364,8 @@ export function ScreeningFilterBar({
    */
   pending: boolean;
   queueCount: number;
+  /** The star narrowing, as "that many OR MORE" — or `unrated`. Null shows every CV. */
+  rating: ScreeningRatingFilter | null;
   received: ScreeningReceivedFilter | null;
   region: ScreeningRegionFilter | null;
   role: ScreeningRoleFilter | null;
@@ -350,6 +377,7 @@ export function ScreeningFilterBar({
 }) {
   const narrowed =
     status !== null ||
+    rating !== null ||
     seen !== "any" ||
     notified !== "any" ||
     received !== null ||
@@ -404,6 +432,31 @@ export function ScreeningFilterBar({
           {candidateStatuses.map((value) => (
             <option key={value} value={value}>
               {candidateStatusLabels[value]}
+            </option>
+          ))}
+        </select>
+      </label>
+      {/* ── STARS ───────────────────────────────────────────────
+          Second on the bar, directly after Status, because it is the only filter here that reads
+          something a PERSON put on the CV rather than something the system worked out about it.
+          Everything else narrows by fact; this one narrows to "the ones I liked".
+
+          "1 star and up" rather than "exactly 1 star", which is what makes it a ladder instead of
+          three unrelated labels — asking for your favourites and being shown only the middling ones
+          because the best are rated higher would be the wrong answer to the question. */}
+      <label className={filterLabelClass(rating !== null)}>
+        Stars
+        <select
+          className={filterSelectClass(rating !== null)}
+          onChange={(event) =>
+            onChange({ rating: (event.target.value || null) as ScreeningRatingFilter | null })
+          }
+          value={rating ?? ""}
+        >
+          <option value="">Any stars</option>
+          {screeningRatingFilters.map((value) => (
+            <option key={value} value={value}>
+              {screeningRatingFilterLabels[value]}
             </option>
           ))}
         </select>

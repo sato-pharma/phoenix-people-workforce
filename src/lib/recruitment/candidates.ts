@@ -37,6 +37,7 @@ import {
   managerSendStamp,
   type ManagerSend,
 } from "@/lib/recruitment/manager-sends";
+import { candidateRatings, parseCandidateRating } from "@/lib/recruitment/candidate-rating";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { ROW_FINDING_KEYS } from "@/lib/recruitment/cv-findings";
@@ -645,7 +646,8 @@ export const CANDIDATE_COLUMNS_WITHOUT_REPEATING_BLOCKS =
   "manager_notified_region,marital_status,medical_rep_employer,medical_rep_experience_from," +
   "medical_rep_experience_to,military_status,national_id,nationality,notes,notice_period,phone," +
   "place_of_birth,preferences_declared_at,preferred_area_name,preferred_region_code," +
-  "preferred_region_name,professional_summary,screening_extra_answers,sent_for_area,sent_for_job_title," +
+  "preferred_region_name,professional_summary,rated_at,rated_by_hr_id,rating,screening_extra_answers," +
+  "sent_for_area,sent_for_job_title," +
   "sent_for_line,sent_for_region,sent_for_vacancy_id,source,status,status_changed_at," +
   "status_changed_by_hr_id,status_note,university,updated_at,whatsapp,years_experience";
 
@@ -946,6 +948,68 @@ export async function updateCandidateStatus(
     note: cleanNote,
     toStatus: next,
   });
+
+  return mapCandidate(data as CandidateDbRow);
+}
+
+/**
+ * Star a CV 1, 2 or 3 — or take the star off.
+ *
+ * The owner, 2026-09-12: "i want be able to favorite a cv more", and he chose degrees over a single
+ * bookmark so the CVs he likes rank against each other and the best rise to the top of the
+ * shortlist. See candidate-rating.ts for why a star is not a status.
+ *
+ * DELIBERATELY NOT A DECISION, and nothing about this behaves like one:
+ *
+ *   - It writes no status and it reads none. A CV can be starred at any point in its life, before
+ *     anyone has triaged it or long after it was sent, and starring one never advances it.
+ *   - It records NO status event. `ats_candidate_status_events` is the decision trail and a star is
+ *     not a decision; putting one there would show up as a move in the throughput trend and in
+ *     every per-screener report built on that table.
+ *   - It refuses nothing and asks `statusChangeRefusal` nothing. There is no illegal star: the only
+ *     invalid value is one that is not on the ladder, and that is refused before the read.
+ *
+ * `null` CLEARS the star. Not 0 — see candidate-rating.ts: "unrated" has exactly one
+ * representation so a filter can ask for it, and the check constraint refuses 0 outright.
+ *
+ * `hrIdForStorage`, never the raw session value, for the reason spelled out on the status write
+ * above: `access.hrId` is the lower-cased comparison key, and persisting it verbatim is what left
+ * `status_changed_by_hr_id` holding three spellings for two people. A new column gets that right
+ * from its first row rather than being repaired later.
+ */
+export async function setCandidateRating(
+  access: AccessContext,
+  id: string,
+  rating: number | null,
+): Promise<Candidate> {
+  // Validated BEFORE the read, so a bad value costs no round trip and the refusal names the ladder
+  // rather than saying "something went wrong".
+  const next = rating === null ? null : parseCandidateRating(rating);
+  if (rating !== null && next === null) {
+    throw new Error(`A star is ${candidateRatings.join(", ")} — or nothing at all to clear it.`);
+  }
+
+  const existing = await getCandidate(id);
+  if (!existing) throw new Error("Candidate not found.");
+
+  const actorHrId = hrIdForStorage(access.hrId);
+  const ratedAt = new Date().toISOString();
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("ats_candidates")
+    .update({
+      // The three move together, always. A cleared star must not leave last month's stamp behind
+      // saying somebody rated a CV that now shows no rating — the stamp describes the star, so it
+      // goes when the star goes.
+      rated_at: next === null ? null : ratedAt,
+      rated_by_hr_id: next === null ? null : actorHrId,
+      rating: next,
+      updated_at: ratedAt,
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw error;
 
   return mapCandidate(data as CandidateDbRow);
 }

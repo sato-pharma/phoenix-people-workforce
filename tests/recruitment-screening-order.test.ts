@@ -128,7 +128,10 @@ export function runRecruitmentScreeningOrderTests() {
   // --- which is precisely how #2395 shipped unnoticed.
   for (const family of candidateRoleFamilies) {
     const key = screeningSortKey(row("x", { family }));
-    assert.ok(Number.isFinite(key[0]), `${family} produced a non-finite band rank (${String(key[0])}) — it is unmapped`);
+    // `key[1]`, not `key[0]`: the star went in AHEAD of the band on 2026-09-12 and every index after
+    // it moved one along. Reading `key[0]` here would have gone on passing forever — the star is
+    // always a finite number — while quietly testing nothing about the band at all.
+    assert.ok(Number.isFinite(key[1]), `${family} produced a non-finite band rank (${String(key[1])}) — it is unmapped`);
   }
 
   // --- ...and countByBand must not grow an "undefined" key, which is what it did on main: every
@@ -176,7 +179,7 @@ export function runRecruitmentScreeningOrderTests() {
   // --- three-way experience filter exists to avoid.
   const unansweredKey = screeningSortKey(row("x", { family: "medical_rep", hasPharmaExperience: null }));
   const noKey = screeningSortKey(row("y", { family: "medical_rep", hasPharmaExperience: false }));
-  assert.ok(unansweredKey[1] < noKey[1], "an unanswered flag must outrank a recorded 'no', never tie with it");
+  assert.ok(unansweredKey[2] < noKey[2], "an unanswered flag must outrank a recorded 'no', never tie with it");
 
   // --- Newest first inside everything else, which is the rule the table itself uses.
   const byDate = [

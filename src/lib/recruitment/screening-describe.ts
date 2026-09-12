@@ -53,6 +53,9 @@ export function describeForOrder(candidate: Candidate): ScreeningOrderInput {
     // A file the extractor already judged not to be a CV is a settled answer, not an open question,
     // so it goes to the back rather than sitting among the ones only a person can read.
     notACv: candidate.notACv,
+    // Straight off the record, unmodified. The star is the one thing in this describe that nobody
+    // derived — see ScreeningOrderInput.rating for why that makes it the top key.
+    rating: candidate.rating,
     region: screeningRegionOf(candidate),
     yearsExperience: candidate.yearsExperience,
   };

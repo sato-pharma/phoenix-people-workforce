@@ -76,6 +76,7 @@ import {
 } from "@/components/recruitment/workstation/workstation-intelligence";
 import { WorkstationQueuePanel } from "@/components/recruitment/workstation/workstation-queue-panel";
 import { WorkstationReviewHeader, type SendState } from "@/components/recruitment/workstation/workstation-review-header";
+import { parseCandidateRating, type CandidateRating } from "@/lib/recruitment/candidate-rating";
 import { Action, Band, BandSays } from "@/components/recruitment/workstation/workstation-look";
 import { EmptyNote, PaneSpine } from "@/components/recruitment/workstation/workstation-ui";
 import { cn } from "@/lib/utils";
@@ -219,6 +220,19 @@ export function ScreeningWorkstation({
   const [loaded, setLoaded] = useState<Record<string, LoadedCandidate>>({});
   const [loadError, setLoadError] = useState<Record<string, string>>({});
   const [decided, setDecided] = useState<Record<string, CandidateStatus>>({});
+  /**
+   * The star put on a CV in THIS sitting, which outranks the stored one until the page reloads.
+   *
+   * Its own map rather than a field on `decided`, because a star is not a decision and the two are
+   * independent in both directions: a CV can be starred and never judged, judged and never starred,
+   * or judged AFTER being starred with the star still standing. Folding them together would mean
+   * clearing one cleared the other.
+   *
+   * A key PRESENT and holding `null` means CLEARED HERE — distinct from an absent key, which means
+   * nothing happened in this sitting and the stored value stands. `??` cannot tell those apart, so
+   * every read goes through `ratingOf`.
+   */
+  const [rated, setRated] = useState<Record<string, CandidateRating | null>>({});
   const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
   const [sentInSession, setSentInSession] = useState<Record<string, string>>({});
   /** Archived to the Duplicates shelf in this session - dropped from the list without a reload. */
@@ -475,6 +489,63 @@ export function ScreeningWorkstation({
   );
 
   /**
+   * The star on a row as the reader currently sees it: this sitting's, or the stored one.
+   *
+   * `id in rated` rather than `rated[id] ?? row.rating`, because taking a star OFF stores `null` and
+   * `??` would fall straight through it back to the value on the record — the star would reappear
+   * the instant it was cleared.
+   */
+  const ratingOf = useCallback(
+    (row: { id: string; rating: CandidateRating | null }): CandidateRating | null =>
+      row.id in rated ? (rated[row.id] ?? null) : row.rating,
+    [rated],
+  );
+
+  /**
+   * Star the CV being read 1, 2 or 3 — or take the star off.
+   *
+   * DELIBERATELY NOT A DECISION, and it behaves like none: it writes no status, offers no undo
+   * window, and does not advance to the next candidate. Advancing would be actively wrong — rating
+   * is what you do WHILE reading, often revised halfway down the document — and a control that
+   * moved you on would make the second thought impossible.
+   *
+   * It also does not take the `busy` lock the decision uses. Starring is exclusive with nothing: it
+   * writes one column on one row, and holding the whole bar for it would mean a star pressed a
+   * moment before Shortlist silently swallowed the Shortlist.
+   */
+  const rate = useCallback(
+    async (next: CandidateRating | null) => {
+      const row = selected;
+      if (!row) return;
+      const was = row.id in rated ? (rated[row.id] ?? null) : row.rating;
+      // Drawn IMMEDIATELY, then put back if the write fails. A star is a glance-speed act and the
+      // round trip here is the same slow one every other control on this page pays. Rolling back on
+      // failure is what keeps the optimism honest.
+      setRated((prev) => ({ ...prev, [row.id]: next }));
+      setActionError(null);
+      try {
+        const res = await fetch(`/api/recruitment/candidates/${row.id}/rating`, {
+          body: JSON.stringify({ rating: next }),
+          headers: { "Content-Type": "application/json" },
+          method: "PATCH",
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          candidate?: { rating?: unknown };
+          message?: string;
+        };
+        if (!res.ok) throw new Error(data.message ?? "Could not save that star.");
+        // Trust the row that came back over the one that was asked for. They agree today; if the
+        // ladder ever widens they might not, and the screen must show what was actually stored.
+        setRated((prev) => ({ ...prev, [row.id]: parseCandidateRating(data.candidate?.rating) }));
+      } catch (caught) {
+        setRated((prev) => ({ ...prev, [row.id]: was }));
+        setActionError(caught instanceof Error ? caught.message : "Could not save that star.");
+      }
+    },
+    [rated, selected],
+  );
+
+  /**
    * The ticked rows that are ACTUALLY IN THE LIST in front of the reader.
    *
    * Marks survive a narrowing, so widening the list again brings the selection back rather than
@@ -710,11 +781,21 @@ export function ScreeningWorkstation({
       if (key === "s" && canDecide && selected) {
         event.preventDefault();
         void decide("shortlisted", null);
+        return;
+      }
+      // ── THE STARS, ON THE NUMBER ROW ────────────────────────────────────────
+      // The one place here where the key IS the value, which is why these are bound and Reject is
+      // not: there is nothing to explain and nothing to confirm, and a mis-pressed 2 is undone by
+      // pressing the right number or 0. `0` CLEARS — it is the key next to them on the same row,
+      // never a rating of zero, which the ladder does not have.
+      if (canDecide && selected && (key === "0" || key === "1" || key === "2" || key === "3")) {
+        event.preventDefault();
+        void rate(key === "0" ? null : (Number(key) as CandidateRating));
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canDecide, decide, goToNext, goToPrevious, selected, undoLast, undoable]);
+  }, [canDecide, decide, goToNext, goToPrevious, rate, selected, undoLast, undoable]);
 
   // The window closes on its own. A timer rather than a rendered countdown: nothing here needs to
   // re-render ten times a second, and a ticking number beside a live control invites a race.
@@ -1145,6 +1226,7 @@ export function ScreeningWorkstation({
               onSelect={openCandidate}
               onToggleMark={canDecide ? toggleMark : null}
               onSearchChange={setSearch}
+              ratedById={rated}
               rows={visible}
               search={search}
               selectedId={selectedId}
@@ -1173,8 +1255,11 @@ export function ScreeningWorkstation({
                   error={actionError}
                   focus={focus}
                   hiringManagers={hiringManagers}
+                  canRate={canDecide}
                   onDecide={decide}
                   onNext={goToNext}
+                  onRate={rate}
+                  rating={ratingOf(selected)}
                   onSend={() => void send()}
                   onSendStateChange={setSendState}
                   onToggleFocus={onToggleFocus}

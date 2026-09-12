@@ -31,7 +31,9 @@ import { Copy, Eye, Search, X } from "lucide-react";
 
 import { candidateStatusLabel, type CandidateStatus } from "@/lib/recruitment/candidate-status";
 import { candidateRedFlagLabels } from "@/lib/recruitment/red-flag";
+import { StarMark } from "@/components/recruitment/workstation/candidate-stars";
 import { Medallion } from "@/components/recruitment/workstation/workstation-look";
+import type { CandidateRating } from "@/lib/recruitment/candidate-rating";
 import { EmptyNote, PaneHead, Pill, relativeDays } from "@/components/recruitment/workstation/workstation-ui";
 import { roleFitVerdictLabels } from "@/lib/recruitment/role-fit";
 import { screeningBandLabels } from "@/lib/recruitment/screening-order";
@@ -47,6 +49,7 @@ const EXTEND_MARGIN = 400;
 
 export function WorkstationCandidateList({
   decidedById,
+  ratedById,
   emptyLabel,
   onCollapse,
   onSelect,
@@ -67,6 +70,15 @@ export function WorkstationCandidateList({
    * simply wears the new verdict. The server's own counts are a snapshot and stay as loaded.
    */
   decidedById: Readonly<Record<string, CandidateStatus>>;
+  /**
+   * The stars put on CVs in THIS sitting, keyed by candidate id.
+   *
+   * Same contract as `decidedById` and for the same reason: the row was loaded before the star was
+   * pressed, so the row's own `rating` is the last page load's answer. A key PRESENT and holding
+   * `null` means the star was taken off here, which is why the read below tests `in` rather than
+   * falling through with `??`.
+   */
+  ratedById: Readonly<Record<string, CandidateRating | null>>;
   emptyLabel: string;
   /**
    * The candidates ticked for a bulk decision.
@@ -204,6 +216,7 @@ export function WorkstationCandidateList({
                       active={row.id === selectedId}
                       decided={decidedById[row.id] ?? null}
                       onSelect={() => onSelect(row.id)}
+                      rating={row.id in ratedById ? (ratedById[row.id] ?? null) : row.rating}
                       row={row}
                     />
                   </div>
@@ -248,11 +261,14 @@ function CandidateBlock({
   active,
   decided,
   onSelect,
+  rating,
   row,
 }: {
   active: boolean;
   decided: CandidateStatus | null;
   onSelect: () => void;
+  /** The star as the reader sees it now — this sitting's if there is one, else the stored one. */
+  rating: CandidateRating | null;
   row: WorkspaceCandidateRow;
 }) {
   const redFlag = row.redFlags[0] ?? null;
@@ -262,6 +278,7 @@ function CandidateBlock({
   // because a JSX child that renders null is still a child — React cannot tell the caller "that row
   // came to nothing", so the row has to know before it draws.
   const hasMeta =
+    rating !== null ||
     Boolean(decided) ||
     status !== "new" ||
     row.seen ||
@@ -353,6 +370,12 @@ function CandidateBlock({
           gap, and forty of those is a list that breathes wrong for no reason at all. */}
       {hasMeta ? (
         <span className="flex flex-wrap items-center gap-1">
+          {/* THE STAR LEADS THE LINE. It is the only mark here that a person put on this CV on
+              purpose, and the whole reason the owner asked for stars was that his favourites were
+              invisible from the list — so it goes ahead of the status, which is a verdict the queue
+              already sorts by, and well ahead of the reading badges. An unstarred CV draws nothing;
+              see StarMark for why three empty outlines on six hundred rows is not a feature. */}
+          <StarMark rating={rating} />
           {/* A decision made in this session shows immediately and is marked as this session's, so a
               reader can tell "I just did that" from "somebody did that last week". A stored status
               only prints when it is NOT the default: "New" on a new-CV queue is forty identical

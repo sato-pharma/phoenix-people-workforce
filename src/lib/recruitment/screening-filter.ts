@@ -24,6 +24,7 @@ import {
   candidateScreeningRoleFamily,
   type ScreeningFactsCandidateRow,
 } from "@/lib/recruitment/candidate-screening-facts";
+import { matchesRatingFilter, type CandidateRating } from "@/lib/recruitment/candidate-rating";
 import { normalizeCandidateStatus } from "@/lib/recruitment/candidate-status";
 import {
   SCREENING_UNKNOWN,
@@ -42,6 +43,8 @@ export type ScreeningFilterCandidateRow = ScreeningFactsCandidateRow &
     managerNotified?: { sentAt: string } | null;
     /** The raw source column, read alongside `sourceContext` — see `candidateSourceChannel`. */
     source?: string | null;
+    /** The star, 1 to 3, or null/absent for a CV nobody has starred — read by the `rating` filter. */
+    rating?: CandidateRating | null;
   };
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -148,6 +151,10 @@ export function matchesScreeningNarrowing(
     const label = candidateSourceChannel(candidate.source, candidate.sourceContext).label;
     if (screeningSourceKey(label) !== screeningSourceKey(narrowing.source)) return false;
   }
+
+  // Tested here, above the three expensive ones, because it reads a single column and the whole
+  // reason to narrow to starred CVs is that it takes a pile of hundreds down to a handful.
+  if (!matchesRatingFilter(candidate.rating ?? null, narrowing.rating)) return false;
 
   if (!narrowing.role && !narrowing.region && !narrowing.area) return true;
 

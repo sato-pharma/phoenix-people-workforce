@@ -108,6 +108,7 @@ async function ScreeningContent({
       poolHref="/recruitment"
       poolSize={workspace.poolSize}
       positionSuggestions={workspace.positionSuggestions}
+      rating={workspace.rating}
       received={workspace.received}
       region={workspace.region}
       role={workspace.role}
