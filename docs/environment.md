@@ -2,6 +2,43 @@
 
 All environment variables are listed in `.env.example` at the repository root. Copy it to `.env.local` for local development.
 
+## Stable environment facts (moved from `AGENTS.md` §3)
+
+Lookup facts about where production, staging, the schedulers and the Supabase projects live. They auto-loaded on every request as `AGENTS.md` §3 until 2026-09-12, when the body moved here to cut that file's per-request cost; §3 there keeps a short summary and the Supabase project-ref table (which `tests/supabase-project-refs.test.ts` parses). Read this before touching deploy, staging, cron, domains, the region or a Supabase project ref.
+
+**Each line is the fact, not the evidence.** Measurements, dates, PR numbers and incident narratives
+are in [docs/agents-incident-history.md](agents-incident-history.md).
+
+- Production application: `https://phoenix-hr.satopharma.com` — **served by Railway, no longer Cloud Run.** Railway service `phoenix-people-workforce`, project `Phoenix-HR-Workforce`, environment **`production`**, region **`europe-west4-drams3a` (Amsterdam)**, 1 replica. **If production is ever re-platformed it must stay in Europe** — colocated with the Frankfurt Supabase project and near the Cairo users. Also at `https://phoenix-people-workforce-production.up.railway.app`; Cloudflare holds `CNAME phoenix-hr -> xok6ir4p.up.railway.app`, unproxied.
+- **Do not assume "merge to `main` ships to production" — confirm the Railway `production` service source branch first.** It tracks `main` directly, but it has silently drifted before and stranded five merged, green PRs for hours with no signal. `railway status --environment production --json` returns the WHOLE project, so select by `.environments.edges[] | select(.node.name=="production")`, print the name you matched, then read `.node.serviceInstances.edges[].node.latestDeployment.meta.branch`. See `AGENTS.md` §2.3.
+- **GCP is DEAD, not standby.** Billing is closed; every API in project `phoenix-workforce-498619` returns `BILLING_DISABLED`. Do not "verify production" against Cloud Run.
+- **The production scheduler is the third-party `cron-job.org`, and it is running, not stalled.** The 8 GCP Cloud Scheduler jobs still fire but **401 on every route** — a red herring. **Never tell the owner notifications/iReports are stalled without checking `cron-job.org` first.** **It cuts every request at 30 s, a PLATFORM cap `requestTimeout` cannot raise — but the server DOES finish the work afterwards**, so a long route logs a false `Failed (timeout)` while succeeding. ⚠ **A MID-SWEEP SNAPSHOT READS EXACTLY LIKE A TRUNCATED ONE** — read the terminal artefact (the audit row, the response body of `GET /jobs/{id}/history/{identifier}`, the final log line), never row timestamps mid-run. `src/lib/cron-control/*` is a dashboard over the dead GCP scheduler and remains inert.
+- **The OUTBOX DRAIN is the one that needs care — it ran perfectly and did nothing for 13 days.** **A green cron and a 200 prove nothing here**, and **`attempted: 0` cannot by itself tell idle from broken — read `drainHealth` in the response body.** The head-of-line block is **FIXED** on all three drains, with a dead-man's-switch alarm behind it. **That alert is deliberately never email, and do not "fix" that back** — it fires precisely when the notification pipeline is the thing not delivering. To check the drain, run its own window query — `status in ('pending','failed')` AND `(next_attempt_at is null or next_attempt_at <= now())` ordered by `created_at` **limit 50** — and count how many of those 50 are already exhausted.
+- **This repository runs FOUR GitHub Actions crons of its own, and one of them is DRIVEN BY cron-job.org rather than separate from it.** `deploy-drift-check.yml` every 30 min (48 runs/day), `migration-drift-check.yml` daily 07:00 UTC, `security-scan.yml` daily 05:17 UTC — which also produces the required `secret-scan` check — and **`synthetic-journeys.yml`**, where the `schedule:` trigger is the SMALLER half: cron-job.org's `phoenix-run-synthetic-journeys` (`0 * * * *`) calls `/api/cron/run-synthetic-journeys`, which `workflow_dispatch`es it. **24 dispatch runs/day against ~3 scheduled. So its `17 2-18/3` cron line is NOT its rate** — ~27/day is — its cadence changes in `job-schedule.ts` and cron-job.org, never in the workflow, and at ~57 min/day of wall clock **it, not deploy-drift-check's ~26, is the standing Actions cost.** Reading the workflow's own cron as its rate is the mis-diagnosis this bullet exists to stop. Count all four before adding a fifth.
+- **There IS a live Railway `staging` environment**, same project, service `phoenix-people-workforce`, at `https://phoenix-people-workforce-staging.up.railway.app`. Its service source tracks git branch `main` (not the branch named `staging`), and its `NEXT_PUBLIC_SUPABASE_URL` points at the staging Supabase project — safe as a real verification target.
+- Vercel: fully legacy/decommissioned — never deploy to or verify against it.
+- **Supabase project refs — the complete list `list_projects` returns.** Two of these four belong to this app; the other two do not, and are listed so an unfamiliar ref is identifiable instead of alarming.
+
+  | Ref | Name | Region | Org | What it is |
+  | --- | --- | --- | --- | --- |
+  | `ozucdzovmcqvepbozvqf` | Phoenix HR | eu-central-1 | `rovnkzmhokgsruftjsaw` | **PRODUCTION** — real payroll data |
+  | `cifwmndunmlxjhyjugxa` | Phoenix-HR-Staging | eu-central-1 | `rovnkzmhokgsruftjsaw` | **STAGING** |
+  | `plleofqyfbknvwcotzqo` | Future Talents Hub | eu-north-1 | `rovnkzmhokgsruftjsaw` | unrelated to this app |
+  | `mlbpzvaanusdejqnimst` | the owner's personal project | eu-central-1 | **`xadcyivhxyjtehyheowl`** | unrelated — **different organization** |
+
+  **Dead refs — treat any doc, memory, or prompt still naming one as stale:** `izhmxvgiktiafqusolot` and `oaifhavixhdtwmseshff`. Neither is returned by `list_projects` any more.
+
+  **Neither region nor org is a guard** — three of the four are `eu-central-1`, and both named MCP servers see **all four**. Resolve with `list_projects` before acting (`AGENTS.md` §8).
+- GitHub Actions secret `STAGING_SUPABASE_SERVICE_ROLE_KEY`: the staging service-role key, used by `ci.yml`'s login-smoke step and both staging legs of `migration-drift-check.yml`. **There is no `preview-smoke` job** — the smoke test is a step inside `validate`.
+- **`.env.local` points at PRODUCTION Supabase.** `pnpm run dev` mutates production data.
+
+Environment meanings — **Local**: this machine or localhost. **Preview**: the deployment generated
+for the current branch. **Staging**: a preview connected to the staging Supabase project.
+**Production**: the public production domain and production Supabase project.
+
+Never store passwords, tokens, API keys, service-role keys, JWT secrets, connection strings, or
+other credentials in this file or in Git. Never assume a pasted preview URL is current.
+
 ## Required for Local Development
 
 | Variable | Description | Example |

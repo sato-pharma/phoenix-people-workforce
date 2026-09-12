@@ -309,3 +309,53 @@ the trim check) still reads only the local `AGENTS.md`, deliberately, per its ow
 remote-tracking ref, git failure), the union silently degrades to the local-only read — the same
 false orphan as before the fix, never a false "reachable". Under-claiming reachability stays the
 one failure mode this file tolerates.
+
+## `AGENTS.md` the AGENTS.md preamble — as it stood before the 2026-09-12 condensation
+
+On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
+
+Operating rules for every AI agent and automation tool in this repository. Codebase reference
+(layout, auth, API conventions, cron, env) lives in [docs/architecture.md](architecture.md);
+daily commands and the protected-file gate live in [CLAUDE.md](../CLAUDE.md). Higher-priority platform
+or system instructions take precedence. When instructions conflict or scope is unclear, stop before
+the risky action and explain the conflict plainly.
+
+**This file auto-loads in full on every request. Every byte here is paid for on every turn.** So it
+holds **hooks only** — a hook is the rule, never the evidence. The measurements, dates, PR numbers
+and incident narratives behind each one live in `docs/`, read on demand. **Adding a rule? Put the
+hook here and the account in `docs/` — never the account here.** §2.1 and §4 grew to essays once
+already, at roughly 13,000 tokens of context on every request, until the 2026-09-01 consolidation
+moved that back into `docs/`. **§2.1 is the half that regrows, and nothing gates a SECTION** — the
+footprint budget has slack enough to stay quiet while §2.1 doubles, so this is behavioural exactly
+like the index's displacement rule: measure §2.1 before you add to it. Floor, regrowth rate and the
+consolidation's own figures: [docs/memory-index-budget.md](memory-index-budget.md).
+
+**Memory slugs live in [docs/agents-memory-map.md](agents-memory-map.md), not here — except the
+ones that map marks `(inline — load-bearing)`.** `scripts/memory-index-reachability.mjs` scans
+`AGENTS.md` only, never `docs/`, and matches the **backticked** form, so a slug removed from here
+orphans that memory **unless `MEMORY.md` also links it**. Those marked slugs are the ones that depend
+on this file; the rest moved out on 2026-09-01. **The map is the authority — re-run the classifier
+before removing any slug** (`node scripts/memory-index-reachability.mjs` for the classification,
+`pnpm run repo:doctor` for the live scan), since which are load-bearing changes as the index does.
+
+## `AGENTS.md` §2.2 The memory index — as it stood before the 2026-09-12 condensation
+
+On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
+
+**Each line is a cue.** Why each rule exists, every trim pass with its byte counts, what earns a line,
+and the arithmetic behind the budget are in
+**[docs/memory-index-budget.md](memory-index-budget.md)**.
+
+- **`MEMORY.md` is the ONLY memory file that auto-loads, and the loader truncates it at 24,400 bytes — SILENTLY.** No error, no marker: the tail simply stops existing, so a hook can be present in the file and absent from every session that reads it.
+- **The budget is 22,000 bytes, and the 2,400-byte gap is deliberate slack.** `node scripts/repo-doctor.mjs` prints the verdict and the exact bytes to free; `.claude/hooks/memory-index-guard.mjs` puts the same figures into every session at SessionStart.
+- 🔒 **THE DISPLACEMENT RULE — never add an index line without freeing at least as many bytes in the same edit.** The file is append-only in practice, so any "trim it when it gets big" plan loses to the append rate by construction.
+- 🔒 **IGNORE the "compact it to under 17.1KB" message.** It fires on EVERY edit to `MEMORY.md`, looks authoritative, and asks for something arithmetically impossible — measured unreachable twice, because the dominant cost is filenames plus `[]()` link syntax, which shrinks ONLY by deleting a memory. Landing under the cliff with real headroom is a SUCCESS.
+- **Route by KIND of fact, never by topic** — an agent-operating trap to §2.1, a production or approval hook to §2.3, an owner product rule to §4. **Reach is identical; only scannability differs.**
+- **Never delete a hook to make room, and correct the FILE before the hook.** The frontmatter `description` decides whether a memory is recalled at all. A stale hook costs more than a missing one — it gets defended rather than looked up. The floor is structural.
+- **What earns a line — all three:** a session would act WRONGLY without it, it is durable (never a count, a status or a date), and it is not derivable in one step. **Sweep by CLAIM, never by filename or topic.**
+- **A relocation spanning git and `~/.claude/` must finish BOTH halves or neither, in that order** — and **MERGED is not the condition; PRESENT IN THE CHECKOUT YOU TRIM FROM is.** `CLAUDE.md` pulls in the WORKING COPY's `AGENTS.md`, so a folder sitting on a branch that predates the merge names the slug NOWHERE: the trim strands the memory while `origin/main` looks perfect and the PR reads as merged. `node scripts/memory-index-reachability.mjs` matches a **backticked slug in `AGENTS.md`**, NAMES what it strands, and must read **0 reachable from neither in THAT folder** before you trim — a hook on an unmerged branch reading as an orphan is CORRECT, not a tool bug. **Before cutting any section out of this file, check which slugs appear ONLY there** — most slugs now
+sit in [docs/agents-memory-map.md](agents-memory-map.md), and the rows it marks
+`(inline — load-bearing)` are the ones this file is the ONLY pointer for. **No count is written down,
+deliberately: the set changes as the index does, and `pnpm run repo:doctor` is what answers it.**
+- **The same trap fires in reverse, on REPORTING rather than trimming.** `repo-doctor`'s MEMORY INDEX section used to resolve a slug against only the local checkout's `AGENTS.md`, so a primary sitting behind `origin/main` printed a merged hook as `ORPHAN` — and following its own advice would have written a SECOND `MEMORY.md` line for a hook already backticked on `origin/main`. Fixed 2026-09-05: it now unions the local read with `git show origin/main:AGENTS.md` (local ref, no fetch) and calls a memory an orphan only when unreachable from BOTH, naming which files that rescued since the read stays conditional on a pull. **The trimming direction above is UNCHANGED and must stay local-only** — removing a line keys on what the checkout you trim FROM holds, never on what shipped elsewhere. [docs/memory-index-budget.md](memory-index-budget.md).
+- **No required check can gate any of this.** `MEMORY.md` lives outside the repository, so CI never sees it — the displacement rule is behavioural.
