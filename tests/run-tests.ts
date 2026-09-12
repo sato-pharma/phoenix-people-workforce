@@ -189,6 +189,7 @@ import { runRecruitmentCvExtractionFieldsTests } from "./recruitment-cv-extracti
 import { runRecruitmentCvExtractionQualityTests } from "./recruitment-cv-extraction-quality.test.ts";
 import { runRecruitmentRuleExtractionTests } from "./recruitment-rule-extraction.test.ts";
 import { runRecruitmentCvAutoApplyTests } from "./recruitment-cv-auto-apply.test.ts";
+import { runRecruitmentCvFactCorrectionTests } from "./recruitment-cv-fact-correction.test.ts";
 import { runRecruitmentContactReviewTests } from "./recruitment-contact-review.test.ts";
 import { runRecruitmentOffersTests } from "./recruitment-offers.test.ts";
 import { runRecruitmentHireDraftTests } from "./recruitment-hire-draft.test.ts";
@@ -1989,6 +1990,7 @@ await runTest(
   runRecruitmentRuleExtractionTests,
 );
 await runTest("recruitment cv auto-apply (high-confidence gap-fill rules; a CREATED candidate's blank email and phone are filled, a MATCHED one's never are, and a value that is not an address never reaches the UNIQUE index)", runRecruitmentCvAutoApplyTests);
+await runTest("recruitment cv fact correction (the OVERWRITE half: identity is never correctable, a declared WhatsApp answer always wins, \"Chemist.\" is not a correction, and only graduationYear may be blanked — and only on request)", runRecruitmentCvFactCorrectionTests);
 await runTest("recruitment contact review (the attended path for the email auto-apply refuses to write; not-a-CV proposes nothing, run-together values never reach a UNIQUE index)", runRecruitmentContactReviewTests);
 await runTest("recruitment offers (an unapproved offer can never be sent — the guard reads the approval trail, not the stage, so a re-widened registry cannot reopen offer_initiated -> offer_sent)", runRecruitmentOffersTests);
 await runTest("recruitment hire draft (the CV and the offer carried into HR's Add Employee form; no salary is ever derived here — that belongs to payroll/policy.ts)", runRecruitmentHireDraftTests);
