@@ -20,7 +20,8 @@ import {
   parseWhatsAppWebhookPayload,
 } from "@/lib/recruitment/inbound/whatsapp-payload-parser";
 import { verifyWhatsAppWebhookHandshake, verifyWhatsAppWebhookSignature } from "@/lib/recruitment/inbound/whatsapp-webhook-events";
-import { captureInboundVideo } from "@/lib/whatsapp-videos/inbox";
+import { extractFtpSubmissionIds } from "@/lib/whatsapp-videos/handoff-contract";
+import { captureInboundSubmissionId, captureInboundVideo } from "@/lib/whatsapp-videos/inbox";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -136,6 +137,34 @@ export async function POST(request: Request) {
         }
         outcomes.push({ outcome: `classify_${replyOutcome}`, wamid: message.wamid });
         continue;
+      }
+
+      // A FUTURE TALENTS SUBMISSION ID ("FTP-12345678"), which interns type next to their closing
+      // videos. Kept for the FTP Portal, which uses it to tell whose videos a chat holds, and then
+      // dropped from this pipeline: no classification, no buffer, no reply, no notification.
+      //
+      // 🔴 IT MUST BE HANDLED BEFORE handleClassifyText, THE BUFFER AND THE TEXT-ONLY BRANCH. Without
+      // it the id is a text from a sender with no CV on file, so the intern is answered "please send
+      // your CV as a file" and Talent Acquisition is told an applicant wrote in. Narrow by
+      // construction — extractFtpSubmissionIds needs the FTP prefix and exactly eight digits — so no
+      // applicant's message is taken on a guess. A history replay is kept too, flagged, because an id
+      // typed weeks ago still says who sent the videos beside it.
+      if (message.text && !message.document) {
+        const submissionIds = extractFtpSubmissionIds(message.text);
+        if (submissionIds.length > 0) {
+          const captured = await captureInboundSubmissionId({
+            contactName: message.contactName,
+            deliveredToDisplayNumber: message.deliveredToDisplayNumber,
+            deliveredToPhoneNumberId: message.deliveredToPhoneNumberId,
+            historical: message.historical,
+            sentAt: message.sentAt,
+            submissionIds,
+            waId: message.from,
+            wamid: message.wamid,
+          });
+          outcomes.push({ outcome: `submission_id_${captured.outcome}`, wamid: message.wamid });
+          continue;
+        }
       }
 
       // A typed answer to an escape row — any of the three questions since 2026-08-28. Checked
