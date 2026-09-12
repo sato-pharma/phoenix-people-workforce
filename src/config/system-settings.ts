@@ -54,6 +54,16 @@ export const systemEmail = {
   defaultFromEmail: "phoenix@send.satopharma.com",
   defaultReplyTo: "phoenix@satopharma.com",
   /**
+   * The From address of every mail the Sato Email Composer sends, whoever is sending it.
+   *
+   * Owner 2026-09-12: composer mail goes out as the HR Business Partner's mailbox. This is the ONE
+   * apex-domain From in the system, and it only delivers because satopharma.com is verified in
+   * Resend alongside send.satopharma.com (DKIM at resend._domainkey.satopharma.com). The domain's
+   * DMARC is p=reject, so if that verification is ever removed every composer send is refused —
+   * do not copy this address into any other sender on the strength of this line.
+   */
+  satoComposerFromEmail: "hrbp@satopharma.com",
+  /**
    * Reply-To for mail a particular SEAT sends by hand, keyed on the SENDER's role.
    *
    * Owner 2026-09-11, refined when asked: a mail carries the HR Business Partner's address when

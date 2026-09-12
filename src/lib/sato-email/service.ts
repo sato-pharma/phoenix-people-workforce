@@ -418,10 +418,9 @@ export async function previewSatoEmail(draft: SatoEmailDraft): Promise<SatoEmail
 /**
  * The From address, wearing the company's name.
  *
- * The address itself is untouched — it stays on the verified sending subdomain, because an
- * apex-domain From is rejected or filed as spam. Only the DISPLAY name changes, to "Sato Pharma":
- * the owner asked for the company's identity, and what a recipient reads in their inbox list is
- * the display name.
+ * The address is `systemEmail.satoComposerFromEmail` — the HR Business Partner's mailbox, owner
+ * 2026-09-12 — and the display name is "Sato Pharma": the owner asked for the company's identity,
+ * and what a recipient reads in their inbox list is the display name.
  */
 export function satoEmailFrom(configured: string): string {
   const match = configured.match(/<([^>]+)>/);
@@ -455,11 +454,6 @@ export async function sendSatoEmail(draft: SatoEmailDraft, access: AccessContext
     return { ...empty, skippedReason: "EMAIL_NOTIFICATIONS_ENABLED is not true." };
   }
 
-  const configuredFrom = process.env.HR_REPLY_EMAIL_FROM || process.env.NOTIFICATION_EMAIL_FROM;
-  if (!configuredFrom) {
-    return { ...empty, skippedReason: "HR_REPLY_EMAIL_FROM or NOTIFICATION_EMAIL_FROM is missing." };
-  }
-
   const { html, text } = renderSatoEmail({
     bodyHtml: normalized.bodyHtml,
     signOff: normalized.signOff,
@@ -477,11 +471,11 @@ export async function sendSatoEmail(draft: SatoEmailDraft, access: AccessContext
   }
   const attachments = loaded.attachments.length > 0 ? loaded.attachments : undefined;
 
-  const from = satoEmailFrom(configuredFrom);
-  // The sender's own seat answers the replies — the HR Business Partner's mail answers to her, not
-  // to a generic inbox. Reply-To only; From stays on the verified sending subdomain above, because
-  // an apex-domain From is rejected or filed as spam. A seat absent from the map (the Super Admin
-  // is) is `undefined` on purpose: sendPhoenixEmail then falls through to NOTIFICATION_REPLY_TO.
+  // Every composer mail goes out as the HR Business Partner's mailbox, whoever presses Send.
+  const from = satoEmailFrom(systemEmail.satoComposerFromEmail);
+  // Replies are still keyed on the SENDER's seat (owner 2026-09-11): hers answer to her, and a seat
+  // absent from the map (the Super Admin is) is `undefined` on purpose, so sendPhoenixEmail falls
+  // through to NOTIFICATION_REPLY_TO rather than sending a Super Admin's replies to her inbox.
   const replyTo = systemEmail.seatReplyTo[access.role];
   const senderId = access.loginId ?? access.hrId ?? "unknown";
 

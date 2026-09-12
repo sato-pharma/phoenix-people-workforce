@@ -137,4 +137,23 @@ export function runSatoEmailListsOnlyComposerTests() {
     /fanoutToBcc:\s*true/.test(satoSendArgs),
     "recipients stay hidden from each other — the owner chose Bcc-style fan-out",
   );
+
+  // --- 5. Composer mail goes out as the HR Business Partner's mailbox ----------------------------
+  // Owner 2026-09-12. The address lives in one place, and the send reads it from there — not from
+  // HR_REPLY_EMAIL_FROM / NOTIFICATION_EMAIL_FROM, which carry the system's notification sender.
+  const settings = readFileSync(path.join(REPO_ROOT, "src/config/system-settings.ts"), "utf8");
+  assert.match(
+    settings,
+    /satoComposerFromEmail:\s*"hrbp@satopharma\.com"/,
+    "the composer's From must be the HR Business Partner's mailbox",
+  );
+  assert.match(
+    satoService,
+    /const from = satoEmailFrom\(systemEmail\.satoComposerFromEmail\)/,
+    "the composer send must take its From from systemEmail.satoComposerFromEmail",
+  );
+  assert.ok(
+    !/HR_REPLY_EMAIL_FROM|NOTIFICATION_EMAIL_FROM/.test(satoService),
+    "the composer must not fall back to the notification sender's From",
+  );
 }
