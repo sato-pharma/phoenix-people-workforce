@@ -106,7 +106,7 @@ export function buildHeadline(context: HeadlineContext): string {
 
 /** The line under it: the window, the scope it was drawn from, and what ordered it. */
 export function buildSubheadline(context: HeadlineContext): string {
-  const { selection, rows, windowLabel, lineNames, regionNames } = context;
+  const { selection, windowLabel, lineNames, regionNames } = context;
   const override = selection.subheadline?.trim();
   if (override) return override;
 
@@ -115,10 +115,19 @@ export function buildSubheadline(context: HeadlineContext): string {
   const lines = selection.filters.lines ?? [];
   if (lines.length > 0 && lines.length < 3) {
     parts.push(joinNames(lines.map((code) => lineNames.get(code) ?? code)));
-  } else if (rows.length > 0 && rows.every((row) => row.lineName && row.lineName === rows[0]!.lineName)) {
-    parts.push(rows[0]!.lineName!);
   } else {
-    parts.push("All lines");
+    // "All TRACKED lines", never "All lines". An absent line filter is normalised to the three
+    // tracked lines before it ever reaches here, so Head Office — 90% of weekly value, carrying no
+    // target, and deliberately outside every spotlight — is not in the ranking this sentence is
+    // describing. `au.v_org_tree` holds those three line codes and no others, so this branch cannot
+    // be reached with a scope any wider than the tracked set, and the word is always true.
+    //
+    // 🔴 AND THE ROWS DO NOT GET A VOTE. This branch used to print a bare line name whenever
+    // every row on the sheet belonged to one line — so a three-line ranking that CNS happened to
+    // sweep announced itself as a CNS sheet, which is the same false claim of scope, made about a
+    // narrower scope instead of a wider one. August 2026 came within one rep of printing it. The
+    // scope a sheet was DRAWN FROM is a property of the selection; who won is not evidence of it.
+    parts.push("All tracked lines");
   }
 
   const regions = selection.filters.regions ?? [];
