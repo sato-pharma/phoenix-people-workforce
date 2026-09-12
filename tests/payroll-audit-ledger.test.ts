@@ -42,7 +42,9 @@ const PAYROLL_ROOTS = [
 
 /**
  * The findings this repository cannot account for, as of 2026-09-12. Thirteen have no trace at all;
- * 30 and 36 are claimed closed by PR #3717 with no code marker and no named earlier work; 19 is
+ * 30 and 36 were claimed closed by PR #3717 with no code marker; both were re-verified on
+ * 2026-09-12 and now carry a marker and a registered test, so they moved into the fixed
+ * bucket and the claimed-closed bucket is empty. 19 is
  * referenced only as a comparison and was never fixed or dismissed.
  */
 const NO_TRACE = [1, 6, 7, 8, 9, 10, 11, 12, 13, 21, 24, 25, 28];
@@ -136,7 +138,7 @@ export async function runPayrollAuditLedgerTests(): Promise<void> {
     counts.includes(55),
     "the ledger's summary table must total 55 findings — the audit numbered 1 to 55",
   );
-  const accountedFor = 39 + 2 + 1; // fixed with evidence + claimed closed + referenced only
+  const accountedFor = 41 + 0 + 1; // fixed with evidence + claimed closed + referenced only
   assert.equal(
     accountedFor + NO_TRACE.length,
     55,

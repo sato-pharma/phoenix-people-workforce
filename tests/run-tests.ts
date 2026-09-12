@@ -1096,6 +1096,7 @@ import { runAutomatedPayrollLeaverOverpaymentTests } from "./automated-payroll-l
 import { runAutomatedPayrollGuardsThatGuardTests } from "./automated-payroll-guards-that-guard.test.ts";
 import { runAutomatedPayrollDismissalSettlementTests } from "./automated-payroll-dismissal-settlement.test.ts";
 import { runAutomatedPayrollInsuranceWageTests } from "./automated-payroll-insurance-wage.test.ts";
+import { runPayrollReadySheetLeaverProrationTests } from "./payroll-ready-sheet-leaver-proration.test.ts";
 import { runAutomatedPayrollVacationReconfirmTests } from "./automated-payroll-vacation-reconfirm.test.ts";
 import { runAutomatedPayrollModuleDriftTests } from "./automated-payroll-module-drift.test.ts";
 import { runAutomatedPayrollDayCollisionTests } from "./automated-payroll-day-collisions.test.ts";
@@ -1872,6 +1873,10 @@ await runTest(
 await runTest(
   "payroll: every employee on a published batch is told their payslip is ready",
   runPayrollPayslipNoticeTests,
+);
+await runTest(
+  "payroll: a leaver whose resignation is still in the workflow is never paid a full month",
+  runPayrollReadySheetLeaverProrationTests,
 );
 await runTest(
   "payroll: somebody hired and gone in the same month is paid from their hire date",
