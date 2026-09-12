@@ -40,3 +40,20 @@ export async function deleteRequest(url: string): Promise<Record<string, unknown
   const res = await fetch(url, { method: "DELETE" });
   return readJson(res, "Delete failed.");
 }
+
+/**
+ * A DELETE that carries a body — used where the thing being deleted is a LIST rather than the
+ * resource in the path (taking several CVs out of one folder, say).
+ *
+ * Separate from `deleteRequest` rather than an optional second argument, because a caller that meant
+ * to send a body and reached for the bodiless helper gets a route refusing "pick at least one" — a
+ * sentence that points at the screen instead of at the call.
+ */
+export async function deleteJson(url: string, body: unknown): Promise<Record<string, unknown>> {
+  const res = await fetch(url, {
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+    method: "DELETE",
+  });
+  return readJson(res, "Delete failed.");
+}

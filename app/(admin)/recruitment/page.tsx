@@ -12,6 +12,8 @@ import {
   type CandidateFolderAreaOption,
 } from "@/lib/recruitment/candidate-folder-options";
 import { summarizeCandidatePool } from "@/lib/recruitment/candidate-stats";
+import { loadCvFolderCabinet } from "@/lib/recruitment/cv-folder-tree-db";
+import type { CvFolderCabinetData } from "@/components/recruitment/cv-folder-cabinet";
 import { getRecruitmentDashboard, type RecruitmentDashboard } from "@/lib/recruitment/dashboard";
 import { isFileUploadEnabled } from "@/lib/recruitment/file-storage";
 import { listHiringManagerOptions, type HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
@@ -44,15 +46,27 @@ export default async function RecruitmentPage() {
 }
 
 async function RecruitmentContent({ access }: { access: AccessContext }) {
-  const [canCreateRequisition, canManage, canApprove, canManageCandidates, canImport, canViewCandidates] =
-    await Promise.all([
-      canAccess(access, "recruitment", "create"),
-      canAccess(access, "recruitment", "update"),
-      canAccess(access, "recruitment", "approve"),
-      canAccess(access, "candidates", "create"),
-      canAccess(access, "candidates", "import"),
-      canAccess(access, "candidates", "read"),
-    ]);
+  const [
+    canCreateRequisition,
+    canManage,
+    canApprove,
+    canManageCandidates,
+    canImport,
+    canViewCandidates,
+    // The gate on the hand-built folder tree, and it is `candidates: update` rather than the
+    // `candidates: create` beside it because that is exactly what every /api/recruitment/cv-folders
+    // route asks for. A UI gate spelled differently from its server boundary either hides a button
+    // somebody is allowed to press, or shows one that 403s — both read as the feature being broken.
+    canFileCandidates,
+  ] = await Promise.all([
+    canAccess(access, "recruitment", "create"),
+    canAccess(access, "recruitment", "update"),
+    canAccess(access, "recruitment", "approve"),
+    canAccess(access, "candidates", "create"),
+    canAccess(access, "candidates", "import"),
+    canAccess(access, "candidates", "read"),
+    canAccess(access, "candidates", "update"),
+  ]);
   // Hard delete is Super Admin only (server enforces this too).
   const canDelete = access.role === "Super Admin" || access.scope === "system";
 
@@ -70,19 +84,34 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
   // who cannot file to an area must still get the pool, and the picker degrades to the two
   // shelves that need no database (regions are a closed list, job titles are typed).
   let areaOptions: CandidateFolderAreaOption[] = [];
+  // The hand-built folder tree, flattened for the client boundary. Empty is a legitimate state —
+  // nobody has made a folder yet — and it is also what a load failure leaves behind, on purpose: an
+  // empty cabinet shows every CV in the pool, where a half-read one would hide people.
+  let cvFolderCabinet: CvFolderCabinetData = { members: {}, rows: [] };
   let initialError: string | null = null;
 
   try {
-    const [dashboardData, vacancies, catalogue, managerOptions, employeeRows, areas] = await Promise.all([
-      getRecruitmentDashboard(access),
-      listOpenVacanciesForRequisition(),
-      listPositionCatalogue(),
-      listHiringManagerOptions(),
-      getEmployeeDirectoryRows(),
-      listCandidateFolderAreaOptions(),
-    ]);
+    const [dashboardData, vacancies, catalogue, managerOptions, employeeRows, areas, cabinet] =
+      await Promise.all([
+        getRecruitmentDashboard(access),
+        listOpenVacanciesForRequisition(),
+        listPositionCatalogue(),
+        listHiringManagerOptions(),
+        getEmployeeDirectoryRows(),
+        listCandidateFolderAreaOptions(),
+        // `withNames` resolves each folder's creator to a person's name — the owner's standing rule
+        // that a screen shows names, never HR codes.
+        loadCvFolderCabinet({ withNames: true }),
+      ]);
     dashboard = dashboardData;
     areaOptions = areas;
+    // A plain object, not the Map the loader returns: this crosses into a client component, and a
+    // Map that survives today's React serializer is a dependency on that serializer rather than on
+    // anything this page states.
+    cvFolderCabinet = {
+      members: Object.fromEntries(cabinet.members),
+      rows: cabinet.rows,
+    };
     openVacancies = vacancies;
     positionCatalogue = catalogue;
     hiringManagers = managerOptions;
@@ -102,12 +131,14 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
       canApprove={canApprove}
       canCreateRequisition={canCreateRequisition}
       canDelete={canDelete}
+      canFileCandidates={canFileCandidates}
       canImport={canImport}
       canManage={canManage}
       canManageCandidates={canManageCandidates}
       canViewCandidates={canViewCandidates}
       candidates={candidates}
       candidateStats={summarizeCandidatePool(candidates)}
+      cvFolderCabinet={cvFolderCabinet}
       dashboard={dashboard}
       filesEnabled={isFileUploadEnabled()}
       initialError={initialError}

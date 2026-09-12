@@ -357,6 +357,27 @@ export type Candidate = {
     // via UNNAMED_FILER_LABEL rather than falling back to the id. Filled by listCandidates.
     filedByName: string | null;
   } | null;
+  /**
+   * The hand-built folders this CV has been pushed into — `ats_cv_folder_items`, added 2026-09-12.
+   *
+   * A SECOND, independent way to be off the main pool, beside `folder` above. That one is the four
+   * derived shelves and holds at most one value; this is a many-to-many membership, because the
+   * owner asked to be able to COPY a CV into another folder as well as move it, and a copy is the
+   * same person in two places at once.
+   *
+   * EMPTY IS THE DEFAULT AND IT MEANS "NOT FILED HERE", never "not loaded" — `mapCandidate` sets it
+   * empty and only `listCandidates` fills it. That asymmetry is the safe direction: a screen built
+   * from a loader that never read the memberships shows the CV in the pool, which is wrong-but-
+   * visible, rather than hiding a person nobody can then find. `isFiledCandidate` is the one place
+   * that reads it.
+   *
+   * OPTIONAL for that same reason. Required, it would force every fixture and every narrower loader
+   * in the codebase to name a field they do not populate, and the value they would be pushed into
+   * writing is `[]` — the very "not filed" answer an absent field already gives. Every reader takes
+   * the missing case (`candidate.cvFolderIds ?? []`), so absent and empty are one behaviour, and
+   * neither can hide anybody.
+   */
+  cvFolderIds?: string[];
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;

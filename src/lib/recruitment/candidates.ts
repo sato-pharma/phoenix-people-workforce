@@ -481,6 +481,41 @@ async function attachFolderFilerNames(candidates: Candidate[]): Promise<void> {
 }
 
 /**
+ * Fill in which hand-built folders each CV sits in — the second way to be off the pool.
+ *
+ * ONE QUERY FOR THE WHOLE TABLE, not one per candidate and not an `.in()` over the pool's ids. The
+ * membership table holds one short row per filing and the pool is read in full by every caller of
+ * `listCandidates` anyway, so the whole table is both smaller than the id list would be in a URL and
+ * immune to the `.in()` header limit entirely.
+ *
+ * BEST-EFFORT, and the failure direction is the one that matters: if this read fails, every
+ * `cvFolderIds` stays empty, so every CV stays VISIBLE in the pool. The opposite failure — hiding
+ * people because a query hiccuped — is how somebody is lost. Same reasoning as the loaders above,
+ * and as `loadCvFolderCabinet`'s own missing-table fallback, which covers the window between this
+ * code deploying and the migration being applied.
+ */
+async function attachCvFolderMemberships(candidates: Candidate[]): Promise<void> {
+  if (candidates.length === 0) return;
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase.from("ats_cv_folder_items").select("folder_id,candidate_id");
+  if (error || !data) return;
+
+  const byCandidate = new Map<string, string[]>();
+  for (const row of data as Array<{ folder_id?: string | null; candidate_id?: string | null }>) {
+    const candidateId = String(row.candidate_id ?? "");
+    const folderId = String(row.folder_id ?? "");
+    if (!candidateId || !folderId) continue;
+    const bucket = byCandidate.get(candidateId) ?? [];
+    bucket.push(folderId);
+    byCandidate.set(candidateId, bucket);
+  }
+
+  for (const candidate of candidates) {
+    candidate.cvFolderIds = byCandidate.get(candidate.id) ?? [];
+  }
+}
+
+/**
  * The job title of the vacancy a candidate was formally put forward for, keyed by candidate id.
  *
  * Last rung of the ladder and the smallest — 7 applications against 2 requisitions in production —
@@ -634,10 +669,14 @@ export async function listCandidates(
   // Concurrently: the four reads touch different fields on the same objects and none reads
   // another's output, so serialising them would only add Atlantic round trips to a page that
   // already waits on one.
-  const [, , , latestSends] = await Promise.all([
+  const [, , , , latestSends] = await Promise.all([
     attachAppliedFor(candidates),
     attachUnconfirmedCvFacts(candidates),
     attachFolderFilerNames(candidates),
+    // The hand-built folder tree's memberships. In the same wave for the same reason as its three
+    // neighbours: it touches a different field on the same objects and reads none of their output,
+    // so serialising it would only add an Atlantic round trip to a page that already waits on one.
+    attachCvFolderMemberships(candidates),
     listLatestSendByCandidate(),
   ]);
 

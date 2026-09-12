@@ -223,6 +223,7 @@ import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.t
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
 import { runRecruitmentScreeningWorkstationTests } from "./recruitment-screening-workstation.test.ts";
 import { runCandidateFolderTests } from "./candidate-folders.test.ts";
+import { runCvFolderTreeTests } from "./cv-folder-tree.test.ts";
 import { runCandidateFolderFilerNameTests } from "./candidate-folder-filer-name.test.ts";
 import { runCandidateCallClaimTests } from "./candidate-call-claims.test.ts";
 import { runCvPhoneRedactionTests } from "./cv-phone-redaction.test.ts";
@@ -2112,6 +2113,10 @@ await runTest(
 await runTest(
   "recruitment folder filer name (a filed CV names WHO filed it, never the raw HR id)",
   runCandidateFolderFilerNameTests,
+);
+await runTest(
+  "recruitment CV folder tree (a folder cannot be moved inside its own subfolder, and a copy is counted ONCE)",
+  runCvFolderTreeTests,
 );
 await runTest(
   "recruitment filed-CV search (a filed CV stays OFF the pool and stays FINDABLE — 150 of 734 were neither)",

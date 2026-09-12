@@ -43,6 +43,7 @@ import { Input } from "@/components/ui/input";
 import { JobAdvertPanel } from "@/components/recruitment/job-advert-panel";
 import { CandidateFoldersTab } from "@/components/recruitment/candidate-folders-tab";
 import { deleteRequest, patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
+import type { CvFolderCabinetData } from "@/components/recruitment/cv-folder-cabinet";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
 import { APPLIED_FOR_SOURCE_LABEL, APPLIED_FOR_SOURCE_SHORT, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
@@ -176,6 +177,8 @@ type Props = {
   canApprove: boolean;
   canCreateRequisition: boolean;
   canDelete: boolean;
+  /** `candidates: update` — what the cv-folders routes enforce, so what the folder buttons gate on. */
+  canFileCandidates: boolean;
   canImport: boolean;
   canManage: boolean;
   canManageCandidates: boolean;
@@ -184,6 +187,8 @@ type Props = {
   // Counted on the server, deliberately — "arrived today" depends on the clock, and a clock read
   // during hydration can disagree with the one from the server render. See candidate-stats.ts.
   candidateStats: CandidatePoolStats;
+  /** The hand-built folder tree and its memberships — the folders tab's top section. */
+  cvFolderCabinet: CvFolderCabinetData;
   dashboard: RecruitmentDashboard | null;
   filesEnabled: boolean;
   // The ~30 real managers a candidate can be sent to, straight from their job title. Distinct from
@@ -1146,7 +1151,9 @@ export function RecruitmentWorkspace(props: Props) {
         // true by construction rather than by two filters agreeing.
         <CandidateFoldersTab
           areaOptions={props.areaOptions}
+          canFileCandidates={props.canFileCandidates}
           candidates={props.candidates}
+          cvFolderCabinet={props.cvFolderCabinet}
           onOpenCandidate={openCandidateFromFolder}
         />
       ) : tab === "pipeline" ? (

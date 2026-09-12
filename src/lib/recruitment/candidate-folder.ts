@@ -348,17 +348,34 @@ export function canFileCandidate(
  */
 export type FiledCandidate = {
   folder?: { kind: CandidateStorageFolderKind; key: string; filedAt: string; filedByHrId: string | null } | null;
+  /**
+   * The hand-built folders this CV sits in — `ats_cv_folder_items`, added 2026-09-12.
+   *
+   * A SECOND way to be off the pool, and an independent one: the four shelves above are a single
+   * value on the candidate row, while this is a many-to-many membership so a CV can be copied into
+   * several folders at once. Optional because most callers build a candidate-shaped object without
+   * it; absent and empty mean the same thing, which is the safe direction — a caller that never
+   * loaded the memberships leaves the CV VISIBLE rather than hiding somebody by omission.
+   */
+  cvFolderIds?: readonly string[] | null;
 };
 
 /**
- * True when this CV is on the shelf and therefore OFF the main pool.
+ * True when this CV is filed and therefore OFF the main pool.
  *
  * The single authority for that question, asked once here rather than as `candidate.folder !== null`
  * scattered across four screens — the pool, the CV database, the screening queue and the folder view
  * itself all have to agree, and they disagreed exactly when red-flag.ts's question was inline.
+ *
+ * TWO WAYS TO BE FILED SINCE 2026-09-12, deliberately OR-ed HERE rather than at the call sites. The
+ * owner was asked directly whether a CV in one of his own folders should stay in the main list and
+ * chose the shelf's behaviour — it disappears — so "filed" now means "on a shelf OR in at least one
+ * hand-built folder". Putting that OR in this function is what carried the change to the pool, the
+ * screening queue, the CV database and the folder suggestions without touching any of them: every
+ * one of those already asked here, which is the whole reason the question was centralised.
  */
 export function isFiledCandidate(candidate: FiledCandidate | null | undefined): boolean {
-  return Boolean(candidate?.folder);
+  return Boolean(candidate?.folder) || (candidate?.cvFolderIds?.length ?? 0) > 0;
 }
 
 /** One folder, with its contents. */
@@ -418,9 +435,23 @@ export function partitionCandidatesByFolder(candidates: readonly Candidate[]): {
    * DELETE /api/recruitment/candidates/[id]/folder puts any of them back.
    */
   archived: Candidate[];
+  /**
+   * CVs in the hand-built folder tree and on no shelf — out of the pool, and not on any shelf here.
+   *
+   * A FOURTH bucket for the same reason `archived` is a third: the shelves are the owner's own list
+   * of four and every folder screen draws one heading per kind, so a fifth heading would appear on
+   * screens that are about which seat a CV is waiting for. The tree has its own screen, which renders
+   * these from `ats_cv_folders` — this bucket exists so they cannot fall into `pool` on the way.
+   *
+   * A CV that is BOTH on a shelf and in the tree stays on its shelf. The shelf is the older, narrower
+   * statement ("waiting for a seat in Nasr City") and it is what the shelf screen must keep showing;
+   * the tree screen finds it through its own membership rows either way, so neither screen loses it.
+   */
+  cabinet: Candidate[];
 } {
   const pool: Candidate[] = [];
   const archived: Candidate[] = [];
+  const cabinet: Candidate[] = [];
   const byKind = new Map<CandidateFolderKind, Map<string, CandidateFolder>>();
   for (const kind of candidateFolderKinds) byKind.set(kind, new Map());
   let filedCount = 0;
@@ -440,6 +471,13 @@ export function partitionCandidatesByFolder(candidates: readonly Candidate[]): {
       continue;
     }
     if (!folder || !groupKey || !isCandidateFolderKind(folder.kind)) {
+      // No shelf — but the hand-built tree is a second way to be filed, and a CV in it must not fall
+      // back into the pool here. Asked AFTER the shelf so a CV that is both keeps its shelf.
+      if ((candidate.cvFolderIds?.length ?? 0) > 0) {
+        cabinet.push(candidate);
+        filedCount += 1;
+        continue;
+      }
       pool.push(candidate);
       continue;
     }
@@ -481,5 +519,5 @@ export function partitionCandidatesByFolder(candidates: readonly Candidate[]): {
     };
   });
 
-  return { archived, filedCount, pool, shelves };
+  return { archived, cabinet, filedCount, pool, shelves };
 }

@@ -250,6 +250,11 @@ export function mapCandidate(row: CandidateDbRow): Candidate {
             kind: row.folder_kind,
           }
         : null,
+    // The hand-built folder tree. Deliberately NOT read off this row — the memberships live in
+    // `ats_cv_folder_items`, so resolving them is a second query and this mapper is synchronous.
+    // `listCandidates` fills it (attachCvFolderMemberships); every other caller leaves it empty, and
+    // empty means "in the pool", which is the direction that shows a person rather than hides one.
+    cvFolderIds: [],
     createdBy: textOrNull(row.created_by),
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),
