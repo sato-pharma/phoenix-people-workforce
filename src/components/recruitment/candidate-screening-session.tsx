@@ -187,7 +187,7 @@ function CvTabStrip({
   };
 
   return (
-    <div className={`inline-flex overflow-hidden rounded-md border ${frame}`}>
+    <div className={`inline-flex overflow-hidden border ${frame}`}>
       {candidateCvTabs.map((key) => (
         <button
           aria-pressed={tab === key}
@@ -199,7 +199,7 @@ function CvTabStrip({
           title={candidateCvTabDescriptions[key]}
           type="button"
         >
-          {key === "red" ? <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-rose-400" /> : null}
+          {key === "red" ? <span aria-hidden className="h-1.5 w-1.5 shrink-0 bg-rose-400" /> : null}
           {candidateCvTabLabels[key]}
           <span className="tabular-nums opacity-70">{counts[key]}</span>
         </button>
@@ -874,7 +874,7 @@ export function CandidateScreeningSession({
   const fullBleed = variant === "overlay" || expanded;
   const shellClass = fullBleed
     ? "fixed inset-0 z-[190] flex flex-col bg-slate-900"
-    : "flex h-[calc(100vh-4rem)] min-h-[32rem] flex-col overflow-hidden rounded-lg bg-slate-900";
+    : "flex h-[calc(100vh-4rem)] min-h-[32rem] flex-col overflow-hidden bg-slate-900";
 
   if (!current) {
     return (
@@ -882,10 +882,10 @@ export function CandidateScreeningSession({
         className={
           variant === "overlay"
             ? "fixed inset-0 z-[190] flex items-center justify-center bg-slate-900/80 p-6"
-            : "flex min-h-[24rem] items-center justify-center rounded-lg bg-slate-900/80 p-6"
+            : "flex min-h-[24rem] items-center justify-center bg-slate-900/80 p-6"
         }
       >
-        <div className="rounded-lg bg-white p-6 text-center">
+        <div className="bg-white p-6 text-center">
           <p className="text-sm text-slate-700">
             {cvTab === "red"
               ? "No red-flagged CVs in this queue — nothing here says anybody cannot be hired."
@@ -898,7 +898,7 @@ export function CandidateScreeningSession({
             <CvTabStrip counts={cvTabCounts} onSelect={openCvTab} tab={cvTab} tone="light" />
           </div>
           <button
-            className="mt-3 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+            className="mt-3 bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
             onClick={() => onClose(0)}
             type="button"
           >
@@ -967,9 +967,9 @@ export function CandidateScreeningSession({
           <span className="text-sm font-black tabular-nums">
             {index + 1} <span className="text-slate-400">/ {total}</span>
           </span>
-          <div className="h-1.5 w-32 overflow-hidden rounded-full bg-slate-700">
+          <div className="h-1.5 w-32 overflow-hidden bg-slate-700">
             <div
-              className="h-full rounded-full bg-orange-500 transition-[width]"
+              className="h-full bg-orange-500 transition-[width]"
               style={{ width: `${Math.round(((index + 1) / total) * 100)}%` }}
             />
           </div>
@@ -987,7 +987,7 @@ export function CandidateScreeningSession({
             invisible and reads as random — and the one thing a screener must never have to wonder
             is why they are being shown this person now. */}
         <span
-          className={`shrink-0 rounded px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide ${bandChipClass[currentBand]}`}
+          className={`shrink-0 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide ${bandChipClass[currentBand]}`}
           title={screeningBandDescriptions[currentBand]}
         >
           {screeningBandLabels[currentBand]} · {bands[currentBand]}
@@ -999,7 +999,7 @@ export function CandidateScreeningSession({
             from "these are two applicants", so this shows the names and decides nothing. */}
         {currentTwins.length > 0 ? (
           <span
-            className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-amber-300"
+            className="shrink-0 bg-amber-500/15 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-amber-300"
             title={`Same phone number as: ${currentTwins.map((twin) => candidateDisplayName(twin.fullName)).join(", ")}. They are next in the queue — read them together and decide once, or treat them as different people if the names say so.`}
           >
             Same number · {currentTwins.length + 1}
@@ -1018,7 +1018,7 @@ export function CandidateScreeningSession({
             "0 left to read" is the single most useful thing this header can say at the end of a
             session, and a button that vanishes reads as a bug. */}
         <button
-          className="flex shrink-0 items-center gap-1.5 rounded-md bg-slate-700 px-2.5 py-1 text-xs font-bold text-white transition hover:bg-slate-600 disabled:cursor-default disabled:opacity-40"
+          className="flex shrink-0 items-center gap-1.5 bg-slate-700 px-2.5 py-1 text-xs font-bold text-white transition hover:bg-slate-600 disabled:cursor-default disabled:opacity-40"
           disabled={freshRemaining === 0}
           onClick={() => jumpToNextFresh()}
           title="Jump to the next CV you have never opened — press U"
@@ -1034,7 +1034,7 @@ export function CandidateScreeningSession({
           <button
             aria-label={expanded ? "Leave full width" : "Read at full width"}
             aria-pressed={expanded}
-            className="rounded-md p-1.5 text-slate-300 transition hover:bg-slate-700 hover:text-white"
+            className="p-1.5 text-slate-300 transition hover:bg-slate-700 hover:text-white"
             onClick={() => setExpanded((on) => !on)}
             title={expanded ? "Back to the page — press F or Escape" : "Read at full width — press F"}
             type="button"
@@ -1044,7 +1044,7 @@ export function CandidateScreeningSession({
         ) : null}
         <button
           aria-label="Leave screening mode"
-          className="rounded-md p-1.5 text-slate-300 transition hover:bg-slate-700 hover:text-white"
+          className="p-1.5 text-slate-300 transition hover:bg-slate-700 hover:text-white"
           onClick={() => onClose(decidedCount)}
           type="button"
         >
@@ -1070,7 +1070,7 @@ export function CandidateScreeningSession({
           <span className="mr-1 text-xs font-semibold text-slate-500">Region</span>
           <button
             aria-pressed={region === null}
-            className={`rounded-full px-2.5 py-0.5 text-xs font-bold transition ${
+            className={`px-2.5 py-0.5 text-xs font-bold transition ${
               region === null ? "bg-slate-700 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
             }`}
             onClick={() => openRegion(null)}
@@ -1081,7 +1081,7 @@ export function CandidateScreeningSession({
           {regionChips.map((chip) => (
             <button
               aria-pressed={region === chip.key}
-              className={`rounded-full px-2.5 py-0.5 text-xs font-bold transition ${
+              className={`px-2.5 py-0.5 text-xs font-bold transition ${
                 region === chip.key ? "bg-slate-700 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
               }`}
               key={chip.key}
@@ -1151,7 +1151,7 @@ export function CandidateScreeningSession({
                   absence as "the feature is broken" rather than as an answer. */}
               {currentView ? (
                 <p
-                  className="mt-1.5 inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-phx-xs font-semibold text-amber-700"
+                  className="mt-1.5 inline-flex items-center gap-1 bg-amber-50 px-2 py-0.5 text-phx-xs font-semibold text-amber-700"
                   title={
                     currentView.viewCount > 1
                       ? `Opened ${currentView.viewCount} times — first on ${firstSeenLabel ?? "an earlier session"}`
@@ -1165,13 +1165,13 @@ export function CandidateScreeningSession({
                   {currentView.viewCount > 1 ? ` · ${currentView.viewCount}×` : ""}
                 </p>
               ) : (
-                <p className="mt-1.5 inline-flex items-center gap-1 rounded bg-sky-50 px-2 py-0.5 text-phx-xs font-semibold text-sky-700">
+                <p className="mt-1.5 inline-flex items-center gap-1 bg-sky-50 px-2 py-0.5 text-phx-xs font-semibold text-sky-700">
                   <Sparkles className="h-3 w-3" />
                   First time
                 </p>
               )}
               {existingStatus !== "new" && !thisDecision ? (
-                <p className="ml-1.5 mt-1.5 inline-flex rounded bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-600">
+                <p className="ml-1.5 mt-1.5 inline-flex bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-600">
                   Already {candidateStatusLabels[existingStatus].toLowerCase()}
                 </p>
               ) : null}
@@ -1198,7 +1198,7 @@ export function CandidateScreeningSession({
             {/* Optional, and deliberately one line: a reason is worth having, but a required field
                 would turn a two-second decision back into a form. */}
             <input
-              className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-slate-400"
+              className="w-full border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-slate-400"
               maxLength={CANDIDATE_STATUS_NOTE_MAX_LENGTH}
               onChange={(event) => setNote(event.target.value)}
               placeholder="Reason (optional) — press N"
@@ -1212,7 +1212,7 @@ export function CandidateScreeningSession({
                 not become one. Rendered only when the caller actually loaded the manager list; a
                 picker with nothing in it is worse than no picker. */}
             {hiringManagers.length > 0 ? (
-              <div className="space-y-1.5 rounded-md border border-orange-200 bg-orange-50/70 p-2">
+              <div className="space-y-1.5 border border-orange-200 bg-orange-50/70 p-2">
                 {/* What is already true, before offering to change it. */}
                 {sentNow ? (
                   <p className="flex items-start gap-1.5 text-phx-xs font-bold text-orange-800">
@@ -1281,7 +1281,7 @@ export function CandidateScreeningSession({
                             reads almost exactly like the first one. */}
                         <input
                           aria-label="Area"
-                          className="h-8 min-w-0 rounded-md border border-slate-300 px-2 text-xs outline-none focus:border-orange-400"
+                          className="h-8 min-w-0 border border-slate-300 px-2 text-xs outline-none focus:border-orange-400"
                           list="screening-position-areas"
                           onChange={(event) => setFreeAreaName(event.target.value)}
                           placeholder="Area"
@@ -1289,7 +1289,7 @@ export function CandidateScreeningSession({
                         />
                         <input
                           aria-label="Job title"
-                          className="h-8 min-w-0 rounded-md border border-slate-300 px-2 text-xs outline-none focus:border-orange-400"
+                          className="h-8 min-w-0 border border-slate-300 px-2 text-xs outline-none focus:border-orange-400"
                           list="screening-position-titles"
                           onChange={(event) => setFreeJobTitle(event.target.value)}
                           placeholder="Job title"
@@ -1324,7 +1324,7 @@ export function CandidateScreeningSession({
                     value={effectiveManagerHrIds}
                   />
                   <button
-                    className="flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-orange-600 px-3 text-xs font-bold text-white transition hover:bg-orange-700 disabled:opacity-40"
+                    className="flex h-8 shrink-0 items-center gap-1.5 bg-orange-600 px-3 text-xs font-bold text-white transition hover:bg-orange-700 disabled:opacity-40"
                     disabled={busy || effectiveManagerHrIds.length === 0}
                     onClick={() => void sendToManager()}
                     type="button"
@@ -1335,7 +1335,7 @@ export function CandidateScreeningSession({
                         while four managers are chosen is the last moment a mistaken fourth pick
                         could have been caught, and it says nothing. */}
                     {effectiveManagerHrIds.length > 1 ? (
-                      <span className="rounded bg-white/20 px-1 tabular-nums">{effectiveManagerHrIds.length}</span>
+                      <span className="bg-white/20 px-1 tabular-nums">{effectiveManagerHrIds.length}</span>
                     ) : null}
                   </button>
                 </div>
@@ -1365,7 +1365,7 @@ export function CandidateScreeningSession({
             </div>
             <div className="grid grid-cols-2 gap-2">
               <button
-                className="flex items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                className="flex items-center justify-center gap-1.5 bg-emerald-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50"
                 disabled={busy}
                 onClick={() => void decide("shortlisted")}
                 type="button"
@@ -1373,7 +1373,7 @@ export function CandidateScreeningSession({
                 <Check className="h-4 w-4" /> Shortlist <kbd className="text-phx-2xs font-normal opacity-70">S</kbd>
               </button>
               <button
-                className="flex items-center justify-center gap-1.5 rounded-md bg-rose-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-rose-700 disabled:opacity-50"
+                className="flex items-center justify-center gap-1.5 bg-rose-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-rose-700 disabled:opacity-50"
                 disabled={busy}
                 onClick={() => void decide("rejected")}
                 type="button"
@@ -1383,7 +1383,7 @@ export function CandidateScreeningSession({
             </div>
             <div className="flex items-center justify-between gap-2">
               <button
-                className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 disabled:opacity-40"
+                className="flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 disabled:opacity-40"
                 disabled={index === 0}
                 onClick={() => goTo(index - 1)}
                 type="button"
@@ -1396,7 +1396,7 @@ export function CandidateScreeningSession({
                     person nobody has looked at. Reviewing the pile you already know is a real
                     thing to want; being forced to is what made the queue feel endless. */}
                 <button
-                  className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-sky-700 transition hover:bg-sky-50 disabled:opacity-40"
+                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-sky-700 transition hover:bg-sky-50 disabled:opacity-40"
                   disabled={freshRemaining === 0}
                   onClick={() => jumpToNextFresh()}
                   title="Next CV nobody has read yet — press U"
@@ -1405,7 +1405,7 @@ export function CandidateScreeningSession({
                   <Sparkles className="h-3.5 w-3.5" /> Next unread
                 </button>
                 <button
-                  className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 disabled:opacity-40"
+                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 disabled:opacity-40"
                   disabled={index >= total - 1}
                   onClick={() => goTo(index + 1)}
                   type="button"
