@@ -23,10 +23,20 @@ import {
   normalizeEgyptianMobile,
   parseDateRange,
 } from "../src/lib/recruitment/rule-extraction/patterns.ts";
-import { findDegree, findFaculty } from "../src/lib/recruitment/rule-extraction/education.ts";
+import {
+  extractEducationHistory,
+  findDegree,
+  findFaculty,
+  findGraduationYear,
+} from "../src/lib/recruitment/rule-extraction/education.ts";
 import { resolveGovernorate, parseFullDate, readLabelledValue } from "../src/lib/recruitment/rule-extraction/personal.ts";
-import { classifyHeading, sliceCvSections } from "../src/lib/recruitment/rule-extraction/sections.ts";
-import { splitTitleAndEmployer } from "../src/lib/recruitment/rule-extraction/work.ts";
+import { classifyHeading, linesOfKinds, sliceCvSections } from "../src/lib/recruitment/rule-extraction/sections.ts";
+import {
+  currentJobTitleField,
+  extractWorkHistory,
+  splitTitleAndEmployer,
+  yearsExperienceField,
+} from "../src/lib/recruitment/rule-extraction/work.ts";
 
 const high = (value: unknown) => ({ confidence: "high" as const, value: value as never });
 const low = (value: unknown) => ({ confidence: "low" as const, value: value as never });
@@ -333,6 +343,20 @@ function runPersonalTests() {
   assert.equal(resolveGovernorate("10th of Ramadan City")?.governorate, "Sharqia");
   assert.equal(resolveGovernorate("El Khanka")?.governorate, "Qalyubia");
   assert.equal(resolveGovernorate("nowhere in particular"), null);
+
+  // The bug this pins: "Al-Rehab St., Damanhur" contains BOTH "Rehab" (a Cairo district) and
+  // "Damanhur" (a Beheira town). The candidate lives in Damanhur — the town named LAST — not in the
+  // Cairo compound whose street he happens to live on. Picking the first dictionary entry that
+  // matched, regardless of where in the string it occurred, used to answer Cairo here.
+  assert.equal(resolveGovernorate("Al-Rehab St., Damanhur")?.governorate, "Beheira");
+  // Same shape, the other transliteration of the town's name.
+  assert.equal(resolveGovernorate("Al-Rehab St., Damanhour")?.governorate, "Beheira");
+
+  // Production carries these governorate spellings verbatim ("Al Buhayrah", "Sharqiya") in the
+  // stored field itself, not just in CV text — found while measuring Pattern 4's real prevalence.
+  // Missing from the dictionary, they used to fall through as an unrecognised governorate entirely.
+  assert.equal(resolveGovernorate("Al Buhayrah")?.governorate, "Beheira");
+  assert.equal(resolveGovernorate("Sharqiya")?.governorate, "Sharqia");
 }
 
 function runEducationTests() {
@@ -369,6 +393,34 @@ function runEducationTests() {
   assert.equal(findFaculty(sliceCvSections(["EDUCATION", "Diploma in Project Management"])), null);
 }
 
+function runGraduationYearTests() {
+  // The bug this pins: a CV showing an ONGOING degree ("2023 - Present") had its START year read as
+  // a graduation year — a current student ("Faculty of Science, Benha University, 2023 - Present",
+  // still enrolled) came back with a graduation year of 2023, misreading her as already a graduate.
+  const ongoing = sliceCvSections(["EDUCATION", "Faculty of Science, Benha University, 2023 - Present"]);
+  assert.equal(findGraduationYear(ongoing), null);
+  assert.equal(extractEducationHistory(ongoing)[0]?.year, null);
+
+  // A FINISHED degree is unaffected — its own end year is still the graduation year.
+  const finished = sliceCvSections(["EDUCATION", "Faculty of Science, Benha University, 2018 - 2023"]);
+  assert.equal(findGraduationYear(finished)?.value, 2023);
+  assert.equal(findGraduationYear(finished)?.confidence, "high");
+  assert.equal(extractEducationHistory(finished)[0]?.year, 2023);
+
+  // A finished bachelor's alongside an ongoing master's in the SAME section: the ongoing line must
+  // not contribute a year at all, so the finished degree's own end year — not the master's start
+  // year — is what "graduation year" reports.
+  const mixed = sliceCvSections([
+    "EDUCATION",
+    "Bachelor of Pharmacy, Cairo University, 2015 - 2019",
+    "Master of Science, Ain Shams University, 2023 - Present",
+  ]);
+  assert.equal(findGraduationYear(mixed)?.value, 2019);
+  const mixedEntries = extractEducationHistory(mixed);
+  assert.equal(mixedEntries[0]?.year, 2019);
+  assert.equal(mixedEntries[1]?.year, null);
+}
+
 function runWorkTests() {
   // Which half is the title is decided by vocabulary, not by position.
   assert.deepEqual(splitTitleAndEmployer("Senior HR Specialist — Marfaa Egypt"), {
@@ -379,6 +431,53 @@ function runWorkTests() {
     employer: "Marfaa Egypt",
     jobTitle: "HR Specialist",
   });
+}
+
+function runExperienceFieldsTests() {
+  // Pattern 3: a CV's own HEADLINE under the name is not proof of a job actually held — "Emad Maher
+  // Othman" headlined himself "Medical Sales Representative" and never held that job. With NO work
+  // history to confirm it, the headline is still offered, but only at LOW confidence.
+  const headlineOnly = sliceCvSections(["Medical Sales Representative", "Nasr City, Cairo | 01234567890"]);
+  const headlineField = currentJobTitleField(
+    linesOfKinds(headlineOnly, ["header"]),
+    extractWorkHistory(headlineOnly),
+  );
+  assert.equal(headlineField?.value, "Medical Sales Representative");
+  assert.equal(headlineField?.confidence, "low");
+
+  // A REAL work-history entry outranks the headline outright, and is trusted at high confidence —
+  // the headline above never held that job; this candidate's own history says otherwise.
+  const withRealJob = sliceCvSections([
+    "Medical Sales Representative",
+    "Nasr City, Cairo | 01234567890",
+    "EXPERIENCE",
+    "Quality Control Analyst — Delta Labs   Jan 2022 - Present",
+  ]);
+  const realField = currentJobTitleField(linesOfKinds(withRealJob, ["header"]), extractWorkHistory(withRealJob));
+  assert.equal(realField?.value, "Quality Control Analyst");
+  assert.equal(realField?.confidence, "high");
+
+  // Pattern 2: an INTERNSHIP or training placement never counts as years of professional
+  // experience — a fresh graduate whose CV lists only a placement like this must not read as
+  // someone with years on the job.
+  const internEntries = extractWorkHistory(
+    sliceCvSections(["EXPERIENCE", "Veterinary Intern — City Vet Clinic   Jun 2024 - Aug 2024"]),
+  );
+  assert.equal(internEntries[0]?.jobTitle, "Veterinary Intern");
+  assert.equal(yearsExperienceField("", internEntries), null);
+
+  // A REAL job alongside a training placement: only the real job's months are counted, so a
+  // candidate with one working year and one summer training reads as one year, not more.
+  const mixedEntries = extractWorkHistory(
+    sliceCvSections([
+      "EXPERIENCE",
+      "Pharmacist — City Pharmacy   Jan 2022 - Dec 2022",
+      "Summer Training — City Pharmacy   Jun 2020 - Aug 2020",
+    ]),
+  );
+  const mixedYears = yearsExperienceField("", mixedEntries);
+  assert.equal(mixedYears?.value, 1);
+  assert.equal(mixedYears?.confidence, "low");
 }
 
 function runEndToEndTests() {
@@ -798,7 +897,9 @@ export function runRecruitmentRuleExtractionTests() {
   runFacultyExtractionTests();
   runPersonalTests();
   runEducationTests();
+  runGraduationYearTests();
   runWorkTests();
+  runExperienceFieldsTests();
   runEndToEndTests();
   runMergeTests();
   runEscalationTests();

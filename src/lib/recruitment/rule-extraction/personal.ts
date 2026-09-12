@@ -17,7 +17,7 @@ import {
   MILITARY_STATUS_KEYWORDS,
   NATIONALITY_KEYWORDS,
 } from "@/lib/recruitment/rule-extraction/dictionaries";
-import { containsPhrase, matchDictionary } from "@/lib/recruitment/rule-extraction/patterns";
+import { indexOfPhrase, matchDictionary } from "@/lib/recruitment/rule-extraction/patterns";
 import { high, low } from "@/lib/recruitment/rule-extraction/result";
 import type { CvSection } from "@/lib/recruitment/rule-extraction/sections";
 import { linesOfKinds } from "@/lib/recruitment/rule-extraction/sections";
@@ -247,19 +247,34 @@ const ADDRESS_LABELS = ["address", "location", "residence", "based in", "living 
  * answer "unknown" for most CVs that state their address perfectly clearly. The three mappings that
  * are routinely got wrong by hand are pinned in the dictionary: 6th of October is Giza, 10th of
  * Ramadan is Sharqia, and Obour/Khanka/Shubra El Kheima are Qalyubia — none of them Cairo.
+ *
+ * When SEVERAL place names appear in the same string — a street, then a district, then the town, as
+ * an Egyptian address is conventionally written — the RIGHTMOST one wins, never the first dictionary
+ * entry that happens to match. "Al-Rehab St., Damanhur" contains both "Rehab" (a Cairo district) and
+ * "Damanhur" (a Beheira town); picking whichever of the two comes first in the ARRAY, as this used
+ * to, answered Cairo for someone who lives in Beheira. The town named last is the one the candidate
+ * actually lives in — the street/compound name earlier in the line is not where they are from.
  */
 export function resolveGovernorate(text: string): { readonly governorate: string; readonly viaDistrict: boolean } | null {
+  const hits: { readonly governorate: string; readonly viaDistrict: boolean; readonly index: number }[] = [];
+
+  // Districts first, so that on a TIE a district beats a bare governorate name.
   for (const entry of EGYPT_DISTRICTS) {
-    if (entry.aliases.some((alias) => containsPhrase(text, alias))) {
-      return { governorate: entry.governorate, viaDistrict: true };
+    for (const alias of entry.aliases) {
+      const index = indexOfPhrase(text, alias);
+      if (index >= 0) hits.push({ governorate: entry.governorate, index, viaDistrict: true });
     }
   }
   for (const entry of EGYPT_GOVERNORATES) {
-    if (entry.aliases.some((alias) => containsPhrase(text, alias))) {
-      return { governorate: entry.canonical, viaDistrict: false };
+    for (const alias of entry.aliases) {
+      const index = indexOfPhrase(text, alias);
+      if (index >= 0) hits.push({ governorate: entry.canonical, index, viaDistrict: false });
     }
   }
-  return null;
+
+  if (hits.length === 0) return null;
+  const best = hits.reduce((furthest, hit) => (hit.index > furthest.index ? hit : furthest));
+  return { governorate: best.governorate, viaDistrict: best.viaDistrict };
 }
 
 export function findAddressAndGovernorate(
