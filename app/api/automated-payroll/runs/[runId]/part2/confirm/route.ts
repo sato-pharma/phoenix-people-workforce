@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { acknowledgmentTokenFromError } from "@/lib/automated-payroll/acknowledgment-token";
 import { jsonError, resolveAccessContext } from "@/lib/automated-payroll/http";
 import {
   confirmPart2,
@@ -19,15 +20,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
     if (csrf) return csrf;
     const { runId } = await params;
     const access = await resolveAccessContext(request);
+    // Acknowledgements are SERVER-MINTED TOKENS, never booleans (audit finding 53): a caller cannot
+    // say yes to a warning this server never showed it. A body that still sends the old
+    // `acknowledgeOverpaid: true` flag is simply not an acknowledgement, and the gate fires.
     const body = (await request.json().catch(() => ({}))) as {
-      acknowledgeOverpaid?: boolean;
-      acknowledgeDataIssues?: boolean;
-      acknowledgePopulationDiff?: boolean;
+      acknowledgeOverpaidToken?: unknown;
+      acknowledgeDataIssuesToken?: unknown;
+      acknowledgePopulationDiffToken?: unknown;
     };
+    const token = (value: unknown) => (typeof value === "string" && value.length > 0 ? value : null);
     const run = await confirmPart2(access, runId, {
-      acknowledgeOverpaid: body.acknowledgeOverpaid === true,
-      acknowledgeDataIssues: body.acknowledgeDataIssues === true,
-      acknowledgePopulationDiff: body.acknowledgePopulationDiff === true,
+      acknowledgeOverpaidToken: token(body.acknowledgeOverpaidToken),
+      acknowledgeDataIssuesToken: token(body.acknowledgeDataIssuesToken),
+      acknowledgePopulationDiffToken: token(body.acknowledgePopulationDiffToken),
     });
     return NextResponse.json({ success: true, run });
   } catch (error) {
@@ -36,11 +41,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
     // so it can prompt instead of just showing a red error. Every other
     // Conflict (notably a split mismatch = calculation bug) stays a plain error.
     const message = clientSafeErrorMessage(error, "");
+    // The token the fired gate minted, handed to the client so its retry can carry it back.
+    const acknowledgmentToken = acknowledgmentTokenFromError(error);
     if (message.includes(DATA_QUALITY_ACK_REQUIRED)) {
       return NextResponse.json(
         {
           success: false,
           requiresDataQualityAcknowledgment: true,
+          acknowledgmentToken,
           error: message.replace(/^conflict:\s*/i, "").replace(`${DATA_QUALITY_ACK_REQUIRED} `, ""),
         },
         { status: 409 },
@@ -52,6 +60,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
         {
           success: false,
           requiresPopulationDiffAcknowledgment: true,
+          acknowledgmentToken,
           error: message.replace(/^conflict:\s*/i, "").replace(`${POPULATION_DIFF_ACK_REQUIRED} `, ""),
         },
         { status: 409 },
@@ -62,6 +71,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
         {
           success: false,
           requiresOverpaidAcknowledgment: true,
+          acknowledgmentToken,
           error: message.replace(/^conflict:\s*/i, "").replace(`${OVERPAID_ACK_REQUIRED} `, ""),
         },
         { status: 409 },

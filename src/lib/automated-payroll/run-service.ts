@@ -96,6 +96,12 @@ import {
   upsertDraftRows,
   upsertStepState,
 } from "./draft-store.ts";
+import {
+  acknowledgmentTokenAnswers,
+  issueAcknowledgmentToken,
+  PayrollAcknowledgmentRequiredError,
+  type AcknowledgmentGate,
+} from "./acknowledgment-token.ts";
 import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 import { monthLabel, notifyPart1Ready, notifyPart1SubmittedForReview, notifyPart2Ready, notifyPublished } from "./notify.ts";
 import {
@@ -914,7 +920,7 @@ function assertAllStepsConfirmed(states: StepState[], keys: readonly StepKey[]):
 export async function confirmPart1(
   access: AccessContext,
   runId: string,
-  options: { acknowledgeDataIssues?: boolean } = {},
+  options: { acknowledgeDataIssuesToken?: string | null } = {},
 ): Promise<MonthlySalaryRun> {
   assertRealSessionForDecision(access, "confirm Part 1 of a payroll run");
   assertAutomatedPayrollHrActor(access);
@@ -940,7 +946,7 @@ export async function confirmPart1(
     members,
     sources,
     draftRows,
-    acknowledged: options.acknowledgeDataIssues === true,
+    acknowledgmentToken: options.acknowledgeDataIssuesToken,
   });
 
   // THE SAME HARD VALIDATION PART 2 WILL RUN, run here, BEFORE money is frozen.
@@ -1179,9 +1185,12 @@ async function readPart2ConfirmedTotals(runId: string): Promise<ConfirmedTotals 
 export async function confirmPart2(
   access: AccessContext,
   runId: string,
-  options: { acknowledgeOverpaid?: boolean; acknowledgeDataIssues?: boolean; acknowledgePopulationDiff?: boolean } = {},
+  options: {
+    acknowledgeOverpaidToken?: string | null;
+    acknowledgeDataIssuesToken?: string | null;
+    acknowledgePopulationDiffToken?: string | null;
+  } = {},
 ): Promise<MonthlySalaryRun> {
-  const acknowledgeOverpaid = options.acknowledgeOverpaid === true;
   assertRealSessionForDecision(access, "confirm Part 2 of a payroll run");
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
@@ -1205,14 +1214,14 @@ export async function confirmPart2(
       members: context.members,
       sources: context.sources,
       draftRows: context.draftRows,
-      acknowledged: options.acknowledgeDataIssues === true,
+      acknowledgmentToken: options.acknowledgeDataIssuesToken,
     });
     await assertPopulationDiffAcknowledged({
       access,
       run,
       members: context.members,
       draftRows: context.draftRows,
-      acknowledged: options.acknowledgePopulationDiff === true,
+      acknowledgmentToken: options.acknowledgePopulationDiffToken,
     });
   }
 
@@ -1279,14 +1288,20 @@ export async function confirmPart2(
   // Overpaid rows are real money the company paid out in Part 1 that this
   // month's total can no longer absorb. HR must consciously accept them rather
   // than discover them later in a report.
-  if (totals.overpaid.length > 0 && !acknowledgeOverpaid) {
+  if (totals.overpaid.length > 0) {
     const totalResidual = roundCurrency(totals.overpaid.reduce((sum, row) => sum + row.residual, 0));
     const sample = totals.overpaid.slice(0, 5).map((row) => `${row.hrId}: ${row.residual}`);
-    throw new Error(
-      `Conflict: ${OVERPAID_ACK_REQUIRED} ${totals.overpaid.length} employee(s) were overpaid in Part 1 by a ` +
+    requireAcknowledgment({
+      runId: run.id,
+      gate: "overpaid",
+      marker: OVERPAID_ACK_REQUIRED,
+      actorHrId: actorId(access),
+      warning:
+        `${totals.overpaid.length} employee(s) were overpaid in Part 1 by a ` +
         `total of ${totalResidual} (Part 2 deductions exceeded their already-paid first installment). ` +
         `Acknowledge to confirm and carry these balances forward to next month. ${sample.join("; ")}`,
-    );
+      token: options.acknowledgeOverpaidToken,
+    });
   }
 
   // ---- carry-forward ledger settlement (owner decision 2026-07-25) ----------
@@ -1954,6 +1969,49 @@ export const OVERPAID_ACK_REQUIRED = "[overpaid-acknowledgment-required]";
 export const DATA_QUALITY_ACK_REQUIRED = "[data-quality-acknowledgment-required]";
 
 /**
+ * ONE PLACE DECIDES WHETHER A WARNING HAS BEEN ANSWERED (audit finding 53).
+ *
+ * Every acknowledgeable gate ends here: it has computed a warning, and the only question left is
+ * whether the person confirming has been shown THAT warning and accepted it. A boolean in the
+ * request body could not answer that — it said "somebody typed yes", never "somebody was told".
+ * A token can, because only this server mints one, and only from inside a gate that fired.
+ *
+ * Refusing re-throws with a FRESH token, so the client always leaves a refusal holding the thing
+ * it needs to come back with. There is no state to reconcile and nothing to expire by hand.
+ */
+function requireAcknowledgment(input: {
+  runId: string;
+  gate: AcknowledgmentGate;
+  marker: string;
+  actorHrId: string;
+  warning: string;
+  token: string | null | undefined;
+}): void {
+  if (
+    acknowledgmentTokenAnswers({
+      token: input.token,
+      runId: input.runId,
+      gate: input.gate,
+      actorHrId: input.actorHrId,
+      warning: input.warning,
+    })
+  ) {
+    return;
+  }
+  throw new PayrollAcknowledgmentRequiredError({
+    marker: input.marker,
+    gate: input.gate,
+    warning: input.warning,
+    token: issueAcknowledgmentToken({
+      runId: input.runId,
+      gate: input.gate,
+      actorHrId: input.actorHrId,
+      warning: input.warning,
+    }),
+  });
+}
+
+/**
  * Shared by both confirms. Throws the acknowledgeable conflict when the run
  * carries employees with missing pay-determining data and HR has not yet
  * accepted it; records the acceptance in the audit log when they have, so a
@@ -1965,7 +2023,7 @@ async function assertPayrollDataAcknowledged(input: {
   members: PopulationMember[];
   sources: Map<string, PayrollSalarySource>;
   draftRows: DraftRow[];
-  acknowledged: boolean;
+  acknowledgmentToken: string | null | undefined;
 }): Promise<void> {
   // The gate deliberately asks only for the issues that change what somebody is PAID — see
   // PAYROLL_DATA_ISSUE_AFFECTS_PAY. The wizard banner shows the full report, filing gaps included.
@@ -1978,9 +2036,14 @@ async function assertPayrollDataAcknowledged(input: {
     }),
   );
   if (report.total === 0) return;
-  if (!input.acknowledged) {
-    throw new Error(`Conflict: ${DATA_QUALITY_ACK_REQUIRED} ${describePayrollDataQuality(report)}`);
-  }
+  requireAcknowledgment({
+    runId: input.run.id,
+    gate: "data-quality",
+    marker: DATA_QUALITY_ACK_REQUIRED,
+    actorHrId: actorId(input.access),
+    warning: describePayrollDataQuality(report),
+    token: input.acknowledgmentToken,
+  });
   await writeAutomatedPayrollAudit({
     runId: input.run.id,
     actorHrId: actorId(input.access),
@@ -2011,14 +2074,19 @@ async function assertPopulationDiffAcknowledged(input: {
   run: MonthlySalaryRun;
   members: PopulationMember[];
   draftRows: DraftRow[];
-  acknowledged: boolean;
+  acknowledgmentToken: string | null | undefined;
 }): Promise<void> {
   const previous = await previousMonthRoster({ month: input.run.month, year: input.run.year });
   const unexplained = unexplainedDisappearances(diffPopulation({ current: input.members, previous }), input.draftRows);
   if (unexplained.length === 0) return;
-  if (!input.acknowledged) {
-    throw new Error(`Conflict: ${POPULATION_DIFF_ACK_REQUIRED} ${describeUnexplainedDisappearances(unexplained)}`);
-  }
+  requireAcknowledgment({
+    runId: input.run.id,
+    gate: "population-diff",
+    marker: POPULATION_DIFF_ACK_REQUIRED,
+    actorHrId: actorId(input.access),
+    warning: describeUnexplainedDisappearances(unexplained),
+    token: input.acknowledgmentToken,
+  });
   await writeAutomatedPayrollAudit({
     runId: input.run.id,
     actorHrId: actorId(input.access),
