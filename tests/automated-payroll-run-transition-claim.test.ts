@@ -172,24 +172,32 @@ export function runAutomatedPayrollRunTransitionClaimTests() {
   const confirmPart2 = bodyOf(source, "export async function confirmPart2(");
   assert.match(
     confirmPart2,
-    /assertPopulationDiffAcknowledged\(\{[\s\S]*?acknowledged: options\.acknowledgePopulationDiff === true/,
+    /assertPopulationDiffAcknowledged\(\{[\s\S]*?acknowledgmentToken: options\.acknowledgePopulationDiffToken/,
     "HEADLINE: Part 2 confirm runs the population gate",
   );
   const gate = bodyOf(source, "async function assertPopulationDiffAcknowledged(");
-  assert.match(gate, /throw new Error\(`Conflict: \$\{POPULATION_DIFF_ACK_REQUIRED\}/, "an unacknowledged disappearance stops the confirm");
+  assert.match(
+    gate,
+    /requireAcknowledgment\(\{[\s\S]*?marker: POPULATION_DIFF_ACK_REQUIRED/,
+    "an unacknowledged disappearance stops the confirm",
+  );
   assert.match(gate, /action: "population_diff_acknowledged"/, "an acknowledged one is recorded");
 
   const route = readFileSync("app/api/automated-payroll/runs/[runId]/part2/confirm/route.ts", "utf8");
-  assert.match(route, /acknowledgePopulationDiff: body\.acknowledgePopulationDiff === true/, "the route passes the flag through");
+  assert.match(
+    route,
+    /acknowledgePopulationDiffToken: token\(body\.acknowledgePopulationDiffToken\)/,
+    "the route passes the token through",
+  );
   assert.match(route, /requiresPopulationDiffAcknowledgment: true/, "and turns the gate into a prompt, not a dead end");
 
   const wizard = readFileSync("src/components/automated-payroll/automated-payroll-wizard.tsx", "utf8");
   assert.match(
     wizard,
-    /const acks = \{ \.\.\.part2Acks, \.\.\.acknowledged \};/,
+    /const acks = \{ \.\.\.part2AckTokens, \.\.\.acknowledged \};/,
     "HEADLINE: every retry sends every acknowledgement already given, so two gates can no longer loop",
   );
-  assert.match(wizard, /acknowledgePopulationDiff: acks\.acknowledgePopulationDiff === true/, "including the new one");
+  assert.match(wizard, /acknowledgePopulationDiffToken: acks\.populationDiff \?\? null/, "including the new one");
   assert.match(wizard, /requiresPopulationDiffAcknowledgment/, "and the wizard prompts on it");
   assert.doesNotMatch(
     wizard,
@@ -204,12 +212,12 @@ export function runAutomatedPayrollRunTransitionClaimTests() {
   const wizardCode = stripComments(wizard);
   assert.match(
     wizardCode,
-    /setDataQuality\(null\);\s*setPart2Acks\(\{\}\);/,
+    /setDataQuality\(null\);\s*setPart2AckTokens\(\{\}\);/,
     "HEADLINE: reloading the run forgets every acknowledgement, because the reload is what can change the answer",
   );
   assert.match(
     wizardCode,
-    /catch \(actionError\) \{\s*setPart2Acks\(\{\}\);/,
+    /catch \(actionError\) \{\s*setPart2AckTokens\(\{\}\);/,
     "HEADLINE: a dropped or non-JSON response answers nothing, so the next attempt asks every gate again",
   );
 
