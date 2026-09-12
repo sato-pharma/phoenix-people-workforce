@@ -68,6 +68,18 @@ export type AuditEntityType =
   // membership claim nobody can be held to, is exactly what an audit trail is for.
   | "distribution_list"
   | "company_email_alias"
+  // The Sato Email Composer, beside the two above. `sato_email_template` is an edit to the fixed
+  // wording a seat can pick off the shelf; `sato_email_send` is one press of Send.
+  //
+  // TWO ENTITY TYPES for the same reason the pair above is two, and the split runs the other way
+  // round: the TEMPLATE row is the stronger claim. Editing a template changes what every future
+  // send says, before anything has been mailed, so it is a REQUIRED audit — refusing the edit when
+  // the trail cannot be written costs nothing. A SEND row is written AFTER the mail has already
+  // left, so it is best-effort: throwing there would report a completed send as a failure and
+  // invite somebody to send it twice. Folding them into one type would force one of those two
+  // behaviours onto the other, and each is wrong in the other's place.
+  | "sato_email_template"
+  | "sato_email_send"
   // Minting or revoking a bearer link to the live CV-lifecycle Google Sheet. The link outlives the
   // session that created it and copies candidate names and phone numbers out of Phoenix, so who
   // made one — and who killed it — is recorded. The token itself is never written here: an audit
