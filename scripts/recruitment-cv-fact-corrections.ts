@@ -151,6 +151,21 @@ function requireEnv(name: string): string {
   return value;
 }
 
+/**
+ * One factory, so the helpers below can be typed from the REAL call site.
+ *
+ * `ReturnType<typeof createClient>` is not that type — the bare generic defaults differ from what
+ * the three-argument call infers, and a helper annotated with it rejects the very client this file
+ * creates. Taking the type off this function keeps the two in step by construction.
+ */
+function opsClient() {
+  return createClient(requireEnv("NEXT_PUBLIC_SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"), {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
+type OpsClient = ReturnType<typeof opsClient>;
+
 function flagValue(args: string[], flag: string): string | null {
   const found = args.find((arg) => arg === flag || arg.startsWith(`${flag}=`));
   if (!found) return null;
@@ -330,9 +345,7 @@ async function main(): Promise<void> {
     throw new Error("--reread calls the model and costs money. Add --confirm-spend once you mean it.");
   }
 
-  const supabase = createClient(requireEnv("NEXT_PUBLIC_SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"), {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  const supabase = opsClient();
 
   console.log(`Supabase project : ${requireEnv("NEXT_PUBLIC_SUPABASE_URL")}`);
   console.log(`Run marker       : ${OPS_MARKER}`);
@@ -467,9 +480,7 @@ function collect(
 }
 
 /** The newest extraction row per candidate, normalized to { value, confidence }. */
-async function loadNewestExtractions(
-  supabase: ReturnType<typeof createClient>,
-): Promise<Map<string, ExtractedCandidateFields>> {
+async function loadNewestExtractions(supabase: OpsClient): Promise<Map<string, ExtractedCandidateFields>> {
   type Row = { candidate_id: string; created_at: string; extracted_fields: unknown };
   const rows: Row[] = [];
   for (let from = 0; ; from += PAGE) {
@@ -492,11 +503,7 @@ async function loadNewestExtractions(
   return newest;
 }
 
-async function runApply(
-  supabase: ReturnType<typeof createClient>,
-  decisionsPath: string,
-  day: string,
-): Promise<void> {
+async function runApply(supabase: OpsClient, decisionsPath: string, day: string): Promise<void> {
   const decisions = await readDecisionSheet(decisionsPath);
   const chosen = decisions.filter((decision) => decision.answer === APPLY_ANSWER);
   console.log(`\nDecisions sheet  : ${decisionsPath}`);
