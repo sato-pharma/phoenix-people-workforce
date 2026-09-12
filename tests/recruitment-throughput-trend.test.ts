@@ -216,8 +216,11 @@ export function runRecruitmentThroughputTrendTests() {
   );
   assert.match(
     workspace,
-    /unread: pool\.filter\(\(candidate\) => !views\[candidate\.id\]\)\.length/,
-    "unread stays a question about the POOL — it is the pile still in front of this reader",
+    /unread: shelfFree\.filter\(\(candidate\) => !views\[candidate\.id\]\)\.length/,
+    "unread stays a question about the WHOLE unfiled pool — it is the pile still in front of this " +
+      "reader. `shelfFree` is that pile and is exactly what `pool` used to be; `pool` itself now " +
+      "narrows to one vacant seat while a seat is being screened, and reading it here would make the " +
+      "backlog appear to shrink because somebody pressed a seat on the rail",
   );
   // The old method must be gone, not merely unused.
   assert.doesNotMatch(

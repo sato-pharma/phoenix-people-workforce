@@ -34,6 +34,7 @@
 // italic grey since 2026-08-21. This extends the same, already-understood convention to the other
 // four facts rather than inventing a second vocabulary for the same idea.
 
+import { describeBackgroundVerdict, judgeBackground } from "@/lib/recruitment/candidate-background";
 import {
   candidateRegionCodes,
   candidateRegionForGovernorate,
@@ -44,6 +45,7 @@ import {
 } from "@/lib/recruitment/candidate-region";
 import { candidateRoleFamilyOrNull, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import { cleanEmployerName } from "@/lib/recruitment/employer-name";
+import { candidateBackgroundLabels } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
 
 /**
  * One screening fact, plus whether it is safe to read as settled.
@@ -72,6 +74,8 @@ export type ScreeningFactsCandidateRow = {
   currentEmployer?: string | null;
   currentJobTitle?: string | null;
   cvUnconfirmed?: CandidateUnconfirmedCvFacts | null;
+  /** A Postgres `date`, so "1997-04-11". Read for an AGE, never rendered raw as an identifier. */
+  dateOfBirth?: string | null;
   /** What they answered when the bot asked what they studied. Their words, not the CV's. */
   declaredBackground?: string | null;
   /** The experience BAND they tapped ("1 - 3 years"). A band, never a number — see `years`. */
@@ -80,8 +84,12 @@ export type ScreeningFactsCandidateRow = {
   declaredExpectedSalary?: string | null;
   /** The parsed figure, for the rows that predate the verbatim column or were typed into the ATS. */
   expectedSalary?: number | null;
+  /** What the CV reader made of their faculty. Feeds the degree rule, never overrules the answer. */
+  faculty?: string | null;
+  gender?: string | null;
   governorate?: string | null;
   hasMedicalRepExperience?: boolean | null;
+  militaryStatus?: string | null;
   /** The area the applicant tapped or typed on WhatsApp. There is no other source for this. */
   preferredAreaName?: string | null;
   /** The region code the applicant TAPPED — one of `candidateRegionCodes`, or nothing. */
@@ -365,4 +373,108 @@ export function unconfirmedCvFactsFromExtraction(
     hasMedicalRepExperience: typeof pharma === "boolean" ? pharma : null,
     yearsExperience: typeof experience === "number" ? experience : null,
   };
+}
+
+// ── THE FOUR CHECKS A SCREENER MAKES BEFORE ANYTHING ELSE ──────────────────────────────────────
+//
+// Measured on the owner's own recruiter session, 2026-09-11: screening one vacant seat meant opening
+// every CV to find the same four things — does the degree pass the rule, man or woman, how old, and
+// is military service settled. They are all on the candidate record already, and until now not one
+// of them was printed anywhere in screening.
+//
+// EVERY ONE OF THE FOUR IS ALWAYS PRINTED, even when nothing is known, and an unknown reads
+// "not on file". A missing row and a row nobody has filled in look identical, and the difference
+// matters: one means the reader has the answer, the other means the CV is the only place left to
+// look. A blank cell, or worse a 0, quietly claims the first when the truth is the second.
+
+/**
+ * One always-printed screening check. `value` is null for "nothing on file" — the RENDERER writes
+ * the words, so the wording lives in one place and a caller cannot invent a second one.
+ */
+export type ScreeningCheck = { hint: string | null; label: string; value: string | null };
+
+/** What a check says when nobody has ever answered it. Never a blank, and never a zero. */
+export const FACT_NOT_ON_FILE = "not on file";
+
+/** Nobody in this pool is younger than this or older than that; anything else is a mis-parsed date. */
+const YOUNGEST_PLAUSIBLE_AGE = 15;
+const OLDEST_PLAUSIBLE_AGE = 80;
+
+/**
+ * Whole years old on `now`, from a `date` column that arrives as "YYYY-MM-DD".
+ *
+ * Parsed by hand rather than through `new Date`, deliberately: that constructor reads a bare
+ * "1997-04-11" as UTC midnight and a local-time birthday then lands a day early for anyone east of
+ * Greenwich, which is everyone here. The month and day are compared as plain numbers instead, so
+ * there is no timezone in the answer at all.
+ */
+export function candidateAgeInYears(dateOfBirth: string | null | undefined, now?: Date): number | null {
+  const raw = text(dateOfBirth);
+  if (!raw) return null;
+  const parts = raw.slice(0, 10).split("-");
+  if (parts.length !== 3) return null;
+  const [year, month, day] = parts.map((part) => Number(part));
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const today = now ?? new Date();
+  let age = today.getFullYear() - year;
+  const beforeBirthday =
+    today.getMonth() + 1 < month || (today.getMonth() + 1 === month && today.getDate() < day);
+  if (beforeBirthday) age -= 1;
+  if (age < YOUNGEST_PLAUSIBLE_AGE || age > OLDEST_PLAUSIBLE_AGE) return null;
+  return age;
+}
+
+/** "male" / "MALE" / "Female" all reach the row as one word, capitalised. Arabic passes through. */
+function titleCaseWord(raw: string): string {
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+/**
+ * The four checks, in the order a screener makes them, for one candidate.
+ *
+ * The degree verdict REUSES `judgeBackground` — the same gate that decides whether a CV may be
+ * auto-filed and the same words `describeBackgroundVerdict` shows the admin who confirms an
+ * exclusion. A second copy of the rule here is exactly how a screen starts telling a recruiter
+ * something the rest of the system does not believe.
+ */
+export function candidateScreeningChecks(
+  candidate: ScreeningFactsCandidateRow,
+  now?: Date,
+): readonly ScreeningCheck[] {
+  const verdict = judgeBackground({
+    declaredBackground: candidate.declaredBackground,
+    faculty: candidate.faculty,
+  });
+  const degree =
+    verdict.outcome === "eligible"
+      ? verdict.discipline
+        ? candidateBackgroundLabels[verdict.discipline]
+        : "Passes the degree rule"
+      : verdict.outcome === "paramedical"
+        ? "Not one of the five eligible degrees"
+        : null;
+
+  const gender = text(candidate.gender);
+  const age = candidateAgeInYears(candidate.dateOfBirth, now);
+  const birthday = text(candidate.dateOfBirth)?.slice(0, 10) ?? null;
+  const military = text(candidate.militaryStatus);
+
+  return [
+    {
+      // The evidence, never a bare judgement — the same rule the admin review screen follows.
+      hint: verdict.evidence ? describeBackgroundVerdict(verdict) : null,
+      label: "Degree rule",
+      value: degree,
+    },
+    { hint: null, label: "Gender", value: gender ? titleCaseWord(gender) : null },
+    {
+      // The date sits under the age so a reader can check the arithmetic, and so a record holding
+      // only an implausible date does not read as though it held nothing.
+      hint: birthday,
+      label: "Age",
+      value: age === null ? null : `${age}`,
+    },
+    { hint: null, label: "Military service", value: military ? titleCaseWord(military) : null },
+  ];
 }

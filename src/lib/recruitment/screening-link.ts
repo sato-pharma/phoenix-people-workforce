@@ -43,6 +43,17 @@ export type ScreeningQueueFilters = {
   received?: string | string[] | undefined;
   /** A source channel label, verbatim — see `candidateSourceChannel`, e.g. `WhatsApp`, `Email`. */
   source?: string | string[] | undefined;
+  /**
+   * One OPEN SEAT, by its vacancy id — "screen the vacant Menoufia 1 medical rep post".
+   *
+   * The only filter here that carries an id rather than a name, and it has to: two seats can share
+   * a job title AND an area and differ only by line, so there is no name that identifies one. It
+   * never reaches a screen — the page prints the seat's job title and place, which is what the
+   * owner's names-never-codes rule is about. It is in the URL because the whole point of that rule's
+   * companion — every filter is a link — is that "screen Menoufia 1" survives a reload and can be
+   * pasted to the other screener.
+   */
+  vacancy?: string | string[] | undefined;
 };
 
 /**
@@ -122,6 +133,8 @@ export type ScreeningQueueNarrowing = {
   received: ScreeningReceivedFilter | null;
   /** A source channel label, verbatim — see `candidateSourceChannel`. */
   source: string | null;
+  /** The open seat being screened, or null for the ordinary whole-pool queue. */
+  vacancy: number | null;
 };
 
 /** Next.js hands a repeated query param through as an array; take the first and ignore the rest. */
@@ -152,6 +165,20 @@ function parseReceived(value: string | null): ScreeningReceivedFilter | null {
   return (screeningReceivedFilters as readonly string[]).includes(normalized)
     ? (normalized as ScreeningReceivedFilter)
     : null;
+}
+
+/**
+ * The seat id out of the link, or null.
+ *
+ * Untrusted like every other parameter: anything that is not a positive whole number is IGNORED
+ * rather than guessed at or thrown on, and an id naming no OPEN seat simply matches nothing when
+ * the loader looks it up. A screening link that 500s because somebody edited the address bar is a
+ * worse outcome than one that shows the ordinary queue.
+ */
+function parseVacancy(value: string | null): number | null {
+  if (!value || !/^[0-9]+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function parseRegion(value: string | null): ScreeningRegionFilter | null {
@@ -197,6 +224,7 @@ export function parseScreeningFilters(filters: ScreeningQueueFilters = {}): Scre
     seen: untouched ? "untouched" : unseen ? "unseen" : seen ? "seen" : "any",
     source: firstParam(filters.source),
     status: normalizeCandidateStatus(firstParam(filters.status)),
+    vacancy: parseVacancy(firstParam(filters.vacancy)),
   };
 }
 
@@ -210,6 +238,8 @@ export type ScreeningHrefOptions = {
   region?: ScreeningRegionFilter | null;
   received?: ScreeningReceivedFilter | null;
   source?: string | null;
+  /** An open seat's vacancy id, or null to leave seat mode and go back to the whole pool. */
+  vacancy?: number | null;
 };
 
 /**
@@ -240,6 +270,7 @@ export function screeningHref(basePath: string, options: ScreeningHrefOptions = 
   if (options.area) params.set("area", options.area);
   if (options.received) params.set("received", options.received);
   if (options.source) params.set("source", options.source);
+  if (options.vacancy) params.set("vacancy", String(options.vacancy));
   const query = params.toString();
   return query ? `${base}?${query}` : base;
 }

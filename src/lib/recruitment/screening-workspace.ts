@@ -87,6 +87,14 @@ import {
   vacanciesForCandidate,
   type VacancyApplicantStats,
 } from "@/lib/recruitment/vacancy-applicants";
+import {
+  isSeatQueueDecided,
+  readSeatQueueReason,
+  seatPlaceName,
+  statedSeatQueueMatch,
+  type SeatQueueCandidate,
+  type SeatQueueMatch,
+} from "@/lib/recruitment/vacancy-seat-queue";
 import type { CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import type { Candidate } from "@/lib/recruitment/types";
 
@@ -144,6 +152,13 @@ export type ScreeningWorkspace = {
   region: ScreeningRegionFilter | null;
   received: ScreeningReceivedFilter | null;
   source: string | null;
+  /** The open seat being screened, or null for the ordinary whole-pool queue. */
+  vacancy: number | null;
+  /**
+   * That seat in words - "Menoufia 1 · Medical Representative" - so the page can say which seat it
+   * is showing without the client looking an id up in a list. Null outside seat mode.
+   */
+  seatLabel: string | null;
 };
 
 function text(value: string | null | undefined): string | null {
@@ -213,6 +228,9 @@ export async function loadScreeningWorkspace(
   options: { canSendToManagers?: boolean } = {},
 ): Promise<ScreeningWorkspace> {
   const canSendToManagers = Boolean(options.canSendToManagers);
+  // READ FIRST, because the pool itself now depends on it: a link naming one vacant seat builds a
+  // different pool from the ordinary queue. Pure, cheap, and no round trip - see screening-link.ts.
+  const narrowing = parseScreeningFilters(filters);
 
   // Fired together, not in sequence: six of these seven are independent, and awaiting them one at a
   // time is the difference between one round trip and seven on a page that is already the slowest in
@@ -256,7 +274,66 @@ export async function loadScreeningWorkspace(
   // A shelved CV leaves the workstation exactly as it leaves the queue: the whole purpose of the
   // shelf is that a good-but-not-now CV stops being offered for review again. Taken off BEFORE
   // `filteredOut` is counted, so that number means the filters and never the archive.
-  const pool = allCandidates.filter((candidate) => !isFiledCandidate(candidate));
+  //
+  // THAT IS STILL THE DEFAULT AND IT IS UNCHANGED. What follows applies only when the link names one
+  // open seat, and it is the whole point of "screen a vacant seat": the shelf is where the CVs for an
+  // open seat are FILED, so for that one seat the shelf has to be read rather than skipped. See
+  // vacancy-seat-queue.ts for the measured hour this cost.
+  const shelfFree = allCandidates.filter((candidate) => !isFiledCandidate(candidate));
+
+  const seat =
+    narrowing.vacancy === null
+      ? null
+      : (openVacancies.find((vacancy) => vacancy.id === narrowing.vacancy) ?? null);
+
+  /** Everything the seat attribution needs off one candidate, resolved once per candidate. */
+  const seatInputFor = (candidate: Candidate): SeatQueueCandidate => {
+    const context = candidate.sourceContext;
+    return {
+      address: candidate.address,
+      appliedForJobTitle: candidate.appliedForJobTitle,
+      // The RESOLVED applied-for text, which for an email applicant is usually the subject line
+      // itself - see applied-for.ts. Read here for a PLACE, never for a title.
+      appliedForText: candidateRowAppliedFor(candidate).text,
+      currentJobTitle: candidate.currentJobTitle,
+      emailSubject: context?.channel === "email" ? context.shortLabel : null,
+      folderKey: candidate.folder?.key ?? null,
+      governorate: candidate.governorate,
+      hasMedicalRepExperience: candidate.hasMedicalRepExperience,
+      preferredAreaName: candidate.preferredAreaName,
+      sentForVacancyId: candidate.sentFor?.vacancyId ?? null,
+    };
+  };
+
+  // WHY EACH CV IS IN THIS SEAT'S PILE, in the words the row prints. Empty outside seat mode.
+  const seatReasons = new Map<string, string>();
+  let seatQueue: Candidate[] | null = null;
+  if (seat) {
+    seatQueue = [];
+    for (const candidate of allCandidates) {
+      // A DECIDED CV NEVER COMES BACK. Rejected, already with a manager, or hired - somebody has
+      // finished with the record, and re-offering it is work the reader has already done.
+      if (isSeatQueueDecided(normalizeCandidateStatus(candidate.status))) continue;
+      const input = seatInputFor(candidate);
+      const match: SeatQueueMatch | null =
+        statedSeatQueueMatch(input, seat) ??
+        (vacanciesForCandidate(input, [seat]).includes(seat.id)
+          ? { reason: readSeatQueueReason(seat), source: "read" as const }
+          : null);
+      if (!match) continue;
+      seatReasons.set(candidate.id, match.reason);
+      seatQueue.push(candidate);
+    }
+  }
+
+  const pool = seatQueue ?? shelfFree;
+
+  // THE WIDER BASIS, for everything that must not shrink because one seat was picked: the duplicate
+  // index, the filter dropdowns and the vacancy rail. In the default mode this IS the pool, so
+  // nothing about that path changes.
+  const poolBasis = seatQueue
+    ? [...new Map([...shelfFree, ...seatQueue].map((candidate) => [candidate.id, candidate])).values()]
+    : shelfFree;
 
   // WHO HAS THIS CV is already resolved — listCandidates overlays the send trail onto every
   // candidate it returns, so `managerNotified` and `sentFor` are the newest of (row stamp, send
@@ -281,19 +358,17 @@ export async function loadScreeningWorkspace(
   const now = new Date();
   const asOf = now.getTime();
 
-  const narrowing = parseScreeningFilters(filters);
-
   // Duplicate SETS over the whole live pool, never over the filtered view: "2 CVs from this number"
   // must stay true when one of the two is filtered out of sight, or the warning quietly becomes a
   // lie at exactly the moment a recruiter narrows down to act on it.
-  const twins = duplicateSets(pool, describeForOrder);
+  const twins = duplicateSets(poolBasis, describeForOrder);
 
   // The same pool indexed by NORMALIZED NAME — the second half of the rule the candidate pool has
   // always used. Built over the whole live pool for the reason the phone index is: a pair that stops
   // being reported the moment one of the two is filtered out of sight is a warning that quietly
   // becomes a lie at exactly the moment a recruiter narrows down to act on it.
   const nameTwins = new Map<string, Candidate[]>();
-  for (const candidate of pool) {
+  for (const candidate of poolBasis) {
     const key = normalizeNameForMatch(candidate.fullName);
     if (!key) continue;
     const group = nameTwins.get(key);
@@ -426,6 +501,7 @@ export async function loadScreeningWorkspace(
       status,
       statusChangedAt: text(candidate.statusChangedAt),
       statusNote: text(candidate.statusNote),
+      seatReason: seatReasons.get(candidate.id) ?? null,
       statusRaw: String(candidate.status ?? ""),
       vacancyIds: [],
     };
@@ -449,13 +525,15 @@ export async function loadScreeningWorkspace(
   );
 
   const rows = visible.map(rowFor);
+  const rowsById = new Map(rows.map((row) => [row.id, row]));
 
   // Vacancy attribution runs over the VISIBLE rows, because the rail's counts have to agree with the
   // list beside it: a seat reading "12 waiting" that shows 3 when clicked is a rail nobody trusts.
   // The seats themselves are every OPEN vacancy, including the ones nobody matches — "nobody has
   // applied for this yet" is the most actionable thing the rail can say, and a seat that vanishes
   // when its pile empties cannot be told from a seat that was filled.
-  const vacancyStatsById = tallyVacancyApplicants(rows, openVacancies, (row) => {
+  const defaultVacancyStats = () =>
+    tallyVacancyApplicants(rows, openVacancies, (row) => {
     const candidate = byId.get(row.id);
     return {
       address: candidate?.address ?? null,
@@ -470,6 +548,47 @@ export async function loadScreeningWorkspace(
     };
   });
 
+  // -- AND IN SEAT MODE, THE COUNT HAS TO BE THE QUEUE --------------------------------------------
+  //
+  // A seat reading "3 waiting" that shows 17 when clicked is worse than no rail at all, so the
+  // counts are taken over the SAME attribution and the SAME population the seat queue offers: every
+  // undecided candidate, filed ones included, matched through the stated sources and then through
+  // the existing place reader. That reader is asked ONCE per candidate against every seat at a time
+  // - never once per pair - which is what keeps this a single pass over the pool.
+  const seatVacancyStats = () => {
+    const stats = new Map<number, VacancyApplicantStats>();
+    for (const vacancy of openVacancies) {
+      stats.set(vacancy.id, {
+        applicants: 0,
+        managerReview: 0,
+        recommended: 0,
+        unreviewed: 0,
+        vacancyId: vacancy.id,
+      });
+    }
+    for (const candidate of poolBasis) {
+      if (isSeatQueueDecided(normalizeCandidateStatus(candidate.status))) continue;
+      const input = seatInputFor(candidate);
+      const read = new Set(vacanciesForCandidate(input, openVacancies));
+      const row = rowsById.get(candidate.id) ?? null;
+      for (const vacancy of openVacancies) {
+        if (!read.has(vacancy.id) && !statedSeatQueueMatch(input, vacancy)) continue;
+        const tally = stats.get(vacancy.id);
+        if (!tally) continue;
+        tally.applicants += 1;
+        // The three work-state figures come off the row when this candidate is one the page built a
+        // row for. Outside that only the pile size is known, and an invented breakdown would be a
+        // number nobody could check against anything.
+        if (row?.queues.includes("new")) tally.unreviewed += 1;
+        if (row?.queues.includes("recommended")) tally.recommended += 1;
+        if (row?.queues.includes("manager_feedback")) tally.managerReview += 1;
+      }
+    }
+    return stats;
+  };
+
+  const vacancyStatsById = seat ? seatVacancyStats() : defaultVacancyStats();
+
   // The reverse index, so the client filters by seat without re-running the place matcher. Built
   // from the same call the counts came from rather than from a second pass, so a row can never
   // appear under a seat whose count did not include it.
@@ -477,6 +596,15 @@ export async function loadScreeningWorkspace(
     const candidate = byId.get(row.id);
     if (!candidate) continue;
     row.vacancyIds = vacancyIdsFor(row, candidate, openVacancies, vacancyStatsById);
+    // AND THE SEAT BEING SCREENED IS ALWAYS ONE OF THEM. This index is what the list filters on in
+    // the browser, and `vacancyIdsFor` only ever reads an address and a job title — so a CV that
+    // reached this seat because it was FILED here, or because the applicant named the area on
+    // WhatsApp or in an email subject, would carry an index without the seat in it and be filtered
+    // straight back out of the queue the server just built for it. Seat mode only: in the ordinary
+    // queue this index is exactly what it has always been.
+    if (seat && seatReasons.has(row.id) && !row.vacancyIds.includes(seat.id)) {
+      row.vacancyIds = [seat.id, ...row.vacancyIds];
+    }
   }
 
   const { counts, overdueManagerFeedback } = tallyWorkQueues(
@@ -503,14 +631,16 @@ export async function loadScreeningWorkspace(
     firstDecisions: [...decisionHistory.firstDecisionAt.values()],
     historyStartsAt: decisionHistory.startsAt,
     now: asOf,
-    unread: pool.filter((candidate) => !views[candidate.id]).length,
+    // The BACKLOG, never the seat: "am I keeping up" is a question about the whole pool, and a
+    // figure that shrank because one seat was picked would answer a different one.
+    unread: shelfFree.filter((candidate) => !views[candidate.id]).length,
   });
 
   return {
     ...narrowing,
     // Built from the WHOLE pool, never from the narrowed list: a dropdown that loses its own options
     // the moment you pick one is a dropdown you cannot change your mind in.
-    areaOptions: screeningAreaOptions(pool),
+    areaOptions: screeningAreaOptions(poolBasis),
     canSendToManagers,
     counts: rows.length === 0 ? emptyWorkQueueCounts() : counts,
     filteredOut: pool.length - rows.length,
@@ -519,7 +649,8 @@ export async function loadScreeningWorkspace(
     poolSize: pool.length,
     positionSuggestions,
     rows,
-    sourceOptions: screeningSourceOptions(pool),
+    seatLabel: seat ? `${seatPlaceName(seat)} · ${seat.jobTitle}` : null,
+    sourceOptions: screeningSourceOptions(poolBasis),
     // Over everything, never the narrowed view: "am I keeping up" is a question about the backlog,
     // and a figure that shrank because a filter was applied would answer a different one.
     throughput,

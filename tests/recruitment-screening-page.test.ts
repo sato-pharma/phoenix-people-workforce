@@ -186,9 +186,18 @@ export async function runRecruitmentScreeningPageTests() {
     seen: "any",
     source: null,
     status: null,
+    vacancy: null,
   };
   assert.deepEqual(parseScreeningFilters({}), nothing, "a bare link narrows nothing");
   assert.deepEqual(parseScreeningFilters(), nothing, "no params at all narrows nothing");
+  // THE VACANT SEAT travels in the link like every other narrowing, so "screen Menoufia 1" can be
+  // bookmarked and pasted to the other screener. It is the one filter carrying an id: two seats can
+  // share a job title AND an area and differ only by line, so no name identifies one.
+  assert.equal(parseScreeningFilters({ vacancy: "501" }).vacancy, 501, "a seat id is read off the link");
+  assert.equal(parseScreeningFilters({ vacancy: "0" }).vacancy, null, "zero is not a seat");
+  assert.equal(parseScreeningFilters({ vacancy: "abc" }).vacancy, null, "an edited address bar narrows nothing rather than throwing");
+  assert.equal(parseScreeningFilters({ vacancy: "-3" }).vacancy, null, "and neither does a negative one");
+  assert.equal(screeningHref("/recruitment", { vacancy: 501 }), "/recruitment/screening?vacancy=501", "and the link carries it back");
   for (const truthy of ["1", "true", "TRUE", "yes"]) {
     assert.equal(parseScreeningFilters({ unseen: truthy }).seen, "unseen", `${truthy} means unseen only`);
     assert.equal(parseScreeningFilters({ seen: truthy }).seen, "seen", `${truthy} on the other half means seen only`);

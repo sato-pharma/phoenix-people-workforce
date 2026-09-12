@@ -329,6 +329,12 @@ export function WorkstationReviewHeader({
             <p className="mt-0.5 break-words text-[14px] font-bold leading-tight text-phx-accent-press">
               {row.appliedForText ?? "No job named on the application"}
             </p>
+            {/* The same sentence the list row carries, repeated here on purpose: the reader spends
+                the minute that matters looking at THIS pane, and "why am I being shown this person
+                for this seat" must be answerable without going back to the list. */}
+            {row.seatReason ? (
+              <p className="mt-0.5 break-words text-[12px] leading-tight text-phx-ink-soft">{row.seatReason}</p>
+            ) : null}
             <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-phx-ink-soft">
               {row.locationLabel ? (
                 <span className="inline-flex items-center gap-1">

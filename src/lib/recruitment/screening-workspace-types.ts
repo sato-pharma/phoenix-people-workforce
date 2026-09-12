@@ -144,6 +144,17 @@ export type WorkspaceCandidateRow = {
   createdAt: string;
   notACv: boolean;
 
+  /**
+   * WHY this CV is in the chosen vacant seat pile, in plain words - "Filed to the Menoufia 1
+   * folder", "Chose Menoufia 1 on WhatsApp", "Email subject names Menoufia 1".
+   *
+   * Null outside seat mode, which is every load that does not name one open seat in the link. A
+   * queue that silently gains eleven rows is a queue nobody trusts, and the recruiter has no way to
+   * tell a CV somebody FILED here from one a matcher guessed at unless the row says which. Names,
+   * never a folder key and never an id - see vacancy-seat-queue.ts.
+   */
+  seatReason: string | null;
+
   /** Which piles this row belongs to. Precomputed so the rail filters without re-classifying. */
   queues: ScreeningWorkQueue[];
   /** The open seats this CV is attributed to. Precomputed so the vacancy rail filters in one pass. */

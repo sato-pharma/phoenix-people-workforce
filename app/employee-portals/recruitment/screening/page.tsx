@@ -114,7 +114,9 @@ async function ScreeningContent({
       sourceOptions={workspace.sourceOptions}
       status={workspace.status}
       throughput={workspace.throughput}
+      seatLabel={workspace.seatLabel}
       vacancies={workspace.vacancies}
+      vacancy={workspace.vacancy}
       vacancyStats={workspace.vacancyStats}
     />
   );

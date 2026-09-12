@@ -253,6 +253,16 @@ function CandidateBlock({
           <span className="mt-0.5 block break-words text-[13px] font-semibold leading-tight text-phx-accent-press">
             {row.appliedForText ?? "No job named on the application"}
           </span>
+          {/* WHY THIS CV IS IN THIS SEAT'S PILE. Only in seat mode, and never a guess dressed up as
+              a fact: "Filed to the Menoufia 1 folder" and "Email subject names Menoufia 1" are two
+              very different reasons to be looking at somebody, and a queue that silently gained
+              eleven rows without saying which is a queue nobody would trust. Wraps rather than
+              truncating — the ellipsis ban is absolute. */}
+          {row.seatReason ? (
+            <span className="mt-0.5 block break-words text-[11px] leading-tight text-phx-ink-soft">
+              {row.seatReason}
+            </span>
+          ) : null}
           {row.currentRole ? (
             <span
               className={cn(
