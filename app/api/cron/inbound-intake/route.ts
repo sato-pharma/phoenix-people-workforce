@@ -5,6 +5,7 @@ import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { drainInboundIntake } from "@/lib/recruitment/inbound/intake-worker";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
+import { fetchPendingInboundVideos } from "@/lib/whatsapp-videos/inbox";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,7 +29,27 @@ export async function GET(request: Request) {
         labels: { deadLettered, event: "inbound_intake_drained", job: "inbound-intake", processed: result.processed },
       });
     }
-    return NextResponse.json({ success: true, ...result });
+
+    // Inbound VIDEOS ride this same tick rather than getting a cron job of their own. Two reasons,
+    // and neither is laziness: the scheduler is cron-job.org, whose REST API allows 100 requests a
+    // DAY and cannot roll a bulk edit back, so adding a job is a change to live infrastructure for
+    // something that does nothing at all until the HR handset is linked; and this tick is already
+    // where a WhatsApp media id gets redeemed for bytes, so its failure mode is one somebody here
+    // already knows how to read.
+    //
+    // Deliberately OUTSIDE the dead man's switch, and its errors deliberately swallowed. That
+    // switch reports on the CV queue — it is what the alarm was built for — and a video backlog
+    // must never be able to mark that job unhealthy. The CV drain above has also already happened
+    // by this point, so its result must be returned whatever happens here.
+    const videos = await fetchPendingInboundVideos().catch((videoError) => {
+      logError("Inbound WhatsApp video fetch failed", {
+        error: videoError,
+        labels: { event: "whatsapp_video_fetch_threw", job: "inbound-intake" },
+      });
+      return null;
+    });
+
+    return NextResponse.json({ success: true, ...result, videos });
   } catch (error) {
     logError("Inbound intake worker failed", {
       error,

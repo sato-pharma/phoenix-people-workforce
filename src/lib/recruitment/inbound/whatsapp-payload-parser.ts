@@ -7,7 +7,20 @@
 // commonly PHOTOGRAPH their CV rather than attach a file, and the downstream vision path reads
 // images natively. Both carry a downloadable media id (the actual download happens later in the
 // worker), so both produce a `document` ref here; an image simply has no filename. Other message
-// types (text, audio, video, …) carry no `document` and are ignored by the webhook.
+// types (text, audio, …) carry no `document` and are ignored by the webhook.
+//
+// A VIDEO is the one exception, and it is a separate field rather than a `document` on purpose.
+// `document` means "this is a CV" to everything downstream — the intake queue, the extraction, the
+// candidate record — so a video arriving as a document node would be read as a curriculum vitae.
+// Videos reach this webhook because the Future Talents programme's closing videos were sent to the
+// HR handset; they are captured by the webhook into a holding table and claimed by that separate
+// application. Nothing here turns one into a candidate.
+//
+// 🔴 THE ROUTING IS ON THE MIME TYPE, NEVER ON THE NODE NAME. WhatsApp sends the same file two
+// ways: tapping the camera icon produces `type: "video"`, and attaching the same file produces
+// `type: "document"` with `mime_type: "video/mp4"` and a filename — which is what a sender does
+// deliberately to dodge WhatsApp's compression, so it is the likely shape rather than the exotic
+// one. Reading the node name alone sends half of them into the CV queue.
 
 import { normalizePhone } from "@/lib/recruitment/candidate-matching";
 import { nameFromAttachmentFilename, parseImportSenderList } from "@/lib/recruitment/inbound/cv-import-shared";
@@ -22,12 +35,43 @@ export type ParsedWhatsAppDocument = {
   caption: string | null;
 };
 
+/**
+ * A video message, held apart from `document` so nothing downstream reads it as a CV.
+ *
+ * Shaped like ParsedWhatsAppDocument rather than sharing the type, because the two are only
+ * incidentally similar: this one is never extracted, never matched to a candidate, and its consumer
+ * is another application entirely. A shared type would invite exactly the code that treats them
+ * alike.
+ */
+export type ParsedWhatsAppVideo = {
+  mediaId: string;
+  mimeType: string;
+  /** Only a video attached as a document carries one; a `type: "video"` node has no filename. */
+  filename: string | null;
+  caption: string | null;
+};
+
 export type ParsedWhatsAppMessage = {
   wamid: string;
   from: string; // digits-only, Meta convention (e.g. "201001234567")
   contactName: string | null;
   messageType: string;
   document: ParsedWhatsAppDocument | null;
+  /**
+   * Set for a video, whether it arrived as `type: "video"` or as a video-MIME document. When this
+   * is set, `document` is null — the two are mutually exclusive by construction, which is what
+   * keeps a video out of the CV queue without every consumer having to remember to check.
+   */
+  video: ParsedWhatsAppVideo | null;
+  /**
+   * When the SENDER sent it, from Meta's `timestamp` (unix seconds), as an ISO string. Null when
+   * Meta omits or malforms it.
+   *
+   * Distinct from when we received it, and on a coexistence replay the two are weeks apart. For a
+   * CV that difference is already carried by `historical`; for a video it is the only thing that
+   * says which of an intern's files is which, since none of them carry a meaningful filename.
+   */
+  sentAt: string | null;
   // For a plain "text" message, its body — buffered per sender so the first few messages can be
   // shown next to the candidate once their CV document arrives. Null for non-text messages.
   text: string | null;
@@ -79,22 +123,41 @@ function parseMessageNode(raw: unknown, ctx: MessageContext): ParsedWhatsAppMess
 
   const messageType = asString(message?.type) ?? "unknown";
   // A document OR an image (photographed CV) both carry a CV. The image node has the same
-  // id/mime_type/caption shape as document, just no filename.
+  // id/mime_type/caption shape as document, just no filename. A video node has that shape too,
+  // which is why the split below is on what the file IS, not on which key it arrived under.
   const mediaNode =
     messageType === "document"
       ? asRecord(message?.document)
       : messageType === "image"
         ? asRecord(message?.image)
-        : null;
+        : messageType === "video"
+          ? asRecord(message?.video)
+          : null;
   const mediaId = asString(mediaNode?.id);
-  const document: ParsedWhatsAppDocument | null = mediaId
+  const mimeType = asString(mediaNode?.mime_type) ?? "application/octet-stream";
+  // `type: "video"` settles it on its own; a document whose MIME type is video/* is the same file
+  // attached instead of recorded, and must not reach the CV path either. Checking both means
+  // neither shape depends on Meta labelling the message the way a human would.
+  const isVideo = Boolean(mediaId) && (messageType === "video" || mimeType.startsWith("video/"));
+
+  const media = mediaId
     ? {
         caption: asString(mediaNode?.caption),
         filename: asString(mediaNode?.filename),
         mediaId,
-        mimeType: asString(mediaNode?.mime_type) ?? "application/octet-stream",
+        mimeType,
       }
     : null;
+  const document: ParsedWhatsAppDocument | null = media && !isVideo ? media : null;
+  const video: ParsedWhatsAppVideo | null = media && isVideo ? media : null;
+
+  // Meta sends unix SECONDS as a string. Anything else — absent, non-numeric, zero — reads as null
+  // rather than as 1970, which would file every affected video as the oldest thing in the inbox.
+  const timestampSeconds = Number(asString(message?.timestamp));
+  const sentAt =
+    Number.isFinite(timestampSeconds) && timestampSeconds > 0
+      ? new Date(timestampSeconds * 1000).toISOString()
+      : null;
 
   // An interactive reply carries the id of the row the sender tapped, nested one level under the
   // reply kind. Both kinds are read: a list_reply for the menus this app sends today, a
@@ -114,7 +177,9 @@ function parseMessageNode(raw: unknown, ctx: MessageContext): ParsedWhatsAppMess
     historical: ctx.historical,
     interactiveReplyId,
     messageType,
+    sentAt,
     text: messageType === "text" ? asString(asRecord(message?.text)?.body) : null,
+    video,
     wamid,
   };
 }

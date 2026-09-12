@@ -98,7 +98,15 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
     // in the webhook and never enqueued.
     interactiveReplyId: null,
     messageType: payload.messageType,
+    // Not carried on the queue payload, and nothing downstream of here reads it — the CV path takes
+    // its dates from the intake event's own timestamps. Adding it to the payload would change the
+    // shape of rows already queued, for a field only the video inbox needs.
+    sentAt: null,
     text: null,
+    // A queued row is a CV by construction: a video is captured in the webhook and never enqueued,
+    // so this can only be null. Stated rather than left to inference, so that a video somehow
+    // reaching this function would be a visible contradiction rather than a silent CV.
+    video: null,
     wamid: payload.wamid,
   };
 

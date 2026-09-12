@@ -281,6 +281,7 @@ import { runWhatsAppClassifyReaskTests } from "./whatsapp-classify-reask.test.ts
 import { runWhatsAppFinishedSweepTests } from "./whatsapp-finished-sweep.test.ts";
 import { runWhatsAppOwnerMirrorTests } from "./whatsapp-owner-mirror.test.ts";
 import { runWhatsAppCoexistenceHistoryTests } from "./recruitment-whatsapp-coexistence-history.test.ts";
+import { runWhatsAppInboundVideoTests } from "./whatsapp-inbound-video.test.ts";
 import { runWhatsAppReplyAnswersTheQuestionTests } from "./whatsapp-reply-answers-the-question.test.ts";
 import { runWhatsAppOutboundLogTests } from "./whatsapp-outbound-log.test.ts";
 import { runWhatsAppRepliesPanelTests } from "./whatsapp-replies-panel.test.ts";
@@ -2325,6 +2326,7 @@ await runTest(
   "recruitment whatsapp coexistence history (the backlog Meta replays)",
   runWhatsAppCoexistenceHistoryTests,
 );
+await runTest("whatsapp inbound video (kept, and never a candidate)", runWhatsAppInboundVideoTests);
 await runTest("recruitment whatsapp intake health (Meta API probe + silence gate)", runRecruitmentWhatsAppHealthTests);
 await runTest(
   "recruitment whatsapp webhook routing (deterministic delivery check)",
