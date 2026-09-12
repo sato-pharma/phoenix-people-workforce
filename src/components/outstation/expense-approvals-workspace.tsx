@@ -48,6 +48,7 @@ import {
   planBulkApproval,
 } from "@/lib/outstation/approval-state";
 import { outstationRequestIdFromTripId } from "@/lib/outstation/expense-approval-decisions";
+import { isImportedHistoryTrip } from "@/lib/outstation/imported-history";
 import {
   buildExpenseApprovalFilterOptions,
   countActiveExpenseApprovalFilters,
@@ -353,8 +354,11 @@ export function ExpenseApprovalsWorkspace({
     writeExpenseDecisionDraft(decisions);
   }, [decisions]);
 
+  // Imported history (trips before July 2026) is values only — owner ruling 2026-09-12, see
+  // imported-history.ts — so it always shows what is stored, whatever a restored draft holds for it.
   const decisionFor = useCallback(
-    (record: LoadedRecord): Decision => decisions[record.tripId] ?? savedDecision(record),
+    (record: LoadedRecord): Decision =>
+      isImportedHistoryTrip(record.date) ? savedDecision(record) : (decisions[record.tripId] ?? savedDecision(record)),
     [decisions],
   );
 
@@ -373,7 +377,7 @@ export function ExpenseApprovalsWorkspace({
     return records.reduce(
       (count, record) => {
         const local = decisions[record.tripId];
-        if (!local) return count;
+        if (!local || isImportedHistoryTrip(record.date)) return count;
         return expenseDecisionChanged(local, savedDecision(record)) ? count + 1 : count;
       },
       0,
@@ -427,7 +431,7 @@ export function ExpenseApprovalsWorkspace({
     return query ? `/api/admin/outstation/expenses/export?${query}` : "/api/admin/outstation/expenses/export";
   }, [filters, search]);
 
-  const { pending, approved, rejected } = useMemo(() => {
+  const { pending, approved, rejected, undecidedHistory } = useMemo(() => {
     const matches = (record: LoadedRecord) => matchesExpenseApprovalSearchText(record, search);
     const visible = records.filter(
       (record) => matchesExpenseApprovalFilters(record, filters) && matches(record),
@@ -438,10 +442,15 @@ export function ExpenseApprovalsWorkspace({
     // inbox forever and the button would look like it did nothing.
     const inState = (state: ReturnType<typeof expenseApprovalState>) =>
       visible.filter((record) => expenseApprovalState(decisionFor(record)) === state).sort(byValue);
+    const undecided = inState("pending");
     return {
       approved: inState("approved"),
-      pending: inState("pending"),
+      // Imported history never awaits a decision (imported-history.ts), so it cannot be selected,
+      // bulk-approved or counted as waiting.
+      pending: undecided.filter((record) => !isImportedHistoryTrip(record.date)),
       rejected: inState("rejected"),
+      // ...but its values are still shown: it stays in the per-employee summary below.
+      undecidedHistory: undecided.filter((record) => isImportedHistoryTrip(record.date)),
     };
   }, [records, search, filters, decisionFor]);
 
@@ -505,7 +514,7 @@ export function ExpenseApprovalsWorkspace({
   const employeeSummaries = useMemo(
     () =>
       buildExpenseApprovalEmployeeSummary(
-        [...pending, ...approved, ...rejected].map((record) => {
+        [...pending, ...undecidedHistory, ...approved, ...rejected].map((record) => {
           const decision = decisionFor(record);
           return {
             amWorkload: record.amWorkload,
@@ -521,7 +530,7 @@ export function ExpenseApprovalsWorkspace({
           };
         }),
       ),
-    [pending, approved, rejected, decisionFor],
+    [pending, undecidedHistory, approved, rejected, decisionFor],
   );
   const summaryTotals = useMemo(
     () => totalExpenseApprovalSummary(employeeSummaries),
@@ -729,7 +738,7 @@ export function ExpenseApprovalsWorkspace({
       const changedReportIds = new Set<string | null>();
       for (const record of records) {
         const local = decisions[record.tripId];
-        if (!local) continue;
+        if (!local || isImportedHistoryTrip(record.date)) continue;
         // The SAME predicate the unsaved count uses. When this was a narrower copy of it, a report
         // whose only change was an undone rejection never entered this set — so nothing was posted
         // for it, `setDecisions({})` below threw the decision away, and the reviewer was told
@@ -1215,7 +1224,7 @@ export function ExpenseApprovalsWorkspace({
                       {/* Only an undecided trip carries a tick box — the bulk action can approve
                           nothing else, and offering one on a decided row invites a click that
                           silently does nothing. Reversing a decision brings the box back. */}
-                      {state === "pending" ? (
+                      {state === "pending" && !isImportedHistoryTrip(record.date) ? (
                         <label className="flex shrink-0 cursor-pointer items-center pl-3">
                           <input
                             aria-label={`Select ${record.specialist || "Unassigned"} ${record.tripId}`}
@@ -1250,6 +1259,11 @@ export function ExpenseApprovalsWorkspace({
                           ) : state === "rejected" ? (
                             <span className="mt-0.5 inline-flex items-center gap-1 text-phx-2xs font-black uppercase tracking-wide text-rose-600">
                               <XCircle className="h-3 w-3" /> Rejected
+                            </span>
+                          ) : null}
+                          {isImportedHistoryTrip(record.date) ? (
+                            <span className="mt-0.5 block text-phx-2xs font-black uppercase tracking-wide text-slate-400">
+                              Imported · values only
                             </span>
                           ) : null}
                         </div>
@@ -1290,6 +1304,7 @@ export function ExpenseApprovalsWorkspace({
               onUnreject={() => setDecision(selected, { hrApproved: false, status: "" })}
               canDecide={canDecide}
               record={selected}
+              valuesOnly={isImportedHistoryTrip(selected.date)}
             />
           )}
         </div>
@@ -1645,6 +1660,7 @@ function ExpenseDecisionPanel({
   onUnreject,
   onChangeAmount,
   onChangeReason,
+  valuesOnly,
 }: {
   canDecide: boolean;
   decision: Decision;
@@ -1655,6 +1671,8 @@ function ExpenseDecisionPanel({
   onUnapprove: () => void;
   onUnreject: () => void;
   record: LoadedRecord;
+  /** Imported history (trips before July 2026): shown, never decided. See imported-history.ts. */
+  valuesOnly: boolean;
 }) {
   const adjusted = isAdjustedAmount(decision.approvedAmount, record.total);
   // Only a Phoenix-submitted trip has an outstation request behind it (and therefore a captured
@@ -1675,7 +1693,9 @@ function ExpenseDecisionPanel({
         <div className="h-[3px] bg-gradient-to-r from-orange-400 via-orange-500 to-amber-200" />
         <div className="flex flex-wrap items-start justify-between gap-3 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 px-5 py-4">
           <div className="min-w-0">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.22em] text-orange-400">Trip under review</p>
+            <p className="text-phx-2xs font-black uppercase tracking-[0.22em] text-orange-400">
+              {valuesOnly ? "Imported trip · values only" : "Trip under review"}
+            </p>
             <h2 className="mt-1 text-lg font-black tracking-tight text-white">{record.specialist || "Unassigned"}</h2>
             <p className="mt-0.5 font-mono text-xs text-slate-400">
               {record.hrId ? record.hrId : "HR ID not mapped"} · {record.tripId}
@@ -1833,6 +1853,7 @@ function ExpenseDecisionPanel({
                     ? "border-orange-400 text-orange-700"
                     : "border-slate-300 text-slate-900 focus:border-orange-500",
                 )}
+                disabled={valuesOnly}
                 id={`deduct-${record.tripId}`}
                 inputMode="decimal"
                 max={record.total}
@@ -1854,6 +1875,7 @@ function ExpenseDecisionPanel({
                   "mt-1 h-11 w-36 border bg-white px-3 text-right font-mono text-sm font-bold text-slate-900 outline-none transition focus:ring-2 focus:ring-orange-500/20",
                   adjusted ? "border-orange-400" : "border-slate-300 focus:border-orange-500",
                 )}
+                disabled={valuesOnly}
                 id={`amt-${record.tripId}`}
                 inputMode="decimal"
                 max={record.total}
@@ -1887,7 +1909,7 @@ function ExpenseDecisionPanel({
               {/* Only the figures already on this screen are offered, so the note can cite the
                   deduction without anything being able to invent one. */}
               <SystemNoteRewriteControl
-                disabled={!canDecide}
+                disabled={!canDecide || valuesOnly}
                 facts={[
                   { label: "Claimed total", value: egp(record.total) },
                   { label: "Approved amount", value: egp(decision.approvedAmount) },
@@ -1909,6 +1931,7 @@ function ExpenseDecisionPanel({
                 "mt-1 h-11 w-full border bg-white px-3 text-sm text-slate-900 outline-none transition focus:ring-2 focus:ring-orange-500/20",
                 reasonMissing ? "border-rose-400" : "border-slate-300 focus:border-orange-500",
               )}
+              disabled={valuesOnly}
               id={`reason-${record.tripId}`}
               onChange={(event) => onChangeReason(event.target.value)}
               placeholder={
@@ -1927,7 +1950,12 @@ function ExpenseDecisionPanel({
             wondering what is wrong. This is presentation only — the decision route asserts
             system-administrator access on its own, so hiding it grants nothing and revealing it
             would grant nothing either. */}
-        {!canDecide ? (
+        {valuesOnly ? (
+          <p className="border border-slate-200 bg-slate-50 p-4 text-xs font-semibold text-slate-500">
+            Imported from the outside source before Phoenix approvals began on 1 July 2026. It is shown
+            for its values only: there is nothing to approve, and its decision cannot be changed here.
+          </p>
+        ) : !canDecide ? (
           <p className="border border-slate-200 bg-slate-50 p-4 text-xs font-semibold text-slate-500">
             You have read-only access to this workspace. Approving, rejecting and adjusting the
             payable amount are reserved for a system administrator.

@@ -123,7 +123,8 @@ export function runExpenseApprovalsOneListTests() {
   // A decided row carries no tick box — offering one invites a click that silently does nothing.
   assert.match(
     workspace,
-    /\{state === "pending" \? \(\s*\n\s*<label className="flex shrink-0 cursor-pointer items-center pl-3">/,
+    // ...and neither does imported history, which is values only (imported-history.ts).
+    /\{state === "pending" && !isImportedHistoryTrip\(record\.date\) \? \(\s*\n\s*<label className="flex shrink-0 cursor-pointer items-center pl-3">/,
     "only an undecided row may show a checkbox",
   );
 }

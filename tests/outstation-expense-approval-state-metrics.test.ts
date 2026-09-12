@@ -49,7 +49,8 @@ function expense(input: ExpenseOverrides): PayrollExpenseApproval {
     approvedAmount: null,
     approvedAt: null,
     approvedBy: null,
-    date: "2026-06-10T00:00:00.000Z",
+    // July onward: a trip before July 2026 is imported history, never pending (imported-history.ts).
+    date: "2026-07-10T00:00:00.000Z",
     description: "",
     from: "Cairo",
     hr: "",

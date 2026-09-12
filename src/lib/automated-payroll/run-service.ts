@@ -13,6 +13,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { assembleRows, computeFrozenFirstParts, type AssembledRow } from "./assemble.ts";
 import { writeAutomatedPayrollAudit } from "./audit.ts";
+import { recordPaidExpenseStamp } from "./expense-stamp.ts";
 import { buildFinanceSheetWorkbook } from "./exports/finance-sheet.ts";
 import { buildCibSheetWorkbook, cibRowsForNonEmployees, cibRowsForScope } from "./exports/cib-sheet.ts";
 import { buildFabSheetWorkbook, defaultFabValueDate, fabRowsForNonEmployees, fabRowsForScope } from "./exports/fab-sheet.ts";
@@ -1880,6 +1881,16 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
   });
   const { batchId, carryForwardRecovered, updated } = published;
 
+  // Mark the outstation trips this month paid (owner ruling 2026-09-12). Never throws: expense-stamp.ts.
+  const expenseStamp = await recordPaidExpenseStamp({
+    actorHrId: actorId(access),
+    batchId,
+    entries: rows,
+    month: run.month,
+    runId,
+    year: run.year,
+  });
+
   // TELL THE EMPLOYEES. This is the notification the whole company receives, and this path never
   // sent it: it was a helper private to the OLD payroll module's route file, and Automated Payroll
   // approves its batch with a direct database write. Production's count says it plainly — 123
@@ -1905,6 +1916,8 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
       payslipNoticeFailed: payslipNotice.failed,
       payslipNoticeError: payslipNotice.error,
       carryForwardRecovered,
+      // Which outstation trips this month paid, or why marking them failed.
+      expenseStamp,
       // Whether publish could prove it wrote the month Part 2 confirmed. False means the run
       // predates the stamp, not that the check failed — a failed READ throws instead, because
       // "could not compare" must never read as "compared and matched".

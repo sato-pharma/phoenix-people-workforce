@@ -1,5 +1,6 @@
 import { normalizeHrIdForAccess } from "@/lib/auth/permissions";
 import { expenseApprovalState } from "@/lib/outstation/approval-state";
+import { isImportedHistoryTrip } from "@/lib/outstation/imported-history";
 import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { roundCurrency } from "@/lib/payroll/money";
 import type { PayrollExpenseApproval } from "@/lib/payroll/types";
@@ -88,7 +89,11 @@ export function summarizePayrollExpenses(
   // sweeps in every REJECTED trip. Pending is the money HR still has to decide on; a rejected trip
   // is decided and will never be paid, so counting it here inflates the backlog on the same screens
   // that render that trip with its own Rejected badge and offer a Rejected filter.
-  const pendingRows = expenses.filter((expense) => expenseApprovalState(expense) === "pending");
+  // Imported history (trips before July 2026) is values only — owner ruling 2026-09-12, see
+  // imported-history.ts — so it never counts as awaiting a decision.
+  const pendingRows = expenses.filter(
+    (expense) => expenseApprovalState(expense) === "pending" && !isImportedHistoryTrip(expense.date),
+  );
   const totalAmount = roundCurrency(expenses.reduce((sum, expense) => sum + (expense.total || 0), 0));
 
   return {
@@ -255,7 +260,7 @@ export function buildPayrollExpenseDsmSummaries(input: {
     if (state === "approved") {
       existing.approvedTrips += 1;
       existing.approvedAmount += payableExpenseAmount(expense.approvedAmount, expense.total);
-    } else if (state === "pending") {
+    } else if (state === "pending" && !isImportedHistoryTrip(expense.date)) {
       existing.pendingTrips += 1;
       existing.pendingAmount += expense.total || 0;
     }
