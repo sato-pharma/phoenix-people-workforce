@@ -2,6 +2,8 @@
 
 **Audit run:** 2026-09-10 → 2026-09-12 · **Findings numbered:** 1 – 55 · **Ledger written:** 2026-09-12
 
+> **🟢 CYCLE 4 (2026-09-12) CLOSED THIS AUDIT.** The original audit document was recovered — it was in the transcript of the Claude Code session that wrote it, on this machine — and **all 55 findings are fixed**, the fourteen that read "no trace" included. Read [audit-original-findings.md](audit-original-findings.md) for the audit itself and [audit-cycle-4.md](audit-cycle-4.md) for the trace. **Rows and counts below have been corrected; superseded wording is struck rather than deleted.** One item is still open and it is half of finding 1 — the outstation paid-stamp, which needs an owner decision.
+>
 > **Cycle 2 ran on 2026-09-12** and is recorded separately in [audit-cycle-2.md](audit-cycle-2.md). It did not recover any of the thirteen — nothing in this repository could — so every count and every row below still stands exactly as written. **Cycle 3 (2026-09-12) corrected the scope of that claim: the owner holds the original audit document, so the thirteen are recoverable from him even though they are not recoverable from here.** Cycle 2 numbered one new finding, **56**, continuing this series so the two can never collide.
 
 ## Why this file exists
@@ -16,11 +18,11 @@ naming the finding, a test that pins it, or a merged PR description that claims 
 no evidence, the row says "no trace found" rather than guessing.** A finding nobody can account for
 is a worse outcome than a finding that is still open, because the open one is at least visible.
 
-**What this ledger is not.** It is not the audit itself. The audit document — the thing that assigned
-these numbers, wrote the findings up and rated their severity — **was never committed to this
-repository**, and is not recoverable from it. Severity is recorded below only where a merged PR
-stated it in words. That missing document is why thirteen findings cannot be reconstructed **here**,
-and it is the single most useful thing that could still be added.
+**What this ledger is not.** It is not the audit itself — that is now
+[audit-original-findings.md](audit-original-findings.md), recovered 2026-09-12 and sitting beside this
+file. ~~The audit document was never committed to this repository, and is not recoverable from it.~~
+The first half of that was true; the second was wrong twice over. It was recoverable from the owner,
+and it was recoverable from this machine's own session transcripts, which is where it came from.
 
 > **CORRECTED 2026-09-12 (cycle 3).** Earlier wording said the document could not be recovered from
 > anything the company holds. **That was wrong: the owner holds the original.** The repository lost
@@ -32,19 +34,29 @@ and it is the single most useful thing that could still be added.
 
 | | Count | Findings |
 | --- | ---: | --- |
-| **Fixed, with evidence** | **41** | 2–5, 14–18, 20, 22, 23, 26, 27, 29–55 |
+| **Fixed, with evidence** | **55** | 1–55 — all of them |
 | **Claimed closed by earlier work, no code marker** | **0** | — (30 and 36 were here until 2026-09-12; re-verified, see below) |
-| **Referenced, but neither fixed nor dismissed** | **1** | 19 |
-| **No trace found anywhere** | **13** | 1, 6–13, 21, 24, 25, 28 |
+| **Referenced, but neither fixed nor dismissed** | **0** | — (19 was here until 2026-09-12; fixed by PR #3649, see below) |
+| **No trace found anywhere** | **0** | — (1, 6–13, 21, 24, 25, 28 were here until 2026-09-12; all fixed, see below) |
 | **Total** | **55** | |
 
-> **Status of the thirteen, plus 19: CLOSED by the owner's ruling of 2026-09-12 — SUSPENDED 2026-09-12 pending the original audit document, which the owner holds.** The counts above are unchanged and stay unchanged — the ruling settled what is owed, not what is known. See [The ruling on the fourteen](#the-ruling-on-the-fourteen--closed-2026-09-12).
+> **CORRECTED 2026-09-12 (cycle 4).** This table read 41 / 0 / 1 / 13 until the original audit was
+> recovered from the transcript of the session that wrote it. **All fourteen of the supposedly
+> untraceable findings turned out to be fixed**, each by a named merged PR that describes the defect
+> in prose without ever writing its number — which is why a search for the numbers found nothing.
+> One item remains genuinely open and it is *half* of finding 1: the outstation paid-stamp, deferred
+> pending an owner decision. See [audit-cycle-4.md](audit-cycle-4.md).
 
-Thirteen numbers — **1, 6–13, 21, 24, 25 and 28** — appear nowhere: not in code, not in a test, not
-in a commit message, not in a merged PR description, and not anywhere in git history. That is the
-honest state. They may have been fixed under a different description, dismissed as not-a-defect,
-folded into another finding, or dropped. **This ledger does not know which, and neither does anyone
-else.**
+> **Status of the thirteen, plus 19: RESOLVED 2026-09-12 (cycle 4) — the ruling is moot.** The audit was recovered and all fourteen are fixed. The ruling text is kept below rather than deleted, so the record shows both what was decided and what was later found. See [The ruling on the fourteen](#the-ruling-on-the-fourteen--closed-2026-09-12) and [audit-cycle-4.md](audit-cycle-4.md).
+
+~~Thirteen numbers — **1, 6–13, 21, 24, 25 and 28** — appear nowhere: not in code, not in a test, not
+in a commit message, not in a merged PR description, and not anywhere in git history.~~
+
+**Struck 2026-09-12 (cycle 4).** That sentence was accurate; the conclusion drawn from it was not.
+Those thirteen numbers genuinely appear nowhere — and all thirteen were nevertheless **fixed**, under
+a different description, exactly as the original next sentence allowed for. They were closed by PRs
+#3641, #3642, #3651, #3659, #3669, #3674, #3684 and #3687, not one of which cites a finding number.
+**A search for an identifier proves only that the identifier is absent.**
 
 ## How to read a row
 
@@ -64,7 +76,7 @@ else.**
 
 | # | What it was | Where the fix lives | Evidence |
 | --- | --- | --- | --- |
-| **1** | — | — | 🔴 **No trace found in the repository.** |
+| **1** | **The wizard paid outstation trips and never stamped them as paid**, so the legacy "Import to payroll" button could sweep them in again. All 374 production rows carried a blank stamp, EGP 126,104.66 of it importable. Closed at the database rather than at the stamp: the import now refuses a month Automated Payroll produced, and excludes every trip whose own payout period it paid. **Forced on production 2026-09-12** — the August call was refused by name, a December control still ran, 0 rows stamped either way. | `phx_period_paid_by_automated_payroll` + `phx_import_approved_expenses_to_payroll`, migration `20260910160000` · `tests/outstation-import-refuses-wizard-months.test.ts` | code + test + PR #3641 |
 | **2** | Both bank builders routed on an exact match of the words `FAB` and `CIB` and silently dropped every other bank. Three people on the live August standing roster — two QNB, one Instapay, 19,000 EGP a month between them — were in neither file. | `src/lib/automated-payroll/exports/bank-coverage.ts` | PR #3642 |
 | **3** | The only check on a finished bank file was whether it came out *completely* empty, so a file missing a fifth of the population downloaded clean and said nothing. The finance sheet's TOTALS row counted their money anyway, certifying a payment the bank files could not make — for two months, in silence. | `bank-coverage.ts`, the `X-Bank-Coverage` download headers, the publish audit row | PR #3642 |
 | **4** | An overpayment was marked recovered without ever being deducted. | the carry-forward path | PR #3642 |
@@ -83,14 +95,27 @@ else.**
 
 ### Findings 6 – 13
 
-| # | Status |
-| --- | --- |
-| **6, 7, 8, 9, 10, 11, 12, 13** | 🔴 **No trace found in the repository.** No code comment, no test, no commit message, no PR description. |
+| # | What it was | Where the fix lives | Evidence |
+| --- | --- | --- | --- |
+| **6** | **35 held people across two published months, with no record of what they were owed.** Publish dropped held rows leaving only a count in one audit row; the overpayment ledger was empty. The published audit row now carries `held`, `heldFirstPartTotal`, `heldSecondPartTotal` and `heldWithoutMeaningfulReason` — "the permanent answer to who was held this month, for how much, and why" — and `automated_payroll_held_settlements` is live in production with RLS and four policies. | `run-service.ts` publish audit detail · `tests/automated-payroll-settlement-and-held-record.test.ts` | code + test + PR #3642 |
+| **7** | **The engine filed a copied column, not the insurance wage.** It took `employees.social_insurance` raw and never touched `social_insurance_wage` — on August's run 94 of 100 records carried the raw figure and none carried 11% of the clamped wage, so the Copilot and this engine filed the same person at two different amounts. Neither figure reduces take-home pay; what moved was the filing. | `assemble.ts` via `statutoryFromInsuranceWage` · `tests/payroll-statutory.test.ts` | code + test + PR #3659 |
+| **8** | **The Statutory Summary reconstructed a wage by dividing by 11%**, which only works if the stored deduction really is 11% of something — and per finding 7 it was not. 88 of 91 rows came out above the 16,700 legal ceiling and the insured payroll read 2.27× true. The subject wage is now READ from the wage column and clamped, with what was actually deducted shown beside it rather than instead of it. | `exports/statutory-summary.ts` · `tests/payroll-statutory.test.ts`, `tests/payroll-exports.test.ts` | code + test + PR #3659 |
+| **9** | **A leaver's frozen first instalment was inflated by his own Part-1 deductions.** The remaining second instalment was measured after fingerprint, loan and medical had already come off, so the system saw headroom that was really those deductions and overpaid. The worked case in the audit — 12,000 net, 400/600/300, 1,500 final — paid 10,500 against a true 9,200, booked as a debt against someone with no next month. | `split.ts` (`provisionalSecond` measured from the anchor) · `tests/automated-payroll-leaver-overpayment.test.ts` | code + test + PR #3651 |
+| **10** | **Approved unpaid vacation was charged twice** — once by shortening the days paid for, once as a deduction raised from the very same `v2_vacation_requests` rows. Unified on the admin-facing figure (owner, 2026-09-11): the deduction is the one a human reviews, the subtraction was invisible arithmetic. It also ended a disagreement — two of the four callers already passed 0. | `copilot/proration.ts` · `tests/automated-payroll-leaver-basis.test.ts` | code + test + PR #3651 |
+| **11** | **The same absence day could be charged twice on the path that pays people.** The one-day-one-charge rule lived inside the Deductions module's own publish step, which payroll deliberately never runs. Now enforced at Part 2 confirm at the same strength, and **not acknowledgeable** — which of two claims is wrong is a judgement payroll cannot make. | `detectPayrollDayCollisions` in `run-service.ts` · `tests/automated-payroll-day-collisions.test.ts` | code + test + PR #3684 |
+| **12** | **Opening the days editor and pressing Save threw away the Thursday half-day.** The workspace pre-fills the day box with the count of ticked dates and sends it on every save, so the default coming back was honoured as a figure a human typed. Five approved August candidates were stamped a half-day high each. The money survived by luck — the amount came from an already-weighted estimate — but the day columns drive the auto-calc, so it was one click from real. | `chargeableDeductionDays` in `deductions-source.ts` · `tests/automated-payroll-thursday-half-day-charge.test.ts` | code + test + PR #3687 |
+| **13** | **A confirmed deduction figure was latched forever.** Setting the candidate to Do Not Take Action afterwards still paid it, and a candidate approved later contributed nothing. What the module was proposing is now snapshotted at confirm, and the wizard names anyone whose figure the module no longer agrees with. **Detection, not auto-correction** — the stale figure is visible rather than silent; changing it is still a human action. | `getModuleDrift` in `run-service.ts` · `module-drift.ts` · `tests/automated-payroll-module-drift.test.ts` | code + test + PR #3674 |
 
-> The numbers 1–6 *do* appear in `src/lib/direct-orders/` and in `docs/direct-orders-delta-reaudit.md`.
-> **That is a different audit's numbering** — the Direct Orders re-audit, which has its own 1–24
-> series and its own document. Those references are not these findings and must not be read as
-> evidence for them.
+> **Three decoys — other audits' numbering, in files a search will reach.** None of them is evidence
+> for any finding in this ledger.
+>
+> - The numbers 1–6 appear in `src/lib/direct-orders/` and in `docs/direct-orders-delta-reaudit.md`.
+>   **That is the Direct Orders re-audit**, which has its own 1–24 series and its own document.
+> - `tests/ready-payroll-template-formulas.test.ts:123` says *"…re-introduce the overpayment finding
+>   #1 fixes"*. The comment block about fifteen lines above reads `// Finding #2 (risk-review):` — that
+>   file numbers a **risk review**, not this audit.
+> - `tests/attendance-manager-view-access.test.ts:101` says *"resolveAttendanceScopeHrIds — findings
+>   #19/#20 fix"*. That is attendance **access scope**, unrelated to payroll findings 19 and 20.
 
 ### Reads that failed quietly — PR #3699 (2026-09-11), PR #3717 (2026-09-11)
 
@@ -119,14 +144,17 @@ else.**
 | # | What it was | Where the fix lives | Evidence |
 | --- | --- | --- | --- |
 | **18** | **The run stayed editable after the money left.** `ready` means Part 2 is confirmed and finance has the sheet and both bank files. Every step stayed writable anyway: the lock HR sees is a browser property, never a server rule. | `tests/automated-payroll-run-integrity.test.ts` | test + PR #3706 |
-| **19** | ⚠️ **Neither fixed nor dismissed.** Finding 19 is referenced **only as a comparison** — *"clearing is safe in the way finding 19's near-miss was not"* — in `run-service.ts` and in the run-integrity test. Nothing in this repository records what finding 19 itself was, or what was decided about it. | — | referenced only; **status unknown** |
+| **19** | **"Start / Resume run" on an already-paid month created a second, shadow run.** `findActiveRun` sees only part1/part2/ready and the one-run-per-month index deliberately excludes published months, so the wizard offered Start on a paid month — and the new empty run became the one every finance screen answered with, making the paid month's sheet and bank files unreachable. **It actually happened**: a second August run was created on production on 2026-09-10, and two steps were confirmed against it ninety seconds later. Now refused at Start rather than at publish, a month of work later. | `startOrResumeRun` via `findPublishedRun` in `run-service.ts` · `tests/automated-payroll-guards-that-guard.test.ts` | code + test + PR #3649 |
 | **20** | **Reopening Part 1 did not re-derive.** It cleared the frozen instalment but not the Base, allowance, fuel and days-worked figures the Joiners and Resignations steps stamped onto the same rows — and a stored figure **beats** the employee record. A rep hired on 10 August at 5,000 instead of 8,000 stayed on the 5,000 after the record was corrected, the run reported success, and the sheet showed the right salary beside an instalment computed from the wrong one. | `unconfirmPart1` in `src/lib/automated-payroll/run-service.ts` | code + test + PR #3706 |
 
-### Findings 21, 24, 25, 28
+### Findings 21, 24, 25, 28 — PR #3669 and PR #3649 (2026-09-11)
 
-| # | Status |
-| --- | --- |
-| **21, 24, 25, 28** | 🔴 **No trace found in the repository.** No code comment, no test, no commit message, no PR description. |
+| # | What it was | Where the fix lives | Evidence |
+| --- | --- | --- | --- |
+| **21** | **Re-confirming the Part 2 Vacation step handed back the leave days the first confirm consumed.** The recalculation read the balance its own earlier settlement had already reduced, found nothing left, reclassified the leave as salary-deducted and superseded the first record — so the days returned while the deduction stayed. It oscillated: a third confirm consumed them again. The run is now passed in so its own earlier settlement is excluded from the balance it re-reads. | `settleCrmLeaveBalanceForPeriod` in `run-service.ts` · `tests/automated-payroll-vacation-reconfirm.test.ts` | code + test + PR #3669 |
+| **24** | **An interrupted publish could mark the run published over a batch that was never approved.** Publish finalised a leftover batch only when it was still `uploaded` and marked the run published anyway for any other state — and payslips are visible only for an approved batch. Because publish returns early for an already-published run, every retry reported success with zero rows and the month became permanently unpublishable. `assertBatchApproved` now refuses rather than assuming. | `assertBatchApproved` in `run-service.ts` · `tests/automated-payroll-guards-that-guard.test.ts` | code + test + PR #3649 |
+| **25** | **The approve step never checked that it approved anything.** The `.eq("status", "uploaded")` guard is real and stays, but a zero-row match returns no error — so anything moving the batch between create and approve left the update silently changing nothing. `finalizeApproved` now reads back what the batch actually is and returns it, so the caller can refuse. | `finalizeApproved` in `run-service.ts` · `tests/automated-payroll-guards-that-guard.test.ts` | code + test + PR #3649 |
+| **28** | **The hard "the split does not add up" gate compared a number to itself.** `assembleParts` defines `monthSalary` as `firstPart + secondPart`, so the check could only ever pass — any real defect recomputes the total from the same two wrong numbers and sails through, finding 9's overpayment included. It now tests the split against the locked engine's own `totalPayable`, with the overpaid residual added back so the identity is exact in both branches. | `reconcile.ts` (`splitAgainstEngine`) · `tests/automated-payroll-guards-that-guard.test.ts` | code + test + PR #3649 |
 
 ### One deduction, one instalment — PR #3703 (2026-09-11)
 
@@ -264,7 +292,21 @@ treated held people as absent.
 
 ---
 
-## The ruling on the fourteen — CLOSED, 2026-09-12
+## The ruling on the fourteen — MOOT, resolved 2026-09-12 (cycle 4)
+
+> **🟢 READ THIS FIRST. The ruling below is superseded and no longer describes reality.** It was
+> made on 2026-09-12 on the stated basis that the fourteen were permanently unrecoverable. Later the
+> same day the original audit was recovered from this machine's session transcripts, and **all
+> fourteen turned out to be fixed** — by PRs #3641, #3642, #3649, #3651, #3659, #3669, #3674, #3684
+> and #3687, none of which cites a finding number. See [audit-cycle-4.md](audit-cycle-4.md).
+>
+> **It is kept, not deleted.** A ruling that accepted real residual risk, on a premise that turned
+> out to be false, is exactly the thing a record should show rather than quietly tidy away. Two of
+> its statements are worth carrying forward as lessons: *"closed is not fixed"* was the right
+> distinction to draw, and *"a future payroll defect is a NEW finding, numbered from 57"* still
+> stands.
+
+### The ruling as it was written (superseded)
 
 **1, 6, 7, 8, 9, 10, 11, 12, 13, 21, 24, 25, 28 — and 19.**
 
@@ -306,5 +348,12 @@ work with no code marker. They stay as the table records them.
 
 The audit document goes in `docs/production-audits/automated-payroll/` **before** the first fix PR of
 a cycle, not after the last one. The folder and its templates already existed for exactly this.
-Fifty-five findings were worked through without one being used, and fourteen of them are gone
-permanently as a direct result. Cycle 2 followed the corrected order.
+Fifty-five findings were worked through without one being used. ~~and fourteen of them are gone
+permanently as a direct result.~~ Cycle 2 followed the corrected order.
+
+**Amended 2026-09-12 (cycle 4).** Nothing was gone permanently; the cost was two days of believing it
+was. Cycle 4 adds the half this missed: **a "no trace" verdict must name where it searched, and
+searching the repository is not enough.** The session transcripts under
+`~/.claude/projects/<repo-slug>/` hold the working record of every AI session on this machine, and an
+audit produced by one of those sessions lives there whether or not it was ever committed. Search them
+before concluding a document is lost.
