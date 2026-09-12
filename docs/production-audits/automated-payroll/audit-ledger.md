@@ -70,6 +70,17 @@ else.**
 | **4** | An overpayment was marked recovered without ever being deducted. | the carry-forward path | PR #3642 |
 | **5** | A held person left no record of what they were owed. | the publish hold record | PR #3642 |
 
+> **Re-verified empirically on 2026-09-12** — see
+> [audit-cycle-3.md](audit-cycle-3.md#findings-25--outside-the-37-verified-2026-09-12). All four
+> hold, and the evidence is no longer only PR #3642's description: the August bank and finance
+> workbooks were built and read back, six breaks each fired their own assertion, and the coverage
+> figures reconcile to the finance sheet's own TOTALS row to the cent. Two qualifications belong
+> with the rows above. **Finding 2 is far larger in production than this row records** — 24 payable
+> rows reach neither bank file in August Part 1 (EGP 291,477.41), not three people at 19,000, because
+> 18 employees carry no bank name at all. And **3 and 5 are fixed for the next month, not proven on a
+> month that has run**: both published audit rows predate #3642 and carry only a count, so September
+> is the first publish that can hold the held roster or the coverage block.
+
 ### Findings 6 – 13
 
 | # | Status |
