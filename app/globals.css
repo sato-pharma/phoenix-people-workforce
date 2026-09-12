@@ -953,6 +953,86 @@ html:has(.admin-shell) {
   border: 1px solid rgba(249, 115, 22, 0.22) !important;
 }
 
+/* RULE 3 — DEPTH ON EVERY CARD. The premium godmode polish golden rule (owner,
+   2026-09-08) says depth is the default for "anything current in system or will be
+   built". #3510 delivered that for the shared admin design tokens, so a page built out
+   of `adminPanelClassName` has been premium ever since. A page that wrote its own
+   `border border-slate-200 bg-white` never got the memo, and there is no way for one to
+   get it later — which is why this belongs in CSS, alongside the corner and table rules,
+   where it reaches every current AND future page without touching a component file.
+
+   MEASURED ON PRODUCTION, 2026-09-12, before this rule existed. The gap was not spread
+   thinly over the app; it was concentrated in the screens seen most:
+
+     /admin (the Command Center)      37 of 37 panels flat
+     /admin/finance-command-center    34 of 35 flat
+     /admin/ceo-command-center        24 of 25 flat
+     /admin/kpis                       6 of 6  flat
+     /admin/crm                        3 of 3  flat
+     /recruitment, /coaching, /probation, /employees, /outstation   0 flat — already premium
+
+   THE SELECTOR IS NARROW ON PURPOSE, AND EACH CLAUSE WAS MEASURED RATHER THAN REASONED.
+
+   `[class~="bg-white"]` is the one that makes this safe. The obvious rule — every
+   bordered block — matched 65 elements on /admin, 28 of them 28px-tall label strips that
+   would each have floated on a 28px ambient shadow. Requiring a white FILL as well drops
+   every one of them: 0 matches under 220x64 on that page, the smallest real match a
+   251x74 stat tile.
+
+   `:not([class*="inline"])` removes the tab strips. /workspace renders its module tabs as
+   `inline-flex min-w-max border border-slate-300 bg-white p-1` — a 1344x40 bar that is a
+   control, not a card. Panels in this codebase are block, flex or grid; chips, pills and
+   tab rails are inline-flex. That one clause is the whole difference.
+
+   `main` is the clause the ADMIN shell never needed and the PORTAL did. Depth belongs to
+   page content; the shell's own chrome has its own design and must not sprout card
+   shadows. The portal top bar renders a zoom pill (`104x34`, reading "80%") and an icon
+   button (`34x26`) as plain `flex ... border border-slate-200 bg-white` — `flex`, not
+   `inline-flex`, so the clause above does not catch them, and they sit in a 56px chrome
+   bar where a 28px ambient shadow would be plainly wrong. Scoping to `main` drops both and
+   costs nothing anywhere else: re-measured page by page, the match count is IDENTICAL with
+   and without it on /admin (27), /admin/finance-command-center (34), /admin/kpis (13) and
+   /workspace (7), and on the portal it goes 2 -> 0. Every page in both shells renders a
+   `<main>`. The smallest surviving match in the app is 74px tall.
+
+   `:not([class*="shadow"])` means an element that states its own depth keeps it. Anything
+   already on `adminPanelClassName` / `adminSoftPanelClassName` is untouched (it carries
+   these same values), and `adminInsetPanelClassName` keeps its INSET shadow instead of
+   being given a drop shadow it must not have — a recessed panel cannot also float.
+
+   A CARD INSIDE A CARD TAKES THE LIGHTER PAIR. 18 of the 27 matches on /admin are tiles
+   nested inside a section. Two full ambient shadows stacked read as dirt, not as depth,
+   so the nested rule hands them `adminSoftPanelClassName`'s values — the same decision
+   the token file already made, expressed here for panels that never imported it.
+
+   NOTHING HERE MOVES A PIXEL. box-shadow is outside the box model, so no width, no height
+   and no layout changes. Verified on /admin at both sizes with the rule live: `main`
+   scrollWidth 1355 = clientWidth 1355 at desktop, and 375 = 375 at 375px, identical with
+   the rule on and off. The fits-the-screen golden rule is not at risk from this file.
+
+   AND THE SQUARE-EDGE GOLDEN RULE IS UNTOUCHED — RULE 1 above still zeroes every radius,
+   re-measured with this rule live: 0 elements with a non-zero computed border-radius.
+   Depth and sharp corners are both true at once, exactly as admin-design-tokens.ts says. */
+.admin-shell main
+  :where(div, section, article, aside, form, fieldset, details)[class~="border"][class~="bg-white"]:not([class*="inline"]):not([class*="shadow"]),
+.employee-portal-shell main
+  :where(div, section, article, aside, form, fieldset, details)[class~="border"][class~="bg-white"]:not([class*="inline"]):not([class*="shadow"]) {
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 12px 28px rgba(15, 23, 42, 0.055);
+}
+
+.admin-shell main
+  :where(div, section, article, aside, form, fieldset, details)[class~="border"][class~="bg-white"]:not([class*="inline"]):not([class*="shadow"])
+  :where(div, section, article, aside, form, fieldset, details)[class~="border"][class~="bg-white"]:not([class*="inline"]):not([class*="shadow"]),
+.employee-portal-shell main
+  :where(div, section, article, aside, form, fieldset, details)[class~="border"][class~="bg-white"]:not([class*="inline"]):not([class*="shadow"])
+  :where(div, section, article, aside, form, fieldset, details)[class~="border"][class~="bg-white"]:not([class*="inline"]):not([class*="shadow"]) {
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 10px 24px rgba(15, 23, 42, 0.045);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    EMPLOYEE-PORTAL DESIGN RULES — mirror of the admin shell, scoped to
    `.employee-portal-shell` (the EmployeePortalChrome root). Owner directive:
