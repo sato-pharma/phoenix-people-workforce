@@ -31,7 +31,25 @@
 //  5. A populated column is never blanked, with ONE opt-in exception: graduationYear, where null is
 //     the correct answer for a degree still in progress. It is the whole point of pattern 1, so it
 //     is allowed — but only when explicitly enabled, never as a side effect.
+//
+// GATES 6-8 were added on 2026-09-12 after the first free preview over production. Gates 1-5 let
+// 182 proposals through, and a triage of that sheet found most of them were not corrections at all:
+//
+//  6. Experience drift is not a correction. 40 of the 82 yearsExperience proposals moved the number
+//     by LESS THAN A YEAR — 7.7 -> 7.8, 18 -> 18.1, 23 -> 23.2. That is the calendar, not a repair:
+//     experience accrues between one reading and the next, so a re-read of an unchanged CV always
+//     disagrees slightly with what was stored. Below a year the two are indistinguishable.
+//  7. A governorate spelled differently is the same governorate. 16 of the 22 governorate proposals
+//     were transliteration — "Sharqia" -> "Sharkia", "Dakahlia" -> "Ad Daqahliyah", "Menoufia" ->
+//     "Menofia", "Beheira" -> "Elbehaira". Applying those would have replaced the app's canonical
+//     spelling with a variant: worse than doing nothing. resolveGovernorate is the one place that
+//     vocabulary lives (a fourth copy is forbidden), so both sides are resolved through it.
+//  8. An employer is not a job title. Six currentJobTitle proposals offered an organisation where a
+//     role belongs — "Community Pharmacist" -> "Dr. Tarek ElTohamy Pharmacy", "Senior Accountant"
+//     -> "Madawa Pharmaceutical Company". That is the owner's original defect 3 (the CV headline
+//     stored as the job) reappearing inside the PROPOSAL, so the correction path must refuse it.
 
+import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import { getCvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
 import { cvFieldColumn } from "@/lib/recruitment/cv-field-storage";
 import type { ExtractedCandidateFields, ExtractedCvValue } from "@/lib/recruitment/cv-extraction-fields";
@@ -94,6 +112,68 @@ export function saysTheSameThing(a: unknown, b: unknown): boolean {
   const numericB = typeof b === "number" ? b : typeof b === "string" && b.trim() !== "" ? Number(b) : NaN;
   if (Number.isFinite(numericA) && Number.isFinite(numericB)) return numericA === numericB;
   return normalizeFactForComparison(a) === normalizeFactForComparison(b);
+}
+
+/**
+ * The smallest change in years of experience that can be a CORRECTION rather than the calendar.
+ *
+ * A CV read in March and re-read in September yields a larger number for the same work history,
+ * because the most recent job is still running. Anything under a year is that drift. The defect
+ * this job exists for — a fresh graduate credited with years of experience — is never this small.
+ */
+export const MIN_EXPERIENCE_YEARS_CHANGE = 1;
+
+/** Gate 6 — a sub-year move in years of experience is the clock, not a repair. */
+export function isExperienceDrift(current: unknown, proposed: unknown): boolean {
+  const from = toFiniteNumber(current);
+  const to = toFiniteNumber(proposed);
+  if (from === null || to === null) return false;
+  return Math.abs(to - from) < MIN_EXPERIENCE_YEARS_CHANGE;
+}
+
+/**
+ * Gate 7 — whether two spellings name the same Egyptian governorate.
+ *
+ * Both sides go through `resolveGovernorate`, the single vocabulary for Egyptian place names
+ * (AGENTS.md forbids a second copy). When either side resolves to nothing the answer is false, so
+ * an unrecognisable value never silently suppresses a real disagreement.
+ */
+export function namesTheSameGovernorate(a: unknown, b: unknown): boolean {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  const left = resolveGovernorate(a);
+  const right = resolveGovernorate(b);
+  if (left === null || right === null) return false;
+  return left === right;
+}
+
+/**
+ * Words that mark a string as the name of an ORGANISATION rather than a role. Kept deliberately
+ * short and unambiguous: every one of these names a place of work, never a job.
+ */
+const EMPLOYER_MARKERS =
+  /\b(pharmacy|pharmacies|hospital|clinic|company|co\.|corp|corporation|ltd|llc|inc|group|center|centre|factory|laboratories|labs|institute|university|college|school)\b|صيدلي(?:ة|ه)|مستشفى|شرك(?:ة|ه)|معمل|مصنع|جامع(?:ة|ه)|مركز|عياد(?:ة|ه)/iu;
+
+/**
+ * Gate 8 — whether a proposed job title is really an employer.
+ *
+ * True only when the PROPOSAL carries an organisation marker and the stored value does not: that is
+ * the direction that makes the record worse. A candidate whose stored title already names their
+ * employer is left alone, because the proposal is then no worse than what is there.
+ */
+export function looksLikeAnEmployerNotARole(current: unknown, proposed: unknown): boolean {
+  if (typeof proposed !== "string") return false;
+  if (!EMPLOYER_MARKERS.test(proposed)) return false;
+  if (typeof current === "string" && EMPLOYER_MARKERS.test(current)) return false;
+  return true;
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 export type FactCorrectionInput = {
@@ -166,6 +246,16 @@ export function selectFactCorrections(input: FactCorrectionInput): FactCorrectio
 
     // Gate 4 — cosmetic differences are not corrections.
     if (saysTheSameThing(current, proposal.value)) continue;
+
+    // Gate 6 — a sub-year move in experience is the calendar, not a repair.
+    if (key === "yearsExperience" && isExperienceDrift(current, proposal.value)) continue;
+
+    // Gate 7 — the same governorate spelled another way is not a correction, and writing the
+    // variant over the canonical spelling would be a regression.
+    if (key === "governorate" && namesTheSameGovernorate(current, proposal.value)) continue;
+
+    // Gate 8 — an employer name is never a job title.
+    if (key === "currentJobTitle" && looksLikeAnEmployerNotARole(current, proposal.value)) continue;
 
     if (definition.type === "number" && typeof proposal.value !== "number") continue;
     if (definition.type === "string" && typeof proposal.value !== "string") continue;
