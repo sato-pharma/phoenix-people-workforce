@@ -255,12 +255,12 @@ export function runCvAddressPlaceTests(): void {
     // not happen is the ruling being re-implemented by pasting the SPACED area name into Cairo's
     // alias list, which would hand an address gazetteer the power to decide where an area sits.
     //
-    // THIS CHECKS THE VOCABULARY, NOT THE ANSWER, on purpose. Asserting `governorateNamedBy("down
-    // town") === null` would pass today for a second and unrelated reason: the squashed comparison
-    // in that walk only fires when the ALIAS carries the space, so a spaced ADDRESS never reaches a
-    // space-free alias. That is a real gap, it predates this change (the same guard is in the
-    // pre-2026-09-12 version), and the owner has not been asked about it — so nothing here should
-    // freeze it in place. Read the alias list itself instead.
+    // THIS CHECKS THE VOCABULARY, NOT THE ANSWER, on purpose. The two questions are now answered by
+    // two different mechanisms and only one of them is the ruling: an ADDRESS saying "down town"
+    // resolves to Cairo through the vocabulary (pinned in the section below, which closed the
+    // spelling gap the same day), while the AREA sits in Cairo because the owner said so. Reading
+    // the alias list directly is what keeps this assertion about the ruling alone — a later change
+    // to how addresses are matched must not be able to make it pass or fail.
     const cairoAliases = placeAliases.find((entry) => entry.label === "Cairo")?.aliases ?? [];
     assert.ok(cairoAliases.length > 0, "Cairo must still be in the place vocabulary at all");
     assert.deepEqual(
@@ -278,6 +278,84 @@ export function runCvAddressPlaceTests(): void {
       Object.keys(areaGovernorateOverrides).filter((name) => name.toLowerCase().startsWith("behira")),
       [],
       "no Behira area may be given an override — the owner ruled the spelling correct, 2026-09-12",
+    );
+  }
+
+  // ── ONE PLACE, TWO SPELLINGS — THE SPACE IS NOT PART OF THE NAME ───────────────
+  //
+  // Two comments in cv-address-place.ts promised this already worked, in both directions, and
+  // neither did. The old test squashed the WHOLE address into a single token and then looked for a
+  // PADDED alias inside it — but once every space is gone there are no internal spaces left for
+  // that padding to find, so it could only ever match an address that said nothing except the
+  // place's name. A CV never says only "down town"; it says "15 Abbas El Akkad, down town, Cairo".
+  //
+  // Measured on the real pool the day this was fixed — 532 distinct production CV addresses, old
+  // matcher against new: 4 gained an answer, NONE lost one, and NONE moved to a different
+  // governorate. Two of the four are below verbatim.
+  //
+  // The owner, 2026-09-12: "fix the down town address gap too".
+  {
+    // THE GAP ITSELF, both spellings and both directions.
+    assert.equal(governorateNamedBy("down town"), "Cairo", 'an address written "down town" names Cairo');
+    assert.equal(governorateNamedBy("downtown"), "Cairo", 'and so does the one-word spelling, as it always did');
+    assert.equal(
+      governorateNamedBy("down town, egypt"),
+      "Cairo",
+      "and it still reads inside a real address, where the place name is one item among several",
+    );
+
+    // THE SAME MECHANISM CARRIES THE AREA, which is the half that reaches a seat suggestion.
+    for (const written of ["15 st down town cairo", "15 st downtown cairo"]) {
+      assert.equal(
+        addressNamesArea(normalizePlaceText(written), "Down town"),
+        true,
+        `the address ${JSON.stringify(written)} names the area Down town — the spelling must not decide it`,
+      );
+    }
+    assert.equal(
+      addressNamesArea(normalizePlaceText("cairo egypt"), "Down town"),
+      false,
+      "but a bare governorate still names no area — that correction is older and stands",
+    );
+
+    // THE OTHER DIRECTION: a run-on address reaching a spaced alias.
+    assert.equal(governorateNamedBy("nasrcity"), "Cairo", 'a run-on "nasrcity" reaches the alias "nasr city"');
+    assert.equal(
+      addressNamesArea(normalizePlaceText("nasrcity cairo"), "Nasr City"),
+      true,
+      "and it names the area Nasr City as well",
+    );
+
+    // TWO REAL PRODUCTION ADDRESSES that answered NOTHING before this, quoted as they are filed.
+    assert.equal(governorateNamedBy("Bani Suef, Egypt"), "Beni Suef", 'the filed address "Bani Suef, Egypt" resolved to nothing until 2026-09-12');
+    assert.equal(governorateNamedBy("Alkhalifa Street, Kafrelsheikh City"), "Kafr El-Sheikh", "and so did this one");
+
+    // WHOLE WORDS ARE WHAT MAKES JOINING THEM SAFE. This matcher's founding bug was a bare
+    // substring test resolving a candidate in Rajasthan to DAKAHLIA, because "bapunAGAr" contains
+    // the alias "aga". A window is cut on word boundaries before it is squashed, so no alias can
+    // be found hiding inside a longer word. Twelve more addresses followed that one; this is the
+    // assertion that must never come back green by accident.
+    assert.equal(
+      governorateNamedBy("C-183, New Bapunagar, Bhilwara, Rajasthan -311001"),
+      null,
+      "an alias must never be found inside a longer word — the Bapunagar/Aga correction",
+    );
+
+    // AND THE WORDS MUST BE CONSECUTIVE. Squashing joins neighbours, never a scatter.
+    assert.equal(governorateNamedBy("port said"), "Port Said", "neighbouring words join");
+    assert.equal(governorateNamedBy("port a b c said"), null, "words four apart do not");
+
+    // THE VOCABULARY'S OWN ORDER STILL DECIDES when an address names two governorates. This is a
+    // real address on file, and the person lives in Alexandria.
+    assert.equal(
+      governorateNamedBy("Alexandria, Egypt (Willing to relocate to Cairo if available Post)"),
+      "Alexandria",
+      "the first governorate the vocabulary ranks still wins",
+    );
+    assert.equal(
+      governorateNamedBy("down town alexandria"),
+      "Alexandria",
+      "and the new spelling match does not jump that queue",
     );
   }
 }
