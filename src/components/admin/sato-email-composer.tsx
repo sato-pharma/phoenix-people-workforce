@@ -1,10 +1,16 @@
 "use client";
 
-import { AlertTriangle, Check, Eye, Loader2, Mail, Search, Send, Sparkles, Undo2, Users, X } from "lucide-react";
+import { AlertTriangle, Check, Eye, Loader2, Mail, Paperclip, Search, Send, Sparkles, Undo2, Users, X } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import { AdminSectionHeader } from "@/components/admin/admin-design-system";
 import { EmailBodyEditor } from "@/components/admin/email-body-editor";
+import {
+  SATO_EMAIL_ATTACHMENT_ACCEPT,
+  SATO_EMAIL_INLINE_ACCEPT,
+  SATO_EMAIL_MEDIA_MAX_FILES,
+  formatBytes,
+} from "@/lib/sato-email/media-limits";
 
 export type SatoTemplateView = {
   bodyHtml: string;
@@ -30,6 +36,8 @@ export type SatoPersonView = {
 };
 
 type PreviewView = {
+  attachmentProblem: string | null;
+  attachments: Array<{ byteSize: number; filename: string; id: string }>;
   audience: {
     recipients: Array<{ email: string; hrId: string | null; name: string }>;
     skipped: Array<{ displayName: string; hrId: string; reason: string }>;
@@ -88,6 +96,10 @@ export function SatoEmailComposer({
   const [subject, setSubject] = useState("");
   const [bodyHtml, setBodyHtml] = useState("");
   const [signOff, setSignOff] = useState("Human Resources");
+  // Files clipped to the mail. A body PICTURE is not here: it lives in bodyHtml as an <img>, which
+  // is the whole difference between the two halves of what the owner asked for.
+  const [attachments, setAttachments] = useState<Array<{ byteSize: number; filename: string; id: string }>>([]);
+  const [uploading, setUploading] = useState(false);
 
   const [listKeys, setListKeys] = useState<string[]>([]);
   const [people, setPeople] = useState<SatoPersonView[]>([]);
@@ -118,6 +130,7 @@ export function SatoEmailComposer({
 
   const draft = useMemo(
     () => ({
+      attachmentIds: attachments.map((file) => file.id),
       bodyHtml,
       clientRequestId,
       hrIds: people.map((person) => person.hrId),
@@ -126,10 +139,78 @@ export function SatoEmailComposer({
       subject,
       templateKey: mode === "template" && templateKey ? templateKey : null,
     }),
-    [bodyHtml, clientRequestId, listKeys, mode, people, signOff, subject, templateKey],
+    [attachments, bodyHtml, clientRequestId, listKeys, mode, people, signOff, subject, templateKey],
   );
 
   const canCompose = Boolean(subject.trim() && bodyHtml.trim() && (listKeys.length > 0 || people.length > 0));
+
+  /**
+   * Put one file in the store and hand back what the caller needs.
+   *
+   * The same call for both halves of the feature; `kind` is the whole difference. An `inline`
+   * upload comes back with a permanent public address for the <img>, an `attachment` comes back
+   * with an id and no address at all, because its bytes only ever travel inside the message.
+   */
+  const uploadOne = useCallback(
+    async (file: File, kind: "attachment" | "inline") => {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("kind", kind);
+      const response = await fetch("/api/admin/sato-email/media", { body: form, method: "POST" });
+      const payload = (await response.json().catch(() => ({}))) as {
+        file?: { byteSize: number; filename: string; id: string; url: string | null };
+        message?: string;
+      };
+      if (!response.ok || !payload.file) throw new Error(payload.message ?? "The file could not be uploaded.");
+      return payload.file;
+    },
+    [],
+  );
+
+  /**
+   * The toolbar Insert image button, wired to the sender own machine.
+   *
+   * Returns an empty string rather than throwing when it fails, because the editor has nowhere to
+   * show a message and this screen does.
+   */
+  const uploadBodyPicture = useCallback(
+    async (file: File) => {
+      setUploading(true);
+      setError(null);
+      try {
+        const stored = await uploadOne(file, "inline");
+        return stored.url ?? "";
+      } catch (uploadError) {
+        setError(uploadError instanceof Error ? uploadError.message : "The picture could not be uploaded.");
+        return "";
+      } finally {
+        setUploading(false);
+      }
+    },
+    [uploadOne],
+  );
+
+  async function attachFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    setError(null);
+    try {
+      for (const file of Array.from(files)) {
+        const stored = await uploadOne(file, "attachment");
+        setAttachments((current) =>
+          current.some((existing) => existing.id === stored.id)
+            ? current
+            : [...current, { byteSize: stored.byteSize, filename: stored.filename, id: stored.id }],
+        );
+      }
+      // The email is a different email now, so the count and the preview beside it are stale.
+      invalidate();
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "The file could not be uploaded.");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   function applyTemplate(key: string) {
     setTemplateKey(key);
@@ -342,15 +423,70 @@ export function SatoEmailComposer({
             <div className="mt-2">
               <EmailBodyEditor
                 hiddenActions={["Action button"]}
+                imageAccept={SATO_EMAIL_INLINE_ACCEPT}
                 onChange={(next) => {
                   setBodyHtml(next);
                   setPolished(null);
                   invalidate();
                 }}
+                uploadImage={uploadBodyPicture}
                 value={bodyHtml}
                 variables={[]}
               />
             </div>
+            <p className="mt-2 text-xs font-semibold text-phx-ink-faint">
+              The picture button in the toolbar puts a picture from your computer straight into the message.
+              A picture in the body has to be fetched from the web when somebody opens the email, so anyone
+              who has the link can see it &mdash; put a company document in the attachments below instead.
+            </p>
+          </div>
+
+          {/* ------------------------------------------------------------------ attachments */}
+          <div className="mt-4">
+            <span className="text-phx-xs font-black uppercase tracking-wide text-phx-ink-2">Attachments</span>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <label className={`${PALE_BUTTON} cursor-pointer`}>
+                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+                {uploading ? "Uploading" : "Attach a picture or file"}
+                <input
+                  accept={SATO_EMAIL_ATTACHMENT_ACCEPT}
+                  className="hidden"
+                  disabled={uploading || attachments.length >= SATO_EMAIL_MEDIA_MAX_FILES}
+                  multiple
+                  onChange={(event) => {
+                    const chosen = event.target.files;
+                    // Cleared first, so the same file can be attached again after a failure.
+                    event.target.value = "";
+                    void attachFiles(chosen);
+                  }}
+                  type="file"
+                />
+              </label>
+              {attachments.map((file) => (
+                <span
+                  className="inline-flex items-center gap-2 rounded-lg border border-phx-line bg-phx-paper px-3 py-2 text-phx-xs font-black text-phx-ink"
+                  key={file.id}
+                >
+                  {file.filename}
+                  <span className="font-semibold text-phx-ink-faint">{formatBytes(file.byteSize)}</span>
+                  <button
+                    aria-label={`Remove ${file.filename}`}
+                    onClick={() => {
+                      setAttachments((current) => current.filter((entry) => entry.id !== file.id));
+                      invalidate();
+                    }}
+                    type="button"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <p className="mt-2 text-xs font-semibold text-phx-ink-faint">
+              Attachments travel inside the email, so only the people you send it to can open them. Up to
+              {" "}{SATO_EMAIL_MEDIA_MAX_FILES} files, and 10 MB in total &mdash; over that the send is refused
+              rather than quietly dropping a file.
+            </p>
           </div>
 
           <div className="mt-3 rounded-xl border border-phx-line bg-phx-paper p-3">
@@ -546,7 +682,7 @@ export function SatoEmailComposer({
         ) : null}
 
         <div className="mt-4 flex flex-wrap gap-2">
-          <button className={DARK_BUTTON} disabled={!canCompose || busy !== null || polishing} onClick={() => void runPreview()} type="button">
+          <button className={DARK_BUTTON} disabled={!canCompose || busy !== null || polishing || uploading} onClick={() => void runPreview()} type="button">
             {busy === "preview" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
             Preview and count recipients
           </button>
@@ -559,6 +695,27 @@ export function SatoEmailComposer({
               {preview.recipientCount} recipient{preview.recipientCount === 1 ? "" : "s"}, sent as {preview.emailCount}{" "}
               email{preview.emailCount === 1 ? "" : "s"}. Nobody sees anyone else&apos;s address.
             </p>
+
+            {preview.attachments.length > 0 ? (
+              <div className="rounded-xl border border-phx-line bg-phx-paper p-3 text-sm text-phx-ink-soft">
+                <p className="font-black text-phx-ink">
+                  <Paperclip className="mr-1.5 inline h-4 w-4" />
+                  {preview.attachments.length} file{preview.attachments.length === 1 ? "" : "s"} attached
+                </p>
+                {preview.attachments.map((file) => (
+                  <p key={file.id}>
+                    {file.filename} &mdash; {formatBytes(file.byteSize)}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+
+            {preview.attachmentProblem ? (
+              <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-900">
+                <AlertTriangle className="mr-1.5 inline h-4 w-4" />
+                {preview.attachmentProblem}
+              </p>
+            ) : null}
 
             {preview.placeholders.length > 0 ? (
               <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
@@ -599,7 +756,7 @@ export function SatoEmailComposer({
                   {preview.recipientCount === 1 ? "" : "s"} now? A sent email cannot be recalled.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button className={DARK_BUTTON} disabled={busy !== null || polishing} onClick={() => void send()} type="button">
+                  <button className={DARK_BUTTON} disabled={busy !== null || polishing || uploading} onClick={() => void send()} type="button">
                     {busy === "send" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                     Yes, send it
                   </button>
@@ -609,7 +766,14 @@ export function SatoEmailComposer({
                 </div>
               </div>
             ) : (
-              <button className={DARK_BUTTON} onClick={() => setConfirming(true)} type="button">
+              // Blocked, not warned: the attachments are part of the email, and an email that cannot
+              // carry them is not the email the sender is looking at.
+              <button
+                className={DARK_BUTTON}
+                disabled={Boolean(preview.attachmentProblem)}
+                onClick={() => setConfirming(true)}
+                type="button"
+              >
                 <Mail className="h-3.5 w-3.5" />
                 Send this email
               </button>

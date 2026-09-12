@@ -80,6 +80,10 @@ export type AuditEntityType =
   // behaviours onto the other, and each is wrong in the other's place.
   | "sato_email_template"
   | "sato_email_send"
+  // A picture or file uploaded for a Sato email. Its own type because an inline picture is handed a
+  // permanent public address at that moment, before any mail exists to attach it to, so the record of
+  // who minted it cannot live on the send row, which may never be written.
+  | "sato_email_media"
   // Minting or revoking a bearer link to the live CV-lifecycle Google Sheet. The link outlives the
   // session that created it and copies candidate names and phone numbers out of Phoenix, so who
   // made one — and who killed it — is recorded. The token itself is never written here: an audit

@@ -34,6 +34,15 @@ export function parseSatoEmailDraft(body: Record<string, unknown>): ParsedDraft 
     return { message: "Choose at least one distribution list or colleague." };
   }
 
+  // Attachments go through the same reader as everything else, so the preview totals the same files
+  // the send will carry. They are ids of already-uploaded rows, never bytes: the upload happened at
+  // /api/admin/sato-email/media under its own gate, and this route only names what to clip on.
+  const attachmentIds = stringArray(body.attachmentIds);
+  if (!attachmentIds) return { message: "attachmentIds must be an array of strings." };
+  if (attachmentIds.some((id) => !/^[0-9a-fA-F-]{36}$/.test(id))) {
+    return { message: "An attachment id is not valid." };
+  }
+
   const clientRequestId = typeof body.clientRequestId === "string" ? body.clientRequestId.trim() : "";
   // Not optional, and not generated here. It is what makes a double-click send once: a key minted
   // server-side would be different on the second request, which is the failure it exists to stop.
@@ -46,5 +55,5 @@ export function parseSatoEmailDraft(body: Record<string, unknown>): ParsedDraft 
       ? body.externalJustification.trim()
       : null;
 
-  return { draft: { bodyHtml, clientRequestId, externalJustification, hrIds, listKeys, signOff, subject, templateKey } };
+  return { draft: { attachmentIds, bodyHtml, clientRequestId, externalJustification, hrIds, listKeys, signOff, subject, templateKey } };
 }
