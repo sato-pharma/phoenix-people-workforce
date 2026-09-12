@@ -1,7 +1,7 @@
 # Automated Payroll — Audit Cycle 3 (in progress)
 
 **Opened:** 2026-09-12 · **Findings covered:** 14–18, 20, 22, 23, 26, 27, 29–55 (37 of them)
-**Status:** TIER 1 VERIFIED (12 of 37) · TIERS 2-4 NOT STARTED
+**Status:** TIERS 1-2 VERIFIED (24 of 37) · TIERS 3-4 NOT STARTED
 **Cycle 1:** [audit-ledger.md](audit-ledger.md) · **Cycle 2:** [audit-cycle-2.md](audit-cycle-2.md)
 
 > This document exists **before** the first fix PR of the cycle, not after the last one. That
@@ -144,18 +144,96 @@ These fail quietly. A green screen showing zero is the failure mode, so each is 
 
 | # | In one line | Claimed fixed by | Re-verified |
 | ---: | --- | --- | :---: |
-| **14** | One failed database read in the CRM collector silently retracts every live CRM deduction for the month. | **no PR named** | ☐ |
-| **34** | A failed leavers query silently removes every already-resigned employee from the whole run. | #3699 | ☐ |
-| **35** | If the expense query fails, the Expenses step shows nobody and every reimbursement freezes at zero. | #3717 | ☐ |
-| **49** | The mutual-exclusion check between the two payroll engines fails open when its own query errors. | #3717 | ☐ |
-| **44** | One expense-approval save can wipe frozen expense figures in a month that did not change. | #3717 | ☐ |
-| **45** | Approved expenses belonging to someone outside the run are dropped with no row and no warning. | #3717 | ☐ |
-| **43** | Every held employee is missing from the month's statutory filing. | #3717 | ☐ |
-| **30** | An employee with no social-insurance figure is published at zero rather than flagged. | **no PR named** | ☐ |
-| **48** | The Manual Deductions reason can be silently erased by a spreadsheet upload reporting no change. | #3717 | ☐ |
-| **33** | The Unpaid Vacation template has two columns with the identical heading, and the importer reads the wrong one. | #3709 | ☐ |
-| **31** | Three spreadsheet day columns can never be saved, but the upload preview reports them as changed. | #3717 | ☐ |
-| **27** | Apply changes after a spreadsheet upload does nothing at all. | #3712, #3741 | ☐ |
+| **14** | One failed database read in the CRM collector silently retracts every live CRM deduction for the month. | **no PR named** | ☑ |
+| **34** | A failed leavers query silently removes every already-resigned employee from the whole run. | #3699 | ☑ |
+| **35** | If the expense query fails, the Expenses step shows nobody and every reimbursement freezes at zero. | #3717 | ☑ |
+| **49** | The mutual-exclusion check between the two payroll engines fails open when its own query errors. | #3717 | ☑ |
+| **44** | One expense-approval save can wipe frozen expense figures in a month that did not change. | #3717 | ☑ |
+| **45** | Approved expenses belonging to someone outside the run are dropped with no row and no warning. | #3717 | ☑ |
+| **43** | Every held employee is missing from the month's statutory filing. | #3717 | ☑ |
+| **30** | An employee with no social-insurance figure is published at zero rather than flagged. | **no PR named** | ☑ |
+| **48** | The Manual Deductions reason can be silently erased by a spreadsheet upload reporting no change. | #3717 | ☑ |
+| **33** | The Unpaid Vacation template has two columns with the identical heading, and the importer reads the wrong one. | #3709 | ☑ |
+| **31** | Three spreadsheet day columns can never be saved, but the upload preview reports them as changed. | #3717 | ☑ |
+| **27** | Apply changes after a spreadsheet upload does nothing at all. | #3712, #3741 | ☑ |
+
+### Tier 2 — results, 2026-09-12
+
+**Twelve of twelve verified. One of them is proven at the mechanism, not by a live click, and one
+step turned out to have a defect nobody had found.**
+
+Tier 2's findings all fail the same way: quietly. Nothing throws, nothing turns red, and the screen
+shows a plausible zero. So none of them can be checked by reading the code that claims to fix them —
+the only proof is to make the read fail and see what the user is actually told.
+
+To do that without touching production, this tier ran behind a **fault-injection loader**: a module
+loader that substitutes a stand-in for the Supabase client, returns a genuine PostgREST-shaped error
+for any table named in the test, and **records every write the code attempts**. That last part is
+what makes "nothing was retracted" a measurement rather than a claim — the harness can show the
+exact list of inserts and updates the code tried to perform.
+
+Every ☑ was then established twice: once by forcing the failure and reading the answer, and once by
+breaking the fix on purpose and watching the check that should catch it fire. The file was restored
+from a byte copy each time, never with `git checkout --`, which would have taken the uncommitted work
+with it.
+
+| Finding | What was broken to prove it | What fired |
+| ---: | --- | --- |
+| **43** | `extraNotes` dropped from `buildStatutorySummaryWorkbook` | the emitted workbook no longer carried the held note under the total: `MISSING` |
+| **30** | `usableInsuranceWage` returns 0 and `statutoryFromInsuranceWage` returns zeros | `no insurance wage returns NULL, never a zero figure` |
+| **49** | the failed Copilot read logged and swallowed instead of thrown | the mutual-exclusion guard passed and the run proceeded to `createRun` |
+| **35** | a failed expense page `break`s out of the loop instead of throwing | `the step returned rows as though nobody travelled` |
+| **45** | `outsideRun.push` removed | `no row at all — the money is invisible` |
+| **34** | the leavers read returns `states` instead of throwing | `it returned a feeder map with no leavers in it` |
+| **14** | the CRM visit scan swallows its own error | `created=0 warnings=[]` — a silent empty month |
+| **14** | the empty-draft backstop disabled | `attempted: update deductions_candidates, insert deductions_audit, insert audit_logs` — the retraction itself |
+| **33** | the pre-fix duplicate heading restored and `assertHeadingsAreUnique` removed | `parsed p1odVacationDays=9` when 4 was typed — the reference column holds 9 |
+| **31** | the day column shipped editable and read back | the preview promised `{ "Deduction Days", from: 2, to: 6, status: "changed" }` on a field that can never be saved |
+| **48** | the unconditional write restored **and** the Reason row removed from `diffStepUpload` | `parsed reason=null` with no Reason row in the preview — erased, and invisible |
+| **44** | `byPeriod` rebuilt as a cross product | September and October both rewritten: `[{"month":9,…["B-14","B-77"]},{"month":10,…["B-14","B-77"]}]` |
+
+**What production supplied.** Finding 14's retraction test was driven by a **real** production row —
+a live CRM deduction candidate for August 2026, 233.87 EGP, belonging to Omnia Nader Ismael Hamed
+Mostafa Elsherbiny — rather than by an invented one, so the ledger the reconcile reads has the shape
+the ledger really has. With the backstop in place and the CRM read failing, the harness recorded
+**no writes at all**: the month's live candidates were left standing and the collector reported a
+warning instead of a silent empty result.
+
+#### The two answers that are not a clean tick
+
+**27 is proven at the browser mechanism and in the source, not by a live click.** No dev server can
+run on this machine at present — free RAM is 2,553 MB against a 2,600 MB floor for a dev server or a
+cold typecheck — so the screen itself could not be driven. Instead the underlying browser behaviour
+was measured directly in a real browser: after `input.value = ""`, the file input holds **0 files**
+and reading it later gives `undefined`, while a `File` captured beforehand survives intact and
+usable. The component does capture beforehand (`pendingUpload` is set from the change event before
+`event.target.value = ""` runs), the Apply button is disabled without it, and Apply refuses with a
+message rather than doing nothing at all. That is the whole of the mechanism the finding describes,
+but it is honest to record that **the click itself was not performed**. It should be exercised once
+on the next real run.
+
+**A defect was found while testing 48, and is fixed in this change.** Finding 48 could not be checked
+on the Manual Deductions step at all, because the template that step needs **cannot be produced**:
+
+```
+GET /api/automated-payroll/runs/{runId}/steps/p2_manual_deductions/export  →  500
+Worksheet name Any more deductions? cannot include any of the following characters: * ? : \ / [ ]
+```
+
+ExcelJS refuses a worksheet name containing any of `* ? : \ / [ ]`, and it refuses **before writing a
+single byte**. The worksheet was named from the step's own title, and the Part 2 step is titled
+*"Any more deductions?"* — the one title of the sixteen that carries a forbidden character. So the
+Download-template button on that one step answered 500 with nothing to say, and HR had no
+spreadsheet path to that step at all: nothing to download, therefore nothing to edit in Excel and
+nothing to re-upload.
+
+The fix derives the sheet name from the title instead of using the title verbatim
+(`worksheetNameFor` in `src/lib/automated-payroll/exports/step-template.ts`) — derived rather than
+hard-coded per step, because the title is what a future step changes, and a punctuation mark in it
+must never again decide whether a download works. It is pinned by a new assertion in
+`tests/automated-payroll-template-headings.test.ts`, already registered in the required `validate`
+job, which builds **every** step's template and fails on any that throws. Breaking the fix made that
+assertion fire with the exact ExcelJS message above.
 
 ### Tier 3 — control, concurrency and access
 
