@@ -1220,6 +1220,7 @@ import { runClosingSourceMaskTests } from "./closing-source-mask.test.ts";
 import { runQemaWarehouseSplitTests } from "./qema-warehouse-split.test.ts";
 import { runMergedAreaAttributionTests } from "./merged-area-attribution.test.ts";
 import { runPediaUpperEgyptSplitTests } from "./pedia-upper-egypt-split.test.ts";
+import { runPediaKafrElSheikhDelta1Tests } from "./pedia-kafr-el-sheikh-delta-1.test.ts";
 import { runAttributionStoreSplitNetTests } from "./attribution-store-split-net.test.ts";
 import { runStoreNamePrefixesTests } from "./store-name-prefixes.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
@@ -3715,6 +3716,10 @@ await runTest(
 await runTest(
   "Pedia Upper Egypt split (August closes on the single Upper Egypt district over 37 El Qema areas; September resolves Upper Egypt 1 and Upper Egypt 2 with Luxor inside Qena 2 over 39; and the August distribution is identical before and after the dated pair is written)",
   runPediaUpperEgyptSplitTests,
+);
+await runTest(
+  "Pedia Kafr El-Sheikh joins Delta (1) (August still files Kafr El-Sheikh 1 under Alex-BHR while September files it under Delta (1); Kafr El-Sheikh 2 stays in Others, so El Qema's divisor and its whole distribution are byte-identical with the dated pair written and without it, in BOTH months)",
+  runPediaKafrElSheikhDelta1Tests,
 );
 await runTest(
   "EPDA «م - » warehouse prefix (anchored at the START only — it matches 40 customers, while the same three characters appear MID-NAME in 590, and turning it into a keyword would move 550 pharmacies)",
