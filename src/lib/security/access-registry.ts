@@ -273,6 +273,10 @@ export const accessRegistry = [
   // `preview` is a POST that writes nothing: the draft is a whole email and has no business in a
   // URL. It is classified as a read because that is what it is.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/sato-email/employees", permission: null, guard: "domain-helper" }),
+  // `polish` is the same shape as `preview`: a POST because the draft is a whole email, and a
+  // read because it changes nothing. It calls a model to rewrite the sender's own wording and
+  // hands it straight back to his screen — no row is written, no mail leaves.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/sato-email/polish", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/sato-email/preview", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/sato-email/send", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/sato-email/templates", permission: null, guard: "domain-helper" }),

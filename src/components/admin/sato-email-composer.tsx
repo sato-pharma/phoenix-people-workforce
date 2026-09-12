@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, Eye, Loader2, Mail, Search, Send, Users, X } from "lucide-react";
+import { AlertTriangle, Check, Eye, Loader2, Mail, Search, Send, Sparkles, Undo2, Users, X } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import { AdminSectionHeader } from "@/components/admin/admin-design-system";
@@ -95,6 +95,12 @@ export function SatoEmailComposer({
   const [matches, setMatches] = useState<SatoPersonView[]>([]);
   const [searching, setSearching] = useState(false);
 
+  // The rewrite. `polished` holds what the sender wrote immediately before it, which is the whole
+  // of Undo: his own words are never sent anywhere to be fetched back, they are simply still here.
+  const [nudge, setNudge] = useState("");
+  const [polishing, setPolishing] = useState(false);
+  const [polished, setPolished] = useState<{ bodyHtml: string; changes: string[]; subject: string } | null>(null);
+
   const [clientRequestId, setClientRequestId] = useState(newRequestId);
   const [preview, setPreview] = useState<PreviewView | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -131,6 +137,49 @@ export function SatoEmailComposer({
     if (!template) return;
     setSubject(template.subject);
     setBodyHtml(template.bodyHtml);
+    setPolished(null);
+    invalidate();
+  }
+
+  /**
+   * Puts the draft into the company's voice. Nothing is saved and nothing is sent — the rewritten
+   * wording lands straight back in the two fields the sender was already editing, and the preview
+   * is invalidated with it, so a recipient count on screen can never belong to the older draft.
+   */
+  async function polish() {
+    setPolishing(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/sato-email/polish", {
+        body: JSON.stringify({ bodyHtml, instruction: nudge, subject }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json()) as {
+        message?: string;
+        result?: { bodyHtml: string; changes: string[]; subject: string };
+      };
+      if (!response.ok || !payload.result) {
+        setError(payload.message ?? "The rewrite could not be produced.");
+        return;
+      }
+      // His own words, kept here and nowhere else, so Undo is exact rather than approximate.
+      setPolished({ bodyHtml, changes: payload.result.changes, subject });
+      setSubject(payload.result.subject);
+      setBodyHtml(payload.result.bodyHtml);
+      invalidate();
+    } catch {
+      setError("The rewrite could not be produced.");
+    } finally {
+      setPolishing(false);
+    }
+  }
+
+  function undoPolish() {
+    if (!polished) return;
+    setSubject(polished.subject);
+    setBodyHtml(polished.bodyHtml);
+    setPolished(null);
     invalidate();
   }
 
@@ -280,6 +329,7 @@ export function SatoEmailComposer({
               maxLength={200}
               onChange={(event) => {
                 setSubject(event.target.value);
+                setPolished(null);
                 invalidate();
               }}
               placeholder="What this email is about"
@@ -294,12 +344,65 @@ export function SatoEmailComposer({
                 hiddenActions={["Action button"]}
                 onChange={(next) => {
                   setBodyHtml(next);
+                  setPolished(null);
                   invalidate();
                 }}
                 value={bodyHtml}
                 variables={[]}
               />
             </div>
+          </div>
+
+          <div className="mt-3 rounded-xl border border-phx-line bg-phx-paper p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                className={DARK_BUTTON}
+                disabled={polishing || !bodyHtml.trim()}
+                onClick={() => void polish()}
+                type="button"
+              >
+                {polishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {polishing ? "Rewriting" : "Rewrite it"}
+              </button>
+              <input
+                className={`${FIELD} h-[42px] min-w-[220px] flex-1`}
+                maxLength={200}
+                onChange={(event) => setNudge(event.target.value)}
+                placeholder="Optional — shorter, warmer, lead with the deadline"
+                value={nudge}
+              />
+            </div>
+            <p className="mt-2 text-xs font-semibold text-phx-ink-faint">
+              Write it however it comes out. This says the same thing in the company&apos;s voice — shorter, plainer,
+              more corporate. It never adds a date, a figure, a link or anything inside [square brackets] that you did
+              not write yourself, and it refuses rather than guess.
+            </p>
+
+            {polished ? (
+              <div className="mt-3 rounded-lg border border-phx-line bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-phx-xs font-black uppercase tracking-wide text-phx-ink-2">What changed</span>
+                  <button className={PALE_BUTTON} onClick={undoPolish} type="button">
+                    <Undo2 className="h-4 w-4" />
+                    Put my words back
+                  </button>
+                </div>
+                {polished.changes.length > 0 ? (
+                  <ul className="mt-2 space-y-1">
+                    {polished.changes.map((change) => (
+                      <li className="text-sm font-semibold text-phx-ink" key={change}>
+                        {change}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm font-semibold text-phx-ink">The wording was tightened.</p>
+                )}
+                <p className="mt-2 text-xs font-semibold text-phx-ink-faint">
+                  Read it before you send it. Edit it freely — this panel closes as soon as you do.
+                </p>
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-4">
@@ -443,7 +546,7 @@ export function SatoEmailComposer({
         ) : null}
 
         <div className="mt-4 flex flex-wrap gap-2">
-          <button className={DARK_BUTTON} disabled={!canCompose || busy !== null} onClick={() => void runPreview()} type="button">
+          <button className={DARK_BUTTON} disabled={!canCompose || busy !== null || polishing} onClick={() => void runPreview()} type="button">
             {busy === "preview" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
             Preview and count recipients
           </button>
@@ -496,7 +599,7 @@ export function SatoEmailComposer({
                   {preview.recipientCount === 1 ? "" : "s"} now? A sent email cannot be recalled.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button className={DARK_BUTTON} disabled={busy !== null} onClick={() => void send()} type="button">
+                  <button className={DARK_BUTTON} disabled={busy !== null || polishing} onClick={() => void send()} type="button">
                     {busy === "send" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                     Yes, send it
                   </button>

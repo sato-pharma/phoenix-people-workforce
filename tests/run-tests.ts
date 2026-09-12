@@ -785,6 +785,7 @@ import {
   runSatoEmailRenderTests,
 } from "./sato-email.test.ts";
 import { runSatoEmailListsOnlyComposerTests } from "./sato-email-lists-only-composer.test.ts";
+import { runSatoEmailPolishTests } from "./sato-email-polish.test.ts";
 import { runEmailControlCenterTests } from "./email-control-center.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
 import { runWorkflowRegistryEnforcementTests } from "./workflow-registry-enforcement.test.ts";
@@ -5327,6 +5328,11 @@ await runTest(
 await runTest(
   "a Sato email send dedupes by address and is cut into emails of at most 25 — the cap the manual-email policy already enforces — with a per-email idempotency key and unfilled template gaps caught",
   runSatoEmailPlanTests,
+);
+
+await runTest(
+  "the Sato composer's rewrite changes wording only — a figure, a link or a [square bracket] gap the sender never wrote is refused, and the reader never learns a model was involved",
+  runSatoEmailPolishTests,
 );
 
 await runTest(

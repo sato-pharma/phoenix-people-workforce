@@ -14,10 +14,10 @@ untouched — different job, different audience, different identity. Nothing abo
 
 - **UI:** `/admin/sato-email` (Super Admin) or `/hr/admin/sato-email` (HR Advisory — the same page,
   rewritten into the HR shell by `isHrRewritablePath`, so there is no second page file).
-- **API:** `/api/admin/sato-email/{templates,employees,preview,send}`.
+- **API:** `/api/admin/sato-email/{templates,employees,polish,preview,send}`.
 - **Code:** [src/lib/sato-email/](../src/lib/sato-email/) — `service.ts` (the server half),
   `plan.ts` (who it reaches and how it is cut into emails), `render.ts` (the house body),
-  `draft.ts` (one parser shared by preview and send), `access.ts` (the gate).
+  `draft.ts` (one parser shared by preview and send), `polish.ts` (the rewrite), `access.ts` (the gate).
 - **Migration:** [`20260912070000_sato_email_composer.sql`](../supabase/migrations/20260912070000_sato_email_composer.sql).
 
 ## Who may use it
@@ -46,6 +46,65 @@ use a fixed email template or I can free type the email I want"*:
 - **Free-typed** — the sender writes the subject and body themselves.
 
 Either way the body is rendered into the Sato house design before it goes.
+
+## Rewrite it — the draft in the company's voice
+
+Owner 2026-09-12: *"add ai tool is the new sato composer in which i write what i want and it enhance
+rephrase more to the point more corporate"*.
+
+Under the body there is one button. The sender writes the email however it comes out — rough,
+half-Arabic, three paragraphs where one would do — presses **Rewrite it**, and gets the same email
+back shorter, plainer and in a formal corporate register. An optional one-line nudge beside the
+button ("shorter", "lead with the deadline") is passed through on top of the house voice.
+
+It is not a draft generator. There is no "write me an email about X" on this screen, and that is
+deliberate: the sender owns what the email says, and the button only owns how it reads.
+
+- **Code:** [src/lib/sato-email/polish.ts](../src/lib/sato-email/polish.ts) — the pure guards at the
+  top, the one model call at the bottom. **API:** `/api/admin/sato-email/polish`, gated by the same
+  `canUseSatoEmail` as every other route behind this screen and limited to 10 calls a minute per
+  person, because each one holds a server slot for up to a minute of upstream time.
+- **Model:** the copilot tier (`gpt-5.4`), not the cheap nano tier the one-sentence rewrites use.
+  This is a whole announcement going to a distribution list under the company's name, pressed a
+  handful of times a day; holding a multi-paragraph meaning steady while rewriting it is not the
+  job the nano tier is calibrated for.
+- **Headings become the house section device.** The sanitizer already turns `<h2>`/`<h3>` into the
+  bold paragraph that `render.ts` converts into a rule plus a small uppercase label, so a rewrite
+  that finds two real sections in the draft gets the journey paper's section device for free.
+
+### It rewrites wording. It never adds a fact.
+
+🔴 **This is the whole safety story, and it fails closed.** A model asked to make a thin note sound
+corporate will reach for the effective date, the policy number, the deadline and the link. On the
+one screen that mails a whole distribution list at once, a fabricated date written in confident
+prose is far worse than the clumsy sentence it replaced. So the rewrite is measured against what the
+sender actually wrote — his subject and his body, markup stripped — and **rejected**, not patched,
+when any of these is true:
+
+| Refused | Why |
+|---|---|
+| a figure that is not in his draft | an invented deadline, amount or time reads as company policy |
+| a `[square bracket]` gap that disappeared | those are gaps he fills himself; a filled one states as fact something nobody decided |
+| a link he did not write | an invented URL in a company-wide email is phishing-shaped |
+| any mention of AI, GPT or a model | owner rule 2026-08-04 — a user never learns a model was involved |
+| an empty subject or body | a blank email is a worse answer than a button that says "try again" |
+
+A refusal names what it caught and tells the sender to press it again or send his own words. He is
+standing in front of the button; nothing is lost.
+
+Two more things are cleaned rather than refused, because neither changes meaning: a sign-off the
+**sender did not write** is stripped (the composer has its own Signed field and the house frame
+prints it, so a second one signs the email twice), and the body goes through
+`sanitizeEmailTemplateHtml` like every other body, so a rewrite can only ever carry markup the
+design knows how to render.
+
+**Nothing is saved and nothing is sent.** The rewritten wording lands back in the same two fields
+the sender was already editing, the preview is invalidated with it — so a recipient count on screen
+can never belong to the older draft — and **Put my words back** restores his own text exactly,
+because it never left the browser. The panel closes the moment he edits anything, since undoing
+past his own edits would throw them away.
+
+All of it is pinned by `tests/sato-email-polish.test.ts`.
 
 ## Choosing the audience
 
