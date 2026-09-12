@@ -9,6 +9,7 @@
 import type { CandidateAppliedFor } from "@/lib/recruitment/applied-for";
 // Type-only, so the cycle with candidate-folder.ts (which imports `Candidate` from here) is erased
 // at compile time and never reaches the bundle — same shape as the applied-for import above.
+import type { CandidateRating } from "@/lib/recruitment/candidate-rating";
 import type { CandidateStorageFolderKind } from "@/lib/recruitment/candidate-folder";
 import type { CandidateUnconfirmedCvFacts } from "@/lib/recruitment/candidate-screening-facts";
 
@@ -216,6 +217,15 @@ export type Candidate = {
   statusNote: string | null;
   statusChangedAt: string | null;
   statusChangedByHrId: string | null;
+  /**
+   * The star: 1, 2 or 3, or null for a CV nobody has starred. NEVER 0 — see candidate-rating.ts.
+   *
+   * Beside the status trio and deliberately not part of it. A star is not a decision and does not
+   * move anything forward; it SURVIVES the decision, which is what lets a shortlist be ordered.
+   */
+  rating: CandidateRating | null;
+  ratedAt: string | null;
+  ratedByHrId: string | null;
   nationalId: string | null;
   email: string | null;
   phone: string | null;

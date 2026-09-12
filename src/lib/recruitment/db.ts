@@ -3,6 +3,7 @@
 
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { isStorableFolderKind } from "@/lib/recruitment/candidate-folder";
+import { parseCandidateRating } from "@/lib/recruitment/candidate-rating";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { assertWorkflowRegistryTransition } from "@/lib/workflow-registry/service";
 import {
@@ -129,6 +130,12 @@ export function mapCandidate(row: CandidateDbRow): Candidate {
     statusNote: textOrNull(row.status_note),
     statusChangedAt: textOrNull(row.status_changed_at),
     statusChangedByHrId: textOrNull(row.status_changed_by_hr_id),
+    // PARSED, not cast. The check constraint should make anything but 1, 2, 3 or NULL impossible,
+    // but this mapper also reads rows written before the column existed, and an unrecognised value
+    // resolving to "not starred" is the safe direction for a field that orders a queue.
+    rating: parseCandidateRating(row.rating),
+    ratedAt: textOrNull(row.rated_at),
+    ratedByHrId: textOrNull(row.rated_by_hr_id),
     nationalId: textOrNull(row.national_id),
     email: textOrNull(row.email),
     phone: textOrNull(row.phone),

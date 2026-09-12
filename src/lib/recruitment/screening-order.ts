@@ -14,6 +14,7 @@
 // exactly as it was. Nothing is hidden and nothing is auto-rejected — every candidate is still in
 // the queue and still gets a human decision. Only the order changes.
 
+import type { CandidateRating } from "@/lib/recruitment/candidate-rating";
 import { type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import { isNotACv } from "@/lib/recruitment/not-a-cv";
@@ -106,6 +107,19 @@ const bandRank: Record<ScreeningBand, number> = {
 export type ScreeningOrderInput = {
   /** ISO timestamp. Ties inside a band are broken newest-first, the same rule the table uses. */
   createdAt: string;
+  /**
+   * The star somebody put on this CV, 1 to 3, or null for the overwhelming majority nobody has.
+   *
+   * THE TOP KEY OF THE WHOLE ORDER — above the band, above pharma experience, above everything
+   * this module works out for itself. That is the point of it, and it is a deliberate inversion:
+   * every other rank here is DERIVED, and a star is a person saying "this one". A human who has
+   * read the document outranks a rule that has read the columns, and the owner asked for stars
+   * precisely so the ones he likes rise to the top rather than sitting wherever the band put them.
+   *
+   * It only ever moves CVs somebody actually starred. Unrated sorts exactly where it always did,
+   * which is most of the pile.
+   */
+  rating?: CandidateRating | null;
   family: CandidateRoleFamily | null;
   /**
    * Whether this person has worked as a medical rep. `null` means nobody has answered, which must
@@ -181,7 +195,9 @@ export function screeningBand(input: ScreeningOrderInput): ScreeningBand {
  * Sort key, lowest first. Exported for the test, and because a caller that wants to show WHY a
  * candidate is where they are needs the same numbers the sort used.
  */
-export function screeningSortKey(input: ScreeningOrderInput): [number, number, number, number] {
+export function screeningSortKey(
+  input: ScreeningOrderInput,
+): [number, number, number, number, number] {
   const band = screeningBand(input);
   // Confirmed pharma experience lifts a candidate within their band; an unanswered one sits in the
   // middle rather than at the bottom, so a data gap never costs somebody their place.
@@ -191,7 +207,21 @@ export function screeningSortKey(input: ScreeningOrderInput): [number, number, n
   // Pharma experience is the thing Phoenix is actually hiring for, so it stays first. Recency drops
   // to last because within one band, meeting the 12-year rep before the 1-year rep is worth more
   // than meeting the one who applied on Tuesday before the one who applied on Monday.
-  return [bandRank[band], pharma, experienceRank(input.yearsExperience), Number.isNaN(created) ? 0 : -created];
+  // NEGATED, because this key sorts lowest-first: three stars is -3 and leads, unrated is 0 and
+  // keeps the place the rest of the key gives it. Never a positive number, so an unstarred CV is
+  // never pushed BELOW where it would have been without the feature.
+  // Written as a branch rather than `-(input.rating ?? 0)`, which produces NEGATIVE ZERO for an
+  // unrated CV. It sorts identically — but `Object.is(-0, 0)` is false, so a strict assertion that
+  // an unstarred CV scores exactly 0 would fail against a key that is behaving perfectly. A number
+  // nobody can compare by equality is a trap left for the next person, not a clever saving.
+  const star = input.rating ? -input.rating : 0;
+  return [
+    star,
+    bandRank[band],
+    pharma,
+    experienceRank(input.yearsExperience),
+    Number.isNaN(created) ? 0 : -created,
+  ];
 }
 
 /**

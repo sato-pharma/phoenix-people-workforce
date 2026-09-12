@@ -68,6 +68,8 @@ import {
 import { roleFitVerdictLabels } from "@/lib/recruitment/role-fit";
 import type { WorkspaceCandidateRow, WorkspaceVacancy } from "@/lib/recruitment/screening-workspace-types";
 import { FREE_POSITION, NO_POSITION, VacancyPicker } from "@/components/recruitment/vacancy-picker";
+import { CandidateStars } from "@/components/recruitment/workstation/candidate-stars";
+import type { CandidateRating } from "@/lib/recruitment/candidate-rating";
 import { cn } from "@/lib/utils";
 
 export type SendState = {
@@ -79,6 +81,7 @@ export type SendState = {
 
 export function WorkstationReviewHeader({
   busy,
+  canRate,
   canReply,
   canSend,
   decided,
@@ -87,10 +90,12 @@ export function WorkstationReviewHeader({
   hiringManagers,
   onDecide,
   onNext,
+  onRate,
   onSend,
   onSendStateChange,
   onToggleFocus,
   positionSuggestions,
+  rating,
   row,
   sendState,
   sentConfirmation,
@@ -98,6 +103,15 @@ export function WorkstationReviewHeader({
   vacancies,
 }: {
   busy: boolean;
+  /**
+   * May this reader put a star on a CV?
+   *
+   * The same `candidates:update` the rating route enforces — which is also what gates the
+   * verdict buttons, since a star reorders the shared queue for everybody who screens and so is
+   * a change to the record. A reader without it is shown no stars to press rather than three
+   * that answer 403.
+   */
+  canRate: boolean;
   /**
    * May this reader answer an applicant on WhatsApp in their own words?
    *
@@ -115,11 +129,15 @@ export function WorkstationReviewHeader({
   hiringManagers: readonly ManagerPickerOption[];
   onDecide: (status: CandidateStatus, note: string | null) => void;
   onNext: () => void;
+  /** `null` takes the star off. Never 0 — see candidate-rating.ts. */
+  onRate: (next: CandidateRating | null) => void;
   onSend: () => void;
   onSendStateChange: (next: SendState) => void;
   onToggleFocus: () => void;
   /** Areas and job titles already in use, offered behind the free-typed position. */
   positionSuggestions: { jobTitles: string[]; areas: string[] };
+  /** The star as the reader sees it now — this sitting's if there is one, else the stored one. */
+  rating: CandidateRating | null;
   row: WorkspaceCandidateRow;
   sendState: SendState;
   sentConfirmation: string | null;
@@ -151,6 +169,16 @@ export function WorkstationReviewHeader({
   );
   const decisions = (
     <>
+      {/* ── THE STARS COME FIRST ──────────────────────────────────────────
+          At the head of the strip because a star is the CHEAPEST thing on it and the only one that
+          is not a commitment: it notifies nobody, decides nothing, moves nobody on, and is undone by
+          pressing it again. Everything to its right leaves a mark somebody else will see.
+
+          It is also not a button, which is why it does not wear the DecisionButton shape. Three of
+          those in a row would read as three more verdicts to weigh up on a strip whose whole design
+          note is that it had become a stripe of equal-weight rectangles. This is one control with
+          three rungs, and it looks like one. */}
+      {canRate ? <CandidateStars busy={busy} onRate={onRate} rating={rating} /> : null}
       {/* WHATSAPP SITS FIRST, and it is not a decision — it decides nothing and notifies nobody
           until the recruiter presses send inside WhatsApp itself. It lives in this group because
           this group is what renders on EVERY candidate in both the folded and full bands, which is

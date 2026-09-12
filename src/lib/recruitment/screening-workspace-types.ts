@@ -17,6 +17,7 @@
 // one place both meet — the server component that hands a loaded workspace to the client shell.
 
 import type { AppliedForSource } from "@/lib/recruitment/applied-for";
+import type { CandidateRating } from "@/lib/recruitment/candidate-rating";
 import type { CandidateRedFlag } from "@/lib/recruitment/red-flag";
 import type { CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
@@ -74,6 +75,13 @@ export type WorkspaceCandidateRow = {
   declaredExperience: string | null;
 
   source: string | null;
+  /**
+   * The star on this CV, 1 to 3, or null for one nobody has starred.
+   *
+   * Beside the status and never inside it — see candidate-rating.ts. It is also the TOP key of the
+   * queue order, so a row carrying one is at the top of the list it appears in.
+   */
+  rating: CandidateRating | null;
   status: CandidateStatus | null;
   /** The raw column, for the handful of production rows still carrying pre-vocabulary free text. */
   statusRaw: string;

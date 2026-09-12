@@ -15,6 +15,10 @@
 // import of their own. Nothing here reaches a Supabase client, and nothing here should.
 // tests/recruitment-screening-page.test.ts pins that import list exactly.
 
+import {
+  isScreeningRatingFilter,
+  type ScreeningRatingFilter,
+} from "@/lib/recruitment/candidate-rating";
 import { candidateRegionCodes, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { candidateRoleFamilies, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import { normalizeCandidateStatus, type CandidateStatus } from "@/lib/recruitment/candidate-status";
@@ -43,6 +47,8 @@ export type ScreeningQueueFilters = {
   received?: string | string[] | undefined;
   /** A source channel label, verbatim — see `candidateSourceChannel`, e.g. `WhatsApp`, `Email`. */
   source?: string | string[] | undefined;
+  /** A `screeningRatingFilters` value — `3`, `2`, `1` (that many stars OR MORE) or `unrated`. */
+  rating?: string | string[] | undefined;
   /**
    * One OPEN SEAT, by its vacancy id — "screen the vacant Menoufia 1 medical rep post".
    *
@@ -133,6 +139,8 @@ export type ScreeningQueueNarrowing = {
   received: ScreeningReceivedFilter | null;
   /** A source channel label, verbatim — see `candidateSourceChannel`. */
   source: string | null;
+  /** The star, as "this many OR MORE" — or `unrated`. See candidate-rating.ts for why not exact. */
+  rating: ScreeningRatingFilter | null;
   /** The open seat being screened, or null for the ordinary whole-pool queue. */
   vacancy: number | null;
 };
@@ -157,6 +165,12 @@ function parseRole(value: string | null): ScreeningRoleFilter | null {
   return (candidateRoleFamilies as readonly string[]).includes(normalized)
     ? (normalized as CandidateRoleFamily)
     : null;
+}
+
+function parseRating(value: string | null): ScreeningRatingFilter | null {
+  if (!value) return null;
+  const normalized = value.toLowerCase();
+  return isScreeningRatingFilter(normalized) ? normalized : null;
 }
 
 function parseReceived(value: string | null): ScreeningReceivedFilter | null {
@@ -214,6 +228,7 @@ export function parseScreeningFilters(filters: ScreeningQueueFilters = {}): Scre
     // `?sent=1&unsent=1` is somebody editing an address bar, not an attack. Sent wins for the same
     // reason unseen wins over seen below: it is the narrower, more specific half of the pair.
     notified: sent ? "sent" : unsent ? "unsent" : "any",
+    rating: parseRating(firstParam(filters.rating)),
     received: parseReceived(firstParam(filters.received)),
     region: parseRegion(firstParam(filters.region)),
     role: parseRole(firstParam(filters.role)),
@@ -237,6 +252,7 @@ export type ScreeningHrefOptions = {
   role?: ScreeningRoleFilter | null;
   region?: ScreeningRegionFilter | null;
   received?: ScreeningReceivedFilter | null;
+  rating?: ScreeningRatingFilter | null;
   source?: string | null;
   /** An open seat's vacancy id, or null to leave seat mode and go back to the whole pool. */
   vacancy?: number | null;
@@ -296,6 +312,7 @@ export function screeningHref(basePath: string, options: ScreeningHrefOptions = 
   if (options.region) params.set("region", options.region);
   if (options.area) params.set("area", options.area);
   if (options.received) params.set("received", options.received);
+  if (options.rating) params.set("rating", options.rating);
   if (options.source) params.set("source", options.source);
   if (options.vacancy) params.set("vacancy", String(options.vacancy));
   const query = params.toString();

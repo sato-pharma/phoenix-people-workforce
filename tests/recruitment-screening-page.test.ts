@@ -180,6 +180,7 @@ export async function runRecruitmentScreeningPageTests() {
   const nothing = {
     area: null,
     notified: "any",
+    rating: null,
     received: null,
     region: null,
     role: null,
@@ -662,7 +663,7 @@ export async function runRecruitmentScreeningPageTests() {
   // Imports only, not mentions — the file's own header explains this rule and says the word
   // "Supabase" while doing so, and a check that forbids explaining itself is a check nobody keeps.
   //
-  // The allowlist is three VOCABULARIES, and it is an allowlist rather than a count for a reason:
+  // The allowlist is four VOCABULARIES, and it is an allowlist rather than a count for a reason:
   // the Role and Region filters added 2026-08-30 need the same lists of role families and region
   // codes the pool's own filters use, and re-declaring either here would be two copies of a
   // vocabulary that drifts in one. Each of the three is verified below to import NOTHING itself, so
@@ -670,6 +671,9 @@ export async function runRecruitmentScreeningPageTests() {
   // must pass that same check first.
   const linkImports = [...linkSource.matchAll(/^import[\s\S]*?from "([^"]+)";$/gm)].map((match) => match[1]);
   const allowedLinkImports = [
+    // The star ladder, added 2026-09-12 with the Stars filter. It passes the same test as the other
+    // three below: candidate-rating.ts is numbers, labels and two type guards, and imports nothing.
+    "@/lib/recruitment/candidate-rating",
     "@/lib/recruitment/candidate-region",
     "@/lib/recruitment/candidate-role-family",
     "@/lib/recruitment/candidate-status",

@@ -207,6 +207,7 @@ import { runRecruitmentRequisitionPositionCatalogueTests } from "./recruitment-r
 import { runRecruitmentNonRecruitablePositionsTests } from "./recruitment-non-recruitable-positions.test.ts";
 import { runRecruitmentManagerInboxTests } from "./recruitment-manager-inbox.test.ts";
 import { runCvIntakeDigest6hTests } from "./cv-intake-digest-6h.test.ts";
+import { runRecruitmentCandidateRatingTests } from "./recruitment-candidate-rating.test.ts";
 import { runRecruitmentCandidatePoolTableTests } from "./recruitment-candidate-pool-table.test.ts";
 import { runRecruitmentLabelTests } from "./recruitment-labels.test.ts";
 import { runHiringDocumentsLabelTests } from "./hiring-documents-labels.test.ts";
@@ -2270,6 +2271,10 @@ await runTest(
 await runTest(
   "recruitment screening order (the queue meets field-force candidates first; nothing is hidden or auto-rejected)",
   runRecruitmentScreeningOrderTests,
+);
+await runTest(
+  "recruitment candidate rating (a star is 1-3, it is not a status, and it is the top key of the queue order)",
+  runRecruitmentCandidateRatingTests,
 );
 await runTest(
   "recruitment red-flag split (a blank nationality is never red, an Egyptian dual national is never red, and no CV is lost between the two tabs)",
