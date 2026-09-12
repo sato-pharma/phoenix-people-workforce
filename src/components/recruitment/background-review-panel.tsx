@@ -185,14 +185,17 @@ function ReviewGroup({
 
             {/* Already sitting on one of the two field-force shelves — the reason this row is in the
                 queue at all despite being "filed". Named so an admin does not have to go find out
-                where the CV already is before deciding whether it belongs there. */}
+                where the CV already is before deciding whether it belongs there.
+
+                The badge WRAPS. It reads like a label, but it is a clause carrying a FOLDER name,
+                and a folder name has no length bound — "Dokki - Mohandseen - Bolak" is a real area
+                and "Technical Support and infrastructure Engineer" is a real declared job title.
+                Measured on the live tab at 375px on 2026-09-12: held at `whitespace-nowrap` that
+                second label takes the whole page to scrollWidth 413 against clientWidth 375 — a
+                38px sideways scroll, the same break #3743 fixed two sections down. The widest one
+                rendering today is only 265px inside 349px, which is why it had not bitten yet. */}
             {candidate.folder &&
             (candidate.folder.kind === "medical_rep" || candidate.folder.kind === "district_manager") ? (
-              {/* Wraps: this reads like a label but it is a clause carrying a FOLDER name, and a
-                  folder name has no length bound — "Dokki - Mohandseen - Bolak" is a real area and
-                  "Technical Support and infrastructure Engineer" is a real declared job title.
-                  Measured at 375px on 2026-09-12 the widest one live is 265px inside 349px; a
-                  longer one is what breaks it, exactly as the folder chip nearly did in #3743. */}
               <span className="bg-amber-50 px-1.5 py-0.5 text-phx-xs font-semibold text-amber-700">
                 Filed: {candidateFolderKindLabels[candidate.folder.kind]} ·{" "}
                 {candidateFolderLabel(candidate.folder.kind, candidate.folder.key)}
