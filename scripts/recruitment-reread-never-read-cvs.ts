@@ -16,6 +16,8 @@ import {
 import { type ExtractedCandidateFields, isEmptyExtractedField } from "@/lib/recruitment/cv-extraction-fields";
 import { describeCvRead } from "@/lib/recruitment/cv-extraction-quality";
 import {
+  type CandidateEducationRow,
+  selectBlankFacultyCandidateIds,
   selectNewestIsRulesCandidateIds,
   selectReadCandidateIds,
   selectRulesOnlyCandidateIds,
@@ -126,6 +128,31 @@ import { cvRereadOpsMarker } from "@/lib/recruitment/ops-marker";
 //                      explicit, prints what it will cost, and is never set by anything but a
 //                      human typing it. Inbound intake cannot reach it. Measured price at the nano
 //                      tier (post-#2451): ~$0.0043 per CV, so all 59 ≈ $0.25.
+//   --blank-faculty    REPLACES the truth set with candidates who carry a degree and no faculty.
+//
+//                      Every other flag here narrows or widens "has no extraction row at all".
+//                      That question is about READ HISTORY, and a repaired extraction RULE does not
+//                      change anybody's read history — it changes what a read would now return. So
+//                      after the degree/faculty fix (ca00dc7b3, 2026-09-11) the candidates worth
+//                      re-reading were the ones whose RECORD still carried the hole, and not one of
+//                      them was reachable: measured on production 2026-09-12, all 313 of them have
+//                      an extraction row, so every existing flag selects exactly ZERO.
+//
+//                      This flag therefore REPLACES the set rather than narrowing it, and says so
+//                      on screen. It also skips the rules-only hold-back below, deliberately: that
+//                      hold-back exists because re-reading with a dead key rewrites the same free
+//                      row, and for a FACULTY the free rules engine is the whole fix — faculty is
+//                      in neither AI_WORTH_ASKING_FIELDS nor HIGH_VALUE_ESCALATION_FIELDS, so the
+//                      escalation gate never spends a cent looking for one. A free re-read is
+//                      exactly what this group needs.
+//
+//                      Measured on production 2026-09-12: 944 candidates, 563 with a faculty, 313
+//                      with a degree and no faculty, 42 of those applying for a Medical Rep role.
+//   --applied-for TEXT narrows --blank-faculty to one shelf by case-insensitive SUBSTRING against
+//                      applied_for_job_title. A substring and not an equality test because that
+//                      column holds whatever the subject line or the WhatsApp answer said, and the
+//                      same role is spelled a dozen ways; an equality test on the canonical
+//                      spelling reads as a much smaller group with no error to say so.
 //   --unresolved-only  narrows the set to candidates whose "Applying for" column is EMPTY and who
 //                      actually have a stored file. Added 2026-08-21 at the owner's instruction
 //                      ("run the extraction on the 56"). Most never-read CVs belong to candidates
@@ -149,6 +176,9 @@ type TargetRow = {
   full_name: string | null;
   created_at: string;
   source: string | null;
+  degree: string | null;
+  faculty: string | null;
+  applied_for_job_title: string | null;
 };
 
 // Candidates whose only stored file is CONFIRMED not to be a CV. Never re-read; there is nothing
@@ -256,6 +286,18 @@ async function main(): Promise<void> {
   const includeRulesOnly = args.includes("--include-rules-only");
   const forceModel = args.includes("--force-model");
   const newestRulesOnly = args.includes("--newest-rules-only");
+  const blankFaculty = args.includes("--blank-faculty");
+  const appliedForArg = args.find((a) => a.startsWith("--applied-for"));
+  const appliedFor = appliedForArg
+    ? (appliedForArg.includes("=")
+        ? appliedForArg.slice(appliedForArg.indexOf("=") + 1)
+        : args[args.indexOf(appliedForArg) + 1]) ?? null
+    : null;
+  // Refused rather than ignored. A narrowing flag that silently does nothing is how a run meant for
+  // 42 candidates quietly becomes a run over 313.
+  if (appliedFor !== null && !blankFaculty) {
+    throw new Error("--applied-for only narrows --blank-faculty. Pass both, or neither.");
+  }
   const limitArg = args.find((a) => a.startsWith("--limit"));
   const limit = limitArg ? Number(limitArg.split("=")[1] ?? args[args.indexOf(limitArg) + 1]) : Number.NaN;
 
@@ -333,23 +375,62 @@ async function main(): Promise<void> {
   // extractionRows is ordered oldest-first, which is what makes "newest" meaningful.
   const newestIsRulesIds = selectNewestIsRulesCandidateIds(extractionRows, RULES_ONLY_MODELS);
 
-  const { data: allCandidates, error: candidateError } = await supabase
-    .from("ats_candidates")
-    .select("id, full_name, created_at, source")
-    .order("created_at", { ascending: true });
-  if (candidateError) throw candidateError;
+  // PAGINATED, for the same reason and by the same shape as the extraction fetch above — and it was
+  // NOT until 2026-09-12, when this select was still unbounded. PostgREST caps an unbounded select
+  // at 1000 rows and returns no error and no marker when it does. The table held 944 rows that day,
+  // 56 short of the cap. Past it the NEWEST candidates simply stop existing as far as this script is
+  // concerned, which prints as a smaller "Never read" figure and reads as "nobody new needs
+  // reading" — the one failure shape that never announces itself.
+  const allCandidates: TargetRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data: page, error: candidateError } = await supabase
+      .from("ats_candidates")
+      .select("id, full_name, created_at, source, degree, faculty, applied_for_job_title")
+      .order("created_at", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (candidateError) throw candidateError;
+    const rows = (page ?? []) as TargetRow[];
+    allCandidates.push(...rows);
+    if (rows.length < PAGE) break;
+  }
 
-  let targets = ((allCandidates ?? []) as TargetRow[]).filter((row) => !readIds.has(String(row.id)));
-  console.log(`\nCandidates total : ${(allCandidates ?? []).length}`);
+  console.log(`\nCandidates total : ${allCandidates.length}`);
   console.log(`Already read     : ${readIds.size} distinct candidates`);
-  console.log(`Never read       : ${targets.length}`);
+
+  let targets: TargetRow[];
+  if (blankFaculty) {
+    // REPLACES the never-read set. Printed loudly, because a flag that silently redefines what a
+    // bulk run targets is exactly what an operator reads past at 2am.
+    const blankFacultyIds = selectBlankFacultyCandidateIds(allCandidates as CandidateEducationRow[], {
+      appliedForContains: appliedFor,
+    });
+    targets = allCandidates.filter((row) => blankFacultyIds.has(String(row.id)));
+    const neverRead = allCandidates.filter((row) => !readIds.has(String(row.id))).length;
+    console.log(`Never read       : ${neverRead}  (NOT the target set this run)`);
+    console.log(
+      `--blank-faculty  : ON — the truth set is REPLACED by "has a degree, has no faculty"` +
+        (appliedFor ? `, narrowed to applied_for_job_title containing "${appliedFor}"` : "") +
+        ".",
+    );
+    console.log(`Degree, no faculty: ${targets.length}`);
+    console.log(
+      "Faculty is free  : it is in neither AI_WORTH_ASKING_FIELDS nor HIGH_VALUE_ESCALATION_FIELDS,\n" +
+        "                   so the escalation gate never spends a cent looking for one. --force-model\n" +
+        "                   buys nothing for a faculty.",
+    );
+  } else {
+    targets = allCandidates.filter((row) => !readIds.has(String(row.id)));
+    console.log(`Never read       : ${targets.length}`);
+  }
 
   // --newest-rules-only ADDS to the set; it never subtracts. A candidate already selected as never
   // read stays selected, so the flag cannot shrink a run or quietly skip anybody.
-  if (newestRulesOnly) {
+  if (blankFaculty) {
+    console.log("Rules-history    : not applied — --blank-faculty selects on the candidate RECORD, not on read history.");
+  } else if (newestRulesOnly) {
     const before = targets.length;
     const selected = new Set(targets.map((row) => String(row.id)));
-    const widened = ((allCandidates ?? []) as TargetRow[]).filter(
+    const widened = allCandidates.filter(
       (row) => newestIsRulesIds.has(String(row.id)) && !selected.has(String(row.id)),
     );
     targets = [...targets, ...widened].sort(
@@ -363,7 +444,7 @@ async function main(): Promise<void> {
       `Newest row rules : ${newestIsRulesIds.size}  (not included — pass --newest-rules-only to re-read the ones whose newest row is free rules output)`,
     );
   }
-  if (rulesOnlyIds.size > 0) {
+  if (!blankFaculty && rulesOnlyIds.size > 0) {
     // Re-reading these while the key is still gone would only write the same free row again — so
     // the default is to hold them back. --include-rules-only releases them, which is what you want
     // once the key is spending again: these are precisely the CVs that were read WORST (a rules row
@@ -459,7 +540,10 @@ async function main(): Promise<void> {
   if (dryRun) {
     console.log("\n--dry-run: listing only, no AI call and no write.\n");
     for (const [index, row] of targets.entries()) {
-      console.log(`${String(index + 1).padStart(3)}. ${cairo(row.created_at)}  ${row.source ?? "-"}  ${row.full_name ?? "(no name)"}`);
+      const education = blankFaculty ? `  [degree: ${row.degree ?? "-"} | faculty: ${row.faculty ?? "(blank)"}]` : "";
+      console.log(
+        `${String(index + 1).padStart(3)}. ${cairo(row.created_at)}  ${row.source ?? "-"}  ${row.full_name ?? "(no name)"}${education}`,
+      );
     }
     return;
   }
