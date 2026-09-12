@@ -28,6 +28,11 @@ export async function buildFinanceSheetWorkbook(input: {
   const label = monthLabel(input.run.month, input.run.year);
   const scopeLabel = input.scope === "part1" ? "Part 1 (first installment)" : "Full monthly sheet";
 
+  // Held people are IN the table below, in red, with a note on the row — but the cover said only
+  // "Employees: N", so the one document finance executes a whole month from never mentioned that
+  // some of those N are not paid by this run at all (audit finding 38).
+  const heldCount = input.rows.filter((row) => row.onHold).length;
+
   buildCoverSheet(workbook, {
     title: "Automated Payroll — Finance Sheet (locked)",
     subtitle: `${label} · ${scopeLabel}`,
@@ -35,6 +40,15 @@ export async function buildFinanceSheetWorkbook(input: {
       ["Period", label],
       ["Scope", scopeLabel],
       ["Employees", String(input.rows.length)],
+      [
+        "On hold",
+        heldCount === 0
+          ? "None — every employee row below is paid by this run"
+          : `${heldCount} of ${input.rows.length}, shown in red below. A held row is NOT paid by ` +
+            "this run: no salary record is written, and nothing here records a payment made " +
+            "outside the system. Held means the SECOND part is owed, not the whole month — " +
+            "paying full net would pay part one twice.",
+      ],
       ["Protection", "All cells locked except Finance Edit / Finance Edit Reason"],
     ],
     confidentialNote:

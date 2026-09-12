@@ -294,6 +294,16 @@ export async function getPayslipCenterEmployeeOptions(access: AccessContext) {
   return [...optionsByKey.values()].sort((left, right) => left.fullName.localeCompare(right.fullName));
 }
 
+/**
+ * `%` and `_` are LIKE wildcards, and PostgREST turns `*` into `%` on the way through. A viewer
+ * typing any of them means the character itself, so they are escaped before the pattern is built —
+ * otherwise `A_5` would quietly match A-5, A15 and A.5, which is exactly the whole-match promise
+ * the HR id search makes.
+ */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_*]/g, (character) => `\\${character}`);
+}
+
 async function querySalaryRecords(
   column: "full_name" | "hr_id",
   query: string,
@@ -307,10 +317,14 @@ async function querySalaryRecords(
     .in("salary_batches.status", publishedPayslipStatuses);
   const base = audienceFilter ? scoped.or(audienceFilter) : scoped;
 
-  // ID columns require exact match — ilike on hr_id would match A-5, A-50, A-51, A-500, etc.
+  // An HR id still matches WHOLE or not at all — a wildcard here would match A-5 against A-50,
+  // A-51 and A-500. But `.eq` is case-SENSITIVE, and HR ids are stored mixed-case in this
+  // database, so typing `b-10` found nothing and read as "this person has no payslips" (audit
+  // finding 55). `ilike` with no `%` is exactly an equality test that ignores case; the escape
+  // keeps a typed `_` or `%` a literal character rather than a wildcard sneaking back in.
   const initialResult = await (column === "full_name"
-    ? base.ilike(column, `%${query}%`)
-    : base.eq(column, query)
+    ? base.ilike(column, `%${escapeLikePattern(query)}%`)
+    : base.ilike(column, escapeLikePattern(query))
   ).limit(120);
   const data: unknown[] | null = initialResult.data;
   const error: unknown = initialResult.error;

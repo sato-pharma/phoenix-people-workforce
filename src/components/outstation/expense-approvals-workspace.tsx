@@ -254,6 +254,12 @@ export function ExpenseApprovalsWorkspace({
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveSkipped, setSaveSkipped] = useState<SkippedDecision[]>([]);
+  /**
+   * Decisions that were saved but did NOT reach payroll — the run's Part 2 is already confirmed,
+   * or the resync failed (audit finding 47). The server names each one; this screen has to show it,
+   * because "Approvals saved." over the top of it reads as the money having moved.
+   */
+  const [savePayrollWarnings, setSavePayrollWarnings] = useState<string[]>([]);
   const [selectedTripIds, setSelectedTripIds] = useState<Set<string>>(() => new Set());
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
   const [view, setView] = useState<"queue" | "employees">("queue");
@@ -713,7 +719,12 @@ export function ExpenseApprovalsWorkspace({
     setSaving(true);
     setSaveMessage(null);
     setSaveSkipped([]);
+    setSavePayrollWarnings([]);
     const notWritten: SkippedDecision[] = [];
+    // What the payroll resync could NOT apply — a run whose Part 2 is already confirmed, or a
+    // resync that failed. The server has said this since audit finding 47's server half; this
+    // screen used to drop it on the floor and still print "Approvals saved."
+    const payrollNotApplied: string[] = [];
     try {
       const changedReportIds = new Set<string | null>();
       for (const record of records) {
@@ -764,6 +775,10 @@ export function ExpenseApprovalsWorkspace({
         if (!response.ok) throw new Error(payload?.message || "Unable to save approvals.");
         const skipped = payload?.requestDecisions?.skipped;
         if (Array.isArray(skipped)) notWritten.push(...(skipped as SkippedDecision[]));
+        const warnings = payload?.payrollWarnings;
+        if (Array.isArray(warnings)) {
+          payrollNotApplied.push(...warnings.filter((line: unknown): line is string => typeof line === "string"));
+        }
       }
 
       setDecisions({});
@@ -776,6 +791,9 @@ export function ExpenseApprovalsWorkspace({
       // already in a paid payroll batch, or a decided request being sent back to pending. Reporting
       // "Approvals saved." over that is how a reviewer walks away believing money moved.
       setSaveSkipped(notWritten);
+      // The decision IS saved here — it simply never reached payroll. Silence would leave a
+      // reviewer believing the money moved this month when it did not (audit finding 47).
+      setSavePayrollWarnings([...new Set(payrollNotApplied)]);
       setSaveMessage(
         notWritten.length === 0
           ? "Approvals saved."
@@ -877,14 +895,33 @@ export function ExpenseApprovalsWorkspace({
         // decisions landed and some did not, and the reviewer has to see which. `saveSkipped` is
         // the fact, so the tone is read from that rather than sniffed back out of the message text.
         <AdminCallout
-          tone={/unable|failed/i.test(saveMessage) ? "danger" : saveSkipped.length > 0 ? "warning" : "success"}
+          tone={
+            /unable|failed/i.test(saveMessage)
+              ? "danger"
+              : saveSkipped.length > 0 || savePayrollWarnings.length > 0
+                ? "warning"
+                : "success"
+          }
         >
-          {/unable|failed/i.test(saveMessage) || saveSkipped.length > 0 ? (
+          {/unable|failed/i.test(saveMessage) ||
+          saveSkipped.length > 0 ||
+          savePayrollWarnings.length > 0 ? (
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           ) : (
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
           )}
-          <p className="text-sm font-semibold">{saveMessage}</p>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">{saveMessage}</p>
+            {/* Saved, but not carried into payroll. It never wears a green tick, and it names the
+                month and the way back — reopening Part 2 — rather than just failing quietly. */}
+            {savePayrollWarnings.length > 0 ? (
+              <ul className="mt-1.5 flex flex-col gap-1 text-xs font-medium">
+                {savePayrollWarnings.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
         </AdminCallout>
       ) : null}
 

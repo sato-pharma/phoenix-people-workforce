@@ -41,6 +41,9 @@ import { SelectField } from "./select-field";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+/** One excluded person as `getRunView` returns them — named, because a panel never shows a code. */
+type ExcludedPerson = { hrId: string; fullName: string; reason: string | null };
+
 /**
  * Purely a visual grouping of the same PART1/PART2_STEP_KEYS — no step gains or
  * loses anything, HR just no longer scans one flat row of 10 identical pills to
@@ -134,7 +137,11 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
   const [excludePrompt, setExcludePrompt] = useState<{ hrId: string; fullName: string } | null>(null);
   const [excludeReason, setExcludeReason] = useState("");
   const [draftRows, setDraftRows] = useState<DraftRow[]>([]);
-  const excludedRows = useMemo(() => draftRows.filter((row) => row.excluded), [draftRows]);
+  /**
+   * Excluded people as the SERVER names them (audit finding 54). A draft row carries only the HR
+   * code; the name has to be joined server-side, so this cannot be derived from `draftRows` here.
+   */
+  const [excludedPeople, setExcludedPeople] = useState<ExcludedPerson[]>([]);
   const [populationDiff, setPopulationDiff] = useState<PopulationDiff | null>(null);
   /** Who this run is NOT paying, and why — see the panel below the reconciliation. */
   const [holdReview, setHoldReview] = useState<HoldReview | null>(null);
@@ -205,6 +212,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       setRun(data.run ?? null);
       setStepStates(data.view?.stepStates ?? []);
       setDraftRows(data.view?.draftRows ?? []);
+      setExcludedPeople((data.view?.excludedPeople ?? []) as ExcludedPerson[]);
       setRecon(null);
       setNonEmployeeCount({ first: 0, second: 0 });
       setPopulationDiff(null);
@@ -721,21 +729,23 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
 
       {/* Who's currently excluded from this run, with the reason and a one-click
           reversal — so an exclusion is never a one-way, un-auditable dead end. */}
-      {excludedRows.length > 0 ? (
+      {excludedPeople.length > 0 ? (
         <AdminCallout tone="warning">
-          <div>
-            <div className="font-black">{people(excludedRows.length)} excluded from this run</div>
+          <div className="min-w-0">
+            <div className="font-black">{people(excludedPeople.length)} excluded from this run</div>
             <ul className="mt-2 flex flex-col gap-1 text-xs">
-              {excludedRows.map((row) => (
-                <li key={row.employeeHrIdCompact} className="flex items-center justify-between gap-2">
+              {excludedPeople.map((person) => (
+                <li key={person.hrId} className="flex items-center justify-between gap-2">
                   <span>
-                    <span className="font-semibold">{row.employeeHrId}</span>
-                    {row.excludedReason ? ` — ${row.excludedReason}` : ""}
+                    {/* The person, then the code — never the code alone (audit finding 54). This
+                        panel asks HR to decide about someone, and a bare B-7 is not someone. */}
+                    <span className="font-semibold">{person.fullName}</span> ({person.hrId})
+                    {person.reason ? ` — ${person.reason}` : ""}
                   </span>
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => void submitInclude(row.employeeHrId, row.employeeHrId)}
+                    onClick={() => void submitInclude(person.hrId, person.fullName)}
                     className="shrink-0 font-semibold underline underline-offset-2 disabled:opacity-50"
                   >
                     Include again
