@@ -160,6 +160,10 @@ function securityProxy(request: NextRequest): NextResponse | null {
       // route verifies that signature itself, so this is CSRF-exempt by the same shared-secret
       // pattern as the other provider webhooks above.
       request.nextUrl.pathname === "/api/webhooks/whatsapp" ||
+      // The Future Talents Portal claiming the WhatsApp videos it has copied: a server-to-server
+      // POST with no Origin header, authorised by FTP_VIDEO_HANDOFF_SECRET inside the route, so it
+      // is CSRF-exempt by the same shared-secret pattern as the provider webhooks above.
+      request.nextUrl.pathname === "/api/integrations/ftp-videos" ||
       // RFC 8058 one-click unsubscribe: the mailbox provider POSTs cross-origin; the
       // signed token (not a session) authorises it, so it is CSRF-exempt by design.
       request.nextUrl.pathname.startsWith("/api/email/unsubscribe/")

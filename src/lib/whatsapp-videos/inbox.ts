@@ -122,6 +122,60 @@ export async function captureInboundVideo(input: InboundVideoCapture): Promise<{
   }
 }
 
+export type InboundSubmissionIdCapture = {
+  wamid: string;
+  waId: string;
+  contactName: string | null;
+  submissionIds: string[];
+  sentAt: string | null;
+  historical: boolean;
+  deliveredToPhoneNumberId: string | null;
+  deliveredToDisplayNumber: string | null;
+};
+
+/**
+ * Records a message carrying a Future Talents submission id. Idempotent on `wamid`, like a video.
+ *
+ * Kept so the portal can tell whose videos a chat holds when the phone they came from is not the
+ * one on the intern's profile. Nothing else is done with it — no reply, no candidate, no
+ * notification — which is the point: without this the intern would be asked for a CV.
+ */
+export async function captureInboundSubmissionId(input: InboundSubmissionIdCapture): Promise<{ outcome: CaptureOutcome }> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase.from("whatsapp_inbound_submission_id").insert({
+      contact_name: input.contactName,
+      delivered_to_display_number: input.deliveredToDisplayNumber,
+      delivered_to_phone_number_id: input.deliveredToPhoneNumberId,
+      historical: input.historical,
+      sent_at: input.sentAt,
+      submission_ids: input.submissionIds,
+      wa_id: input.waId,
+      wamid: input.wamid,
+    });
+
+    if (error) {
+      if (error.code === "23505") return { outcome: "duplicate" };
+      logError("Failed to capture an inbound submission id", {
+        error,
+        labels: { event: "whatsapp_submission_id_capture_failed", wamid: input.wamid },
+      });
+      return { outcome: "failed" };
+    }
+
+    logInfo("Captured an inbound submission id", {
+      labels: { event: "whatsapp_submission_id_captured", historical: input.historical, wamid: input.wamid },
+    });
+    return { outcome: "captured" };
+  } catch (error) {
+    logError("Inbound submission id capture threw", {
+      error,
+      labels: { event: "whatsapp_submission_id_capture_threw", wamid: input.wamid },
+    });
+    return { outcome: "failed" };
+  }
+}
+
 type PendingRow = {
   id: string;
   wamid: string;

@@ -362,6 +362,7 @@ copies directly with no variable fallback, so deleting the secret copies would s
 | Secret | Purpose |
 |---|---|
 | CRON_SECRET | Bearer-token auth for cron-job.org's calls into `/api/cron/*` |
+| FTP_VIDEO_HANDOFF_SECRET | Bearer token the Future Talents Portal sends to `/api/integrations/ftp-videos` to list and claim WhatsApp closing videos. Its own token, deliberately never `CRON_SECRET`; unset means the route refuses every call. The portal holds the same value as `PHOENIX_VIDEO_RELAY_SECRET` |
 
 ### Maps & geo
 | Secret | Purpose |
