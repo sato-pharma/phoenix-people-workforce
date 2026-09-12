@@ -564,6 +564,7 @@ import { runOfficeAllocationTests } from "./office-allocation.test.ts";
 import { runOfficeGoldenRuleLockTests } from "./office-golden-rule-lock.test.ts";
 import { runClosingOfficeDifferentiationTests } from "./closing-office-differentiation.test.ts";
 import { runOfficeColumnIsCnsOnlyTests } from "./office-column-is-cns-only.test.ts";
+import { runClosingTargetInkTests } from "./closing-target-ink.test.ts";
 import { runSosEvenSplitEzTests } from "./sos-even-split-ez.test.ts";
 import { runClosingMatrixFoldTests } from "./closing-matrix-fold.test.ts";
 import { runClosingSummaryFitsTests } from "./closing-summary-fits.test.ts";
@@ -2622,6 +2623,12 @@ await runTest(
   + "sheet appear on CNS and nowhere else; every other line's Closing Matrix is identical with and "
   + "without an Office grid, because the grid is a lens and never a source)",
   runOfficeColumnIsCnsOnlyTests,
+);
+await runTest(
+  'the Monthly Closing Target axis is orange (owner, 2026-09-12: "make the tgt orange" — the Tgt '
+  + "figures no longer borrow the dim grey, and every shade clears 4.5:1 on every ground that row "
+  + "variant puts the cell on)",
+  runClosingTargetInkTests,
 );
 await runTest(
   "EZ even split (owner, 2026-08-26: EZ is credited evenly across the CNS reps active in Cairo and "
