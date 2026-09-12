@@ -63,7 +63,7 @@ A defect here moves money into or out of a real person's account. Verified again
 | **16** | The same non-employee can be seeded automatically and typed in by hand on one run, and be paid twice. | #3696 | ☑ |
 | **17** | Syncing the standing list during Part 2 can add money to a Part 1 that is already paid, and that row can then never be removed. | #3696 | ☑ |
 | **22** | Changing someone's payment mode between the two confirms charges their loan twice, or drops it entirely. | #3703 | ☑ ⚠ |
-| **23** | The Additions step writes unlimited money with no source, no reason, and no audit record of two of its three fields. | #3707 | **partly** |
+| **23** | The Additions step writes unlimited money with no source, no reason, and no audit record of two of its three fields. | #3707 | ☑ |
 | **39** | An employee can be excluded from a run after their first instalment was paid, erasing them from every record. | #3712 | ☑ |
 | **41** | The insurance-wage spreadsheet import accepts any positive number, with no legal floor or ceiling. | #3712 | ☑ |
 | **42** | A negative bonus is accepted end to end and becomes a deduction nothing checks. | #3717 | ☑ |
@@ -75,7 +75,7 @@ A defect here moves money into or out of a real person's account. Verified again
 
 ### Tier 1 — results, 2026-09-12
 
-**Ten of the twelve verified. One is partly fixed by deliberate decision. One names no code at all.**
+**Eleven of the twelve verified. One names no code at all.**
 
 Every ☑ above was established the same way: the fix was broken on purpose, the check that should
 catch it was watched firing, and the file was restored from a byte copy. A green check on unmodified
@@ -104,15 +104,19 @@ excluded.
 | Any insurance wage outside the legal band (41)? | **0** of 167; band 2,700–16,700, stored range 5,600–16,700 |
 | The same non-employee paid twice on one run (16)? | **0.** 14 rows — 7 seeded, 7 typed by hand — no duplicate identity |
 
-#### The three answers that are not a clean tick
+#### The two answers that are not a clean tick
 
-**23 is two thirds fixed, and the missing third is a question for the owner.** An addition with no
-reason is now refused at confirm, and the audit record carries bonus and overtime instead of only
-incentive. But the finding also asked for an **upper limit, and there is none** — verified: a
-5,000,000 EGP bonus with the one-word reason "because" is accepted. That is a deliberate choice
-recorded in the code: *"a limit is a number only the owner can give."* It is correct not to invent
-one. It is not correct to carry the finding as closed while the cap is open, so **it is listed here
-as partly fixed until the owner names a figure — or rules that no cap is wanted.**
+**23 is closed, and the missing third was closed by a ruling rather than by code.** An addition with
+no reason is now refused at confirm, and the audit record carries bonus and overtime instead of only
+incentive. The finding also asked for an **upper limit**, and there is none — verified: a 5,000,000
+EGP bonus with the one-word reason "because" is accepted. The code declined to invent one on the
+grounds that *"a limit is a number only the owner can give."*
+
+> **THE OWNER RULED ON 2026-09-12: NO CAP.** There is no upper limit on a payroll addition, by
+> decision. The reason requirement is the whole of the control, and that is deliberate: a threshold
+> would block a legitimate payment on a number nobody agreed. **Do not propose a cap again, and do
+> not "fix" an uncapped addition back into a defect** — a large addition with a reason is the system
+> working as the owner intends. Anyone reading a large figure back reads the reason, not a limit.
 
 **22 and 23 are fixed for the next month, not proven on a month that has run.** All 244 production
 draft rows carry `settled_in_part1 = null`, and all 5 rows with an addition carry no reason —
