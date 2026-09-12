@@ -131,12 +131,24 @@ type CandidateRow = {
   graduation_year: number | null;
   degree: string | null;
   status: string | null;
-  cv_position_key: string | null;
   preferences_declared_at: string | null;
 };
 
 const CANDIDATE_COLUMNS =
-  "id, full_name, address, governorate, current_job_title, years_experience, graduation_year, degree, status, cv_position_key, preferences_declared_at";
+  "id, full_name, address, governorate, current_job_title, years_experience, graduation_year, degree, status, preferences_declared_at";
+
+/**
+ * The position key lives on the EXTRACTION row, not on the candidate.
+ *
+ * `ats_candidates` has no such column — an earlier draft of this file selected `cv_position_key`
+ * and PostgREST answered 42703. `ats_candidate_cv_extractions.position_key` is the one place it is
+ * recorded, which is also where `cv-extraction.ts` reads it from, so a candidate with no extraction
+ * on file has no key at all and falls back to the universal schema.
+ */
+type NewestExtraction = {
+  fields: ExtractedCandidateFields;
+  positionKey: string;
+};
 
 type Proposal = {
   candidateId: string;
@@ -394,6 +406,10 @@ async function main(): Promise<void> {
 
   const proposals: Proposal[] = [];
 
+  // Loaded for BOTH paths: in STORED mode it is the reading being compared, and in --reread mode it
+  // is still the only record of which schema this candidate's CV was read under.
+  const newest = await loadNewestExtractions(supabase);
+
   if (reread) {
     console.log(
       `\n--reread         : ON. All ${targets.length} targets reach the model through the FIXED extractor.`,
@@ -412,13 +428,10 @@ async function main(): Promise<void> {
 
     for (const [index, row] of targets.entries()) {
       const label = `${String(index + 1).padStart(4)}/${targets.length}  ${row.full_name ?? "(no name)"}`;
+      const positionKey = newest.get(row.id)?.positionKey ?? defaultCvPositionKey;
       try {
-        const result = await extractCandidateFieldsFromCv(
-          row.id,
-          access,
-          row.cv_position_key ?? defaultCvPositionKey,
-        );
-        const found = collect(row, result.fields, allowClearingGraduationYear);
+        const result = await extractCandidateFieldsFromCv(row.id, access, positionKey);
+        const found = collect(row, result.fields, positionKey, allowClearingGraduationYear);
         proposals.push(...found);
         console.log(`${label} — ${found.length} correction(s)`);
       } catch (error) {
@@ -435,11 +448,10 @@ async function main(): Promise<void> {
         "                   fix for those candidates. Pass --reread --confirm-spend for the repair.",
     );
 
-    const newest = await loadNewestExtractions(supabase);
     for (const row of targets) {
-      const fields = newest.get(row.id);
-      if (!fields) continue;
-      proposals.push(...collect(row, fields, allowClearingGraduationYear));
+      const extraction = newest.get(row.id);
+      if (!extraction) continue;
+      proposals.push(...collect(row, extraction.fields, extraction.positionKey, allowClearingGraduationYear));
     }
   }
 
@@ -463,6 +475,7 @@ async function main(): Promise<void> {
 function collect(
   row: CandidateRow,
   fields: ExtractedCandidateFields,
+  positionKey: string,
   allowClearingGraduationYear: boolean,
 ): Proposal[] {
   return selectFactCorrections({
@@ -470,7 +483,7 @@ function collect(
     candidate: asCamelCase(row),
     extractedFields: fields,
     hasDeclaredPreferences: row.preferences_declared_at !== null,
-    positionKey: row.cv_position_key ?? defaultCvPositionKey,
+    positionKey,
   }).map((correction) => ({
     address: row.address,
     candidateId: row.id,
@@ -480,13 +493,18 @@ function collect(
 }
 
 /** The newest extraction row per candidate, normalized to { value, confidence }. */
-async function loadNewestExtractions(supabase: OpsClient): Promise<Map<string, ExtractedCandidateFields>> {
-  type Row = { candidate_id: string; created_at: string; extracted_fields: unknown };
+async function loadNewestExtractions(supabase: OpsClient): Promise<Map<string, NewestExtraction>> {
+  type Row = {
+    candidate_id: string;
+    created_at: string;
+    extracted_fields: unknown;
+    position_key: string | null;
+  };
   const rows: Row[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data: page, error } = await supabase
       .from("ats_candidate_cv_extractions")
-      .select("candidate_id, created_at, extracted_fields")
+      .select("candidate_id, created_at, extracted_fields, position_key")
       .order("created_at", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw error;
@@ -496,9 +514,12 @@ async function loadNewestExtractions(supabase: OpsClient): Promise<Map<string, E
   }
 
   // Ordered oldest-first, so a plain overwrite leaves the newest standing.
-  const newest = new Map<string, ExtractedCandidateFields>();
+  const newest = new Map<string, NewestExtraction>();
   for (const row of rows) {
-    newest.set(String(row.candidate_id), normalizeStoredExtractionFields(row.extracted_fields));
+    newest.set(String(row.candidate_id), {
+      fields: normalizeStoredExtractionFields(row.extracted_fields),
+      positionKey: row.position_key ?? defaultCvPositionKey,
+    });
   }
   return newest;
 }
