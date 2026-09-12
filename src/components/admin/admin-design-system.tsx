@@ -345,16 +345,37 @@ export function AdminSectionHeader({
   description: string;
   title: string;
 }) {
+  // ── The header row must WRAP, not crush its own title ─────────────────────────
+  // Owner, 2026-09-12, with a screenshot of the Closing Matrix card: "fix the shit
+  // we are seeing now" — the heading sat on top of the LINE label and the
+  // description ran one word per line down the page.
+  //
+  // Two things combined, and neither is visible in a diff of the other:
+  //   1. `app/globals.css` sets `min-width: 0` on every flex child in the admin
+  //      shell that does not name a `min-w-*` of its own. That is deliberate (it
+  //      is what keeps long cells from dragging a page sideways) and it means a
+  //      text block here has NO min-content floor to stop at.
+  //   2. The action carried `shrink-0`, so a wide toolbar took the whole row and
+  //      the text block was shrunk to literally 0 px. Measured on production at
+  //      819 px: action 752, text block 0 — heading 0 wide overflowing its box.
+  //
+  // So the row wraps instead. The text block gets a 20rem flex-basis, which is
+  // small enough never to force a wrap on its own and large enough that when the
+  // action does not fit beside it the action drops to its own line. Measured on
+  // production, before → after: 640 px 0 → 558, 819 px 0 → 727, 960 px 100 → 868;
+  // 1100 px and 1440 px are byte-identical, and 375 px never entered this branch.
+  // `shrink-0` is gone because on its own line the action must be able to reflow —
+  // it is also what made the toolbar's own `flex-wrap` inert.
   return (
-    <div className="flex flex-col gap-4 border-b border-slate-200/80 bg-white px-5 py-5 sm:px-6 sm:flex-row sm:items-start sm:justify-between">
-      <div>
+    <div className="flex flex-col gap-4 border-b border-slate-200/80 bg-white px-5 py-5 sm:px-6 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+      <div className="sm:grow sm:shrink sm:basis-80">
         <div className="flex items-center gap-2.5">
-          <span className="h-2 w-2 bg-phx-accent" />
+          <span className="h-2 w-2 shrink-0 bg-phx-accent" />
           <h2 className="text-lg font-black tracking-tight text-slate-900">{title}</h2>
         </div>
         <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
       </div>
-      {action ? <div className="w-full shrink-0 sm:w-auto">{action}</div> : null}
+      {action ? <div className="w-full sm:w-auto">{action}</div> : null}
     </div>
   );
 }

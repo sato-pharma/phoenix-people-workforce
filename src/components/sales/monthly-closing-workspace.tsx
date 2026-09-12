@@ -420,7 +420,10 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
 
       <AdminTableShell
         action={(
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          // Six controls, ~750 px if they insist on one line. They have to be able to
+          // fold onto a second, or this toolbar takes the whole header row and leaves
+          // the "Closing Matrix" title nothing — see AdminSectionHeader.
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:justify-end">
             <label className="flex flex-col gap-1 sm:w-44">
               <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
               <SearchableSelect
