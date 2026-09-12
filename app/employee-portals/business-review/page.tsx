@@ -7,9 +7,11 @@
 //   District Manager                                     → their own district's areas
 //   Medical Representative                               → no access (owner ruling)
 //
-// Scope is resolved by src/lib/business-review/portal-scope.ts against a snapshot of the live
-// organogram seat map, NOT by matching region labels or DM display names. That shortcut has
-// produced a real defect here before (#1479).
+// Scope is resolved by src/lib/business-review/portal-scope.ts against the LIVE organogram seat
+// map, NOT by matching region labels or DM display names. That shortcut has produced a real defect
+// here before (#1479). It was resolved against a committed snapshot of that map until 2026-09-12,
+// when seven serving district managers were found to be locked out of the module by a file six
+// weeks out of date; the snapshot is no longer in the request path.
 //
 // Two different timeframes meet on this page and are deliberately not merged: the numbers are the
 // history of whatever window the viewer picked, while the seat map is today. An area that was
@@ -22,8 +24,7 @@ import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/
 import { BusinessReviewPortal } from "@/components/business-review/portal-review.client";
 import {
   applySeatScope,
-  resolveReviewPortalScope,
-  reviewAccessMapGeneratedAt,
+  loadReviewPortalScope,
 } from "@/lib/business-review/portal-scope";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import {
@@ -67,7 +68,10 @@ type PageProps = {
 
 export default async function PortalBusinessReviewPage({ searchParams }: PageProps) {
   const access = await resolveAuthenticatedPageAccess();
-  const scope = resolveReviewPortalScope({ hrId: access.hrId, sessionRole: access.role });
+  const { scope, resolvedAt } = await loadReviewPortalScope({
+    hrId: access.hrId,
+    sessionRole: access.role,
+  });
 
   const shell = (children: React.ReactNode, description: string, badge: string) => (
     <EmployeePortalPageShell badge={badge} description={description} title="Business Review">
@@ -96,7 +100,7 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
   const shared = {
     available,
     coverage,
-    mapGeneratedAt: reviewAccessMapGeneratedAt(),
+    mapGeneratedAt: resolvedAt,
     restatementNotice: REVIEW_SOURCE_NOTICE,
     window,
   };
