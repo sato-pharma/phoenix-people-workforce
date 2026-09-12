@@ -79,8 +79,14 @@ const GROUND = {
   totalAlt: CLOSING_IDENTITY.secondaryNavy,
 } as const;
 
-/** Ground for a cell, honouring a row-wide override (Direct rows, total rows). */
-function groundOf(rowBg: string | undefined, own: string) {
+/**
+ * Ground for a cell, honouring a row-wide override (Direct rows, total rows).
+ *
+ * `own` is optional because every ground helper deliberately returns undefined on a grand-total
+ * row - that row is navy end to end and a cell ground would paint straight over it. So "no ground"
+ * is a real answer here, not a missing one, and the result is passed to a `bg?: string` prop.
+ */
+function groundOf(rowBg: string | undefined, own: string | undefined) {
   return rowBg ?? own;
 }
 

@@ -127,8 +127,13 @@ export async function runClosingScreenIdentityTests() {
       `the ${name} column tint must stay a TINT (alpha ${tint.alpha}): these grounds sit over a zebra band on some rows and a region subtotal's fill on others, and at high alpha they erase whichever they land on`,
     );
   }
-  assert.ok(
-    CLOSING_COLUMN_TINT.office !== CLOSING_COLUMN_TINT.achievement,
+  // Compared through the widened values rather than `office !== achievement`: the object is `as
+  // const`, so TypeScript reads that as two non-overlapping literal types and rejects the
+  // comparison outright (TS2367) instead of letting it run.
+  const tintValues: string[] = Object.values(CLOSING_COLUMN_TINT);
+  assert.equal(
+    new Set(tintValues).size,
+    tintValues.length,
     "two special columns sharing one ground identifies neither",
   );
 
