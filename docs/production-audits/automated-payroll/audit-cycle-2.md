@@ -131,6 +131,60 @@ An audit that lists only problems says nothing about coverage. These were examin
 | Run-phase gates | **19 of 19** Automated Payroll money-writing handlers reach a phase check; all six gaps were in the legacy `/api/payroll/` tree, and finding 56 is one of them |
 | Arithmetic | Day-rate divisor fails closed as #3752 ruled; `distributeAmount` absorbs the rounding residual correctly |
 | Money handling | No NaN swallowed into a number; no unguarded money divisor |
+| `set_config` guard bypasses | **2 of 2** audited against the standard this cycle set. `request.phx_allow_salary_batch_delete` was finding 56. `request.phx_allow_terminal_employee_reactivation` has **no setter at all** — see below |
+
+### The second bypass flag, audited against the standard finding 56 set
+
+Finding 56 produced a standing rule: *when a migration adds a bypass for a guard, the function that
+sets the bypass must re-assert the rule itself, because a guard the application can switch off is
+invisible to everyone reading the schema.* The schema contains exactly two such flags. The second
+was audited on 2026-09-12, read from live production (`ozucdzovmcqvepbozvqf`) rather than from the
+migration ledger, since the ledger reports intent and not reality.
+
+**`request.phx_allow_terminal_employee_reactivation` is sound.** It is not the finding 56 shape,
+and the reason is stronger than "the setter re-asserts the rule": **there is no setter.**
+
+What reads the flag — exactly one object, and nothing else:
+
+| Surface | Result |
+| --- | --- |
+| Functions whose body mentions the flag | **1** — `public.phx_prevent_terminal_employee_reactivation()`, the guard itself |
+| Triggers running that function | **1** — `phx_prevent_terminal_employee_reactivation`, `BEFORE UPDATE ON public.employees FOR EACH ROW`, `tgenabled = 'O'` |
+| RLS policies referencing the flag | **0** (`pg_policy.polqual` / `polwithcheck` scanned) |
+| Check constraints referencing the flag | **0** |
+
+What can set it — nothing that ships:
+
+| Path | Result |
+| --- | --- |
+| Production functions calling `set_config` on a `request.phx*` flag | **1**, and it is `phx_delete_salary_batch` setting the *other* flag (finding 56) |
+| Migrations that set it — current tree and `_migrations_archive` | **0**. Repo-wide, `set_config` appears only for `phx_allow_salary_batch_delete` and `phoenix.map_guard_bypass` |
+| Application code (`src/`, `app/`) calling `set_config` | **0** |
+| Session default at role or database level (`pg_db_role_setting`) | **0** — no role and no database carries it |
+| Client injection through PostgREST | Not reachable. `pgrst.db_pre_request` is unset, and `set_config` exists only in `pg_catalog`, which is not an exposed schema |
+| Global trigger suppression | `session_replication_role = origin`, so the trigger is not switched off wholesale |
+
+Verified behaviourally on production, inside a `DO` block ending in a `RAISE` so that every write
+rolled back and nothing could commit. Subject was a real resigned employee:
+
+- Flag unset — `UPDATE employees SET employment_status = 'active'` →
+  **refused**, `Terminal employees cannot be reactivated outside a governed workflow.`
+- Flag set to `on` — same update → **allowed**.
+
+So the bypass is real and functional, the guard is armed on every path that exists today, and the
+key to the bypass was never cut. Reading the schema and trusting this guard gives the correct answer,
+which is precisely what finding 56 did not.
+
+**One asymmetry noted, offered as an observation and not as a finding.** This guard defines terminal
+as `('resigned', 'terminated')`. Four sibling objects on the same table define it as
+`('resigned', 'terminated', 'inactive')` — `phx_enforce_terminal_employee_lifecycle_flags`,
+`phx_employee_terminal_release_manager_ownership`, `phx_employee_terminal_vacancy_guard` and
+`phx_reassign_replacement_ownership`. An `inactive` employee can therefore be moved back to
+`active` without this trigger firing. The application already refuses that on the import path
+(`employee-validator.ts`), so no known route exploits it, and whether `inactive` is meant to be
+recoverable is a business question rather than a code one. It is recorded here so the next cycle does
+not rediscover it as new, and it is deliberately **not** numbered: padding a findings list to reach a
+number is its own defect.
 
 ### A note on the tooling, because it nearly produced three false findings
 
