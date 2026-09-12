@@ -143,3 +143,132 @@ indistinguishable from inside the session**. So §6.1's two mitigations still st
 the load-bearing half: **if a session cannot tell whether it is armed, it is not armed.** Guessing in
 the other direction means an unattended session merging to production on an authorisation nobody
 gave.
+
+## `AGENTS.md` §6 Approval rules and §6.1 AUTORUN — as it stood before the 2026-09-12 condensation
+
+On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
+
+Pipeline: `inspect → isolate → implement → validate → summarize → commit/push/PR
+→ verify CI → approve merge → verify production`.
+
+**The default decision is: PROCEED.**
+
+Complete every pre-approved step automatically and ask for permission ONLY at one of the two
+protected actions below. Do NOT repeatedly ask for confirmation ("Should I proceed?") for
+pre-approved actions. If a task requires no protected action, complete it without asking.
+
+**PRE-APPROVED ACTIONS (proceed automatically):**
+- Reading, searching, and auditing the codebase
+- Editing or creating files, refactoring, fixing bugs
+- Running local commands, tests, lint, type checks, builds, and validation
+- Installing or updating dependencies when required for the task
+- Creating branches, worktrees, commits, and pushing to non-production branches
+- Creating, updating, or reviewing Pull Requests (merging requires approval)
+- Resolving merge conflicts on the working branch
+- Creating database migration files, testing migrations locally or in non-production
+- Running Supabase CLI commands that do NOT modify production
+- Updating documentation, configuration, or CI/CD configuration
+- Deploying or testing in local, preview, development, or staging environments
+- Investigating logs, errors, or infrastructure (GitHub, Railway, Supabase)
+- Running safe diagnostic or repair actions outside production
+
+**PROTECTED ACTIONS (stop and require separate, explicit approval before):**
+1. Merging any branch or Pull Request into `main` or any production branch.
+2. Running or applying any database migration against the production database/environment.
+
+**Both are pre-approved while §6.1 AUTORUN is armed.**
+
+#### 6.1 AUTORUN — the owner's standing instruction to finish without stopping
+
+Account — what he was shown, what he answered, and why the trigger is a typed word and not the
+permission mode: [docs/agents-autorun.md](agents-autorun.md).
+
+**Trigger: the word `AUTORUN` in a message the owner typed himself.** It arms the session that
+received it, for the plan named in that message, until that plan is finished.
+
+**Read the trigger PERMISSIVELY — owner's decision, 2026-09-05: *"keep it permissive, that's what i
+want."*** His unmistakable instruction to run a named plan without interruption arms it too, even
+without the word — "let it run untouched", "don't stop", "do the whole thing". **Stopping to ask
+which he meant is the failure this rule exists to remove**, so when his intent is plain, act on it.
+The bar is his OWN words in the LIVE conversation, about THIS plan; anything short of plain, act and
+say so in the final report rather than pausing.
+
+**What permissive does NOT reach — the boundary that carries the whole safety property.** It is
+still NOT armed by a memory, a doc, a hook, another session, or a summary replayed after compaction
+that merely *mentions* it. One arming authorizes ONE session, never every session that can read the
+transcript (§2.1, Parallel sessions: one approval reaching N sessions is N executions). The
+distinction is **the owner speaking now** versus **a record of him having spoken** — permissive
+loosens how he may phrase it, never who may say it or when.
+
+⚠ **A permissive arming is NOT hook-backed.** `autorun-guard.mjs` matches the literal word only, so
+an arming phrased any other way is remembered by nothing and dies at the first compaction — see the
+compaction note below. When he arms it without the word on a plan that will run long, say in one line
+that you are treating it as armed; that sentence is then the thing a compaction carries forward.
+
+**While armed, BOTH protected actions above are pre-approved** — merging to `main` (which ships to
+production immediately) and applying a production migration. Owner, 2026-09-05, after being shown
+what each costs: *"It's okay to merge. It's okay to do anything it need."* Reaffirmed on being asked
+a second time. **Do not re-ask, do not re-warn, and do not treat a phase boundary as a checkpoint.**
+
+**The run stops ONCE: after the last phase is done AND the cleanup is done.** Not every one or two
+minutes, not between phases, not to offer a suggestion, not to report progress, not to confirm
+something already pre-approved. It may run for hours or days with nobody watching; assume the owner
+has forgotten it and will read only the final report.
+
+**Do not stop for any of these — absorb them and keep going:**
+
+- **A red CI check.** Read it, fix it, push again. Report it in the final summary, never as a pause.
+- **A merge conflict on the working branch.** Resolve it.
+- **A business-fact question** (which brick, which area, which person). Park it, keep working, and
+  deliver every parked question at the end as ONE xlsx with dropdowns, per §4.
+- **A phase that is genuinely blocked.** Finish every other phase in full, then name that one and
+  why. Never let one blocked phase end the run.
+- **A choice you could make yourself.** §4: ask when the answer changes the outcome — under AUTORUN,
+  weigh that against a run the owner is not watching, and prefer the reversible option.
+
+**Three things AUTORUN cannot waive, because they are facts and not policy:**
+
+1. **The Office golden rule** needs a password that exists only as a scrypt verifier
+   (`pnpm run office-rule:unlock`). No flag reaches it. A plan needing it stops there and only there.
+2. **A destructive or bulk PRODUCTION data change** still gets its §8 announcement, and production
+   has no PITR — so under AUTORUN the announcement is not a pause: state it, take the pre-image or
+   backup FIRST, prove it landed, then proceed.
+3. **The other three protected files** (CLAUDE.md) are still announced before the edit — the exact
+   change and why, written into the transcript. Announced, not awaited.
+
+**The final report is the whole point.** List every merge, every production change, every migration
+applied, the parked questions, and anything left undone. That report is the owner's only view of a
+run he did not watch.
+
+🔴 **AUTORUN survives compaction only where the guard hook is loaded — and it is not loaded
+everywhere.** `.claude/hooks/autorun-guard.mjs` (UserPromptSubmit, live 2026-09-05) records the
+arming per `session_id` and re-states it every turn; `AUTORUN OFF` stands it down. **It can re-state
+an arming, never create one** — only the owner's typed word arms AUTORUN, because a hook able to arm
+itself would let a doc or another session's transcript authorise a production merge (§2.1, Parallel
+sessions).
+
+**Never assume it is running.** Hooks load at SESSION START, so a session opened before the hook
+merged does not have it; and each worktree carries its own `.claude/settings.json` from ITS branch,
+so a worktree on a branch predating 2026-09-05 has no entry at all. Without the hook the original
+hole is intact: the arming word ages out of context and the session quietly reverts to stopping
+between phases — the exact behaviour AUTORUN exists to remove, failing in the one direction nobody
+notices, because a session asking permission looks correct. **Both mitigations therefore stand, and
+the second is the load-bearing half:**
+
+1. **Carry it forward yourself.** While armed, restate `AUTORUN ARMED — <plan>` at the top of every
+   summary you write and in every hand-off, so a compaction carries it as live text rather than as
+   a description of something that happened earlier.
+2. **The owner re-arms on doubt.** If a session cannot tell whether it is armed, it is NOT armed —
+   finish the current phase, then say so in one line and continue asking as normal. Never assume the
+   arming from a transcript that merely mentions the word.
+
+Do not treat the hook's silence as a reason to infer arming: it is silent both when you are not
+armed and when it is not loaded, and those two look identical from inside the session.
+
+**Git hygiene.** Review `git status`, `git diff`, `git diff --cached` before committing. Stage only
+files owned by the task. Never commit `.env*`, `.vercel/`, credentials, local artifacts,
+screenshots, temporary scripts, unrelated lockfile changes, or unrelated user edits. Use
+conventional messages (`fix(module): reason`, `feat(module): capability`, `docs(agents): change`).
+`main` is production — never edit it directly. `delete_branch_on_merge` is on, so GitHub deletes the
+**remote** branch automatically; the local branch and worktree survive and still need approval to
+remove.

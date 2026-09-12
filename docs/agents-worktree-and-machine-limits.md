@@ -867,3 +867,58 @@ This connects to a hook already in §2.3 that nothing linked to it: *"ONE `auth.
 probe passes."* repo-doctor pages at `per_page=1000`, the largest page GoTrue allows — precisely the
 shape that trips it. So the command most likely to hit that production landmine is the one presented
 as local housekeeping. `--no-auth` skips the leg; every other section is unaffected.
+
+## `AGENTS.md` §5 Session, worktree, and parallel-work safety — as it stood before the 2026-09-12 condensation
+
+On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
+
+Before editing, run `git status`, `git branch --show-current`, `git log -1 --oneline`,
+`git worktree list`. **Each line is the rule, not the evidence.** Measurements, dates and incidents
+are in [docs/agents-worktree-and-machine-limits.md](agents-worktree-and-machine-limits.md).
+
+- Use one working tree per active session. **Never two interactive sessions in one folder** — the SessionStart lock warning is a hard stop. (A crashed session's lock self-expires after 2 hours, and that AGE is the ONLY staleness test — the lock's `pid` is the hook's own parent shell, so EVERY lock names a dead PID.)
+- Start new work from the latest `origin/main` on a focused `codex/<task>` branch unless told otherwise.
+- Never run `git clone`, `git init`, or anything that recreates the primary repository's `.git`.
+- Never discard, overwrite, clean, reset, or revert changes you did not create. Treat unexpected changes as the owner's work. If the tree is dirty, classify and preserve it.
+- **Never delete a `.xlsx` or `.pdf` file**, even a stray untracked one in a worktree being cleaned up. Scan any folder for them before removing it; if found and not identical to a git-tracked copy, move them into `xlsx/` at the repo root.
+- **Start a session with `node scripts/new-session.mjs <task>` — one command for the whole four-step ritual** (fetch `origin/main`, create `_wt-<task>` on `codex/<task>`, junction `node_modules`, copy the gitignored env files). It refuses below 6 GB of free commit charge. `--status` prints live headroom, `--repair` fixes a worktree missing either piece, `--from <ref>` branches elsewhere. **`git worktree add` is only step one of four** — it never copies gitignored files, so a hand-made worktree has no `.env.local` (dev-auth and the dev server then fail silently) and no `node_modules`.
+- **A sibling `_wt-<task>` is a NEW project to Claude Code's own memory/settings, unlike a NESTED `.claude/worktrees/<name>` one** — the latter is Claude Code's native worktree feature and is recognized as the same project automatically; the former is just a different absolute path, so a session opened there starts with an empty auto-memory bucket and no `.claude/settings.local.json` (none of `MEMORY.md` or the personal Bash allow-list carries over). `scripts/sync-worktree-env.mjs` (step 4 above, and re-run at every SessionStart) now also copies `.claude/settings.local.json` from the primary when missing and points `autoMemoryDirectory` back at the primary's real memory folder — re-run it by hand (`node scripts/sync-worktree-env.mjs`) on any worktree created before this existed.
+- **Never `pnpm install` inside a worktree, and never `pnpm run` — or `pnpm exec` — there.** Both run the deps-status check first, and it purges `node_modules` once it sees the lockfile has moved, destroying the junction before your command starts. **`pnpm exec` fails SILENTLY-SHAPED**: it aborts the purge (`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`) and exits 1 without starting anything, while the background task reports **exit code 0** and the port stays dead — which reads as a permissions or path problem, not as pnpm. Invoke `node scripts/…` directly, and start the dev server as `node node_modules/next/dist/bin/next dev --webpack --port 3000`. The junction is enough for `typecheck`, `lint` and `node scripts/…`, but **not for `next dev`** without the explicit `--webpack` flag (§2.1, Worktrees).
+- **Stopping a dev server: kill it by PORT, not by task.** Stopping the background TASK kills the wrapper shell and leaves `next dev` itself holding 3000 — the harness reports "Successfully stopped", `curl /api/healthz` still answers 200, and the next start then fights a port it cannot have. Three times in one session, 2026-09-02. From PowerShell: `Get-NetTCPConnection -LocalPort 3000 -State Listen`, then `Stop-Process -Id <OwningProcess> -Force`. **Believe only a live probe, in both directions** — a background task can also report a bare `exit 127` moments AFTER serving a healthy 200, so read its log before blaming permissions. A curl of `000` is the only proof the port is free, and holding it stale is what breaks "one dev server at a time, ever" below.
+- Prefer worktrees as siblings (`git worktree add ../_wt-<task>`). If one must live inside the repo, its folder name must start with `_wt-` (or sit under `.codex-worktrees/` or `.claude/worktrees/`) — those patterns are excluded from `tsconfig.json`, `eslint.config.mjs` and `.gitignore`; a folder matching none silently makes every local `typecheck`/`lint` several times slower. Locked worktrees under `.claude/worktrees/` belong to other live sessions — never remove them.
+- **Remove worktrees with `node scripts/new-session.mjs --remove <task>`**, only after approval. It runs three gates in cost order — untracked `.xlsx`/`.pdf` rescue scan, uncommitted work, then commits on no remote branch **and** with no merged PR — drops the junction with `cmd /c rmdir`, and re-reads the folder's branch live rather than trusting an earlier scan. That last gate asks the merged PR, never reachability — **a squash-merged branch legitimately holds commits `main` does not.**
+- **`git worktree remove` leaves a HUSK, and nothing built into git can see it.** It leaves the gitignored payload — `node_modules/`, `.next/` — with no `.git` file and no registry entry, so `git worktree prune` cannot find it. **Run `pnpm run repo:doctor`** after any removal: it reports by default, and `--fix` deletes only husks proven to hold zero files.
+- **A memory file with no index line is invisible, not merely hard to find.** `pnpm run repo:doctor` reports them (and pointers whose file is gone) in a MEMORY INDEX section; `--deep` lists every one. Its report never WRITES — **`--snapshot-xlsx` is the one flag in it that writes anything, and it writes only outside the repo** (next bullet) — but **read-only is not the same as local: by default it reads `.env.local` and pages the PRODUCTION GoTrue admin API** (`/auth/v1/admin/users`, `per_page=1000`, up to 50 pages) plus paged PostgREST reads, to list orphan auth users. That is the **large-page shape** §2.3's `banned_until = 'infinity'` GoTrue 500 takes, so this "local hygiene" command is the tool most exposed to it. `--no-auth` skips that leg and leaves every other section intact.
+- **`xlsx/` is the one folder git cannot recover for you — `.gitignore` matches `*.xlsx`, so ~103 working spreadsheets sit in NO commit, branch or archive ref.** On 2026-09-05 an unidentified sweep deleted every **tracked** PDF there from all seven checkouts at once; those came back from git and the sheets beside them would not have — and the DR copy was 11 days stale, missing 74 of them, with nothing measuring that. 🔴 **THE HOURLY COPY AND ITS ALERT WERE RETIRED 2026-09-09 at the owner's word — these sheets have NO automatic backup.** Never tell him they are covered. `repo:doctor` still grades by CONTENT, never by name, and calls no not-knowing state clean, but prints it ONLY under `--deep`/`--snapshot-xlsx`, which copies by hand. Account: `scripts/repo-doctor-xlsx-snapshot.mjs`.
+- **Worktree payload — not git, not tsc — is what makes this checkout feel slow.** Roughly 99% of the path count is worktrees, and tools honouring `.gitignore` never see it, so validation looks healthy while the session crawls. **Do not tune `tsconfig`/`eslint` — those excludes are already correct.** Retire merged worktrees and clear husks. Cost is path COUNT, not gigabytes.
+
+**Machine limits.** RAM is soldered at 16 GB. One dev server at a time, ever; one typecheck/build at a
+time locally — parallel validation belongs to CI.
+
+**The binding limit is the Windows COMMIT charge, not RAM, and it FLOATS** — RAM plus the pagefile
+*as currently allocated*. **Never budget headroom against a limit you did not just read:**
+`Win32_OperatingSystem.TotalVirtualMemorySize` is the limit, `FreeVirtualMemory` the headroom, and
+`node scripts/new-session.mjs --status` prints both live. **Sessions were never the ceiling** — ~0.5 GB
+idle against ~3.5 GB for a dev server, build or cold typecheck, so the real limit is ~5 concurrent
+HEAVY jobs.
+
+🔴 **COMMIT headroom and PHYSICAL RAM are two ceilings; the one above stays GREEN while the machine
+dies. Read FREE RAM, never the session count** — a session is ~269 MB while ONE `next dev` held
+3,454 MB, more than eleven sessions. Under **2,600 MB** a dev server or cold typecheck crosses
+`mem-watchdog.ps1`'s floor and `~/.claude/hooks/heavy-job-gate.mjs` refuses to START one; under
+**1,800 MB** the watchdog reaps IDLE dev servers, then all but the most recently active, and under
+**500 MB** ANY node job, most RAM first. **Stop a dev server before closing a session, and kill it
+by PORT.** `~/.claude/hooks/session-census.mjs` is deliberately SILENT until 13/16 sessions — **a
+statusline count is not a guard.** Account:
+[docs/agents-worktree-and-machine-limits.md](agents-worktree-and-machine-limits.md).
+
+Route work by tier:
+
+| Tier | Where | Use for |
+| --- | --- | --- |
+| **A — Cloud session** *(the default)* | Isolated cloud clone, ends in a PR | Any independent task not needing localhost browser verification, local files, or local credentials. Sonnet by default. |
+| **B — Local worktree** (max 2–3 woken) | Sibling `_wt-<task>` | Only tasks needing browser preview, dev-auth role sweeps, or local creds. |
+| **C — Main checkout** (exactly one — the control tower) | primary repo folder | Reviews, merge/deploy decisions, DB operations, deployed-env verification, worktree triage. Never feature edits. |
+
+Only the control-tower session rewrites the memory index; others may append memory files but never
+reorganize it. Cloud sessions cannot see local state — put everything they need in the task prompt.

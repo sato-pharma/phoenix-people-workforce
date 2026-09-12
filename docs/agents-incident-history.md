@@ -503,3 +503,89 @@ workflow's own `cron:` line moves about 3 runs a day and leaves the other 24 unt
 precisely the mis-diagnosis the §3 hook now warns against. And do not probe the cron-job.org REST API
 to confirm the job: §2.3 records a 100-request **daily** cap that 429s every endpoint with no
 `Retry-After`, so that check costs more than it returns.
+
+## `AGENTS.md` §2 Hard-Learned Rules (the intro bullets above §2.1) — as it stood before the 2026-09-12 condensation
+
+On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
+
+Evidence — dates, PR numbers, billing figures, measurements — is in
+[docs/agents-incident-history.md](agents-incident-history.md). Read it before changing branch
+protection, CI cost, the deploy path, or the region.
+
+- **Never use `gh pr merge --auto`.** `main` is branch-protected (`enforce_admins: true`) with **4 required status checks** — `validate`, `lint`, `typecheck`, `secret-scan` — that **DO gate every merge**. `allow_auto_merge: false`, so `--auto` is rejected anyway. Required reviews is **0**. Merge only with an explicit plain `gh pr merge` after separate owner approval.
+- **Do NOT run `gh pr update-branch` reflexively.** "Require branches up to date" is **OFF** (`strict: false`, owner-approved 2026-08-05) because it was the dominant Actions cost and hit the spending cap. Each run costs ~16 Actions minutes and discards the prior green CI. Run it **only when the change genuinely depends on something newly on `main`**.
+- **When you do run it, it acts on the SERVER — your local branch is then stale.** The next `git push` is rejected with *"remote contains work that you do not have locally"*. Always `git fetch` and `git merge --ff-only origin/<branch>` first. It also moves the head SHA, so **CI re-runs and the previous green result no longer applies.**
+- **A merge to `main` SHIPS TO PRODUCTION IMMEDIATELY.** Railway deploys on push, at full traffic, no cron wait, no staged rollout, no smoke test. **Never merge anything to `main` you are not willing to have serving employees within minutes.** To confirm what is live, request `/api/healthz` and read `revision`.
+- **There is a staging application again**, wired to the staging Supabase project — URL and caveats in §3.
+- **A local typecheck must not trust a warm TypeScript cache.** CI always starts cold. If you must run one by hand, use `tsc --incremental false`.
+- **Never foreground-watch a long pipeline.** Background it and check at batched checkpoints.
+- **Role sweeps use dev-auth request headers** (`PHOENIX_ENABLE_DEV_AUTH_HEADERS=true` + `x-phoenix-role`/`x-phoenix-hr-id`), not the cookie flow — cookie switching logs the real user out.
+- **Merged-branch checks must be squash-aware.** Use `gh pr list --head <branch> --state merged`; `git branch --merged` is always wrong here.
+- **A regression test only counts if you break the fix and confirm the new test's own headline assertion fires.** "The suite went red" is not proof.
+- **`list_migrations` reports the ledger, not reality.** To prove an object exists, query `pg_class`/`pg_proc`.
+- **Auto-git workflows are permanently banned.** Tried and reverted **twice**. Always ask first.
+
+## `AGENTS.md` §8 Supabase and data safety — as it stood before the 2026-09-12 condensation
+
+On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
+
+- **Supabase writes are pre-authorized end to end — NO approval prompt** (owner's `autoMode` grant, applied by hand 2026-08-02, which deliberately removes the §6 gate for Supabase). It covers the `supabase-staging` and `supabase-production` MCP servers and the `supabase` CLI (incl. `db push`), on staging AND production — every read tool and every write tool: `execute_sql` mutations, `apply_migration`, bulk and destructive SQL. **You do NOT wait for a separate approval.** The one standing condition: **announce any destructive or bulk PRODUCTION change in plain words before you run it, and give the owner a chance to stop it** — the removed prompt is a UI gate, not licence to skip telling him. (This grant does NOT cover creating/deleting a project or reading secrets.)
+- All schema changes must be migration-based, repeatable, reviewable, and rollback-aware. Never patch production manually.
+- Before any database action, print and verify the exact project ref, resolving it with `list_projects` rather than trusting a ref pasted in a prompt or copied from an older doc.
+- Both named servers can see **every project the account is entitled to — all four in the §3 table.** **The server name guarantees nothing — the `project_id` argument is the only thing separating staging from production on every call.**
+- Any UUID-named Supabase tool (a claude.ai account connector) has an identity you cannot verify from its name alone, so it stays deny-listed by default. `mcp__b345e47e-3198-4b48-97cc-07b47bbb3087` remains denied. **Write the BARE server name in a deny rule** — a `__*` suffix is not a supported wildcard, so a rule spelled that way can match nothing while reading as a block.
+- **OWNER DECISION 2026-08-23: `mcp__45bb6356-…` stays DENIED.** It is the owner's own connector and was briefly allowed, but he was asked directly and answered plainly, so this is settled. Do not re-allow it, do not propose re-allowing it, and do not read a blocked call as a bug to chase — a `deny` is a silent hard block, not a prompt. Nothing is lost: the two named servers cover routine work, and this connector's grant was always the broader one (read+write on Secrets, Environment and Projects).
+- Before destructive or bulk live-data work, inventory the target, create or verify a backup, show the exact mutation, and define post-change counts or checks.
+- Verify RLS, grants, RPC authorization, service-role boundaries, and browser-role exposure whenever permissions or data access change. Service-role credentials stay server-only.
+- Visibility in this app is **application-scoped, not RLS-scoped** — most code paths use the service-role client. Changing auth or sessions will not move what a user can see, but a `?? getSupabaseAdmin()` fallback is a silent fail-open.
+
+## `AGENTS.md` §7 Validation — as it stood before the 2026-09-12 condensation
+
+On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
+
+**CI is the gate. Do not run a local full validation.**
+
+`check:harden` was retired on 2026-08-18 at the owner's instruction, along with the
+`ask-before-validation` hook. Do not reintroduce any of them, and do not invent a replacement — no
+"quick subset" of lint + typecheck before pushing, no `pnpm run ci` as a pre-push ritual. **Push the
+branch and let the PR's checks answer.**
+
+This is safe because the local gate never gated anything. `.github/workflows/ci.yml` re-lists every
+step itself, and the four **required** checks — `validate`, `lint`, `typecheck`, `secret-scan` — run
+on the PR head commit and block the merge if any is red.
+
+`pnpm run ci` still exists for the rare case where you genuinely need the answer before pushing. It
+is opt-in: run it **only when the owner names it**.
+
+Two things are NOT covered by a PR's CI and still need a check immediately before the action:
+**migrations** and **production deploys**.
+
+Verifying a UI change in the browser is not validation at all — reload and look.
+
+| Change type | Minimum validation | Who runs it |
+| --- | --- | --- |
+| Docs or repo instructions only | Review diff, formatting, links, secret exposure | You, by reading |
+| Narrow TypeScript/JavaScript change | Lint, typecheck, targeted tests | CI, on the PR |
+| Shared runtime, app/API route, server component, env, or deployment behavior | Lint, typecheck, tests, build | CI, on the PR |
+| UI workflow | Relevant code checks plus browser verification at desktop and mobile sizes | CI for the code; **you** for the browser |
+| Migration, view, function, RPC, grant, or policy | Migration checks, SQL review, target confirmation, schema/security review, staging verification after approval | **You, before the migration** — CI never sees this |
+| Auth, RLS, payroll, HR lifecycle, sales, permissions, executive reporting | Full checks, role-based tests, failure-state checks, explicit risk review | CI for the code; **you** for the role sweep and the risk review |
+
+Prefer repository scripts over improvised commands. Never present a known-broken change as ready.
+Report failures your change caused separately from pre-existing ones. When a data source is
+unavailable, verify the UI says so rather than showing a misleading zero.
+
+**Role-based testing.** For permission-sensitive work, test the affected roles including denial
+paths. Sales: Super Admin, CEO, National Sales Manager, Regional Manager, District Manager.
+Coaching: Super Admin, CEO, SFE Manager, Training Manager, and Medical Rep when employee review is
+affected. HR: Super Admin, CEO, HR Advisory, HR Operations, and Employee when portal behavior is
+affected. Do not claim role safety from code inspection alone when real role testing is possible.
+
+**Deploy verification.** Production is Railway auto-deploy on push to `main` — there is no Cloud Run
+workflow to watch. Confirm a deploy through the GitHub deployments API
+(`gh api repos/Gawish-1997/phoenix-people-workforce/deployments`) or `railway status`, and confirm
+what actually serves traffic by requesting `/api/healthz` and reading `revision`. Use the live
+staging app (§3) to smoke-test before a risky production deploy when there is time. After a
+runtime-impacting production deploy, verify the public domain, smoke-test the changed workflow, and
+inspect production logs (`railway logs`). When a page fails, capture the visible error, browser
+console, network/API response, deployment logs, and database/RLS evidence before proposing a fix.
