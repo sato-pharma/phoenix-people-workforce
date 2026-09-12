@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 
 import { readFileSync } from "node:fs";
 
+import { permissionMatrix } from "../src/lib/auth/permissions.ts";
 import { conversationMessageIdempotencyKey } from "../src/lib/conversations/notify.ts";
+import { MARKET_AWARENESS_PORTAL_ROLES } from "../src/lib/employee-portal/navigation.ts";
 import type { MarketAwarenessApproverSlot } from "../src/lib/market-awareness/approvers.ts";
 import {
   canDecideSlot,
@@ -13,7 +15,10 @@ import {
 } from "../src/lib/market-awareness/approvers.ts";
 import { isTrackableProductLine } from "../src/lib/market-awareness/lines.ts";
 import { MARKET_AWARENESS_STATUSES } from "../src/lib/market-awareness/types.ts";
-import { resolvePendingDecisionRecipients } from "../src/lib/market-awareness/notifications.ts";
+import {
+  resolveApprovalAudience,
+  resolvePendingDecisionRecipients,
+} from "../src/lib/market-awareness/notifications.ts";
 import {
   canCreateActivity,
   canEditActivity,
@@ -395,6 +400,89 @@ export function runMarketAwarenessTests() {
     false,
     "the CEO approves activities; he does not raise them",
   );
+
+  // ── The District Manager is out of the module entirely (owner, 2026-09-12) ─────────────────
+  //
+  // He was an informed reader under answers 42 and 43 until the owner asked for the module to be
+  // hidden from district managers: it is "only applicable for product or group product managers and
+  // marketing and national sales manager". FOUR gates had to close, and closing three of them is
+  // indistinguishable from closing four on any screen — the sidebar list is UX only, the matrix is
+  // what the routes actually enforce, and the approval announcement is a door of its own with a link
+  // straight into the module. Each is pinned separately here because each one alone reads as done.
+  assert.equal(
+    permissionMatrix["District Manager"].market_awareness,
+    undefined,
+    "a District Manager holds NO market_awareness grant — this is the gate the API routes enforce",
+  );
+  assert.ok(
+    !MARKET_AWARENESS_PORTAL_ROLES.includes("District Manager"),
+    "the Market Awareness portal tab is not drawn for a District Manager",
+  );
+  assert.deepEqual(
+    resolveActivityVisibility({ role: "District Manager", hrId: "B-12" }),
+    { kind: "none" },
+    "a District Manager sees no activity at all — he is out of MARKET_AWARENESS_SEE_ALL_ROLES",
+  );
+  assert.equal(
+    canViewActivity({ role: "District Manager", hrId: "B-12" }, { requesterHrId: "B-155" }),
+    false,
+    "a District Manager cannot open an activity, his own region's included",
+  );
+  {
+    const notificationsSource = readFileSync(
+      new URL("../src/lib/market-awareness/notifications.ts", import.meta.url),
+      "utf8",
+    );
+    // The CALL, not the word: the comment beside `resolveApprovalAudience` names the helper on
+    // purpose, to say where it legitimately still runs (the service, filling the activity screen's
+    // list of the region's DMs). Matching the bare name failed on that comment.
+    assert.ok(
+      !/loadRegionManagers\(/.test(notificationsSource),
+      "the CEO-approval announcement must not resolve district managers — a notification whose link " +
+        "opens a page the recipient is refused is the hide undone",
+    );
+    assert.ok(
+      !/districtManagerHrIds/.test(notificationsSource),
+      "no district manager may survive anywhere in the approval audience",
+    );
+
+    // ── And the area's own Medical Rep, off the same announcement (owner, 2026-09-12) ──────────
+    //
+    // He was the first name on the approval audience under answer 42, and the owner took him off
+    // the same day the district managers went: "NO HIDE FROM MEDICAL REP". He never held a
+    // market_awareness grant at all, so what he was receiving was a notice on three channels whose
+    // link redirected him the moment he opened it.
+    //
+    // The audience is asserted by CALLING it rather than by reading the source, because the failure
+    // this guards is not a mention of the rep — it is one extra id in the list that goes out. The
+    // activity is no longer an argument at all, which is the structural half of the same fix: there
+    // is no longer anything in scope here to read a rep off.
+    assert.deepEqual(
+      resolveApprovalAudience(["N-1", "S-2", "F-3"]).recipientHrIds,
+      ["N-1", "S-2", "F-3"],
+      "the CEO-approval announcement reaches the NSM, the SFE Manager and Finance — and nobody else",
+    );
+    assert.deepEqual(
+      resolveApprovalAudience([]).recipientHrIds,
+      [],
+      "with no role holders resolved it reaches NOBODY — never a fallback to the rep or the region",
+    );
+    assert.deepEqual(
+      resolveApprovalAudience(["N-1", "n-1", null, undefined, "  ", "S-2"]).recipientHrIds,
+      ["N-1", "S-2"],
+      "one person holding two roles is told once, and a blank id is not a recipient",
+    );
+    assert.ok(
+      !notificationsSource.includes("resolveApprovalAudience(activity"),
+      "the audience takes ONLY the resolved role holders — an activity argument is what a rep would " +
+        "come back in through, and there is nothing to read one off any more",
+    );
+    assert.ok(
+      !/repHrId|repNotified/.test(notificationsSource),
+      "no rep survives in the approval audience or its result — the caller must not be able to " +
+        "report a delivery that is deliberately not made",
+    );
+  }
 
   assert.deepEqual(resolveActivityVisibility({ role: "Product Manager", hrId: "B-155" }), {
     kind: "own",

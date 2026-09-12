@@ -1645,10 +1645,12 @@ const employeePortalNavigationSectionSeeds = [
         icon: Sparkles,
         label: "Market Awareness",
         // The whole audience: the Group Product Manager, both Product Managers and the Marketing
-        // Manager raise activities; the informed roles (NSM, SFE, DM, Finance) and the CEO read
-        // them. This list is UX only — every route calls assertPermission(market_awareness) and
-        // then narrows by identity, because the matrix has no per-row layer and a Product Manager
-        // sees only his own.
+        // Manager raise activities; the informed roles (NSM, SFE, Finance) and the CEO read them.
+        // The DISTRICT MANAGER was an informed reader here until 2026-09-12 and is now out at the
+        // owner's instruction — see MARKET_AWARENESS_PORTAL_ROLES, which this list mirrors. This
+        // list is UX only — every route calls assertPermission(market_awareness) and then narrows
+        // by identity, because the matrix has no per-row layer and a Product Manager sees only his
+        // own.
         permissions: [{ resource: "market_awareness", action: "read" }],
         roles: [
           "Product Manager",
@@ -1656,7 +1658,6 @@ const employeePortalNavigationSectionSeeds = [
           "Marketing Manager",
           "National Sales Manager",
           "SFE Manager",
-          "District Manager",
           "Finance Manager",
           "CEO",
           "Super Admin",

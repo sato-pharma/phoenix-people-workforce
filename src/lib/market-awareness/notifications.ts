@@ -1,6 +1,5 @@
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { MarketAwarenessApproverSlot } from "@/lib/market-awareness/approvers";
-import { loadRegionManagers } from "@/lib/market-awareness/geography";
 import type { MarketAwarenessActivity } from "@/lib/market-awareness/types";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
@@ -13,9 +12,14 @@ import { logError } from "@/lib/observability/log";
  * submitter, CC the sender and every participant, in-app and Telegram to everyone except the author.
  * Re-implementing that addressing would make it two rules within a year.
  *
- * WHAT THIS MODULE ADDS is the one-off announcement on CEO approval: every district manager in the
- * region for the chosen line, the National Sales Manager, the SFE Manager, the area's Medical Rep,
- * and Finance for execution. In-app, Telegram and email (owner answer 42).
+ * WHAT THIS MODULE ADDS is the one-off announcement on CEO approval: the National Sales Manager,
+ * the SFE Manager and Finance, for execution. In-app, Telegram and email (owner answer 42).
+ *
+ * TWO AUDIENCES WERE REMOVED ON 2026-09-12, both at the owner's instruction and both for the same
+ * reason. Every district manager in the region was told, and so was the area's own Medical Rep;
+ * neither holds a `market_awareness` grant any more, so the announcement would have handed each of
+ * them a link to a page that refuses them. A notification is a door: closing the sidebar link while
+ * this one still fired would have left the door standing.
  *
  * Best-effort by contract. The activity row is already committed by the time this runs, so a
  * delivery failure is logged and swallowed — never thrown back into the write path, where it would
@@ -36,37 +40,40 @@ function moneyLabel(activity: MarketAwarenessActivity): string {
 }
 
 export type ApprovalAudience = {
-  districtManagerHrIds: string[];
-  repHrId: string | null;
   /** Everyone who will actually be told, de-duplicated by canonical HR id. */
   recipientHrIds: string[];
 };
 
 /**
- * The informed set. Every DM in the REGION for the chosen line — the owner's answer 32, which is
- * wider than the single DM of the area — plus the area's rep.
+ * The informed set: whoever the caller resolves by role — the NSM, the SFE Manager and Finance.
  *
- * A DM seat with nobody in it yields no HR id and is simply absent from the recipients. That is a
- * real vacancy rather than a lookup failure, and the caller reports the count so a shorter list than
- * the screen promised is visible rather than silent.
+ * NOBODY ELSE, and two names that used to be here are the reason this comment is long.
+ *
+ * NO DISTRICT MANAGER. Every DM in the region used to be told — owner answer 32, deliberately wider
+ * than the single DM of the area — and on 2026-09-12 the owner hid the module from district managers
+ * altogether.
+ *
+ * NO MEDICAL REP either. The area's own rep was the first name on this list (owner answer 42) and
+ * came off the same day, at the owner's instruction: "no hide from medical rep". He never held a
+ * `market_awareness` grant at all, so the notice he was getting pointed at a page that redirected
+ * him the moment he opened it — a door with nothing behind it, arriving by three channels.
+ *
+ * So the activity itself is no longer read here: every recipient now comes from the caller's role
+ * lookup, and this function's whole job is to de-duplicate them by canonical HR id. It was async
+ * while it still resolved the region's managers from the database; it reads nothing now, and a
+ * function that returns a promise for no reason is a missing `await` waiting to happen. Left
+ * exported and separate so the audience can be asserted without a database.
+ *
+ * `loadRegionManagers` is still the source of `activity.districtManagers` in the service — the
+ * activity screen names the DMs of the region to the people who CAN see it. Naming a manager is not
+ * notifying him, and the same holds for the rep named on the activity.
  */
-export async function resolveApprovalAudience(
-  activity: MarketAwarenessActivity,
-  extraHrIds: Array<string | null | undefined> = [],
-): Promise<ApprovalAudience> {
-  const managers = await loadRegionManagers(
-    activity.primaryLine.lineCode,
-    activity.regionCode,
-  );
-  const districtManagerHrIds = managers
-    .map((manager) => manager.dmHrId)
-    .filter((hrId): hrId is string => Boolean(hrId));
-
-  const repHrId = activity.rep.hrId;
-
+export function resolveApprovalAudience(
+  hrIds: Array<string | null | undefined> = [],
+): ApprovalAudience {
   const seen = new Set<string>();
   const recipientHrIds: string[] = [];
-  for (const hrId of [...districtManagerHrIds, repHrId, ...extraHrIds]) {
+  for (const hrId of hrIds) {
     if (!hrId) continue;
     const key = canonicalHrIdKey(hrId);
     if (!key || seen.has(key)) continue;
@@ -74,7 +81,7 @@ export async function resolveApprovalAudience(
     recipientHrIds.push(hrId);
   }
 
-  return { districtManagerHrIds, repHrId, recipientHrIds };
+  return { recipientHrIds };
 }
 
 /**
@@ -322,19 +329,22 @@ export async function notifyActivityHeld(input: {
 /**
  * Fired once, when the CEO approves. Recipients can comment on the activity but never approve it —
  * their matrix grant is `read` only, so this notification cannot become an authority they lack.
+ *
+ * Neither district managers nor the area's Medical Rep are recipients since 2026-09-12 — see
+ * `resolveApprovalAudience` for why.
  */
 export async function notifyActivityApproved(input: {
   activity: MarketAwarenessActivity;
   /** NSM, SFE Manager and Finance HR ids, resolved by the caller from the role directory. */
   roleRecipientHrIds: Array<string | null | undefined>;
   actionUrl: string;
-}): Promise<{ notified: number; districtManagers: number; repNotified: boolean }> {
+}): Promise<{ notified: number }> {
   const { activity } = input;
 
   try {
-    const audience = await resolveApprovalAudience(activity, input.roleRecipientHrIds);
+    const audience = resolveApprovalAudience(input.roleRecipientHrIds);
     if (audience.recipientHrIds.length === 0) {
-      return { notified: 0, districtManagers: 0, repNotified: false };
+      return { notified: 0 };
     }
 
     const where = [activity.areaName ?? activity.areaCode, activity.regionName ?? activity.regionCode]
@@ -365,11 +375,7 @@ export async function notifyActivityApproved(input: {
       audience.recipientHrIds,
     );
 
-    return {
-      notified: audience.recipientHrIds.length,
-      districtManagers: audience.districtManagerHrIds.length,
-      repNotified: Boolean(audience.repHrId),
-    };
+    return { notified: audience.recipientHrIds.length };
   } catch (error) {
     // Swallowed on purpose: the approval is already committed, and an undelivered notification must
     // never undo a decision the CEO made.
@@ -381,6 +387,6 @@ export async function notifyActivityApproved(input: {
       },
       error,
     });
-    return { notified: 0, districtManagers: 0, repNotified: false };
+    return { notified: 0 };
   }
 }

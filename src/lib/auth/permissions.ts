@@ -1114,9 +1114,12 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "District Manager": {
-    // Market Awareness: informed when an activity in his region is approved. Read only — an
-    // informed person may comment but never approve (owner answer 43).
-    market_awareness: ["read"],
+    // Market Awareness: NO GRANT. He held `read` as an informed party (owner answers 42 and 43)
+    // until 2026-09-12, when the owner asked for the module to be hidden from district managers
+    // outright — it is "only applicable for product or group product managers and marketing and
+    // national sales manager". Removing the grant is what makes the hide real: the sidebar list in
+    // employee-portal/navigation.ts is UX only, so leaving `read` here would have kept every route,
+    // every activity and the approval announcement open to him behind a missing link.
     direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],

@@ -220,6 +220,13 @@ const hideMyPerformanceTabRoles = new Set<PhoenixRole>([
  * Who sees Market Awareness in the portal sidebar. The creators plus the roles that are INFORMED
  * when an activity is approved — being told about one is useless without a way to open it.
  *
+ * THE DISTRICT MANAGER IS DELIBERATELY ABSENT (owner, 2026-09-12: "hide from them, only applicable
+ * for product or group product managers and marketing and national sales manager"). That reverses
+ * owner answers 42 and 43, which had made every DM in the region an informed reader. The hide is
+ * total rather than cosmetic: the matrix grant, the see-all scope and the approval announcement all
+ * dropped him in the same change, because a sidebar link removed while the notification still fires
+ * only moves the door — it does not close it.
+ *
  * This is UX only. Every route calls assertPermission(market_awareness) and then narrows by
  * identity, because the matrix has no per-row layer and a Product Manager sees only his own.
  */
@@ -252,7 +259,6 @@ export const MARKET_AWARENESS_PORTAL_ROLES: readonly PhoenixRole[] = [
   "Marketing Manager",
   "National Sales Manager",
   "SFE Manager",
-  "District Manager",
   "Finance Manager",
   "CEO",
   "Super Admin",
