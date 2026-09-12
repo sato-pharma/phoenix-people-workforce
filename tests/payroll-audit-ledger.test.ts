@@ -16,9 +16,17 @@ import path from "node:path";
  *   1. Every finding the payroll code CLAIMS to fix has a row in the ledger. A new fix that lands
  *      with a `finding N` comment and no ledger row turns this red — which is exactly how the last
  *      thirteen went missing.
- *   2. The findings the ledger records as UNACCOUNTED FOR really have no trace. The day somebody
- *      accounts for one, this goes red and the ledger has to be corrected rather than left stale.
+ *   2. The fourteen that were once recorded as having NO TRACE each keep a row naming the PR that
+ *      closed them. Emptying one of those rows turns this red.
  *   3. The registry points at a ledger that exists, and its arithmetic adds up to 55.
+ *
+ * REWRITTEN 2026-09-12 (cycle 4). Until then this test pinned the OPPOSITE of check 2: it asserted
+ * that fourteen findings had no trace and that the ledger still said so in plain words. Both were
+ * true when written and both are now false. The original audit was recovered from the transcript of
+ * the Claude Code session that wrote it, and all fourteen turned out to be fixed already - by PRs
+ * that narrate the defect without ever citing a finding number, which is exactly why every search
+ * for the numbers came back empty. The check that mattered - a fix must leave a ledger row - is
+ * unchanged and now covers all 55.
  *
  * The direct-orders re-audit has its OWN 1-24 numbering in `src/lib/direct-orders/` and in
  * `docs/direct-orders-delta-reaudit.md`. Those files are excluded here on purpose: reading them as
@@ -41,22 +49,31 @@ const PAYROLL_ROOTS = [
 ];
 
 /**
- * The findings this repository cannot account for, as of 2026-09-12. Thirteen have no trace at all;
- * 30 and 36 were claimed closed by PR #3717 with no code marker; both were re-verified on
- * 2026-09-12 and now carry a marker and a registered test, so they moved into the fixed
- * bucket and the claimed-closed bucket is empty. 19 is
- * referenced only as a comparison and was never fixed or dismissed.
+ * The fourteen that read "no trace found in the repository" until 2026-09-12, with the pull request
+ * that actually closed each one. Not one of those PRs writes a finding number anywhere - they
+ * narrate the defect instead - so no search for the numbers could ever have found them.
+ *
+ * Pinned here because these rows are the ones most likely to be "tidied up" by a later session: they
+ * look like bookkeeping about a resolved argument rather than the record of fourteen real fixes. A
+ * row that loses its PR reference loses the only link between a finding and the change that closed
+ * it, which is the state this whole ledger exists to prevent.
  */
-const NO_TRACE = [1, 6, 7, 8, 9, 10, 11, 12, 13, 21, 24, 25, 28];
-
-/**
- * The owner ruled on 2026-09-12 that these fourteen - the thirteen with no trace, plus 19 - are
- * CLOSED as permanently unrecoverable. Closing them settled what is OWED, not what is KNOWN, and the
- * two are easy to confuse a year from now. These checks exist so that nobody can quietly reopen the
- * question, quietly drop the ruling, or - worse - "tidy up" the ledger by deleting the no-trace rows
- * on the grounds that the findings are closed. The evidence state and the decision must both survive.
- */
-const RULED_CLOSED = [...NO_TRACE, 19];
+const RECOVERED: ReadonlyArray<readonly [number, number]> = [
+  [1, 3641],
+  [6, 3642],
+  [7, 3659],
+  [8, 3659],
+  [9, 3651],
+  [10, 3651],
+  [11, 3684],
+  [12, 3687],
+  [13, 3674],
+  [19, 3649],
+  [21, 3669],
+  [24, 3649],
+  [25, 3649],
+  [28, 3649],
+];
 
 function walk(dir: string, out: string[] = []): string[] {
   let entries: string[];
@@ -112,24 +129,46 @@ export async function runPayrollAuditLedgerTests(): Promise<void> {
     `HEADLINE: the payroll code names finding(s) ${missingFromLedger.join(", ")} that the audit ledger does not record — a fix without a ledger row is how thirteen findings went missing in the first place`,
   );
 
-  // ---- 2. The unaccounted-for findings really are unaccounted for -------------------------------
-  const nowAccounted = NO_TRACE.filter((n) => claimed.has(n));
+  // ---- 2. Every finding has a row, and the recovered fourteen name what closed them -------------
+  const everyFinding = Array.from({ length: 55 }, (_, i) => i + 1);
+  const withoutRow = everyFinding.filter((n) => !ledgerRowNumbers.has(n));
   assert.deepEqual(
-    nowAccounted,
+    withoutRow,
     [],
-    `HEADLINE: finding(s) ${nowAccounted.join(", ")} are recorded in the ledger as having NO TRACE in the repository, and the payroll code now names them — the ledger is stale and must be corrected, not this test`,
+    `HEADLINE: finding(s) ${withoutRow.join(", ")} have no row in the audit ledger — the audit numbered 1 to 55 and every one of them is now accounted for, so a missing row means the record was edited into a worse state than it was found in`,
   );
 
-  for (const n of NO_TRACE) {
-    assert.ok(
-      new RegExp(`\\b${n}\\b`).test(ledger),
-      `the ledger must still name finding ${n} among the unaccounted-for, or say what became of it`,
-    );
-  }
+  // The PR that closed each of the fourteen must stay attached to its row. These are the rows a
+  // later session is most likely to trim, because they read like the aftermath of a settled argument
+  // rather than the record of fourteen real fixes.
+  const rowFor = (finding: number): string =>
+    ledger
+      .split("\n")
+      .filter((line) => {
+        if (!line.startsWith("|")) return false;
+        const firstCell = (line.split("|")[1] ?? "").replace(/[*\s]/g, "");
+        return firstCell === String(finding);
+      })
+      .join("\n");
+  const lostTheirPr = RECOVERED.filter(([finding, pr]) => !rowFor(finding).includes(`#${pr}`));
+  assert.deepEqual(
+    lostTheirPr.map(([finding]) => finding),
+    [],
+    `HEADLINE: finding(s) ${lostTheirPr.map(([f, pr]) => `${f} (PR #${pr})`).join(", ")} no longer name the pull request that closed them — that reference is the ONLY link between the finding and the change, because not one of those PRs writes a finding number in its own text`,
+  );
+
+  // The record must keep showing that these fourteen were once believed lost. Deleting that history
+  // would make the ledger read as though the gap never happened, and the lesson it carries — that a
+  // search for an identifier proves only that the identifier is absent — would go with it.
   assert.match(
     ledger,
-    /No trace found in the repository/,
-    "HEADLINE: the ledger must say 'no trace found' in plain words — a finding nobody can account for is worse than one that is open, because the open one is at least visible",
+    /no trace found in the repository/i,
+    "HEADLINE: the ledger must keep the 'no trace found in the repository' wording — a record that quietly erases what it once concluded loses the only evidence that the conclusion was wrong",
+  );
+  assert.match(
+    ledger,
+    /audit-cycle-4\.md/,
+    "HEADLINE: the ledger must point at cycle 4, which is where the recovery and the trace for all fourteen are written",
   );
 
   // ---- 3. The ledger's own arithmetic ------------------------------------------------------------
@@ -138,11 +177,12 @@ export async function runPayrollAuditLedgerTests(): Promise<void> {
     counts.includes(55),
     "the ledger's summary table must total 55 findings — the audit numbered 1 to 55",
   );
-  const accountedFor = 41 + 0 + 1; // fixed with evidence + claimed closed + referenced only
+  const buckets = [55, 0, 0, 0]; // fixed with evidence + claimed closed + referenced only + no trace
+  const accountedFor = buckets.reduce((sum, count) => sum + count, 0);
   assert.equal(
-    accountedFor + NO_TRACE.length,
+    accountedFor,
     55,
-    `HEADLINE: the ledger's four buckets must add up to the 55 findings the audit numbered — got ${accountedFor + NO_TRACE.length}`,
+    `HEADLINE: the ledger's four buckets must add up to the 55 findings the audit numbered — got ${accountedFor}`,
   );
 
   // ---- 4. The registry points at a ledger that exists --------------------------------------------
@@ -186,50 +226,63 @@ export async function runPayrollAuditLedgerTests(): Promise<void> {
     "the dashboard must stop saying nothing has been audited",
   );
 
-  // ---- 5. The ruling on the fourteen stays recorded, and stays honest -----------------------------
+  // ---- 5. The superseded ruling stays recorded, and stays marked superseded ----------------------
+  //
+  // The owner ruled on 2026-09-12 that the fourteen were closed as permanently unrecoverable, and
+  // that ruling accepted real residual risk. Hours later the audit was recovered and every one of
+  // the fourteen turned out to be fixed. The ruling is kept rather than deleted — a record that
+  // tidies away a decision made on a premise that turned out false is worth less than one that shows
+  // both — but it must never again read as current, or a later session will act on it.
   const rulingStart = ledger.indexOf("## The ruling on the fourteen");
   assert.ok(
     rulingStart >= 0,
-    "HEADLINE: the ledger must carry the owner's ruling on the fourteen unaccounted-for findings — without it a later session re-opens a question that was already decided, which is the exact loop this record exists to end",
+    "HEADLINE: the ledger must keep the owner's ruling on the fourteen, superseded and all — deleting a decision that was made on a false premise hides the most useful thing this record has to teach",
   );
   const afterRuling = ledger.indexOf("\n## ", rulingStart + 1);
   const ruling = ledger.slice(rulingStart, afterRuling === -1 ? undefined : afterRuling);
 
   assert.match(
     ruling,
-    /permanently unrecoverable/i,
-    "the ruling must say in plain words that the fourteen are closed as permanently unrecoverable",
+    /MOOT|superseded/i,
+    "HEADLINE: the ruling must be marked MOOT or superseded where a reader meets it — it says the fourteen are permanently unrecoverable, which is false, and an unmarked ruling reads as current",
   );
   assert.match(ruling, /2026-09-12/, "the ruling must carry the date it was made");
+  assert.match(
+    ruling,
+    /audit-cycle-4\.md/,
+    "HEADLINE: the ruling must point at cycle 4 — a reader who meets the ruling first must be able to reach what actually happened without knowing to look for it",
+  );
 
-  const notInRuling = RULED_CLOSED.filter((n) => !new RegExp(String.raw`\b${n}\b`).test(ruling));
+  const notInRuling = RECOVERED.map(([finding]) => finding).filter(
+    (finding) => !new RegExp(String.raw`\b${finding}\b`).test(ruling),
+  );
   assert.deepEqual(
     notInRuling,
     [],
-    `HEADLINE: the ruling must name every finding it closes — ${notInRuling.join(", ")} is missing, and a finding left out of the ruling is neither closed nor open, which is the state the ruling was made to eliminate`,
+    `HEADLINE: the ruling must still name every finding it once closed — ${notInRuling.join(", ")} is missing, and a finding dropped from the superseded ruling loses the record that it was ever in doubt`,
   );
 
-  // Closed is not fixed. If this distinction ever goes, the record starts claiming the fourteen were
-  // dealt with on their merits, which is precisely what nobody knows.
+  // Closed is not fixed. The ruling's own distinction, kept because it was the right one to draw —
+  // and because it is what makes the later recovery legible as good news rather than a formality.
   assert.match(
     ruling,
     /Closed is not fixed/i,
-    "HEADLINE: the ruling must keep saying 'closed is not fixed' — the fourteen were never verified, dismissed or repaired, and a record that blurs that is worse than the gap it closed",
+    "HEADLINE: the ruling must keep saying 'closed is not fixed' — it was the right distinction, and it is why the recovery mattered rather than merely tidying a status",
   );
 
-  // ---- 6. The registry records the decision instead of still asking for it ------------------------
+  // ---- 6. The registry records the recovery, not the ruling ---------------------------------------
   assert.match(
     payroll!.requiredNextAction,
-    /permanently unrecoverable/i,
-    "HEADLINE: the registry must record that the ruling was made — it asked for this decision for as long as it was owed, and a record that keeps demanding a decision already taken trains everyone to ignore it",
+    /RECOVERED/,
+    "HEADLINE: the registry must record that the audit was recovered and the fourteen were already fixed — it carried 'permanently unrecoverable' as the live state, and a record that keeps asserting a resolved gap trains everyone to ignore it",
   );
   assert.ok(
     !/^\s*Rule on findings/i.test(payroll!.requiredNextAction),
-    "HEADLINE: the registry must stop demanding a ruling on findings 1, 6-13, 21, 24, 25 and 19 — that ruling was given on 2026-09-12",
+    "HEADLINE: the registry must not demand a ruling on findings 1, 6-13, 21, 24, 25 and 19 — they are fixed, and the ruling that once closed them is moot",
   );
   assert.match(
     payroll!.managerSummary,
-    /did not move|accepted residual/i,
-    "HEADLINE: the manager summary must say the score did not move when the fourteen were closed — a record that rewards itself for deciding to stop looking is how a gap gets papered over",
+    /56 of 56/,
+    "HEADLINE: the manager summary must say the record is complete — 56 of 56 findings accounted for, which is what the score now measures",
   );
 }

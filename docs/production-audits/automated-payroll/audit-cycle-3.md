@@ -2,7 +2,13 @@
 
 **Opened:** 2026-09-12 · **Findings covered:** 14–18, 20, 22, 23, 26, 27, 29–55 (37 of them), plus 2–5
 **Status:** ALL FOUR TIERS VERIFIED — 37 of 37, and findings 2–5 verified 2026-09-12
-**Cycle 1:** [audit-ledger.md](audit-ledger.md) · **Cycle 2:** [audit-cycle-2.md](audit-cycle-2.md)
+**Cycle 1:** [audit-ledger.md](audit-ledger.md) · **Cycle 2:** [audit-cycle-2.md](audit-cycle-2.md) · **Cycle 4:** [audit-cycle-4.md](audit-cycle-4.md)
+
+> **🟢 CYCLE 4 (2026-09-12) FINISHED THE JOB.** The remaining fourteen — 1, 6–13, 19, 21, 24, 25, 28
+> — were the ones this cycle could not cover, because nothing in the repository recorded them. The
+> original audit has since been recovered from this machine's session transcripts
+> ([audit-original-findings.md](audit-original-findings.md)) and **all fourteen are fixed**. With
+> cycle 3's 37 plus findings 2–5, that is **55 of 55**.
 
 > This document exists **before** the first fix PR of the cycle, not after the last one. That
 > ordering is the process fix cycle 2 established, and it is the reason cycle 1 lost fourteen
