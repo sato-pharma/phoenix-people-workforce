@@ -2,6 +2,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { logError } from "@/lib/observability/log";
 import { runRetentionRiskPrePayrollNotice } from "@/lib/retention-risk/notify";
 import { roundCurrency } from "@/lib/payroll/money";
+import { calendarDaysInMonth } from "@/lib/payroll/copilot/proration";
 import {
   createSalaryBatch,
   findSalaryBatchForPeriod,
@@ -2245,7 +2246,12 @@ export async function importStepUpload(
   // A corrected day count moves the money it drives, as it does on screen (audit finding 32). Priced
   // against the rows as they stand BEFORE the upload, so the preview and the commit move the same money.
   const { rows: before } = await getStepRecommendation(access, runId, stepKey);
-  const { edits, recalculated } = applyDayDrivenMoney({ stepKey, edits: parsed, current: before });
+  const { edits, recalculated } = applyDayDrivenMoney({
+    stepKey,
+    edits: parsed,
+    current: before,
+    monthDays: calendarDaysInMonth({ month: run.month, year: run.year }),
+  });
 
   if (!commit) {
     return diffStepUpload({ stepKey, edits, current: before, invalidHrIds, recalculated });

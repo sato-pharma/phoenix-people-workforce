@@ -40,7 +40,12 @@ export function runSatoEmailRenderTests() {
   assert.ok(!/bgcolor/i.test(html), "a fill the sender added to a table cell must be stripped — the ink rule");
   assert.ok(!/background-color/i.test(html), "a highlight the sender picked must be stripped — the ink rule");
   const grounds = [...html.matchAll(/background\s*:\s*([^;"]+)/gi)].map((match) => match[1].trim().toLowerCase());
-  assert.ok(grounds.length > 0 && grounds.every((value) => value === "#ffffff"), "the only ground is plain white paper");
+  assert.ok(grounds.length > 0, "the mail lays its own white ground rather than inheriting the client's");
+  // 🔴 THIS BODY'S TABLE IS ONE ROW, AND A SINGLE ROW IS NEVER STRIPED — so white really is the only
+  // ground here, and this assertion says nothing at all about the zebra. It read as the ink rule's
+  // guard for a while and was blind to the one fill the house format allows. The zebra is pinned
+  // properly in `runSatoEmailHouseTemplateTests`, against a table with enough rows to stripe.
+  assert.ok(grounds.every((value) => value === "#ffffff"), "a one-row table adds no ground of its own");
 
   assert.ok(html.includes(HOUSE_COLORS.deep), "the heading is in the logo's deep blue");
   assert.ok(html.includes(HOUSE_COLORS.blue), "the brand rule is in the PHARMA blue");
@@ -55,6 +60,99 @@ export function runSatoEmailRenderTests() {
 
   const unsigned = renderSatoEmail({ bodyHtml: "<p>Body</p>", signOff: "  ", subject: "Subject" });
   assert.ok(!unsigned.html.includes("Regards,"), "an empty sign-off leaves no dangling 'Regards,'");
+}
+
+/**
+ * THE TEMPLATE WEARS THE JOURNEY PAPER'S DEVICES. Owner 2026-09-12, sending that paper as the
+ * reference for this email and settling the one detail he sent back: "keep the blue marker".
+ *
+ * Each assertion below pins a DECISION, not a measurement — the shape of a heading, what carries a
+ * list item, where the company is named. A number inside one (a padding, a size) is incidental; the
+ * relationship it expresses is the thing. Break one and the message tells you which decision moved.
+ */
+export function runSatoEmailHouseTemplateTests() {
+  const { html } = renderSatoEmail({
+    bodyHtml:
+      "<h2>What is closing</h2>" +
+      "<blockquote>The offices close on Thursday and reopen on Monday.</blockquote>" +
+      "<ul><li>Hand any pending claim to your manager.</li></ul>" +
+      "<table><thead><tr><th>Day</th><th>Offices</th></tr></thead><tbody>" +
+      "<tr><td>Thursday</td><td>Closed</td></tr>" +
+      "<tr><td>Friday</td><td>Closed</td></tr>" +
+      "<tr><td>Saturday</td><td>Closed</td></tr>" +
+      "<tr><td>Sunday</td><td>Open</td></tr>" +
+      "</tbody></table>",
+    signOff: "Human Resources",
+    subject: "Eid al-Adha holiday",
+  });
+
+  // 🔴 THE ZEBRA, MEASURED ON A TABLE BIG ENOUGH TO HAVE ONE. Four data rows, so the second and the
+  // fourth carry the tint and the head carries nothing: a `<th>` is not data, and a head sharing the
+  // body's rhythm loses the thing a head is for.
+  const rows = html.split(/<tr[^>]*>/i).slice(1);
+  const striped = rows.filter((row) => row.includes(`background:${HOUSE_COLORS.tint}`));
+  assert.equal(striped.length, 2, "of four data rows, exactly two are striped");
+  assert.ok(
+    striped.every((row) => /Friday|Sunday/.test(row)),
+    "the SECOND and FOURTH data rows are the striped ones — the count starts after the head, not at it",
+  );
+  assert.ok(!/<th[^>]*background/i.test(html), "a header row is never striped");
+
+  const grounds = [...html.matchAll(/background\s*:\s*([^;"]+)/gi)].map((match) => match[1].trim().toUpperCase());
+  assert.deepEqual(
+    [...new Set(grounds)].sort(),
+    ["#F2F6FA", "#FFFFFF"],
+    "THE INK RULE: white paper and the 6% zebra row are the only two grounds in the whole mail",
+  );
+
+  // THE SECTION DEVICE: a heading is a rule with an uppercase label under it. The paper never sets a
+  // heading as large text, which is what makes pages of unrelated content read as one document.
+  assert.ok(
+    !/font-size:18px;font-weight:bold/.test(html),
+    "a heading never survives as the sanitizer's bold paragraph — it becomes the section device",
+  );
+  const section = new RegExp(
+    `border-top:\\d+px solid ${HOUSE_COLORS.deep};[^"]*">&nbsp;</td></tr><tr><td[^>]*text-transform:uppercase[^>]*>([^<]+)</td>`,
+    "i",
+  ).exec(html);
+  assert.ok(section, "a heading emits a deep rule with a tracked uppercase label under it");
+  assert.equal(section?.[1], "What is closing", "and the label is the heading the sender typed");
+
+  // 🔴 NO RULE UNDER A LIST ITEM, AND THE MARKER KEEPS THE BRAND BLUE. Owner 2026-09-12: "i am not
+  // happy with the list rules", then "keep the blue marker". The item is set in blue so the bullet
+  // takes it, and the item's own words are wrapped back to body ink.
+  assert.ok(!/<li[^>]*border-bottom/i.test(html), "a list item carries no rule");
+  assert.match(
+    html,
+    new RegExp(`<li[^>]*color:${HOUSE_COLORS.blue}"><span style="color:${HOUSE_COLORS.body}">`),
+    "the marker takes the PHARMA blue and the words stay in body ink",
+  );
+
+  // THE CALLOUT: a light edge and hairlines on white, never the tinted box — that is a filled area.
+  assert.match(
+    html,
+    new RegExp(`<blockquote[^>]*border-left:3px solid ${HOUSE_COLORS.light}`),
+    "a quote is the paper's callout — a thick light edge on white",
+  );
+
+  // THE PROVENANCE FOOT, and the masthead that no longer duplicates it. The mark says the company;
+  // the head carries the reference instead, and the legal person is stated ONCE, where an issuer
+  // belongs. So "Sato Pharma" appears exactly twice: the mark's alt text, and the foot.
+  assert.ok(html.includes(">Issued by</div>"), "the foot names the issuer under a micro label");
+  assert.ok(html.includes(">Reference</div>"), "and the standard under its own");
+  assert.equal(
+    (html.match(/Sato Pharma/g) || []).length,
+    2,
+    "the mark's alt text and the provenance foot — the masthead does not typeset the name a second time",
+  );
+  assert.equal(
+    (html.match(/SATO-DIS-2026-01 v1\.0/g) || []).length,
+    2,
+    "THE DOCUMENT IDENTITY is stamped twice: the masthead reference and the provenance foot",
+  );
+
+  // THE COLOPHON: a SHORT centred rule closes the document. Full width would open a section.
+  assert.match(html, /<table[^>]*width="180"/, "the colophon rule is a third of the column, not the whole of it");
 }
 
 export function runSatoEmailPlanTests() {

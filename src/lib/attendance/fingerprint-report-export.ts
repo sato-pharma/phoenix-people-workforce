@@ -122,7 +122,7 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
   notesSheet.addRows([
     ["Note", "Details"],
     ["Source", "Rows are calculated from attendance_raw_punches after active device user mappings resolve to employee HR_ID."],
-    ["Deduction Days / Amount", "Deduction amount is estimated from employee base salary / 30 * deduction day fraction. Current report does not mutate payroll."],
+    ["Deduction Days / Amount", "Deduction amount is estimated from employee base salary divided by the month's calendar days, times the deduction day fraction. Current report does not mutate payroll."],
     ["Scheduled Times", "Daily rows use the active policy resolved by HR_ID, then job title, then default policy. Grace minutes are a daily budget shared between late arrival and early leave."],
     ["Workdays", "When an attendance policy has custom workdays, only those weekdays are expected attendance days. Empty workdays use the standard company weekend policy."],
     ["Approved Vacation/Leave, Approved Excuse, CRM Activity, Weekly Plan", "Supporting evidence only -- these columns do not change this report's own Status/Deduction figures. They show what Phoenix vacation/excuse requests, the CRM (iReports360) mirror, and the employee's approved weekly plan record for that same day, so a reviewer can manually cross-check a flagged day the same way the Employee Day-by-Day Report's reconciliation does."],

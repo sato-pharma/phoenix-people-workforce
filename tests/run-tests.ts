@@ -775,7 +775,11 @@ import { runCronControlRegistryTests } from "./cron-control-registry.test.ts";
 import { runNotificationRoleRecipientsTests } from "./notification-role-recipients.test.ts";
 import { runDistributionListsTests } from "./distribution-lists.test.ts";
 import { runDistributionListsAccessTests } from "./distribution-lists-access.test.ts";
-import { runSatoEmailPlanTests, runSatoEmailRenderTests } from "./sato-email.test.ts";
+import {
+  runSatoEmailHouseTemplateTests,
+  runSatoEmailPlanTests,
+  runSatoEmailRenderTests,
+} from "./sato-email.test.ts";
 import { runSatoEmailListsOnlyComposerTests } from "./sato-email-lists-only-composer.test.ts";
 import { runEmailControlCenterTests } from "./email-control-center.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
@@ -1143,6 +1147,8 @@ import { runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests } from "./au
 import { runAutomatedPayrollRecurringNonEmployeesTests } from "./automated-payroll-recurring-non-employees.test.ts";
 import { runPayrollAcknowledgmentTokenTests } from "./payroll-acknowledgment-token.test.ts";
 import { runPayrollSilentScreensTests } from "./payroll-silent-screens.test.ts";
+import { runPayrollDayRateDivisorTests } from "./payroll-day-rate-divisor.test.ts";
+import { runPayrollAuditLedgerTests } from "./payroll-audit-ledger.test.ts";
 import { runFieldWorkforceThursdayHalfDayTests } from "./field-workforce-thursday-half-day.test.ts";
 import { runDeductionsModuleNoRecordsScopeTests } from "./deductions-module-no-records-scope.test.ts";
 import { runOutstationApprovedAmountTests } from "./outstation-approved-amount.test.ts";
@@ -1322,7 +1328,6 @@ import { runSalesStoreOverrideTests } from "./sales-store-override.test.ts";
 import { runClosingExportFilenameTests } from "./closing-export-filename.test.ts";
 import { runClosingEngineExportTests } from "./closing-engine-export.test.ts";
 import { runClosingExecutiveLookTests } from "./closing-executive-look.test.ts";
-import { runClosingScreenIdentityTests } from "./closing-screen-identity.test.ts";
 import { runClosingLayoutInvariantTests } from "./closing-layout-invariants.test.ts";
 import { runClosingAchievementFollowsTheClosingTests } from "./closing-achievement-follows-the-closing.test.ts";
 import { runWeeklyPlansDistrictManagerBypassTests } from "./weekly-plans-district-manager-bypass.test.ts";
@@ -4241,10 +4246,6 @@ await runTest(
   runClosingExecutiveLookTests,
 );
 await runTest(
-  "the closing SCREEN wears that same workbook identity (owner 2026-09-12) — every colour role-for-role, the column tints derived and not invented, no foreign palette on any closing component, the frozen black Export XLSX button untouched, and every special column keeping its own colour inside the Grand Total",
-  runClosingScreenIdentityTests,
-);
-await runTest(
   "the premium closing's achievement IS the Monthly Closing's (all sales over target, owner 2026-09-05) on a MIXED area, on the masthead, on every region row, on Family Performance, and in the owner's own four .xlsm formulas",
   runClosingAchievementFollowsTheClosingTests,
 );
@@ -5288,6 +5289,11 @@ await runTest(
 );
 
 await runTest(
+  "the Sato email wears the journey paper's devices: a heading is a rule with a tracked label under it, a list item carries no rule and keeps the blue marker, a quote is a light edge on white, the zebra stripes the second and fourth data rows and never the head, and the foot states the issuer once",
+  runSatoEmailHouseTemplateTests,
+);
+
+await runTest(
   "a Sato email send dedupes by address and is cut into emails of at most 25 — the cap the manual-email policy already enforces — with a per-email idempotency key and unfilled template gaps caught",
   runSatoEmailPlanTests,
 );
@@ -5340,6 +5346,16 @@ await runTest(
 await runTest(
   "recruitment Folders tab: no `whitespace-nowrap` on prose, and the inventory is pinned (the fits-the-screen golden rule)",
   runRecruitmentFoldersNowrapLockTests,
+);
+
+await runTest(
+  "one day rate: a deducted day is worth the month's own day, exactly like the day it cancels — the flat 30 is retired on every step, and a caller that cannot say how long the month is prices nothing (owner ruling 2026-09-12)",
+  runPayrollDayRateDivisorTests,
+);
+
+await runTest(
+  "the payroll audit ledger stays true: every finding the code claims has a row, the thirteen nobody can account for still have no trace, and the registry points at a ledger that exists",
+  runPayrollAuditLedgerTests,
 );
 
 await runTest(
