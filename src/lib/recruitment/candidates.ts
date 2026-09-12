@@ -31,7 +31,8 @@ import {
   managerSendStamp,
   type ManagerSend,
 } from "@/lib/recruitment/manager-sends";
-import { hrIdForStorage, hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { ROW_FINDING_KEYS } from "@/lib/recruitment/cv-findings";
 import { isBatchActor } from "@/lib/recruitment/batch-actor";
 import type {
@@ -410,6 +411,70 @@ async function attachUnconfirmedCvFacts(candidates: Candidate[]): Promise<void> 
 }
 
 /**
+ * Chunk size for an `.in("hr_id", …)` built from `hrIdLookupKeys`, which turns each id into two or
+ * three spellings. Matches vacancy-options.ts, for the same reason: a long enough `in` filter makes
+ * PostgREST return zero rows and no error at all.
+ */
+const HR_ID_LOOKUP_CHUNK = 50;
+
+/**
+ * Puts the FILER'S NAME on every shelved CV, in place.
+ *
+ * WHY THIS EXISTS. The shelf row read "filed 03 Sept 2026, 10:33 by B-10" — a raw HR id where the
+ * owner's standing rule is a human-readable name. `folder_filed_by_hr_id` is the only thing the
+ * candidate row holds about who filed it, and the name lives in `employees`, so the shelf could not
+ * have named anybody without this read.
+ *
+ * ONE QUERY FOR THE WHOLE POOL, and usually for one person: measured on production 2026-09-11, all
+ * 323 filed CVs carry the same filer (B-10, the owner). So the distinct set is what goes to the
+ * database, not the rows — a pool-sized `.in()` of 323 identical ids would be a self-inflicted
+ * version of the length limit that makes PostgREST return zero rows with no error.
+ *
+ * LOOKED UP THROUGH `hrIdLookupKeys`, NOT A BARE `.eq`. HR ids in this database are mixed case —
+ * `hrIdForStorage` writes upper, and roughly 37,000 lower-cased actor ids sit across 52 columns from
+ * before it existed — and PostgREST matches case-sensitively, so the wrong spelling returns no row
+ * at all. That failure is silent and looks like a data fault: the shelf would say the filer has no
+ * name on file while the employee sits right there in the table.
+ *
+ * A FAILED LOOKUP COSTS THE NAME AND NOTHING ELSE. `filedByName` stays null, the shelf says so in
+ * words (never the id), and every other thing on the row still renders.
+ */
+async function attachFolderFilerNames(candidates: Candidate[]): Promise<void> {
+  const filed = candidates.filter((candidate) => candidate.folder?.filedByHrId);
+  if (filed.length === 0) return;
+
+  const distinctHrIds = [
+    ...new Set(filed.map((candidate) => candidate.folder?.filedByHrId).filter((hrId): hrId is string => Boolean(hrId))),
+  ];
+  const keys = [...new Set(distinctHrIds.flatMap((hrId) => hrIdLookupKeys(hrId)))];
+  if (keys.length === 0) return;
+
+  const byCanonical = new Map<string, string>();
+  const supabase = recruitmentDb();
+  for (let start = 0; start < keys.length; start += HR_ID_LOOKUP_CHUNK) {
+    const { data, error } = await supabase
+      .from("employees")
+      .select("hr_id,full_name,nickname")
+      .in("hr_id", keys.slice(start, start + HR_ID_LOOKUP_CHUNK));
+    if (error || !data) continue;
+    for (const row of data as Array<{ hr_id?: string | null; full_name?: string | null; nickname?: string | null }>) {
+      const key = canonicalHrIdKey(row.hr_id);
+      const fullName = String(row.full_name ?? "").trim();
+      if (!key || !fullName) continue;
+      // Nickname-aware, so the shelf reads "Omar Gawish" rather than the legal name on the payroll
+      // file — the same rule every other live screen renders a person by.
+      byCanonical.set(key, resolveEmployeeDisplayName(fullName, row.nickname ?? null, row.hr_id ?? null));
+    }
+  }
+
+  for (const candidate of filed) {
+    if (!candidate.folder) continue;
+    const name = byCanonical.get(canonicalHrIdKey(candidate.folder.filedByHrId) ?? "");
+    if (name) candidate.folder.filedByName = name;
+  }
+}
+
+/**
  * The job title of the vacancy a candidate was formally put forward for, keyed by candidate id.
  *
  * Last rung of the ladder and the smallest — 7 applications against 2 requisitions in production —
@@ -560,12 +625,13 @@ export async function listCandidates(
     table.select(columns).order("created_at", { ascending: false }),
   );
   const candidates = rows.map(mapCandidate);
-  // Concurrently: the three reads touch different fields on the same objects and none reads
+  // Concurrently: the four reads touch different fields on the same objects and none reads
   // another's output, so serialising them would only add Atlantic round trips to a page that
   // already waits on one.
-  const [, , latestSends] = await Promise.all([
+  const [, , , latestSends] = await Promise.all([
     attachAppliedFor(candidates),
     attachUnconfirmedCvFacts(candidates),
+    attachFolderFilerNames(candidates),
     listLatestSendByCandidate(),
   ]);
 

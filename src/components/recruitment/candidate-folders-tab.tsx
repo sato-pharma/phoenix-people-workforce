@@ -27,6 +27,7 @@ import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
 import { deleteRequest, getJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
+import { personLabel, UNNAMED_FILER_LABEL } from "@/lib/recruitment/person-labels";
 import {
   partitionCandidatesByFolder,
   type CandidateFolder,
@@ -342,9 +343,16 @@ function FiledCvName({ candidate }: { candidate: Candidate }) {
           {candidateStatusLabel(candidate.status)}
         </span>
         {candidate.folder ? (
+          // BY A PERSON, NEVER BY AN ID. This read "by B-10" until 2026-09-11 — the owner's own HR
+          // id, on the screen of the only person who reads it, where the standing rule is
+          // human-readable names and never raw codes. `filedByName` is resolved server-side by
+          // listCandidates; when it comes back empty the clause says so in words rather than
+          // falling back to the id, because an id is exactly what the reader cannot act on.
           <span className="whitespace-nowrap text-phx-xs font-medium text-slate-400">
             filed {cairoDateTime(candidate.folder.filedAt)}
-            {candidate.folder.filedByHrId ? ` by ${candidate.folder.filedByHrId}` : ""}
+            {candidate.folder.filedByHrId
+              ? ` by ${personLabel(candidate.folder.filedByName, UNNAMED_FILER_LABEL)}`
+              : ""}
           </span>
         ) : null}
         {state === "loading" ? <span className="text-xs font-medium text-slate-400">Opening…</span> : null}
