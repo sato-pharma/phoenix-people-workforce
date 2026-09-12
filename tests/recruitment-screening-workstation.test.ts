@@ -545,10 +545,81 @@ export async function runRecruitmentScreeningWorkstationTests() {
     /const \[focus, setFocus\] = useState\(false\)/,
     "the focus flag must live on the page, which is the only common parent of the filter bar and the panes",
   );
+  // ── The page opens on the work, not on its own controls ──────────────────────────────────────
+  //
+  // The owner, 2026-09-12: the page "looks crowded and noisy". Measured on his own window, 276px of
+  // this page's own chrome — 30% of a 910px viewport — stood above the first candidate's name, and
+  // the largest single piece of it was a filter bar that opened itself on every load. It starts
+  // CLOSED now, which is pinned here because the default is one word: a later session reading the
+  // old comment would put it back without ever seeing this measurement.
   assert.match(
     withoutComments(pageClient),
-    /const \[filtersOpen, setFiltersOpen\] = useState\(true\)/,
-    "the filter bar folds on its own too, and starts open",
+    /function filtersClosedOnServer\(\): boolean \{\s+return false;/,
+    "the filter bar starts closed — eight dropdowns are not what this page is opened to read",
+  );
+  // REMEMBERED, or closing it becomes a chore repeated on every load. In the BROWSER and not in the
+  // URL: the URL carries WHICH filters are on and is the shareable half, so a pasted screening link
+  // must not prise the other screener's bar open.
+  assert.match(
+    withoutComments(pageClient),
+    /useSyncExternalStore\(\s+subscribeFiltersOpen,\s+readRememberedFiltersOpen,\s+filtersClosedOnServer,\s+\)/,
+    "a reader who opens the bar finds it open next time",
+  );
+  assert.match(
+    withoutComments(pageClient),
+    /rememberFiltersOpen\(!filtersOpen\)/,
+    "and the toggle is what records that, rather than an effect that also fires on the first paint",
+  );
+
+  // ── A FILTER THAT UNDOES YOUR CHOICE READS AS A BROKEN FILTER ───────────────────────────
+  //
+  // The owner, 2026-09-12: "the filters are not working" — every symptom, in the seat view and in
+  // the pool. Every filter was in fact correct: measured against the live pool the same morning,
+  // status=new returned 161 of 607, received=day 9, role=medical_rep 72, and seat 369 narrowed to
+  // 10 and then to 9 under status=new. What was broken was the answering.
+  //
+  // Each `<select>` is controlled by the value the SERVER last sent, and each change is a full
+  // round trip taking 5 to 12 seconds. So the dropdown snapped back to its old value the instant it
+  // was clicked, the list sat still, and nothing said the page had heard anything. Two pins, because
+  // the fix has two halves and either one alone still reads as broken.
+  assert.match(
+    withoutComments(pageClient),
+    /const \[shown, showImmediately\] = useOptimistic\(/,
+    "the dropdown must show what was just picked, not what the server last answered",
+  );
+  assert.match(
+    withoutComments(pageClient),
+    /startTransition\(\(\) => \{\s+showImmediately\(next\);\s+router\.push\(href\);\s+\}\)/,
+    "and inside the same transition as the navigation, or React drops it on the next render",
+  );
+  assert.match(
+    withoutComments(pageClient),
+    /pending=\{pending\}/,
+    "and the bar has to say the list is on its way — silence for 12 seconds is what a dead control looks like",
+  );
+  // Read from the optimistic values, or the folded bar's own count lags the click by the same
+  // seconds — which is the half of this the reader sees when the bar is shut.
+  assert.match(
+    withoutComments(pageClient),
+    /const activeFilters = \[\s+shown\.area,/,
+    "the folded bar counts what was picked, not what has arrived",
+  );
+  // NOT an effect that seeds state. `useEffect(() => setFiltersOpen(true), [])` reads correctly and
+  // costs a whole second render of the screening page to do it; the React compiler lint calls it out
+  // by name (set-state-in-effect) and CI went red on exactly this on 2026-09-12. The store version
+  // has the same server-safe behaviour without the extra pass, so the effect must not come back.
+  assert.doesNotMatch(
+    withoutComments(pageClient),
+    /setFiltersOpen/,
+    "the preference is read from the store, never poured into state by an effect",
+  );
+  // localStorage THROWS rather than returning null where a browser blocks site data, so every read
+  // and every write is wrapped — an unguarded one would white-screen the whole screening page over a
+  // view preference.
+  assert.match(
+    withoutComments(pageClient),
+    /window\.localStorage\.getItem\(FILTERS_OPEN_KEY\)/,
+    "the preference is read from this browser",
   );
   assert.match(
     withoutComments(pageClient),
@@ -680,13 +751,24 @@ export async function runRecruitmentScreeningWorkstationTests() {
   const listSource = withoutComments(read("src/components/recruitment/workstation/workstation-candidate-list.tsx"));
   assert.match(
     listSource,
-    /showBand=\{index === 0 \|\| visible\[index - 1\]\.band !== row\.band\}/,
+    /const showBand = index === 0 \|\| visible\[index - 1\]\.band !== row\.band;/,
     "the band prints on the first row of each group and nowhere else",
   );
+  // MOVED OUT OF THE CARD ON 2026-09-12. It was a prop on CandidateBlock and drew at the BOTTOM of
+  // the first card in the group, which reads as a caption on that one candidate rather than as the
+  // name of the group they open. A group heading is a heading: it is now the list's own element,
+  // full width, above the row — which also means it spans the bulk-decision tick-box column instead
+  // of starting to the right of it. The regex pins the heading to the list level: a `showBand` prop
+  // handed back to the card would not match it.
   assert.match(
     listSource,
-    /\{showBand \? \(\s+<span className="block text-\[10px\] uppercase/,
+    /\{showBand \? \(\s+<span className="block border-b border-phx-line bg-phx-surface-2 px-3 py-1 text-\[10px\]/,
     "and the flag has to gate the band itself, not merely exist",
+  );
+  assert.doesNotMatch(
+    listSource,
+    /showBand=\{/,
+    "the band is the list's heading, not something the card is told to draw",
   );
 
   // A folded pane and the spine that brings it back must call the pane the same thing. The list's
@@ -745,7 +827,10 @@ export async function runRecruitmentScreeningWorkstationTests() {
 
   // ── Is the backlog growing? The question no number on the page could answer ───────────────────
   const pageSource = read("src/components/recruitment/workstation/workstation-page-client.tsx");
-  assert.match(pageSource, /function ThroughputStrip\(/, "the page must say whether the reader is keeping up");
+  // Renamed from ThroughputStrip on 2026-09-12: the strip stopped being a strip. It is now three
+  // figures sitting inside the page header beside the title, because a full-width band of its own
+  // was one of the three stacked bars that pushed the first candidate's name 276px down the page.
+  assert.match(pageSource, /function BacklogFigures\(/, "the page must say whether the reader is keeping up");
   // IN AGAINST OUT — the difference is still the answer, but the arithmetic moved out of the
   // component into candidate-throughput.ts on 2026-09-05, when the strip became a four-week trend.
   // It had to move: the counting it used to do was measured wrong in both directions against the
@@ -761,6 +846,73 @@ export async function runRecruitmentScreeningWorkstationTests() {
     /throughputDirection\(throughput\)/,
     "and the strip asks for that difference rather than recomputing it beside the module that owns it",
   );
+  // THREE FIGURES, NOT SIX, AND NO BAND OF ITS OWN — 2026-09-12. The strip shipped as a bordered
+  // band above the toolbar carrying the pool, the unread, two in-against-out spans and a direction,
+  // and the spans rendered as "this week 220 in 300 decided -80": a sentence nobody reads at a
+  // glance, in a band that pushed the first candidate's name down the page. The question it exists
+  // to answer is unchanged; what is gone is the half of it that was never legible.
+  assert.doesNotMatch(
+    pageSource,
+    /function Span\(/,
+    "the in-against-out pair is gone — the direction is the readable half and it stayed",
+  );
+
+  // ── The candidate card: what a scanning eye needs, and nothing else ───────────────────────────
+  //
+  // Nine things printed on every one of forty cards. Four went, and none of them are lost: a "New"
+  // pill on a queue of new CVs is forty identical pills, and the arrival, the source and (in seat
+  // mode) the place all print in the review header the moment the card is opened.
+  const cardSource = withoutComments(read("src/components/recruitment/workstation/workstation-candidate-list.tsx"));
+  assert.match(
+    cardSource,
+    /const hasMeta =/,
+    "the second line knows whether it has anything to say, so an empty one is never drawn",
+  );
+  assert.match(
+    cardSource,
+    /\{decided \|\| status !== "new" \? \(/,
+    "a status pill prints only when it is not the default",
+  );
+  assert.match(
+    cardSource,
+    /\{row\.locationLabel && !row\.seatReason \? \(/,
+    "and the place is not printed twice where the seat reason above already names it",
+  );
+  assert.doesNotMatch(
+    cardSource,
+    /\{row\.source \? <span/,
+    "the source belongs to the opened card — it is in the review header",
+  );
+  assert.doesNotMatch(
+    cardSource,
+    /relativeDays\(row\.createdAt\)/,
+    "so does the arrival — the review header prints 'Arrived ...' on the card that opens",
+  );
+  const headerSource = read("src/components/recruitment/workstation/workstation-review-header.tsx");
+  // THE PAIR IS THE POINT: cutting them from the card is only safe while the opened card still says
+  // them. If either of these ever goes, the two assertions above are cutting information, not noise.
+  assert.match(headerSource, /Arrived \{relativeDays\(row\.createdAt\)\}/, "the opened card says when it arrived");
+  assert.match(headerSource, /via \{row\.source\}/, "and where it came from");
+
+  // ── The intelligence panel opens on the decision ──────────────────────────────────────────────
+  //
+  // Role fit and the recruiter briefing are both READINGS of facts printed above them, so they are
+  // the right thing to have to ask for. Both keep a summary on the closed bar — the fit keeps its
+  // score and verdict, the briefing its counts — so a folded section still answers "worth my time".
+  const intelligenceSource = read("src/components/recruitment/workstation/workstation-intelligence.tsx");
+  for (const [key, what] of [
+    ["summary:fit", "the fit breakdown"],
+    ["summary:briefing", "the recruiter briefing"],
+  ] as const) {
+    const block = intelligenceSource.slice(
+      Math.max(0, intelligenceSource.indexOf(`storageKey="${key}"`) - 900),
+      intelligenceSource.indexOf(`storageKey="${key}"`),
+    );
+    assert.ok(
+      block.includes("defaultOpen={false}"),
+      what + " starts folded — it is a reading of the facts above it, not new information",
+    );
+  }
 
   const loaderSource = read("src/lib/recruitment/screening-workspace.ts");
   // NEVER THE NARROWED VIEW. That is the invariant this has always guarded: a backlog figure that

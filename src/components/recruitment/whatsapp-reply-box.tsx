@@ -18,8 +18,22 @@
 // and also the honest shape: the window is checked when a human asks to reply, not on every render
 // of every card in a list that may hold hundreds.
 
-import { useCallback, useState } from "react";
+// ── IT LIVES ON TWO SCREENS NOW, AND IT IS PAINTED IN THE PRODUCT’S OWN INK ──────────────────
+//
+// Until 2026-09-12 the only way to answer an applicant in your own words was the candidate drawer in
+// the pool. The screening workstation — the screen a recruiter actually spends the morning on — had
+// the templated send dialog and nothing else, so "reply to what they just wrote" meant leaving the
+// CV, finding them in the pool, and opening a drawer. It renders in both places now, off the same
+// route and the same 24-hour check.
+//
+// It was also painted entirely in Tailwind’s `slate` with a bare `orange-400`, which is nobody’s
+// palette here. Sitting inside a header built from `--phx-*` that reads as a pasted-in widget, so
+// every class names a token and the buttons come from the screening page’s own Action kit.
 
+import { useCallback, useState } from "react";
+import { MessageCircle } from "lucide-react";
+
+import { Action } from "@/components/recruitment/workstation/workstation-look";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import { getJson, postJson } from "@/components/recruitment/recruitment-fetch";
 
@@ -108,80 +122,75 @@ export function WhatsAppReplyBox({ candidateId }: { candidateId: string }) {
 
   if (state.kind === "idle") {
     return (
-      <button
-        className="border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-slate-50"
+      <Action
         onClick={() => void open()}
-        type="button"
+        title="Answer this applicant in your own words, if WhatsApp still allows it"
+        tone="quiet"
       >
+        <MessageCircle aria-hidden className="h-3.5 w-3.5" />
         Reply on WhatsApp
-      </button>
+      </Action>
     );
   }
 
   return (
-    <div className="w-full border border-slate-300 bg-white p-3 text-xs">
-      {state.kind === "loading" ? <p className="text-slate-500">Checking WhatsApp…</p> : null}
+    <div className="w-full border border-phx-line bg-white p-3 text-[12px]">
+      {state.kind === "loading" ? <p className="text-phx-ink-soft">Checking WhatsApp…</p> : null}
 
       {state.kind === "none" ? (
-        <p className="text-slate-500">
+        <p className="leading-snug text-phx-ink-soft">
           This candidate has never messaged us on WhatsApp, so there is no conversation to reply to.
         </p>
       ) : null}
 
       {state.kind === "closed" ? (
-        <p className="text-slate-500">
+        <p className="leading-snug text-phx-ink-soft">
           WhatsApp only allows a written reply within 24 hours of their last message, and theirs came in on{" "}
-          <span className="text-slate-900">{formatCairo(state.lastInboundAt)}</span>. Send an approved template instead.
+          <span className="font-semibold text-phx-ink">{formatCairo(state.lastInboundAt)}</span>. Send an approved
+          template instead.
         </p>
       ) : null}
 
-      {state.kind === "error" ? <p className="text-red-600">{state.message}</p> : null}
+      {state.kind === "error" ? <p className="leading-snug text-phx-danger">{state.message}</p> : null}
 
       {state.kind === "open" ? (
         <div className="flex w-full flex-col gap-2">
-          <p className="text-slate-500">
-            Sending from <span className="text-slate-900">{state.lineNumber ?? "the line they messaged"}</span>.{" "}
+          <p className="leading-snug text-phx-ink-soft">
+            Sending from{" "}
+            <span className="font-semibold text-phx-ink">{state.lineNumber ?? "the line they messaged"}</span>.{" "}
             {formatRemaining(state.minutesLeft)} left to reply in your own words.
           </p>
           <textarea
-            className="w-full border border-slate-300 bg-white p-2 text-xs text-slate-900 focus:border-orange-400 focus:outline-none"
+            className="w-full resize-y border border-phx-line bg-white p-2 text-[13px] leading-relaxed text-phx-ink outline-none focus:border-phx-accent"
             disabled={sending}
             onChange={(event) => setText(event.target.value)}
             placeholder="Write your reply…"
             rows={3}
             value={text}
           />
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              className="border border-slate-900 bg-slate-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-              disabled={sending || text.trim().length === 0}
-              onClick={() => void send()}
-              type="button"
-            >
+          <div className="flex flex-wrap items-center gap-1.5">
+            {/* The one loud control here, and it is loud for the reason the kit reserves that volume:
+                this message leaves the building the moment it is pressed and cannot be recalled. */}
+            <Action disabled={sending || text.trim().length === 0} onClick={() => void send()} tone="primary">
               {sending ? "Sending…" : "Send"}
-            </button>
-            <button
-              className="border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-50"
-              disabled={sending}
-              onClick={() => setState({ kind: "idle" })}
-              type="button"
-            >
+            </Action>
+            <Action disabled={sending} onClick={() => setState({ kind: "idle" })} tone="ghost">
               Close
-            </button>
+            </Action>
           </div>
-          {sendError ? <p className="text-red-600">{sendError}</p> : null}
-          {sent ? <p className="text-slate-500">Sent: <span className="text-slate-900">{sent}</span></p> : null}
+          {sendError ? <p className="leading-snug text-phx-danger">{sendError}</p> : null}
+          {sent ? (
+            <p className="leading-snug text-phx-ink-soft">
+              Sent: <span className="font-semibold text-phx-ink">{sent}</span>
+            </p>
+          ) : null}
         </div>
       ) : null}
 
       {state.kind !== "open" && state.kind !== "loading" ? (
-        <button
-          className="mt-2 border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-50"
-          onClick={() => setState({ kind: "idle" })}
-          type="button"
-        >
+        <Action className="mt-2" onClick={() => setState({ kind: "idle" })} tone="ghost">
           Close
-        </button>
+        </Action>
       ) : null}
     </div>
   );

@@ -243,6 +243,33 @@ export type ScreeningHrefOptions = {
 };
 
 /**
+ * The narrowing a screen should DRAW after one filter was picked, before the server has answered.
+ *
+ * Two rules, and both of them are load-bearing:
+ *
+ *   - `undefined` in `ScreeningHrefOptions` means "leave this one alone", never "clear it". A plain
+ *     spread would blank every filter the caller did not mention. `null` DOES mean clear it, which
+ *     is how the Clear button drops all eight at once.
+ *   - Only keys the current narrowing already holds are copied across. The two screening screens
+ *     carry different shapes — the workstation has `vacancy`, the pool screen does not — so the
+ *     return type is the caller's own, and a key that screen does not have is ignored rather than
+ *     grafted on.
+ *
+ * Here rather than inline in either screen because both need it and neither owns it.
+ */
+export function mergeNarrowing<T extends Partial<ScreeningHrefOptions>>(
+  current: T,
+  picked: ScreeningHrefOptions,
+): T {
+  const next: T = { ...current };
+  for (const [key, value] of Object.entries(picked)) {
+    if (value === undefined || !(key in next)) continue;
+    (next as Record<string, unknown>)[key] = value;
+  }
+  return next;
+}
+
+/**
  * The link that opens the screening queue, optionally narrowed.
  *
  * Every filter on the page is a LINK rather than a piece of component state, which is the whole

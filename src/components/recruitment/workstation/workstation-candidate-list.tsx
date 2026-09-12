@@ -31,6 +31,7 @@ import { Copy, Eye, Search, X } from "lucide-react";
 
 import { candidateStatusLabel, type CandidateStatus } from "@/lib/recruitment/candidate-status";
 import { candidateRedFlagLabels } from "@/lib/recruitment/red-flag";
+import { Medallion } from "@/components/recruitment/workstation/workstation-look";
 import { EmptyNote, PaneHead, Pill, relativeDays } from "@/components/recruitment/workstation/workstation-ui";
 import { roleFitVerdictLabels } from "@/lib/recruitment/role-fit";
 import { screeningBandLabels } from "@/lib/recruitment/screening-order";
@@ -164,36 +165,51 @@ export function WorkstationCandidateList({
           <EmptyNote>{emptyLabel}</EmptyNote>
         ) : (
           <>
-            {visible.map((row, index) => (
-              // A FLEX LINE, with the tick-box a SIBLING of the row rather than inside it. A control
-              // nested in another control is invalid HTML and behaves accordingly — the tick would be
-              // swallowed by the row's own click and open the CV instead of selecting it.
-              <div className="flex items-stretch" key={row.id}>
-                {onToggleMark ? (
-                  <label className="flex shrink-0 cursor-pointer items-start border-b border-phx-line bg-white pl-2 pr-1 pt-3">
-                    <input
-                      aria-label={`Select ${row.fullName} for a bulk decision`}
-                      checked={markedIds.has(row.id)}
-                      className="h-3.5 w-3.5 accent-phx-accent"
-                      onChange={() => onToggleMark(row.id)}
-                      type="checkbox"
+            {visible.map((row, index) => {
+              // A band printed on every row is not information, it is wallpaper: the list is ordered
+              // BY band, so forty consecutive rows read "FIELD FORCE" and the eye has to step over
+              // the same three words forty times to get to the next name. Printed only where it
+              // CHANGES it does the job it was written for — it marks where one group of the queue
+              // ends and the next begins — and costs nothing on the rows in between.
+              const showBand = index === 0 || visible[index - 1].band !== row.band;
+              return (
+                <div key={row.id}>
+                  {/* THE BAND IS A GROUP HEADING, SO IT IS DRAWN AS ONE — the full width of the list,
+                      above the first row of the group, spanning the tick-box column too. It used to
+                      print at the BOTTOM of the first card, which reads as a caption on that one
+                      candidate rather than as the name of the group they open; and drawn inside the
+                      card it would start after the tick-box and sit beside it, which is the same
+                      mistake with better alignment. */}
+                  {showBand ? (
+                    <span className="block border-b border-phx-line bg-phx-surface-2 px-3 py-1 text-[10px] font-bold uppercase leading-[1.6] tracking-[0.12em] text-phx-ink-faint">
+                      {screeningBandLabels[row.band]}
+                    </span>
+                  ) : null}
+                  {/* A FLEX LINE, with the tick-box a SIBLING of the row rather than inside it. A
+                      control nested in another control is invalid HTML and behaves accordingly — the
+                      tick would be swallowed by the row's own click and open the CV instead. */}
+                  <div className="flex items-stretch">
+                    {onToggleMark ? (
+                      <label className="flex shrink-0 cursor-pointer items-start border-b border-phx-line bg-white pl-2 pr-1 pt-3">
+                        <input
+                          aria-label={`Select ${row.fullName} for a bulk decision`}
+                          checked={markedIds.has(row.id)}
+                          className="h-3.5 w-3.5 accent-phx-accent"
+                          onChange={() => onToggleMark(row.id)}
+                          type="checkbox"
+                        />
+                      </label>
+                    ) : null}
+                    <CandidateBlock
+                      active={row.id === selectedId}
+                      decided={decidedById[row.id] ?? null}
+                      onSelect={() => onSelect(row.id)}
+                      row={row}
                     />
-                  </label>
-                ) : null}
-              <CandidateBlock
-                active={row.id === selectedId}
-                decided={decidedById[row.id] ?? null}
-                onSelect={() => onSelect(row.id)}
-                row={row}
-                // A band printed on every row is not information, it is wallpaper: the list is
-                // ordered BY band, so forty consecutive rows read "FIELD FORCE" and the eye has to
-                // step over the same three words forty times to get to the next name. Printed only
-                // where it CHANGES it does the job it was written for — it marks where one group of
-                // the queue ends and the next begins — and costs nothing on the rows in between.
-                showBand={index === 0 || visible[index - 1].band !== row.band}
-              />
-              </div>
-            ))}
+                  </div>
+                </div>
+              );
+            })}
             {limit < rows.length ? (
               // A real button as well as the scroll handler. Scroll-to-load alone is invisible to a
               // keyboard user and silently broken if the pane never overflows.
@@ -212,31 +228,61 @@ export function WorkstationCandidateList({
   );
 }
 
+/**
+ * ONE CANDIDATE, AS ONE CARD.
+ *
+ * Read top to bottom it answers, in this order: who · what seat they are for · why they are in this
+ * pile · what they do now — with the fit read as a medallion on the trailing edge, so the eye can
+ * run down the column of numbers alone when it is triaging rather than reading.
+ *
+ * THE VACANCY IS BIGGER THAN THE JOB TITLE, and that inversion is the owner's own instruction. A
+ * recruiter is filling a SEAT, so "applying for Office Coordinator" is the fact that decides whether
+ * to open the CV and "currently a Social Media Executive" is context for that decision. Every
+ * earlier version of this screen led with the current title, which reads as a directory of people
+ * rather than a queue of applications.
+ *
+ * NOTHING HERE TRUNCATES. The ellipsis ban is absolute and an Egyptian four-part name in a 288px
+ * column is exactly the case it was written for, so every line wraps instead.
+ */
 function CandidateBlock({
   active,
   decided,
   onSelect,
   row,
-  showBand,
 }: {
   active: boolean;
   decided: CandidateStatus | null;
   onSelect: () => void;
   row: WorkspaceCandidateRow;
-  /** True on the first row of each band — see the call site for why it is not true on all of them. */
-  showBand: boolean;
 }) {
   const redFlag = row.redFlags[0] ?? null;
   const status = decided ?? row.status;
 
-  // `min-w-0 flex-1` rather than `w-full`: the row now sits in a flex line beside an optional
-  // tick-box (see the call site). Alone in that line it is exactly the width it always was, so a
-  // reader who cannot decide sees the list unchanged.
+  // Does the second line have anything to say? Written out rather than inferred from children,
+  // because a JSX child that renders null is still a child — React cannot tell the caller "that row
+  // came to nothing", so the row has to know before it draws.
+  const hasMeta =
+    Boolean(decided) ||
+    status !== "new" ||
+    row.seen ||
+    row.alsoReadBy.length > 0 ||
+    Boolean(row.beingReadBy) ||
+    row.unsavedFindings > 0 ||
+    Boolean(row.locationLabel && !row.seatReason) ||
+    Boolean(row.experienceLabel) ||
+    row.band === "no_cv";
+
+  // `min-w-0 flex-1` rather than `w-full`: the row sits in a flex line beside an optional tick-box
+  // (see the call site). Alone in that line it is exactly the width it always was, so a reader who
+  // cannot decide sees the list unchanged.
   return (
     <button
       aria-current={active ? "true" : undefined}
       className={cn(
-        "flex min-w-0 flex-1 flex-col gap-1 border-b border-phx-line px-3 py-2 text-left transition",
+        "flex min-w-0 flex-1 flex-col gap-1.5 border-b border-phx-line px-3 py-2.5 text-left transition-colors",
+        // THE SELECTED ROW IS MARKED ON ITS EDGE, not painted. A 2px rule in the accent plus the
+        // faintest tint reads as "this one" from across the room without turning the open candidate
+        // into the loudest object on a screen whose actual subject is the CV two panes to the right.
         active
           ? "border-l-2 border-l-phx-accent bg-phx-accent-soft"
           : "border-l-2 border-l-transparent hover:bg-phx-paper",
@@ -244,32 +290,31 @@ function CandidateBlock({
       onClick={onSelect}
       type="button"
     >
-      <span className="flex items-start gap-2">
+      <span className="flex items-start gap-2.5">
         <span className="min-w-0 flex-1">
-          {/* The name, then the SEAT in bold underneath it. Wraps rather than truncating — the
-              ellipsis ban is absolute, and an Egyptian four-part name in a 320px column is exactly
-              the case it was written for. */}
-          <span className="block break-words text-[14px] font-bold leading-tight text-phx-ink">{row.fullName}</span>
-          <span className="mt-0.5 block break-words text-[13px] font-semibold leading-tight text-phx-accent-press">
+          <span className="block break-words text-[14px] font-bold leading-tight tracking-[-0.005em] text-phx-ink">
+            {row.fullName}
+          </span>
+          {/* The SEAT, in the accent, directly under the name — the owner's inversion, drawn. */}
+          <span className="mt-1 block break-words text-[13px] font-semibold leading-tight text-phx-accent-press">
             {row.appliedForText ?? "No job named on the application"}
           </span>
           {/* WHY THIS CV IS IN THIS SEAT'S PILE. Only in seat mode, and never a guess dressed up as
               a fact: "Filed to the Menoufia 1 folder" and "Email subject names Menoufia 1" are two
               very different reasons to be looking at somebody, and a queue that silently gained
-              eleven rows without saying which is a queue nobody would trust. Wraps rather than
-              truncating — the ellipsis ban is absolute. */}
+              eleven rows without saying which is a queue nobody would trust. */}
           {row.seatReason ? (
-            <span className="mt-0.5 block break-words text-[11px] leading-tight text-phx-ink-soft">
+            <span className="mt-1 block break-words text-[11px] leading-snug text-phx-ink-soft">
               {row.seatReason}
             </span>
           ) : null}
           {row.currentRole ? (
             <span
               className={cn(
-                "mt-0.5 block break-words text-[12px] leading-tight",
+                "mt-1 block break-words text-[12px] leading-snug",
                 // A hedged read is drawn in italic grey — the same convention "Applying for" has
                 // used since August, extended rather than reinvented.
-                row.currentRole.confirmed ? "text-phx-ink-soft" : "italic text-phx-ink-faint",
+                row.currentRole.confirmed ? "text-phx-ink-2" : "italic text-phx-ink-faint",
               )}
               title={row.currentRole.confirmed ? undefined : "Read off the CV, but the reader was not confident."}
             >
@@ -279,102 +324,115 @@ function CandidateBlock({
           ) : null}
         </span>
 
-        {/* The fit read. A number that could not honestly be computed prints as a dash rather than
-            as a zero — "not enough on file" and "poor fit" are opposite findings. */}
-        <span
-          className={cn(
-            "flex w-11 shrink-0 flex-col items-center border py-0.5",
-            row.fitScore === null
-              ? "border-phx-line bg-phx-paper text-phx-ink-faint"
-              : row.fitVerdict === "strong"
-                ? "border-phx-ok-line bg-phx-ok-bg text-phx-ok"
-                : row.fitVerdict === "possible"
-                  ? "border-phx-warn-line bg-phx-warn-bg text-phx-warn"
-                  : "border-phx-line bg-phx-paper text-phx-ink-soft",
-          )}
+        <Medallion
+          caption={row.fitScore === null ? "no read" : "fit"}
           title={`${roleFitVerdictLabels[row.fitVerdict]} — read against ${row.fitRoleLabel}. Not an AI score: it is how many of the checks for this job the record answers.`}
-        >
-          <span className="text-[14px] font-black leading-none tabular-nums">
-            {row.fitScore === null ? "—" : row.fitScore}
-          </span>
-          <span className="text-[9px] font-bold uppercase leading-tight">{row.fitScore === null ? "no read" : "fit"}</span>
+          tone={
+            row.fitScore === null
+              ? "none"
+              : row.fitVerdict === "strong"
+                ? "ok"
+                : row.fitVerdict === "possible"
+                  ? "warn"
+                  : "neutral"
+          }
+          value={row.fitScore}
+        />
+      </span>
+
+      {/* WHAT A SCANNING EYE ACTUALLY NEEDS — and nothing else.
+          This line carried nine things on every one of forty cards until 2026-09-12, and the owner's
+          word for the result was "crowded and noisy". Four of the nine went, and none of them are
+          lost: the status pill said "New" on a queue of new CVs, and the arrival, the source and (in
+          seat mode) the place all print in the review header the moment the card is opened, one
+          click away. What stays is what changes a decision before the CV is even opened — a verdict
+          that is not the default, who else is on this CV, findings nobody has saved, and how long
+          they have worked.
+
+          The whole line is dropped rather than rendered empty: an empty flex row still costs its own
+          gap, and forty of those is a list that breathes wrong for no reason at all. */}
+      {hasMeta ? (
+        <span className="flex flex-wrap items-center gap-1">
+          {/* A decision made in this session shows immediately and is marked as this session's, so a
+              reader can tell "I just did that" from "somebody did that last week". A stored status
+              only prints when it is NOT the default: "New" on a new-CV queue is forty identical
+              pills teaching the eye to skip the one place a real verdict would appear. */}
+          {decided || status !== "new" ? (
+            <Pill tone={status === "rejected" ? "danger" : status === "new" ? "accent" : decided ? "ok" : "neutral"}>
+              {decided ? `${candidateStatusLabel(decided)} · just now` : candidateStatusLabel(row.statusRaw)}
+            </Pill>
+          ) : null}
+          {row.seen ? (
+            <Pill tone="neutral" title="You have opened this CV before.">
+              <Eye className="h-2.5 w-2.5" />
+              Read
+            </Pill>
+          ) : null}
+          {/* SOMEBODY ELSE has read it. A separate badge from "Read" above, never folded into it,
+              because the two answer different questions: "Read" decides whether the queue offers this
+              CV to YOU again, this one only says the work may already be done. Two people sharing one
+              queue with no sight of each other's reading do the same CVs twice and cannot tell which.
+              Named, never an id — the owner's standing rule. */}
+          {row.alsoReadBy.length > 0 ? (
+            <Pill tone="info" title={`Also opened by ${row.alsoReadBy.join(", ")}.`}>
+              <Eye className="h-2.5 w-2.5" />
+              {row.alsoReadBy.length === 1 ? row.alsoReadBy[0] : `${row.alsoReadBy.length} others`}
+            </Pill>
+          ) : null}
+          {/* SOMEBODY HAS IT OPEN RIGHT NOW. The badge above is permanent history — "this work may
+              already be done" — and cannot answer the collision that costs the most: two screeners
+              opening the same CV in the same minute, both reading it, one reading wasted.
+
+              `warn`, not `info`, because this one asks the reader to do something: pick another CV.
+              It is advisory — nothing stops them — and it disappears by itself after five minutes,
+              so a closed laptop cannot hold a CV away from the other screener. */}
+          {row.beingReadBy ? (
+            <Pill tone="warn" title={`${row.beingReadBy} has this open right now. Pick another CV unless you mean to look together.`}>
+              <Eye className="h-2.5 w-2.5" />
+              {row.beingReadBy} is reading
+            </Pill>
+          ) : null}
+          {/* THE CV READER FOUND SOMETHING NOBODY SAVED. 271 of 582 candidates carried one of these on
+              2026-09-05 and there was no way to tell from the list which. Not an extraction failure:
+              cv-auto-apply writes unattended only at high confidence and `low` waits for a human, so
+              for an automatically-created candidate it waited for a review that never came. The title
+              names the three fields checked rather than claiming to be a total — see cv-findings.ts. */}
+          {row.unsavedFindings > 0 ? (
+            <Pill
+              tone="warn"
+              title="The CV reader found an experience figure, a national ID or a job title that is not on the record yet. Open the CV Data tab to save it."
+            >
+              {row.unsavedFindings} to save
+            </Pill>
+          ) : null}
+          {/* THE PLACE, except where the line above already said it. In seat mode the reason this CV
+              is in this pile names the area in a full sentence — "Chose Menoufia 1 on WhatsApp" — and
+              printing "Menoufia" again two lines below is the same fact twice. Outside seat mode there
+              is no such sentence and the place is a scanning fact, so it stays. */}
+          {row.locationLabel && !row.seatReason ? (
+            <span className="text-[11px] text-phx-ink-soft" title={row.locationDeclared ? "The applicant asked for this." : "Worked out from the address on the CV."}>
+              {row.locationLabel}
+              {row.locationDeclared ? "" : " (from CV)"}
+            </span>
+          ) : null}
+          {row.experienceLabel ? (
+            <span className={cn("text-[11px]", row.experienceConfirmed ? "text-phx-ink-soft" : "italic text-phx-ink-faint")}>
+              {row.experienceLabel}
+            </span>
+          ) : null}
+          {row.band === "no_cv" ? (
+            <Pill tone="warn" title="The reader judged the attached file not to be a CV.">
+              Not a CV
+            </Pill>
+          ) : null}
         </span>
-      </span>
-
-      <span className="flex flex-wrap items-center gap-1">
-        {/* A decision made in this session shows immediately and is marked as this session's, so a
-            reader can tell "I just did that" from "somebody did that last week". */}
-        <Pill tone={status === "rejected" ? "danger" : status === "new" ? "accent" : decided ? "ok" : "neutral"}>
-          {decided ? `${candidateStatusLabel(decided)} · just now` : candidateStatusLabel(row.statusRaw)}
-        </Pill>
-        {row.seen ? (
-          <Pill tone="neutral" title="You have opened this CV before.">
-            <Eye className="h-2.5 w-2.5" />
-            Read
-          </Pill>
-        ) : null}
-        {/* SOMEBODY ELSE has read it. A separate badge from "Read" above, never folded into it,
-            because the two answer different questions: "Read" decides whether the queue offers this
-            CV to YOU again, this one only says the work may already be done. Two people sharing one
-            queue with no sight of each other's reading do the same CVs twice and cannot tell which.
-            Named, never an id — the owner's standing rule. */}
-        {row.alsoReadBy.length > 0 ? (
-          <Pill tone="info" title={`Also opened by ${row.alsoReadBy.join(", ")}.`}>
-            <Eye className="h-2.5 w-2.5" />
-            {row.alsoReadBy.length === 1 ? row.alsoReadBy[0] : `${row.alsoReadBy.length} others`}
-          </Pill>
-        ) : null}
-        {/* SOMEBODY HAS IT OPEN RIGHT NOW. The badge above is permanent history — "this work may
-            already be done" — and cannot answer the collision that costs the most: two screeners
-            opening the same CV in the same minute, both reading it, one reading wasted.
-
-            `warn`, not `info`, because this one asks the reader to do something: pick another CV.
-            It is advisory — nothing stops them — and it disappears by itself after five minutes,
-            so a closed laptop cannot hold a CV away from the other screener. */}
-        {row.beingReadBy ? (
-          <Pill tone="warn" title={`${row.beingReadBy} has this open right now. Pick another CV unless you mean to look together.`}>
-            <Eye className="h-2.5 w-2.5" />
-            {row.beingReadBy} is reading
-          </Pill>
-        ) : null}
-        {/* THE CV READER FOUND SOMETHING NOBODY SAVED. 271 of 582 candidates carried one of these on
-            2026-09-05 and there was no way to tell from the list which. Not an extraction failure:
-            cv-auto-apply writes unattended only at high confidence and `low` waits for a human, so
-            for an automatically-created candidate it waited for a review that never came. The title
-            names the three fields checked rather than claiming to be a total — see cv-findings.ts. */}
-        {row.unsavedFindings > 0 ? (
-          <Pill
-            tone="warn"
-            title="The CV reader found an experience figure, a national ID or a job title that is not on the record yet. Open the CV Data tab to save it."
-          >
-            {row.unsavedFindings} to save
-          </Pill>
-        ) : null}
-        {row.locationLabel ? (
-          <span className="text-[11px] text-phx-ink-soft" title={row.locationDeclared ? "The applicant asked for this." : "Worked out from the address on the CV."}>
-            {row.locationLabel}
-            {row.locationDeclared ? "" : " (from CV)"}
-          </span>
-        ) : null}
-        {row.experienceLabel ? (
-          <span className={cn("text-[11px]", row.experienceConfirmed ? "text-phx-ink-soft" : "italic text-phx-ink-faint")}>
-            {row.experienceLabel}
-          </span>
-        ) : null}
-        {row.source ? <span className="text-[11px] text-phx-ink-soft">{row.source}</span> : null}
-        <span className="text-[11px] text-phx-ink-faint">{relativeDays(row.createdAt)}</span>
-        {row.band === "no_cv" ? (
-          <Pill tone="warn" title="The reader judged the attached file not to be a CV.">
-            Not a CV
-          </Pill>
-        ) : null}
-      </span>
+      ) : null}
 
       {row.duplicateCount > 1 ? (
         /* Names the OTHER person, which is the whole difference between "they uploaded twice" and
            "two people share a handset" — and only a person can tell those apart, which is why this
            reports and never merges. */
-        <span className="flex items-start gap-1 border border-phx-warn-line bg-phx-warn-bg px-1.5 py-0.5 text-[11px] font-semibold leading-tight text-phx-warn">
+        <span className="flex items-start gap-1.5 border-l-2 border-l-phx-warn bg-phx-warn-bg px-2 py-1 text-[11px] font-semibold leading-snug text-phx-warn">
           <Copy aria-hidden className="mt-px h-2.5 w-2.5 shrink-0" />
           <span className="min-w-0 break-words">
             Same phone as {row.duplicateNames.join(", ") || `${row.duplicateCount - 1} other record`}
@@ -383,24 +441,15 @@ function CandidateBlock({
       ) : null}
 
       {row.sentToManagerAt ? (
-        <span className="block break-words text-[11px] leading-tight text-phx-ink-soft">
+        <span className="block break-words text-[11px] leading-snug text-phx-ink-soft">
           Sent to {row.sentToManagerName ?? "a manager"} {relativeDays(row.sentToManagerAt)}
           {row.answeredAt ? " · answered" : " · no reply yet"}
         </span>
       ) : null}
 
       {redFlag ? (
-        <span className="block text-[11px] font-bold uppercase tracking-[0.04em] text-phx-danger">
+        <span className="block text-[11px] font-bold uppercase tracking-[0.06em] text-phx-danger">
           {candidateRedFlagLabels[redFlag]}
-        </span>
-      ) : null}
-
-      {/* The band is the queue's own ordering reason. Shown quietly, and only where it changes:
-          it explains WHY this row sits where it does, which is a question a recruiter only asks at
-          the boundary between two groups. */}
-      {showBand ? (
-        <span className="block text-[10px] uppercase tracking-[0.06em] text-phx-ink-faint">
-          {screeningBandLabels[row.band]}
         </span>
       ) : null}
     </button>

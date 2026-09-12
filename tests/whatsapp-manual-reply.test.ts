@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
 import { REPLY_WINDOW_MS, replyWindow } from "../src/lib/recruitment/inbound/whatsapp-conversation.ts";
+
+const read = (relative: string) => readFileSync(path.join(process.cwd(), relative), "utf8");
 
 // Answering an applicant from inside Phoenix, in a recruiter's own words.
 //
@@ -17,6 +21,13 @@ import { REPLY_WINDOW_MS, replyWindow } from "../src/lib/recruitment/inbound/wha
 //      public in the company's name is not that. If the specific entry is ever removed the route
 //      keeps working, the catch-all silently answers for it, and the gate widens to everyone who
 //      can open a CV. Nothing goes red; there is just a broader audience able to message applicants.
+//
+//   3. WHICH SCREEN IT IS ON. Added 2026-09-12. The box was built for the candidate drawer in the
+//      pool and never reached the SCREENING WORKSTATION, which is the screen a recruiter actually
+//      works in — so answering somebody who had just written in meant leaving the CV, finding them
+//      in the pool and opening a drawer, and in practice it did not happen. Nothing was broken and
+//      nothing went red; the capability simply was not where the work is. It is on both screens now,
+//      and this pins that, because a rebuild of either surface would drop it again in silence.
 
 const HOUR = 60 * 60 * 1000;
 
@@ -71,5 +82,60 @@ export function runWhatsAppManualReplyTests() {
     readOnlySibling?.permission,
     { resource: "candidates", action: "read" },
     "an ordinary candidate route still resolves to the catch-all, so the specific entry is not over-reaching",
+  );
+
+  // --- and it is reachable from BOTH screens ----------------------------------------------------
+  // Source pins rather than a render: these are client components sitting on a service-role data
+  // path, and the thing that regresses is not behaviour, it is somebody rebuilding a header and not
+  // carrying a child across. A missing import is exactly what that looks like.
+  const workstationHeader = read("src/components/recruitment/workstation/workstation-review-header.tsx");
+  assert.match(
+    workstationHeader,
+    /import \{ WhatsAppReplyBox \} from "@\/components\/recruitment\/whatsapp-reply-box"/,
+    "the screening workstation must be able to answer an applicant, not only send a template",
+  );
+  assert.match(
+    workstationHeader,
+    /\{canReply \? \(\s+<div className="mt-2">\s+<WhatsAppReplyBox candidateId=\{row\.id\} \/>/,
+    "and it is gated on the same recruitment:update the route enforces, so nobody is offered a refusal",
+  );
+
+  // AND AT FULL SCREEN. The focus strip collapses the identity band and the decision band into one
+  // row, so the copy pinned above — which lives in the identity band — is not rendered there at all.
+  // Reading a CV full screen and answering the person who sent it is one errand, and until
+  // 2026-09-12 it cost leaving full screen and coming back. The owner asked for it there by name.
+  assert.match(
+    workstationHeader,
+    /\{canReply && focus \? <WhatsAppReplyBox candidateId=\{row\.id\} \/> : null\}/,
+    "full-screen reading must be able to answer the applicant without leaving full screen",
+  );
+  // The `&& focus` half is load-bearing in the other direction: `decisions` is also what the
+  // ordinary layout's action bar renders, and without the guard the box would draw twice on one
+  // screen — two mounts, two window checks, two boxes disagreeing about how long is left.
+  assert.doesNotMatch(
+    workstationHeader,
+    /\{canReply \? <WhatsAppReplyBox/,
+    "and never unguarded, or the ordinary layout gets a second copy of it",
+  );
+  assert.match(
+    read("src/components/recruitment/workstation/screening-workstation.tsx"),
+    /canReply=\{canDecide\}/,
+    "canDecide IS recruitment:update on this page — see the two screening route files that set it",
+  );
+
+  const poolDrawer = read("src/components/recruitment/recruitment-workspace.tsx");
+  assert.match(
+    poolDrawer,
+    /<WhatsAppReplyBox candidateId=\{profile\.candidate\.id\} \/>/,
+    "the pool drawer keeps it too — one capability, two screens, never one of them quietly losing it",
+  );
+
+  // The box lands inside a header painted entirely in --phx-* tokens. Tailwind's own ramps read as a
+  // pasted-in widget there, and `slate` carries a blue cast against a warm paper ground.
+  const box = read("src/components/recruitment/whatsapp-reply-box.tsx");
+  assert.doesNotMatch(
+    box,
+    /(?:bg|text|border|ring)-(?:slate|gray|zinc|orange|red)-\d{2,3}/,
+    "the reply box is painted in the Phoenix palette, not Tailwind's",
   );
 }

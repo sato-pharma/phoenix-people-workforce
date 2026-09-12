@@ -76,6 +76,7 @@ import {
 } from "@/components/recruitment/workstation/workstation-intelligence";
 import { WorkstationQueuePanel } from "@/components/recruitment/workstation/workstation-queue-panel";
 import { WorkstationReviewHeader, type SendState } from "@/components/recruitment/workstation/workstation-review-header";
+import { Action, Band, BandSays } from "@/components/recruitment/workstation/workstation-look";
 import { EmptyNote, PaneSpine } from "@/components/recruitment/workstation/workstation-ui";
 import { cn } from "@/lib/utils";
 
@@ -981,31 +982,38 @@ export function ScreeningWorkstation({
             phone as it does on a laptop. The way back out lives on the strip above the document. */}
         <div
           className={cn(
-            "shrink-0 items-center gap-1.5 border-b border-phx-line bg-white px-2 py-1.5 xl:hidden",
+            "shrink-0 items-center gap-1.5 border-b border-phx-line bg-white px-3 py-1.5 xl:hidden",
+            // A SEGMENTED CONTROL, not three loose buttons. The three panes are one choice, so they
+            // are drawn as one object with a shared frame — which is also what stops the row from
+            // reading as five competing controls on a 375px phone.
             focus ? "hidden" : "flex",
           )}
         >
-          <button
-            className="inline-flex items-center gap-1 border border-phx-line bg-white px-2 py-1 text-[12px] font-bold text-phx-ink-2 transition hover:bg-phx-paper"
+          <Action
             onClick={() => setQueueOpen((open) => !open)}
-            type="button"
+            title={queueOpen ? "Close the work queue" : "Open the work queue"}
+            tone="ghost"
           >
-            {queueOpen ? <X className="h-3.5 w-3.5" /> : <PanelLeft className="h-3.5 w-3.5" />}
+            {queueOpen ? (
+              <X aria-hidden className="h-3.5 w-3.5" />
+            ) : (
+              <PanelLeft aria-hidden className="h-3.5 w-3.5" />
+            )}
             Queue
-          </button>
-          <span className="min-w-0 flex-1 break-words text-[12px] font-semibold text-phx-ink-soft">
+          </Action>
+          <span className="min-w-0 flex-1 break-words text-[12px] font-semibold leading-snug text-phx-ink-soft">
             {listTitle}
             {chosenVacancy ? ` · ${chosenVacancy.jobTitle}` : ""}
           </span>
-          <span className="flex shrink-0 lg:hidden">
+          <span className="flex shrink-0 border border-phx-line lg:hidden">
             {(["list", "cv", "panel"] as const).map((pane) => (
               <button
                 aria-pressed={mobilePane === pane}
                 className={cn(
-                  "border border-l-0 px-2 py-1 text-[12px] font-bold transition first:border-l",
+                  "border-l border-phx-line px-2 py-1.5 text-[12px] font-bold leading-none transition-colors first:border-l-0",
                   mobilePane === pane
-                    ? "border-phx-accent-line bg-phx-accent text-white"
-                    : "border-phx-line bg-white text-phx-ink-2",
+                    ? "bg-phx-accent text-phx-accent-ink"
+                    : "bg-white text-phx-ink-2 hover:bg-phx-paper",
                 )}
                 key={pane}
                 onClick={() => setMobilePane(pane)}
@@ -1022,137 +1030,102 @@ export function ScreeningWorkstation({
             whichever CV happens to be open — after a bulk verdict the row it refers to may not be
             on screen at all. It wraps rather than scrolling, per the fits-the-screen rule. */}
         {undoable ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-phx-line bg-phx-accent-soft px-4 py-1.5">
-            <span className="text-[12px] font-bold text-phx-ink">{undoable.label}.</span>
-            <button
-              className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-bold text-phx-ink transition hover:bg-phx-accent hover:text-white disabled:opacity-50"
-              disabled={busy}
-              onClick={() => void undoLast()}
-              type="button"
-            >
+          <Band
+            footnote="Or press U. This offer goes in a few seconds; after that the decision can still be changed the ordinary way, with a reason."
+            tone="accent"
+          >
+            <BandSays>{undoable.label}.</BandSays>
+            <Action disabled={busy} onClick={() => void undoLast()} tone="quiet">
               Undo
-            </button>
-            <span className="w-full text-[11px] leading-tight text-phx-ink-soft">
-              Or press U. This offer goes in a few seconds; after that the decision can still be
-              changed the ordinary way, with a reason.
-            </span>
-          </div>
+            </Action>
+          </Band>
         ) : null}
 
         {/* ── Search inside the CVs ─────────────────────────────────────────
             Offered only once something is typed, and only while the instant search is narrower than
             the CV search could be. Wraps rather than scrolling, per the fits-the-screen rule. */}
         {search.trim().length >= 2 ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-phx-line bg-phx-surface-2 px-4 py-1.5">
-            {cvSearch && cvSearch.query === search.trim().toLowerCase() ? (
-              <>
-                <span className="text-[12px] font-bold text-phx-ink">
-                  {cvSearch.ids.size} {cvSearch.ids.size === 1 ? "CV mentions" : "CVs mention"}
-                  {" "}&ldquo;{search.trim()}&rdquo;
-                </span>
-                <button
-                  className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper"
-                  onClick={() => setCvSearch(null)}
-                  type="button"
-                >
-                  Clear
-                </button>
-                {cvSearch.truncated ? (
+          cvSearch && cvSearch.query === search.trim().toLowerCase() ? (
+            <Band
+              footnote={
+                cvSearch.truncated ? (
                   // NEVER a silent cut. A list stopped at the cap reads as a complete answer, and a
                   // recruiter who believes they have seen every match stops looking.
-                  <span className="w-full text-[11px] leading-tight text-phx-ink-soft">
+                  <>
                     More than {cvSearch.ids.size} CVs match. Add another word to narrow it — every
                     word must appear, so &ldquo;{search.trim()} cairo&rdquo; is a smaller list.
-                  </span>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <button
-                  className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-bold text-phx-ink-2 transition hover:bg-phx-accent hover:text-white disabled:opacity-50"
-                  disabled={cvSearching}
-                  onClick={() => void searchCvContents()}
-                  type="button"
-                >
-                  {cvSearching ? "Searching CVs..." : `Search inside CVs for "${search.trim()}"`}
-                </button>
-                <span className="text-[11px] leading-tight text-phx-ink-soft">
-                  The box above searches names, roles and numbers. This reads what the CV itself says
-                  &mdash; skills, employers, universities.
-                </span>
-              </>
-            )}
-          </div>
+                  </>
+                ) : null
+              }
+            >
+              <BandSays>
+                {cvSearch.ids.size} {cvSearch.ids.size === 1 ? "CV mentions" : "CVs mention"}
+                {" "}&ldquo;{search.trim()}&rdquo;
+              </BandSays>
+              <Action onClick={() => setCvSearch(null)} tone="ghost">
+                Clear
+              </Action>
+            </Band>
+          ) : (
+            <Band footnote="The box above searches names, roles and numbers. This reads what the CV itself says — skills, employers, universities.">
+              <Action disabled={cvSearching} onClick={() => void searchCvContents()} tone="quiet">
+                {cvSearching ? "Searching CVs..." : `Search inside CVs for "${search.trim()}"`}
+              </Action>
+            </Band>
+          )
         ) : null}
 
         {/* ── SCREENING ONE VACANT SEAT ───────────────────────────────────────────────────────────
-            The pile names itself, and the way out is one press. Without this line a recruiter who
-            followed a bookmarked seat link would see a short queue with nothing on the page saying
-            why it is short — which is exactly the complaint this whole mode exists to answer, in
-            reverse. Wraps at 375px rather than scrolling sideways; no ellipsis, no id. */}
+            The way out is one press, and it is the whole reason this line still exists after the
+            page header started naming the seat itself. The header says WHICH seat and what is in the
+            pile; this says how to stop looking at only that seat — and it has to live here rather
+            than up there because leaving seat mode also puts the work queue back on "New CVs", which
+            is state the workstation owns.
+
+            Wraps at 375px rather than scrolling sideways; no ellipsis, no id. */}
         {seatLabel ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-phx-accent-line bg-phx-accent-soft px-4 py-1.5">
-            <span className="min-w-0 break-words text-[12px] font-bold text-phx-accent-press">
-              Screening the vacant seat: {seatLabel}
-            </span>
-            <span className="min-w-0 flex-1 break-words text-[11px] leading-tight text-phx-ink-soft">
-              Every undecided CV for this seat — filed to its folder, chosen on WhatsApp, or named in
-              an email — with the reason under each name.
-            </span>
-            <button
-              className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper"
+          <Band tone="accent">
+            <BandSays>One vacant seat: {seatLabel}</BandSays>
+            <Action
               onClick={() => {
                 onSelectVacancy(null);
                 setQueue("new");
               }}
-              type="button"
+              tone="quiet"
             >
               Show everyone
-            </button>
-          </div>
+            </Action>
+          </Band>
         ) : null}
 
         {/* ── The bulk verdict ──────────────────────────────────────────────
             Only once something is ticked. A permanently visible bar advertising an action nobody
             has set up yet is furniture, and the row tick-boxes are how it is reached. */}
         {canDecide && markedVisible.length > 0 ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-phx-line bg-phx-surface-2 px-4 py-1.5">
-            <span className="text-[12px] font-bold text-phx-ink">
-              {markedVisible.length} selected
-            </span>
+          <Band
+            footnote={
+              <>
+                One decision, applied together — it either moves all of them or none. Every move is
+                written to each candidate&rsquo;s history, and can be taken back for a few seconds
+                afterwards.
+              </>
+            }
+          >
+            <BandSays>{markedVisible.length} selected</BandSays>
             {bulkDecidableStatuses.map((status) => (
-              <button
-                className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-bold text-phx-ink-2 transition hover:bg-phx-accent hover:text-white disabled:opacity-50"
-                disabled={busy}
-                key={status}
-                onClick={() => void bulkDecide(status)}
-                type="button"
-              >
+              <Action disabled={busy} key={status} onClick={() => void bulkDecide(status)} tone="quiet">
                 {candidateStatusLabels[status]} all {markedVisible.length}
-              </button>
+              </Action>
             ))}
             {visible.length > markedVisible.length ? (
-              <button
-                className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper"
-                onClick={markAllVisible}
-                type="button"
-              >
+              <Action onClick={markAllVisible} tone="ghost">
                 Select all {Math.min(visible.length, BULK_DECISION_MAX)} in this list
-              </button>
+              </Action>
             ) : null}
-            <button
-              className="border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper"
-              onClick={clearMarks}
-              type="button"
-            >
+            <Action onClick={clearMarks} tone="ghost">
               Clear
-            </button>
-            <span className="w-full text-[11px] leading-tight text-phx-ink-soft">
-              One decision, applied together — it either moves all of them or none. Every move is
-              written to each candidate&rsquo;s history, and can be taken back for a few seconds
-              afterwards.
-            </span>
-          </div>
+            </Action>
+          </Band>
         ) : null}
 
         <div className="flex min-h-0 flex-1">
@@ -1194,6 +1167,7 @@ export function ScreeningWorkstation({
               <>
                 <WorkstationReviewHeader
                   busy={busy}
+                  canReply={canDecide}
                   canSend={canSendToManagers}
                   decided={decided[selected.id] ?? null}
                   error={actionError}

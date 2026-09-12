@@ -21,6 +21,7 @@
 
 import { AlertTriangle } from "lucide-react";
 
+import { Action, Tally } from "@/components/recruitment/workstation/workstation-look";
 import { CollapsibleSection, PaneHead, Pill } from "@/components/recruitment/workstation/workstation-ui";
 import {
   screeningWorkQueueDescriptions,
@@ -120,13 +121,14 @@ export function WorkstationQueuePanel({
             vacancyId !== null ? (
               // Rides in the header's right-hand slot rather than beside the title, so a rail narrowed
               // to one seat still SAYS so — and can still be widened again — with the list folded away.
-              <button
-                className="text-[11px] font-bold uppercase tracking-[0.06em] text-phx-accent-press hover:underline"
+              <Action
+                className="px-1.5 py-1 text-[11px] uppercase tracking-[0.06em] text-phx-accent-press"
                 onClick={() => onSelectVacancy(null)}
-                type="button"
+                title="Stop narrowing the list to one seat"
+                tone="ghost"
               >
                 Clear filter
-              </button>
+              </Action>
             ) : (
               `${vacancies.length} open`
             )
@@ -180,7 +182,7 @@ function QueueButton({
     <button
       aria-pressed={active}
       className={cn(
-        "flex w-full items-center gap-2 border-b border-phx-line px-3 py-2 text-left transition",
+        "flex w-full items-center gap-2 border-b border-phx-line px-3 py-2 text-left transition-colors",
         // The active row is a LEFT BAR plus a tint, not a fill: a solid orange row beside four
         // white ones dominates a 220px column and reads as an alert rather than as a selection.
         active
@@ -194,7 +196,7 @@ function QueueButton({
         <span className={cn("block text-[13px] font-bold leading-tight", active ? "text-phx-accent-press" : "text-phx-ink")}>
           {label}
         </span>
-        <span className="block text-[11px] leading-tight text-phx-ink-soft">{description}</span>
+        <span className="block text-[11px] leading-snug text-phx-ink-soft">{description}</span>
       </span>
       {warning > 0 ? (
         <Pill tone="danger" title={`${warning} of these have been waiting past the chase threshold.`}>
@@ -202,14 +204,7 @@ function QueueButton({
           {warning}
         </Pill>
       ) : null}
-      <span
-        className={cn(
-          "min-w-6 shrink-0 border px-1 py-px text-center text-[12px] font-bold tabular-nums",
-          active ? "border-phx-accent-line bg-white text-phx-accent-press" : "border-phx-line bg-phx-paper text-phx-ink-2",
-        )}
-      >
-        {count}
-      </span>
+      <Tally active={active}>{count}</Tally>
     </button>
   );
 }
@@ -240,7 +235,7 @@ function VacancyButton({
     <button
       aria-pressed={active}
       className={cn(
-        "flex w-full flex-col gap-0.5 border-b border-phx-line px-3 py-2 text-left transition",
+        "flex w-full flex-col gap-0.5 border-b border-phx-line px-3 py-2 text-left transition-colors",
         active
           ? "border-l-2 border-l-phx-accent bg-phx-accent-soft"
           : "border-l-2 border-l-transparent hover:bg-phx-paper",
@@ -257,17 +252,10 @@ function VacancyButton({
         >
           {vacancy.jobTitle}
         </span>
-        <span
-          className={cn(
-            "min-w-6 shrink-0 border px-1 py-px text-center text-[12px] font-bold tabular-nums",
-            active ? "border-phx-accent-line bg-white text-phx-accent-press" : "border-phx-line bg-phx-paper text-phx-ink-2",
-          )}
-        >
-          {applicants}
-        </span>
+        <Tally active={active}>{applicants}</Tally>
       </span>
-      {place ? <span className="block text-[11px] leading-tight text-phx-ink-soft">{place}</span> : null}
-      <span className="block text-[11px] leading-tight text-phx-ink-soft">
+      {place ? <span className="block text-[11px] leading-snug text-phx-ink-soft">{place}</span> : null}
+      <span className="block text-[11px] leading-snug text-phx-ink-soft">
         {parts.length > 0 ? parts.join(" · ") : "No applicants yet"}
       </span>
     </button>

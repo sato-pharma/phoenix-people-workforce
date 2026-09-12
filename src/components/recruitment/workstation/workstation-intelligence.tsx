@@ -127,10 +127,14 @@ export function WorkstationIntelligencePanel({
             aria-label={tabLabels[key]}
             aria-pressed={tab === key}
             className={cn(
-              "flex flex-1 items-center justify-center gap-1 border-b-2 px-1 py-1.5 text-[12px] font-bold transition",
+              // The chosen tab sits on WHITE, which is the ground of the panel below it, so the tab
+              // and its content read as one surface and the unchosen tabs as the recessed strip they
+              // are. That is the whole of the depth here — no shadow, no radius, and the 2px accent
+              // rule is the only colour the strip spends.
+              "flex flex-1 items-center justify-center gap-1 border-b-2 px-1 py-2 text-[11px] font-bold uppercase leading-none tracking-[0.06em] transition-colors",
               tab === key
                 ? "border-b-phx-accent bg-white text-phx-accent-press"
-                : "border-b-transparent text-phx-ink-soft hover:bg-white hover:text-phx-ink",
+                : "border-b-transparent text-phx-ink-faint hover:bg-white hover:text-phx-ink-2",
             )}
             key={key}
             onClick={() => onTabChange(key)}
@@ -258,6 +262,12 @@ function SummaryTab({
       </CollapsibleSection>
 
       <CollapsibleSection
+        // FOLDED UNTIL ASKED FOR, and it is the headline above that makes that affordable: the score
+        // and the verdict stay on the closed bar, so the question this panel is opened to answer —
+        // is this one worth my time — is still answered at a glance, while the fourteen check lines
+        // behind it wait for the reader who wants to argue with the number. The fold is remembered
+        // per reader, so opening it once keeps it open all the way down the list.
+        defaultOpen={false}
         // The headline survives the fold: a score and a verdict, so "is this one worth opening" is
         // answerable with every section shut.
         right={
@@ -330,7 +340,15 @@ function SummaryTab({
         </div>
       </CollapsibleSection>
 
-      <CollapsibleSection storageKey="summary:briefing" title="Recruiter briefing">
+      {/* ALSO FOLDED. Every line of the briefing is composed from facts printed above it — it is a
+          reading of the record, not new information — so it is the right thing to have to ask for.
+          The counts stay on the closed bar so a record with real gaps still says so. */}
+      <CollapsibleSection
+        defaultOpen={false}
+        right={`${briefing.strengths.length} strong · ${briefing.gaps.length} to ask about`}
+        storageKey="summary:briefing"
+        title="Recruiter briefing"
+      >
         <div className="space-y-2 px-3 py-2">
           <BriefingList
             empty="Nothing on the record stands out yet — the CV has not answered enough to say."

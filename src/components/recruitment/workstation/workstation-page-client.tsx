@@ -23,19 +23,38 @@
 // different. Making it a link is also what the owner asked for — "screen Menoufia 1" survives a
 // reload and can be pasted to the other screener, exactly like every other filter on this page.
 //
-// FULL WIDTH IS A BUTTON, and it is not decoration. Measured on a 1366px laptop, the admin shell's
-// sidebar leaves the CV pane roughly 300px narrower than the same pane full-bleed — enough that a
-// Word page that reads perfectly one way is squeezed the other. `F` toggles it, Escape leaves it.
+// ── WHAT THE TOP OF THIS PAGE LOOKS LIKE, AND WHY IT WAS REBUILT ────────────────────────────────
 //
-// AND SO IS EVERY BAR ON THE PAGE. The owner's words: "I need the full screen to see the CV in."
-// So the toolbar folds, the filter bar folds, and one control — CV FULL SCREEN — folds every bar
-// and every pane at once, leaving a single line above the document. The state lives HERE rather
-// than inside the workstation because the two bars this page owns have to fold with it; the panes
-// keep their own flags underneath and get them back untouched when the reader comes out.
+// The owner, 2026-09-12: it "looks crowded and noisy". Measured on his own window that day, 276px of
+// this page's own chrome — 30% of a 910px viewport — sat between the top of the page and the first
+// candidate's name, and the app shell's own 104px was above that again. Three stacked strips: a
+// bordered band of six throughput figures, a row of five identically-weighted bordered buttons, and
+// eight filter dropdowns that opened themselves on every single load. Nowhere in any of it did the
+// page say what it was or which pile was open — the name of the pile lived inside the list pane, two
+// panes to the right of where the eye starts.
+//
+// It is ONE header now. The page says its name in display type, says what is in the pile underneath
+// it, puts its figures where figures belong, and keeps its controls in a quiet row below. The look
+// itself lives in workstation-look.tsx so that every bar on this screen speaks with one voice; read
+// that file's header before changing anything visual here.
+//
+// FILTERS START CLOSED and the choice is remembered — see the state below.
+//
+// ONE CONTROL FOR "GET OUT OF MY WAY", not two. There were two buttons for nearly the same wish:
+// Full width (drop the admin sidebar) and CV full screen (drop everything). The second already does
+// the first on its way past, so the reader was being asked to choose between a thing and that same
+// thing plus more. CV FULL SCREEN is the one that survived; `F` still toggles plain full width for
+// anyone who wants only the sidebar gone, and Escape still steps back out one level at a time.
+//
+// EVERY BAR ON THIS PAGE FOLDS. The owner's words: "I need the full screen to see the CV in." So the
+// header folds, the filter bar folds, and that one control folds every bar and every pane at once,
+// leaving a single line above the document. The state lives HERE rather than inside the workstation
+// because the two bars this page owns have to fold with it; the panes keep their own flags
+// underneath and get them back untouched when the reader comes out.
 
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, ChevronDown, ChevronUp, Maximize2, Minimize2, ScanLine } from "lucide-react";
+import { useCallback, useEffect, useOptimistic, useState, useSyncExternalStore, useTransition } from "react";
+import { ArrowLeft, ChevronDown, ChevronUp, Minimize2, ScanLine } from "lucide-react";
 
 import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
 import {
@@ -45,6 +64,14 @@ import {
 import { ScreeningFilterBar, ScreeningPageFrame } from "@/components/recruitment/screening-page-client";
 import { ScreeningWorkstation } from "@/components/recruitment/workstation/screening-workstation";
 import {
+  Action,
+  ActionLink,
+  Eyebrow,
+  Figure,
+  WorkHeader,
+} from "@/components/recruitment/workstation/workstation-look";
+import {
+  mergeNarrowing,
   screeningHref,
   screeningShellPoolHref,
   type ScreeningHrefOptions,
@@ -124,7 +151,7 @@ export function WorkstationPageClient({
   source: string | null;
   sourceOptions: string[];
   status: CandidateStatus | null;
-  /** Backlog in against backlog out, over four weeks — see the strip below. */
+  /** Backlog in against backlog out, over four weeks — see the figures in the header. */
   throughput: ThroughputSummary;
   /** The seat being screened, in words, or null for the ordinary queue. Printed, never an id. */
   seatLabel: string | null;
@@ -136,10 +163,36 @@ export function WorkstationPageClient({
   const router = useRouter();
   const [fullBleed, setFullBleed] = useState(false);
   const [focus, setFocus] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  // FILTERS START CLOSED, AND THE CHOICE IS REMEMBERED.
+  //
+  // Open was the default until 2026-09-12, which put eight dropdowns between the reader and the
+  // first name on every load — of a page he opens to READ, not to filter. The bar is one press away
+  // and the button still says how many narrowings are holding something, so nothing is hidden.
+  //
+  // Remembered in the BROWSER rather than in the URL on purpose: the URL is the shareable half — it
+  // carries WHICH filters are on — and a pasted link should not prise the other screener's bar open.
+  // READ AS AN EXTERNAL STORE, not as state seeded by an effect. `localStorage` is exactly what
+  // `useSyncExternalStore` is for, and it is the only way to read one during a server render that
+  // does not lie: the server and the first client paint both take `filtersClosedOnServer`, so the
+  // markup matches, and React re-reads the real browser value the instant hydration finishes. The
+  // effect version of this (`useEffect(() => setFiltersOpen(true))`) costs a second render of the
+  // whole page for a view preference, and the compiler lint rejects it by name. Closed-then-open is
+  // the harmless direction for the one flicker either way leaves; open-then-closed, which a lazy
+  // initial state would give, is the one that moves the list under the cursor.
+  const filtersOpen = useSyncExternalStore(
+    subscribeFiltersOpen,
+    readRememberedFiltersOpen,
+    filtersClosedOnServer,
+  );
   // What full-bleed was before focus took it, so leaving focus puts the shell back exactly as it
   // was rather than deciding for the reader that he also wanted his sidebar returned.
   const [bleedBeforeFocus, setBleedBeforeFocus] = useState(false);
+
+  // Writing the preference IS the state change: the store notifies, React re-reads it, the bar
+  // moves. One source of truth rather than a flag and a copy of it that can drift apart.
+  const toggleFilters = useCallback(() => {
+    rememberFiltersOpen(!filtersOpen);
+  }, [filtersOpen]);
 
   // FOCUS TAKES THE SIDEBAR TOO. "I need the full screen to see the CV in" is one screen, not one
   // column of it: with the admin shell still on the left the document gets about 1,100px of a
@@ -160,40 +213,72 @@ export function WorkstationPageClient({
     else enterFocus();
   }, [enterFocus, focus, leaveFocus]);
 
+  // ── WHAT THE BAR DRAWS WHILE THE SERVER IS STILL THINKING ────────────────────────────────
+  //
+  // Every filter on this page is a URL rather than component state, which is deliberate and worth
+  // keeping: it is what makes a narrowed queue something you can bookmark and paste to somebody.
+  // The cost is that each `<select>` is CONTROLLED BY THE SERVER'S ANSWER, and the answer takes a
+  // real round trip — 5 to 12 seconds against the live pool of 607 CVs, measured 2026-09-12.
+  //
+  // So picking "Shortlisted" used to do this: React re-rendered immediately with the value the
+  // server last sent, the dropdown SNAPPED BACK to "Any status", the list did not move, and nothing
+  // anywhere said the page had heard the click. Seconds later everything changed at once. The owner
+  // reported the filters as "not working" — in both the seat view and the pool, with every symptom
+  // at once — and he was reading it exactly right: a control that undoes your choice IS broken,
+  // whatever it later does.
+  //
+  // `useOptimistic` holds the value that was just picked for as long as the transition it was
+  // dispatched inside is still running, then falls back to the server's own answer. Not `useState`:
+  // a state copy has to be cleared when the real value lands, and the only place to do that is an
+  // effect — which is the same set-state-in-effect the store rewrite above just removed.
+  const serverNarrowing = { area, notified, received, region, role, seen, source, status, vacancy };
+  const [shown, showImmediately] = useOptimistic(
+    serverNarrowing,
+    (current, picked: ScreeningHrefOptions) => mergeNarrowing(current, picked),
+  );
+  // The list is fetched by the ROUTER, so `pending` is the only honest signal that it is on its way.
+  const [pending, startTransition] = useTransition();
+
   // How many of the eight URL narrowings are actually holding something. It is what the folded
   // filter bar says about itself: a bar that hides how many filters are on is a bar that makes
-  // "why am I only seeing four people" unanswerable without opening it again.
+  // "why am I only seeing four people" unanswerable without opening it again. Reads the OPTIMISTIC
+  // values, so a filter changed while the bar is folded is counted the moment it is picked.
   const activeFilters = [
-    area,
-    source,
-    status,
-    role,
-    region,
-    received,
-    notified === "any" ? null : notified,
-    seen === "any" ? null : seen,
-    vacancy,
+    shown.area,
+    shown.source,
+    shown.status,
+    shown.role,
+    shown.region,
+    shown.received,
+    shown.notified === "any" ? null : shown.notified,
+    shown.seen === "any" ? null : shown.seen,
+    shown.vacancy,
   ].filter((value) => value !== null && value !== undefined && value !== "").length;
   // WHICH SHELL AM I ACTUALLY IN? Not always the one that rendered me — see screeningShellPoolHref.
   const shellPoolHref = screeningShellPoolHref(usePathname(), poolHref);
 
   const goTo = useCallback(
     (next: ScreeningHrefOptions) => {
-      router.push(
-        screeningHref(shellPoolHref, {
-          area: next.area !== undefined ? next.area : area,
-          notified: next.notified !== undefined ? next.notified : notified,
-          received: next.received !== undefined ? next.received : received,
-          region: next.region !== undefined ? next.region : region,
-          role: next.role !== undefined ? next.role : role,
-          seen: next.seen !== undefined ? next.seen : seen,
-          source: next.source !== undefined ? next.source : source,
-          status: next.status !== undefined ? next.status : status,
-          vacancy: next.vacancy !== undefined ? next.vacancy : vacancy,
-        }),
-      );
+      const href = screeningHref(shellPoolHref, {
+        area: next.area !== undefined ? next.area : area,
+        notified: next.notified !== undefined ? next.notified : notified,
+        received: next.received !== undefined ? next.received : received,
+        region: next.region !== undefined ? next.region : region,
+        role: next.role !== undefined ? next.role : role,
+        seen: next.seen !== undefined ? next.seen : seen,
+        source: next.source !== undefined ? next.source : source,
+        status: next.status !== undefined ? next.status : status,
+        vacancy: next.vacancy !== undefined ? next.vacancy : vacancy,
+      });
+      // BOTH INSIDE THE ONE TRANSITION. The optimistic value lives exactly as long as the navigation
+      // it belongs to: dispatched outside it, React drops it on the very next render and the
+      // dropdown snaps back again — which is the whole bug.
+      startTransition(() => {
+        showImmediately(next);
+        router.push(href);
+      });
     },
-    [area, notified, received, region, role, router, seen, shellPoolHref, source, status, vacancy],
+    [area, notified, received, region, role, router, seen, shellPoolHref, showImmediately, source, status, vacancy],
   );
 
   // `F` for full width, Escape to leave it. Ignored while typing, so an "f" in a search term does
@@ -248,52 +333,61 @@ export function WorkstationPageClient({
 
   return (
     <ScreeningPageFrame>
-      {/* THE PAGE'S OWN CHROME. Both bars answer focus; both are gone in full bleed, which draws its
-          own single bar inside the frame below. */}
-      {focus || fullBleed ? null : <ThroughputStrip poolSize={poolSize} throughput={throughput} />}
-
+      {/* THE PAGE'S OWN CHROME, IN ONE HEADER. It answers focus, and it is gone in full bleed —
+          which draws its own single line inside the frame below. */}
       {focus || fullBleed ? null : (
-        <div className="flex flex-wrap items-center gap-2 px-2 pb-2 sm:px-4">
-          <a
-            className="inline-flex items-center gap-1 border border-phx-line bg-white px-2 py-1 text-[12px] font-bold text-phx-ink-2 transition hover:bg-phx-paper"
-            href={shellPoolHref}
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to the pool
-          </a>
-          <button
-            aria-expanded={filtersOpen}
-            className="inline-flex items-center gap-1 border border-phx-line bg-white px-2 py-1 text-[12px] font-bold text-phx-ink-2 transition hover:bg-phx-paper"
-            onClick={() => setFiltersOpen((open) => !open)}
-            title={filtersOpen ? "Hide the filter bar" : "Show the filter bar"}
-            type="button"
-          >
-            {filtersOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            Filters
-            {activeFilters > 0 ? (
-              <span className="border border-phx-accent-line bg-phx-accent-soft px-1 text-[11px] font-black tabular-nums text-phx-accent-press">
-                {activeFilters}
-              </span>
-            ) : null}
-          </button>
-          <button
-            className="inline-flex items-center gap-1 border border-phx-line bg-white px-2 py-1 text-[12px] font-bold text-phx-ink-2 transition hover:bg-phx-paper"
-            onClick={() => setFullBleed(true)}
-            title="Read at full width — press F"
-            type="button"
-          >
-            <Maximize2 className="h-3.5 w-3.5" />
-            Full width
-          </button>
-          <FocusButton onClick={enterFocus} />
-        </div>
+        <WorkHeader
+          controls={
+            <>
+              <ActionLink href={shellPoolHref} title="Back to the candidate pool" tone="ghost">
+                <ArrowLeft aria-hidden className="h-3.5 w-3.5" />
+                Back to the pool
+              </ActionLink>
+              <Action
+                aria-expanded={filtersOpen}
+                onClick={toggleFilters}
+                title={filtersOpen ? "Hide the filter bar" : "Show the filter bar"}
+                tone={activeFilters > 0 ? "quiet" : "ghost"}
+              >
+                {filtersOpen ? (
+                  <ChevronUp aria-hidden className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronDown aria-hidden className="h-3.5 w-3.5" />
+                )}
+                Filters
+                {activeFilters > 0 ? (
+                  <span className="border border-phx-accent-line bg-phx-accent-soft px-1 text-[11px] font-black leading-tight tabular-nums text-phx-accent-press">
+                    {activeFilters}
+                  </span>
+                ) : null}
+              </Action>
+              {/* THE ONE LOUD CONTROL ON THE PAGE, and it is loud because it is the one the owner
+                  asked for by name: "I need the full screen to see the CV in." */}
+              <Action
+                onClick={enterFocus}
+                title="Give the whole screen to the CV — Escape comes back"
+                tone="primary"
+              >
+                <ScanLine aria-hidden className="h-3.5 w-3.5" />
+                CV full screen
+              </Action>
+            </>
+          }
+          figures={<BacklogFigures poolSize={poolSize} throughput={throughput} />}
+          subtitle={
+            seatLabel
+              ? "Every undecided CV for this seat — filed to its folder, chosen on WhatsApp, or named in an email. Why each one is here is printed under their name."
+              : "The whole pool. Narrow it to one pile, or to one vacant seat, from the work queue on the left."
+          }
+          title={seatLabel ?? "CV screening"}
+        />
       )}
 
       {focus || fullBleed || !filtersOpen ? null : (
         <ScreeningFilterBar
-          area={area}
+          area={shown.area}
           areaOptions={areaOptions}
-          notified={notified}
+          notified={shown.notified}
           onChange={goTo}
           onClear={() =>
             goTo({
@@ -308,14 +402,15 @@ export function WorkstationPageClient({
               vacancy: null,
             })
           }
+          pending={pending}
           queueCount={rows.length}
-          received={received}
-          region={region}
-          role={role}
-          seen={seen}
-          source={source}
+          received={shown.received}
+          region={shown.region}
+          role={shown.role}
+          seen={shown.seen}
+          source={shown.source}
           sourceOptions={sourceOptions}
-          status={status}
+          status={shown.status}
           totalCount={poolSize}
         />
       )}
@@ -337,18 +432,21 @@ export function WorkstationPageClient({
         }
       >
         {fullBleed && !focus ? (
-          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-phx-line bg-phx-surface-2 px-3 py-1.5">
-            <span className="text-[12px] font-bold uppercase tracking-[0.08em] text-phx-ink-2">CV screening</span>
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-phx-line bg-white px-3 py-1.5">
+            <Eyebrow>{seatLabel ?? "CV screening"}</Eyebrow>
             <span className="flex items-center gap-1.5">
-              <FocusButton onClick={enterFocus} />
-              <button
-                className="inline-flex items-center gap-1 border border-phx-line bg-white px-2 py-1 text-[12px] font-bold text-phx-ink-2 transition hover:bg-phx-paper"
-                onClick={() => setFullBleed(false)}
-                type="button"
+              <Action
+                onClick={enterFocus}
+                title="Give the whole screen to the CV — Escape comes back"
+                tone="primary"
               >
-                <Minimize2 className="h-3.5 w-3.5" />
+                <ScanLine aria-hidden className="h-3.5 w-3.5" />
+                CV full screen
+              </Action>
+              <Action onClick={() => setFullBleed(false)} tone="quiet">
+                <Minimize2 aria-hidden className="h-3.5 w-3.5" />
                 Back to the page
-              </button>
+              </Action>
             </span>
           </div>
         ) : null}
@@ -366,42 +464,37 @@ export function WorkstationPageClient({
  * seven days, and an average of 12.8 days to a first decision. The queue was correct and losing, and
  * nothing on screen said so.
  *
- * So: what came in, what went out, and the difference — in that order, because the difference is
- * meaningless without the two figures that produced it. `net` is deliberately signed and worded
- * rather than coloured: "+38 this week" is a fact, and a red pill would be this component having an
- * opinion about a recruiter's week.
+ * THREE FACTS NOW, NOT SIX, AND NO BAND OF THEIR OWN. It shipped as a bordered strip above the
+ * toolbar carrying the pool, the unread, two in-against-out spans and a direction, and the spans
+ * rendered as "this week 220 in 300 decided -80" — a sentence nobody reads at a glance, in a band
+ * that pushed the first candidate's name further down the page than the figures were worth. What
+ * survives is what a screener acts on: the size of the pool, how much of it he has never opened, and
+ * whether this week is gaining on it. The arithmetic is unchanged and still lives in
+ * candidate-throughput.ts.
  *
  * The unread figure is THIS VIEWER's, the same "seen" the rest of the page means — see
  * candidate-views.ts on why that is per person and not per candidate.
  */
-function ThroughputStrip({
-  poolSize,
-  throughput,
-}: {
-  poolSize: number;
-  throughput: ThroughputSummary;
-}) {
-  const { improving, netLastWeek, netThisWeek } = throughputDirection(throughput);
+function BacklogFigures({ poolSize, throughput }: { poolSize: number; throughput: ThroughputSummary }) {
+  const { improving, netThisWeek } = throughputDirection(throughput);
 
   return (
-    // WRAPS, never scrolls. Six figures and a sentence do not fit a 375px phone on one line, and
-    // the rule is that the page never scrolls sideways — so the row folds instead. `gap-y` is what
-    // keeps the folded rows legible rather than stacked against each other.
-    <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 border border-phx-line bg-phx-surface-2 px-3 py-1.5 text-[12px] sm:mx-2">
+    <>
       <Figure label="in the pool" value={poolSize} />
       <Figure label="you have not opened" value={throughput.unread} />
-      <Span label="this week" arrived={throughput.arrived7} decided={throughput.decided7} net={netThisWeek} />
-      <Span label="30 days" arrived={throughput.arrived30} decided={throughput.decided30} net={null} />
       {/* The DIRECTION, which is the whole point of a trend: one week's net on its own says nothing
-          about whether the reader is gaining. Silent when either week is unreportable, rather than
-          comparing against a week whose decisions were never recorded. */}
-      {improving === null ? null : (
-        <span className="font-bold text-phx-ink-2">
-          {improving ? "better than last week" : "worse than last week"}
-          <span className="font-semibold text-phx-ink-soft">
-            {" "}
-            ({netLastWeek !== null && netLastWeek > 0 ? "+" : ""}
-            {netLastWeek} then)
+          about whether the reader is gaining. Signed and worded rather than coloured — "+38 this
+          week" is a fact, and a red pill would be this component having an opinion about a
+          recruiter's week. Silent when the week is unreportable, rather than drawing a confident
+          line through a span whose decisions were never recorded. */}
+      {netThisWeek === null ? null : (
+        <span className="flex items-baseline gap-1.5">
+          <span className="text-[15px] font-black leading-none tabular-nums text-phx-ink">
+            {netThisWeek > 0 ? `+${netThisWeek}` : netThisWeek}
+          </span>
+          <span className="text-[11px] font-semibold leading-none text-phx-ink-soft">
+            this week
+            {improving === null ? "" : improving ? ", better than last week" : ", worse than last week"}
           </span>
         </span>
       )}
@@ -409,48 +502,13 @@ function ThroughputStrip({
         // NOT an error, and not hidden either. Decisions were only recorded from this date, so a
         // span before it has no number — saying "0 decided" there would blame the reader for a gap
         // in the table.
-        <span className="w-full text-[11px] leading-tight text-phx-ink-soft">
+        <span className="w-full text-[11px] leading-snug text-phx-ink-soft">
           {throughput.historyStartsAt
             ? `Decisions have been recorded since ${cairoDay(throughput.historyStartsAt)}. Anything before that is not counted here.`
             : "No decision history has been recorded yet, so nothing decided can be counted here."}
         </span>
       )}
-    </div>
-  );
-}
-
-/** One window: what came in, what went out, and the difference. */
-function Span({
-  arrived,
-  decided,
-  label,
-  net,
-}: {
-  arrived: number;
-  /** Null when the decision history does not cover the whole span — printed as words, never as 0. */
-  decided: number | null;
-  label: string;
-  net: number | null;
-}) {
-  return (
-    <span className="flex items-baseline gap-1">
-      <span className="font-semibold text-phx-ink-soft">{label}</span>
-      <span className="font-bold tabular-nums text-phx-ink">{arrived}</span>
-      <span className="font-semibold text-phx-ink-soft">in</span>
-      {decided === null ? (
-        <span className="font-semibold text-phx-ink-soft">(decisions not recorded)</span>
-      ) : (
-        <>
-          <span className="font-bold tabular-nums text-phx-ink">{decided}</span>
-          <span className="font-semibold text-phx-ink-soft">decided</span>
-        </>
-      )}
-      {net === null ? null : (
-        <span className="font-bold tabular-nums text-phx-ink-2">
-          {net > 0 ? `+${net}` : net}
-        </span>
-      )}
-    </span>
+    </>
   );
 }
 
@@ -472,33 +530,58 @@ function cairoDay(iso: string): string {
   });
 }
 
-/** One figure and its words. Tabular so the row does not jitter as the numbers change. */
-function Figure({ label, value }: { label: string; value: number }) {
-  return (
-    <span className="flex items-baseline gap-1">
-      <span className="font-bold tabular-nums text-phx-ink">{value}</span>
-      <span className="font-semibold text-phx-ink-soft">{label}</span>
-    </span>
-  );
+/**
+ * Whether this browser's reader left the filter bar open.
+ *
+ * Every read and every write is wrapped, because `localStorage` does not politely return null when
+ * a browser is set to block site data — it THROWS, and an unguarded read here would white-screen the
+ * whole screening page over a remembered preference. Any failure reads as closed, which is the
+ * default this page ships with anyway, so the worst case is a bar that forgets.
+ *
+ * Per browser and not per account on purpose: it is a view preference of the kind that should not
+ * follow a person onto a shared machine, and it is worth no round trip to the server.
+ */
+const FILTERS_OPEN_KEY = "phoenix.screening.filters-open";
+const FILTERS_OPEN_EVENT = "phoenix.screening.filters-open.change";
+
+function readRememberedFiltersOpen(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(FILTERS_OPEN_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 
 /**
- * One press, and every bar and every pane on this screen folds away.
- *
- * It is deliberately NOT "hide the sidebar" or "collapse the filters" spelled four times: the owner
- * asked for the screen, not for four controls that each give back a strip of it. Everything it folds
- * can also be folded on its own, and coming back out restores exactly what was open before.
+ * What the server renders, and what the client renders while it hydrates — closed, always. A real
+ * read here would produce markup the server could never have produced, which is a hydration error
+ * rather than a flicker.
  */
-function FocusButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      className="inline-flex items-center gap-1 border border-phx-accent-line bg-phx-accent-soft px-2 py-1 text-[12px] font-bold text-phx-accent-press transition hover:bg-phx-accent hover:text-white"
-      onClick={onClick}
-      title="Give the whole screen to the CV — Escape comes back"
-      type="button"
-    >
-      <ScanLine className="h-3.5 w-3.5" />
-      CV full screen
-    </button>
-  );
+function filtersClosedOnServer(): boolean {
+  return false;
+}
+
+function rememberFiltersOpen(open: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(FILTERS_OPEN_KEY, open ? "1" : "0");
+    window.dispatchEvent(new CustomEvent(FILTERS_OPEN_EVENT));
+  } catch {
+    // A browser that blocks site data still screens CVs. It just forgets the bar.
+  }
+}
+
+/**
+ * `storage` fires in the OTHER tabs, never the one that wrote — so the custom event is what makes
+ * the bar move in THIS one. Both are listened for: a screener with the queue open twice gets the
+ * same bar in both, which is the least surprising thing for a preference to do.
+ */
+function subscribeFiltersOpen(onChange: () => void): () => void {
+  window.addEventListener("storage", onChange);
+  window.addEventListener(FILTERS_OPEN_EVENT, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(FILTERS_OPEN_EVENT, onChange);
+  };
 }

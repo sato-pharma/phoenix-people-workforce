@@ -30,6 +30,23 @@
 // which is 12px, as does the rest of the recruitment module. The first draft of this folder was
 // built a step smaller and the mismatch was visible: a 10/11px tool under a 12px bar it shares a
 // page with. The ladder never changed; the STEP it starts on is what was corrected.
+//
+// ── BUT A LABEL IS NOT BODY, AND THAT IS THE 2026-09-12 CORRECTION ──────────────────────────────
+//
+// The rule above was applied to everything, including the parts nobody reads. A pane's own name, a
+// section heading, the word "Location" beside a location: these are glanced at once to place what is
+// next to them, and set at body size in bold uppercase they compete with the thing they label.
+// Four pane heads, a dozen section bars and thirty key-value labels all shouting at 12px bold is
+// most of what the owner meant by "crowded and noisy" — there was no quiet level on the page at all.
+//
+// So there are now THREE VOICES here, and each has exactly one job:
+//
+//   · 13-14px   what is being read — a name, a value, a sentence the page is saying.
+//   · 12px      body and controls — the size the page around this one reads at, unchanged.
+//   · 10-11px   labels and meta — uppercase, wide tracking (0.12em), faint ink, never competing.
+//
+// Wide tracking is what buys back the legibility the smaller step costs; that is what tracking is
+// for, and it is why the label voice is not simply "the same thing, smaller".
 
 import { useCallback, useState } from "react";
 import { ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
@@ -75,7 +92,12 @@ export function PaneHead({
       {/* A 2px tick in the accent, not a heading weight competition. Four panes each need to say
           which one they are without any of them shouting; a mark reads faster than more bold. */}
       <span aria-hidden className="h-3 w-0.5 shrink-0 bg-phx-accent" />
-      <span className="min-w-0 flex-1 text-[12px] font-bold uppercase leading-[1.45] tracking-[0.09em] text-phx-ink-2">
+      {/* 11px, not 12. The body size on this page is 12px and that is correct for what a reader
+          READS; a pane's own name is not read, it is glanced at once to place the pane. Four heads
+          set at body size in bold uppercase was four labels competing with their own contents — the
+          "a heading that outshouts its content" failure the look kit names. Wide tracking keeps it
+          legible at the smaller step, which is what tracking is for. */}
+      <span className="min-w-0 flex-1 text-[11px] font-bold uppercase leading-[1.45] tracking-[0.12em] text-phx-ink-soft">
         {title}
       </span>
       {right ? (
@@ -137,7 +159,7 @@ export function PaneSpine({
         <ChevronsLeft aria-hidden className="h-3.5 w-3.5 shrink-0 text-phx-ink-faint" />
       )}
       <span
-        className="text-[11px] font-bold uppercase tracking-[0.14em] text-phx-ink-soft"
+        className="text-[11px] font-bold uppercase tracking-[0.12em] text-phx-ink-soft"
         style={{ writingMode: "vertical-rl" }}
       >
         {label}
@@ -172,7 +194,7 @@ export function Pill({
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 border px-1.5 py-px text-[11px] font-bold uppercase leading-[1.5] tracking-[0.05em]",
+        "inline-flex shrink-0 items-center gap-1 border px-1.5 py-0.5 text-[10px] font-bold uppercase leading-[1.4] tracking-[0.08em]",
         pillToneClass[tone],
         className,
       )}
@@ -201,7 +223,7 @@ export function KeyValue({
 }) {
   return (
     <div className="grid grid-cols-[104px_minmax(0,1fr)] gap-2 border-b border-phx-line/70 px-3 py-1.5 transition-colors last:border-b-0 hover:bg-phx-surface-2">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-phx-ink-soft">{label}</span>
+      <span className="text-[10px] font-bold uppercase leading-[1.6] tracking-[0.12em] text-phx-ink-faint">{label}</span>
       <span className="min-w-0 break-words text-[13px] leading-[1.45] text-phx-ink">
         {children}
         {hint ? <span className="mt-0.5 block text-[11px] leading-tight text-phx-ink-soft">{hint}</span> : null}
@@ -414,7 +436,7 @@ export function CollapsibleSection({
           />
           <span
             className={cn(
-              "min-w-0 flex-1 text-[11px] font-bold uppercase leading-[1.45] tracking-[0.09em]",
+              "min-w-0 flex-1 text-[11px] font-bold uppercase leading-[1.45] tracking-[0.12em]",
               tone === "default" ? "text-phx-ink-2" : "text-phx-ink-soft",
             )}
           >

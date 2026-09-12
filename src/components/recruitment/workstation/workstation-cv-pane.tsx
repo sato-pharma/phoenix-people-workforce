@@ -25,6 +25,7 @@
 import { Download, ExternalLink, FileWarning, Loader2 } from "lucide-react";
 
 import { CvDocumentView } from "@/components/recruitment/cv-preview-modal";
+import { ActionLink } from "@/components/recruitment/workstation/workstation-look";
 import { PaneHead } from "@/components/recruitment/workstation/workstation-ui";
 
 export type CvPaneFile = {
@@ -58,22 +59,29 @@ export function WorkstationCvPane({
             <span className="hidden max-w-[220px] break-all text-[11px] text-phx-ink-soft md:inline">
               {file.fileName}
             </span>
-            <a
-              className="inline-flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[11px] font-bold text-phx-ink-2 transition hover:bg-phx-paper"
+            {/* Both are escapes, not actions — they exist for the day the preview cannot draw the
+                file — so they take the quietest volume the kit has and get out of the document's
+                way. They were two more hand-typed copies of the page's one button. */}
+            <ActionLink
+              className="px-2 py-1 text-[11px]"
               href={`${downloadUrl}?disposition=inline`}
               rel="noreferrer"
               target="_blank"
+              title="Open this CV in its own browser tab"
+              tone="quiet"
             >
-              <ExternalLink className="h-3 w-3" />
+              <ExternalLink aria-hidden className="h-3 w-3" />
               New tab
-            </a>
-            <a
-              className="inline-flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[11px] font-bold text-phx-ink-2 transition hover:bg-phx-paper"
+            </ActionLink>
+            <ActionLink
+              className="px-2 py-1 text-[11px]"
               href={downloadUrl}
+              title="Save this CV to your machine"
+              tone="quiet"
             >
-              <Download className="h-3 w-3" />
+              <Download aria-hidden className="h-3 w-3" />
               Download
-            </a>
+            </ActionLink>
           </span>
         ) : null}
       </PaneHead>

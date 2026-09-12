@@ -626,6 +626,31 @@ export async function runRecruitmentScreeningPageTests() {
   );
 
   // And the pure module must STAY pure, or the fix above quietly undoes itself.
+  // ── THE FILTER BAR HAS TWO HOMES, AND A FIX TO ONE IS HALF A FIX ───────────────────────
+  //
+  // `ScreeningFilterBar` is drawn by this page AND by the workstation, and both push a URL and wait
+  // seconds for the server. Reported 2026-09-12 as "the filters are not working": the `<select>` is
+  // controlled by the value the server last sent, so it snapped back to its old value the instant it
+  // was clicked. The workstation was fixed first and this caller was found only because `pending`
+  // became a required prop and the types went red — which is luck, not a guard. `shown.*` is not
+  // load-bearing to the compiler, so it is pinned here.
+  const poolScreen = read("src/components/recruitment/screening-page-client.tsx");
+  assert.match(
+    poolScreen,
+    /const \[shown, showImmediately\] = useOptimistic\(/,
+    "this screen's dropdowns must show what was just picked, not what the server last answered",
+  );
+  assert.match(
+    poolScreen,
+    /startTransition\(\(\) => \{\s+showImmediately\(next\);\s+router\.push\(href\);\s+\}\)/,
+    "and inside the same transition as the navigation, or React drops it on the next render",
+  );
+  assert.match(
+    poolScreen,
+    /<ScreeningFilterBar\s+area=\{shown\.area\}/,
+    "and the bar has to be handed those optimistic values, not the server's own props",
+  );
+
   const linkSource = read("src/lib/recruitment/screening-link.ts");
   for (const forbidden of ["candidates", "candidate-views", "db", "supabase"]) {
     assert.doesNotMatch(
