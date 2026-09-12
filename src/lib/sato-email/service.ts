@@ -473,10 +473,12 @@ export async function sendSatoEmail(draft: SatoEmailDraft, access: AccessContext
 
   // Every composer mail goes out as the HR Business Partner's mailbox, whoever presses Send.
   const from = satoEmailFrom(systemEmail.satoComposerFromEmail);
-  // Replies are still keyed on the SENDER's seat (owner 2026-09-11): hers answer to her, and a seat
-  // absent from the map (the Super Admin is) is `undefined` on purpose, so sendPhoenixEmail falls
-  // through to NOTIFICATION_REPLY_TO rather than sending a Super Admin's replies to her inbox.
-  const replyTo = systemEmail.seatReplyTo[access.role];
+  // 🔴 Reply-To is the SAME mailbox, for every sender, and it is not cosmetic: with more than one
+  // recipient the fan-out puts the batch in Bcc and writes the Reply-To into the visible To. Keyed on
+  // the seat, a Super Admin send fell through to phoenix@satopharma.com — an inbox Resend suppresses
+  // for hard bounces — so every composer mail showed a suppressed To and its replies bounced (owner's
+  // test send, 2026-09-13). The composer is hrbp@'s mail end to end: From, visible To and replies.
+  const replyTo = systemEmail.satoComposerFromEmail;
   const senderId = access.loginId ?? access.hrId ?? "unknown";
 
   const outcomes: SatoEmailSendOutcome[] = [];
