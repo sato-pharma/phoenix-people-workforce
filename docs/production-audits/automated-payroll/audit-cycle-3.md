@@ -1,7 +1,7 @@
 # Automated Payroll — Audit Cycle 3 (in progress)
 
 **Opened:** 2026-09-12 · **Findings covered:** 14–18, 20, 22, 23, 26, 27, 29–55 (37 of them)
-**Status:** TIERS 1-2 VERIFIED (24 of 37) · TIERS 3-4 NOT STARTED
+**Status:** TIERS 1-3 VERIFIED (33 of 37) · TIER 4 NOT STARTED
 **Cycle 1:** [audit-ledger.md](audit-ledger.md) · **Cycle 2:** [audit-cycle-2.md](audit-cycle-2.md)
 
 > This document exists **before** the first fix PR of the cycle, not after the last one. That
@@ -241,15 +241,107 @@ These do not move money by themselves; they remove the interlock that stops some
 
 | # | In one line | Claimed fixed by | Re-verified |
 | ---: | --- | --- | :---: |
-| **18** | Nothing is re-checked at publish, and the run stays changeable after Part 2 is confirmed. | #3706 | ☐ |
-| **26** | The payroll decision trail can be deleted, and nothing in the database stops it. | #3701 | ☐ |
-| **50** | A concurrent cancel and Part 2 confirm can silently undo each other. | #3731 | ☐ |
-| **51** | The CEO Payroll Console omits the company-scope check its sibling page has. | #3717 | ☐ |
-| **40** | The locked finance workbook leaves the bank name and account number editable, contradicting its own cover. | #3712 | ☐ |
-| **46** | The population comparison never blocks anything, and its baseline makes a held person look like a new hire. | #3717, #3731, #3746 | ☐ |
-| **47** | An expense resync skipped because Part 2 is already confirmed is reported to nobody. | #3717, #3741 | ☐ |
-| **52** | The Executive Summary compares this month including held people against last month excluding them. | #3717 | ☐ |
-| **53** | Both acknowledgement gates accept a plain yes-flag sent on the first request, so the warning need never be shown. | #3746 | ☐ |
+| **18** | Nothing is re-checked at publish, and the run stays changeable after Part 2 is confirmed. | #3706 | ☑ |
+| **26** | The payroll decision trail can be deleted, and nothing in the database stops it. | #3701 | ☑ |
+| **50** | A concurrent cancel and Part 2 confirm can silently undo each other. | #3731 | ☑ |
+| **51** | The CEO Payroll Console omits the company-scope check its sibling page has. | #3717 | ☑ |
+| **40** | The locked finance workbook leaves the bank name and account number editable, contradicting its own cover. | #3712 | ☑ |
+| **46** | The population comparison never blocks anything, and its baseline makes a held person look like a new hire. | #3717, #3731, #3746 | ☑ |
+| **47** | An expense resync skipped because Part 2 is already confirmed is reported to nobody. | #3717, #3741 | ☑ |
+| **52** | The Executive Summary compares this month including held people against last month excluding them. | #3717 | ☑ |
+| **53** | Both acknowledgement gates accept a plain yes-flag sent on the first request, so the warning need never be shown. | #3746 | ☑ |
+
+### Tier 3 — results, 2026-09-12
+
+**Nine of nine verified.** Four were settled against the **production database itself** — the audit
+trail's triggers, the transition race, what August actually recorded, and what the acknowledgement
+gates are asked. Two were read out of the **emitted workbook**. Every one was then broken on purpose
+and the check watched firing.
+
+| Finding | What was broken to prove it | What fired |
+| ---: | --- | --- |
+| **40** | every appended column unlocked again, as before the fix | `full: Bank Name must be locked for Real Employee` |
+| **26** | *(not broken — the refusal was forced on production)* | `The automated_payroll_audit decision trail is append-only. DELETE is refused.` |
+| **50** | the pre-fix unconditional phase write, run on production | `unconditional_write_rows=1 · phase_now=cancelled` — the confirm that won, overwritten |
+| **18** | the post-Part-2 freeze removed from `assertStepPhaseAllowed` | the refusal vanished: a confirmed run took the edit exactly like an open one |
+| **51** | the scope line's supposed backstop tested on its own | `Medical Rep`, `SFE Manager` and `Employee` all pass `payroll:read` |
+| **47** | the skip neither logged nor described | `0 warning line(s)`, and nothing in the log — "reported to nobody", exactly |
+| **52** | the basis note not rendered | `-97.3%` printed with nothing beside it to say the two months are not comparable |
+| **53** | the yes-flag restored as the acknowledgement | 10 of the 15 refusals stopped refusing |
+| **46** | the pre-fix baseline, built from `salary_records` alone | `joined = ["Held Last Month"]` — a held person read as a new hire |
+
+#### What production says
+
+**The decision trail cannot be rewritten, and that was forced, not read.** `automated_payroll_audit`
+carries three BEFORE triggers — DELETE, UPDATE and TRUNCATE — all calling
+`phx_refuse_audit_trail_change()`. A real `DELETE` and a real `UPDATE` were attempted on production,
+inside a transaction terminated by `raise exception` so it rolled itself back. Both were refused, and
+the connection they were refused on was **`postgres`**, the superuser — stronger than the app's
+service-role client, and unlike RLS a trigger is not bypassed by either. Afterwards: **202 rows still
+held, 0 tampered.**
+
+**The transition race was run on the live database.** A scratch run was created in phase `part2`,
+Confirm Part 2 claimed it, and a Cancel arrived while it was still working:
+
+| Step | Result |
+| --- | --- |
+| Confirm Part 2 claims the run | a token |
+| Cancel claims the same run | **`NULL`** — refused, it cannot proceed |
+| a write carrying a token it does not hold | **0 rows** |
+| the holder's own write | 1 row, and the claim cleared |
+| the pre-fix unconditional write (Break V) | **1 row — `phase_now=cancelled`**, the winner silently undone |
+
+Both transactions rolled back: **0 scratch rows left, still only the two real runs.**
+
+**Eleven roles hold `payroll:read` and are not company-scoped** — Employee and Medical Rep among
+them. Each one reached the CEO Payroll Console, which lists every salary batch in the company, before
+finding 51's scope line. The line is the whole boundary: the permission check behind it admits all
+eleven (Break X), and the sidebar hiding the link is presentation, not a gate.
+
+**August recorded 20 held people as a count with no amounts,** which is precisely the case findings 46
+and 52 were built for. All 20 are still recoverable and nameable from that run's own draft rows, so
+September's population baseline will carry them and none will read as a new hire; and September's
+Executive Summary will carry the basis note, which was read back out of the emitted workbook rather
+than assumed.
+
+#### The three answers that are not a clean tick
+
+**18's drift stamp has never run on a real month.** Publish now re-runs the pre-flight gate, the split
+reconciliation, and a comparison against the totals Part 2 stamped. The comparison works — tested
+with a month that moved (`employees 120 → 121`, and three money totals) and with two cents of
+movement, both caught — but it needs `detail.confirmedTotals` in the `part2_confirmed` audit row, and
+**neither published month has it**. Both read back as `null`, so the check was a silent no-op for July
+and August. Confirm writes the stamp today; **September is the first month the guard can fire.** The
+other half of 18 — the sheet frozen once Part 2 is confirmed — is live and was proven server-side,
+with nothing written.
+
+**47 is proven on the server, not on the screen.** The skip is real and measured: with Part 2 already
+confirmed, the resync returns `{action: "skip", reason: "part2_already_confirmed"}`, logs it with the
+run, the month and the HR ids, returns the sentence *"Payroll for September 2026 already has Part 2
+confirmed, so this decision did not reach it"*, and **attempts no write at all**. The control — the
+same decision while Part 2 is open — reaches payroll and says nothing. Whether the banner renders is
+a source-level reading, same limit as finding 27: no dev server can run at this machine's free RAM.
+
+**26 is tamper-proof once written, but the writer is best-effort by design.**
+`writeAutomatedPayrollAudit` logs its own failure and returns — payroll must not fail on a logging
+error — so the trail can be silently incomplete even though nothing can delete from it. Measured
+rather than assumed: both published runs carry a `published` row and a `part2_confirmed` row, and 202
+rows in total. The gap has not bitten. It is the same class as the Tier 1 note and stays recorded
+rather than reopened.
+
+#### Noted on the way, not yet a finding
+
+**Eleven of July's draft rows were written 18 days after July was published,** all of them held rows —
+ten in the same second on 2026-08-28, one on 2026-08-30 — and ten of the eleven now hold
+`expenses = null`, the signature of `clearDraftExpenses`. That is findings 44/47's failure mode
+reaching backwards into a published month, before either was fixed. **No money moved:** not one
+salary record was created for either batch after its publish, so the payslips are untouched and both
+months stand exactly as announced. What no longer matches is the stored sheet: for those ten held
+people, July's draft rows no longer carry the expense figures July was published with. Today the same
+write is refused twice over — `planExpenseResync` stops at `part2ConfirmedAt`, and a published run is
+refused before that — so this is history, not a live hole. It is recorded because the ledger and the
+Held tab read those rows, and because it is the only direct evidence in production that the pre-fix
+defect actually occurred rather than merely could have.
 
 ### Tier 4 — what people are told
 
