@@ -259,7 +259,7 @@ export function runRecruitmentCandidateRatingTests() {
   // correct starting state — a default of 0 or 1 would have invented six hundred opinions nobody
   // held. (`is not null` in the index predicate below is a different thing and is allowed.)
   assert.ok(
-    !/add column[^;]*?not null/is.test(sql),
+    !/add column[^;]*?\bnot null\b/i.test(sql),
     "nothing here is NOT NULL — every existing CV is unrated, and that is correct",
   );
   // A PARTIAL index, on the handful of rows that carry a star rather than on all six hundred. The
