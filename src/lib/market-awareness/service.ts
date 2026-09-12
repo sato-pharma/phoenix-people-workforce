@@ -1471,10 +1471,12 @@ export async function decideActivity(
 
   const decided = await getActivity(access, activityId);
 
-  // On CEO approval, tell everyone the owner named: every district manager in the region for this
-  // line, the NSM, the SFE Manager, the area's medical rep and Finance. Best-effort by contract —
-  // notifyActivityApproved swallows and logs, because an undelivered notification must never undo
-  // a decision the CEO actually made.
+  // On CEO approval, tell the three roles the owner named: the NSM, the SFE Manager and Finance.
+  // District managers and the area's own medical rep were both on that list until 2026-09-12 and
+  // neither is any more — the owner hid the module from the DMs and then from the rep ("no hide
+  // from medical rep"), and neither holds a market_awareness grant, so the announcement would have
+  // pointed each of them at a page that redirects. Best-effort by contract — notifyActivityApproved
+  // swallows and logs, because an undelivered notification must never undo a decision the CEO made.
   // Moving on to the CEO is a hand-off like any other: somebody new has to act, so somebody new has
   // to be told. This is the owner's "once the two or three of them approve, the CEO is informed".
   if (movedTo === "pending_ceo") {

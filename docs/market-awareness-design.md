@@ -154,8 +154,9 @@ draft → manager → CEO → approved → executed → closed
 - Any participant can open a conversation. This plugs into `src/lib/conversations/notify.ts` — the
   owner's own 2026-09-03 rule: **email to the submitter, CC the sender and every participant**,
   in-app and Telegram to everyone except the author. Nothing new is built for this.
-- On CEO approval: every DM in the region for the chosen line, the NSM, the SFE Manager, the area's
-  Medical Rep, and Finance. Channel: **in-app + Telegram + email**.
+- On CEO approval: the NSM, the SFE Manager and Finance. Channel: **in-app + Telegram + email**.
+  Every DM in the region for the chosen line was on this list, and so was the area's Medical Rep;
+  both came off on 2026-09-12 — see the note under the permission table.
 - Those informed people can **comment but never approve**.
 
 ### Closure
@@ -237,10 +238,29 @@ holds it.
 | Marketing Manager | all | ✅ | manager step |
 | CEO | all | — | CEO step |
 | Super Admin | all | ✅ | both |
-| NSM · SFE Manager · District Manager · Finance | tracking + informed | — | — |
+| NSM · SFE Manager · Finance | tracking + informed | — | — |
+| District Manager | — | — | — |
+
+**The District Manager was removed from the module on 2026-09-12**, at the owner's instruction: it is
+"only applicable for product or group product managers and marketing and national sales manager". He
+had held `read` as an informed party under answers 42 and 43. All four gates went in one change — the
+portal sidebar list, the `market_awareness` matrix grant, `MARKET_AWARENESS_SEE_ALL_ROLES`, and the
+district managers in the CEO-approval announcement. Dropping fewer than all four would have left the
+module reachable: the sidebar is UX only, and a notification is a door of its own.
+
+**The area's Medical Rep came off the CEO-approval announcement the same day** — "NO HIDE FROM
+MEDICAL REP" — which supersedes his place in answer 42. He is the one case where only the
+notification had to change, because he never held a `market_awareness` grant in the first place: the
+notice he was receiving on three channels linked to a page that redirected him the moment he opened
+it. The approval audience is now resolved purely from the role directory, and the activity is no
+longer an argument to it, so there is nothing left in scope to read a rep off.
+
+Naming is not notifying. The activity screen still shows the region's district managers and the
+area's rep to the people who **can** open it — that is who the activity is about, and it is a
+different question from who gets told.
 
 Role sweep before merge, denial paths included: a Medical Rep and a District Manager must be refused
-create and decide, and must reach only what the informed set allows.
+the module outright, and the informed roles must reach only what the informed set allows.
 
 ## 6. The one open question
 

@@ -30,9 +30,15 @@ export const MARKET_AWARENESS_CREATOR_ROLES: readonly PhoenixRole[] = [
  * Roles that see every activity. A Product Manager is deliberately absent: he sees his own only
  * (owner answer 3), and that narrowing is `ownOnly` below.
  *
- * The informed roles — NSM, SFE Manager, District Manager, Finance Manager — are here because being
- * informed of an approved activity is meaningless without being able to open it. They hold `read`
- * and nothing else in the matrix, so seeing everything cannot become doing anything.
+ * The informed roles — NSM, SFE Manager, Finance Manager — are here because being informed of an
+ * approved activity is meaningless without being able to open it. They hold `read` and nothing else
+ * in the matrix (Finance also holds `update`, the paid mark), so seeing everything cannot become
+ * doing anything.
+ *
+ * The District Manager was here until 2026-09-12 and is now out at the owner's instruction — the
+ * module is hidden from him entirely, not merely unlinked. He holds no `market_awareness` grant at
+ * all, so this list can never be reached by him; he is removed anyway, because a role named here
+ * and nowhere else would be the first thing a future reader restores the grant for.
  */
 export const MARKET_AWARENESS_SEE_ALL_ROLES: readonly PhoenixRole[] = [
   "Super Admin",
@@ -41,7 +47,6 @@ export const MARKET_AWARENESS_SEE_ALL_ROLES: readonly PhoenixRole[] = [
   "Marketing Manager",
   "National Sales Manager",
   "SFE Manager",
-  "District Manager",
   "Finance Manager",
 ] as const;
 
