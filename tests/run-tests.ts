@@ -775,7 +775,11 @@ import { runCronControlRegistryTests } from "./cron-control-registry.test.ts";
 import { runNotificationRoleRecipientsTests } from "./notification-role-recipients.test.ts";
 import { runDistributionListsTests } from "./distribution-lists.test.ts";
 import { runDistributionListsAccessTests } from "./distribution-lists-access.test.ts";
-import { runSatoEmailPlanTests, runSatoEmailRenderTests } from "./sato-email.test.ts";
+import {
+  runSatoEmailHouseTemplateTests,
+  runSatoEmailPlanTests,
+  runSatoEmailRenderTests,
+} from "./sato-email.test.ts";
 import { runSatoEmailListsOnlyComposerTests } from "./sato-email-lists-only-composer.test.ts";
 import { runEmailControlCenterTests } from "./email-control-center.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
@@ -5281,6 +5285,11 @@ await runTest(
 await runTest(
   "the Sato email wears the house identity, never Phoenix: on-light mark, white paper, no fills or radius, sanitised body and per-line direction",
   runSatoEmailRenderTests,
+);
+
+await runTest(
+  "the Sato email wears the journey paper's devices: a heading is a rule with a tracked label under it, a list item carries no rule and keeps the blue marker, a quote is a light edge on white, the zebra stripes the second and fourth data rows and never the head, and the foot states the issuer once",
+  runSatoEmailHouseTemplateTests,
 );
 
 await runTest(
