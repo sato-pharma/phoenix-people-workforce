@@ -47,6 +47,7 @@ import { screeningBandForFamily } from "@/lib/recruitment/screening-order";
 import {
   candidateRoleFamily,
   candidateRoleFamilyLabels,
+  namesAnOccupation,
   type CandidateRoleFamily,
 } from "@/lib/recruitment/candidate-role-family";
 import type { Candidate } from "@/lib/recruitment/types";
@@ -83,6 +84,16 @@ export type CandidateFolderSuggestionResult =
   | { suggestion: null; refusal: string };
 
 /**
+ * A declared job title, read: which family it names, and whether the applicant TAPPED it or typed it.
+ *
+ * `tapped` is not decoration. It is the difference between an answer the applicant chose off a menu
+ * and a sentence they wrote, and the "other" shelf below is keyed on that text VERBATIM — so it is
+ * the one fact that says whether the folder name came from this system's own vocabulary or from a
+ * WhatsApp message.
+ */
+type DeclaredRole = { family: CandidateRoleFamily; tapped: boolean };
+
+/**
  * The role family behind a declared job title.
  *
  * A tapped answer is stored as the family's own LABEL ("Medical Representative"), so an exact label
@@ -91,14 +102,18 @@ export type CandidateFolderSuggestionResult =
  * inference is — the difference matters, and mixing the two is how a tapped answer would inherit an
  * inference's error rate.
  */
-function declaredRoleFamily(title: string | null | undefined): CandidateRoleFamily | null {
+function readDeclaredRole(title: string | null | undefined): DeclaredRole | null {
   const cleaned = cleanFolderKey(title);
   if (!cleaned) return null;
   const tapped = (Object.keys(candidateRoleFamilyLabels) as CandidateRoleFamily[]).find(
     (family) => candidateRoleFamilyLabels[family].toLowerCase() === cleaned.toLowerCase(),
   );
-  if (tapped) return tapped;
-  return candidateRoleFamily(cleaned);
+  if (tapped) return { family: tapped, tapped: true };
+  return { family: candidateRoleFamily(cleaned), tapped: false };
+}
+
+function declaredRoleFamily(title: string | null | undefined): CandidateRoleFamily | null {
+  return readDeclaredRole(title)?.family ?? null;
 }
 
 /**
@@ -253,10 +268,11 @@ export function suggestFolderFromDeclaredAnswers(
   const blocked = candidateFolderRefusal(candidate);
   if (blocked) return { refusal: blocked, suggestion: null };
 
-  const family = declaredRoleFamily(candidate.appliedForJobTitle);
-  if (!family) {
+  const declaredRole = readDeclaredRole(candidate.appliedForJobTitle);
+  if (!declaredRole) {
     return { refusal: "Answered the questions but named no role.", suggestion: null };
   }
+  const family = declaredRole.family;
 
   if (family === "medical_rep") {
     // The medical-rep shelf is keyed on the AREA, so a rep who never reached the area question has
@@ -326,8 +342,37 @@ export function suggestFolderFromDeclaredAnswers(
 
   // Every other role goes on the "other" shelf under the job title itself — the owner's own split:
   // *"8 regions, and split other positions by job title"*.
+  //
+  // THE TITLE MUST NAME A JOB, AND ONLY THIS SHELF HAS TO ASK. The other three shelves are keyed on
+  // a vocabulary — a canonical area, a region code, one fixed folder — so a value that is not in it
+  // is refused by the list itself. This one is keyed on FREE TEXT by the owner's own design, which
+  // is right for a recruiter naming a shelf and wrong for an automated action reading whatever the
+  // applicant last typed: `applied_for_job_title` is filled by the WhatsApp flow, and a reply that
+  // is not an answer to the job question lands in it unchanged.
+  //
+  // Measured against production 2026-09-11: a candidate whose title read "بخصوص الإعلان دا"
+  // ("regarding this ad") had a folder of that name opened for her by the bulk "file the declared
+  // CVs" action, one shelf away from the Medical Representative folder she belonged on. Nothing was
+  // wrong with the filing code — the text simply was not a job, and no gate asked.
+  //
+  // So the gate is: a TAPPED answer is this system's own label and always files; a TYPED one files
+  // only when it NAMES A JOB — `namesAnOccupation`, which is a much lower bar than being placed in
+  // a family and deliberately so. "Regulatory Affairs Specialist" belongs to no family here and is
+  // exactly the kind of position the owner's split is FOR, so the question this shelf asks is not
+  // *which role is this* but *is this a role at all*. A typed answer that names no seat is refused,
+  // as an unrecognised area is, and stays in the pool with the reason on screen.
+  //
+  // THE REFUSAL IS NOT A DEAD END — the picker's "Job title" box is free text and still takes any
+  // title a recruiter types, so the owner's split survives whole. What it no longer does is let an
+  // unread sentence name a folder with nobody looking.
   const title = cleanFolderKey(candidate.appliedForJobTitle);
   if (!title) return { refusal: "Answered the questions but named no role.", suggestion: null };
+  if (!declaredRole.tapped && !namesAnOccupation(title)) {
+    return {
+      refusal: `Typed "${title}" as their job title, which names no job — a folder cannot be opened from it. File this CV by hand under the title it should have.`,
+      suggestion: null,
+    };
+  }
   return { refusal: null, suggestion: buildSuggestion("other", title) };
 }
 
