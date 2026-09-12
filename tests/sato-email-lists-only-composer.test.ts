@@ -156,4 +156,17 @@ export function runSatoEmailListsOnlyComposerTests() {
     !/HR_REPLY_EMAIL_FROM|NOTIFICATION_EMAIL_FROM/.test(satoService),
     "the composer must not fall back to the notification sender's From",
   );
+
+  // --- 6. …and its Reply-To — which the fan-out also writes into the visible To — is the same box --
+  // Owner's test send 2026-09-13: From was hrbp@, but a Super Admin send took no seat Reply-To, fell
+  // through to phoenix@satopharma.com, and the fan-out put that suppressed inbox in the visible To.
+  assert.match(
+    satoService,
+    /const replyTo = systemEmail\.satoComposerFromEmail;/,
+    "the composer's Reply-To (and so the neutral visible To) must be the same hrbp@ mailbox for every sender",
+  );
+  assert.ok(
+    !/seatReplyTo/.test(satoService),
+    "the composer must not key Reply-To on the sender's seat — a seat without an entry falls through to a suppressed inbox",
+  );
 }
