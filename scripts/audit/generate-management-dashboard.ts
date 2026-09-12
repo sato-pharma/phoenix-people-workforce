@@ -304,6 +304,19 @@ function main(): void {
     lines.push(`- ${safeText(action)}`);
   }
 
+  // The manager summary is the one field written FOR the person reading this page, and the dashboard
+  // used to drop it on the floor: a score and a verdict with no sentence saying what they mean. A
+  // score in particular cannot defend itself — the table above prints it against a fixed scale, so a
+  // module whose score measures something else (the completeness of its RECORD, say) reads as a
+  // quality rating unless its own summary is on the same page.
+  lines.push("");
+  lines.push("## What Each Module's Score And Verdict Actually Mean");
+  for (const record of records) {
+    lines.push(`### ${safeText(record.moduleName)}`);
+    lines.push(safeText(record.managerSummary));
+    lines.push("");
+  }
+
   lines.push("");
 
   const output = lines.join("\n");
