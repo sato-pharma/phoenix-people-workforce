@@ -20,6 +20,7 @@ import {
   parseWhatsAppWebhookPayload,
 } from "@/lib/recruitment/inbound/whatsapp-payload-parser";
 import { verifyWhatsAppWebhookHandshake, verifyWhatsAppWebhookSignature } from "@/lib/recruitment/inbound/whatsapp-webhook-events";
+import { captureInboundVideo } from "@/lib/whatsapp-videos/inbox";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -201,6 +202,38 @@ export async function POST(request: Request) {
             labels: { event: "whatsapp_message_buffer_failed", wamid: message.wamid },
           });
         });
+      }
+
+      // A VIDEO. Captured into its own holding table and then dropped from this pipeline entirely —
+      // no queue row, no candidate, no reply, no notification.
+      //
+      // 🔴 IT MUST BE HANDLED BEFORE THE TEXT-ONLY BRANCH BELOW, and the ordering is the whole
+      // point of this block rather than a style preference. A video carries no `document`, so
+      // without this it falls into handleTextOnlyMessage, where the guard table splits it two ways
+      // and both are wrong: a REPLAYED video hits the `historical` rung and is discarded with no
+      // record at all, and a LIVE video hits `new_contact` — so the sender is answered "please send
+      // your CV as a file" and Talent Acquisition is notified. The senders are the company's own
+      // interns sending their closing videos, so that second path means messaging twenty-nine of
+      // them to ask for a job application they never made.
+      //
+      // Best-effort like everything else here: a capture failure is logged and reported in the
+      // outcome, never raised, because a non-200 makes Meta retry the whole payload.
+      if (message.video) {
+        const captured = await captureInboundVideo({
+          caption: message.video.caption,
+          contactName: message.contactName,
+          deliveredToDisplayNumber: message.deliveredToDisplayNumber,
+          deliveredToPhoneNumberId: message.deliveredToPhoneNumberId,
+          fileName: message.video.filename,
+          historical: message.historical,
+          mediaId: message.video.mediaId,
+          mimeType: message.video.mimeType,
+          sentAt: message.sentAt,
+          waId: message.from,
+          wamid: message.wamid,
+        });
+        outcomes.push({ outcome: `video_${captured.outcome}`, wamid: message.wamid });
+        continue;
       }
 
       // A message with no document. Until 2026-08-29 this line simply dropped it: buffered above,
