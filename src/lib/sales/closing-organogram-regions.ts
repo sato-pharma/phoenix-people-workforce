@@ -20,7 +20,15 @@ import type {
 // line. The organogram says otherwise, and it is per line (verified against production):
 //
 //   Anti Infective  UE-1 = UE1, UE2 (+ GZ6)      UE-2 = UE3..UE8      — no plain "UE" at all
-//   CNS / Pedia     UE   = UE1..UE7              D16 (Kafr El-Sheikh) sits under AB, not D1
+//   CNS             UE   = UE1..UE7              D16 (Kafr El-Sheikh 1) sits under AB, not D1
+//   Pedia           UE-1 / UE-2 from 2026-09-01  D16 joins Delta (1) from 2026-09-01
+//
+// 🔴 BOTH PEDIA ROWS ARE DATED, AND THE DATE IS THE MECHANISM. Pedia's Upper Egypt split and its
+// Kafr El-Sheikh 1 move are each written as a PAIR in au.line_area_map effective 2026-09-01, so
+// August resolves to the left-hand structure and September to the right-hand one no matter when a
+// closing is run. Read the two Pedia lines above as "before | after", never as current state, and
+// never assume the same area answers the same on two lines: Pedia's UE-1 / UE-2 membership
+// deliberately differs from Anti Infective's, and CNS keeps Kafr El-Sheikh 1 on Alex-BHR for good.
 //
 // The same split already governs Direct uploads (see ambiguousDirectRegion, which rejects a Direct
 // row tagged "UE" on Anti Infective precisely because it covers two DMs) and the AU achievement

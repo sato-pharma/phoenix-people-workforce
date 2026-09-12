@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 
 import {
   CORRECTABLE_KEYS,
+  isExperienceDrift,
+  looksLikeAnEmployerNotARole,
+  namesTheSameGovernorate,
   normalizeFactForComparison,
   saysTheSameThing,
   selectFactCorrections,
@@ -58,6 +61,91 @@ export async function runRecruitmentCvFactCorrectionTests(): Promise<void> {
       hasDeclaredPreferences: true,
     });
     assert.equal(withDeclaration.length, 0, "a declared answer is never overwritten by a CV guess");
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // Gates 6-8. Every pair below is a REAL row from the free preview run over production on
+  // 2026-09-12, which gates 1-5 let through and which is not a correction.
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+
+  // Gate 6 — experience accrues with the calendar. A sub-year move is drift, not a repair.
+  {
+    for (const [from, to] of [[7.7, 7.8], [7.75, 7.8], [18, 18.1], [23, 23.2], [10.4, 10.6]] as const) {
+      assert.equal(isExperienceDrift(from, to), true, `${from} -> ${to} is the clock, not a correction`);
+      const corrections = propose({ yearsExperience: high(to) }, { yearsExperience: from });
+      assert.equal(corrections.length, 0, `${from} -> ${to} years must not be proposed`);
+    }
+
+    // The defect this job exists for is never this small: a fresh graduate credited with years.
+    assert.equal(isExperienceDrift(5, 0), false, "5 years down to 0 is the fresh-graduate defect itself");
+    const real = propose({ yearsExperience: high(0) }, { yearsExperience: 5 });
+    assert.equal(real.length, 1, "control: a whole-year disagreement IS still proposed");
+    assert.equal(real[0].to, 0);
+
+    // Exactly one year is a correction; the threshold is a floor, not a window.
+    assert.equal(isExperienceDrift(10, 11), false, "a full year of difference is not drift");
+    assert.equal(isExperienceDrift(10, 10.999), true, "just under a year still is");
+  }
+
+  // Gate 7 — the same governorate spelled another way. Writing the variant over the app's
+  // canonical spelling would be a regression, not a repair.
+  {
+    for (const [stored, cv] of [
+      ["Sharqia", "Sharkia"],
+      ["Dakahlia", "Ad Daqahliyah"],
+      ["Menoufia", "Menofia"],
+      ["Beheira", "Elbehaira"],
+      ["Al Buhayrah", "Beheira"],
+      ["Qalyubia", "kaliobia"],
+      ["Sohag", "Sohage"],
+      ["Kafr El Sheikh", "Kafr el-Sheikh"],
+    ] as const) {
+      assert.equal(namesTheSameGovernorate(stored, cv), true, `"${stored}" and "${cv}" are one place`);
+      const corrections = propose({ governorate: high(cv) }, { governorate: stored });
+      assert.equal(corrections.length, 0, `"${stored}" -> "${cv}" is spelling, not a correction`);
+    }
+
+    // A real move between two different governorates still gets through.
+    assert.equal(namesTheSameGovernorate("Cairo", "Sharqia"), false);
+    const real = propose({ governorate: high("Sharqia") }, { governorate: "Cairo" });
+    assert.equal(real.length, 1, "control: Cairo -> Sharqia is a genuine disagreement");
+
+    // An unrecognisable value must NOT silently suppress a disagreement.
+    assert.equal(namesTheSameGovernorate("Cairo", "Wakanda"), false);
+    assert.equal(namesTheSameGovernorate("", "Cairo"), false);
+  }
+
+  // Gate 8 — an employer is never a job title. This is the owner's original defect 3 (the CV
+  // headline stored as the job) reappearing inside the PROPOSAL.
+  {
+    for (const [stored, cv] of [
+      ["Community Pharmacist", "Dr. Tarek ElTohamy Pharmacy"],
+      ["Senior Accountant / Chief Accountant", "Madawa Pharmaceutical Company"],
+      ["HR | Senior Personnel Specialist", "❖ Company: Keys Payroll"],
+      ["HR Personnel", "HR Personnel In Postal Distribution Company"],
+      ["Sales Manager", "Sales Manager, Amoun Pharmaceutical Company"],
+      ["محامي", "شركة المحاماة الدولية"],
+    ] as const) {
+      assert.equal(looksLikeAnEmployerNotARole(stored, cv), true, `"${cv}" names an employer, not a role`);
+      const corrections = propose({ currentJobTitle: high(cv) }, { currentJobTitle: stored });
+      assert.equal(corrections.length, 0, `"${stored}" -> "${cv}" must not be proposed`);
+    }
+
+    // A genuine role refinement with no employer in it still gets through.
+    assert.equal(looksLikeAnEmployerNotARole("Veterinarian", "Clinical Veterinarian"), false);
+    const real = propose({ currentJobTitle: high("Clinical Veterinarian") }, { currentJobTitle: "Veterinarian" });
+    assert.equal(real.length, 1, "control: a role-to-role refinement IS still proposed");
+
+    // When the STORED value already names an employer, the proposal is no worse — leave it alone.
+    assert.equal(
+      looksLikeAnEmployerNotARole("Pharmacist at El Ezaby Pharmacy", "El Ezaby Pharmacy"),
+      false,
+      "the stored value already carries the employer, so this gate does not apply",
+    );
+
+    // The markers must not fire on ordinary roles that merely sound institutional.
+    assert.equal(looksLikeAnEmployerNotARole("Rep", "Medical Representative"), false);
+    assert.equal(looksLikeAnEmployerNotARole("Accountant", "Senior Accountant"), false);
   }
 
   // Gate 2 — the extractor's own hedge is respected.

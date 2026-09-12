@@ -99,6 +99,23 @@ export async function runEgyptVocabularySpellingsTests(): Promise<void> {
     assert.equal(resolveGovernorate("Bani Sweif"), "Beni Suef", "as is the variant the table already carried");
   }
 
+  // ── 3b. Two more spellings, found the same way ─────────────────────────────
+  //
+  // Found on 2026-09-12 by the CV fact-correction preview, which proposed rewriting a stored
+  // governorate with the candidate's own transliteration of the SAME place. That gate compares both
+  // sides through resolveGovernorate, so a spelling the table does not carry reads as a real
+  // disagreement and the correction sheet asks the owner to adjudicate a non-question.
+  {
+    assert.equal(resolveGovernorate("Elbehaira"), "Beheira", "a Beheira address spelled the way a candidate wrote it");
+    assert.equal(resolveGovernorate("El Behaira"), "Beheira", "spaced, as it is also written");
+    assert.equal(resolveGovernorate("Beheira"), "Beheira", "and the usual spelling is untouched");
+    assert.equal(resolveGovernorate("Al Buhayrah"), "Beheira", "as is the variant the table already carried");
+
+    assert.equal(resolveGovernorate("kaliobia"), "Qalyubia", "a Qalyubia address as a candidate wrote it");
+    assert.equal(resolveGovernorate("Qalyubia"), "Qalyubia", "and the usual spelling is untouched");
+    assert.equal(resolveGovernorate("Qalubeya"), "Qalyubia", "as is the variant the table already carried");
+  }
+
   // ── 4. The vocabulary stays single ─────────────────────────────────────────
   //
   // The correction is worth nothing if a caller keeps its own copy of Egypt. Both spellings are

@@ -1221,6 +1221,7 @@ import { runClosingSourceMaskTests } from "./closing-source-mask.test.ts";
 import { runQemaWarehouseSplitTests } from "./qema-warehouse-split.test.ts";
 import { runMergedAreaAttributionTests } from "./merged-area-attribution.test.ts";
 import { runPediaUpperEgyptSplitTests } from "./pedia-upper-egypt-split.test.ts";
+import { runPediaKafrElSheikhDelta1Tests } from "./pedia-kafr-el-sheikh-delta-1.test.ts";
 import { runAttributionStoreSplitNetTests } from "./attribution-store-split-net.test.ts";
 import { runStoreNamePrefixesTests } from "./store-name-prefixes.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
@@ -1322,6 +1323,7 @@ import { runSalesStoreOverrideTests } from "./sales-store-override.test.ts";
 import { runClosingExportFilenameTests } from "./closing-export-filename.test.ts";
 import { runClosingEngineExportTests } from "./closing-engine-export.test.ts";
 import { runClosingExecutiveLookTests } from "./closing-executive-look.test.ts";
+import { runClosingScreenIdentityTests } from "./closing-screen-identity.test.ts";
 import { runClosingLayoutInvariantTests } from "./closing-layout-invariants.test.ts";
 import { runClosingAchievementFollowsTheClosingTests } from "./closing-achievement-follows-the-closing.test.ts";
 import { runWeeklyPlansDistrictManagerBypassTests } from "./weekly-plans-district-manager-bypass.test.ts";
@@ -1599,6 +1601,7 @@ import { runDataBackupWorkbookTests } from "./data-backup-workbook.test.ts";
 import { runBackgroundFolderFilingGateTests } from "./background-folder-filing-gate.test.ts";
 import { runPhoenixOfficialLogoTests } from "./phoenix-official-logo.test.ts";
 import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending-backfill-completed-only.test.ts";
+import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowrap-lock.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -3716,6 +3719,10 @@ await runTest(
   runPediaUpperEgyptSplitTests,
 );
 await runTest(
+  "Pedia Kafr El-Sheikh joins Delta (1) (August still files Kafr El-Sheikh 1 under Alex-BHR while September files it under Delta (1); Kafr El-Sheikh 2 stays in Others, so El Qema's divisor and its whole distribution are byte-identical with the dated pair written and without it, in BOTH months)",
+  runPediaKafrElSheikhDelta1Tests,
+);
+await runTest(
   "EPDA «م - » warehouse prefix (anchored at the START only — it matches 40 customers, while the same three characters appear MID-NAME in 590, and turning it into a keyword would move 550 pharmacies)",
   runStoreNamePrefixesTests,
 );
@@ -4232,6 +4239,10 @@ await runTest(
 await runTest(
   "the premium closing workbook keeps its APPROVED executive look (owner 2026-09-08) — exempt from the house identity, so no brand blue anywhere, rounded buttons kept, filled bands kept, band heights held",
   runClosingExecutiveLookTests,
+);
+await runTest(
+  "the closing SCREEN wears that same workbook identity (owner 2026-09-12) — every colour role-for-role, the column tints derived and not invented, no foreign palette on any closing component, the frozen black Export XLSX button untouched, and every special column keeping its own colour inside the Grand Total",
+  runClosingScreenIdentityTests,
 );
 await runTest(
   "the premium closing's achievement IS the Monthly Closing's (all sales over target, owner 2026-09-05) on a MIXED area, on the masthead, on every region row, on Family Performance, and in the owner's own four .xlsm formulas",
@@ -5324,6 +5335,11 @@ await runTest(
 await runTest(
   "a payroll warning can only be acknowledged by the person it was shown to, for the run and gate it was raised on, while it still says the same thing — a yes on the first request answers nothing",
   runPayrollAcknowledgmentTokenTests,
+);
+
+await runTest(
+  "recruitment Folders tab: no `whitespace-nowrap` on prose, and the inventory is pinned (the fits-the-screen golden rule)",
+  runRecruitmentFoldersNowrapLockTests,
 );
 
 await runTest(
