@@ -26,7 +26,7 @@ import {
 import { assertHoldReasonsPresent, holdCandidatesFromStepRows } from "./hold-reason.ts";
 import { buildHoldReview, type HoldReview } from "./hold-review.ts";
 import { exclusionRefusal } from "./exclusion-guard.ts";
-import { assertNoTransitionInProgress, describeTransitionRefusal } from "./transition-claim.ts";
+import { assertNoTransitionInProgress, describeTransitionRefusal, TRANSITION_CLAIM_LOST } from "./transition-claim.ts";
 import { assertNoNegativeStepValues } from "./negative-values.ts";
 import {
   describePayrollDayCollisions,
@@ -1769,6 +1769,10 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
   // From the batch to the phase, under one claim (audit finding 50): see claimTransition. A cancel racing
   // publish used to write `cancelled` over `published` and un-mark the debts it had just recovered.
   const transition = await claimTransition(runId, ["ready"], "Publishing to payslips");
+  // What already landed, so a lost claim can say what exists instead of "nothing was written". Publish is
+  // the one transition that writes REAL MONEY before its phase write: by the time the run is marked, the
+  // salary records exist, the batch is approved and the carry-forward ledger is settled.
+  let batchAlreadyWritten: string | null = null;
   const published = await whileClaimed(runId, transition, async () => {
     const ownFileName = `automated-payroll:${runId}`;
     const existing = await findSalaryBatchForPeriod(run.month, run.year);
@@ -1802,6 +1806,7 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
       batchId = created.batch.id;
       assertBatchApproved(await finalizeApproved(batchId, actorId(access)), batchId);
     }
+    batchAlreadyWritten = batchId;
 
     // SETTLE THE CARRY-FORWARD LEDGER HERE, from the rows that were actually published. Held rows
     // are excluded because no salary record was written for them, so their debt was collected from
@@ -1821,6 +1826,20 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
       { transitionToken: transition },
     );
     return { batchId, carryForwardRecovered, updated };
+  }).catch((publishError: unknown) => {
+    // A lost claim HERE is not "nothing happened": the payslips are live and the run is not marked.
+    // Saying otherwise invites the two moves that make it worse — re-publishing, or reopening Part 2 and
+    // releasing a carry-forward that was genuinely collected.
+    const message = publishError instanceof Error ? publishError.message : String(publishError);
+    if (message.includes(TRANSITION_CLAIM_LOST) && batchAlreadyWritten) {
+      throw new Error(
+        `Conflict: the payslips for this run WERE written — salary batch ${batchAlreadyWritten} is approved and ` +
+          "live, and the carry-forward ledger is settled — but the run could not be marked published because " +
+          "another action took it. Do NOT publish, reopen or cancel this run again: it and its batch now " +
+          "disagree, and someone has to reconcile them by hand.",
+      );
+    }
+    throw publishError;
   });
   const { batchId, carryForwardRecovered, updated } = published;
 

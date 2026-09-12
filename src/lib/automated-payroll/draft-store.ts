@@ -1,4 +1,6 @@
 import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
+
+import { TRANSITION_CLAIM_LOST } from "./transition-claim.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { normalizeHoldReason, previousPeriod } from "./hold-reason.ts";
@@ -230,8 +232,9 @@ export async function updateRun(
   if (!row) {
     throw new Error(
       options.transitionToken
-        ? "Conflict: this change's hold on the run lapsed before it could be written, and another action has " +
-            "taken the run. Nothing was written; refresh the page to see where it stands."
+        ? `Conflict: ${TRANSITION_CLAIM_LOST} this action's hold on the run lapsed before the run could be ` +
+            "marked, and another action has taken the run. Work this action had already saved may still " +
+            "stand — refresh the page and read where the run is before repeating it."
         : "Not found: payroll run does not exist.",
     );
   }

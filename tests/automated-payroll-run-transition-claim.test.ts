@@ -196,4 +196,42 @@ export function runAutomatedPayrollRunTransitionClaimTests() {
     /confirmPart2WithOverpaidGate\([^)]*, (true|false)\)/,
     "no button may send a positional flag, which is what dropped the other acknowledgements",
   );
+
+  // ==== An acknowledgement answers ONE attempt, and dies with it ==================================
+  // Accumulating them fixed the loop and opened something worse: an acknowledgement that outlived its
+  // attempt would answer a LATER, different disappearance with no prompt at all — invisible, which is
+  // the exact shape of the bug finding 46 exists to catch. It dies on reload and on a failed request.
+  const wizardCode = stripComments(wizard);
+  assert.match(
+    wizardCode,
+    /setDataQuality\(null\);\s*setPart2Acks\(\{\}\);/,
+    "HEADLINE: reloading the run forgets every acknowledgement, because the reload is what can change the answer",
+  );
+  assert.match(
+    wizardCode,
+    /catch \(actionError\) \{\s*setPart2Acks\(\{\}\);/,
+    "HEADLINE: a dropped or non-JSON response answers nothing, so the next attempt asks every gate again",
+  );
+
+  // ==== A lost claim never says nothing happened ==================================================
+  // Every transition writes something before its phase write, and publish writes REAL MONEY: salary
+  // records, an approved batch, a settled ledger. Telling HR nothing happened invites the two moves
+  // that make it worse — publishing again, or reopening Part 2 and releasing a debt truly collected.
+  assert.match(update, /TRANSITION_CLAIM_LOST/, "a lost claim is marked, so publish can recognise it");
+  assert.match(
+    update,
+    /Work this action had already saved may still/,
+    "HEADLINE: a refused conditioned write never claims that nothing was written",
+  );
+  assert.match(publish, /batchAlreadyWritten = batchId;/, "publish remembers the batch it wrote before the phase write");
+  assert.match(
+    publish,
+    /message\.includes\(TRANSITION_CLAIM_LOST\) && batchAlreadyWritten/,
+    "HEADLINE: a publish that loses its claim names the live batch instead of reporting a plain conflict",
+  );
+  assert.match(
+    publish,
+    /salary batch \$\{batchAlreadyWritten\} is approved and/,
+    "and names it, because someone has to reconcile the run against its batch by hand",
+  );
 }

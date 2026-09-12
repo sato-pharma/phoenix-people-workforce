@@ -210,6 +210,13 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       setPopulationDiff(null);
       setHoldReview(null);
       setDataQuality(null);
+      // Every acknowledgement dies with the reload that could have changed what it answered.
+      // Keeping them would let a LATER, different disappearance be accepted with no prompt —
+      // invisible, where the loop these acks fix was merely annoying.
+      setPart2Acks({});
+      setOverpaidPrompt(null);
+      setDataIssuePrompt(null);
+      setPopulationPrompt(null);
 
       // Load the population diff eagerly rather than behind a button: the bug
       // it guards against (someone silently vanishing from payroll) is invisible
@@ -364,6 +371,9 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       setNotice("Part 2 confirmed. Finance roles notified.");
       await loadRun(month, year);
     } catch (actionError) {
+      // A transport failure (dropped connection, timeout, non-JSON body) answers nothing:
+      // the next attempt must ask every gate again.
+      setPart2Acks({});
       setError(actionError instanceof Error ? actionError.message : "Action failed.");
     } finally {
       setBusy(false);

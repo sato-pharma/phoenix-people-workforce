@@ -22,6 +22,12 @@ export function transitionInProgress(run: ClaimFields, nowMs: number = Date.now(
   return nowMs - startedAt < TRANSITION_CLAIM_LAPSE_MINUTES * 60_000;
 }
 
+/**
+ * Marker on the refusal a conditioned phase write throws when its claim no longer holds the run.
+ * Publish looks for it, because by then a salary batch exists and "nothing happened" would be a lie.
+ */
+export const TRANSITION_CLAIM_LOST = "[transition-claim-lost]";
+
 /** A step save, exclusion or re-inclusion waits while a transition holds the run. */
 export function assertNoTransitionInProgress(run: ClaimFields, nowMs: number = Date.now()): void {
   if (!transitionInProgress(run, nowMs)) return;
