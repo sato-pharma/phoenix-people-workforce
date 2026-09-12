@@ -146,7 +146,7 @@ artifacts:
 Every headline was checked against the actual file before it was believed. A scan that reports a
 catastrophe is more likely to be broken than the code is.
 
-## What cycle 2 does not close
+## What cycle 2 does not close — and the ruling that closed it
 
 - **Findings 1, 6–13, 21, 24, 25, 28 remain unaccounted for.** Nothing empirical can recover them.
   They are not "open" and not "fixed" — the record of what they were is gone.
@@ -154,8 +154,27 @@ catastrophe is more likely to be broken than the code is.
 - `tests/payroll-audit-ledger.test.ts` therefore needs no change to its `NO_TRACE` list; the ledger's
   arithmetic for findings 1–55 stands exactly as written.
 
-The decision now owed is not technical: whether to accept those fourteen as permanently unrecoverable
-and close them on the record, or to keep them open indefinitely. That is the owner's call.
+The decision owed was not technical: whether to accept those fourteen as permanently unrecoverable
+and close them on the record, or to keep them open indefinitely.
+
+### The owner ruled on 2026-09-12: close them as permanently unrecoverable.
+
+That ruling is recorded in full in
+[audit-ledger.md — The ruling on the fourteen](audit-ledger.md#the-ruling-on-the-fourteen--closed-2026-09-12),
+which is the authoritative place for it. In short:
+
+- **No further work is owed on the fourteen.** They are not open items, and no third cycle re-opens
+  the question.
+- **Nothing is claimed about their content.** Closed is not fixed. The evidence rows still read *no
+  trace found in the repository*, deliberately — closing a finding must not erase what was known
+  when it was closed.
+- **The residual risk is accepted, not removed.** If one of them described a live defect, it is still
+  live and there is no description to search for.
+- **A future payroll defect is a NEW finding**, numbered from 57 onward. Never attribute one to a
+  closed number — the attribution could never be checked.
+
+With that ruling, cycle 2 has no open item. Finding 56 is fixed and verified in production, and the
+fourteen are settled on the record.
 
 ## The process fix that outlasts both cycles
 

@@ -47,6 +47,15 @@ const PAYROLL_ROOTS = [
  */
 const NO_TRACE = [1, 6, 7, 8, 9, 10, 11, 12, 13, 21, 24, 25, 28];
 
+/**
+ * The owner ruled on 2026-09-12 that these fourteen - the thirteen with no trace, plus 19 - are
+ * CLOSED as permanently unrecoverable. Closing them settled what is OWED, not what is KNOWN, and the
+ * two are easy to confuse a year from now. These checks exist so that nobody can quietly reopen the
+ * question, quietly drop the ruling, or - worse - "tidy up" the ledger by deleting the no-trace rows
+ * on the grounds that the findings are closed. The evidence state and the decision must both survive.
+ */
+const RULED_CLOSED = [...NO_TRACE, 19];
+
 function walk(dir: string, out: string[] = []): string[] {
   let entries: string[];
   try {
@@ -172,5 +181,52 @@ export async function runPayrollAuditLedgerTests(): Promise<void> {
   assert.ok(
     !/Modules have not been audited yet/.test(dashboard),
     "the dashboard must stop saying nothing has been audited",
+  );
+
+  // ---- 5. The ruling on the fourteen stays recorded, and stays honest -----------------------------
+  const rulingStart = ledger.indexOf("## The ruling on the fourteen");
+  assert.ok(
+    rulingStart >= 0,
+    "HEADLINE: the ledger must carry the owner's ruling on the fourteen unaccounted-for findings — without it a later session re-opens a question that was already decided, which is the exact loop this record exists to end",
+  );
+  const afterRuling = ledger.indexOf("\n## ", rulingStart + 1);
+  const ruling = ledger.slice(rulingStart, afterRuling === -1 ? undefined : afterRuling);
+
+  assert.match(
+    ruling,
+    /permanently unrecoverable/i,
+    "the ruling must say in plain words that the fourteen are closed as permanently unrecoverable",
+  );
+  assert.match(ruling, /2026-09-12/, "the ruling must carry the date it was made");
+
+  const notInRuling = RULED_CLOSED.filter((n) => !new RegExp(String.raw`\b${n}\b`).test(ruling));
+  assert.deepEqual(
+    notInRuling,
+    [],
+    `HEADLINE: the ruling must name every finding it closes — ${notInRuling.join(", ")} is missing, and a finding left out of the ruling is neither closed nor open, which is the state the ruling was made to eliminate`,
+  );
+
+  // Closed is not fixed. If this distinction ever goes, the record starts claiming the fourteen were
+  // dealt with on their merits, which is precisely what nobody knows.
+  assert.match(
+    ruling,
+    /Closed is not fixed/i,
+    "HEADLINE: the ruling must keep saying 'closed is not fixed' — the fourteen were never verified, dismissed or repaired, and a record that blurs that is worse than the gap it closed",
+  );
+
+  // ---- 6. The registry records the decision instead of still asking for it ------------------------
+  assert.match(
+    payroll!.requiredNextAction,
+    /permanently unrecoverable/i,
+    "HEADLINE: the registry must record that the ruling was made — it asked for this decision for as long as it was owed, and a record that keeps demanding a decision already taken trains everyone to ignore it",
+  );
+  assert.ok(
+    !/^\s*Rule on findings/i.test(payroll!.requiredNextAction),
+    "HEADLINE: the registry must stop demanding a ruling on findings 1, 6-13, 21, 24, 25 and 19 — that ruling was given on 2026-09-12",
+  );
+  assert.match(
+    payroll!.managerSummary,
+    /did not move|accepted residual/i,
+    "HEADLINE: the manager summary must say the score did not move when the fourteen were closed — a record that rewards itself for deciding to stop looking is how a gap gets papered over",
   );
 }

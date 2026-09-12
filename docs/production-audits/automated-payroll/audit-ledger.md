@@ -32,6 +32,8 @@ the single most useful thing that could still be added here.
 | **No trace found anywhere** | **13** | 1, 6–13, 21, 24, 25, 28 |
 | **Total** | **55** | |
 
+> **Status of the thirteen, plus 19: CLOSED as permanently unrecoverable by the owner's ruling of 2026-09-12.** The counts above are unchanged and stay unchanged — the ruling settled what is owed, not what is known. See [The ruling on the fourteen](#the-ruling-on-the-fourteen--closed-2026-09-12).
+
 Thirteen numbers — **1, 6–13, 21, 24, 25 and 28** — appear nowhere: not in code, not in a test, not
 in a commit message, not in a merged PR description, and not anywhere in git history. That is the
 honest state. They may have been fixed under a different description, dismissed as not-a-defect,
@@ -222,19 +224,45 @@ treated held people as absent.
 
 ---
 
-## What to do with the thirteen
+## The ruling on the fourteen — CLOSED, 2026-09-12
 
-**1, 6, 7, 8, 9, 10, 11, 12, 13, 21, 24, 25, 28.**
+**1, 6, 7, 8, 9, 10, 11, 12, 13, 21, 24, 25, 28 — and 19.**
 
-There is no way to reconstruct these from the repository. The only sources that could still answer
-are outside it: the original audit document, wherever it was produced, and the owner's own record of
-what he was shown. Until one of those is found, these thirteen are **unaccounted for** — not fixed,
-not dismissed, not open. Unaccounted for.
+**The owner ruled on 2026-09-12: these fourteen are closed as permanently unrecoverable.**
 
-The same applies, more weakly, to **19, 30 and 36**: they exist in the record, but only as a passing
-reference or an unsourced claim.
+Cycle 2 established that nothing in this company can recover them. The audit document that assigned
+the numbers was never committed; `git grep` across the whole tree and `git log -S` across the whole
+history return nothing for any of them in the payroll paths; no merged pull request describes them.
+An empirical re-audit of the module was run instead (see [audit-cycle-2.md](audit-cycle-2.md)) and it
+found one defect, which was numbered **56** and fixed — not one of these fourteen.
 
-**The fix that prevents the next one:** the audit document goes in
-`docs/production-audits/automated-payroll/` **before** the first fix PR, not after the last one. The
-folder and its templates already existed for exactly this. Fifty-five findings were worked through
-without one being used.
+### What "closed" means here, exactly
+
+**Closed is not fixed.** The ruling settles what is *owed*, not what is *known*:
+
+- **No further work is owed on them.** They are not open items. No third cycle re-litigates them, and
+  no session should re-open this question or offer to "recover" them again — the answer is in.
+- **Nothing is claimed about their content.** They were not verified, not dismissed and not fixed by
+  this ruling. Whether any of them touched money is unknown and will stay unknown.
+- **The residual risk is accepted, not removed.** If one of them described a live defect, that defect
+  is still live and there is no description of it to search for. The ruling accepts that exposure
+  deliberately, because the alternative — fourteen permanently open items nobody can act on — is a
+  record that decays into noise.
+- **A future payroll defect is a NEW finding.** It is numbered from 57 onward. Do not attribute one
+  to a closed number: there is no basis on which that attribution could ever be checked, and a wrong
+  one would make this record worse than the gap it filled.
+
+The rows above still read **no trace found in the repository**, and that is deliberate. Closing a
+finding must never erase the evidence state that led to it — the two facts are recorded side by side
+so that anyone reading this in a year can see both what was decided and what was known when it was
+decided.
+
+**30 and 36 are not part of this ruling.** They are accounted for, weakly: claimed closed by earlier
+work with no code marker. They stay as the table records them.
+
+## The fix that prevents the next one
+
+The audit document goes in `docs/production-audits/automated-payroll/` **before** the first fix PR of
+a cycle, not after the last one. The folder and its templates already existed for exactly this.
+Fifty-five findings were worked through without one being used, and fourteen of them are gone
+permanently as a direct result. Cycle 2 followed the corrected order.
