@@ -7,9 +7,12 @@ import {
   parseHandoffWamids,
 } from "../src/lib/whatsapp-videos/handoff-contract.ts";
 import {
+  FTP_VIDEO_THANKS_QUIET_MS,
   FTP_VIDEO_THANKS_TEXT,
+  FTP_VIDEO_THANKS_WINDOW_MS,
+  type FtpVideoThanksMessage,
   cairoDay,
-  shouldThankFtpSender,
+  dueFtpVideoThanks,
 } from "../src/lib/whatsapp-videos/thanks-contract.ts";
 
 // The Future Talents Portal claims the WhatsApp videos through /api/integrations/ftp-videos. A claimed
@@ -85,7 +88,7 @@ export function runFtpVideoHandoffTests() {
     );
   }
 
-  // --- the thank-you: the owner's words, once per sender per Cairo day -----------------------
+  // --- the thank-you: the owner's words, once per batch, after the videos --------------------
   assert.equal(FTP_VIDEO_THANKS_TEXT, "Thanks, well received. Good luck!");
   assert.equal(cairoDay(new Date("2026-09-12T20:59:00Z")), "2026-09-12", "23:59 Cairo is still the 12th");
   assert.equal(
@@ -94,40 +97,100 @@ export function runFtpVideoHandoffTests() {
     "00:30 Cairo is the 13th even though UTC still says the 12th",
   );
 
-  assert.equal(shouldThankFtpSender({ historical: false, outcome: "captured" }), true);
-  assert.equal(shouldThankFtpSender({ historical: false, outcome: "duplicate" }), false, "a redelivery is never thanked twice");
-  assert.equal(shouldThankFtpSender({ historical: false, outcome: "failed" }), false, "a video that failed to save is not well received");
-  assert.equal(shouldThankFtpSender({ historical: true, outcome: "captured" }), false, "a history replay is not answered days late");
+  // Who is due. Owner 2026-09-13: thank an intern AFTER their videos — most type their id first, and
+  // the old first-message reply thanked them before a single video had arrived.
+  const now = new Date("2026-09-13T12:00:00Z");
+  const ago = (ms: number) => new Date(now.getTime() - ms).toISOString();
+  const minute = 60_000;
+  const msg = (waId: string, wamid: string, kind: FtpVideoThanksMessage["kind"], msAgo: number, line = "LINE-A") => ({
+    kind,
+    phoneNumberId: line,
+    receivedAt: ago(msAgo),
+    waId,
+    wamid,
+  });
+  const due = (messages: FtpVideoThanksMessage[], thanked: Record<string, string> = {}) =>
+    dueFtpVideoThanks({ lastThankedAt: new Map(Object.entries(thanked)), messages, now });
 
-  // The day is claimed by a primary key BEFORE the send, so six simultaneous videos thank once.
+  assert.equal(FTP_VIDEO_THANKS_QUIET_MS, 3 * minute);
+  assert.deepEqual(
+    due([msg("201", "id-1", "submission_id", 10 * minute), msg("201", "v-1", "video", 5 * minute), msg("201", "v-2", "video", 4 * minute)]),
+    [{ lastWamid: "v-2", phoneNumberId: "LINE-A", waId: "201" }],
+    "an id then two videos, quiet for four minutes: one thank-you, keyed on the last message",
+  );
+  assert.deepEqual(
+    due([msg("201", "id-1", "submission_id", 10 * minute), msg("201", "v-1", "video", 2 * minute)]),
+    [],
+    "still sending two minutes ago: wait",
+  );
+  assert.deepEqual(
+    due([msg("201", "id-1", "submission_id", 10 * minute)]),
+    [],
+    "an id with no video yet is not 'well received' — it waits for the videos",
+  );
+  assert.deepEqual(
+    due([msg("201", "v-1", "video", 20 * minute), msg("201", "id-1", "submission_id", 5 * minute)], { "201": ago(15 * minute) }),
+    [],
+    "an id typed after the thank-you is not a new batch of videos",
+  );
+  assert.deepEqual(
+    due([msg("201", "v-1", "video", 30 * minute), msg("201", "v-2", "video", 5 * minute)], { "201": ago(20 * minute) }),
+    [{ lastWamid: "v-2", phoneNumberId: "LINE-A", waId: "201" }],
+    "a video after the last thank-you is a new batch",
+  );
+  assert.deepEqual(
+    due([msg("201", "v-1", "video", 30 * minute)], { "201": ago(20 * minute) }),
+    [],
+    "a batch already thanked is never thanked again",
+  );
+  assert.deepEqual(
+    due([msg("201", "v-1", "video", FTP_VIDEO_THANKS_WINDOW_MS + minute)]),
+    [],
+    "outside WhatsApp's reply window: no send",
+  );
+  assert.deepEqual(
+    due([msg("201", "v-1", "video", 9 * minute, "LINE-A"), msg("201", "v-2", "video", 8 * minute, "LINE-B")]),
+    [{ lastWamid: "v-2", phoneNumberId: "LINE-B", waId: "201" }],
+    "the reply goes from the line the last message arrived on",
+  );
+  assert.deepEqual(
+    due([msg("202", "v-9", "video", 6 * minute), msg("201", "v-1", "video", 6 * minute)]).map((item) => item.waId),
+    ["201", "202"],
+    "each sender is answered on their own",
+  );
+
+  // The batch is claimed by a primary key BEFORE the send, so two overlapping ticks thank once.
   const migration = readFileSync(
-    new URL("../supabase/migrations/20260912230000_whatsapp_ftp_video_thanks.sql", import.meta.url),
+    new URL("../supabase/migrations/20260913000000_whatsapp_ftp_video_thanks_batch.sql", import.meta.url),
     "utf8",
   );
-  assert.match(migration, /primary key \(wa_id, cairo_day\)/, "once-per-day is enforced by the table, not by a read");
+  assert.match(migration, /primary key \(wa_id, triggered_by_wamid\)/, "once-per-batch is enforced by the table, not by a read");
+  assert.match(migration, /revoke all on table public\.whatsapp_ftp_video_thanks_batch from anon, authenticated;/);
   const thanks = readFileSync(new URL("../src/lib/whatsapp-videos/thanks.ts", import.meta.url), "utf8");
   const claimAt = thanks.indexOf(".insert(");
   const sendAt = thanks.indexOf("sendWhatsAppText({");
-  assert.ok(claimAt > 0 && sendAt > 0 && claimAt < sendAt, "the day must be claimed before the message is sent");
+  assert.ok(claimAt > 0 && sendAt > 0 && claimAt < sendAt, "the batch must be claimed before the message is sent");
+  assert.match(thanks, /phoneNumberId: item\.phoneNumberId,/, "the send must use the line the message arrived on");
+  assert.equal(
+    (thanks.match(/\.eq\("historical", false\)/g) ?? []).length,
+    2,
+    "a history replay is never answered — neither a replayed video nor a replayed id",
+  );
+  assert.match(
+    thanks,
+    /\.from\("ats_whatsapp_outbound_messages"\)[\s\S]*?\.eq\("event", FTP_VIDEO_THANKS_EVENT\)/,
+    "every thank-you already sent counts as 'last thanked', the one-off manual send included",
+  );
 
-  // The thank-you goes FROM the line the intern wrote to. With two lines on one webhook, replying
-  // from the other one opens a conversation with the company's second number that they never started.
-  assert.match(thanks, /phoneNumberId: input\.phoneNumberId,/, "the send must use the line the message arrived on");
-  const thankArgs = webhook.match(/thankFtpVideoSender\(\{[^}]*\}\)/g) ?? [];
-  assert.equal(thankArgs.length, 2);
-  for (const call of thankArgs) {
-    assert.match(call, /phoneNumberId: message\.deliveredToPhoneNumberId/, "the webhook must pass the receiving line");
-  }
-
-  // Both captures thank, each only through the gate.
-  const thankCalls = webhook.match(/shouldThankFtpSender\(/g) ?? [];
-  assert.equal(thankCalls.length, 2, "a new video and a new submission id both thank, through shouldThankFtpSender");
-  const idThank = webhook.indexOf("shouldThankFtpSender(", capture);
-  assert.ok(idThank < webhook.indexOf("handleClassifyText({"), "the id thank-you belongs to the id block");
-  const videoCapture = webhook.indexOf("captureInboundVideo({");
-  const videoThank = webhook.indexOf("shouldThankFtpSender(", videoCapture);
+  // The webhook no longer answers: a reply there is exactly the before-the-videos thank-you this replaced.
+  const webhookCode = webhook.replace(/\/\/.*$/gm, "");
+  assert.doesNotMatch(webhookCode, /thankFtpVideoSender|thankDueFtpVideoSenders|FTP_VIDEO_THANKS/, "the webhook must not send the thank-you");
+  const cron = readFileSync(new URL("../app/api/cron/inbound-intake/route.ts", import.meta.url), "utf8");
+  const cronFetch = cron.indexOf("await fetchPendingInboundVideos()");
+  const cronThanks = cron.indexOf("await thankDueFtpVideoSenders()");
+  assert.ok(cronFetch > 0 && cronThanks > cronFetch, "the cron thanks after it has fetched the videos");
   assert.ok(
-    videoCapture > 0 && videoThank > videoCapture && videoThank < webhook.indexOf("handleTextOnlyMessage({"),
-    "the video thank-you belongs to the video block",
+    cronThanks > cron.indexOf("withDeadMansSwitch("),
+    "the thank-you runs outside the CV queue's dead man's switch, so it can never mark that job unhealthy",
   );
 }
