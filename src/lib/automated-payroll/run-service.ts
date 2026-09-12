@@ -197,6 +197,12 @@ export type RunView = {
   run: MonthlySalaryRun;
   stepStates: StepState[];
   draftRows: DraftRow[];
+  /**
+   * Who is excluded from this run, BY NAME (audit finding 54). A draft row carries only the HR
+   * code, so the panel listing exclusions printed `B-7` at the person it was asking HR to decide
+   * about — against the standing rule that a screen shows names, never codes.
+   */
+  excludedPeople: Array<{ hrId: string; fullName: string; reason: string | null }>;
 };
 
 function nowIso(): string {
@@ -378,7 +384,20 @@ export async function getRunView(access: AccessContext, runId: string): Promise<
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   const [stepStates, draftRows] = await Promise.all([listStepStates(runId), listDraftRows(runId)]);
-  return { run, stepStates, draftRows };
+  const excluded = draftRows.filter((row) => row.excluded);
+  const names = excluded.length > 0 ? await employeeNamesByCompactKey() : new Map<string, string>();
+  return {
+    run,
+    stepStates,
+    draftRows,
+    excludedPeople: excluded.map((row) => ({
+      hrId: row.employeeHrId,
+      // The code is the fallback, never the label: a person missing from `employees` still has to
+      // be identifiable on screen rather than vanishing behind an empty name.
+      fullName: names.get(compactHrKey(row.employeeHrId)) || row.employeeHrId,
+      reason: row.excludedReason ?? null,
+    })),
+  };
 }
 
 /** The active/most-recent run for a period (or null), for the page loader. */
@@ -1378,17 +1397,25 @@ async function previousMonthRoster(period: PayrollPeriod): Promise<PreviousRoste
 }
 
 /** A run's held HR ids from its draft rows, named from the employee directory (compact-keyed: HR ids are mixed case). */
-async function heldPeopleFromDrafts(runId: string): Promise<Array<{ hrId: string; fullName: string }>> {
-  const hrIds = await heldDraftHrIds(runId);
-  if (hrIds.length === 0) return [];
+/**
+ * Every employee's name, keyed the one way HR ids compare safely here — lower-cased with the
+ * punctuation stripped, because the ids are stored in mixed case and a raw `.eq` under-returns.
+ */
+async function employeeNamesByCompactKey(): Promise<Map<string, string>> {
   const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,full_name");
   if (error) throw error;
-  const names = new Map(
+  return new Map(
     ((data ?? []) as Array<{ hr_id: string | null; full_name: string | null }>).map((row) => [
       compactHrKey(row.hr_id ?? ""),
       row.full_name ?? "",
     ]),
   );
+}
+
+async function heldPeopleFromDrafts(runId: string): Promise<Array<{ hrId: string; fullName: string }>> {
+  const hrIds = await heldDraftHrIds(runId);
+  if (hrIds.length === 0) return [];
+  const names = await employeeNamesByCompactKey();
   return hrIds.map((hrId) => ({ hrId, fullName: names.get(compactHrKey(hrId)) || hrId }));
 }
 

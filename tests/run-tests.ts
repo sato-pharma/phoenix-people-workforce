@@ -1136,6 +1136,7 @@ import { runAutomatedPayrollHeldInReportsTests } from "./automated-payroll-held-
 import { runAutomatedPayrollReadsDeductionsModuleTests } from "./automated-payroll-reads-deductions-module.test.ts";
 import { runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests } from "./automated-payroll-manual-expenses-and-part2-non-employees.test.ts";
 import { runAutomatedPayrollRecurringNonEmployeesTests } from "./automated-payroll-recurring-non-employees.test.ts";
+import { runPayrollSilentScreensTests } from "./payroll-silent-screens.test.ts";
 import { runFieldWorkforceThursdayHalfDayTests } from "./field-workforce-thursday-half-day.test.ts";
 import { runDeductionsModuleNoRecordsScopeTests } from "./deductions-module-no-records-scope.test.ts";
 import { runOutstationApprovedAmountTests } from "./outstation-approved-amount.test.ts";
@@ -5284,6 +5285,11 @@ await runTest(
 await runTest(
   "a WhatsApp applicant's pending-classification and pending-extra-answers backfills only ever apply a session whose completed_at is set, never a snapshot of one still mid-conversation",
   runWhatsAppPendingBackfillCompletedOnlyTests,
+);
+
+await runTest(
+  "five payroll screens that said nothing: Apply changes commits the workbook it previewed, a saved approval that never reached payroll says so, the finance cover names the held people, the excluded panel shows names not codes, and a lower-case HR id still finds its payslips",
+  runPayrollSilentScreensTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
