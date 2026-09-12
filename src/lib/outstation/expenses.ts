@@ -29,6 +29,7 @@ import {
   type ExpenseDecisionWrite,
   type StoredExpenseDecision,
 } from "@/lib/outstation/approval-state";
+import { describeImportedHistoryRefusal, planImportedHistoryWrites } from "@/lib/outstation/imported-history";
 import { assertOutstationExpenseWorkflowTransition } from "@/lib/outstation/workflow";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -1076,6 +1077,31 @@ export async function savePayrollExpenseApprovals(input: {
   );
   const before = existingRows.map(toExpenseDecisionSnapshot);
 
+  // IMPORTED HISTORY IS VALUES ONLY — owner ruling 2026-09-12, see imported-history.ts. Enforced
+  // here as well as on the screen, so the rule does not rest on a hidden button. A trip dated before
+  // July 2026 whose decision this save would CHANGE is refused before anything is written; one that is
+  // merely carried along in its report's record set keeps its stored decision exactly, instead of
+  // being re-stamped with today's approver. The workflow's own re-push already preserves, so it is
+  // left out of the check.
+  const importedHistory = planImportedHistoryWrites({
+    records: input.records
+      .filter((record) => !record.preserveExistingDecision)
+      .map((record) => ({
+        approvedAmount: record.approvedAmount,
+        date: record.date,
+        hrApproved: record.hrApproved,
+        hrComment: record.hrComment,
+        specialist: record.specialist,
+        status: record.status,
+        total: record.total,
+        tripId: String(record.tripId ?? ""),
+      })),
+    storedByTripId,
+  });
+  if (importedHistory.refused.length > 0) {
+    throw new Error(describeImportedHistoryRefusal(importedHistory.refused));
+  }
+
   // Index-aligned with input.records, so the payload below cannot miss one.
   const decisions: ExpenseDecisionWrite[] = input.records.map((record) =>
     resolveExpenseDecisionWrite({
@@ -1089,7 +1115,8 @@ export async function savePayrollExpenseApprovals(input: {
         status: record.status,
       },
       now,
-      preserveExistingDecision: record.preserveExistingDecision,
+      preserveExistingDecision:
+        record.preserveExistingDecision || importedHistory.preserveTripIds.has(String(record.tripId ?? "")),
       stored: storedByTripId.get(String(record.tripId ?? "")) ?? null,
     }),
   );

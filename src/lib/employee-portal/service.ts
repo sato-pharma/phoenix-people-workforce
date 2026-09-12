@@ -61,6 +61,8 @@ import {
   buildPayrollExpenseDsmSummaries,
   summarizePayrollExpenses,
 } from "@/lib/outstation/expense-metrics";
+import { expenseApprovalState } from "@/lib/outstation/approval-state";
+import { isImportedHistoryTrip } from "@/lib/outstation/imported-history";
 import { roundCurrency } from "@/lib/payroll/money";
 import {
   dedupeHistoricalExpensesByTrip,
@@ -3431,7 +3433,14 @@ export async function getMedicalRepPortalData(
         employee,
       })
     : emptyPortalVacancySummary();
-  const pendingApprovalCount = expenses.filter((expense) => !expense.hrApproved).length;
+  // "Expense actions pending" counts only what still waits for a DECISION. `!hrApproved` also swept
+  // in every REJECTED trip, and imported history (trips before July 2026) is values only — owner
+  // ruling 2026-09-12, see imported-history.ts — so neither may raise the action.
+  const pendingApprovalCount = expenses.filter(
+    (expense) =>
+      expenseApprovalState({ hrApproved: expense.hrApproved, status: expense.status }) === "pending" &&
+      !isImportedHistoryTrip(expense.date),
+  ).length;
   const overview = includePortalOverview
     ? await buildEmployeePortalOverviewData({
         access,
