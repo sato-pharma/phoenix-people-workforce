@@ -904,6 +904,28 @@ export const accessRegistry = [
   // silently hand out the ability to message applicants.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/candidates/*/whatsapp-reply", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/candidates/**", permission: { resource: "candidates", action: "read" }, csrfRequired: true }),
+  // The recruiter's OWN folder tree — folders and subfolders built by hand, and the CVs pushed into
+  // them (owner request 2026-09-12). Gated on `candidates` rather than `recruitment` because of what
+  // filing a CV DOES: a candidate sitting in any of these folders is hidden from the pool every
+  // recruiter works from, which is the same authority as the four derived shelves already on
+  // /api/recruitment/candidates/**. `candidates:update` is hard-boundary-locked to Super Admin and
+  // Talent Acquisition, so a hiring-manager-type role cannot reach a shared folder even through an
+  // override — deliberately, since this tree is one shared arrangement for the whole team rather
+  // than a per-manager shelf.
+  //
+  // Four CONCRETE entries and no wildcard, so the inventory says exactly what each method requires:
+  // reading the tree is `read`, and every write — create, rename, re-parent, delete, file, take out,
+  // return to pool — is `update`. A single `/cv-folders/**` blanket would have been shorter and
+  // would have reported the GET as an update, which is the false-comfort direction this registry
+  // exists to prevent.
+  sessionApi({ methods: ["GET"], pattern: "/api/recruitment/cv-folders", permission: { resource: "candidates", action: "read" } }),
+  sessionApi({ methods: ["POST"], pattern: "/api/recruitment/cv-folders", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
+  sessionApi({ methods: ["PATCH", "DELETE"], pattern: "/api/recruitment/cv-folders/:id", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
+  sessionApi({ methods: ["POST", "DELETE"], pattern: "/api/recruitment/cv-folders/:id/items", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
+  // Listed after the `:id` entry it would otherwise be swallowed by — the matcher prefers the longer
+  // pattern, so this concrete one wins over `:id` for this route whatever the order, but keeping it
+  // adjacent is what stops the next reader from assuming `return-to-pool` is a folder id.
+  sessionApi({ methods: ["POST"], pattern: "/api/recruitment/cv-folders/return-to-pool", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/interviews/**", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: allMethods, pattern: "/api/recruitment/files/**", permission: { resource: "candidates", action: "read" }, csrfRequired: true }),
   // Deliberately gated on the narrow `hiring_interviews` resource, not `recruitment`/

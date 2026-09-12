@@ -24,6 +24,7 @@ import { FolderInput, FolderOpen, IdCard, Undo2 } from "lucide-react";
 import { BackgroundReviewPanel } from "@/components/recruitment/background-review-panel";
 import { Button } from "@/components/ui/button";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
+import { CvFolderCabinet, type CvFolderCabinetData } from "@/components/recruitment/cv-folder-cabinet";
 import { deleteRequest, getJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
@@ -62,13 +63,26 @@ function cairoDateTime(iso: string | null | undefined): string {
 
 export function CandidateFoldersTab({
   areaOptions,
+  canFileCandidates,
   candidates,
+  cvFolderCabinet,
   onOpenCandidate,
 }: {
   /** The live areas — passed straight to the declared-filings preview, which must not suggest a
    * medical-rep folder for a typed area that is not one of these. See DeclaredFilingsPanel. */
   areaOptions: CandidateFolderAreaOption[];
+  /** `candidates: update`. Without it the hand-built tree is readable and every button is absent. */
+  canFileCandidates: boolean;
   candidates: Candidate[];
+  /**
+   * The folders a recruiter built by hand, which sit ABOVE the four automatic shelves.
+   *
+   * One tab, two mechanisms, in the order the owner asked for them on 2026-09-12: his own folders
+   * first, because they are the ones he maintains, and the derived shelves under them. Splitting
+   * them across two tabs would mean two answers to "where is that CV filed?", which is the question
+   * this whole screen exists to answer once.
+   */
+  cvFolderCabinet: CvFolderCabinetData;
   /**
    * Open one filed candidate's full PROFILE — which means leaving this screen, because the panel
    * renders in the pool tab. Reached from the row's Profile button and from the background-review
@@ -122,6 +136,15 @@ export function CandidateFoldersTab({
           {error}
         </p>
       ) : null}
+
+      {/* The recruiter's OWN folders, first — the only ones on this screen anybody has to maintain,
+          and the only ones that nest. Everything below is derived and cannot be created. */}
+      <CvFolderCabinet
+        cabinet={cvFolderCabinet}
+        canManage={canFileCandidates}
+        candidates={candidates}
+        onOpenCandidate={onOpenCandidate}
+      />
 
       {/* ── THE ARCHIVE, AND THE WAY BACK OUT ────────────────────────────────────────────────────
           Records archived as duplicates from the screening queue. It is listed rather than hidden
