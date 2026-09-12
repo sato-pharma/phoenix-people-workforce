@@ -577,9 +577,19 @@ function FolderChip({
     <button
       aria-expanded={isOpen}
       className={cn(
-        // whitespace-nowrap, never a truncate: the owner's standing rule is that text is never cut
-        // and never wrapped, and "Dokki - Mohandseen - Bolak" is a real 26-character area name.
-        "inline-flex items-center gap-2 whitespace-nowrap rounded-md border px-3 py-1.5 text-xs font-semibold transition",
+        // Never a truncate — the owner's standing rule is that text is never cut — but the label now
+        // WRAPS, because the no-horizontal-scroll rule outranks the no-wrap habit and this chip has
+        // outgrown the 26-character area name the old comment was written for. "Other positions"
+        // mints one folder per declared JOB TITLE, which is free text a candidate types, so the
+        // label has no length bound at all. Measured on production at 375px on 2026-09-12: the
+        // "Technical Support and infrastructure Engineer" chip is 311px inside a 349px row — about
+        // five characters from painting off the side of the phone, and the next longer job title
+        // somebody types takes it there with no code change at all.
+        //
+        // `max-w-full` so the chip can never exceed its row whatever the label; the COUNT below
+        // keeps its own `whitespace-nowrap` so the number never splits away from the folder it
+        // belongs to. `text-left` because a wrapped label reads ragged-right, not centred.
+        "inline-flex max-w-full items-center gap-2 rounded-md border px-3 py-1.5 text-left text-xs font-semibold transition",
         isOpen
           ? "border-phx-accent bg-orange-50 text-phx-accent-press"
           : "border-phx-line bg-white text-slate-700 hover:bg-slate-50",
@@ -590,7 +600,7 @@ function FolderChip({
     >
       <FolderOpen aria-hidden className="h-3.5 w-3.5 shrink-0" />
       {folder.label}
-      <span className="tabular-nums opacity-70">{folder.candidates.length}</span>
+      <span className="whitespace-nowrap tabular-nums opacity-70">{folder.candidates.length}</span>
     </button>
   );
 }
