@@ -1599,6 +1599,7 @@ import { runDataBackupWorkbookTests } from "./data-backup-workbook.test.ts";
 import { runBackgroundFolderFilingGateTests } from "./background-folder-filing-gate.test.ts";
 import { runPhoenixOfficialLogoTests } from "./phoenix-official-logo.test.ts";
 import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending-backfill-completed-only.test.ts";
+import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowrap-lock.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5328,6 +5329,11 @@ await runTest(
 await runTest(
   "a payroll warning can only be acknowledged by the person it was shown to, for the run and gate it was raised on, while it still says the same thing — a yes on the first request answers nothing",
   runPayrollAcknowledgmentTokenTests,
+);
+
+await runTest(
+  "recruitment Folders tab: no `whitespace-nowrap` on prose, and the inventory is pinned (the fits-the-screen golden rule)",
+  runRecruitmentFoldersNowrapLockTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
