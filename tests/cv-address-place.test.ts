@@ -6,6 +6,7 @@ import {
   addressNamesArea,
   areaGovernedByCv,
   areaGovernorate,
+  areaGovernorateOverrides,
   areaGovernorates,
   areaNamedByCv,
   areaTokens,
@@ -13,6 +14,7 @@ import {
   neighbourhoodMatchStrength,
   normalizePlaceText,
 } from "../src/lib/recruitment/cv-address-place.ts";
+import { placeAliases } from "../src/lib/geo/egypt-locations.ts";
 
 /**
  * The shared answer to "which area does this CV's own text name".
@@ -220,5 +222,62 @@ export function runCvAddressPlaceTests(): void {
     const spent = Date.now() - started;
     assert.ok(spent < 1000,
       `scoring 9,000 address-by-seat pairs must stay under a second; took ${spent}ms — the place answers are no longer being remembered`);
+  }
+
+  // ── DOWN TOWN SITS IN CAIRO, BY THE OWNER'S RULING ─────────────────────────────
+  //
+  // Area `CA5` is named "Down town" and filed under the GIZA sales region, and it was the ONLY one
+  // of the 40 live area names that resolved to no governorate at all — every other name carries its
+  // governorate inside it. Asked directly, the owner ruled on 2026-09-12: "downtown move top cairo
+  // yes". He ruled in the same breath that Behira needs NOTHING, which is pinned below.
+  //
+  // WHY THIS MATTERS BEYOND A TIDY LOOKUP. position-suggestion.ts exempts a last-remaining seat from
+  // the address check when its area has no governorate — an exemption meant for seats that are not
+  // anywhere a person lives. "Down town" was falling through it, so the one downtown seat could be
+  // pre-filled for somebody whose address agreed with nothing at all.
+  {
+    assert.equal(areaGovernorate("Down town"), "Cairo", "Down town sits in Cairo — the owner's ruling, 2026-09-12");
+    assert.deepEqual(areaGovernorates("Down town"), ["Cairo"], "and it names exactly one governorate");
+
+    // THE SAME LABEL the rest of the map uses, not a second spelling of Cairo. An override whose
+    // value did not match the vocabulary would resolve to a governorate nothing else can join on.
+    assert.equal(areaGovernorate("Nasr City"), "Cairo", "the label must be the one Cairo's other areas carry");
+
+    // Keyed by the EXACT production name: a rename in au.canonical_areas silently drops the override
+    // and returns Down town to resolving nothing, which is what this line is here to catch.
+    assert.ok(
+      Object.keys(areaGovernorateOverrides).includes("Down town"),
+      "the override is keyed by the exact area name in production",
+    );
+
+    // AN AREA OVERRIDE, NOT AN ALIAS. The address gazetteer already answers Cairo for the ONE-WORD
+    // "downtown" and for "وسط البلد" — it always has, and this change adds nothing to it. What must
+    // not happen is the ruling being re-implemented by pasting the SPACED area name into Cairo's
+    // alias list, which would hand an address gazetteer the power to decide where an area sits.
+    //
+    // THIS CHECKS THE VOCABULARY, NOT THE ANSWER, on purpose. Asserting `governorateNamedBy("down
+    // town") === null` would pass today for a second and unrelated reason: the squashed comparison
+    // in that walk only fires when the ALIAS carries the space, so a spaced ADDRESS never reaches a
+    // space-free alias. That is a real gap, it predates this change (the same guard is in the
+    // pre-2026-09-12 version), and the owner has not been asked about it — so nothing here should
+    // freeze it in place. Read the alias list itself instead.
+    const cairoAliases = placeAliases.find((entry) => entry.label === "Cairo")?.aliases ?? [];
+    assert.ok(cairoAliases.length > 0, "Cairo must still be in the place vocabulary at all");
+    assert.deepEqual(
+      cairoAliases.filter((alias) => normalizePlaceText(alias) === "down town"),
+      [],
+      "the spaced area name must stay out of Cairo's alias list — the ruling moved the AREA, not the words",
+    );
+
+    // AND BEHIRA IS UNTOUCHED. Both halves already resolved correctly through the `behira` alias;
+    // the owner confirmed twice that there is nothing to fix there. A session that reads the
+    // override map as an invitation to "finish the job" should fail here.
+    assert.equal(areaGovernorate("Behira 1"), "Beheira", "Behira 1 already resolved — leave it alone");
+    assert.equal(areaGovernorate("Behira 2"), "Beheira", "Behira 2 already resolved — leave it alone");
+    assert.deepEqual(
+      Object.keys(areaGovernorateOverrides).filter((name) => name.toLowerCase().startsWith("behira")),
+      [],
+      "no Behira area may be given an override — the owner ruled the spelling correct, 2026-09-12",
+    );
   }
 }

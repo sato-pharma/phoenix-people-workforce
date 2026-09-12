@@ -246,6 +246,40 @@ export function addressNamesArea(haystack: string, areaName: string | null): boo
 }
 
 /**
+ * Areas whose own NAME holds no place this vocabulary knows, and the governorate the owner has ruled
+ * each one sits in.
+ *
+ * ONE ENTRY, AND IT IS A RULING RATHER THAN A LOOKUP. "Down town" is area `CA5` — a real Cairo
+ * district with one seat, filed under the GIZA sales region. Every other one of the 40 live area
+ * names carries a governorate inside it ("Behira 1" -> Beheira, "Sohag1" -> Sohag); this one is
+ * named after a neighbourhood and resolved to nothing at all.
+ *
+ * WHAT THAT COST, and why it is worth a map of its own. `position-suggestion.ts` exempts a
+ * last-remaining seat from the address check when its area has no governorate — an exemption
+ * written for seats that are not somewhere a person LIVES, like head office or the whole country.
+ * `Down town` was falling through it, so the one downtown seat could be pre-filled for a candidate
+ * whose address agreed with nothing. Giving it a governorate puts it back under the same rule as
+ * every other real area.
+ *
+ * AN AREA OVERRIDE, DELIBERATELY NOT AN ALIAS — and the gazetteer is not the reason. Cairo's alias
+ * list in egypt-locations.ts already carries "downtown" and "وسط البلد", so an ADDRESS saying
+ * downtown has always answered Cairo. What never matched is the AREA NAME: the area walk splits
+ * "Down town" on its space and neither half names a place. The reason not to close that by pasting
+ * "down town" into the alias list is that an area's governorate would then be decided by an address
+ * gazetteer edited for unrelated reasons — a territory fact quietly following geography, which is
+ * the one thing this repo's rules forbid. Named here, the ruling is explicit, dated and
+ * attributable. Sales, the closing and `au.canonical_areas` are untouched — the same shape, and the
+ * same reasoning, as `recruitmentAreaRegionOverrides` in candidate-region.ts.
+ *
+ * Owner, 2026-09-12, asked rather than inferred: "downtown move top cairo yes". Keyed by the
+ * EXACT area name in production, so a rename there drops the override — which the registered test
+ * pins against.
+ */
+export const areaGovernorateOverrides: Record<string, string> = {
+  "Down town": "Cairo",
+};
+
+/**
  * EVERY governorate an area's own name mentions, in the order the name mentions them.
  *
  * Usually one, and then this is `areaGovernorate` with the answer in a list. It exists for the
@@ -259,6 +293,11 @@ export function areaGovernorates(areaName: string | null): string[] {
 }
 
 const governoratesOfArea = memoizeByText((areaName: string): readonly string[] => {
+  // The ruling first: an area named in the map above does not get to be re-derived from its own
+  // letters, because the whole reason it is there is that its letters say nothing.
+  const ruled = areaGovernorateOverrides[areaName.trim()];
+  if (ruled) return [ruled];
+
   const found: string[] = [];
   for (const token of tokensOfArea(areaName)) {
     if (NON_PLACE_TOKENS.has(token)) continue;
