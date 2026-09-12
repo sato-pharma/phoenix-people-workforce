@@ -22,6 +22,8 @@ import {
 import { verifyWhatsAppWebhookHandshake, verifyWhatsAppWebhookSignature } from "@/lib/recruitment/inbound/whatsapp-webhook-events";
 import { extractFtpSubmissionIds } from "@/lib/whatsapp-videos/handoff-contract";
 import { captureInboundSubmissionId, captureInboundVideo } from "@/lib/whatsapp-videos/inbox";
+import { thankFtpVideoSender } from "@/lib/whatsapp-videos/thanks";
+import { shouldThankFtpSender } from "@/lib/whatsapp-videos/thanks-contract";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -141,7 +143,8 @@ export async function POST(request: Request) {
 
       // A FUTURE TALENTS SUBMISSION ID ("FTP-12345678"), which interns type next to their closing
       // videos. Kept for the FTP Portal, which uses it to tell whose videos a chat holds, and then
-      // dropped from this pipeline: no classification, no buffer, no reply, no notification.
+      // dropped from this pipeline: no classification, no buffer, no notification. The only reply is
+      // the owner's thank-you (2026-09-12), once per sender per Cairo day — see whatsapp-videos/thanks.
       //
       // 🔴 IT MUST BE HANDLED BEFORE handleClassifyText, THE BUFFER AND THE TEXT-ONLY BRANCH. Without
       // it the id is a text from a sender with no CV on file, so the intern is answered "please send
@@ -163,6 +166,14 @@ export async function POST(request: Request) {
             wamid: message.wamid,
           });
           outcomes.push({ outcome: `submission_id_${captured.outcome}`, wamid: message.wamid });
+          if (shouldThankFtpSender({ historical: message.historical, outcome: captured.outcome })) {
+            const thanked = await thankFtpVideoSender({
+              phoneNumberId: message.deliveredToPhoneNumberId,
+              wamid: message.wamid,
+              waId: message.from,
+            });
+            outcomes.push({ outcome: `ftp_thanks_${thanked}`, wamid: message.wamid });
+          }
           continue;
         }
       }
@@ -234,7 +245,7 @@ export async function POST(request: Request) {
       }
 
       // A VIDEO. Captured into its own holding table and then dropped from this pipeline entirely —
-      // no queue row, no candidate, no reply, no notification.
+      // no queue row, no candidate, no notification. Its one reply is the owner's thank-you, below.
       //
       // 🔴 IT MUST BE HANDLED BEFORE THE TEXT-ONLY BRANCH BELOW, and the ordering is the whole
       // point of this block rather than a style preference. A video carries no `document`, so
@@ -262,6 +273,16 @@ export async function POST(request: Request) {
           wamid: message.wamid,
         });
         outcomes.push({ outcome: `video_${captured.outcome}`, wamid: message.wamid });
+        // The owner's thank-you (2026-09-12) — the one reply on this path, once per sender per Cairo
+        // day however many videos arrive, and never for a redelivery or a history replay.
+        if (shouldThankFtpSender({ historical: message.historical, outcome: captured.outcome })) {
+          const thanked = await thankFtpVideoSender({
+            phoneNumberId: message.deliveredToPhoneNumberId,
+            wamid: message.wamid,
+            waId: message.from,
+          });
+          outcomes.push({ outcome: `ftp_thanks_${thanked}`, wamid: message.wamid });
+        }
         continue;
       }
 
