@@ -15,7 +15,7 @@
 // to keep true.
 
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback } from "react";
+import { useCallback, useOptimistic, useTransition } from "react";
 import { Loader2, X } from "lucide-react";
 
 import { CandidateScreeningSession } from "@/components/recruitment/candidate-screening-session";
@@ -35,6 +35,7 @@ import {
   screeningHref,
   screeningReceivedFilterLabels,
   screeningReceivedFilters,
+  mergeNarrowing,
   screeningShellPoolHref,
   type ScreeningHrefOptions,
   type ScreeningNotifiedFilter,
@@ -152,30 +153,45 @@ export function ScreeningPageClient({
   // thing you rebuild every morning. Landing here directly (the HR job workbook sends people
   // straight to /recruitment/screening, no filter) used to mean the only way to narrow the queue
   // was going back to the pool, filtering there, and pressing "Screen" again.
+  // ── THE SAME ROUND TRIP, AND THE SAME BUG ─────────────────────────────────────────
+  // This screen draws the same bar as the workstation and pushes the same URLs, so it had the same
+  // defect for the same reason: a `<select>` controlled by the server’s last answer, and an answer
+  // that takes seconds. See the long note in workstation-page-client.tsx. The types caught that this
+  // second caller existed — a reminder that the bar has two homes and a fix to one is half a fix.
+  const shownNarrowing = { area, notified, received, region, role, seen, source, status };
+  const [shown, showImmediately] = useOptimistic(
+    shownNarrowing,
+    (current, picked: ScreeningHrefOptions) => mergeNarrowing(current, picked),
+  );
+  const [pending, startTransition] = useTransition();
+
   const goTo = useCallback(
     (next: ScreeningHrefOptions) => {
-      router.push(
-        screeningHref(shellPoolHref, {
-          area: next.area !== undefined ? next.area : area,
-          notified: next.notified !== undefined ? next.notified : notified,
-          received: next.received !== undefined ? next.received : received,
-          region: next.region !== undefined ? next.region : region,
-          role: next.role !== undefined ? next.role : role,
-          seen: next.seen !== undefined ? next.seen : seen,
-          source: next.source !== undefined ? next.source : source,
-          status: next.status !== undefined ? next.status : status,
-        }),
-      );
+      const href = screeningHref(shellPoolHref, {
+        area: next.area !== undefined ? next.area : area,
+        notified: next.notified !== undefined ? next.notified : notified,
+        received: next.received !== undefined ? next.received : received,
+        region: next.region !== undefined ? next.region : region,
+        role: next.role !== undefined ? next.role : role,
+        seen: next.seen !== undefined ? next.seen : seen,
+        source: next.source !== undefined ? next.source : source,
+        status: next.status !== undefined ? next.status : status,
+      });
+      // One transition around both, or React drops the optimistic value on the next render.
+      startTransition(() => {
+        showImmediately(next);
+        router.push(href);
+      });
     },
-    [area, notified, received, region, role, router, seen, shellPoolHref, source, status],
+    [area, notified, received, region, role, router, seen, shellPoolHref, showImmediately, source, status],
   );
 
   return (
     <ScreeningPageFrame>
       <ScreeningFilterBar
-        area={area}
+        area={shown.area}
         areaOptions={areaOptions}
-        notified={notified}
+        notified={shown.notified}
         onChange={goTo}
         onClear={() =>
           goTo({
@@ -189,14 +205,15 @@ export function ScreeningPageClient({
             status: null,
           })
         }
+        pending={pending}
         queueCount={candidates.length}
-        received={received}
-        region={region}
-        role={role}
-        seen={seen}
-        source={source}
+        received={shown.received}
+        region={shown.region}
+        role={shown.role}
+        seen={shown.seen}
+        source={shown.source}
         sourceOptions={sourceOptions}
-        status={status}
+        status={shown.status}
         totalCount={totalCount}
       />
       <CandidateScreeningSession

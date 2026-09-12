@@ -71,6 +71,7 @@ import {
   WorkHeader,
 } from "@/components/recruitment/workstation/workstation-look";
 import {
+  mergeNarrowing,
   screeningHref,
   screeningShellPoolHref,
   type ScreeningHrefOptions,
@@ -233,7 +234,7 @@ export function WorkstationPageClient({
   const serverNarrowing = { area, notified, received, region, role, seen, source, status, vacancy };
   const [shown, showImmediately] = useOptimistic(
     serverNarrowing,
-    (current, picked: ScreeningHrefOptions) => ({ ...current, ...definedOnly(picked) }),
+    (current, picked: ScreeningHrefOptions) => mergeNarrowing(current, picked),
   );
   // The list is fetched by the ROUTER, so `pending` is the only honest signal that it is on its way.
   const [pending, startTransition] = useTransition();
@@ -540,16 +541,6 @@ function cairoDay(iso: string): string {
  * Per browser and not per account on purpose: it is a view preference of the kind that should not
  * follow a person onto a shared machine, and it is worth no round trip to the server.
  */
-/**
- * The keys a caller actually SET, dropped of the ones it left out.
- *
- * `ScreeningHrefOptions` uses `undefined` to mean "leave this one alone", so spreading it raw over
- * the current narrowing would blank every filter the caller did not mention.
- */
-function definedOnly(picked: ScreeningHrefOptions): Partial<ScreeningHrefOptions> {
-  return Object.fromEntries(Object.entries(picked).filter(([, value]) => value !== undefined));
-}
-
 const FILTERS_OPEN_KEY = "phoenix.screening.filters-open";
 const FILTERS_OPEN_EVENT = "phoenix.screening.filters-open.change";
 
