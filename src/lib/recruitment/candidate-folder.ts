@@ -247,6 +247,34 @@ export function resolveCanonicalMedicalRepArea(
 }
 
 /**
+ * The region code a District Manager folder is keyed on, or the sentence saying why there isn't one.
+ *
+ * The region shelf is the one shelf whose vocabulary is CLOSED and lives in this repository —
+ * `candidateRegionCodes`, eight codes, no database read — so unlike the area shelf there is nothing
+ * to look up and nothing to be uncertain about. That is exactly why it was the easiest one to leave
+ * unguarded: `fileCandidateToFolder` stored whatever key arrived, and a stale tab, a typo in a
+ * hand-made request, or a future caller passing a region NAME ("Delta (3)") instead of its code
+ * would have opened a folder `candidateFolderLabel` cannot name and `districtManagerFolderOptions`
+ * never lists. The CV would be filed, off the pool screen, and in a folder nobody opens.
+ *
+ * Returns the CANONICAL upper-case code, never the caller's casing, so "ue" and "UE" land in one
+ * folder — the same property `resolveCanonicalMedicalRepArea` holds for an area's spelling.
+ */
+export function resolveCandidateRegionFolderCode(
+  raw: string | null | undefined,
+): { code: CandidateRegionCode; refusal: null } | { code: null; refusal: string } {
+  const cleaned = cleanFolderKey(raw);
+  if (!cleaned) return { code: null, refusal: "No region was given." };
+  const upper = cleaned.toUpperCase();
+  const match = candidateRegionCodes.find((code) => code === upper);
+  if (match) return { code: match, refusal: null };
+  return {
+    code: null,
+    refusal: `"${cleaned}" is not one of this system's regions — file this CV manually once the region is confirmed.`,
+  };
+}
+
+/**
  * The folder as a person reads it.
  *
  * The region shelf is the only one that translates: it stores "D3" and shows "Delta (3)", because

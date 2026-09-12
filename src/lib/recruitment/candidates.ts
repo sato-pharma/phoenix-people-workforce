@@ -19,6 +19,7 @@ import {
   isStorableFolderKind,
   cleanFolderKey,
   PARAMEDICAL_FOLDER_KEY,
+  resolveCandidateRegionFolderCode,
   resolveCanonicalMedicalRepArea,
 } from "@/lib/recruitment/candidate-folder";
 import { listCanonicalMedicalRepAreaNames } from "@/lib/recruitment/candidate-folder-options";
@@ -1151,6 +1152,21 @@ export async function fileCandidateToFolder(
   // caller), so it is the one place a typo, a stale tab, or a hand-made request gets refused instead
   // of quietly opening a folder nobody else will ever open. Measured against production 2026-09-11:
   // seven CVs had already been filed this way — see resolveCanonicalMedicalRepArea.
+  //
+  // AND THE REGION IS VALIDATED THE SAME WAY, for the same reason and at the same cost. Its list is
+  // closed and lives in this repository (`candidateRegionCodes`), so there is nothing to look up —
+  // which is exactly why it stayed unguarded while the area was being fixed. An unrecognised code
+  // here would open a folder `candidateFolderLabel` cannot name and `districtManagerFolderOptions`
+  // never lists, so the CV would be filed, off the pool screen, and in a folder nobody opens.
+  // Production is clean on this shelf today (5 folders, all real codes, verified 2026-09-12) — this
+  // keeps it that way rather than repairing it.
+  //
+  // The "other" shelf deliberately gets NO list to check against. It is keyed on a job title the
+  // recruiter types, by the owner's own split — *"8 regions, and split other positions by job
+  // title"* — and there is no vocabulary of job titles to validate one against. Its guard belongs
+  // where the danger is, on the AUTOMATED path: candidate-folder-suggestion.ts refuses to propose a
+  // folder from a typed title nothing can place, so an unread WhatsApp reply can no longer name a
+  // shelf. A recruiter typing a title by hand is a person deciding, and is left alone.
   let folderKey: string;
   if (kind === "paramedical") {
     folderKey = PARAMEDICAL_FOLDER_KEY;
@@ -1161,6 +1177,10 @@ export async function fileCandidateToFolder(
     const resolved = resolveCanonicalMedicalRepArea(cleanKey, canonicalAreas);
     if (resolved.area === null) throw new Error(resolved.refusal);
     folderKey = resolved.area;
+  } else if (kind === "district_manager") {
+    const resolved = resolveCandidateRegionFolderCode(cleanKey);
+    if (resolved.code === null) throw new Error(resolved.refusal);
+    folderKey = resolved.code;
   } else {
     folderKey = cleanKey;
   }

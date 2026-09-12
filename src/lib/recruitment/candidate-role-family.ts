@@ -183,6 +183,98 @@ export function candidateRoleFamily(raw: string | null | undefined): CandidateRo
 }
 
 /**
+ * SEAT NOUNS — the words that make a piece of text a JOB rather than a sentence.
+ *
+ * This list answers a different question from `candidateRoleFamily` above and must not be confused
+ * with it. That function asks *which of our eleven families is this* and always answers, because
+ * "other" is a real answer for a real job. This asks *is this a job at all*, and it exists because
+ * one caller — the automated folder suggestion — names a FOLDER after the text and therefore cannot
+ * treat "we could not place it" and "this is not a job title" as the same thing.
+ *
+ * A title is a noun phrase built around a seat: Regulatory Affairs SPECIALIST, Technical Support and
+ * infrastructure ENGINEER, Project - Account MANAGER. A WhatsApp reply is not: "بخصوص الإعلان دا"
+ * ("regarding this ad") names no seat, and neither does "reservation (arrange & book hotels
+ * accommodation for employees)", which describes duties. Both are real production values sitting in
+ * `applied_for_job_title` today.
+ *
+ * DEPARTMENTS ARE DELIBERATELY ABSENT. "Quality", "regulatory", "logistics" and the rest name a part
+ * of a company, not a seat in it, and a bare department is genuinely ambiguous — refusing it and
+ * letting a recruiter name the folder is the right answer, not a gap. The departments that DO matter
+ * here are already covered one level up, because `candidateRoleFamily` claims them by pattern:
+ * anything carrying sales, marketing, pharmacy, HR, finance or accounting resolves to a family
+ * before this list is ever consulted.
+ *
+ * English entries are matched as WHOLE WORDS against the normalised text's own tokens. Arabic
+ * entries are matched as SUBSTRINGS instead, because the word arrives carrying prefixes and
+ * suffixes a token comparison would miss — "الصيدلي" is the same seat as "صيدلي" — and because `\b`
+ * in JavaScript is defined over ASCII word characters, so a word-boundary escape around an Arabic
+ * word does not mean what it reads as.
+ */
+const occupationSeatWords = [
+  "accountant", "administrator", "adviser", "advisor", "agent", "analyst", "architect",
+  "assistant", "associate", "attendant", "auditor", "buyer", "cashier", "chemist", "clerk",
+  "consultant", "controller", "coordinator", "designer", "developer", "dietitian", "director",
+  "doctor", "driver", "editor", "engineer", "executive", "head", "inspector", "instructor",
+  "intern", "interpreter", "lawyer", "lead", "leader", "lecturer", "manager", "nurse", "officer",
+  "operator", "paramedic", "pharmacist", "physician", "physiotherapist", "planner", "practitioner",
+  "professor", "programmer", "promoter", "receptionist", "rep", "reps", "representative",
+  "researcher", "scientist", "secretary", "specialist", "storekeeper", "supervisor", "surveyor",
+  "teacher", "technician", "technologist", "therapist", "trainee", "trainer", "translator",
+  "treasurer", "tutor", "veterinarian", "writer",
+] as const;
+
+/** The same question in Arabic, matched as substrings — see the note above. */
+const occupationSeatWordsArabic = [
+  "\u0645\u062d\u0627\u0645", // محام — the stem shared by محامي and المحامي (lawyer); one in production
+  "\u0645\u0646\u062f\u0648\u0628", // مندوب — representative
+  "\u0645\u0645\u062b\u0644", // ممثل — representative
+  "\u0645\u062f\u064a\u0631", // مدير — manager
+  "\u0645\u0634\u0631\u0641", // مشرف — supervisor
+  "\u0623\u062e\u0635\u0627\u0626\u064a", // أخصائي — specialist
+  "\u0627\u062e\u0635\u0627\u0626\u064a", // اخصائي — the same word without the hamza, as typed
+  "\u0635\u064a\u062f\u0644", // صيدل — the stem shared by صيدلي and صيدلاني (pharmacist)
+  "\u0645\u062d\u0627\u0633\u0628", // محاسب — accountant
+  "\u0645\u0647\u0646\u062f\u0633", // مهندس — engineer
+  "\u0641\u0646\u064a", // فني — technician
+  "\u0633\u0643\u0631\u062a\u064a\u0631", // سكرتير — secretary
+  "\u0645\u0648\u0638\u0641", // موظف — employee / clerk
+  "\u0637\u0628\u064a\u0628", // طبيب — doctor
+  "\u0645\u0645\u0631\u0636", // ممرض — nurse
+  "\u0633\u0627\u0626\u0642", // سائق — driver
+  "\u0645\u0633\u0624\u0648\u0644", // مسؤول — officer / person responsible
+  "\u0645\u0633\u0626\u0648\u0644", // مسئول — the same word, the other spelling
+] as const;
+
+/**
+ * Does this text name a job?
+ *
+ * TRUE whenever `candidateRoleFamily` can already place it — every pattern in that function names a
+ * seat, so a title it claims is a title by construction — or when the text carries a seat noun of
+ * its own. FALSE for a blank, for a sentence, and for a description of duties.
+ *
+ * WHY A REFUSAL IS THE SAFE ANSWER, and why this list being incomplete is survivable: the only
+ * caller is the automated suggestion, and the cost of answering FALSE about a real title is that
+ * the CV stays in the pool with the reason on screen for a recruiter to file by hand — one field,
+ * free text, unchanged by any of this. The cost of answering TRUE about a WhatsApp reply is a
+ * folder named after that reply, sitting beside the real ones, that nobody ever opens. Those two
+ * are not symmetrical, so this list may grow but must never become a guess.
+ */
+export function namesAnOccupation(raw: string | null | undefined): boolean {
+  const t = normalizeJobTitle(raw);
+  if (!t) return false;
+  if (candidateRoleFamily(t) !== "other") return true;
+  // WHOLE WORDS, by set membership rather than a regex. `normalizeJobTitle` has already reduced the
+  // text to lowercase words separated by single spaces, so the words ARE the tokens — which makes
+  // "rep" firing inside "prepare" impossible without needing a word-boundary escape at all. That
+  // matters beyond tidiness: the first draft of this line used one, a heredoc ate the backslash
+  // (AGENTS.md §2.1), and the surviving `\b` matched NOTHING — every real title was refused and the
+  // code read as correct. A Set cannot fail that way.
+  const words = new Set(t.split(" "));
+  if (occupationSeatWords.some((word) => words.has(word))) return true;
+  return occupationSeatWordsArabic.some((word) => t.includes(word));
+}
+
+/**
  * Same call, but null when there is no title to judge. The pool has 249 people with no title at
  * all, and showing them under "Other" would read as a decision that was never made.
  */
