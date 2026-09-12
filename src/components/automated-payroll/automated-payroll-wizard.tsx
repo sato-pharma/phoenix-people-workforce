@@ -169,7 +169,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
    * that "falls back to ... a 0.00 salary". For an employee whose ONLY problem is
    * a zero derived base salary that is simply false — their net salary is on
    * record and this month's pay computes correctly from it; what breaks is the
-   * Base/30 day-rate every future deduction uses. Saying they are about to be
+   * day-rate every future deduction uses. Saying they are about to be
    * paid nothing is the kind of wrong-but-confident alarm people learn to click
    * through (owner-reported 2026-08-08: "those errors are not true").
    *

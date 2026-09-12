@@ -186,9 +186,9 @@ export type DraftRow = {
    * days for the leaver's final settlement). Auto-calculates `crm` when edited, at
    * the leaver's NET ÷ the month's actual calendar days × days (owner rule
    * 2026-08-30; `resignationCrmDays` in step-definitions.ts carries the three
-   * context keys). This comment used to say Base/30 and cite
-   * calculateDeductionAmountFromBaseSalary; both went stale, the rate on
-   * 2026-08-30 and that function's divisor (real calendar days) on 2026-08-01.
+   * context keys). Since the owner's 2026-09-12 ruling every day-driven money
+   * field on every step divides by the month's actual calendar days, so this is
+   * no longer the exception it was written as.
    * There is deliberately NO equivalent for `unpaidVacations`: that figure is a
    * composite of a balance-aware Phoenix-vacation amount plus a day-rate CRM-leave
    * amount, not a flat day-rate — auto-calculating it from a single day count
@@ -197,7 +197,7 @@ export type DraftRow = {
   resignationCrmDays: number | null;
   // Part 1 — 4 manual deduction tabs (CRM, Unpaid Vacation, Day Without Record, and
   // Other deductions for Loan/Other), each category with its own optional days
-  // (auto-calculates value via Base/30 × days), value (money — can be typed directly
+  // (auto-calculates value via Base ÷ the month's calendar days × days), value (money — can be typed directly
   // instead of days), and reason (optional). Every tab is scoped in recommend.ts to
   // this month's resignations and one-part-salary employees only — continuing
   // two-part employees get CRM/Vacation handled automatically in Part 2 instead, so
@@ -220,7 +220,7 @@ export type DraftRow = {
   p1odOtherReason: string | null;
   // Part 1 — Special Situations tab. Shows every employee regardless of payment
   // mode (unlike the 4 tabs above). A day count auto-calculates its money value
-  // (Base/30 × days), same formula as the other Part 1 day-rate fields. One
+  // (Base ÷ the month's calendar days × days), same formula as the other Part 1 day-rate fields. One
   // shared dropdown routes BOTH the deduction and the addition to whichever
   // installment HR picks — there is deliberately no separate addition-routing
   // field. Only "first" may be chosen before Part 1 is confirmed; once frozen,
@@ -457,15 +457,20 @@ export type StepFieldSpec = {
   reason?: boolean;
   /**
    * For a "days" field: the key of the paired "money" field it auto-calculates
-   * (via Base Salary/30 × days) whenever the days input changes. Direct edits to
+   * (via Base ÷ the month's calendar days × days) whenever the days input changes. Direct edits to
    * the money field itself are left alone.
    */
   autoCalcMoneyKey?: string;
   /**
    * For a "days" field: names a context column holding the divisor to use
-   * instead of the default 30. Deduction day-rates are Base/30 by owner rule,
-   * but resignation proration is Base/actual-calendar-days-in-month — using 30
-   * there would pay the wrong amount in any 31-day month.
+   * instead of `dayDrivenMoney`'s own `monthDays` argument.
+   *
+   * Since the owner's 2026-09-12 ruling (audit finding 37) this changes nothing
+   * on any live step: pay and deductions both divide by the month's actual
+   * calendar days, so every column named here already holds that figure. It is
+   * kept because the two Resignations tabs name it explicitly, and because a
+   * future step could legitimately price off something other than the month.
+   * There is deliberately no flat fallback anywhere — see dayDrivenMoney.
    */
   autoCalcDivisorContextKey?: string;
   /**
@@ -504,13 +509,13 @@ export type StepFieldSpec = {
    * Editing either field clamps it to [0, total] and sets the OTHER to
    * (total - value). The total is read from `complementTotalContextKey`.
    *
-   * Deliberately a SEPARATE field from `autoCalcDivisorContextKey`: on the Part 1
-   * CRM tab the money divisor stays a flat 30 regardless of the actual month
-   * length (the owner's 2026-07-25 rate, the one calculateFlat30DeductionAmount
-   * applies; NOT calculateDeductionAmountFromBaseSalary, which this comment used
-   * to cite and which has divided by real calendar days since 2026-08-01), while
-   * the complement CAP must be the real calendar day count (28–31) — conflating
-   * the two would silently change the deduction amount in any 31-day month.
+   * Deliberately a SEPARATE field from `autoCalcDivisorContextKey` even though
+   * the two now hold the same number on every live step: this one is the CAP on
+   * a day count, that one is the price of a day. They coincided before too — on
+   * the Part 1 CRM tab the cap was the real calendar day count while the divisor
+   * was a flat 30 — and the 2026-09-12 ruling closing that gap is not a reason
+   * to fold them together. A future step can cap days at something that is not
+   * the month (the Resignations CRM tab already caps at Days Worked).
    */
   complementFieldKey?: string;
   /** For a "days" field with `complementFieldKey`: the context column holding the fixed total both fields sum to. */

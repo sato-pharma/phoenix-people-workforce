@@ -70,13 +70,13 @@ export const PAYROLL_DATA_ISSUE_LABELS: Record<PayrollDataIssue, string> = {
   missing_salary: "No salary on record at all — they would be paid 0.00",
   // Deliberately NOT "would be paid 0.00" — this month's pay (new-hire proration,
   // etc.) is usually computed from net salary and is fine. What is actually zero
-  // is BASE salary, which every day-rate deduction (Base/30 × days — Fingerprint,
+  // is BASE salary, which every day-rate deduction (Base ÷ the month's calendar days × days — Fingerprint,
   // CRM, Vacation, ...) derives from. Real case, owner-reported 2026-08-08: 6
   // August new hires whose entered net salary exactly equals their title's
   // standard cost-of-living + fuel allowance (e.g. 2500 = 2000 + 500 for a
   // Medical Rep), so net-minus-allowances lands on exactly zero.
   zero_base_after_allowances:
-    "Net salary is on record but no base salary — after standard allowances that nets to a zero base, so every day-rate deduction (Base/30 × days) will compute as 0.00 for them",
+    "Net salary is on record but no base salary — after standard allowances that nets to a zero base, so every day-rate deduction (Base ÷ the month's calendar days × days) will compute as 0.00 for them",
   missing_payment_mode: "No payment mode — the First/Second Part split is being decided by a default",
   joined_after_part1: "Added to the run after Part 1 was confirmed — no frozen first installment",
   // The one issue here that costs nobody a pound. Social insurance is absorbed by the company and

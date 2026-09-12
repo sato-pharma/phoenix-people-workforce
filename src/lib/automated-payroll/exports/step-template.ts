@@ -79,7 +79,7 @@ export function stepTemplateColumns(stepKey: StepKey): TemplateColumn[] {
  * match, and `sheet_to_json` renames a duplicate header rather than dropping it. So a template with
  * two identical headings does not merely look untidy — it reads the wrong column on re-upload and
  * writes that value into the other one's field. On the Part 1 Unpaid Vacation step that replaced a
- * leaver's balance-aware settlement with a flat Base/30 day rate and silently discarded the figure
+ * leaver's balance-aware settlement with a flat day rate and silently discarded the figure
  * HR had actually typed.
  *
  * Refusing the download is the right failure: a template with colliding headings is already a
