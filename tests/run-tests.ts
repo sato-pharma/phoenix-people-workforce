@@ -1606,6 +1606,7 @@ import { runBackgroundFolderFilingGateTests } from "./background-folder-filing-g
 import { runPhoenixOfficialLogoTests } from "./phoenix-official-logo.test.ts";
 import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending-backfill-completed-only.test.ts";
 import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowrap-lock.test.ts";
+import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5355,6 +5356,11 @@ await runTest(
 await runTest(
   "the payroll audit ledger stays true: every finding the code claims has a row, the thirteen nobody can account for still have no trace, and the registry points at a ledger that exists",
   runPayrollAuditLedgerTests,
+);
+
+await runTest(
+  "spotlight sheet: the ranking paginates instead of clipping, sheets are numbered and balanced, nothing rasterises",
+  runSpotlightSheetDesignTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
