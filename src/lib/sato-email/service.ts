@@ -5,6 +5,7 @@ import { invalidCommunicationEmails } from "@/lib/communication/metrics";
 import { getDistributionListSpecs, resolveDistributionListByKey } from "@/lib/distribution-lists/service";
 import { validateManualEmailRecipientPolicy } from "@/lib/email/email-safety";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { loadSatoEmailAttachments, resolveSatoEmailAttachments, type SatoEmailAttachmentSummary } from "@/lib/sato-email/media";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey, hrIdForStorage } from "@/lib/hr-id";
 import { emailNotificationsEnabled } from "@/lib/notifications/email";
@@ -78,6 +79,8 @@ export type SatoEmailAudience = {
 };
 
 export type SatoEmailDraft = {
+  /** Ids of uploaded files this email carries. Body pictures are NOT here - they are in bodyHtml. */
+  attachmentIds: string[];
   bodyHtml: string;
   clientRequestId: string;
   externalJustification?: string | null;
@@ -89,6 +92,15 @@ export type SatoEmailDraft = {
 };
 
 export type SatoEmailPreview = {
+  attachments: SatoEmailAttachmentSummary[];
+  /**
+   * The one reason these attachments cannot be sent, resolved at PREVIEW time on purpose.
+   *
+   * The sender learns the files are over budget while he is still looking at the draft, not after
+   * he has read a recipient count and pressed a confirm button. Send checks it again - the preview
+   * is a courtesy and the server is the boundary.
+   */
+  attachmentProblem: string | null;
   audience: SatoEmailAudience;
   emailCount: number;
   html: string;
@@ -368,6 +380,7 @@ export async function resolveSatoEmailAudience(input: {
 
 function normalizeDraft(draft: SatoEmailDraft) {
   return {
+    attachmentIds: Array.isArray(draft.attachmentIds) ? draft.attachmentIds : [],
     bodyHtml: String(draft.bodyHtml ?? "").trim(),
     clientRequestId: String(draft.clientRequestId ?? "").trim(),
     externalJustification: draft.externalJustification ?? null,
@@ -388,8 +401,11 @@ export async function previewSatoEmail(draft: SatoEmailDraft): Promise<SatoEmail
     signOff: normalized.signOff,
     subject: normalized.subject,
   });
+  const attachments = await resolveSatoEmailAttachments(normalized.attachmentIds);
 
   return {
+    attachmentProblem: attachments.problem,
+    attachments: attachments.files,
     audience: { ...audience, recipients: plan.recipients },
     emailCount: plan.batches.length,
     html,
@@ -449,6 +465,18 @@ export async function sendSatoEmail(draft: SatoEmailDraft, access: AccessContext
     signOff: normalized.signOff,
     subject: normalized.subject,
   });
+  // 🔴 READ ONCE, BEFORE ANY MAIL LEAVES, AND REFUSE THE WHOLE SEND IF THEY CANNOT GO.
+  // `guardAttachments` in send-phoenix-email.ts silently drops an over-budget file and sends the
+  // mail anyway. That is a defensible default for a system notification and completely wrong here:
+  // "the new policy is attached" reaching a whole distribution list with nothing attached cannot be
+  // recalled, and nothing on the sender's screen would have said so. Reading them before the loop
+  // also means a storage failure stops the send at batch zero rather than half way down the list.
+  const loaded = await loadSatoEmailAttachments(normalized.attachmentIds);
+  if ("problem" in loaded) {
+    return { ...empty, skippedReason: loaded.problem, status: "failed" };
+  }
+  const attachments = loaded.attachments.length > 0 ? loaded.attachments : undefined;
+
   const from = satoEmailFrom(configuredFrom);
   // The sender's own seat answers the replies — the HR Business Partner's mail answers to her, not
   // to a generic inbox. Reply-To only; From stays on the verified sending subdomain above, because
@@ -477,6 +505,9 @@ export async function sendSatoEmail(draft: SatoEmailDraft, access: AccessContext
     let result: Awaited<ReturnType<typeof sendPhoenixEmail>>;
     try {
       result = await sendPhoenixEmail({
+        // Every batch carries the same files: the batching is a recipient-count cap, not a difference
+        // between the emails. A recipient in batch three must get the same attachment as batch one.
+        attachments,
         // Hidden from each other: the owner chose "keep them hidden". With more than one recipient
         // the fan-out moves the batch into Bcc behind a neutral visible To.
         fanoutToBcc: true,
@@ -484,6 +515,7 @@ export async function sendSatoEmail(draft: SatoEmailDraft, access: AccessContext
         from,
         html,
         idempotencyKey: buildSatoEmailIdempotencyKey({
+          attachmentIds: normalized.attachmentIds,
           batch,
           batchIndex,
           clientRequestId: normalized.clientRequestId,

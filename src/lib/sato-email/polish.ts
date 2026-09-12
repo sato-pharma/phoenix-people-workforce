@@ -5,14 +5,21 @@
  * Owner 2026-09-12: "add ai tool is the new sato composer in which i write what i want and it
  * enhance rephrase more to the point more corporate".
  *
- * 🔴 THIS REWRITES WORDING. IT NEVER ADDS FACTS. The Sato composer is the one screen that mails a
- * whole distribution list at once, so the failure that matters here is not a clumsy sentence — it
- * is a polished one that says something Sato never said. A model asked to make a thin note sound
- * corporate will happily invent the effective date, the policy number, the deadline and the link.
- * So every figure, every [square-bracket] gap and every link that comes back is checked against
- * what the sender wrote, and the call FAILS rather than hands back something plausible. The sender
- * is sitting in front of the button and can press it again; a fabricated date in a company-wide
- * announcement cannot be taken back.
+ * 🔴 THIS REWRITES WORDING AND FORMATTING. IT NEVER ADDS FACTS.
+ *
+ * The Sato composer is the one screen that mails a whole distribution list at once, so the failure
+ * that matters here is not a clumsy sentence — it is a polished one that says something Sato never
+ * said. A model asked to make a thin note sound corporate will happily invent the effective date,
+ * the policy number, the deadline and the link. So every figure, every [square-bracket] gap and
+ * every address — href or img src alike — that comes back is checked against what the sender wrote,
+ * and the call FAILS rather than hands back something plausible. The sender is sitting in front of
+ * the button and can press it again; a fabricated date in a company-wide announcement cannot be
+ * taken back.
+ *
+ * It may FORMAT freely within the composer's own toolbox (`src/lib/email/toolbar-tools.ts`) — bold,
+ * a list, a table, an Arabic paragraph's direction — because formatting rearranges what is already
+ * there. It may not use a tool to introduce anything: a table cell needs a value the draft already
+ * holds, and an <img> needs an address the sender already wrote.
  *
  * Nothing here sends anything, and nothing here is saved. The rewritten wording lands in the same
  * subject and body fields the sender was already editing, the preview is invalidated so a
@@ -29,6 +36,7 @@ import {
   resolveOpenAiCopilotModel,
 } from "@/lib/ai/openai-client";
 import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
+import { toolboxPromptLines } from "@/lib/email/toolbar-tools";
 
 /** The composer's own subject cap, so a rewrite can never produce a draft the send route rejects. */
 export const SATO_POLISH_MAX_SUBJECT_CHARS = 200;
@@ -105,9 +113,15 @@ export function bracketTokens(value: string): string[] {
   );
 }
 
-/** Every link target in a body, so a rewrite cannot mint one. */
+/**
+ * Every address a body points at, so a rewrite cannot mint one.
+ *
+ * `src` counts as much as `href`. Once the model was taught the Insert image tool it could fetch
+ * a URL of its own choosing into a company-wide email, which is the same fabrication as an
+ * invented link and reaches the reader without a click.
+ */
 export function linkTargets(html: string): string[] {
-  return Array.from(String(html ?? "").matchAll(/href\s*=\s*["']([^"']+)["']/gi)).map((match) =>
+  return Array.from(String(html ?? "").matchAll(/(?:href|src)\s*=\s*["']([^"']+)["']/gi)).map((match) =>
     match[1].trim().toLowerCase(),
   );
 }
@@ -218,10 +232,14 @@ export function buildPolishPrompt(input: SatoPolishRequest): string {
     .join("\n\n");
 }
 
-const polishInstructions = [
+/**
+ * Exported so `tests/sato-email-toolbox.test.ts` can assert the toolbox actually reaches the
+ * model. A catalogue that is never put in the prompt would still pass every other check.
+ */
+export const SATO_POLISH_INSTRUCTIONS = [
   "You rewrite an internal announcement for Sato Pharma, an Egyptian pharmaceutical company, inside its HR system. A named colleague has written a draft and pressed a button to have it read better. It will be emailed to a distribution list of employees under the company's own identity.",
   [
-    "WHAT YOU CHANGE — wording only:",
+    "WHAT YOU CHANGE — how it reads and how it looks, never what it says:",
     "- Say the same thing in fewer, plainer words. Lead with the point; put the background after it.",
     "- Formal corporate register: measured, impersonal, confident. No slang, no exclamation marks, no emoji, no hype.",
     "- Fix grammar, spelling and punctuation. Break a wall of text into short paragraphs.",
@@ -240,18 +258,29 @@ const polishInstructions = [
     "- Never soften or harden the decision he is announcing. You change how it reads, never what it says.",
   ].join("\n"),
   [
-    "FORMAT — the email design is strict about this:",
-    "- Return the body as simple HTML using only: <p>, <strong>, <em>, <u>, <ul>, <ol>, <li>, <a>, <blockquote>, <table>, <tr>, <td>, <th>, <br>, and <h2> or <h3>.",
-    "- <h2> and <h3> become the house section headings — a rule across the page with a small uppercase label under it. Use one only when the announcement genuinely has two or more sections, and keep the label to a few words.",
+    "THE TOOLBOX — you are pressing the same buttons the sender has:",
+    "The sender writes in an editor with a Gmail-style toolbar. You cannot click it, so you press a button by writing the markup that button produces. This is the whole list, and nothing outside it survives:",
+    ...toolboxPromptLines(),
+    "",
+    "When the sender asks for one of these in his own words, do it. \"Bold the deadline\", \"put the dates in a table\", \"make it a list\", \"right-align the Arabic\" are instructions to use that tool, not requests for new content — you format what is already there.",
+  ].join("\n"),
+  [
+    "HOW TO USE THE TOOLBOX — restraint is the house style:",
+    "- Formatting carries meaning. If everything is bold, nothing is. A company announcement normally needs nothing more than paragraphs, one list, and bold on the single thing that must not be missed.",
+    "- Use a heading only when the announcement genuinely has two or more sections. One section needs no heading.",
+    "- Use a table only when the draft already contains something with two dimensions — a date per branch, an amount per grade. Never build a table with an empty cell, and never add a column the draft cannot fill.",
+    "- Colour, highlight, font and font size only when the sender asks for them. Left alone, the house design supplies all of that and looks better than anything you would choose.",
+    "- Arabic paragraphs take dir=\"rtl\", which already right-aligns them — do not add text-align as well. English paragraphs need neither. In a bilingual email set the direction per paragraph, never once around the whole body.",
     "- Use <ul> when the draft lists things. One idea per item, no full stop at the end of an item.",
-    "- Do not write any style, colour, font or width attribute. The house design supplies all of that, and anything you write there is discarded.",
-    "- No heading above <h2>, no <div>, no markdown, no code fences.",
+    "- No <div>, no <script>, no class attribute, no markdown, no code fences. A style declaration outside the list above is dropped in silence, so writing one just loses the formatting.",
   ].join("\n"),
   [
     "Also return a short list of what you changed, in plain words a non-writer understands, at most five items. Examples of the right register:",
     "- Moved the decision into the first sentence.",
     "- Cut the opening paragraph, which repeated the subject.",
     "- Turned the four requirements into a list.",
+    "- Put the branch closing times in a table.",
+    "- Made the Arabic paragraph read right to left.",
     "Say nothing about tone in the abstract, and never claim you added anything.",
   ].join("\n"),
 ].join("\n\n");
@@ -263,7 +292,8 @@ const polishTextFormat = {
       additionalProperties: false,
       properties: {
         bodyHtml: {
-          description: "The rewritten body, as simple email HTML with no style attributes.",
+          description:
+            "The rewritten body, as email HTML built only from the toolbox markup listed in the instructions.",
           type: "string",
         },
         changes: {
@@ -352,7 +382,7 @@ export async function polishSatoEmailDraft(input: SatoPolishRequest): Promise<Sa
     // the right fit for holding a multi-paragraph announcement's meaning steady while rewriting it.
     const response = await createOpenAiResponseText({
       input: prompt,
-      instructions: polishInstructions,
+      instructions: SATO_POLISH_INSTRUCTIONS,
       maxOutputTokens: 6_000,
       model: resolveOpenAiCopilotModel(),
       purpose: "sato-email-polish",

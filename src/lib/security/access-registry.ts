@@ -132,6 +132,14 @@ export const accessRegistry = [
   // the reader log in. A CV is the most sensitive document this system holds, and an
   // unauthenticated route that streams one is not a feature anybody asked for.
   tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/share/cv-lifecycle/:token/feed", reason: "CSV bundle for the owner's live CV-lifecycle Google Sheet, whose Apps Script runs on a timer and cannot authenticate; guarded by a 32-byte token with mandatory expiry and one-click revoke, and intended to live inside a private sheet rather than be handed to a person." }),
+  // A picture inside a Sato email, fetched by the recipient's mail app. Unauthenticated because
+  // there is no alternative: Gmail and Outlook fetch a body image with an anonymous GET, Gmail
+  // through its own proxy, and they do it days after the mail was sent — so a signed URL would
+  // have expired and a session check has nothing to check. The 24-byte token is the whole
+  // credential, the sender is told so on the screen that uploads the picture, and the lookup
+  // states kind = 'inline', so an ATTACHED file has no address to guess. The caller never names a
+  // bucket or a path.
+  tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/sato-email/media/:token", reason: "Serves one body picture to a recipient's mail client, which fetches it anonymously and long after the send, so neither a session nor a signed URL is available. The 24-byte token is the credential; bucket and path are resolved server-side from the row and only a kind='inline' row can be reached, so attachments stay unreachable." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/change-password", reason: "Auth-layer self-service endpoint: validates the active Phoenix session cookie directly via resolveSessionState before allowing password change." }),
   // Biometric (passkey) sign-in. The two /login/* routes are credential bootstrap exactly like
   // /api/auth/login — no session exists yet, and the WebAuthn signature IS the credential. The
@@ -277,6 +285,12 @@ export const accessRegistry = [
   // read because it changes nothing. It calls a model to rewrite the sender's own wording and
   // hands it straight back to his screen — no row is written, no mail leaves.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/sato-email/polish", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // `media` is the upload behind the attach button and the toolbar Insert image, classified as a
+  // mutation because it writes an object and a row — and because an `inline` upload mints a
+  // PERMANENT PUBLIC ADDRESS for that picture (served by the token route above), which is a thing
+  // that should be answerable later. Same gate as everything else here; an upload endpoint on this
+  // domain reachable by anyone else is not a feature.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/sato-email/media", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/sato-email/preview", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/sato-email/send", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/sato-email/templates", permission: null, guard: "domain-helper" }),

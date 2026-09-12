@@ -14,11 +14,16 @@ untouched — different job, different audience, different identity. Nothing abo
 
 - **UI:** `/admin/sato-email` (Super Admin) or `/hr/admin/sato-email` (HR Advisory — the same page,
   rewritten into the HR shell by `isHrRewritablePath`, so there is no second page file).
-- **API:** `/api/admin/sato-email/{templates,employees,polish,preview,send}`.
+- **API:** `/api/admin/sato-email/{templates,employees,polish,preview,send,media}`, plus the one
+  unauthenticated route `/api/sato-email/media/[token]` that serves a body picture to a mail client.
 - **Code:** [src/lib/sato-email/](../src/lib/sato-email/) — `service.ts` (the server half),
   `plan.ts` (who it reaches and how it is cut into emails), `render.ts` (the house body),
-  `draft.ts` (one parser shared by preview and send), `polish.ts` (the rewrite), `access.ts` (the gate).
-- **Migration:** [`20260912070000_sato_email_composer.sql`](../supabase/migrations/20260912070000_sato_email_composer.sql).
+  `draft.ts` (one parser shared by preview and send), `polish.ts` (the rewrite), `access.ts` (the gate),
+  `media.ts` (storing and reading files — server only) and `media-limits.ts` (the ceilings and the
+  allowlist, split out so the composer can import them without dragging Node crypto and the
+  service-role key into the browser bundle).
+- **Migrations:** [`20260912070000_sato_email_composer.sql`](../supabase/migrations/20260912070000_sato_email_composer.sql)
+  and [`20260912160000_sato_email_media.sql`](../supabase/migrations/20260912160000_sato_email_media.sql).
 
 ## Who may use it
 
@@ -47,6 +52,49 @@ use a fixed email template or I can free type the email I want"*:
 
 Either way the body is rendered into the Sato house design before it goes.
 
+## The toolbox
+
+Owner 2026-09-12: *"ADD A TOOLBOX EXACTLY LIKE THE ONE IN THE EMAIL COMPOSER TO FEEL LIKE USING
+GMAIL OR OUTLOOK AND TRAIN THE AI TOOL ON IT IN WHICH IT UNDERSTANDS WHAT I WANT AND CAN USE EVERY
+TOOL"*.
+
+The body is a rich editor with a Gmail-style toolbar — `EmailBodyEditor`, the same component with
+the same props the HR reply composer and the email template manager use, so the three screens are
+one editor and stay that way. Font, size, **Heading**, line spacing, letter spacing, Arabic
+right-to-left, English left-to-right, text colour, highlight, bold, italic, underline,
+strikethrough, bulleted and numbered lists, align left / center / **right**, **quote**, link,
+**remove link**, table, **insert image**, divider, clear formatting, **undo** and **redo**. The six
+in bold were added on 2026-09-12; the rest were there from the start. **Insert image** opens the
+file picker on this screen rather than asking for an address — see *Attachments and pictures* below.
+
+Two things about it are not obvious:
+
+- **Heading writes a styled paragraph, not an `<h2>`.** The email sanitizer discards heading tags
+  and rebuilds them as `font-size:18px;font-weight:bold`, and the house renderer reads that size
+  back to draw the section device — a rule across the page with a small uppercase label under it.
+  Setting the style directly means the canvas already shows what will be sent.
+- **Paste is plain text, deliberately.** Word and Outlook paste carries markup the sanitizer would
+  strip unpredictably, so what you see after pasting is what survives the save.
+
+### The AI presses the same buttons
+
+The rewrite model has no toolbar. The only way it can use a tool is to write the markup that tool
+produces, so [`src/lib/email/toolbar-tools.ts`](../src/lib/email/toolbar-tools.ts) holds that
+translation once — every control, the phrases a sender uses for it (*"bold the deadline"*, *"put
+the dates in a table"*, *"make it Arabic"*), and the exact markup — and the rewrite prompt is built
+from it. So a nudge that names a tool works, and the toolbar and the model cannot drift apart:
+`tests/sato-email-toolbox.test.ts` reads the editor's own source, extracts every control it
+renders, and fails if one of them is not in the catalogue.
+
+The same test sanitizes every taught markup string and asserts it survives. A tool taught markup
+the sanitizer throws away would look to the sender like the model ignoring him, which is worse than
+a missing feature because nothing reports it.
+
+**Restraint is the instruction.** Colour, highlight, font and font size are used only when the
+sender asks for them; a heading only when the announcement genuinely has two sections; a table only
+when the draft already holds something with two dimensions. Left alone, a rewrite comes back as
+plain paragraphs, one list, and bold on the single thing that must not be missed.
+
 ## Rewrite it — the draft in the company's voice
 
 Owner 2026-09-12: *"add ai tool is the new sato composer in which i write what i want and it enhance
@@ -61,7 +109,9 @@ It is not a draft generator. There is no "write me an email about X" on this scr
 deliberate: the sender owns what the email says, and the button only owns how it reads.
 
 - **Code:** [src/lib/sato-email/polish.ts](../src/lib/sato-email/polish.ts) — the pure guards at the
-  top, the one model call at the bottom. **API:** `/api/admin/sato-email/polish`, gated by the same
+  top, the one model call at the bottom. The toolbox it is allowed to use is
+  [src/lib/email/toolbar-tools.ts](../src/lib/email/toolbar-tools.ts).
+  **API:** `/api/admin/sato-email/polish`, gated by the same
   `canUseSatoEmail` as every other route behind this screen and limited to 10 calls a minute per
   person, because each one holds a server slot for up to a minute of upstream time.
 - **Model:** the copilot tier (`gpt-5.4`), not the cheap nano tier the one-sentence rewrites use.
@@ -72,7 +122,7 @@ deliberate: the sender owns what the email says, and the button only owns how it
   bold paragraph that `render.ts` converts into a rule plus a small uppercase label, so a rewrite
   that finds two real sections in the draft gets the journey paper's section device for free.
 
-### It rewrites wording. It never adds a fact.
+### It rewrites and formats. It never adds a fact.
 
 🔴 **This is the whole safety story, and it fails closed.** A model asked to make a thin note sound
 corporate will reach for the effective date, the policy number, the deadline and the link. On the
@@ -86,6 +136,7 @@ when any of these is true:
 | a figure that is not in his draft | an invented deadline, amount or time reads as company policy |
 | a `[square bracket]` gap that disappeared | those are gaps he fills himself; a filled one states as fact something nobody decided |
 | a link he did not write | an invented URL in a company-wide email is phishing-shaped |
+| an image address he did not write | a picture loads without a click, so a minted `src` needs the same guard as a minted `href` |
 | any mention of AI, GPT or a model | owner rule 2026-08-04 — a user never learns a model was involved |
 | an empty subject or body | a blank email is a worse answer than a button that says "try again" |
 
@@ -104,7 +155,72 @@ can never belong to the older draft — and **Put my words back** restores his o
 because it never left the browser. The panel closes the moment he edits anything, since undoing
 past his own edits would throw them away.
 
-All of it is pinned by `tests/sato-email-polish.test.ts`.
+All of it is pinned by `tests/sato-email-polish.test.ts`, and the toolbox half by
+`tests/sato-email-toolbox.test.ts`.
+
+## Attachments and pictures
+
+Owner 2026-09-12: *"make an option to attach pic or file and to put pic in message body"*.
+
+Two different things, built as two different things, because their exposure is not remotely the same.
+
+| | **Attach a file** | **Put a picture in the body** |
+|---|---|---|
+| How it travels | inside the message, base64'd into the provider call at send time | it does **not** travel — the recipient's mail app fetches it over plain HTTP, days later |
+| Who can reach it | only the people the email went to | **anybody holding the link**, for as long as the email exists |
+| Address | none | a permanent `/api/sato-email/media/<token>` URL, unauthenticated by construction |
+| Accepts | pictures, PDF, Word, Excel, PowerPoint, CSV, plain text | pictures only — JPEG, PNG, GIF, WebP |
+
+🔴 **A body picture is public. That is not a shortcut, it is how email works.** Gmail fetches a body
+image through its own proxy, carrying nobody's cookie; Outlook fetches it straight from the web. There
+is no session to check and never will be, and a signed URL is the wrong instrument because it expires
+while the email does not — the picture would quietly become a broken box in a mail already sent. So
+the composer says so on screen, beside the button: **put company documents in the attachments, not in
+the body.**
+
+The bucket itself is private and the caller never names a path. The only input the public route takes
+is a token, and the lookup states `kind = 'inline'` — an attached contract has no token at all, and
+could not be opened even if a future bug minted it one. That is the same rule the marketing
+share-file route already states: accepting a path, even a signed one, would turn a file route into a
+read primitive over the bucket.
+
+**SVG and HTML are refused, in both halves.** Both carry script, and the token route serves from this
+application's own origin.
+
+### The limits, and why they refuse rather than drop
+
+**10 MB per file, 10 MB per email, 10 files.** Not arbitrary: Resend carries the mail normally and
+takes 40 MB, but mail fails over to Brevo on a quota or auth error — the bad day — and Brevo rejects
+any message over 10 MB. Taking the smaller of the two means a send behaves identically whichever
+provider carries it, and `tests/sato-email-attachments.test.ts` fails if the constant ever rises
+above Brevo's limit.
+
+🔴 **Over budget REFUSES the send. It does not drop a file and send anyway.** `guardAttachments()` in
+`send-phoenix-email.ts` silently omits an over-budget attachment and sends the mail regardless, which
+is a reasonable default for a system notification and the worst possible behaviour here: *"the new
+policy is attached"* reaching a whole distribution list with nothing attached cannot be recalled, and
+nothing on screen would ever have said so. On this screen the budget is checked at **preview** time,
+beside the recipient count, and the **Send** button is disabled — not warned beside — while it is
+over. It is checked again at send, because the preview is a courtesy and the server is the boundary.
+
+A file whose row has gone is a refusal too, never a quiet skip, and the refusal lists **which** files
+so the sender can see what to remove.
+
+### The rest of the handling
+
+- **Filenames are rebuilt, never trusted.** Path separators and control characters are stripped and
+  the extension is forced to the one the content type maps to, so `salary.pdf.exe` leaves as
+  `salary.pdf`.
+- **The attachment list is part of the idempotency key.** A send that failed, had a file removed and
+  was pressed again is a different email, and must not be swallowed as a duplicate.
+- **Uploading writes an audit row** (`sato_email_media`) — its own entity type rather than a field on
+  the send row, because an inline picture is handed a permanent public address before any mail exists
+  at all, and who minted it should be answerable later.
+- **Rate limited** to 30 uploads a minute per person, and the per-file ceiling is checked before the
+  bytes are read into memory.
+- **A body picture cannot be tested on a local dev server.** `sanitizeEmailTemplateHtml` allows
+  `<img>` on the `https` scheme only, and localhost is `http`, so the tag is stripped on save. That is
+  the rule working, not a bug — verify it on staging or production.
 
 ## Choosing the audience
 

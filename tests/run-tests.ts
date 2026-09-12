@@ -786,6 +786,8 @@ import {
 } from "./sato-email.test.ts";
 import { runSatoEmailListsOnlyComposerTests } from "./sato-email-lists-only-composer.test.ts";
 import { runSatoEmailPolishTests } from "./sato-email-polish.test.ts";
+import { runSatoEmailToolboxTests } from "./sato-email-toolbox.test.ts";
+import { runSatoEmailAttachmentTests } from "./sato-email-attachments.test.ts";
 import { runEmailControlCenterTests } from "./email-control-center.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
 import { runWorkflowRegistryEnforcementTests } from "./workflow-registry-enforcement.test.ts";
@@ -5333,6 +5335,16 @@ await runTest(
 await runTest(
   "the Sato composer's rewrite changes wording only — a figure, a link or a [square bracket] gap the sender never wrote is refused, and the reader never learns a model was involved",
   runSatoEmailPolishTests,
+);
+
+await runTest(
+  "the composer toolbox and the rewrite model stay one toolbox — every button the sender can press is taught to the AI, with markup the email sanitizer actually keeps",
+  runSatoEmailToolboxTests,
+);
+
+await runTest(
+  "a Sato email carries files without leaking them - an over-budget attachment is REFUSED rather than silently dropped, only a picture can ever be served from the public token route, and a filename cannot smuggle a path or another extension",
+  runSatoEmailAttachmentTests,
 );
 
 await runTest(

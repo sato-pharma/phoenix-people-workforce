@@ -99,6 +99,26 @@ export function runSatoEmailPolishTests() {
     `an invented URL in a company-wide email is phishing-shaped and must be refused, got ${JSON.stringify(mintedLink)}`,
   );
 
+  // An image address is a link the reader never has to click — it loads on open. Once the model
+  // was taught the Insert image tool, `src` had to count exactly as `href` does.
+  assert.deepEqual(linkTargets('<img src="https://Cdn.Example/Poster.png" />'), ["https://cdn.example/poster.png"]);
+
+  const mintedImage = findPolishViolations(
+    { bodyHtml: '<p>See the poster.</p><img src="https://cdn.example/poster.png" alt="" />', subject: "Poster" },
+    { bodyHtml: "<p>see the poster</p>", subject: "Poster" },
+  );
+  assert.ok(
+    mintedImage.some((violation) => /links nobody wrote/.test(violation)),
+    `an image address the sender never wrote fetches from a server nobody chose, and must be refused, got ${JSON.stringify(mintedImage)}`,
+  );
+
+  // The sender's own image survives — the guard is "nothing new", not "no pictures".
+  const senderImage = findPolishViolations(
+    { bodyHtml: '<p>The poster.</p><img src="https://cdn.example/poster.png" alt="" />', subject: "Poster" },
+    { bodyHtml: '<p>heres the poster</p><img src="https://cdn.example/poster.png" />', subject: "Poster" },
+  );
+  assert.deepEqual(senderImage, [], "an image the sender himself pasted must survive the rewrite");
+
   // -- the reader never learns a model was involved ---------------------------------------------
 
   const named = findPolishViolations(
