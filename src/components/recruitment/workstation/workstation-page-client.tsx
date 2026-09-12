@@ -53,7 +53,7 @@
 // underneath and get them back untouched when the reader comes out.
 
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useOptimistic, useState, useSyncExternalStore, useTransition } from "react";
 import { ArrowLeft, ChevronDown, ChevronUp, Minimize2, ScanLine } from "lucide-react";
 
 import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
@@ -212,40 +212,72 @@ export function WorkstationPageClient({
     else enterFocus();
   }, [enterFocus, focus, leaveFocus]);
 
+  // ── WHAT THE BAR DRAWS WHILE THE SERVER IS STILL THINKING ────────────────────────────────
+  //
+  // Every filter on this page is a URL rather than component state, which is deliberate and worth
+  // keeping: it is what makes a narrowed queue something you can bookmark and paste to somebody.
+  // The cost is that each `<select>` is CONTROLLED BY THE SERVER'S ANSWER, and the answer takes a
+  // real round trip — 5 to 12 seconds against the live pool of 607 CVs, measured 2026-09-12.
+  //
+  // So picking "Shortlisted" used to do this: React re-rendered immediately with the value the
+  // server last sent, the dropdown SNAPPED BACK to "Any status", the list did not move, and nothing
+  // anywhere said the page had heard the click. Seconds later everything changed at once. The owner
+  // reported the filters as "not working" — in both the seat view and the pool, with every symptom
+  // at once — and he was reading it exactly right: a control that undoes your choice IS broken,
+  // whatever it later does.
+  //
+  // `useOptimistic` holds the value that was just picked for as long as the transition it was
+  // dispatched inside is still running, then falls back to the server's own answer. Not `useState`:
+  // a state copy has to be cleared when the real value lands, and the only place to do that is an
+  // effect — which is the same set-state-in-effect the store rewrite above just removed.
+  const serverNarrowing = { area, notified, received, region, role, seen, source, status, vacancy };
+  const [shown, showImmediately] = useOptimistic(
+    serverNarrowing,
+    (current, picked: ScreeningHrefOptions) => ({ ...current, ...definedOnly(picked) }),
+  );
+  // The list is fetched by the ROUTER, so `pending` is the only honest signal that it is on its way.
+  const [pending, startTransition] = useTransition();
+
   // How many of the eight URL narrowings are actually holding something. It is what the folded
   // filter bar says about itself: a bar that hides how many filters are on is a bar that makes
-  // "why am I only seeing four people" unanswerable without opening it again.
+  // "why am I only seeing four people" unanswerable without opening it again. Reads the OPTIMISTIC
+  // values, so a filter changed while the bar is folded is counted the moment it is picked.
   const activeFilters = [
-    area,
-    source,
-    status,
-    role,
-    region,
-    received,
-    notified === "any" ? null : notified,
-    seen === "any" ? null : seen,
-    vacancy,
+    shown.area,
+    shown.source,
+    shown.status,
+    shown.role,
+    shown.region,
+    shown.received,
+    shown.notified === "any" ? null : shown.notified,
+    shown.seen === "any" ? null : shown.seen,
+    shown.vacancy,
   ].filter((value) => value !== null && value !== undefined && value !== "").length;
   // WHICH SHELL AM I ACTUALLY IN? Not always the one that rendered me — see screeningShellPoolHref.
   const shellPoolHref = screeningShellPoolHref(usePathname(), poolHref);
 
   const goTo = useCallback(
     (next: ScreeningHrefOptions) => {
-      router.push(
-        screeningHref(shellPoolHref, {
-          area: next.area !== undefined ? next.area : area,
-          notified: next.notified !== undefined ? next.notified : notified,
-          received: next.received !== undefined ? next.received : received,
-          region: next.region !== undefined ? next.region : region,
-          role: next.role !== undefined ? next.role : role,
-          seen: next.seen !== undefined ? next.seen : seen,
-          source: next.source !== undefined ? next.source : source,
-          status: next.status !== undefined ? next.status : status,
-          vacancy: next.vacancy !== undefined ? next.vacancy : vacancy,
-        }),
-      );
+      const href = screeningHref(shellPoolHref, {
+        area: next.area !== undefined ? next.area : area,
+        notified: next.notified !== undefined ? next.notified : notified,
+        received: next.received !== undefined ? next.received : received,
+        region: next.region !== undefined ? next.region : region,
+        role: next.role !== undefined ? next.role : role,
+        seen: next.seen !== undefined ? next.seen : seen,
+        source: next.source !== undefined ? next.source : source,
+        status: next.status !== undefined ? next.status : status,
+        vacancy: next.vacancy !== undefined ? next.vacancy : vacancy,
+      });
+      // BOTH INSIDE THE ONE TRANSITION. The optimistic value lives exactly as long as the navigation
+      // it belongs to: dispatched outside it, React drops it on the very next render and the
+      // dropdown snaps back again — which is the whole bug.
+      startTransition(() => {
+        showImmediately(next);
+        router.push(href);
+      });
     },
-    [area, notified, received, region, role, router, seen, shellPoolHref, source, status, vacancy],
+    [area, notified, received, region, role, router, seen, shellPoolHref, showImmediately, source, status, vacancy],
   );
 
   // `F` for full width, Escape to leave it. Ignored while typing, so an "f" in a search term does
@@ -352,9 +384,9 @@ export function WorkstationPageClient({
 
       {focus || fullBleed || !filtersOpen ? null : (
         <ScreeningFilterBar
-          area={area}
+          area={shown.area}
           areaOptions={areaOptions}
-          notified={notified}
+          notified={shown.notified}
           onChange={goTo}
           onClear={() =>
             goTo({
@@ -369,14 +401,15 @@ export function WorkstationPageClient({
               vacancy: null,
             })
           }
+          pending={pending}
           queueCount={rows.length}
-          received={received}
-          region={region}
-          role={role}
-          seen={seen}
-          source={source}
+          received={shown.received}
+          region={shown.region}
+          role={shown.role}
+          seen={shown.seen}
+          source={shown.source}
           sourceOptions={sourceOptions}
-          status={status}
+          status={shown.status}
           totalCount={poolSize}
         />
       )}
@@ -507,6 +540,16 @@ function cairoDay(iso: string): string {
  * Per browser and not per account on purpose: it is a view preference of the kind that should not
  * follow a person onto a shared machine, and it is worth no round trip to the server.
  */
+/**
+ * The keys a caller actually SET, dropped of the ones it left out.
+ *
+ * `ScreeningHrefOptions` uses `undefined` to mean "leave this one alone", so spreading it raw over
+ * the current narrowing would blank every filter the caller did not mention.
+ */
+function definedOnly(picked: ScreeningHrefOptions): Partial<ScreeningHrefOptions> {
+  return Object.fromEntries(Object.entries(picked).filter(([, value]) => value !== undefined));
+}
+
 const FILTERS_OPEN_KEY = "phoenix.screening.filters-open";
 const FILTERS_OPEN_EVENT = "phoenix.screening.filters-open.change";
 

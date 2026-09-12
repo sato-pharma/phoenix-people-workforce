@@ -570,6 +570,40 @@ export async function runRecruitmentScreeningWorkstationTests() {
     /rememberFiltersOpen\(!filtersOpen\)/,
     "and the toggle is what records that, rather than an effect that also fires on the first paint",
   );
+
+  // ── A FILTER THAT UNDOES YOUR CHOICE READS AS A BROKEN FILTER ───────────────────────────
+  //
+  // The owner, 2026-09-12: "the filters are not working" — every symptom, in the seat view and in
+  // the pool. Every filter was in fact correct: measured against the live pool the same morning,
+  // status=new returned 161 of 607, received=day 9, role=medical_rep 72, and seat 369 narrowed to
+  // 10 and then to 9 under status=new. What was broken was the answering.
+  //
+  // Each `<select>` is controlled by the value the SERVER last sent, and each change is a full
+  // round trip taking 5 to 12 seconds. So the dropdown snapped back to its old value the instant it
+  // was clicked, the list sat still, and nothing said the page had heard anything. Two pins, because
+  // the fix has two halves and either one alone still reads as broken.
+  assert.match(
+    withoutComments(pageClient),
+    /const \[shown, showImmediately\] = useOptimistic\(/,
+    "the dropdown must show what was just picked, not what the server last answered",
+  );
+  assert.match(
+    withoutComments(pageClient),
+    /startTransition\(\(\) => \{\s+showImmediately\(next\);\s+router\.push\(href\);\s+\}\)/,
+    "and inside the same transition as the navigation, or React drops it on the next render",
+  );
+  assert.match(
+    withoutComments(pageClient),
+    /pending=\{pending\}/,
+    "and the bar has to say the list is on its way — silence for 12 seconds is what a dead control looks like",
+  );
+  // Read from the optimistic values, or the folded bar's own count lags the click by the same
+  // seconds — which is the half of this the reader sees when the bar is shut.
+  assert.match(
+    withoutComments(pageClient),
+    /const activeFilters = \[\s+shown\.area,/,
+    "the folded bar counts what was picked, not what has arrived",
+  );
   // NOT an effect that seeds state. `useEffect(() => setFiltersOpen(true), [])` reads correctly and
   // costs a whole second render of the screening page to do it; the React compiler lint calls it out
   // by name (set-state-in-effect) and CI went red on exactly this on 2026-09-12. The store version

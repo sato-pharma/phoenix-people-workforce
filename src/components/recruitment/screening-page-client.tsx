@@ -16,7 +16,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback } from "react";
-import { X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 
 import { CandidateScreeningSession } from "@/components/recruitment/candidate-screening-session";
 import {
@@ -297,6 +297,7 @@ export function ScreeningFilterBar({
   notified,
   onChange,
   onClear,
+  pending,
   queueCount,
   received,
   region,
@@ -312,6 +313,14 @@ export function ScreeningFilterBar({
   notified: ScreeningNotifiedFilter;
   onChange: (next: ScreeningHrefOptions) => void;
   onClear: () => void;
+  /**
+   * Is the list currently being fetched for a filter that was just changed?
+   *
+   * Every filter here is a URL, so changing one is a server round trip — measured at 5 to 12
+   * seconds against the live pool of 607 CVs on 2026-09-12. Without this the page gives no sign
+   * at all that it heard the click, and the owner reported the filters as simply "not working".
+   */
+  pending: boolean;
   queueCount: number;
   received: ScreeningReceivedFilter | null;
   region: ScreeningRegionFilter | null;
@@ -355,6 +364,18 @@ export function ScreeningFilterBar({
         )}
         <span className="text-[11px] font-semibold opacity-70">{totalCount === 1 ? "CV" : "CVs"}</span>
       </span>
+      {/* ── THE PAGE HEARD YOU ────────────────────────────────────────────────────────────
+          A filter change reloads the whole queue from the server, and on the live pool that takes
+          seconds, not milliseconds. Silence for that long is indistinguishable from a dead control:
+          reported 2026-09-12 as "the filters are not working", when every one of them was in fact
+          working perfectly and slowly. Its own element rather than a suffix inside the count so the
+          number beside it does not jump sideways each time it appears. */}
+      {pending ? (
+        <span className="inline-flex items-center gap-1 whitespace-nowrap text-[10px] font-bold uppercase leading-none tracking-[0.12em] text-phx-accent-press">
+          <Loader2 aria-hidden className="h-3 w-3 animate-spin" />
+          Updating
+        </span>
+      ) : null}
       <label className={filterLabelClass(status !== null)}>
         Status
         <select
