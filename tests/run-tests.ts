@@ -566,6 +566,7 @@ import { runOfficeGoldenRuleLockTests } from "./office-golden-rule-lock.test.ts"
 import { runClosingOfficeDifferentiationTests } from "./closing-office-differentiation.test.ts";
 import { runOfficeColumnIsCnsOnlyTests } from "./office-column-is-cns-only.test.ts";
 import { runClosingTargetInkTests } from "./closing-target-ink.test.ts";
+import { runAdminSectionHeaderFitTests } from "./admin-section-header-fit.test.ts";
 import { runSosEvenSplitEzTests } from "./sos-even-split-ez.test.ts";
 import { runClosingMatrixFoldTests } from "./closing-matrix-fold.test.ts";
 import { runClosingSummaryFitsTests } from "./closing-summary-fits.test.ts";
@@ -2638,6 +2639,12 @@ await runTest(
   + "figures no longer borrow the dim grey, and every shade clears 4.5:1 on every ground that row "
   + "variant puts the cell on)",
   runClosingTargetInkTests,
+);
+await runTest(
+  'an admin card header wraps instead of crushing its own title (owner, 2026-09-12: "fix the shit '
+  + 'we are seeing now" — a wide toolbar had shrunk the "Closing Matrix" heading and its '
+  + "description to 0 px wide at 640-1024, so they rendered one letter and one word per line)",
+  runAdminSectionHeaderFitTests,
 );
 await runTest(
   "EZ even split (owner, 2026-08-26: EZ is credited evenly across the CNS reps active in Cairo and "
