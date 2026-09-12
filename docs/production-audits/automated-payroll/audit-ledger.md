@@ -2,6 +2,8 @@
 
 **Audit run:** 2026-09-10 → 2026-09-12 · **Findings numbered:** 1 – 55 · **Ledger written:** 2026-09-12
 
+> **Cycle 2 ran on 2026-09-12** and is recorded separately in [audit-cycle-2.md](audit-cycle-2.md). It did not recover any of the thirteen — nothing could — so every count and every row below still stands exactly as written. Cycle 2 numbered one new finding, **56**, continuing this series so the two can never collide.
+
 ## Why this file exists
 
 Until today this audit existed **only as code comments and pull-request descriptions**. There was no

@@ -42,6 +42,17 @@ export function isBatchReplaceable(batch: SalaryBatch) {
   return replaceableBatchStatuses.has(batch.status) && !isPart1PaidBatch(batch);
 }
 
+/**
+ * Delete is strictly more destructive than Replace, so it is offered on exactly the batches a
+ * Replace is offered on — never more. The Replace button was already disabled for a closed month
+ * while Delete was not, which is the same asymmetry the database had.
+ *
+ * This is UX only. The refusal that matters is in phx_delete_salary_batch.
+ */
+export function isBatchDeletable(batch: SalaryBatch) {
+  return isBatchReplaceable(batch);
+}
+
 export function payrollPeriodLabel(month: number, year: number) {
   const monthName =
     payrollMonths.find((item) => item.value === String(month))?.label ??
