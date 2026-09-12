@@ -32,10 +32,14 @@ function row(overrides: Partial<SpotlightRow> & { title: string }): SpotlightRow
     hrId: "B-136",
     isVacant: false,
     actualValue,
+    // The ordinary case: every active month carried a target, so the numerator IS the actual. A
+    // fixture that wants the other shape overrides gradedValue and targetedPeriods together.
+    gradedValue: overrides.gradedValue ?? actualValue,
     targetValue,
     achievement: targetValue === null ? null : (actualValue / targetValue) * 100,
     varianceValue: targetValue === null ? null : actualValue - targetValue,
-    targetedMonths: 3,
+    targetedPeriods: targetValue === null ? [] : ["2026-06", "2026-07", "2026-08"],
+    targetedMonths: targetValue === null ? 0 : 3,
     activeMonths: 3,
     ...overrides,
   };
@@ -144,10 +148,77 @@ export function runSpotlightSheetDesignTests() {
   assert.ok(!quarterHero.includes("Q3 2026 target"), "there is no such thing as a quarterly target here");
 
   // A one-month window is the case where naming the window IS naming the target.
-  const oneMonth = { ...result(people(1), "heroes"), periods: ["2026-07"], windowLabel: "July 2026" };
+  const oneMonthRow = row({ title: "Ali Hassan", targetedPeriods: ["2026-07"], targetedMonths: 1 });
+  const oneMonth = { ...result([oneMonthRow], "heroes"), periods: ["2026-07"], windowLabel: "July 2026" };
   assert.ok(
     spotlightDocumentHtml(oneMonth).includes("of the July 2026 target"),
     "a single-month window keeps the shorter sentence, because there the window is the target",
+  );
+
+  // ── The caption names the months that CARRIED a target, never the window's own ──────────────
+  // This is the half the first wording got wrong: it replaced a fabricated quarterly target with
+  // three fabricated monthly ones. Mar-Jun 2026 carry sales and no target on the three tracked
+  // lines, so a subject targeted in one month of a quarter is the ordinary shape of this data.
+  const partial = row({
+    title: "Ali Hassan",
+    actualValue: 3_000_000,   // every pound, across the whole quarter
+    gradedValue: 2_000_000,   // the two-thirds of it earned in the month that carried a target
+    targetValue: 2_000_000,
+    targetedPeriods: ["2026-07"],
+    targetedMonths: 1,
+  });
+  const partialHtml = spotlightDocumentHtml(result([partial], "heroes"));
+  assert.ok(
+    partialHtml.includes("of the July 2026 target"),
+    "the caption names the month that carried a target, not the three the window covers",
+  );
+  assert.ok(
+    !partialHtml.includes("of the monthly targets for June · July · August 2026"),
+    "a target is never asserted for a month nobody set one in — the sheet's own stat band says 1 of 3",
+  );
+
+  // ── The figure beside the target DIVIDES into the percentage above it ───────────────────────
+  // A reader who sees a number next to a target divides the two. Printing every pound there against
+  // a denominator that excludes an untargeted month makes that division disagree with the headline
+  // percentage, on the same page, with no way to tell which is wrong.
+  assert.ok(
+    partialHtml.includes("Delivered in the month that carried a target, against 2,000,000"),
+    "the numerator is labelled as the targeted months' money, so the pair can be divided",
+  );
+  assert.ok(
+    !partialHtml.includes("Delivered against 2,000,000 in monthly targets"),
+    "which is the label that invited the wrong division",
+  );
+  assert.ok(
+    partialHtml.includes("Delivered in total, including 2 months with no target"),
+    "and every pound is still on the sheet, under its own name",
+  );
+
+  // The ordinary case keeps the short label, because there the two figures ARE the same.
+  assert.ok(
+    quarterHero.includes("Delivered against 1,800,000 in monthly targets"),
+    "where every active month was targeted, the total IS the numerator and the label stays plain",
+  );
+
+  // ── A subject with no target says so, rather than naming a denominator it does not have ─────
+  const noTarget = spotlightDocumentHtml(result([row({ title: "Ali Hassan", targetValue: null })], "heroes"));
+  assert.ok(
+    noTarget.includes("No target was set for this window, so there is no achievement to draw."),
+    "an untargeted subject states it outright, in one full sentence",
+  );
+  assert.ok(
+    !noTarget.includes("of the monthly targets for"),
+    "it must not print a caption claiming targets behind a dash",
+  );
+  assert.ok(
+    !noTarget.includes('<p class="figure__cap">'),
+    "and it says it once — a caption repeating the gauge's sentence is the sheet stating twice that it has nothing to state",
+  );
+  // A dash is not a percentage, so it does not wear a percent sign.
+  assert.ok(!/—<span>%<\/span>/.test(noTarget), "no achievement means no per-cent sign beside the dash");
+  assert.ok(
+    quarterHero.includes("<span>%</span>"),
+    "while a real achievement keeps it — this assertion must fail if the sign is dropped for everyone",
   );
 
   // ── The hero number steps down rather than running off the sheet ───────────────────────────
@@ -170,6 +241,85 @@ export function runSpotlightSheetDesignTests() {
     "the step-down is for the exception — these assertions must read the element, never the stylesheet every sheet carries",
   );
 
+  // ── The NAME steps down too, and a character count cannot decide when ──────────────────────
+  // The name stands ON a rule, which is the certificate device that separates a name that has been
+  // awarded something from a name in a list — and it reads as one only while the name above it is
+  // one line. At 29pt "Mohamed Ahmed Abdel Rahman", an unremarkable name here, broke as a full line
+  // and the orphan "Rahman".
+  //
+  // 🔴 THE DECISION IS THE NAME'S WIDTH IN THE REAL FACE, WHICH IS WHY THE TABLE EXISTS. The pair
+  // below is the whole argument: a 23-character name that sets 151.9mm overruns the 150mm measure,
+  // and a LONGER 25-character one that sets 133.5mm does not. Any rule that counts letters gets one
+  // of those two wrong, and the one it gets wrong wraps a name that had no need to wrap. Measured in
+  // Chromium under print media, in the face production actually has.
+  const nameHtml = (title: string) => spotlightDocumentHtml(result([row({ title })], "heroes"));
+  assert.ok(
+    nameHtml("Mohamed Mohamed Mohamed").includes('class="name name--long"'),
+    "a 23-character name that sets 151.9mm steps down — a character count would have left it at full "
+      + "size and wrapped it",
+  );
+  assert.ok(
+    nameHtml("Youssef Kamal El Sharkawy").includes('class="name"'),
+    "while a LONGER 25-character name that sets 133.5mm keeps the full size — the same count would "
+      + "have shrunk this one for nothing",
+  );
+  assert.ok(
+    nameHtml("Mohamed Ahmed Abdel Rahman").includes('class="name name--long"'),
+    "the name that started this steps down, so it stands whole on its rule",
+  );
+  assert.ok(nameHtml("Heba Ali Shahin").includes('class="name"'), "and a short name is left alone");
+
+  const nameRule = /\.name \{([^}]*)\}/.exec(ordinary)?.[1] ?? "";
+  const nameSize = Number(/font-size:\s*([\d.]+)pt/.exec(nameRule)?.[1]);
+  const longSize = Number(/\.name--long\s*\{[^}]*font-size:\s*([\d.]+)pt/.exec(ordinary)?.[1]);
+  assert.ok(
+    Number.isFinite(nameSize) && Number.isFinite(longSize),
+    "both name sizes were read off the emitted stylesheet — a pattern that matches nothing leaves NaN "
+      + "on both sides, and NaN < NaN is false, so the next assertion would fail for the wrong reason",
+  );
+  assert.ok(longSize < nameSize, "the step is DOWN — a bigger --long would wrap the names it exists to save");
+
+  // 🔴 AND WHAT NO SIZE CAN SAVE WRAPS EVENLY, rather than leaving one word stranded underneath.
+  assert.ok(
+    /\.name \{[^}]*text-wrap:\s*balance/.test(ordinary),
+    "a name of five parts wraps at any size worth setting it in, so it wraps into even lines",
+  );
+  assert.ok(
+    /\.figure__cap \{[^}]*text-wrap:\s*balance/.test(ordinary),
+    "and so does the caption, which names MONTHS — a six-month window set sixty-nine letterspaced "
+      + "characters on one line and \"June 2026\" alone on the next",
+  );
+  assert.ok(
+    !/\u2026/.test(long) && !/\.\.\./.test(long),
+    "nothing anywhere on the sheet is shortened with an ellipsis — it is set smaller or it wraps",
+  );
+
+  // ── ONE rule closes the figure panel, where two used to stand 6.1mm apart ──────────────────
+  // The panel had a hairline along its bottom edge AND the stat band's own 1.6pt rule 6.1mm under
+  // it: a pale line, a gap, then a heavy line, two rules doing one job at the busiest edge of the
+  // sheet. The heavy one is the panel's bottom edge now.
+  // Anchored on the line start: ".inner > .figure { ... }" sits higher up the same stylesheet and
+  // matches a bare pattern — a rule with no border in it at all, which is green for the wrong reason.
+  const figureRule = /\n  \.figure \{([^}]*)\}/.exec(ordinary)?.[1] ?? "";
+  assert.ok(/border-top:/.test(figureRule), "the panel still opens on a hairline, against the 1.6pt below it");
+  assert.ok(
+    !/border-bottom:/.test(figureRule),
+    "and does not close on a second rule 6.1mm above the stat band's — that pair was the redundancy",
+  );
+  assert.ok(
+    /\.figure \+ \.stats \{[^}]*margin-top:\s*0/.test(ordinary),
+    "the band is pulled flush instead, so the heavy rule IS the panel's bottom edge",
+  );
+  assert.ok(
+    /\n  \.stats \{[^}]*margin-top:\s*calc/.test(ordinary),
+    "and ONLY there — the ranking's band follows a paragraph, not a panel, and keeps its own space",
+  );
+  assert.ok(
+    /\.figure__core \{[^}]*justify-content:\s*space-evenly/.test(ordinary),
+    "the panel's surplus is shared over its four parts — centred as a block it banked 25.4mm of white "
+      + "between the scale and the heavy rule, which reads as the panel having run out",
+  );
+
   // ── Nothing on the page may rasterise ──────────────────────────────────────────────────────
   assert.ok(!/gradient\(/.test(long), "a CSS gradient costs Chromium a page-sized raster layer per rule when printing");
   assert.ok(!/repeating-/.test(long), "a repeating background rasterises the same way — the ornament stays vector");
@@ -177,9 +327,101 @@ export function runSpotlightSheetDesignTests() {
     long.includes('src="data:image/svg+xml;base64,'),
     "the mark is embedded ONCE as a base64 data URI; inlining its paths repeats them on every page",
   );
-  assert.equal(countOf(long, "<img"), sheets, "one <img> per sheet, all pointing at the same embedded resource");
   assert.ok(!/<img[^>]*src="\/(?!\/)/.test(long), "setContent has no base URL — an /absolute src renders nothing at all");
   assert.ok(long.includes("<polyline"), "the braid and the corner bosses are polylines, not images");
+
+  // ── The Arabic mark signs the FOOT, and replaced the Source block outright ───────────────
+  // Four placements came out before this one — a wash behind the figure, a bleed off the right edge,
+  // a seal under the gauge, a pale watermark over the figure's left shoulder — and all four put the
+  // mark where the page was already saying something. The owner, 2026-09-12: "you will put in the
+  // left corner the logo ... the Arabic one", striking the Source block in the same breath.
+  const heroHtml = spotlightDocumentHtml(result([row({ title: "Ali Hassan" })], "heroes"));
+  assert.ok(
+    heroHtml.includes('<div class="foot__block foot__block--mark"><img alt="" src="data:image/png;base64,'),
+    "the Arabic logotype is embedded as one base64 data URI — setContent has no base URL, so an "
+      + "/absolute src renders a hole in the sheet and reports nothing",
+  );
+  assert.equal(
+    countOf(long, 'class="foot__block foot__block--mark"'),
+    sheets,
+    "on EVERY sheet including the ranking — a logo in the corner of the foot is not a wash behind a "
+      + "table of names, which is what made the earlier placement hero-only",
+  );
+
+  // 🔴 THE SOURCE BLOCK IS GONE, BY HIS DECISION, AND THE OTHER TWO ARE NOT.
+  assert.ok(!heroHtml.includes("foot__block--src"), "the Source block it replaced is not still being emitted");
+  assert.ok(!heroHtml.includes("Sales vs Target"), "nor its wording somewhere else on the sheet");
+  assert.ok(heroHtml.includes("SATO-DIS-2026-01 v1.0"), "the document identity stays — it is a standing house rule");
+  assert.ok(heroHtml.includes('class="foot__cap">Sheet<'), "and so does the sheet numbering, which pins a stapled pack");
+
+  // 🔴 NO ISSUE STAMP. The owner had it off on 2026-09-12. A time of day on a recognition sheet
+  // dates it to the minute somebody happened to press a button, which is a fact about the export and
+  // not about the person holding the paper — and it makes two prints of one achievement disagree.
+  assert.ok(!heroHtml.includes("Issued"), "the sheet carries no issue stamp");
+  assert.ok(
+    !heroHtml.includes("12 September 2026, 03:40") && !heroHtml.includes("Africa/Cairo"),
+    "nor the generated-at time under another name — the fixture sets one, so this fails if it reaches the page",
+  );
+
+  // 🔴 THE SHEET NUMBER SITS ON THE CENTRE LINE, AND EQUAL FLANKS ARE THE ONLY THING PUTTING IT
+  // THERE. It is a fixed 20mm column between two flexible ones; the moment those two differ it slides
+  // off centre, which is what a 1.7-to-1 split did while the Source block was there. MEASURED on the
+  // rendered sheet: its centre is 105.00mm across a 210mm page.
+  const markFlex = Number(/\.foot__block--mark\s*\{[^}]*flex:\s*([\d.]+)/.exec(heroHtml)?.[1]);
+  const recFlex = Number(/\.foot__block--rec\s*\{[^}]*flex:\s*([\d.]+)/.exec(heroHtml)?.[1]);
+  assert.ok(
+    Number.isFinite(markFlex) && Number.isFinite(recFlex),
+    "both flank widths were read off the stylesheet — assert.equal(NaN, NaN) PASSES, so a pattern that "
+      + "matches nothing would make the next assertion green while testing nothing",
+  );
+  assert.equal(
+    markFlex, recFlex,
+    "the blocks either side of the sheet number are the same width, which is what puts the number on the "
+      + "centre line of the paper — widen one and the number moves with it, silently",
+  );
+  assert.ok(
+    /\.foot__block--no\s*\{[^}]*flex:\s*0 0 \d/.test(heroHtml),
+    "and the number's own column is fixed, so it cannot drift with its content either",
+  );
+
+  assert.equal(
+    countOf(long, "<img"),
+    sheets * 2,
+    "two <img> per sheet and no more — the crest mark and the Arabic mark, each embedded once and "
+      + "referenced by every page",
+  );
+
+  const markRule = /\.foot__block--mark img\s*\{([^}]*)\}/.exec(heroHtml)?.[1] ?? "";
+
+  // 🔴 THE FOOT MAY NOT GROW. ROW_AREA_FIRST and ROW_AREA_LATER are measured constants that
+  // already pay for a footer of the old height; a foot taller than that is pushed off the bottom of
+  // the paper and slices the last row in half, with no error anywhere. The Source block stood 17mm.
+  const markHeight = Number(/height:\s*([\d.]+)mm/.exec(markRule)?.[1]);
+  assert.ok(
+    markHeight > 0 && markHeight <= 15,
+    `the mark is capped below the 17mm block it replaced, so the foot cannot outgrow the page — found ${markHeight}mm`,
+  );
+
+  // 🔴 NOTHING OF THE NAME MAY BE CUT OR SQUEEZED. The first build ran the mark off the right
+  // edge, copying the certificate exactly — and Arabic reads right to left, so A4 ate the first half
+  // of the name and left the second by itself. The owner: "no you croped sato the company name".
+  // Height with width auto is what keeps the calligraphy at its own proportion whatever the column
+  // does; a width in millimetres here would stretch or crush it instead.
+  assert.ok(
+    /width:\s*auto/.test(markRule),
+    "width is auto, so the name keeps its own proportion and is never squeezed to fit the column",
+  );
+  assert.ok(
+    !/(top|right|bottom|left):\s*-/.test(markRule),
+    "no negative offset — .sheet clips at A4 with overflow:hidden and reports nothing, so one does not "
+      + "bleed off the edge, it deletes what it pushes past it",
+  );
+
+  assert.ok(
+    !/\.foot__block--mark[^}]*(background-image|filter:)/.test(heroHtml),
+    "tinting or masking at render time costs a composited layer per page — the file is already the house blue",
+  );
+
 
   // ── House identity ─────────────────────────────────────────────────────────────────────────
   assert.ok(long.includes("border-radius: 0"), "square edges everywhere — the house rule has no exception on this sheet");

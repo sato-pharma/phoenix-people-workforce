@@ -127,6 +127,11 @@ export function runSpotlightRankingTests() {
     assert.equal(summary.targetedMonths, 1);
     assert.equal(summary.activeMonths, 2, "but it did happen, and is still counted as an active month");
 
+    // WHICH month, not just how many. A renderer holding only the count cannot name the denominator,
+    // and the hero sheet names it in words on a page handed to the person it is about.
+    assert.deepEqual(summary.targetedPeriods, ["2026-07"], "the targeted month is named, so a sheet can say so");
+    assert.equal(summary.graded, 100_000, "the numerator is carried, not left to be reconstructed");
+
     // The naive reading — every pound over the targeted months' targets — is the 300% this rule exists
     // to stop. Assert the wrong answer is NOT produced, so a future refactor cannot quietly restore it.
     assert.notEqual(summary.achievement, 300);
@@ -196,10 +201,27 @@ export function runSpotlightRankingTests() {
     assert.equal(rows[0]!.actualValue, 100);
   }
 
+  // ── 5b. The targeted months come back in calendar order, not query order ───
+  {
+    // Rows arrive in whatever order the query returned them, and a Map preserves INSERTION order —
+    // so a sheet naming these months would print "August · June" for a window targeted in both.
+    const months = new Map([
+      ["2026-08", { actual: 300, target: 300 }],
+      ["2026-06", { actual: 100, target: 100 }],
+    ]);
+    assert.deepEqual(
+      summariseMonths(months).targetedPeriods,
+      ["2026-06", "2026-08"],
+      "sorted here rather than trusted — the caller writes these into a sentence",
+    );
+  }
+
   // ── 6. An untargeted subject is dropped from an achievement race, kept in a value one ──
   {
-    const graded = { key: "a", title: "Graded", titleAr: null, roleLabel: "r", territory: "t", lineName: "CNS", hrId: null, isVacant: false, actualValue: 100, targetValue: 200, achievement: 50, varianceValue: -100, targetedMonths: 1, activeMonths: 1 };
-    const others = { key: "b", title: "Others", titleAr: null, roleLabel: "r", territory: "t", lineName: "CNS", hrId: null, isVacant: false, actualValue: 834_365, targetValue: null, achievement: null, varianceValue: null, targetedMonths: 0, activeMonths: 1 };
+    const graded = { key: "a", title: "Graded", titleAr: null, roleLabel: "r", territory: "t", lineName: "CNS", hrId: null, isVacant: false, actualValue: 100, gradedValue: 100, targetValue: 200, achievement: 50, varianceValue: -100, targetedPeriods: ["2026-07"], targetedMonths: 1, activeMonths: 1 };
+    // "Others" carries real money and was targeted in no month at all, so its graded figure is zero
+    // while its actual is 834,365 — the exact shape the sheet must not print as one number.
+    const others = { key: "b", title: "Others", titleAr: null, roleLabel: "r", territory: "t", lineName: "CNS", hrId: null, isVacant: false, actualValue: 834_365, gradedValue: 0, targetValue: null, achievement: null, varianceValue: null, targetedPeriods: [], targetedMonths: 0, activeMonths: 1 };
 
     const byAchievement = rankRows([graded, others], "achievement", "top", null);
     assert.deepEqual(byAchievement.ranked.map((r) => r.key), ["a"], "no target means no place in an achievement ranking");
@@ -211,7 +233,7 @@ export function runSpotlightRankingTests() {
 
   // ── 7. Ties break stably, so two exports of one selection agree ────────────
   {
-    const mk = (key: string, title: string) => ({ key, title, titleAr: null, roleLabel: "r", territory: "t", lineName: "CNS", hrId: null, isVacant: false, actualValue: 500, targetValue: 500, achievement: 100, varianceValue: 0, targetedMonths: 1, activeMonths: 1 });
+    const mk = (key: string, title: string) => ({ key, title, titleAr: null, roleLabel: "r", territory: "t", lineName: "CNS", hrId: null, isVacant: false, actualValue: 500, gradedValue: 500, targetValue: 500, achievement: 100, varianceValue: 0, targetedPeriods: ["2026-08"], targetedMonths: 1, activeMonths: 1 });
     const first = rankRows([mk("z", "Zakaria"), mk("a", "Ahmed")], "achievement", "top", null).ranked.map((r) => r.key);
     const again = rankRows([mk("a", "Ahmed"), mk("z", "Zakaria")], "achievement", "top", null).ranked.map((r) => r.key);
     assert.deepEqual(first, again, "input order cannot change the printed order");
@@ -221,12 +243,24 @@ export function runSpotlightRankingTests() {
   // ── 8. Shortlist totals are summed, not averaged ───────────────────────────
   {
     const totals = summariseShortlist([
-      { key: "a", title: "A", titleAr: null, roleLabel: "r", territory: "t", lineName: null, hrId: null, isVacant: false, actualValue: 200_000, targetValue: 100_000, achievement: 200, varianceValue: 100_000, targetedMonths: 1, activeMonths: 1 },
-      { key: "b", title: "B", titleAr: null, roleLabel: "r", territory: "t", lineName: null, hrId: null, isVacant: false, actualValue: 450_000, targetValue: 900_000, achievement: 50, varianceValue: -450_000, targetedMonths: 1, activeMonths: 1 },
+      { key: "a", title: "A", titleAr: null, roleLabel: "r", territory: "t", lineName: null, hrId: null, isVacant: false, actualValue: 200_000, gradedValue: 200_000, targetValue: 100_000, achievement: 200, varianceValue: 100_000, targetedPeriods: ["2026-07"], targetedMonths: 1, activeMonths: 1 },
+      { key: "b", title: "B", titleAr: null, roleLabel: "r", territory: "t", lineName: null, hrId: null, isVacant: false, actualValue: 450_000, gradedValue: 450_000, targetValue: 900_000, achievement: 50, varianceValue: -450_000, targetedPeriods: ["2026-08"], targetedMonths: 1, activeMonths: 1 },
     ]);
     assert.equal(totals.targetValue, 1_000_000);
     assert.equal(totals.achievement, 65, "the pair's true joint achievement");
     assert.notEqual(totals.achievement, 125, "not the mean of 200 and 50");
+  }
+
+  // ── 8b. A shortlist total reads the numerator off the row, untargeted money excluded ──
+  {
+    // One subject, targeted in one month of two, with half its money earned in the untargeted month.
+    // A total built from `actualValue` reads 150% here; the rule says 100%.
+    const totals = summariseShortlist([
+      { key: "a", title: "A", titleAr: null, roleLabel: "r", territory: "t", lineName: null, hrId: null, isVacant: false, actualValue: 300_000, gradedValue: 200_000, targetValue: 200_000, achievement: 100, varianceValue: 0, targetedPeriods: ["2026-07"], targetedMonths: 1, activeMonths: 2 },
+    ]);
+    assert.equal(totals.actualValue, 300_000, "every pound is still reported");
+    assert.equal(totals.achievement, 100, "but the percentage is graded money over target");
+    assert.notEqual(totals.achievement, 150, "which is what reading actualValue here would have printed");
   }
 
   // ── 9. A district ranking climbs from rep rows, so vacant districts still total ──

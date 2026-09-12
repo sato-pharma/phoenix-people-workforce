@@ -138,7 +138,20 @@ export type SpotlightRow = {
   hrId: string | null;
   isVacant: boolean;
 
+  /** Every pound delivered in the window, targeted month or not. */
   actualValue: number;
+  /**
+   * The achievement's own NUMERATOR — pounds delivered in the months this subject was targeted in.
+   *
+   * 🔴 `actualValue / targetValue` IS NOT THE ACHIEVEMENT whenever the window holds a month that
+   * carried sales and no target: the denominator drops that month and the numerator must drop it
+   * too, or the percentage is measuring one set of months against another. Equal to `actualValue`
+   * exactly when every active month was targeted, which is the ordinary case.
+   *
+   * It exists because a sheet that prints a figure beside a target invites the reader to divide the
+   * pair, and the pair has to come out at the percentage printed above it.
+   */
+  gradedValue: number;
   /** Sum of targets over the months this subject was targeted in. Null when never targeted. */
   targetValue: number | null;
   /**
@@ -150,7 +163,16 @@ export type SpotlightRow = {
   achievement: number | null;
   /** Actual minus target. Null when there is no target to be over or under. */
   varianceValue: number | null;
-  /** Months in the window that carried a target for this subject. */
+  /**
+   * WHICH months in the window carried a target for this subject, ascending — the months the
+   * achievement is actually measured over.
+   *
+   * The hero sheet names these, never the window's own months. Naming the window would print "of
+   * the monthly targets for June · July · August 2026" on a subject targeted only in July: three
+   * months claimed, one of them measured, and a target asserted for two months where none was set.
+   */
+  targetedPeriods: PeriodKey[];
+  /** How many months carried a target. Always `targetedPeriods.length`. */
   targetedMonths: number;
   /** Months in the window that carried any sales for this subject. */
   activeMonths: number;
