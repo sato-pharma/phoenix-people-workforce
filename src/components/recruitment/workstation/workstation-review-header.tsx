@@ -55,7 +55,9 @@ import {
   type CandidateStatus,
 } from "@/lib/recruitment/candidate-status";
 import { ManagerPicker, type ManagerPickerOption } from "@/components/recruitment/manager-picker";
+import { WhatsAppReplyBox } from "@/components/recruitment/whatsapp-reply-box";
 import { WhatsAppSendDialog } from "@/components/recruitment/whatsapp-send-dialog";
+import { Action } from "@/components/recruitment/workstation/workstation-look";
 import { Pill, relativeDays, useSectionFold } from "@/components/recruitment/workstation/workstation-ui";
 import {
   composeRejectionNote,
@@ -77,6 +79,7 @@ export type SendState = {
 
 export function WorkstationReviewHeader({
   busy,
+  canReply,
   canSend,
   decided,
   error,
@@ -95,6 +98,14 @@ export function WorkstationReviewHeader({
   vacancies,
 }: {
   busy: boolean;
+  /**
+   * May this reader answer an applicant on WhatsApp in their own words?
+   *
+   * The same `recruitment:update` the route itself enforces, so a reader who cannot send is never
+   * shown a box that would refuse them. Not folded into `canSend`: that one is about pushing a CV
+   * to a hiring manager, which is a different permission and a different act.
+   */
+  canReply: boolean;
   canSend: boolean;
   /** What THIS session decided, which outranks the stored status until the page is reloaded. */
   decided: CandidateStatus | null;
@@ -160,6 +171,21 @@ export function WorkstationReviewHeader({
           onClose={() => setWhatsAppOpen(false)}
         />
       ) : null}
+      {/* ── ANSWERING IN YOUR OWN WORDS, AT FULL SCREEN ─────────────────────────────────
+          `&& focus` is what stops this being the SECOND copy on the ordinary layout, where the box
+          already sits under the phone number it would send from — which is where it belongs when
+          there is room for it. At full screen there is no identity block at all: the two bands
+          collapse into this one row, so without this the only way to answer somebody you were
+          reading was to leave full screen first. That is the press this whole mode exists to avoid.
+          The two are never mounted together, so there is no second fetch and no second window check.
+
+          It sits beside the template button because they are the same errand told apart by one fact:
+          a template goes whenever, free text only inside WhatsApp’s 24-hour window.
+
+          IT DOES NOT COST THE ROW. Idle it is one button, so the strip stays the single line the
+          owner asked for; opened, its panel is `w-full`, which in this wrapping row puts it on its
+          own line underneath and takes the space back the moment it is closed. */}
+      {canReply && focus ? <WhatsAppReplyBox candidateId={row.id} /> : null}
       <DecisionButton
         disabled={busy}
         icon={<ThumbsUp className="h-3.5 w-3.5" />}
@@ -244,6 +270,10 @@ export function WorkstationReviewHeader({
   // THE FOCUS STRIP. Two bands become one line: who it is, and what can be done. Nothing is taken
   // away - a decision taken at full screen is the same decision - and the way back is the FIRST
   // control on the row, where a reader looks for it, rather than a key he has to have been told.
+  //
+  // "Nothing is taken away" was not quite true until 2026-09-12: the WhatsApp REPLY box lived in the
+  // identity block, and the identity block does not exist here, so answering an applicant meant
+  // leaving full screen. It travels with `decisions` now - see the `&& focus` guard there.
   if (focus) {
     return (
       <div className="shrink-0 border-b border-phx-line bg-white">
@@ -357,6 +387,20 @@ export function WorkstationReviewHeader({
               <span>Arrived {relativeDays(row.createdAt)}</span>
               {row.source ? <span>via {row.source}</span> : null}
             </p>
+            {/* ── ANSWERING THEM, ON THE SCREEN WHERE THEY ARE READ ─────────────────────────────
+                Directly under the number it would be sent from, which is the only place it means
+                anything. The WhatsApp button in the decision bar sends an approved TEMPLATE and works
+                whenever; this sends free text and only works inside WhatsApp’s 24-hour window, so the
+                two are deliberately not the same control — the box checks the window before it offers
+                a field to type in, rather than letting Meta refuse the message afterwards.
+
+                It draws as one quiet button until somebody asks for it, so a reader who never replies
+                pays nothing for it being here. Folded away with the rest of this block. */}
+            {canReply ? (
+              <div className="mt-2">
+                <WhatsAppReplyBox candidateId={row.id} />
+              </div>
+            ) : null}
           </div>
 
           <div className="flex shrink-0 flex-col items-end gap-1">
@@ -410,21 +454,45 @@ function DecisionButton({
   pressed?: boolean;
   tone: "ok" | "danger" | "info" | "accent";
 }) {
-  const toneClass =
+  // ── ONE LOUD BUTTON PER ROW, AND IT IS THE ONE THAT MOVES THE WORK ─────────────────────────────
+  //
+  // Until 2026-09-12 all five of these were filled blocks — green, red, blue, blue, orange, side by
+  // side at the same size and the same weight. Five tinted rectangles in a row is not five
+  // affordances, it is a stripe: nothing in it can be more important than anything else, and the
+  // owner's word for the screen that resulted was "noisy".
+  //
+  // So the COLOUR MOVES INTO THE INK. The verdict buttons sit on white behind the same hairline as
+  // everything else, carrying their meaning in the glyph and the word — green for shortlist, red for
+  // reject — and fill with their own tint only under the pointer, which is the moment the meaning is
+  // about to matter. Exactly one button keeps a solid ground, and it is "Next candidate", because
+  // that is the press this screen is built to make cheap. The Band kit states the same rule for
+  // bands: the loudest volume is spent once, or it is not loud.
+  //
+  // A PRESSED BUTTON HAS A PANEL OPEN UNDERNEATH IT, so it wears the filled tint and an inset
+  // shadow — pushed in, not glowing. The old `ring-1` read as a halo, which is the one ornament this
+  // design system does not own.
+  const rest =
     tone === "ok"
-      ? "border-phx-ok-line bg-phx-ok-bg text-phx-ok hover:bg-phx-ok hover:text-white"
+      ? "border-phx-line bg-white text-phx-ok hover:border-phx-ok-line hover:bg-phx-ok-bg"
       : tone === "danger"
-        ? "border-phx-danger-line bg-phx-danger-bg text-phx-danger hover:bg-phx-danger hover:text-white"
+        ? "border-phx-line bg-white text-phx-danger hover:border-phx-danger-line hover:bg-phx-danger-bg"
         : tone === "info"
-          ? "border-phx-info-line bg-phx-info-bg text-phx-info hover:bg-phx-info hover:text-white"
-          : "border-phx-accent-line bg-phx-accent text-white hover:bg-phx-accent-press";
+          ? "border-phx-line bg-white text-phx-info hover:border-phx-info-line hover:bg-phx-info-bg"
+          : "border-phx-accent-press bg-phx-accent text-phx-accent-ink shadow-[0_1px_2px_rgba(13,16,21,0.10)] hover:bg-phx-accent-hover";
+  const held =
+    tone === "ok"
+      ? "border-phx-ok-line bg-phx-ok-bg text-phx-ok"
+      : tone === "danger"
+        ? "border-phx-danger-line bg-phx-danger-bg text-phx-danger"
+        : tone === "info"
+          ? "border-phx-info-line bg-phx-info-bg text-phx-info"
+          : "border-phx-accent-press bg-phx-accent-hover text-phx-accent-ink";
   return (
     <button
       aria-pressed={pressed}
       className={cn(
-        "inline-flex items-center gap-1.5 border px-3 py-1.5 text-[13px] font-bold transition disabled:opacity-45",
-        toneClass,
-        pressed ? "ring-1 ring-phx-ink/20" : null,
+        "inline-flex items-center gap-1.5 border px-3 py-1.5 text-[13px] font-bold leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-45",
+        pressed ? cn(held, "shadow-[inset_0_1px_2px_rgba(13,16,21,0.14)]") : rest,
       )}
       disabled={disabled}
       onClick={onClick}
@@ -463,9 +531,9 @@ function RejectPanel({
           <button
             aria-pressed={reason === key}
             className={cn(
-              "border px-2 py-1 text-[12px] font-semibold transition",
+              "border px-2 py-1 text-[12px] font-semibold leading-none transition-colors",
               reason === key
-                ? "border-phx-danger-line bg-phx-danger text-white"
+                ? "border-phx-danger-line bg-phx-danger text-white shadow-[inset_0_1px_2px_rgba(13,16,21,0.18)]"
                 : "border-phx-line bg-white text-phx-ink-2 hover:border-phx-danger-line hover:text-phx-danger",
             )}
             key={key}
@@ -485,18 +553,22 @@ function RejectPanel({
           placeholder="Note — optional, kept in the candidate's history"
           value={detail}
         />
-        <button
-          className="border border-phx-line bg-white px-3 py-1.5 text-[13px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper"
-          onClick={onCancel}
-          type="button"
-        >
+        {/* Backing out is the quietest thing in the panel. It was the same size and weight as the
+            rejection beside it, which is the one pairing where "they look alike" costs something
+            real. */}
+        <Action onClick={onCancel} size="md" tone="ghost">
           Cancel
-        </button>
+        </Action>
         <button
-          className="border border-phx-danger-line bg-phx-danger px-3 py-1.5 text-[13px] font-bold text-white transition hover:bg-phx-danger/90 disabled:opacity-45"
+          className="border border-phx-danger-line bg-phx-danger px-3 py-2 text-[13px] font-bold leading-none text-white shadow-[0_1px_2px_rgba(13,16,21,0.10)] transition-colors hover:bg-phx-danger/90 disabled:cursor-not-allowed disabled:opacity-45"
           /* A reason is required and the button says so by staying off — the whole point of the
              list is that the archive can be counted, and an unlabelled rejection is the state this
-             replaces. */
+             replaces.
+
+             The one control on this page that is NOT built from the Action kit, and deliberately:
+             the kit has three volumes and the loudest of them is the accent, which is the page's
+             "carry on" colour. This is the single irreversible-feeling act on the screen and it has
+             to be unmistakably its own thing. */
           disabled={busy || reason === null}
           onClick={() => {
             if (!reason) return;

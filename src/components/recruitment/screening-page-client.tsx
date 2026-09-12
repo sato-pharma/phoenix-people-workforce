@@ -43,6 +43,7 @@ import {
   type ScreeningRoleFilter,
   type ScreeningSeenFilter,
 } from "@/lib/recruitment/screening-link";
+import { Action } from "@/components/recruitment/workstation/workstation-look";
 import type { Candidate } from "@/lib/recruitment/types";
 import { cn } from "@/lib/utils";
 // Type-only for the same reason: vacancy-options reads the service-role client.
@@ -241,8 +242,8 @@ export function ScreeningPageClient({
 //
 // A 4px radius is invisible in a screenshot and survives review, which is why it is checked by
 // counting computed `border-radius` rather than by looking. The focus ring stays — it was the
-// second half of that change and it is not a corner: `focus:border-orange-400` alone moves one
-// pixel of colour, which on a 1px slate border is very nearly invisible.
+// second half of that change and it is not a corner: `focus:border-phx-accent` alone moves one
+// pixel of colour, which on a 1px hairline is very nearly invisible.
 //
 // ── AND WHICH OF THE EIGHT IS DOING IT ──────────────────────────────────────────────────────────
 // The bar reports that 42 of 434 CVs survived, and until now it did not say WHICH switch took the
@@ -255,17 +256,30 @@ export function ScreeningPageClient({
 // field. Not decoration — it is the difference between spotting a stale Region filter in a glance
 // and hunting for it. The `narrowed` flag that already drives the count pill and the Clear button is
 // the same idea; this just moves it from the summary onto the control responsible.
+//
+// ── THE PALETTE IS THE PRODUCT'S, NOT TAILWIND'S ────────────────────────────────────────────────
+// Until 2026-09-12 this bar was painted in `slate-*` and `orange-*` — Tailwind's own ramps, not
+// Phoenix's. On its own that is invisible; sitting one pixel above a workstation painted entirely in
+// `--phx-*`, it is two products on one screen. `slate-200` is #e2e8f0 and carries a blue cast;
+// `--phx-line` is #e0dcd4 and carries a warm one, against a paper ground that is not white. Every
+// class below now names a token, so a change to `tokens.css` reaches this bar like it reaches
+// everything else.
+//
+// AND THE LABEL HAD NO SIZE AT ALL. It was written `text-phx-xs` inside a `cn()` call, and `cn()`
+// runs tailwind-merge, which silently DROPS a custom named font size — the class compiled, shipped,
+// and did nothing, so eight filter labels rendered at whatever they inherited. The bracket form is
+// the only safe way to say a Phoenix step inside `cn()`; see the same warning in workstation-look.
 const filterLabelClass = (active: boolean) =>
   cn(
-    "flex min-w-0 flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide transition-colors",
-    active ? "text-orange-600" : "text-slate-500",
+    "flex min-w-0 flex-col gap-1 text-[10px] font-bold uppercase leading-none tracking-[0.12em] transition-colors",
+    active ? "text-phx-accent-press" : "text-phx-ink-faint",
   );
 const filterSelectClass = (active: boolean) =>
   cn(
-    "h-8 border px-2 text-sm transition focus:outline-none focus:ring-2 focus:ring-orange-100",
+    "h-8 border px-2 text-[13px] transition-colors focus:outline-none focus:ring-1 focus:ring-phx-accent-line",
     active
-      ? "border-orange-300 bg-orange-50/70 font-semibold text-orange-900 hover:border-orange-400 focus:border-orange-400"
-      : "border-slate-200 bg-white text-slate-800 hover:border-slate-300 focus:border-orange-400",
+      ? "border-phx-accent-line bg-phx-accent-soft font-semibold text-phx-accent-press hover:border-phx-accent focus:border-phx-accent"
+      : "border-phx-line bg-white text-phx-ink hover:border-phx-line-strong focus:border-phx-accent",
   );
 
 /**
@@ -318,25 +332,28 @@ export function ScreeningFilterBar({
     area !== null ||
     source !== null;
   return (
-    <div className="flex flex-wrap items-end gap-x-3 gap-y-2 border border-b-0 border-phx-line bg-gradient-to-b from-white to-slate-50/70 px-3 py-2.5">
+    <div className="flex flex-wrap items-end gap-x-3 gap-y-2 border border-b-0 border-phx-line bg-gradient-to-b from-white to-phx-surface-2 px-3 py-2.5">
       {/* The size of the pile, as the headline of the bar rather than another grey word in it.
           "42 of 434" is the single fact this row exists to report — how much the switches beside it
           just took off — and as plain 12px text it read as a caption on the Status filter. The
           tabular figures stop the number jittering as it changes with each new link. */}
       <span
-        className={`inline-flex items-center gap-1 whitespace-nowrap px-2 py-1 text-xs font-bold tabular-nums ${
-          narrowed ? "bg-orange-50 text-orange-700 ring-1 ring-orange-200/70" : "bg-slate-100 text-slate-700"
-        }`}
+        className={cn(
+          "inline-flex h-8 items-center gap-1 whitespace-nowrap border px-2 text-[13px] font-black tabular-nums",
+          narrowed
+            ? "border-phx-accent-line bg-phx-accent-soft text-phx-accent-press"
+            : "border-phx-line bg-phx-paper-2 text-phx-ink",
+        )}
       >
         {narrowed ? (
           <>
             {queueCount}
-            <span className="font-semibold text-orange-500/80">of {totalCount}</span>
+            <span className="text-[11px] font-semibold opacity-80">of {totalCount}</span>
           </>
         ) : (
           <>{totalCount}</>
         )}
-        <span className="font-semibold opacity-70">{totalCount === 1 ? "CV" : "CVs"}</span>
+        <span className="text-[11px] font-semibold opacity-70">{totalCount === 1 ? "CV" : "CVs"}</span>
       </span>
       <label className={filterLabelClass(status !== null)}>
         Status
@@ -469,15 +486,15 @@ export function ScreeningFilterBar({
           real target rather than a 12px underline: this is the undo for a filter that hid the CVs
           somebody is looking for, and it was the smallest hit area on the bar. */}
       {narrowed ? (
-        <button
-          className="inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+        <Action
+          className="h-8 whitespace-nowrap px-2.5"
           onClick={onClear}
           title="Drop every filter and show the whole pool"
-          type="button"
+          tone="quiet"
         >
-          <X className="h-3 w-3" />
+          <X aria-hidden className="h-3 w-3" />
           Clear
-        </button>
+        </Action>
       ) : null}
     </div>
   );
