@@ -1601,6 +1601,7 @@ import { runBackgroundFolderFilingGateTests } from "./background-folder-filing-g
 import { runPhoenixOfficialLogoTests } from "./phoenix-official-logo.test.ts";
 import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending-backfill-completed-only.test.ts";
 import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowrap-lock.test.ts";
+import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5339,6 +5340,11 @@ await runTest(
 await runTest(
   "recruitment Folders tab: no `whitespace-nowrap` on prose, and the inventory is pinned (the fits-the-screen golden rule)",
   runRecruitmentFoldersNowrapLockTests,
+);
+
+await runTest(
+  "spotlight sheet: the ranking paginates instead of clipping, sheets are numbered and balanced, nothing rasterises",
+  runSpotlightSheetDesignTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
