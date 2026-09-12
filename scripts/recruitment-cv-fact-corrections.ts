@@ -17,6 +17,10 @@ import {
   selectFactCorrections,
 } from "@/lib/recruitment/cv-fact-correction";
 import { defaultCvPositionKey } from "@/lib/recruitment/cv-field-schemas";
+import {
+  EXTRACTOR_FIX_LANDED_AT,
+  needsRereadThroughFixedExtractor,
+} from "@/lib/recruitment/cv-reread-staleness";
 import { cvRereadOpsMarker } from "@/lib/recruitment/ops-marker";
 import type { UpdateCandidateInput } from "@/lib/recruitment/types";
 
@@ -86,7 +90,18 @@ import type { UpdateCandidateInput } from "@/lib/recruitment/types";
 //                  saying otherwise would be the mistake the sibling script's header made for
 //                  twelve days.
 //   --confirm-spend  required beside --reread. Nothing else in this file turns a free run into a
-//                  paid one.
+//                  paid one. The estimate PRINTS before this refuses, so `--reread --only-stale`
+//                  with no --confirm-spend is the free way to ask what the job would cost.
+//   --only-stale[=<ISO>]
+//                  narrows --reread to candidates whose newest reading is at or before the cutoff,
+//                  plus every candidate with no reading at all. Defaults to the instant #3729 —
+//                  the extractor fix — merged. Exists because a re-read is charged per CV and a
+//                  third of the population had already been done: without it, finishing the job
+//                  means paying twice for work already paid for. See
+//                  src/lib/recruitment/cv-reread-staleness.ts for why the cut is a timestamp and
+//                  not the `created_by` marker, and why it leans towards re-reading when unsure.
+//                  The override is accepted ONLY as `--only-stale=<ISO>`, never as a separate
+//                  argument — a bare flag followed by a value would read the neighbouring flag.
 //   --limit N      first N targets only. Prove the path on one before firing all.
 //   --allow-clearing-graduation-year
 //                  lets a proposal BLANK a populated graduation_year when the CV shows the degree is
@@ -148,6 +163,8 @@ const CANDIDATE_COLUMNS =
 type NewestExtraction = {
   fields: ExtractedCandidateFields;
   positionKey: string;
+  /** When this reading was produced — the one thing that says whether the extractor had the fix. */
+  createdAt: string;
 };
 
 type Proposal = {
@@ -344,6 +361,16 @@ async function main(): Promise<void> {
   const confirmSpend = args.includes("--confirm-spend");
   const apply = args.includes("--apply");
   const allowClearingGraduationYear = args.includes("--allow-clearing-graduation-year");
+  // `--only-stale` takes its override ONLY as `--only-stale=<ISO>`. The shared flagValue() helper
+  // reads a bare flag's value from the NEXT argv entry, which would quietly turn
+  // `--only-stale --confirm-spend` into a cutoff of "--confirm-spend" — an unparseable date, which
+  // the predicate then treats as "re-read everything". That is a silent quadrupling of the bill, so
+  // the bare form is matched exactly and never looks at its neighbour.
+  const onlyStaleArg = args.find((arg) => arg === "--only-stale" || arg.startsWith("--only-stale="));
+  const onlyStale = onlyStaleArg !== undefined;
+  const staleCutoff = onlyStaleArg?.includes("=")
+    ? onlyStaleArg.slice(onlyStaleArg.indexOf("=") + 1).trim()
+    : EXTRACTOR_FIX_LANDED_AT;
   const decisionsPath = flagValue(args, "--decisions");
   const limitRaw = flagValue(args, "--limit");
   const limit = limitRaw === null ? Number.NaN : Number(limitRaw);
@@ -353,8 +380,13 @@ async function main(): Promise<void> {
   if (apply && !decisionsPath) {
     throw new Error("--apply needs --decisions <path to the sheet you filled in>. It has no other input.");
   }
-  if (reread && !confirmSpend) {
-    throw new Error("--reread calls the model and costs money. Add --confirm-spend once you mean it.");
+  if (onlyStale && !reread) {
+    throw new Error("--only-stale narrows what --reread pays for. On its own it changes nothing — add --reread.");
+  }
+  if (onlyStale && Number.isNaN(Date.parse(staleCutoff))) {
+    throw new Error(
+      `--only-stale=${staleCutoff} is not a date this can read. Use an ISO instant, e.g. --only-stale=2026-09-12T00:09:24Z.`,
+    );
   }
 
   const supabase = opsClient();
@@ -411,12 +443,31 @@ async function main(): Promise<void> {
   const newest = await loadNewestExtractions(supabase);
 
   if (reread) {
+    if (onlyStale) {
+      const before = targets.length;
+      targets = targets.filter((row) => needsRereadThroughFixedExtractor(newest.get(row.id)?.createdAt, staleCutoff));
+      console.log(
+        `\n--only-stale     : ON, cutoff ${staleCutoff}.` +
+          ` ${before - targets.length} of ${before} already read after it — skipped, not re-paid for.`,
+      );
+      console.log(
+        "                   A candidate with NO reading on file counts as stale and IS re-read.",
+      );
+    }
+
     console.log(
-      `\n--reread         : ON. All ${targets.length} targets reach the model through the FIXED extractor.`,
+      `\n--reread         : ON. ${targets.length} target(s) reach the model through the FIXED extractor.`,
     );
     console.log(
       `Estimated spend  : ~$${(targets.length * NANO_COST_PER_CV).toFixed(2)} (${targets.length} x ~$${NANO_COST_PER_CV.toFixed(4)}); vision-route CVs cost ~12x more.`,
     );
+
+    // The refusal sits BELOW the estimate on purpose: the number above is the whole reason to run
+    // this without committing, so `--reread --only-stale` with no --confirm-spend is the free way to
+    // ask "what would this cost me?". Nothing has called the model at this point.
+    if (!confirmSpend) {
+      throw new Error("--reread calls the model and costs money. Add --confirm-spend once you mean it.");
+    }
 
     const access: AccessContext = {
       hrId: null,
@@ -519,6 +570,7 @@ async function loadNewestExtractions(supabase: OpsClient): Promise<Map<string, N
     newest.set(String(row.candidate_id), {
       fields: normalizeStoredExtractionFields(row.extracted_fields),
       positionKey: row.position_key ?? defaultCvPositionKey,
+      createdAt: row.created_at,
     });
   }
   return newest;
