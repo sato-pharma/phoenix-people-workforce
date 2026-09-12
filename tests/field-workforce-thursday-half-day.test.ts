@@ -112,7 +112,7 @@ export function runFieldWorkforceThursdayHalfDayTests() {
   assert.equal(
     sumFieldWorkforceDeductionDayWeights([SUNDAY, MONDAY, THURSDAY], REP),
     2.5,
-    "two full days plus a Thursday is 2.5 days, not 3 — this is the number multiplied by Base/30",
+    "two full days plus a Thursday is 2.5 days, not 3 — this is the number multiplied by the day rate",
   );
   assert.equal(
     sumFieldWorkforceDeductionDayWeights([THURSDAY, THURSDAY], REP),

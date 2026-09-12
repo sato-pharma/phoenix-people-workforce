@@ -1143,6 +1143,7 @@ import { runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests } from "./au
 import { runAutomatedPayrollRecurringNonEmployeesTests } from "./automated-payroll-recurring-non-employees.test.ts";
 import { runPayrollAcknowledgmentTokenTests } from "./payroll-acknowledgment-token.test.ts";
 import { runPayrollSilentScreensTests } from "./payroll-silent-screens.test.ts";
+import { runPayrollDayRateDivisorTests } from "./payroll-day-rate-divisor.test.ts";
 import { runFieldWorkforceThursdayHalfDayTests } from "./field-workforce-thursday-half-day.test.ts";
 import { runDeductionsModuleNoRecordsScopeTests } from "./deductions-module-no-records-scope.test.ts";
 import { runOutstationApprovedAmountTests } from "./outstation-approved-amount.test.ts";
@@ -5323,6 +5324,11 @@ await runTest(
 await runTest(
   "a payroll warning can only be acknowledged by the person it was shown to, for the run and gate it was raised on, while it still says the same thing — a yes on the first request answers nothing",
   runPayrollAcknowledgmentTokenTests,
+);
+
+await runTest(
+  "one day rate: a deducted day is worth the month's own day, exactly like the day it cancels — the flat 30 is retired on every step, and a caller that cannot say how long the month is prices nothing (owner ruling 2026-09-12)",
+  runPayrollDayRateDivisorTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

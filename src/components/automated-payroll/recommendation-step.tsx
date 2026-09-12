@@ -12,6 +12,7 @@ import {
   hasDoubleDeductionConflict,
 } from "@/lib/automated-payroll/conflicts";
 import { computeSettlementSummary } from "@/lib/automated-payroll/settlement-summary";
+import { calendarDaysInMonth } from "@/lib/payroll/copilot/proration";
 import {
   dayDrivenMoney,
   monthNameAndYear,
@@ -497,10 +498,13 @@ export function RecommendationStep({
    *             "Base Salary". The Resignations CRM tab names "Net Salary"
    *             (owner rule 2026-08-30: a no-activity day must cost exactly one
    *             day of the pay it cancels, and that pay is prorated off the net).
-   *   divisor — the context column named by `autoCalcDivisorContextKey`, default
-   *             30 (the owner's deduction day-rate). Resignation proration
-   *             divides by the month's ACTUAL calendar days, so a 31-day month
-   *             would otherwise settle the wrong amount.
+   *   divisor — the month's ACTUAL calendar days, for deductions exactly as for
+   *             pay (owner ruling 2026-09-12, audit finding 37 — it retired the
+   *             flat 30 the Part 1 deduction tabs used to divide by, which made
+   *             a deducted day worth more than the day it cancelled in a 31-day
+   *             month and less in February). A step may still name its own
+   *             divisor column via `autoCalcDivisorContextKey`; today every one
+   *             that does carries the same figure.
    *
    * `autoCalcCompanionMoneyKeys` is what makes the Resignations step's Days
    * Worked move Extra Cost of Living and Fuel alongside Base. Before 2026-08-30
@@ -518,7 +522,14 @@ export function RecommendationStep({
   ) => {
     // The arithmetic lives in step-definitions.ts so a re-uploaded sheet prices a corrected day
     // count exactly as this grid does (audit finding 32).
-    Object.assign(values, dayDrivenMoney(spec, row.context, days));
+    //
+    // `period` is loaded with the step and is null only before the first load lands, when there are
+    // no rows to type into. If it somehow is null, dayDrivenMoney is handed 0 and prices nothing
+    // rather than guessing a month length — a blank cell HR can see beats a silently wrong number.
+    Object.assign(
+      values,
+      dayDrivenMoney(spec, row.context, days, period ? calendarDaysInMonth(period) : 0),
+    );
   };
 
   const setDaysValue = (hrId: string, field: string, days: number) => {

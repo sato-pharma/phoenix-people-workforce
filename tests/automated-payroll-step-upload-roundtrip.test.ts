@@ -135,16 +135,17 @@ export async function runAutomatedPayrollStepUploadRoundTripTests() {
     stepKey: "p1_no_record",
     edits: [{ hrId: "B-3", values: { p1odNoRecordDays: 5, p1odNoRecordValue: 600 } }],
     current: noRecordRows,
+    monthDays: 31,
   });
   assert.equal(
     moved.edits[0].values?.p1odNoRecordValue,
-    1500,
-    "HEADLINE: 5 days at 9,000 / 30 is 1,500; the sheet's untouched 600 belonged to the old 2 days",
+    1451.61,
+    "HEADLINE: 5 days at 9,000 ÷ 31 is 1,451.61 — not the 1,500 a flat 30 gave; the sheet's untouched 600 belonged to the old 2 days",
   );
   const noRecordDays = STEP_DEFINITIONS.p1_no_record.fields.find((field) => field.key === "p1odNoRecordDays");
   assert.equal(
     moved.edits[0].values?.p1odNoRecordValue,
-    dayDrivenMoney(noRecordDays, { "Base Salary": 9000 }, 5).p1odNoRecordValue,
+    dayDrivenMoney(noRecordDays, { "Base Salary": 9000 }, 5, 31).p1odNoRecordValue,
     "and it is the same figure the grid computes, from the same function",
   );
   assert.equal(
@@ -159,6 +160,7 @@ export async function runAutomatedPayrollStepUploadRoundTripTests() {
       stepKey: "p1_no_record",
       edits: [{ hrId: "B-3", values: { p1odNoRecordDays: 5, p1odNoRecordValue: 999 } }],
       current: noRecordRows,
+      monthDays: 31,
     }).edits[0].values?.p1odNoRecordValue,
     999,
     "an amount HR changed alongside the days is their decision and stands",
@@ -168,6 +170,7 @@ export async function runAutomatedPayrollStepUploadRoundTripTests() {
       stepKey: "p1_no_record",
       edits: [{ hrId: "B-3", values: { p1odNoRecordDays: 2, p1odNoRecordValue: 600 } }],
       current: noRecordRows,
+      monthDays: 31,
     }).edits[0].values?.p1odNoRecordValue,
     600,
     "no day change, no money change",
@@ -186,6 +189,7 @@ export async function runAutomatedPayrollStepUploadRoundTripTests() {
     stepKey: "p1_resignations",
     edits: [{ hrId: "B-4", values: { daysWorked: 4.5, baseForMonth: 5419.35, ecolPaid: 387.1, fuelPaid: 193.55 } }],
     current: leaverRows,
+    monthDays: 31,
   });
   assert.equal(corrected.edits[0].values?.daysWorked, 4.5, "the corrected day count is kept");
   assert.deepEqual(
@@ -207,6 +211,7 @@ export async function runAutomatedPayrollStepUploadRoundTripTests() {
       stepKey: "p1_unpaid_vacation",
       edits: [{ hrId: "B-5", values: { p1odVacationDays: 3, p1odVacationValue: 2750 } }],
       current: [stepRow({ hrId: "B-5", lifecycle: "leaver", context: { "Base Salary": 9000 }, values: { p1odVacationDays: 1, p1odVacationValue: 2750 } })],
+      monthDays: 31,
     }).edits[0].values?.p1odVacationValue,
     2750,
     "a leaver's unpaid-vacation value must not be re-priced from days",
@@ -223,5 +228,9 @@ export async function runAutomatedPayrollStepUploadRoundTripTests() {
   assert.match(saveBody, /\] = null;/, "and clear them, so the settlement rule re-derives the money from the saved days");
 
   const grid = readFileSync("src/components/automated-payroll/recommendation-step.tsx", "utf8");
-  assert.match(grid, /dayDrivenMoney\(spec, row\.context, days\)/, "the grid must price days with the same shared function");
+  assert.match(
+    grid,
+    /dayDrivenMoney\(spec, row\.context, days, period \? calendarDaysInMonth\(period\) : 0\)/,
+    "the grid must price days with the same shared function, and hand it the run's own month length",
+  );
 }
