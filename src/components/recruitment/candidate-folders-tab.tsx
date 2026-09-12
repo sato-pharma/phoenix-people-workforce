@@ -528,14 +528,24 @@ function DeclaredFilingsPanel({
           {/* A rejection is a settled decision, not an open question — see collectSuggestedFilings.
               Counted here rather than listed one row per person, which is what buried the 25 rows a
               recruiter could actually act on under 40 rows nobody can. */}
+          {/* WRAPS. Measured on production at 375px on 2026-09-12: held at `whitespace-nowrap` this
+              one sentence laid out 415px wide inside a 351px box and dragged the whole tab into a
+              65px sideways scroll (main scrollWidth 440 vs clientWidth 375) — the fits-the-screen
+              golden rule broken by a single class. Wrapping is the permitted answer and the only
+              one: the ellipsis ban means `truncate` was never available here. Same reasoning as the
+              shelf header above, which was measured the same way on 2026-09-02. */}
           {rejectedCount > 0 ? (
-            <p className="whitespace-nowrap text-xs font-medium text-slate-500">
+            <p className="text-xs font-medium text-slate-500">
               {rejectedCount} more already rejected — a rejection is a settled decision, not shown here.
             </p>
           ) : null}
           {skipped.length > 0 ? (
             <>
-              <p className="mt-1 whitespace-nowrap text-xs font-bold text-slate-600 first:mt-0">
+              {/* Wraps too. It fits at 375px today, but it is a SENTENCE with a count in front of
+                  it, and the sibling above is the proof that a no-wrap sentence on this screen is
+                  one wording change away from the sideways scroll. Labels and counts below keep
+                  their `whitespace-nowrap`; prose does not get it. */}
+              <p className="mt-1 text-xs font-bold text-slate-600 first:mt-0">
                 {skipped.length} answered but cannot be placed
               </p>
               <ul className="mt-1 space-y-0.5">
@@ -569,9 +579,14 @@ function FolderChip({
     <button
       aria-expanded={isOpen}
       className={cn(
-        // whitespace-nowrap, never a truncate: the owner's standing rule is that text is never cut
-        // and never wrapped, and "Dokki - Mohandseen - Bolak" is a real 26-character area name.
-        "inline-flex items-center gap-2 whitespace-nowrap rounded-md border px-3 py-1.5 text-xs font-semibold transition",
+        // Never a truncate — the owner's standing rule is that text is never cut — but the label WRAPS,
+        // because the no-horizontal-scroll rule outranks the no-wrap habit and this chip has outgrown
+        // the 26-character area name the old comment was written for. "Other positions" mints one
+        // folder per declared JOB TITLE, and production already holds "Technical Support and
+        // infrastructure Engineer": measured at 375px on 2026-09-12 that chip is 311px inside a 349px
+        // row — five characters from painting off the side of the phone. max-w-full so it can never
+        // exceed its row; the count below keeps its own nowrap so the number never splits off.
+        "inline-flex max-w-full items-center gap-2 rounded-md border px-3 py-1.5 text-left text-xs font-semibold transition",
         isOpen
           ? "border-phx-accent bg-orange-50 text-phx-accent-press"
           : "border-phx-line bg-white text-slate-700 hover:bg-slate-50",
@@ -582,7 +597,7 @@ function FolderChip({
     >
       <FolderOpen aria-hidden className="h-3.5 w-3.5 shrink-0" />
       {folder.label}
-      <span className="tabular-nums opacity-70">{folder.candidates.length}</span>
+      <span className="whitespace-nowrap tabular-nums opacity-70">{folder.candidates.length}</span>
     </button>
   );
 }
