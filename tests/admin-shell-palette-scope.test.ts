@@ -254,6 +254,45 @@ export async function runAdminShellPaletteScopeTests(): Promise<void> {
     "the LOCKED admin-shell flat-black table header is missing from app/globals.css",
   );
 
+  // RULE 3 — depth on every card (the premium godmode polish golden rule, owner 2026-09-08).
+  // Asserted in three parts because each one is separately load-bearing and each has already
+  // been got wrong once during the measurement that produced the rule:
+  //
+  //   `[class~="bg-white"]`   without it the rule matched 28px label strips
+  //   `:not([class*="inline"])` without it it matched the /workspace tab rail
+  //   ` main `                 without it it matched the portal top bar's zoom pill
+  //   the nested lighter pair  without it a tile inside a section stacks two full shadows
+  //
+  // A session "simplifying" the selector drops one of those and the damage is invisible in
+  // source review — it shows up only as a shadow under something that is not a card.
+  const depthRule = /\.admin-shell main\s+:where\(div, section, article, aside, form, fieldset, details\)\[class~="border"\]\[class~="bg-white"\]:not\(\[class\*="inline"\]\):not\(\[class\*="shadow"\]\)/;
+  assert.match(
+    GLOBALS_SOURCE,
+    depthRule,
+    "the LOCKED admin-shell card-depth rule is missing from app/globals.css, or its selector " +
+      'has been widened — `main`, `[class~="bg-white"]` and `:not([class*="inline"])` are what ' +
+      "keep it off chrome controls, label strips and tab rails, and none of the three is optional.",
+  );
+  assert.ok(
+    GLOBALS_SOURCE.includes("0 12px 28px rgba(15, 23, 42, 0.055)"),
+    "the card-depth rule no longer carries adminPanelClassName's ambient shadow — the CSS and " +
+      "the token must stay the same value or one surface lifts differently from its neighbour",
+  );
+  assert.ok(
+    GLOBALS_SOURCE.includes("0 10px 24px rgba(15, 23, 42, 0.045)"),
+    "the NESTED card-depth rule is gone — a card inside a card must take " +
+      "adminSoftPanelClassName's lighter pair, or two full ambient shadows stack and read as dirt",
+  );
+  // The portal is a mirror by owner directive, and a rule added to only one shell is the exact
+  // way the two looks drifted apart before.
+  assert.ok(
+    GLOBALS_SOURCE.includes(
+      '.employee-portal-shell main\n  :where(div, section, article, aside, form, fieldset, details)[class~="border"][class~="bg-white"]',
+    ),
+    "the card-depth rule reaches the admin shell but not `.employee-portal-shell` — the portal " +
+      "mirrors every locked admin rule, and half a rule is how one token produced two looks",
+  );
+
   // --- 8. the arbitrary-hex residue -----------------------------------------
   // The variable remap cannot reach a literal: `border-[#DDE6F1]` compiles to
   // `border-color:#DDE6F1` with no variable in between. A second block overrides those by
