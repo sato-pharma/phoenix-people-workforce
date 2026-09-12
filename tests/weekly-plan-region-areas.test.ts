@@ -649,6 +649,19 @@ export function runWeeklyPlanRegionAreasTests() {
     /return \{ \.\.\.row, locationText: lockedRegion \};/,
     "and every geography row must carry it, whatever the row came from",
   );
+  // DERIVED from the raw rows, not written back into them. Stamping the region from an effect
+  // calls setState synchronously inside one — a cascading render, and a lint ERROR that took the
+  // first push of this change red. The derivation reaches every entry point the same way without
+  // the write, and is what everything downstream (render, validation, submit payload) reads.
+  assert.match(
+    workspaceSrc,
+    /const rows = useMemo\(\(\) => withLockedRegion\(rawRows, lockedRegion\), \[lockedRegion, rawRows\]\);/,
+    "the locked region must be derived onto the rows, never stamped into state",
+  );
+  assert.ok(
+    !/useEffect\([\s\S]{0,400}?setRows\([\s\S]{0,400}?locationText: lockedRegion/.test(workspaceSrc),
+    "and it must not go back to setState-inside-an-effect",
+  );
   assert.ok(
     !/\bworkplaceRegions\b/.test(serviceSrc),
     "the directory-derived region list must not come back — it read employees.region_name, not the AU seat model, and was never wired to the client",

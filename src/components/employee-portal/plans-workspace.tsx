@@ -501,6 +501,25 @@ function canonicalRegion(value: string | null | undefined) {
 // applied to every line alike. Anti Infective's Delta 3 has no CNS/Pedia counterpart, so a
 // region list shared across lines offers a region that then hands those two lines zero areas:
 // the same dead-end cascading dropdown this file's Area picker already had to be fixed for once.
+/**
+ * Every geography row rewritten to the plan owner's locked region, or the rows untouched when
+ * nobody is locked. A locked row is left alone: it comes from an approved leave or holiday and is
+ * not the owner's to place. Returns the SAME array identity when there is nothing to change, so
+ * memos keyed on the result do not churn.
+ */
+function withLockedRegion(rows: DraftItem[], lockedRegion: string | null): DraftItem[] {
+  if (!lockedRegion) return rows;
+  let changed = false;
+  const next = rows.map((row) => {
+    if (row.locked) return row;
+    const rule = activityRule(row.activityType, row.activityTitle);
+    if (!rule.showRegion || row.locationText === lockedRegion) return row;
+    changed = true;
+    return { ...row, locationText: lockedRegion };
+  });
+  return changed ? next : rows;
+}
+
 function regionOptions(source: AreaSource, currentRegion?: string | null): string[] {
   const options: string[] = source.lockedRegion
     ? [source.lockedRegion]
@@ -1048,11 +1067,24 @@ export function PlansWorkspace({
   const [activeKind, setActiveKind] = useState<EmployeePlanKind>(initialKind);
   const [anchorDate, setAnchorDate] = useState(initialAnchorDate);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(initialSelectedPlan?.id ?? null);
-  const [rows, setRows] = useState<DraftItem[]>(() =>
+  // A District Manager's region is his own AU district and nothing else — he is not asked for it
+  // (owner, 2026-09-12). Null for everyone else, and null too when the seat model cannot name his
+  // district: an unresolvable lock has to fall back to the picker rather than guess.
+  const lockedRegion = useMemo(() => {
+    if (!isDistrictManagerPlanTitle(workspace.currentEmployee?.jobTitle ?? null)) return null;
+    return ownPlanningRegionForOwner(workspace.planningAreaSeats, workspace.currentEmployee);
+  }, [workspace.currentEmployee, workspace.planningAreaSeats]);
+  const [rawRows, setRows] = useState<DraftItem[]>(() =>
     initialSelectedPlan
       ? draftRowsFromPlan(initialSelectedPlan, initialWorkspace.medicalRepOptions)
       : defaultRows(initialKind, initialAnchorDate, initialWorkweek),
   );
+  // Every geography row carries the locked region, wherever the row came from — a fresh week, a
+  // prefill, an older plan reopened for edit. DERIVED, never written back into state: stamping it
+  // from an effect is a cascading render (and a lint error), and this reaches exactly the same
+  // rows without one. Everything downstream reads `rows`, so rendering, validation and the submit
+  // payload all see it — which is what makes "hard-coded" true of every entry point at once.
+  const rows = useMemo(() => withLockedRegion(rawRows, lockedRegion), [lockedRegion, rawRows]);
   const [message, setMessage] = useState<PlanMessage | null>(null);
   // A failed action and a successful one used to render in the SAME sky-blue box, so a
   // rejection ("a plan already exists for this week") was indistinguishable from a
@@ -1234,13 +1266,6 @@ export function PlansWorkspace({
 
   // Everything the Area picker reads, assembled once. The AU seat model decides; the roster
   // below it is only reached when that map could not be loaded.
-  // A District Manager's region is his own AU district and nothing else — he is not asked for it
-  // (owner, 2026-09-12). Null for everyone else, and null too when the seat model cannot name his
-  // district: an unresolvable lock has to fall back to the picker rather than guess.
-  const lockedRegion = useMemo(() => {
-    if (!isDistrictManagerPlanTitle(workspace.currentEmployee?.jobTitle ?? null)) return null;
-    return ownPlanningRegionForOwner(workspace.planningAreaSeats, workspace.currentEmployee);
-  }, [workspace.currentEmployee, workspace.planningAreaSeats]);
   const areaSource = useMemo<AreaSource>(
     () => ({
       lockedRegion,
@@ -1250,24 +1275,6 @@ export function PlansWorkspace({
     }),
     [lockedRegion, workspace.currentEmployee, workspace.medicalRepOptions, workspace.planningAreaSeats],
   );
-  // Stamp the locked region onto every geography row, wherever the row came from — a fresh week,
-  // a prefill, an older plan reopened for edit. Doing it here rather than at each of those call
-  // sites is what makes "hard-coded" true of all of them at once. Idempotent: when nothing needs
-  // changing the same array identity is returned, so this cannot loop.
-  useEffect(() => {
-    if (!lockedRegion) return;
-    setRows((current) => {
-      let changed = false;
-      const next = current.map((row) => {
-        if (row.locked) return row;
-        const rule = activityRule(row.activityType, row.activityTitle);
-        if (!rule.showRegion || row.locationText === lockedRegion) return row;
-        changed = true;
-        return { ...row, locationText: lockedRegion };
-      });
-      return changed ? next : current;
-    });
-  }, [lockedRegion, rows]);
   const tableNeedsLine = lineOptions.length > 1;
   const submitBlocked = !canEdit || submitValidationIssues.length > 0 || incompleteDays.length > 0 || noSameLineReps || noPlanRows;
   const prefillScopeKey = `${workspace.currentEmployee?.hrId ?? ""}|${activeKind}|${period.periodStartDate}`;
