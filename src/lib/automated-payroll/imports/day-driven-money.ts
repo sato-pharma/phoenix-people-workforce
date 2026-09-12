@@ -37,6 +37,12 @@ export function applyDayDrivenMoney(input: {
   stepKey: StepKey;
   edits: StepEditInput[];
   current: StepRow[];
+  /**
+   * The run's own month length — the one divisor for pay and for deductions (owner ruling
+   * 2026-09-12, audit finding 37). Required, so that a re-uploaded sheet and the grid price a
+   * corrected day count identically; see dayDrivenMoney's own note on why there is no fallback.
+   */
+  monthDays: number;
 }): DayDrivenMoneyResult {
   const definition = stepDefinition(input.stepKey);
   const recalculated = new Map<string, string[]>();
@@ -73,7 +79,7 @@ export function applyDayDrivenMoney(input: {
         recalculated.set(key, [...(recalculated.get(key) ?? []), ...untouched]);
         continue;
       }
-      const derived = dayDrivenMoney(field, current.context, days);
+      const derived = dayDrivenMoney(field, current.context, days, input.monthDays);
       for (const moneyKey of untouched) {
         if (derived[moneyKey] !== undefined) values[moneyKey] = derived[moneyKey];
       }

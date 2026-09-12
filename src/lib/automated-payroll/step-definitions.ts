@@ -69,7 +69,24 @@ export function stepFieldsTotal(
  * on screen (audit finding 32: the sheet used to move the days and leave the money behind).
  *
  *   amount  — the context column `autoCalcAmountContextKey` names, default "Base Salary".
- *   divisor — the context column `autoCalcDivisorContextKey` names, default 30.
+ *   divisor — THE MONTH'S OWN CALENDAR DAYS (`monthDays`), or the context column
+ *             `autoCalcDivisorContextKey` names when the step supplies one. Both are the same
+ *             number now — see below.
+ *
+ * ONE DIVISOR FOR PAY AND FOR DEDUCTIONS (owner ruling 2026-09-12, audit finding 37). Until that
+ * ruling eleven of the thirteen day-driven money fields divided by a flat 30 while joiner/leaver
+ * pay divided by the month's real length, so a day was worth one amount when it was PAID and a
+ * different amount when it was TAKEN AWAY. In a 31-day month the flat 30 deducted MORE than the day
+ * it cancelled; in February it deducted less. Wrong in both directions, and invisible on a payslip
+ * — and in a 30-day month the two divisors agree exactly, so a spot check never catches it.
+ * Effective from September 2026 forward: August 2026 was published and announced, and a published
+ * month is never re-opened.
+ *
+ * `monthDays` is REQUIRED, deliberately. It replaced a `|| 30` fallback, which is precisely how
+ * eleven fields ended up on the retired rate without anyone choosing it: a caller that forgot simply
+ * got the old behaviour, silently. Now a caller that cannot say how long the month is prices
+ * NOTHING and leaves the money field for a human to type. A missing divisor must never quietly
+ * become a number.
  *
  * Rounded to cents with an epsilon, exactly as the grid always did. A money field whose amount is not
  * a number (a "—" for missing compensation) is left out rather than priced at NaN.
@@ -78,11 +95,15 @@ export function dayDrivenMoney(
   spec: StepFieldSpec | undefined,
   context: Record<string, string | number | null>,
   days: number,
+  monthDays: number,
 ): Record<string, number> {
   const money: Record<string, number> = {};
   if (!spec?.autoCalcMoneyKey) return money;
   const divisorKey = spec.autoCalcDivisorContextKey;
-  const divisor = divisorKey ? Number(context[divisorKey] ?? 0) || 30 : 30;
+  const named = divisorKey ? Number(context[divisorKey] ?? 0) : 0;
+  const divisor = Number.isFinite(named) && named > 0 ? named : monthDays;
+  // Fail closed rather than fall back to a flat 30 — see the note above.
+  if (!Number.isFinite(divisor) || divisor <= 0) return money;
   const share = (moneyKey: string, amountContextKey: string) => {
     const amount = Number(context[amountContextKey] ?? 0);
     if (!Number.isFinite(amount)) return;
@@ -212,7 +233,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part1",
     title: "CRM Deduction",
     subtitle:
-      "CRM no-activity deduction for Part 1 — shown only for this month's one-part-salary employees (continuing two-part employees get this automatically via the Part 2 CRM step instead, so entering it here too would double it; this month's resignations have their own dedicated Resignations CRM tab). Working Days and Non-Working Days always sum to the month's calendar days (owner request 2026-07-25) — edit either one and the other adjusts automatically; the deduction is always calculated from Non-Working Days at Base/30 × days. Reason is optional.",
+      "CRM no-activity deduction for Part 1 — shown only for this month's one-part-salary employees (continuing two-part employees get this automatically via the Part 2 CRM step instead, so entering it here too would double it; this month's resignations have their own dedicated Resignations CRM tab). Working Days and Non-Working Days always sum to the month's calendar days (owner request 2026-07-25) — edit either one and the other adjusts automatically; the deduction is always calculated from Non-Working Days at Base ÷ the month's calendar days × days. Reason is optional.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },
@@ -235,11 +256,14 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
         key: "p1odCrmDays",
         label: "Non-Working Days",
         kind: "days",
-        // Money divisor stays the DEFAULT 30: the flat Base/30 rate the owner set on 2026-07-25, the
-        // one calculateFlat30DeductionAmount (flat-deduction-rate.ts) applies. NOT
-        // calculateDeductionAmountFromBaseSalary, which this comment used to cite: that function has
-        // divided by the month's real calendar days since 2026-08-01. Never autoCalcDivisorContextKey
-        // here, see that field's own doc.
+        // Money divisor is the month's own calendar days, like every day-rate in the system
+        // (owner ruling 2026-09-12, audit finding 37). This tab was the last flat-30 holdout: the
+        // owner's 2026-07-25 ÷30 rate is retired, because a deducted day must be worth exactly what
+        // the day it cancels is worth, and that day has been paid at Net ÷ real calendar days since
+        // 2026-08-29. No autoCalcDivisorContextKey is needed — dayDrivenMoney's own monthDays
+        // argument IS the month's length; naming "Days In Month" here would be the same number.
+        // Keep it distinct from complementTotalContextKey below all the same: that key is the CAP
+        // on the day count, a separate rule that merely happens to share the figure.
         autoCalcMoneyKey: "p1odCrmValue",
         complementFieldKey: "p1odCrmWorkingDays",
         complementTotalContextKey: "Days In Month",
@@ -310,7 +334,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part1",
     title: "Unpaid Vacation",
     subtitle:
-      "Unpaid-vacation deduction for Part 1 — shown only for this month's resignations and one-part-salary employees (continuing two-part employees get this automatically via the Part 2 Vacation step instead, so entering it here too would double it). For a resigning leaver, Value is pre-filled with their real settlement (owner request 2026-07-25 — moved here from the Resignations step) and still nets against their own Second Part first; \"Unpaid Vacation Days\" is read-only reference only — it combines a balance-aware Phoenix-vacation amount with a separate CRM-leave amount, not a flat day rate, so edit the Value directly instead of typing days for a leaver. For everyone else, type days to auto-calculate the value (Base/30 × days), or type the value directly. Reason is optional.",
+      "Unpaid-vacation deduction for Part 1 — shown only for this month's resignations and one-part-salary employees (continuing two-part employees get this automatically via the Part 2 Vacation step instead, so entering it here too would double it). For a resigning leaver, Value is pre-filled with their real settlement (owner request 2026-07-25 — moved here from the Resignations step) and still nets against their own Second Part first; \"Unpaid Vacation Days\" is read-only reference only — it combines a balance-aware Phoenix-vacation amount with a separate CRM-leave amount, not a flat day rate, so edit the Value directly instead of typing days for a leaver. For everyone else, type days to auto-calculate the value (Base ÷ the month's calendar days × days), or type the value directly. Reason is optional.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },
@@ -319,7 +343,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       // The xlsx template emits both columns, and `pickCell` in step-parser.ts matches the FIRST
       // header whose normalised text matches — the context column, emitted first. So a re-upload
       // read this read-only reference and wrote it into `p1odVacationDays`, which auto-calculates
-      // the money as Base/30 x days. For a leaver that replaced a balance-aware settlement with a
+      // the money from a day count. For a leaver that replaced a balance-aware settlement with a
       // flat day rate, and the edit HR actually typed was discarded. The key is unchanged because
       // recommend.ts writes `row.context["Unpaid Vacation Days"]`; only the HEADING moves.
       { key: "Unpaid Vacation Days", label: "Unpaid Vacation Days (reference)" },
@@ -337,7 +361,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part1",
     title: "Day Without Record",
     subtitle:
-      "Day-without-attendance-record deduction for Part 1 — shown only for this month's resignations and one-part-salary employees. Type days to auto-calculate the value (Base/30 × days), or leave days blank and type the value directly. Reason is optional.",
+      "Day-without-attendance-record deduction for Part 1 — shown only for this month's resignations and one-part-salary employees. Type days to auto-calculate the value (Base ÷ the month's calendar days × days), or leave days blank and type the value directly. Reason is optional.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },
@@ -356,7 +380,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part1",
     title: "Other Deductions (Loan & Other)",
     subtitle:
-      "Loan repayment or any other manual deduction for Part 1 — shown only for this month's resignations and one-part-salary employees. Pre-filled with the Loan and Other deductions you marked \"Approved for Payroll\" in the Deductions module (owner request 2026-08-03); continuing two-part employees take theirs on the Part 2 \"Any more deductions?\" step instead. Expand a row to see what made up the figure. Type days to auto-calculate the value (Base/30 × days), or leave days blank and type the value directly. Reason is optional.",
+      "Loan repayment or any other manual deduction for Part 1 — shown only for this month's resignations and one-part-salary employees. Pre-filled with the Loan and Other deductions you marked \"Approved for Payroll\" in the Deductions module (owner request 2026-08-03); continuing two-part employees take theirs on the Part 2 \"Any more deductions?\" step instead. Expand a row to see what made up the figure. Type days to auto-calculate the value (Base ÷ the month's calendar days × days), or leave days blank and type the value directly. Reason is optional.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },
@@ -378,7 +402,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part1",
     title: "Special Situations",
     subtitle:
-      "Every employee, regardless of payment mode — for cases that fall outside the normal rules. Enter a deduction and/or addition (days auto-calculate the value at Base/30 × days, or type the value directly), then choose which installment it applies to. That choice applies to BOTH the deduction and the addition for this employee. Only available while Part 1 is still open — like every Part 1 step, this tab locks once Part 1 is confirmed.",
+      "Every employee, regardless of payment mode — for cases that fall outside the normal rules. Enter a deduction and/or addition (days auto-calculate the value at Base ÷ the month's calendar days × days, or type the value directly), then choose which installment it applies to. That choice applies to BOTH the deduction and the addition for this employee. Only available while Part 1 is still open — like every Part 1 step, this tab locks once Part 1 is confirmed.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },

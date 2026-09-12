@@ -31,7 +31,7 @@ import {
   type DeductionLine,
   type EmployeeDeductions,
 } from "./deductions-source.ts";
-import { calculateFlat30DeductionAmount } from "./flat-deduction-rate.ts";
+import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions/calculations.ts";
 // The ONE leaver rule — days worked and the day rate — shared by the
 // Resignations and Resignations CRM steps so they can never disagree again
 // (owner, 2026-08-30: "the rule must be synced everywhere in the module").
@@ -132,8 +132,9 @@ function moneyOrNull(value: number): number | null {
  * Splits an already-rounded total into `count` per-line amounts that sum back to
  * it EXACTLY, with the last line absorbing the rounding remainder.
  *
- * Needed because the row's money is computed once for the whole group (Base/30 ×
- * days) while the new breakdown shows it per day. Naively rounding total/count
+ * Needed because the row's money is computed once for the whole group (Base ÷ the
+ * month's calendar days × days) while the new breakdown shows it per day.
+ * Naively rounding total/count
  * per line makes 1,400.00 display as 3 × 466.67 = 1,400.01 — and a payroll
  * screen whose breakdown doesn't foot to its own total is worse than showing no
  * breakdown at all. Never changes the total itself. Exported for tests.
@@ -775,9 +776,11 @@ async function recommendResignations(
     row.context = {
       "Hire Date": member.employee.hireDate ?? "",
       "Last Working Date": member.lastWorkingDate,
-      // Divisor for the client-side Days Worked -> money auto-calc. Must be the
-      // month's ACTUAL calendar days to match dailyRate() in proration.ts; the
-      // default 30 used for deduction day-rates would overpay in a 31-day month.
+      // Divisor for the client-side Days Worked -> money auto-calc. The month's
+      // ACTUAL calendar days, matching dailyRate() in proration.ts. Since the
+      // owner's 2026-09-12 ruling that is also dayDrivenMoney's own default, so
+      // this key no longer changes the figure — it is kept because the step
+      // names it explicitly and because it is ALSO the complement cap.
       "Days In Month": basis.monthDays,
       // The three monthly amounts the Days Worked field prorates. All three are
       // in context (NOT in this step's displayed contextColumns — see
@@ -908,7 +911,8 @@ function recommendFingerprint(
       "Hire Date": member.employee.hireDate ?? "",
       // Not shown in this step's contextColumns — purely so the client-side
       // Days→Value auto-calc (recommendation-step.tsx setDaysValue) has a
-      // Base/30 rate to compute from when HR types a day count by hand.
+      // base amount to compute the day-rate from when HR types a day count by
+      // hand. The divisor is the month's calendar days (ruling 2026-09-12).
       "Base Salary": roundCurrency(source?.baseSalary ?? 0),
     };
     row.recommended = { fingerprintDays: days, fingerprintValue: value };
@@ -1346,7 +1350,12 @@ export async function computeVacationDeductionTotals(
     const base = roundCurrency(lookupSource(sources, member.employee.hrId)?.baseSalary ?? 0);
     const amount =
       unpaidDays > 0
-        ? calculateFlat30DeductionAmount({ baseSalary: base, deductionDays: unpaidDays }) ?? 0
+        ? calculateDeductionAmountFromBaseSalary({
+            baseSalary: base,
+            deductionDays: unpaidDays,
+            month: period.month,
+            year: period.year,
+          }) ?? 0
         : 0;
     const entry = ensure(compact);
     entry.crmDays += crmOnly.length;
@@ -1707,9 +1716,10 @@ function part1ManualDeductionBaseRow(
     "Hire Date": member.employee.hireDate ?? "",
     // "Base Salary" is kept in context (NOT in this step's displayed contextColumns —
     // see step-definitions.ts) purely because the client-side Days→Value auto-calc
-    // reads row.context["Base Salary"] to compute Base/30 × days (recommendation-step.tsx
-    // setDaysValue) — that formula is untouched. "Net Salary" is the number HR actually
-    // sees displayed (owner request 2026-07-25: show Net, not Base, in the UI).
+    // reads row.context["Base Salary"] to compute Base ÷ the month's calendar days × days
+    // (recommendation-step.tsx setDaysValue) — the divisor moved off a flat 30 on
+    // 2026-09-12. "Net Salary" is the number HR actually sees displayed (owner
+    // request 2026-07-25: show Net, not Base, in the UI).
     "Base Salary": roundCurrency(source?.baseSalary ?? 0),
     "Net Salary": roundCurrency(source?.netSalary ?? 0),
     // Blank for continuing (non-leaver) one-part employees — only leavers have one.
