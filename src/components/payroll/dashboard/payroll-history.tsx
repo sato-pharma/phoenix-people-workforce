@@ -11,6 +11,7 @@ import type { SalaryBatch } from "@/lib/payroll/types";
 import { cn } from "@/lib/utils";
 
 import {
+  isBatchDeletable,
   isBatchReplaceable,
   panelClassName,
   payrollPeriodIndex,
@@ -228,7 +229,7 @@ export function PayrollHistory({
                     </Button>
                     <Button
                       className="px-3 py-1.5 text-xs"
-                      disabled={deletingBatchId === batch.id}
+                      disabled={!isBatchDeletable(batch) || deletingBatchId === batch.id}
                       onClick={() => onDelete(batch.id)}
                       variant="secondary"
                     >

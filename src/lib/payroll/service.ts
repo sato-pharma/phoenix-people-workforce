@@ -1122,6 +1122,28 @@ export function isReplaceableSalaryBatch(batch: SalaryBatch) {
   return isReplaceableSalaryBatchStatus(batch.status) && !isSalaryBatchPart1Paid(batch);
 }
 
+/**
+ * Deleting a batch removes the batch, its salary_records and its salary_flags outright, so it is
+ * strictly MORE destructive than replacing one and can never be permitted where a replace is
+ * refused. That is why this is the replace predicate rather than a second, laxer notion of
+ * "closed" — one definition, or this hole grows back.
+ *
+ * The real enforcement is in phx_delete_salary_batch, which now refuses BEFORE it bypasses the
+ * three closed-month triggers (migration 20260912120000). This exists so the screen gets a 409 and
+ * a sentence naming the month and its stage, rather than a raw Postgres P0001.
+ */
+export function isDeletableSalaryBatch(batch: SalaryBatch) {
+  return isReplaceableSalaryBatch(batch);
+}
+
+export function assertSalaryBatchDeletable(batch: SalaryBatch): void {
+  if (isDeletableSalaryBatch(batch)) return;
+  throw new PayrollConflictError(
+    `Payroll ${batch.month}/${batch.year} is ${batch.status.replace(/_/g, " ")} and cannot be deleted. ` +
+      "A month that has reached this stage is never deleted; correct it in the next month instead.",
+  );
+}
+
 export function payrollPeriodConflictForBatch(batch: SalaryBatch): PayrollPeriodConflict {
   const replaceable = isReplaceableSalaryBatch(batch);
 
@@ -1441,6 +1463,15 @@ export async function deleteSalaryBatch(batchId: string, actor?: string | null) 
       error,
     });
   }
+
+  // A closed month is never deleted. The RPC refuses this too and is the actual boundary — it
+  // covers every caller, including one that never comes through here. This check exists to turn
+  // that refusal into a 409 naming the month and its stage.
+  //
+  // When the read above FAILED we cannot tell whether the month is closed, so there is nothing to
+  // assert on and the call goes through to the RPC, which can read the row itself. That is the one
+  // case where the comment above still holds: the read is best-effort, the RPC is not.
+  if (existing) assertSalaryBatchDeletable(existing);
 
   const { error } = await supabase.rpc("phx_delete_salary_batch", {
     p_batch_id: batchId,

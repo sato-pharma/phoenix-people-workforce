@@ -1186,6 +1186,7 @@ import { runClosingHeadlineCountsDirectTests } from "./closing-headline-counts-d
 import { runAttendanceMonthlySummaryOutageTests } from "./attendance-monthly-summary-outage.test.ts";
 
 import { runPayrollBatchMembershipTests } from "./payroll-batch-membership.test.ts";
+import { runPayrollClosedMonthDeleteTests } from "./payroll-closed-month-delete.test.ts";
 import { runDeductionsEmployeeSummaryPublishEligibilityTests } from "./deductions-employee-summary-publish-eligibility.test.ts";
 import { runDeductionsExportHouseIdentityTests } from "./deductions-export-house-identity.test.ts";
 import { runDeductionsExportAppliedAndMasterTests } from "./deductions-export-applied-and-master.test.ts";
@@ -3595,6 +3596,10 @@ await runTest("root redirect (\"/\" resolves from the signed cookie alone so pro
 await runTest("attendance monthly summary (a device-ingestion outage is reported as missing data, never as employee absence)", runAttendanceMonthlySummaryOutageTests);
 
 await runTest("payroll batch membership is historical (a resignation after payday cannot remove someone from the month they were paid for, incl. the bank file)", runPayrollBatchMembershipTests);
+await runTest(
+  "a closed payroll month is never deleted: the delete path used to switch off all three closed-month guards and then ignore the status it had just read",
+  runPayrollClosedMonthDeleteTests,
+);
 
 await runTest("deductions By Employee total counts only what publish will actually take (pending shown separately, agrees with Overview)", runDeductionsEmployeeSummaryPublishEligibilityTests);
 
