@@ -8,6 +8,7 @@ import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions/calculations";
 import type {
   EmployeeDayByDayReport,
   EmployeeDayDecisionInfo,
@@ -79,15 +80,27 @@ function formatDuration(minutes: number): string {
   return `${hours}h ${remainder}m`;
 }
 
-/** Live EGP value from a (possibly just-edited) day count — base salary / 30 x days, the exact
- * formula the server re-derives on Approve, so the displayed number never lies about what will
- * actually be saved. Falls back to the report's own precomputed value when nothing's been edited. */
-function liveValue(days: number, editedValue: string | undefined, baseSalary: number | null, fallback: number): number {
+/** Live EGP value from a (possibly just-edited) day count — base salary ÷ the day's own month in
+ * calendar days × days, the exact formula the server re-derives on Approve
+ * (calculateDeductionAmountFromBaseSalary), so the displayed number never lies about what will
+ * actually be saved. Falls back to the report's own precomputed value when nothing's been edited.
+ *
+ * It DID lie until 2026-09-12: this divided by a flat 30 while the server it claims to mirror has
+ * divided by the month's real calendar days since 2026-08-01, so every figure a reviewer approved
+ * in a 31-day month read ~3.3% higher on screen than the amount actually charged — and lower in
+ * February. Hence `dateIso`: the divisor depends on WHICH month the day falls in, so the day being
+ * priced has to be passed in. */
+function liveValue(
+  dateIso: string,
+  days: number,
+  editedValue: string | undefined,
+  baseSalary: number | null,
+  fallback: number,
+): number {
   const parsedDays = editedValue?.trim() ? Number(editedValue) : days;
-  if (Number.isFinite(parsedDays) && baseSalary != null) {
-    return Math.round((baseSalary / 30) * parsedDays * 100) / 100;
-  }
-  return fallback;
+  const [year, month] = dateIso.split("-").map(Number);
+  const value = calculateDeductionAmountFromBaseSalary({ baseSalary, deductionDays: parsedDays, month, year });
+  return Number.isFinite(parsedDays) && value != null ? value : fallback;
 }
 
 async function postJson(url: string, body: unknown): Promise<Record<string, unknown>> {
@@ -433,7 +446,7 @@ export function EmployeeDayReport({
                             </td>
                             <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">
                               {(() => {
-                                const value = liveValue(defaultDays, editedDays[day.dateIso], initialReport.baseSalary, decision?.appliedAmount ?? day.deductionValue);
+                                const value = liveValue(day.dateIso, defaultDays, editedDays[day.dateIso], initialReport.baseSalary, decision?.appliedAmount ?? day.deductionValue);
                                 return value > 0 ? value.toFixed(2) : "—";
                               })()}
                             </td>

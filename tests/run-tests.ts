@@ -1143,6 +1143,7 @@ import { runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests } from "./au
 import { runAutomatedPayrollRecurringNonEmployeesTests } from "./automated-payroll-recurring-non-employees.test.ts";
 import { runPayrollAcknowledgmentTokenTests } from "./payroll-acknowledgment-token.test.ts";
 import { runPayrollSilentScreensTests } from "./payroll-silent-screens.test.ts";
+import { runPayrollDayRateDivisorTests } from "./payroll-day-rate-divisor.test.ts";
 import { runFieldWorkforceThursdayHalfDayTests } from "./field-workforce-thursday-half-day.test.ts";
 import { runDeductionsModuleNoRecordsScopeTests } from "./deductions-module-no-records-scope.test.ts";
 import { runOutstationApprovedAmountTests } from "./outstation-approved-amount.test.ts";
@@ -5339,6 +5340,11 @@ await runTest(
 await runTest(
   "recruitment Folders tab: no `whitespace-nowrap` on prose, and the inventory is pinned (the fits-the-screen golden rule)",
   runRecruitmentFoldersNowrapLockTests,
+);
+
+await runTest(
+  "one day rate: a deducted day is worth the month's own day, exactly like the day it cancels — the flat 30 is retired on every step, and a caller that cannot say how long the month is prices nothing (owner ruling 2026-09-12)",
+  runPayrollDayRateDivisorTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

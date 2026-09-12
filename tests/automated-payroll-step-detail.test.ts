@@ -16,7 +16,7 @@ import { STEP_DEFINITIONS, stepWindowLabel } from "../src/lib/automated-payroll/
  * Two things must hold for a breakdown on a payroll screen to be worth showing:
  *
  *  1. It must FOOT. The row's money is computed once for a whole group
- *     (Base/30 × days); the panel shows it per day. Rounding total/count per
+ *     (Base ÷ the month's calendar days × days); the panel shows it per day. Rounding total/count per
  *     line makes 1,400.00 display as 3 × 466.67 = 1,400.01, and a breakdown that
  *     disagrees with its own total destroys trust in the number it explains.
  *     distributeAmount is the only thing standing between those two figures.
