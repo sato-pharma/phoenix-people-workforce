@@ -43,6 +43,7 @@ import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import {
   approvedRegionsForSeats,
   canonicalPlanningRegionName,
+  ownPlanningRegionForOwner,
   planningAreaOptions,
   planningAreasForRegion,
   type PlanningOwner,
@@ -112,6 +113,12 @@ type AreaSource = {
    * than copied into two fields that can drift apart.
    */
   owner: (PlanningOwner & { regionName?: string | null }) | null;
+  /**
+   * The one region this plan owner may plan in, or null when they choose. A District Manager
+   * never chooses: his region IS his district, so it is stated rather than picked and he is left
+   * with the one question that is actually his — which area (owner, 2026-09-12).
+   */
+  lockedRegion: string | null;
 };
 type DayMode = "full" | "split";
 type PlanningActivityValue = EmployeePlanItemInput["activityType"] | "Coaching";
@@ -494,11 +501,16 @@ function canonicalRegion(value: string | null | undefined) {
 // applied to every line alike. Anti Infective's Delta 3 has no CNS/Pedia counterpart, so a
 // region list shared across lines offers a region that then hands those two lines zero areas:
 // the same dead-end cascading dropdown this file's Area picker already had to be fixed for once.
-function regionOptions(source: AreaSource, currentRegion?: string | null) {
-  const options = approvedRegionsForSeats(source.seats);
+function regionOptions(source: AreaSource, currentRegion?: string | null): string[] {
+  const options: string[] = source.lockedRegion
+    ? [source.lockedRegion]
+    : [...approvedRegionsForSeats(source.seats)];
   const current = String(currentRegion ?? "").trim();
-  if (current && !canonicalRegion(current) && !options.some((region) => region.toLowerCase() === current.toLowerCase())) {
-    options.push(current as (typeof options)[number]);
+  // Keep whatever the row already holds selectable, canonical or not. A plan submitted before
+  // Upper Egypt was split stores the bare "Upper Egypt", which IS canonical and yet is no longer
+  // one of a split line's options — dropping it would blank the Region box mid-edit.
+  if (current && !options.some((region) => region.toLowerCase() === current.toLowerCase())) {
+    options.push(current);
   }
   return options;
 }
@@ -1222,14 +1234,40 @@ export function PlansWorkspace({
 
   // Everything the Area picker reads, assembled once. The AU seat model decides; the roster
   // below it is only reached when that map could not be loaded.
+  // A District Manager's region is his own AU district and nothing else — he is not asked for it
+  // (owner, 2026-09-12). Null for everyone else, and null too when the seat model cannot name his
+  // district: an unresolvable lock has to fall back to the picker rather than guess.
+  const lockedRegion = useMemo(() => {
+    if (!isDistrictManagerPlanTitle(workspace.currentEmployee?.jobTitle ?? null)) return null;
+    return ownPlanningRegionForOwner(workspace.planningAreaSeats, workspace.currentEmployee);
+  }, [workspace.currentEmployee, workspace.planningAreaSeats]);
   const areaSource = useMemo<AreaSource>(
     () => ({
+      lockedRegion,
       owner: workspace.currentEmployee,
       roster: workspace.medicalRepOptions,
       seats: workspace.planningAreaSeats,
     }),
-    [workspace.currentEmployee, workspace.medicalRepOptions, workspace.planningAreaSeats],
+    [lockedRegion, workspace.currentEmployee, workspace.medicalRepOptions, workspace.planningAreaSeats],
   );
+  // Stamp the locked region onto every geography row, wherever the row came from — a fresh week,
+  // a prefill, an older plan reopened for edit. Doing it here rather than at each of those call
+  // sites is what makes "hard-coded" true of all of them at once. Idempotent: when nothing needs
+  // changing the same array identity is returned, so this cannot loop.
+  useEffect(() => {
+    if (!lockedRegion) return;
+    setRows((current) => {
+      let changed = false;
+      const next = current.map((row) => {
+        if (row.locked) return row;
+        const rule = activityRule(row.activityType, row.activityTitle);
+        if (!rule.showRegion || row.locationText === lockedRegion) return row;
+        changed = true;
+        return { ...row, locationText: lockedRegion };
+      });
+      return changed ? next : current;
+    });
+  }, [lockedRegion, rows]);
   const tableNeedsLine = lineOptions.length > 1;
   const submitBlocked = !canEdit || submitValidationIssues.length > 0 || incompleteDays.length > 0 || noSameLineReps || noPlanRows;
   const prefillScopeKey = `${workspace.currentEmployee?.hrId ?? ""}|${activeKind}|${period.periodStartDate}`;
@@ -2595,19 +2633,25 @@ export function PlansWorkspace({
                                     ))}
                                   </SearchableSelect>
                                 ) : rule.showRegion ? (
-                                  <SearchableSelect
-                                    className={tableSelectClass}
-                                    disabled={!canEdit}
-                                    onChange={(e) => updateRow(row.key, "locationText", e.target.value)}
-                                    value={canonicalRegion(row.locationText) || row.locationText || ""}
-                                  >
-                                    <option value="">{rule.requiresRegion ? "Select region" : "Optional region"}</option>
-                                    {currentRegionOptions.map((region) => (
-                                      <option key={region} value={region}>
-                                        {region}
-                                      </option>
-                                    ))}
-                                  </SearchableSelect>
+                                  areaSource.lockedRegion ? (
+                                    <StatedFieldText hint="Your own district — set from the organogram">
+                                      {areaSource.lockedRegion}
+                                    </StatedFieldText>
+                                  ) : (
+                                    <SearchableSelect
+                                      className={tableSelectClass}
+                                      disabled={!canEdit}
+                                      onChange={(e) => updateRow(row.key, "locationText", e.target.value)}
+                                      value={canonicalRegion(row.locationText) || row.locationText || ""}
+                                    >
+                                      <option value="">{rule.requiresRegion ? "Select region" : "Optional region"}</option>
+                                      {currentRegionOptions.map((region) => (
+                                        <option key={region} value={region}>
+                                          {region}
+                                        </option>
+                                      ))}
+                                    </SearchableSelect>
+                                  )
                                 ) : (
                                   <DisabledFieldText>Not needed</DisabledFieldText>
                                 )}
@@ -3205,19 +3249,25 @@ function RowEditSheet({
             </Field>
           ) : rule.showRegion ? (
             <Field label="Region">
-              <SearchableSelect
-                className={mobileField}
-                disabled={!canEdit}
-                onChange={(e) => onUpdate("locationText", e.target.value)}
-                value={canonicalRegion(row.locationText) || row.locationText || ""}
-              >
-                <option value="">{rule.requiresRegion ? "Select region" : "Optional region"}</option>
-                {currentRegionOptions.map((region) => (
-                  <option key={region} value={region}>
-                    {region}
-                  </option>
-                ))}
-              </SearchableSelect>
+              {areaSource.lockedRegion ? (
+                <StatedFieldText hint="Your own district — set from the organogram">
+                  {areaSource.lockedRegion}
+                </StatedFieldText>
+              ) : (
+                <SearchableSelect
+                  className={mobileField}
+                  disabled={!canEdit}
+                  onChange={(e) => onUpdate("locationText", e.target.value)}
+                  value={canonicalRegion(row.locationText) || row.locationText || ""}
+                >
+                  <option value="">{rule.requiresRegion ? "Select region" : "Optional region"}</option>
+                  {currentRegionOptions.map((region) => (
+                    <option key={region} value={region}>
+                      {region}
+                    </option>
+                  ))}
+                </SearchableSelect>
+              )}
             </Field>
           ) : null}
 
@@ -3347,6 +3397,22 @@ function DisabledFieldText({
   return (
     <div className="flex h-10 min-w-0 items-center rounded-sm border border-slate-200 bg-slate-50 px-3 transition-colors duration-150 hover:border-slate-300 hover:bg-slate-100">
       <span className={`whitespace-nowrap text-xs ${textClass}`}>{children}</span>
+    </div>
+  );
+}
+
+/**
+ * A field the app answers for you — the plan owner's own district, stated rather than picked.
+ * Reads as a real value (not the greyed "Not needed" of DisabledFieldText), and keeps the same
+ * height and square edge as the select it stands in for so a row does not jump.
+ */
+function StatedFieldText({ children, hint }: { children: React.ReactNode; hint?: string }) {
+  return (
+    <div
+      className="flex h-10 min-w-0 items-center border border-orange-200 bg-orange-50/60 px-3"
+      title={hint}
+    >
+      <span className="text-sm font-semibold text-slate-800">{children}</span>
     </div>
   );
 }

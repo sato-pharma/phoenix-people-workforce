@@ -11,7 +11,15 @@
  * became an error the employee had no way to satisfy.
  */
 
-/** The seven regions an employee may plan against. Deliberately coarser than `employees.region_name`. */
+/**
+ * Every region spelling planning recognises.
+ *
+ * Upper Egypt appears three times on purpose. The organogram does not agree with itself across
+ * lines — Anti Infective and Pedia each split Upper Egypt into UE-1 / UE-2 (with DIFFERENT
+ * membership), CNS keeps one undivided UE — and the planning picker follows the organogram
+ * (owner, 2026-09-12), so all three spellings have to be nameable. Which of them a given person
+ * is actually offered is decided per line by `approvedRegionsForSeats`, never by this list.
+ */
 export const APPROVED_PLANNING_REGIONS = [
   "ALEX-BHR",
   "Cairo",
@@ -20,22 +28,40 @@ export const APPROVED_PLANNING_REGIONS = [
   "Delta 3",
   "Giza",
   "Upper Egypt",
+  "Upper Egypt 1",
+  "Upper Egypt 2",
 ] as const;
 
-export type ApprovedPlanningRegion = (typeof APPROVED_PLANNING_REGIONS)[number];
+/**
+ * The list to fall back on when the seat model could not be read at all. Deliberately the
+ * pre-split seven: with no seat map there is no way to know whether this line splits Upper
+ * Egypt, and offering all three spellings at once would ask the employee a question the app
+ * is supposed to answer.
+ */
+const FALLBACK_PLANNING_REGIONS = [
+  "ALEX-BHR",
+  "Cairo",
+  "Delta 1",
+  "Delta 2",
+  "Delta 3",
+  "Giza",
+  "Upper Egypt",
+] as const satisfies readonly ApprovedPlanningRegion[];
+
+export type ApprovedPlanningRegion = (typeof APPROVED_PLANNING_REGIONS)[number] | `Upper Egypt ${number}`;
 
 const ALEX_BHR_SPELLINGS = ["alex-bhr", "alex bhr", "alex/bhr", "alex", "alexandria", "bhr", "beheira"];
 
 /**
- * Line 1 splits Upper Egypt into districts on the employee row ("Upper Egypt 1",
- * "Upper Egypt 2"); lines 2 and 3 store it unsuffixed. Planning has a single approved Upper
- * Egypt, so every district folds into it. Matching any trailing number — not just 1 and 2 —
- * so a future "Upper Egypt 3" does not silently empty the picker the way this did.
+ * An Upper Egypt district as the organogram spells it: "Upper Egypt 1", "Upper Egypt 2", and
+ * whatever number a future split adds. The district SURVIVES canonicalisation — it used to be
+ * folded onto the bare "Upper Egypt", which is exactly what made a Pedia District Manager whose
+ * own district is Upper Egypt 2 see an undivided "Upper Egypt" in his plan submitter.
  *
- * Delta is NOT folded the same way: "Delta 1" and "Delta 2" are two separate approved
- * planning regions, so their numbers are meaningful and must survive canonicalisation.
+ * The bare spelling stays valid: CNS genuinely has one undivided Upper Egypt, and every plan
+ * submitted before this change stored the bare name.
  */
-const UPPER_EGYPT_DISTRICT = /^upper egypt(?: \d+)?$/;
+const UPPER_EGYPT_DISTRICT = /^upper egypt (\d+)$/;
 
 /** Lowercase, drop parentheses ("Delta (1)" -> "delta 1"), collapse whitespace. */
 function normalizeRegionText(value: unknown): string {
@@ -65,8 +91,36 @@ export function canonicalPlanningRegionName(value: unknown): ApprovedPlanningReg
   if (normalized === "delta 2" || normalized === "delta-2") return "Delta 2";
   if (normalized === "delta 3" || normalized === "delta-3") return "Delta 3";
   if (normalized === "giza") return "Giza";
-  if (UPPER_EGYPT_DISTRICT.test(normalized)) return "Upper Egypt";
+  if (normalized === "upper egypt") return "Upper Egypt";
+  const district = UPPER_EGYPT_DISTRICT.exec(normalized);
+  if (district) return `Upper Egypt ${Number(district[1])}`;
   return null;
+}
+
+/**
+ * Whether picking `selected` in the Region box covers an area filed under `seatRegionName`.
+ *
+ * Exact after canonicalisation, plus ONE legacy direction: a plan submitted before the districts
+ * became first-class stored the bare family name ("Upper Egypt"), and must keep reaching the
+ * districts it used to fold into, or every one of those rows loses its Area list mid-edit. The
+ * reverse never holds — picking "Upper Egypt 2" must never reach an Upper Egypt 1 area, which is
+ * the whole point of showing the districts apart.
+ */
+export function planningRegionCoversSeatRegion(
+  selected: string | null | undefined,
+  seatRegionName: string | null | undefined,
+): boolean {
+  const target = canonicalPlanningRegionName(selected);
+  const seat = canonicalPlanningRegionName(seatRegionName);
+  if (!target || !seat) return false;
+  if (target === seat) return true;
+  return isDistrictOf(seat, target);
+}
+
+/** "Upper Egypt 2" is a district of "Upper Egypt"; "Delta 2" is NOT a district of "Delta". */
+function isDistrictOf(candidate: string, family: string): boolean {
+  if (!candidate.toLowerCase().startsWith(`${family.toLowerCase()} `)) return false;
+  return /^\d+$/.test(candidate.slice(family.length + 1));
 }
 
 /** Anything carrying an area and the region that area sits in. */
@@ -98,7 +152,7 @@ export function planningAreasForRegion(
   const add = (seat: PlanningSeat | null | undefined) => {
     const areaName = seat?.areaName;
     if (!areaName) return;
-    if (canonicalPlanningRegionName(seat?.regionName) !== targetRegion) return;
+    if (!planningRegionCoversSeatRegion(targetRegion, seat?.regionName)) return;
     const key = areaName.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
@@ -193,7 +247,7 @@ export function planningAreaOptions(
   const targetRegion = canonicalPlanningRegionName(selectedRegion);
   if (!targetRegion) return [];
 
-  const inRegion = seats.filter((seat) => canonicalPlanningRegionName(seat.regionName) === targetRegion);
+  const inRegion = seats.filter((seat) => planningRegionCoversSeatRegion(targetRegion, seat.regionName));
   const ownCode = resolveOwnDistrict(seats, owner);
   const ownDistrict = ownCode
     ? inRegion.filter((seat) => normalizeRegionCode(seat.regionCode) === ownCode)
@@ -224,8 +278,14 @@ export function planningAreaOptions(
  * follow the seat model exactly the way the area list already does, per line, rather than
  * naming a shared vocabulary and hoping every line's organogram happens to agree with it.
  *
- * Falls back to the full approved list when the seat model has nothing to offer at all (not
- * loaded, or a genuinely empty line) — an empty region picker is worse than an over-wide one.
+ * The list is the seat model's OWN region names, not a fixed menu filtered by them: Upper Egypt
+ * reaches this file as three different organogram facts — "Upper Egypt 1" / "Upper Egypt 2" on
+ * Anti Infective and Pedia, plain "Upper Egypt" on CNS — and each line must be offered the one
+ * its own organogram states. A region the planning vocabulary does not recognise at all is still
+ * dropped, which is what keeps "Others" (Main Store, Aswan, …) out of the picker.
+ *
+ * Falls back to the pre-split seven when the seat model has nothing to offer at all (not loaded,
+ * or a genuinely empty line) — an empty region picker is worse than an over-wide one.
  */
 export function approvedRegionsForSeats(seats: readonly PlanningAreaSeat[]): ApprovedPlanningRegion[] {
   const present = new Set<ApprovedPlanningRegion>();
@@ -233,8 +293,35 @@ export function approvedRegionsForSeats(seats: readonly PlanningAreaSeat[]): App
     const region = canonicalPlanningRegionName(seat.regionName);
     if (region) present.add(region);
   }
-  if (present.size === 0) return [...APPROVED_PLANNING_REGIONS];
-  return APPROVED_PLANNING_REGIONS.filter((region) => present.has(region));
+  if (present.size === 0) return [...FALLBACK_PLANNING_REGIONS];
+  return [...present].sort(byApprovedRegionOrder);
+}
+
+/** Approved-list order, with anything the list has not been told about (a future district) last. */
+function byApprovedRegionOrder(left: ApprovedPlanningRegion, right: ApprovedPlanningRegion): number {
+  const rank = (region: ApprovedPlanningRegion) => {
+    const index = (APPROVED_PLANNING_REGIONS as readonly string[]).indexOf(region);
+    return index === -1 ? APPROVED_PLANNING_REGIONS.length : index;
+  };
+  return rank(left) - rank(right) || left.localeCompare(right);
+}
+
+/**
+ * The single region a plan owner's own AU district sits in, spelled the way the organogram spells
+ * it — "Upper Egypt 2" for a Pedia District Manager of UE-2, "Upper Egypt" for his CNS opposite
+ * number whose line never split.
+ *
+ * Null when the seat model cannot name his district. Never guess one: a wrong hard-coded region
+ * is worse than a picker, because he cannot correct it.
+ */
+export function ownPlanningRegionForOwner(
+  seats: readonly PlanningAreaSeat[],
+  owner: PlanningOwner | null | undefined,
+): ApprovedPlanningRegion | null {
+  const ownCode = resolveOwnDistrict(seats, owner);
+  if (!ownCode) return null;
+  const seat = seats.find((candidate) => normalizeRegionCode(candidate.regionCode) === ownCode);
+  return canonicalPlanningRegionName(seat?.regionName ?? null);
 }
 
 /**
@@ -272,5 +359,5 @@ export function planningAreaBelongsToRegion(
 
   const matches = seats.filter((seat) => seat.areaName.trim().toLowerCase() === areaKey);
   if (matches.length === 0) return true;
-  return matches.some((seat) => canonicalPlanningRegionName(seat.regionName) === targetRegion);
+  return matches.some((seat) => planningRegionCoversSeatRegion(targetRegion, seat.regionName));
 }

@@ -7,6 +7,7 @@ import {
   approvedRegionsForSeats,
   canonicalPlanningRegionName,
   isSeatEffectiveOn,
+  ownPlanningRegionForOwner,
   planningAreaBelongsToRegion,
   planningAreaOptions,
   planningAreasForRegion,
@@ -68,6 +69,23 @@ const DELTA_3_SEATS = [
   { areaName: "Suez", regionCode: "D3", regionName: "Delta (3)" },
 ];
 
+// Pedia's Upper Egypt, exactly as production returns it (au_v_line_area_map + au_v_regions, rows
+// in force, read 2026-09-12). Its UE-1/UE-2 membership is NOT Anti Infective's: Assuit sits in
+// UE-1 here and in UE-2 there, and Luxor rides in UE-2 with no rep seat of its own.
+const PEDIA_UE_SEATS = [
+  { areaName: "Fayoum", regionCode: "UE-1", regionName: "Upper Egypt 1" },
+  { areaName: "Beni Suef", regionCode: "UE-1", regionName: "Upper Egypt 1" },
+  { areaName: "Minia 1", regionCode: "UE-1", regionName: "Upper Egypt 1" },
+  { areaName: "Minia 2", regionCode: "UE-1", regionName: "Upper Egypt 1" },
+  { areaName: "Assuit 1", regionCode: "UE-1", regionName: "Upper Egypt 1" },
+  { areaName: "Assuit 2", regionCode: "UE-1", regionName: "Upper Egypt 1" },
+  { areaName: "Sohag1", regionCode: "UE-2", regionName: "Upper Egypt 2" },
+  { areaName: "Sohag2", regionCode: "UE-2", regionName: "Upper Egypt 2" },
+  { areaName: "Qena 1", regionCode: "UE-2", regionName: "Upper Egypt 2" },
+  { areaName: "Qena 2", regionCode: "UE-2", regionName: "Upper Egypt 2" },
+  { areaName: "Luxor", regionCode: "UE-2", regionName: "Upper Egypt 2" },
+];
+
 // CNS keeps Upper Egypt undivided — one district code for the whole region.
 const CNS_SEATS = [
   { areaName: "Minia 1", regionCode: "UE", regionName: "Upper Egypt" },
@@ -88,11 +106,17 @@ const PEDIA_GZ_SEATS_RAW = [
 export function runWeeklyPlanRegionAreasTests() {
   // ---------------------------------------------------------------- 1. region canonicalisation
 
-  // Both district spellings must belong to the one approved Upper Egypt planning region.
-  assert.equal(canonicalPlanningRegionName("Upper Egypt 1"), "Upper Egypt");
-  assert.equal(canonicalPlanningRegionName("Upper Egypt 2"), "Upper Egypt");
-  // A future district must not silently empty the picker the way 1 and 2 did.
-  assert.equal(canonicalPlanningRegionName("Upper Egypt 3"), "Upper Egypt");
+  // The districts SURVIVE canonicalisation (owner, 2026-09-12). They used to fold onto the bare
+  // "Upper Egypt", which is what made a Pedia District Manager of Upper Egypt 2 open his plan
+  // submitter and find an undivided "Upper Egypt" that his organogram has not had since 1 Sep.
+  assert.equal(canonicalPlanningRegionName("Upper Egypt 1"), "Upper Egypt 1");
+  assert.equal(canonicalPlanningRegionName("Upper Egypt 2"), "Upper Egypt 2");
+  assert.equal(canonicalPlanningRegionName("upper egypt 2"), "Upper Egypt 2");
+  assert.equal(canonicalPlanningRegionName("Upper Egypt (2)"), "Upper Egypt 2");
+  // A future district must canonicalise on its own, without being added to any list first.
+  assert.equal(canonicalPlanningRegionName("Upper Egypt 3"), "Upper Egypt 3");
+  // The bare spelling stays valid: CNS genuinely has one undivided Upper Egypt, and every plan
+  // submitted before this change stored the bare name.
   assert.equal(canonicalPlanningRegionName("upper egypt"), "Upper Egypt");
 
   // Delta's numbers are NOT district suffixes — they are separate approved regions and
@@ -113,10 +137,14 @@ export function runWeeklyPlanRegionAreasTests() {
   assert.equal(canonicalPlanningRegionName(""), null);
   assert.equal(canonicalPlanningRegionName(null), null);
 
-  assert.equal(APPROVED_PLANNING_REGIONS.length, 7, "the approved planning region list is seven regions");
+  assert.equal(APPROVED_PLANNING_REGIONS.length, 9, "seven regions, with Upper Egypt's two districts beside it");
   assert.ok(
-    !APPROVED_PLANNING_REGIONS.some((region) => /upper egypt \d/i.test(region)),
-    "districts must fold into Upper Egypt, never be added to the approved list",
+    APPROVED_PLANNING_REGIONS.includes("Upper Egypt 1") && APPROVED_PLANNING_REGIONS.includes("Upper Egypt 2"),
+    "the districts are nameable regions of their own — the picker follows the organogram",
+  );
+  assert.ok(
+    APPROVED_PLANNING_REGIONS.includes("Upper Egypt"),
+    "and the undivided spelling stays, for CNS and for every plan stored before the split",
   );
 
   // ---------------------------------------------------------------- 2. the rep's own district
@@ -300,8 +328,8 @@ export function runWeeklyPlanRegionAreasTests() {
   // derived from the same per-line seat model the area options already come from.
   assert.deepEqual(
     approvedRegionsForSeats([...ANTI_INFECTIVE_SEATS, ...DELTA_3_SEATS]),
-    ["Cairo", "Delta 3", "Upper Egypt"],
-    "Anti Infective's own seats must offer Delta 3",
+    ["Cairo", "Delta 3", "Upper Egypt 1", "Upper Egypt 2"],
+    "Anti Infective's own seats must offer Delta 3 — and its two Upper Egypt districts apart",
   );
   assert.ok(
     !approvedRegionsForSeats(CNS_SEATS).includes("Delta 3"),
@@ -309,10 +337,20 @@ export function runWeeklyPlanRegionAreasTests() {
   );
   assert.deepEqual(approvedRegionsForSeats(CNS_SEATS), ["Upper Egypt"], "CNS offers only the regions its own seats cover");
 
-  // An unreachable/empty seat map falls back to the full approved list — an empty region picker
-  // is worse than an over-wide one, the same reasoning areasForRegion already applies one level
-  // down for the roster fallback.
-  assert.deepEqual(approvedRegionsForSeats([]), [...APPROVED_PLANNING_REGIONS]);
+  // An unreachable/empty seat map falls back to the pre-split seven — an empty region picker is
+  // worse than an over-wide one, the same reasoning areasForRegion already applies one level down
+  // for the roster fallback. The DISTRICTS are deliberately not in that fallback: with no seat map
+  // there is no way to know whether this line splits Upper Egypt, and offering all three spellings
+  // at once asks the employee a question the app is supposed to answer.
+  assert.deepEqual(approvedRegionsForSeats([]), [
+    "ALEX-BHR",
+    "Cairo",
+    "Delta 1",
+    "Delta 2",
+    "Delta 3",
+    "Giza",
+    "Upper Egypt",
+  ]);
 
   // "Others" is not plannable under any region.
   for (const region of APPROVED_PLANNING_REGIONS) {
@@ -325,6 +363,101 @@ export function runWeeklyPlanRegionAreasTests() {
   // No region chosen yet -> no areas, whatever the seat map holds.
   assert.deepEqual(planningAreaOptions(ANTI_INFECTIVE_SEATS, "", { regionCode: "UE-1" }), []);
   assert.deepEqual(planningAreaOptions(ANTI_INFECTIVE_SEATS, "Others", { regionCode: "UE-1" }), []);
+
+  // ------------------------------- 3c. the picker follows the organogram's Upper Egypt, per line
+  //
+  // Reported 2026-09-12: a District Manager whose own district is Upper Egypt 2 opened the weekly
+  // plan submitter and found an undivided "Upper Egypt". The organogram has not said that since
+  // 1 Sep — and it does not say ONE thing across lines either. Measured on production the same
+  // day (au_v_line_area_map + au_v_regions, rows in force):
+  //
+  //   anti_infective  UE-1 (3 areas)  UE-2 (6 areas)
+  //   pedia           UE-1 (6 areas)  UE-2 (5 areas)   <- different membership from AI's
+  //   cns             UE   (7 areas)                   <- never split
+  //
+  // So the Region box cannot hold one shared "Upper Egypt": it has to say what the plan owner's
+  // own line's organogram says.
+  assert.deepEqual(
+    approvedRegionsForSeats(PEDIA_UE_SEATS),
+    ["Upper Egypt 1", "Upper Egypt 2"],
+    "a Pedia plan owner is offered the two districts, never an undivided Upper Egypt",
+  );
+  assert.deepEqual(
+    approvedRegionsForSeats(CNS_SEATS),
+    ["Upper Egypt"],
+    "and a CNS plan owner is offered the undivided one, because that is HIS organogram",
+  );
+
+  // Picking a district gets that district's areas and nothing from the other one.
+  assert.deepEqual(
+    planningAreaOptions(PEDIA_UE_SEATS, "Upper Egypt 2", { seatRegionCode: "UE-2" }),
+    ["Luxor", "Qena 1", "Qena 2", "Sohag1", "Sohag2"],
+  );
+  assert.deepEqual(
+    planningAreaOptions(PEDIA_UE_SEATS, "Upper Egypt 1", { seatRegionCode: "UE-1" }),
+    ["Assuit 1", "Assuit 2", "Beni Suef", "Fayoum", "Minia 1", "Minia 2"],
+  );
+  for (const foreign of ["Luxor", "Qena 1", "Qena 2", "Sohag1", "Sohag2"]) {
+    assert.ok(
+      !planningAreaOptions(PEDIA_UE_SEATS, "Upper Egypt 1", { seatRegionCode: "UE-1" }).includes(foreign),
+      `Pedia UE-1 must not reach ${foreign} (that is UE-2)`,
+    );
+  }
+  // Selecting a district must never widen back out to the family — the one-way legacy match below
+  // is the ONLY direction that crosses district lines.
+  assert.equal(
+    planningAreaBelongsToRegion(PEDIA_UE_SEATS, "Upper Egypt 1", "Qena 1"),
+    false,
+    "a UE-2 area filed under UE-1 is a real error and must be rejected on submit",
+  );
+
+  // BACKWARD COMPATIBILITY. Every plan stored before today holds the bare "Upper Egypt", and those
+  // rows are reopened for edit. The bare family name must keep covering its districts, or the Area
+  // list empties mid-edit and the submit-time check starts rejecting rows nobody touched.
+  assert.deepEqual(
+    planningAreaOptions(PEDIA_UE_SEATS, "Upper Egypt", { seatRegionCode: "UE-2" }),
+    ["Luxor", "Qena 1", "Qena 2", "Sohag1", "Sohag2"],
+    "a legacy 'Upper Egypt' row still narrows to the owner's own district",
+  );
+  assert.equal(planningAreaBelongsToRegion(PEDIA_UE_SEATS, "Upper Egypt", "Qena 1"), true);
+  assert.equal(planningAreaBelongsToRegion(PEDIA_UE_SEATS, "Upper Egypt", "Minia 1"), true);
+
+  // ------------------------------------------- 3d. a District Manager does not choose his region
+  //
+  // Owner, 2026-09-12: "make his region hard coded ... and make him choose the area". The lock is
+  // the district the seat model states for him, spelled the way his own line spells it.
+  assert.equal(
+    ownPlanningRegionForOwner(PEDIA_UE_SEATS, { seatRegionCode: "UE-2" }),
+    "Upper Egypt 2",
+    "a Pedia DM of UE-2 is pinned to Upper Egypt 2",
+  );
+  assert.equal(
+    ownPlanningRegionForOwner(PEDIA_UE_SEATS, { seatRegionCode: "UE-1" }),
+    "Upper Egypt 1",
+  );
+  assert.equal(
+    ownPlanningRegionForOwner(CNS_SEATS, { seatRegionCode: "UE" }),
+    "Upper Egypt",
+    "his CNS opposite number is pinned to the undivided spelling, because that is his organogram",
+  );
+  assert.equal(
+    ownPlanningRegionForOwner(ANTI_INFECTIVE_SEATS, { seatRegionCode: "CA" }),
+    "Cairo",
+    "the lock is not an Upper Egypt special case — it is whichever district he holds",
+  );
+  // Never guess. An unresolvable district falls back to the normal picker rather than hard-coding
+  // a region he would have no way to correct.
+  assert.equal(ownPlanningRegionForOwner(PEDIA_UE_SEATS, null), null);
+  assert.equal(ownPlanningRegionForOwner(PEDIA_UE_SEATS, { seatRegionCode: "  " }), null);
+  assert.equal(ownPlanningRegionForOwner(PEDIA_UE_SEATS, { seatRegionCode: "ZZ" }), null, "a code with no seat");
+  assert.equal(ownPlanningRegionForOwner([], { seatRegionCode: "UE-2" }), null, "no seat map, no lock");
+  // "Others" is not a planning region, so a seat in it cannot become a lock either.
+  assert.equal(
+    ownPlanningRegionForOwner(ANTI_INFECTIVE_SEATS, { seatRegionCode: "OT" }),
+    null,
+    "an Others seat must not hard-code a region the picker does not even offer",
+  );
+
 
   // ---------------------------------------------------------------- 4. the roster fallback
 
@@ -491,6 +624,30 @@ export function runWeeklyPlanRegionAreasTests() {
   assert.ok(
     !/\bAPPROVED_PLANNING_REGIONS\b/.test(workspaceSrc),
     "the client must not read the flat approved-region list directly — every consumer scopes it through the seat model",
+  );
+
+  // The District Manager region lock (owner, 2026-09-12). Gated on the DM title, resolved from the
+  // seat model, and STATED in both layouts — never a select that is merely disabled, which still
+  // reads as a question he has to answer.
+  assert.match(
+    workspaceSrc,
+    /isDistrictManagerPlanTitle\(workspace\.currentEmployee\?\.jobTitle \?\? null\)/,
+    "the region lock must apply to District Managers only",
+  );
+  assert.match(
+    workspaceSrc,
+    /ownPlanningRegionForOwner\(workspace\.planningAreaSeats, workspace\.currentEmployee\)/,
+    "and it must come from the AU seat model, not the hand-typed employee columns alone",
+  );
+  assert.equal(
+    (workspaceSrc.match(/areaSource\.lockedRegion \? \(/g) ?? []).length,
+    2,
+    "both the desktop table and the mobile card must state the locked region",
+  );
+  assert.match(
+    workspaceSrc,
+    /return \{ \.\.\.row, locationText: lockedRegion \};/,
+    "and every geography row must carry it, whatever the row came from",
   );
   assert.ok(
     !/\bworkplaceRegions\b/.test(serviceSrc),
